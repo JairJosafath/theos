@@ -9,7 +9,7 @@ kind: Kustomization
 namespace: gitea
 labels:
   - pairs:
-      app.kubernetes.io/part-of: c4factory-testenv
+      app.kubernetes.io/part-of: theos-testenv
     includeTemplates: true
 resources:
   - namespace.yaml

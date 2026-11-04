@@ -6,7 +6,7 @@ import { WarningsBanner } from './Status'
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
 
 describe('WarningsBanner', () => {
-  const deprecated = 'c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1.'
+  const deprecated = 'theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1.'
 
   it('shows what the API server warned, as a status and each once (#1618)', () => {
     const html = renderToStaticMarkup(createElement(WarningsBanner, { warnings: [deprecated, deprecated, 'other'] }))

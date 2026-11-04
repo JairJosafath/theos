@@ -15,9 +15,9 @@ ok   pick, no cluster: a needs/cluster issue
 ## `grep -rn "cluster acquire" hack/relay.sh .claude/skills`: only the human path
 
 ```
-.claude/skills/factory-ops/SKILL.md:12:first leases one (`C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire`
+.claude/skills/factory-ops/SKILL.md:12:first leases one (`THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire`
 .claude/skills/handoff/SKILL.md:53:would check. Kind is a tier only a human runs: `cluster acquire` refuses
-.claude/skills/handoff/SKILL.md:62:2. `C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire` prints the cluster
+.claude/skills/handoff/SKILL.md:62:2. `THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire` prints the cluster
 hack/relay.sh:57:# human runs (hack/lib/github.sh cluster acquire refuses without
 ```
 
@@ -36,7 +36,7 @@ test/e2e/agents_test.go:112:	It("carries a Standard bump to main through a pull 
 === RUN   TestCheck/credentials_Secret
 === RUN   TestCheck/Secret_in_env
 --- PASS: TestCheck (0.00s)
-ok  	github.com/JairJosafath/c4factory/test/e2e/standin	0.004s
+ok  	github.com/JairJosafath/theos/test/e2e/standin	0.004s
 ```
 
 ## Workflows that start Kind run on `workflow_dispatch` only

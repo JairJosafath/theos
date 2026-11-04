@@ -14,13 +14,13 @@ $ go test ./internal/model/ -run "Failed|ClarifiedBody" -v
 --- PASS: TestBriefWorkspaceFailed (0.00s)
 --- PASS: TestFailedMessage (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/model	0.008s
+ok  	github.com/JairJosafath/theos/internal/model	0.008s
 
 == #455 Provider.EditIssueBody (Gitea client) ==
 $ go test ./internal/gitprovider/ -run TestEditIssueBody -v
 --- PASS: TestEditIssueBody (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/gitprovider	0.009s
+ok  	github.com/JairJosafath/theos/internal/gitprovider	0.009s
 
 == #454 the Brief lists its failed issues, #455 a prompt retries and closes them (envtest) ==
 $ go test ./internal/controller/ -run TestControllers -v -ginkgo.v -ginkgo.focus 'Brief failed issues'
@@ -30,7 +30,7 @@ Ran 2 of 191 Specs in 19.802 seconds
 SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 189 Skipped
 --- PASS: TestControllers (19.81s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/controller	19.831s
+ok  	github.com/JairJosafath/theos/internal/controller	19.831s
 
 == #456 the card (ui/) ==
 $ (cd ui && npx vitest run src/model/brief.test.ts -t failed --reporter=verbose)

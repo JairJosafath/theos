@@ -8,10 +8,10 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
-// Identity is the content of .c4factory.yaml: which Container a repository is.
+// Identity is the content of .theos.yaml: which Container a repository is.
 // The Session client reads it to register Sessions on the right Container.
 type Identity struct {
 	Project        string   `yaml:"project"`
@@ -28,7 +28,7 @@ type Identity struct {
 	License string `yaml:"license,omitempty"`
 }
 
-const identityHeader = "# Written once by C4 Factory when this repository was scaffolded.\n" +
+const identityHeader = "# Written once by theos when this repository was scaffolded.\n" +
 	"# The Session client reads it to find this repository's Container.\n"
 
 // Marshal returns the identity file's content.
@@ -54,7 +54,7 @@ func ParseIdentity(data []byte) (Identity, error) {
 
 // Commit trailers that mark the operator's own initial commit.
 const (
-	trailerContainer    = "C4-Factory-Container"
+	trailerContainer    = "theos-Container"
 	trailerFrom         = "Scaffolded-From"
 	trailerRelationship = "Applied-Relationship"
 	trailerBundle       = "Scaffolded-Bundle"
@@ -63,8 +63,8 @@ const (
 
 // Author of the initial commit.
 const (
-	AuthorName  = "C4 Factory"
-	AuthorEmail = "factory@c4.factory.io"
+	AuthorName  = "theos"
+	AuthorEmail = "factory@theos.factory.io"
 )
 
 // CommitMessage is the message of the single initial commit. Its trailers let the
@@ -72,7 +72,7 @@ const (
 func CommitMessage(in Input, scaffoldedFrom []string, relationships []model.AppliedRelationship) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Scaffold %s\n\n", in.Container)
-	fmt.Fprintf(&b, "Created by C4 Factory for Container %s in SoftwareSystem %s.\n", in.Container, in.SoftwareSystem)
+	fmt.Fprintf(&b, "Created by theos for Container %s in SoftwareSystem %s.\n", in.Container, in.SoftwareSystem)
 	b.WriteString("Scaffolding happens once; from here on the repository is yours.\n\n")
 	fmt.Fprintf(&b, "%s: %s/%s\n", trailerContainer, in.Project, in.Container)
 	for _, from := range scaffoldedFrom {
@@ -115,7 +115,7 @@ type CommitInfo struct {
 }
 
 // ErrNotOurs means a commit wasn't made by the operator.
-var ErrNotOurs = errors.New("commit was not made by C4 Factory")
+var ErrNotOurs = errors.New("commit was not made by theos")
 
 // ParseCommitMessage reads the trailers of an initial commit, or returns ErrNotOurs.
 func ParseCommitMessage(msg string) (CommitInfo, error) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for hack/pull.sh: main is fast-forwarded where it is checked out
 # nowhere and left alone where another worktree has it, also when git worktree
-# list writes more than a pipe holds, and the checkout C4_PULL_REPO names is
+# list writes more than a pipe holds, and the checkout THEOS_PULL_REPO names is
 # pulled, against a throwaway origin and clone.
 # Run: hack/pull_test.sh
 T=$(mktemp -d)
@@ -64,11 +64,11 @@ check "other worktree: main left alone" "$(git -C "$T/clone" rev-parse main)" "$
 check "other worktree: says why" "$(grep -c 'checked out in another worktree' <<<"$out")" 1
 check "other worktree: its checkout untouched" "$(git -C "$T/wt-main" status --porcelain)" ""
 
-# C4_PULL_REPO: another checkout's copy pulls the checkout it names, as the
+# THEOS_PULL_REPO: another checkout's copy pulls the checkout it names, as the
 # relay runs origin/main's copy on the checkout it was started from (#1126).
 want=$(git -C "$T/src" rev-parse main)
-out=$(C4_PULL_REPO=$T/wt-main "$T/src/hack/pull.sh")
-check "C4_PULL_REPO: that checkout's main moves" "$(git -C "$T/wt-main" rev-parse HEAD)" "$want"
-check "C4_PULL_REPO: says so" "$(grep -c 'pull: main .* on main' <<<"$out")" 1
+out=$(THEOS_PULL_REPO=$T/wt-main "$T/src/hack/pull.sh")
+check "THEOS_PULL_REPO: that checkout's main moves" "$(git -C "$T/wt-main" rev-parse HEAD)" "$want"
+check "THEOS_PULL_REPO: says so" "$(grep -c 'pull: main .* on main' <<<"$out")" 1
 
 exit $fail

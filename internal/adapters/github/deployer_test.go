@@ -6,8 +6,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // #1598: a source the Git host streams without a file the commit needs is

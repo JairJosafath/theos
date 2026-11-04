@@ -1,17 +1,17 @@
 # Architecture
 
 How the code is split, and which way dependencies may point. Read this before adding
-code. [design.md](design.md) says *what* C4 Factory does; this file says *where* the
+code. [design.md](design.md) says *what* theos does; this file says *where* the
 code for it goes.
 
-[![C4 Factory's architecture: what runs where in the Kind cluster, the code layers, and where state lives](images/architecture.png)](images/architecture.svg)
+[![theos's architecture: what runs where in the Kind cluster, the code layers, and where state lives](images/architecture.png)](images/architecture.svg)
 
 The board's source is [images/architecture.excalidraw](images/architecture.excalidraw).
 
 ## Layers
 
 ```
-     cmd/main.go            cmd/c4session          cmd/c4agent               ui/ (server.mjs + React)
+     cmd/main.go            cmd/theos-session          cmd/theos-agent               ui/ (server.mjs + React)
      (operator manager)     (Session client CLI)   (runner in a sandbox)     (the UI)
           │                       │                      │                        │
           ▼                       ▼                      ▼                        ▼
@@ -27,7 +27,7 @@ internal/  internal/        internal/ports ◄── internal/adapters/*
      ▲        ▲
      └────────┴── api/v1beta1 types never reach these two
 
-features/ embeds the c4session devcontainer feature; the operator writes it into
+features/ embeds the theos-session devcontainer feature; the operator writes it into
 every scaffolded repository.
 ```
 
@@ -38,7 +38,7 @@ every scaffolded repository.
 | Ports | `internal/ports` and its `fake`, `contract` (the Deployer from #1161; the Git host's from #1094) | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
 | Adapters | `internal/adapters/*`: `gitea`, `git`, `github`, `gitlab`, `argocd`, `cloudformation` | ports, business rules; host adapters `net/http` and go-git; runtime and deploy adapters client-go | `api/`, `internal/controller`; host adapters also Kubernetes |
 | OCI images | `internal/oci` | the standard library, `net/http`, go-containerregistry; host adapters use it | Kubernetes, controller-runtime, `api/`, any other `internal/` package |
-| Sandbox runner | `internal/agentrunner`, `cmd/c4agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
+| Sandbox runner | `internal/agentrunner`, `cmd/theos-agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
 | Model proxy | `internal/modelproxy`, `cmd/model-proxy` | the standard library; `cmd/model-proxy` also `internal/modelproxy` and `internal/buildinfo` | Kubernetes, controller-runtime, `api/`, `internal/controller`, `internal/adapters`; `internal/modelproxy` any other `internal/` package |
 | Clients of the API | `internal/controller`, `internal/sessionclient` | everything above but adapters; their tests wire adapters onto fakes | `cmd/`, `internal/adapters/*` |
 | Build info | `internal/buildinfo` | nothing | everything; only `cmd/*` reads it |
@@ -46,7 +46,7 @@ every scaffolded repository.
 | Entry points | `cmd/*` | everything | nothing imports them |
 
 The UI in `ui/` is a separate program. Its server proxies GET requests to the
-Kubernetes API, under `/apis/c4.factory.io/` only. With its actions off (the
+Kubernetes API, under `/apis/theos.factory.io/` only. With its actions off (the
 default), it is read-only by construction but for three writes: creating a Brief (`POST` of kind `Brief` into a namespace that
 holds a Project; only its name and spec go upstream), appending a follow-up
 prompt to one (a JSON patch whose only operation is `add` at `/spec/prompts/-`),
@@ -112,7 +112,7 @@ it against this table. Where the code lives:
   GitProvider and its Secret, which needs Kubernetes, and each controller
   maps the delivery to its own objects.
 - **The per-CI table** (`model.CI`: its name, which names the templates'
-  `.c4factory/ci/<name>/` folder, check contexts, protected paths) is in
+  `.theos/ci/<name>/` folder, check contexts, protected paths) is in
   `internal/model`, so `internal/scaffold` reads it without an adapter.
 - **The host-neutral guard** is a Go test beside the ports
   (`internal/ports/hostneutral_test.go`, from #1094) with its allowlist of
@@ -150,7 +150,7 @@ swappable here once its fake and two real adapters pass its contract.
    pinned ref.
 4. `internal/scaffold` renders the layers in order (Framework, Standard, Compute,
    Deployment, Connectors, Domains), fails on a path owned by two layers, adds `.devcontainer/` and
-   `.c4factory.yaml`, and returns one file tree.
+   `.theos.yaml`, and returns one file tree.
 5. The Gitea adapter pushes that tree as a single commit.
 6. `internal/controller` writes `Ready`, `repositoryURL`, `scaffoldedFrom`,
    `scaffoldedDomains` and `appliedRelationships` with `appliedConnectors` (what each Relationship added).
@@ -185,9 +185,9 @@ Containers at once.
 
 ## Flow of one Session
 
-1. The c4session feature installs the client in the devcontainer and runs
-   `c4session start` after every start.
-2. `internal/sessionclient` finds `.c4factory.yaml`, creates a Session on that
+1. The theos-session feature installs the client in the devcontainer and runs
+   `theos-session start` after every start.
+2. `internal/sessionclient` finds `.theos.yaml`, creates a Session on that
    Container and patches its status with a heartbeat every 30 seconds.
 3. `internal/controller` adopts the Session under its Container, counts it in
    `activeSessions`, and marks it `Stale` two minutes after the last heartbeat.
@@ -224,7 +224,7 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    `c4Context` gives the agent the Container's place in the story: the system's
    needs and KPIs, its users, each Relationship, and the related Containers'
    repositories.
-4. In the pod, `cmd/c4agent` reads its job from the environment, and
+4. In the pod, `cmd/theos-agent` reads its job from the environment, and
    `internal/agentrunner` clones with the bot's token, clones the related
    repositories read-only, reads the role guide (`docs/agents/<role>.md`) from the
    base branch, runs the agent, runs `make check` and sends the agent back while
@@ -245,7 +245,7 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
 6. **A Standard change.** After a round the runner splits the agent's commits:
    edits to eligible protected paths (the Makefile, `.gitea/`, lint config,
    `docs/style/`, `.devcontainer/`; never `AGENTS.md`, `docs/agents/` or
-   `.c4factory.yaml`) go to a proposal branch `standard/<task>` and are reverted
+   `.theos.yaml`) go to a proposal branch `standard/<task>` and are reverted
    on the Task branch; an ineligible path fails the round. The result carries the
    proposal (branch, paths, reason).
 7. **`Blocked`.** The controller files a `kind/standard-change` issue as the
@@ -280,24 +280,24 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    implementer's prompt overrides old guides:
    Containers on Standard v1.0.0 have guides that say "stop", and a Standard
    may ship none and an `AGENTS.md` that says "Leave .devcontainer/,
-   .c4factory.yaml and .gitea/ alone"; the prompt says to follow it instead. Only
+   .theos.yaml and .gitea/ alone"; the prompt says to follow it instead. Only
    `go-standard` and `ts-standard` (v1.1.0 and later) and `python-standard` ship guides
    that describe Standard changes.
 
 ## Go modules of the factory's apps
 
-An app's Go module path is `c4factory.local/<project>/<container>` (the Go
+An app's Go module path is `theos.local/<project>/<container>` (the Go
 templates' `go.mod`), which no public proxy knows. Agent sandboxes of a
-Container's Tasks get `C4_GO_REGISTRY=<gitea>/api/packages/<owner>/go`,
-`GOPROXY=http://127.0.0.1:3127,direct` and `GONOSUMDB=c4factory.local`
+Container's Tasks get `THEOS_GO_REGISTRY=<gitea>/api/packages/<owner>/go`,
+`GOPROXY=http://127.0.0.1:3127,direct` and `GONOSUMDB=theos.local`
 (`buildSandbox`, from the GitProvider's URL and owner through
-`ports.Repository.GoProxy`). c4agent serves `agentrunner.GoProxy` there
-while the agent works: `c4factory.local/` paths go to the registry and nowhere
+`ports.Repository.GoProxy`). theos-agent serves `agentrunner.GoProxy` there
+while the agent works: `theos.local/` paths go to the registry and nowhere
 else, with the bot's credentials over https (`ports.AgentTokenScopes`
 lets it read the owner's packages; the token's name carries its scopes, so an
 operator upgrade that changes them makes a new token beside the old one
 instead of revoking what a running sandbox of the Container holds. The agent
-Git Secret's `c4.factory.io/old-tokens-before` annotation records when; at
+Git Secret's `theos.factory.io/old-tokens-before` annotation records when; at
 the start and end of each run, once every sandbox of the Container started
 after it (`model.OldTokensUnused`), the operator revokes the old tokens
 (`ports.RevokeOldAgentTokens`) and drops the annotation), and every
@@ -306,21 +306,21 @@ proxy.golang.org. The go command has no per-path proxy, and with a list of
 the registry, then the public proxy, it would ask the public proxy for a
 factory module the registry lacks (it goes on after a 404), leaking the
 project's and Container's names. go-standard's CI (v1.1.5) downloads the
-`c4factory.local/` modules of `go.sum` with `GOPROXY` set to the registry
-alone, then runs `make check` with `GOPRIVATE=c4factory.local`, so no proxy is
+`theos.local/` modules of `go.sum` with `GOPROXY` set to the registry
+alone, then runs `make check` with `GOPRIVATE=theos.local`, so no proxy is
 asked for them. [plans/done/app-modules.md](plans/done/app-modules.md) has why.
 
 ## npm and PyPI packages of the factory's apps
 
-The same sandboxes get `C4_NPM_SCOPE`, `C4_NPM_REGISTRY` and `C4_PYPI_INDEX`
+The same sandboxes get `THEOS_NPM_SCOPE`, `THEOS_NPM_REGISTRY` and `THEOS_PYPI_INDEX`
 (`buildSandbox`, through `ports.Repository.NpmScope`, `NpmRegistry` and
 `PyPIIndex`): `GitProvider.spec.packages` where it is set, else the scope
-`@c4factory` and the host's own registries,
+`@theos` and the host's own registries,
 `<gitea>/api/packages/<owner>/npm/` and `.../pypi/simple`. The planner's gets
 none, as with Go. The token a pod installs with is the agent bot's for the
-host's own registry, else `C4_NPM_TOKEN` or `C4_PYPI_TOKEN` from the registry
+host's own registry, else `THEOS_NPM_TOKEN` or `THEOS_PYPI_TOKEN` from the registry
 Secret's `readToken` (`readTokenEnv`); with neither, installs send no
-credential. c4agent writes `~/.npmrc` (mode 0600, `agentrunner.WriteNpmrc`)
+credential. theos-agent writes `~/.npmrc` (mode 0600, `agentrunner.WriteNpmrc`)
 with the scope's registry and the token as `_authToken` for the registry's
 host and path, and uv reads the `~/.netrc` it writes for Git. No loopback
 proxy: npm sends a scope, and uv a package, to its own registry. When
@@ -355,9 +355,9 @@ each run compiles only what changed:
 
 | Cache | Node directory | Mounted by | Set up by |
 | --- | --- | --- | --- |
-| sandboxes | `/var/cache/c4factory/go/sandbox`, the operator's `--sandbox-go-cache` | every agent sandbox, at `/cache/go`, with `GOCACHE` and `GOLANGCI_LINT_CACHE` pointing into it | an init container in the agent's image |
-| CI, shared | `/var/cache/c4factory/go/ci` | only the shared `go` runner (`config/runner/go.yaml`), which serves the templates organization; jobs get the variables from the runner's `env_file` | an init container, and a sidecar hourly |
-| CI, per project | `/var/cache/c4factory/go/projects/<namespace>`, under the operator's `--ci-go-cache` | the project's `go` pool pods, at `/cache/go`; the variables come from ConfigMap `c4-ci-runner-env` in the namespace, the pod's `env_file` | an init container of each pod |
+| sandboxes | `/var/cache/theos/go/sandbox`, the operator's `--sandbox-go-cache` | every agent sandbox, at `/cache/go`, with `GOCACHE` and `GOLANGCI_LINT_CACHE` pointing into it | an init container in the agent's image |
+| CI, shared | `/var/cache/theos/go/ci` | only the shared `go` runner (`config/runner/go.yaml`), which serves the templates organization; jobs get the variables from the runner's `env_file` | an init container, and a sidecar hourly |
+| CI, per project | `/var/cache/theos/go/projects/<namespace>`, under the operator's `--ci-go-cache` | the project's `go` pool pods, at `/cache/go`; the variables come from ConfigMap `c4-ci-runner-env` in the namespace, the pod's `env_file` | an init container of each pod |
 
 - **CI's cache is its own.** Go doesn't check what it reads from a cache, so a
   sandbox that could write CI's cache could plant a compiled package that CI,

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -18,10 +18,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // taskSkew moves the Task's clock ahead of the real one, so a test sees the
@@ -60,11 +60,11 @@ func setRunJobs(owner, name string, id int64, online []int64, jobs ...ports.Work
 // testRunnerRecordKept).
 func heldPoolPod(ns string) *corev1.Pod {
 	GinkgoHelper()
-	const held = "c4.factory.io/test-held"
+	const held = "theos.factory.io/test-held"
 	var provider c4v1beta1.GitProvider
 	Expect(k8sClient.Get(ctx, key(ns, "gitea"), &provider)).To(Succeed())
 	provider.Spec.CI = &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: []c4v1beta1.CIRunnerSpec{
-		{Label: "go", Image: "c4factory/gitea-runner-go:dev", Size: 1},
+		{Label: "go", Image: "theos/gitea-runner-go:dev", Size: 1},
 	}}}
 	Expect(k8sClient.Update(ctx, &provider)).To(Succeed())
 	var pod corev1.Pod

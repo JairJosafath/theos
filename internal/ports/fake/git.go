@@ -15,9 +15,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // TemplatesURL is where NewGit serves the templates of the folder it reads:

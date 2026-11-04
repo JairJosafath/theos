@@ -8,7 +8,7 @@
 # Planned (later ones append with a JSON patch, or the UI's prompt field):
 # kubectl -n cel-lens patch brief cel-lens --type=merge \
 #   -p '{"spec":{"prompts":["Support ValidatingAdmissionPolicy files first."]}}'
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Brief
 metadata:
   name: cel-lens

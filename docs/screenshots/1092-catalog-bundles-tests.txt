@@ -37,13 +37,13 @@ $ go test ./internal/model -run Bundle -count=1 -v
 --- PASS: TestBundleStringRoundTrip (0.00s)
 --- PASS: TestPlannerGuidePrefersABundle (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/model	0.004s
+ok  	github.com/JairJosafath/theos/internal/model	0.004s
 
 == Tier 2: the chart's bundles (#1623), make validate-yaml
 $ make validate-yaml
 Skipped, they fetch remote URLs: config/agent-sandbox, config/argocd, config/metrics-server
-The chart's GitProviders, catalog and Agents are in ConfigMap c4factory-catalog, none a hook
-The chart's gitProviders are in ConfigMap c4factory-gitproviders, none a hook
+The chart's GitProviders, catalog and Agents are in ConfigMap theos-catalog, none a hook
+The chart's gitProviders are in ConfigMap theos-gitproviders, none a hook
 Every GitProvider the chart renders carries a base and a go runner pool
 2 Bundles in chart-gitea-catalog.yaml name entries the chart installs, each supporting a Container type
 Validating 44 files
@@ -60,7 +60,7 @@ The CI fence and the manager take clusterDNS
 All 15 invalid files rejected
 The chart's CRDs match config/crd/bases
 The chart's manager role matches config/rbac/role.yaml
-The chart's manager Deployment keeps /tmp, POD_NAMESPACE, C4_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount and the webhook
+The chart's manager Deployment keeps /tmp, POD_NAMESPACE, THEOS_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount and the webhook
 
 == Tier 4: envtest, the Bundle specs (#1619, #1620, #1621, #1622)
 $ KUBEBUILDER_ASSETS=... go test ./internal/controller -v -run '^TestControllers$' -count=1 -ginkgo.focus=Bundle -ginkgo.v
@@ -96,7 +96,7 @@ Container naming a Bundle fails a Bundle whose entries don't fit the Container, 
 Ran 9 of 529 Specs in 13.997 seconds
 SUCCESS! -- 9 Passed | 0 Failed | 0 Pending | 520 Skipped
 --- PASS: TestControllers (14.00s)
-ok  	github.com/JairJosafath/c4factory/internal/controller	14.020s
+ok  	github.com/JairJosafath/theos/internal/controller	14.020s
 
 == The UI (#1624), its bundle tests
 $ cd ui && npx vitest run src/model/choices.test.ts

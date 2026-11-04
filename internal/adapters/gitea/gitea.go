@@ -11,9 +11,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/adapters/git"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/adapters/git"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // gitea implements every Git host port, backed by Gitea's REST API for repositories and plain Git

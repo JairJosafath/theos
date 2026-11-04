@@ -131,7 +131,7 @@ export interface WatchState<T> {
   /**
    * What the API server warned about the last list, from the response's
    * Warning header: a request at a deprecated version, such as
-   * c4.factory.io/v1alpha1 (#1618). Unset when it warned about nothing.
+   * theos.factory.io/v1alpha1 (#1618). Unset when it warned about nothing.
    */
   warning?: string
 }
@@ -162,7 +162,7 @@ export type OpenWatch = (
 export interface WatcherOptions {
   /** Base URL of the API proxy, such as "k8s" (relative to the page) or "/k8s". */
   baseUrl: string
-  /** API path of the resource, such as /apis/c4.factory.io/v1beta1/namespaces/webshop/containers. */
+  /** API path of the resource, such as /apis/theos.factory.io/v1beta1/namespaces/webshop/containers. */
   path: string
   fetch?: typeof fetch
   /**

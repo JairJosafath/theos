@@ -4,9 +4,9 @@ How to test and run the factory. Go tests are the gate: `make check` for
 every change. A Kind cluster exists only when a human asks to run tests in it;
 agents never create, lease or deploy to one, and never run `make e2e`. The
 human runs it against the dedicated Kind clusters of the device's pool
-(`c4factory`, `c4factory-2`, ...; `make cluster`), never a real cluster.
+(`theos`, `theos-2`, ...; `make cluster`), never a real cluster.
 Every make target works on `KIND_CLUSTER`, by default the pool cluster this
-checkout leased, else `c4factory`; kubectl calls name it with `--context
+checkout leased, else `theos`; kubectl calls name it with `--context
 kind-<name>`.
 
 ## Test tiers
@@ -57,7 +57,7 @@ make cluster gitea seed  # Kind cluster, Gitea, and the seeded templates
 make deploy sample       # Build and deploy the operator into Kind, apply the webshop sample
 make session             # Run the test Session pod; make session-kill kills its client
 make gitea-local seed-local  # A Gitea of this checkout's own, seeded like Kind's (no kubectl)
-make test-gitea          # the Gitea adapter against a local Gitea (make gitea-local), or C4_GITEA_URL if set
+make test-gitea          # the Gitea adapter against a local Gitea (make gitea-local), or THEOS_GITEA_URL if set
 make test-gitea-kind     # the Gitea adapter against the seeded Gitea of the Kind cluster
 make toolchain-base runner-base agent-sandbox agent-image-base  # Minimal toolchain (with uv), CI runner (label base), Agent Sandbox, agent image
 make argocd              # Argo CD core (config/argocd), where the webshop's Containers deploy to
@@ -129,21 +129,21 @@ half a second.
 `make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why;
 the *Tests* workflow gives its loaded self-hosted runners 60m, #1504). The
 controller suite ends itself 30 s before that, failing the spec that was running by
-name. With `C4_SLOWEST_SPECS=FILE` it writes its 10 slowest specs to FILE; the
+name. With `THEOS_SLOWEST_SPECS=FILE` it writes its 10 slowest specs to FILE; the
 *Tests* workflow prints them, so a slow run's log says which specs to speed up.
 
 The controller suite runs its specs one after another, so `make test` runs it
-as `C4_TEST_PROCS` go tests at once (default 2), beside one go test of the
+as `THEOS_TEST_PROCS` go tests at once (default 2), beside one go test of the
 other packages (`hack/go-test.sh`, #1283). Each part gets
-`C4_TEST_SHARD=i/n` and runs its share of the suite's top-level containers
+`THEOS_TEST_SHARD=i/n` and runs its share of the suite's top-level containers
 against its own control plane and manager; a container is never split, since
 Ginkgo already runs them in random order but the specs inside one may share
 state. The split is the same in every part, and a part that ran another
 number of specs than its containers hold fails. Go's test cache answers each
 part on its own, and their profiles (`COVER=1`) and slowest specs
-(`C4_SLOWEST_SPECS`) are merged into one. With `C4_TEST_PROCS` unset and less
-than `C4_TEST_MIN_MEM_GIB` (default 4) of `MemAvailable`, the suite runs in
-one process; `C4_TEST_PROCS=1` always does. A spec run outside `make test`
+(`THEOS_SLOWEST_SPECS`) are merged into one. With `THEOS_TEST_PROCS` unset and less
+than `THEOS_TEST_MIN_MEM_GIB` (default 4) of `MemAvailable`, the suite runs in
+one process; `THEOS_TEST_PROCS=1` always does. A spec run outside `make test`
 (an IDE, `go test` by hand) runs the whole suite in one process, as before.
 What it costs is under [Memory on the cluster device](devices.md#memory-on-the-cluster-device).
 
@@ -194,8 +194,8 @@ Docker, so the Gitea tests run on any device, lite ones included:
   `.gitea-local/app.ini`. There is no lease.
 - It also creates admin `c4admin` with a random password and an access token
   (the seed's scopes) and writes them to `.gitea-local/credentials.env`
-  (mode 0600; `C4_GITEA_URL`, `C4_GITEA_USERNAME`, `C4_GITEA_PASSWORD`,
-  `C4_GITEA_TOKEN`). Nothing prints them; source the file to use them.
+  (mode 0600; `THEOS_GITEA_URL`, `THEOS_GITEA_USERNAME`, `THEOS_GITEA_PASSWORD`,
+  `THEOS_GITEA_TOKEN`). Nothing prints them; source the file to use them.
 - Starting again while it runs is a no-op. `make gitea-local-stop` stops it
   and keeps its data; after a stop, `rm -rf .gitea-local` starts over with a
   new port and new credentials.
@@ -208,18 +208,18 @@ pushing the templates; later runs take about half a minute. The packages
 test (`TestGiteaPackagesIntegration`) installs what it publishes with the
 real tools, so it wants `npm` and `uv` on PATH, and skips, saying which one
 is missing, when either isn't. With
-`C4_GITEA_URL` set (and `C4_GITEA_USERNAME`, `C4_GITEA_TOKEN`) it tests that
+`THEOS_GITEA_URL` set (and `THEOS_GITEA_USERNAME`, `THEOS_GITEA_TOKEN`) it tests that
 Gitea instead, for example the Kind one behind `make gitea-forward`;
 `make test-gitea-kind` does that forward and reads the token from the cluster.
-Sourcing `credentials.env` into your shell exports `C4_GITEA_URL` too, so
+Sourcing `credentials.env` into your shell exports `THEOS_GITEA_URL` too, so
 `make test-gitea` then skips starting the local Gitea; unset it after a stop.
 
 `make seed-local` starts it and seeds it as `make seed` seeds Kind's, with no
 kubectl: the `templates` organization with every tag in
 `templates/versions.txt`, and the `webshop` organization. The seed's file mode
 (`CREDENTIALS_DIR` in `hack/seed/seed.sh`) writes webshop's token to
-`.gitea-local/webshop.env` (mode 0600; `C4_GITEA_URL`, `C4_GITEA_USERNAME`,
-`C4_GITEA_TOKEN`) instead of Secret `gitea-credentials`, and skips the runner
+`.gitea-local/webshop.env` (mode 0600; `THEOS_GITEA_URL`, `THEOS_GITEA_USERNAME`,
+`THEOS_GITEA_TOKEN`) instead of Secret `gitea-credentials`, and skips the runner
 token. Use it to check template work on any device: a wording fix, a new tag in
 `versions.txt`, or how the seed pushes and tags. A second run changes nothing,
 and warns when a template no longer matches its tag. `hack/seed_test.sh`
@@ -238,14 +238,14 @@ install subtests skip, and say so; the publish still runs (#1702).
 make manifests generate
 
 # 2. Build, load into Kind, deploy
-make deploy            # builds c4factory/operator:dev-<checkout>, kind-loads it as :dev, applies config/default, restarts
+make deploy            # builds theos/operator:dev-<checkout>, kind-loads it as :dev, applies config/default, restarts
 
-# 3. Try it (kubectl names the cluster: kind-c4factory, or the one you leased)
+# 3. Try it (kubectl names the cluster: kind-theos, or the one you leased)
 make sample            # the webshop story
-kubectl --context kind-c4factory get c4 -n webshop
+kubectl --context kind-theos get theos -n webshop
 
 # 4. Debug
-kubectl --context kind-c4factory logs -n c4-factory-system deployment/c4-factory-controller-manager -c manager -f
+kubectl --context kind-theos logs -n theos-system deployment/theos-controller-manager -c manager -f
 make gitea-forward     # then open http://localhost:3000
 ```
 
@@ -259,7 +259,7 @@ writes what the plugin would change to `bin/chart/manager.plugin.diff`, outside 
 `bin/yaml/` that `make validate-yaml` parses, to port by hand,
 and `hack/chart-manager.sh` fails `make validate-yaml` when the render lacks them; the *Test Chart* workflow, dispatched by hand, installs it into a
 fresh Kind cluster on GitHub. Don't `helm install` it into the shared
-`c4factory` cluster: `make deploy` owns the CRDs there.
+`theos` cluster: `make deploy` owns the CRDs there.
 
 A pushed `vX.Y.Z` tag runs the *Release* workflow, which builds the operator,
 UI, toolchain, agent and runner images, pushes them and the chart to GHCR and
@@ -305,11 +305,11 @@ and its tests) too, so a UI change can't merge with what would turn *UI* red
 ## Work on the factory: GitHub issues by hand
 
 The relay (`hack/relay.sh`, `hack/relay-watch.sh`) is retired: the factory works
-its own issues in Gitea, through the Crew `c4factory`. How that runs is in
+its own issues in Gitea, through the Crew `theos`. How that runs is in
 [docs/plans/self-hosting.md](../plans/self-hosting.md).
 
 A human who works an issue by hand still finds it on GitHub
-(`JairJosafath/c4factory`), and `hack/lib/github.sh` does every GitHub call,
+(`JairJosafath/theos`), and `hack/lib/github.sh` does every GitHub call,
 with the token from the git credential helper. Sessions hand off through issue
 comments (the `handoff` skill).
 
@@ -318,10 +318,10 @@ hack/lib/github.sh pick            # the issue to work next
 hack/lib/github.sh show 14         # an issue, its newest handoff comment and what came after
 hack/lib/github.sh take 14         # claim it for this checkout; prints the agent's name and branch
 hack/lib/github.sh claims          # who holds which issue, with heartbeat age and branch
-C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire # a human only: lease a pool cluster; prints its name (waits up to 30m; exit 4 names the holders, exit 5 without the opt-in)
+THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire # a human only: lease a pool cluster; prints its name (waits up to 30m; exit 4 names the holders, exit 5 without the opt-in)
 hack/lib/github.sh cluster acquire --fresh # the same, on a clean cluster: deletes and recreates the one it leased
 hack/lib/github.sh cluster acquire --fresh --bare # the same, with nothing installed: for a release install (getting-started)
-hack/lib/github.sh cluster name    # the cluster make uses in this checkout: its lease's, else c4factory
+hack/lib/github.sh cluster name    # the cluster make uses in this checkout: its lease's, else theos
 hack/lib/github.sh cluster release # drop it once verification is done
 hack/lib/github.sh cluster holder  # who holds which cluster
 hack/lib/github.sh cluster pool    # each pool cluster: leased, free or not created yet
@@ -342,7 +342,7 @@ worker's session files the issue `status/ready` and reserves nothing. Follow-ups
 that need a decision are filed `status/proposed`.
 
 A claim whose heartbeat stays live but whose work shows no progress for
-`C4_CLAIM_STALE` (2h; `0` turns it off) is stale: `hack/lib/github.sh stale`
+`THEOS_CLAIM_STALE` (2h; `0` turns it off) is stale: `hack/lib/github.sh stale`
 lists such claims, and `stale --apply` sets the issue to
 `status/needs-maintainer` with one comment naming the last progress, the holder
 and the branch. The claim is left alone, since the live heartbeat says it may
@@ -370,7 +370,7 @@ unchecked the same way.
 ### Sharing the Kind clusters between checkouts
 
 A human who runs Kind leases a cluster of the device's pool around the steps
-that touch it (`C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire`, then
+that touch it (`THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire`, then
 `cluster release`); agents never do. The pool and its leases are in
 [devices.md](devices.md#sharing-the-kind-clusters-between-checkouts).
 
@@ -440,7 +440,7 @@ there with its phase and its `Ready` condition, that the new manager logs no
 `Reconciler error` in its first two minutes (optimistic-lock conflicts
 aside), that Secrets `gitea-admin` and `gitea-runner` are unchanged (one
 exception: a `gitea-runner` that held an instance token before, with no
-`c4.factory.io/token-owner` annotation, is replaced once by the templates
+`theos.factory.io/token-owner` annotation, is replaced once by the templates
 organization's token the seed stores, and the check wants that one to be
 there after), and that
 every Gitea repository is still there with its earlier head commit (the seed

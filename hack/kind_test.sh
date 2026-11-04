@@ -44,39 +44,39 @@ KIND=fake_kind CONTAINER_TOOL=fake_docker KUBECTL=fake_kubectl
 calls() { cat "$T/calls" 2>/dev/null; : >"$T/calls"; }
 
 # The tag: two checkouts with one directory name still get their own.
-a=$(cd "$T" && mkdir -p x/c4factory y/c4factory && cd x/c4factory && checkout_tag)
-b=$(cd "$T/y/c4factory" && checkout_tag)
-check "tag: names the directory" "${a%-*}" c4factory
+a=$(cd "$T" && mkdir -p x/theos y/theos && cd x/theos && checkout_tag)
+b=$(cd "$T/y/theos" && checkout_tag)
+check "tag: names the directory" "${a%-*}" theos
 check "tag: differs by path" "$([ "$a" != "$b" ] && echo yes)" yes
-check "tag: stable" "$(cd "$T/x/c4factory" && checkout_tag)" "$a"
+check "tag: stable" "$(cd "$T/x/theos" && checkout_tag)" "$a"
 check "tag: valid docker tag" "$(cd "$T" && mkdir -p 'My Repo' && cd 'My Repo' && checkout_tag | grep -cE '^[a-z0-9_.-]+$')" 1
 
-check "ref: docker hub user" "$(ref c4factory/operator:dev)" docker.io/c4factory/operator:dev
+check "ref: docker hub user" "$(ref theos/operator:dev)" docker.io/theos/operator:dev
 check "ref: library" "$(ref busybox:1)" docker.io/library/busybox:1
 check "ref: registry" "$(ref ghcr.io/x/y:1)" ghcr.io/x/y:1
 check "ref: registry port" "$(ref localhost:5000/y:1)" localhost:5000/y:1
 
 # Load: the checkout's build goes in, and is named IMAGE in every node.
 tag=$(checkout_tag)
-load c4factory-2 c4factory/operator:dev >/dev/null
-check "load: calls" "$(calls)" "kind load docker-image c4factory/operator:dev-$tag --name c4factory-2
-kind get nodes --name c4factory-2
-docker exec c4factory-2-control-plane ctr -n k8s.io images tag --force docker.io/c4factory/operator:dev-$tag docker.io/c4factory/operator:dev
-docker exec c4factory-2-control-plane ctr -n k8s.io images rm docker.io/c4factory/operator:dev-$tag"
-load gone c4factory/operator:dev >/dev/null 2>&1
+load theos-2 theos/operator:dev >/dev/null
+check "load: calls" "$(calls)" "kind load docker-image theos/operator:dev-$tag --name theos-2
+kind get nodes --name theos-2
+docker exec theos-2-control-plane ctr -n k8s.io images tag --force docker.io/theos/operator:dev-$tag docker.io/theos/operator:dev
+docker exec theos-2-control-plane ctr -n k8s.io images rm docker.io/theos/operator:dev-$tag"
+load gone theos/operator:dev >/dev/null 2>&1
 check "load: no nodes fails" "$?" 1
 calls >/dev/null
-load c4factory-2 missing:dev >/dev/null 2>&1
+load theos-2 missing:dev >/dev/null 2>&1
 check "load: unbuilt image fails" "$?$(calls)" 1
-load c4factory-2 foo/bar >/dev/null
-check "load: untagged is latest" "$(calls | sed -n 3p)" "docker exec c4factory-2-control-plane ctr -n k8s.io images tag --force docker.io/foo/bar:latest-$tag docker.io/foo/bar:latest"
+load theos-2 foo/bar >/dev/null
+check "load: untagged is latest" "$(calls | sed -n 3p)" "docker exec theos-2-control-plane ctr -n k8s.io images tag --force docker.io/foo/bar:latest-$tag docker.io/foo/bar:latest"
 
 # keep-context: kind create switches the context; it's put back.
-echo kind-c4factory >"$T/context"
-keep_context fake_kind create cluster --name c4factory-3
-check "keep-context: restores" "$(cat "$T/context")" kind-c4factory
+echo kind-theos >"$T/context"
+keep_context fake_kind create cluster --name theos-3
+check "keep-context: restores" "$(cat "$T/context")" kind-theos
 : >"$T/context"
-keep_context fake_kind create cluster --name c4factory-3
+keep_context fake_kind create cluster --name theos-3
 check "keep-context: stays unset" "$(cat "$T/context")" ""
 keep_context false
 check "keep-context: keeps the exit code" "$?" 1
@@ -87,17 +87,17 @@ calls >/dev/null
 # the lock beside the kubeconfig keeps the device on X.
 export KUBECONFIG="$T/config"
 slow_switch() { echo "kind-$1" >"$T/context"; sleep 0.3; }
-echo kind-c4factory >"$T/context"
+echo kind-theos >"$T/context"
 keep_context slow_switch a & sleep 0.1
 keep_context slow_switch b & wait
-check "keep-context: concurrent calls restore the original" "$(cat "$T/context")" kind-c4factory
+check "keep-context: concurrent calls restore the original" "$(cat "$T/context")" kind-theos
 check "keep-context: lock beside the kubeconfig" "$(ls "$T" | grep -c '^config\.keep-context\.lock$')" 1
 
 # registry-hosts: every node gets containerd's hosts.toml for Gitea, pointing
 # at the ClusterIP config/gitea/service.yaml fixes.
-registry_hosts c4factory-2 >/dev/null
-check "registry-hosts: calls" "$(calls)" "kind get nodes --name c4factory-2
-docker exec -i c4factory-2-control-plane sh -c mkdir -p \"\$1\" && cat >\"\$1/hosts.toml\" sh /etc/containerd/certs.d/gitea.gitea.svc.cluster.local:3000"
+registry_hosts theos-2 >/dev/null
+check "registry-hosts: calls" "$(calls)" "kind get nodes --name theos-2
+docker exec -i theos-2-control-plane sh -c mkdir -p \"\$1\" && cat >\"\$1/hosts.toml\" sh /etc/containerd/certs.d/gitea.gitea.svc.cluster.local:3000"
 check "registry-hosts: hosts.toml" "$(cat "$T/stdin")" 'server = "http://10.96.0.30:3000"
 
 [host."http://10.96.0.30:3000"]
@@ -111,16 +111,16 @@ calls >/dev/null
 # gitea-service: spec.clusterIP is immutable, so before make gitea applies
 # config/gitea, a Service whose ClusterIP differs from the fixed one is
 # deleted (#1679); one that matches, or none, is left alone.
-get_svc="kubectl --context kind-c4factory-2 -n gitea get svc gitea --ignore-not-found -o jsonpath={.spec.clusterIP}"
+get_svc="kubectl --context kind-theos-2 -n gitea get svc gitea --ignore-not-found -o jsonpath={.spec.clusterIP}"
 printf 10.96.187.4 >"$T/svc-ip"
-gitea_service c4factory-2 >/dev/null
+gitea_service theos-2 >/dev/null
 check "gitea-service: another ClusterIP is deleted (#1679)" "$(calls)" "$get_svc
-kubectl --context kind-c4factory-2 -n gitea delete svc gitea"
+kubectl --context kind-theos-2 -n gitea delete svc gitea"
 printf 10.96.0.30 >"$T/svc-ip"
-gitea_service c4factory-2 >/dev/null
+gitea_service theos-2 >/dev/null
 check "gitea-service: the fixed ClusterIP stays (#1679)" "$(calls)" "$get_svc"
 rm -f "$T/svc-ip"
-gitea_service c4factory-2 >/dev/null
+gitea_service theos-2 >/dev/null
 check "gitea-service: no Service stays (#1679)" "$(calls)" "$get_svc"
 check "gitea-service: make gitea runs it before the apply (#1679)" \
   "$(awk '/kind.sh gitea-service/{s=NR} /apply -k config\/gitea/{a=NR} END{print (s && a && s<a) ? "yes" : "no"}' "$(dirname "$0")/testenv.mk")" yes

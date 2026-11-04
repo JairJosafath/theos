@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -18,8 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // #1455: a release written between the Crew's read and its adoption stays.

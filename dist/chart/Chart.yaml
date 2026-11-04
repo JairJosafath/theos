@@ -1,6 +1,6 @@
 apiVersion: v2
-name: c4-factory
-description: A Helm chart to distribute c4-factory
+name: theos
+description: A Helm chart to distribute theos
 type: application
 
 # The newest release. hack/release.sh bumps it, and docs/getting-started.md's

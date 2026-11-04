@@ -1,4 +1,4 @@
-# C4 Factory v4: issues, crews and roles
+# theos v4: issues, crews and roles
 
 Oct 2, 2026 · asked for by @Jeremy Jo., designed and decided by Claude while working
 autonomously. Every decision is in the table below so it can be overruled.
@@ -45,7 +45,7 @@ The product: **CEL Lens**, rich CEL language support in Kubernetes YAML.
 | 8 | Picking up | A new kind, `Crew`, per Container: who implements, who reviews, and whether it picks up ready issues. It starts one Task at a time, lowest issue number first |
 | 9 | Issue states | Exclusive scoped labels: `status/proposed`, `status/ready`, `status/in-progress`, `status/needs-human`. Merging closes the issue |
 | 10 | Roles | `Agent` gains `model` and `harness`. Crews pair a Sonnet implementer with an Opus reviewer. Fable is never used |
-| 11 | Role guides | A Standard ships `docs/agents/implementer.md` and `docs/agents/reviewer.md`; c4agent reads them from the base branch, so a change under review can't rewrite its own review |
+| 11 | Role guides | A Standard ships `docs/agents/implementer.md` and `docs/agents/reviewer.md`; theos-agent reads them from the base branch, so a change under review can't rewrite its own review |
 | 12 | C4 context | Agents get the system's needs, the Container, its Relationships with their descriptions, and a read-only clone of every related Container's repository |
 | 13 | Reviews in Gitea | Each verdict is posted as a pull request review (approve or request changes) naming the reviewer Agent and model |
 | 14 | Follow-ups | The reviewer may name up to three follow-ups; the operator files them as `status/proposed` issues on merge, in the Later milestone, outside any release |
@@ -144,7 +144,7 @@ These facts go into the issues, so agents start from a known path.
 ```yaml
 kind: Agent
 spec:
-  image: c4factory/agent-go:dev
+  image: theos/agent-go:dev
   harness: claude-code          # new: claude-code (default) or stand-in
   model: claude-sonnet-5-5      # new: passed to the harness; empty means its default
 ---
@@ -208,7 +208,7 @@ The operator builds the context from the model, not from the prompt author:
 - the system, its needs and KPIs, and the Persons who use it;
 - the Container: type, description, catalog choices;
 - each Relationship of the Container, in either direction, with its description;
-- for each related Container, its repository, cloned read-only by c4agent into
+- for each related Container, its repository, cloned read-only by theos-agent into
   `/workspace/related/<name>` (repositories are public inside Gitea; the bot's
   token can't push there).
 

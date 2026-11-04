@@ -26,8 +26,8 @@
     --- PASS: TestBehindChanges/a_long_change_is_cut_at_a_line (0.00s)
     --- PASS: TestBehindChanges/one_line_past_the_bound_is_cut_at_a_character (0.00s)
     --- PASS: TestBehindChanges/only_the_first_files_carry_their_change (0.00s)
-ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.016s
-ok  	github.com/JairJosafath/c4factory/internal/model	0.033s
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.016s
+ok  	github.com/JairJosafath/theos/internal/model	0.033s
 
 # envtest: go test -v ./internal/controller -ginkgo.v -ginkgo.focus='<the specs below>'
 # The first checks the update's pull request body carries the Standard's change to Makefile and the lines a take drops (#979).
@@ -37,7 +37,7 @@ Container Standard update leaves out a file the repository changed in the same l
 Container Standard update records the change to a file left out of an update that opens no pull request
 • [3.342 seconds]
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/controller	52.857s
+ok  	github.com/JairJosafath/theos/internal/controller	52.857s
 
 # Vitest (ui): npx vitest run --reporter=verbose <the files below>
 

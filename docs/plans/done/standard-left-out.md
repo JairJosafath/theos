@@ -64,14 +64,14 @@ pull request.
   `spec.releases`. In no autopilot mode does the Brief take it by itself: the
   repository's change may itself be a reviewed Standard change.
 - **The person answers with one annotation on the Container.**
-  `c4.factory.io/standard-take: <ref>` takes the Standard's version of every
-  path in `behind`; `c4.factory.io/standard-keep: <ref>` keeps the
+  `theos.factory.io/standard-take: <ref>` takes the Standard's version of every
+  path in `behind`; `theos.factory.io/standard-keep: <ref>` keeps the
   repository's. The value is the Standard ref the answer was given for; an
   answer for another ref (the Standard moved on since) is ignored and the item
   stays. The Kubernetes API is the truth and agents never reach it, so no
   agent can answer for the person; the UI offers both as one-click actions with
   `ui.actions.enabled` (an allowlisted merge patch of the annotations, like
-  `c4.factory.io/retry`) and shows the `kubectl annotate` lines otherwise.
+  `theos.factory.io/retry`) and shows the `kubectl annotate` lines otherwise.
 - **Take is the operator's pull request, merged like an update.** The
   operator opens "Bring `<paths>` up to date with `<standard>` `<ref>`" on
   branch `standard-take/<standard>-<ref>`: each file is the three-way merge

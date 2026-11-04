@@ -66,7 +66,7 @@ func TestParseCDKAssembly(t *testing.T) {
 				if s.TerminationProtection != (tier == DeployTierProduction) {
 					t.Errorf("terminationProtection = %v at %s", s.TerminationProtection, tier)
 				}
-				if s.Tags["c4factory:container"] == "" {
+				if s.Tags["theos:container"] == "" {
 					t.Errorf("tags = %v, want the assembly's", s.Tags)
 				}
 				role := "arn:aws:iam::123456789012:role/cdk-hnb659fds-%s-role-123456789012-eu-west-1"
@@ -252,10 +252,10 @@ func TestCDKChangeSetParameters(t *testing.T) {
 }
 
 func TestCloudFormationStackTags(t *testing.T) {
-	got := CloudFormationStackTags(map[string]string{"c4factory:container": "search", CloudFormationTagVersion: "old"},
+	got := CloudFormationStackTags(map[string]string{"theos:container": "search", CloudFormationTagVersion: "old"},
 		"ns/search", "production", "v1.0.0", 2)
-	want := map[string]string{"c4factory:container": "search", "c4factory.io/app": "ns/search",
-		"c4factory.io/tier": "production", "c4factory.io/version": "v1.0.0", "c4factory.io/stacks": "2"}
+	want := map[string]string{"theos:container": "search", "theos.io/app": "ns/search",
+		"theos.io/tier": "production", "theos.io/version": "v1.0.0", "theos.io/stacks": "2"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("tags %v", got)
 	}
@@ -292,7 +292,7 @@ func TestCDKToken(t *testing.T) {
 	if tok, _ := CDKClientRequestToken("v1.2.3", "ab"); tok != "c4f-v1-2e2-2e3--ab" {
 		t.Errorf("token = %s", tok)
 	}
-	if n, _ := CDKChangeSetName("v1.2.3"); n != "c4factory-v1-2e2-2e3" {
+	if n, _ := CDKChangeSetName("v1.2.3"); n != "theos-v1-2e2-2e3" {
 		t.Errorf("change set name = %s", n)
 	}
 	long := strings.Repeat(".", 40) // 120 encoded

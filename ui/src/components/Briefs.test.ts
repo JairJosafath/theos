@@ -159,7 +159,7 @@ describe('the Brief card with a Container whose Standard files are behind', () =
           kind: 'Container',
           name: 'cel-lens-core',
           question,
-          recommend: "Take the Standard's version: annotate the Container `c4.factory.io/standard-take=v1.2.0`.",
+          recommend: "Take the Standard's version: annotate the Container `theos.factory.io/standard-take=v1.2.0`.",
           why: "The Standard's fix (go-standard v1.2.0) reaches the app.",
           since: '2026-10-12T16:00:00Z',
         },

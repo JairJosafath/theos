@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // The Standards whose check workflow skips make check on a change to only the

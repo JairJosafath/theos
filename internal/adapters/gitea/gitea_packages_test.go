@@ -3,11 +3,11 @@ package gitea
 import (
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // TestRepositoryPackageRegistries checks the npm and PyPI settings a repository
-// carries: the host's own registries and scope @c4factory by default, and the
+// carries: the host's own registries and scope @theos by default, and the
 // GitProvider's own when Config names them (#1229, decision 5 of
 // docs/plans/done/app-packages.md).
 func TestRepositoryPackageRegistries(t *testing.T) {
@@ -17,7 +17,7 @@ func TestRepositoryPackageRegistries(t *testing.T) {
 		want     ports.Repository
 	}{
 		{"the host's own by default", ports.Packages{}, ports.Repository{
-			NpmScope:    "@c4factory",
+			NpmScope:    "@theos",
 			NpmRegistry: "https://git.example.com/api/packages/webshop/npm/",
 			PyPIIndex:   "https://git.example.com/api/packages/webshop/pypi/simple",
 			PyPIUpload:  "https://git.example.com/api/packages/webshop/pypi",
@@ -30,7 +30,7 @@ func TestRepositoryPackageRegistries(t *testing.T) {
 			PyPIUpload:  "https://pypi.example.com/upload",
 		}},
 		{"a registry without a trailing slash gets one (#1701)", ports.Packages{NpmRegistry: "https://npm.example.com"}, ports.Repository{
-			NpmScope:    "@c4factory",
+			NpmScope:    "@theos",
 			NpmRegistry: "https://npm.example.com/",
 			PyPIIndex:   "https://git.example.com/api/packages/webshop/pypi/simple",
 			PyPIUpload:  "https://git.example.com/api/packages/webshop/pypi",

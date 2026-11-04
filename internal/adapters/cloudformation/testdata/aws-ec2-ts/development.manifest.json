@@ -16,9 +16,9 @@
         "templateFile": "development.search-development.template.json",
         "terminationProtection": false,
         "tags": {
-          "c4factory:container": "search",
-          "c4factory:project": "webshop",
-          "c4factory:system": "shop"
+          "theos:container": "search",
+          "theos:project": "webshop",
+          "theos:system": "shop"
         },
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-deploy-role-${AWS::AccountId}-${AWS::Region}",

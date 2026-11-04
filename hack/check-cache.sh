@@ -20,11 +20,11 @@
 # it runs, so a change to hack/ doesn't rerun the UI's check, nor one to ui/ the
 # shell tests (#1285). The whole-tree record stays for land and CHECK_CACHED.
 #
-#   CHECK_CACHE_DIR  where passes live (default $XDG_CACHE_HOME/c4factory/checks, which ./dev puts in .dev/cache)
+#   CHECK_CACHE_DIR  where passes live (default $XDG_CACHE_HOME/theos/checks, which ./dev puts in .dev/cache)
 #   FORCE            non-empty: lookup always misses
 set -uo pipefail
 
-DIR=${CHECK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/c4factory/checks}
+DIR=${CHECK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/theos/checks}
 
 # with_index CMD...: runs CMD with GIT_INDEX_FILE set to a copy of the index,
 # for CMD to git add the working state to: git add only rehashes what changed.
@@ -210,7 +210,7 @@ record() {
   [ -s "$claim" ] && agent=$(jq -r '.name // empty' "$claim" 2>/dev/null)
   if ! { mkdir -p "$DIR" &&
     printf 'when=%s\ncheckout=%s\nagent=%s\n' \
-      "$(date '+%Y-%m-%d %H:%M')" "$(git rev-parse --show-toplevel)" "${agent:-${C4_AGENT:-}}" >"$DIR/$t.$$" &&
+      "$(date '+%Y-%m-%d %H:%M')" "$(git rev-parse --show-toplevel)" "${agent:-${THEOS_AGENT:-}}" >"$DIR/$t.$$" &&
     mv "$DIR/$t.$$" "$DIR/$t"; } 2>/dev/null; then
     rm -f "$DIR/$t.$$" 2>/dev/null
     echo "make check: passed on tree $t; warning: $DIR is not writable, pass not recorded" >&2

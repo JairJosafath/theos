@@ -12,15 +12,15 @@
 #                                       checkout; without systemd, a crontab line
 #   hack/gh-runner/gh-runner.sh uninstall  remove the keeper
 #
-# Runner i is container c4factory-gh-runner-i, named c4factory-<hostname>-i on
+# Runner i is container theos-gh-runner-i, named theos-<hostname>-i on
 # GitHub, with its registration and tool cache on volumes of its own and its own
 # work directory. The Go, npm and golangci-lint caches are one volume they
 # share: those tools lock what they write. The Makefile's tools (LOCALBIN) are
 # kept there too, out of the checkout a job cleans. Only runner 1 carries the label
-# c4factory-kind, which the jobs that make a Kind cluster ask for, so a device
+# theos-kind, which the jobs that make a Kind cluster ask for, so a device
 # runs one of them at a time. up with fewer runners than are there removes the
 # extra ones; a runner from before there were several (container
-# c4factory-gh-runner) is removed and registered again as runner 1.
+# theos-gh-runner) is removed and registered again as runner 1.
 #
 # Jobs reach the device's Docker through its socket, on the host's network, so
 # a Kind cluster a job makes answers on 127.0.0.1. The work directory has the
@@ -29,7 +29,7 @@
 # come from the device's gh login and are never stored.
 #
 # up records RUNNERS, with the names, work directories and repository it used,
-# in ~/.local/state/c4factory/gh-runner/runners; down removes the record. keep
+# in ~/.local/state/theos/gh-runner/runners; down removes the record. keep
 # starts what the record names and nothing else: it never changes the count,
 # starts nothing after down, and never recreates a container that is up, which
 # would kill its job. It is for Docker Desktop recreating its data disk, which
@@ -41,27 +41,27 @@
 # and keep take turns on a lock; keep skips its turn while another runs.
 #
 #   RUNNERS          how many runners up starts (default 1)
-#   C4_GITHUB_REPO   the repository (default JairJosafath/c4factory)
-#   GH_RUNNER_NAME   the runners' names on GitHub, before -i (default c4factory-<hostname>)
-#   GH_RUNNER_WORK   their work directories, each in a subdirectory i (default ~/.cache/c4factory/gh-runner/work)
+#   THEOS_GITHUB_REPO   the repository (default JairJosafath/theos)
+#   GH_RUNNER_NAME   the runners' names on GitHub, before -i (default theos-<hostname>)
+#   GH_RUNNER_WORK   their work directories, each in a subdirectory i (default ~/.cache/theos/gh-runner/work)
 set -euo pipefail
 
-repo=${C4_GITHUB_REPO:-JairJosafath/c4factory}
+repo=${THEOS_GITHUB_REPO:-JairJosafath/theos}
 runners=${RUNNERS:-1}
-base_name=${GH_RUNNER_NAME:-c4factory-$(hostname -s)}
-base_work=${GH_RUNNER_WORK:-${XDG_CACHE_HOME:-$HOME/.cache}/c4factory/gh-runner/work}
+base_name=${GH_RUNNER_NAME:-theos-$(hostname -s)}
+base_work=${GH_RUNNER_WORK:-${XDG_CACHE_HOME:-$HOME/.cache}/theos/gh-runner/work}
 sock=/var/run/docker.sock
-image=c4factory/gh-runner:dev
-prefix=c4factory-gh-runner
+image=theos/gh-runner:dev
+prefix=theos-gh-runner
 cache=$prefix-cache
-kind_label=c4factory-kind
+kind_label=theos-kind
 here=$(cd "$(dirname "$0")" && pwd)
-rev_label='{{index .Config.Labels "c4factory.gh-runner.rev"}}'
-state=$HOME/.local/state/c4factory/gh-runner
+rev_label='{{index .Config.Labels "theos.gh-runner.rev"}}'
+state=$HOME/.local/state/theos/gh-runner
 record=$state/runners
-unit=c4factory-gh-runner-keep
+unit=theos-gh-runner-keep
 units=$HOME/.config/systemd/user
-cron_tag="# c4factory gh-runner keeper"
+cron_tag="# theos gh-runner keeper"
 stamp= # keep's lines carry the time: they go to a log
 
 say() { echo "${stamp:+$(date '+%F %T') }gh-runner: $*" >&2; }
@@ -85,7 +85,7 @@ read_record() {
       RUNNERS) runners=$v ;;
       GH_RUNNER_NAME) base_name=$v ;;
       GH_RUNNER_WORK) base_work=$v ;;
-      C4_GITHUB_REPO) repo=$v ;;
+      THEOS_GITHUB_REPO) repo=$v ;;
     esac
   done <"$record"
   [[ $runners =~ ^[1-9][0-9]*$ ]]
@@ -95,10 +95,10 @@ read_record() {
 # and labels. use legacy is the single runner from before there were several.
 use() {
   if [ "$1" = legacy ]; then
-    container=$prefix name=$base_name work=$base_work labels=c4factory
+    container=$prefix name=$base_name work=$base_work labels=theos
   else
-    container=$prefix-$1 name=$base_name-$1 work=$base_work/$1 labels=c4factory
-    [ "$1" = 1 ] && labels=c4factory,$kind_label
+    container=$prefix-$1 name=$base_name-$1 work=$base_work/$1 labels=theos
+    [ "$1" = 1 ] && labels=theos,$kind_label
   fi
   config=$container-config toolcache=$container-toolcache
 }
@@ -138,7 +138,7 @@ remove_container() {
 # oneshot CMD: run the image once on the registration volume (configure, remove, registered).
 oneshot() {
   # Made here first: a bind mount Docker has to make itself is root's, and so
-  # is every missing parent (.dev/cache/c4factory, where make check records).
+  # is every missing parent (.dev/cache/theos, where make check records).
   mkdir -p "$work"
   docker run --rm -e ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT=false \
     -e RUNNER_TOKEN -e RUNNER_URL="https://github.com/$repo" -e RUNNER_NAME="$name" \
@@ -245,7 +245,7 @@ build() {
   rev=$({ cat "$here/Dockerfile" "$here/entrypoint.sh" "$here/job-started.sh"; id -u; id -g; } | sha256sum | cut -c1-12)
   if [ "$(docker image inspect -f "$rev_label" "$image" 2>/dev/null)" != "$rev" ]; then
     say "building $image"
-    docker build -q -t "$image" --label "c4factory.gh-runner.rev=$rev" \
+    docker build -q -t "$image" --label "theos.gh-runner.rev=$rev" \
       --build-arg RUNNER_UID="$(id -u)" --build-arg RUNNER_GID="$(id -g)" "$here" >/dev/null
   fi
   docker volume create "$cache" >/dev/null
@@ -259,7 +259,7 @@ up() {
   local rev i
   lock
   printf '%s\n' "RUNNERS=$runners" "GH_RUNNER_NAME=$base_name" "GH_RUNNER_WORK=$base_work" \
-    "C4_GITHUB_REPO=$repo" >"$record"
+    "THEOS_GITHUB_REPO=$repo" >"$record"
   build
   migrate
   for i in $(indices); do
@@ -359,7 +359,7 @@ install_keeper() {
     # lacks gh), and without ./dev run.
     cat >"$units/$unit.service" <<EOF
 [Unit]
-Description=C4 Factory GitHub Actions runner keeper ($here)
+Description=theos GitHub Actions runner keeper ($here)
 
 [Service]
 Type=oneshot
@@ -371,7 +371,7 @@ StandardError=append:$state/keep.log
 EOF
     cat >"$units/$unit.timer" <<EOF
 [Unit]
-Description=Start the C4 Factory GitHub Actions runners that are gone, every 2 minutes
+Description=Start the theos GitHub Actions runners that are gone, every 2 minutes
 
 [Timer]
 OnCalendar=*:0/2

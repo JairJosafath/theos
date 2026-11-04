@@ -1,4 +1,4 @@
-// Package features holds the devcontainer features C4 Factory ships. They are
+// Package features holds the devcontainer features theos ships. They are
 // embedded so the operator can write them into the repositories it scaffolds.
 package features
 
@@ -7,17 +7,17 @@ import (
 	"io/fs"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
-//go:embed src/c4session
+//go:embed src/theos-session
 var files embed.FS
 
-// C4Session returns the files of the c4session feature, with paths relative to
+// TheosSession returns the files of the theos-session feature, with paths relative to
 // the feature's folder. Shell scripts are executable.
-func C4Session() (scaffold.Tree, error) {
+func TheosSession() (scaffold.Tree, error) {
 	tree := scaffold.Tree{}
-	root := "src/c4session"
+	root := "src/theos-session"
 	err := fs.WalkDir(files, root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -42,7 +42,7 @@ const (
 )
 
 // localFeatureDir is where the feature goes, under .devcontainer/.
-const localFeatureDir = "c4session"
+const localFeatureDir = "theos-session"
 
 // ScaffoldOptions returns how the operator adds the Session client to scaffolded
 // devcontainers. mode is SessionFeatureLocal, SessionFeatureNone, or a feature
@@ -57,7 +57,7 @@ func ScaffoldOptions(mode, binaryURL string) (scaffold.Options, error) {
 	case SessionFeatureNone:
 		return scaffold.Options{}, nil
 	case SessionFeatureLocal, "":
-		tree, err := C4Session()
+		tree, err := TheosSession()
 		if err != nil {
 			return scaffold.Options{}, err
 		}

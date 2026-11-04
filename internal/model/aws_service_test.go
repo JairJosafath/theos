@@ -8,14 +8,14 @@ import (
 
 // fargatePlan is a planner's plan for a container service on AWS: a service
 // on aws-fargate-ts with aws-standard, and no Compute or Deployment.
-const fargatePlan = `apiVersion: c4.factory.io/v1beta1
+const fargatePlan = `apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
 spec:
   description: Sells lamps
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: orders-api

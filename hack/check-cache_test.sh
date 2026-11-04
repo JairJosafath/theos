@@ -8,7 +8,7 @@ trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$T"' EXIT
 HACK="$(cd "$(dirname "$0")" && pwd)"
 CACHE=$HACK/check-cache.sh
 export CHECK_CACHE_DIR=$T/checks HEAVY_SLOTS_DIR=$T/slots HEAVY_JOBS=1 HEAVY_POLL=0.2
-unset FORCE C4_HEAVY_SLOT C4_AGENT
+unset FORCE THEOS_HEAVY_SLOT THEOS_AGENT
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 

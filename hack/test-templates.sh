@@ -89,9 +89,9 @@ ln -s "$GOLANGCI_LINT" "$T/bin/golangci-lint"
 unset GOLANGCI_LINT
 export PATH="$T/bin:$PATH"
 # The rendered repos' make is their own, not a sub-make of this repository's.
-unset MAKEFLAGS MFLAGS MAKELEVEL MAKEOVERRIDES C4_HEAVY_SLOT
+unset MAKEFLAGS MFLAGS MAKELEVEL MAKEOVERRIDES THEOS_HEAVY_SLOT
 
-git() { command git -c user.name="test-templates" -c user.email="test@c4factory.local" \
+git() { command git -c user.name="test-templates" -c user.email="test@theos.local" \
 	-c core.hooksPath=/dev/null -c commit.gpgsign=false "$@"; }
 step() { echo; echo "\$ $*"; "$@"; }
 
@@ -101,9 +101,9 @@ dist_files() {
 	local version=${1#v} want=()
 	case $framework in
 	python-cli) want=("dist/${container//-/_}-$version-py3-none-any.whl" "dist/${container//-/_}-$version.tar.gz") ;;
-	# npm packs the scoped package @c4factory/<container> (hack/render's default
-	# scope) as c4factory-<container>-<version>.tgz (#1695).
-	node-cli) want=("dist/c4factory-$container-$version.tgz") ;;
+	# npm packs the scoped package @theos/<container> (hack/render's default
+	# scope) as theos-<container>-<version>.tgz (#1695).
+	node-cli) want=("dist/theos-$container-$version.tgz") ;;
 	vscode-extension) want=("dist/$container-$version.vsix") ;;
 	# aws-standard's flat cloud assembly, both tiers (#1607).
 	aws-*) want=(dist/production.manifest.json dist/development.manifest.json) ;;

@@ -1,11 +1,11 @@
-# The read-only UI (ui/), in its own namespace. It reads the c4.factory.io
+# The read-only UI (ui/), in its own namespace. It reads theos.factory.io
 # resources in every namespace and can change none of them: its ClusterRole has
 # only get, list and watch, and its server proxies only GET.
 #   make ui          build the image, load it into Kind and apply this
 #   make ui-forward  open it on http://localhost:8080
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Everything without a namespace goes in c4-factory-ui; the RoleBindings that
+# Everything without a namespace goes in theos-ui; the RoleBindings that
 # let the UI read pods keep theirs (rbac.yaml).
 transformers:
 - |-
@@ -13,11 +13,11 @@ transformers:
   kind: NamespaceTransformer
   metadata:
     name: ui-namespace
-    namespace: c4-factory-ui
+    namespace: theos-ui
   unsetOnly: true
 labels:
 - pairs:
-    app.kubernetes.io/part-of: c4-factory
+    app.kubernetes.io/part-of: theos
     app.kubernetes.io/managed-by: kustomize
   includeSelectors: false
 resources:

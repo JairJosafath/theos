@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // DeployerEnv is a Deployer under test and the targets it ships to.

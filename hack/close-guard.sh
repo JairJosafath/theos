@@ -55,7 +55,7 @@ what= byhand=
 . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"
 # Only this repository's issues: another repository's #N is not ours to guard.
 origin=$(git remote get-url origin 2>/dev/null) || exit 0
-[[ ${origin,,} == *"${C4_GITHUB_REPO,,}"* ]] || exit 0
+[[ ${origin,,} == *"${THEOS_GITHUB_REPO,,}"* ]] || exit 0
 
 deny() {
   jq -n --arg m "$1" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $m}}'
@@ -96,7 +96,7 @@ no_heredocs() {
 # ours REPO: REPO (OWNER/REPO, HOST/OWNER/REPO, gh api's {owner}/{repo}, a
 # $VAR, or empty for the current one) is this repository.
 ours() {
-  [[ -z $1 || $1 == *[{:\$]* || ${1,,} == "${C4_GITHUB_REPO,,}" || ${1,,} == */"${C4_GITHUB_REPO,,}" ]]
+  [[ -z $1 || $1 == *[{:\$]* || ${1,,} == "${THEOS_GITHUB_REPO,,}" || ${1,,} == */"${THEOS_GITHUB_REPO,,}" ]]
 }
 
 # closed_by_hand WORD...: if the command WORD... closes one of this
@@ -226,7 +226,7 @@ if [[ $what == *merge ]]; then
     [ -z "$end" ] || break
   done
   # Another repository's pull request is not ours to guard.
-  [ -z "$repo" ] || [[ ${repo,,} == *"${C4_GITHUB_REPO,,}" ]] || exit 0
+  [ -z "$repo" ] || [[ ${repo,,} == *"${THEOS_GITHUB_REPO,,}" ]] || exit 0
   if [[ $arg =~ ^[0-9]+$ || $arg =~ /pull/([0-9]+) ]]; then
     n=${BASH_REMATCH[1]:-$arg}
   else

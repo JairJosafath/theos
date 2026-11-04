@@ -17,20 +17,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // A run continues from a checkpoint (docs/design.md, "A run continues from a
 // checkpoint"). The sandbox has a volume of its own that outlives its pod,
 // mounted at Job.CheckpointDir. Told to stop (SIGTERM: a node shutdown, an
-// eviction), c4agent ends the agent's session as it always did, then saves
+// eviction), theos-agent ends the agent's session as it always did, then saves
 // the run there: the working tree as a git bundle, its uncommitted changes as
 // a commit inside it that is never pushed, the session's Claude Code
 // transcript, and state.json. The sandbox's next pod clones as usual, restores
 // the bundle and goes on at the recorded step, in a fresh session told what
 // the stopped one left. A checkpoint it can't read starts the run over.
 
-// Checkpoint kinds: a hard one is saved when c4agent is told to stop, and
+// Checkpoint kinds: a hard one is saved when theos-agent is told to stop, and
 // its session could not end on its own, and between tool calls while the
 // session goes on (periodic.go); a clean one, saved when the pause
 // ended the session after a tool or stopped the run between its steps, can go
@@ -42,14 +42,14 @@ const (
 
 // PodInfoDir is where the Sandbox pod mounts its own annotations through the
 // downward API (a file named annotations, one key="value" per line). The
-// pause-guard hook reads it to see the c4.factory.io/pause annotation.
-const PodInfoDir = "/etc/c4agent/podinfo"
+// pause-guard hook reads it to see theos.factory.io/pause annotation.
+const PodInfoDir = "/etc/theos-agent/podinfo"
 
 // PauseGrace is how long a tool may still run after the pause annotation
-// appears: past it, c4agent ends the run as on SIGTERM (a hard checkpoint).
+// appears: past it, theos-agent ends the run as on SIGTERM (a hard checkpoint).
 const PauseGrace = 5 * time.Minute
 
-// checkpointVersion is the format of state.json this c4agent writes and
+// checkpointVersion is the format of state.json this theos-agent writes and
 // reads; one of another version starts the run over.
 const checkpointVersion = 1
 
@@ -522,7 +522,7 @@ func (r *repo) snapshot(ctx context.Context) (string, error) {
 	if err != nil || strings.TrimSpace(status) == "" {
 		return "", err
 	}
-	index, err := os.CreateTemp("", "c4agent-checkpoint-index-")
+	index, err := os.CreateTemp("", "theos-agent-checkpoint-index-")
 	if err != nil {
 		return "", err
 	}
@@ -540,7 +540,7 @@ func (r *repo) snapshot(ctx context.Context) (string, error) {
 		return "", err
 	}
 	commit, err := r.git(ctx, r.dir, "commit-tree", strings.TrimSpace(tree), "-p", "HEAD",
-		"-m", "c4agent checkpoint: the working tree when the sandbox stopped")
+		"-m", "theos-agent checkpoint: the working tree when the sandbox stopped")
 	return strings.TrimSpace(commit), err
 }
 

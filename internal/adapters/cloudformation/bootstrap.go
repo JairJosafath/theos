@@ -19,8 +19,8 @@ import (
 	"github.com/go-logr/logr"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // bootstrapTemplates holds the CDK bootstrap template of the pinned aws-cdk
@@ -89,7 +89,7 @@ const (
 	toolkitStack            = "CDKToolkit"
 	defaultBootstrapParam   = "/cdk-bootstrap/hnb659fds/version"
 	executionPoliciesParam  = "CloudFormationExecutionPolicies"
-	bootstrapChangeSetStart = "c4factory-bootstrap-v"
+	bootstrapChangeSetStart = "theos-bootstrap-v"
 )
 
 // bootstrap makes sure the account and the target's region run the CDK
@@ -132,7 +132,7 @@ func (d *Deployer) bootstrap(ctx context.Context, ses *session, a model.CDKAssem
 		ChangeSetName: aws.String(bootstrapChangeSetStart + strconv.Itoa(version)),
 		ChangeSetType: types.ChangeSetTypeCreate, TemplateBody: aws.String(body),
 		Capabilities: []types.Capability{types.CapabilityCapabilityIam, types.CapabilityCapabilityNamedIam},
-		Description:  aws.String(fmt.Sprintf("c4factory bootstraps CDK version %d", version))}
+		Description:  aws.String(fmt.Sprintf("theos bootstraps CDK version %d", version))}
 	policies := true
 	if st != nil {
 		status := string(st.StackStatus)

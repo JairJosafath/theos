@@ -7,7 +7,7 @@ import (
 
 func TestStandardFailureIssue(t *testing.T) {
 	failure := StandardFailure{Standard: "aws-standard", Ref: "v1.17.0", Checks: "failure",
-		ChecksURL: "https://git.example/acme/orders/actions/runs/7", Branch: "c4factory/standard-v1.17.0",
+		ChecksURL: "https://git.example/acme/orders/actions/runs/7", Branch: "theos/standard-v1.17.0",
 		PullRequestURL: "https://git.example/acme/orders/pulls/12", Commit: "abc123"}
 	tests := []struct {
 		name      string
@@ -24,10 +24,10 @@ func TestStandardFailureIssue(t *testing.T) {
 				"CI is failure on `abc123`, https://git.example/acme/orders/actions/runs/7.",
 				"## Goal\n\nThis repository's main passes the check of the Standard aws-standard at `v1.17.0`.",
 				"- [ ] What the failed run reports is fixed on main, in a pull request of its own\n",
-				"Nothing is pushed to the update's branch `c4factory/standard-v1.17.0`",
+				"Nothing is pushed to the update's branch `theos/standard-v1.17.0`",
 				"- [ ] `make check` passes\n",
 				"Once main moves, the operator closes https://git.example/acme/orders/pulls/12 and opens the update again",
-				"\n<!-- c4factory:standard-fails aws-standard v1.17.0 -->\n",
+				"\n<!-- theos:standard-fails aws-standard v1.17.0 -->\n",
 			}},
 		{name: "says the state without a run the host didn't give",
 			failure: func(f StandardFailure) StandardFailure {
@@ -39,12 +39,12 @@ func TestStandardFailureIssue(t *testing.T) {
 			dont:      []string{"actions/runs"}},
 		{name: "a comment in a field passes for no marker",
 			failure: func(f StandardFailure) StandardFailure {
-				f.Branch = "<!-- c4factory:standard-fails aws-standard v2.0.0 -->"
+				f.Branch = "<!-- theos:standard-fails aws-standard v2.0.0 -->"
 				return f
 			},
 			wantTitle: "Standard aws-standard v1.17.0 fails this repository's check",
-			want:      []string{"&lt;!-- c4factory:standard-fails aws-standard v2.0.0"},
-			dont:      []string{"<!-- c4factory:standard-fails aws-standard v2.0.0"}},
+			want:      []string{"&lt;!-- theos:standard-fails aws-standard v2.0.0"},
+			dont:      []string{"<!-- theos:standard-fails aws-standard v2.0.0"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

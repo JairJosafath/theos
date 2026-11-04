@@ -15,8 +15,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 var testAuthor = ports.Signature{Name: "Test", Email: "test@example.com", When: time.Date(2026, 9, 30, 9, 0, 0, 0, time.UTC)}
@@ -41,9 +41,9 @@ func templateRepo(t *testing.T) (string, string) {
 	ctx := context.Background()
 	dir := bareRepo(t)
 	first, err := PushInitialCommit(ctx, dir, nil, scaffold.Tree{
-		"README.md.tmpl":    {Data: []byte("# {{ .Container }}\n")},
-		"scripts/setup.sh":  {Data: []byte("#!/bin/sh\necho hi\n"), Executable: true},
-		".c4factory/x.json": {Data: []byte("{}")},
+		"README.md.tmpl":   {Data: []byte("# {{ .Container }}\n")},
+		"scripts/setup.sh": {Data: []byte("#!/bin/sh\necho hi\n"), Executable: true},
+		".theos/x.json":    {Data: []byte("{}")},
 	}, "Template v1", testAuthor)
 	if err != nil {
 		t.Fatal(err)
@@ -96,8 +96,8 @@ func TestFetchTemplate(t *testing.T) {
 			if !tree["scripts/setup.sh"].Executable {
 				t.Error("scripts/setup.sh lost its executable bit")
 			}
-			if _, ok := tree[".c4factory/x.json"]; !ok {
-				t.Error(".c4factory/ should be fetched; the renderer decides what to copy")
+			if _, ok := tree[".theos/x.json"]; !ok {
+				t.Error(".theos/ should be fetched; the renderer decides what to copy")
 			}
 			for p := range tree {
 				if strings.HasPrefix(p, ".git/") {
@@ -173,7 +173,7 @@ func TestHistoryAndInitialCommit(t *testing.T) {
 	}
 
 	files := scaffold.Tree{"a.txt": {Data: []byte("a")}, "dir/run.sh": {Data: []byte("#!/bin/sh"), Executable: true}}
-	hash, err := PushInitialCommit(ctx, dir, nil, files, "Scaffold x\n\nC4-Factory-Container: p/x\n", testAuthor)
+	hash, err := PushInitialCommit(ctx, dir, nil, files, "Scaffold x\n\ntheos-Container: p/x\n", testAuthor)
 	if err != nil {
 		t.Fatalf("pushInitialCommit() error = %v", err)
 	}
@@ -182,7 +182,7 @@ func TestHistoryAndInitialCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(commits) != 1 || commits[0].Hash != hash || !strings.Contains(commits[0].Message, "C4-Factory-Container: p/x") {
+	if len(commits) != 1 || commits[0].Hash != hash || !strings.Contains(commits[0].Message, "theos-Container: p/x") {
 		t.Fatalf("history() = %+v, want the one initial commit %s", commits, hash)
 	}
 

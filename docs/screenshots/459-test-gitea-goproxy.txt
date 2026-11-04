@@ -13,4 +13,4 @@
 --- PASS: TestGiteaReleasesIntegration (3.20s)
 --- PASS: TestGiteaMilestonesIntegration (0.31s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/gitprovider	10.810s
+ok  	github.com/JairJosafath/theos/internal/gitprovider	10.810s

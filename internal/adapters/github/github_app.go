@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // appTokenMargin is how long before it expires an installation token is

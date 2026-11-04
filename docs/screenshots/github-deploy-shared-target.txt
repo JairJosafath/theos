@@ -16,4 +16,4 @@ fakegithub_test.go) through the real github adapter (routedDeployer in suite_tes
     DeployTarget takes an empty tagPrefix, one with a folder, and latest false (#1486)
     Ran 8 of 433 Specs in 24.062 seconds
     SUCCESS! -- 8 Passed | 0 Failed | 0 Pending | 425 Skipped
-    ok  	github.com/JairJosafath/c4factory/internal/controller	24.096s
+    ok  	github.com/JairJosafath/theos/internal/controller	24.096s

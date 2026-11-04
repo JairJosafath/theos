@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -20,32 +20,32 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // The per-project CI runner pool (docs/plans/ci-runner-isolation.md, step 3).
 const (
 	// LabelCIRunner marks the pool's pods; the project's CI NetworkPolicy selects it.
-	LabelCIRunner = "c4.factory.io/ci-runner"
+	LabelCIRunner = "theos.factory.io/ci-runner"
 	// LabelCIGitProvider names the GitProvider a pool pod registers to, and
 	// LabelCILabel the job label it takes.
-	LabelCIGitProvider = "c4.factory.io/git-provider"
-	LabelCILabel       = "c4.factory.io/ci-label"
+	LabelCIGitProvider = "theos.factory.io/git-provider"
+	LabelCILabel       = "theos.factory.io/ci-label"
 	// ciRunnerValue is the value of LabelCIRunner.
 	ciRunnerValue = "true"
 	// CIRunnerRecordFinalizer keeps an ended pod, with its final status, until
 	// the pool has read how it ended: a pod deleted mid-job stays readable by
 	// the Task that asks who cancelled its job (model.Canceller). Only the
 	// pool drops it, at the record's expiry or with the Project (#1697).
-	CIRunnerRecordFinalizer = "c4.factory.io/ci-runner-record"
+	CIRunnerRecordFinalizer = "theos.factory.io/ci-runner-record"
 	// AnnotationRunnerFate is the pool's verdict on an ended pod: RunnerFateEnded
 	// or RunnerFateLost.
-	AnnotationRunnerFate = "c4.factory.io/runner-fate"
+	AnnotationRunnerFate = "theos.factory.io/runner-fate"
 	// AnnotationRunnerSpec names the spec a pool pod was built from
 	// (runnerSpecHash); a pod of another spec than its pool's is replaced
 	// once idle (#1700).
-	AnnotationRunnerSpec = "c4.factory.io/runner-spec"
+	AnnotationRunnerSpec = "theos.factory.io/runner-spec"
 	// RunnerFateEnded is a pod whose runner ran its one job and exited on its
 	// own; RunnerFateLost one deleted, evicted or killed before its job ended.
 	// The Task reads them as model.CIJob.PodFate.
@@ -54,10 +54,10 @@ const (
 	// AnnotationRunnerFailure is on a lost pod that failed on its own, nobody
 	// deleting it: the container that ended non-zero (register, runner) or
 	// the pod's status reason. The pool backs off from such failures (#1699).
-	AnnotationRunnerFailure = "c4.factory.io/runner-failure"
+	AnnotationRunnerFailure = "theos.factory.io/runner-failure"
 	// AnnotationRunnerFateAt is when the pool recorded the fate, RFC3339Nano:
 	// a deletionTimestamp has only seconds, too coarse for the backoff.
-	AnnotationRunnerFateAt = "c4.factory.io/runner-fate-at"
+	AnnotationRunnerFateAt = "theos.factory.io/runner-fate-at"
 	// CINetworkPolicyName is the NetworkPolicy that fences the pool's pods.
 	CINetworkPolicyName = "c4-ci-runner"
 	// CIJobEnvConfigMap holds the variables the runner gives every job

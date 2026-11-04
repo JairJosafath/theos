@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -256,7 +256,7 @@ type CrewRelease struct {
 	RunURL string `json:"runURL,omitempty"`
 
 	// rerunTime is when the operator last re-ran the release's failed runs, on
-	// a c4.factory.io/rerun-release request; the hour the runs have to end
+	// a theos.factory.io/rerun-release request; the hour the runs have to end
 	// counts from it instead of from time.
 	// +optional
 	RerunTime *metav1.Time `json:"rerunTime,omitempty"`
@@ -331,7 +331,7 @@ type CrewReleasePackage struct {
 // CrewReleaseGoModule is how publishing a release's Go module went.
 type CrewReleaseGoModule struct {
 	// state is Published once go get finds the version where its path is
-	// read: the registry for a c4factory.local/ path, the Go proxy for any
+	// read: the registry for a theos.local/ path, the Go proxy for any
 	// other. NotGo when the repository has no go.mod at its root at the tag,
 	// Invalid when Go can't take the module at that version, such as a v2.0.0
 	// whose module path lacks /v2, Failed while the Git host can't be reached
@@ -483,13 +483,13 @@ type CrewStatus struct {
 
 	// publishTarget is the GitHub repository the Crew published its releases
 	// to, by GitHub's id: set at the first publish that succeeds, or when
-	// c4.factory.io/accept-repository accepts another, and reset when
+	// theos.factory.io/accept-repository accepts another, and reset when
 	// spec.publishReleases names another repository. A publish to a repository
 	// renamed or replaced since fails before anything is written to it.
 	// +optional
 	PublishTarget *CrewPublishTarget `json:"publishTarget,omitempty"`
 
-	// rerunRelease is the c4.factory.io/rerun-release value the operator last
+	// rerunRelease is theos.factory.io/rerun-release value the operator last
 	// answered, so each value re-runs the failed release runs once.
 	// +optional
 	RerunRelease string `json:"rerunRelease,omitempty"`
@@ -514,10 +514,10 @@ type CrewStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// +kubebuilder:deprecatedversion:warning="c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
+// +kubebuilder:deprecatedversion:warning="theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:printcolumn:name="Container",type=string,JSONPath=".spec.containerRef.name"
 // +kubebuilder:printcolumn:name="Implementer",type=string,JSONPath=".spec.implementer.name"
 // +kubebuilder:printcolumn:name="Reviewer",type=string,JSONPath=".spec.reviewer.name"

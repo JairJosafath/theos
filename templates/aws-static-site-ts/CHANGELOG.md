@@ -8,6 +8,6 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
-- The site, scaffolded by C4 Factory: a page built with Vite, served from an
+- The site, scaffolded by theos: a page built with Vite, served from an
   S3 bucket through a CloudFront distribution, with alarms and a dashboard,
   and in production a web application firewall and the site's files kept.

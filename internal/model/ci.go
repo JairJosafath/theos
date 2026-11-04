@@ -11,7 +11,7 @@ import (
 type CI struct {
 	// Name names the CI system as GitProvider.spec.ci's member does, such as
 	// giteaActions. A template keeps the system's files under
-	// .c4factory/ci/<Name>/.
+	// .theos/ci/<Name>/.
 	Name string
 	// CheckContexts are the status check contexts a protected default branch
 	// requires, as glob patterns. A Standard's CI must report under a context

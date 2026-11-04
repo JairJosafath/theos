@@ -18,7 +18,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // templatesDir is the repository's templates/ folder, which the operator's
@@ -1017,7 +1017,7 @@ func TestGiteaReleaseGuideSeparatesLooseListItems(t *testing.T) {
 }
 
 // TestGoStandardCIKeepsFactoryModulesOffPublicProxies checks go-standard's CI:
-// the factory's c4factory.local modules come from the owner's package registry
+// the factory's theos.local modules come from the owner's package registry
 // alone, before make check, and make check never asks a proxy for them. A
 // GOPROXY list of the registry, then the public proxy, would ask the public one
 // for a module the registry lacks: the go command goes on after a 404.
@@ -1042,8 +1042,8 @@ func TestGoStandardCIKeepsFactoryModulesOffPublicProxies(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := workflow.Jobs["check"]
-	if job.Env["GOPRIVATE"] != "c4factory.local" || strings.Contains(job.Env["GOPROXY"], "/api/packages/") {
-		t.Errorf("job env %v: want GOPRIVATE=c4factory.local and the public proxy only", job.Env)
+	if job.Env["GOPRIVATE"] != "theos.local" || strings.Contains(job.Env["GOPROXY"], "/api/packages/") {
+		t.Errorf("job env %v: want GOPRIVATE=theos.local and the public proxy only", job.Env)
 	}
 	fetched, checked := -1, -1
 	for i, step := range job.Steps {
@@ -1051,8 +1051,8 @@ func TestGoStandardCIKeepsFactoryModulesOffPublicProxies(t *testing.T) {
 			// GOPRIVATE set and empty: the job's would send the paths direct.
 			private, set := step.Env["GOPRIVATE"]
 			if step.Env["GOPROXY"] != registry || !set || private != "" ||
-				step.Env["GONOSUMDB"] != "c4factory.local" {
-				t.Errorf("step %q env %v: want GOPROXY=%s alone, an empty GOPRIVATE, GONOSUMDB=c4factory.local",
+				step.Env["GONOSUMDB"] != "theos.local" {
+				t.Errorf("step %q env %v: want GOPROXY=%s alone, an empty GOPRIVATE, GONOSUMDB=theos.local",
 					step.Name, step.Env, registry)
 			}
 			if !strings.Contains(step.Run, "go.sum") || !strings.Contains(step.Run, "go mod download") {
@@ -1077,7 +1077,7 @@ func TestGoStandardCIKeepsFactoryModulesOffPublicProxies(t *testing.T) {
 // and ts-standard's `make dist` help name that file, never the unscoped
 // <container>-<version>.tgz (#1695).
 func TestNodeCLINamesItsPackageUnderTheScope(t *testing.T) {
-	for _, scope := range []string{"@c4factory", "@acme"} {
+	for _, scope := range []string{"@theos", "@acme"} {
 		t.Run(scope, func(t *testing.T) {
 			in, layers := loadCombo(t, "cli", []side{
 				{model.SideFramework, "node-cli"},
@@ -1149,11 +1149,11 @@ func TestStandardsCIWriteTheRegistryCredentials(t *testing.T) {
 		} `yaml:"jobs"`
 	}
 	wantEnv := map[string]string{
-		"NPM_SCOPE":    "${{ vars.C4_NPM_SCOPE }}",
-		"NPM_REGISTRY": "${{ vars.C4_NPM_REGISTRY }}",
-		"NPM_TOKEN":    "${{ secrets.C4_NPM_TOKEN }}",
-		"PYPI_INDEX":   "${{ vars.C4_PYPI_INDEX }}",
-		"PYPI_TOKEN":   "${{ secrets.C4_PYPI_TOKEN }}",
+		"NPM_SCOPE":    "${{ vars.THEOS_NPM_SCOPE }}",
+		"NPM_REGISTRY": "${{ vars.THEOS_NPM_REGISTRY }}",
+		"NPM_TOKEN":    "${{ secrets.THEOS_NPM_TOKEN }}",
+		"PYPI_INDEX":   "${{ vars.THEOS_PYPI_INDEX }}",
+		"PYPI_TOKEN":   "${{ secrets.THEOS_PYPI_TOKEN }}",
 		"SERVER":       "${{ gitea.server_url }}",
 		"OWNER":        "${{ gitea.repository_owner }}",
 		"ACTOR":        "${{ gitea.actor }}",
@@ -1162,7 +1162,7 @@ func TestStandardsCIWriteTheRegistryCredentials(t *testing.T) {
 	wantRun := []string{
 		`${NPM_REGISTRY:-$SERVER/api/packages/$OWNER/npm/}`,
 		`${PYPI_INDEX:-$SERVER/api/packages/$OWNER/pypi/simple}`,
-		`${NPM_SCOPE:-@c4factory}`, `${NPM_TOKEN:-$TOKEN}`, `${PYPI_TOKEN:-$TOKEN}`,
+		`${NPM_SCOPE:-@theos}`, `${NPM_TOKEN:-$TOKEN}`, `${PYPI_TOKEN:-$TOKEN}`,
 		"umask 077", `:_authToken=`, `> "$HOME/.npmrc"`, `> "$HOME/.netrc"`,
 	}
 	cases := []struct {
@@ -1250,7 +1250,7 @@ func TestStandardsCIWriteTheRegistryCredentials(t *testing.T) {
 	// The step under bash, as the runner runs it (#1696): ~/.netrc names the
 	// index's host without the port, which uv, pip and requests match on;
 	// the login is gitea.actor with the workflow's token and __token__ with
-	// C4_PYPI_TOKEN; ~/.npmrc keeps the port, which npm matches on.
+	// THEOS_PYPI_TOKEN; ~/.npmrc keeps the port, which npm matches on.
 	const server = "http://gitea.gitea.svc.cluster.local:3000"
 	for _, c := range []struct {
 		name      string
@@ -1258,7 +1258,7 @@ func TestStandardsCIWriteTheRegistryCredentials(t *testing.T) {
 		wantNetrc string
 	}{
 		{"the workflow's token", "", "machine gitea.gitea.svc.cluster.local\nlogin runner\npassword tok\n"},
-		{"C4_PYPI_TOKEN", "pypi-tok", "machine gitea.gitea.svc.cluster.local\nlogin __token__\npassword pypi-tok\n"},
+		{"THEOS_PYPI_TOKEN", "pypi-tok", "machine gitea.gitea.svc.cluster.local\nlogin __token__\npassword pypi-tok\n"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -1279,7 +1279,7 @@ func TestStandardsCIWriteTheRegistryCredentials(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantNpmrc := "@c4factory:registry=" + server + "/api/packages/webshop/npm/\n" +
+			wantNpmrc := "@theos:registry=" + server + "/api/packages/webshop/npm/\n" +
 				"//gitea.gitea.svc.cluster.local:3000/api/packages/webshop/npm/:_authToken=tok\n"
 			if string(npmrc) != wantNpmrc {
 				t.Errorf("~/.npmrc:\n%s\nwant:\n%s", npmrc, wantNpmrc)
@@ -1334,7 +1334,7 @@ func loadCombo(t *testing.T, typ string, sides []side, checks string) (Input, []
 		// the Container has none.
 		Operations: model.ResolveOperations(model.OperationsChoices{}),
 		CI:         giteaActions(t),
-		NpmScope:   "@c4factory",
+		NpmScope:   "@theos",
 	}
 	layers := make([]Layer, 0, len(sides))
 	for _, l := range sides {
@@ -1605,7 +1605,7 @@ func domainName(folder string) string { return strings.TrimSuffix(folder, domain
 // against docs/plans/domains.md, decision 7: Markdown only, a README.md whose
 // topic list names every other file, and in each topic file the four
 // headings Practices, Common mistakes, Controversies and Sources. The
-// template's own .c4factory/ notes are not rendered and are left out. Built
+// template's own .theos/ notes are not rendered and are left out. Built
 // as the Domain of a Container, every file lands under
 // docs/agents/domain/<name>/ (#1759).
 func TestDomainTemplatesHaveTheShape(t *testing.T) {

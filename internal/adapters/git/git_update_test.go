@@ -15,13 +15,13 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 const updateBranch = "standard-update/go-standard-v1.1.1"
 
-var updateAuthor = ports.Signature{Name: "C4 Factory", Email: "factory@c4.factory.io", When: testAuthor.When.Add(24 * time.Hour)}
+var updateAuthor = ports.Signature{Name: "theos", Email: "factory@theos.factory.io", When: testAuthor.When.Add(24 * time.Hour)}
 
 // localGit stands in for a Git host's provider, for calls that go over Git
 // alone, so they can reach a local repository: it calls this package's

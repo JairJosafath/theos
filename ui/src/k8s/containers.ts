@@ -1,7 +1,7 @@
 // The Container page's writes, with actions on (design.md, UI actions): retry
-// a Failed scaffold through the c4.factory.io/retry annotation, answer the
-// Standard's files left out through c4.factory.io/standard-take or
-// c4.factory.io/standard-keep, set when CI runs the full check (spec.checks),
+// a Failed scaffold through theos.factory.io/retry annotation, answer the
+// Standard's files left out through theos.factory.io/standard-take or
+// theos.factory.io/standard-keep, set when CI runs the full check (spec.checks),
 // approve the version waiting at one of its deploy targets (spec.deploy[i].approved),
 // and start a Task from a goal with the Container's Crew. server.mjs passes on
 // exactly these requests; the CRDs decide the rest, so a refused write shows
@@ -31,7 +31,7 @@ export const STALE_APPROVAL =
   'The page is out of date: this deploy changed since it was read, perhaps approved by someone else. Look again and approve once more if it still waits.'
 
 /** The annotation whose new value makes the operator try a Failed Container's scaffold again. */
-export const RETRY_ANNOTATION = 'c4.factory.io/retry'
+export const RETRY_ANNOTATION = 'theos.factory.io/retry'
 
 /** The merge patch that retries a scaffold: the annotation set to `at`, a value it never had. */
 export function retryPatch(at: Date): { metadata: { annotations: Record<string, string> } } {
@@ -39,10 +39,10 @@ export function retryPatch(at: Date): { metadata: { annotations: Record<string, 
 }
 
 /** The annotation that makes the operator take the Standard's version, at its value's ref, of the files left out. */
-export const STANDARD_TAKE_ANNOTATION = 'c4.factory.io/standard-take'
+export const STANDARD_TAKE_ANNOTATION = 'theos.factory.io/standard-take'
 
 /** The annotation that makes the operator keep the repository's version, at its value's ref, of the files left out. */
-export const STANDARD_KEEP_ANNOTATION = 'c4.factory.io/standard-keep'
+export const STANDARD_KEEP_ANNOTATION = 'theos.factory.io/standard-keep'
 
 /** A person's answer to the Standard's files left out: take the Standard's version, or keep the repository's. */
 export type StandardAnswer = 'take' | 'keep'

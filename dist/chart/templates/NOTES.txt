@@ -1,4 +1,4 @@
-c4factory is installed in namespace {{ .Release.Namespace }} as release {{ .Release.Name }}.
+theos is installed in namespace {{ .Release.Namespace }} as release {{ .Release.Name }}.
 
 The operator needs Agent Sandbox (its Sandbox kind) to start, its controller
 without leader election, which makes one replica exit on a busy host:
@@ -14,7 +14,7 @@ Check it:
 
 Open the read-only UI on http://localhost:8080:
 
-  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "c4-factory.uiName" . }} 8080
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "theos.uiName" . }} 8080
 {{- end }}
 {{- range .Values.gitProviders }}
 
@@ -25,14 +25,14 @@ with the token in Secret {{ .existingSecret }}. Make it if it is missing:
     --from-literal=username=<user> --from-literal=token=<token>
 {{- end }}
 {{- if .Values.gitea.enabled }}
-{{- $ns := include "c4-factory.giteaNamespace" . }}
+{{- $ns := include "theos.giteaNamespace" . }}
 
-Gitea runs in namespace {{ $ns }} at {{ include "c4-factory.giteaURL" . }}, seeded
+Gitea runs in namespace {{ $ns }} at {{ include "theos.giteaURL" . }}, seeded
 with the tagged templates. Its admin password, and Gitea on http://localhost:3000:
 
-  kubectl -n {{ $ns }} get secret {{ include "c4-factory.giteaAdminSecret" . }} -o jsonpath='{.data.password}' | base64 -d; echo
+  kubectl -n {{ $ns }} get secret {{ include "theos.giteaAdminSecret" . }} -o jsonpath='{.data.password}' | base64 -d; echo
   kubectl -n {{ $ns }} port-forward svc/gitea 3000
-{{- range include "c4-factory.projectNames" . | fromJsonArray }}
+{{- range include "theos.projectNames" . | fromJsonArray }}
 
 Project {{ . }}: organization {{ . }} in Gitea, GitProvider gitea in namespace {{ . }}.
 {{- end }}

@@ -82,11 +82,11 @@ describe('ObjectHeader for a Failed Container', () => {
     expect(html).toContain('href="https://gitea.example/webshop/catalog-api"')
     const command = /<code[^>]*>([^<]*)<\/code>/.exec(html)![1].replace(/&#x27;/g, "'")
     expect(command).toBe(
-      'kubectl -n webshop annotate containers.c4.factory.io catalog-api c4.factory.io/retry=$(date +%s) --overwrite',
+      'kubectl -n webshop annotate containers.theos.factory.io catalog-api theos.factory.io/retry=$(date +%s) --overwrite',
     )
     // It names this Container, in its namespace, and the annotation the operator watches.
     const args = command.split(' ')
-    expect(args.slice(0, 5)).toEqual(['kubectl', '-n', 'webshop', 'annotate', 'containers.c4.factory.io'])
+    expect(args.slice(0, 5)).toEqual(['kubectl', '-n', 'webshop', 'annotate', 'containers.theos.factory.io'])
     expect(args[5]).toBe(failed.metadata.name)
     expect(args[6]).toMatch(/^c4\.factory\.io\/retry=/)
     expect(html).toContain('aria-label="Copy the command"')

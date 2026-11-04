@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -21,7 +21,7 @@ import (
 	utiljson "k8s.io/apimachinery/pkg/util/json"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 
-	"github.com/JairJosafath/c4factory/api/v1beta1"
+	"github.com/JairJosafath/theos/api/v1beta1"
 )
 
 // Every kind converts to and from its v1beta1 hub through one generic
@@ -34,7 +34,7 @@ import (
 
 // FieldsAnnotation is the annotation, formatted with the version a field came
 // from, that carries the fields the other version has no home for.
-const FieldsAnnotation = "c4.factory.io/%s-fields"
+const FieldsAnnotation = "theos.factory.io/%s-fields"
 
 // A conversionHook moves what differs between the versions in an object's
 // unstructured form, after the fields that rode in FieldsAnnotation are back.
@@ -42,7 +42,7 @@ type conversionHook func(obj map[string]any) error
 
 // toHubHooks and fromHubHooks hold a kind's hooks, by kind. None yet:
 // v1beta1 changes no shape. The change that adds a kind's first hook also
-// marks its hub type +kubebuilder:metadata:annotations="c4.factory.io/conversion=webhook",
+// marks its hub type +kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook",
 // which switches that CRD alone from strategy None to the webhook (#1830,
 // docs/plans/done/api-versions.md, decision 3); a test in internal/controller
 // keeps the mark and the schemas in step.

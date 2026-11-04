@@ -14,7 +14,7 @@ name: Verify Release
 # Both follow the same steps: Agent Sandbox, the ghcr pull secret made from
 # GITHUB_TOKEN (packages: read reads the private packages Release pushed), the
 # agent images pulled and loaded into Kind, then `helm install` of
-# oci://ghcr.io/<owner>/c4factory/charts/c4-factory with project webshop. They
+# oci://ghcr.io/<owner>/theos/charts/theos with project webshop. They
 # wait for the seed's repositories, the runners, the manager and the UI, then
 # apply the installed release's own webshop sample and wait for orders-api's
 # repository. Then they follow docs/getting-started.md for the first app: the
@@ -116,8 +116,8 @@ jobs:
       issues: write
     name: ${{ matrix.name }}
     # On self-hosted runners (make gh-runner) only runner 1 of a device carries
-    # c4factory-kind, so a device makes one Kind cluster at a time.
-    runs-on: ${{ vars.RUNS_ON == 'self-hosted' && fromJSON('["self-hosted", "c4factory-kind"]') || vars.RUNS_ON || 'ubuntu-latest' }}
+    # theos-kind, so a device makes one Kind cluster at a time.
+    runs-on: ${{ vars.RUNS_ON == 'self-hosted' && fromJSON('["self-hosted", "theos-kind"]') || vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -150,7 +150,7 @@ jobs:
         run: |
           echo "VERSION=${TAG#v}" >>"$GITHUB_ENV"
           echo "FROM_VERSION=${FROM#v}" >>"$GITHUB_ENV"
-          echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/c4factory" >>"$GITHUB_ENV"
+          echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/theos" >>"$GITHUB_ENV"
           echo "GITEA_PORT=3000" >>"$GITHUB_ENV"
           # The values the upgrade repeats.
           echo "VALUES=$RUNNER_TEMP/values.yaml" >>"$GITHUB_ENV"
@@ -255,10 +255,10 @@ jobs:
           TOKEN: ${{ github.token }}
           ACTOR: ${{ github.actor }}
         run: |
-          for ns in c4-factory-system gitea webshop; do
+          for ns in theos-system gitea webshop; do
             $KUBECTL create namespace "$ns"
           done
-          for ns in c4-factory-system gitea; do
+          for ns in theos-system gitea; do
             $KUBECTL -n "$ns" create secret docker-registry ghcr --docker-server=ghcr.io \
               --docker-username="$ACTOR" --docker-password="$TOKEN"
           done
@@ -290,13 +290,13 @@ jobs:
               resources:
                 requests: {cpu: 100m, memory: 128Mi}
           EOF
-          helm install c4-factory "oci://$REGISTRY/charts/c4-factory" --version "$FROM_VERSION" \
-            --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system --wait --timeout 15m -f "$VALUES"
+          helm install theos "oci://$REGISTRY/charts/theos" --version "$FROM_VERSION" \
+            --kube-context "kind-$KIND_CLUSTER_NAME" -n theos-system --wait --timeout 15m -f "$VALUES"
 
       - name: Wait for the seed, the runners, the manager and the UI
         run: |
-          $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-controller-manager --timeout=300s
-          $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-ui --timeout=300s
+          $KUBECTL -n theos-system rollout status deployment/theos-controller-manager --timeout=300s
+          $KUBECTL -n theos-system rollout status deployment/theos-ui --timeout=300s
           $KUBECTL -n gitea port-forward service/gitea "$GITEA_PORT:3000" >/dev/null 2>&1 &
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)
           pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' | base64 -d)
@@ -338,7 +338,7 @@ jobs:
 
       # docs/getting-started.md, "Registry login and the pull secret": a
       # project needs no pull secret of its own. The operator copies `ghcr`
-      # into webshop, labeled c4.factory.io/shared-secrets=true by the chart,
+      # into webshop, labeled theos.factory.io/shared-secrets=true by the chart,
       # and names it in the agents' pods (#1271). A pod naming it with
       # imagePullPolicy Always proves it pulls agent-go from GHCR, though Kind
       # has the image loaded.
@@ -447,7 +447,7 @@ jobs:
             { $KUBECTL -n webshop get brief stand-in-demo -o yaml | tail -40; exit 1; }
           $KUBECTL -n webshop wait brief/stand-in-demo --for=jsonpath='{.status.phase}'=Planned --timeout=15m ||
             { $KUBECTL -n webshop get brief stand-in-demo -o yaml | tail -40; exit 1; }
-          $KUBECTL -n webshop get c4
+          $KUBECTL -n webshop get theos
           get brief/stand-in-demo '{range .status.choices[*]}- {@}{"\n"}{end}'
           container=$(get brief/stand-in-demo '{.status.created[?(@.kind=="Container")].name}')
           crew=$(get brief/stand-in-demo '{.status.created[?(@.kind=="Crew")].name}')
@@ -474,7 +474,7 @@ jobs:
             fi
             task=
             for i in $(seq 1 60); do
-              task=$($KUBECTL -n webshop get tasks -l "c4.factory.io/crew=$crew,c4.factory.io/issue=$issue" -o name)
+              task=$($KUBECTL -n webshop get tasks -l "theos.factory.io/crew=$crew,theos.factory.io/issue=$issue" -o name)
               [ -n "$task" ] && break
               sleep 10
             done
@@ -524,7 +524,7 @@ jobs:
           out=$1
           mkdir -p "$out"
           # kind namespace name phase Ready
-          $KUBECTL get c4,c4catalog -A -o json | jq -r '.items[] | [.kind, .metadata.namespace, .metadata.name,
+          $KUBECTL get theos,c4catalog -A -o json | jq -r '.items[] | [.kind, .metadata.namespace, .metadata.name,
             (.status.phase // "-"), ((.status.conditions // []) | map(select(.type == "Ready")) | .[0].status // "-")] | @tsv' |
             sort >"$out/objects.tsv"
           # name hash token-owner: the owner annotation says whose token
@@ -553,28 +553,28 @@ jobs:
         if: matrix.check == 'upgrade'
         run: |
           # Pulled once: the CRD check renders the same chart.
-          helm pull "oci://$REGISTRY/charts/c4-factory" --version "$VERSION" --untar -d "$RUNNER_TEMP/chart"
-          helm upgrade c4-factory "$RUNNER_TEMP/chart/c4-factory" \
-            --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system --wait --timeout 15m -f "$VALUES"
-          $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-controller-manager --timeout=300s
-          $KUBECTL -n c4-factory-system rollout status deployment/c4-factory-ui --timeout=300s
+          helm pull "oci://$REGISTRY/charts/theos" --version "$VERSION" --untar -d "$RUNNER_TEMP/chart"
+          helm upgrade theos "$RUNNER_TEMP/chart/theos" \
+            --kube-context "kind-$KIND_CLUSTER_NAME" -n theos-system --wait --timeout 15m -f "$VALUES"
+          $KUBECTL -n theos-system rollout status deployment/theos-controller-manager --timeout=300s
+          $KUBECTL -n theos-system rollout status deployment/theos-ui --timeout=300s
           $KUBECTL -n gitea rollout status deployment/gitea --timeout=300s
           date -u +%s >"$RUNNER_TEMP/upgraded-at"
           # Gitea's pod may have rolled, and the earlier port-forward with it.
           echo "GITEA_PORT=3001" >>"$GITHUB_ENV"
           $KUBECTL -n gitea port-forward service/gitea 3001:3000 >/dev/null 2>&1 &
           for i in $(seq 1 30); do curl -fsS http://localhost:3001/api/v1/version >/dev/null 2>&1 && break; sleep 2; done
-          helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system history c4-factory
+          helm --kube-context "kind-$KIND_CLUSTER_NAME" -n theos-system history theos
 
       # What the release's chart renders, not its config/crd/bases: v0.3.0's
       # chart shipped a crews CRD older than its bases.
       - name: "Upgrade: the CRDs are the release's"
         if: matrix.check == 'upgrade'
         run: |
-          chart=$RUNNER_TEMP/chart/c4-factory
+          chart=$RUNNER_TEMP/chart/theos
           only=()
           for f in "$chart"/templates/crd/*.yaml; do only+=(--show-only "templates/crd/${f##*/}"); done
-          helm template c4-factory "$chart" -n c4-factory-system -f "$VALUES" "${only[@]}" >"$EVIDENCE/crds.yaml"
+          helm template theos "$chart" -n theos-system -f "$VALUES" "${only[@]}" >"$EVIDENCE/crds.yaml"
           echo "$(grep -c '^kind: CustomResourceDefinition' "$EVIDENCE/crds.yaml") CRDs in $TAG's chart"
           # kubectl diff exits 1 when applying them would change what the
           # cluster has.
@@ -594,7 +594,7 @@ jobs:
         run: |
           left=$(( $(cat "$RUNNER_TEMP/upgraded-at") + 120 - $(date -u +%s) ))
           [ "$left" -gt 0 ] && sleep "$left"
-          $KUBECTL -n c4-factory-system logs deployment/c4-factory-controller-manager --all-containers \
+          $KUBECTL -n theos-system logs deployment/theos-controller-manager --all-containers \
             >"$EVIDENCE/manager.log" 2>&1
           bash "$RUNNER_TEMP/snapshot.sh" "$EVIDENCE/after"
           fail=0
@@ -680,8 +680,8 @@ jobs:
             $KUBECTL -n webshop get crew stand-in-demo -o yaml >crew-stand-in-demo.yaml 2>&1 || true
             cp "$RUNNER_TEMP/brief-release.json" brief-release.json 2>/dev/null || true
           fi
-          helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system status c4-factory >helm-status.txt 2>&1 || true
-          helm --kube-context "kind-$KIND_CLUSTER_NAME" -n c4-factory-system history c4-factory >helm-history.txt 2>&1 || true
+          helm --kube-context "kind-$KIND_CLUSTER_NAME" -n theos-system status theos >helm-status.txt 2>&1 || true
+          helm --kube-context "kind-$KIND_CLUSTER_NAME" -n theos-system history theos >helm-history.txt 2>&1 || true
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || true)
           pass=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || true)
           curl -fsS -u "$user:$pass" "http://localhost:$GITEA_PORT/api/v1/repos/search?limit=50" 2>/dev/null |
@@ -706,7 +706,7 @@ jobs:
             if [ "$CHECK" = upgrade ]; then
               echo "## Release $TAG, upgraded from $FROM: ${{ job.status }}"
               echo
-              echo "Chart \`oci://$REGISTRY/charts/c4-factory\` $FROM_VERSION on Kind, then \`helm upgrade\` to $VERSION" \
+              echo "Chart \`oci://$REGISTRY/charts/theos\` $FROM_VERSION on Kind, then \`helm upgrade\` to $VERSION" \
                 "with the same values. $(cat pressure.txt)"
               echo
               echo "### Before and after the upgrade"
@@ -717,7 +717,7 @@ jobs:
             else
               echo "## Release $TAG: ${{ job.status }}"
               echo
-              echo "Chart \`oci://$REGISTRY/charts/c4-factory\` $VERSION on Kind. $(cat pressure.txt)"
+              echo "Chart \`oci://$REGISTRY/charts/theos\` $VERSION on Kind. $(cat pressure.txt)"
             fi
             echo
             echo "### Gitea repositories"; echo '```'; cat gitea-repos.txt; echo '```'

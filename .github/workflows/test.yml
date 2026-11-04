@@ -107,7 +107,7 @@ jobs:
       # still ends a hung spec, naming it, 30 s before.
       - name: Running Tests
         env:
-          C4_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
+          THEOS_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
           TEST_ALL: ${{ github.event_name != 'pull_request' && '1' || '' }}
           TEST_BASE: origin/${{ github.base_ref || 'main' }}
           TEST_TIMEOUT: 60m
@@ -118,8 +118,8 @@ jobs:
       - name: Slowest controller specs
         if: always()
         env:
-          C4_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
-        run: cat "$C4_SLOWEST_SPECS" 2>/dev/null || echo "The controller suite wrote no report."
+          THEOS_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
+        run: cat "$THEOS_SLOWEST_SPECS" 2>/dev/null || echo "The controller suite wrote no report."
 
       # The Gitea integration tests install the packages they publish with
       # the real npm and uv; without them the install subtests skip, and

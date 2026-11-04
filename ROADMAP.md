@@ -1,9 +1,9 @@
 # Roadmap
 
-This file holds how C4 Factory releases, the outcomes it works towards, and what
+This file holds how theos releases, the outcomes it works towards, and what
 1.0 means. The maintainer decided it on 2026-10-06 (#305). The live state of
 each outcome, with its issues, is in the
-[milestones](https://github.com/JairJosafath/c4factory/milestones); this file
+[milestones](https://github.com/JairJosafath/theos/milestones); this file
 doesn't copy their issue lists.
 
 ## What the project is for
@@ -85,7 +85,7 @@ its user-visible steps join an existing milestone or none.
 all of these:
 
 - a written [compatibility promise](docs/design.md#compatibility) for
-  `c4.factory.io`, and a served version past `v1alpha1` that existing
+  `theos.factory.io`, and a served version past `v1alpha1` that existing
   objects convert to;
 - every release checks the upgrade from the previous one;
 - the agent fence closes its known gap: the Claude token never enters the

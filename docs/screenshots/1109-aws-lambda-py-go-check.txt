@@ -9,11 +9,11 @@
 # the Standard's test, aws-ec2-ts v1.0.0 and aws-fargate-ts v1.0.0, and the aws-lambda-py and
 # aws-lambda-go v1.0.0 runs (the last section); those used /tmp/1109-std/ and /tmp/1109-bin.
 # After the merge:
-# go run ./hack/render -out ~/.cache/c4factory-1109/py -type function Framework=aws-lambda-py Standard=aws-standard
-# go run ./hack/render -out ~/.cache/c4factory-1109/go -type function Framework=aws-lambda-go Standard=aws-standard
+# go run ./hack/render -out ~/.cache/theos-1109/py -type function Framework=aws-lambda-py Standard=aws-standard
+# go run ./hack/render -out ~/.cache/theos-1109/go -type function Framework=aws-lambda-go Standard=aws-standard
 # (spec.operations left out: the defaults, retentionDays 35, no copy, rpo 1h, rto 4h, no email)
 # then in each, with no AWS variables, an empty HOME, Node v24.21.0, uv 0.12.23, Python 3.14.4,
-# Go 1.26.9 and golangci-lint 2.13.1 (in ~/.cache/c4factory-1109/bin), outside any git repository:
+# Go 1.26.9 and golangci-lint 2.13.1 (in ~/.cache/theos-1109/bin), outside any git repository:
 # env -i "PATH=<that bin>:$PATH" HOME=<an empty dir> NO_COLOR=1 npm_config_cache=<a cache> \
 #   UV_CACHE_DIR=<a cache> GOCACHE=<a cache> GOMODCACHE=<a cache> make check
 # on 2026-10-16. synth writes both tiers, cdk.out/production/ and cdk.out/development/,
@@ -114,7 +114,7 @@ cd src && golangci-lint run
 0 issues.
 node_modules/.bin/tsc --noEmit
 cd src && go test -race -count=1 ./...
-ok  	c4factory.local/webshop/sample-app	1.044s
+ok  	theos.local/webshop/sample-app	1.044s
 node_modules/.bin/vitest run
 
  ✓ infra/standard.test.ts (51 tests) 77322ms
@@ -145,7 +145,7 @@ cdk.out/production/sample-app.template.json
 All matched files use Prettier code style!
 cd src && golangci-lint run
 0 issues.
-ok  	c4factory.local/webshop/sample-app	1.030s
+ok  	theos.local/webshop/sample-app	1.030s
  ✓ infra/standard.test.ts (45 tests) 4279ms
  ✓ infra/api_stack.test.ts (15 tests) 5159ms
  Test Files  2 passed (2)
@@ -326,7 +326,7 @@ cd src && golangci-lint run
 0 issues.
 node_modules/.bin/tsc --noEmit
 cd src && go test -race -count=1 ./...
-ok  	c4factory.local/webshop/sample-app	1.043s
+ok  	theos.local/webshop/sample-app	1.043s
 node_modules/.bin/vitest run
 
  RUN  v5.0.3 <scratch>/go

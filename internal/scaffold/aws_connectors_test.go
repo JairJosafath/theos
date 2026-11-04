@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // An AWS data store is a DataStore on a Connector: the dynamodb Connector

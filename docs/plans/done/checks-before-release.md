@@ -123,7 +123,7 @@ owns.
   reads `status.standard.checks`, what the repository runs, not the spec, so
   it never waits for a `full` job the repository doesn't have.
 - **A new Container** is scaffolded with its effective checks and records them
-  in `status.standard.checks` and in `.c4factory.yaml`, like the refs.
+  in `status.standard.checks` and in `.theos.yaml`, like the refs.
 - **No Kind evidence.** Everything above is seen by `internal/model` and
   `internal/scaffold` table tests, envtest with a faked Gitea, and
   `make test-gitea` for the new Gitea call. Whether a real Gitea runner picks

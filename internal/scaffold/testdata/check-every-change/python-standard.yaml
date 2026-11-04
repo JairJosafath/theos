@@ -53,11 +53,11 @@ jobs:
         # registry lacks fails here instead of being asked of npmjs.org or
         # pypi.org.
         env:
-          NPM_SCOPE: ${{ vars.C4_NPM_SCOPE }}
-          NPM_REGISTRY: ${{ vars.C4_NPM_REGISTRY }}
-          NPM_TOKEN: ${{ secrets.C4_NPM_TOKEN }}
-          PYPI_INDEX: ${{ vars.C4_PYPI_INDEX }}
-          PYPI_TOKEN: ${{ secrets.C4_PYPI_TOKEN }}
+          NPM_SCOPE: ${{ vars.THEOS_NPM_SCOPE }}
+          NPM_REGISTRY: ${{ vars.THEOS_NPM_REGISTRY }}
+          NPM_TOKEN: ${{ secrets.THEOS_NPM_TOKEN }}
+          PYPI_INDEX: ${{ vars.THEOS_PYPI_INDEX }}
+          PYPI_TOKEN: ${{ secrets.THEOS_PYPI_TOKEN }}
           SERVER: ${{ gitea.server_url }}
           OWNER: ${{ gitea.repository_owner }}
           ACTOR: ${{ gitea.actor }}
@@ -72,7 +72,7 @@ jobs:
           login=${PYPI_TOKEN:+__token__}
           login=${login:-$ACTOR}
           umask 077
-          printf '%s:registry=%s\n//%s:_authToken=%s\n' "${NPM_SCOPE:-@c4factory}" "$registry" "${registry#*://}" "${NPM_TOKEN:-$TOKEN}" > "$HOME/.npmrc"
+          printf '%s:registry=%s\n//%s:_authToken=%s\n' "${NPM_SCOPE:-@theos}" "$registry" "${registry#*://}" "${NPM_TOKEN:-$TOKEN}" > "$HOME/.npmrc"
           printf 'machine %s\nlogin %s\npassword %s\n' "$host" "$login" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
       # uv's cache and the Python it installs (about 250 MB) go in the
       # checkout, which is in memory and goes with the job: on the runner's

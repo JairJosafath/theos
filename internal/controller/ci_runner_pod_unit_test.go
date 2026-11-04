@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -17,7 +17,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 )
 
 // The pool's pod (#1140): registration in an init container that alone holds the
@@ -26,8 +26,8 @@ import (
 func TestBuildRunnerPod(t *testing.T) {
 	in := runnerPodInput{namespace: "shop", provider: "gitea", gitURL: "http://gitea.gitea.svc.cluster.local:3000",
 		tokenSecret: ciRunnerTokenSecret("gitea"),
-		runner:      c4v1beta1.CIRunnerSpec{Label: "go", Image: "c4factory/gitea-runner-go:dev", Size: 1, GoCache: true},
-		goCacheRoot: "/var/cache/c4factory/go/ci"}
+		runner:      c4v1beta1.CIRunnerSpec{Label: "go", Image: "theos/gitea-runner-go:dev", Size: 1, GoCache: true},
+		goCacheRoot: "/var/cache/theos/go/ci"}
 	pod := buildRunnerPod(in)
 	if pod.GenerateName != "ci-gitea-go-" || pod.Namespace != "shop" {
 		t.Errorf("named %q in %q, want ci-gitea-go- in shop", pod.GenerateName, pod.Namespace)
@@ -75,13 +75,13 @@ func TestBuildRunnerPod(t *testing.T) {
 // flag or the label's goCache, no cache and no job.env.
 func TestBuildRunnerPodGoCache(t *testing.T) {
 	in := runnerPodInput{namespace: "shop", provider: "gitea", tokenSecret: ciRunnerTokenSecret("gitea"),
-		runner:      c4v1beta1.CIRunnerSpec{Label: "go", Image: "c4factory/gitea-runner-go:dev", GoCache: true},
-		goCacheRoot: "/var/cache/c4factory/go/ci"}
+		runner:      c4v1beta1.CIRunnerSpec{Label: "go", Image: "theos/gitea-runner-go:dev", GoCache: true},
+		goCacheRoot: "/var/cache/theos/go/ci"}
 	pod := buildRunnerPod(in)
 	for _, v := range pod.Spec.Volumes {
 		switch v.Name {
 		case goCacheVolume:
-			if v.HostPath == nil || v.HostPath.Path != "/var/cache/c4factory/go/ci/shop" {
+			if v.HostPath == nil || v.HostPath.Path != "/var/cache/theos/go/ci/shop" {
 				t.Errorf("go-cache volume %+v, want the project's directory under the root", v.VolumeSource)
 			}
 		case "work", "tmp":

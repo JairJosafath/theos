@@ -27,16 +27,16 @@ rounds and `cel-lens-core-139` $2.29 over 3 rounds and failed; nobody can
 tell whether those were a few long sessions or many short ones.
 
 How a run works today: a sandbox runs one job (implement, review or plan);
-c4agent calls the agent once, and on an implement whose check fails up to
+theos-agent calls the agent once, and on an implement whose check fails up to
 `checkFixAttempts` (2) more times, each a fresh `claude -p --output-format
 json` with the prompt on stdin (`internal/agentrunner/agent.go`). Each call
-is one Claude Code session. c4agent reads `total_cost_usd` from the JSON,
+is one Claude Code session. theos-agent reads `total_cost_usd` from the JSON,
 `costMeter` adds up the calls, and the run's `Result` reaches the operator in
 the pod's termination message, where `endRun` adds it to the Task.
 
 ## Decisions, and why
 
-1. **Claude Code streams, and c4agent reads every turn.** The default command
+1. **Claude Code streams, and theos-agent reads every turn.** The default command
    becomes `claude -p --output-format stream-json --verbose`. Its last line,
    `type: result`, has what the JSON output has today (`result`, `is_error`,
    `subtype`, `total_cost_usd`, `session_id`) plus `usage` and `modelUsage`;
@@ -76,28 +76,28 @@ the pod's termination message, where `endRun` adds it to the Task.
 6. **The limit is the Agent's `sessionTokenLimit`.** Default 130000, minimum
    20000, maximum 1000000. It sits beside `model` and `maxRounds` because it
    depends on the model and the role: a bigger window may take more, a
-   reviewer may need less. The operator passes it to c4agent as
-   `C4AGENT_SESSION_TOKEN_LIMIT`.
-7. **The session is told to hand off, by a hook.** c4agent writes a Claude
+   reviewer may need less. The operator passes it to theos-agent as
+   `THEOS_AGENT_SESSION_TOKEN_LIMIT`.
+7. **The session is told to hand off, by a hook.** theos-agent writes a Claude
    Code settings file outside the repository (`--settings`, so nothing lands
-   in the commit) with a `PreToolUse` hook that runs `c4agent session-guard`.
+   in the commit) with a `PreToolUse` hook that runs `theos-agent session-guard`.
    The guard reads the hook's input, finds the session's newest turn in its
    transcript (`transcript_path`), and once that turn's size passes the limit
    denies every tool but writing the handoff file, with the reason: "This
    session is past N tokens. Stop here: write to HANDOFF what is done, what
    is left and what you learned that the code doesn't show, then end your
    turn." The agent stops at a tool boundary, so no edit is cut in half. A
-   hook rather than c4agent killing the process: the agent writes the note
+   hook rather than theos-agent killing the process: the agent writes the note
    itself, which only it can, and stops where it chooses.
 8. **The fresh session gets the job and the note.** When a session ended
-   with a handoff file, c4agent starts a fresh `claude -p` with the same
+   with a handoff file, theos-agent starts a fresh `claude -p` with the same
    prompt and a section: "A previous session worked on this and handed off.
    Its changes are in the working tree (git status, git diff). Its note:
    ...". The fresh session's answer is the call's answer; every session's
    tokens and cost add up into the call's. This lives inside `ClaudeAgent`,
    so implement, review, plan and check fixes all get it unchanged.
 9. **A session that won't stop is stopped.** One past the limit by half
-   again (a huge turn, or an agent ignoring the guard) is ended by c4agent,
+   again (a huge turn, or an agent ignoring the guard) is ended by theos-agent,
    which then writes the note itself (the session's last assistant text and
    `git status --short`) and starts the fresh session the same way. After
    `maxSessionHandoffs` (3) handoffs in one call, the guard stops guarding
@@ -115,7 +115,7 @@ the pod's termination message, where `endRun` adds it to the Task.
 Each step is its own issue and pull request, and leaves main working.
 
 1. **Tokens from the agent's stream to Task and Brief status** (#657,
-   decisions 1-4). c4agent switches to stream-json and reads the tokens and
+   decisions 1-4). theos-agent switches to stream-json and reads the tokens and
    session sizes; `Result`, `model.RunResult`, `TaskStatus`, `BriefRound`
    and `BriefStatus` carry `tokens`; `docs/design.md` says so. Tier 1: the
    stream parsed from a fixture captured from the agent image's Claude Code
@@ -129,7 +129,7 @@ Each step is its own issue and pull request, and leaves main working.
    the line for reported tokens, a run without them, and a largest session
    past the limit. Depends on step 1.
 3. **A long session hands off to a fresh one** (#659, decisions 6-10). The
-   Agent's `sessionTokenLimit`, `c4agent session-guard`, the fresh session,
+   Agent's `sessionTokenLimit`, `theos-agent session-guard`, the fresh session,
    the hard stop, `sessionHandoffs`, the Event and "handed off N×" in the UI.
    Tier 1: the guard on transcripts below and past the limit, allowing only
    the handoff file; a stand-in Claude command that streams growing turns and

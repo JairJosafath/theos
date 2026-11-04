@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/adapters/github"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/adapters/github"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The issues side of fakeGitHub: a repository's issues and their comments,
@@ -243,7 +243,7 @@ func (f *fakeGitHub) serveIssues(w http.ResponseWriter, req *http.Request, repos
 		var c fakeGitHubComment
 		_ = json.NewDecoder(req.Body).Decode(&c)
 		f.nextID++
-		c.ID, c.User = f.nextID, fakeGitHubUser{"c4factory-bot"}
+		c.ID, c.User = f.nextID, fakeGitHubUser{"theos-bot"}
 		issue.comments = append(issue.comments, c)
 		reply(w, http.StatusCreated, c)
 	default:

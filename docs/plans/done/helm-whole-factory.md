@@ -51,7 +51,7 @@ a checkout and locally built `:dev` images (`imagePullPolicy: Never`).
   (`RUNNER_SECRET=""`). So the runners don't wait for a hook, and
   `helm install --wait` works. The `go` runner
   keeps its Go build cache on the node (`runners.go.goCache`, default
-  `/var/cache/c4factory/go/ci`), as `config/runner/go.yaml` does.
+  `/var/cache/theos/go/ci`), as `config/runner/go.yaml` does.
 - **The UI's health view** lists Gitea and the runners when Gitea is enabled.
 - **Private images.** GHCR packages are private until the owner makes them
   public. The chart supports both ways:
@@ -64,7 +64,7 @@ a checkout and locally built `:dev` images (`imagePullPolicy: Never`).
     pull secret. This is also the way for the agent images, which run in
     project namespaces in Sandboxes the operator creates, outside the chart.
 - **Images:** *Release* publishes `seed` with the others; its default
-  repository is `ghcr.io/jairjosafath/c4factory/seed`, tag `Chart.appVersion`.
+  repository is `ghcr.io/jairjosafath/theos/seed`, tag `Chart.appVersion`.
 - **Agent Sandbox** stays a prerequisite the device applies first: another
   project's controller and CRDs.
 - **The Kind test environment** keeps `make gitea seed runner-*` and
@@ -108,7 +108,7 @@ the last says `Part of #127`, the last `Closes #127`. New behaviour stays off
    pull private images; README *Try it* points at it.
 6. **Verified from a release.** Once the owner pushes `v0.2.0` and *Release*
    publishes it: on a fresh Kind cluster of the pool, apply Agent Sandbox,
-   `helm install` from `oci://ghcr.io/jairjosafath/c4factory/charts`, nothing
+   `helm install` from `oci://ghcr.io/jairjosafath/theos/charts`, nothing
    built or loaded locally (pulled with a pull secret or after making the
    packages public), and save the `kubectl get` output and a Gitea screenshot
    in `docs/screenshots/`. If the tag isn't pushed yet, step 5 closes #127 and

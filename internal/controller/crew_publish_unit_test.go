@@ -3,7 +3,7 @@ package controller
 import (
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // TestSourceName maps the names GitHub gives uploaded files back to Gitea's.

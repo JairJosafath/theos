@@ -5,9 +5,9 @@ import (
 	"maps"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // The fake reads a plan branch as the planner leaves it: main with its plan/

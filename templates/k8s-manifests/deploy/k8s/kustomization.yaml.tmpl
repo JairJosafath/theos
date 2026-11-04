@@ -1,5 +1,5 @@
 # Kubernetes manifests for {{ .Container }}; render them with `kubectl kustomize deploy/k8s`.
-# C4 Factory ships them through an `argoCD` DeployTarget: Argo CD syncs this
+# theos ships them through an `argoCD` DeployTarget: Argo CD syncs this
 # folder at each release's tag with the release's image. To ship them yourself,
 # point the image at what you build from the Dockerfile, for example:
 #   cd deploy/k8s && kustomize edit set image {{ .Container }}=registry.example.com/{{ .Container }}:1.0.0

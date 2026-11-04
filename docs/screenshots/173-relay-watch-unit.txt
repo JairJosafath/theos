@@ -1,10 +1,10 @@
 # #173: the relay watch under systemd on the relay device (host 3st8JJ, WSL2), 2026-10-06
 
 $ hack/relay-watch.sh --install --workers 9   (from the main checkout, at 3108d39)
-relay watch installed as ~/.config/systemd/user/c4factory-relay-watch.service for 9 worker(s)
+relay watch installed as ~/.config/systemd/user/theos-relay-watch.service for 9 worker(s)
 (.relay/watch.log: 02:52:14 another watch holds the lock; pid 1298241 waits for it to end)
 
-$ systemctl --user is-enabled c4factory-relay-watch; loginctl show-user math -p Linger
+$ systemctl --user is-enabled theos-relay-watch; loginctl show-user math -p Linger
 enabled
 Linger=yes
 
@@ -22,17 +22,17 @@ $ date; kill 1298241
 $ new lines in .relay/watch.log
 2026-10-06T02:52:46+02:00 watch started: pid 1301484, under systemd, HEAD 3108d39, 9 worker(s), asks GitHub every 60s
 
-$ journalctl --user -u c4factory-relay-watch -n 6
-Oct 06 02:52:14 3st8JJ systemd[561]: Started c4factory-relay-watch.service - C4 Factory relay watch (~/www/github.com/jairjosafath/c4factory).
-Oct 06 02:52:31 3st8JJ systemd[561]: c4factory-relay-watch.service: Unit process 1299084 (bash) remains running after unit stopped.
-Oct 06 02:52:31 3st8JJ systemd[561]: c4factory-relay-watch.service: Unit process 1299086 (bash) remains running after unit stopped.
-Oct 06 02:52:31 3st8JJ systemd[561]: c4factory-relay-watch.service: Unit process 1299163 (gh) remains running after unit stopped.
-Oct 06 02:52:46 3st8JJ systemd[561]: c4factory-relay-watch.service: Scheduled restart job, restart counter is at 1.
-Oct 06 02:52:46 3st8JJ systemd[561]: Started c4factory-relay-watch.service - C4 Factory relay watch (~/www/github.com/jairjosafath/c4factory).
+$ journalctl --user -u theos-relay-watch -n 6
+Oct 06 02:52:14 3st8JJ systemd[561]: Started theos-relay-watch.service - theos relay watch (~/www/github.com/jairjosafath/theos).
+Oct 06 02:52:31 3st8JJ systemd[561]: theos-relay-watch.service: Unit process 1299084 (bash) remains running after unit stopped.
+Oct 06 02:52:31 3st8JJ systemd[561]: theos-relay-watch.service: Unit process 1299086 (bash) remains running after unit stopped.
+Oct 06 02:52:31 3st8JJ systemd[561]: theos-relay-watch.service: Unit process 1299163 (gh) remains running after unit stopped.
+Oct 06 02:52:46 3st8JJ systemd[561]: theos-relay-watch.service: Scheduled restart job, restart counter is at 1.
+Oct 06 02:52:46 3st8JJ systemd[561]: Started theos-relay-watch.service - theos relay watch (~/www/github.com/jairjosafath/theos).
 
-$ systemctl --user status c4factory-relay-watch | head -6
-● c4factory-relay-watch.service - C4 Factory relay watch (~/www/github.com/jairjosafath/c4factory)
-     Loaded: loaded (~/.config/systemd/user/c4factory-relay-watch.service; enabled; preset: enabled)
+$ systemctl --user status theos-relay-watch | head -6
+● theos-relay-watch.service - theos relay watch (~/www/github.com/jairjosafath/theos)
+     Loaded: loaded (~/.config/systemd/user/theos-relay-watch.service; enabled; preset: enabled)
      Active: active (running) since Tue 2026-10-06 02:52:46 CEST; 807ms ago
  Invocation: 7d751eb538e64e4bbc0dc07bca1bb5ed
    Main PID: 1301484 (bash)
@@ -63,8 +63,8 @@ ok   cron: passes the relay settings
 ok   cron: every 5 minutes
 ok   cron: starts the watch now
 FAIL cron uninstall: only the other lines left: got [0 3 * * * backup
-@reboot cd /tmp/tmp.KN6F7PN6Oh/repo && PATH=/tmp/tmp.KN6F7PN6Oh/bin:/tmp/tmp.KN6F7PN6Oh/bin:~/www/github.com/jairjosafath/c4factory/bin:~/www/github.com/jairjosafath/c4factory/.dev/bin:~/www/github.com/jairjosafath/c4factory/.dev/npm/bin:~/www/github.com/jairjosafath/c4factory/.dev/go/bin:~/www/github.com/jairjosafath/c4factory/.dev/tools/go/bin:~/www/github.com/jairjosafath/c4factory/.dev/tools/node/bin:~/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/remote-cli:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/windows/system32:/mnt/c/windows:/mnt/c/windows/System32/Wbem:/mnt/c/windows/System32/WindowsPowerShell/v1.0/:/mnt/c/windows/System32/OpenSSH/:/mnt/c/Program\ Files\ \(x86\)/NVIDIA\ Corporation/PhysX/Common:/mnt/c/Program\ Files/NVIDIA\ Corporation/NVIDIA\ NvDLISR:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program\ Files/GitHub\ CLI/:/mnt/c/Users/josaf/AppData/Local/Microsoft/WindowsApps:/mnt/c/Users/josaf/AppData/Local/Programs/Microsoft\ VS\ Code/bin:/Docker/host/bin:/snap/bin C4_CLUSTER=none RELAY_MAX_WORKERS=5 RELAY_RC=0 ./dev run hack/relay-watch.sh --cron --workers 3 >>.relay/watch.out 2>&1 # c4factory relay watch: /tmp/tmp.KN6F7PN6Oh/repo
-*/5 * * * * cd /tmp/tmp.KN6F7PN6Oh/repo && PATH=/tmp/tmp.KN6F7PN6Oh/bin:/tmp/tmp.KN6F7PN6Oh/bin:~/www/github.com/jairjosafath/c4factory/bin:~/www/github.com/jairjosafath/c4factory/.dev/bin:~/www/github.com/jairjosafath/c4factory/.dev/npm/bin:~/www/github.com/jairjosafath/c4factory/.dev/go/bin:~/www/github.com/jairjosafath/c4factory/.dev/tools/go/bin:~/www/github.com/jairjosafath/c4factory/.dev/tools/node/bin:~/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/remote-cli:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/windows/system32:/mnt/c/windows:/mnt/c/windows/System32/Wbem:/mnt/c/windows/System32/WindowsPowerShell/v1.0/:/mnt/c/windows/System32/OpenSSH/:/mnt/c/Program\ Files\ \(x86\)/NVIDIA\ Corporation/PhysX/Common:/mnt/c/Program\ Files/NVIDIA\ Corporation/NVIDIA\ NvDLISR:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program\ Files/GitHub\ CLI/:/mnt/c/Users/josaf/AppData/Local/Microsoft/WindowsApps:/mnt/c/Users/josaf/AppData/Local/Programs/Microsoft\ VS\ Code/bin:/Docker/host/bin:/snap/bin C4_CLUSTER=none RELAY_MAX_WORKERS=5 RELAY_RC=0 ./dev run hack/relay-watch.sh --cron --workers 3 >>.relay/watch.out 2>&1 # c4factory relay watch: /tmp/tmp.KN6F7PN6Oh/repo] want [0 3 * * * backup]
+@reboot cd /tmp/tmp.KN6F7PN6Oh/repo && PATH=/tmp/tmp.KN6F7PN6Oh/bin:/tmp/tmp.KN6F7PN6Oh/bin:~/www/github.com/jairjosafath/theos/bin:~/www/github.com/jairjosafath/theos/.dev/bin:~/www/github.com/jairjosafath/theos/.dev/npm/bin:~/www/github.com/jairjosafath/theos/.dev/go/bin:~/www/github.com/jairjosafath/theos/.dev/tools/go/bin:~/www/github.com/jairjosafath/theos/.dev/tools/node/bin:~/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/remote-cli:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/windows/system32:/mnt/c/windows:/mnt/c/windows/System32/Wbem:/mnt/c/windows/System32/WindowsPowerShell/v1.0/:/mnt/c/windows/System32/OpenSSH/:/mnt/c/Program\ Files\ \(x86\)/NVIDIA\ Corporation/PhysX/Common:/mnt/c/Program\ Files/NVIDIA\ Corporation/NVIDIA\ NvDLISR:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program\ Files/GitHub\ CLI/:/mnt/c/Users/josaf/AppData/Local/Microsoft/WindowsApps:/mnt/c/Users/josaf/AppData/Local/Programs/Microsoft\ VS\ Code/bin:/Docker/host/bin:/snap/bin THEOS_CLUSTER=none RELAY_MAX_WORKERS=5 RELAY_RC=0 ./dev run hack/relay-watch.sh --cron --workers 3 >>.relay/watch.out 2>&1 # theos relay watch: /tmp/tmp.KN6F7PN6Oh/repo
+*/5 * * * * cd /tmp/tmp.KN6F7PN6Oh/repo && PATH=/tmp/tmp.KN6F7PN6Oh/bin:/tmp/tmp.KN6F7PN6Oh/bin:~/www/github.com/jairjosafath/theos/bin:~/www/github.com/jairjosafath/theos/.dev/bin:~/www/github.com/jairjosafath/theos/.dev/npm/bin:~/www/github.com/jairjosafath/theos/.dev/go/bin:~/www/github.com/jairjosafath/theos/.dev/tools/go/bin:~/www/github.com/jairjosafath/theos/.dev/tools/node/bin:~/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/remote-cli:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/windows/system32:/mnt/c/windows:/mnt/c/windows/System32/Wbem:/mnt/c/windows/System32/WindowsPowerShell/v1.0/:/mnt/c/windows/System32/OpenSSH/:/mnt/c/Program\ Files\ \(x86\)/NVIDIA\ Corporation/PhysX/Common:/mnt/c/Program\ Files/NVIDIA\ Corporation/NVIDIA\ NvDLISR:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program\ Files/GitHub\ CLI/:/mnt/c/Users/josaf/AppData/Local/Microsoft/WindowsApps:/mnt/c/Users/josaf/AppData/Local/Programs/Microsoft\ VS\ Code/bin:/Docker/host/bin:/snap/bin THEOS_CLUSTER=none RELAY_MAX_WORKERS=5 RELAY_RC=0 ./dev run hack/relay-watch.sh --cron --workers 3 >>.relay/watch.out 2>&1 # theos relay watch: /tmp/tmp.KN6F7PN6Oh/repo] want [0 3 * * * backup]
 ok   worktree: refused
 ok   worktree: no unit
 ok   cron start with the stop file: nothing

@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // fakeGitHubIssues is GitHub's issues API for fakeGitHubRepo and its teams'
@@ -103,7 +103,7 @@ func (f *fakeGitHubIssues) serve(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
 	case path == "/user" && r.Method == http.MethodGet:
-		writeJSON(w, http.StatusOK, githubUser{Login: "C4Factory-Bot"})
+		writeJSON(w, http.StatusOK, githubUser{Login: "Theos-Bot"})
 	case path == issues && r.Method == http.MethodGet:
 		q := r.URL.Query()
 		if q.Get("state") != "open" || q.Get("sort") != "created" || q.Get("direction") != "asc" {
@@ -144,7 +144,7 @@ func (f *fakeGitHubIssues) serve(w http.ResponseWriter, r *http.Request) {
 			var in struct{ Body string }
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			f.nextID++
-			c := githubComment{ID: f.nextID, Body: in.Body, User: githubUser{Login: "c4factory-bot"},
+			c := githubComment{ID: f.nextID, Body: in.Body, User: githubUser{Login: "theos-bot"},
 				HTMLURL: fmt.Sprintf("https://github.com/%s/issues/%d#issuecomment-%d", fakeGitHubRepo, n, f.nextID)}
 			f.comments[n] = append(f.comments[n], c)
 			writeJSON(w, http.StatusCreated, c)
@@ -333,7 +333,7 @@ func TestGitHubIssuesCommentAndClose(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()
 	n := f.open("dark mode", "gray-lenovo", false)
-	const marker = "<!-- c4factory:request brief=shop stage=planned -->"
+	const marker = "<!-- theos:request brief=shop stage=planned -->"
 
 	found, err := g.FindComment(ctx, n, marker)
 	if err != nil || found != nil {
@@ -349,7 +349,7 @@ func TestGitHubIssuesCommentAndClose(t *testing.T) {
 		t.Fatalf("Comment() = %+v, %v", posted, err)
 	}
 	found, err = g.FindComment(ctx, n, marker)
-	if err != nil || found == nil || found.ID != posted.ID || found.Author != "c4factory-bot" {
+	if err != nil || found == nil || found.ID != posted.ID || found.Author != "theos-bot" {
 		t.Errorf("FindComment() = %+v, %v; want comment %d", found, err, posted.ID)
 	}
 	if calls := f.takeCalls(); !slices.Contains(calls, "GET /user") {
@@ -361,7 +361,7 @@ func TestGitHubIssuesCommentAndClose(t *testing.T) {
 	if calls := f.takeCalls(); slices.Contains(calls, "GET /user") {
 		t.Errorf("a second FindComment() read the token's account again: %q", calls)
 	}
-	if found, err := g.FindComment(ctx, n, "<!-- c4factory:request brief=shop stage=released -->"); err != nil || found != nil {
+	if found, err := g.FindComment(ctx, n, "<!-- theos:request brief=shop stage=released -->"); err != nil || found != nil {
 		t.Errorf("FindComment(another stage) = %+v, %v; want nil", found, err)
 	}
 
@@ -395,7 +395,7 @@ func TestGitHubIssuesFindCommentStranger(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()
 	n := f.open("dark mode", "gray-lenovo", false)
-	const marker = "<!-- c4factory:request brief=shop stage=declined -->"
+	const marker = "<!-- theos:request brief=shop stage=declined -->"
 	f.mu.Lock()
 	f.comments[n] = []githubComment{{ID: 1, Body: "Declined.\n\n" + marker, User: githubUser{Login: "a-stranger"}}}
 	f.mu.Unlock()

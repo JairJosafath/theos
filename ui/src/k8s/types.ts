@@ -1,8 +1,8 @@
-// TypeScript shapes of the c4.factory.io/v1beta1 resources, as the Kubernetes API
+// TypeScript shapes of theos.factory.io/v1beta1 resources, as the Kubernetes API
 // returns them. They mirror api/v1beta1/*_types.go; every status field is optional
 // because the operator may not have reported yet.
 
-export const GROUP = 'c4.factory.io'
+export const GROUP = 'theos.factory.io'
 export const VERSION = 'v1beta1'
 
 export interface ObjectMeta {
@@ -297,7 +297,7 @@ export interface ContainerDeployStatus {
 /**
  * A place Containers are shipped to: exactly one member says which tool owns
  * it. Its Secret is named, never read: the UI's proxy serves only
- * c4.factory.io, so no Secret data reaches the browser.
+ * theos.factory.io, so no Secret data reaches the browser.
  */
 export interface DeployTarget extends K8sObject {
   spec: {
@@ -459,7 +459,7 @@ export interface Domain extends K8sObject {
 
 /**
  * Where repositories are created. Its Secret is named, never read: the UI's
- * proxy serves only c4.factory.io, so no Secret data reaches the browser.
+ * proxy serves only theos.factory.io, so no Secret data reaches the browser.
  */
 export interface GitProvider extends K8sObject {
   spec: {
@@ -494,7 +494,7 @@ export const RESOURCES = {
   briefs: 'briefs',
 } as const
 
-/** API path of a c4.factory.io resource, in one namespace or across all of them. */
+/** API path of a theos.factory.io resource, in one namespace or across all of them. */
 export function resourcePath(plural: string, namespace?: string): string {
   const ns = namespace ? `/namespaces/${encodeURIComponent(namespace)}` : ''
   return `/apis/${GROUP}/${VERSION}${ns}/${plural}`
@@ -519,7 +519,7 @@ export interface TaskTransition {
 /** What a Task keeps of one agent run once it ended: its round, role, cost, tokens and handoff sizes. */
 export interface TaskAgentRun {
   round: number
-  /** implement, review or plan; omitted when neither c4agent nor the sandbox's name said. */
+  /** implement, review or plan; omitted when neither theos-agent nor the sandbox's name said. */
   role?: string
   sandbox?: string
   /** When the Task saw the run end. */
@@ -539,8 +539,8 @@ export interface CheckStatus {
 }
 
 /** Labels on the Tasks a Crew starts: the Crew's name, and the issue number. */
-export const LABEL_CREW = 'c4.factory.io/crew'
-export const LABEL_ISSUE = 'c4.factory.io/issue'
+export const LABEL_CREW = 'theos.factory.io/crew'
+export const LABEL_ISSUE = 'theos.factory.io/issue'
 
 export interface Task extends K8sObject {
   spec: {
@@ -669,7 +669,7 @@ export interface Crew extends K8sObject {
     lastRelease?: CrewRelease
     /** The GitHub repository the Crew published to, by GitHub's id: a renamed or replaced one isn't published to. */
     publishTarget?: { repository: string; id: number }
-    /** The c4.factory.io/rerun-release value the Crew answered last. */
+    /** theos.factory.io/rerun-release value the Crew answered last. */
     rerunRelease?: string
     lastPolled?: string
     observedGeneration?: number

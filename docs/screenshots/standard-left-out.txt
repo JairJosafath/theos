@@ -105,8 +105,8 @@
     --- PASS: TestNextStandardStep/a_change_of_nothing_is_refused (0.00s)
     --- PASS: TestNextStandardStep/a_change_outside_the_plan_is_refused (0.00s)
     --- PASS: TestNextStandardStep/a_green_change_of_planned_paths_merges (0.00s)
-ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.016s
-ok  	github.com/JairJosafath/c4factory/internal/model	0.033s
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.016s
+ok  	github.com/JairJosafath/theos/internal/model	0.033s
 
 # envtest: go test -v ./internal/controller -ginkgo.v -ginkgo.focus='<the specs below>'
 
@@ -125,7 +125,7 @@ Brief autopilot in Off, lists a Container whose Standard files are behind under 
 Brief autopilot in On, lists a Container whose Standard files are behind under Needs you until they aren't
 • [5.439 seconds]
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/controller	52.857s
+ok  	github.com/JairJosafath/theos/internal/controller	52.857s
 
 # Vitest (ui): npx vitest run --reporter=verbose <the files below>
 

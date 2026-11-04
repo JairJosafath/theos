@@ -80,7 +80,7 @@ changes how they work.
    reruns the suite; an untouched package answers from the cache. The
    check-cache stays for the whole-tree case.
 4. **The envtest suite runs in parallel procs,** as many as the device's
-   memory carries (default 2, `C4_TEST_PROCS`), each with its own control
+   memory carries (default 2, `THEOS_TEST_PROCS`), each with its own control
    plane. Memory, not CPU, is the device's limit, so the number is measured
    and written down next to the `HEAVY_JOBS` numbers, not guessed.
 5. **A follow-up stays with its finder when it is decided.** Three cases,

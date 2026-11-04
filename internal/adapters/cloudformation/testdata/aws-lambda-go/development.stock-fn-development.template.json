@@ -26,15 +26,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -51,15 +51,15 @@
     "RetentionInDays": 30,
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -87,15 +87,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -185,15 +185,15 @@
     "Runtime": "provided.al2023",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -216,15 +216,15 @@
     "RetentionInDays": 30,
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -241,9 +241,9 @@
     "Name": "Api",
     "ProtocolType": "HTTP",
     "Tags": {
-     "c4factory:container": "stock-fn",
-     "c4factory:project": "webshop",
-     "c4factory:system": "shop"
+     "theos:container": "stock-fn",
+     "theos:project": "webshop",
+     "theos:system": "shop"
     }
    },
    "Metadata": {
@@ -272,9 +272,9 @@
     },
     "StageName": "$default",
     "Tags": {
-     "c4factory:container": "stock-fn",
-     "c4factory:project": "webshop",
-     "c4factory:system": "shop"
+     "theos:container": "stock-fn",
+     "theos:project": "webshop",
+     "theos:system": "shop"
     }
    },
    "Metadata": {
@@ -475,15 +475,15 @@
     "PendingWindowInDays": 7,
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -505,15 +505,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -841,15 +841,15 @@
     "DashboardName": "stock-fn-development",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -901,15 +901,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -959,15 +959,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1017,15 +1017,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1075,15 +1075,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1139,15 +1139,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1203,15 +1203,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1462,15 +1462,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "stock-fn"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],

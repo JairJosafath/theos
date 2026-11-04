@@ -19,8 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // DefaultHeartbeat is how often the client reports in. The operator marks a
@@ -54,7 +54,7 @@ func (o *Options) FromIdentity(path string) error {
 	return nil
 }
 
-// FindIdentity returns the nearest .c4factory.yaml in dir or above it.
+// FindIdentity returns the nearest .theos.yaml in dir or above it.
 func FindIdentity(dir string) (string, error) {
 	start, err := filepath.Abs(dir)
 	if err != nil {
@@ -68,7 +68,7 @@ func FindIdentity(dir string) (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("no %s in %s or above; is this a repository C4 Factory scaffolded?",
+			return "", fmt.Errorf("no %s in %s or above; is this a repository theos scaffolded?",
 				scaffold.IdentityPath, start)
 		}
 		dir = parent

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The fake host's CI: the runs of a tag or commit, their jobs, the runners

@@ -48,17 +48,17 @@ linters:
               desc: business rules must not import controller-runtime or other Kubernetes libraries (docs/architecture.md)
             - pkg: net/http
               desc: business rules must not do I/O over HTTP; that belongs in an adapter, internal/adapters (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/api
+            - pkg: github.com/JairJosafath/theos/api
               desc: business rules take plain values; controllers convert resources (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/controller
+            - pkg: github.com/JairJosafath/theos/internal/controller
               desc: business rules must not depend on controllers (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/adapters
+            - pkg: github.com/JairJosafath/theos/internal/adapters
               desc: business rules must not depend on adapters (docs/architecture.md)
         model-is-the-bottom:
           files:
             - "**/internal/model/**"
           deny:
-            - pkg: github.com/JairJosafath/c4factory/internal/scaffold
+            - pkg: github.com/JairJosafath/theos/internal/scaffold
               desc: model is the lowest layer; scaffold builds on it (docs/architecture.md)
         # Argo CD's adapter talks to the cluster; the Git host's and the
         # releases' adapters don't.
@@ -73,9 +73,9 @@ linters:
               desc: adapters must not import Kubernetes (docs/architecture.md)
             - pkg: sigs.k8s.io
               desc: adapters must not import controller-runtime (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/api
+            - pkg: github.com/JairJosafath/theos/api
               desc: adapters take plain values (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/controller
+            - pkg: github.com/JairJosafath/theos/internal/controller
               desc: adapters must not depend on controllers (docs/architecture.md)
         ports-are-plain-go:
           files:
@@ -87,19 +87,19 @@ linters:
               desc: ports are plain Go (docs/architecture.md)
             - pkg: net/http
               desc: ports do no I/O; that belongs in an adapter (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/api
+            - pkg: github.com/JairJosafath/theos/api
               desc: ports take plain values (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/adapters
+            - pkg: github.com/JairJosafath/theos/internal/adapters
               desc: ports must not depend on adapters (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/controller
+            - pkg: github.com/JairJosafath/theos/internal/controller
               desc: ports must not depend on controllers (docs/architecture.md)
         adapters-take-plain-values:
           files:
             - "**/internal/adapters/**"
           deny:
-            - pkg: github.com/JairJosafath/c4factory/api
+            - pkg: github.com/JairJosafath/theos/api
               desc: adapters take plain values (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/controller
+            - pkg: github.com/JairJosafath/theos/internal/controller
               desc: adapters must not depend on controllers (docs/architecture.md)
         controllers-take-ports:
           files:
@@ -107,22 +107,22 @@ linters:
             - "**/internal/sessionclient/**"
             - "!$test"
           deny:
-            - pkg: github.com/JairJosafath/c4factory/internal/adapters
+            - pkg: github.com/JairJosafath/theos/internal/adapters
               desc: controllers take ports; only cmd/main.go builds adapters, and tests wire them onto fakes (docs/architecture.md)
         runner-has-no-cluster-access:
           files:
             - "**/internal/agentrunner/**"
-            - "**/cmd/c4agent/**"
+            - "**/cmd/theos-agent/**"
           deny:
             - pkg: k8s.io
               desc: the sandbox runner has no Kubernetes credentials; it reports through its termination message (docs/architecture.md)
             - pkg: sigs.k8s.io
               desc: the sandbox runner has no Kubernetes credentials (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/api
+            - pkg: github.com/JairJosafath/theos/api
               desc: the runner takes plain values from its environment (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/controller
+            - pkg: github.com/JairJosafath/theos/internal/controller
               desc: the runner must not depend on controllers (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/adapters
+            - pkg: github.com/JairJosafath/theos/internal/adapters
               desc: the runner uses git and its token only; the operator talks to the Git host API (docs/architecture.md)
         model-proxy-stands-alone:
           files:
@@ -133,17 +133,17 @@ linters:
               desc: the model proxy reads one Secret file and forwards to one upstream; it needs no cluster access (docs/architecture.md)
             - pkg: sigs.k8s.io
               desc: the model proxy needs no cluster access (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/api
+            - pkg: github.com/JairJosafath/theos/api
               desc: the model proxy knows no resources; it takes its flags and one Secret file (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/controller
+            - pkg: github.com/JairJosafath/theos/internal/controller
               desc: the model proxy must not depend on controllers (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal/adapters
+            - pkg: github.com/JairJosafath/theos/internal/adapters
               desc: the model proxy talks to the Claude API only, never to the Git host (docs/architecture.md)
         model-proxy-handler-is-a-leaf:
           files:
             - "**/internal/modelproxy/**"
           deny:
-            - pkg: github.com/JairJosafath/c4factory/internal
+            - pkg: github.com/JairJosafath/theos/internal
               desc: the model proxy's handler uses the standard library only (docs/architecture.md)
         oci-is-plain-go:
           files:
@@ -153,15 +153,15 @@ linters:
               desc: internal/oci pushes and copies images over go-containerregistry; it needs no cluster access (docs/architecture.md)
             - pkg: sigs.k8s.io
               desc: internal/oci needs no cluster access (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/api
+            - pkg: github.com/JairJosafath/theos/api
               desc: internal/oci takes plain values; its callers convert resources (docs/architecture.md)
-            - pkg: github.com/JairJosafath/c4factory/internal
+            - pkg: github.com/JairJosafath/theos/internal
               desc: internal/oci is a leaf; adapters use it, it uses none of ours (docs/architecture.md)
         api-stands-alone:
           files:
             - "**/api/**"
           deny:
-            - pkg: github.com/JairJosafath/c4factory/internal
+            - pkg: github.com/JairJosafath/theos/internal
               desc: API types must not import internal packages (docs/architecture.md)
     gosec:
       excludes:

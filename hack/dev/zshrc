@@ -1,12 +1,12 @@
-# C4 Factory project shell. Loaded through ZDOTDIR=.dev/zsh (VS Code terminals,
+# theos project shell. Loaded through ZDOTDIR=.dev/zsh (VS Code terminals,
 # ./dev shell), so it never reads or changes your own ~/.zshrc, and everything it
 # writes (history, completion cache, plugins) stays in .dev/.
 
-source "$C4_ROOT/hack/dev/env.sh"
+source "$THEOS_ROOT/hack/dev/env.sh"
 
 # --- oh-my-zsh, from .dev/zsh --------------------------------------------------
-export ZSH="$C4_DEV/zsh/oh-my-zsh"
-export ZSH_CUSTOM="$C4_DEV/zsh/custom"
+export ZSH="$THEOS_DEV/zsh/oh-my-zsh"
+export ZSH_CUSTOM="$THEOS_DEV/zsh/custom"
 ZSH_THEME="robbyrussell"
 # ./dev setup --upgrade fetches a fresh copy; no update prompts in between.
 zstyle ':omz:update' mode disabled
@@ -15,7 +15,7 @@ plugins=(git golang docker kubectl helm gh fzf zsh-autosuggestions zsh-syntax-hi
 source "$ZSH/oh-my-zsh.sh"
 
 # --- History, kept in .dev/ so the suggestions keep learning --------------------
-HISTFILE="$C4_DEV/zsh/history"
+HISTFILE="$THEOS_DEV/zsh/history"
 HISTSIZE=100000
 SAVEHIST=100000
 setopt INC_APPEND_HISTORY SHARE_HISTORY HIST_IGNORE_ALL_DUPS HIST_REDUCE_BLANKS
@@ -32,4 +32,4 @@ command -v kubebuilder >/dev/null && source <(kubebuilder completion zsh)
 command -v uv >/dev/null && eval "$(uv generate-shell-completion zsh)"
 
 # Show it when this device runs without a cluster.
-[[ "${C4_CLUSTER:-}" == none ]] && print -P '%F{yellow}C4_CLUSTER=none: no Kind cluster on this device%f'
+[[ "${THEOS_CLUSTER:-}" == none ]] && print -P '%F{yellow}THEOS_CLUSTER=none: no Kind cluster on this device%f'

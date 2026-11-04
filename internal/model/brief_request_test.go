@@ -112,37 +112,37 @@ func TestRequestComments(t *testing.T) {
 		want string
 	}{
 		{"planned in a release", PlannedComment("cel-lens", []string{"Add a dark theme"}, "v0.3.0"),
-			"<!-- c4factory:request brief=cel-lens stage=planned -->\n" +
+			"<!-- theos:request brief=cel-lens stage=planned -->\n" +
 				"Planned as \"Add a dark theme\", in release v0.3.0.\n"},
 		{"planned as several issues", PlannedComment("cel-lens",
 			[]string{"Add a theme setting", "Theme the panel", "Theme the hover"}, "v0.3.0"),
-			"<!-- c4factory:request brief=cel-lens stage=planned -->\n" +
+			"<!-- theos:request brief=cel-lens stage=planned -->\n" +
 				"Planned as \"Add a theme setting\", \"Theme the panel\" and \"Theme the hover\", in release v0.3.0.\n"},
 		{"planned in no release", PlannedComment("cel-lens", []string{"Add a dark theme"}, ""),
-			"<!-- c4factory:request brief=cel-lens stage=planned -->\nPlanned as \"Add a dark theme\".\n"},
+			"<!-- theos:request brief=cel-lens stage=planned -->\nPlanned as \"Add a dark theme\".\n"},
 		{"skipped", SkippedComment("cel-lens", "  The app\nalready has a dark theme. "),
-			"<!-- c4factory:request brief=cel-lens stage=planned -->\nNot planned: The app already has a dark theme.\n"},
+			"<!-- theos:request brief=cel-lens stage=planned -->\nNot planned: The app already has a dark theme.\n"},
 		{"skipped with no why", SkippedComment("cel-lens", ""),
-			"<!-- c4factory:request brief=cel-lens stage=planned -->\nNot planned.\n"},
+			"<!-- theos:request brief=cel-lens stage=planned -->\nNot planned.\n"},
 		{"declined", DeclinedComment("cel-lens"),
-			"<!-- c4factory:request brief=cel-lens stage=declined -->\nNot taken by the app's owners.\n"},
+			"<!-- theos:request brief=cel-lens stage=declined -->\nNot taken by the app's owners.\n"},
 		{"released", ReleasedComment("cel-lens", []Shipped{
 			{Tag: "v0.3.0", URL: "https://github.com/gray-lenovo/cel-lens/releases/tag/v0.3.0"}}),
-			"<!-- c4factory:request brief=cel-lens stage=released -->\n" +
+			"<!-- theos:request brief=cel-lens stage=released -->\n" +
 				"Shipped in v0.3.0: https://github.com/gray-lenovo/cel-lens/releases/tag/v0.3.0\n"},
 		{"released in two", ReleasedComment("cel-lens", []Shipped{{Tag: "v0.3.0", URL: "https://x/v0.3.0"},
 			{Tag: "v1.0.0"}}),
-			"<!-- c4factory:request brief=cel-lens stage=released -->\nShipped in v0.3.0: https://x/v0.3.0 and v1.0.0\n"},
+			"<!-- theos:request brief=cel-lens stage=released -->\nShipped in v0.3.0: https://x/v0.3.0 and v1.0.0\n"},
 		{"done where nothing publishes", ReleasedComment("cel-lens", []Shipped{
 			{URL: "http://gitea/cel-lens/linter/issues/4"}}),
-			"<!-- c4factory:request brief=cel-lens stage=released -->\nDone in http://gitea/cel-lens/linter/issues/4.\n"},
+			"<!-- theos:request brief=cel-lens stage=released -->\nDone in http://gitea/cel-lens/linter/issues/4.\n"},
 		{"done in two issues", ReleasedComment("cel-lens", []Shipped{{URL: "http://gitea/cel-lens/linter/issues/4"},
 			{URL: "http://gitea/cel-lens/linter/issues/5"}}),
-			"<!-- c4factory:request brief=cel-lens stage=released -->\n" +
+			"<!-- theos:request brief=cel-lens stage=released -->\n" +
 				"Done in http://gitea/cel-lens/linter/issues/4 and http://gitea/cel-lens/linter/issues/5.\n"},
 		{"shipped and done", ReleasedComment("cel-lens", []Shipped{{Tag: "v0.3.0", URL: "https://x/v0.3.0"},
 			{URL: "http://gitea/cel-lens/server/issues/2"}}),
-			"<!-- c4factory:request brief=cel-lens stage=released -->\n" +
+			"<!-- theos:request brief=cel-lens stage=released -->\n" +
 				"Shipped in v0.3.0: https://x/v0.3.0\nDone in http://gitea/cel-lens/server/issues/2.\n"},
 	}
 	for _, tc := range tests {

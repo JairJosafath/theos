@@ -11,7 +11,7 @@
 // Framework's files have their placeholders turned into template fields, edits
 // follow (addComputePatch, addDistIgnore and addCrossBuild), the README is the
 // factory's own (readmeFor), and they replace everything in the output folder
-// except its .c4factory/.
+// except its .theos/.
 package main
 
 import (
@@ -34,8 +34,8 @@ import (
 const (
 	placeholderProject   = "placeholder-project"
 	placeholderContainer = "placeholder-container"
-	placeholderDomain    = placeholderProject + ".c4factory.local"
-	placeholderRepo      = "c4factory.local/" + placeholderProject + "/" + placeholderContainer
+	placeholderDomain    = placeholderProject + ".theos.local"
+	placeholderRepo      = "theos.local/" + placeholderProject + "/" + placeholderContainer
 )
 
 // initArgs are the arguments of `kubebuilder init`.
@@ -106,10 +106,10 @@ var replacements = []struct {
 	re  *regexp.Regexp
 	new string
 }{
-	{regexp.MustCompile(regexp.QuoteMeta(placeholderRepo)), "c4factory.local/{{ .Project }}/{{ .Container }}"},
+	{regexp.MustCompile(regexp.QuoteMeta(placeholderRepo)), "theos.local/{{ .Project }}/{{ .Container }}"},
 	{
 		regexp.MustCompile(`[0-9a-f]{8}\.` + regexp.QuoteMeta(placeholderDomain)),
-		"{{ .Container }}.{{ .Project }}.c4factory.local",
+		"{{ .Container }}.{{ .Project }}.theos.local",
 	},
 	{regexp.MustCompile(placeholderProject), "{{ .Project }}"},
 	{regexp.MustCompile(placeholderContainer), "{{ .Container }}"},
@@ -283,7 +283,7 @@ const readmeTemplate = `# {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .C
 {{ .Description }}
 {{ end }}
 The ` + "`{{ .Container }}`" + ` Kubernetes operator of {{ .SoftwareSystem }}, in project
-{{ .Project }}: a kubebuilder ` + "`go/v4`" + ` project, scaffolded by C4 Factory. It
+{{ .Project }}: a kubebuilder ` + "`go/v4`" + ` project, scaffolded by theos. It
 needs Go GOVERSION or later (` + "`go.mod`" + `'s ` + "`go`" + ` line); the devcontainer has it,
 with kubebuilder, controller-gen, kustomize and the envtest binaries.
 
@@ -302,7 +302,7 @@ controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
 {{- end }}
 ` + "```" + `
 
-The kind's API group is ` + "`<group>.{{ .Project }}.c4factory.local`" + `. Its types go in
+The kind's API group is ` + "`<group>.{{ .Project }}.theos.local`" + `. Its types go in
 ` + "`api/v1alpha1/`" + `, its reconciler in ` + "`internal/controller/`" + `; the files under
 ` + "`config/crd/bases/`" + `, ` + "`config/rbac/role.yaml`" + ` and ` + "`zz_generated.*.go`" + ` are
 generated, never edited.
@@ -432,14 +432,14 @@ func frameworkFiles(dir string) (map[string]file, error) {
 	return out, errors.Join(errs...)
 }
 
-// write replaces everything in dir except .c4factory/ with files.
+// write replaces everything in dir except .theos/ with files.
 func write(dir string, files map[string]file) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	for _, e := range entries {
-		if e.Name() == ".c4factory" {
+		if e.Name() == ".theos" {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {

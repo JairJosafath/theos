@@ -11,7 +11,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // Deployer ships a built release to a place a DeployTarget names and reads

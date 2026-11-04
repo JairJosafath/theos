@@ -16,7 +16,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // agentGitea is a small stateful Gitea for the agent calls. It records every
@@ -336,14 +336,14 @@ func TestEnsureAgentAccess(t *testing.T) {
 func TestEnsureAgentAccessKeepsTokensOfOtherScopes(t *testing.T) {
 	g, p := newAgentGitea(t)
 	g.users["photo-editor-agent"] = true
-	g.botTokens["c4factory-agent"] = true // made before the token carried read:package
+	g.botTokens["theos-agent"] = true // made before the token carried read:package
 	repo := p.Repository("photo-editor")
 	for i := range 2 {
 		if _, err := p.EnsureAgentAccess(context.Background(), repo, "photo-editor-agent"); err != nil {
 			t.Fatalf("EnsureAgentAccess() #%d error = %v", i, err)
 		}
 	}
-	if slices.Contains(g.calls, "DELETE /api/v1/users/photo-editor-agent/tokens/c4factory-agent") {
+	if slices.Contains(g.calls, "DELETE /api/v1/users/photo-editor-agent/tokens/theos-agent") {
 		t.Error("EnsureAgentAccess revoked the token made with other scopes")
 	}
 	if !g.botTokens[agentTokenName] || len(g.botTokens) != 2 {
@@ -363,8 +363,8 @@ func TestRevokeOldAgentTokens(t *testing.T) {
 		t.Fatalf("RevokeOldAgentTokens() of a missing user error = %v", err)
 	}
 	g.users["photo-editor-agent"] = true
-	g.botTokens["c4factory-agent"] = true          // made before the token carried read:package
-	g.botTokens["c4factory-agent-00000000"] = true // made with other scopes
+	g.botTokens["theos-agent"] = true          // made before the token carried read:package
+	g.botTokens["theos-agent-00000000"] = true // made with other scopes
 	g.botTokens["someone-else"] = true
 	if _, err := p.EnsureAgentAccess(ctx, p.Repository("photo-editor"), "photo-editor-agent"); err != nil {
 		t.Fatal(err)

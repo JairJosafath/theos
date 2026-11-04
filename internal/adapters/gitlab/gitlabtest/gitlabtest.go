@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // DefaultScopes are a new project's token's scopes: what the design asks of
@@ -318,7 +318,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.Method == http.MethodGet && len(seg) == 2 && seg[0] == "personal_access_tokens" && seg[1] == "self":
-		writeJSON(w, http.StatusOK, map[string]any{"id": token.ID, keyName: "c4factory", "revoked": false,
+		writeJSON(w, http.StatusOK, map[string]any{"id": token.ID, keyName: "theos", "revoked": false,
 			"active": true, "scopes": token.Scopes})
 	case r.Method == http.MethodGet && len(seg) == 1 && seg[0] == "user":
 		writeJSON(w, http.StatusOK, map[string]any{"id": 1000 + token.ID,

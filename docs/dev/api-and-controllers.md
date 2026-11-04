@@ -95,9 +95,9 @@ which fails when a generated file differs from what is committed.
 **RBAC markers in** `internal/controller/*_controller.go`:
 
 ```go
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=containers/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=containers/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
 ```
 

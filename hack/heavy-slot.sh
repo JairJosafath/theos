@@ -15,7 +15,7 @@
 # A waiter with --first holds a first-NNNNNNNNNN ticket, ordered before every
 # wait- one: it takes the next slot that frees, ahead of older waiters, and
 # never one that is held. Only the check land runs under the merge turn goes
-# first (C4_HEAVY_FIRST, the Makefile; #1290): one pull request at a time holds
+# first (THEOS_HEAVY_FIRST, the Makefile; #1290): one pull request at a time holds
 # the turn across every device, so the other waiters can't starve.
 #
 #   hack/heavy-slot.sh acquire [--first] PID JOB

@@ -4,4 +4,4 @@ metadata:
   name: apps
   labels:
     # The operator copies its shared Secrets, such as claude-credentials, here.
-    c4.factory.io/shared-secrets: "true"
+    theos.factory.io/shared-secrets: "true"

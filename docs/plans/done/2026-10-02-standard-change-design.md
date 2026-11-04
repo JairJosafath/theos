@@ -21,7 +21,7 @@ Made by the user (2026-10-02):
 - The operator files it as a Gitea issue, so it shows in the backlog, the
   milestone and the UI.
 - Eligible: every protected path except the agents' rules (`AGENTS.md`,
-  `docs/agents/`) and the factory's contract (`.c4factory.yaml`). The Makefile,
+  `docs/agents/`) and the factory's contract (`.theos.yaml`). The Makefile,
   CI and release workflows (`.gitea/`), lint config, `.editorconfig`,
   `docs/style/` and `.devcontainer/` are eligible.
 

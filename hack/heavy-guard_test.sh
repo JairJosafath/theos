@@ -7,9 +7,9 @@
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 HOOK="$(cd "$(dirname "$0")" && pwd)/heavy-guard.sh"
-export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 CALLED=$T/called C4_CLUSTER_LEASE=$T/lease \
+export RELAY_MEMINFO=$T/meminfo RELAY_MIN_MEM_GIB=4 CALLED=$T/called THEOS_CLUSTER_LEASE=$T/lease \
   HEAVY_SLOTS_DIR=$T/slots HEAVY_JOBS=2
-unset C4_HEADLESS KIND_CLUSTER IS_SANDBOX # an agent sandbox sets the last; the hook does nothing there (#1894)
+unset THEOS_HEADLESS KIND_CLUSTER IS_SANDBOX # an agent sandbox sets the last; the hook does nothing there (#1894)
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 meminfo() { printf 'MemTotal:       15400000 kB\nMemAvailable:   %s kB\n' $(($1 * 1048576)) >"$RELAY_MEMINFO"; }
@@ -34,7 +34,7 @@ EOF
 cat >"$T/bin/docker" <<'EOF'
 #!/bin/sh
 echo docker >>"$CALLED"
-[ "$1 $2" = "stats --no-stream" ] && [ "$5" = c4factory-control-plane ] && echo '4.4GiB / 14.7GiB'
+[ "$1 $2" = "stats --no-stream" ] && [ "$5" = theos-control-plane ] && echo '4.4GiB / 14.7GiB'
 EOF
 chmod +x "$T"/spy/* "$T"/bin/*
 PATH=$T/bin:$PATH
@@ -95,7 +95,7 @@ case $reason in *"claude (3) 3.1 GiB, golangci-lint 2.4 GiB, node 0.4 GiB, tmux 
 check "reason: names the top processes" $r yes
 case $reason in *sleep*) r=yes ;; *) r=no ;; esac
 check "reason: only the top five" $r no
-case $reason in *"Kind node c4factory-control-plane uses 4.4GiB"*) r=yes ;; *) r=no ;; esac
+case $reason in *"Kind node theos-control-plane uses 4.4GiB"*) r=yes ;; *) r=no ;; esac
 check "reason: names the Kind node" $r yes
 KIND_CLUSTER=other hook "make check"
 case $(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out") in *"Kind node"*) r=yes ;; *) r=no ;; esac
@@ -106,7 +106,7 @@ check "no docker: still asks" "$(decision)" ask
 mv "$T/docker" "$T/bin/docker"
 
 # A headless session gets the warning in its context; nobody could answer a question.
-C4_HEADLESS=1 hook "make check"
+THEOS_HEADLESS=1 hook "make check"
 check "headless: does not ask" "$(decision)" none
 case $(jq -r .hookSpecificOutput.additionalContext "$T/out") in *"1.0 GiB available"*) r=yes ;; *) r=no ;; esac
 check "headless: warns" $r yes
@@ -129,7 +129,7 @@ check "no meminfo: silent" "$(cat "$T/out")" ""
 REPO=$(cd "$(dirname "$HOOK")/.." && pwd)
 meminfo 8
 mkdir -p "$T/other"
-lease() { jq -n --arg wt "$1" --argjson b "$2" '{name:"heron-50",issue:50,worktree:$wt,beat:$b}' >"$C4_CLUSTER_LEASE"; }
+lease() { jq -n --arg wt "$1" --argjson b "$2" '{name:"heron-50",issue:50,worktree:$wt,beat:$b}' >"$THEOS_CLUSTER_LEASE"; }
 lease "$T/other" "$(date +%s)"
 for c in "make deploy" "make sample" "make e2e" "make test-e2e" "make up" "make down" "cd x && make -j2 deploy IMG=y"; do
   hook "$c"
@@ -138,9 +138,9 @@ done
 reason=$(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out")
 case $reason in *"heron-50 (#50, $T/other)"*) r=yes ;; *) r=no ;; esac
 check "deny: names the holder" $r yes
-case $reason in *"C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire"*) r=yes ;; *) r=no ;; esac
+case $reason in *"THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire"*) r=yes ;; *) r=no ;; esac
 check "deny: tells the human to acquire" $r yes
-C4_HEADLESS=1 hook "make deploy"
+THEOS_HEADLESS=1 hook "make deploy"
 check "lease held, headless: denied" "$(decision)" deny
 for c in "make check" "make upgrade" "make docker-build" "git log --grep 'make deploy'" \
   "git commit -m 'next: make deploy then verify'" 'echo "then make e2e"'; do
@@ -155,33 +155,33 @@ hook "make deploy"
 check "stale lease: runs" "$(cat "$T/out")" ""
 # With a pool, the lease that counts is the targeted cluster's: KIND_CLUSTER=
 # in the command, else KIND_CLUSTER, else this checkout's leased one.
-LEASE2=$T/lease-c4factory-2.lease
+LEASE2=$T/lease-theos-2.lease
 lease "$T/other" "$(date +%s)"
-hook "make deploy KIND_CLUSTER=c4factory-2"
-check "c4factory held, deploy to c4factory-2: runs" "$(cat "$T/out")" ""
-KIND_CLUSTER=c4factory-2 hook "make deploy"
-check "c4factory held, KIND_CLUSTER=c4factory-2: runs" "$(cat "$T/out")" ""
-jq -n --arg wt "$REPO" --argjson b "$(date +%s)" '{cluster:"c4factory-2",name:"otter-9",issue:9,worktree:$wt,beat:$b}' >"$LEASE2"
+hook "make deploy KIND_CLUSTER=theos-2"
+check "theos held, deploy to theos-2: runs" "$(cat "$T/out")" ""
+KIND_CLUSTER=theos-2 hook "make deploy"
+check "theos held, KIND_CLUSTER=theos-2: runs" "$(cat "$T/out")" ""
+jq -n --arg wt "$REPO" --argjson b "$(date +%s)" '{cluster:"theos-2",name:"otter-9",issue:9,worktree:$wt,beat:$b}' >"$LEASE2"
 hook "make deploy"
-check "c4factory held, this checkout leased c4factory-2: runs" "$(cat "$T/out")" ""
-jq -n --arg wt "$T/other" --argjson b "$(date +%s)" '{cluster:"c4factory-2",name:"heron-51",issue:51,worktree:$wt,beat:$b}' >"$LEASE2"
-hook "KIND_CLUSTER=c4factory-2 make deploy"
-check "c4factory-2 held elsewhere, deploy to it: denied" "$(decision)" deny
-hook 'KIND_CLUSTER="c4factory-2" make deploy'
-check "c4factory-2 held elsewhere, quoted name: denied" "$(decision)" deny
-hook "make deploy KIND_CLUSTER='c4factory-2'"
-check "c4factory-2 held elsewhere, single-quoted name: denied" "$(decision)" deny
-case $(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out") in *"Kind cluster c4factory-2 is in use: heron-51"*) r=yes ;; *) r=no ;; esac
+check "theos held, this checkout leased theos-2: runs" "$(cat "$T/out")" ""
+jq -n --arg wt "$T/other" --argjson b "$(date +%s)" '{cluster:"theos-2",name:"heron-51",issue:51,worktree:$wt,beat:$b}' >"$LEASE2"
+hook "KIND_CLUSTER=theos-2 make deploy"
+check "theos-2 held elsewhere, deploy to it: denied" "$(decision)" deny
+hook 'KIND_CLUSTER="theos-2" make deploy'
+check "theos-2 held elsewhere, quoted name: denied" "$(decision)" deny
+hook "make deploy KIND_CLUSTER='theos-2'"
+check "theos-2 held elsewhere, single-quoted name: denied" "$(decision)" deny
+case $(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out") in *"Kind cluster theos-2 is in use: heron-51"*) r=yes ;; *) r=no ;; esac
 check "deny: names the cluster and its holder" $r yes
 rm -f "$LEASE2"
 
-rm -f "$C4_CLUSTER_LEASE"
+rm -f "$THEOS_CLUSTER_LEASE"
 hook "make up"
 check "no lease: runs" "$(cat "$T/out")" ""
 # A headless session never runs a cluster command, lease or not, and is never
 # told to lease one (#353).
 for c in "make deploy" "make e2e" "make up"; do
-  C4_HEADLESS=1 hook "$c"
+  THEOS_HEADLESS=1 hook "$c"
   check "headless, no lease, $c: denied" "$(decision)" deny
 done
 reason=$(jq -r .hookSpecificOutput.permissionDecisionReason "$T/out")
@@ -189,7 +189,7 @@ case $reason in *"cluster acquire"*) r=yes ;; *) r=no ;; esac
 check "headless deny: never says to acquire" $r no
 case $reason in *"make check"*) r=yes ;; *) r=no ;; esac
 check "headless deny: names the gate" $r yes
-C4_HEADLESS=1 hook "git commit -m 'next: make deploy then verify'"
+THEOS_HEADLESS=1 hook "git commit -m 'next: make deploy then verify'"
 check "headless, quoted: not a cluster command" "$(cat "$T/out")" ""
 meminfo 1
 hook "make deploy"

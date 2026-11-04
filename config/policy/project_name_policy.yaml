@@ -8,7 +8,7 @@ spec:
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
-      - apiGroups: ["c4.factory.io"]
+      - apiGroups: ["theos.factory.io"]
         apiVersions: ["*"]
         operations: ["CREATE"]
         resources: ["projects"]

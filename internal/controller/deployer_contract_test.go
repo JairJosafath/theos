@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -18,10 +18,10 @@ import (
 	"strings"
 	"testing"
 
-	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/contract"
+	githubdeploy "github.com/JairJosafath/theos/internal/adapters/github"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/contract"
 )
 
 // TestGitHubDeployerContract runs the Deployer's contract on the github

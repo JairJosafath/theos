@@ -13,4 +13,4 @@ $ go test ./internal/model/ -run "TestUsesLine|TestUsesNothingPublished|TestBrie
 === RUN   TestPlannerGuideShowsUses
 --- PASS: TestPlannerGuideShowsUses (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/model	0.014s
+ok  	github.com/JairJosafath/theos/internal/model	0.014s

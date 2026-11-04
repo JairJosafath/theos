@@ -23,7 +23,7 @@ func TestInstallVerifiesTheDownload(t *testing.T) {
 			t.Skipf("%s is not installed", tool)
 		}
 	}
-	binary := "#!/bin/sh\necho fake c4session\n"
+	binary := "#!/bin/sh\necho fake theos-session\n"
 	sum := fmt.Sprintf("%x", sha256.Sum256([]byte(binary)))
 	other := fmt.Sprintf("%x", sha256.Sum256([]byte("another build")))
 
@@ -33,17 +33,19 @@ func TestInstallVerifiesTheDownload(t *testing.T) {
 		installed bool
 		warning   string
 	}{
-		{"a matching SHA256SUMS installs", sum + "  c4session-linux-amd64\n" + other + "  c4session-linux-arm64\n", true, ""},
-		{"a mismatch is refused", other + "  c4session-linux-amd64\n", false, "checksum mismatch for c4session-linux-amd64"},
-		{"a SHA256SUMS without the binary is refused", other + "  c4session-linux-arm64\n", false,
-			"SHA256SUMS doesn't list c4session-linux-amd64"},
+		{"a matching SHA256SUMS installs",
+			sum + "  theos-session-linux-amd64\n" + other + "  theos-session-linux-arm64\n", true, ""},
+		{"a mismatch is refused", other + "  theos-session-linux-amd64\n", false,
+			"checksum mismatch for theos-session-linux-amd64"},
+		{"a SHA256SUMS without the binary is refused", other + "  theos-session-linux-arm64\n", false,
+			"SHA256SUMS doesn't list theos-session-linux-amd64"},
 		{"no SHA256SUMS is refused", "", false, "no SHA256SUMS next to the binary"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
-				case "/downloads/c4session-linux-amd64":
+				case "/downloads/theos-session-linux-amd64":
 					_, _ = fmt.Fprint(w, binary)
 				case "/downloads/SHA256SUMS":
 					if c.sums == "" {
@@ -58,23 +60,23 @@ func TestInstallVerifiesTheDownload(t *testing.T) {
 			defer srv.Close()
 
 			bin := t.TempDir()
-			cmd := exec.Command("sh", filepath.Join("src", "c4session", "install.sh"))
+			cmd := exec.Command("sh", filepath.Join("src", "theos-session", "install.sh"))
 			cmd.Env = append(os.Environ(),
-				"BINARYURL="+srv.URL+"/downloads/c4session-linux-amd64",
-				"C4SESSION_BIN_DIR="+bin)
+				"BINARYURL="+srv.URL+"/downloads/theos-session-linux-amd64",
+				"THEOS_SESSION_BIN_DIR="+bin)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("install.sh failed the build: %v\n%s", err, out)
 			}
 
-			got, readErr := os.ReadFile(filepath.Join(bin, "c4session"))
+			got, readErr := os.ReadFile(filepath.Join(bin, "theos-session"))
 			switch {
 			case c.installed && readErr != nil:
-				t.Errorf("c4session was not installed: %v\n%s", readErr, out)
+				t.Errorf("theos-session was not installed: %v\n%s", readErr, out)
 			case c.installed && string(got) != binary:
-				t.Errorf("installed c4session = %q, want the download", got)
+				t.Errorf("installed theos-session = %q, want the download", got)
 			case !c.installed && readErr == nil:
-				t.Errorf("an unverified c4session was installed\n%s", out)
+				t.Errorf("an unverified theos-session was installed\n%s", out)
 			}
 			if c.installed {
 				if !strings.Contains(string(out), "matches SHA256SUMS") {
@@ -83,12 +85,12 @@ func TestInstallVerifiesTheDownload(t *testing.T) {
 			} else if !strings.Contains(string(out), c.warning) || !strings.Contains(string(out), "was not installed") {
 				t.Errorf("install.sh output lacks %q and the not-installed warning:\n%s", c.warning, out)
 			}
-			leftovers, _ := filepath.Glob(filepath.Join(bin, "c4session.*"))
+			leftovers, _ := filepath.Glob(filepath.Join(bin, "theos-session.*"))
 			if len(leftovers) != 0 {
 				t.Errorf("install.sh left %v behind", leftovers)
 			}
-			if _, err := os.Stat(filepath.Join(bin, "c4session-start")); err != nil {
-				t.Errorf("c4session-start was not written: %v", err)
+			if _, err := os.Stat(filepath.Join(bin, "theos-session-start")); err != nil {
+				t.Errorf("theos-session-start was not written: %v", err)
 			}
 		})
 	}

@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/mod/module"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The fake host's package and container registries: Go modules, a release's

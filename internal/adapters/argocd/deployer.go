@@ -26,13 +26,13 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/oci"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/oci"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // FieldManager is the field manager Ship applies the Application with.
-const FieldManager = "c4factory"
+const FieldManager = "theos"
 
 // Finalizer is Argo CD's resources finalizer: a person deleting the
 // Application removes the app it runs.
@@ -41,8 +41,8 @@ const Finalizer = "resources-finalizer.argocd.argoproj.io"
 // Labels on the Application that find it from the Container, which the
 // Application can't own: it lives in another namespace.
 const (
-	LabelNamespace = "c4.factory.io/namespace"
-	LabelContainer = "c4.factory.io/container"
+	LabelNamespace = "theos.factory.io/namespace"
+	LabelContainer = "theos.factory.io/container"
 )
 
 // Argo CD's kinds, read and written as unstructured objects: the adapter

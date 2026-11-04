@@ -4,7 +4,7 @@
 
 **Goal:** A Crew's optional designer Agent turns `status/design` ideas into `status/ready` issues, wearing the hats of up to three experts the factory picks per repository at kickoff.
 
-**Architecture:** A design is a Task with `spec.kind: Design` that runs one sandbox with `C4_ROLE=design`. The designer pushes its output to `design/<issue>` (and the team to `team/<issue>` at kickoff). The operator reads it, checks it with pure functions in `internal/model`, and applies it to Gitea: rewrites the issue, files split-off issues, merges the team, labels it ready. The Crew starts design Tasks next to implement Tasks.
+**Architecture:** A design is a Task with `spec.kind: Design` that runs one sandbox with `THEOS_ROLE=design`. The designer pushes its output to `design/<issue>` (and the team to `team/<issue>` at kickoff). The operator reads it, checks it with pure functions in `internal/model`, and applies it to Gitea: rewrites the issue, files split-off issues, merges the team, labels it ready. The Crew starts design Tasks next to implement Tasks.
 
 **Tech Stack:** Go 1.26, kubebuilder/controller-runtime, envtest + Ginkgo, Gitea API, `claude -p` in agent sandboxes.
 

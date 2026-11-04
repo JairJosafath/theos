@@ -11,14 +11,14 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const happyModel = `apiVersion: c4.factory.io/v1beta1
+const happyModel = `apiVersion: theos.factory.io/v1beta1
 kind: Project
 metadata:
   name: shop
 spec:
   displayName: Shop
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
@@ -27,7 +27,7 @@ spec:
   needs: [orders]
   kpis: [orders per day]
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: api
@@ -37,7 +37,7 @@ spec:
   gitProviderRef: {name: gitea}
   frameworkRef: {name: go-service}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: web
@@ -49,7 +49,7 @@ spec:
   frameworkRef: {name: react-site}
   standardRef: {name: web-standard}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: DataStore
 metadata:
   name: db
@@ -57,7 +57,7 @@ spec:
   softwareSystemRef: {name: shop}
   connectorRef: {name: postgres}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: api-to-db
@@ -169,7 +169,7 @@ func TestParsePlan(t *testing.T) {
 // one the planner leaves out is Internal (#1150).
 func TestParsePlanLocation(t *testing.T) {
 	system := func(location string) string {
-		return "apiVersion: c4.factory.io/v1beta1\nkind: SoftwareSystem\nmetadata:\n  name: payments\nspec:\n" +
+		return "apiVersion: theos.factory.io/v1beta1\nkind: SoftwareSystem\nmetadata:\n  name: payments\nspec:\n" +
 			"  description: Takes the money\n" + location
 	}
 	tests := []struct {
@@ -243,7 +243,7 @@ func TestParsePlanErrors(t *testing.T) {
 		{"model isn't YAML", map[string]string{PlanModelFile: "kind: [Container"}, PlanModelFile},
 		{"a document without a name", map[string]string{PlanModelFile: "kind: Person\n"}, PlanModelFile},
 		{"a field the kind doesn't have", map[string]string{
-			PlanModelFile: "apiVersion: c4.factory.io/v1beta1\nkind: Person\nmetadata: {name: ann}\nspec: {type: service}\n"},
+			PlanModelFile: "apiVersion: theos.factory.io/v1beta1\nkind: Person\nmetadata: {name: ann}\nspec: {type: service}\n"},
 			PlanModelFile},
 		{"an empty needs-input", map[string]string{PlanNeedsInputFile: " \n", PlanModelFile: ""}, PlanNeedsInputFile},
 		{"an issue file badly named", map[string]string{PlanModelFile: "", "plan/issues/web.md": readyIssue},
@@ -370,7 +370,7 @@ func TestCheckPlan(t *testing.T) {
 		}, "Container/web", PlanAPIVersion},
 		// #1617: a plan at a served older version applies through conversion.
 		{"a story kind at the served v1alpha1", func(p *Plan, _ *CurrentModel) {
-			object(p, "Container/web").APIVersion = "c4.factory.io/v1alpha1"
+			object(p, "Container/web").APIVersion = "theos.factory.io/v1alpha1"
 		}, "", ""},
 		{"a name that isn't a DNS label", func(p *Plan, _ *CurrentModel) {
 			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindPerson, Name: "Ann_B"})
@@ -616,12 +616,12 @@ func TestCheckPlan(t *testing.T) {
 			p.Issues[0].Body = "## Goal\n\nThe reviewer checks orders.\n\n## Acceptance criteria\n\n" +
 				"- [ ] `docs/agents/reviewer.md` says to check orders\n"
 		}, "plan/issues/01-web.md", "names docs/agents/reviewer.md in its acceptance criteria, a path no change " +
-			"may make: `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` are the agents' rules and the platform's " +
+			"may make: `AGENTS.md`, `docs/agents/` and `.theos.yaml` are the agents' rules and the platform's " +
 			"settings. File no issue for it; say what wasn't planned in plan/summary.md and why in plan/choices.md. " +
 			"Notes for the agents go in docs/project-notes.md"},
-		{"an issue whose criteria name .c4factory.yaml", func(p *Plan, _ *CurrentModel) {
-			p.Issues[1].Body += "- [ ] .c4factory.yaml names the new check.\n"
-		}, "plan/issues/02-api.md", "names .c4factory.yaml in its acceptance criteria"},
+		{"an issue whose criteria name .theos.yaml", func(p *Plan, _ *CurrentModel) {
+			p.Issues[1].Body += "- [ ] .theos.yaml names the new check.\n"
+		}, "plan/issues/02-api.md", "names .theos.yaml in its acceptance criteria"},
 		{"an issue whose body names AGENTS.md outside its criteria", func(p *Plan, _ *CurrentModel) {
 			p.Issues[0].Body = "## Goal\n\nList the orders, as AGENTS.md says.\n\n## Acceptance criteria\n\n" +
 				"- [ ] A page lists the orders\n\n## Notes\n\nSee `docs/agents/implementer.md`.\n"
@@ -909,12 +909,12 @@ func TestBriefIssueBodyUsing(t *testing.T) {
 	issue := PlanIssue{N: 3, Body: "## Goal\n\nCheck a file."}
 	got := BriefIssueBodyUsing(issue, "cel-lens", 1,
 		[]BuildsOn{{Repository: "shop/core", Number: 2, Title: "The checker"}},
-		[]UsedPackage{{Ecosystem: EcosystemGo, Name: "c4factory.local/cel-lens/cel-lens-core", Version: "v0.1.0"},
-			{Ecosystem: EcosystemNpm, Name: "@c4factory/cel-lens-core", Version: "0.1.0"}})
+		[]UsedPackage{{Ecosystem: EcosystemGo, Name: "theos.local/cel-lens/cel-lens-core", Version: "v0.1.0"},
+			{Ecosystem: EcosystemNpm, Name: "@theos/cel-lens-core", Version: "0.1.0"}})
 	want := "## Goal\n\nCheck a file.\n\n" +
 		"Builds on shop/core#2 (The checker).\n\n" +
-		"Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that version.\n" +
-		"Uses npm package @c4factory/cel-lens-core 0.1.0: npm install --save-exact @c4factory/cel-lens-core@0.1.0.\n\n" +
+		"Uses theos.local/cel-lens/cel-lens-core v0.1.0: go get it at that version.\n" +
+		"Uses npm package @theos/cel-lens-core 0.1.0: npm install --save-exact @theos/cel-lens-core@0.1.0.\n\n" +
 		"<!-- c4-brief: cel-lens/1/3 -->\n"
 	if got != want {
 		t.Errorf("body\n%q\nwant\n%q", got, want)
@@ -931,16 +931,16 @@ func TestUsesLine(t *testing.T) {
 		pkg  UsedPackage
 		want string
 	}{
-		{"Go module", UsedPackage{Ecosystem: EcosystemGo, Name: "c4factory.local/cel-lens/cel-lens-core", Version: "v0.1.0"},
-			"Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that version."},
-		{"Go module, ecosystem unset", UsedPackage{Name: "c4factory.local/cel-lens/cel-lens-core", Version: "v0.1.0"},
-			"Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that version."},
-		{"npm, the default scope", UsedPackage{Ecosystem: EcosystemNpm, Name: "@c4factory/cel-lens-core", Version: "0.1.0"},
-			"Uses npm package @c4factory/cel-lens-core 0.1.0: npm install --save-exact @c4factory/cel-lens-core@0.1.0."},
+		{"Go module", UsedPackage{Ecosystem: EcosystemGo, Name: "theos.local/cel-lens/cel-lens-core", Version: "v0.1.0"},
+			"Uses theos.local/cel-lens/cel-lens-core v0.1.0: go get it at that version."},
+		{"Go module, ecosystem unset", UsedPackage{Name: "theos.local/cel-lens/cel-lens-core", Version: "v0.1.0"},
+			"Uses theos.local/cel-lens/cel-lens-core v0.1.0: go get it at that version."},
+		{"npm, the default scope", UsedPackage{Ecosystem: EcosystemNpm, Name: "@theos/cel-lens-core", Version: "0.1.0"},
+			"Uses npm package @theos/cel-lens-core 0.1.0: npm install --save-exact @theos/cel-lens-core@0.1.0."},
 		{"npm, a custom scope", UsedPackage{Ecosystem: EcosystemNpm, Name: "@acme/cel-lens-core", Version: "0.1.0"},
 			"Uses npm package @acme/cel-lens-core 0.1.0: npm install --save-exact @acme/cel-lens-core@0.1.0."},
 		{"PyPI, with its index", UsedPackage{Ecosystem: EcosystemPyPI, Name: "cel-lens-core", Version: "0.1.0", Index: index},
-			"Uses PyPI package cel-lens-core 0.1.0 from the c4factory index " + index +
+			"Uses PyPI package cel-lens-core 0.1.0 from the theos index " + index +
 				": uv add cel-lens-core==0.1.0, pinned to that index as AGENTS.md says."},
 	}
 	for _, tt := range tests {
@@ -1021,7 +1021,7 @@ func TestSpecLimitsMatchTheCRDs(t *testing.T) {
 		KindContainer: "containers", KindDataStore: "datastores", KindRelationship: "relationships"}
 	for _, kind := range planKinds {
 		t.Run(kind, func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join("..", "..", "config", "crd", "bases", "c4.factory.io_"+plural[kind]+".yaml"))
+			data, err := os.ReadFile(filepath.Join("..", "..", "config", "crd", "bases", "theos.factory.io_"+plural[kind]+".yaml"))
 			if err != nil {
 				t.Fatal(err)
 			}

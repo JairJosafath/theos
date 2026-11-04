@@ -1,15 +1,15 @@
-# C4 Factory: Design
+# theos: Design
 
 The spec: what the factory is and does. How it got here, with each step's date
 and reasons, is [design-history.md](design-history.md); the plans in
 [plans/done/](plans/done/) hold every decision's why. Where this says
 *decided, not built*, the issue named builds it.
 
-[![How C4 Factory works today: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](images/how-it-works.png)](images/how-it-works.svg)
+[![How theos works today: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](images/how-it-works.png)](images/how-it-works.svg)
 
 ## Purpose
 
-C4 Factory turns an idea into working repositories by first telling its story
+theos turns an idea into working repositories by first telling its story
 as a C4-inspired model. The model lives in Kubernetes custom resources, a
 kubebuilder operator acts on it, agents build the apps from issues, and a UI
 draws the story on top.
@@ -41,7 +41,7 @@ draws the story on top.
 
 ## The model
 
-Twenty namespaced kinds in `c4.factory.io/v1beta1`, the version users write
+Twenty namespaced kinds in `theos.factory.io/v1beta1`, the version users write
 (`v1alpha1` is deprecated; Compatibility). Every child names its parent in
 `spec`; the operator turns that into the ownerReference, so deletion
 follows the tree. `metadata.name` is the stable id; `displayName` and
@@ -161,11 +161,11 @@ Domains catalog page, a system's Domains and a Container's `DomainsApplied`.
    serve with `{{ fail "why" }}`: the render stops and the Container is
    `Failed` with that message, as a Connector no Framework file calls does.
    Each CI system's files sit under
-   `.c4factory/ci/<system>/` and render at the root only for the Container's;
+   `.theos/ci/<system>/` and render at the root only for the Container's;
    a template with CI files but none for it fails, `UnsupportedCI`.
 5. **Assemble the devcontainer:** the Framework's settings plus a compose
    service per Connector.
-6. **Write `.c4factory.yaml`** with the project, the container and the
+6. **Write `.theos.yaml`** with the project, the container and the
    scaffold's refs.
 7. **Write `LICENSE`** when the Container's `spec.license`, else its
    Project's, names one: an SPDX id from the set the operator holds the text
@@ -175,7 +175,7 @@ Domains catalog page, a system's Domains and a Container's `DomainsApplied`.
    SPDX one; where it has a copyright line, the year is the scaffold's and
    the holder the Project's `displayName`, else its name. The factory never
    picks a license: with none set, no file. It is an operator path like
-   `.c4factory.yaml`, which records the id; a layer writing `LICENSE` is the
+   `.theos.yaml`, which records the id; a layer writing `LICENSE` is the
    two-layers collision below. Read at scaffold only: changing the setting
    later rewrites nothing, and a Container already scaffolded gets its
    license by a commit ([plans/license.md](plans/license.md)).
@@ -186,12 +186,12 @@ Every file belongs to exactly one layer: two layers writing a path fail the
 Container, naming it. An empty existing repository gets the commit again; one
 with commits the operator didn't make stops it `Failed`. A `Failed` Container
 tries again when something it depends on changes, or when its
-`c4.factory.io/retry` annotation is set or changed.
+`theos.factory.io/retry` annotation is set or changed.
 
 **Adopting a repository.** A Container with `spec.adopt: true` (set at
 creation, immutable) takes over a repository that already has commits and
 is never scaffolded: the operator writes nothing. It checks main for two
-things. `.c4factory.yaml` carries the identity file's fields, naming this
+things. `.theos.yaml` carries the identity file's fields, naming this
 project and Container, with `scaffoldedFrom` empty since nothing was
 scaffolded; a missing file or another identity fails `IdentityMismatch`,
 saying what the file holds. Every file the Container's Standard renders for
@@ -225,7 +225,7 @@ with conditions `ReferencesResolved`, `ChoicesValid`, `RepositoryCreated`,
 Project status carries `factory: {operatorVersion, chartVersion}`.
 
 **Sessions.** A devcontainer feature installs a Go client that reads
-`.c4factory.yaml`, creates a Session on its Container (actor and a one-line
+`.theos.yaml`, creates a Session on its Container (actor and a one-line
 summary), heartbeats every 30 seconds and deletes it on stop. The operator
 marks one `Stale` after 2 minutes without a heartbeat and counts the Active
 ones. The client's per-namespace ServiceAccount may only write Sessions.
@@ -302,11 +302,11 @@ on a Standard change), then `Merged` or `Failed`.
   `--sandbox-checkpoint-storage-class`, the chart's `checkpointStorageClass`):
   empty is the cluster's default class, and `none` gives sandboxes no volume,
   for a cluster without a class to provision one; their interrupted runs are
-  rerun. Told to stop, c4agent ends the agent's session, then saves a `hard`
+  rerun. Told to stop, theos-agent ends the agent's session, then saves a `hard`
   checkpoint: the working tree as a git bundle of the commits the remote
   lacks (uncommitted changes as a commit inside it, never pushed), the
   session's Claude Code transcript (each session starts
-  with a `--session-id` c4agent records), and `state.json` (format version,
+  with a `--session-id` theos-agent records), and `state.json` (format version,
   the run's step, session ID, handoffs, model, cost and tokens so far,
   `clean` or `hard`). The workspace stays in memory. When the infrastructure
   interrupts a run whose sandbox has the volume, the operator counts what the
@@ -315,7 +315,7 @@ on a Standard change), then `Merged` or `Failed`.
   current Agent's image and env and the run's remaining time (its timeout
   less what its pods ran, at least ten minutes) into the pod template, clears
   `status.sandboxPod` and sets it `Running`: a resumed run gets the current
-  runner and fence. The new pod's c4agent restores the
+  runner and fence. The new pod's theos-agent restores the
   bundle after its clone and goes on at the recorded step in a fresh session,
   told what the stopped one left (the note it writes for a session it ended);
   an unreadable checkpoint, or one of an unknown version, starts the run over.
@@ -334,15 +334,15 @@ on a Standard change), then `Merged` or `Failed`.
   half way puts the clone back as it was cloned before the run starts over.
   A `clean` checkpoint is saved when a run pauses at a tool boundary (below);
   on the same model it resumes the same session with `claude -p --resume`.
-  Between tool calls, `pause-guard` also has c4agent save a `hard`
+  Between tool calls, `pause-guard` also has theos-agent save a `hard`
   checkpoint when the last is 10 minutes old, and the session goes on; a
   pod lost without warning (a power loss, `wsl --shutdown`) resumes from it.
-- **An unavailable agent's run waits, suspended.** c4agent saves a
+- **An unavailable agent's run waits, suspended.** theos-agent saves a
   checkpoint before it reports `Unavailable`: `clean` when the agent ended
-  on the service's error, its transcript whole, `hard` when c4agent had to
+  on the service's error, its transcript whole, `hard` when theos-agent had to
   stop it. Its result says it saved one (`checkpoint`). The operator counts
   what the run cost so far, suspends the Sandbox as for an interruption,
-  marked with when the agent is back (`c4.factory.io/agent-back-at`: the
+  marked with when the agent is back (`theos.factory.io/agent-back-at`: the
   service's `RetryAt`, or 15 minutes on) and without its shutdown time, and
   resumes it then with the current Agent. The resumed session is told the
   service was unavailable. The wait costs no round, rerun or resume. Once
@@ -369,7 +369,7 @@ on a Standard change), then `Merged` or `Failed`.
   operator merges the reviewed change after its checks. It never weakens a
   check (no target, test, lint rule or CI job removed or skipped): the
   implementer stops with a `Blocked:` line instead. The agents' rules and
-  `.c4factory.yaml` stay out of reach.
+  `.theos.yaml` stay out of reach.
 - **A Task keeps its record:** `status.history`, `status.runs` per agent run,
   the cost (`status.costMilliUSD`) and tokens (`status.tokens`, with
   `largestSession`) its agents reported. `WaitingForSlot` says it waits for
@@ -378,7 +378,7 @@ on a Standard change), then `Merged` or `Failed`.
   "Past the limit" counts use the Agent's current limit and the Task's current
   Agent, since a run records neither, so changing either rejudges past runs.
 - **A long session hands off.** Past its Agent's `sessionTokenLimit` (default
-  130000) a session writes where it stands and stops; the runner, `c4agent`,
+  130000) a session writes where it stands and stops; the runner, `theos-agent`,
   starts a fresh one with that note (`status.tokens.sessionHandoffs`).
 
 ### The fence
@@ -468,11 +468,11 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
 
 - **Pausing runs.** `spec.pauseRuns`, which CEL allows only with `paused`,
   pauses the Crew's running Tasks at their next tool boundary. The operator
-  sets the annotation `c4.factory.io/pause: <reason>` on the pod template of
+  sets the annotation `theos.factory.io/pause: <reason>` on the pod template of
   each running Task's Sandbox, the one thing it changes under a running
   agent; Agent Sandbox copies it onto the pod, and the pod sees its own
-  annotations through a downward API volume at `/etc/c4agent/podinfo`.
-  c4agent's `pause-guard` hook stops the agent after its current tool (a tool
+  annotations through a downward API volume at `/etc/theos-agent/podinfo`.
+  theos-agent's `pause-guard` hook stops the agent after its current tool (a tool
   still running five minutes on is ended as on `SIGTERM`), saves a `clean`
   checkpoint and reports `Paused`. The operator counts what the run cost so
   far, suspends the Sandbox as it does an interrupted run's and drops its
@@ -520,7 +520,7 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
 - **The release run.** `status.lastRelease.run` sums the runs the tag started
   (`Waiting`, `Running`, `Failed`, `Succeeded`), with Events
   `ReleaseRunFailed` and, past an hour, `ReleaseRunOverdue`. Setting or
-  changing `c4.factory.io/rerun-release` on a `Failed` run re-runs its failed
+  changing `theos.factory.io/rerun-release` on a `Failed` run re-runs its failed
   jobs, once per value.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
@@ -533,9 +533,9 @@ The operator moves bytes with credentials it holds; it builds nothing.
 - **A Go module.** A tagged repository with a root `go.mod` is published to
   the Git host's Go registry (`status.lastRelease.goModule`).
   `ModulePublished` turns True once `go get <path>@<version>` finds it: a
-  `c4factory.local/` path through the registry, any other through the public
+  `theos.local/` path through the registry, any other through the public
   proxy (`--go-proxy`), else `NotFetchable` or `ProxyUnavailable`. Agent pods
-  and the Go Standard's CI fetch `c4factory.local/...` from the registry.
+  and the Go Standard's CI fetch `theos.local/...` from the registry.
 - **npm and PyPI packages** (#1087): the release's npm tarballs, wheels and
   sdists, published once to the npm registry and the PyPI index
   `GitProvider.spec.packages` names, by default the Git host's own, by the
@@ -546,7 +546,7 @@ The operator moves bytes with credentials it holds; it builds nothing.
   condition `PackagesPublished` turns True at `Published` or `NoPackage`; an
   upload is a Normal Event `PackagePublished`, an invalid file a Warning
   `InvalidPackage`, once per release. npm packages are named
-  `<scope>/<container>`; the scope is a setting there too, `@c4factory` by
+  `<scope>/<container>`; the scope is a setting there too, `@theos` by
   default, and a tarball outside it is left alone and named in the message
   with the scope it lacks. The factory claims no name on
   npmjs.org or any public registry (#1234): by default nothing leaves the
@@ -557,7 +557,7 @@ The operator moves bytes with credentials it holds; it builds nothing.
   (a repository and a token Secret for it alone) copies the tag, notes and
   files once the runs succeed; the operator does it, not CI, so the token
   never meets the agents' code. It refuses a renamed or replaced target
-  (`Published=False`) until `c4.factory.io/accept-repository: <id>` accepts
+  (`Published=False`) until `theos.factory.io/accept-repository: <id>` accepts
   it. The same copy is a `github` DeployTarget's (the Deploys section), and
   the Crew's field ships through the same code path, its `Published`
   condition and reasons kept. The field stays valid and working in
@@ -590,8 +590,8 @@ new ref and opens a pull request with the difference, which it merges as
 admin once CI passes. A file the repository changed since is merged three-way
 when the changes don't overlap; one that overlaps is left out, listed in
 `status.standard.behind` with its diff (`StandardUpdated=False`,
-`FilesBehind`), until a person sets `c4.factory.io/standard-take` (the
-operator merges the Standard's version) or `c4.factory.io/standard-keep`
+`FilesBehind`), until a person sets `theos.factory.io/standard-take` (the
+operator merges the Standard's version) or `theos.factory.io/standard-keep`
 naming the ref. No agent takes part. `scaffoldedFrom` keeps the scaffold's
 refs, `status.standard` the current. A Container that got its Standard from a
 Bundle keeps following the Standard itself; a changed Bundle is only reported
@@ -665,7 +665,7 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   Container would show, and the Container is created on the Bundle. The operator makes a Crew per new Container
   and files the issues once it is Ready, ordered by their `after:` front
   matter as Git host dependencies. What it made carries the label
-  `c4.factory.io/brief`. A failed step says where and why
+  `theos.factory.io/brief`. A failed step says where and why
   (`Planned=False`, `ApplyFailed`). A round that waits for a Container that
   stopped (phase `Failed`) keeps waiting and says why: its `Planned` message
   carries the Container's failing condition's reason and message after the
@@ -703,7 +703,7 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   round; `Paused` names the Tasks still running. `spec.pauseRuns`, only with
   `paused`, passes on to the Crews it paused, as `paused` does, and pauses
   its planner Task's run too; `Paused` then names the Tasks still stopping. No issue may ask to change
-  `model.AgentNeverPaths` (`AGENTS.md`, `docs/agents/`, `.c4factory.yaml`).
+  `model.AgentNeverPaths` (`AGENTS.md`, `docs/agents/`, `.theos.yaml`).
 - **Follow-ups keep scaffold once:** a change to a scaffolded Container is an
   issue in its repository, a new Relationship's wiring too.
 - **Its status tells the story:** each round's summary for the person, its
@@ -747,8 +747,8 @@ other path, method, content type or field, and by RBAC for anything else:
 | Brief | `POST` | a new Brief |
 | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.pauseRuns`, `spec.autopilot`, `spec.parallel`, `spec.releases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.pauseRuns`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
-| Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
-| Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take`, `c4.factory.io/standard-keep` |
+| Crew | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` |
+| Container | `PATCH`, merge patch | annotations `theos.factory.io/retry`, `theos.factory.io/standard-take`, `theos.factory.io/standard-keep` |
 | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` and a `test` of the approval the page showed: its old `approved`, or, when it had none, the whole entry as read (JSON Patch can't test a missing member), so a stale page fails, and says it is out of date, rather than overwrite a newer approval, a first one too |
 | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
 | Standard | `PATCH`, JSON patch | `spec.template.ref` |
@@ -880,7 +880,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   already scaffolded. The
   values compared are the GitProvider's token, the Container's agent Git
   token, its namespace's Agents' token Secrets (their keys naming a token, key, secret, password or credential) and the target's own Secret.
-  A line marked `c4factory:allow-secret` is skipped, and the message says
+  A line marked `theos:allow-secret` is skipped, and the message says
   how many when nothing else is found; release files and images are not
   scanned. The image
   goes by digest to `ghcr.io/<owner>/<repository>/<name>` (the repository
@@ -967,7 +967,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 ## Distribution and issues
 
 This repository develops the factory and holds no product. A `vX.Y.Z` tag
-publishes the Helm chart at `oci://ghcr.io/jairjosafath/c4factory/charts` and
+publishes the Helm chart at `oci://ghcr.io/jairjosafath/theos/charts` and
 its images on GHCR. The release installs:
 
 | Part | Where | Notes |
@@ -976,7 +976,7 @@ its images on GHCR. The release installs:
 | UI | release namespace | `ui.enabled`, on by default; actions off |
 | Gitea and its CI runners `base` and `go` | `gitea.namespace` | `gitea.enabled`, on by default; secrets generated in the cluster, never rendered by Helm |
 | Seed job | Gitea's namespace | after every install and upgrade: templates, a GitProvider and Project per `gitea.projects` entry, the catalog and Agents applied in place |
-| Project namespaces | each of `gitea.projects` | made when missing, labeled `c4.factory.io/shared-secrets: "true"`, kept on uninstall |
+| Project namespaces | each of `gitea.projects` | made when missing, labeled `theos.factory.io/shared-secrets: "true"`, kept on uninstall |
 | Shared Secrets | copied from the release namespace | the pull Secrets; a project's own Secret of that name wins. The Agents' token is read by the model proxy there and never copied |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release doesn't run |
 
@@ -987,7 +987,7 @@ reports issues through the form *Report from a device*.
 
 ## Compatibility
 
-**An object a client stored keeps validating across upgrades.** `c4.factory.io`
+**An object a client stored keeps validating across upgrades.** `theos.factory.io`
 serves `v1beta1`, the version users write and every kind stores, and
 `v1alpha1`, deprecated since v0.30.0 and converted (below; its drop is #1963).
 A release keeps every object of the one before valid and meaning what it
@@ -1010,7 +1010,7 @@ with an object may change, as the release notes say.
   it, as `v1alpha1` did and `v1beta1` does.
 - **Every served version converts to and from the storage version** without
   failing and without loss. A field with no home in the target version rides
-  in the annotation `c4.factory.io/<version>-fields` as JSON, so a round trip
+  in the annotation `theos.factory.io/<version>-fields` as JSON, so a round trip
   gives the object back exactly.
 - **A release deprecates a version** by saying so under *Deprecated* in its
   notes and marking the CRD version `deprecated: true`, with a

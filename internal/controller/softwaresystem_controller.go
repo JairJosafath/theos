@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -18,8 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // SoftwareSystemReconciler rolls up the state of a system's Containers. The
@@ -29,9 +29,9 @@ type SoftwareSystemReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=softwaresystems,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=softwaresystems/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=softwaresystems/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=softwaresystems,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=softwaresystems/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=softwaresystems/finalizers,verbs=update
 
 // Reconcile counts the system's Containers, DataStores and active Sessions.
 func (r *SoftwareSystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

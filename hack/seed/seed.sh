@@ -12,7 +12,7 @@
 #      each project's namespace when it has none, so the UI can take a Brief
 #      there; it never changes or deletes one;
 #   7. with SHARE_SECRETS=true (the Helm chart), labels each project's namespace
-#      c4.factory.io/shared-secrets=true, which opts it in to the Secrets the
+#      theos.factory.io/shared-secrets=true, which opts it in to the Secrets the
 #      operator shares (claude-credentials, the pull Secrets).
 #   8. with CATALOG set (the Helm chart), applies that file's GitProviders,
 #      catalog and Agents in place (catalog.sh), last, once the templates are
@@ -45,8 +45,8 @@ CREDENTIALS_SECRET=${CREDENTIALS_SECRET:-gitea-credentials}
 # write:package lets it publish a released Container's Go module.
 TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:issue,write:organization,write:package,write:repository,read:user}
 # File mode: each project's credentials go to CREDENTIALS_DIR/PROJECT.env (mode
-# 0600) as C4_GITEA_URL, C4_GITEA_USERNAME, C4_GITEA_TOKEN and
-# C4_GITEA_TOKEN_SCOPES, not to a Secret; there is no runner to register.
+# 0600) as THEOS_GITEA_URL, THEOS_GITEA_USERNAME, THEOS_GITEA_TOKEN and
+# THEOS_GITEA_TOKEN_SCOPES, not to a Secret; there is no runner to register.
 CREDENTIALS_DIR=${CREDENTIALS_DIR:-}
 RUNNER_SECRET=${RUNNER_SECRET-gitea-runner}
 if [[ -n $CREDENTIALS_DIR ]]; then RUNNER_SECRET=""; fi
@@ -55,12 +55,12 @@ PROJECT_OBJECTS=${PROJECT_OBJECTS:-false}
 if [[ -n $CREDENTIALS_DIR ]]; then PROJECT_OBJECTS=false; fi
 SHARE_SECRETS=${SHARE_SECRETS:-false}
 if [[ -n $CREDENTIALS_DIR ]]; then SHARE_SECRETS=false; fi
-SHARED_LABEL=c4.factory.io/shared-secrets
-# The chart's ConfigMap c4factory-catalog, mounted; empty: none.
+SHARED_LABEL=theos.factory.io/shared-secrets
+# The chart's ConfigMap theos-catalog, mounted; empty: none.
 CATALOG=${CATALOG:-}
 if [[ -n $CREDENTIALS_DIR ]]; then CATALOG=""; fi
 
-export GIT_AUTHOR_NAME="C4 Factory seed" GIT_AUTHOR_EMAIL="seed@c4.factory.io"
+export GIT_AUTHOR_NAME="theos seed" GIT_AUTHOR_EMAIL="seed@theos.factory.io"
 export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
 export GIT_TERMINAL_PROMPT=0
 
@@ -155,7 +155,7 @@ seed_template() {
   api GET "/repos/$repo"
   if [[ $STATUS == 404 ]]; then
     api POST "/orgs/$TEMPLATE_ORG/repos" "$(jq -nc --arg n "$name" \
-      '{name: $n, description: "C4 Factory template \($n)", private: false, default_branch: "main"}')"
+      '{name: $n, description: "theos template \($n)", private: false, default_branch: "main"}')"
     expect "Creating repository $repo" 201
     log "Created repository $repo"
   else
@@ -206,10 +206,10 @@ token_works() {
     curl -s -o /dev/null -w '%{http_code}' -H @- "$GITEA_URL/api/v1/user") == 200 ]]
 }
 
-# new_token PROJECT FILE: a new admin token c4factory-PROJECT with TOKEN_SCOPES,
+# new_token PROJECT FILE: a new admin token theos-PROJECT with TOKEN_SCOPES,
 # written to FILE (mode 0600), replacing the previous one.
 new_token() {
-  local token_name="c4factory-$1" file=$2
+  local token_name="theos-$1" file=$2
   # Token names are unique per user, so drop our previous token first.
   api DELETE "/users/$GITEA_USERNAME/tokens/$token_name"
   expect "Deleting old token $token_name" 204 404
@@ -227,8 +227,8 @@ new_token() {
 ensure_credentials_file() {
   local project=$1 file="$CREDENTIALS_DIR/$1.env" token="" scopes=""
   if [[ -f $file ]]; then
-    token=$(sed -n 's/^C4_GITEA_TOKEN=//p' "$file")
-    scopes=$(sed -n 's/^C4_GITEA_TOKEN_SCOPES=//p' "$file")
+    token=$(sed -n 's/^THEOS_GITEA_TOKEN=//p' "$file")
+    scopes=$(sed -n 's/^THEOS_GITEA_TOKEN_SCOPES=//p' "$file")
     if [[ -z $token ]]; then
       log "$file holds no token; replacing it"
     elif [[ $scopes != "$TOKEN_SCOPES" ]]; then
@@ -244,10 +244,10 @@ ensure_credentials_file() {
   mkdir -p "$CREDENTIALS_DIR"
   # Written next to the file and moved, so a reader never sees half of it.
   (umask 077 && {
-    printf 'C4_GITEA_URL=%s\n' "$GITEA_URL"
-    printf 'C4_GITEA_USERNAME=%s\n' "$GITEA_USERNAME"
-    printf 'C4_GITEA_TOKEN=%s\n' "$(cat "$WORK/token-$project")"
-    printf 'C4_GITEA_TOKEN_SCOPES=%s\n' "$TOKEN_SCOPES"
+    printf 'THEOS_GITEA_URL=%s\n' "$GITEA_URL"
+    printf 'THEOS_GITEA_USERNAME=%s\n' "$GITEA_USERNAME"
+    printf 'THEOS_GITEA_TOKEN=%s\n' "$(cat "$WORK/token-$project")"
+    printf 'THEOS_GITEA_TOKEN_SCOPES=%s\n' "$TOKEN_SCOPES"
   } > "$file.tmp")
   mv "$file.tmp" "$file"
   log "Stored the token in $file"
@@ -278,8 +278,8 @@ ensure_credentials() {
   # Server-side apply: no last-applied annotation carrying the token around.
   kubectl -n "$ns" create secret generic "$secret" --from-file="$creds" \
     --dry-run=client -o yaml |
-    kubectl annotate --local -f - "c4.factory.io/token-scopes=$TOKEN_SCOPES" -o yaml |
-    kubectl apply --server-side --field-manager=c4factory-seed --force-conflicts -f - >/dev/null
+    kubectl annotate --local -f - "theos.factory.io/token-scopes=$TOKEN_SCOPES" -o yaml |
+    kubectl apply --server-side --field-manager=theos-seed --force-conflicts -f - >/dev/null
   log "Stored the token as Secret $ns/$secret (keys username, token)"
 }
 
@@ -290,7 +290,7 @@ ensure_credentials() {
 # project's checks run on the operator's per-project pool of single-job
 # runners (docs/plans/ci-runner-isolation.md). Gitea hands out the token it
 # has until it is reset, so a Secret holding it is kept (the upgrade check
-# sees it unchanged); the annotation c4.factory.io/token-owner says whose
+# sees it unchanged); the annotation theos.factory.io/token-owner says whose
 # token it is, and a Secret without it, an instance token an older seed or
 # chart stored, is replaced.
 ensure_runner_token() {
@@ -309,8 +309,8 @@ ensure_runner_token() {
   fi
   kubectl -n "$ns" create secret generic "$secret" --from-file=token="$file" \
     --dry-run=client -o yaml |
-    kubectl annotate --local -f - "c4.factory.io/token-owner=$owner" -o yaml |
-    kubectl apply --server-side --field-manager=c4factory-seed --force-conflicts -f - >/dev/null
+    kubectl annotate --local -f - "theos.factory.io/token-owner=$owner" -o yaml |
+    kubectl apply --server-side --field-manager=theos-seed --force-conflicts -f - >/dev/null
   log "Stored organization $TEMPLATE_ORG's runner registration token as Secret $ns/$secret"
 }
 
@@ -319,12 +319,12 @@ ensure_runner_token() {
 # applied: a Project someone wrote, or a Brief's planner described, stays as is.
 ensure_project() {
   local ns=$1
-  if kubectl -n "$ns" get projects.c4.factory.io "$ns" >/dev/null 2>&1; then
+  if kubectl -n "$ns" get projects.theos.factory.io "$ns" >/dev/null 2>&1; then
     log "Project $ns/$ns exists; keeping it"
     return
   fi
   kubectl create -f - >/dev/null <<EOF
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Project
 metadata:
   name: $ns
@@ -349,7 +349,7 @@ ensure_shared_label() {
 
 main() {
   wait_for_gitea
-  ensure_org "$TEMPLATE_ORG" "Template repositories for the C4 Factory catalog"
+  ensure_org "$TEMPLATE_ORG" "Template repositories for the theos catalog"
   local project
   for project in $PROJECTS; do
     ensure_org "$project" "Container repositories of project $project"

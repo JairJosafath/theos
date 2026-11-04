@@ -44,7 +44,7 @@
 # closes; the watch catches the ones they missed, while the relay was down.
 # In the same look it escalates stale claims (hack/lib/github.sh stale
 # --apply, #1513): a live claim on an in-progress issue with no commit,
-# handoff or start for C4_CLAIM_STALE (2h) goes to status/needs-maintainer
+# handoff or start for THEOS_CLAIM_STALE (2h) goes to status/needs-maintainer
 # with one comment; the claim is left alone, as its heartbeat says it may
 # still be worked. Every device's watch sees every claim; the comment's marker
 # keeps it to one escalation per stale stretch.
@@ -90,7 +90,7 @@
 # under the Maintainer report's Health only (hack/lib/github.sh report-note
 # tmp-<host>, with no Needs you line), kept current while it lasts
 # (.relay/tmp-full), and removes it when /tmp drops back. Relay sessions keep
-# their scratch in ~/.cache/c4factory/tmp (#1269, #1307), so what fills /tmp is
+# their scratch in ~/.cache/theos/tmp (#1269, #1307), so what fills /tmp is
 # someone else's.
 #
 # Each pass, busy or idle, it may start the maintainer (hack/relay.sh
@@ -161,8 +161,8 @@
 set -uo pipefail
 
 CODE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-REPO=${C4_RELAY_REPO:-$CODE}
-unset C4_RELAY_REPO
+REPO=${THEOS_RELAY_REPO:-$CODE}
+unset THEOS_RELAY_REPO
 # shellcheck source=hack/lib/session-env.sh
 . "$CODE/hack/lib/session-env.sh"
 # shellcheck source=hack/lib/relay-code.sh
@@ -228,12 +228,12 @@ cycles() { github cycles --report; }
 parents() { github parents --apply; }
 stale_claims() { github stale --apply; }
 proposed() { github proposed "$@"; }
-run_relay() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --workers "$WORKERS"; }
-run_triage() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
+run_relay() { THEOS_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --workers "$WORKERS"; }
+run_triage() { THEOS_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --triage; }
 activity() { github activity; }
 escalated() { github escalated; }
 swept() { github swept; }
-run_maintain() { C4_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
+run_maintain() { THEOS_RELAY_REPO=$REPO "$CODE/hack/relay.sh" --maintain; }
 trim_caches() { "$CODE/hack/prune-caches.sh"; }
 report_note() { github report-note "$@"; }
 # tmp_use: the percent of /tmp's filesystem in use, a bare number.
@@ -537,7 +537,7 @@ flake_round() {
 
 ## Runs
 
-$(S=$spec awk -F'\t' -v t="$t" -v repo="${C4_GITHUB_REPO:-JairJosafath/c4factory}" \
+$(S=$spec awk -F'\t' -v t="$t" -v repo="${THEOS_GITHUB_REPO:-JairJosafath/theos}" \
   '$1 == ENVIRON["S"] && $3 >= t && !r[$2]++ { print "- https://github.com/" repo "/actions/runs/" $2 " at " $3 }' "$DIR/flakes.tsv")
 
 Find why it fails now and then (a race, a timeout too short for a busy runner, an order it depends on) and fix the spec or the code; retrying until it passes is no fix. \`hack/lib/github.sh flakes --count\` lists the specs that failed on main this week. Filed by hack/relay-watch.sh, which files no other issue for this spec while this one is open."
@@ -769,7 +769,7 @@ code_sum() { cat "$CODE/hack/relay-watch.sh" "$CODE/hack/lib/session-env.sh" "$C
 # elsewhere or that changed the watch's code (see the header).
 update() {
   local out key
-  out=$(C4_PULL_REPO=$REPO "$CODE/hack/pull.sh" 2>&1)
+  out=$(THEOS_PULL_REPO=$REPO "$CODE/hack/pull.sh" 2>&1)
   # A reason pull.sh repeats (its lines start with the time) is logged once.
   key=$(sed 's/^[0-9][0-9]:[0-9][0-9] //' <<<"$out")
   [ -n "$out" ] && [ "$key" != "$PULLED" ] && log "${out//$'\n'/; }"
@@ -782,16 +782,16 @@ update() {
     log "moving to origin/main's code ($(relay_code) at $(git -C "$(relay_code)" rev-parse --short HEAD)) from $CODE; restarting"
   fi
   # The new watch keeps this one's lock on fd 8.
-  exec env C4_RELAY_WATCH_CHILD=1 C4_RELAY_WATCH_RESTART=1 C4_RELAY_REPO="$REPO" bash "$(relay_code)/hack/relay-watch.sh" \
+  exec env THEOS_RELAY_WATCH_CHILD=1 THEOS_RELAY_WATCH_RESTART=1 THEOS_RELAY_REPO="$REPO" bash "$(relay_code)/hack/relay-watch.sh" \
     --workers "$WORKERS" $([ "$MODE" = foreground ] && echo --foreground)
 }
 
 # --install and --uninstall. The unit goes to the user's own systemd folder,
 # not $XDG_CONFIG_HOME, which the project shell points into .dev/.
-UNIT=c4factory-relay-watch.service
+UNIT=theos-relay-watch.service
 TEMPLATE="$CODE/hack/relay-watch.service"
 unit_file() { echo "$HOME/.config/systemd/user/$UNIT"; }
-cron_tag() { echo "# c4factory relay watch: $REPO"; }
+cron_tag() { echo "# theos relay watch: $REPO"; }
 
 # has_systemd: whether this user has a systemd user manager to run the unit.
 has_systemd() { command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; }
@@ -881,7 +881,7 @@ manager_groups() {
 # its GitHub token from the git credential helper, as hack/lib/github.sh does.
 settings() {
   local v
-  for v in $(compgen -v | grep -E '^(RELAY_|WATCH_|HEAVY_JOBS$|C4_CLUSTER)'); do
+  for v in $(compgen -v | grep -E '^(RELAY_|WATCH_|HEAVY_JOBS$|THEOS_CLUSTER)'); do
     printf '%s=%s\n' "$v" "${!v}"
   done
 }
@@ -979,7 +979,7 @@ uninstall_watch() {
 # relay it starts run as from a plain project shell (#645), headless: no
 # cluster lease code (gh_headless in hack/lib/github.sh).
 drop_session_env
-export C4_HEADLESS=1
+export THEOS_HEADLESS=1
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
@@ -991,7 +991,7 @@ esac
 
 # Started from a terminal with the unit installed: start the unit (after a
 # stop file), so the watch stays supervised.
-if [ "$MODE" = start ] && [ "${C4_RELAY_WATCH_CHILD:-}" != 1 ] && [ -e "$(unit_file)" ] && has_systemd; then
+if [ "$MODE" = start ] && [ "${THEOS_RELAY_WATCH_CHILD:-}" != 1 ] && [ -e "$(unit_file)" ] && has_systemd; then
   rm -f "$STOP"
   systemctl --user start "$UNIT" || exit 1
   echo "relay watch started under systemd ($UNIT, its own worker count; --install --workers N changes it): tail -f $LOG"
@@ -1000,7 +1000,7 @@ fi
 
 # Started from a terminal or cron: start the watch, detached, and return.
 # From cron, a stop file stays and keeps the watch down.
-if [ "${C4_RELAY_WATCH_CHILD:-}" != 1 ] && [ "$MODE" != foreground ]; then
+if [ "${THEOS_RELAY_WATCH_CHILD:-}" != 1 ] && [ "$MODE" != foreground ]; then
   if ! flock -n "$DIR/watch.lock" true; then
     [ "$MODE" = cron ] || echo "the relay watch is already running; see $LOG"
     exit 0
@@ -1010,14 +1010,14 @@ if [ "${C4_RELAY_WATCH_CHILD:-}" != 1 ] && [ "$MODE" != foreground ]; then
   else
     rm -f "$STOP"
   fi
-  C4_RELAY_WATCH_CHILD=1 setsid nohup bash "$0" --workers "$WORKERS" >>"$DIR/watch.out" 2>&1 </dev/null &
+  THEOS_RELAY_WATCH_CHILD=1 setsid nohup bash "$0" --workers "$WORKERS" >>"$DIR/watch.out" 2>&1 </dev/null &
   echo "relay watch started (pid $!) for $WORKERS worker(s): tail -f $LOG"
   echo "stop: touch $STOP"
   exit 0
 fi
 
 cd "$REPO" || exit 1
-if [ "${C4_RELAY_WATCH_RESTART:-}" = 1 ]; then
+if [ "${THEOS_RELAY_WATCH_RESTART:-}" = 1 ]; then
   flock -n 8 || { log "restarted without the watch's lock; exiting"; exit 1; }
 else
   exec 8>"$DIR/watch.lock"
@@ -1029,9 +1029,9 @@ else
   fi
 fi
 # The workers and their sessions don't need to know they were started by a watch.
-unset C4_RELAY_WATCH_CHILD C4_RELAY_WATCH_RESTART
+unset THEOS_RELAY_WATCH_CHILD THEOS_RELAY_WATCH_RESTART
 CODE_SUM=$(code_sum)
-log "watch started: pid $$${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), code $CODE at $(git -C "$CODE" rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
+log "watch started: pid $$${THEOS_CLUSTER:+, THEOS_CLUSTER=$THEOS_CLUSTER}$([ "$MODE" = foreground ] && echo ", under systemd"), code $CODE at $(git -C "$CODE" rev-parse --short HEAD 2>/dev/null), $WORKERS worker(s), asks GitHub every ${EVERY}s"
 own_groups
 sync_labels
 PULL_T=0 PULLED= CI_T=0

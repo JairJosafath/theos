@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -37,8 +37,8 @@ const StorageMigratorRetry = 30 * time.Second
 // pass.
 const StorageMigratorReadyPoll = time.Second
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=agents;briefs;bundles;computes;connectors;containers;crews;datastores;deployments;deploytargets;domains;frameworks;gitproviders;people;projects;relationships;sessions;softwaresystems;standards;tasks,verbs=list;patch
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions/status,verbs=patch,resourceNames=agents.c4.factory.io;briefs.c4.factory.io;bundles.c4.factory.io;computes.c4.factory.io;connectors.c4.factory.io;containers.c4.factory.io;crews.c4.factory.io;datastores.c4.factory.io;deployments.c4.factory.io;deploytargets.c4.factory.io;domains.c4.factory.io;frameworks.c4.factory.io;gitproviders.c4.factory.io;people.c4.factory.io;projects.c4.factory.io;relationships.c4.factory.io;sessions.c4.factory.io;softwaresystems.c4.factory.io;standards.c4.factory.io;tasks.c4.factory.io
+// +kubebuilder:rbac:groups=theos.factory.io,resources=agents;briefs;bundles;computes;connectors;containers;crews;datastores;deployments;deploytargets;domains;frameworks;gitproviders;people;projects;relationships;sessions;softwaresystems;standards;tasks,verbs=list;patch
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions/status,verbs=patch,resourceNames=agents.theos.factory.io;briefs.theos.factory.io;bundles.theos.factory.io;computes.theos.factory.io;connectors.theos.factory.io;containers.theos.factory.io;crews.theos.factory.io;datastores.theos.factory.io;deployments.theos.factory.io;deploytargets.theos.factory.io;domains.theos.factory.io;frameworks.theos.factory.io;gitproviders.theos.factory.io;people.theos.factory.io;projects.theos.factory.io;relationships.theos.factory.io;sessions.theos.factory.io;softwaresystems.theos.factory.io;standards.theos.factory.io;tasks.theos.factory.io
 
 // StorageMigrator rewrites what etcd holds at a version other than the
 // storage one (docs/plans/done/api-versions.md, decision 4). For each CRD in CRDs

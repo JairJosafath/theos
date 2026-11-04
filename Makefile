@@ -1,6 +1,6 @@
 # Image URL to use all building/pushing image targets. The dev tag is loaded
 # straight into the Kind cluster by `make deploy`, never pushed.
-IMG ?= c4factory/operator:dev
+IMG ?= theos/operator:dev
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
@@ -92,22 +92,22 @@ vet: ## Run go vet against code.
 # Heavy goals queue device-wide for one of HEAVY_JOBS slots (default 2), shared
 # by every checkout, before anything builds (hack/heavy-slot.sh). The slot is
 # held while this make runs; its sub-makes don't take another. With
-# C4_HEAVY_FIRST set (land's make check under the merge turn, #1290) it takes
+# THEOS_HEAVY_FIRST set (land's make check under the merge turn, #1290) it takes
 # the next free slot ahead of the waiters; the recipes don't inherit it.
 # A plain `make check` on a tree that already passed on this device, in any
 # checkout, is answered from the cache (hack/check-cache.sh) without a slot;
 # FORCE=1 runs it anyway.
-ifeq ($(MAKECMDGOALS)$(C4_HEAVY_SLOT),check)
+ifeq ($(MAKECMDGOALS)$(THEOS_HEAVY_SLOT),check)
 CHECK_CACHED := $(shell hack/check-cache.sh lookup)
 endif
 HEAVY_GOALS = check test lint lint-fix vulncheck docker-build deploy e2e test-e2e test-templates-operator test-templates
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
-ifeq ($(C4_HEAVY_SLOT)$(CHECK_CACHED),)
-$(shell hack/heavy-slot.sh acquire $(if $(C4_HEAVY_FIRST),--first )$$PPID "make $(MAKECMDGOALS)" >&2)
-export C4_HEAVY_SLOT := 1
+ifeq ($(THEOS_HEAVY_SLOT)$(CHECK_CACHED),)
+$(shell hack/heavy-slot.sh acquire $(if $(THEOS_HEAVY_FIRST),--first )$$PPID "make $(MAKECMDGOALS)" >&2)
+export THEOS_HEAVY_SLOT := 1
 endif
 endif
-unexport C4_HEAVY_FIRST
+unexport THEOS_HEAVY_FIRST
 
 # TEST_TIMEOUT bounds each package's test binary. The slowest is the controller
 # envtest suite, whose specs ran one after another: 286 specs in 557 s on the CI
@@ -115,7 +115,7 @@ unexport C4_HEAVY_FIRST
 # HEAVY_JOBS allows (#843). 15m left that loaded run under 1.3 times its
 # runtime; 20m leaves it 1.75 times, and the CI run 2 times, and still ends a
 # hung spec. The suite stops itself 30 s earlier, naming the spec that was
-# running; CI prints its 10 slowest specs (C4_SLOWEST_SPECS), so when it grows
+# running; CI prints its 10 slowest specs (THEOS_SLOWEST_SPECS), so when it grows
 # toward the limit the log says which specs to speed up before raising this.
 TEST_TIMEOUT ?= 20m
 
@@ -147,7 +147,7 @@ TEST_FLAGS = -timeout $(TEST_TIMEOUT) $(if $(COVER),-coverprofile cover.out) $(i
 # tests get a cache home outside the module, one per device, so envtest runs in
 # every checkout see each other's ports; GOCACHE stays where go env puts it.
 # Under $HOME, not $TMPDIR: the relay's TMPDIR lies inside a checkout (#1326).
-TEST_CACHE_HOME ?= $(HOME)/.cache/c4factory/test-cache
+TEST_CACHE_HOME ?= $(HOME)/.cache/theos/test-cache
 
 .PHONY: test
 # make test tests only the packages the change since origin/main can affect,
@@ -155,7 +155,7 @@ TEST_CACHE_HOME ?= $(HOME)/.cache/c4factory/test-cache
 # the like, or with TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which
 # and why. Go's test cache still answers the unchanged ones among them. With
 # COVER=1, cover.out covers the packages that ran, and is empty when none did.
-# The controller envtest suite runs in C4_TEST_PROCS processes at once (default
+# The controller envtest suite runs in THEOS_TEST_PROCS processes at once (default
 # 2, 1 when memory is short), each a go test of part of it (hack/go-test.sh).
 test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package; FORCE=1 reruns cached ones, COVER=1 writes cover.out).
 	@pkgs="$$(hack/test-packages.sh)" || exit; \
@@ -204,9 +204,9 @@ template-go-kubebuilder: kubebuilder ## Regenerate templates/go-kubebuilder from
 # The e2e tests run against the dedicated Kind cluster $(KIND_CLUSTER), never
 # another one. make e2e builds everything it needs first; it's safe to repeat.
 # KIND_CLUSTER defaults to the pool cluster this checkout leased
-# (hack/lib/github.sh cluster acquire), else c4factory.
+# (hack/lib/github.sh cluster acquire), else theos.
 ifeq ($(origin KIND_CLUSTER),undefined)
-KIND_CLUSTER := $(or $(shell hack/lib/github.sh cluster name 2>/dev/null),c4factory)
+KIND_CLUSTER := $(or $(shell hack/lib/github.sh cluster name 2>/dev/null),theos)
 endif
 
 .PHONY: e2e
@@ -314,10 +314,10 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name c4-factory-builder
-	$(CONTAINER_TOOL) buildx use c4-factory-builder
+	- $(CONTAINER_TOOL) buildx create --name theos-builder
+	$(CONTAINER_TOOL) buildx use theos-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) $(if $(BASE_IMAGE),--build-arg BASE_IMAGE=$(BASE_IMAGE)) --tag ${IMG} -f Dockerfile.cross .
-	- $(CONTAINER_TOOL) buildx rm c4-factory-builder
+	- $(CONTAINER_TOOL) buildx rm theos-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer
@@ -353,8 +353,8 @@ deploy: manifests kustomize ## Build the operator, load it into the Kind cluster
 	cd config/model-proxy && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default | $(TESTENV_KUBECTL) apply -f -
 	@# Same tag, new image: restart so the pods pick it up.
-	$(TESTENV_KUBECTL) -n c4-factory-system rollout restart deployment/c4-factory-controller-manager deployment/c4-factory-model-proxy
-	$(TESTENV_KUBECTL) -n c4-factory-system rollout status deployment/c4-factory-controller-manager --timeout=180s
+	$(TESTENV_KUBECTL) -n theos-system rollout restart deployment/theos-controller-manager deployment/theos-model-proxy
+	$(TESTENV_KUBECTL) -n theos-system rollout status deployment/theos-controller-manager --timeout=180s
 
 .PHONY: deploy-manifests
 deploy-manifests: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config, without building.
@@ -610,9 +610,9 @@ helm-lint: install-helm ## Lint the Helm chart, render it without Gitea, with it
 ## Helm binary to use for deploying the chart; make install-helm downloads it
 HELM ?= $(LOCALBIN)/helm-$(HELM_VERSION)
 ## Namespace to deploy the Helm release
-HELM_NAMESPACE ?= c4-factory-system
+HELM_NAMESPACE ?= theos-system
 ## Name of the Helm release
-HELM_RELEASE ?= c4-factory
+HELM_RELEASE ?= theos
 ## Path to the Helm chart directory
 HELM_CHART_DIR ?= dist/chart
 ## Additional arguments to pass to helm commands

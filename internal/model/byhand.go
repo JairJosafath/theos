@@ -27,7 +27,7 @@ func IsByHand(labels []string) bool { return slices.Contains(labels, LabelByHand
 // ByHandMarker is the hidden line that ties a by-hand issue to the Task that
 // filed it, so a rerun of the merge finds it again.
 func ByHandMarker(task string) string {
-	return "<!-- c4factory:by-hand " + task + " -->"
+	return "<!-- theos:by-hand " + task + " -->"
 }
 
 // HasByHandMarker reports whether body carries task's marker on a line of its

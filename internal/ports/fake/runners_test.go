@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 // The fake keeps each owner's runners apart, as TestGiteaRunnersIntegration

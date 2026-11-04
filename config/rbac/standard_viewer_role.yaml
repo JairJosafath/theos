@@ -1,7 +1,7 @@
-# This rule is not used by the project c4-factory itself.
+# This rule is not used by the project theos itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants read-only access to c4.factory.io resources.
+# Grants read-only access to theos.factory.io resources.
 # This role is intended for users who need visibility into these resources
 # without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
 
@@ -9,12 +9,12 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
-    app.kubernetes.io/name: c4-factory
+    app.kubernetes.io/name: theos
     app.kubernetes.io/managed-by: kustomize
   name: standard-viewer-role
 rules:
 - apiGroups:
-  - c4.factory.io
+  - theos.factory.io
   resources:
   - standards
   verbs:
@@ -22,7 +22,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - c4.factory.io
+  - theos.factory.io
   resources:
   - standards/status
   verbs:

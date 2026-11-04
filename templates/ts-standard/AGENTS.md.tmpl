@@ -3,7 +3,7 @@
 This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ if eq .Framework "react-vite" }}web app of {{ .SoftwareSystem }}: a page in React
 and TypeScript, built with Vite{{ else if eq .Framework "node-cli" }}command-line program of {{ .SoftwareSystem }}: a
 command in TypeScript for Node{{ else }}extension of {{ .SoftwareSystem }}: one VS
-Code extension in TypeScript{{ end }}, scaffolded by C4 Factory with the `{{ .Standard }}`
+Code extension in TypeScript{{ end }}, scaffolded by theos with the `{{ .Standard }}`
 Standard. Build it to the rules below. What the {{ if eq .Framework "react-vite" }}app{{ else if eq .Framework "node-cli" }}program{{ else }}extension{{ end }} is for, and what it must
 never do, is in the issue you were given and the system's needs: follow those.
 
@@ -41,9 +41,9 @@ change here.
 4. Make the smallest change that meets every criterion. One concern per commit.
 5. `make check`, then commit with a Conventional Commit message
    (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
-6. `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` never change. Other protected files
+6. `AGENTS.md`, `docs/agents/` and `.theos.yaml` never change. Other protected files
    change only through a Standard change (see your role guide), never in a normal pull
-   request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
+   request. `.devcontainer/`, `.theos.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
    `.editorconfig`, `AGENTS.md`, `docs/style/` and `docs/agents/` belong to the
    Standard. `tsconfig.json` and {{ if eq .Framework "react-vite" }}`vite.config.ts`{{ else if eq .Framework "node-cli" }}`vitest.config.mts`{{ else }}`vitest.config.mts`{{ end }} decide what the checks check: don't

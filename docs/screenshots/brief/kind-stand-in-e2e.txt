@@ -1,8 +1,8 @@
 # Briefs on Kind with the stand-in planner, no Claude token (#282, plans/done/brief.md step 8)
 #
-# Cluster c4factory, made fresh with `hack/lib/github.sh cluster acquire`, then
+# Cluster theos, made fresh with `hack/lib/github.sh cluster acquire`, then
 #   make deploy toolchain-base runner-base agent-sandbox agent-image-base e2e-apps
-#   KIND_CLUSTER=c4factory go test -tags=e2e ./test/e2e/ -v -ginkgo.v -ginkgo.focus=Briefs -timeout 60m
+#   KIND_CLUSTER=theos go test -tags=e2e ./test/e2e/ -v -ginkgo.v -ginkgo.focus=Briefs -timeout 60m
 # on branch feat/282-briefs-step-8-cel-lens-from-a-brief-on, with the EnsureLabels fix.
 #
 # The first run found a race: the Brief filing its issue and the new Crew's first
@@ -15,52 +15,52 @@
 ## The specs
 === RUN   TestE2E
 Will run 2 of 17 specs
-  STEP: connecting to the Kind cluster c4factory @ 10/06/26 15:18:10.255
+  STEP: connecting to the Kind cluster theos @ 10/06/26 15:18:10.255
   STEP: checking the operator is running @ 10/06/26 15:18:10.258
   STEP: forwarding a local port to Gitea @ 10/06/26 15:18:10.293
 [BeforeSuite] PASSED [0.412 seconds]
 Briefs plans the idea: a Container, its Crew and an issue the Crew picks up
-  running: "kubectl --context kind-c4factory apply -n e2e-brief-tf88q -f test/e2e/testdata/apps/factory.yaml"
+  running: "kubectl --context kind-theos apply -n e2e-brief-tf88q -f test/e2e/testdata/apps/factory.yaml"
   STEP: the Crew starting a Task for the issue @ 10/06/26 15:19:22.202
-  running: "kubectl --context kind-c4factory -n e2e-brief-tf88q patch crew e2e-xg62x --type=merge -p {\"spec\":{\"paused\":true}}"
+  running: "kubectl --context kind-theos -n e2e-brief-tf88q patch crew e2e-xg62x --type=merge -p {\"spec\":{\"paused\":true}}"
 Briefs plans a follow-up prompt as an issue, and changes no scaffolded Container
-  running: "kubectl --context kind-c4factory -n e2e-brief-tf88q patch brief e2e-xg62x --type=merge -p {\"spec\":{\"prompts\":[\"Support ValidatingAdmissionPolicy files first.\"]}}"
+  running: "kubectl --context kind-theos -n e2e-brief-tf88q patch brief e2e-xg62x --type=merge -p {\"spec\":{\"prompts\":[\"Support ValidatingAdmissionPolicy files first.\"]}}"
 [AfterSuite] PASSED [0.000 seconds]
 Ran 2 of 17 Specs in 82.426 seconds
 --- PASS: TestE2E (82.43s)
 PASS
-ok  	github.com/JairJosafath/c4factory/test/e2e	82.455s
+ok  	github.com/JairJosafath/theos/test/e2e	82.455s
 
 ## Round 1: the Brief planned, its Container scaffolded and Ready, the Crew working the issue
 2026-10-06T13:19:17Z
 NAME                            PHASE     ROUND   AGE
-brief.c4.factory.io/e2e-xg62x   Planned   1       66s
+brief.theos.factory.io/e2e-xg62x   Planned   1       66s
 
 NAME                                TYPE   PHASE   CHECKS   SESSIONS   REPOSITORY                                                 AGE
-container.c4.factory.io/e2e-xg62x   cli    Ready            0          http://gitea.gitea.svc.cluster.local:3000/apps/e2e-xg62x   18s
+container.theos.factory.io/e2e-xg62x   cli    Ready            0          http://gitea.gitea.svc.cluster.local:3000/apps/e2e-xg62x   18s
 
 NAME                           CONTAINER   IMPLEMENTER   REVIEWER   PHASE     PARALLEL   TASKS             AGE
-crew.c4.factory.io/e2e-xg62x   e2e-xg62x   stand-in      stand-in   Working   1          ["e2e-xg62x-1"]   5s
+crew.theos.factory.io/e2e-xg62x   e2e-xg62x   stand-in      stand-in   Working   1          ["e2e-xg62x-1"]   5s
 
 NAME                                  CONTAINER   ISSUE   PHASE      ROUND   CHECKS    REVIEW   PR                                                                 KIND        BRIEF       AGE
-task.c4.factory.io/e2e-xg62x-1        e2e-xg62x   1       Checking   1       pending            http://gitea.gitea.svc.cluster.local:3000/apps/e2e-xg62x/pulls/2   Implement               5s
-task.c4.factory.io/e2e-xg62x-plan-1                       Merged     1                                                                                             Plan        e2e-xg62x   25s
+task.theos.factory.io/e2e-xg62x-1        e2e-xg62x   1       Checking   1       pending            http://gitea.gitea.svc.cluster.local:3000/apps/e2e-xg62x/pulls/2   Implement               5s
+task.theos.factory.io/e2e-xg62x-plan-1                       Merged     1                                                                                             Plan        e2e-xg62x   25s
 
 ## Round 2: the follow-up prompt planned as issue 3; the Container untouched
 2026-10-06T13:19:28Z
 NAME                            PHASE     ROUND   AGE
-brief.c4.factory.io/e2e-xg62x   Planned   2       77s
+brief.theos.factory.io/e2e-xg62x   Planned   2       77s
 
 NAME                                TYPE   PHASE   CHECKS   SESSIONS   REPOSITORY                                                 AGE
-container.c4.factory.io/e2e-xg62x   cli    Ready            0          http://gitea.gitea.svc.cluster.local:3000/apps/e2e-xg62x   29s
+container.theos.factory.io/e2e-xg62x   cli    Ready            0          http://gitea.gitea.svc.cluster.local:3000/apps/e2e-xg62x   29s
 
 NAME                           CONTAINER   IMPLEMENTER   REVIEWER   PHASE    PARALLEL   TASKS             AGE
-crew.c4.factory.io/e2e-xg62x   e2e-xg62x   stand-in      stand-in   Paused   1          ["e2e-xg62x-1"]   16s
+crew.theos.factory.io/e2e-xg62x   e2e-xg62x   stand-in      stand-in   Paused   1          ["e2e-xg62x-1"]   16s
 
 NAME                                  CONTAINER   ISSUE   PHASE      ROUND   CHECKS    REVIEW   PR                                                                 KIND        BRIEF       AGE
-task.c4.factory.io/e2e-xg62x-1        e2e-xg62x   1       Checking   1       pending            http://gitea.gitea.svc.cluster.local:3000/apps/e2e-xg62x/pulls/2   Implement               16s
-task.c4.factory.io/e2e-xg62x-plan-1                       Merged     1                                                                                             Plan        e2e-xg62x   36s
-task.c4.factory.io/e2e-xg62x-plan-2                       Merged     1                                                                                             Plan        e2e-xg62x   5s
+task.theos.factory.io/e2e-xg62x-1        e2e-xg62x   1       Checking   1       pending            http://gitea.gitea.svc.cluster.local:3000/apps/e2e-xg62x/pulls/2   Implement               16s
+task.theos.factory.io/e2e-xg62x-plan-1                       Merged     1                                                                                             Plan        e2e-xg62x   36s
+task.theos.factory.io/e2e-xg62x-plan-2                       Merged     1                                                                                             Plan        e2e-xg62x   5s
 {
   "phase": "Planned",
   "round": 2,

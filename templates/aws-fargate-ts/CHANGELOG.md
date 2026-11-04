@@ -15,7 +15,7 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
-- The service, scaffolded by C4 Factory: an HTTP API that stores and returns
+- The service, scaffolded by theos: an HTTP API that stores and returns
   items (`PUT` and `GET /items/{id}`) in a DynamoDB table, on ECS on Fargate
   behind an Application Load Balancer, with alarms, a dashboard and
   deployments that roll back on them, and in production backups, tracing

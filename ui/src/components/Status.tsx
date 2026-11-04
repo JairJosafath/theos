@@ -25,7 +25,7 @@ export function ConnectionStatus({ connection }: { connection: Connection }) {
 function problemHint(p: Problem): string {
   if (p.code === 403)
     return 'The UI is not allowed to read these. Its ClusterRole (config/ui) needs get, list and watch on them.'
-  if (p.code === 404) return 'This kind is not installed in the cluster. Are the C4 Factory CRDs installed?'
+  if (p.code === 404) return 'This kind is not installed in the cluster. Are the theos CRDs installed?'
   if (p.code === 502 || p.code === 503 || p.code === 504) return 'The UI server cannot reach the Kubernetes API.'
   return 'Retrying automatically.'
 }

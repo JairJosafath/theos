@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The fake host's issues, labels and reviews. Issue numbers count separately

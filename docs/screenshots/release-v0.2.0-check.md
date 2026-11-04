@@ -1,14 +1,14 @@
 # Release v0.2.0 checks itself (#191)
 
 *Verify Release* (`.github/workflows/verify-release.yml`) installed the
-published chart `oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory`
+published chart `oci://ghcr.io/jairjosafath/theos/charts/theos`
 0.2.0 on a fresh Kind cluster of a hosted runner, building nothing, and ran
-green: https://github.com/JairJosafath/c4factory/actions/runs/37394587730
+green: https://github.com/JairJosafath/theos/actions/runs/37394587730
 
 The run came from the workflow's temporary `pull_request` trigger on its branch
 (pull request #194), which stood in for `workflow_dispatch` with `tag=v0.2.0`
 until the file is on main; the trigger was removed before merging. The first
-try, https://github.com/JairJosafath/c4factory/actions/runs/37393852524, passed
+try, https://github.com/JairJosafath/theos/actions/runs/37393852524, passed
 every check of the release and failed only in the workflow's own evidence step
 (the checkout removed the evidence directory made before it); that was fixed.
 
@@ -52,31 +52,31 @@ webshop/orders-api
 ## The webshop sample
 ```
 NAME                            SYSTEMS   CONTAINERS   READY   SESSIONS   AGE
-project.c4.factory.io/webshop   1         1            1       0          6s
+project.theos.factory.io/webshop   1         1            1       0          6s
 
 NAME                              PROVIDER   URL                                         OWNER     AGE
-gitprovider.c4.factory.io/gitea   gitea      http://gitea.gitea.svc.cluster.local:3000   webshop   10s
+gitprovider.theos.factory.io/gitea   gitea      http://gitea.gitea.svc.cluster.local:3000   webshop   10s
 
 NAME                                        DISPLAY NAME   CONTAINERS   READY   SESSIONS   AGE
-softwaresystem.c4.factory.io/webshop-core   Webshop Core   1            1       0          6s
+softwaresystem.theos.factory.io/webshop-core   Webshop Core   1            1       0          6s
 
 NAME                                 TYPE      PHASE   CHECKS   SESSIONS   REPOSITORY                                                     AGE
-container.c4.factory.io/orders-api   service   Ready            0          http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api   7s
+container.theos.factory.io/orders-api   service   Ready            0          http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api   7s
 
 NAME                                CONNECTOR   RESOLVED   AGE
-datastore.c4.factory.io/orders-db   postgres    True       7s
+datastore.theos.factory.io/orders-db   postgres    True       7s
 
 NAME                                                    SOURCE       TARGET         DESCRIPTION                    APPLIED   AGE
-relationship.c4.factory.io/customer-uses-webshop-core   customer     webshop-core   Browses, orders and reorders             6s
-relationship.c4.factory.io/orders-api-to-orders-db      orders-api   orders-db      Reads and writes orders        True      6s
+relationship.theos.factory.io/customer-uses-webshop-core   customer     webshop-core   Browses, orders and reorders             6s
+relationship.theos.factory.io/orders-api-to-orders-db      orders-api   orders-db      Reads and writes orders        True      6s
 ```
 
 ## Pods
 ```
 NAMESPACE             NAME                                                 READY  STATUS   RESTARTS
 agent-sandbox-system  agent-sandbox-controller-5d58fb5df9-7w67q            1/1    Running  0
-c4-factory-system     c4-factory-controller-manager-57655c4597-xqrn7       1/1    Running  0
-c4-factory-system     c4-factory-ui-6d94984cd9-qnc59                       1/1    Running  0
+theos-system     theos-controller-manager-57655c4597-xqrn7       1/1    Running  0
+theos-system     theos-ui-6d94984cd9-qnc59                       1/1    Running  0
 gitea                 gitea-f5fc8bd76-tzsj6                                1/1    Running  0
 gitea                 gitea-runner-base-75b4f5c877-bd984                   1/1    Running  0
 gitea                 gitea-runner-go-659b7bf849-dqzmg                     1/1    Running  0

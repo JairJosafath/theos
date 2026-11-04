@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 )
 
 // #591: a status written between the Task's read and its adoption stays. The

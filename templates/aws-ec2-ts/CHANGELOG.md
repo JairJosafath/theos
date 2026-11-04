@@ -8,7 +8,7 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
-- The service, scaffolded by C4 Factory: an HTTP API that stores and returns
+- The service, scaffolded by theos: an HTTP API that stores and returns
   items (`PUT` and `GET /items/{id}`) in a DynamoDB table, on EC2 instances
   behind an internal load balancer serving HTTPS, with alarms and a
   dashboard, and in production backups.

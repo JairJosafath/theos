@@ -8,7 +8,7 @@ metadata:
   name: session-orders-api
   namespace: webshop
   labels:
-    app.kubernetes.io/name: c4session-test
+    app.kubernetes.io/name: theos-session-test
 spec:
   serviceAccountName: c4-session
   restartPolicy: Never
@@ -22,7 +22,7 @@ spec:
       type: RuntimeDefault
   initContainers:
     - name: clone
-      image: c4factory/c4session:dev
+      image: theos/theos-session:dev
       imagePullPolicy: IfNotPresent
       command: [git, clone, --depth=1, "http://gitea.gitea.svc.cluster.local:3000/webshop/orders-api.git", /work/orders-api]
       volumeMounts:
@@ -32,9 +32,9 @@ spec:
         capabilities: {drop: [ALL]}
   containers:
     - name: client
-      image: c4factory/c4session:dev
+      image: theos/theos-session:dev
       imagePullPolicy: IfNotPresent
-      # c4session finds .c4factory.yaml in the working directory.
+      # theos-session finds .theos.yaml in the working directory.
       workingDir: /work/orders-api
       args: [run, --actor=agent, "--summary=Adding order validation"]
       resources:

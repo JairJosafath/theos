@@ -58,7 +58,7 @@ function pod(
 }
 
 const node = {
-  metadata: { name: 'c4factory-control-plane' },
+  metadata: { name: 'theos-control-plane' },
   status: {
     allocatable: { cpu: '12', memory: '15000000Ki' },
     conditions: [
@@ -152,7 +152,7 @@ describe('componentState', () => {
 
 describe('summarizeHealth', () => {
   const operator = pod(
-    'c4-factory-system',
+    'theos-system',
     'manager-1',
     { 'control-plane': 'controller-manager' },
     {
@@ -161,8 +161,8 @@ describe('summarizeHealth', () => {
   )
   const gitea = pod('gitea', 'gitea-1', { 'app.kubernetes.io/name': 'gitea' })
   const sandbox = pod('apps', 'image-shrink-v1-r1-implement', {
-    'c4.factory.io/agent-sandbox': 'true',
-    'c4.factory.io/task': 'image-shrink-v1',
+    'theos.factory.io/agent-sandbox': 'true',
+    'theos.factory.io/task': 'image-shrink-v1',
   })
   const finishedSeed = pod(
     'gitea',
@@ -203,7 +203,7 @@ describe('summarizeHealth', () => {
   })
 
   it("falls back to the operator's default slot count", () => {
-    const plain = pod('c4-factory-system', 'm', { 'control-plane': 'controller-manager' }, { args: ['--leader-elect'] })
+    const plain = pod('theos-system', 'm', { 'control-plane': 'controller-manager' }, { args: ['--leader-elect'] })
     assert.equal(summarizeHealth({ components, pods: [plain], nodes: [node] }).agents.maxSandboxes, 1)
   })
 
@@ -218,13 +218,13 @@ describe('summarizeHealth', () => {
       components,
       pods: [],
       nodes: [node],
-      nodeMetrics: [{ metadata: { name: 'c4factory-control-plane' }, usage: { cpu: '163m', memory: '1084Mi' } }],
+      nodeMetrics: [{ metadata: { name: 'theos-control-plane' }, usage: { cpu: '163m', memory: '1084Mi' } }],
       podMetrics: [],
       now: NOW,
     })
     assert.equal(health.metrics, true)
     assert.deepEqual(health.nodes[0], {
-      name: 'c4factory-control-plane',
+      name: 'theos-control-plane',
       ready: true,
       pressure: [],
       cpuAllocatableMilli: 12000,
@@ -268,7 +268,7 @@ describe('componentsFromEnv', () => {
 })
 
 describe('createHealthHandler', () => {
-  const projects = '/apis/c4.factory.io/v1beta1/projects'
+  const projects = '/apis/theos.factory.io/v1beta1/projects'
   const namespaces = [...new Set(DEFAULT_COMPONENTS.map((c) => c.namespace))]
   const answers = {
     '/api/v1/nodes': { status: 200, body: { items: [node] } },
@@ -312,16 +312,16 @@ describe('createHealthHandler', () => {
           return { status: 200, body: { items: [{ metadata: { namespace: 'apps', name: 'apps' } }] } }
         }
         if (path === '/api/v1/namespaces/apps/pods') {
-          return { status: 200, body: { items: [pod('apps', 'sb', { 'c4.factory.io/agent-sandbox': 'true' })] } }
+          return { status: 200, body: { items: [pod('apps', 'sb', { 'theos.factory.io/agent-sandbox': 'true' })] } }
         }
         return answer(path)
       },
     })()
     assert.deepEqual(calls.filter((p) => p.includes('pods')).sort(), [
       '/api/v1/namespaces/apps/pods',
-      '/api/v1/namespaces/c4-factory-system/pods',
+      '/api/v1/namespaces/theos-system/pods',
       '/apis/metrics.k8s.io/v1beta1/namespaces/apps/pods',
-      '/apis/metrics.k8s.io/v1beta1/namespaces/c4-factory-system/pods',
+      '/apis/metrics.k8s.io/v1beta1/namespaces/theos-system/pods',
     ])
     assert.deepEqual(
       health.agents.sandboxes.map((s) => s.name),
@@ -359,7 +359,7 @@ describe('createHealthHandler', () => {
     }
     assert.deepEqual((await health()).errors, [
       '/api/v1/nodes: 404 not found',
-      '/api/v1/namespaces/c4-factory-system/pods: 404 not found',
+      '/api/v1/namespaces/theos-system/pods: 404 not found',
     ])
   })
 })
@@ -385,14 +385,14 @@ describe('history', () => {
       components: DEFAULT_COMPONENTS.filter((c) => c.key === 'runner'),
       pods: [
         pod('gitea', 'runner-1', { 'app.kubernetes.io/name': 'gitea-runner' }),
-        pod('apps', 'sb', { 'c4.factory.io/agent-sandbox': 'true', 'c4.factory.io/task': 't' }),
+        pod('apps', 'sb', { 'theos.factory.io/agent-sandbox': 'true', 'theos.factory.io/task': 't' }),
       ],
       podMetrics: [
         { metadata: { namespace: 'gitea', name: 'runner-1' }, containers: [{ usage: { cpu: '4', memory: '1Gi' } }] },
         { metadata: { namespace: 'apps', name: 'sb' }, containers: [{ usage: { cpu: '2500m', memory: '2Gi' } }] },
       ],
       nodes: [node],
-      nodeMetrics: [{ metadata: { name: 'c4factory-control-plane' }, usage: { cpu: '7', memory: '8Gi' } }],
+      nodeMetrics: [{ metadata: { name: 'theos-control-plane' }, usage: { cpu: '7', memory: '8Gi' } }],
       now: NOW,
     })
     assert.deepEqual(sampleOf(health, 1234.4, true), {

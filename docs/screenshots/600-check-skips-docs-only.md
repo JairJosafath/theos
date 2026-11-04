@@ -15,5 +15,5 @@ $ go test ./internal/scaffold/ -run TestStandardCheck -v
     --- PASS: TestStandardCheckSkipsChangesThatTouchNoCode/no_base (0.04s)
     --- PASS: TestStandardCheckSkipsChangesThatTouchNoCode/a_base_the_server_lacks (0.05s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.621s
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.621s
 ```

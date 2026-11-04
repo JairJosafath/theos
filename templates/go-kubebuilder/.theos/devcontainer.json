@@ -1,0 +1,25 @@
+{
+  "image": "theos/go:1.26",
+  "postCreateCommand": "go mod download",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go"
+      ],
+      "settings": {
+        "go.lintTool": "golangci-lint-v2",
+        "go.lintOnSave": "package",
+        "go.testFlags": ["-race"],
+        "gopls": {
+          "ui.semanticTokens": true
+        },
+        "[go]": {
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+          }
+        }
+      }
+    }
+  }
+}

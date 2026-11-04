@@ -1,14 +1,14 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: {{ include "c4-factory.resourceName" (dict "suffix" "project-name-equals-namespace" "context" $) }}
+  name: {{ include "theos.resourceName" (dict "suffix" "project-name-equals-namespace" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
     - apiGroups:
-      - c4.factory.io
+      - theos.factory.io
       apiVersions:
       - '*'
       operations:

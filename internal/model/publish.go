@@ -26,7 +26,7 @@ type PublishFacts struct {
 	Repository, Brief string
 	// Recorded is the repository the Crew published to before
 	// (status.publishTarget), nil when none. Accept is the GitHub id a person
-	// accepts in its place (c4.factory.io/accept-repository), or "".
+	// accepts in its place (theos.factory.io/accept-repository), or "".
 	Recorded *PublishTarget
 	Accept   string
 	// Remote is the repository GitHub answers for Repository, nil until read.
@@ -284,12 +284,12 @@ func PublishMarker(namespace, container, tag string) string {
 
 // ShipMarker is PublishMarker of app, namespace/name, at tag.
 func ShipMarker(app, tag string) string {
-	return fmt.Sprintf("<!-- c4factory: %s %s -->", app, tag)
+	return fmt.Sprintf("<!-- theos: %s %s -->", app, tag)
 }
 
 // ShipMarkerPrefix is the start of every ShipMarker of app, whatever its tag.
 func ShipMarkerPrefix(app string) string {
-	return fmt.Sprintf("<!-- c4factory: %s ", app)
+	return fmt.Sprintf("<!-- theos: %s ", app)
 }
 
 // ReleaseNotes are the notes the operator writes for a release nobody wrote
@@ -448,7 +448,7 @@ func repositoryStep(f PublishFacts) (PublishStep, bool) {
 		return fail(PublishRepositoryReplaced, "%s is not the repository this Crew published to before "+
 			"(GitHub id %d, now %d): it was deleted or renamed and a new one took its name. Nothing is published "+
 			"to it until you point %s at the repository wanted, or accept this one with the annotation "+
-			"c4.factory.io/accept-repository: \"%d\" on the Crew",
+			"theos.factory.io/accept-repository: \"%d\" on the Crew",
 			f.Repository, f.Recorded.ID, f.Remote.ID, setBy(f), f.Remote.ID), false
 	}
 	return PublishStep{}, true

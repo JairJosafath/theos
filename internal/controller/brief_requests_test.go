@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -19,9 +19,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // requestsBrief makes Brief cel-lens with a releases entry taking requests
@@ -264,7 +264,7 @@ var _ = Describe("Brief requests", func() {
 		// close; on the third a stranger copied the marker, which doesn't count.
 		githubFake.mu.Lock()
 		githubFake.issueState().issues[repository][second-1].comments = []fakeGitHubComment{
-			{ID: 999, Body: model.DeclinedComment("cel-lens"), User: fakeGitHubUser{"c4factory-bot"}}}
+			{ID: 999, Body: model.DeclinedComment("cel-lens"), User: fakeGitHubUser{"theos-bot"}}}
 		githubFake.issueState().issues[repository][third-1].comments = []fakeGitHubComment{
 			{ID: 998, Body: model.DeclinedComment("cel-lens"), User: fakeGitHubUser{"stranger"}}}
 		githubFake.mu.Unlock()

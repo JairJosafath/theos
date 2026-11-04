@@ -4,7 +4,7 @@
 // open the area they showed.
 //
 // Needs a build and Chromium:  npm run test:e2e
-// C4_UI_SHOTS=DIR also saves a picture of each area in DIR (docs/screenshots).
+// THEOS_UI_SHOTS=DIR also saves a picture of each area in DIR (docs/screenshots).
 
 import assert from 'node:assert/strict'
 import path from 'node:path'
@@ -91,10 +91,10 @@ describe('the shell', () => {
       await heading(title).waitFor({ timeout: 10000 })
       assert.equal(areaOf(), area)
       assert.equal(await current().textContent(), label)
-      assert.match(await page.title(), new RegExp(`^${label} · C4 Factory$`))
-      if (process.env.C4_UI_SHOTS) {
+      assert.match(await page.title(), new RegExp(`^${label} · theos$`))
+      if (process.env.THEOS_UI_SHOTS) {
         await page.waitForTimeout(300)
-        await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, `ui-shell-${area}.png`) })
+        await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, `ui-shell-${area}.png`) })
       }
     }
     for (const [label, area, title] of AREAS.slice(0, -1).reverse()) {
@@ -142,12 +142,12 @@ describe('the shell', () => {
   it('shows the versions and where to read about them in About', async () => {
     await page.goto(`${base}/?area=about`)
     const about = page.locator('.about')
-    await about.getByText('c4.factory.io/v1beta1').waitFor({ timeout: 5000 })
+    await about.getByText('theos.factory.io/v1beta1').waitFor({ timeout: 5000 })
     const href = (name) => about.getByRole('link', { name }).getAttribute('href')
     // The test build is unreleased, so main's docs and every release.
-    assert.equal(await href('Release notes'), 'https://github.com/JairJosafath/c4factory/releases')
+    assert.equal(await href('Release notes'), 'https://github.com/JairJosafath/theos/releases')
     assert.match(await href(/The design/), /\/blob\/main\/docs\/design\.md$/)
-    assert.equal(await href('The repository'), 'https://github.com/JairJosafath/c4factory')
+    assert.equal(await href('The repository'), 'https://github.com/JairJosafath/theos')
   })
 
   it('keeps an object route in the URL', async () => {
@@ -167,15 +167,15 @@ describe('the shell', () => {
     await header.waitFor({ timeout: 10000 })
     let params = new URL(page.url()).searchParams
     assert.deepEqual([params.get('ns'), params.get('kind'), params.get('name')], [namespace, 'Brief', 'webshop'])
-    assert.match(await page.title(), /^Brief webshop · C4 Factory$/)
+    assert.match(await page.title(), /^Brief webshop · theos$/)
     // The lifecycle with Planned current, the rounds, and its writes: pause and prompt.
     assert.equal(await header.locator('[aria-current="step"]').textContent(), 'Planned')
     await header.getByText(/^Round 1 applied$/).waitFor({ timeout: 5000 })
     await header.getByRole('button', { name: /^(Pause|Resume) brief webshop$/ }).waitFor({ timeout: 5000 })
     await page.getByRole('heading', { name: 'Rounds' }).first().waitFor({ timeout: 5000 })
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-brief.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-object-brief.png'), fullPage: true })
     }
 
     // It made a Container and a Crew both named storefront.
@@ -189,12 +189,12 @@ describe('the shell', () => {
     await container.getByText('Choices valid: no · UnsupportedType').waitFor({ timeout: 5000 })
     assert.equal(
       await container.locator('.command-line code').textContent(),
-      `kubectl -n ${namespace} annotate containers.c4.factory.io storefront c4.factory.io/retry=$(date +%s) --overwrite`,
+      `kubectl -n ${namespace} annotate containers.theos.factory.io storefront theos.factory.io/retry=$(date +%s) --overwrite`,
     )
     await container.getByRole('link', { name: 'Made by Brief webshop' }).waitFor({ timeout: 5000 })
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-container.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-object-container.png'), fullPage: true })
     }
 
     // Back returns through both pages to the Briefs.
@@ -224,15 +224,15 @@ describe('the shell', () => {
     await crew.waitFor({ timeout: 10000 })
     let params = new URL(page.url()).searchParams
     assert.deepEqual([params.get('ns'), params.get('kind'), params.get('name')], [namespace, 'Crew', 'orders-api'])
-    assert.match(await page.title(), /^Crew orders-api · C4 Factory$/)
+    assert.match(await page.title(), /^Crew orders-api · theos$/)
     // Working, its Tasks, the places in use and its last release.
     assert.equal(await crew.locator('[aria-current="step"]').textContent(), 'Working')
     await page.getByText('2 of 2 busy').waitFor({ timeout: 5000 })
     await heading('Last release: v0.2.0').waitFor({ timeout: 5000 })
     await page.locator('dd', { hasText: /^succeeded Open the run/ }).waitFor({ timeout: 5000 })
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-crew.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-object-crew.png'), fullPage: true })
     }
 
     await crew.getByRole('link', { name: 'orders-api-13', exact: true }).click()
@@ -260,9 +260,9 @@ describe('the shell', () => {
     })
     assert.equal(await page.locator('.command-line code').count(), 0)
     await task.getByRole('link', { name: 'Crew orders-api' }).waitFor({ timeout: 5000 })
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-task.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-object-task.png'), fullPage: true })
     }
 
     await page.goBack()
@@ -277,9 +277,9 @@ describe('the shell', () => {
       await releases.getByRole('link', { name: 'Crew orders-api', exact: true }).getAttribute('href'),
       `/?area=work&ns=${namespace}&kind=Crew&name=orders-api`,
     )
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-shell-work-board.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-shell-work-board.png'), fullPage: true })
     }
     await page.locator('.board a.task-card', { hasText: 'orders-api-14' }).click()
     const task = page.getByRole('region', { name: 'Task orders-api-14', exact: true })
@@ -334,7 +334,7 @@ describe('the shell', () => {
     assert.equal(await crew.locator('[aria-current="step"]').textContent(), 'Paused')
     assert.equal(
       await crew.locator('.command-line code').textContent(),
-      `kubectl -n ${namespace} patch crews.c4.factory.io storefront --type merge -p '{"spec":{"paused":false}}'`,
+      `kubectl -n ${namespace} patch crews.theos.factory.io storefront --type merge -p '{"spec":{"paused":false}}'`,
     )
   })
 
@@ -353,11 +353,11 @@ describe('the shell', () => {
       await page.goto(`${base}/?ns=${namespace}&kind=${kind}&name=${name}`)
       await page.getByRole('region', { name: `${kind} ${name}`, exact: true }).waitFor({ timeout: 10000 })
       await page.getByRole('heading', { name: section }).first().waitFor({ timeout: 5000 })
-      assert.match(await page.title(), new RegExp(`^${kind} ${name} · C4 Factory$`))
-      if (process.env.C4_UI_SHOTS) {
+      assert.match(await page.title(), new RegExp(`^${kind} ${name} · theos$`))
+      if (process.env.THEOS_UI_SHOTS) {
         await page.waitForTimeout(300)
         await page.screenshot({
-          path: path.join(process.env.C4_UI_SHOTS, `ui-object-${kind.toLowerCase()}.png`),
+          path: path.join(process.env.THEOS_UI_SHOTS, `ui-object-${kind.toLowerCase()}.png`),
           fullPage: true,
         })
       }
@@ -397,9 +397,9 @@ describe('the shell', () => {
     const catalog = page.getByRole('region', { name: 'Its catalog and Git hosts' })
     await catalog.getByText(/^Could not read standards \(403\)/).waitFor({ timeout: 10000 })
     await catalog.getByRole('link', { name: 'small', exact: true }).waitFor({ timeout: 5000 })
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await catalog.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-object-refused-read.png') })
+      await catalog.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-object-refused-read.png') })
     }
   })
 

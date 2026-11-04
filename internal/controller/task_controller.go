@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -29,9 +29,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // Task condition types.
@@ -131,10 +131,10 @@ const eventSessionHandedOff = "SessionHandedOff"
 // main in the agent's workspace too: CI decides it.
 const eventCheckFailsOnBase = "CheckFailsOnBase"
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=tasks/finalizers,verbs=update
-// +kubebuilder:rbac:groups=c4.factory.io,resources=agents;softwaresystems;briefs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=tasks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=tasks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=tasks/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=agents;softwaresystems;briefs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=agents.x-k8s.io,resources=sandboxes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;patch

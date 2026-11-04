@@ -8,11 +8,11 @@
 # For a human: agents never lease, build or deploy to a Kind cluster.
 set -euo pipefail
 
-# Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else c4factory.
-CLUSTER="${KIND_CLUSTER:-$("$(dirname "${BASH_SOURCE[0]}")/lib/github.sh" cluster name 2>/dev/null || echo c4factory)}"
+# Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else theos.
+CLUSTER="${KIND_CLUSTER:-$("$(dirname "${BASH_SOURCE[0]}")/lib/github.sh" cluster name 2>/dev/null || echo theos)}"
 NODE="${CLUSTER}-control-plane"
 KUBECTL=(kubectl --context "kind-${CLUSTER}" --request-timeout=10s)
-NAMESPACES=(kube-system local-path-storage gitea agent-sandbox-system c4-factory-system c4-factory-ui)
+NAMESPACES=(kube-system local-path-storage gitea agent-sandbox-system theos-system theos-ui)
 
 # Progress goes to fd 3, so wait_for can silence the commands it runs.
 exec 3>&1
@@ -40,7 +40,7 @@ fi
 started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 state=$(docker inspect -f '{{.State.Status}}' "$NODE" 2>/dev/null) || state=missing
 if [[ "$state" == missing ]]; then
-  echo "Kind cluster $CLUSTER does not exist: a human builds one with C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire; agents never do" >&2
+  echo "Kind cluster $CLUSTER does not exist: a human builds one with THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire; agents never do" >&2
   exit 1
 fi
 if [[ "$state" != running ]]; then

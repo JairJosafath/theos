@@ -5,7 +5,7 @@
 // and the built UI in Chromium.
 //
 // Needs a build and Chromium:  npm run test:e2e
-// C4_UI_SHOTS=DIR also saves the dialog, the refusal and the signed-out page in
+// THEOS_UI_SHOTS=DIR also saves the dialog, the refusal and the signed-out page in
 // DIR (docs/screenshots).
 
 import assert from 'node:assert/strict'
@@ -75,12 +75,12 @@ async function stop({ api, ui }) {
   await new Promise((r) => api.server.close(r))
 }
 
-/** A picture of the viewport around the actions panel, in C4_UI_SHOTS. */
+/** A picture of the viewport around the actions panel, in THEOS_UI_SHOTS. */
 async function shot(page, name) {
-  if (!process.env.C4_UI_SHOTS) return
+  if (!process.env.THEOS_UI_SHOTS) return
   await page.getByRole('region', { name: 'Act on it' }).scrollIntoViewIfNeeded()
   await page.waitForTimeout(200)
-  await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, name) })
+  await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, name) })
 }
 
 describe('the Container page’s actions', () => {
@@ -128,9 +128,9 @@ describe('the Container page’s actions', () => {
       assert.equal(env.api.writes.length, 1)
       const [w] = env.api.writes
       assert.equal(w.method, 'PATCH')
-      assert.equal(w.path, `/apis/c4.factory.io/v1beta1/namespaces/${NS}/containers/orders-api`)
-      assert.deepEqual(Object.keys(w.body.metadata.annotations), ['c4.factory.io/retry'])
-      assert.ok(!Number.isNaN(Date.parse(w.body.metadata.annotations['c4.factory.io/retry'])))
+      assert.equal(w.path, `/apis/theos.factory.io/v1beta1/namespaces/${NS}/containers/orders-api`)
+      assert.deepEqual(Object.keys(w.body.metadata.annotations), ['theos.factory.io/retry'])
+      assert.ok(!Number.isNaN(Date.parse(w.body.metadata.annotations['theos.factory.io/retry'])))
     })
 
     it('sets when CI runs the full check, sending only spec.checks', async () => {
@@ -142,7 +142,7 @@ describe('the Container page’s actions', () => {
       assert.equal(env.api.writes.length, 1)
       const [w] = env.api.writes
       assert.equal(w.method, 'PATCH')
-      assert.equal(w.path, `/apis/c4.factory.io/v1beta1/namespaces/${NS}/containers/orders-api`)
+      assert.equal(w.path, `/apis/theos.factory.io/v1beta1/namespaces/${NS}/containers/orders-api`)
       assert.deepEqual(w.body, [{ op: 'add', path: '/spec/checks', value: 'BeforeRelease' }])
       await checks.getByText('The repository still runs the full check on every change').waitFor({ timeout: 5000 })
     })

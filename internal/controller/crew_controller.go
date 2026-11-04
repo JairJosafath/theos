@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -30,17 +30,17 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // Labels on Tasks a Crew starts.
 const (
 	// LabelCrew names the Crew that started a Task.
-	LabelCrew = "c4.factory.io/crew"
+	LabelCrew = "theos.factory.io/crew"
 	// LabelIssue is the number of the issue a Task works on.
-	LabelIssue = "c4.factory.io/issue"
+	LabelIssue = "theos.factory.io/issue"
 )
 
 // ConditionReady says whether a Crew can pick up issues, and why not.
@@ -76,7 +76,7 @@ type CrewReconciler struct {
 	// copies it through the github member's. cmd/main.go builds them.
 	Deployers ports.Deployers
 	// GoProxy is the Go proxy asked whether go get finds a released module
-	// outside c4factory.local/; "" asks none.
+	// outside theos.local/; "" asks none.
 	GoProxy string
 
 	// releaseSaid is, by Crew UID, the reason and message of the last release
@@ -126,11 +126,11 @@ type CrewReconciler struct {
 	tagged sync.Map
 }
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=crews/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=crews/finalizers,verbs=update
-// +kubebuilder:rbac:groups=c4.factory.io,resources=tasks,verbs=get;list;watch;create
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers;agents;gitproviders;relationships,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=crews,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=crews/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=crews/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=tasks,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups=theos.factory.io,resources=containers;agents;gitproviders;relationships,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 

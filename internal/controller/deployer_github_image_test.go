@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/oci"
-	"github.com/JairJosafath/c4factory/internal/oci/ocitest"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	githubdeploy "github.com/JairJosafath/theos/internal/adapters/github"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/oci"
+	"github.com/JairJosafath/theos/internal/oci/ocitest"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // TestGitHubDeployerImage: with a packagesToken, the github member copies

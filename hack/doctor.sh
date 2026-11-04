@@ -3,12 +3,12 @@
 # the Docker daemon up to the Agents' credentials. Works when the cluster or the
 # UI is down, which is when it is needed. Kind is a tier only a human runs:
 # agents never lease, build or deploy to a cluster, so its hints are a human's.
-#   make doctor            (KIND_CLUSTER: this checkout's leased cluster, else c4factory)
+#   make doctor            (KIND_CLUSTER: this checkout's leased cluster, else theos)
 # Exits 1 when a required part is broken; optional parts only warn.
 set -uo pipefail
 
-# Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else c4factory.
-CLUSTER="${KIND_CLUSTER:-$("$(dirname "${BASH_SOURCE[0]}")/lib/github.sh" cluster name 2>/dev/null || echo c4factory)}"
+# Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else theos.
+CLUSTER="${KIND_CLUSTER:-$("$(dirname "${BASH_SOURCE[0]}")/lib/github.sh" cluster name 2>/dev/null || echo theos)}"
 NODE="${CLUSTER}-control-plane"
 KUBECTL=(kubectl --context "kind-${CLUSTER}" --request-timeout=10s)
 
@@ -34,7 +34,7 @@ case "$state" in
 running) ok "Kind node $NODE is running" ;;
 missing)
   bad "Kind cluster $CLUSTER does not exist"
-  hint "C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire (a human only: it leases and builds one)"
+  hint "THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire (a human only: it leases and builds one)"
   exit 1
   ;;
 *)
@@ -63,10 +63,10 @@ else
 fi
 pressure=$("${KUBECTL[@]}" get node "$NODE" -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}{" "}{end}' 2>/dev/null | sed 's/Ready//')
 [[ -n "${pressure// /}" ]] && bad "Node reports:${pressure}"
-if "${KUBECTL[@]}" get crd tasks.c4.factory.io >/dev/null 2>&1; then
-  ok "C4 Factory CRDs are installed"
+if "${KUBECTL[@]}" get crd tasks.theos.factory.io >/dev/null 2>&1; then
+  ok "theos CRDs are installed"
 else
-  bad "C4 Factory CRDs are missing"
+  bad "theos CRDs are missing"
   hint "make deploy (a human only, on the cluster this checkout leased)"
 fi
 
@@ -105,13 +105,13 @@ deployment() {
 }
 
 section "Factory"
-deployment c4-factory-system c4-factory-controller-manager "Operator"
+deployment theos-system theos-controller-manager "Operator"
 deployment gitea gitea "Gitea"
 deployment gitea gitea-runner-base "CI runner" "make runner-base"
 deployment agent-sandbox-system agent-sandbox-controller "Agent Sandbox" "make agent-sandbox"
 deployment kube-system coredns "Cluster DNS"
 deployment kube-system metrics-server "metrics-server" "make metrics-server"
-deployment c4-factory-ui c4-factory-ui "UI" "make ui"
+deployment theos-ui theos-ui "UI" "make ui"
 if "${KUBECTL[@]}" get --raw /apis/metrics.k8s.io/v1beta1/nodes >/dev/null 2>&1; then
   ok "CPU and memory figures are available"
 else
@@ -119,7 +119,7 @@ else
 fi
 
 section "Projects"
-projects=$("${KUBECTL[@]}" get projects.c4.factory.io -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"\n"}{end}' 2>/dev/null)
+projects=$("${KUBECTL[@]}" get projects.theos.factory.io -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"\n"}{end}' 2>/dev/null)
 if [[ -z "$projects" ]]; then
   warn "No Projects yet (make sample, make e2e-apps)"
 fi
@@ -133,7 +133,7 @@ for ns in $projects; do
       bad "$ns: GitProvider $provider is missing Secret $secret"
       hint "make seed"
     fi
-  done < <("${KUBECTL[@]}" -n "$ns" get gitproviders.c4.factory.io \
+  done < <("${KUBECTL[@]}" -n "$ns" get gitproviders.theos.factory.io \
     -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.credentialsSecretRef.name}{"\n"}{end}' 2>/dev/null)
   # Each Agent's credentials, if it needs any.
   while read -r agent secret; do
@@ -142,14 +142,14 @@ for ns in $projects; do
       ok "$ns: Agent $agent has its Secret $secret"
     else
       warn "$ns: Agent $agent is missing Secret $secret; its Tasks wait"
-      hint "make claude-secret, shared with namespaces labeled c4.factory.io/shared-secrets=true (docs/dev/devices.md)"
+      hint "make claude-secret, shared with namespaces labeled theos.factory.io/shared-secrets=true (docs/dev/devices.md)"
     fi
-  done < <("${KUBECTL[@]}" -n "$ns" get agents.c4.factory.io \
+  done < <("${KUBECTL[@]}" -n "$ns" get agents.theos.factory.io \
     -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.credentialsSecretRef.name}{"\n"}{end}' 2>/dev/null)
-  failed_containers=$("${KUBECTL[@]}" -n "$ns" get containers.c4.factory.io \
+  failed_containers=$("${KUBECTL[@]}" -n "$ns" get containers.theos.factory.io \
     -o jsonpath='{range .items[?(@.status.phase=="Failed")]}{.metadata.name}{" "}{end}' 2>/dev/null | xargs)
   [[ -n "$failed_containers" ]] && warn "$ns: Failed Containers: $failed_containers"
-  active=$("${KUBECTL[@]}" -n "$ns" get tasks.c4.factory.io \
+  active=$("${KUBECTL[@]}" -n "$ns" get tasks.theos.factory.io \
     -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' 2>/dev/null | grep -cvE '^(Merged|Failed)$')
   [[ "$active" -gt 0 ]] && ok "$ns: $active active Task(s)"
 done

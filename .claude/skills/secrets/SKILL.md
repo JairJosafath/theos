@@ -1,6 +1,6 @@
 ---
 name: secrets
-description: Use when a change in the C4 Factory makes, stores, passes or tests a credential (password, token, key, Kubernetes Secret) in Helm chart templates, config/ manifests, make targets, scripts, the seed, Go tests or samples, or when a secret scanner such as GitGuardian fails on a pull request.
+description: Use when a change in the theos makes, stores, passes or tests a credential (password, token, key, Kubernetes Secret) in Helm chart templates, config/ manifests, make targets, scripts, the seed, Go tests or samples, or when a secret scanner such as GitGuardian fails on a pull request.
 ---
 
 # Secrets

@@ -29,7 +29,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // maxPackageFile is the largest release file PublishReleasePackages reads. A

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -27,8 +27,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/buildinfo"
-	"github.com/JairJosafath/c4factory/internal/modelproxy"
+	"github.com/JairJosafath/theos/internal/buildinfo"
+	"github.com/JairJosafath/theos/internal/modelproxy"
 )
 
 // shutdownGrace is how long a stop waits for open requests, the drain

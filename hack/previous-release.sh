@@ -11,7 +11,7 @@
 # It reads REPO's releases (and for --skipped its tags) with gh, so a workflow
 # gives it GH_TOKEN. A failed lookup fails; it never means "no release".
 #
-#   REPO   owner/name (default $GITHUB_REPOSITORY, else JairJosafath/c4factory)
+#   REPO   owner/name (default $GITHUB_REPOSITORY, else JairJosafath/theos)
 set -euo pipefail
 
 skipped=
@@ -21,7 +21,7 @@ if ! [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "usage: hack/previous-release.sh [--skipped] vX.Y.Z (got: ${TAG:-nothing})" >&2
   exit 2
 fi
-REPO=${REPO:-${GITHUB_REPOSITORY:-JairJosafath/c4factory}}
+REPO=${REPO:-${GITHUB_REPOSITORY:-JairJosafath/theos}}
 
 # list PATH FILTER: the vX.Y.Z names FILTER picks from every page of
 # repos/REPO/PATH, one a line. A reply that isn't pages of lists fails too.

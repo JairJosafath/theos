@@ -1,7 +1,7 @@
-# C4 Factory - AI Agent Guide
+# theos - AI Agent Guide
 
-C4 Factory is a kubebuilder operator. Users describe software as a C4-style model in
-custom resources (group `c4.factory.io`, version `v1beta1`); the operator scaffolds
+theos is a kubebuilder operator. Users describe software as a C4-style model in
+custom resources (group `theos.factory.io`, version `v1beta1`); the operator scaffolds
 one Git repository per Container from pinned templates, then only reports. Read
 [docs/design.md](docs/design.md) for the what and why, and
 [docs/architecture.md](docs/architecture.md) for where code goes.
@@ -111,9 +111,9 @@ make check      # manifests, generate, fmt, vet, lint, test and the UI's check i
   default works on the chart's in-cluster Gitea, and a user who runs
   elsewhere gives their own value. The design never hard-codes such a choice
   for the user, and no plan asks the owner to hold a name or an account on a
-  user's behalf (#1234: `@c4factory` on npmjs.org was proposed as the one
+  user's behalf (#1234: `@theos` on npmjs.org was proposed as the one
   scope; the scope and the registry are settings, the scope's default is
-  `@c4factory` and the registry's the in-cluster Gitea's npm registry, so
+  `@theos` and the registry's the in-cluster Gitea's npm registry, so
   nothing leaves the cluster unless the user says where). The accounts and
   credentials the project itself needs stay the owner's ([GOVERNANCE.md](GOVERNANCE.md), "Reserved to the owner").
 - **Test the rules where they live,** at the lowest tier that can see them:

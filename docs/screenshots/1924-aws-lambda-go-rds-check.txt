@@ -21,7 +21,7 @@ cd src && golangci-lint run
 0 issues.
 node_modules/.bin/tsc --noEmit
 cd src && go test -race -count=1 ./...
-ok  	c4factory.local/webshop/sample-app	1.107s
+ok  	theos.local/webshop/sample-app	1.107s
 node_modules/.bin/vitest run
  RUN  v5.0.3 $S/go
  ✓ infra/connector_rds.test.ts (7 tests) 24315ms

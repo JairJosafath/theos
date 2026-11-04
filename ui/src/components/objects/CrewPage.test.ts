@@ -118,7 +118,7 @@ describe('the Crew page’s published release', () => {
   it('says publishReleases is deprecated and links the migration (#1603)', () => {
     const html = render(undefined, published('Published'))
     expect(html).toContain(
-      'href="https://github.com/JairJosafath/c4factory/blob/main/docs/design.md#publishing-a-release"',
+      'href="https://github.com/JairJosafath/theos/blob/main/docs/design.md#publishing-a-release"',
     )
     expect(html.replace(/<[^>]+>/g, '')).toContain('publishReleases is deprecated: a github DeployTarget')
     expect(render(undefined, crew('Succeeded'))).not.toContain('is deprecated')

@@ -50,7 +50,7 @@ git -C "$T/main" worktree add -q "$T/wt" -b wt
 mkdir -p "$T/wt/.dev/cache/go-build"
 check "#1132 leftover .dev: ./dev run finds the main checkout's tools" "$(dev "$T/wt" run c4-tool)" "main tools"
 check "leftover .dev: caches go to the main checkout's" \
-  "$(dev "$T/wt" run sh -c 'echo "$C4_DEV $GOCACHE"')" "$T/main/.dev $T/main/.dev/cache/go-build"
+  "$(dev "$T/wt" run sh -c 'echo "$THEOS_DEV $GOCACHE"')" "$T/main/.dev $T/main/.dev/cache/go-build"
 check "leftover .dev: ./dev shell opens the main checkout's shell" "$(dev "$T/wt" shell)" "ZDOTDIR=$T/main/.dev/zsh"
 out=$(dev "$T/wt" setup)
 check "leftover .dev: ./dev setup succeeds" "$?" 0
@@ -83,13 +83,13 @@ check "main not set up: no link" "$([ -e "$T/wt2/.dev" ] || echo none)" none
 mv "$T/main/.dev/bin.off" "$T/main/.dev/bin"
 
 # The main checkout keeps its own .dev/.
-check "main checkout: its own .dev" "$(dev "$T/main" run sh -c 'echo "$C4_DEV"')" "$T/main/.dev"
+check "main checkout: its own .dev" "$(dev "$T/main" run sh -c 'echo "$THEOS_DEV"')" "$T/main/.dev"
 
 # The project shell sources env.sh in zsh.
 if [ -x /usr/bin/zsh ] || [ -x /bin/zsh ]; then
   mkdir -p "$T/wt2/.dev/cache"
   check "zsh: a worktree's leftover .dev resolves to the main checkout's" \
-    "$(cd "$T/wt2" && env -i PATH=/usr/bin:/bin C4_ROOT="$T/wt2" zsh -fc 'source hack/dev/env.sh && print -r -- $C4_DEV')" "$T/main/.dev"
+    "$(cd "$T/wt2" && env -i PATH=/usr/bin:/bin THEOS_ROOT="$T/wt2" zsh -fc 'source hack/dev/env.sh && print -r -- $THEOS_DEV')" "$T/main/.dev"
 else
   echo "skip zsh: no zsh on this device"
 fi

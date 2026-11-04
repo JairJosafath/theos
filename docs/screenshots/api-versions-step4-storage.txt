@@ -6,7 +6,7 @@ Storage migrator rewrites a kind at strategy None without waiting on the webhook
 Ran 2 of 590 Specs in 6.659 seconds
 SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 588 Skipped
 --- PASS: TestControllers (6.66s)
-ok  	github.com/JairJosafath/c4factory/internal/controller	6.726s
+ok  	github.com/JairJosafath/theos/internal/controller	6.726s
 
 == go test ./test/compat/... -v
 --- PASS: TestCRDsKeepTheLastRelease (0.04s)
@@ -16,4 +16,4 @@ ok  	github.com/JairJosafath/c4factory/internal/controller	6.726s
 --- PASS: TestDroppedNamesOnlyDroppedVersions (0.05s)
 --- PASS: TestStaleDropped (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/test/compat	(cached)
+ok  	github.com/JairJosafath/theos/test/compat	(cached)

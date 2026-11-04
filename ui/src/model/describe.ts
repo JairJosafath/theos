@@ -190,7 +190,7 @@ const REASON_WORDING: Record<string, string> = {
   ForeignCommits: 'The repository already had commits the factory did not make, so it stopped',
   LayerConflict: 'Two templates wanted to write the same file',
   NothingToAdopt: 'The repository to adopt has no commits',
-  IdentityMismatch: 'The adopted repository’s .c4factory.yaml does not name this container',
+  IdentityMismatch: 'The adopted repository’s .theos.yaml does not name this container',
   StandardFilesDiffer: 'The adopted repository’s files differ from what its Standard renders',
   UnsupportedCI: 'A template has CI files, but none for the Git host’s CI system',
   UnpinnedRef: 'A template points to a branch instead of a fixed version',

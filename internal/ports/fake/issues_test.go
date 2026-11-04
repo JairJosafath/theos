@@ -5,9 +5,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 // The fake Gitea hands out a copy of an issue's labels: what ListIssues and

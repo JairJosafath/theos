@@ -11,7 +11,7 @@
 # group or personal access token works the same). Ready says whether GitLab
 # takes it. Not in ../webshop/kustomization.yaml, so `make sample` needs no
 # GitLab account; apply it with: kubectl apply -k config/samples/webshop-gitlab
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: DeployTarget
 metadata:
   name: webshop-gitlab

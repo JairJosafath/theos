@@ -8,8 +8,8 @@
 # It takes about five minutes, two of them waiting for a Session to turn Stale.
 set -euo pipefail
 
-# Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else c4factory.
-CLUSTER="${KIND_CLUSTER:-$("$(dirname "${BASH_SOURCE[0]}")/lib/github.sh" cluster name 2>/dev/null || echo c4factory)}"
+# Default: the pool cluster this checkout leased (hack/lib/github.sh cluster name), else theos.
+CLUSTER="${KIND_CLUSTER:-$("$(dirname "${BASH_SOURCE[0]}")/lib/github.sh" cluster name 2>/dev/null || echo theos)}"
 OUT="${OUT:-docs/screenshots}"
 WORK="$(mktemp -d)"
 trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$WORK"' EXIT
@@ -63,7 +63,7 @@ m1_tags() {
 
 # --- Milestone 2: story model ------------------------------------------------
 
-m2_story() { run kubectl get c4 -n webshop; }
+m2_story() { run kubectl get theos -n webshop; }
 
 m2_ownership() {
     p "kubectl -n webshop get <kind>/<name> -o jsonpath='{.metadata.ownerReferences[0]}'"
@@ -76,7 +76,7 @@ m2_ownership() {
 m2_policy() {
     kubectl create namespace evidence-policy --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     p 'kubectl apply -f -   # a Project called webshop in namespace evidence-policy'
-    printf 'apiVersion: c4.factory.io/v1beta1\nkind: Project\nmetadata: {name: webshop, namespace: evidence-policy}\n' |
+    printf 'apiVersion: theos.factory.io/v1beta1\nkind: Project\nmetadata: {name: webshop, namespace: evidence-policy}\n' |
         kubectl apply -f - 2>&1 || true
     kubectl delete namespace evidence-policy --wait=false >/dev/null
 }
@@ -135,8 +135,8 @@ m5_active() {
 }
 
 m5_stale() {
-    p "kubectl -n webshop exec session-orders-api -c client -- pkill -KILL c4session"
-    kubectl -n webshop exec session-orders-api -c client -- pkill -KILL c4session
+    p "kubectl -n webshop exec session-orders-api -c client -- pkill -KILL theos-session"
+    kubectl -n webshop exec session-orders-api -c client -- pkill -KILL theos-session
     echo "Killed the client at $(date -u +%T); watching the Session:"
     for _ in $(seq 1 40); do
         phase=$(kubectl -n webshop get sessions -o jsonpath='{.items[0].status.phase}')
@@ -151,8 +151,8 @@ m5_stale() {
 # --- Milestone 6: UI ---------------------------------------------------------
 
 m6_readonly() {
-    local api=http://localhost:8080/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api
-    p 'curl -X <method> http://localhost:8080/k8s/apis/c4.factory.io/.../containers/orders-api'
+    local api=http://localhost:8080/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api
+    p 'curl -X <method> http://localhost:8080/k8s/apis/theos.factory.io/.../containers/orders-api'
     for m in GET POST PUT PATCH DELETE; do
         printf '  %-7s -> %s\n' "$m" "$(curl -s -o /dev/null -w '%{http_code}' -X "$m" "${api/8080/8088}")"
     done
@@ -160,8 +160,8 @@ m6_readonly() {
     printf '  %-7s -> %s\n' GET \
         "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8088/k8s/api/v1/namespaces/webshop/secrets/gitea-credentials)"
     echo
-    p 'kubectl auth can-i --list --as=system:serviceaccount:c4-factory-ui:c4-factory-ui'
-    kubectl auth can-i --list --as=system:serviceaccount:c4-factory-ui:c4-factory-ui | grep -E 'Resources|c4.factory.io'
+    p 'kubectl auth can-i --list --as=system:serviceaccount:theos-ui:theos-ui'
+    kubectl auth can-i --list --as=system:serviceaccount:theos-ui:theos-ui | grep -E 'Resources|theos.factory.io'
 }
 
 # --- Run ---------------------------------------------------------------------
@@ -180,7 +180,7 @@ shot m2-policy "A Project must be named after its namespace" m2_policy
 # A copy of the story in its own namespace, so deleting webshop-core there shows
 # the cascade without touching the sample.
 kubectl create namespace evidence-cascade --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-printf 'apiVersion: c4.factory.io/v1beta1\nkind: Project\nmetadata: {name: evidence-cascade}\n' |
+printf 'apiVersion: theos.factory.io/v1beta1\nkind: Project\nmetadata: {name: evidence-cascade}\n' |
     kubectl -n evidence-cascade apply -f - >/dev/null
 kubectl -n evidence-cascade apply -f config/samples/webshop/story.yaml >/dev/null
 sleep 5
@@ -193,15 +193,15 @@ kubectl -n evidence-catalog apply -f config/samples/webshop/factory.yaml >/dev/n
 kubectl -n evidence-catalog create secret generic gitea-credentials --from-literal=token=unused \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 cat <<'EOF' | kubectl -n evidence-catalog apply -f - >/dev/null
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Project
 metadata: {name: evidence-catalog}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata: {name: webshop-core}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata: {name: storefront}
 spec:
@@ -238,7 +238,7 @@ kubectl -n webshop wait pod/session-orders-api --for=condition=Ready --timeout=1
 sleep 5
 
 echo "==> Milestone 6: UI"
-kubectl -n c4-factory-ui port-forward svc/c4-factory-ui 8088:8080 >/dev/null 2>&1 &
+kubectl -n theos-ui port-forward svc/theos-ui 8088:8080 >/dev/null 2>&1 &
 sleep 3
 ui="http://localhost:8088/?project=webshop"
 containers="view=containers&system=webshop-core"

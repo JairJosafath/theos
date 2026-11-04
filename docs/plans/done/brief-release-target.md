@@ -42,8 +42,8 @@ pull request.
   to a Brief-made Crew's `spec.publishReleases` would need a
   ValidatingAdmissionPolicy that tells the operator's write from a person's.
   It can only do that by the operator's ServiceAccount name, which differs
-  between the kustomize install (`c4-factory-controller-manager` in
-  `c4-factory-system`), the chart (`resourceName`, or a `serviceAccount.name`
+  between the kustomize install (`theos-controller-manager` in
+  `theos-system`), the chart (`resourceName`, or a `serviceAccount.name`
   the user picks) and envtest; an `authorizer` check would let any
   cluster-admin, the usual `kubectl` user on a Kind cluster, through anyway.
   A rule that breaks with an install option is worse than none. Instead the
@@ -53,7 +53,7 @@ pull request.
   no release goes to a target only one side names. The UI, where most such
   changes are made, edits the Brief, so it never makes the disagreement.
 - **The last target the Brief set is an annotation on the Crew.**
-  `c4.factory.io/brief-publish-releases` holds the JSON of the
+  `theos.factory.io/brief-publish-releases` holds the JSON of the
   `CrewPublishReleases` the Brief last wrote (`{}` when its entry names none),
   written in the same patch as the spec. Comparing three values settles who
   changed what:
@@ -115,7 +115,7 @@ pull request.
     gray-lenovo's was): fail `RepositoryReplaced`, "R is not the repository
     this Crew published to before (GitHub id N, now M); it was deleted or
     renamed and a new one took its name". A person who means the new one says
-    so with the annotation `c4.factory.io/accept-repository: <M>` on the
+    so with the annotation `theos.factory.io/accept-repository: <M>` on the
     Crew; the operator records M and removes the annotation.
   - a target changed on purpose (another `repository`) resets the record.
   Both are Warning `ReleasePublishFailed` Events, once per reason, like the

@@ -35,7 +35,7 @@ mtime back. envtest reserves each port it hands out as a file in
 `$XDG_CACHE_HOME/kubebuilder-envtest`, and `./dev` puts `XDG_CACHE_HOME` in
 `.dev/`, inside the module, where each envtest run changed a directory the
 other suites had read; `make test` gives the tests `TEST_CACHE_HOME` instead
-(`~/.cache/c4factory/test-cache`, one per device, outside any checkout, #1326) and keeps `GOCACHE`. A
+(`~/.cache/theos/test-cache`, one per device, outside any checkout, #1326) and keeps `GOCACHE`. A
 result is not cached when a file the test read changed in the 2 seconds
 before; the next run caches it. Coverage is collected only when
 asked: `COVER=1 make test` writes `cover.out`, and CI's Tests workflow asks.
@@ -57,7 +57,7 @@ mkdir -p .dev/secrets && install -m 600 /dev/stdin .dev/secrets/claude-token
 ```
 
 After `make deploy`, `make claude-secret` stores it as Secret
-`claude-credentials` in `CLAUDE_NAMESPACE` (default `c4-factory-system`, the
+`claude-credentials` in `CLAUDE_NAMESPACE` (default `theos-system`, the
 operator's namespace) of the leased cluster, without the token in its argv or
 transcript. The test environment shares it like the release: `config/manager`
 runs the operator with `--shared-secret=claude-credentials` and `POD_NAMESPACE`,
@@ -66,11 +66,11 @@ the shared token gets `ANTHROPIC_BASE_URL` pointing at the proxy instead of the
 token (the chart passes both when `agents.enabled`). The operator copies no
 token: the proxy reads it in the operator's namespace, and a rotated token
 reaches it within the kubelet's sync period, about a minute. The label
-`c4.factory.io/shared-secrets: "true"` still gates the proxy's NetworkPolicy
+`theos.factory.io/shared-secrets: "true"` still gates the proxy's NetworkPolicy
 and the pull secrets the operator copies (`--shared-pull-secret`): `make seed`
 labels `webshop` and `apps`, and the webshop sample and the e2e fixture label
 theirs, so one Secret serves every project. Another namespace opts in with
-`kubectl label namespace NAME c4.factory.io/shared-secrets=true`. A project
+`kubectl label namespace NAME theos.factory.io/shared-secrets=true`. A project
 with a token of its own needs a Secret of another name in its namespace and
 Agents naming it (its keys become the sandbox's environment); a
 `claude-credentials` that `make claude-secret CLAUDE_NAMESPACE=NAME` writes
@@ -84,19 +84,19 @@ the environment wins over the file; `CLAUDE_TOKEN_FILE` names another file.
 ## Sharing the Kind clusters between checkouts
 
 This is the human path: a person who wants to run Kind sets
-`C4_HUMAN_CLUSTER=1` in their own shell; without it `cluster acquire` exits 5
+`THEOS_HUMAN_CLUSTER=1` in their own shell; without it `cluster acquire` exits 5
 and names the opt-in. The relay never sets it and unsets it for its sessions
 (`hack/lib/session-env.sh`), and no prompt or skill tells an agent to. Two humans' checkouts (or a human's worktrees) may still run Kind at
 once. A deploy and its verification take a whole cluster: `make deploy` from a branch
 replaces the operator, CRDs and admission policies another session deployed,
 an outage test or `make down`/`make up` stops the node, and Standard tags land
 in Gitea's shared `templates` org. So the device runs a pool of
-`C4_CLUSTERS` Kind clusters (default 2): `c4factory`, `c4factory-2`, ...,
+`THEOS_CLUSTERS` Kind clusters (default 2): `theos`, `theos-2`, ...,
 each with its own Gitea and seeded templates, and a checkout leases one only
 around the steps that touch it:
 
 1. Do the work that needs no cluster first (code, `make check`, envtest).
-2. Right before the first cluster step, `C4_HUMAN_CLUSTER=1
+2. Right before the first cluster step, `THEOS_HUMAN_CLUSTER=1
    hack/lib/github.sh cluster acquire`.
    It leases this checkout the cluster it already holds, else a free one that
    exists, else the first free one, which it then creates
@@ -138,41 +138,41 @@ around the steps that touch it:
    before it applies `config/gitea`; the apply recreates it (#1679).
    Images built for a deploy (`make deploy`,
    the agent, runner, seed, session and UI images) are tagged per checkout
-   (`c4factory/operator:dev-relay-2-1a2b3c`, from `hack/kind.sh checkout`),
+   (`theos/operator:dev-relay-2-1a2b3c`, from `hack/kind.sh checkout`),
    so two checkouts building at once never share a tag; `hack/kind.sh load`
    loads one into the leased cluster under the name the manifests use
-   (`c4factory/operator:dev`). The toolchain base images
-   (`c4factory/go:1.26`, `c4factory/base:dev`) stay shared: they change
+   (`theos/operator:dev`). The toolchain base images
+   (`theos/go:1.26`, `theos/base:dev`) stay shared: they change
    rarely and only from `hack/toolchain-*`.
-   `make gitea-forward` and `make test-gitea-kind` use port 3000 for `c4factory`
-   and 3000+K-1 for `c4factory-K` (`GITEA_PORT`), so two forwards don't
+   `make gitea-forward` and `make test-gitea-kind` use port 3000 for `theos`
+   and 3000+K-1 for `theos-K` (`GITEA_PORT`), so two forwards don't
    collide; the e2e tests pick a free one.
 4. `hack/lib/github.sh cluster release`.
 
 Each cluster's lease is a file in the git common dir (`.git/` of the main
-checkout): `c4-cluster.lease` for `c4factory`, `c4-cluster-<name>.lease` for
+checkout): `c4-cluster.lease` for `theos`, `c4-cluster-<name>.lease` for
 the others, naming the cluster, agent, issue and worktree. A checkout holds
 at most one. `beat` (the heartbeat hook) refreshes it, and it is stale after
-`C4_LEASE_TTL` (2h) or once its worktree is gone; `acquire` takes a stale one
+`THEOS_LEASE_TTL` (2h) or once its worktree is gone; `acquire` takes a stale one
 over. `release`, `handoff`, `close`, `status N waiting`, `status N
 needs-maintainer` and `status N needs-human` drop it. In the relay and its
-sessions (`C4_HEADLESS=1`) `beat` and those commands touch no lease: they
+sessions (`THEOS_HEADLESS=1`) `beat` and those commands touch no lease: they
 hold none.
 `hack/heavy-guard.sh` denies `make deploy`, `sample`, `e2e`, `test-e2e`, `up`
 and `down` while another checkout holds the cluster the command targets
 (`KIND_CLUSTER=` in the command, else the checkout's lease, else
-`c4factory`). The memory gates below stay as they are.
+`theos`). The memory gates below stay as they are.
 `hack/lib/github_test.sh`, `hack/relay_test.sh` and `hack/heavy-guard_test.sh`
 test the leases.
 
-Raise `C4_CLUSTERS` only after measuring: each idle cluster takes about 1.1
+Raise `THEOS_CLUSTERS` only after measuring: each idle cluster takes about 1.1
 GiB, and up to 4.5 GiB with a Crew running.
 
 ## The relay watch as a service
 
 Install the watch once on each device that runs the relay overnight, from the
 main checkout: `hack/relay-watch.sh --install --workers N`. It writes the
-systemd user unit `c4factory-relay-watch.service` (from
+systemd user unit `theos-relay-watch.service` (from
 `hack/relay-watch.service`, with this checkout, N and your `PATH`), enables and
 starts it, and turns on `loginctl enable-linger`, so the watch starts at boot
 without a login. A crash, an OOM kill or `kill <pid>` brings the watch back
@@ -186,14 +186,14 @@ the unit again (with the unit's worker count); on a cron install, `rm -f
 .relay/stop` alone, and cron's next tick starts the watch under its own
 login ([testenv.md](testenv.md), "The restore depends on the install").
 `--uninstall` removes the unit or the crontab lines. Install from the main checkout, not a worktree; the unit and
-cron get your `PATH` and `RELAY_*`, `WATCH_*`, `HEAVY_JOBS` and `C4_CLUSTER*`
+cron get your `PATH` and `RELAY_*`, `WATCH_*`, `HEAVY_JOBS` and `THEOS_CLUSTER*`
 settings, and the GitHub token from the git credential helper, not `GH_TOKEN`.
 They also get the Claude Code login of the shell you install from
 (`CLAUDE_CONFIG_DIR`, or `~/.claude` when unset), set after `./dev run`, which
 would otherwise point every session at `.dev/claude` (#1435); `--install`
 refuses a login without `.credentials.json`, so install from a logged-in
 shell: `CLAUDE_CONFIG_DIR=$HOME/.claude hack/relay-watch.sh --install` uses
-the VS Code login. `systemctl --user status c4factory-relay-watch` shows the
+the VS Code login. `systemctl --user status theos-relay-watch` shows the
 unit.
 
 On the device with the Kind cluster, the systemd user manager must have the
@@ -245,7 +245,7 @@ queue:
   or run it in the background. Waiters get slots first come, first served:
   each holds a numbered ticket, and a waiter that dies loses its turn. One
   job goes first: the `make check` that `land` runs under the merge turn
-  (`C4_HEAVY_FIRST=1`, which the Makefile turns into `hack/heavy-slot.sh
+  (`THEOS_HEAVY_FIRST=1`, which the Makefile turns into `hack/heavy-slot.sh
   acquire --first`) takes the next slot that frees, ahead of every waiter,
   since every device's lands wait on it while the other checks hold up only
   their own. It never takes a held slot, and one pull request at a time holds
@@ -255,13 +255,13 @@ queue:
   sub-makes don't take another. `hack/heavy-slot.sh status` shows the slots
   and the waiters, the one going first marked `goes first` and the slot it
   took `went first`.
-- The controller suite runs in `C4_TEST_PROCS` processes (default 2), each
+- The controller suite runs in `THEOS_TEST_PROCS` processes (default 2), each
   with its own control plane and manager (#1283). Measured on 2026-10-16 on
   this device (9.6 GiB, `HEAVY_JOBS=1` then), the suite alone, the peak RSS
   of its whole process tree (go test, the test binaries, etcd,
   kube-apiserver):
 
-  | `C4_TEST_PROCS` | Wall time | Peak RSS |
+  | `THEOS_TEST_PROCS` | Wall time | Peak RSS |
   | --- | --- | --- |
   | 1 | 834 s | 1.0 GiB |
   | 2 | 484 s | 2.2 GiB |
@@ -270,9 +270,9 @@ queue:
   Each part costs about 1.1 GiB. Two checks at once at 2 take about 4.4 GiB
   for their suites and leave the device above `RELAY_MIN_MEM_GIB`; at 4 they
   would take 8.8 GiB, more than it has free. So the default is 2, and below
-  `C4_TEST_MIN_MEM_GIB` (4 GiB, two parts and the relay's 2 GiB of
+  `THEOS_TEST_MIN_MEM_GIB` (4 GiB, two parts and the relay's 2 GiB of
   headroom) of `MemAvailable` the suite runs in one process. A device with
-  memory to spare runs `C4_TEST_PROCS=4 make check`.
+  memory to spare runs `THEOS_TEST_PROCS=4 make check`.
 - Two checks at once still start several envtest control planes at once, so
   `make test` gives them slack: 2 minutes for etcd and kube-apiserver to
   start (`ENVTEST_START_TIMEOUT`), and etcd a 10 s election timeout
@@ -287,7 +287,7 @@ queue:
 - `make check` remembers a passing tree, device-wide (`hack/check-cache.sh`).
   A pass is recorded under the git tree hash of the working state as the
   check left it (tracked and untracked non-ignored files, after `manifests`,
-  `generate` and `fmt`) in `.dev/cache/c4factory/checks/<tree>`: when, which
+  `generate` and `fmt`) in `.dev/cache/theos/checks/<tree>`: when, which
   checkout, which agent. A plain `make check` on a tree that already passed, in
   any checkout, prints `make check: passed on tree <hash> at <time> in
   <checkout> (cached); FORCE=1 to rerun` and exits 0 without a heavy slot. A
@@ -319,7 +319,7 @@ queue:
     and `go version`.
 
   `lint` keeps golangci-lint's own cache. Tier passes live in
-  `.dev/cache/c4factory/checks/tiers/<tier>-<key>`; a failing tier records
+  `.dev/cache/theos/checks/tiers/<tier>-<key>`; a failing tier records
   nothing, `FORCE=1` runs every tier, and a dry run (`make -n check`)
   records nothing. So a `hack/`-only change runs the shell tests and skips
   the UI's check and `validate-yaml`; one under `ui/` runs only the UI's check.
@@ -333,7 +333,7 @@ queue:
   every other hook `.claude/settings.json` runs, exits 0 before reading its
   input (#1894). Below `RELAY_MIN_MEM_GIB` it asks the user before the job
   runs, naming the processes with the most memory and the Kind node. A
-  headless session (`C4_HEADLESS=1`, set by the relay) gets
+  headless session (`THEOS_HEADLESS=1`, set by the relay) gets
   that warning in its context and the job runs, since in `claude -p` a
   question nobody can answer blocks the command. When every slot is taken, it
   tells the session a `make` job will wait, and that the wait is not a hang.
@@ -346,7 +346,7 @@ jobs running while a third waits, a slot freed by a job that ends or is killed,
 the oldest waiter taking the next free slot and a dead waiter skipped, a
 `--first` waiter taking the next free slot ahead of older waiters but never a
 held one while the others keep their order, and the Makefile queueing its
-heavy goals, going first only with `C4_HEAVY_FIRST`, which its recipes don't
+heavy goals, going first only with `THEOS_HEAVY_FIRST`, which its recipes don't
 inherit. `hack/check-cache_test.sh` tests the
 check cache: a pass, then a hit on the same tree from another worktree, a miss
 on one changed byte (tracked or untracked), and `FORCE=1` queueing again; and
@@ -392,7 +392,7 @@ it reached, all tested without Docker (`hack/check-workflows_test.sh`,
   check`) fails either workflow without that step, and *Release* with it
   before the push. The base images the Dockerfiles pin stay: local builds
   share them, and only a bump leaves an old one behind.
-- `hack/prune-caches.sh` caps Docker's build cache at `C4_PRUNE_DOCKER_MAX_GB`
+- `hack/prune-caches.sh` caps Docker's build cache at `THEOS_PRUNE_DOCKER_MAX_GB`
   (10 GB, oldest first) on top of the 72h rule, and drops the dangling images,
   every 30 minutes from `hack/relay-watch.sh` and when a worker finds a
   watched filesystem low.
@@ -452,19 +452,19 @@ Every workflow's `runs-on` uses the repository variable `RUNS_ON`, so switching
 needs no code change. On the device, with `gh` logged in to the repository:
 
 ```bash
-make gh-runner RUNNERS=3                    # build, register c4factory-<hostname>-1..3 once, start them
+make gh-runner RUNNERS=3                    # build, register theos-<hostname>-1..3 once, start them
 gh variable set RUNS_ON --body self-hosted  # every job goes to them
 make gh-runner-status                       # whether Docker answers, their containers, whether GitHub sees them online
 gh variable delete RUNS_ON                  # back to ubuntu-latest
 make gh-runner-down                         # stop them all and remove them from GitHub
-docker logs -f c4factory-gh-runner-1        # what runner 1 is doing
+docker logs -f theos-gh-runner-1        # what runner 1 is doing
 hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that are gone, every 2 minutes
 ```
 
-- Runner *i* is the container `c4factory-gh-runner-i`, registered as
-  `c4factory-<hostname>-i` with the labels `self-hosted`, `linux`, `x64` and
-  `c4factory`, with a token from the device's `gh` login. Its registration
-  lives on a volume of its own (`c4factory-gh-runner-i-config`), so `docker
+- Runner *i* is the container `theos-gh-runner-i`, registered as
+  `theos-<hostname>-i` with the labels `self-hosted`, `linux`, `x64` and
+  `theos`, with a token from the device's `gh` login. Its registration
+  lives on a volume of its own (`theos-gh-runner-i-config`), so `docker
   restart`, a reboot and a new image keep it. GitHub drops a runner that stays
   offline for 14 days; `make gh-runner` then registers it again. With
   `RUNS_ON` set and the runners down, jobs wait in the queue: nothing fails,
@@ -478,17 +478,17 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   answering from this distro means starting Docker Desktop. A container down
   means running `make gh-runner RUNNERS=N`. A runner GitHub sees offline while
   its container is up has its reason in `docker logs --tail 50
-  c4factory-gh-runner-i`. It exits 1 unless every runner is online. Setting
+  theos-gh-runner-i`. It exits 1 unless every runner is online. Setting
   `RUNS_ON` back is the owner's call.
 - **The keeper.** Docker Desktop on WSL loses its data disk now and then
   (2026-10-08, 10-09, 10-12, 10-15): it comes back without the containers,
   volumes and image, so `--restart unless-stopped` has nothing to restart,
   and jobs waited hours. `hack/gh-runner/gh-runner.sh install`, run once per
   device from the main checkout, installs a systemd user timer
-  (`c4factory-gh-runner-keep.timer`; without systemd, a crontab line) that
+  (`theos-gh-runner-keep.timer`; without systemd, a crontab line) that
   runs `gh-runner.sh keep` every 2 minutes. `make gh-runner RUNNERS=N` records
   N, with the names, work directories and repository it used, in
-  `~/.local/state/c4factory/gh-runner/runners`; `keep` starts the recorded
+  `~/.local/state/theos/gh-runner/runners`; `keep` starts the recorded
   runners whose container is gone or not up (building the image and
   registering them again when those went too), and nothing else:
   - it never recreates a container that is up, which would kill its job,
@@ -500,7 +500,7 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
     --shutdown`), and the relay watch's *Runners offline* note is the alarm;
   - it skips its turn while `make gh-runner` or `make gh-runner-down` runs.
 
-  Its log is `~/.local/state/c4factory/gh-runner/keep.log`, under `$HOME`
+  Its log is `~/.local/state/theos/gh-runner/keep.log`, under `$HOME`
   since `./dev` points the XDG folders into `.dev/`. It runs without `./dev
   run`, with the installer's `PATH` and the device's `gh` login. The systemd
   user manager needs the `docker` group, and `install` warns when it lacks it
@@ -509,15 +509,15 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   down. `gh-runner.sh uninstall` removes the keeper.
 - `make gh-runner RUNNERS=N` again with a smaller N removes the runners above
   N, from Docker and from GitHub; `RUNNERS` defaults to 1. A device that ran
-  the single runner from before (container `c4factory-gh-runner`, named
-  `c4factory-<hostname>`) has it removed and registered again as runner 1 on
+  the single runner from before (container `theos-gh-runner`, named
+  `theos-<hostname>`) has it removed and registered again as runner 1 on
   the first `make gh-runner`.
 - **One Kind job per device.** *Test Chart*, *E2E Tests* and *Verify Release*
   make Kind clusters with fixed names (`chart-test`, `ci-e2e`,
   `release-<check>`) and take several GB of the device's memory. Only runner 1
-  of a device carries the label `c4factory-kind`, and while `RUNS_ON` is
+  of a device carries the label `theos-kind`, and while `RUNS_ON` is
   `self-hosted` those jobs ask for it (`runs-on: ${{ vars.RUNS_ON ==
-  'self-hosted' && fromJSON('["self-hosted", "c4factory-kind"]') || ... }}`),
+  'self-hosted' && fromJSON('["self-hosted", "theos-kind"]') || ... }}`),
   so a device runs one of them at a time and two devices run one each. A
   label, not a `concurrency` group: a group spans the repository, not a
   device, and keeps only the newest pending run, cancelling the others; and
@@ -579,20 +579,20 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   `docker build` and Kind work and a Kind cluster a job makes answers on
   127.0.0.1. The socket is root on the device, which is acceptable for a
   private repository with one owner. Runner *i*'s work directory
-  (`~/.cache/c4factory/gh-runner/work/i`) has the same path in the container,
+  (`~/.cache/theos/gh-runner/work/i`) has the same path in the container,
   so a job's bind mounts resolve.
 - Each runner takes one job at a time. They run on the device's Docker
   outside the `HEAVY_JOBS` slots: a release builds eight images and *Tests*
   runs `make test` whatever the device's sessions are doing, so pick N for the
   device's memory.
 - The Go module, build and golangci-lint caches and the npm cache are one
-  volume the runners share (`c4factory-gh-runner-cache`): Go, golangci-lint and
+  volume the runners share (`theos-gh-runner-cache`): Go, golangci-lint and
   npm lock what they write there. The Makefile's tools (controller-gen,
   golangci-lint, the envtest binaries, Gitea) are kept there too, in
   `~/.cache/make-bin` (`LOCALBIN`), since `actions/checkout` deletes the
   checkout's `.dev/` before each job; they install through a temporary
   directory, as when worktrees share `.dev/`. The tool cache setup-go and setup-node unpack
-  into is a volume per runner (`c4factory-gh-runner-i-toolcache`): two runners
+  into is a volume per runner (`theos-gh-runner-i-toolcache`): two runners
   unpacking one Go version into it at once would race. The workflows skip
   GitHub's cache on self-hosted runners. `make gh-runner-down` keeps the caches.
 - **What a job leaves behind.** The containers live on, job after job, so the

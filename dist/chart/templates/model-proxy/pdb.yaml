@@ -3,13 +3,13 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "c4-factory.modelProxyName" . }}
+  name: {{ include "theos.modelProxyName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "c4-factory.modelProxyLabels" . | nindent 4 }}
+    {{- include "theos.modelProxyLabels" . | nindent 4 }}
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      {{- include "c4-factory.modelProxySelectorLabels" . | nindent 6 }}
+      {{- include "theos.modelProxySelectorLabels" . | nindent 6 }}
 {{- end }}

@@ -12,12 +12,12 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/funcr"
 
-	gitlabdeploy "github.com/JairJosafath/c4factory/internal/adapters/gitlab"
-	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/oci"
-	"github.com/JairJosafath/c4factory/internal/oci/ocitest"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	gitlabdeploy "github.com/JairJosafath/theos/internal/adapters/gitlab"
+	"github.com/JairJosafath/theos/internal/adapters/gitlab/gitlabtest"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/oci"
+	"github.com/JairJosafath/theos/internal/oci/ocitest"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // TestGitLabDeployerImage: the gitlab member copies the release's image to

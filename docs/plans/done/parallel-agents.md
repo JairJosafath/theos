@@ -32,7 +32,7 @@ agents today and both work the same issue in the same checkout.
   ```
 
 - A claim is live while its body is unreleased and the comment was edited in
-  the last 2 hours (`C4_LEASE_TTL`). GitHub's `updated_at` is the heartbeat; no
+  the last 2 hours (`THEOS_LEASE_TTL`). GitHub's `updated_at` is the heartbeat; no
   `stale` label, so nothing has to remember to remove one.
 - A Claude Code `PostToolUse` hook (`.claude/settings.json`, shared in git)
   runs `hack/lib/github.sh beat`: it edits the heartbeat line at most every 15
@@ -118,13 +118,13 @@ evaluate twice; its 6-hour throttle reads that issue's newest evaluation.
   had one `needs/cluster` issue per device, held for the claim's life; with 9
   workers that serialized most open issues, whose code and envtest work needs
   no cluster.)
-- **Devices without a cluster.** `C4_CLUSTER=none` in the environment: `pick`
+- **Devices without a cluster.** `THEOS_CLUSTER=none` in the environment: `pick`
   skips `needs/cluster` issues, `take` refuses them, and the relay prompt says
   there is no cluster. A session that finds mid-way that its issue needs the
   cluster lands what it can (the code pull request, with unit and envtest
   tests), labels the issue `needs/cluster` and hands off with what is left
   (deploy and verify); a device with the cluster takes it from there.
-- **The light devcontainer**, `.devcontainer/lite`, sets `C4_CLUSTER=none`:
+- **The light devcontainer**, `.devcontainer/lite`, sets `THEOS_CLUSTER=none`:
   Go, Node, git, gh and Claude Code without Docker, Kind, kubectl or Helm. It
   and the full container empty Go's build cache on start past 4 GB.
   The README's "A device without the cluster" says how to set one up.
@@ -171,7 +171,7 @@ Each step is one pull request to main and leaves the single-relay flow working.
   three or more ready issues. No issue is taken twice, `claims` shows each with
   a fresh heartbeat, and killing a worker hands its issue to another after the
   TTL. The log and the `claims` output are saved in `docs/screenshots/`.
-- Step 5: a relay with `C4_CLUSTER=none` takes only issues without
+- Step 5: a relay with `THEOS_CLUSTER=none` takes only issues without
   `needs/cluster` while the cluster device works one; an issue it hands back
   with the label is finished on the cluster device; two checkouts on one device
   never both hold a `needs/cluster` issue; and the light devcontainer builds

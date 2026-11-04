@@ -22,7 +22,7 @@ shown on the page; "live" when the page shows none.
 
 | Source | Version / date |
 |---|---|
-| golangci-lint — https://golangci-lint.run/ | **v2.14.0**, as installed in `c4factory/go:1.26`; config checked with `golangci-lint config verify` |
+| golangci-lint — https://golangci-lint.run/ | **v2.14.0**, as installed in `theos/go:1.26`; config checked with `golangci-lint config verify` |
 | golangci-lint JSON schema — https://golangci-lint.run/jsonschema/golangci.jsonschema.json | fetched 2026-10-02, for setting and revive rule names |
 
 Every linter in `.golangci.yml` was checked to fire on a file written to break

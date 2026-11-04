@@ -73,7 +73,7 @@ sample-app: parameter AlertEmail default "ops@example.com"
 sample-app: AlarmsEmailSubscription71D15C2C under condition HasAlertEmail = {"Fn::Not": [{"Fn::Equals": [{"Ref": "AlertEmail"}, ""]}]}
    {"Endpoint": {"Ref": "AlertEmail"}, "Protocol": "email", "TopicArn": {"Ref": "AlarmsTopic3A2DFEBA"}}
 sample-app: backup plan rule cron(0 5 * * ? *) keeps {'DeleteAfterDays': 7} copies to [{"DestinationBackupVaultArn": {"Fn::Join": ["", ["arn:", {"Ref": "AWS::Partition"}, ":backup:eu-central-1:", {"Ref": "AWS::AccountId"}, ":backup-vault:sample-app-copies"]]}, "Lifecycle": {"DeleteAfterDays": 7}}]
-sample-app: backup selection {"Resources": ["*"], "Conditions": {"StringEquals": [{"ConditionKey": "aws:ResourceTag/c4factory:container", "ConditionValue": "sample-app"}]}, "ListOfTags": null, "NotResources": [{"Fn::GetAtt": ["LoadBalancerLogsC31A6119", "Arn"]}]}
+sample-app: backup selection {"Resources": ["*"], "Conditions": {"StringEquals": [{"ConditionKey": "aws:ResourceTag/theos:container", "ConditionValue": "sample-app"}]}, "ListOfTags": null, "NotResources": [{"Fn::GetAtt": ["LoadBalancerLogsC31A6119", "Arn"]}]}
   NotResources names LoadBalancerLogsC31A6119 AWS::S3::Bucket
 sample-app: LoadBalancerBE9EEC3A writes its access logs to {"Ref": "LoadBalancerLogsC31A6119"}
 sample-app-backup-copy: VaultKey6B75F33E AWS::KMS::Key Retain, Vault23237E5B AWS::Backup::BackupVault Retain ; vault name sample-app-copies

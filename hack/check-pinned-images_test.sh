@@ -3,7 +3,7 @@
 # pinned (#919), and the UI's npm ci step checks the native bindings in the
 # same layer (#912); a base image by tag alone, an ARG default by tag alone or
 # an ARG without a default fails, and a FROM naming an earlier stage or, through
-# an ARG, one of our own c4factory/ images passes.
+# an ARG, one of our own theos/ images passes.
 # Run: hack/check-pinned-images_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -73,12 +73,12 @@ FROM \${IMG}"
 "$CHECK" "$T/Dockerfile" 2>/dev/null
 check "an ARG after the first FROM doesn't resolve a FROM" "$?" 1
 
-df "ARG BASE=c4factory/base:dev
+df "ARG BASE=theos/base:dev
 FROM \${BASE}"
 "$CHECK" "$T/Dockerfile" 2>/dev/null
 check "an ARG default naming our own image passes" "$?" 0
 
-df "FROM c4factory/base:dev"
+df "FROM theos/base:dev"
 "$CHECK" "$T/Dockerfile" 2>/dev/null
 check "our own image named directly fails" "$?" 1
 

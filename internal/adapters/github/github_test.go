@@ -18,7 +18,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 const fakeGitHubRepo = "acme/cel-lens"
@@ -269,7 +269,7 @@ func (f *fakeGitHub) reply(w http.ResponseWriter, status int, body string) {
 	_, _ = io.WriteString(w, body)
 }
 
-const testMarker = "<!-- c4factory: shop/cel-lens v0.2.0 -->"
+const testMarker = "<!-- theos: shop/cel-lens v0.2.0 -->"
 
 // TestGitHubReleasesPublish walks a release through every call: find nothing,
 // draft, upload, list, replace an asset, find the draft by its marker, publish.
@@ -509,7 +509,7 @@ func TestGitHubReleasesFindRelease(t *testing.T) {
 	if err != nil || got == nil || got.ID != 8 || got.Draft {
 		t.Errorf("FindRelease() = %+v, %v; want the published release 8", got, err)
 	}
-	got, err = g.FindRelease(ctx, "v9.9.9", "<!-- c4factory: shop/cel-lens v9.9.9 -->")
+	got, err = g.FindRelease(ctx, "v9.9.9", "<!-- theos: shop/cel-lens v9.9.9 -->")
 	if err != nil || got != nil {
 		t.Errorf("FindRelease(v9.9.9) = %+v, %v; want nil", got, err)
 	}

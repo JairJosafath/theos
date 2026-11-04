@@ -1,5 +1,5 @@
 # expect: two releases entries of one GitHub repository need source folders apart, neither inside the other
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Brief
 metadata:
   name: cel-lens

@@ -1,11 +1,11 @@
 # Test Chart installs the whole factory (#127, step 5)
-# https://github.com/JairJosafath/c4factory/actions/runs/37388185154, branch feat/127-the-helm-release-installs-the-whole
+# https://github.com/JairJosafath/theos/actions/runs/37388185154, branch feat/127-the-helm-release-installs-the-whole
 # helm install --wait --timeout 10m with gitea.projects={webshop}, on a fresh Kind cluster with Agent Sandbox; the "Check the release" step's output.
 
 2026-10-05T23:30:03.1214396Z ##[group]Run make helm-status
 ^[[36;1mmake helm-status^[[0m
-^[[36;1mkubectl -n c4-factory-system get deployments,pods^[[0m
-^[[36;1mkubectl -n c4-factory-system rollout status deployment/c4-factory-ui --timeout=120s^[[0m
+^[[36;1mkubectl -n theos-system get deployments,pods^[[0m
+^[[36;1mkubectl -n theos-system rollout status deployment/theos-ui --timeout=120s^[[0m
 ^[[36;1mkubectl -n gitea get deployments,pods^[[0m
 ^[[36;1mkubectl -n gitea rollout status deployment/gitea-runner-base --timeout=120s^[[0m
 ^[[36;1mkubectl -n gitea rollout status deployment/gitea-runner-go --timeout=120s^[[0m
@@ -31,7 +31,7 @@
 ^[[36;1m# misnamed Project gets in, so delete it and try again.^[[0m
 ^[[36;1mfor i in $(seq 1 12); do^[[0m
 ^[[36;1m  if ! kubectl -n webshop create -f - <<'EOF' 2>err.txt; then^[[0m
-^[[36;1mapiVersion: c4.factory.io/v1alpha1^[[0m
+^[[36;1mapiVersion: theos.factory.io/v1alpha1^[[0m
 ^[[36;1mkind: Project^[[0m
 ^[[36;1mmetadata:^[[0m
 ^[[36;1m  name: not-webshop^[[0m
@@ -46,15 +46,15 @@
 ^[[36;1mgrep -q "must be named after its namespace" err.txt^[[0m
 shell: /usr/bin/bash -e {0}
 env:
-helm status c4-factory --namespace c4-factory-system
-NAME: c4-factory
+helm status theos --namespace theos-system
+NAME: theos
 LAST DEPLOYED: Mon Oct  5 23:29:33 2026
-NAMESPACE: c4-factory-system
+NAMESPACE: theos-system
 STATUS: deployed
 REVISION: 1
 TEST SUITE: None
 NOTES:
-c4factory is installed in namespace c4-factory-system as release c4-factory.
+theos is installed in namespace theos-system as release theos.
 
 The operator needs Agent Sandbox (its Sandbox kind) to start:
 
@@ -62,11 +62,11 @@ The operator needs Agent Sandbox (its Sandbox kind) to start:
 
 Check it:
 
-  kubectl -n c4-factory-system get pods
+  kubectl -n theos-system get pods
 
 Open the read-only UI on http://localhost:8080:
 
-  kubectl -n c4-factory-system port-forward svc/c4-factory-ui 8080
+  kubectl -n theos-system port-forward svc/theos-ui 8080
 
 Gitea runs in namespace gitea at http://gitea.gitea.svc.cluster.local:3000, seeded
 with the tagged templates. Its admin password, and Gitea on http://localhost:3000:
@@ -76,13 +76,13 @@ with the tagged templates. Its admin password, and Gitea on http://localhost:300
 
 Project webshop: organization webshop in Gitea, GitProvider gitea in namespace webshop.
 NAME                                            READY   UP-TO-DATE   AVAILABLE   AGE
-deployment.apps/c4-factory-controller-manager   1/1     1            1           28s
-deployment.apps/c4-factory-ui                   1/1     1            1           28s
+deployment.apps/theos-controller-manager   1/1     1            1           28s
+deployment.apps/theos-ui                   1/1     1            1           28s
 
 NAME                                                 READY   STATUS    RESTARTS   AGE
-pod/c4-factory-controller-manager-665dcdc687-9m9p2   1/1     Running   0          27s
-pod/c4-factory-ui-69dff9694c-69tg2                   1/1     Running   0          27s
-deployment "c4-factory-ui" successfully rolled out
+pod/theos-controller-manager-665dcdc687-9m9p2   1/1     Running   0          27s
+pod/theos-ui-69dff9694c-69tg2                   1/1     Running   0          27s
+deployment "theos-ui" successfully rolled out
 NAME                                READY   UP-TO-DATE   AVAILABLE   AGE
 deployment.apps/gitea               1/1     1            1           28s
 deployment.apps/gitea-runner-base   1/1     1            1           28s
@@ -100,4 +100,4 @@ gitea-credentials   Opaque   2      3s
 templates
 webshop
 runners: base go
-The projects "not-webshop" is invalid: : ValidatingAdmissionPolicy 'c4-factory-project-name-equals-namespace' with binding 'c4-factory-project-name-equals-namespace-binding' denied request: a Project must be named after its namespace: want webshop, got not-webshop
+The projects "not-webshop" is invalid: : ValidatingAdmissionPolicy 'theos-project-name-equals-namespace' with binding 'theos-project-name-equals-namespace-binding' denied request: a Project must be named after its namespace: want webshop, got not-webshop

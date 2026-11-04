@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # GitHub helpers for work on the factory itself. That work is tracked as issues
-# on JairJosafath/c4factory, one issue per piece of work, and sessions hand off
+# on JairJosafath/theos, one issue per piece of work, and sessions hand off
 # through comments on them (the handoff skill). Product work, the apps the
 # factory builds, stays in Gitea, where the Crews work it.
 #
@@ -34,7 +34,7 @@
 #   hack/lib/github.sh claims            the live and stale claims on open issues
 #   hack/lib/github.sh stale [--apply]   the live claims on in-progress issues with no progress (a commit on the
 #                                        claim's branch or a <branch>-* one, a handoff, the claim's start) for
-#                                        C4_CLAIM_STALE (2h; 0: off). --apply escalates each (needs-maintainer)
+#                                        THEOS_CLAIM_STALE (2h; 0: off). --apply escalates each (needs-maintainer)
 #                                        with one <!-- c4-claim-stale --> comment, once per stale stretch,
 #                                        and leaves the claim alone. The relay watch runs it
 #   hack/lib/github.sh beat              refresh this checkout's claim heartbeat and cluster lease, at most every 15
@@ -50,8 +50,8 @@
 #   hack/lib/github.sh milestones        the open milestones, by due date: TITLE OPEN CLOSED DUE, tab-separated,
 #                                        OPEN and CLOSED being their issue counts, DUE the date or empty
 #   hack/lib/github.sh cluster acquire [--wait DURATION] [--fresh] [--bare]
-#                                        for a human only: refused (exit 5) unless C4_HUMAN_CLUSTER=1, which the
-#                                        relay never sets. Lease one of this device's Kind clusters (C4_CLUSTERS, default 2) to this
+#                                        for a human only: refused (exit 5) unless THEOS_HUMAN_CLUSTER=1, which the
+#                                        relay never sets. Lease one of this device's Kind clusters (THEOS_CLUSTERS, default 2) to this
 #                                        checkout and print its name, creating it if it does not exist yet; wait up
 #                                        to DURATION (default 30m) while other checkouts hold every one; exit 4 names them.
 #                                        --fresh: prefer one not created yet, else delete and recreate the leased one
@@ -62,7 +62,7 @@
 #                                        cluster stays marked bare: a plain acquire takes it last and recreates it
 #                                        with Gitea and the seed (one this checkout already holds is kept, with a warning)
 #   hack/lib/github.sh cluster release   drop this checkout's cluster lease
-#   hack/lib/github.sh cluster name      the cluster this checkout's make targets use: its lease's, else c4factory
+#   hack/lib/github.sh cluster name      the cluster this checkout's make targets use: its lease's, else theos
 #   hack/lib/github.sh cluster holder [NAME]
 #                                        the live cluster leases (or NAME's); exit 1: none
 #   hack/lib/github.sh cluster pool      each cluster in the pool: leased, free or not created yet, and bare
@@ -112,7 +112,7 @@
 #                                        new untracked one, which pushes nothing (#1449, #1462); make check's output, the path taken and how long the turn
 #                                        was held are kept in .relay/land-PR.log). The turn is a comment on the
 #                                        Maintainer report issue, refreshed every GH_LAND_BEAT seconds while it
-#                                        waits and runs; one older than C4_LAND_TTL (45m) was abandoned and is
+#                                        waits and runs; one older than THEOS_LAND_TTL (45m) was abandoned and is
 #                                        dropped. Exit 4: not its turn within DURATION (default 2h); its place is
 #                                        given up. Refused before it queues when PR changes more than
 #                                        GH_REVIEW_LINES (400) lines in hand-written files and carries no review
@@ -159,7 +159,7 @@
 #   hack/lib/github.sh create --next TITLE FILE kind/bug|kind/chore|kind/docs [LABEL...]
 #                                        a follow-up you decided: filed status/ready and, in a relay worker's
 #                                        session, reserved for this worktree's next session (.relay/next): its pick
-#                                        returns it first, every other pick skips it for C4_LEASE_TTL. Refused
+#                                        returns it first, every other pick skips it for THEOS_LEASE_TTL. Refused
 #                                        without one of those kinds or with a status other than ready
 #   hack/lib/github.sh red WORKFLOW      whether WORKFLOW (its file, test.yml) is red on main: its two newest
 #                                        finished runs there failed (cancelled and skipped runs, and runs its
@@ -224,12 +224,12 @@
 # The Kind cluster: agents never create, lease or deploy to one; Go tests,
 # validate-yaml, envtest and the local Gitea are the gate, and Kind is a tier
 # only a human runs. So `cluster acquire` refuses unless the human sets
-# C4_HUMAN_CLUSTER=1 (the relay never does), and pick and take hand out every
-# issue whether or not the device has a cluster (C4_CLUSTER=none). The human's
+# THEOS_HUMAN_CLUSTER=1 (the relay never does), and pick and take hand out every
+# issue whether or not the device has a cluster (THEOS_CLUSTER=none). The human's
 # checkouts share a pool of Kind clusters through leases: acquire, deploy the
 # branch (make deploy) to the cluster it got, verify, `cluster release`. A lease lives in the git common dir,
 # beside every checkout, names the cluster, agent, issue and worktree, is
-# refreshed by beat and is stale after C4_LEASE_TTL. release, handoff, close,
+# refreshed by beat and is stale after THEOS_LEASE_TTL. release, handoff, close,
 # needs-maintainer and needs-human drop it too. In the relay and its sessions
 # (gh_headless) those commands and beat touch no lease: they hold none.
 # hack/lib/github_test.sh tests these rules against a stubbed GitHub.
@@ -237,27 +237,27 @@
 # Claims (docs/plans/done/parallel-agents.md): taking an issue posts a comment that
 # starts with <!-- c4-claim --> and names the agent (otter-23), host, branch and
 # session. It is live while it says "works on this issue" and was edited within
-# C4_LEASE_TTL (2h; 90m, 300s and plain seconds work too). The local half is
-# .relay/claim; a checkout holds one claim at a time. C4_HOST names the host
-# (default: hostname), C4_SESSION_ID the session (default: CLAUDE_CODE_SESSION_ID).
+# THEOS_LEASE_TTL (2h; 90m, 300s and plain seconds work too). The local half is
+# .relay/claim; a checkout holds one claim at a time. THEOS_HOST names the host
+# (default: hostname), THEOS_SESSION_ID the session (default: CLAUDE_CODE_SESSION_ID).
 # A reservation (create --next) is a claim comment that says "reserved this
-# issue" instead: live for C4_LEASE_TTL from when it was posted, so every other
+# issue" instead: live for THEOS_LEASE_TTL from when it was posted, so every other
 # checkout's pick skips it and take refuses it, while the checkout that posted
 # it, whose .relay/next names it, picks it first and takes it.
 #
 # Auth: GH_TOKEN, else the git credential helper's github.com password, kept in
-# the environment and never printed. Needs gh and jq. C4_GITHUB_REPO overrides
+# the environment and never printed. Needs gh and jq. THEOS_GITHUB_REPO overrides
 # the repository.
 
 GH_LIB_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-C4_GITHUB_REPO=${C4_GITHUB_REPO:-JairJosafath/c4factory}
+THEOS_GITHUB_REPO=${THEOS_GITHUB_REPO:-JairJosafath/theos}
 GH_PENDING_DIR=${GH_PENDING_DIR:-$GH_LIB_ROOT/.relay}
 GH_HANDOFF_MARKER='<!-- relay-handoff -->'
 GH_CLAIM_MARKER='<!-- c4-claim -->'
 GH_STALE_MARKER='<!-- c4-claim-stale -->'
-C4_CLAIM_STALE=${C4_CLAIM_STALE:-2h}
+THEOS_CLAIM_STALE=${THEOS_CLAIM_STALE:-2h}
 GH_CLAIM_FILE=${GH_CLAIM_FILE:-$GH_PENDING_DIR/claim}
-C4_LEASE_TTL=${C4_LEASE_TTL:-2h}
+THEOS_LEASE_TTL=${THEOS_LEASE_TTL:-2h}
 GH_CLAIM_SETTLE=${GH_CLAIM_SETTLE:-5}  # seconds take waits before checking it won
 GH_BEAT_EVERY=${GH_BEAT_EVERY:-900}    # seconds between heartbeats
 GH_MAINT_BEATS=${GH_MAINT_BEATS:-3}    # missed heartbeats after which the maintainer lease is stale (#1322)
@@ -322,8 +322,8 @@ GH_LABELS=(
   'kind/chore|ededed|Upkeep: operations, releases, tooling'
   'kind/docs|0075ca|Documentation'
   'kind/improvement|84b6eb|Make something that works better'
-  'source/dev|bfd4f2|Made while developing c4factory'
-  'source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it'
+  'source/dev|bfd4f2|Made while developing theos'
+  'source/user|f9d0c4|Reported from a device that runs theos; user/<name> names it'
   'maintainer/report|5319e7|The pinned Maintainer report; the maintainer rewrites it each sweep'
   'mode/yolo|ff7f0e|Yolo mode: a pull request merges once made, until only the Maintainer report is open'
 )
@@ -362,7 +362,7 @@ gh_read() {
 
 gh_labels() {
   local have line name color desc was
-  have=$(gh_api --paginate "repos/$C4_GITHUB_REPO/labels?per_page=100" --jq '.[] | [.name, .description // ""] | @tsv') || return 1
+  have=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/labels?per_page=100" --jq '.[] | [.name, .description // ""] | @tsv') || return 1
   for line in "${GH_LABELS[@]}"; do
     IFS='|' read -r name color desc <<<"$line"
     if grep -q -- "^$name"$'\t' <<<"$have"; then
@@ -370,18 +370,18 @@ gh_labels() {
       if [ "$was" = "$desc" ]; then
         echo "label $name: exists"
       else
-        gh_api --method PATCH "repos/$C4_GITHUB_REPO/labels/${name//\//%2F}" -f description="$desc" >/dev/null || return 1
+        gh_api --method PATCH "repos/$THEOS_GITHUB_REPO/labels/${name//\//%2F}" -f description="$desc" >/dev/null || return 1
         echo "label $name: description updated"
       fi
       continue
     fi
-    gh_api --method POST "repos/$C4_GITHUB_REPO/labels" \
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/labels" \
       -f name="$name" -f color="$color" -f description="$desc" >/dev/null || return 1
     echo "label $name: created"
   done
   for name in "${GH_RETIRED_LABELS[@]}"; do
     grep -q -- "^$name"$'\t' <<<"$have" || continue
-    gh_api --method DELETE "repos/$C4_GITHUB_REPO/labels/${name//\//%2F}" >/dev/null || return 1
+    gh_api --method DELETE "repos/$THEOS_GITHUB_REPO/labels/${name//\//%2F}" >/dev/null || return 1
     echo "label $name: retired"
   done
 }
@@ -399,15 +399,15 @@ gh_seconds() {
   esac
 }
 
-# gh_ttl: C4_LEASE_TTL in seconds.
-gh_ttl() { gh_seconds "$C4_LEASE_TTL" C4_LEASE_TTL; }
+# gh_ttl: THEOS_LEASE_TTL in seconds.
+gh_ttl() { gh_seconds "$THEOS_LEASE_TTL" THEOS_LEASE_TTL; }
 
 # gh_recent_claims SECONDS: the claim comments on any issue edited in the last
 # SECONDS, as one JSON array of {id, issue, created_at, updated_at, html_url, body}.
 gh_recent_claims() {
   local since pages
   since=$(date -u -d "@$(($(gh_now) - $1))" +%Y-%m-%dT%H:%M:%SZ)
-  pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 1
+  pages=$(gh_api --paginate --slurp "repos/$THEOS_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 1
   jq -c --arg m "$GH_CLAIM_MARKER" --argjson ttl 0 "$GH_CLAIM_JQ"'
     [.[][] | select(claim) | {id, issue: (.issue_url | sub(".*/"; "") | tonumber), created_at, updated_at, html_url, body}]' <<<"$pages"
 }
@@ -430,7 +430,7 @@ gh_pick() {
   local ttl issues claims next row extra
   ttl=$(gh_ttl) || return 2
   issues=$(gh_api --paginate --slurp \
-    "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
+    "repos/$THEOS_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
   claims=$(gh_recent_claims "$ttl") || return 2
   mapfile -t extra <<<"${GH_NEXT_FILES:-}"
   next=$(gh_next_read "$GH_PENDING_DIR/next" "${extra[@]}")
@@ -468,7 +468,7 @@ GH_DEPS_JQ='
 gh_open_issues() {
   local pages
   pages=$(gh_api --paginate --slurp \
-    "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 1
+    "repos/$THEOS_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 1
   jq -c '[.[][] | select(.pull_request | not)]' <<<"$pages"
 }
 
@@ -518,12 +518,12 @@ gh_blocked() {
 # Refs #N.
 gh_plan_pr() {
   local pages pr files
-  pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$1/timeline?per_page=100") || return 1
+  pages=$(gh_api --paginate --slurp "repos/$THEOS_GITHUB_REPO/issues/$1/timeline?per_page=100") || return 1
   for pr in $(jq -r --argjson n "$1" '[.[][] | select(.event == "cross-referenced") | .source.issue // empty
     | select(.pull_request.merged_at != null)
     | select((.body // "") | test("(?i)\\b(refs|closes|fixes|resolves) #\($n)\\b"))
     | .number] | unique | reverse | .[]' <<<"$pages"); do
-    files=$(gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$pr/files?per_page=100" --jq '.[].filename') || return 1
+    files=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/pulls/$pr/files?per_page=100" --jq '.[].filename') || return 1
     grep -qE '^docs/(plans/|design\.md$)' <<<"$files" && { echo "$pr"; return 0; }
   done
   return 0
@@ -574,7 +574,7 @@ gh_parents() {
       # elsewhere) counts as closed; one GitHub can't answer for (no such
       # issue) keeps the parent open.
       for d in $all; do
-        if ! says=$(gh_api "repos/$C4_GITHUB_REPO/issues/$d" --jq '"\(.state) \(.state_reason // "")"' 2>/dev/null); then
+        if ! says=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$d" --jq '"\(.state) \(.state_reason // "")"' 2>/dev/null); then
           echo "github: #$n depends on #$d, which GitHub could not show; #$n stays open" >&2
           left+=" $d"
           continue
@@ -688,15 +688,15 @@ gh_proposed() {
     *) echo "usage: hack/lib/github.sh proposed [--since EPOCH]" >&2; return 1 ;;
   esac
   issues=$(gh_api --paginate --slurp \
-    "repos/$C4_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
+    "repos/$THEOS_GITHUB_REPO/issues?state=open&sort=created&direction=asc&per_page=100") || return 2
   issues=$(jq -c '[.[][] | select(.pull_request | not) | select(.labels | any(.name == "status/proposed"))]' <<<"$issues") ||
     return 2
   if [ -z "$since" ]; then
     jq -r '.[].number' <<<"$issues"
     return
   fi
-  comments=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 2
-  closed=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues?state=closed&since=$since&per_page=100") || return 2
+  comments=$(gh_api --paginate --slurp "repos/$THEOS_GITHUB_REPO/issues/comments?since=$since&per_page=100") || return 2
+  closed=$(gh_api --paginate --slurp "repos/$THEOS_GITHUB_REPO/issues?state=closed&since=$since&per_page=100") || return 2
   closed=$(jq -c --arg s "$since" '[.[][] | select(.closed_at != null and .closed_at > $s) | {number, closed_at}]' <<<"$closed") ||
     return 2
   # Only when something closed since T: each issue's newest triage comment, for the #M it names.
@@ -738,11 +738,11 @@ gh_proposed() {
 gh_escalated() {
   local pages n events
   pages=$(gh_api --paginate --slurp \
-    "repos/$C4_GITHUB_REPO/issues?state=open&labels=status/needs-maintainer&sort=created&direction=asc&per_page=100") ||
+    "repos/$THEOS_GITHUB_REPO/issues?state=open&labels=status/needs-maintainer&sort=created&direction=asc&per_page=100") ||
     return 1
   for n in $(jq -r '.[][] | select(.pull_request | not) | select(.labels | any(.name == "status/needs-maintainer"))
     | .number' <<<"$pages"); do
-    events=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$n/events?per_page=100") || return 1
+    events=$(gh_api --paginate --slurp "repos/$THEOS_GITHUB_REPO/issues/$n/events?per_page=100") || return 1
     jq -r --argjson n "$n" '[.[][] | select(.event == "labeled" and .label.name == "status/needs-maintainer")
       | .created_at | fromdateiso8601] | "\($n) \(max // 0)"' <<<"$events" || return 1
   done
@@ -751,7 +751,7 @@ gh_escalated() {
 # gh_comments N: issue N's comments, oldest first, as one JSON array.
 gh_comments() {
   local pages
-  pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$1/comments?per_page=100") || return 1
+  pages=$(gh_api --paginate --slurp "repos/$THEOS_GITHUB_REPO/issues/$1/comments?per_page=100") || return 1
   jq -c '[.[][] | {id, created_at, updated_at, html_url, user: .user.login, body}]' <<<"$pages"
 }
 
@@ -765,7 +765,7 @@ gh_latest_handoff() {
 
 gh_show() {
   local n=${1:?usage: show N} issue all
-  issue=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n") || return 1
+  issue=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n") || return 1
   all=$(gh_comments "$n") || return 1
   jq -r '"#\(.number) \(.title)\n\(.html_url)\n\(.state); labels: \(.labels | map(.name) | join(", "))\n\n\(.body // "")"' <<<"$issue"
   jq -r --arg m "$GH_HANDOFF_MARKER" '
@@ -786,7 +786,7 @@ gh_comment() {
   body=$(gh_read "${2:--}") || return 1
   [ -n "$body" ] || { echo "github: empty comment" >&2; return 1; }
   jq -n --arg b "$body" '{body: $b}' |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .html_url
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/comments" --input - --jq .html_url
 }
 
 # gh_put_labels N: make the lines on stdin N's labels, in one PUT. GitHub
@@ -797,7 +797,7 @@ gh_comment() {
 # many, other label writes few.
 gh_put_labels() {
   jq -Rn '{labels: [inputs | select(. != "")]}' |
-    gh_api --method PUT "repos/$C4_GITHUB_REPO/issues/$1/labels" --input - >/dev/null
+    gh_api --method PUT "repos/$THEOS_GITHUB_REPO/issues/$1/labels" --input - >/dev/null
 }
 
 # gh_set_status N STATUS: make status/STATUS N's only status label.
@@ -807,7 +807,7 @@ gh_set_status() {
     proposed | ready | in-progress | waiting | needs-maintainer | needs-human) want=status/$2 ;;
     *) echo "github: status must be proposed, ready, in-progress, waiting, needs-maintainer or needs-human" >&2; return 1 ;;
   esac
-  labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
+  labels=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
   # take names the branch from the kind/* label, and the release notes file
   # the work by it, so a ready issue needs one.
   if [ "$want" = status/ready ] && ! grep -q '^kind/' <<<"$labels"; then
@@ -828,7 +828,7 @@ gh_set_status() {
 # gh_unstatus N: drop every status/* label from N.
 gh_unstatus() {
   local n=${1:?usage: gh_unstatus N} labels
-  labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
+  labels=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n/labels?per_page=100" --jq '.[].name') || return 1
   grep -q '^status/' <<<"$labels" || return 0
   { grep -v '^status/' <<<"$labels" || :; } | gh_put_labels "$n"
 }
@@ -837,7 +837,7 @@ gh_unstatus() {
 gh_closed() {
   local n=${1:?usage: closed N} state
   [[ $n =~ ^[0-9]+$ ]] || { echo "github: closed takes an issue number" >&2; return 1; }
-  state=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq .state) || return 1
+  state=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n" --jq .state) || return 1
   [ "$state" = closed ] || { echo "github: #$n is open; its status labels stay" >&2; return 0; }
   gh_unstatus "$n"
 }
@@ -845,14 +845,14 @@ gh_closed() {
 # gh_edit_comment ID BODY: replace comment ID's body.
 gh_edit_comment() {
   jq -n --arg b "$2" '{body: $b}' |
-    gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/comments/$1" --input - >/dev/null
+    gh_api --method PATCH "repos/$THEOS_GITHUB_REPO/issues/comments/$1" --input - >/dev/null
 }
 
 # gh_delete_comment ID: delete comment ID (a maintainer lease, a merge turn);
 # one already gone counts as deleted.
 gh_delete_comment() {
   local out
-  out=$(gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/${1:?usage: gh_delete_comment ID}" 2>&1) && return 0
+  out=$(gh_api --method DELETE "repos/$THEOS_GITHUB_REPO/issues/comments/${1:?usage: gh_delete_comment ID}" 2>&1) && return 0
   grep -q 'HTTP 404' <<<"$out" && return 0
   echo "$out" >&2
   return 1
@@ -862,7 +862,7 @@ gh_delete_comment() {
 # when it was deleted. Exit 1: GitHub could not be asked.
 gh_claim_comment() {
   local out
-  if out=$(gh_api "repos/$C4_GITHUB_REPO/issues/comments/$1" --jq '{id, updated_at, body}' 2>&1); then
+  if out=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/comments/$1" --jq '{id, updated_at, body}' 2>&1); then
     echo "$out"
     return 0
   fi
@@ -893,8 +893,8 @@ gh_claim_held() {
 
 # gh_claim_body NAME BRANCH: a live claim comment's body.
 gh_claim_body() {
-  local session=${C4_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}} line
-  line="**$1** works on this issue · host \`${C4_HOST:-$(hostname)}\` · branch \`$2\`"
+  local session=${THEOS_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}} line
+  line="**$1** works on this issue · host \`${THEOS_HOST:-$(hostname)}\` · branch \`$2\`"
   [ -z "$session" ] || line+=" · \`claude --resume $session\`"
   printf '%s\n%s\nHeartbeat: %s\n' "$GH_CLAIM_MARKER" "$line" "$(date -u +%Y-%m-%dT%H:%MZ)"
 }
@@ -973,7 +973,7 @@ gh_take_locked() {
         return 0
       fi
       # A merged pull request saying "Closes #N" closes N but leaves its claim.
-      state=$(gh_api "repos/$C4_GITHUB_REPO/issues/$c_issue" --jq .state) || return 1
+      state=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$c_issue" --jq .state) || return 1
       if [ "$state" != closed ]; then
         echo "github: this checkout holds #$c_issue as $c_name; release it (hack/lib/github.sh release) or take #$n from another worktree" >&2
         return 1
@@ -983,7 +983,7 @@ gh_take_locked() {
     rm -f "$GH_CLAIM_FILE"
   fi
 
-  issue=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n") || return 1
+  issue=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n") || return 1
   all=$(gh_comments "$n") || return 1
   # This checkout's live reservation on N (create --next), which it turns
   # into its claim.
@@ -1036,17 +1036,17 @@ gh_take_locked() {
     gh_edit_comment "$id" "$(gh_claim_body "$name" "$branch")" || return 1
   else
     id=$(gh_claim_body "$name" "$branch" | jq -Rs '{body: .}' |
-      gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+      gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
   fi
   sleep "$GH_CLAIM_SETTLE"
   if ! all=$(gh_comments "$n"); then
-    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null
+    gh_api --method DELETE "repos/$THEOS_GITHUB_REPO/issues/comments/$id" >/dev/null
     return 1
   fi
   winner=$(jq -r "${q[@]}" "$GH_CLAIM_JQ"'
     [.[] | select(live)] | min_by(.id) // empty | "\(.id)\t\(cname)"' <<<"$all")
   if [ "${winner%%$'\t'*}" != "$id" ]; then
-    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null
+    gh_api --method DELETE "repos/$THEOS_GITHUB_REPO/issues/comments/$id" >/dev/null
     echo "github: #$n was claimed at the same time by ${winner#*$'\t'}, who won" >&2
     return 4
   fi
@@ -1067,14 +1067,14 @@ gh_label() {
   shift
   [ $# -gt 0 ] || { echo "usage: label N LABEL..." >&2; return 64; }
   jq -n '{labels: $ARGS.positional}' --args "$@" |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
   echo "labeled #$n: $*"
 }
 
 # gh_open_milestones: the open milestones as JSON objects, one per line, by due date.
 gh_open_milestones() {
   local all
-  all=$(gh_api --paginate "repos/$C4_GITHUB_REPO/milestones?state=open&sort=due_on&direction=asc&per_page=100") || return 1
+  all=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/milestones?state=open&sort=due_on&direction=asc&per_page=100") || return 1
   jq -c '.[]' <<<"$all"
 }
 
@@ -1090,7 +1090,7 @@ gh_milestone() {
     fi
   fi
   jq -n --argjson m "$num" '{milestone: $m}' |
-    gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - >/dev/null || return 1
+    gh_api --method PATCH "repos/$THEOS_GITHUB_REPO/issues/$n" --input - >/dev/null || return 1
   echo "milestone #$n: ${title:-cleared}"
 }
 
@@ -1101,18 +1101,18 @@ gh_milestones() {
   [ -z "$open" ] || jq -r '[.title, .open_issues, .closed_issues, ((.due_on // "")[:10])] | @tsv' <<<"$open"
 }
 
-# The cluster pool: the device runs C4_CLUSTERS Kind clusters (default 2),
-# c4factory, c4factory-2, ..., and its checkouts share them through leases. A
+# The cluster pool: the device runs THEOS_CLUSTERS Kind clusters (default 2),
+# theos, theos-2, ..., and its checkouts share them through leases. A
 # deploy and its verification take a whole cluster (one operator Deployment,
 # one set of cluster-scoped CRDs, a node that verifications stop), so a session
 # leases one only around the steps that touch it, and the make targets in its
 # checkout use that one (cluster name). Each cluster's lease is a JSON file in
 # the git common dir, beside every checkout: {cluster, name, issue, worktree,
 # beat}. It is live while its worktree exists and its beat is within
-# C4_LEASE_TTL; a stale one is taken over. A checkout holds at most one.
-# C4_CLUSTER_LEASE names the first cluster's file (the tests); the others sit
+# THEOS_LEASE_TTL; a stale one is taken over. A checkout holds at most one.
+# THEOS_CLUSTER_LEASE names the first cluster's file (the tests); the others sit
 # beside it. A pool cluster that does not exist yet is created on its first
-# lease (make cluster gitea seed; C4_MAKE overrides make, KIND kind). A pool
+# lease (make cluster gitea seed; THEOS_MAKE overrides make, KIND kind). A pool
 # cluster belongs to nobody between leases: what an earlier session installed
 # stays on it, so acquire --fresh deletes and recreates the cluster it leased
 # (make cluster-delete, then as above), and never one another checkout holds.
@@ -1122,19 +1122,19 @@ gh_milestones() {
 # acquire prefers other clusters, and recreates a bare one it gets with Gitea
 # and the seed, so it never hands out a bare cluster as a testenv one.
 GH_LEASE_POLL=${GH_LEASE_POLL:-15} # seconds between tries while acquire waits
-GH_POOL_FIRST=c4factory
+GH_POOL_FIRST=theos
 
-# gh_headless: exit 0 in the relay and its sessions (C4_HEADLESS=1, set by
+# gh_headless: exit 0 in the relay and its sessions (THEOS_HEADLESS=1, set by
 # hack/relay.sh and hack/relay-watch.sh). They hold no lease: acquire wants
-# C4_HUMAN_CLUSTER=1, which hack/lib/session-env.sh unsets there. So beat,
+# THEOS_HUMAN_CLUSTER=1, which hack/lib/session-env.sh unsets there. So beat,
 # release, handoff, close and the status swaps touch a lease only elsewhere,
 # in a checkout a human may have leased one to, however they opted in.
-gh_headless() { [ "${C4_HEADLESS:-}" = 1 ]; }
+gh_headless() { [ "${THEOS_HEADLESS:-}" = 1 ]; }
 
 # gh_pool: the pool's cluster names, one per line.
 gh_pool() {
-  local n=${C4_CLUSTERS:-2} k
-  [[ $n =~ ^[1-9][0-9]{0,1}$ ]] || { echo "github: C4_CLUSTERS must be a number from 1 to 99, not '$n'" >&2; return 64; }
+  local n=${THEOS_CLUSTERS:-2} k
+  [[ $n =~ ^[1-9][0-9]{0,1}$ ]] || { echo "github: THEOS_CLUSTERS must be a number from 1 to 99, not '$n'" >&2; return 64; }
   echo "$GH_POOL_FIRST"
   for ((k = 2; k <= n; k++)); do echo "$GH_POOL_FIRST-$k"; done
 }
@@ -1142,7 +1142,7 @@ gh_pool() {
 # gh_lease_base: the first cluster's lease file; the lock sits beside it.
 gh_lease_base() {
   local dir
-  [ -z "${C4_CLUSTER_LEASE:-}" ] || { echo "$C4_CLUSTER_LEASE"; return; }
+  [ -z "${THEOS_CLUSTER_LEASE:-}" ] || { echo "$THEOS_CLUSTER_LEASE"; return; }
   dir=$(git -C "$GH_LIB_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || dir=$GH_PENDING_DIR
   echo "$dir/c4-cluster.lease"
 }
@@ -1193,7 +1193,7 @@ gh_lease_read() {
 }
 
 # gh_lease_live NAME: gh_lease_read, and exit 1 unless the lease is live. A bad
-# C4_LEASE_TTL counts as live: better wait than deploy over another session.
+# THEOS_LEASE_TTL counts as live: better wait than deploy over another session.
 gh_lease_live() {
   local ttl
   gh_lease_read "$1" && [ -d "$l_wt" ] || return 1
@@ -1260,7 +1260,7 @@ gh_kind_exists() {
 gh_lease_take() {
   local fresh=${1:-} pool c f pick= free=() held=() exist name= issue= c_issue c_id c_name c_branch l_name l_issue l_wt l_beat
   pool=$(gh_pool) || return 64
-  # The cluster this checkout holds, while it is still in the pool (C4_CLUSTERS may have shrunk).
+  # The cluster this checkout holds, while it is still in the pool (THEOS_CLUSTERS may have shrunk).
   pick=$(gh_lease_name) && grep -qxF -- "$pick" <<<"$pool" || pick=
   if [ -z "$pick" ]; then
     [ -z "$(gh_lease_name)" ] || gh_lease_release_locked >/dev/null
@@ -1296,12 +1296,12 @@ gh_lease_take() {
 # it bare. Without either, a newly leased cluster marked bare is recreated with
 # them; one this checkout already held is kept, with a warning. Prints
 # the cluster's name on stdout, the rest on stderr. Exit 4 naming the holders
-# when the wait runs out. Exit 5 without C4_HUMAN_CLUSTER=1: only a human
+# when the wait runs out. Exit 5 without THEOS_HUMAN_CLUSTER=1: only a human
 # runs Kind; agents never lease a cluster.
 gh_lease_acquire() {
   local wait=30m secs t0 out said= fresh= bare= held= l_name l_issue l_wt l_beat
-  if [ "${C4_HUMAN_CLUSTER:-}" != 1 ]; then
-    echo "github: cluster acquire is for a human only: set C4_HUMAN_CLUSTER=1 to run Kind yourself. Agents never lease a cluster; make check (Go tests, validate-yaml, envtest) is the gate" >&2
+  if [ "${THEOS_HUMAN_CLUSTER:-}" != 1 ]; then
+    echo "github: cluster acquire is for a human only: set THEOS_HUMAN_CLUSTER=1 to run Kind yourself. Agents never lease a cluster; make check (Go tests, validate-yaml, envtest) is the gate" >&2
     return 5
   fi
   while [ $# -gt 0 ]; do
@@ -1343,7 +1343,7 @@ gh_lease_acquire() {
       return 1
     fi
     echo "github: --fresh: deleting Kind cluster $out, which this checkout now leases (no other checkout holds it), to create it again (make cluster-delete KIND_CLUSTER=$out)" >&2
-    if ! "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" cluster-delete "KIND_CLUSTER=$out" >&2; then
+    if ! "${THEOS_MAKE:-make}" -C "$GH_LIB_ROOT" cluster-delete "KIND_CLUSTER=$out" >&2; then
       gh_lease_release >/dev/null
       echo "github: could not delete Kind cluster $out; released its lease" >&2
       return 1
@@ -1352,7 +1352,7 @@ gh_lease_acquire() {
   fi
   if [ -n "$bare" ] && ! gh_kind_exists "$out"; then
     echo "github: --bare: creating Kind cluster $out with nothing installed (make cluster KIND_CLUSTER=$out)" >&2
-    if ! "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" cluster "KIND_CLUSTER=$out" >&2; then
+    if ! "${THEOS_MAKE:-make}" -C "$GH_LIB_ROOT" cluster "KIND_CLUSTER=$out" >&2; then
       gh_lease_release >/dev/null
       echo "github: could not create Kind cluster $out; released its lease" >&2
       return 1
@@ -1361,7 +1361,7 @@ gh_lease_acquire() {
   elif ! gh_kind_exists "$out"; then
     echo "github: Kind cluster $out does not exist yet; creating it with Gitea and the seeded templates (make cluster gitea seed KIND_CLUSTER=$out)" >&2
     rm -f "$(gh_bare_file "$out")"
-    if ! "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" cluster gitea seed "KIND_CLUSTER=$out" >&2; then
+    if ! "${THEOS_MAKE:-make}" -C "$GH_LIB_ROOT" cluster gitea seed "KIND_CLUSTER=$out" >&2; then
       gh_lease_release >/dev/null
       echo "github: could not create Kind cluster $out; released its lease" >&2
       return 1
@@ -1434,7 +1434,7 @@ gh_lease_pool() {
 
 # gh_cluster acquire [--wait DURATION] [--fresh] [--bare] | release | name | holder [NAME] | pool:
 # the cluster pool. name prints the cluster this checkout's make targets use:
-# its lease's, else c4factory. holder prints the live leases, or NAME's; exit
+# its lease's, else theos. holder prints the live leases, or NAME's; exit
 # 1 when there is none.
 gh_cluster() {
   local c found= l_name l_issue l_wt l_beat
@@ -1469,7 +1469,7 @@ gh_release() {
   if [ "$rc" = 0 ]; then
     host=$(jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl 0 "$GH_CLAIM_JQ"'cfield("host")' <<<"$c")
     gh_edit_comment "$c_id" "$(printf '%s\n**%s** released this issue: %s · host `%s` · branch `%s`' \
-      "$GH_CLAIM_MARKER" "$c_name" "$reason" "${host:-${C4_HOST:-$(hostname)}}" "$c_branch")" || return 1
+      "$GH_CLAIM_MARKER" "$c_name" "$reason" "${host:-${THEOS_HOST:-$(hostname)}}" "$c_branch")" || return 1
     echo "released #$c_issue ($c_name): $reason"
   else
     echo "github: $c_name's claim on #$c_issue was already released or taken over" >&2
@@ -1478,12 +1478,12 @@ gh_release() {
 }
 
 # gh_release_for N REASON: release this checkout's claim if it is on N. A
-# failure only warns: the claim then expires after C4_LEASE_TTL.
+# failure only warns: the claim then expires after THEOS_LEASE_TTL.
 gh_release_for() {
   local c_issue c_id c_name c_branch
   gh_claim_read && [ "$c_issue" = "$1" ] || return 0
   gh_release "$2" >/dev/null ||
-    echo "github: could not release the claim on #$1; it expires after $C4_LEASE_TTL" >&2
+    echo "github: could not release the claim on #$1; it expires after $THEOS_LEASE_TTL" >&2
 }
 
 # gh_beat: refresh this checkout's claim heartbeat, and its cluster lease
@@ -1523,7 +1523,7 @@ gh_claims() {
   local ttl claims open
   ttl=$(gh_ttl) || return 1
   claims=$(gh_recent_claims $((7 * 86400))) || return 1
-  open=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues?state=open&per_page=100" |
+  open=$(gh_api --paginate --slurp "repos/$THEOS_GITHUB_REPO/issues?state=open&per_page=100" |
     jq -c '[.[][].number]') || return 1
   jq -r --arg m "$GH_CLAIM_MARKER" --argjson ttl "$ttl" --argjson open "$open" "$GH_CLAIM_JQ"'
     [group_by(.issue)[] | max_by(.id) | select(.issue as $i | $open | any(. == $i)) | select(held or (reserved and fresh))]
@@ -1537,12 +1537,12 @@ gh_claims() {
 # is none. Exit 1: GitHub could not be asked.
 gh_branch_progress() {
   local refs ref sha d best=0 bref=
-  refs=$(gh_api "repos/$C4_GITHUB_REPO/git/matching-refs/heads/$1" --jq '.[] | [.ref, .object.sha] | @tsv') || return 1
+  refs=$(gh_api "repos/$THEOS_GITHUB_REPO/git/matching-refs/heads/$1" --jq '.[] | [.ref, .object.sha] | @tsv') || return 1
   while IFS=$'\t' read -r ref sha; do
     [ -n "$sha" ] || continue
     ref=${ref#refs/heads/}
     [ "$ref" = "$1" ] || [[ $ref == "$1"-* ]] || continue
-    d=$(gh_api "repos/$C4_GITHUB_REPO/commits/$sha" --jq .commit.committer.date) || return 1
+    d=$(gh_api "repos/$THEOS_GITHUB_REPO/commits/$sha" --jq .commit.committer.date) || return 1
     d=$(date -d "$d" +%s 2>/dev/null) || continue
     [ "$d" -le "$best" ] || { best=$d; bref=$ref; }
   done <<<"$refs"
@@ -1559,7 +1559,7 @@ gh_stale_since() {
 }
 
 # gh_stale [--apply]: the live, held claims on open status/in-progress issues
-# with no progress for C4_CLAIM_STALE (2h; 0 turns it off), one line each.
+# with no progress for THEOS_CLAIM_STALE (2h; 0 turns it off), one line each.
 # Progress is the newest of the claim's start, a handoff comment and a commit
 # on origin's claim branch or a <branch>-* takeover branch; heartbeats don't
 # count. A live heartbeat means the work may go on, so the claim is left
@@ -1575,7 +1575,7 @@ gh_stale() {
     *) echo "usage: hack/lib/github.sh stale [--apply]" >&2; return 1 ;;
   esac
   ttl=$(gh_ttl) || return 2
-  stale=$(gh_seconds "$C4_CLAIM_STALE" C4_CLAIM_STALE) || return 2
+  stale=$(gh_seconds "$THEOS_CLAIM_STALE" THEOS_CLAIM_STALE) || return 2
   [ "$stale" -gt 0 ] || return 0
   now=$(gh_now)
   claims=$(gh_recent_claims "$ttl") || return 2
@@ -1610,10 +1610,10 @@ gh_stale() {
     id=$(printf '%s\n%s\n\n%s\n' "$GH_STALE_MARKER" \
       "**Stale claim.** **$name** on host \`$host\` holds this issue with a live heartbeat ($(((now - beat) / 60))m ago) but no progress for $(((now - at) / 60))m: the last was $what at $(date -u -d "@$at" +%Y-%m-%dT%H:%MZ). Branch \`${branch:-none}\`." \
       "Maintainer: decide the next step (the maintainer skill's stale claims): ask the holder, release the claim and ready the issue, or leave it with a new deadline. The claim is left as it is." |
-      jq -Rs '{body: .}' | gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || { rc=2; continue; }
+      jq -Rs '{body: .}' | gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || { rc=2; continue; }
     sleep "$GH_CLAIM_SETTLE"
     if all=$(gh_comments "$n") && first=$(gh_stale_since "$all" "$at") && [ "$first" != "$id" ]; then
-      gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null
+      gh_api --method DELETE "repos/$THEOS_GITHUB_REPO/issues/comments/$id" >/dev/null
       continue
     fi
     gh_set_status "$n" needs-maintainer || { rc=2; continue; }
@@ -1687,7 +1687,7 @@ gh_closing_refs() {
       else
         repo=${ref%#*} ref=${ref##*#}
       fi
-      [ -z "$repo" ] || [ "${repo,,}" = "${C4_GITHUB_REPO,,}" ] || continue
+      [ -z "$repo" ] || [ "${repo,,}" = "${THEOS_GITHUB_REPO,,}" ] || continue
       echo "$ref"
     done
 }
@@ -1707,14 +1707,14 @@ gh_closing_line() {
 gh_steps() {
   local n=$1 body line s state
   shift
-  body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+  body=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
   while IFS= read -r line; do
     line=$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$line")
     for s in $(grep -oiE 'depends on #[0-9]+' <<<"$line" | grep -oE '[0-9]+'); do
       if [[ " $* " == *" $s "* ]]; then
         state=closing
       else
-        state=$(gh_api "repos/$C4_GITHUB_REPO/issues/$s" --jq .state) || return 1
+        state=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$s" --jq .state) || return 1
       fi
       printf '%s\t%s\t%s\n' "$s" "$state" "$line"
     done
@@ -1769,13 +1769,13 @@ gh_closes_check() {
 # issue: its title (the merge commit's), body and commit messages.
 gh_pr_text() {
   local pr=${1:?usage: pr-check PR}
-  gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '.title, (.body // "")' || return 1
-  gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$pr/commits?per_page=100" --jq '.[].commit.message' || return 1
+  gh_api "repos/$THEOS_GITHUB_REPO/pulls/$pr" --jq '.title, (.body // "")' || return 1
+  gh_api --paginate "repos/$THEOS_GITHUB_REPO/pulls/$pr/commits?per_page=100" --jq '.[].commit.message' || return 1
 }
 
 # gh_pr_body PR: pull request PR's body, whose Refs #N alone make it a plan's.
 gh_pr_body() {
-  gh_api "repos/$C4_GITHUB_REPO/pulls/${1:?usage: pr-check PR}" --jq '.body // ""'
+  gh_api "repos/$THEOS_GITHUB_REPO/pulls/${1:?usage: pr-check PR}" --jq '.body // ""'
 }
 
 # gh_pr_check PR: gh_closes_check over pull request PR's title, body and
@@ -1816,9 +1816,9 @@ gh_close() {
   local n=${1:?usage: close N FILE}
   gh_close_check "$n" || return 1
   gh_comment "$n" "${2:--}" || return 1
-  if ! gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
+  if ! gh_api --method PATCH "repos/$THEOS_GITHUB_REPO/issues/$n" \
     -f state=closed -f state_reason=completed --jq '"closed #\(.number)"'; then
-    [ "$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq .state 2>/dev/null)" = closed ] || return 1
+    [ "$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n" --jq .state 2>/dev/null)" = closed ] || return 1
     echo "#$n was already closed"
   fi
   gh_unstatus "$n" || echo "github: closed #$n but could not drop its status labels" >&2
@@ -1879,21 +1879,21 @@ gh_merge() {
     echo "github: #$pr: the branch moved since the check (${checked:0:12} checked, GitHub's head is ${head:0:12}); land again" >&2
     return 1
   fi
-  behind=$(gh_api "repos/$C4_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
+  behind=$(gh_api "repos/$THEOS_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
     echo "github: #$pr: could not ask GitHub whether it is behind $base; merge refused" >&2; return 1; }
   if [ "$behind" != 0 ]; then
     echo "github: #$pr is $behind commit(s) behind $base: land it (hack/lib/github.sh land $pr), which merges $base in, runs make check and merges in its turn" >&2
     return 1
   fi
   gh_token || return 1
-  gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge --match-head-commit "$head"
+  gh pr merge "$pr" --repo "$THEOS_GITHUB_REPO" --merge --match-head-commit "$head"
 }
 
 # gh_merge_view PR: pull request PR as merge reads it from GitHub's GraphQL
 # API: body, base, head, closing references with their labels, files and
 # commit messages.
 gh_merge_view() {
-  gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$1" -f query='
+  gh_api graphql -F owner="${THEOS_GITHUB_REPO%/*}" -F name="${THEOS_GITHUB_REPO#*/}" -F pr="$1" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
       body baseRefName headRefOid closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
       files(first: 100) { totalCount nodes { path changeType } } commits(last: 100) { nodes { commit { message } } } } } }' \
@@ -1966,7 +1966,7 @@ gh_bugfix_check() {
 # land runs it before it queues for the merge turn.
 gh_bugfix_pr() {
   local pr=$1 view
-  view=$(gh_api graphql -F owner="${C4_GITHUB_REPO%/*}" -F name="${C4_GITHUB_REPO#*/}" -F pr="$pr" -f query='
+  view=$(gh_api graphql -F owner="${THEOS_GITHUB_REPO%/*}" -F name="${THEOS_GITHUB_REPO#*/}" -F pr="$pr" -f query='
     query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
       body closingIssuesReferences(first: 100) { nodes { number labels(first: 30) { nodes { name } } } }
       files(first: 100) { totalCount nodes { path changeType } } } } }' \
@@ -1991,7 +1991,7 @@ gh_yolo() {
       gh_label_make "$GH_YOLO_LABEL" || return 1
       n=$(gh_report_issue) || return 1
       jq -n --arg l "$GH_YOLO_LABEL" '{labels: [$l]}' |
-        gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
+        gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/labels" --input - >/dev/null || return 1
       echo "yolo: on" ;;
     off)
       n=$(gh_report_issue) || return 1
@@ -2006,7 +2006,7 @@ gh_yolo() {
         1) echo off; return 1 ;;
         2) echo "github: could not read the Maintainer report's labels; yolo mode unknown" >&2; return 2 ;;
       esac
-      open=$(gh_api --paginate "repos/$C4_GITHUB_REPO/issues?state=open&per_page=100" \
+      open=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/issues?state=open&per_page=100" \
         --jq '.[] | select(.pull_request | not) | .number') || {
         echo "github: could not list the open issues; yolo mode unknown" >&2; return 2; }
       if [ "$(grep -vx "$n" <<<"$open" | grep -c .)" = 0 ]; then
@@ -2018,7 +2018,7 @@ gh_yolo() {
       echo on ;;
     merge)
       gh_yolo status >/dev/null || return 0
-      prs=$(gh_api --paginate "repos/$C4_GITHUB_REPO/pulls?state=open&base=main&per_page=100" \
+      prs=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/pulls?state=open&base=main&per_page=100" \
         --jq '.[] | select(.draft | not) | .number') || {
         echo "github: could not list the open pull requests; nothing merged" >&2; return 0; }
       for p in $prs; do
@@ -2033,13 +2033,13 @@ gh_yolo() {
 # 2: GitHub could not be asked.
 gh_yolo_labeled() {
   local labels
-  labels=$(gh_api "repos/$C4_GITHUB_REPO/issues/$1" --jq '[.labels[].name] | join(" ")') || return 2
+  labels=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$1" --jq '[.labels[].name] | join(" ")') || return 2
   [[ " $labels " == *" $GH_YOLO_LABEL "* ]]
 }
 
 # gh_yolo_off N: take the mode/yolo label off issue N.
 gh_yolo_off() {
-  gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/$1/labels/${GH_YOLO_LABEL//\//%2F}" >/dev/null
+  gh_api --method DELETE "repos/$THEOS_GITHUB_REPO/issues/$1/labels/${GH_YOLO_LABEL//\//%2F}" >/dev/null
 }
 
 # gh_yolo_merge PR: merge pull request PR as yolo mode does: the
@@ -2054,13 +2054,13 @@ gh_yolo_merge() {
   base=$(jq -r '.baseRefName // "main"' <<<"$view")
   head=$(jq -r '.headRefOid // empty' <<<"$view")
   [ -n "$head" ] || { echo "github: #$pr: GitHub did not say its head commit; not merged" >&2; return 1; }
-  behind=$(gh_api "repos/$C4_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
+  behind=$(gh_api "repos/$THEOS_GITHUB_REPO/compare/$base...$head" --jq .behind_by) || {
     echo "github: #$pr: could not ask GitHub whether it is behind $base; not merged" >&2; return 1; }
   if [ "$behind" != 0 ]; then
-    gh_api --method PUT "repos/$C4_GITHUB_REPO/pulls/$pr/update-branch" -f expected_head_sha="$head" >/dev/null || {
+    gh_api --method PUT "repos/$THEOS_GITHUB_REPO/pulls/$pr/update-branch" -f expected_head_sha="$head" >/dev/null || {
       echo "github: #$pr: GitHub could not merge $base into its branch (a conflict?); merge it by hand and push" >&2; return 1; }
     for i in 1 2 3 4 5 6 7 8 9 10; do
-      new=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq .head.sha) || new=
+      new=$(gh_api "repos/$THEOS_GITHUB_REPO/pulls/$pr" --jq .head.sha) || new=
       [ -n "$new" ] && [ "$new" != "$head" ] && break
       new=
       sleep "$GH_LAND_SETTLE"
@@ -2069,7 +2069,7 @@ gh_yolo_merge() {
     head=$new
   fi
   gh_token || return 1
-  gh pr merge "$pr" --repo "$C4_GITHUB_REPO" --merge --match-head-commit "$head" || return 1
+  gh pr merge "$pr" --repo "$THEOS_GITHUB_REPO" --merge --match-head-commit "$head" || return 1
   echo "github: #$pr merged (yolo mode: no make check, review or merge turn)" >&2
 }
 
@@ -2081,7 +2081,7 @@ gh_duplicate() {
   [[ $n =~ ^[0-9]+$ && $m =~ ^[0-9]+$ && $n != "$m" ]] || { echo "github: duplicate takes two issue numbers" >&2; return 1; }
   gh_close_check "$n" || return 1
   echo "Duplicate of #$m." | gh_comment "$n" - >/dev/null || return 1
-  gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" \
+  gh_api --method PATCH "repos/$THEOS_GITHUB_REPO/issues/$n" \
     -f state=closed -f state_reason=not_planned --jq '"closed #\(.number) as a duplicate of #'"$m"'"' || return 1
   gh_unstatus "$n"
 }
@@ -2102,7 +2102,7 @@ gh_create() {
     for a in "$@"; do [ "$a" = status/ready ] || l+=("$a"); done
     set -- status/ready "${l[@]}"
   fi
-  found=$(gh_api --paginate "repos/$C4_GITHUB_REPO/issues?state=open&per_page=100" \
+  found=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/issues?state=open&per_page=100" \
     --jq ".[] | select((.pull_request | not) and .title == $(jq -n --arg t "$title" '$t')) | .number" |
     head -1) || return 1
   if [ -n "$found" ]; then
@@ -2115,7 +2115,7 @@ gh_create() {
   for a in "$@"; do [[ $a == source/* ]] && has_source=1; done
   [ -n "$has_source" ] || set -- "$@" source/dev
   n=$(jq -n --arg t "$title" --arg b "$body" '{title: $t, body: $b, labels: $ARGS.positional}' --args "$@" |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq .number) || return 1
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues" --input - --jq .number) || return 1
   [ -z "$next" ] || gh_reserve "$n" ||
     echo "github: filed #$n ready but could not reserve it; any worker picks it" >&2
   echo "$n"
@@ -2147,14 +2147,14 @@ gh_next_labels() {
 
 # gh_reserve N: reserve ready issue N for this checkout's next session: a
 # reservation comment (a claim that says "reserved this issue"), which every
-# other checkout's pick skips and take refuses for C4_LEASE_TTL, and a line in
+# other checkout's pick skips and take refuses for THEOS_LEASE_TTL, and a line in
 # .relay/next, which this checkout's pick reads first and its take turns into
-# the claim. Only a relay worker's session (C4_RELAY_WORKER=1, 2, ...) has a
+# the claim. Only a relay worker's session (THEOS_RELAY_WORKER=1, 2, ...) has a
 # next session: in any other, the triage's and the maintainer's too, N is
 # left ready for any worker.
 gh_reserve() {
   local n=${1:?usage: gh_reserve N} c_issue c_id c_name c_branch who from= id
-  if ! [[ ${C4_RELAY_WORKER:-} =~ ^[0-9]+$ ]]; then
+  if ! [[ ${THEOS_RELAY_WORKER:-} =~ ^[0-9]+$ ]]; then
     echo "github: #$n is ready and not reserved: only a relay worker's session has a next session to reserve it for" >&2
     return 0
   fi
@@ -2164,16 +2164,16 @@ gh_reserve() {
     who=$(basename "$(gh_checkout)")
   fi
   id=$(printf '%s\n**%s** reserved this issue for the next session in `%s` · host `%s`%s\nAnyone may take it once this comment is %s old.\n' \
-    "$GH_CLAIM_MARKER" "$who" "$(basename "$(gh_checkout)")" "${C4_HOST:-$(hostname)}" "$from" "$C4_LEASE_TTL" |
-    jq -Rs '{body: .}' | gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+    "$GH_CLAIM_MARKER" "$who" "$(basename "$(gh_checkout)")" "${THEOS_HOST:-$(hostname)}" "$from" "$THEOS_LEASE_TTL" |
+    jq -Rs '{body: .}' | gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
   mkdir -p "$GH_PENDING_DIR"
   [ -e "$GH_PENDING_DIR/.gitignore" ] || echo '*' >"$GH_PENDING_DIR/.gitignore"
   # Without the local half not even this checkout picks it: drop the comment.
   if ! jq -nc --argjson n "$n" --argjson id "$id" --argjson at "$(gh_now)" '{issue: $n, id: $id, at: $at}' >>"$GH_PENDING_DIR/next"; then
-    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null
+    gh_api --method DELETE "repos/$THEOS_GITHUB_REPO/issues/comments/$id" >/dev/null
     return 1
   fi
-  echo "github: reserved #$n for this checkout's next session, for $C4_LEASE_TTL" >&2
+  echo "github: reserved #$n for this checkout's next session, for $THEOS_LEASE_TTL" >&2
 }
 
 # gh_activity: one line, UPDATED SHA: the newest updated_at among the issues
@@ -2181,9 +2181,9 @@ gh_reserve() {
 # doesn't count) and main's commit. It changes whenever anything does.
 gh_activity() {
   local updated sha
-  updated=$(gh_api "repos/$C4_GITHUB_REPO/issues?state=all&sort=updated&direction=desc&per_page=20" \
+  updated=$(gh_api "repos/$THEOS_GITHUB_REPO/issues?state=all&sort=updated&direction=desc&per_page=20" \
     --jq "[.[] | select(.labels | any(.name == \"$GH_REPORT_LABEL\") | not) | .updated_at] | first // \"none\"") || return 1
-  sha=$(gh_api "repos/$C4_GITHUB_REPO/commits/main" --jq .sha) || return 1
+  sha=$(gh_api "repos/$THEOS_GITHUB_REPO/commits/main" --jq .sha) || return 1
   [ -n "$updated" ] && [ -n "$sha" ] || { echo "github: activity: GitHub gave no answer" >&2; return 1; }
   echo "$updated $sha"
 }
@@ -2192,7 +2192,7 @@ gh_activity() {
 # labeled maintainer/report), or nothing when there is none. The slash stays
 # unencoded, as in gh_escalated (#1802).
 gh_report_find() {
-  gh_api "repos/$C4_GITHUB_REPO/issues?state=open&labels=$GH_REPORT_LABEL&per_page=10" \
+  gh_api "repos/$THEOS_GITHUB_REPO/issues?state=open&labels=$GH_REPORT_LABEL&per_page=10" \
     --jq '[.[] | select(.pull_request | not) | .number] | min // empty'
 }
 
@@ -2200,11 +2200,11 @@ gh_report_find() {
 # repository lacks it.
 gh_label_make() {
   local name=$1 line color desc
-  gh_api "repos/$C4_GITHUB_REPO/labels/${name//\//%2F}" >/dev/null 2>&1 && return 0
+  gh_api "repos/$THEOS_GITHUB_REPO/labels/${name//\//%2F}" >/dev/null 2>&1 && return 0
   for line in "${GH_LABELS[@]}"; do
     [[ $line == "$name|"* ]] || continue
     IFS='|' read -r _ color desc <<<"$line"
-    gh_api --method POST "repos/$C4_GITHUB_REPO/labels" -f name="$name" -f color="$color" \
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/labels" -f name="$name" -f color="$color" \
       -f description="$desc" >/dev/null || return 1
     return 0
   done
@@ -2222,15 +2222,15 @@ gh_report() {
   [ -n "$body" ] || { echo "github: empty report" >&2; return 1; }
   n=$(gh_report_find) || return 1
   if [ -n "$n" ]; then
-    old=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+    old=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
     body=$(gh_keep_watch "$old" <<<"$body") || return 1
     jq -n --arg b "$body" '{body: $b}' |
-      gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - --jq .html_url
+      gh_api --method PATCH "repos/$THEOS_GITHUB_REPO/issues/$n" --input - --jq .html_url
     return
   fi
   gh_label_make "$GH_REPORT_LABEL" || return 1
   url=$(jq -n --arg t "$GH_REPORT_TITLE" --arg b "$body" --arg l "$GH_REPORT_LABEL" '{title: $t, body: $b, labels: [$l]}' |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues" --input - --jq '"\(.node_id) \(.html_url)"') || return 1
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues" --input - --jq '"\(.node_id) \(.html_url)"') || return 1
   id=${url%% *} url=${url#* }
   gh_api graphql -f query='mutation($id: ID!) { pinIssue(input: {issueId: $id}) { issue { number } } }' \
     -f id="$id" >/dev/null || echo "github: created $url but could not pin it; pin it by hand" >&2
@@ -2316,11 +2316,11 @@ gh_report_note() {
   n=$(gh_report_find) || return 1
   [ -n "$n" ] || { echo "github: no Maintainer report issue to note in" >&2; return 1; }
   for try in 1 2 3; do
-    body=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
+    body=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n" --jq '.body // ""') || return 1
     new=$(gh_note_body "$@" <<<"$body") || return 1
     [ "$new" != "$body" ] || return 0
-    [ "$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" --jq '.body // ""')" = "$body" ] || continue
-    jq -n --arg b "$new" '{body: $b}' | gh_api --method PATCH "repos/$C4_GITHUB_REPO/issues/$n" --input - >/dev/null
+    [ "$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n" --jq '.body // ""')" = "$body" ] || continue
+    jq -n --arg b "$new" '{body: $b}' | gh_api --method PATCH "repos/$THEOS_GITHUB_REPO/issues/$n" --input - >/dev/null
     return
   done
   echo "github: report-note: the Maintainer report kept changing; try again" >&2
@@ -2333,7 +2333,7 @@ gh_report_note() {
 # <!-- c4-maintainer --> and names the host and pid. The relay refreshes it
 # every GH_BEAT_EVERY seconds while the session runs and deletes it when the
 # session ends; it is live while it was edited within GH_MAINT_BEATS
-# heartbeats (3, 45m), not the claims' C4_LEASE_TTL: a dead device's lease
+# heartbeats (3, 45m), not the claims' THEOS_LEASE_TTL: a dead device's lease
 # held the maintainer off for two hours (#1322). Only the relay's maintainer, under its device lock
 # (.relay/maintain.lock), takes it, so a live lease of this host is one a
 # crashed maintainer left: it is taken over like a stale one.
@@ -2360,7 +2360,7 @@ gh_report_issue() {
 # gh_maint_body: the lease comment's body.
 gh_maint_body() {
   printf '%s\n**maintainer** sweeps · host `%s` · pid `%s`\nHeartbeat: %s\n' \
-    "$GH_MAINT_MARKER" "${C4_HOST:-$(hostname)}" "${GH_MAINT_PID:-$$}" "$(date -u +%Y-%m-%dT%H:%MZ)"
+    "$GH_MAINT_MARKER" "${THEOS_HOST:-$(hostname)}" "${GH_MAINT_PID:-$$}" "$(date -u +%Y-%m-%dT%H:%MZ)"
 }
 
 # gh_maint_ttl: seconds a maintainer lease stays live without a heartbeat.
@@ -2374,7 +2374,7 @@ gh_maint_take() {
   ttl=$(gh_maint_ttl)
   n=$(gh_report_issue) || return 1
   all=$(gh_comments "$n") || return 1
-  local q=(--arg m "$GH_MAINT_MARKER" --argjson ttl "$ttl" --arg host "${C4_HOST:-$(hostname)}")
+  local q=(--arg m "$GH_MAINT_MARKER" --argjson ttl "$ttl" --arg host "${THEOS_HOST:-$(hostname)}")
   holder=$(jq -r "${q[@]}" "$GH_MAINT_JQ"'
     [.[] | select(lease and fresh and (mine | not))] | min_by(.id) // empty
     | "host \(cfield("host")) (pid \(cfield("pid"))), heartbeat \(age)"' <<<"$all")
@@ -2385,11 +2385,11 @@ gh_maint_take() {
   # Stale leases, and this host's (its maintainer crashed), are deleted.
   while read -r id; do
     [ -n "$id" ] || continue
-    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/comments/$id" >/dev/null || return 1
+    gh_api --method DELETE "repos/$THEOS_GITHUB_REPO/issues/comments/$id" >/dev/null || return 1
   done < <(jq -r "${q[@]}" "$GH_MAINT_JQ"'.[] | select(lease and ((fresh | not) or mine)) | .id' <<<"$all")
   # Post, wait, and keep it only if it is the oldest live lease.
   id=$(gh_maint_body | jq -Rs '{body: .}' |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
   sleep "$GH_CLAIM_SETTLE"
   if ! all=$(gh_comments "$n"); then
     gh_delete_comment "$id"
@@ -2438,7 +2438,7 @@ gh_swept() {
   fi
   [ $# = 2 ] && [[ $1 =~ ^[0-9]+$ ]] || { echo "usage: swept [START ACTIVITY]" >&2; return 64; }
   body=$(printf '%s\n**maintainer** swept · host `%s` · start `%s` · activity `%s`\nStarted: %s\n' \
-    "$GH_SWEPT_MARKER" "${C4_HOST:-$(hostname)}" "$1" "$2" "$(date -u -d "@$1" +%Y-%m-%dT%H:%MZ)")
+    "$GH_SWEPT_MARKER" "${THEOS_HOST:-$(hostname)}" "$1" "$2" "$(date -u -d "@$1" +%Y-%m-%dT%H:%MZ)")
   ids=$(jq -r "${q[@]}" "$GH_MARKED_JQ"'[.[] | select(marked)] | sort_by(.id) | reverse | .[].id' <<<"$all")
   if [ -n "$ids" ]; then
     # The newest record is edited in place; any older one is a leftover.
@@ -2450,7 +2450,7 @@ gh_swept() {
     return 0
   fi
   jq -n --arg b "$body" '{body: $b}' |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - >/dev/null
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/comments" --input - >/dev/null
 }
 
 # The merge turn (#1037): merge refuses a pull request behind main, so with
@@ -2461,11 +2461,11 @@ gh_swept() {
 # turn with a comment on the Maintainer report issue that starts with
 # <!-- c4-land -->, names the agent, the pull request, the host and the pid,
 # and is refreshed every GH_LAND_BEAT seconds. The oldest fresh one holds the
-# turn (first come, first served); one not edited within C4_LAND_TTL was
+# turn (first come, first served); one not edited within THEOS_LAND_TTL was
 # abandoned and is deleted by the next land that sees it. land deletes its own
 # when it ends, merged or not.
 GH_LAND_MARKER='<!-- c4-land -->'
-C4_LAND_TTL=${C4_LAND_TTL:-45m}
+THEOS_LAND_TTL=${THEOS_LAND_TTL:-45m}
 GH_LAND_POLL=${GH_LAND_POLL:-60}    # seconds between looks at the queue
 GH_LAND_BEAT=${GH_LAND_BEAT:-300}   # seconds between heartbeats of a place in it
 GH_LAND_SETTLE=${GH_LAND_SETTLE:-3} # seconds between asks whether GitHub saw the push
@@ -2515,7 +2515,7 @@ gh_land_simple_goal() {
 # exit 1: not simple; exit 2: GitHub could not be asked.
 gh_land_simple() {
   local files goal lines
-  files=$(gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$1/files?per_page=100" \
+  files=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/pulls/$1/files?per_page=100" \
     --jq '.[] | "\(.additions + .deletions)\t\(.filename)\t\(.previous_filename // "")"') || return 2
   goal=$(cut -f2- <<<"$files" | tr '\t' '\n' | gh_land_simple_goal) || return 1
   lines=$(awk -F'\t' '{ n += $1 } END { print n + 0 }' <<<"$files")
@@ -2526,7 +2526,7 @@ gh_land_simple() {
 # gh_land_queue N: the merge-turn comments on issue N, as JSON.
 gh_land_queue() {
   local all ttl
-  ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 1
+  ttl=$(gh_seconds "$THEOS_LAND_TTL" THEOS_LAND_TTL) || return 1
   all=$(gh_comments "$1") || return 1
   jq -c --arg m "$GH_LAND_MARKER" --argjson ttl "$ttl" "$GH_LAND_JQ"'
     [.[] | select(turn) | . + {fresh: fresh, who: who, pr: cfield("pull request")}]' <<<"$all"
@@ -2547,7 +2547,7 @@ gh_land_body() {
   local name
   name=$(jq -r '.name // empty' "$GH_CLAIM_FILE" 2>/dev/null)
   printf '%s\n**%s** lands pull request `%s` · host `%s` · pid `%s`\nHeartbeat: %s\n' "$GH_LAND_MARKER" \
-    "${name:-${USER:-someone}}" "$1" "${C4_HOST:-$(hostname)}" "${GH_LAND_PID:-$$}" "$(date -u +%Y-%m-%dT%H:%MZ)"
+    "${name:-${USER:-someone}}" "$1" "${THEOS_HOST:-$(hostname)}" "${GH_LAND_PID:-$$}" "$(date -u +%Y-%m-%dT%H:%MZ)"
 }
 
 # The review pass (#1104): nothing read a change before it landed but its
@@ -2566,7 +2566,7 @@ GH_REVIEW_SKIP='(^|/)zz_generated\.[^/]*$|^config/crd/bases/|^config/rbac/role\.
 # gh_review_lines PR: the lines PR adds and deletes in hand-written files.
 gh_review_lines() {
   local files
-  files=$(gh_api --paginate "repos/$C4_GITHUB_REPO/pulls/$1/files?per_page=100" \
+  files=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/pulls/$1/files?per_page=100" \
     --jq '.[] | "\(.additions + .deletions)\t\(.filename)"') || return 1
   # Through the environment: awk -v would read the regexp's backslashes as escapes.
   SKIP=$GH_REVIEW_SKIP awk -F'\t' '$2 !~ ENVIRON["SKIP"] { n += $1 } END { print n + 0 }' <<<"$files"
@@ -2582,7 +2582,7 @@ gh_review_check() {
     echo "github: #$pr changes $lines lines in hand-written files: no review pass needed" >&2
     return 0
   fi
-  pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$pr/comments?per_page=100") || {
+  pages=$(gh_api --paginate --slurp "repos/$THEOS_GITHUB_REPO/issues/$pr/comments?per_page=100") || {
     echo "github: #$pr: could not read its comments" >&2; return 1; }
   # The newest Review: comment that counts decides; an outsider's or one naming no agent never does.
   verdict=$(jq -r '
@@ -2658,7 +2658,7 @@ gh_land_say() {
 # merge, said. Exit 2: open, or GitHub could not be asked.
 gh_land_done() {
   local out state merged by at
-  out=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$1" \
+  out=$(gh_api "repos/$THEOS_GITHUB_REPO/pulls/$1" \
     --jq '"\(.state)\t\(.merged)\t\(.merged_by.login // "someone")\t\(.merged_at // "")"') || return 2
   IFS=$'\t' read -r state merged by at <<<"$out"
   if [ "$merged" = true ]; then
@@ -2687,7 +2687,7 @@ gh_land_fetch() {
 # variable, so make's children don't inherit it: make test-hack runs
 # github_test.sh, whose land must check, #1960), push, and wait until GitHub shows the push. With ID, the
 # merge-turn comment ID is heartbeaten while make check runs, and make check
-# goes first in the device's heavy-job queue (C4_HEAVY_FIRST, #1290): every
+# goes first in the device's heavy-job queue (THEOS_HEAVY_FIRST, #1290): every
 # device's lands wait on it, and only the turn's one holder may. Exit 3: PR
 # was merged outside land meanwhile, make check stopped (#1369). Exit 0 sets
 # GH_LAND_HEAD to the commit it checked and pushed: the one the merge is
@@ -2740,7 +2740,7 @@ gh_land_sync() {
   local untracked
   : >>"$GH_LAND_LOG"
   untracked=$(git -C "$GH_LIB_ROOT" ls-files --others --exclude-standard | sort)
-  C4_HEAVY_FIRST=${id:+1} "${C4_MAKE:-make}" -C "$GH_LIB_ROOT" "$goal" >>"$GH_LAND_LOG" 2>&1
+  THEOS_HEAVY_FIRST=${id:+1} "${THEOS_MAKE:-make}" -C "$GH_LIB_ROOT" "$goal" >>"$GH_LAND_LOG" 2>&1
   rc=$?
   kill "$GH_LAND_BEATER" 2>/dev/null
   wait "$GH_LAND_BEATER" 2>/dev/null
@@ -2779,7 +2779,7 @@ gh_land_push() {
   # merge compares the head it is given with GitHub's: wait until it shows the push.
   local_head=$(git -C "$GH_LIB_ROOT" rev-parse HEAD)
   for i in 1 2 3 4 5 6 7 8 9 10; do
-    [ "$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq .head.sha)" = "$local_head" ] && break
+    [ "$(gh_api "repos/$THEOS_GITHUB_REPO/pulls/$pr" --jq .head.sha)" = "$local_head" ] && break
     sleep "$GH_LAND_SETTLE"
   done
   GH_LAND_HEAD=$local_head
@@ -2788,11 +2788,11 @@ gh_land_push() {
 gh_land_turn() {
   local pr=$1 wait ttl info state base head branch n id me q first ahead said= t0 beat s who checked now t1 rechecks=0 moves=0 simple goal
   wait=$(gh_seconds "$2" --wait) || return 64
-  ttl=$(gh_seconds "$C4_LAND_TTL" C4_LAND_TTL) || return 64
+  ttl=$(gh_seconds "$THEOS_LAND_TTL" THEOS_LAND_TTL) || return 64
   gh_land_done "$pr"
   s=$?
   ((s == 2)) || return "$s"
-  info=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.ref)"') || return 1
+  info=$(gh_api "repos/$THEOS_GITHUB_REPO/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.ref)"') || return 1
   read -r state base head <<<"$info"
   [ "$state" = open ] || { echo "github: #$pr is $state; nothing to land" >&2; return 1; }
   # Yolo mode (#1534): merged at once, from any checkout; unknown (exit 2) takes the normal path.
@@ -2810,7 +2810,7 @@ gh_land_turn() {
   me=$BASHPID GH_LAND_BEATER=
   gh_land_trap() {
     trap 'if [ "$BASHPID" = "'"$me"'" ]; then [ -z "$GH_LAND_BEATER" ] || kill "$GH_LAND_BEATER" 2>/dev/null; gh_delete_comment "'"$id"'" >/dev/null 2>&1 ||
-      echo "github: could not delete the merge turn (comment '"$id"'); it lapses after $C4_LAND_TTL" >&2; fi' EXIT
+      echo "github: could not delete the merge turn (comment '"$id"'); it lapses after $THEOS_LAND_TTL" >&2; fi' EXIT
     trap 'exit 130' INT TERM
   }
   [ -z "$id" ] || gh_land_trap
@@ -2846,7 +2846,7 @@ gh_land_turn() {
   ((s == 0)) || return 1
   if [ -z "$id" ]; then
     id=$(gh_land_body "$pr" | jq -Rs '{body: .}' |
-      gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
+      gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/comments" --input - --jq .id) || return 1
     [ -n "$id" ] || { echo "github: could not queue #$pr for the merge turn" >&2; return 1; }
     gh_land_trap
   fi
@@ -2919,7 +2919,7 @@ gh_land_turn() {
   # while it waited (an Also fixes commit, say) is one no check ran on, and
   # main did not move, so nothing above saw it. GitHub's head is compared
   # here, and the merge is pinned to the checked one besides.
-  now=$(gh_api "repos/$C4_GITHUB_REPO/pulls/$pr" --jq .head.sha) || {
+  now=$(gh_api "repos/$THEOS_GITHUB_REPO/pulls/$pr" --jq .head.sha) || {
     gh_land_say "$pr" ": could not ask GitHub for its head; nothing merged, gave the turn up after $((SECONDS - t1))s: land again"; return 1; }
   if [ "$now" != "$GH_LAND_HEAD" ]; then
     gh_land_say "$pr" ": its branch $branch moved since the check (${GH_LAND_HEAD:0:12} checked, GitHub's head is ${now:0:12}): nothing merged, gave the turn up after $((SECONDS - t1))s; land again"
@@ -2940,7 +2940,7 @@ gh_land_turn() {
 gh_red() {
   local wf=${1:?usage: red WORKFLOW} runs n id
   gh_token || return 2
-  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --workflow "$wf" --limit 10 \
+  runs=$(gh run list --repo "$THEOS_GITHUB_REPO" --branch main --workflow "$wf" --limit 10 \
     --json databaseId,status,conclusion,headSha,displayTitle,url,createdAt,workflowName) || return 2
   # A run still going on main may be the fix: wait for it.
   [ "$(jq -r 'sort_by(.createdAt) | last | .status // "completed"' <<<"$runs")" = completed ] || return 1
@@ -2997,14 +2997,14 @@ gh_red() {
   for id in $(jq -r '.[].databaseId' <<<"$runs"); do
     jq -r --argjson id "$id" '.[] | select(.databaseId == $id) |
       "- [\(.databaseId)](\(.url)) at \(.createdAt), \(.conclusion), commit \(.headSha[:7]): \(.displayTitle)"' <<<"$runs"
-    gh run view "$id" --repo "$C4_GITHUB_REPO" --json jobs \
+    gh run view "$id" --repo "$THEOS_GITHUB_REPO" --json jobs \
       --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | "  - failed job: \(.name)"' || return 2
   done
   echo
   echo "## The newest run's failed log, last 40 lines"
   echo
   echo '```'
-  gh run view "$(jq -r '.[0].databaseId' <<<"$runs")" --repo "$C4_GITHUB_REPO" --log-failed 2>&1 | tail -40
+  gh run view "$(jq -r '.[0].databaseId' <<<"$runs")" --repo "$THEOS_GITHUB_REPO" --log-failed 2>&1 | tail -40
   echo '```'
   echo
   echo "Filed by hack/relay-watch.sh. The session that fixes main closes this issue; when the cause already has an open issue, close this one as its duplicate (\`hack/lib/github.sh duplicate N M\`)."
@@ -3026,7 +3026,7 @@ gh_queued() {
   [[ $minutes =~ ^[0-9]+$ ]] || { echo "usage: queued [--minutes M]" >&2; return 64; }
   gh_token || return 2
   # Every page: the list comes newest first, and a cut one loses the oldest (#1212).
-  runs=$(gh_api --paginate "repos/$C4_GITHUB_REPO/actions/runs?branch=main&status=queued&per_page=100" \
+  runs=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/actions/runs?branch=main&status=queued&per_page=100" \
     --jq '.workflow_runs[] | {databaseId: .id, status, createdAt: .created_at}') || return 2
   runs=$(jq -sr --argjson m "$minutes" "$GH_NOW_JQ"'[.[] | select(.status == "queued")] | sort_by(.createdAt) | .[] |
     "\(.databaseId)\t\(.createdAt)\t\((now - (.createdAt | fromdateiso8601)) > $m * 60)"' <<<"$runs") || return 2
@@ -3034,7 +3034,7 @@ gh_queued() {
     [ -n "$id" ] || continue
     if [ -n "$since" ]; then n=$((n + 1)); continue; fi
     [ "$old" = true ] || break
-    jobs=$(gh run view "$id" --repo "$C4_GITHUB_REPO" --json jobs \
+    jobs=$(gh run view "$id" --repo "$THEOS_GITHUB_REPO" --json jobs \
       --jq '"\(.jobs | length) \([.jobs[] | select(.status == "queued")] | length)"') || return 2
     case $jobs in
       "0 0") printf 'no-jobs\t%s\t%s\n' "$id" "$at" ;;
@@ -3043,7 +3043,7 @@ gh_queued() {
     esac
   done <<<"$runs"
   [ -n "$since" ] || return 1
-  online=$(gh_api --paginate "repos/$C4_GITHUB_REPO/actions/runners?per_page=100" \
+  online=$(gh_api --paginate "repos/$THEOS_GITHUB_REPO/actions/runners?per_page=100" \
     --jq '[.runners[] | select(.status == "online")] | length') || return 2
   printf 'waiting\t%s\t%s\t%s\n' "$since" "$n" "$(awk '{ s += $1 } END { print s + 0 }' <<<"$online")"
 }
@@ -3090,12 +3090,12 @@ gh_flakes() {
   gh_token || return 1
   since=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ) || return 1
   if [ -n "$closed" ]; then
-    gh_api --paginate "repos/$C4_GITHUB_REPO/issues?state=closed&since=$since&per_page=100" \
+    gh_api --paginate "repos/$THEOS_GITHUB_REPO/issues?state=closed&since=$since&per_page=100" \
       --jq ".[] | select((.pull_request | not) and .closed_at != null and .title == $(jq -n --arg t "$closed" '$t')) | [.closed_at, .number] | @tsv" |
       sort -r | head -1 | awk -F'\t' '{ print $2 "\t" $1 }'
     return "${PIPESTATUS[0]}"
   fi
-  runs=$(gh run list --repo "$C4_GITHUB_REPO" --branch main --created ">=${since%%T*}" --limit 1000 \
+  runs=$(gh run list --repo "$THEOS_GITHUB_REPO" --branch main --created ">=${since%%T*}" --limit 1000 \
     --json databaseId,createdAt,conclusion,workflowName,headSha) || return 1
   runs=$(jq -r --arg since "$since" 'group_by(.workflowName)[] | sort_by(.createdAt) |
     reduce .[] as $r ({streak: null, out: []};
@@ -3110,7 +3110,7 @@ gh_flakes() {
       read+="$id"$'\n'
       continue
     fi
-    log=$(gh run view "$id" --repo "$C4_GITHUB_REPO" --log-failed 2>/dev/null) || continue
+    log=$(gh run view "$id" --repo "$THEOS_GITHUB_REPO" --log-failed 2>/dev/null) || continue
     read+="$id"$'\n'
     out+=$(gh_fail_specs <<<"$log" | awk -v r="$id" -v t="$at" -v k="$streak" '{ print $0 "\t" r "\t" t "\t" k }')$'\n'
   done <<<"$runs"
@@ -3131,7 +3131,7 @@ gh_flakes() {
 # GitHub can't say.
 gh_lost() {
   local jobs
-  jobs=$(gh run view "${1:?usage: gh_lost RUN}" --repo "$C4_GITHUB_REPO" --json jobs --jq '.jobs') || return 2
+  jobs=$(gh run view "${1:?usage: gh_lost RUN}" --repo "$THEOS_GITHUB_REPO" --json jobs --jq '.jobs') || return 2
   jq -e 'length > 0 and all(.[]; .conclusion != "timed_out"
     and (((.steps // []) | length > 0) or .conclusion != "failure")
     and all((.steps // [])[]; .conclusion != "failure"))' <<<"$jobs" >/dev/null || return 1
@@ -3143,13 +3143,13 @@ gh_lost() {
 # spending limit). Exit 1 when a failed job started, 2 when GitHub can't say.
 gh_unstarted() {
   local run=${1:?usage: gh_unstarted RUN} jobs id msg out=
-  jobs=$(gh run view "$run" --repo "$C4_GITHUB_REPO" --json jobs \
+  jobs=$(gh run view "$run" --repo "$THEOS_GITHUB_REPO" --json jobs \
     --jq '[.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure")]') ||
     return 2
   [ "$(jq length <<<"$jobs")" -gt 0 ] || return 1
   [ "$(jq '[.[] | select((.steps // []) | length > 0)] | length' <<<"$jobs")" = 0 ] || return 1
   for id in $(jq -r '.[].databaseId' <<<"$jobs"); do
-    msg=$(gh_api "repos/$C4_GITHUB_REPO/check-runs/$id/annotations" --jq '.[].message') || return 2
+    msg=$(gh_api "repos/$THEOS_GITHUB_REPO/check-runs/$id/annotations" --jq '.[].message') || return 2
     grep -qi 'was not started' <<<"$msg" || return 1
     [[ $'\n'"$out"$'\n' == *$'\n'"$msg"$'\n'* ]] || out+=${out:+$'\n'}$msg
   done
@@ -3185,7 +3185,7 @@ gh_user_slug() {
 # anyone but the owner, members and collaborators are left alone.
 gh_intake() {
   local n=${1:?usage: intake N} issue assoc body labels name slug user_label add=() del=() l
-  issue=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n") || return 1
+  issue=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n") || return 1
   assoc=$(jq -r .author_association <<<"$issue")
   case $assoc in OWNER | MEMBER | COLLABORATOR) ;; *) return 0 ;; esac
   body=$(jq -r '.body // ""' <<<"$issue")
@@ -3205,16 +3205,16 @@ gh_intake() {
   fi
   grep -q '^status/' <<<"$labels" || add+=(status/proposed)
   for l in "${del[@]}"; do
-    gh_api --method DELETE "repos/$C4_GITHUB_REPO/issues/$n/labels/${l//\//%2F}" >/dev/null || return 1
+    gh_api --method DELETE "repos/$THEOS_GITHUB_REPO/issues/$n/labels/${l//\//%2F}" >/dev/null || return 1
   done
   [ ${#add[@]} -gt 0 ] || return 0
   if [ -n "${user_label:-}" ] && [[ " ${add[*]} " == *" $user_label "* ]] &&
-    ! gh_api "repos/$C4_GITHUB_REPO/labels/${user_label//\//%2F}" >/dev/null 2>&1; then
-    gh_api --method POST "repos/$C4_GITHUB_REPO/labels" -f name="$user_label" -f color="$GH_USER_COLOR" \
+    ! gh_api "repos/$THEOS_GITHUB_REPO/labels/${user_label//\//%2F}" >/dev/null 2>&1; then
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/labels" -f name="$user_label" -f color="$GH_USER_COLOR" \
       -f description="Reported by the device $slug" >/dev/null || return 1
   fi
   jq -n '{labels: $ARGS.positional}' --args "${add[@]}" |
-    gh_api --method POST "repos/$C4_GITHUB_REPO/issues/$n/labels" --input - >/dev/null
+    gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/labels" --input - >/dev/null
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then

@@ -1,4 +1,4 @@
-// Package agentrunner is the logic of c4agent, the program that runs inside an
+// Package agentrunner is the logic of theos-agent, the program that runs inside an
 // agent's sandbox. It reads one job from its environment, clones the Container's
 // repository (or, planning, the Brief's) with a token scoped to that
 // repository, runs the agent, and returns one Result. It has no Kubernetes credentials: the operator reads the Result from
@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // Roles a sandbox can play in a Task round. Plan is a Plan Task's round: it
@@ -27,70 +27,70 @@ const (
 
 // Environment variables the operator sets on the sandbox.
 const (
-	EnvRole         = "C4_ROLE"
-	EnvRepoURL      = "C4_REPO_URL"
-	EnvBranch       = "C4_BRANCH"
-	EnvBase         = "C4_BASE"
-	EnvGoal         = "C4_GOAL"
-	EnvFeedback     = "C4_FEEDBACK"
-	EnvProject      = "C4_PROJECT"
-	EnvContainer    = "C4_CONTAINER"
-	EnvTask         = "C4_TASK"
-	EnvRound        = "C4_ROUND"
-	EnvMaxRounds    = "C4_MAX_ROUNDS"
-	EnvGitUsername  = "C4_GIT_USERNAME"
-	EnvGitToken     = "C4_GIT_TOKEN" //nolint:gosec // an environment variable's name
-	EnvCheckCommand = "C4_CHECK_COMMAND"
-	EnvContext      = "C4_CONTEXT"
+	EnvRole         = "THEOS_ROLE"
+	EnvRepoURL      = "THEOS_REPO_URL"
+	EnvBranch       = "THEOS_BRANCH"
+	EnvBase         = "THEOS_BASE"
+	EnvGoal         = "THEOS_GOAL"
+	EnvFeedback     = "THEOS_FEEDBACK"
+	EnvProject      = "THEOS_PROJECT"
+	EnvContainer    = "THEOS_CONTAINER"
+	EnvTask         = "THEOS_TASK"
+	EnvRound        = "THEOS_ROUND"
+	EnvMaxRounds    = "THEOS_MAX_ROUNDS"
+	EnvGitUsername  = "THEOS_GIT_USERNAME"
+	EnvGitToken     = "THEOS_GIT_TOKEN" //nolint:gosec // an environment variable's name
+	EnvCheckCommand = "THEOS_CHECK_COMMAND"
+	EnvContext      = "THEOS_CONTEXT"
 	// EnvProtectedPaths lists the paths the agent must not change, the
 	// platform's and the Standard's, comma-separated.
-	EnvProtectedPaths = "C4_PROTECTED_PATHS"
+	EnvProtectedPaths = "THEOS_PROTECTED_PATHS"
 	// EnvAllowedPaths lists the protected paths an approved Standard change lets
 	// this Task change, comma-separated.
-	EnvAllowedPaths = "C4_ALLOWED_PATHS"
+	EnvAllowedPaths = "THEOS_ALLOWED_PATHS"
 	// EnvResumed is "true" when the Task resumes after its Standard change merged.
-	EnvResumed = "C4_RESUMED"
+	EnvResumed = "THEOS_RESUMED"
 	// EnvIssue is the number of the issue the goal comes from, if any.
-	EnvIssue = "C4_ISSUE"
+	EnvIssue = "THEOS_ISSUE"
 	// EnvPullRequest is the number of the Task's open pull request, when an
 	// implement run's branch already has one.
-	EnvPullRequest = "C4_PULL_REQUEST"
+	EnvPullRequest = "THEOS_PULL_REQUEST"
 	// EnvHarness and EnvModel say which agent program runs, with which model.
-	EnvHarness = "C4_HARNESS"
-	EnvModel   = "C4_MODEL"
+	EnvHarness = "THEOS_HARNESS"
+	EnvModel   = "THEOS_MODEL"
 	// EnvRelated lists the repositories of related Containers, as
 	// name=url pairs, comma-separated. They are cloned read-only.
-	EnvRelated = "C4_RELATED"
+	EnvRelated = "THEOS_RELATED"
 	// EnvBrief is the Brief a plan run plans.
-	EnvBrief = "C4_BRIEF"
+	EnvBrief = "THEOS_BRIEF"
 	// EnvGoRegistry is the owner's Go package registry, where GoProxy sends
 	// the factory's module paths.
-	EnvGoRegistry = "C4_GO_REGISTRY"
+	EnvGoRegistry = "THEOS_GO_REGISTRY"
 	// EnvNpmScope is the scope the owner's npm packages are named under, and
 	// EnvNpmRegistry the registry that serves it; both or neither.
-	EnvNpmScope    = "C4_NPM_SCOPE"
-	EnvNpmRegistry = "C4_NPM_REGISTRY"
+	EnvNpmScope    = "THEOS_NPM_SCOPE"
+	EnvNpmRegistry = "THEOS_NPM_REGISTRY"
 	// EnvNpmToken installs from a registry on another host than the Git
 	// host; the Git host's own registry takes the agent's Git token.
-	EnvNpmToken = "C4_NPM_TOKEN" //nolint:gosec // an environment variable's name
+	EnvNpmToken = "THEOS_NPM_TOKEN" //nolint:gosec // an environment variable's name
 	// EnvPyPIIndex is the simple index the owner's Python packages are
 	// installed from, and EnvPyPIToken installs from one on another host
 	// than the Git host.
-	EnvPyPIIndex = "C4_PYPI_INDEX"
-	EnvPyPIToken = "C4_PYPI_TOKEN" //nolint:gosec // an environment variable's name
+	EnvPyPIIndex = "THEOS_PYPI_INDEX"
+	EnvPyPIToken = "THEOS_PYPI_TOKEN" //nolint:gosec // an environment variable's name
 	// EnvSessionTokenLimit is the Agent's sessionTokenLimit: the size at which
 	// an agent session hands off to a fresh one.
-	EnvSessionTokenLimit = "C4AGENT_SESSION_TOKEN_LIMIT"
+	EnvSessionTokenLimit = "THEOS_AGENT_SESSION_TOKEN_LIMIT" //nolint:gosec // an environment variable's name
 	// EnvCheckpointDir is where the sandbox mounts its checkpoint volume:
-	// c4agent saves an interrupted run there and goes on from it in the
+	// theos-agent saves an interrupted run there and goes on from it in the
 	// sandbox's next pod (checkpoint.go). Unset: no checkpoints.
-	EnvCheckpointDir = "C4_CHECKPOINT_DIR"
+	EnvCheckpointDir = "THEOS_CHECKPOINT_DIR"
 )
 
 // CheckpointDir is where the operator mounts a sandbox's checkpoint volume.
 const CheckpointDir = "/checkpoint"
 
-// Harnesses: the agent programs c4agent can run.
+// Harnesses: the agent programs theos-agent can run.
 const (
 	HarnessClaudeCode = "claude-code"
 	HarnessStandIn    = "stand-in"

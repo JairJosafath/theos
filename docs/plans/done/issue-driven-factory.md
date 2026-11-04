@@ -18,7 +18,7 @@ separate implementer and reviewer Agents; the factory learns from the run.
 3. **Git host** (`internal/gitprovider`): issues, labels, dependencies, comments,
    closing, creating, assigning, pull request reviews. Tests against an
    `httptest` Gitea and, with `make test-gitea`, the real one.
-4. **Runner** (`internal/agentrunner`, `cmd/c4agent`): model and harness, role
+4. **Runner** (`internal/agentrunner`, `cmd/theos-agent`): model and harness, role
    guides read from the base branch, related repositories cloned read-only, issue
    and acceptance criteria in the prompts, follow-ups in the verdict.
 5. **Controllers:** Tasks from issues (labels, comments, Gitea reviews, close,

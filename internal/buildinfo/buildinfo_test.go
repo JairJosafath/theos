@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -27,7 +27,7 @@ func TestLdflagsStampVersion(t *testing.T) {
 		t.Skip("builds a binary")
 	}
 	out, err := exec.Command("go", "run",
-		"-ldflags=-X=github.com/JairJosafath/c4factory/internal/buildinfo.Version=1.2.3",
+		"-ldflags=-X=github.com/JairJosafath/theos/internal/buildinfo.Version=1.2.3",
 		"./testdata/printversion").CombinedOutput()
 	if err != nil {
 		t.Fatalf("go run: %v\n%s", err, out)

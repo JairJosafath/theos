@@ -11,7 +11,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // TestPostgresRunsOnKubernetes checks the postgres Connector's manifests

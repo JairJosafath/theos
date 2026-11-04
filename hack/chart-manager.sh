@@ -5,7 +5,7 @@
 # (internal/gitprovider), the POD_NAMESPACE the shared Secrets are read from,
 # the --shared-secret, --shared-pull-secret and --model-proxy-url flags, the --ui-service-account
 # the UI reads project namespaces' pods as (#1080), the webhook's flags and
-# port (#1614), and the C4_CHART_VERSION
+# port (#1614), and the THEOS_CHART_VERSION
 # the Project status reports, the chart's version. kubebuilder's helm
 # plugin regenerates that template without them; make chart keeps the file,
 # and this check catches a hand edit that loses them (#543).
@@ -43,12 +43,12 @@ need "the --webhook-cert-secret flag" -E '^ *- --webhook-cert-secret=[^ ]+-webho
 need "the webhook-server container port" -Pzo '\n *- containerPort: [0-9]+\n *name: webhook-server\n'
 need "the POD_NAMESPACE env from metadata.namespace" -Pzo \
 	'\n *- name: POD_NAMESPACE\n *valueFrom:\n *fieldRef:\n *fieldPath: metadata\.namespace\n'
-need "C4_CHART_VERSION set to the chart's version, $version" -Pzo \
-	"\n *- name: C4_CHART_VERSION\n *value: \"${version//./\\.}\"\n"
+need "THEOS_CHART_VERSION set to the chart's version, $version" -Pzo \
+	"\n *- name: THEOS_CHART_VERSION\n *value: \"${version//./\\.}\"\n"
 need "the /tmp volume mount" -Pzo '\n *- name: tmp\n *mountPath: /tmp\n'
 need "the tmp emptyDir volume" -Pzo '\n *- name: tmp\n *emptyDir:'
 if [ "$fail" -ne 0 ]; then
 	echo "kubebuilder's helm plugin drops these; restore them in dist/chart/$SOURCE." >&2
 	exit 1
 fi
-echo "The chart's manager Deployment keeps /tmp, POD_NAMESPACE, C4_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount and the webhook"
+echo "The chart's manager Deployment keeps /tmp, POD_NAMESPACE, THEOS_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount and the webhook"

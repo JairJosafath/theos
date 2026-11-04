@@ -1,9 +1,9 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: {{ include "c4-factory.resourceName" (dict "suffix" "project-name-equals-namespace-binding" "context" $) }}
+  name: {{ include "theos.resourceName" (dict "suffix" "project-name-equals-namespace-binding" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
-  policyName: {{ include "c4-factory.resourceName" (dict "suffix" "project-name-equals-namespace" "context" $) }}
+  policyName: {{ include "theos.resourceName" (dict "suffix" "project-name-equals-namespace" "context" $) }}
   validationActions:
   - Deny

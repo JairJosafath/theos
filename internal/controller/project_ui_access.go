@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -15,14 +15,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 )
 
 // UIPodReaderName is the Role and RoleBinding that let the UI read the pods,
 // and their metrics, of a project namespace: its agent sandboxes, for the
 // Factory view's health. The UI reads pods nowhere else but in the factory's
 // own namespaces, where the chart binds the same rules.
-const UIPodReaderName = "c4-factory-ui-pods"
+const UIPodReaderName = "theos-ui-pods"
 
 // UIPodReaderRules are the rules of UIPodReaderName. The operator holds them
 // itself, which is what lets it grant them.

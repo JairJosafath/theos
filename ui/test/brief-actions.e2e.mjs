@@ -6,7 +6,7 @@
 // a signed-out page says to sign in instead of offering the buttons.
 //
 // Needs a build and Chromium:  npm run test:e2e
-// C4_UI_SHOTS=DIR also saves pictures of the page in DIR (docs/screenshots).
+// THEOS_UI_SHOTS=DIR also saves pictures of the page in DIR (docs/screenshots).
 
 import assert from 'node:assert/strict'
 import path from 'node:path'
@@ -94,7 +94,7 @@ describe('the Brief page’s actions', () => {
     await click()
     const write = await nextWrite(count)
     assert.equal(write.method, 'PATCH')
-    assert.equal(write.path, `/apis/c4.factory.io/v1beta1/namespaces/${namespace}/briefs/webshop`)
+    assert.equal(write.path, `/apis/theos.factory.io/v1beta1/namespaces/${namespace}/briefs/webshop`)
     assert.equal(write.contentType, 'application/json-patch+json')
     return write.body
   }
@@ -141,9 +141,9 @@ describe('the Brief page’s actions', () => {
     assert.deepEqual(tested(ops), [{ op: 'add', path: '/spec/releases', value: [entry] }])
     const remove = settings().getByRole('button', { name: 'Stop publishing storefront' })
     await remove.waitFor({ timeout: 5000 })
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-brief-settings.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-brief-settings.png'), fullPage: true })
     }
     ops = await patchOf(() => remove.click())
     assert.deepEqual(tested(ops), [{ op: 'add', path: '/spec/releases', value: [] }])
@@ -152,7 +152,7 @@ describe('the Brief page’s actions', () => {
 
   it('shows the API server’s message when it refuses a setting', async () => {
     const message =
-      'Brief.c4.factory.io "webshop" is invalid: spec.parallel: Invalid value: 9: spec.parallel in body should be less than or equal to 5'
+      'Brief.theos.factory.io "webshop" is invalid: spec.parallel: Invalid value: 9: spec.parallel in body should be less than or equal to 5'
     api.refuseNextWrite(message)
     await settings()
       .getByLabel(/^Parallel/)
@@ -183,14 +183,14 @@ describe('the Brief page’s actions', () => {
   it('offers the answers again once a round took the prompt, and waits', async () => {
     await page.getByText('Answered: Retry, for the next round').waitFor({ timeout: 5000 })
     // The storefront #3 answer recommended by the tending round is Wait.
-    const at = `${apiUrl}/apis/c4.factory.io/v1beta1/namespaces/${namespace}/briefs/webshop`
+    const at = `${apiUrl}/apis/theos.factory.io/v1beta1/namespaces/${namespace}/briefs/webshop`
     const webshop = await (await fetch(at)).json()
     api.modify('briefs', { ...webshop, status: { ...webshop.status, promptsPlanned: webshop.spec.prompts.length } })
     const wait = button('Wait storefront #3, as it would')
     await wait.waitFor({ timeout: 5000 })
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-brief-answers.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-brief-answers.png'), fullPage: true })
     }
     const ops = await patchOf(() => wait.click())
     assert.deepEqual(ops, [
@@ -200,7 +200,7 @@ describe('the Brief page’s actions', () => {
   })
 
   it('shows the API server’s message when it refuses an answer', async () => {
-    const message = 'Brief.c4.factory.io "webshop" is invalid: spec.prompts: Too many: 51: must have at most 50 items'
+    const message = 'Brief.theos.factory.io "webshop" is invalid: spec.prompts: Too many: 51: must have at most 50 items'
     api.refuseNextWrite(message)
     await patchOf(() => button('Retry orders-api #15').click())
     // orders-api #15 was closed above and that prompt was taken; Retry is offered again.
@@ -221,9 +221,9 @@ describe('the Brief page’s actions', () => {
       assert.equal(await button.isDisabled(), true)
     const signIn = settings().getByRole('link', { name: 'Sign in' })
     assert.match(await signIn.getAttribute('href'), /^\/ui\/login\?return=/)
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-brief-signed-out.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-brief-signed-out.png'), fullPage: true })
     }
     assert.equal(api.writes.length, writes)
   })

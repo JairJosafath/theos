@@ -24,7 +24,7 @@ type StandardFailure struct {
 // StandardFailureMarker is the line that ties a failure issue to its Standard
 // and ref.
 func StandardFailureMarker(standard, ref string) string {
-	return "<!-- c4factory:standard-fails " + standard + " " + ref + " -->"
+	return "<!-- theos:standard-fails " + standard + " " + ref + " -->"
 }
 
 // HasStandardFailureMarker reports whether body carries the marker of the

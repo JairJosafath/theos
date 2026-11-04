@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 // The fake GitHub's Git Data API: a repository's blobs, trees, commits and

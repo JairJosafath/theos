@@ -2,7 +2,7 @@
 
 Since 2026-10-28 the factory develops itself (docs/plans/self-hosting.md). The relay, its triage and its maintainer are retired, and what this file says about them is history.
 
-C4 Factory has one person, the owner, and a team of agents that do the work.
+theos has one person, the owner, and a team of agents that do the work.
 This document says who decides what. Agents use it to run the project day to
 day, so the owner only steps in when they choose to. It adapts the CNCF
 project template's

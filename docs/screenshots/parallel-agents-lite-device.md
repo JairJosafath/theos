@@ -9,8 +9,8 @@ The light side of #27's "Done when", run on 2026-10-03 in the lite dev container
 ```
 $ hostname
 1aba59e9ec44
-$ echo C4_CLUSTER=$C4_CLUSTER
-C4_CLUSTER=none
+$ echo THEOS_CLUSTER=$THEOS_CLUSTER
+THEOS_CLUSTER=none
 $ go version
 go version go1.26.8 linux/amd64
 $ node --version
@@ -29,7 +29,7 @@ $ helm version
 bash: line 1: helm: command not found
 ```
 
-(#44's report came from the full container with `C4_CLUSTER=none` set by the relay,
+(#44's report came from the full container with `THEOS_CLUSTER=none` set by the relay,
 so kubectl and kind ran there; this one replaces it.)
 
 ## `make check` passes without a cluster
@@ -37,13 +37,13 @@ so kubectl and kind ran there; this one replaces it.)
 At f52de1e, 4m19s on 8 CPUs; `golangci-lint` reported 0 issues.
 
 ```
-ok  	github.com/JairJosafath/c4factory/features	0.007s	coverage: 92.0% of statements
-ok  	github.com/JairJosafath/c4factory/internal/agentrunner	9.279s	coverage: 87.3% of statements
-ok  	github.com/JairJosafath/c4factory/internal/controller	103.789s	coverage: 84.3% of statements
-ok  	github.com/JairJosafath/c4factory/internal/gitprovider	0.420s	coverage: 79.6% of statements
-ok  	github.com/JairJosafath/c4factory/internal/model	0.012s	coverage: 97.9% of statements
-ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.022s	coverage: 91.1% of statements
-ok  	github.com/JairJosafath/c4factory/internal/sessionclient	15.760s	coverage: 73.2% of statements
+ok  	github.com/JairJosafath/theos/features	0.007s	coverage: 92.0% of statements
+ok  	github.com/JairJosafath/theos/internal/agentrunner	9.279s	coverage: 87.3% of statements
+ok  	github.com/JairJosafath/theos/internal/controller	103.789s	coverage: 84.3% of statements
+ok  	github.com/JairJosafath/theos/internal/gitprovider	0.420s	coverage: 79.6% of statements
+ok  	github.com/JairJosafath/theos/internal/model	0.012s	coverage: 97.9% of statements
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.022s	coverage: 91.1% of statements
+ok  	github.com/JairJosafath/theos/internal/sessionclient	15.760s	coverage: 73.2% of statements
 real	4m19.096s
 ```
 
@@ -52,9 +52,9 @@ real	4m19.096s
 Ready at the time: #12 (`needs/cluster`, older) and #38 (no label).
 
 ```
-== pick with C4_CLUSTER=none (this lite container):
+== pick with THEOS_CLUSTER=none (this lite container):
 38	Release the claim when a merged pull request closes the issue	…/issues/38	ready
-== pick as a device with the cluster would (C4_CLUSTER unset):
+== pick as a device with the cluster would (THEOS_CLUSTER unset):
 12	go-standard and ts-standard v1.1.0 guides state the Standard-change hook rule backwards	…/issues/12	ready
 ```
 
@@ -64,13 +64,13 @@ Ready at the time: #12 (`needs/cluster`, older) and #38 (no label).
 the cluster device:
 
 ```
-08:34:55 worker 1 started: pid 25946, C4_CLUSTER=none, worktree …/.claude/worktrees/relay-1, HEAD f52de1e, at most 8 sessions of 6h
+08:34:55 worker 1 started: pid 25946, THEOS_CLUSTER=none, worktree …/.claude/worktrees/relay-1, HEAD f52de1e, at most 8 sessions of 6h
 08:35:07 session 1 start: id 0ce589a7-…, otter-38 on #38 (ready) Release the claim when a merged pull request closes the issue
 08:41:02 session 1 end: exit 0 after 5m, 16 turns, error false
 08:41:02 backup-releases: failed with exit 2; see …/.relay/backup-releases.out
 08:41:04 released #38 (otter-38): finished
 08:41:04 session 1 closed #38
-08:41:07 no issue ready; the evaluator reads the cluster, and this device has none (C4_CLUSTER=none)
+08:41:07 no issue ready; the evaluator reads the cluster, and this device has none (THEOS_CLUSTER=none)
 08:41:07 no issue ready; stopping
 ```
 
@@ -82,12 +82,12 @@ $ hack/lib/github.sh claims        # 08:41
 ```
 
 #12 stayed ready for the cluster device. `backup-releases` still runs, and fails,
-on a device with `C4_CLUSTER=none`.
+on a device with `THEOS_CLUSTER=none`.
 
 ## A handed-back issue is finished on the cluster device
 
 #45 ("report the Kind cluster's nodes") had no `needs/cluster` label. A relay with
-`C4_CLUSTER=none` took it, found it needs the cluster, labelled it and handed it
+`THEOS_CLUSTER=none` took it, found it needs the cluster, labelled it and handed it
 back; the cluster device closed it two and a half minutes later. Issue events:
 
 ```

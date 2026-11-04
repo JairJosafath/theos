@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -21,8 +21,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // newBrief makes a Brief whose autopilot is Off, so a handed-back issue starts
@@ -172,7 +172,7 @@ var _ = Describe("Brief", func() {
 			mustCreate(brief)
 			Eventually(func() string { return gitFake.AgentUser(ns, repo) }).Should(Equal(model.AgentUsername(ns, repo)))
 			Expect(k8sClient.Get(ctx, key(ns, "cel-lens"), brief)).To(Succeed())
-			Expect(brief.Finalizers).To(ContainElement("c4.factory.io/brief-bot"))
+			Expect(brief.Finalizers).To(ContainElement("theos.factory.io/brief-bot"))
 
 			Expect(k8sClient.Delete(ctx, brief)).To(Succeed())
 			Eventually(func() bool {

@@ -20,7 +20,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // fakeGit is a repository's git objects and refs, hashed as git hashes them,
@@ -383,7 +383,7 @@ func TestGitHubSource(t *testing.T) {
 		t.Errorf("CreateTree() removing README.md left %v", entryNames(tree))
 	}
 
-	message := "CEL Lens engine/v0.6.1: source\n\nC4factory-Source: shop/engine v0.6.1"
+	message := "CEL Lens engine/v0.6.1: source\n\ntheos-Source: shop/engine v0.6.1"
 	sourceCommit, err := g.CreateCommit(ctx, message, newRoot, []string{head})
 	if err != nil {
 		t.Fatalf("CreateCommit() error = %v", err)

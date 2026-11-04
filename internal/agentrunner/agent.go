@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // Agent does the work in a checked-out repository and answers in text.
@@ -37,10 +37,10 @@ type ClaudeAgent struct {
 	// to a fresh one (session.go); zero runs one session to its end.
 	SessionTokenLimit int64
 	// Guard is the program whose session-guard subcommand guards a session:
-	// c4agent itself.
+	// theos-agent itself.
 	Guard string
 	// SessionIDs starts each session with a --session-id of its own, which
-	// c4agent records for a checkpoint; Claude Code's own command takes it.
+	// theos-agent records for a checkpoint; Claude Code's own command takes it.
 	SessionIDs bool
 	// sessions, when set, records each session's ID and last words.
 	sessions *sessionLog
@@ -94,7 +94,7 @@ func (a ClaudeAgent) RunReportingUsage(ctx context.Context, dir, prompt string) 
 	return s.answer, s.usage, s.err
 }
 
-// stopWait is how long a session c4agent ended may hold its output open,
+// stopWait is how long a session theos-agent ended may hold its output open,
 // through a process it started.
 const stopWait = 10 * time.Second
 
@@ -168,7 +168,7 @@ func (a ClaudeAgent) runSession(ctx context.Context, dir, prompt string, guard *
 		case s.stopped:
 			// No result line: its turns say what it used; what it cost is unknown.
 			s.usage.Tokens = &out.turns
-			s.err = fmt.Errorf("c4agent ended the session at %d tokens", s.size)
+			s.err = fmt.Errorf("theos-agent ended the session at %d tokens", s.size)
 		case runErr != nil:
 			// stderr goes last: a stream's lines come before it and the tail
 			// keeps what says why, such as a limit or an overload.

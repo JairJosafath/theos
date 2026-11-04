@@ -16,7 +16,7 @@ only rounds being spent.
 1. **A Standard change may carry the unprotected changes its checks need.** A
    gated Task's scope is its allowed protected paths plus any path no Standard
    or the platform protects. Other protected paths, the agents' rules and
-   `.c4factory.yaml` included, stay refused. The extra paths are named: in the
+   `.theos.yaml` included, stay refused. The extra paths are named: in the
    round's history entry ("besides its Standard change's files it changes
    ..."), and in the pull request's description for the reviewer, or in a
    comment on it when a later round adds them (the description is round 1's).

@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // statusHost answers the status and commit calls of repository apps/orders and

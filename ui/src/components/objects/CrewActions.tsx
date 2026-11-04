@@ -468,7 +468,7 @@ function SourceFields({
 }
 
 /**
- * Re-runs the last release's failed runs: sets c4.factory.io/rerun-release to
+ * Re-runs the last release's failed runs: sets theos.factory.io/rerun-release to
  * a new value, which the operator answers once (design.md, UI actions).
  */
 export function RerunButton({ crew, writer }: { crew: Crew; writer: CrewWriter }) {

@@ -11,7 +11,7 @@ const k8sApi = process.env.K8S_API ?? 'http://127.0.0.1:8001'
 // development is read-only and multiplexes watches exactly like production.
 function k8sGateway(): Plugin {
   return {
-    name: 'c4factory-k8s-gateway',
+    name: 'theos-k8s-gateway',
     configureServer(server) {
       const api = createApiHandler({
         upstream: resolveUpstream({ K8S_API: k8sApi }),
@@ -29,7 +29,7 @@ export default defineConfig({
   base: './',
   // The release this UI is: the image's VERSION build arg (Dockerfile), dev otherwise.
   define: {
-    __C4_UI_VERSION__: JSON.stringify(process.env.C4_UI_VERSION || 'dev'),
+    __C4_UI_VERSION__: JSON.stringify(process.env.THEOS_UI_VERSION || 'dev'),
   },
   plugins: [react(), k8sGateway()],
   test: {

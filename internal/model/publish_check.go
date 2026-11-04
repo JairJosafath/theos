@@ -24,7 +24,7 @@ const (
 
 // AllowSecretMark on a line of a source file skips that line's secret check:
 // a test fixture, a sample key.
-const AllowSecretMark = "c4factory:allow-secret" //nolint:gosec // a mark, not a credential
+const AllowSecretMark = "theos:allow-secret" //nolint:gosec // a mark, not a credential
 
 // The files at a source's root that count as its license and its README.
 var (

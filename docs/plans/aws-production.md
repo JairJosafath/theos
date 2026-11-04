@@ -488,7 +488,7 @@ task size, as said here):
   name tables and vaults, so a log bucket passes in either tier; the stack
   test asserts it, and step 9, the first data bucket, adds the bucket rule.
 - **The backups leave the access logs out.** The plan selects by the
-  `c4factory:container` tag, which `applyStandard` puts on every resource,
+  `theos:container` tag, which `applyStandard` puts on every resource,
   the log bucket too: in an account that opted S3 in to AWS Backup, its
   daily job would fail (the bucket isn't versioned, the role has no S3
   permissions) and back up logs (decision 3). `Backups` takes an optional
@@ -496,7 +496,7 @@ task size, as said here):
   passes the log bucket's. AWS Backup's guide shows `NotResources` only
   beside `Resources: ["*"]` and `Conditions` (and recommends `Conditions`
   over `ListOfTags`), so Fargate's `backups.ts` selects by one
-  `aws:ResourceTag/c4factory:container` condition on `*` instead of CDK's
+  `aws:ResourceTag/theos:container` condition on `*` instead of CDK's
   `fromTag`. This is where it departs from aws-lambda-ts's file, which has
   nothing to leave out and is unchanged; the Standard's test accepts either
   form, exactly the tag either way, and checks per tier that every load

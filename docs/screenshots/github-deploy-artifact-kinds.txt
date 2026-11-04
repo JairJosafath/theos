@@ -31,7 +31,7 @@ alone, in its folder: #1599.
     DeployTarget takes an empty tagPrefix, one with a folder, and latest false (#1486)
 
     Ran 17 of 492 Specs in 35.940 seconds
-    ok  	github.com/JairJosafath/c4factory/internal/controller	35.995s
+    ok  	github.com/JairJosafath/theos/internal/controller	35.995s
 
 ## UI: what the pages show
 

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -79,7 +79,7 @@ type ContainerSpec struct {
 
 	// adopt says the Container takes over a repository that already has
 	// commits instead of scaffolding a new one. The operator writes nothing:
-	// it checks that main's .c4factory.yaml names this project and Container
+	// it checks that main's .theos.yaml names this project and Container
 	// and that every file of the Container's Standard is there with the
 	// content the Standard renders at its ref, then protects main and goes
 	// Ready. An adopted Container is never scaffolded; an empty repository
@@ -669,10 +669,10 @@ type ContainerStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// +kubebuilder:deprecatedversion:warning="c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
+// +kubebuilder:deprecatedversion:warning="theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Checks",type=string,JSONPath=".status.checks.state"

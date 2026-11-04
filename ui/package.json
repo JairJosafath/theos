@@ -1,8 +1,8 @@
 {
-  "name": "c4factory-ui",
+  "name": "theos-ui",
   "private": true,
   "version": "0.1.0",
-  "description": "UI for C4 Factory: draws the story from the custom resources, live through watches; with actions off, its only writes create a Brief, add a prompt to one, and pause or resume one.",
+  "description": "UI for theos: draws the story from the custom resources, live through watches; with actions off, its only writes create a Brief, add a prompt to one, and pause or resume one.",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {

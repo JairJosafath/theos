@@ -55,7 +55,7 @@ exit=0
 uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json
 exit=0
 # aws-lambda-go (golangci-lint 2.13.1, go1.26.8):
-ok  	c4factory.local/webshop/sample-app	1.024s
+ok  	theos.local/webshop/sample-app	1.024s
  Test Files  2 passed (2)
       Tests  14 passed (14)
 uvx cfn-lint==1.57.2 --ignore-checks W3005 -- cdk.out/*.template.json

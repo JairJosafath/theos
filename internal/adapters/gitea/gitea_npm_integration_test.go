@@ -16,24 +16,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // TestGiteaNpmIntegration checks what an agent's pod relies on to install the
 // factory's npm packages (docs/plans/done/app-packages.md, decision 5): a scoped
 // package published to the owner's npm registry installs as the restricted
-// agent account through the .npmrc c4agent writes, over plain http as the
+// agent account through the .npmrc theos-agent writes, over plain http as the
 // in-cluster Gitea is reached, and over TLS, as an external one is, where npm
 // sends the agent's token. Like TestGiteaIntegration; the publish runs
 // without npm, and only the install subtests skip (#1702).
 func TestGiteaNpmIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 

@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // tarGz builds a gzipped tar of files, by path.
@@ -346,13 +346,13 @@ func TestPublishReleasePackages(t *testing.T) {
 
 	t.Run("a repeat publishes nothing", func(t *testing.T) {
 		h, p := newPackageHost(t, "v0.1.0", release, ports.Packages{})
-		h.npmVersions["@c4factory/shop-ui"] = []string{"0.0.9", "0.1.0"}
+		h.npmVersions["@theos/shop-ui"] = []string{"0.0.9", "0.1.0"}
 		h.pypiFiles["shop-api"] = []string{"shop_api-0.1.0-py3-none-any.whl", "shop_api-0.1.0.tar.gz"}
 		got, err := p.PublishReleasePackages(ctx, p.Repository("shop"), "v0.1.0")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := []string{"npm @c4factory/shop-ui@0.1.0 Exists", "PyPI shop-api@0.1.0 Exists", "PyPI shop-api@0.1.0 Exists"}; !slices.Equal(outcomes(got.Packages), want) {
+		if want := []string{"npm @theos/shop-ui@0.1.0 Exists", "PyPI shop-api@0.1.0 Exists", "PyPI shop-api@0.1.0 Exists"}; !slices.Equal(outcomes(got.Packages), want) {
 			t.Errorf("outcomes = %v, want %v", outcomes(got.Packages), want)
 		}
 		if h.npmPut != nil || len(h.pypiForm) != 0 {
@@ -367,7 +367,7 @@ func TestPublishReleasePackages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := []string{"npm @c4factory/shop-ui@0.1.0 Exists", "PyPI shop-api@0.1.0 Exists", "PyPI shop-api@0.1.0 Exists"}; !slices.Equal(outcomes(got.Packages), want) {
+		if want := []string{"npm @theos/shop-ui@0.1.0 Exists", "PyPI shop-api@0.1.0 Exists", "PyPI shop-api@0.1.0 Exists"}; !slices.Equal(outcomes(got.Packages), want) {
 			t.Errorf("outcomes = %v, want %v", outcomes(got.Packages), want)
 		}
 	})
@@ -379,7 +379,7 @@ func TestPublishReleasePackages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := []string{"npm @c4factory/shop-ui@0.1.0 Published", "PyPI shop-api@0.1.0 Published", "PyPI shop-api@0.1.0 Exists"}; !slices.Equal(outcomes(got.Packages), want) {
+		if want := []string{"npm @theos/shop-ui@0.1.0 Published", "PyPI shop-api@0.1.0 Published", "PyPI shop-api@0.1.0 Exists"}; !slices.Equal(outcomes(got.Packages), want) {
 			t.Errorf("outcomes = %v, want %v", outcomes(got.Packages), want)
 		}
 		if len(h.pypiForm) != 1 || h.pypiForm[0]["filetype"] != "bdist_wheel" {
@@ -420,7 +420,7 @@ func TestPublishReleasePackages(t *testing.T) {
 // wheel and sdist, and three files that are no package.
 func shopRelease(t *testing.T) (ui, whl, sd []byte, release []testAsset) {
 	t.Helper()
-	ui = npmTarball(t, "@c4factory/shop-ui", "0.1.0")
+	ui = npmTarball(t, "@theos/shop-ui", "0.1.0")
 	whl = wheel(t, "shop-api", "0.1.0")
 	sd = sdist(t, "shop-api", "0.1.0")
 	release = []testAsset{
@@ -446,7 +446,7 @@ func TestPublishReleasePackagesUploads(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ports.Package{
-		{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemNpm, Name: "@c4factory/shop-ui", Version: "0.1.0", File: "shop-ui-0.1.0.tgz"},
+		{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemNpm, Name: "@theos/shop-ui", Version: "0.1.0", File: "shop-ui-0.1.0.tgz"},
 		{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemPyPI, Name: "shop-api", Version: "0.1.0", File: "shop_api-0.1.0-py3-none-any.whl"},
 		{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemPyPI, Name: "shop-api", Version: "0.1.0", File: "shop_api-0.1.0.tar.gz"},
 	}
@@ -468,12 +468,12 @@ func TestPublishReleasePackagesUploads(t *testing.T) {
 // the publish document PUT as npm publish does, its tarball attached.
 func checkNpmPublish(t *testing.T, h *packageHost, ui []byte) {
 	t.Helper()
-	npmPath := "/api/packages/webshop/npm/@c4factory%2Fshop-ui"
+	npmPath := "/api/packages/webshop/npm/@theos%2Fshop-ui"
 	if i, j := slices.Index(h.calls, "GET "+npmPath), slices.Index(h.calls, "PUT "+npmPath); i < 0 || j < i {
 		t.Errorf("calls = %v, want GET then PUT of %s", h.calls, npmPath)
 	}
 	doc := decodeNpmPut(t, h.npmPut)
-	if doc.ID != "@c4factory/shop-ui" || doc.Name != "@c4factory/shop-ui" || doc.Description != "The shop's UI" ||
+	if doc.ID != "@theos/shop-ui" || doc.Name != "@theos/shop-ui" || doc.Description != "The shop's UI" ||
 		doc.DistTags["latest"] != "0.1.0" {
 		t.Errorf("npm document head = %+v", doc)
 	}
@@ -482,12 +482,12 @@ func checkNpmPublish(t *testing.T, h *packageHost, ui []byte) {
 		t.Fatalf("npm document versions = %v, want 0.1.0 alone", doc.Versions)
 	}
 	sum512 := sha512.Sum512(ui)
-	if v.ID != "@c4factory/shop-ui@0.1.0" || v.Name != "@c4factory/shop-ui" || v.Version != "0.1.0" ||
+	if v.ID != "@theos/shop-ui@0.1.0" || v.Name != "@theos/shop-ui" || v.Version != "0.1.0" ||
 		v.Repository["url"] != "https://git.example.com/webshop/shop-ui.git" || v.Repository["type"] != "git" {
 		t.Errorf("npm version = %+v", v)
 	}
 	if v.Dist.Integrity != "sha512-"+base64.StdEncoding.EncodeToString(sum512[:]) ||
-		v.Dist.Tarball != h.url+"/api/packages/webshop/npm/@c4factory/shop-ui/-/shop-ui-0.1.0.tgz" || len(v.Dist.Shasum) != 40 {
+		v.Dist.Tarball != h.url+"/api/packages/webshop/npm/@theos/shop-ui/-/shop-ui-0.1.0.tgz" || len(v.Dist.Shasum) != 40 {
 		t.Errorf("npm dist = %+v", v.Dist)
 	}
 	att, ok := doc.Attachments["shop-ui-0.1.0.tgz"]
@@ -557,20 +557,20 @@ func TestPublishReleasePackagesOutcomes(t *testing.T) {
 		tag:    "v0.1.0",
 		assets: []testAsset{{"shop-ui-0.1.0.tgz", npmTarball(t, "shop-ui", "0.1.0")}},
 		want: []ports.Package{{Outcome: ports.PackageUnscoped, Ecosystem: ports.EcosystemNpm, Name: "shop-ui", Version: "0.1.0",
-			File: "shop-ui-0.1.0.tgz", Reason: "shop-ui is not under the scope @c4factory"}},
+			File: "shop-ui-0.1.0.tgz", Reason: "shop-ui is not under the scope @theos"}},
 	}, {
 		name:   "another scope is left alone",
 		tag:    "v0.1.0",
 		assets: []testAsset{{"shop-ui-0.1.0.tgz", npmTarball(t, "@acme/shop-ui", "0.1.0")}},
 		want: []ports.Package{{Outcome: ports.PackageUnscoped, Ecosystem: ports.EcosystemNpm, Name: "@acme/shop-ui", Version: "0.1.0",
-			File: "shop-ui-0.1.0.tgz", Reason: "@acme/shop-ui is not under the scope @c4factory"}},
+			File: "shop-ui-0.1.0.tgz", Reason: "@acme/shop-ui is not under the scope @theos"}},
 	}, {
 		name: "a version that isn't the tag's is invalid",
 		tag:  "v0.1.0",
-		assets: []testAsset{{"shop-ui-0.2.0.tgz", npmTarball(t, "@c4factory/shop-ui", "0.2.0")},
+		assets: []testAsset{{"shop-ui-0.2.0.tgz", npmTarball(t, "@theos/shop-ui", "0.2.0")},
 			{"shop_api-0.2.0-py3-none-any.whl", wheel(t, "shop-api", "0.2.0")}},
 		want: []ports.Package{
-			{Outcome: ports.PackageInvalid, Ecosystem: ports.EcosystemNpm, Name: "@c4factory/shop-ui", Version: "0.2.0",
+			{Outcome: ports.PackageInvalid, Ecosystem: ports.EcosystemNpm, Name: "@theos/shop-ui", Version: "0.2.0",
 				File: "shop-ui-0.2.0.tgz", Reason: "version 0.2.0 is not the tag's, 0.1.0"},
 			{Outcome: ports.PackageInvalid, Ecosystem: ports.EcosystemPyPI, Name: "shop-api", Version: "0.2.0",
 				File: "shop_api-0.2.0-py3-none-any.whl", Reason: "version 0.2.0 is not the tag's, 0.1.0"},
@@ -578,11 +578,11 @@ func TestPublishReleasePackagesOutcomes(t *testing.T) {
 	}, {
 		name: "a pre-release tag is normalised for Python and exact for npm (#1701)",
 		tag:  "v1.0.0-rc.1",
-		assets: []testAsset{{"shop-ui-1.0.0-rc.1.tgz", npmTarball(t, "@c4factory/shop-ui", "1.0.0-rc.1")},
+		assets: []testAsset{{"shop-ui-1.0.0-rc.1.tgz", npmTarball(t, "@theos/shop-ui", "1.0.0-rc.1")},
 			{"shop_api-1.0.0rc1-py3-none-any.whl", wheel(t, "shop-api", "1.0.0rc1")},
 			{"shop_api-1.0.0rc1.tar.gz", sdist(t, "shop-api", "1.0.0-RC.1")}},
 		want: []ports.Package{
-			{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemNpm, Name: "@c4factory/shop-ui", Version: "1.0.0-rc.1", File: "shop-ui-1.0.0-rc.1.tgz"},
+			{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemNpm, Name: "@theos/shop-ui", Version: "1.0.0-rc.1", File: "shop-ui-1.0.0-rc.1.tgz"},
 			{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemPyPI, Name: "shop-api", Version: "1.0.0rc1", File: "shop_api-1.0.0rc1-py3-none-any.whl"},
 			{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemPyPI, Name: "shop-api", Version: "1.0.0-RC.1", File: "shop_api-1.0.0rc1.tar.gz"},
 		},
@@ -622,14 +622,14 @@ func TestPublishReleasePackagesOutcomes(t *testing.T) {
 }
 
 // TestPublishReleasePackagesCustomRegistry checks a GitProvider's own scope
-// and registries (#1229, decision 5): under scope @acme a @c4factory tarball
+// and registries (#1229, decision 5): under scope @acme a @theos tarball
 // is left alone, uploads go to the custom URLs with their own tokens, and the
 // host's credentials never leave the host.
 func TestPublishReleasePackagesCustomRegistry(t *testing.T) {
 	ctx := context.Background()
 	assets := []testAsset{
 		{"shop-ui-0.1.0.tgz", npmTarball(t, "@acme/shop-ui", "0.1.0")},
-		{"legacy-0.1.0.tgz", npmTarball(t, "@c4factory/legacy", "0.1.0")},
+		{"legacy-0.1.0.tgz", npmTarball(t, "@theos/legacy", "0.1.0")},
 		{"shop_api-0.1.0-py3-none-any.whl", wheel(t, "Shop_API", "0.1.0")},
 	}
 	for _, tt := range []struct {
@@ -656,8 +656,8 @@ func TestPublishReleasePackagesCustomRegistry(t *testing.T) {
 			}
 			want := []ports.Package{
 				{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemNpm, Name: "@acme/shop-ui", Version: "0.1.0", File: "shop-ui-0.1.0.tgz"},
-				{Outcome: ports.PackageUnscoped, Ecosystem: ports.EcosystemNpm, Name: "@c4factory/legacy", Version: "0.1.0", File: "legacy-0.1.0.tgz",
-					Reason: "@c4factory/legacy is not under the scope @acme"},
+				{Outcome: ports.PackageUnscoped, Ecosystem: ports.EcosystemNpm, Name: "@theos/legacy", Version: "0.1.0", File: "legacy-0.1.0.tgz",
+					Reason: "@theos/legacy is not under the scope @acme"},
 				{Outcome: ports.PackagePublished, Ecosystem: ports.EcosystemPyPI, Name: "Shop_API", Version: "0.1.0", File: "shop_api-0.1.0-py3-none-any.whl"},
 			}
 			if !slices.Equal(got.Packages, want) {

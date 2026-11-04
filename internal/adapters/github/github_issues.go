@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // GitHubIssues returns an IssueTracker on cfg's repository. ctx bounds each

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for take claiming an issue on a device without a cluster,
-# acquire refusing without the human opt-in (C4_HUMAN_CLUSTER=1),
+# acquire refusing without the human opt-in (THEOS_HUMAN_CLUSTER=1),
 # and the cluster pool's leases (acquire, wait, exit 4, stale lease, two leases
 # on two clusters, a third waiting, a released cluster reused, a missing one
 # created, --fresh recreating only the cluster it leased, a bare cluster taken last and recreated; release on handoff, close and release, and kept when marking, handing off or closing another issue),
@@ -13,7 +13,7 @@
 # Run: hack/lib/github_test.sh
 . "$(dirname "$0")/github.sh"
 set -o pipefail # as github.sh runs as a script
-unset C4_CLUSTER C4_HUMAN_CLUSTER C4_HEADLESS IS_SANDBOX GH_LAND_GOAL # ./dev setup --lite sets the first, a human the second, the relay the third, an agent sandbox the fourth; each test sets its own
+unset THEOS_CLUSTER THEOS_HUMAN_CLUSTER THEOS_HEADLESS IS_SANDBOX GH_LAND_GOAL # ./dev setup --lite sets the first, a human the second, the relay the third, an agent sandbox the fourth; each test sets its own
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 git init -q "$T/main"
@@ -86,7 +86,7 @@ clear() { rm -rf "$T"/{main,wt2,wt3}/.relay; }
 # lists $T/kind-clusters; a fake make records what it was asked and creates the cluster.
 as() { local wt=$1; shift; GH_PENDING_DIR=$wt/.relay GH_CLAIM_FILE=$wt/.relay/claim "$@"; }
 LEASE=$T/main/.git/c4-cluster.lease
-LEASE2=$T/main/.git/c4-cluster-c4factory-2.lease
+LEASE2=$T/main/.git/c4-cluster-theos-2.lease
 lease() { jq -n --arg wt "$1" --argjson i "$2" --argjson b "$3" '{name:"heron-\($i)",issue:$i,worktree:$wt,beat:$b}' >"${4:-$LEASE}"; }
 mkdir -p "$T/bin"
 # It goes on writing after the list, more than a pipe holds: under pipefail
@@ -101,43 +101,43 @@ if [ "\$3" = cluster-delete ]; then grep -vxF "\$c" "$T/kind-clusters" >"$T/kind
 else echo "\$c" >>"$T/kind-clusters"; fi
 EOF
 chmod +x "$T"/bin/*
-export KIND=$T/bin/kind C4_MAKE=$T/bin/make
-echo c4factory >"$T/kind-clusters"
+export KIND=$T/bin/kind THEOS_MAKE=$T/bin/make
+echo theos >"$T/kind-clusters"
 clear
 
-# One cluster (C4_CLUSTERS=1): acquire, wait, exit 4, stale lease, release, beat.
-export C4_CLUSTERS=1
-check "lease file in the git common dir" "$(as "$T/wt2" gh_lease_file c4factory)" "$LEASE"
-check "second cluster's lease beside it" "$(as "$T/wt2" gh_lease_file c4factory-2)" "$LEASE2"
+# One cluster (THEOS_CLUSTERS=1): acquire, wait, exit 4, stale lease, release, beat.
+export THEOS_CLUSTERS=1
+check "lease file in the git common dir" "$(as "$T/wt2" gh_lease_file theos)" "$LEASE"
+check "second cluster's lease beside it" "$(as "$T/wt2" gh_lease_file theos-2)" "$LEASE2"
 as "$T/wt2" gh_cluster holder >/dev/null; check "holder, none" $? 1
-check "name, no lease: the default" "$(as "$T/wt2" gh_cluster name)" c4factory
+check "name, no lease: the default" "$(as "$T/wt2" gh_cluster name)" theos
 claim "$T/wt2" 50 "$GH_NOW"
 out=$(as "$T/wt2" gh_cluster acquire --wait 0 2>"$T/err"); check "acquire, no human opt-in: refused" "$?|$out|$([ -e "$LEASE" ] && echo leased)" "5||"
-grep -q "C4_HUMAN_CLUSTER=1" "$T/err"; check "acquire, no human opt-in: names it" $? 0
-C4_HUMAN_CLUSTER=0 as "$T/wt2" gh_cluster acquire --wait 0 >/dev/null 2>&1; check "acquire, opt-in not 1: refused" $? 5
-export C4_HUMAN_CLUSTER=1 # the rest of the pool tests are a human's
-out=$(as "$T/wt2" gh_cluster acquire --wait 0 2>"$T/err"); check "acquire, free" "$? $out" "0 c4factory"
-case $(cat "$T/err") in "github: Kind cluster c4factory is leased to heron-50 (#50, $T/wt2), heartbeat 0m ago."*) r=yes ;; *) r=no ;; esac
+grep -q "THEOS_HUMAN_CLUSTER=1" "$T/err"; check "acquire, no human opt-in: names it" $? 0
+THEOS_HUMAN_CLUSTER=0 as "$T/wt2" gh_cluster acquire --wait 0 >/dev/null 2>&1; check "acquire, opt-in not 1: refused" $? 5
+export THEOS_HUMAN_CLUSTER=1 # the rest of the pool tests are a human's
+out=$(as "$T/wt2" gh_cluster acquire --wait 0 2>"$T/err"); check "acquire, free" "$? $out" "0 theos"
+case $(cat "$T/err") in "github: Kind cluster theos is leased to heron-50 (#50, $T/wt2), heartbeat 0m ago."*) r=yes ;; *) r=no ;; esac
 check "acquire names the lease" $r yes
-check "lease names cluster, agent, issue, worktree" "$(jq -c '[.cluster, .name, .issue, .worktree]' "$LEASE")" "[\"c4factory\",\"heron-50\",50,\"$T/wt2\"]"
-check "holder, other checkout" "$(gh_cluster holder)" "c4factory: heron-50 (#50, $T/wt2), heartbeat 0m ago"
-check "holder, this checkout" "$(as "$T/wt2" gh_cluster holder)" "c4factory: heron-50 (#50, $T/wt2), heartbeat 0m ago (this checkout)"
-check "acquire again, own lease" "$(as "$T/wt2" gh_cluster acquire --wait 0 2>/dev/null)" c4factory
+check "lease names cluster, agent, issue, worktree" "$(jq -c '[.cluster, .name, .issue, .worktree]' "$LEASE")" "[\"theos\",\"heron-50\",50,\"$T/wt2\"]"
+check "holder, other checkout" "$(gh_cluster holder)" "theos: heron-50 (#50, $T/wt2), heartbeat 0m ago"
+check "holder, this checkout" "$(as "$T/wt2" gh_cluster holder)" "theos: heron-50 (#50, $T/wt2), heartbeat 0m ago (this checkout)"
+check "acquire again, own lease" "$(as "$T/wt2" gh_cluster acquire --wait 0 2>/dev/null)" theos
 gh_cluster acquire --wait 0 2>"$T/err"; check "acquire, held: exit 4" $? 4
-grep -q "c4factory: heron-50 (#50, $T/wt2)" "$T/err"; check "acquire, held: names the holder" $? 0
+grep -q "theos: heron-50 (#50, $T/wt2)" "$T/err"; check "acquire, held: names the holder" $? 0
 gh_cluster acquire --wait x 2>/dev/null; check "acquire, bad wait" $? 64
-C4_LEASE_TTL=bogus gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad TTL" $? 64
-C4_CLUSTERS=0 gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad C4_CLUSTERS" $? 64
-check "bad TTL: the lease counts as live" "$(C4_LEASE_TTL=bogus gh_lease_holder c4factory | cut -d' ' -f1)" heron-50
+THEOS_LEASE_TTL=bogus gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad TTL" $? 64
+THEOS_CLUSTERS=0 gh_cluster acquire --wait 0 2>/dev/null; check "acquire, bad THEOS_CLUSTERS" $? 64
+check "bad TTL: the lease counts as live" "$(THEOS_LEASE_TTL=bogus gh_lease_holder theos | cut -d' ' -f1)" heron-50
 # The release waits for acquire's waiting line, not for a second, so a loaded
 # device can't release before acquire looks (#1409).
 : >"$T/err"
 (said "waiting up to" "$T/err"; as "$T/wt2" gh_cluster release >/dev/null) &
 GH_LEASE_POLL=0.2 gh_cluster acquire --wait 60s >/dev/null 2>"$T/err"; check "acquire waits for a release" $? 0
 wait
-grep -q "every Kind cluster in the pool is leased (c4factory: heron-50.*); waiting up to 60s" "$T/err"; check "acquire says it waits" $? 0
+grep -q "every Kind cluster in the pool is leased (theos: heron-50.*); waiting up to 60s" "$T/err"; check "acquire says it waits" $? 0
 check "acquire after the wait: lease is main's" "$(jq -r .worktree "$LEASE")" "$T/main"
-check "name, own lease" "$(gh_cluster name)" c4factory
+check "name, own lease" "$(gh_cluster name)" theos
 gh_cluster release >/dev/null; check "release" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
 lease "$T/wt2" 50 $((GH_NOW - 3 * 3600))
 gh_cluster holder >/dev/null; check "stale lease: no holder" $? 1
@@ -147,120 +147,120 @@ gh_cluster acquire --wait 0 >/dev/null 2>&1; check "lease of a removed worktree 
 lease "$T/wt2" 50 "$GH_NOW"
 gh_cluster release >/dev/null; check "release leaves another checkout's lease" "$(jq -r .worktree "$LEASE")" "$T/wt2"
 lease "$T/main" 50 $((GH_NOW - 3600))
-C4_HEADLESS=1 gh_beat; check "beat, the relay's: no lease touched (#1128)" "$(jq .beat "$LEASE")" $((GH_NOW - 3600))
+THEOS_HEADLESS=1 gh_beat; check "beat, the relay's: no lease touched (#1128)" "$(jq .beat "$LEASE")" $((GH_NOW - 3600))
 # The heartbeat hook runs beat without the opt-in a human gave acquire inline.
-C4_HUMAN_CLUSTER= gh_beat; check "beat refreshes the lease" "$(jq .beat "$LEASE")" "$GH_NOW"
+THEOS_HUMAN_CLUSTER= gh_beat; check "beat refreshes the lease" "$(jq .beat "$LEASE")" "$GH_NOW"
 lease "$T/wt2" 50 $((GH_NOW - 3600)); b=$(jq .beat "$LEASE")
 gh_beat; check "beat leaves another checkout's lease" "$(jq .beat "$LEASE")" "$b"
 # A heartbeat 45 s old across a minute boundary is 0m old; 90 s old, 1m (#1194).
 lease "$T/wt2" 50 $((GH_NOW + 30))
-check "holder, 45 s on, past a minute boundary" "$(GH_NOW=$((GH_NOW + 75)) gh_cluster holder)" "c4factory: heron-50 (#50, $T/wt2), heartbeat 0m ago"
-check "holder, 90 s on" "$(GH_NOW=$((GH_NOW + 120)) gh_cluster holder)" "c4factory: heron-50 (#50, $T/wt2), heartbeat 1m ago"
+check "holder, 45 s on, past a minute boundary" "$(GH_NOW=$((GH_NOW + 75)) gh_cluster holder)" "theos: heron-50 (#50, $T/wt2), heartbeat 0m ago"
+check "holder, 90 s on" "$(GH_NOW=$((GH_NOW + 120)) gh_cluster holder)" "theos: heron-50 (#50, $T/wt2), heartbeat 1m ago"
 rm -f "$LEASE"
 
 # A pool of two: two leases at once get different clusters, a third waits, a
 # released cluster is reused, and a missing one is created on its first lease.
-export C4_CLUSTERS=2
+export THEOS_CLUSTERS=2
 clear; rm -f "$T/made"; claim "$T/wt2" 50 "$GH_NOW"; claim "$T/wt3" 51 "$GH_NOW"
-check "pool, c4factory-2 not created" "$(gh_cluster pool | tail -1)" "c4factory-2: free, not created yet (its first lease creates it)"
-check "two at once: the first gets c4factory" "$(as "$T/wt2" gh_cluster acquire --wait 0 2>/dev/null)" c4factory
+check "pool, theos-2 not created" "$(gh_cluster pool | tail -1)" "theos-2: free, not created yet (its first lease creates it)"
+check "two at once: the first gets theos" "$(as "$T/wt2" gh_cluster acquire --wait 0 2>/dev/null)" theos
 check "two at once: no cluster made for an existing one" "$(cat "$T/made" 2>/dev/null)" ""
-out=$(as "$T/wt3" gh_cluster acquire --wait 0 2>"$T/err"); check "two at once: the second gets c4factory-2" "$? $out" "0 c4factory-2"
-check "a missing cluster is created on its first lease" "$(cat "$T/made")" "-C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
-grep -q "Kind cluster c4factory-2 does not exist yet; creating it" "$T/err"; check "acquire says it creates" $? 0
-check "second lease names its cluster" "$(jq -r '"\(.cluster) \(.worktree)"' "$LEASE2")" "c4factory-2 $T/wt3"
-check "name, each checkout its own" "$(as "$T/wt2" gh_cluster name) $(as "$T/wt3" gh_cluster name)" "c4factory c4factory-2"
-check "holder lists both" "$(gh_cluster holder | cut -d' ' -f1-2 | tr '\n' ' ')" "c4factory: heron-50 c4factory-2: heron-51 "
-check "holder NAME" "$(gh_cluster holder c4factory-2 | cut -d: -f1)" c4factory-2
+out=$(as "$T/wt3" gh_cluster acquire --wait 0 2>"$T/err"); check "two at once: the second gets theos-2" "$? $out" "0 theos-2"
+check "a missing cluster is created on its first lease" "$(cat "$T/made")" "-C $T/main cluster gitea seed KIND_CLUSTER=theos-2"
+grep -q "Kind cluster theos-2 does not exist yet; creating it" "$T/err"; check "acquire says it creates" $? 0
+check "second lease names its cluster" "$(jq -r '"\(.cluster) \(.worktree)"' "$LEASE2")" "theos-2 $T/wt3"
+check "name, each checkout its own" "$(as "$T/wt2" gh_cluster name) $(as "$T/wt3" gh_cluster name)" "theos theos-2"
+check "holder lists both" "$(gh_cluster holder | cut -d' ' -f1-2 | tr '\n' ' ')" "theos: heron-50 theos-2: heron-51 "
+check "holder NAME" "$(gh_cluster holder theos-2 | cut -d: -f1)" theos-2
 check "pool, both leased" "$(gh_cluster pool | grep -c ': leased to ')" 2
 gh_cluster acquire --wait 0 2>"$T/err"; check "a third: exit 4" $? 4
-grep -q "c4factory: heron-50.*; c4factory-2: heron-51" "$T/err"; check "a third: names both holders" $? 0
+grep -q "theos: heron-50.*; theos-2: heron-51" "$T/err"; check "a third: names both holders" $? 0
 : >"$T/err"
 (said "waiting up to" "$T/err"; as "$T/wt3" gh_cluster release >/dev/null) &
-out=$(GH_LEASE_POLL=0.2 gh_cluster acquire --wait 60s 2>"$T/err"); check "a third waits, then reuses the released cluster" "$? $out" "0 c4factory-2"
+out=$(GH_LEASE_POLL=0.2 gh_cluster acquire --wait 60s 2>"$T/err"); check "a third waits, then reuses the released cluster" "$? $out" "0 theos-2"
 wait
 check "reused cluster not created again" "$(wc -l <"$T/made")" 1
 as "$T/wt2" gh_cluster release >/dev/null
 check "release leaves the other checkout's cluster" "$([ -e "$LEASE" ] && echo kept || echo gone) $(jq -r .worktree "$LEASE2")" "gone $T/main"
 gh_cluster release >/dev/null
-echo c4factory-2 >"$T/kind-clusters"
-check "a free cluster that exists goes first" "$(gh_cluster acquire --wait 0 2>/dev/null)" c4factory-2
+echo theos-2 >"$T/kind-clusters"
+check "a free cluster that exists goes first" "$(gh_cluster acquire --wait 0 2>/dev/null)" theos-2
 gh_cluster release >/dev/null
 : >"$T/kind-clusters"; touch "$T/make-fails"
 gh_cluster acquire --wait 0 >/dev/null 2>"$T/err"; check "create fails: exit 1" $? 1
 check "create fails: lease dropped" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
-rm -f "$T/make-fails"; echo c4factory >"$T/kind-clusters"
+rm -f "$T/make-fails"; echo theos >"$T/kind-clusters"
 lease "$T/main" 50 "$GH_NOW" "$LEASE2"
-check "pool shrunk: a lease outside it is dropped for one inside" "$(C4_CLUSTERS=1 gh_cluster acquire --wait 0 2>/dev/null) $([ -e "$LEASE2" ] && echo kept || echo gone)" "c4factory gone"
+check "pool shrunk: a lease outside it is dropped for one inside" "$(THEOS_CLUSTERS=1 gh_cluster acquire --wait 0 2>/dev/null) $([ -e "$LEASE2" ] && echo kept || echo gone)" "theos gone"
 gh_cluster release >/dev/null
 
 # --fresh: a cluster not created yet goes first; else the leased one, and only
 # it, is deleted and created again; with every cluster held it waits and exits 4.
-rm -f "$T/made"; echo c4factory >"$T/kind-clusters"
-out=$(gh_cluster acquire --wait 0 --fresh 2>"$T/err"); check "fresh: a not-yet-created cluster first" "$? $out" "0 c4factory-2"
-check "fresh, not created: created, nothing deleted" "$(cat "$T/made")" "-C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
+rm -f "$T/made"; echo theos >"$T/kind-clusters"
+out=$(gh_cluster acquire --wait 0 --fresh 2>"$T/err"); check "fresh: a not-yet-created cluster first" "$? $out" "0 theos-2"
+check "fresh, not created: created, nothing deleted" "$(cat "$T/made")" "-C $T/main cluster gitea seed KIND_CLUSTER=theos-2"
 gh_cluster release >/dev/null; rm -f "$T/made"
 lease "$T/wt2" 50 "$GH_NOW"
-out=$(gh_cluster acquire --fresh --wait 0 2>"$T/err"); check "fresh: an existing free cluster when all exist" "$? $out" "0 c4factory-2"
-check "fresh: recreates only the cluster it leased" "$(cat "$T/made")" "-C $T/main cluster-delete KIND_CLUSTER=c4factory-2
--C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
-check "fresh: the held cluster is left alone" "$(sort "$T/kind-clusters" | tr '\n' ' ') $(jq -r .worktree "$LEASE")" "c4factory c4factory-2  $T/wt2"
-grep -q "deleting Kind cluster c4factory-2, which this checkout now leases (no other checkout holds it)" "$T/err"; check "fresh: says what it deletes and why" $? 0
+out=$(gh_cluster acquire --fresh --wait 0 2>"$T/err"); check "fresh: an existing free cluster when all exist" "$? $out" "0 theos-2"
+check "fresh: recreates only the cluster it leased" "$(cat "$T/made")" "-C $T/main cluster-delete KIND_CLUSTER=theos-2
+-C $T/main cluster gitea seed KIND_CLUSTER=theos-2"
+check "fresh: the held cluster is left alone" "$(sort "$T/kind-clusters" | tr '\n' ' ') $(jq -r .worktree "$LEASE")" "theos theos-2  $T/wt2"
+grep -q "deleting Kind cluster theos-2, which this checkout now leases (no other checkout holds it)" "$T/err"; check "fresh: says what it deletes and why" $? 0
 rm -f "$T/made"
-check "fresh, own lease: recreated again" "$(gh_cluster acquire --wait 0 --fresh 2>/dev/null) $(head -1 "$T/made")" "c4factory-2 -C $T/main cluster-delete KIND_CLUSTER=c4factory-2"
+check "fresh, own lease: recreated again" "$(gh_cluster acquire --wait 0 --fresh 2>/dev/null) $(head -1 "$T/made")" "theos-2 -C $T/main cluster-delete KIND_CLUSTER=theos-2"
 rm -f "$T/made"
 as "$T/wt3" gh_cluster acquire --wait 0 --fresh 2>"$T/err"; check "fresh, every cluster held: exit 4" $? 4
 check "fresh, every cluster held: nothing deleted" "$(cat "$T/made" 2>/dev/null)" ""
 touch "$T/make-fails"
 gh_cluster acquire --wait 0 --fresh >/dev/null 2>"$T/err"; check "fresh, delete fails: exit 1" $? 1
 check "fresh, delete fails: lease dropped" "$([ -e "$LEASE2" ] && echo kept || echo gone)" gone
-rm -f "$T/make-fails" "$LEASE" "$T/made"; echo c4factory >"$T/kind-clusters"
+rm -f "$T/make-fails" "$LEASE" "$T/made"; echo theos >"$T/kind-clusters"
 
 # --bare, with or without --fresh: as --fresh, and created with make cluster
 # only: no testenv Gitea, no seed, for a release install.
-out=$(gh_cluster acquire --wait 0 --fresh --bare 2>"$T/err"); check "bare: a not-yet-created cluster first" "$? $out" "0 c4factory-2"
-check "bare, not created: make cluster only" "$(cat "$T/made")" "-C $T/main cluster KIND_CLUSTER=c4factory-2"
-grep -q "creating Kind cluster c4factory-2 with nothing installed" "$T/err"; check "bare: says it installs nothing" $? 0
+out=$(gh_cluster acquire --wait 0 --fresh --bare 2>"$T/err"); check "bare: a not-yet-created cluster first" "$? $out" "0 theos-2"
+check "bare, not created: make cluster only" "$(cat "$T/made")" "-C $T/main cluster KIND_CLUSTER=theos-2"
+grep -q "creating Kind cluster theos-2 with nothing installed" "$T/err"; check "bare: says it installs nothing" $? 0
 rm -f "$T/made"
-check "bare, own lease: recreated bare" "$(gh_cluster acquire --wait 0 --bare 2>/dev/null) $(cat "$T/made")" "c4factory-2 -C $T/main cluster-delete KIND_CLUSTER=c4factory-2
--C $T/main cluster KIND_CLUSTER=c4factory-2"
+check "bare, own lease: recreated bare" "$(gh_cluster acquire --wait 0 --bare 2>/dev/null) $(cat "$T/made")" "theos-2 -C $T/main cluster-delete KIND_CLUSTER=theos-2
+-C $T/main cluster KIND_CLUSTER=theos-2"
 touch "$T/make-fails"; gh_cluster release >/dev/null; : >"$T/kind-clusters"
 gh_cluster acquire --wait 0 --bare >/dev/null 2>"$T/err"; check "bare, create fails: exit 1" $? 1
 check "bare, create fails: lease dropped" "$([ -e "$LEASE" ] && echo kept || echo gone)" gone
-rm -f "$T/make-fails" "$LEASE" "$LEASE2" "$T/made"; echo c4factory >"$T/kind-clusters"
+rm -f "$T/make-fails" "$LEASE" "$LEASE2" "$T/made"; echo theos >"$T/kind-clusters"
 
 # A cluster made bare stays marked bare after its lease: a plain acquire
 # prefers any other free cluster, and recreates a bare one it must take with
 # Gitea and the seed; one this checkout already holds is kept, with a warning.
 BARE=$T/main/.git/c4-cluster.bare
-BARE2=$T/main/.git/c4-cluster-c4factory-2.bare
-check "bare mark beside the lease" "$(gh_bare_file c4factory) $(gh_bare_file c4factory-2)" "$BARE $BARE2"
+BARE2=$T/main/.git/c4-cluster-theos-2.bare
+check "bare mark beside the lease" "$(gh_bare_file theos) $(gh_bare_file theos-2)" "$BARE $BARE2"
 check "bare: the mark outlives the lease" "$([ -e "$BARE2" ] && echo kept || echo gone)" kept
-rm -f "$BARE2"; printf 'c4factory\nc4factory-2\n' >"$T/kind-clusters"; touch "$BARE"
-check "pool says free, bare" "$(gh_cluster pool | head -1)" "c4factory: free, bare (acquire --bare: no testenv Gitea or seed); a plain acquire takes it last and recreates it"
-out=$(gh_cluster acquire --wait 0 2>/dev/null); check "plain: a free testenv cluster before a bare one" "$? $out $(cat "$T/made" 2>/dev/null)" "0 c4factory-2 "
+rm -f "$BARE2"; printf 'theos\ntheos-2\n' >"$T/kind-clusters"; touch "$BARE"
+check "pool says free, bare" "$(gh_cluster pool | head -1)" "theos: free, bare (acquire --bare: no testenv Gitea or seed); a plain acquire takes it last and recreates it"
+out=$(gh_cluster acquire --wait 0 2>/dev/null); check "plain: a free testenv cluster before a bare one" "$? $out $(cat "$T/made" 2>/dev/null)" "0 theos-2 "
 gh_cluster release >/dev/null
-echo c4factory >"$T/kind-clusters"
-out=$(gh_cluster acquire --wait 0 2>/dev/null); check "plain: a cluster not created yet before a bare one" "$? $out $(cat "$T/made")" "0 c4factory-2 -C $T/main cluster gitea seed KIND_CLUSTER=c4factory-2"
+echo theos >"$T/kind-clusters"
+out=$(gh_cluster acquire --wait 0 2>/dev/null); check "plain: a cluster not created yet before a bare one" "$? $out $(cat "$T/made")" "0 theos-2 -C $T/main cluster gitea seed KIND_CLUSTER=theos-2"
 gh_cluster release >/dev/null; rm -f "$T/made"
 lease "$T/wt2" 50 "$GH_NOW" "$LEASE2"
-out=$(gh_cluster acquire --wait 0 2>"$T/err"); check "plain, only a bare one free: it" "$? $out" "0 c4factory"
-check "plain, only a bare one free: recreated as a testenv one" "$(cat "$T/made")" "-C $T/main cluster-delete KIND_CLUSTER=c4factory
--C $T/main cluster gitea seed KIND_CLUSTER=c4factory"
-grep -q "Kind cluster c4factory was created bare (acquire --bare), with no testenv Gitea or seed, and is the only free one; recreating it" "$T/err"; check "plain, bare: says why it recreates" $? 0
-check "plain, bare recreated: the mark is gone" "$([ -e "$BARE" ] && echo kept || echo gone) $(gh_cluster pool | head -1 | cut -d' ' -f1-3)" "gone c4factory: leased to"
+out=$(gh_cluster acquire --wait 0 2>"$T/err"); check "plain, only a bare one free: it" "$? $out" "0 theos"
+check "plain, only a bare one free: recreated as a testenv one" "$(cat "$T/made")" "-C $T/main cluster-delete KIND_CLUSTER=theos
+-C $T/main cluster gitea seed KIND_CLUSTER=theos"
+grep -q "Kind cluster theos was created bare (acquire --bare), with no testenv Gitea or seed, and is the only free one; recreating it" "$T/err"; check "plain, bare: says why it recreates" $? 0
+check "plain, bare recreated: the mark is gone" "$([ -e "$BARE" ] && echo kept || echo gone) $(gh_cluster pool | head -1 | cut -d' ' -f1-3)" "gone theos: leased to"
 gh_cluster release >/dev/null; rm -f "$T/made"
 gh_cluster acquire --wait 0 --bare >/dev/null 2>&1; rm -f "$T/made"
-case $(gh_cluster pool | head -1) in "c4factory: leased to "*"(this checkout), bare (acquire --bare: no testenv Gitea or seed)") r=yes ;; *) r=no ;; esac
+case $(gh_cluster pool | head -1) in "theos: leased to "*"(this checkout), bare (acquire --bare: no testenv Gitea or seed)") r=yes ;; *) r=no ;; esac
 check "pool says leased, bare" $r yes
-out=$(gh_cluster acquire --wait 0 2>"$T/err"); check "plain, own bare lease: kept as it is" "$? $out $(cat "$T/made" 2>/dev/null)" "0 c4factory "
+out=$(gh_cluster acquire --wait 0 2>"$T/err"); check "plain, own bare lease: kept as it is" "$? $out $(cat "$T/made" 2>/dev/null)" "0 theos "
 grep -q "which this checkout already leased, was created bare (acquire --bare): no testenv Gitea or seed. Kept as it is; acquire --fresh makes it a testenv one" "$T/err"; check "plain, own bare lease: warns" $? 0
-gh_cluster acquire --wait 0 --fresh >/dev/null 2>&1; check "fresh: a bare cluster becomes a testenv one" "$([ -e "$BARE" ] && echo kept || echo gone) $(tail -1 "$T/made")" "gone -C $T/main cluster gitea seed KIND_CLUSTER=c4factory"
-rm -f "$LEASE" "$LEASE2" "$BARE" "$BARE2" "$T/made"; echo c4factory >"$T/kind-clusters"
+gh_cluster acquire --wait 0 --fresh >/dev/null 2>&1; check "fresh: a bare cluster becomes a testenv one" "$([ -e "$BARE" ] && echo kept || echo gone) $(tail -1 "$T/made")" "gone -C $T/main cluster gitea seed KIND_CLUSTER=theos"
+rm -f "$LEASE" "$LEASE2" "$BARE" "$BARE2" "$T/made"; echo theos >"$T/kind-clusters"
 
 # take claims an issue without a cluster, and while another checkout holds the lease.
 clear; lease "$T/wt2" 50 "$GH_NOW"
-rm -f "$T/posted"; out=$(C4_CLUSTER=none gh_take 60 2>/dev/null); check "take 60, no cluster" "$? $(cut -f1 <<<"$out" | grep -c .)" "0 1"
+rm -f "$T/posted"; out=$(THEOS_CLUSTER=none gh_take 60 2>/dev/null); check "take 60, no cluster" "$? $(cut -f1 <<<"$out" | grep -c .)" "0 1"
 rm -f "$T/main/.relay/claim"
 rm -f "$T/posted"; gh_take 60 >/dev/null 2>&1; check "take 60, lease held elsewhere" $? 0
 rm -f "$T/main/.relay/claim"
@@ -282,7 +282,7 @@ real_set_status 51 needs-maintainer >/dev/null 2>&1
 check "needs-maintainer drops the lease and the claim" \
   "$([ -e "$LEASE" ] && echo kept || echo gone) $([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" "gone released"
 check "needs-maintainer swaps the status" "$(cat "$T/calls")" \
-  "PUT repos/JairJosafath/c4factory/issues/51/labels {\"labels\":[\"status/needs-maintainer\"]}"
+  "PUT repos/JairJosafath/theos/issues/51/labels {\"labels\":[\"status/needs-maintainer\"]}"
 clear; claim "$T/main" 51 "$GH_NOW"; lease "$T/main" 51 "$GH_NOW"
 real_set_status 51 needs-human >/dev/null 2>&1
 check "needs-human drops the lease and the claim" \
@@ -293,7 +293,7 @@ out=$(real_set_status 51 ready 2>&1); rc=$?
 check "ready without a kind label is refused" "$rc $(grep -c 'no kind/\* label' <<<"$out") $(grep -c . "$T/calls")" "1 1 0"
 clear; : >"$T/calls"
 real_set_status 72 ready >/dev/null 2>&1; rc=$?
-check "ready with a kind label" "$rc $(cat "$T/calls")" "0 PUT repos/JairJosafath/c4factory/issues/72/labels {\"labels\":[\"kind/bug\",\"status/ready\"]}"
+check "ready with a kind label" "$rc $(cat "$T/calls")" "0 PUT repos/JairJosafath/theos/issues/72/labels {\"labels\":[\"kind/bug\",\"status/ready\"]}"
 # Marking, handing off or closing another issue keeps this checkout's lease and claim.
 clear; claim "$T/main" 52 "$GH_NOW"; lease "$T/main" 52 "$GH_NOW"
 real_set_status 51 needs-human >/dev/null 2>&1
@@ -312,15 +312,15 @@ echo landed | gh_close 72 - >/dev/null 2>&1; check "close of another issue keeps
 # The relay's release, handoff, close and status touch no lease, even one
 # naming its checkout and issue (#1128): only a human's checkout holds one.
 clear; claim "$T/main" 72 "$GH_NOW"; lease "$T/main" 72 "$GH_NOW"
-echo landed | C4_HEADLESS=1 gh_close 72 - >/dev/null 2>&1
+echo landed | THEOS_HEADLESS=1 gh_close 72 - >/dev/null 2>&1
 check "close, the relay's: the claim released, no lease touched" \
   "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released) $([ -e "$LEASE" ] && echo kept || echo gone)" "released kept"
 clear; lease "$T/main" 73 "$GH_NOW"
-echo h | C4_HEADLESS=1 gh_handoff 73 - >/dev/null 2>&1; check "handoff, the relay's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+echo h | THEOS_HEADLESS=1 gh_handoff 73 - >/dev/null 2>&1; check "handoff, the relay's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
 clear; lease "$T/main" 73 "$GH_NOW"
-C4_HEADLESS=1 gh_release >/dev/null 2>&1; check "release, the relay's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
+THEOS_HEADLESS=1 gh_release >/dev/null 2>&1; check "release, the relay's: no lease touched" "$([ -e "$LEASE" ] && echo kept || echo gone)" kept
 clear; claim "$T/main" 51 "$GH_NOW"; lease "$T/main" 51 "$GH_NOW"
-C4_HEADLESS=1 real_set_status 51 needs-maintainer >/dev/null 2>&1
+THEOS_HEADLESS=1 real_set_status 51 needs-maintainer >/dev/null 2>&1
 check "needs-maintainer, the relay's: the claim released, no lease touched" \
   "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released) $([ -e "$LEASE" ] && echo kept || echo gone)" "released kept"
 real_set_status 51 bogus 2>/dev/null; check "status, unknown" $? 1
@@ -405,7 +405,7 @@ check "escalated, none" "$(OPEN='[[]]' gh_escalated)" ""
 check "escalated: labels=status/needs-maintainer, slash unencoded (#1802)" "$(
   gh_api() { local a; for a; do case $a in repos/*) echo "$a" >>"$T/escalated-urls" ;; esac; done; echo '[[]]'; }
   gh_escalated >/dev/null; cat "$T/escalated-urls"
-)" "repos/$C4_GITHUB_REPO/issues?state=open&labels=status/needs-maintainer&sort=created&direction=asc&per_page=100"
+)" "repos/$THEOS_GITHUB_REPO/issues?state=open&labels=status/needs-maintainer&sort=created&direction=asc&per_page=100"
 
 rm -rf "$T"/{main,wt2,wt3}/.relay "$T/posted"
 # The other take holds the lock until told to let go, and this one is seen
@@ -426,7 +426,7 @@ check "close fails, claim kept" "$(jq .issue "$T/main/.relay/claim")" 71
 claim "$T/main" 72 "$GH_NOW"; : >"$T/calls"
 echo landed | gh_close 72 - >/dev/null 2>&1; check "close" $? 0
 check "close, claim released" "$([ -e "$T/main/.relay/claim" ] && echo kept || echo released)" released
-R=repos/$C4_GITHUB_REPO
+R=repos/$THEOS_GITHUB_REPO
 check "close drops every status label" "$(grep PUT "$T/calls")" "PUT $R/issues/72/labels {\"labels\":[\"kind/bug\"]}"
 claim "$T/main" 75 "$GH_NOW"; lease "$T/main" 75 "$GH_NOW"; : >"$T/calls"
 echo landed | gh_close 75 - >/dev/null 2>&1; check "close, already closed" $? 0
@@ -626,7 +626,7 @@ check "cycles --report, commented but not moved: moves the newest" "$(report)" "
 cycle #110 #111 #112: #112 to status/needs-maintainer"
 
 # Intake: labels an issue by where it came from.
-R=repos/JairJosafath/c4factory
+R=repos/JairJosafath/theos
 issue() { # N ASSOC LABELS BODY
   jq -n --argjson n "$1" --arg a "$2" --arg b "$4" --arg l "$3" \
     '{number: $n, author_association: $a, body: $b, labels: ($l | split(" ") | map(select(. != "") | {name: .}))}' >"$T/issue-$1.json"
@@ -914,7 +914,7 @@ check "labels: descriptions fit GitHub's 100 characters" "$long" ""
       "PATCH $R/issues/"*) echo "closed #${url##*/}" ;;
     esac
   }
-  R=repos/$C4_GITHUB_REPO
+  R=repos/$THEOS_GITHUB_REPO
   plans='[[120, ["status/in-progress"], "Plan: docs/plans/p.md\nDepends on #121\nDepends on #122"],
     [123, ["status/in-progress"], "Depends on #124\nDepends on #125"], [124, ["status/ready"]],
     [126, ["status/in-progress"], "Depends on #127"],
@@ -1027,7 +1027,7 @@ PUT $R/issues/123/labels"
   : >"$T/calls"
   out=$(printf 'feat(486): ask\n\nRefs #486\n' | gh_closes_check - 2>&1)
   check "closes-check: no closing keyword asks GitHub nothing" "$? $out $(grep -c . "$T/calls")" "0  0"
-  out=$(echo 'Resolves: https://github.com/JairJosafath/c4factory/issues/486 (Refs #486)' | gh_closes_check - 2>&1)
+  out=$(echo 'Resolves: https://github.com/JairJosafath/theos/issues/486 (Refs #486)' | gh_closes_check - 2>&1)
   check "closes-check: an issue URL after a keyword closes it too" "$? $(grep -c 'closes #486 at merge' <<<"$out")" "1 1"
   out=$(echo 'Fixes other/repo#486, see https://github.com/other/repo/issues/467' | gh_closes_check - 2>&1)
   check "closes-check: another repository's issue is not ours" "$? $out" "0 "
@@ -1085,7 +1085,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
     # compare BASE...HEAD: how far the head is behind its base, BEHIND (0 by default).
     # The merge queue: TURNS, the comments on the report issue #7 (none by default).
     [[ $1 == repos/*/issues\?state=open* ]] && { [ -z "${TURNS:-}" ] || echo 7; return; }
-    [[ " $* " == *" repos/$C4_GITHUB_REPO/issues/7/comments"* ]] && { echo "$TURNS"; return; }
+    [[ " $* " == *" repos/$THEOS_GITHUB_REPO/issues/7/comments"* ]] && { echo "$TURNS"; return; }
     [[ $1 == repos/*/compare/* ]] && { echo "$1" >>"$T/compared"; [ "${BEHIND:-0}" != fail ] || return 1; echo "${BEHIND:-0}"; return; }
     for a in "$@"; do case $a in repos/*/issues/*) a=${a##*/}; [[ " $* " == *" .state "* ]] && { [ -e "$T/open-$a" ] && echo open || echo closed; } || cat "$T/body-$a" 2>/dev/null; return 0 ;; esac; done
     return 1
@@ -1098,9 +1098,9 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   out=$(PR=$(pr $'Refs #7\n\n#9 (the prompt path; its PR closes #7)' '[7]') gh_merge 12 2>&1)
   check "merge: refuses Refs #7 plus prose that closes #7" "$? $(cat "$T/merged" 2>/dev/null)" "1 "
   check "merge: names the line to reword" "$out" 'github: #12 says Refs #7, but "#9 (the prompt path; its PR closes #7)" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)'
-  out=$(PR=$(pr $'Refs #7\n\nFixed: '"$C4_GITHUB_REPO"'#7 in step two' '[]') gh_merge 12 2>&1)
-  check "merge: any closing word, colon and OWNER/REPO#N too" "$? $out" "1 github: #12 says Refs #7, but \"Fixed: $C4_GITHUB_REPO#7 in step two\" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)"
-  out=$(PR=$(pr $'Refs #7\n\nSteps: #8, #9; the last one closes https://github.com/'"$C4_GITHUB_REPO"'/issues/7' '[]') gh_merge 12 2>&1)
+  out=$(PR=$(pr $'Refs #7\n\nFixed: '"$THEOS_GITHUB_REPO"'#7 in step two' '[]') gh_merge 12 2>&1)
+  check "merge: any closing word, colon and OWNER/REPO#N too" "$? $out" "1 github: #12 says Refs #7, but \"Fixed: $THEOS_GITHUB_REPO#7 in step two\" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)"
+  out=$(PR=$(pr $'Refs #7\n\nSteps: #8, #9; the last one closes https://github.com/'"$THEOS_GITHUB_REPO"'/issues/7' '[]') gh_merge 12 2>&1)
   check "merge: refuses Refs #7 plus the issue URL after a closing word" "$? $(grep -c 'says Refs #7, but "Steps: #8, #9; the last one closes https://github.com/.*/issues/7" in it closes #7 on merge' <<<"$out")" "1 1"
   out=$(PR=$(pr 'Refs #7' '[]' $'docs: plan\n\nresolves #7') gh_merge 12 2>&1)
   check "merge: a commit message counts" "$? $out" '1 github: #12 says Refs #7, but "resolves #7" in it closes #7 on merge; reword it (no close, fix or resolve word before #7)'
@@ -1108,17 +1108,17 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "merge: closingIssuesReferences alone refuses" "$? $out" '1 github: #12 says Refs #7, but GitHub would close #7 on merge (closingIssuesReferences); drop the link or the closing word before it'
   check "merge: nothing merged while refused" "$(cat "$T/merged" 2>/dev/null)" ""
   out=$(PR=$(pr $'Refs #7\n\nSteps: #8 (finishes #7), #9\nCloses #70' '[70]') gh_merge 12 2>&1)
-  check "merge: only Refs #7 merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 12 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  check "merge: only Refs #7 merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 12 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$T/merged"
   # A pull request's intent is its body: a commit's Refs #N closes nothing (#1200).
   out=$(PR=$(pr 'Closes #18' '[18]' $'fix(18): the first commit\n\nRefs #18') gh_merge 18 2>&1)
-  check "merge: the body's Closes #N merges though a commit says Refs #N (#1200)" "$? $out | $(cat "$T/merged" 2>/dev/null)" "0  | gh pr merge 18 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  check "merge: the body's Closes #N merges though a commit says Refs #N (#1200)" "$? $out | $(cat "$T/merged" 2>/dev/null)" "0  | gh pr merge 18 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$T/merged"
   out=$(PR=$(pr 'Refs #18' '[]' $'docs(18): plan\n\nCloses #18') gh_merge 18 2>&1)
   check "merge: the body's Refs #N with a commit's Closes #N is still refused" "$? $out | $(cat "$T/merged" 2>/dev/null)" '1 github: #18 says Refs #18, but "Closes #18" in it closes #18 on merge; reword it (no close, fix or resolve word before #18) | '
   rm -f "$T/merged"
   out=$(PR=$(pr 'Closes #565' '[565]') gh_merge 13 2>&1)
-  check "merge: a step's Closes #N merges" "$? $(cat "$T/merged")" "0 gh pr merge 13 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  check "merge: a step's Closes #N merges" "$? $(cat "$T/merged")" "0 gh pr merge 13 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   gh_merge abc 2>/dev/null; check "merge: bad argument" $? 1
   rm -f "$T/merged"
   out=$(PR=$(pr $'Closes #5\n\nFollows #8; its PR closes #9.' '[5, 9]') gh_merge 15 2>&1)
@@ -1129,11 +1129,11 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   out=$(PR=$(pr 'Closes #5' '[5, 9]') gh_merge 15 2>&1)
   check "merge: a linked issue with no Closes line refuses" "$? $out" '1 github: #15 would close #9 on merge (closingIssuesReferences), and no line starts with Closes #9; unlink #9, or put Closes #9 on its own line'
   check "merge: nothing merged while prose closes" "$(cat "$T/merged" 2>/dev/null)" ""
-  out=$(PR=$(pr $'Closes #5\n  fixes: #6\nResolves '"$C4_GITHUB_REPO#7" '[5, 6, 7]') gh_merge 15 2>&1)
-  check "merge: only Closes, Fixes, Resolves lines merge" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 15 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  out=$(PR=$(pr $'Closes #5\n  fixes: #6\nResolves '"$THEOS_GITHUB_REPO#7" '[5, 6, 7]') gh_merge 15 2>&1)
+  check "merge: only Closes, Fixes, Resolves lines merge" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 15 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$T/merged"
-  out=$(PR=$(pr "Closes https://github.com/$C4_GITHUB_REPO/issues/5" '[5]') gh_merge 15 2>&1)
-  check "merge: a Closes line with the issue URL merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 15 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  out=$(PR=$(pr "Closes https://github.com/$THEOS_GITHUB_REPO/issues/5" '[5]') gh_merge 15 2>&1)
+  check "merge: a Closes line with the issue URL merges" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 15 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$T/merged"
   printf 'Depends on #571\nDepends on #572\n' >"$T/body-570"
   touch "$T/open-571" "$T/open-572"
@@ -1141,23 +1141,23 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   check "merge: refuses closing a parent while another step is open" "$? $(grep -c 'its step #571 is open' <<<"$out") $(cat "$T/merged" 2>/dev/null)" "1 1 "
   rm "$T/open-571"
   out=$(PR=$(pr $'Closes #572\nCloses #570' '[572, 570]') gh_merge 14 2>&1)
-  check "merge: the last step closes its parent" "$? $(cat "$T/merged")" "0 gh pr merge 14 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  check "merge: the last step closes its parent" "$? $(cat "$T/merged")" "0 gh pr merge 14 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   # A pull request behind main is refused: green alone, it may be red merged.
   rm -f "$T/merged" "$T/compared"
   out=$(BEHIND=3 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: refuses a pull request behind main" "$? $out $(cat "$T/merged" 2>/dev/null)" \
     '1 github: #16 is 3 commit(s) behind main: land it (hack/lib/github.sh land 16), which merges main in, runs make check and merges in its turn '
-  check "merge: compares main with the head it merges" "$(cat "$T/compared")" "repos/$C4_GITHUB_REPO/compare/main...h1"
+  check "merge: compares main with the head it merges" "$(cat "$T/compared")" "repos/$THEOS_GITHUB_REPO/compare/main...h1"
   out=$(BEHIND=fail PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge: refuses when GitHub can't say whether it is behind" "$? $out $(cat "$T/merged" 2>/dev/null)" \
     '1 github: #16: could not ask GitHub whether it is behind main; merge refused '
   out=$(BEHIND=0 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
-  check "merge: merges a pull request that contains main" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  check "merge: merges a pull request that contains main" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   # land's merge is pinned to the head it checked (#1320): GitHub's head must be it.
   h1=$(printf 'a%.0s' $(seq 40)) h2=$(printf 'b%.0s' $(seq 40))
   rm -f "$T/merged"
   out=$(PR=$(pr 'Closes #5' '[5]' | jq --arg h "$h1" '.headRefOid = $h') gh_merge 16 "$h1" 2>&1)
-  check "merge: merges the checked head when GitHub's is it (#1320)" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit $h1"
+  check "merge: merges the checked head when GitHub's is it (#1320)" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $THEOS_GITHUB_REPO --merge --match-head-commit $h1"
   rm -f "$T/merged"
   out=$(PR=$(pr 'Closes #5' '[5]' | jq --arg h "$h2" '.headRefOid = $h') gh_merge 16 "$h1" 2>&1)
   check "merge: refuses when GitHub's head isn't the checked one (#1320)" "$? $out | $(cat "$T/merged" 2>/dev/null)" \
@@ -1174,7 +1174,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # land's simple path (#1524) merges without the turn; the other refusals stay.
   rm -f "$T/merged"
   out=$(TURNS="[[$(turn 1 20 "$now"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]' | jq --arg h "$h1" '.headRefOid = $h') gh_merge 16 "$h1" simple 2>&1)
-  check "merge: the simple path merges while another holds the turn (#1524)" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit $h1"
+  check "merge: the simple path merges while another holds the turn (#1524)" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $THEOS_GITHUB_REPO --merge --match-head-commit $h1"
   out=$(TURNS="[[$(turn 1 20 "$now"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]' | jq --arg h "$h2" '.headRefOid = $h') gh_merge 16 "$h1" simple 2>&1)
   check "merge: the simple path still refuses a moved branch (#1524)" "$? $(grep -c 'the branch moved since the check' <<<"$out")" "1 1"
   rm -f "$T/merged"
@@ -1184,10 +1184,10 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
     grep -o 'heartbeat [0-9-]*m ago'; }
   check "merge: a turn's age, 45 s on past a minute boundary, then 90 s on" "$(age 75) | $(age 120)" "heartbeat 0m ago | heartbeat 1m ago"
   out=$(TURNS="[[$(turn 1 20 "$old"),$(turn 2 16 "$now")]]" PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
-  check "merge: its own turn merges, an abandoned one ahead is no turn" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  check "merge: its own turn merges, an abandoned one ahead is no turn" "$? $out | $(cat "$T/merged")" "0  | gh pr merge 16 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$T/merged"
   out=$(TURNS='[[]]' PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
-  check "merge: nobody's turn merges" "$? | $(cat "$T/merged")" "0 | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  check "merge: nobody's turn merges" "$? | $(cat "$T/merged")" "0 | gh pr merge 16 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   # A bug fix changes a test file, or says why not on a line No test: <why>.
   # bugpr BODY LABEL FILES: a pull request closing #5, labeled LABEL, changing FILES.
   bugpr() { jq -n --arg b "$1" --arg l "$2" --argjson f "$3" \
@@ -1195,7 +1195,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
       files: {totalCount: ($f | length), nodes: [$f[] | {path: .}]}, commits: {nodes: [{commit: {message: "fix: thing"}}]}}'; }
   rm -f "$T/merged"
   out=$(PR=$(bugpr 'Closes #5' kind/bug '["hack/lib/github.sh", "hack/lib/github_test.sh"]') gh_merge 17 2>&1)
-  check "merge: a bug fix touching a test file merges" "$? $out | $(cat "$T/merged" 2>/dev/null)" "0  | gh pr merge 17 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  check "merge: a bug fix touching a test file merges" "$? $out | $(cat "$T/merged" 2>/dev/null)" "0  | gh pr merge 17 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   # The UI's node tests count too (#1203).
   for f in internal/model/brief_test.go ui/src/brief.test.ts ui/src/Brief.test.tsx ui/test/vite-config.test.mjs ui/src/brief.test.js; do
     PR=$(bugpr 'Closes #5' kind/bug "[\"$f\"]") gh_merge 17 >/dev/null 2>&1; check "merge: $f is a test file" $? 0
@@ -1283,7 +1283,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   git clone -q "$T/origin.git" "$T/other" 2>/dev/null
   echo other >"$T/other/other" && git -C "$T/other" add other && git -C "$T/other" -c user.name=t -c user.email=t@t commit -q -m other && git -C "$T/other" push -q origin main
   # The fake make: records it ran (and whether it goes first in the heavy-job
-  # queue, C4_HEAVY_FIRST), fails when $T/red exists, and while $T/move
+  # queue, THEOS_HEAVY_FIRST), fails when $T/red exists, and while $T/move
   # counts down, another pull request merges to main during it (adding the
   # file $T/move-file names, when it is there; #1524). A run that
   # moves nothing, with CHECK_BEATS=N, first waits (up to about 30 s) until land
@@ -1291,7 +1291,7 @@ github: refused to close #467: its step #475 is open ("Depends on #475" in #467'
   # $T/beats: a loaded device slows the beats down, it doesn't drop them (#1192).
   cat >"$T/bin/check-make" <<MAKE
 #!/bin/sh
-echo "\$*\${C4_HEAVY_FIRST:+ (first)}" >>"$T/checked"
+echo "\$*\${THEOS_HEAVY_FIRST:+ (first)}" >>"$T/checked"
 if [ "\$(cat "$T/move" 2>/dev/null || echo 0)" -gt 0 ]; then
   echo \$((\$(cat "$T/move") - 1)) >"$T/move"
   git -C "$T/other" pull -q --no-rebase origin main
@@ -1320,7 +1320,7 @@ MAKE
   chmod +x "$T/bin/check-make"
   # land merges main in itself: give it an identity a device without a global one lacks.
   export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
-  export C4_MAKE=$T/bin/check-make GH_LIB_ROOT=$T/land GH_PENDING_DIR=$T/land/.relay GH_LAND_POLL=0.2 GH_LAND_SETTLE=0
+  export THEOS_MAKE=$T/bin/check-make GH_LIB_ROOT=$T/land GH_PENDING_DIR=$T/land/.relay GH_LAND_POLL=0.2 GH_LAND_SETTLE=0
   queue() { ls "$Q" | sed 's/\.json//' | sort -n | tr '\n' ' '; }
   NOBUG='{"body": "Closes #5", "closingIssuesReferences": {"nodes": [{"number": 5, "labels": {"nodes": [{"name": "kind/feature"}]}}]}, "files": {"totalCount": 1, "nodes": [{"path": "feat"}]}}'
 
@@ -1371,7 +1371,7 @@ MAKE
   printf '#!/bin/bash\n[ -e "%s/gated" ] && exit 0\ntouch "%s/gated"\n%s\ngate\n' "$T" "$T" "$(declare -f gate)" >"$T/bin/gate-make"
   chmod +x "$T/bin/gate-make"
   rm -f "$T/landed" "$T/exec" "$T/gated"
-  out=$(T=$T C4_MAKE=$T/bin/gate-make gh_land 40 2>&1); rc=$?
+  out=$(T=$T THEOS_MAKE=$T/bin/gate-make gh_land 40 2>&1); rc=$?
   turn=$(queue)
   check "land: a gate merged before its turn refuses under it, the turn kept (#1211)" "$rc $(cat "$T/landed" 2>/dev/null) | $(cat "$T/exec")" \
     "1  | land 40 --wait 7200s turn=${turn% }"
@@ -1383,7 +1383,7 @@ MAKE
   : >"$T/calls"; rm -f "$T/landed"
   printf '#!/bin/sh\necho "${GH_LAND_TURN:-none}" >"%s/turn-env"\n' "$T" >"$T/bin/env-make"
   chmod +x "$T/bin/env-make"
-  out=$(GH_LAND_TURN=30 C4_MAKE=$T/bin/env-make gh_land 40 2>&1)
+  out=$(GH_LAND_TURN=30 THEOS_MAKE=$T/bin/env-make gh_land 40 2>&1)
   check "land: the merged copy keeps the turn" "$? $(cut -d' ' -f1-2 "$T/landed") | $(grep -c '^POST ' "$T/calls") | $(queue) | $(cat "$T/turn-env")" "0 merge 40 | 0 |  | none"
   out=$(GH_LAND_TURN=x gh_land 40 2>&1)
   check "land: GH_LAND_TURN is a comment id" "$? $(queue)" "64 "
@@ -1441,7 +1441,7 @@ MAKE
   check "land: names the checked head and the moved one (#1320)" $? 0
   g pull -q --no-rebase origin feat
 
-  # An abandoned turn (no heartbeat for C4_LAND_TTL) is dropped, not waited on.
+  # An abandoned turn (no heartbeat for THEOS_LAND_TTL) is dropped, not waited on.
   rm -f "$T/landed"
   put 5 41 -3600
   out=$(gh_land 40 2>&1)
@@ -1597,7 +1597,7 @@ MAKE
   # test-hack runs this file, whose land must run make check (#1960).
   printf '#!/bin/sh\necho "${GH_LAND_GOAL:-none}" >"%s/goal-env"\n' "$T" >"$T/bin/goal-make"
   chmod +x "$T/bin/goal-make"
-  out=$(C4_MAKE=$T/bin/goal-make simple "$(files docs/dev/testenv.md)")
+  out=$(THEOS_MAKE=$T/bin/goal-make simple "$(files docs/dev/testenv.md)")
   check "land: make test-hack does not inherit the goal (#1960)" "$? | $(cat "$T/goal-env")" "0 | none"
   touch "$T/red"
   out=$(simple "$(files .claude/skills/handoff/SKILL.md)")
@@ -1726,7 +1726,7 @@ MAKE
   # A make that records it ran: yolo never runs it.
   printf '#!/bin/sh\necho "$*" >>"%s/checked"\n' "$Y" >"$Y/make"
   chmod +x "$Y/make"
-  C4_MAKE=$Y/make GH_LAND_SETTLE=0
+  THEOS_MAKE=$Y/make GH_LAND_SETTLE=0
   # on creates the label the repository lacks and puts it on the report.
   out=$(gh_yolo on 2>&1)
   check "yolo on: creates the label and puts it on the Maintainer report (#1534)" "$? $out | $(grep -E '^(POST|DELETE)' "$Y/calls" | paste -sd'|')" \
@@ -1769,7 +1769,7 @@ MAKE
   echo h1 >"$Y/head-40"
   out=$(BEHIND=2 PR=$(pr 'Closes #5' '[5]') gh_land 40 2>&1)
   check "land, yolo: a branch behind main gets main merged in, then merges at the new head (#1534)" "$? | $(cat "$Y/merged") | $(grep -c "^PUT $R/pulls/40/update-branch" "$Y/calls") $(cat "$Y/polls-40")" \
-    "0 | gh pr merge 40 --repo $C4_GITHUB_REPO --merge --match-head-commit h2 | 1 2"
+    "0 | gh pr merge 40 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h2 | 1 2"
   check "land, yolo: says so" "$(grep -c '^github: #40 merged (yolo mode: no make check, review or merge turn)$' <<<"$out")" 1
   check "land, yolo: no make check, no merge turn (#1534)" "$(cat "$Y/checked" 2>/dev/null) | $(grep -c "issues/7/comments" "$Y/calls")" " | 0"
   [ "$(git -C "$GH_LIB_ROOT" symbolic-ref --short -q HEAD)" != feat ]; check "land, yolo: from a checkout on another branch (#1534)" $? 0
@@ -1778,7 +1778,7 @@ MAKE
   echo h1 >"$Y/head-40"
   out=$(BEHIND=0 PR=$(pr 'Closes #5' '[5]') gh_land 40 2>&1)
   check "land, yolo: a branch that contains main merges as it is (#1534)" "$? | $(cat "$Y/merged") | $(grep -c "^PUT " "$Y/calls")" \
-    "0 | gh pr merge 40 --repo $C4_GITHUB_REPO --merge --match-head-commit h1 | 1"
+    "0 | gh pr merge 40 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1 | 1"
   rm -f "$Y/merged"
   touch "$Y/conflict"
   out=$(BEHIND=2 PR=$(pr 'Closes #5' '[5]') gh_land 40 2>&1)
@@ -1793,12 +1793,12 @@ MAKE
   # fine; the closing-keyword refusals stay.
   rm -f "$Y/merged"
   out=$(PR=$(bugpr 'Closes #5' kind/bug '["internal/model/brief.go"]') gh_merge 17 2>&1)
-  check "merge, yolo: a bug fix without a test merges (#1534)" "$? | $(cat "$Y/merged")" "0 | gh pr merge 17 --repo $C4_GITHUB_REPO --merge --match-head-commit h1"
+  check "merge, yolo: a bug fix without a test merges (#1534)" "$? | $(cat "$Y/merged")" "0 | gh pr merge 17 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1"
   rm -f "$Y/merged"
   echo h1 >"$Y/head-16"
   out=$(BEHIND=3 PR=$(pr 'Closes #5' '[5]') gh_merge 16 2>&1)
   check "merge, yolo: a pull request behind main merges after update-branch (#1534)" "$? | $(cat "$Y/merged") | $(grep -c "^PUT $R/pulls/16/update-branch" "$Y/calls")" \
-    "0 | gh pr merge 16 --repo $C4_GITHUB_REPO --merge --match-head-commit h2 | 1"
+    "0 | gh pr merge 16 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h2 | 1"
   rm -f "$Y/merged"
   out=$(PR=$(pr $'Refs #7\n\n#9 (the prompt path; its PR closes #7)' '[7]') gh_merge 12 2>&1)
   check "merge, yolo: Refs #7 plus prose that closes #7 is still refused (#1534)" "$? $out | $(cat "$Y/merged" 2>/dev/null)" \
@@ -1811,7 +1811,7 @@ MAKE
   : >"$Y/calls"
   out=$(PR=$(pr 'Closes #5' '[5]') gh_yolo merge 2>&1)
   check "yolo merge: merges the open non-draft pull requests, a refused one not stopping the rest (#1534)" "$? | $(paste -sd'|' "$Y/merged") | $(grep -o '^graphql [0-9]*' "$Y/calls" | paste -sd,)" \
-    "0 | gh pr merge 3 --repo $C4_GITHUB_REPO --merge --match-head-commit h1 | graphql 1,graphql 3"
+    "0 | gh pr merge 3 --repo $THEOS_GITHUB_REPO --merge --match-head-commit h1 | graphql 1,graphql 3"
   check "yolo merge: says why #1 was not merged (#1534)" "$(grep -c '^github: #1 says Refs #7' <<<"$out") $(grep -c '^github: #1: not merged$' <<<"$out") $(grep -c '^github: #3 merged (yolo mode' <<<"$out")" "1 1 1"
   gh_yolo off >/dev/null
   rm -f "$Y/merged"
@@ -1827,14 +1827,14 @@ MAKE
 # create --next (#1284): a follow-up its finder decided is filed ready and
 # reserved for this checkout's next session. Every other checkout's pick skips
 # it and take refuses it; this checkout's pick returns it first and its take
-# turns the reservation into the claim; after C4_LEASE_TTL anyone picks it.
+# turns the reservation into the claim; after THEOS_LEASE_TTL anyone picks it.
 # Refused without kind/bug, kind/chore or kind/docs, or with another status.
 # A fake GitHub keeps the issues and comments in $NX.
 (
   NX=$T/nx
   mkdir -p "$NX"
-  unset C4_RELAY_WORKER # the relay's sessions run these tests too
-  export C4_HOST=h
+  unset THEOS_RELAY_WORKER # the relay's sessions run these tests too
+  export THEOS_HOST=h
   rm -rf "$T"/{main,wt2,wt3}/.relay
   echo '[{"number": 150, "title": "Older", "body": "", "state": "open", "html_url": "u150",
     "labels": [{"name": "status/proposed"}, {"name": "kind/chore"}]}]' >"$NX/issues"
@@ -1843,7 +1843,7 @@ MAKE
     local url= q= m=GET slurp= in= out n t
     while [ $# -gt 0 ]; do
       case $1 in
-        repos/*) url=${1#"repos/$C4_GITHUB_REPO/"} ;;
+        repos/*) url=${1#"repos/$THEOS_GITHUB_REPO/"} ;;
         --jq) q=$2; shift ;;
         --method) m=$2; shift ;;
         --slurp) slurp=1 ;;
@@ -1893,22 +1893,22 @@ MAKE
   # wt2's session works #150 and files its follow-ups.
   claim "$T/wt2" 150 "$GH_NOW"
 
-  out=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "No kind" "$NX/body" 2>&1)
+  out=$(THEOS_RELAY_WORKER=2 as "$T/wt2" gh_create --next "No kind" "$NX/body" 2>&1)
   check "create --next, no kind/*: refused" "$? $(issues) $out" \
     "1 1 github: create --next needs a kind/* label: kind/bug, kind/chore or kind/docs"
-  out=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "A feature" "$NX/body" kind/feature 2>&1)
+  out=$(THEOS_RELAY_WORKER=2 as "$T/wt2" gh_create --next "A feature" "$NX/body" kind/feature 2>&1)
   check "create --next, a feature: refused, to be proposed" "$? $(issues) $(grep -c 'file a kind/feature status/proposed' <<<"$out")" "1 1 1"
-  out=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Proposed" "$NX/body" status/proposed kind/bug 2>&1)
+  out=$(THEOS_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Proposed" "$NX/body" status/proposed kind/bug 2>&1)
   check "create --next, another status: refused" "$? $(issues) $out" "1 1 github: create --next files the issue status/ready; leave out status/proposed"
 
-  b=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Fix the retry" "$NX/body" kind/bug 2>"$T/err")
+  b=$(THEOS_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Fix the retry" "$NX/body" kind/bug 2>"$T/err")
   check "create --next: filed ready" "$? $b $(labels "$b")" "0 151 status/ready kind/bug source/dev"
   check "create --next: one reservation comment" "$(comments "$b")" "1
 **heron-150** reserved this issue for the next session in \`wt2\` · host \`h\` · from #150"
   check "create --next: .relay/next names it" "$(next "$T/wt2")" "[151,1000] "
   check "create --next: says so" "$(cat "$T/err")" "github: reserved #151 for this checkout's next session, for 2h"
   check "create --next, status/ready given: one status" \
-    "$(C4_RELAY_WORKER=2 as "$T/wt3" gh_create --next "Doc it" "$NX/body" status/ready kind/docs 2>/dev/null; labels 152)" "152
+    "$(THEOS_RELAY_WORKER=2 as "$T/wt3" gh_create --next "Doc it" "$NX/body" status/ready kind/docs 2>/dev/null; labels 152)" "152
 status/ready kind/docs source/dev"
   rm -rf "$T/wt3/.relay"
   jq 'map(if .number == 152 then .state = "closed" else . end)' "$NX/issues" >"$NX/new" && mv "$NX/new" "$NX/issues"
@@ -1932,8 +1932,8 @@ status/ready kind/docs source/dev"
   check "take, this checkout: .relay/next emptied" "$([ -e "$T/wt2/.relay/next" ] && echo kept || echo gone)" gone
   check "pick, another checkout, after: still skips it" "$(gh_pick | cut -f1,4)" "153	ready"
 
-  # The reservation expires: after C4_LEASE_TTL anyone picks and takes it.
-  b=$(C4_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Write the doc" "$NX/body" kind/docs 2>/dev/null)
+  # The reservation expires: after THEOS_LEASE_TTL anyone picks and takes it.
+  b=$(THEOS_RELAY_WORKER=2 as "$T/wt2" gh_create --next "Write the doc" "$NX/body" kind/docs 2>/dev/null)
   jq 'map(if .number == 151 or .number == 153 then .state = "closed" else . end)' "$NX/issues" >"$NX/new" && mv "$NX/new" "$NX/issues"
   later=$((GH_NOW + 2 * 3600 + 60))
   gh_pick >/dev/null; check "expiry: skipped before the TTL" $? 1
@@ -1950,18 +1950,18 @@ status/ready kind/docs source/dev"
   b=$(as "$T/wt2" gh_create --next "Hand filed" "$NX/body" kind/chore 2>"$T/err")
   check "create --next, no relay session: ready, not reserved" "$(labels "$b") $(comments "$b") $(next "$T/wt2")" "status/ready kind/chore source/dev 0 "
   check "create --next, no relay session: says so" "$(cat "$T/err")" "github: #$b is ready and not reserved: only a relay worker's session has a next session to reserve it for"
-  b=$(C4_RELAY_WORKER=maintainer as "$T/wt2" gh_create --next "Maintainer filed" "$NX/body" kind/bug 2>/dev/null)
+  b=$(THEOS_RELAY_WORKER=maintainer as "$T/wt2" gh_create --next "Maintainer filed" "$NX/body" kind/bug 2>/dev/null)
   check "create --next, the maintainer's session: ready, not reserved" "$(labels "$b") $(comments "$b") $(next "$T/wt2")" "status/ready kind/bug source/dev 0 "
 
   # A claim past the TTL: another device's take expires it, and the comment
   # keeps the host it was held on (#1199). Released, a claim keeps it too.
   rm -rf "$T"/{main,wt2,wt3}/.relay
   b=$(gh_create "Held elsewhere" "$NX/body" status/ready kind/chore 2>/dev/null)
-  C4_HOST=far as "$T/wt3" gh_take "$b" >/dev/null 2>&1
+  THEOS_HOST=far as "$T/wt3" gh_take "$b" >/dev/null 2>&1
   out=$(GH_NOW=$later gh_take "$b" 2>&1); check "expiry, a claim: another device takes it" "$? $out" "0 heron-$b	chore/$b-held-elsewhere"
   check "expiry, a claim: keeps the host it was held on" "$(comments "$b" | sed -n 2p)" \
     "**otter-$b** expired, taken over by heron-$b · host \`far\` · branch \`chore/$b-held-elsewhere\`"
-  out=$(C4_HEADLESS=1 gh_release "session ended without a handoff" 2>&1); check "release after a takeover" "$? $out" "0 released #$b (heron-$b): session ended without a handoff"
+  out=$(THEOS_HEADLESS=1 gh_release "session ended without a handoff" 2>&1); check "release after a takeover" "$? $out" "0 released #$b (heron-$b): session ended without a handoff"
   check "release: keeps the host it was held on" "$(comments "$b" | sed -n 3p)" \
     "**heron-$b** released this issue: session ended without a handoff · host \`h\` · branch \`chore/$b-held-elsewhere\`"
   exit $fail
@@ -1999,7 +1999,7 @@ status/ready kind/docs source/dev"
   check "review-check: 401 lines need one" "$? $(grep -c '#50 changes 401 lines in hand-written files (over 400) and has no review pass: run /code-review in a subagent' <<<"$out")" "1 1"
   files '[{filename: "a.go", additions: 10, deletions: 0},
     {filename: "api/v1alpha1/zz_generated.deepcopy.go", additions: 900, deletions: 0},
-    {filename: "config/crd/bases/c4.factory.io_containers.yaml", additions: 900, deletions: 0},
+    {filename: "config/crd/bases/theos.factory.io_containers.yaml", additions: 900, deletions: 0},
     {filename: "config/rbac/role.yaml", additions: 900, deletions: 0},
     {filename: "go.sum", additions: 900, deletions: 0},
     {filename: "ui/package-lock.json", additions: 900, deletions: 0},
@@ -2117,7 +2117,7 @@ status/ready kind/docs source/dev"
   out=$(gh_take 120 2>"$TK/err")
   check "take, held by another: exit 4, names the holder" "$?|$out|$(cat "$TK/err")" "4||github: #120 is claimed by heron-120 on host h1, heartbeat 5m ago"
   check "take, held by another: posts nothing" "$(calls '^POST ')" 0
-  # A held claim past C4_LEASE_TTL (2h) is marked expired, and take goes on its branch.
+  # A held claim past THEOS_LEASE_TTL (2h) is marked expired, and take goes on its branch.
   again; cm 1 $((3 * 3600)) "$(holds heron-120 chore/120-old)" | comments
   out=$(gh_take 120 2>/dev/null)
   check "take, stale claim: taken over" "$?|$(tr '\t' ' ' <<<"$out")" "0|otter-120 chore/120-old"
@@ -2239,7 +2239,7 @@ later"
   exit $fail
 ) || fail=1
 
-# stale (#1513): a live claim with no progress for C4_CLAIM_STALE is escalated
+# stale (#1513): a live claim with no progress for THEOS_CLAIM_STALE is escalated
 # to the maintainer once per stale stretch, and the claim is left alone.
 # $T/st/comments is #140's comments, $T/st/refs origin's branches (REF SHA
 # AGE), $T/st/claims the claim comments; a POST adds its comment as id 700,
@@ -2247,7 +2247,7 @@ later"
 (
   ST=$T/st
   mkdir -p "$ST"
-  R=repos/$C4_GITHUB_REPO
+  R=repos/$THEOS_GITHUB_REPO
   iso() { date -u -d "@$((GH_NOW - $1))" +%Y-%m-%dT%H:%M:%SZ; }
   # cm ID CREATED_AGE UPDATED_AGE BODY: a comment on #140.
   cm() { jq -nc --argjson id "$1" --arg c "$(iso "$2")" --arg u "$(iso "$3")" --arg b "$4" \
@@ -2287,7 +2287,7 @@ later"
   check "stale: the comment names holder, host, heartbeat, last progress and branch (#1513)" $? 0
   : >"$ST/calls"; out=$(gh_stale --apply)
   check "stale: the same stretch is not flagged twice (#1513)" "$?|$out|$(calls '^POST ')" "0||0"
-  # Progress inside C4_CLAIM_STALE: a commit on a takeover branch, a handoff, a young claim.
+  # Progress inside THEOS_CLAIM_STALE: a commit on a takeover branch, a handoff, a young claim.
   setup "$(cm 10 $((3 * H)) 60 "$(holds)")"; printf 'feat/140-a s1 %s\nfeat/140-a-heron s2 %s\nfeat/140-ab s3 0\n' $((4 * H)) $((H)) >"$ST/refs"
   check "stale: a commit on a <branch>-* branch an hour ago is progress (#1513)" "$(gh_stale --apply)|$(calls '^POST ')" "|0"
   printf 'feat/140-a s1 %s\nfeat/140-ab s3 0\n' $((5 * H / 2)) >"$ST/refs"
@@ -2299,9 +2299,9 @@ x')"
   check "stale: a claim an hour old is not stale (#1513)" "$(gh_stale --apply)|$(calls '^POST ')" "|0"
   setup "$(cm 10 $((3 * H)) $((3 * H)) "$(holds)")"
   check "stale: a claim whose heartbeat stopped is take's, not stale (#1513)" "$(gh_stale --apply)|$(calls '^POST ')" "|0"
-  out=$(C4_CLAIM_STALE=0; setup "$(cm 10 $((3 * H)) 60 "$(holds)")"; gh_stale --apply)
-  check "stale: C4_CLAIM_STALE=0 turns it off (#1513)" "$out|$(calls '^POST ')" "|0"
-  # New progress after a flag, then C4_CLAIM_STALE of none: flagged again.
+  out=$(THEOS_CLAIM_STALE=0; setup "$(cm 10 $((3 * H)) 60 "$(holds)")"; gh_stale --apply)
+  check "stale: THEOS_CLAIM_STALE=0 turns it off (#1513)" "$out|$(calls '^POST ')" "|0"
+  # New progress after a flag, then THEOS_CLAIM_STALE of none: flagged again.
   setup "$(cm 10 $((6 * H)) 60 "$(holds)")" "$(cm 20 $((4 * H)) $((4 * H)) '<!-- c4-claim-stale -->
 old')" "$(cm 21 $((3 * H)) $((3 * H)) '<!-- relay-handoff -->
 x')"

@@ -5,4 +5,4 @@
     --- PASS: TestUIActionsGrantExactlyTheTable/actions_on_with_OIDC_behind_an_Ingress (0.20s)
     --- PASS: TestUIActionsGrantExactlyTheTable/actions_on_with_an_empty_ui.auth.oidc (0.25s)
 --- PASS: TestUIActionsBehindAnIngressNeedOIDC (0.20s)
-ok  	github.com/JairJosafath/c4factory/test/chart	1.297s
+ok  	github.com/JairJosafath/theos/test/chart	1.297s

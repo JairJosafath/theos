@@ -112,7 +112,7 @@ type RunRecord struct {
 
 // Record is the record of a run of sandbox in round that ends at, and false
 // for a sandbox that is gone: whoever ended it recorded it. The role is the one
-// c4agent reported when it is a known role, else the one in the sandbox's name,
+// theos-agent reported when it is a known role, else the one in the sandbox's name,
 // so a role the Task's status can't hold never fails its status write.
 func (s RunState) Record(round int, sandbox string, at time.Time) (RunRecord, bool) {
 	if !s.Started {

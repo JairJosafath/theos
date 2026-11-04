@@ -19,7 +19,7 @@ can run it. The roles:
 | Step-0 session | one headless session, under an hour | Files what the plan says, lands the plan, readies the steps, installs the relay watch, hands off, ends. |
 | Relay workers | `hack/relay.sh` | Work the step issues, one per session. |
 | Maintainer | `hack/relay.sh --maintain` | Closes what finishes, decides escalations, lists what only the owner can do under *Needs you*, cuts releases. |
-| Verifier session | one session the owner starts with `C4_HUMAN_CLUSTER=1` | The one agent that touches a cluster: builds the reference app on Kind, judges it, files the gaps, releases the cluster, ends. |
+| Verifier session | one session the owner starts with `THEOS_HUMAN_CLUSTER=1` | The one agent that touches a cluster: builds the reference app on Kind, judges it, files the gaps, releases the cluster, ends. |
 
 The rules, each from something the first run hit on 2026-10-19:
 
@@ -30,7 +30,7 @@ The rules, each from something the first run hit on 2026-10-19:
 2. **Sessions start from the project environment, and run project
    commands bare.** The allow rules in `.claude/settings.json` match the
    literal start of a command: `hack/lib/github.sh close 1388 FILE`
-   matches, `cd ~/c4factory && ./dev run hack/lib/github.sh close ...`
+   matches, `cd ~/theos && ./dev run hack/lib/github.sh close ...`
    does not, and auto mode's classifier then refuses closes, branch
    deletions and more. `jq` and the tools live in `.dev/bin`, so the
    session is started through `./dev run` (below), and inside it every
@@ -146,7 +146,7 @@ Started by the owner, from a plain shell in the checkout on 3st8JJ, after
 the owner's part below is done:
 
 ```bash
-cd ~/c4factory && ./dev run env CLAUDE_CONFIG_DIR="$HOME/.claude" \
+cd ~/theos && ./dev run env CLAUDE_CONFIG_DIR="$HOME/.claude" \
   claude -p --permission-mode auto --model opus \
   "Run step 0 of docs/plans/fresh-start.md, then end. Project commands bare, as the plan says."
 ```
@@ -159,7 +159,7 @@ The session, every command bare:
 2. `hack/lib/github.sh take 1426`, `git switch chore/1426-fresh-start-the-reference-app-is-the`,
    `git merge origin/main`. Add to AGENTS.md, at the end of "Agents Never
    Touch a Cluster": *The one exception is a verifier session: one the
-   owner starts from their own shell with `C4_HUMAN_CLUSTER=1` to run one
+   owner starts from their own shell with `THEOS_HUMAN_CLUSTER=1` to run one
    plan step that needs a cluster (its issue names the step). It leases a
    pool cluster, does only what the step says, releases the cluster and
    ends.* Commit with an `Agent:` trailer, push, `hack/lib/github.sh land 1427`.
@@ -223,7 +223,7 @@ The owner's one command, from their own shell on 3st8JJ, once #1428 is
 closed and #1429 is under *Needs you*:
 
 ```bash
-cd ~/c4factory && C4_HUMAN_CLUSTER=1 ./dev run env CLAUDE_CONFIG_DIR="$HOME/.claude" \
+cd ~/theos && THEOS_HUMAN_CLUSTER=1 ./dev run env CLAUDE_CONFIG_DIR="$HOME/.claude" \
   claude -p --permission-mode auto --model opus \
   "You are the verifier session of docs/plans/fresh-start.md, step 4, issue #1429. Take it, do what it says, close it when its Done when holds, end."
 ```

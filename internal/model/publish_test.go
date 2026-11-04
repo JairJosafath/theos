@@ -8,7 +8,7 @@ import (
 )
 
 func TestNextPublishStep(t *testing.T) {
-	const marker = "<!-- c4factory: cel-lens/extension v0.2.0 -->"
+	const marker = "<!-- theos: cel-lens/extension v0.2.0 -->"
 	const url = "https://github.com/JairJosafath/cel-lens/releases/tag/v0.2.0"
 	// name is the release's name: the app, then the Crew's tag, no prefix.
 	const name = "CEL Lens for VS Code v0.2.0"
@@ -162,7 +162,7 @@ func TestNextPublishStep(t *testing.T) {
 			message: "JairJosafath/cel-lens is not the repository this Crew published to before (GitHub id 7, now 8): " +
 				"it was deleted or renamed and a new one took its name. Nothing is published to it until you point " +
 				"the Crew's spec.publishReleases at the repository wanted, or accept this one with the annotation " +
-				`c4.factory.io/accept-repository: "8" on the Crew`},
+				`theos.factory.io/accept-repository: "8" on the Crew`},
 		{name: "a replaced repository is refused before its releases are read",
 			facts: read(PublishFacts{Recorded: remote, Remote: &PublishTarget{Repository: "JairJosafath/cel-lens", ID: 8},
 				GitHub: onGitHub(draft(vsix, sums))}),
@@ -189,11 +189,11 @@ func TestNextPublishStep(t *testing.T) {
 			want:  PublishStep{Action: PublishFail, Reason: PublishTagTaken}},
 		{name: "a marked release of another tag doesn't count",
 			facts: read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 4, TagName: "v0.1.0",
-				Body: "<!-- c4factory: cel-lens/extension v0.1.0 -->"})}),
+				Body: "<!-- theos: cel-lens/extension v0.1.0 -->"})}),
 			want: PublishStep{Action: PublishCreateDraft, Tag: "v0.2.0", Name: name, Body: "- Lens the CEL (#3)\n\n" + marker + "\n"}},
 		{name: "another Container's marked release of the tag is taken",
 			facts: read(PublishFacts{GitHub: onGitHub(TargetRelease{ID: 4, TagName: "v0.2.0",
-				Body: "<!-- c4factory: cel-lens/cli v0.2.0 -->"})}),
+				Body: "<!-- theos: cel-lens/cli v0.2.0 -->"})}),
 			want: PublishStep{Action: PublishFail, Reason: PublishTagTaken}},
 
 		{name: "notes nobody wrote need the merged issues",
@@ -213,7 +213,7 @@ func TestNextPublishStep(t *testing.T) {
 		{name: "the prefix goes before the tag, in the marker too",
 			facts: read(PublishFacts{TagPrefix: "cli-"}),
 			want: PublishStep{Action: PublishCreateDraft, Tag: "cli-v0.2.0", Name: name,
-				Body: "- Lens the CEL (#3)\n\n<!-- c4factory: cel-lens/extension cli-v0.2.0 -->\n"}},
+				Body: "- Lens the CEL (#3)\n\n<!-- theos: cel-lens/extension cli-v0.2.0 -->\n"}},
 
 		{name: "retry: a draft without assets gets the first",
 			facts: read(PublishFacts{GitHub: onGitHub(draft())}),
@@ -412,7 +412,7 @@ func TestPublishMarkerAndTag(t *testing.T) {
 	if got := ReleaseTag("", "v0.2.0"); got != "v0.2.0" {
 		t.Errorf("ReleaseTag = %q", got)
 	}
-	if got := PublishMarker("cel-lens", "extension", "v0.2.0"); got != "<!-- c4factory: cel-lens/extension v0.2.0 -->" {
+	if got := PublishMarker("cel-lens", "extension", "v0.2.0"); got != "<!-- theos: cel-lens/extension v0.2.0 -->" {
 		t.Errorf("PublishMarker = %q", got)
 	}
 }

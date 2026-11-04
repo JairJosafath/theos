@@ -11,8 +11,8 @@
 # The tests run with make's own variables cleared, so a test that runs make
 # sees a make started from a shell, not a sub-make of make check; and with the
 # relay's variables cleared, so a test run from a relay session (hack/relay.sh
-# exports C4_HEADLESS, C4_RELAY_WORKER and, to its children, C4_RELAY_CHILD,
-# C4_RELAY_TRIAGE and C4_RELAY_MAINTAIN) sees the same environment as one run
+# exports THEOS_HEADLESS, THEOS_RELAY_WORKER and, to its children, THEOS_RELAY_CHILD,
+# THEOS_RELAY_TRIAGE and THEOS_RELAY_MAINTAIN) sees the same environment as one run
 # from a shell: under the maintainer session, relay_test.sh's --triage dry run
 # took the maintainer's lock (#1564); and with IS_SANDBOX cleared, so the
 # hooks' tests see the hooks at work when the tests run in an agent sandbox,
@@ -33,8 +33,8 @@ fi
 # seconds in $LOGS/N.rc.
 run() {
   local start=$SECONDS rc
-  env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL -u MAKEOVERRIDES -u C4_HEAVY_SLOT \
-    -u C4_HEADLESS -u C4_RELAY_WORKER -u C4_RELAY_CHILD -u C4_RELAY_TRIAGE -u C4_RELAY_MAINTAIN -u IS_SANDBOX \
+  env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL -u MAKEOVERRIDES -u THEOS_HEAVY_SLOT \
+    -u THEOS_HEADLESS -u THEOS_RELAY_WORKER -u THEOS_RELAY_CHILD -u THEOS_RELAY_TRIAGE -u THEOS_RELAY_MAINTAIN -u IS_SANDBOX \
     bash "$1" >"$LOGS/$2.log" 2>&1 </dev/null
   rc=$?
   echo "$rc $((SECONDS - start))" >"$LOGS/$2.rc"

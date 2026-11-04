@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Agents build high-quality Flutter tool apps end to end on C4 Factory, fenced to their Container, with CI, an agent reviewer and autonomous merges.
+**Goal:** Agents build high-quality Flutter tool apps end to end on theos, fenced to their Container, with CI, an agent reviewer and autonomous merges.
 
-**Architecture:** Two new catalog kinds (Standard, Agent) and one work kind (Task). The operator scaffolds Standards as a layer, protects `main`, reports checks, and drives Tasks through Agent Sandbox pods running `c4agent` (a Go runner around Claude Code). Gitea Actions runs each repository's `make check`.
+**Architecture:** Two new catalog kinds (Standard, Agent) and one work kind (Task). The operator scaffolds Standards as a layer, protects `main`, reports checks, and drives Tasks through Agent Sandbox pods running `theos-agent` (a Go runner around Claude Code). Gitea Actions runs each repository's `make check`.
 
 **Tech Stack:** Go 1.26, kubebuilder v4, controller-runtime, envtest + Ginkgo, Gitea 1.27 + Actions (act_runner), Agent Sandbox v1.0.4 (`agents.x-k8s.io/v1beta1`), Flutter stable (cirruslabs image), very_good_analysis, Claude Code CLI.
 
@@ -64,7 +64,7 @@
 
 **Files:** `kubebuilder create api ... --kind Agent --resource --controller=false`; `api/v1alpha1/agent_types.go`; project adoption.
 
-**Interfaces:** `AgentSpec{DisplayName, Description string; Image string (MinLength 1); CredentialsSecretRef *LocalRef; MaxRounds int32 (default 3, min 1, max 10); Env []corev1.EnvVar (optional, e.g. C4AGENT_FAKE)}`.
+**Interfaces:** `AgentSpec{DisplayName, Description string; Image string (MinLength 1); CredentialsSecretRef *LocalRef; MaxRounds int32 (default 3, min 1, max 10); Env []corev1.EnvVar (optional, e.g. THEOS_AGENT_FAKE)}`.
 
 - [ ] envtest: Agent is adopted by the Project (ownerReference) like catalog entries.
 - [ ] Commit `feat(api): add the Agent catalog kind`.
@@ -74,7 +74,7 @@
 ### Task 8.1: flutter-app Framework template
 - [ ] Generate with `flutter create --org io.factory.c4 --platforms android --project-name app` in the cirruslabs image; keep `android/`, `lib/`, `test/`, `pubspec.yaml`; templatize the application id (`io.factory.c4.{{snake .Project}}.{{snake .Container}}`), app label (`.DisplayName`), `README.md.tmpl`.
 - [ ] Restructure `lib/` into `main.dart`, `src/app.dart`, `src/theme.dart`, `src/home/home_page.dart`; widget test at `test/src/home/home_page_test.dart`.
-- [ ] `.c4factory/devcontainer.json` using the cirruslabs image; `.c4factory/README.md` per the template convention.
+- [ ] `.theos/devcontainer.json` using the cirruslabs image; `.theos/README.md` per the template convention.
 - [ ] Verify: render with a throwaway Go test harness (`scaffold.Build`) into a temp dir together with flutter-standard, then `make check` in the Flutter image passes.
 
 ### Task 8.2: flutter-standard Standard template
@@ -118,15 +118,15 @@
 - `MergePullRequest(ctx, repo, number int, message string) error` (merge style `squash`)
 - [ ] httptest unit tests for each; seed token gains `write:admin`.
 
-### Task 10.2: runner (internal/agentrunner + cmd/c4agent)
+### Task 10.2: runner (internal/agentrunner + cmd/theos-agent)
 **Interfaces:**
-- `agentrunner.Job{Role string ("implement"|"review"); RepoURL, Branch, Base string; Goal, Feedback, Container, Project string; Username, Token string; Round int}` read by `JobFromEnv(getenv func(string) string) (Job, error)` from `C4_ROLE, C4_REPO_URL, C4_BRANCH, C4_BASE, C4_GOAL, C4_FEEDBACK, C4_CONTAINER, C4_PROJECT, C4_GIT_USERNAME, C4_GIT_TOKEN, C4_ROUND`.
+- `agentrunner.Job{Role string ("implement"|"review"); RepoURL, Branch, Base string; Goal, Feedback, Container, Project string; Username, Token string; Round int}` read by `JobFromEnv(getenv func(string) string) (Job, error)` from `THEOS_ROLE, THEOS_REPO_URL, THEOS_BRANCH, THEOS_BASE, THEOS_GOAL, THEOS_FEEDBACK, THEOS_CONTAINER, THEOS_PROJECT, THEOS_GIT_USERNAME, THEOS_GIT_TOKEN, THEOS_ROUND`.
 - `agentrunner.Agent interface{ Run(ctx, dir, prompt string) (string, error) }`; `ClaudeAgent{Command []string}`; `FakeAgent` (implement: appends a line to `CHANGELOG.md`, review: approves).
 - `agentrunner.Result{Role, Commit, Summary, Verdict string; Error string}` JSON ≤ 3.5 KB (summary truncated).
 - `agentrunner.Run(ctx, job, agent, git GitOps) Result`; `ImplementPrompt(job) string`; `ReviewPrompt(job, diff string) string`; `ParseVerdict(output string) (verdict, summary string, err error)` (looks for a JSON object with `verdict` approve|changes).
 - [ ] Table tests: prompts contain goal/feedback/rules pointer; ParseVerdict variants; Run against a local bare repo with FakeAgent (branch pushed, commit returned; empty diff → Error "the agent made no changes").
-- [ ] `cmd/c4agent`: writes `Result` to `/dev/termination-log` (path flag), exits 0 even on job errors (the result carries them).
-- [ ] `hack/agent/Dockerfile`: FROM Flutter image + Node + `@anthropic-ai/claude-code` + c4agent; `make agent-image`.
+- [ ] `cmd/theos-agent`: writes `Result` to `/dev/termination-log` (path flag), exits 0 even on job errors (the result carries them).
+- [ ] `hack/agent/Dockerfile`: FROM Flutter image + Node + `@anthropic-ai/claude-code` + theos-agent; `make agent-image`.
 
 ### Task 10.3: Task kind and reconciler
 `kubebuilder create api --group c4 --version v1alpha1 --kind Task --resource --controller`.
@@ -136,7 +136,7 @@
 - `TaskStatus{Phase TaskPhase; Round int32; Branch, PullRequestURL string; PullRequest int32; Checks *CheckStatus; Review *TaskReview{Verdict, Summary}; Sandbox string; Conditions}`; phases `Pending, Implementing, Checking, Reviewing, Merged, Failed`.
 - `model.NextStep(TaskFacts) Step` — pure state machine. `TaskFacts{Phase; Round, MaxRounds int; ContainerReady, OtherTaskActive bool; SandboxDone bool; SandboxResult *RunResult; ChecksState string; ReviewVerdict string; PRMerged bool}`; `Step{Action (Wait|StartImplement|StartReview|OpenPR|Merge|Retry|Fail); Phase; Feedback, Message string}`.
 - [ ] Table tests for NextStep covering every Review Focus line.
-- [ ] Reconciler: adopt under Container; ensure agent access Secret `<container>-agent-git` (owned by Container); create `agents.x-k8s.io/v1beta1 Sandbox` (unstructured) named `<task>-r<round>-<role>`, owned by the Task, pod: image, env from job + Secret refs, `restartPolicy: Never`, `automountServiceAccountToken: false`, label `c4.factory.io/sandbox=true`, `shutdownTime` now+45m; read the pod's termination message (list pods by the Sandbox's `status.selector`); open PR; poll checks via CombinedStatus(head); start reviewer; comment review on the PR; merge.
+- [ ] Reconciler: adopt under Container; ensure agent access Secret `<container>-agent-git` (owned by Container); create `agents.x-k8s.io/v1beta1 Sandbox` (unstructured) named `<task>-r<round>-<role>`, owned by the Task, pod: image, env from job + Secret refs, `restartPolicy: Never`, `automountServiceAccountToken: false`, label `theos.factory.io/sandbox=true`, `shutdownTime` now+45m; read the pod's termination message (list pods by the Sandbox's `status.selector`); open PR; poll checks via CombinedStatus(head); start reviewer; comment review on the PR; merge.
 - [ ] envtest installs Agent Sandbox CRDs from `test/crds/agent-sandbox/` (copied from release v1.0.4 `sandbox.yaml`, CRDs only); the test plays the pod (creates a Pod matching the selector with a terminated container status + message).
 - [ ] NetworkPolicy `c4-agent-sandbox` applied per project namespace by the Project reconciler (egress: DNS, gitea namespace, 0.0.0.0/0:443 except cluster CIDRs 10.0.0.0/8).
 

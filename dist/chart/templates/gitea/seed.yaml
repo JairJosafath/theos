@@ -1,12 +1,12 @@
 {{- if .Values.gitea.enabled }}
-{{- $ns := include "c4-factory.giteaNamespace" . }}
+{{- $ns := include "theos.giteaNamespace" . }}
 {{- $seed := .Values.gitea.seed }}
 # The seed (hack/seed/seed.sh): the templates organization and its tagged
 # template repositories, and an organization, Secret gitea-credentials and,
 # when its namespace has none, a Project for each project, whose namespace it
 # labels to receive the Secrets the operator shares; and Secret gitea-runner,
 # the templates organization's runner registration token, which the shared
-# runners register with (runners.yaml). Last, it applies ConfigMap c4factory-catalog's
+# runners register with (runners.yaml). Last, it applies ConfigMap theos-catalog's
 # GitProviders, catalog and Agents in place. A hook after every install and
 # upgrade: it changes nothing already in place but the fields the chart sets,
 # and a new chart version brings new template tags. A failed Job stays for its
@@ -17,7 +17,7 @@ metadata:
   name: seed
   namespace: {{ $ns }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
   annotations:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
@@ -27,11 +27,11 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 8 }}
+        {{- include "theos.giteaLabels" (dict "name" "seed" "context" .) | nindent 8 }}
     spec:
       serviceAccountName: seed
       restartPolicy: Never
-      {{- include "c4-factory.imagePullSecrets" . | nindent 6 }}
+      {{- include "theos.imagePullSecrets" . | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -44,11 +44,11 @@ spec:
           imagePullPolicy: {{ $seed.image.pullPolicy }}
           env:
             - name: GITEA_URL
-              value: {{ include "c4-factory.giteaURL" . | quote }}
+              value: {{ include "theos.giteaURL" . | quote }}
             - name: GITEA_WAIT
               value: {{ $seed.waitSeconds | quote }}
             - name: PROJECTS
-              value: {{ join " " (include "c4-factory.projectNames" . | fromJsonArray) | quote }}
+              value: {{ join " " (include "theos.projectNames" . | fromJsonArray) | quote }}
             - name: RUNNER_SECRET
               value: gitea-runner
             - name: RUNNER_NAMESPACE
@@ -60,9 +60,9 @@ spec:
             - name: CATALOG
               value: /catalog/objects.yaml
             - name: GITEA_USERNAME
-              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: username}}
+              valueFrom: {secretKeyRef: {name: {{ include "theos.giteaAdminSecret" . }}, key: username}}
             - name: GITEA_PASSWORD
-              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: password}}
+              valueFrom: {secretKeyRef: {name: {{ include "theos.giteaAdminSecret" . }}, key: password}}
           resources:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {memory: 256Mi}
@@ -82,7 +82,7 @@ spec:
           emptyDir: {}
         - name: catalog
           configMap:
-            name: c4factory-catalog
+            name: theos-catalog
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -90,7 +90,7 @@ metadata:
   name: seed
   namespace: {{ $ns }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
 ---
 # The seed may create Secrets in Gitea's namespace (create cannot be limited
 # by name) and change only gitea-runner, the shared runners' registration
@@ -101,7 +101,7 @@ metadata:
   name: seed-runner-token
   namespace: {{ $ns }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: [secrets]
@@ -117,7 +117,7 @@ metadata:
   name: seed-runner-token
   namespace: {{ $ns }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -126,17 +126,17 @@ subjects:
   - kind: ServiceAccount
     name: seed
     namespace: {{ $ns }}
-{{- with include "c4-factory.projectNames" . | fromJsonArray }}
+{{- with include "theos.projectNames" . | fromJsonArray }}
 ---
-# The seed labels each project's namespace c4.factory.io/shared-secrets=true,
+# The seed labels each project's namespace theos.factory.io/shared-secrets=true,
 # which opts it in to the Secrets the operator shares: the chart's own
 # Namespaces have the label, one made by hand doesn't. Only these namespaces.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "c4-factory.resourceName" (dict "suffix" "seed-namespaces" "context" $) }}
+  name: {{ include "theos.resourceName" (dict "suffix" "seed-namespaces" "context" $) }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: [namespaces]
@@ -146,30 +146,30 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "c4-factory.resourceName" (dict "suffix" "seed-namespaces" "context" $) }}
+  name: {{ include "theos.resourceName" (dict "suffix" "seed-namespaces" "context" $) }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "c4-factory.resourceName" (dict "suffix" "seed-namespaces" "context" $) }}
+  name: {{ include "theos.resourceName" (dict "suffix" "seed-namespaces" "context" $) }}
 subjects:
   - kind: ServiceAccount
     name: seed
     namespace: {{ $ns }}
 {{- end }}
-{{- range include "c4-factory.projectNames" . | fromJsonArray }}
+{{- range include "theos.projectNames" . | fromJsonArray }}
 ---
 # The seed may create Secret gitea-credentials and change only that one,
 # create the project's Project when the namespace has none, and apply the
-# GitProvider, catalog and Agents of ConfigMap c4factory-catalog.
+# GitProvider, catalog and Agents of ConfigMap theos-catalog.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: seed-credentials
   namespace: {{ . }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: [secrets]
@@ -178,10 +178,10 @@ rules:
     resources: [secrets]
     resourceNames: [gitea-credentials]
     verbs: [get, update, patch]
-  - apiGroups: [c4.factory.io]
+  - apiGroups: [theos.factory.io]
     resources: [projects]
     verbs: [get, create]
-  - apiGroups: [c4.factory.io]
+  - apiGroups: [theos.factory.io]
     resources: [gitproviders, agents, frameworks, standards, computes, deployments, connectors, bundles, domains]
     verbs: [get, list, create, patch]
 ---
@@ -191,7 +191,7 @@ metadata:
   name: seed-credentials
   namespace: {{ . }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "seed" "context" $) | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

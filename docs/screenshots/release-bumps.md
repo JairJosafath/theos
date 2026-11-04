@@ -1,6 +1,6 @@
 # A release files a bump issue in the Container that bundles it (#118)
 
-Kind cluster `c4factory`, operator built from `feat/118-a-release-files-bump-issues-in-the`
+Kind cluster `theos`, operator built from `feat/118-a-release-files-bump-issues-in-the`
 (`make deploy`), 2026-10-06 00:32–00:34 UTC. Setup, as a person would do it:
 
 - Containers `apps/bump-srv`, `apps/bump-ext` and `apps/bump-web`: the hello
@@ -65,12 +65,12 @@ bump-ext ships bump-srv v0.1.0.
 - [ ] What bump-srv's changes up to v0.1.0 ask of the Containers that use it is done here, or filed as an issue
 - [ ] `make check` passes
 
-<!-- c4factory:bump bump-srv v0.1.0 -->
+<!-- theos:bump bump-srv v0.1.0 -->
 
 
 $ Gitea: GET /repos/apps/bump-web/issues?state=all  (calls the server, does not bundle it)
 []
-$ kubectl -n c4-factory-system logs deploy/c4-factory-controller-manager | grep -E "Released milestone|bump issue" (trimmed)
+$ kubectl -n theos-system logs deploy/theos-controller-manager | grep -E "Released milestone|bump issue" (trimmed)
 2026-10-06T00:33:26Z	INFO	Released milestone	{"tag": "v0.1.0", "commit": "c6f1ec9d3ea72ae3e54e5d765e6b6a1369047526", "created": true}
 2026-10-06T00:33:27Z	INFO	Filed a bump issue	{"bundler": "bump-ext", "tag": "v0.1.0", "issue": "http://gitea.gitea.svc.cluster.local:3000/apps/bump-ext/issues/1"}
 ```

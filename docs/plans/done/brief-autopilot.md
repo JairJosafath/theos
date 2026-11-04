@@ -40,7 +40,7 @@ until something changed. The card shows *Needs you* and what the Brief did.
    the last step of this plan, unset means `Off`, so nothing changes for
    anyone before the whole loop has landed.
 2. **What the Brief watches is its own.** Only things the Brief made (label
-   `c4.factory.io/brief`): failed issues (`status.failed`, #429), its
+   `theos.factory.io/brief`): failed issues (`status.failed`, #429), its
    Containers' Tasks, its Crews and its Containers. Node memory, node
    pressure, components and the API server are the factory's, not a Brief's:
    they stay on the Factory view, and the Brief never acts on them. A memory
@@ -80,7 +80,7 @@ until something changed. The card shows *Needs you* and what the Brief did.
    when the last round is over, no prompt is waiting (a prompt round goes
    first and answers the same issues), `autopilot` is `Ask` or `On`, and at
    least one failed issue is *due and unanswered*. It is a Plan Task like any
-   round (`<brief>-plan-<round>`, label `c4.factory.io/brief-round-kind: tend`),
+   round (`<brief>-plan-<round>`, label `theos.factory.io/brief-round-kind: tend`),
    so cost, history and timeline need nothing new, and its workspace is the
    same plus a line in `brief.md`: "No new prompt: decide the failed issues in
    `model/failed.yaml`". The plan it may write is `plan/failed.yaml` and

@@ -22,7 +22,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 func TestMain(m *testing.M) {
@@ -69,12 +69,12 @@ func TestJobFromEnv(t *testing.T) {
 		env  map[string]string
 		want string
 	}{
-		{"missing values", map[string]string{EnvGoal: "", EnvGitToken: ""}, "missing C4_GIT_TOKEN, C4_GOAL"},
-		{"unknown role", map[string]string{EnvRole: "deploy"}, `C4_ROLE="deploy"`},
+		{"missing values", map[string]string{EnvGoal: "", EnvGitToken: ""}, "missing THEOS_GIT_TOKEN, THEOS_GOAL"},
+		{"unknown role", map[string]string{EnvRole: "deploy"}, `THEOS_ROLE="deploy"`},
 		{"bad round", map[string]string{EnvRound: "zero"}, "not a round number"},
 		{"bad round limit", map[string]string{EnvMaxRounds: "-1"}, "not a round number"},
 		{"branch is the base", map[string]string{EnvBranch: "main"}, "must not be the base"},
-		{"bad resumed", map[string]string{EnvResumed: "maybe"}, "C4_RESUMED"},
+		{"bad resumed", map[string]string{EnvResumed: "maybe"}, "THEOS_RESUMED"},
 		{"bad session limit", map[string]string{EnvSessionTokenLimit: "lots"}, "not a number of tokens"},
 	}
 	for _, tt := range tests {
@@ -391,7 +391,7 @@ func TestRunImplementFailures(t *testing.T) {
 		url := bareRepo(t, map[string]string{".gitea/workflows/check.yaml": "on: push\n"})
 		job := testJob(t, url, RoleImplement, 1)
 		// The operator sends the platform's paths for the Container's CI system.
-		job.ProtectedPaths = []string{".c4factory.yaml", ".devcontainer/", ".gitea/"}
+		job.ProtectedPaths = []string{".theos.yaml", ".devcontainer/", ".gitea/"}
 		got := Run(ctx, job, editAgent{path: ".gitea/workflows/check.yaml"}, t.TempDir())
 		if !strings.Contains(got.Error, ".gitea/workflows/check.yaml, which the platform and the Standard protect") {
 			t.Errorf("Error = %q", got.Error)
@@ -1019,7 +1019,7 @@ func TestRunReportsAnInterruptedRun(t *testing.T) {
 	}
 }
 
-// #1996: c4agent stopped at the run's deadline, or by a SIGTERM, while the
+// #1996: theos-agent stopped at the run's deadline, or by a SIGTERM, while the
 // agent's earlier output said the service was overloaded: the run is
 // interrupted, with a hard checkpoint that counts against MaxResumes, not
 // an unavailable agent the operator would resume with no round spent.
@@ -1040,7 +1040,7 @@ func TestRunStoppedAfterAnOverloadIsInterruptedNotUnavailable(t *testing.T) {
 	}
 }
 
-// stoppedAgent is an agent killed because c4agent was told to stop, whose
+// stoppedAgent is an agent killed because theos-agent was told to stop, whose
 // error carries what it printed before.
 type stoppedAgent struct {
 	stop context.CancelFunc
@@ -1054,7 +1054,7 @@ func (a stoppedAgent) Run(context.Context, string, string) (string, error) {
 
 func TestRunKilledBeforeTheStopIsInterrupted(t *testing.T) {
 	// A node restart: every process of the pod gets SIGTERM at once, and the
-	// agent dies before c4agent's own signal cancels ctx.
+	// agent dies before theos-agent's own signal cancels ctx.
 	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
 	ctx, cancel := context.WithCancel(context.Background())
 	agent := killedAgent{stop: func() { time.AfterFunc(50*time.Millisecond, cancel) }}
@@ -1065,7 +1065,7 @@ func TestRunKilledBeforeTheStopIsInterrupted(t *testing.T) {
 }
 
 func TestRunKilledWithoutStopIsTheAgentsFailure(t *testing.T) {
-	// An out-of-memory kill: the agent dies, but nobody told c4agent to stop.
+	// An out-of-memory kill: the agent dies, but nobody told theos-agent to stop.
 	url := bareRepo(t, map[string]string{"README.md": "hi\n"})
 	got := Run(context.Background(), testJob(t, url, RoleImplement, 1),
 		failingAgent{err: errors.New("claude failed: signal: killed")}, t.TempDir())
@@ -1074,7 +1074,7 @@ func TestRunKilledWithoutStopIsTheAgentsFailure(t *testing.T) {
 	}
 }
 
-// killedAgent is an agent killed because c4agent was told to stop.
+// killedAgent is an agent killed because theos-agent was told to stop.
 type killedAgent struct{ stop context.CancelFunc }
 
 func (a killedAgent) Run(context.Context, string, string) (string, error) {
@@ -1508,7 +1508,7 @@ func TestStandardChangePrompts(t *testing.T) {
 		{"implement issue", ImplementPrompt(issue, Workspace{}), []string{"Standard change:",
 			"The protected change merges first, so it must work on main without the rest of your work",
 			"may rely on it", "use a hook", "npm run dist --if-present", "each with a test that proves it",
-			"where it is met and tested", "AGENTS.md, docs/agents/ and .c4factory.yaml",
+			"where it is met and tested", "AGENTS.md, docs/agents/ and .theos.yaml",
 			"even if your role guide or AGENTS.md says to stop"}, []string{"must run on main alone"}},
 		{"implement goal", ImplementPrompt(goal, Workspace{}), []string{"do not change", "tests for it"},
 			[]string{"Standard change:"}},

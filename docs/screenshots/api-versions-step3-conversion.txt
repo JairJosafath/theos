@@ -3,5 +3,5 @@
 --- PASS: TestConversionFieldsAnnotation (0.00s)
 --- PASS: TestConversionFieldsAnnotationByHand (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/api/v1alpha1	0.584s
-?   	github.com/JairJosafath/c4factory/api/v1beta1	[no test files]
+ok  	github.com/JairJosafath/theos/api/v1alpha1	0.584s
+?   	github.com/JairJosafath/theos/api/v1beta1	[no test files]

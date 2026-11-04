@@ -41,7 +41,7 @@ the agents' NetworkPolicy).
    the release namespace. The Project reconciler copies each shared Secret
    into every namespace that opts in (decision 3), with a Project or before
    one (decision 10), under the same name, with the label
-   `c4.factory.io/shared-from: <name>`. It keeps a copy it made in step with the source, so a rotated token reaches every
+   `theos.factory.io/shared-from: <name>`. It keeps a copy it made in step with the source, so a rotated token reaches every
    project, and deletes its copies when the namespace opts out. Why the
    operator and not the seed job: the seed runs only on `helm upgrade`, so a
    rotated token and a NeedsInput Brief would wait for the next one; the
@@ -53,7 +53,7 @@ the agents' NetworkPolicy).
    A Project reports it in a condition `SecretsShared`, naming each shared
    Secret, whether it is a copy or the project's own, and a missing source.
 3. **A project opts in by a namespace label, which only an admin or the chart
-   sets.** `c4.factory.io/shared-secrets: "true"`. A Project alone is not
+   sets.** `theos.factory.io/shared-secrets: "true"`. A Project alone is not
    enough: anyone allowed to create a Project in some namespace would receive
    the factory's token. Namespace labels need `patch` on the cluster-scoped
    namespace, which namespace admins don't have. The chart's Namespaces carry
@@ -82,7 +82,7 @@ the agents' NetworkPolicy).
    and the opt-in that a user could reach (decision 3) needs an admin.
 7. **The Brief's NeedsInput message names where to give the token.** With
    sharing on: "Secret claude-credentials of Agent planner is missing: make
-   it in namespace c4-factory-system, which the factory shares with every
+   it in namespace theos-system, which the factory shares with every
    project, or in cel-lens for this project only". It names the label when the
    namespace hasn't opted in, and keeps today's message when sharing is off.
    When the source is there, the message says the copy is on its way instead

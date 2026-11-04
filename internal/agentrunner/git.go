@@ -42,7 +42,7 @@ func clone(ctx context.Context, job Job, dir string) (*repo, error) {
 	}
 	for _, kv := range [][2]string{
 		{"user.name", job.Username},
-		{"user.email", job.Username + "@agents.c4.factory.io"},
+		{"user.email", job.Username + "@agents.theos.factory.io"},
 	} {
 		if _, err := r.git(ctx, dir, "config", kv[0], kv[1]); err != nil {
 			return nil, err

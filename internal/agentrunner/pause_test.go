@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // Step 12 of docs/plans/self-hosting.md: running Tasks pause at a tool
@@ -47,9 +47,9 @@ func annotationsFile(t *testing.T, path string, annotations map[string]string) {
 func TestPauseGuard(t *testing.T) {
 	dir := t.TempDir()
 	unpaused := filepath.Join(dir, "unpaused")
-	annotationsFile(t, unpaused, map[string]string{"c4.factory.io/task": "add-crop"})
+	annotationsFile(t, unpaused, map[string]string{"theos.factory.io/task": "add-crop"})
 	paused := filepath.Join(dir, "paused")
-	annotationsFile(t, paused, map[string]string{"c4.factory.io/task": "add-crop", PauseAnnotation: pauseReasonText})
+	annotationsFile(t, paused, map[string]string{"theos.factory.io/task": "add-crop", PauseAnnotation: pauseReasonText})
 	input := `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"go test ./..."}}`
 
 	tests := []struct {
@@ -192,7 +192,7 @@ func pausedRun(t *testing.T, mode string, grace time.Duration) (url, checkpoints
 	job := testJob(t, url, RoleImplement, 1)
 	job.CheckpointDir, job.Model, job.PodInfoDir = checkpoints, "claude-opus-5-5", t.TempDir()
 	annotations := filepath.Join(job.PodInfoDir, podAnnotationsFile)
-	others := map[string]string{"c4.factory.io/task": "add-crop"}
+	others := map[string]string{"theos.factory.io/task": "add-crop"}
 	annotationsFile(t, annotations, others)
 
 	done := make(chan struct{})
@@ -500,7 +500,7 @@ func TestPauseKillsARunningCheckThatRunsAgainOnResume(t *testing.T) {
 	}
 }
 
-// Between agent calls c4agent stops at its next one: a pause asked before
+// Between agent calls theos-agent stops at its next one: a pause asked before
 // the run's session starts it not.
 func TestPauseBeforeTheSessionStartsNone(t *testing.T) {
 	url := bareRepo(t, map[string]string{"README.md": "hi\n"})

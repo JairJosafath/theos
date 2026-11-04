@@ -1,0 +1,2136 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: containers.theos.factory.io
+spec:
+  group: theos.factory.io
+  names:
+    categories:
+    - theos
+    kind: Container
+    listKind: ContainerList
+    plural: containers
+    singular: container
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.checks.state
+      name: Checks
+      type: string
+    - jsonPath: .status.activeSessions
+      name: Sessions
+      type: integer
+    - jsonPath: .status.repositoryURL
+      name: Repository
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    deprecated: true
+    deprecationWarning: theos.factory.io/v1alpha1 is deprecated since v0.30.0; use
+      theos.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it
+      (#1963).
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Container is an application with its own repository. It is owned by its
+          SoftwareSystem and scaffolded exactly once.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of Container
+            properties:
+              adopt:
+                description: |-
+                  adopt says the Container takes over a repository that already has
+                  commits instead of scaffolding a new one. The operator writes nothing:
+                  it checks that main's .theos.yaml names this project and Container
+                  and that every file of the Container's Standard is there with the
+                  content the Standard renders at its ref, then protects main and goes
+                  Ready. An adopted Container is never scaffolded; an empty repository
+                  fails NothingToAdopt. Set at creation and immutable.
+                type: boolean
+              bundleRef:
+                description: |-
+                  bundleRef names the Bundle catalog entry that picks the Framework,
+                  Standard, Compute and Deployment together. It replaces the four refs
+                  below: a Container names a bundle or its sides, never both. The operator
+                  expands it until the scaffold and records the expansion in
+                  status.bundle; from the scaffold on it reads status.bundle and never the
+                  Bundle again. It can't change.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              checks:
+                default: EveryChange
+                description: |-
+                  checks is when CI runs the application's full check: EveryChange runs it on
+                  every pull request and push to main; BeforeRelease runs a light check on each
+                  change and the full one on the commit a release will be tagged at. It takes
+                  effect only when the Standard says it can (checksBeforeRelease); the
+                  condition ChecksApplied says when it doesn't.
+                enum:
+                - EveryChange
+                - BeforeRelease
+                type: string
+              computeRef:
+                description: 'computeRef names the Compute catalog entry: resource
+                  sizing.'
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              deploy:
+                description: |-
+                  deploy names the DeployTargets each release of the Container's Crew
+                  ships to, in order. The operator ships the newest release whose runs
+                  succeeded, or an entry's pinned version, through the target's tool, and
+                  reports it in status.deploys and the condition Deployed. The list may
+                  change at any time and never scaffolds again; removing an entry stops
+                  shipping there and leaves what runs there alone.
+                items:
+                  description: ContainerDeploy is one place a Container's releases
+                    ship to.
+                  properties:
+                    after:
+                      description: |-
+                        after names an earlier entry's target: a version ships here only once
+                        that entry runs it, healthy where its target reads health.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    approved:
+                      description: |-
+                        approved is the version a person let in. Where the target needs
+                        approval, a version ships only when approved names it.
+                      maxLength: 128
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9._+-]*$
+                      type: string
+                    target:
+                      description: target names the DeployTarget, in the Container's
+                        namespace.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    version:
+                      description: |-
+                        version pins a release tag; empty follows the newest release whose runs
+                        succeeded. Pinning an older tag rolls back.
+                      maxLength: 128
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9._+-]*$
+                      type: string
+                  required:
+                  - target
+                  type: object
+                maxItems: 5
+                type: array
+                x-kubernetes-list-map-keys:
+                - target
+                x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: after must name an entry earlier in deploy
+                  rule: '[0, 1, 2, 3, 4].all(i, i >= self.size() || !has(self[i].after)
+                    || [0, 1, 2, 3, 4].exists(j, j < i && self[j].target == self[i].after))'
+              deploymentRef:
+                description: 'deploymentRef names the Deployment catalog entry: how
+                  the application ships.'
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              description:
+                description: description says what the application does.
+                maxLength: 1000
+                type: string
+              displayName:
+                description: displayName is a human-friendly name, such as "Orders
+                  API".
+                maxLength: 100
+                type: string
+              frameworkRef:
+                description: |-
+                  frameworkRef names the Framework catalog entry: language, framework and
+                  tooling. Set it, or bundleRef.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              gitProviderRef:
+                description: gitProviderRef names the GitProvider that hosts the repository.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              license:
+                description: |-
+                  license is the SPDX id of the license the repository is scaffolded
+                  with, over the Project's spec.license: the operator writes its text as
+                  LICENSE. It is read at scaffold only: changing it later rewrites
+                  nothing, and a Container already scaffolded gets its license by a
+                  commit. With neither set, the repository gets no LICENSE.
+                enum:
+                - MIT
+                - Apache-2.0
+                - BSD-2-Clause
+                - BSD-3-Clause
+                - ISC
+                - 0BSD
+                - MPL-2.0
+                - GPL-2.0-only
+                - GPL-3.0-only
+                - LGPL-3.0-only
+                - AGPL-3.0-only
+                - Unlicense
+                type: string
+              operations:
+                description: |-
+                  operations is what the application promises whatever tier runs it: how
+                  long its backups are kept and where they are copied, its recovery
+                  objectives and who its alarms tell. The tier itself is the deploy
+                  target's, never the Container's. A field left out takes the factory's
+                  default. A change after the scaffold reaches the repository's
+                  infra/operations.ts through a pull request the operator opens and
+                  merges, as a Standard bump does; the condition OperationsApplied says
+                  where it stands.
+                properties:
+                  alerts:
+                    description: alerts says who the alarms tell by default.
+                    properties:
+                      email:
+                        description: |-
+                          email is the address the alarms tell by default; a deploy target
+                          overrides it per environment. Empty means nobody is told.
+                        maxLength: 254
+                        pattern: ^([^@\s]+@[^@\s]+)?$
+                        type: string
+                    type: object
+                  backups:
+                    description: backups says how long backups are kept and where
+                      they are copied.
+                    properties:
+                      copyToRegion:
+                        description: |-
+                          copyToRegion is a second AWS region the backups are copied to, such as
+                          eu-west-1; empty means none.
+                        maxLength: 32
+                        pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                        type: string
+                      retentionDays:
+                        description: |-
+                          retentionDays is how many days daily backups are kept in production; 0
+                          means point-in-time recovery only. Left out, 35.
+                        format: int32
+                        maximum: 3650
+                        minimum: 0
+                        type: integer
+                    type: object
+                  recovery:
+                    description: |-
+                      recovery states the recovery objectives the runbook, the alarms and the
+                      checks are written to.
+                    properties:
+                      rpo:
+                        description: |-
+                          rpo is the recovery point objective: how much data a recovery may lose.
+                          Left out, 1h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                      rto:
+                        description: |-
+                          rto is the recovery time objective: how long a recovery may take. Left
+                          out, 4h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                    type: object
+                type: object
+              softwareSystemRef:
+                description: softwareSystemRef names the SoftwareSystem this Container
+                  belongs to. It can't change.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: softwareSystemRef is immutable
+                  rule: self == oldSelf
+              standardRef:
+                description: |-
+                  standardRef names the Standard catalog entry: coding rules, checks and CI. It
+                  must list the Framework.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              type:
+                description: type is the shape of the application. Every catalog entry
+                  used must support it.
+                enum:
+                - static-site
+                - service
+                - job
+                - worker
+                - mobile-app
+                - cli
+                - extension
+                - operator
+                - function
+                type: string
+            required:
+            - gitProviderRef
+            - softwareSystemRef
+            - type
+            type: object
+            x-kubernetes-validations:
+            - message: name a bundleRef or a frameworkRef
+              rule: has(self.bundleRef) || has(self.frameworkRef)
+            - message: bundleRef replaces frameworkRef, standardRef, computeRef and
+                deploymentRef
+              rule: '!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef)
+                || has(self.computeRef) || has(self.deploymentRef))'
+            - message: bundleRef is immutable
+              rule: has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef)
+                || self.bundleRef == oldSelf.bundleRef)
+            - message: adopt is immutable
+              rule: (has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)
+          status:
+            description: status defines the observed state of Container
+            properties:
+              activeSessions:
+                description: activeSessions is the number of Active Sessions on this
+                  Container.
+                format: int32
+                type: integer
+              appliedConnectors:
+                description: |-
+                  appliedConnectors records, for each applied Relationship, the DataStore it
+                  pointed at and the Connector that went into the scaffold. A Container
+                  scaffolded before this was kept has only appliedRelationships.
+                items:
+                  description: AppliedConnector is what one Relationship added to
+                    a scaffold.
+                  properties:
+                    connector:
+                      description: connector is the DataStore's Connector that was
+                        applied.
+                      type: string
+                    dataStore:
+                      description: dataStore is the DataStore the Relationship pointed
+                        at.
+                      type: string
+                    relationship:
+                      description: relationship is the Relationship's name.
+                      type: string
+                  required:
+                  - connector
+                  - dataStore
+                  - relationship
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - relationship
+                x-kubernetes-list-type: map
+              appliedRelationships:
+                description: appliedRelationships lists the Relationships whose Connectors
+                  were part of the scaffold.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              bundle:
+                description: |-
+                  bundle is what spec.bundleRef expanded to, by entry name: afresh at each
+                  reconcile until the scaffold, then kept as the scaffold used it. Only a
+                  Container that names a bundle has it.
+                properties:
+                  compute:
+                    description: compute names the Compute the bundle picked, if any.
+                    type: string
+                  deployment:
+                    description: deployment names the Deployment the bundle picked,
+                      if any.
+                    type: string
+                  framework:
+                    description: framework names the Framework the bundle picked.
+                    type: string
+                  name:
+                    description: name is the Bundle's name.
+                    type: string
+                  standard:
+                    description: standard names the Standard the bundle picked, if
+                      any.
+                    type: string
+                required:
+                - framework
+                - name
+                type: object
+              checks:
+                description: |-
+                  checks is the latest CI result on the default branch. Only Containers with a
+                  Standard have checks.
+                properties:
+                  commit:
+                    description: commit is the SHA the checks ran on.
+                    type: string
+                  state:
+                    description: state is pending, success, failure or error; empty
+                      until a check reports.
+                    type: string
+                  url:
+                    description: url links to the check run.
+                    type: string
+                type: object
+              conditions:
+                description: |-
+                  conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
+                  and, for a Container with a Standard, StandardUpdated and ChecksApplied;
+                  once scaffolded, OperationsApplied; with spec.deploy, Deployed; with
+                  status.image, ImagePublished.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              deploys:
+                description: deploys is what runs at each of spec.deploy's targets,
+                  in its order.
+                items:
+                  description: ContainerDeployStatus is what runs at one of a Container's
+                    targets.
+                  properties:
+                    health:
+                      description: health is what the target's tool reports of what
+                        runs there.
+                      enum:
+                      - Healthy
+                      - Progressing
+                      - Degraded
+                      - Unknown
+                      type: string
+                    image:
+                      description: |-
+                        image is the app's image as the target holds it, host/repository@digest,
+                        when the target copies the release's image: a github target with a
+                        packagesToken copies it to GHCR.
+                      type: string
+                    message:
+                      description: message says it for a person.
+                      type: string
+                    phase:
+                      description: |-
+                        phase is Waiting while the wanted version is held, Deploying while the
+                        target's tool ships it, Deployed once it runs, and Failed when the tool
+                        or the call failed.
+                      enum:
+                      - Waiting
+                      - Deploying
+                      - Deployed
+                      - Failed
+                      type: string
+                    reason:
+                      description: reason says why the entry is in its phase, in CamelCase.
+                      type: string
+                    since:
+                      description: since is when the phase, reason or wanted version
+                        last changed.
+                      format: date-time
+                      type: string
+                    target:
+                      description: target is the entry's DeployTarget.
+                      type: string
+                    url:
+                      description: url is where the app, or its release, answers,
+                        when the tool knows it.
+                      type: string
+                    version:
+                      description: version is the version running there, as its tool
+                        last reported.
+                      type: string
+                    wantedVersion:
+                      description: |-
+                        wantedVersion is the version the entry should run: its pin, else the
+                        newest release.
+                      type: string
+                  required:
+                  - phase
+                  - target
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - target
+                x-kubernetes-list-type: map
+              image:
+                description: |-
+                  image is newestRelease's image in the owner's container registry on the
+                  Git host. Only a Container whose Deployment builds an image has it, once
+                  a release has succeeded its runs.
+                properties:
+                  digest:
+                    description: |-
+                      digest is the image index's digest; "" when there is no archive or it is
+                      invalid.
+                    type: string
+                  message:
+                    description: message says the state for a person.
+                    type: string
+                  platforms:
+                    description: platforms are the platforms the image runs on, attestations
+                      left out.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  publishedTime:
+                    description: publishedTime is when the operator found the image
+                      pushed.
+                    format: date-time
+                    type: string
+                  repository:
+                    description: repository is the image's repository, <host>/<owner>/<repository>.
+                    type: string
+                  state:
+                    description: |-
+                      state is Pushing while the operator pushes the archive, Published once
+                      the registry has the image under the tag, NoImage when the release has
+                      no image archive, Invalid when its archive can't be pushed, TagTaken
+                      when the tag names another digest, and Failed while the Git host can't
+                      be reached, tried again each poll.
+                    enum:
+                    - Pushing
+                    - Published
+                    - NoImage
+                    - Invalid
+                    - TagTaken
+                    - Failed
+                    type: string
+                  tag:
+                    description: tag is the release's tag, the image's tag.
+                    type: string
+                required:
+                - state
+                - tag
+                type: object
+              newestRelease:
+                description: |-
+                  newestRelease is the newest release of the Container's Crews whose runs
+                  succeeded, kept while a newer release's runs haven't: the version an
+                  unpinned spec.deploy entry follows.
+                type: string
+              observedGeneration:
+                description: observedGeneration is the spec generation the status
+                  reflects.
+                format: int64
+                type: integer
+              operations:
+                description: |-
+                  operations is the operations block the repository's
+                  infra/operations.ts was last rendered with, its defaults filled in: at
+                  the scaffold, then by each operations update that merged.
+                  OperationsApplied compares spec.operations to it. A Container scaffolded
+                  before this was kept has none.
+                properties:
+                  alerts:
+                    description: alerts says who the alarms tell by default.
+                    properties:
+                      email:
+                        description: |-
+                          email is the address the alarms tell by default; a deploy target
+                          overrides it per environment. Empty means nobody is told.
+                        maxLength: 254
+                        pattern: ^([^@\s]+@[^@\s]+)?$
+                        type: string
+                    type: object
+                  backups:
+                    description: backups says how long backups are kept and where
+                      they are copied.
+                    properties:
+                      copyToRegion:
+                        description: |-
+                          copyToRegion is a second AWS region the backups are copied to, such as
+                          eu-west-1; empty means none.
+                        maxLength: 32
+                        pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                        type: string
+                      retentionDays:
+                        description: |-
+                          retentionDays is how many days daily backups are kept in production; 0
+                          means point-in-time recovery only. Left out, 35.
+                        format: int32
+                        maximum: 3650
+                        minimum: 0
+                        type: integer
+                    type: object
+                  recovery:
+                    description: |-
+                      recovery states the recovery objectives the runbook, the alarms and the
+                      checks are written to.
+                    properties:
+                      rpo:
+                        description: |-
+                          rpo is the recovery point objective: how much data a recovery may lose.
+                          Left out, 1h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                      rto:
+                        description: |-
+                          rto is the recovery time objective: how long a recovery may take. Left
+                          out, 4h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                    type: object
+                type: object
+              operationsUpdate:
+                description: |-
+                  operationsUpdate is the pull request the operator opened to render
+                  infra/operations.ts again from a changed spec.operations: in flight,
+                  stopped, or merged. A merged one stays, naming the commit it made, until
+                  the next change replaces it.
+                properties:
+                  branch:
+                    description: branch is the update's branch, and commit the one
+                      commit on it.
+                    type: string
+                  commit:
+                    type: string
+                  mergeCommit:
+                    description: |-
+                      mergeCommit is the commit on main that holds the block: the one the
+                      pull request's merge made, or main's head when main already held it.
+                      It is set once the update merged.
+                    type: string
+                  operations:
+                    description: |-
+                      operations is the block the pull request renders, every field set as
+                      status.operations records it.
+                    properties:
+                      alerts:
+                        description: alerts says who the alarms tell by default.
+                        properties:
+                          email:
+                            description: |-
+                              email is the address the alarms tell by default; a deploy target
+                              overrides it per environment. Empty means nobody is told.
+                            maxLength: 254
+                            pattern: ^([^@\s]+@[^@\s]+)?$
+                            type: string
+                        type: object
+                      backups:
+                        description: backups says how long backups are kept and where
+                          they are copied.
+                        properties:
+                          copyToRegion:
+                            description: |-
+                              copyToRegion is a second AWS region the backups are copied to, such as
+                              eu-west-1; empty means none.
+                            maxLength: 32
+                            pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                            type: string
+                          retentionDays:
+                            description: |-
+                              retentionDays is how many days daily backups are kept in production; 0
+                              means point-in-time recovery only. Left out, 35.
+                            format: int32
+                            maximum: 3650
+                            minimum: 0
+                            type: integer
+                        type: object
+                      recovery:
+                        description: |-
+                          recovery states the recovery objectives the runbook, the alarms and the
+                          checks are written to.
+                        properties:
+                          rpo:
+                            description: |-
+                              rpo is the recovery point objective: how much data a recovery may lose.
+                              Left out, 1h.
+                            maxLength: 16
+                            pattern: ^[0-9]+(m|h|d)$
+                            type: string
+                          rto:
+                            description: |-
+                              rto is the recovery time objective: how long a recovery may take. Left
+                              out, 4h.
+                            maxLength: 16
+                            pattern: ^[0-9]+(m|h|d)$
+                            type: string
+                        type: object
+                    type: object
+                  pullRequest:
+                    description: |-
+                      pullRequest is the number of the update's pull request, and pullRequestURL
+                      its address. Both are empty when main already held the file as the block
+                      renders it.
+                    format: int32
+                    type: integer
+                  pullRequestURL:
+                    type: string
+                  stopped:
+                    description: |-
+                      stopped is why the update stopped without merging, such as UpdateClosed,
+                      UpdateRefused or Failed; a stopped update waits for spec.operations to
+                      change again.
+                    type: string
+                required:
+                - operations
+                type: object
+              phase:
+                description: phase is Pending, Scaffolding, then Ready or Failed.
+                enum:
+                - Pending
+                - Scaffolding
+                - Ready
+                - Failed
+                type: string
+              repositoryURL:
+                description: repositoryURL is the web address of the scaffolded repository.
+                type: string
+              scaffoldedDomains:
+                description: |-
+                  scaffoldedDomains names the Domains the scaffold wrote under
+                  docs/agents/domain/, sorted; DomainsApplied compares the system's Domains
+                  with them, and a Standard update renders with them. An adopted Container
+                  has none.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              scaffoldedFrom:
+                description: scaffoldedFrom lists the templates used, as name@ref,
+                  in layer order.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: atomic
+              standard:
+                description: |-
+                  standard says which ref of its Standard the repository's Standard files are
+                  at, and the update in flight. Only a Ready Container with a Standard that
+                  was part of its scaffold has it.
+                properties:
+                  behind:
+                    description: |-
+                      behind are the Standard's files an update left out, because the
+                      repository had changed them in lines the Standard changed too, each with
+                      the ref its repository copy was last brought to. Each later update merges
+                      them against that ref; they stay until it brings them up to date or a
+                      person settles them.
+                    items:
+                      description: |-
+                        StandardFile is one of a Standard's files in the repository, at a ref of the
+                        Standard.
+                      properties:
+                        change:
+                          description: |-
+                            change is, for a file behind, what the Standard changed in it from ref
+                            to the Standard's ref the files are at, as a unified diff, and the
+                            repository's lines taking the Standard's version would drop, as they
+                            were when the update that left it out was planned. It is cut at 4 KiB,
+                            and only the first 16 files behind carry it; the rest say so.
+                          maxLength: 4096
+                          type: string
+                        path:
+                          description: path is the file's path in the repository.
+                          type: string
+                        pullRequestURL:
+                          description: |-
+                            pullRequestURL is the address of the update's pull request that last
+                            left the file out, when one did.
+                          type: string
+                        ref:
+                          description: |-
+                            ref is the Standard's template ref the file was last brought to, or
+                            kept at.
+                          type: string
+                      required:
+                      - path
+                      - ref
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - path
+                    x-kubernetes-list-type: map
+                  checks:
+                    description: |-
+                      checks is when the repository's CI runs the full check, as its Standard
+                      files were last rendered: the scaffold's, then each merged update's. Empty
+                      reads as EveryChange.
+                    enum:
+                    - EveryChange
+                    - BeforeRelease
+                    type: string
+                  failureIssue:
+                    description: |-
+                      failureIssue is the issue the operator filed for the Crew when an
+                      update's CI failed, once per target ref: a newer ref files its own.
+                    properties:
+                      number:
+                        description: number is the issue's number in the Container's
+                          repository.
+                        format: int32
+                        type: integer
+                      ref:
+                        description: ref is the Standard's template ref the failed
+                          update targets.
+                        type: string
+                      url:
+                        description: url is the issue's address.
+                        type: string
+                    required:
+                    - number
+                    - ref
+                    type: object
+                  kept:
+                    description: |-
+                      kept are the Standard's files a person chose to keep as the repository
+                      has them, each with the ref it was kept at.
+                    items:
+                      description: |-
+                        StandardFile is one of a Standard's files in the repository, at a ref of the
+                        Standard.
+                      properties:
+                        change:
+                          description: |-
+                            change is, for a file behind, what the Standard changed in it from ref
+                            to the Standard's ref the files are at, as a unified diff, and the
+                            repository's lines taking the Standard's version would drop, as they
+                            were when the update that left it out was planned. It is cut at 4 KiB,
+                            and only the first 16 files behind carry it; the rest say so.
+                          maxLength: 4096
+                          type: string
+                        path:
+                          description: path is the file's path in the repository.
+                          type: string
+                        pullRequestURL:
+                          description: |-
+                            pullRequestURL is the address of the update's pull request that last
+                            left the file out, when one did.
+                          type: string
+                        ref:
+                          description: |-
+                            ref is the Standard's template ref the file was last brought to, or
+                            kept at.
+                          type: string
+                      required:
+                      - path
+                      - ref
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - path
+                    x-kubernetes-list-type: map
+                  leftOut:
+                    description: leftOut are the paths of behind, kept for what reads
+                      them.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  name:
+                    description: name is the Standard's name.
+                    type: string
+                  ref:
+                    description: |-
+                      ref is the Standard's template ref the repository's Standard files are at:
+                      the scaffold's, then each merged update's.
+                    type: string
+                  update:
+                    description: update is the Standard update in flight, or the last
+                      one, stopped.
+                    properties:
+                      base:
+                        description: |-
+                          base is main's head the update was planned from. An update whose CI
+                          failed is planned again once main is no longer at it.
+                        type: string
+                      behind:
+                        description: |-
+                          behind are the files behind once the update merges, each with the ref
+                          its copy is at and the Standard's change to it; status.standard.behind
+                          takes them when it merges.
+                        items:
+                          description: |-
+                            StandardFile is one of a Standard's files in the repository, at a ref of the
+                            Standard.
+                          properties:
+                            change:
+                              description: |-
+                                change is, for a file behind, what the Standard changed in it from ref
+                                to the Standard's ref the files are at, as a unified diff, and the
+                                repository's lines taking the Standard's version would drop, as they
+                                were when the update that left it out was planned. It is cut at 4 KiB,
+                                and only the first 16 files behind carry it; the rest say so.
+                              maxLength: 4096
+                              type: string
+                            path:
+                              description: path is the file's path in the repository.
+                              type: string
+                            pullRequestURL:
+                              description: |-
+                                pullRequestURL is the address of the update's pull request that last
+                                left the file out, when one did.
+                              type: string
+                            ref:
+                              description: |-
+                                ref is the Standard's template ref the file was last brought to, or
+                                kept at.
+                              type: string
+                          required:
+                          - path
+                          - ref
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - path
+                        x-kubernetes-list-type: map
+                      branch:
+                        description: branch is the update's branch, and commit the
+                          one commit on it.
+                        type: string
+                      checks:
+                        description: |-
+                          checks is when CI runs the full check once the update merges. Empty reads
+                          as EveryChange.
+                        enum:
+                        - EveryChange
+                        - BeforeRelease
+                        type: string
+                      commit:
+                        type: string
+                      leftOut:
+                        description: |-
+                          leftOut are the files the update leaves out, because the repository
+                          changed them since the Standard's files were last rendered in ways that
+                          don't merge with the Standard's changes.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      merged:
+                        description: |-
+                          merged are the paths the update writes that the repository changed too
+                          since the Standard's files were last rendered, in other lines: the update
+                          writes the two changes merged.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      paths:
+                        description: paths are the files the update writes or removes.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      pullRequest:
+                        description: |-
+                          pullRequest is the number of the update's pull request, and pullRequestURL
+                          its address.
+                        format: int32
+                        type: integer
+                      pullRequestURL:
+                        type: string
+                      ref:
+                        description: ref is the Standard's template ref the update
+                          brings the files to.
+                        type: string
+                      stopped:
+                        description: |-
+                          stopped is why the update stopped without merging, such as UpdateClosed;
+                          a stopped update waits for the Standard's ref or the Container's effective
+                          checks to change, except NoLightCheck, which is planned again every pass.
+                        type: string
+                      take:
+                        description: |-
+                          take says the pull request takes the Standard's version at ref of the
+                          files behind, as a person answered with the standard-take annotation.
+                        type: boolean
+                    required:
+                    - ref
+                    type: object
+                required:
+                - name
+                - ref
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: false
+    subresources:
+      status: {}
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.checks.state
+      name: Checks
+      type: string
+    - jsonPath: .status.activeSessions
+      name: Sessions
+      type: integer
+    - jsonPath: .status.repositoryURL
+      name: Repository
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Container is an application with its own repository. It is owned by its
+          SoftwareSystem and scaffolded exactly once.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of Container
+            properties:
+              adopt:
+                description: |-
+                  adopt says the Container takes over a repository that already has
+                  commits instead of scaffolding a new one. The operator writes nothing:
+                  it checks that main's .theos.yaml names this project and Container
+                  and that every file of the Container's Standard is there with the
+                  content the Standard renders at its ref, then protects main and goes
+                  Ready. An adopted Container is never scaffolded; an empty repository
+                  fails NothingToAdopt. Set at creation and immutable.
+                type: boolean
+              bundleRef:
+                description: |-
+                  bundleRef names the Bundle catalog entry that picks the Framework,
+                  Standard, Compute and Deployment together. It replaces the four refs
+                  below: a Container names a bundle or its sides, never both. The operator
+                  expands it until the scaffold and records the expansion in
+                  status.bundle; from the scaffold on it reads status.bundle and never the
+                  Bundle again. It can't change.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              checks:
+                default: EveryChange
+                description: |-
+                  checks is when CI runs the application's full check: EveryChange runs it on
+                  every pull request and push to main; BeforeRelease runs a light check on each
+                  change and the full one on the commit a release will be tagged at. It takes
+                  effect only when the Standard says it can (checksBeforeRelease); the
+                  condition ChecksApplied says when it doesn't.
+                enum:
+                - EveryChange
+                - BeforeRelease
+                type: string
+              computeRef:
+                description: 'computeRef names the Compute catalog entry: resource
+                  sizing.'
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              deploy:
+                description: |-
+                  deploy names the DeployTargets each release of the Container's Crew
+                  ships to, in order. The operator ships the newest release whose runs
+                  succeeded, or an entry's pinned version, through the target's tool, and
+                  reports it in status.deploys and the condition Deployed. The list may
+                  change at any time and never scaffolds again; removing an entry stops
+                  shipping there and leaves what runs there alone.
+                items:
+                  description: ContainerDeploy is one place a Container's releases
+                    ship to.
+                  properties:
+                    after:
+                      description: |-
+                        after names an earlier entry's target: a version ships here only once
+                        that entry runs it, healthy where its target reads health.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    approved:
+                      description: |-
+                        approved is the version a person let in. Where the target needs
+                        approval, a version ships only when approved names it.
+                      maxLength: 128
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9._+-]*$
+                      type: string
+                    target:
+                      description: target names the DeployTarget, in the Container's
+                        namespace.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    version:
+                      description: |-
+                        version pins a release tag; empty follows the newest release whose runs
+                        succeeded. Pinning an older tag rolls back.
+                      maxLength: 128
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9._+-]*$
+                      type: string
+                  required:
+                  - target
+                  type: object
+                maxItems: 5
+                type: array
+                x-kubernetes-list-map-keys:
+                - target
+                x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: after must name an entry earlier in deploy
+                  rule: '[0, 1, 2, 3, 4].all(i, i >= self.size() || !has(self[i].after)
+                    || [0, 1, 2, 3, 4].exists(j, j < i && self[j].target == self[i].after))'
+              deploymentRef:
+                description: 'deploymentRef names the Deployment catalog entry: how
+                  the application ships.'
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              description:
+                description: description says what the application does.
+                maxLength: 1000
+                type: string
+              displayName:
+                description: displayName is a human-friendly name, such as "Orders
+                  API".
+                maxLength: 100
+                type: string
+              frameworkRef:
+                description: |-
+                  frameworkRef names the Framework catalog entry: language, framework and
+                  tooling. Set it, or bundleRef.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              gitProviderRef:
+                description: gitProviderRef names the GitProvider that hosts the repository.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              license:
+                description: |-
+                  license is the SPDX id of the license the repository is scaffolded
+                  with, over the Project's spec.license: the operator writes its text as
+                  LICENSE. It is read at scaffold only: changing it later rewrites
+                  nothing, and a Container already scaffolded gets its license by a
+                  commit. With neither set, the repository gets no LICENSE.
+                enum:
+                - MIT
+                - Apache-2.0
+                - BSD-2-Clause
+                - BSD-3-Clause
+                - ISC
+                - 0BSD
+                - MPL-2.0
+                - GPL-2.0-only
+                - GPL-3.0-only
+                - LGPL-3.0-only
+                - AGPL-3.0-only
+                - Unlicense
+                type: string
+              operations:
+                description: |-
+                  operations is what the application promises whatever tier runs it: how
+                  long its backups are kept and where they are copied, its recovery
+                  objectives and who its alarms tell. The tier itself is the deploy
+                  target's, never the Container's. A field left out takes the factory's
+                  default. A change after the scaffold reaches the repository's
+                  infra/operations.ts through a pull request the operator opens and
+                  merges, as a Standard bump does; the condition OperationsApplied says
+                  where it stands.
+                properties:
+                  alerts:
+                    description: alerts says who the alarms tell by default.
+                    properties:
+                      email:
+                        description: |-
+                          email is the address the alarms tell by default; a deploy target
+                          overrides it per environment. Empty means nobody is told.
+                        maxLength: 254
+                        pattern: ^([^@\s]+@[^@\s]+)?$
+                        type: string
+                    type: object
+                  backups:
+                    description: backups says how long backups are kept and where
+                      they are copied.
+                    properties:
+                      copyToRegion:
+                        description: |-
+                          copyToRegion is a second AWS region the backups are copied to, such as
+                          eu-west-1; empty means none.
+                        maxLength: 32
+                        pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                        type: string
+                      retentionDays:
+                        description: |-
+                          retentionDays is how many days daily backups are kept in production; 0
+                          means point-in-time recovery only. Left out, 35.
+                        format: int32
+                        maximum: 3650
+                        minimum: 0
+                        type: integer
+                    type: object
+                  recovery:
+                    description: |-
+                      recovery states the recovery objectives the runbook, the alarms and the
+                      checks are written to.
+                    properties:
+                      rpo:
+                        description: |-
+                          rpo is the recovery point objective: how much data a recovery may lose.
+                          Left out, 1h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                      rto:
+                        description: |-
+                          rto is the recovery time objective: how long a recovery may take. Left
+                          out, 4h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                    type: object
+                type: object
+              softwareSystemRef:
+                description: softwareSystemRef names the SoftwareSystem this Container
+                  belongs to. It can't change.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: softwareSystemRef is immutable
+                  rule: self == oldSelf
+              standardRef:
+                description: |-
+                  standardRef names the Standard catalog entry: coding rules, checks and CI. It
+                  must list the Framework.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              type:
+                description: type is the shape of the application. Every catalog entry
+                  used must support it.
+                enum:
+                - static-site
+                - service
+                - job
+                - worker
+                - mobile-app
+                - cli
+                - extension
+                - operator
+                - function
+                type: string
+            required:
+            - gitProviderRef
+            - softwareSystemRef
+            - type
+            type: object
+            x-kubernetes-validations:
+            - message: name a bundleRef or a frameworkRef
+              rule: has(self.bundleRef) || has(self.frameworkRef)
+            - message: bundleRef replaces frameworkRef, standardRef, computeRef and
+                deploymentRef
+              rule: '!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef)
+                || has(self.computeRef) || has(self.deploymentRef))'
+            - message: bundleRef is immutable
+              rule: has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef)
+                || self.bundleRef == oldSelf.bundleRef)
+            - message: adopt is immutable
+              rule: (has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)
+          status:
+            description: status defines the observed state of Container
+            properties:
+              activeSessions:
+                description: activeSessions is the number of Active Sessions on this
+                  Container.
+                format: int32
+                type: integer
+              appliedConnectors:
+                description: |-
+                  appliedConnectors records, for each applied Relationship, the DataStore it
+                  pointed at and the Connector that went into the scaffold. A Container
+                  scaffolded before this was kept has only appliedRelationships.
+                items:
+                  description: AppliedConnector is what one Relationship added to
+                    a scaffold.
+                  properties:
+                    connector:
+                      description: connector is the DataStore's Connector that was
+                        applied.
+                      type: string
+                    dataStore:
+                      description: dataStore is the DataStore the Relationship pointed
+                        at.
+                      type: string
+                    relationship:
+                      description: relationship is the Relationship's name.
+                      type: string
+                  required:
+                  - connector
+                  - dataStore
+                  - relationship
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - relationship
+                x-kubernetes-list-type: map
+              appliedRelationships:
+                description: appliedRelationships lists the Relationships whose Connectors
+                  were part of the scaffold.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              bundle:
+                description: |-
+                  bundle is what spec.bundleRef expanded to, by entry name: afresh at each
+                  reconcile until the scaffold, then kept as the scaffold used it. Only a
+                  Container that names a bundle has it.
+                properties:
+                  compute:
+                    description: compute names the Compute the bundle picked, if any.
+                    type: string
+                  deployment:
+                    description: deployment names the Deployment the bundle picked,
+                      if any.
+                    type: string
+                  framework:
+                    description: framework names the Framework the bundle picked.
+                    type: string
+                  name:
+                    description: name is the Bundle's name.
+                    type: string
+                  standard:
+                    description: standard names the Standard the bundle picked, if
+                      any.
+                    type: string
+                required:
+                - framework
+                - name
+                type: object
+              checks:
+                description: |-
+                  checks is the latest CI result on the default branch. Only Containers with a
+                  Standard have checks.
+                properties:
+                  commit:
+                    description: commit is the SHA the checks ran on.
+                    type: string
+                  state:
+                    description: state is pending, success, failure or error; empty
+                      until a check reports.
+                    type: string
+                  url:
+                    description: url links to the check run.
+                    type: string
+                type: object
+              conditions:
+                description: |-
+                  conditions: ReferencesResolved, ChoicesValid, RepositoryCreated, Scaffolded
+                  and, for a Container with a Standard, StandardUpdated and ChecksApplied;
+                  once scaffolded, OperationsApplied; with spec.deploy, Deployed; with
+                  status.image, ImagePublished.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              deploys:
+                description: deploys is what runs at each of spec.deploy's targets,
+                  in its order.
+                items:
+                  description: ContainerDeployStatus is what runs at one of a Container's
+                    targets.
+                  properties:
+                    health:
+                      description: health is what the target's tool reports of what
+                        runs there.
+                      enum:
+                      - Healthy
+                      - Progressing
+                      - Degraded
+                      - Unknown
+                      type: string
+                    image:
+                      description: |-
+                        image is the app's image as the target holds it, host/repository@digest,
+                        when the target copies the release's image: a github target with a
+                        packagesToken copies it to GHCR.
+                      type: string
+                    message:
+                      description: message says it for a person.
+                      type: string
+                    phase:
+                      description: |-
+                        phase is Waiting while the wanted version is held, Deploying while the
+                        target's tool ships it, Deployed once it runs, and Failed when the tool
+                        or the call failed.
+                      enum:
+                      - Waiting
+                      - Deploying
+                      - Deployed
+                      - Failed
+                      type: string
+                    reason:
+                      description: reason says why the entry is in its phase, in CamelCase.
+                      type: string
+                    since:
+                      description: since is when the phase, reason or wanted version
+                        last changed.
+                      format: date-time
+                      type: string
+                    target:
+                      description: target is the entry's DeployTarget.
+                      type: string
+                    url:
+                      description: url is where the app, or its release, answers,
+                        when the tool knows it.
+                      type: string
+                    version:
+                      description: version is the version running there, as its tool
+                        last reported.
+                      type: string
+                    wantedVersion:
+                      description: |-
+                        wantedVersion is the version the entry should run: its pin, else the
+                        newest release.
+                      type: string
+                  required:
+                  - phase
+                  - target
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - target
+                x-kubernetes-list-type: map
+              image:
+                description: |-
+                  image is newestRelease's image in the owner's container registry on the
+                  Git host. Only a Container whose Deployment builds an image has it, once
+                  a release has succeeded its runs.
+                properties:
+                  digest:
+                    description: |-
+                      digest is the image index's digest; "" when there is no archive or it is
+                      invalid.
+                    type: string
+                  message:
+                    description: message says the state for a person.
+                    type: string
+                  platforms:
+                    description: platforms are the platforms the image runs on, attestations
+                      left out.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  publishedTime:
+                    description: publishedTime is when the operator found the image
+                      pushed.
+                    format: date-time
+                    type: string
+                  repository:
+                    description: repository is the image's repository, <host>/<owner>/<repository>.
+                    type: string
+                  state:
+                    description: |-
+                      state is Pushing while the operator pushes the archive, Published once
+                      the registry has the image under the tag, NoImage when the release has
+                      no image archive, Invalid when its archive can't be pushed, TagTaken
+                      when the tag names another digest, and Failed while the Git host can't
+                      be reached, tried again each poll.
+                    enum:
+                    - Pushing
+                    - Published
+                    - NoImage
+                    - Invalid
+                    - TagTaken
+                    - Failed
+                    type: string
+                  tag:
+                    description: tag is the release's tag, the image's tag.
+                    type: string
+                required:
+                - state
+                - tag
+                type: object
+              newestRelease:
+                description: |-
+                  newestRelease is the newest release of the Container's Crews whose runs
+                  succeeded, kept while a newer release's runs haven't: the version an
+                  unpinned spec.deploy entry follows.
+                type: string
+              observedGeneration:
+                description: observedGeneration is the spec generation the status
+                  reflects.
+                format: int64
+                type: integer
+              operations:
+                description: |-
+                  operations is the operations block the repository's
+                  infra/operations.ts was last rendered with, its defaults filled in: at
+                  the scaffold, then by each operations update that merged.
+                  OperationsApplied compares spec.operations to it. A Container scaffolded
+                  before this was kept has none.
+                properties:
+                  alerts:
+                    description: alerts says who the alarms tell by default.
+                    properties:
+                      email:
+                        description: |-
+                          email is the address the alarms tell by default; a deploy target
+                          overrides it per environment. Empty means nobody is told.
+                        maxLength: 254
+                        pattern: ^([^@\s]+@[^@\s]+)?$
+                        type: string
+                    type: object
+                  backups:
+                    description: backups says how long backups are kept and where
+                      they are copied.
+                    properties:
+                      copyToRegion:
+                        description: |-
+                          copyToRegion is a second AWS region the backups are copied to, such as
+                          eu-west-1; empty means none.
+                        maxLength: 32
+                        pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                        type: string
+                      retentionDays:
+                        description: |-
+                          retentionDays is how many days daily backups are kept in production; 0
+                          means point-in-time recovery only. Left out, 35.
+                        format: int32
+                        maximum: 3650
+                        minimum: 0
+                        type: integer
+                    type: object
+                  recovery:
+                    description: |-
+                      recovery states the recovery objectives the runbook, the alarms and the
+                      checks are written to.
+                    properties:
+                      rpo:
+                        description: |-
+                          rpo is the recovery point objective: how much data a recovery may lose.
+                          Left out, 1h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                      rto:
+                        description: |-
+                          rto is the recovery time objective: how long a recovery may take. Left
+                          out, 4h.
+                        maxLength: 16
+                        pattern: ^[0-9]+(m|h|d)$
+                        type: string
+                    type: object
+                type: object
+              operationsUpdate:
+                description: |-
+                  operationsUpdate is the pull request the operator opened to render
+                  infra/operations.ts again from a changed spec.operations: in flight,
+                  stopped, or merged. A merged one stays, naming the commit it made, until
+                  the next change replaces it.
+                properties:
+                  branch:
+                    description: branch is the update's branch, and commit the one
+                      commit on it.
+                    type: string
+                  commit:
+                    type: string
+                  mergeCommit:
+                    description: |-
+                      mergeCommit is the commit on main that holds the block: the one the
+                      pull request's merge made, or main's head when main already held it.
+                      It is set once the update merged.
+                    type: string
+                  operations:
+                    description: |-
+                      operations is the block the pull request renders, every field set as
+                      status.operations records it.
+                    properties:
+                      alerts:
+                        description: alerts says who the alarms tell by default.
+                        properties:
+                          email:
+                            description: |-
+                              email is the address the alarms tell by default; a deploy target
+                              overrides it per environment. Empty means nobody is told.
+                            maxLength: 254
+                            pattern: ^([^@\s]+@[^@\s]+)?$
+                            type: string
+                        type: object
+                      backups:
+                        description: backups says how long backups are kept and where
+                          they are copied.
+                        properties:
+                          copyToRegion:
+                            description: |-
+                              copyToRegion is a second AWS region the backups are copied to, such as
+                              eu-west-1; empty means none.
+                            maxLength: 32
+                            pattern: ^([a-z]{2}(-[a-z]+)+-[0-9]+)?$
+                            type: string
+                          retentionDays:
+                            description: |-
+                              retentionDays is how many days daily backups are kept in production; 0
+                              means point-in-time recovery only. Left out, 35.
+                            format: int32
+                            maximum: 3650
+                            minimum: 0
+                            type: integer
+                        type: object
+                      recovery:
+                        description: |-
+                          recovery states the recovery objectives the runbook, the alarms and the
+                          checks are written to.
+                        properties:
+                          rpo:
+                            description: |-
+                              rpo is the recovery point objective: how much data a recovery may lose.
+                              Left out, 1h.
+                            maxLength: 16
+                            pattern: ^[0-9]+(m|h|d)$
+                            type: string
+                          rto:
+                            description: |-
+                              rto is the recovery time objective: how long a recovery may take. Left
+                              out, 4h.
+                            maxLength: 16
+                            pattern: ^[0-9]+(m|h|d)$
+                            type: string
+                        type: object
+                    type: object
+                  pullRequest:
+                    description: |-
+                      pullRequest is the number of the update's pull request, and pullRequestURL
+                      its address. Both are empty when main already held the file as the block
+                      renders it.
+                    format: int32
+                    type: integer
+                  pullRequestURL:
+                    type: string
+                  stopped:
+                    description: |-
+                      stopped is why the update stopped without merging, such as UpdateClosed,
+                      UpdateRefused or Failed; a stopped update waits for spec.operations to
+                      change again.
+                    type: string
+                required:
+                - operations
+                type: object
+              phase:
+                description: phase is Pending, Scaffolding, then Ready or Failed.
+                enum:
+                - Pending
+                - Scaffolding
+                - Ready
+                - Failed
+                type: string
+              repositoryURL:
+                description: repositoryURL is the web address of the scaffolded repository.
+                type: string
+              scaffoldedDomains:
+                description: |-
+                  scaffoldedDomains names the Domains the scaffold wrote under
+                  docs/agents/domain/, sorted; DomainsApplied compares the system's Domains
+                  with them, and a Standard update renders with them. An adopted Container
+                  has none.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              scaffoldedFrom:
+                description: scaffoldedFrom lists the templates used, as name@ref,
+                  in layer order.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: atomic
+              standard:
+                description: |-
+                  standard says which ref of its Standard the repository's Standard files are
+                  at, and the update in flight. Only a Ready Container with a Standard that
+                  was part of its scaffold has it.
+                properties:
+                  behind:
+                    description: |-
+                      behind are the Standard's files an update left out, because the
+                      repository had changed them in lines the Standard changed too, each with
+                      the ref its repository copy was last brought to. Each later update merges
+                      them against that ref; they stay until it brings them up to date or a
+                      person settles them.
+                    items:
+                      description: |-
+                        StandardFile is one of a Standard's files in the repository, at a ref of the
+                        Standard.
+                      properties:
+                        change:
+                          description: |-
+                            change is, for a file behind, what the Standard changed in it from ref
+                            to the Standard's ref the files are at, as a unified diff, and the
+                            repository's lines taking the Standard's version would drop, as they
+                            were when the update that left it out was planned. It is cut at 4 KiB,
+                            and only the first 16 files behind carry it; the rest say so.
+                          maxLength: 4096
+                          type: string
+                        path:
+                          description: path is the file's path in the repository.
+                          type: string
+                        pullRequestURL:
+                          description: |-
+                            pullRequestURL is the address of the update's pull request that last
+                            left the file out, when one did.
+                          type: string
+                        ref:
+                          description: |-
+                            ref is the Standard's template ref the file was last brought to, or
+                            kept at.
+                          type: string
+                      required:
+                      - path
+                      - ref
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - path
+                    x-kubernetes-list-type: map
+                  checks:
+                    description: |-
+                      checks is when the repository's CI runs the full check, as its Standard
+                      files were last rendered: the scaffold's, then each merged update's. Empty
+                      reads as EveryChange.
+                    enum:
+                    - EveryChange
+                    - BeforeRelease
+                    type: string
+                  failureIssue:
+                    description: |-
+                      failureIssue is the issue the operator filed for the Crew when an
+                      update's CI failed, once per target ref: a newer ref files its own.
+                    properties:
+                      number:
+                        description: number is the issue's number in the Container's
+                          repository.
+                        format: int32
+                        type: integer
+                      ref:
+                        description: ref is the Standard's template ref the failed
+                          update targets.
+                        type: string
+                      url:
+                        description: url is the issue's address.
+                        type: string
+                    required:
+                    - number
+                    - ref
+                    type: object
+                  kept:
+                    description: |-
+                      kept are the Standard's files a person chose to keep as the repository
+                      has them, each with the ref it was kept at.
+                    items:
+                      description: |-
+                        StandardFile is one of a Standard's files in the repository, at a ref of the
+                        Standard.
+                      properties:
+                        change:
+                          description: |-
+                            change is, for a file behind, what the Standard changed in it from ref
+                            to the Standard's ref the files are at, as a unified diff, and the
+                            repository's lines taking the Standard's version would drop, as they
+                            were when the update that left it out was planned. It is cut at 4 KiB,
+                            and only the first 16 files behind carry it; the rest say so.
+                          maxLength: 4096
+                          type: string
+                        path:
+                          description: path is the file's path in the repository.
+                          type: string
+                        pullRequestURL:
+                          description: |-
+                            pullRequestURL is the address of the update's pull request that last
+                            left the file out, when one did.
+                          type: string
+                        ref:
+                          description: |-
+                            ref is the Standard's template ref the file was last brought to, or
+                            kept at.
+                          type: string
+                      required:
+                      - path
+                      - ref
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - path
+                    x-kubernetes-list-type: map
+                  leftOut:
+                    description: leftOut are the paths of behind, kept for what reads
+                      them.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  name:
+                    description: name is the Standard's name.
+                    type: string
+                  ref:
+                    description: |-
+                      ref is the Standard's template ref the repository's Standard files are at:
+                      the scaffold's, then each merged update's.
+                    type: string
+                  update:
+                    description: update is the Standard update in flight, or the last
+                      one, stopped.
+                    properties:
+                      base:
+                        description: |-
+                          base is main's head the update was planned from. An update whose CI
+                          failed is planned again once main is no longer at it.
+                        type: string
+                      behind:
+                        description: |-
+                          behind are the files behind once the update merges, each with the ref
+                          its copy is at and the Standard's change to it; status.standard.behind
+                          takes them when it merges.
+                        items:
+                          description: |-
+                            StandardFile is one of a Standard's files in the repository, at a ref of the
+                            Standard.
+                          properties:
+                            change:
+                              description: |-
+                                change is, for a file behind, what the Standard changed in it from ref
+                                to the Standard's ref the files are at, as a unified diff, and the
+                                repository's lines taking the Standard's version would drop, as they
+                                were when the update that left it out was planned. It is cut at 4 KiB,
+                                and only the first 16 files behind carry it; the rest say so.
+                              maxLength: 4096
+                              type: string
+                            path:
+                              description: path is the file's path in the repository.
+                              type: string
+                            pullRequestURL:
+                              description: |-
+                                pullRequestURL is the address of the update's pull request that last
+                                left the file out, when one did.
+                              type: string
+                            ref:
+                              description: |-
+                                ref is the Standard's template ref the file was last brought to, or
+                                kept at.
+                              type: string
+                          required:
+                          - path
+                          - ref
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - path
+                        x-kubernetes-list-type: map
+                      branch:
+                        description: branch is the update's branch, and commit the
+                          one commit on it.
+                        type: string
+                      checks:
+                        description: |-
+                          checks is when CI runs the full check once the update merges. Empty reads
+                          as EveryChange.
+                        enum:
+                        - EveryChange
+                        - BeforeRelease
+                        type: string
+                      commit:
+                        type: string
+                      leftOut:
+                        description: |-
+                          leftOut are the files the update leaves out, because the repository
+                          changed them since the Standard's files were last rendered in ways that
+                          don't merge with the Standard's changes.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      merged:
+                        description: |-
+                          merged are the paths the update writes that the repository changed too
+                          since the Standard's files were last rendered, in other lines: the update
+                          writes the two changes merged.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      paths:
+                        description: paths are the files the update writes or removes.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      pullRequest:
+                        description: |-
+                          pullRequest is the number of the update's pull request, and pullRequestURL
+                          its address.
+                        format: int32
+                        type: integer
+                      pullRequestURL:
+                        type: string
+                      ref:
+                        description: ref is the Standard's template ref the update
+                          brings the files to.
+                        type: string
+                      stopped:
+                        description: |-
+                          stopped is why the update stopped without merging, such as UpdateClosed;
+                          a stopped update waits for the Standard's ref or the Container's effective
+                          checks to change, except NoLightCheck, which is planned again every pass.
+                        type: string
+                      take:
+                        description: |-
+                          take says the pull request takes the Standard's version at ref of the
+                          files behind, as a person answered with the standard-take annotation.
+                        type: boolean
+                    required:
+                    - ref
+                    type: object
+                required:
+                - name
+                - ref
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

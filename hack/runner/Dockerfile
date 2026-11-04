@@ -3,7 +3,7 @@
 # agents use. Jobs pick it with `runs-on: <label>`: `make runner-base` builds it
 # on the minimal image (label base), `make runner-go` on the Go and Node one (label go).
 # Both images have uv, so a Python project checks on either and releases on go.
-ARG BASE=c4factory/base:dev
+ARG BASE=theos/base:dev
 FROM ${BASE}
 ARG RUNNER_VERSION=3.5.0
 ARG RUNNER_SHA256=16dc5c89ad5ac5496369642f01ed29c9bb130a2512e16a8cc3b400d9d0bfea73

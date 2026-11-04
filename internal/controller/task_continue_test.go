@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -18,10 +18,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // #607: a new try on an issue goes on from the earlier try's open pull request,
@@ -66,9 +66,9 @@ var _ = Describe("Task on an issue an earlier try left a pull request for", func
 		}).Should(Succeed())
 		containers, _, _ := unstructured.NestedSlice(sandbox.Object, "spec", "podTemplate", "spec", "containers")
 		Expect(containers[0].(map[string]any)["env"]).To(ContainElements(
-			map[string]any{"name": "C4_BRANCH", "value": "task/orders-api-1"},
-			map[string]any{"name": "C4_PULL_REQUEST", "value": "1"},
-			And(HaveKeyWithValue("name", "C4_FEEDBACK"), HaveKeyWithValue("value", ContainSubstring("how to try it"))),
+			map[string]any{"name": "THEOS_BRANCH", "value": "task/orders-api-1"},
+			map[string]any{"name": "THEOS_PULL_REQUEST", "value": "1"},
+			And(HaveKeyWithValue("name", "THEOS_FEEDBACK"), HaveKeyWithValue("value", ContainSubstring("how to try it"))),
 		))
 		Expect(gitFake.PullComments(ns, "orders-api", 1)).To(ContainElement(
 			ContainSubstring("Task `orders-api-2` continues this pull request")))

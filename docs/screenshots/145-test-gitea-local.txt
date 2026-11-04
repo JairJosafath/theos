@@ -1,4 +1,4 @@
-$ C4_CLUSTER=none make test-gitea   # fresh: no bin/gitea, no .gitea-local/, no kubectl calls
+$ THEOS_CLUSTER=none make test-gitea   # fresh: no bin/gitea, no .gitea-local/, no kubectl calls
 Downloading Gitea 1.27.3 for linux/amd64
 gitea-local: Wrote .gitea-local/app.ini (port 13547)
 gitea-local: Created admin c4admin and a token; credentials are in .gitea-local/credentials.env
@@ -41,5 +41,5 @@ gitea-local: Created organization webshop
 --- PASS: TestGiteaIssuesIntegration (0.91s)
     --- PASS: TestGiteaIssuesIntegration/labels,_links_and_closes_issues (0.91s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/gitprovider	1.689s
+ok  	github.com/JairJosafath/theos/internal/gitprovider	1.689s
 exit 0

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -18,7 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // DefaultClusterDNS is where cluster DNS runs unless --cluster-dns says
@@ -59,7 +59,7 @@ func ParseClusterDNS(entry string) (networkingv1.NetworkPolicyPeer, error) {
 		return networkingv1.NetworkPolicyPeer{}, fmt.Errorf("cluster DNS %q: namespace %q: %s", entry, namespace, errs[0])
 	}
 	// The pod labels are exactly key=value pairs, the grammar the chart's
-	// c4-factory.clusterDNSPeers helper accepts, so one value renders the same
+	// theos.clusterDNSPeers helper accepts, so one value renders the same
 	// peer for both fences: no ==, no !=, no set expression, no spaces.
 	pods := map[string]string{}
 	for pair := range strings.SplitSeq(selector, ",") {

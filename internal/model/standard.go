@@ -148,7 +148,7 @@ func ProposalBranch(task string) string { return "standard/" + task }
 // ProposalMarker is the hidden line in a Standard change issue that identifies
 // its branch, so the operator finds the issue again.
 func ProposalMarker(branch string) string {
-	return "<!-- c4factory:standard-change " + branch + " -->"
+	return "<!-- theos:standard-change " + branch + " -->"
 }
 
 // HasProposalMarker reports whether body carries branch's marker on a line of its

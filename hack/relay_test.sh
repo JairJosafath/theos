@@ -27,10 +27,10 @@ T=$(mktemp -d)
 # Only this shell cleans up (#544): a job killed just after it is forked, before
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
-unset C4_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN RELAY_MIN_FREE_GB RELAY_DISK_PATHS RELAY_OSRELEASE RELAY_MODEL
+unset THEOS_CLUSTER RELAY_MAX_WORKERS RELAY_MIN_MEM_GIB RELAY_ADMIT_GAP RELAY_DRY_RUN RELAY_MIN_FREE_GB RELAY_DISK_PATHS RELAY_OSRELEASE RELAY_MODEL
 # A relay session has the relay's variables; run from the maintainer's, the
 # --triage dry run below took the maintainer's lock (#1564).
-unset C4_HEADLESS C4_RELAY_WORKER C4_RELAY_CHILD C4_RELAY_TRIAGE C4_RELAY_MAINTAIN
+unset THEOS_HEADLESS THEOS_RELAY_WORKER THEOS_RELAY_CHILD THEOS_RELAY_TRIAGE THEOS_RELAY_MAINTAIN
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 # said PATTERN FILE: wait for a line of FILE to match PATTERN, for up to a
@@ -45,7 +45,7 @@ check "trap: killed jobs leave the scratch dir" "$(test -d "$T" && echo kept)" k
 check "defaults" "$(. "$(dirname "$0")/relay.sh"; echo "$MAX_WORKERS $MIN_MEM_GIB $ADMIT_GAP $MIN_FREE_GB")" "9 2 120 15"
 check "defaults: RELAY_MODEL is opus (#1727)" "$(. "$(dirname "$0")/relay.sh"; echo "$RELAY_MODEL")" opus
 check "defaults: RELAY_MIN_FREE_GB and RELAY_DISK_PATHS" "$(RELAY_MIN_FREE_GB=5 RELAY_DISK_PATHS='/a /b'; . "$(dirname "$0")/relay.sh"; echo "$MIN_FREE_GB" $(disk_paths))" "5 /a /b"
-check "defaults: scratch in the user's cache, not ./dev's XDG_CACHE_HOME (#1307, #1326)" "$(unset RELAY_SCRATCH; HOME=/h XDG_CACHE_HOME=/repo/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/c4factory/tmp
+check "defaults: scratch in the user's cache, not ./dev's XDG_CACHE_HOME (#1307, #1326)" "$(unset RELAY_SCRATCH; HOME=/h XDG_CACHE_HOME=/repo/.dev/cache; . "$(dirname "$0")/relay.sh"; echo "$SCRATCH")" /h/.cache/theos/tmp
 # With XDG_CACHE_HOME inside a real git checkout, as ./dev sets it, the
 # scratch is in no git checkout (#1347).
 git init -q "$T/main" && mkdir -p "$T/home"
@@ -71,7 +71,7 @@ cap 1 2>/dev/null; check "cap: one worker" $? 0
 cap 2 2>"$T/err"; check "cap: two workers" $? 1
 grep -q RELAY_MAX_WORKERS "$T/err"; check "cap: names RELAY_MAX_WORKERS" $? 0
 MAX_WORKERS=2 cap 2 2>/dev/null; check "cap: raised on purpose" $? 0
-C4_CLUSTER=none cap 9 2>/dev/null; check "cap: no cluster" $? 0
+THEOS_CLUSTER=none cap 9 2>/dev/null; check "cap: no cluster" $? 0
 flock "$DIR/lock-3" sleep 30 &
 until ! flock -n "$DIR/lock-3" true; do sleep 0.1; done
 check "running workers" "$(running_workers)" 1
@@ -226,10 +226,10 @@ grep -q "could not release" "$LOG"; check "flush: no failed release logged" $? 1
 # No prompt tells a session to lease, create or deploy to a cluster (#353):
 # the worker's, the triage's and the maintainer's, on a device with or without one.
 for c in unset none; do
-  out=$(if [ "$c" = unset ]; then unset C4_CLUSTER; else C4_CLUSTER=$c; fi
+  out=$(if [ "$c" = unset ]; then unset THEOS_CLUSTER; else THEOS_CLUSTER=$c; fi
     prompt 1 t u ready n b; prompt 1 t u in-progress n b)
-  check "prompt, C4_CLUSTER $c: no cluster steps" "$(grep -cE 'cluster acquire|cluster release|make deploy|--fresh|needs/cluster' <<<"$out")" 0
-  check "prompt, C4_CLUSTER $c: never a cluster" "$(grep -c 'Never lease, create or deploy to a Kind cluster' <<<"$out")" 2
+  check "prompt, THEOS_CLUSTER $c: no cluster steps" "$(grep -cE 'cluster acquire|cluster release|make deploy|--fresh|needs/cluster' <<<"$out")" 0
+  check "prompt, THEOS_CLUSTER $c: never a cluster" "$(grep -c 'Never lease, create or deploy to a Kind cluster' <<<"$out")" 2
 done
 
 # A follow-up (#1284): fixed in the pull request when it is already there,
@@ -322,17 +322,17 @@ check "triage: none proposed" "$(DRY_RUN=1 triage)" "dry run: no proposed issues
     ".claude/worktrees/relay-triage relay-triage.log triage.lock"
   # The flag wins over the variables a relay session's shell inherits (#1564).
   check "triage #1564: --triage under the maintainer's variables" \
-    "$(export C4_RELAY_MAINTAIN=1 C4_RELAY_WORKER=maintainer C4_RELAY_CHILD=1; . "$(dirname "$0")/relay.sh" --triage; echo "${WT#"$REPO"/} ${LOG##*/} ${LOCK##*/}")" \
+    "$(export THEOS_RELAY_MAINTAIN=1 THEOS_RELAY_WORKER=maintainer THEOS_RELAY_CHILD=1; . "$(dirname "$0")/relay.sh" --triage; echo "${WT#"$REPO"/} ${LOG##*/} ${LOCK##*/}")" \
     ".claude/worktrees/relay-triage relay-triage.log triage.lock"
   check "maintain #1564: --maintain under the triage's variables" \
-    "$(export C4_RELAY_TRIAGE=1 C4_RELAY_WORKER=triage C4_RELAY_CHILD=1; . "$(dirname "$0")/relay.sh" --maintain; echo "${WT#"$REPO"/} ${LOG##*/} ${LOCK##*/}")" \
+    "$(export THEOS_RELAY_TRIAGE=1 THEOS_RELAY_WORKER=triage THEOS_RELAY_CHILD=1; . "$(dirname "$0")/relay.sh" --maintain; echo "${WT#"$REPO"/} ${LOG##*/} ${LOCK##*/}")" \
     ".claude/worktrees/relay-maintainer relay-maintainer.log maintain.lock"
   DIR=$T/triage STOP=$T/triage/stop LOCK=$T/triage/triage.lock LOG=$T/triage/log MAX_WORKERS=1
   mkdir -p "$DIR"
   gh_proposed() { printf '40\n41\n'; }
   check "triage: its prompt names its worktree" "$(DRY_RUN=1 triage | grep -c 'this worktree, relay-triage, is on origin/main')" 1
   gh_token() { :; }
-  setsid() { echo "${C4_RELAY_CHILD:-} ${C4_RELAY_TRIAGE:-} $*" >"$T/setsid"; }
+  setsid() { echo "${THEOS_RELAY_CHILD:-} ${THEOS_RELAY_TRIAGE:-} $*" >"$T/setsid"; }
   flock -o "$DIR/lock-1" sleep 30 &
   l1=$!
   flock -o "$DIR/lock-2" sleep 30 &
@@ -500,7 +500,7 @@ case $(cat "$FAKE") in
   # The relay writes the pid file after it starts the session, so wait for it
   # (#1910: under load the fake read it first and copied nothing); bounded, so a
   # relay that never writes it fails the case instead of hanging it.
-  pidfile) f=${FAKE%/*}/relay/session-$C4_RELAY_WORKER.pid
+  pidfile) f=${FAKE%/*}/relay/session-$THEOS_RELAY_WORKER.pid
     for _ in $(seq 50); do [ -s "$f" ] && break; sleep 0.1; done
     cp "$f" "$FAKE.pidfile"; echo $PPID >"$FAKE.ppid"; echo '{"is_error":false,"result":"pid","num_turns":1}' ;;
   hang) mkdir -p "${t%/*}"; echo '{}' >"$t"; sleep 600 & echo $! >"$FAKE.child"; wait; : >"$FAKE.hung" ;;
@@ -560,9 +560,9 @@ if [ "\$1" = +%s ] && [ -s "\$FAKE.skew" ]; then echo \$((\$($(command -v date) 
 FAKE
 chmod +x "$T/bin/date"
 export PATH=$T/bin:$PATH FAKE=$T/fake HANDOFF=$T/handoff STATE=$T/state CLAUDE_CONFIG_DIR=$T/claude
-# The sessions' TMPDIRs are in $T, not the user's ~/.cache/c4factory/tmp/wt,
+# The sessions' TMPDIRs are in $T, not the user's ~/.cache/theos/tmp/wt,
 # which every run of this test on the device would share and clear (#1526).
-SCRATCH=$T/cache/c4factory/tmp
+SCRATCH=$T/cache/theos/tmp
 # The main checkout the relay runs from, apart from the worktree (#1371).
 REPO=$T/repo-main MAIN=$T/repo-main
 export MAIN
@@ -754,14 +754,14 @@ echo env >"$FAKE"
   CLAUDE_CODE_MESSAGING_SOCKET=/tmp/s CLAUDE_CODE_MESSAGING_TOKEN=x CLAUDE_EFFORT=xhigh \
   CLAUDE_PID=1 AI_AGENT=claude ELECTRON_RUN_AS_NODE=1 VSCODE_PID=1 VSCODE_IPC_HOOK_CLI=/tmp/v \
   GIT_ASKPASS=/home/u/.vscode-server/askpass.sh TERM_PROGRAM=vscode CLAUDE_CODE_OAUTH_TOKEN=kept \
-  C4_HUMAN_CLUSTER=1 C4_RELAY_CHILD=1 C4_RELAY_MAINTAIN=1 C4_RELAY_TRIAGE=1
+  THEOS_HUMAN_CLUSTER=1 THEOS_RELAY_CHILD=1 THEOS_RELAY_MAINTAIN=1 THEOS_RELAY_TRIAGE=1
   work)
 check "env: no Claude Code or VS Code session variables" \
   "$(grep -E '^(CLAUDECODE|CLAUDE_CODE_(SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|ENTRYPOINT|MESSAGING_SOCKET|MESSAGING_TOKEN)|CLAUDE_EFFORT|CLAUDE_PID|AI_AGENT|ELECTRON_RUN_AS_NODE|VSCODE_[A-Z_]*|GIT_ASKPASS|TERM_PROGRAM)=' "$FAKE.env")" ""
-check "env: no human cluster opt-in (#1128)" "$(grep -c '^C4_HUMAN_CLUSTER=' "$FAKE.env")" 0
-check "env #1564: none of the relay's child variables" "$(grep -c '^C4_RELAY_\(CHILD\|MAINTAIN\|TRIAGE\)=' "$FAKE.env")" 0
-check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|C4_HEADLESS=1)$" "$FAKE.env")" 3
-check "env: names the worker, for create --next (#1284)" "$(grep -c "^C4_RELAY_WORKER=$K$" "$FAKE.env")" 1
+check "env: no human cluster opt-in (#1128)" "$(grep -c '^THEOS_HUMAN_CLUSTER=' "$FAKE.env")" 0
+check "env #1564: none of the relay's child variables" "$(grep -c '^THEOS_RELAY_\(CHILD\|MAINTAIN\|TRIAGE\)=' "$FAKE.env")" 0
+check "env: keeps the Claude settings" "$(grep -cE "^(CLAUDE_CODE_OAUTH_TOKEN=kept|CLAUDE_CONFIG_DIR=$T/claude|THEOS_HEADLESS=1)$" "$FAKE.env")" 3
+check "env: names the worker, for create --next (#1284)" "$(grep -c "^THEOS_RELAY_WORKER=$K$" "$FAKE.env")" 1
 check "env #1371: OLDPWD is the worktree, not the main checkout" "$(grep '^OLDPWD=' "$FAKE.env")" "OLDPWD=$WT"
 check "env #1371: cd - stays in the worktree" "$(cat "$FAKE.cd")" "$WT"
 no_strikes
@@ -1161,7 +1161,7 @@ lease() {
 # leases: the IDs of the lease comments; swept: of the sweep records (#1322).
 leases() { jq -c 'map(select(.body | startswith("<!-- c4-maintainer -->")) | .id)' "$LEASES"; }
 swept() { jq -c 'map(select(.body | startswith("<!-- c4-swept -->")) | .id)' "$LEASES"; }
-C4_GITHUB_REPO=x C4_HOST=here C4_LEASE_TTL=1h GH_CLAIM_SETTLE=0
+THEOS_GITHUB_REPO=x THEOS_HOST=here THEOS_LEASE_TTL=1h GH_CLAIM_SETTLE=0
 git -C "$WT" update-ref refs/remotes/origin/main HEAD
 gh_activity() { echo "2026-10-06T08:00:00Z abc123"; }
 rm -f "$DIR/paused-until" "$DIR/maintained"
@@ -1204,21 +1204,21 @@ grep -q "another device's maintainer holds the lease: host raced (pid 42), heart
 check "lease: a lost race, the winner logged and ours deleted" "$? $(leases)" "0 [5]"
 echo '[]' >"$LEASES"
 # The lease is stale after GH_MAINT_BEATS (3) missed heartbeats, not after the
-# claims' C4_LEASE_TTL (#1322): one beaten 2000s ago is live though
-# C4_LEASE_TTL says 10m, one beaten 3000s ago is stale though it says 1h.
+# claims' THEOS_LEASE_TTL (#1322): one beaten 2000s ago is live though
+# THEOS_LEASE_TTL says 10m, one beaten 3000s ago is stale though it says 1h.
 echo 30 >"$T/next-id"
 lease there 10 2000
 : >"$LOG"
-C4_LEASE_TTL=10m ADMIT_GAP=0 maintain
-check "lease: beaten within 3 heartbeats: kept, whatever C4_LEASE_TTL" "$(grep -c 'maintainer start' "$LOG") $(leases)" "0 [10]"
+THEOS_LEASE_TTL=10m ADMIT_GAP=0 maintain
+check "lease: beaten within 3 heartbeats: kept, whatever THEOS_LEASE_TTL" "$(grep -c 'maintainer start' "$LOG") $(leases)" "0 [10]"
 grep -q "another device's maintainer holds the lease: host there (pid 42), heartbeat 33m ago; no sweep" "$LOG"
 check "lease: beaten within 3 heartbeats: the holder logged" $? 0
 echo '[]' >"$LEASES"
 lease there 10 3000
 : >"$LOG"
 echo fail >"$FAKE"
-C4_LEASE_TTL=1h ADMIT_GAP=0 maintain
-check "lease: 3 heartbeats missed: taken over, whatever C4_LEASE_TTL" "$(grep -c 'maintainer start: .*, lease 31$' "$LOG") $(leases)" "1 []"
+THEOS_LEASE_TTL=1h ADMIT_GAP=0 maintain
+check "lease: 3 heartbeats missed: taken over, whatever THEOS_LEASE_TTL" "$(grep -c 'maintainer start: .*, lease 31$' "$LOG") $(leases)" "1 []"
 echo '[]' >"$LEASES"
 
 # A maintainer sweep, with claude faked, on origin/main: it records the
@@ -1289,7 +1289,7 @@ move() {
   (
     sum=${1:-}
     set --
-    export C4_RELAY_CHILD=1 C4_RELAY_WORKER=1 GH_TOKEN=x
+    export THEOS_RELAY_CHILD=1 THEOS_RELAY_WORKER=1 GH_TOKEN=x
     # shellcheck source=hack/relay.sh
     . "$H/relay.sh"
     CODE=${CODE_AT:-$C} REPO=$C DIR=$C/.relay STOP=$C/.relay/stop LOG=$C/.relay/relay-1.log K=1 PULL=1

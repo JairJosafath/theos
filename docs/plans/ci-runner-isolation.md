@@ -38,7 +38,7 @@ rule and no longer calls the runner open. `make check` passes on each.
   `/data/.runner` holds the runner's own token, with which a job can fetch
   other jobs as the runner.
 - **A job shares the build cache with every project.** The `go` runner mounts
-  `/var/cache/c4factory/go/ci` from the node (`goCache`), writable: a job can
+  `/var/cache/theos/go/ci` from the node (`goCache`), writable: a job can
   plant a build result that a later job, of any project, links into its
   binary, a release included.
 - **No NetworkPolicy selects the runners.** A job reaches the Kubernetes API,
@@ -137,15 +137,15 @@ Decided before building, from the code as it stands after #1138 and #1139:
   runners serve as today. The root of the per-project Go caches is an
   operator flag `--ci-go-cache` (as `--sandbox-go-cache`), the pods
   mounting `<root>/<project namespace>`; empty root, no cache mount. The
-  root is `/var/cache/c4factory/go/projects` in the manifests and the chart,
+  root is `/var/cache/theos/go/projects` in the manifests and the chart,
   a sibling of the shared runners' `go/ci`, so the shared `go` runner never
   mounts a project's cache.
 - **The ProjectReconciler keeps the pool** (`project_ci_runners.go`), owning
   the pods (`Owns(&corev1.Pod{})`, controller reference to the Project so
   deletion cascades) and reconciling on GitProvider spec changes, which it
   already watches. Pods are named by `GenerateName` `ci-<provider>-<label>-`
-  and labelled `c4.factory.io/ci-runner: "true"`, `c4.factory.io/git-provider`
-  and `c4.factory.io/ci-label`. The pool counts pods not ended (Pending or
+  and labelled `theos.factory.io/ci-runner: "true"`, `theos.factory.io/git-provider`
+  and `theos.factory.io/ci-label`. The pool counts pods not ended (Pending or
   Running, no deletionTimestamp) per provider and label, creates up to
   `size`, deletes ended ones, and deletes pods of a provider or label that is
   no longer in any `ci` block. RBAC: pods `create;delete` added to the
@@ -171,18 +171,18 @@ Decided before building, from the code as it stands after #1138 and #1139:
   (the runner reads `env_file`, not its environment, so the literal env first
   proposed here was not kept).
 - **The CI NetworkPolicy** `c4-ci-runner` selects
-  `c4.factory.io/ci-runner: "true"`; `ensureAgentNetwork`'s egress build
+  `theos.factory.io/ci-runner: "true"`; `ensureAgentNetwork`'s egress build
   moves into `fenceEgress(gitNamespaces)` so both policies share it,
   table-tested.
 - **Who cancelled (the folded-in #1261).** `gitprovider.WorkflowJob` and
   `model.CIJob` gain `RunnerName` (Gitea's `runner_name`; the fake's jobs name
   their runner). Each pool pod carries the finalizer
-  `c4.factory.io/ci-runner-record`, so a pod deleted by anyone stays, with its
+  `theos.factory.io/ci-runner-record`, so a pod deleted by anyone stays, with its
   final status, until the pool removes the finalizer `RunnerRecordKept`
   (2h) after it ended; the Task reads the pod by the job's runner name. The
   pool classifies a pod the first time it sees it ended, in a pure function
   `runnerPodFate(pod)`, and writes the verdict as annotation
-  `c4.factory.io/runner-fate`: `lost` when the pod has a deletionTimestamp
+  `theos.factory.io/runner-fate`: `lost` when the pod has a deletionTimestamp
   and no verdict yet (someone deleted it before it ended), `podDisrupted`,
   phase Failed or a runner container that ended non-zero; `ended` when phase
   Succeeded. The pool annotates before it deletes an ended pod, so its own

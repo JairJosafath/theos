@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 )
 
 // DataStoreReconciler makes a DataStore a child of its SoftwareSystem and checks
@@ -33,10 +33,10 @@ type DataStoreReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=datastores,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=datastores/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=datastores/finalizers,verbs=update
-// +kubebuilder:rbac:groups=c4.factory.io,resources=connectors,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=datastores,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=datastores/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=datastores/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=connectors,verbs=get;list;watch
 
 // Reconcile adopts the DataStore and reports whether its references resolve.
 func (r *DataStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

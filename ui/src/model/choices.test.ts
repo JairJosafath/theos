@@ -4,7 +4,7 @@ import { bundleEntries, bundleTypes, choicesOf } from './choices'
 
 function container(spec: Partial<Container['spec']>, status?: Container['status']): Container {
   return {
-    apiVersion: 'c4.factory.io/v1beta1',
+    apiVersion: 'theos.factory.io/v1beta1',
     kind: 'Container',
     metadata: { name: 'c', namespace: 'ns' },
     spec: { softwareSystemRef: { name: 's' }, type: 'service', gitProviderRef: { name: 'g' }, ...spec },
@@ -14,7 +14,7 @@ function container(spec: Partial<Container['spec']>, status?: Container['status'
 
 function entry(name: string, supportedTypes: CatalogEntry['spec']['supportedTypes']): CatalogEntry {
   return {
-    apiVersion: 'c4.factory.io/v1beta1',
+    apiVersion: 'theos.factory.io/v1beta1',
     kind: 'Compute',
     metadata: { name, namespace: 'ns' },
     spec: { supportedTypes, template: { url: 'https://example.com/t.git', ref: 'v1' } },
@@ -22,7 +22,7 @@ function entry(name: string, supportedTypes: CatalogEntry['spec']['supportedType
 }
 
 function bundle(spec: Bundle['spec']): Bundle {
-  return { apiVersion: 'c4.factory.io/v1beta1', kind: 'Bundle', metadata: { name: 'b', namespace: 'ns' }, spec }
+  return { apiVersion: 'theos.factory.io/v1beta1', kind: 'Bundle', metadata: { name: 'b', namespace: 'ns' }, spec }
 }
 
 describe('choicesOf', () => {

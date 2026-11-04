@@ -12,5 +12,5 @@ resources:
 - pdb.yaml
 images:
 - name: controller
-  newName: c4factory/operator
+  newName: theos/operator
   newTag: dev

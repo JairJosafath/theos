@@ -12,4 +12,4 @@
 === RUN   TestGiteaSourceIntegration
 --- PASS: TestGiteaSourceIntegration (2.16s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/gitprovider	17.285s
+ok  	github.com/JairJosafath/theos/internal/gitprovider	17.285s

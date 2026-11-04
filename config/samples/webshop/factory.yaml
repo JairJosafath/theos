@@ -1,6 +1,6 @@
 # Where repositories go, and the catalog Containers pick from. Templates are
 # pinned to tags pushed by the seed job (templates/versions.txt).
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: GitProvider
 metadata:
   name: gitea
@@ -19,14 +19,14 @@ spec:
     giteaActions:
       runners:
         - label: base
-          image: c4factory/gitea-runner-base:dev
+          image: theos/gitea-runner-base:dev
           size: 1
         - label: go
-          image: c4factory/gitea-runner-go:dev
+          image: theos/gitea-runner-go:dev
           size: 1
           goCache: true
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Framework
 metadata:
   name: python-fastapi
@@ -38,7 +38,7 @@ spec:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-fastapi
     ref: v1.6.0
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Framework
 metadata:
   name: react-vite
@@ -50,7 +50,7 @@ spec:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/react-vite
     ref: v1.0.0
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Framework
 metadata:
   name: python-cli
@@ -62,7 +62,7 @@ spec:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-cli
     ref: v1.2.0
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Standard
 metadata:
   name: ts-standard
@@ -78,7 +78,7 @@ spec:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/ts-standard
     ref: v1.7.0
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Standard
 metadata:
   name: python-standard
@@ -93,7 +93,7 @@ spec:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-standard
     ref: v1.7.0
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Compute
 metadata:
   name: small
@@ -105,7 +105,7 @@ spec:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/small
     ref: v1.1.0
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Deployment
 metadata:
   name: k8s-manifests
@@ -117,7 +117,7 @@ spec:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/k8s-manifests
     ref: v1.9.1
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Connector
 metadata:
   name: postgres
@@ -131,7 +131,7 @@ spec:
 ---
 # What the webshop is about: carts, stock and payments, their common mistakes
 # and the choices to make. A SoftwareSystem names it in spec.domainRefs.
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Domain
 metadata:
   name: webshop

@@ -1,5 +1,5 @@
 # Issue 73: acceptance criteria where issues are written
-# Kind cluster c4factory, operator built from feat/73 at 7b7806c (image c4factory/operator:heron-73), 2026-10-05T19:46:11Z
+# Kind cluster theos, operator built from feat/73 at 7b7806c (image theos/operator:heron-73), 2026-10-05T19:46:11Z
 # Crew apps/hello, implementer and reviewer: the stand-in Agent.
 
 ## 1. A ready issue without a checklist: the needs-human comment shows an example
@@ -38,11 +38,11 @@ hello-8         hello       8       Checking   1       pending             18s
 stand-in-loop   hello               Merged     2       success   approve   28m
 
 ## 3. A reviewer files the follow-up itself (issue #122)
-# Kind cluster c4factory, created fresh 2026-10-05T22:25Z; operator (make deploy) and
-# agent image c4factory/agent-base:dev (make agent-image-base) built from main at fe737fe.
+# Kind cluster theos, created fresh 2026-10-05T22:25Z; operator (make deploy) and
+# agent image theos/agent-base:dev (make agent-image-base) built from main at fe737fe.
 # Crew apps/hello, implementer and reviewer: the stand-in Agent with follow-ups on.
 $ kubectl -n apps get agent stand-in -o jsonpath='{.spec.env}'
-[{"name":"C4AGENT_FAKE","value":"1"},{"name":"C4AGENT_FAKE_FOLLOW_UP","value":"true"}]
+[{"name":"THEOS_AGENT_FAKE","value":"1"},{"name":"THEOS_AGENT_FAKE_FOLLOW_UP","value":"true"}]
 $ gitea issue apps/hello#1 "Greet twice", milestone v0.1.0 (due 2026-12-01), labeled status/ready
 $ kubectl -n apps get task hello-1 -o jsonpath='{range .status.history[*]}...'
 Implementing r1 Running

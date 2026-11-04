@@ -3,19 +3,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "c4-factory.modelProxyName" . }}
+  name: {{ include "theos.modelProxyName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "c4-factory.modelProxyLabels" . | nindent 4 }}
+    {{- include "theos.modelProxyLabels" . | nindent 4 }}
 spec:
   replicas: {{ $mp.replicas }}
   selector:
     matchLabels:
-      {{- include "c4-factory.modelProxySelectorLabels" . | nindent 6 }}
+      {{- include "theos.modelProxySelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "c4-factory.modelProxyLabels" . | nindent 8 }}
+        {{- include "theos.modelProxyLabels" . | nindent 8 }}
     spec:
       # The proxy talks to no API server: no ServiceAccount token.
       automountServiceAccountToken: false
@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: model-proxy
-        image: {{ include "c4-factory.modelProxyImage" . | quote }}
+        image: {{ include "theos.modelProxyImage" . | quote }}
         {{- with .Values.manager.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}

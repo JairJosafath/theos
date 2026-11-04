@@ -1,10 +1,10 @@
 name: Release
 
-# A pushed vX.Y.Z tag publishes c4factory, so a device installs it without
+# A pushed vX.Y.Z tag publishes theos, so a device installs it without
 # building anything: the operator, UI, seed, toolchain, agent and runner images to
-# ghcr.io/<owner>/c4factory/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
-# to oci://ghcr.io/<owner>/c4factory/charts and to a GitHub release for the tag,
-# with the c4session binaries and their SHA256SUMS for a chart whose UI is off
+# ghcr.io/<owner>/theos/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
+# to oci://ghcr.io/<owner>/theos/charts and to a GitHub release for the tag,
+# with the theos-session binaries and their SHA256SUMS for a chart whose UI is off
 # (#1079, #1175); with the UI on, a scaffolded devcontainer downloads its
 # Session client from the UI image, which carries the same files under
 # /downloads/ (#1151).
@@ -68,7 +68,7 @@ jobs:
             exit 1
           fi
           echo "VERSION=$version" >>"$GITHUB_ENV"
-          echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/c4factory" >>"$GITHUB_ENV"
+          echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/theos" >>"$GITHUB_ENV"
 
       - name: Build the images
         run: |
@@ -92,15 +92,15 @@ jobs:
           cache: false
 
       # The names are the chart's sessionBinaryURL with ${arch} filled in.
-      # SHA256SUMS goes with them: the c4session feature downloads it from next
+      # SHA256SUMS goes with them: the theos-session feature downloads it from next
       # to the binary and refuses a binary it doesn't match (#1175).
       - name: Build the Session client
         run: |
           for arch in amd64 arm64; do
-            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags=-s -o "c4session-linux-$arch" ./cmd/c4session
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags=-s -o "theos-session-linux-$arch" ./cmd/theos-session
           done
-          sha256sum c4session-linux-amd64 c4session-linux-arm64 >SHA256SUMS
-          ls -l c4session-linux-*
+          sha256sum theos-session-linux-amd64 theos-session-linux-arm64 >SHA256SUMS
+          ls -l theos-session-linux-*
           cat SHA256SUMS
 
       - name: Install Helm
@@ -112,10 +112,10 @@ jobs:
         run: |
           make helm-lint
           helm package dist/chart --version "$VERSION" --app-version "$VERSION" --destination .
-          helm template c4-factory "c4-factory-$VERSION.tgz" >rendered.yaml
+          helm template theos "theos-$VERSION.tgz" >rendered.yaml
           grep "image: \"$REGISTRY/operator:$VERSION\"" rendered.yaml
           grep "image: \"$REGISTRY/ui:$VERSION\"" rendered.yaml
-          grep -F -- "--session-binary-url=http://localhost:8080/downloads/c4session-linux-\${arch}" rendered.yaml
+          grep -F -- "--session-binary-url=http://localhost:8080/downloads/theos-session-linux-\${arch}" rendered.yaml
 
       - name: Push the images and the chart
         if: env.PUBLISH == 'true'
@@ -128,8 +128,8 @@ jobs:
           for name in $IMAGES; do
             docker push "$REGISTRY/$name:$VERSION"
           done
-          helm push "c4-factory-$VERSION.tgz" "oci://$REGISTRY/charts"
-          helm show chart "oci://$REGISTRY/charts/c4-factory" --version "$VERSION"
+          helm push "theos-$VERSION.tgz" "oci://$REGISTRY/charts"
+          helm show chart "oci://$REGISTRY/charts/theos" --version "$VERSION"
 
       - name: Create the GitHub release
         if: env.PUBLISH == 'true'
@@ -141,7 +141,7 @@ jobs:
           echo "The notes list what merged since ${prev:-the start of history}."
           REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" "$prev" >notes.md
           cat notes.md
-          gh release create "$GITHUB_REF_NAME" "c4-factory-$VERSION.tgz" c4session-linux-amd64 c4session-linux-arm64 SHA256SUMS \
+          gh release create "$GITHUB_REF_NAME" "theos-$VERSION.tgz" theos-session-linux-amd64 theos-session-linux-arm64 SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
 
       # A dispatch made with GITHUB_TOKEN starts a run, unlike its other events.

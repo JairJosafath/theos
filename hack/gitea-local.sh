@@ -21,8 +21,8 @@
 #
 # Credentials: the first start creates admin GITEA_ADMIN with a random password
 # and an access token, and writes them to .gitea-local/credentials.env (mode
-# 0600) as C4_GITEA_URL, C4_GITEA_USERNAME, C4_GITEA_PASSWORD and C4_GITEA_TOKEN,
-# with the token's scopes as C4_GITEA_TOKEN_SCOPES; a start that finds other
+# 0600) as THEOS_GITEA_URL, THEOS_GITEA_USERNAME, THEOS_GITEA_PASSWORD and THEOS_GITEA_TOKEN,
+# with the token's scopes as THEOS_GITEA_TOKEN_SCOPES; a start that finds other
 # scopes there makes a new token. They are never printed; source the file
 # (`set -a; . .gitea-local/credentials.env`).
 # rm -rf .gitea-local (after stop) starts over with new ones.
@@ -32,7 +32,7 @@ GITEA=${GITEA:-gitea}
 TOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 DIR=$TOP/.gitea-local
 GITEA_ADMIN=${GITEA_ADMIN:-c4admin}
-GITEA_ADMIN_EMAIL=${GITEA_ADMIN_EMAIL:-c4admin@c4.factory.io}
+GITEA_ADMIN_EMAIL=${GITEA_ADMIN_EMAIL:-c4admin@theos.factory.io}
 # The scopes the seed gives the operator's token (hack/seed/seed.sh).
 TOKEN_SCOPES=${TOKEN_SCOPES:-write:admin,write:issue,write:organization,write:package,write:repository,read:user}
 # Seconds to wait for Gitea to answer after starting it.
@@ -87,7 +87,7 @@ write_config() {
   secret_key=$("$GITEA" generate secret SECRET_KEY)
   internal_token=$("$GITEA" generate secret INTERNAL_TOKEN)
   (umask 077 && cat >"$CONFIG" <<EOF
-APP_NAME = C4 Factory local Gitea
+APP_NAME = theos local Gitea
 RUN_MODE = prod
 WORK_PATH = $DIR
 
@@ -156,7 +156,7 @@ create_admin() {
       --random-password --must-change-password=false >/dev/null
   fi
   token=$(g admin user generate-access-token --username "$GITEA_ADMIN" \
-    --token-name "c4factory-local-$(date +%s)" --scopes "$TOKEN_SCOPES" --raw)
+    --token-name "theos-local-$(date +%s)" --scopes "$TOKEN_SCOPES" --raw)
   [[ -n $token ]] || die "Gitea returned no access token"
   password=$(head -c 24 /dev/urandom | base64 | tr -d '\n/+=')
   status=$({ printf 'Authorization: token %s\n' "$token"; } |
@@ -166,11 +166,11 @@ create_admin() {
       "$(url)/api/v1/admin/users/$GITEA_ADMIN")
   [[ $status == 200 ]] || die "setting the password of $GITEA_ADMIN: HTTP $status"
   (umask 077 && cat >"$CREDENTIALS.tmp" <<EOF
-C4_GITEA_URL=$(url)
-C4_GITEA_USERNAME=$GITEA_ADMIN
-C4_GITEA_PASSWORD=$password
-C4_GITEA_TOKEN=$token
-C4_GITEA_TOKEN_SCOPES=$TOKEN_SCOPES
+THEOS_GITEA_URL=$(url)
+THEOS_GITEA_USERNAME=$GITEA_ADMIN
+THEOS_GITEA_PASSWORD=$password
+THEOS_GITEA_TOKEN=$token
+THEOS_GITEA_TOKEN_SCOPES=$TOKEN_SCOPES
 EOF
   )
   mv "$CREDENTIALS.tmp" "$CREDENTIALS"
@@ -179,7 +179,7 @@ EOF
 
 # credentials_current: CREDENTIALS exists and its token has TOKEN_SCOPES.
 credentials_current() {
-  [[ -f $CREDENTIALS ]] && [[ $(sed -n 's/^C4_GITEA_TOKEN_SCOPES=//p' "$CREDENTIALS") == "$TOKEN_SCOPES" ]]
+  [[ -f $CREDENTIALS ]] && [[ $(sed -n 's/^THEOS_GITEA_TOKEN_SCOPES=//p' "$CREDENTIALS") == "$TOKEN_SCOPES" ]]
 }
 
 # enable_actions: turns Actions on in an app.ini written before it was on, and
@@ -263,15 +263,15 @@ fixtures() {
   running && healthy || die "Gitea is not running; run make gitea-local"
   # shellcheck disable=SC1090
   set -a && . "$CREDENTIALS" && set +a
-  GITEA_URL=$C4_GITEA_URL GITEA_USERNAME=$C4_GITEA_USERNAME GITEA_PASSWORD=$C4_GITEA_PASSWORD \
+  GITEA_URL=$THEOS_GITEA_URL GITEA_USERNAME=$THEOS_GITEA_USERNAME GITEA_PASSWORD=$THEOS_GITEA_PASSWORD \
     TEMPLATES_DIR=$TOP/templates PROJECTS="" RUNNER_SECRET="" "$TOP/hack/seed/seed.sh"
   local status
-  status=$(printf 'Authorization: token %s\n' "$C4_GITEA_TOKEN" |
-    curl -sS -o /dev/null -w '%{http_code}' -H @- "$C4_GITEA_URL/api/v1/orgs/webshop")
+  status=$(printf 'Authorization: token %s\n' "$THEOS_GITEA_TOKEN" |
+    curl -sS -o /dev/null -w '%{http_code}' -H @- "$THEOS_GITEA_URL/api/v1/orgs/webshop")
   if [[ $status == 404 ]]; then
-    status=$(printf 'Authorization: token %s\n' "$C4_GITEA_TOKEN" |
+    status=$(printf 'Authorization: token %s\n' "$THEOS_GITEA_TOKEN" |
       curl -sS -o /dev/null -w '%{http_code}' -H @- -H 'Content-Type: application/json' \
-        --data '{"username":"webshop","visibility":"public"}' "$C4_GITEA_URL/api/v1/orgs")
+        --data '{"username":"webshop","visibility":"public"}' "$THEOS_GITEA_URL/api/v1/orgs")
     [[ $status == 201 ]] || die "creating organization webshop: HTTP $status"
     log "Created organization webshop"
   else
@@ -284,7 +284,7 @@ seed() {
   running && healthy || die "Gitea is not running; run make gitea-local"
   # shellcheck disable=SC1090
   set -a && . "$CREDENTIALS" && set +a
-  GITEA_URL=$C4_GITEA_URL GITEA_USERNAME=$C4_GITEA_USERNAME GITEA_PASSWORD=$C4_GITEA_PASSWORD \
+  GITEA_URL=$THEOS_GITEA_URL GITEA_USERNAME=$THEOS_GITEA_USERNAME GITEA_PASSWORD=$THEOS_GITEA_PASSWORD \
     TEMPLATES_DIR=$TOP/templates PROJECTS=${PROJECTS:-webshop} CREDENTIALS_DIR=$DIR \
     "$TOP/hack/seed/seed.sh"
 }

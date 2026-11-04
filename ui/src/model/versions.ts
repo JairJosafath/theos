@@ -42,7 +42,7 @@ export function versionSkew(v: Pick<Versions, 'ui' | 'operator'>): string | unde
 }
 
 /** Where the factory's code, docs and releases live. */
-export const REPO_URL = 'https://github.com/JairJosafath/c4factory'
+export const REPO_URL = 'https://github.com/JairJosafath/theos'
 
 /**
  * The release the factory runs, for the About area's links: the operator's

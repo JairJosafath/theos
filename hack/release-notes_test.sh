@@ -15,7 +15,7 @@ hasnt() { grep -qF -- "$2" "$T/out"; check "$1" $? 1; }
 # section NAME: the lines of section NAME in $T/out.
 section() { sed -n "/^### $1\$/,/^\(###\|Images:\)/p" "$T/out" | grep '^- '; }
 
-VERSION=1.2.0 REGISTRY=ghcr.io/o/c4factory REPO=o/c4factory \
+VERSION=1.2.0 REGISTRY=ghcr.io/o/theos REPO=o/theos \
   "$NOTES" --prs "$HACK/testdata/release-notes-prs.jsonl" v1.1.0 >"$T/out" 2>&1
 check "drafts from a fixture" $? 0
 
@@ -23,8 +23,8 @@ check "sections in Keep a Changelog order" "$(grep '^### ' "$T/out" | tr '\n' ' 
 check "feat: Added, without the prefix; a title with none takes the branch's type" \
   "$(section Added)" "$(printf -- '- a Brief kind (#1)\n- Briefs step 2: the planner (#2)\n- AWS: the Go Lambda Framework aws-lambda-go (#15)\n- the UI speaks v1beta1 (#19)')"
 check "a body line Deprecated: adds a Deprecated line next to the pull request's own (#1618)" \
-  "$(section Deprecated)" "- c4.factory.io/v1alpha1; use v1beta1, and the version may be dropped no earlier than 2027-01-22 (#1963) (#19)"
-check "a body line Removed: adds a Removed line, a chore's too (#1618)" "$(section Removed)" "- c4.factory.io/v1alpha1, deprecated by v0.30.0 (#20)"
+  "$(section Deprecated)" "- theos.factory.io/v1alpha1; use v1beta1, and the version may be dropped no earlier than 2027-01-22 (#1963) (#19)"
+check "a body line Removed: adds a Removed line, a chore's too (#1618)" "$(section Removed)" "- theos.factory.io/v1alpha1, deprecated by v0.30.0 (#20)"
 check "  and the chore has no other line" "$(grep -c '(#20)' "$T/out")" 1
 check "fix: Fixed" "$(section Fixed)" "- the UI keeps its session (#3)"
 check "breaking (! or BREAKING CHANGE) and other types: Changed" "$(section Changed)" \
@@ -38,9 +38,9 @@ has "an AWS: title on a feat/ branch: Added, the title whole (#1270)" "- AWS: th
 hasnt "an Envtest: title on a chore/ branch: left out (#1270)" "(#16)"
 hasnt "a plan touching only docs/plans/ on a feat/ branch: left out (#1270)" "(#17)"
 hasnt "a plan touching the design, architecture, AGENTS.md and evidence too: left out (#1270)" "(#18)"
-has "the image list ends it" 'Images: `ghcr.io/o/c4factory/<name>:1.2.0` for operator, ui, seed, the toolchains'
-has "the install command names the version" "helm install c4-factory oci://ghcr.io/o/c4factory/charts/c4-factory --version 1.2.0 \\"
-has "the guide link names the tag" "[docs/getting-started.md](https://github.com/o/c4factory/blob/v1.2.0/docs/getting-started.md)"
+has "the image list ends it" 'Images: `ghcr.io/o/theos/<name>:1.2.0` for operator, ui, seed, the toolchains'
+has "the install command names the version" "helm install theos oci://ghcr.io/o/theos/charts/theos --version 1.2.0 \\"
+has "the guide link names the tag" "[docs/getting-started.md](https://github.com/o/theos/blob/v1.2.0/docs/getting-started.md)"
 
 # The install snippet is the guide's install without the pull secret: the
 # bash blocks of its section 1 up to the helm install's, but the registry
@@ -75,7 +75,7 @@ VERSION=1.2.0 "$NOTES" --prs "$T/none.jsonl" v1.1.0 >"$T/out" 2>&1
 check "a range with nothing to list: drafts" $? 0
 check "  no sections" "$(grep -c '^### ' "$T/out")" 0
 has "  says nothing changed" "Nothing a device runs changed since v1.1.0."
-has "  still ends with the images" 'Images: `ghcr.io/jairjosafath/c4factory/<name>:1.2.0` for operator, ui, seed, the toolchains'
+has "  still ends with the images" 'Images: `ghcr.io/jairjosafath/theos/<name>:1.2.0` for operator, ui, seed, the toolchains'
 
 # A repository with two tags and pull requests merged between them; gh knows
 # #3's labels and nothing else.
@@ -110,14 +110,14 @@ PATH="$T/bin:$PATH" "$NOTES" >"$T/out" 2>&1
 check "from git, previous tag to HEAD: drafts" $? 0
 has "  lists what merged after the newest tag" "- after the tag (#6)"
 hasnt "  not what came before it" "(#2)"
-has "  the version is a placeholder off a tag" "helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version X.Y.Z \\"
+has "  the version is a placeholder off a tag" "helm install theos oci://ghcr.io/jairjosafath/theos/charts/theos --version X.Y.Z \\"
 
 PATH="$T/bin:$PATH" "$NOTES" v0.3.0 >"$T/out" 2>&1
 check "from git, a tag to the one before it: drafts" $? 0
 check "  each pull request in its section" "$(grep -E '^(###|- )' "$T/out")" "$(printf -- '### Added\n- a new kind (#2)\n### Changed\n- **Breaking:** the API (#4)\n### Security\n- escape names (#3)')"
 hasnt "  not before the previous tag" "(#1)"
 hasnt "  not after the tag" "(#6)"
-has "  the version comes from the tag" "helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version 0.3.0 \\"
+has "  the version comes from the tag" "helm install theos oci://ghcr.io/jairjosafath/theos/charts/theos --version 0.3.0 \\"
 
 # The Release workflow passes the previous published release as FROM: v0.2.0's
 # release failed, so v0.3.0's notes run from v0.1.0.

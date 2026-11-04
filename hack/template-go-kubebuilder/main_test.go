@@ -123,24 +123,24 @@ func TestTransform(t *testing.T) {
 		{
 			name:         "module path",
 			path:         "go.mod",
-			in:           "module c4factory.local/placeholder-project/placeholder-container\n",
+			in:           "module theos.local/placeholder-project/placeholder-container\n",
 			wantPath:     "go.mod.tmpl",
-			wantSrc:      "module c4factory.local/{{ .Project }}/{{ .Container }}\n",
-			wantRendered: "module c4factory.local/webshop/backup-op\n",
+			wantSrc:      "module theos.local/{{ .Project }}/{{ .Container }}\n",
+			wantRendered: "module theos.local/webshop/backup-op\n",
 		},
 		{
 			name:         "leader election ID",
 			path:         "cmd/main.go",
-			in:           `LeaderElectionID: "f6e0971b.placeholder-project.c4factory.local",`,
+			in:           `LeaderElectionID: "f6e0971b.placeholder-project.theos.local",`,
 			wantPath:     "cmd/main.go.tmpl",
-			wantRendered: `LeaderElectionID: "backup-op.webshop.c4factory.local",`,
+			wantRendered: `LeaderElectionID: "backup-op.webshop.theos.local",`,
 		},
 		{
 			name:         "domain and name",
 			path:         "PROJECT",
-			in:           "domain: placeholder-project.c4factory.local\nprojectName: placeholder-container\n",
+			in:           "domain: placeholder-project.theos.local\nprojectName: placeholder-container\n",
 			wantPath:     "PROJECT.tmpl",
-			wantRendered: "domain: webshop.c4factory.local\nprojectName: backup-op\n",
+			wantRendered: "domain: webshop.theos.local\nprojectName: backup-op\n",
 		},
 		{
 			name:         "a go file's own delimiters",
@@ -294,7 +294,7 @@ func TestReadme(t *testing.T) {
 	checkReadme(t, "README with a Standard", render(t, readme+".tmpl", src, data), "1.27.1", []string{
 		"# Backup Operator\n\nBacks up the shop's databases nightly.\n\nThe `backup-op` Kubernetes operator of shop",
 		"kubebuilder create api --group <group> --version v1alpha1 --kind <Kind>\nmake manifests generate\n",
-		"`<group>.webshop.c4factory.local`",
+		"`<group>.webshop.theos.local`",
 		"make check ", "make install run\n", "make test-e2e",
 		"## Release\n", "`make dist VERSION=<tag> IMG=<image>`", "SHA256SUMS",
 		"make docker-build docker-push IMG=<some-registry>/backup-op:<tag>\n" +
@@ -365,7 +365,7 @@ func TestCommittedTemplate(t *testing.T) {
 		}
 		p := filepath.ToSlash(rel)
 		if d.IsDir() {
-			if p == ".c4factory" {
+			if p == ".theos" {
 				return fs.SkipDir
 			}
 			return nil

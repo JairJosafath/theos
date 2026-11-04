@@ -22,4 +22,4 @@ $ go test ./internal/scaffold/ -run TestAWSStandardWellArchitectedFitsTheLanguag
     --- PASS: TestAWSStandardWellArchitectedFitsTheLanguage/aws-fargate-ts (0.00s)
     --- PASS: TestAWSStandardWellArchitectedFitsTheLanguage/aws-lambda-py (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.017s
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.017s

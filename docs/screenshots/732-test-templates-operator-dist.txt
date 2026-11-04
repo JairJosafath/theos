@@ -10,11 +10,11 @@ Generated files are up to date.
 go vet ./...
 "/tmp/tmp.JmOCQdy20M/bin/golangci-lint" run
 0 issues.
-KUBEBUILDER_ASSETS=/home/math/www/github.com/jairjosafath/c4factory/.dev/make/bin/k8s/1.37.0-linux-amd64
-?   	c4factory.local/webshop/backup-operator/api/v1	[no test files]
-?   	c4factory.local/webshop/backup-operator/cmd	[no test files]
-ok  	c4factory.local/webshop/backup-operator/internal/controller	8.902s
-?   	c4factory.local/webshop/backup-operator/test/utils	[no test files]
+KUBEBUILDER_ASSETS=/home/math/www/github.com/jairjosafath/theos/.dev/make/bin/k8s/1.37.0-linux-amd64
+?   	theos.local/webshop/backup-operator/api/v1	[no test files]
+?   	theos.local/webshop/backup-operator/cmd	[no test files]
+ok  	theos.local/webshop/backup-operator/internal/controller	8.902s
+?   	theos.local/webshop/backup-operator/test/utils	[no test files]
 
 $ make dist VERSION=v0.1.0
 rm -f dist/backup-operator_* dist/install.yaml dist/SHA256SUMS

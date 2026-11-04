@@ -11,7 +11,7 @@
 Every source read to write `docs/style/` and `docs/well-architected.md`. This
 Standard was copied from ts-standard v1.5.0: its TypeScript rules
 (`typescript.md`, the ESLint config, Prettier) and `principles.md` are
-ts-standard's, and a test in C4 Factory keeps them equal. The TypeScript
+ts-standard's, and a test in theos keeps them equal. The TypeScript
 sources were read on 2026-10-02 for ts-standard. Of the AWS sources, the
 Well-Architected Framework, Amazon ECS's best practices index and its
 connection draining page, and the Application Load Balancer's access log
@@ -118,7 +118,7 @@ for what costs more, not for figures: the digests give none.
 Every source read to write `docs/style/` and `docs/well-architected.md`. This
 Standard was copied from ts-standard v1.5.0: its TypeScript rules
 (`typescript.md`, the ESLint config, Prettier) and `principles.md` are
-ts-standard's, and a test in C4 Factory keeps them equal. The TypeScript
+ts-standard's, and a test in theos keeps them equal. The TypeScript
 sources were read on 2026-10-02 for ts-standard. Of the AWS sources, the
 {{ if eq .Framework "aws-ec2-ts" }}Well-Architected Framework was read on 2026-10-13, and the Application Load
 Balancer's access log page on 2026-10-13 for the aws-ec2-ts Framework,{{ else if eq .Framework "aws-static-site-ts" }}Well-Architected Framework was read on 2026-10-13, its pillars' pages on
@@ -130,7 +130,7 @@ The cross-language sources were read on 2026-09-30 for another
 Standard, whose `principles.md` ts-standard adapts; they were not read again.
 {{- if eq .Framework "aws-lambda-py" }}
 The function's Python rules (`python.md`'s general sections, `ruff.toml`,
-`mypy.ini`) are python-standard v1.7.0's, and a test in C4 Factory keeps them
+`mypy.ini`) are python-standard v1.7.0's, and a test in theos keeps them
 equal; its Python sources were read on 2026-10-07 for python-standard and not
 read again. Lambda's Python pages and the boto3 guide are references the
 digests follow, not fetched again for them.
@@ -145,7 +145,7 @@ relying on a detail it alone gives.
 {{- if eq .Framework "aws-lambda-go" }}
 
 For the Go function, `go.md` and `.golangci.yml` are go-standard's, copied
-from go-standard v1.4.0, and a test in C4 Factory keeps them equal; its Go
+from go-standard v1.4.0, and a test in theos keeps them equal; its Go
 sources were read on 2026-10-02 for go-standard and are listed in its own
 `SOURCES.md`. The Go pages of the AWS docs below are the references the
 digests follow, not fetched for them: check one before relying on a detail

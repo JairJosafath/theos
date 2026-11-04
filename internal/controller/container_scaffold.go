@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -20,10 +20,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // GitClient reaches Git hosts and fetches templates. cmd/main.go builds it
@@ -134,7 +134,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 			"Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonForeignCommits,
-			fmt.Sprintf("Repository %s has commits C4 Factory didn't make; it only scaffolds into a new, empty repository",
+			fmt.Sprintf("Repository %s has commits theos didn't make; it only scaffolds into a new, empty repository",
 				repo.WebURL))
 	}
 
@@ -191,7 +191,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 }
 
 // adopt takes over a repository that already has commits (#1888, spec.adopt).
-// Nothing is written: main must exist and carry a .c4factory.yaml naming this project
+// Nothing is written: main must exist and carry a .theos.yaml naming this project
 // and Container, and every file of the Container's Standard with the content
 // the Standard renders for it at its ref. Then main is protected and the
 // Container is Ready, its Standard recorded at that ref and nothing recorded
@@ -419,7 +419,7 @@ func (r *ContainerReconciler) resolveLicense(ctx context.Context,
 }
 
 // scaffoldedLicense is the license the Container's repository carries: the
-// id its .c4factory.yaml on main records, with the holder and the year as a
+// id its .theos.yaml on main records, with the holder and the year as a
 // scaffold resolves them. An update renders with it, never with spec.license
 // as it stands: changing the setting after the scaffold rewrites nothing
 // (docs/plans/license.md, decision 5), so a layer writing LICENSE collides

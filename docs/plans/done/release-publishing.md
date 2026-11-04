@@ -74,7 +74,7 @@ a port-forward, and are gone with the cluster. The repository they named is
   held whole in memory.
 - **Idempotent through a draft and a marker.** The operator creates the GitHub
   release as a draft whose body ends with a hidden marker,
-  `<!-- c4factory: <namespace>/<container> <tag> -->`, uploads each asset the
+  `<!-- theos: <namespace>/<container> <tag> -->`, uploads each asset the
   draft doesn't have yet (same name and size counts as uploaded; a different
   size is deleted and uploaded again), then publishes the draft. A retry finds
   the draft by its marker (drafts aren't found by tag, so it lists the

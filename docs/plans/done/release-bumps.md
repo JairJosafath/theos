@@ -26,7 +26,7 @@ GitHub issue #118, a follow-up of #78 ([release-tags.md](../release-tags.md)).
 - **Once per Container and release.** `status.lastRelease.bumps` lists the
   Containers whose issue was filed and the issue's address. Before filing, the
   Crew looks for an open `kind/bump` issue in A with the marker
-  `<!-- c4factory:bump <B> <tag> -->`, so a lost status write files no second
+  `<!-- theos:bump <B> <tag> -->`, so a lost status write files no second
   issue.
 - **Links at release time.** A Relationship created after the release was tagged
   files no bump for it: the bundler started from a later state. A bundler that

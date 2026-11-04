@@ -18,7 +18,7 @@ export const DEFAULT_COMPONENTS = [
     key: 'operator',
     name: 'Operator',
     role: 'Scaffolds Containers and runs Tasks',
-    namespace: 'c4-factory-system',
+    namespace: 'theos-system',
     selector: 'control-plane=controller-manager',
   },
   {
@@ -54,8 +54,8 @@ export const DEFAULT_COMPONENTS = [
     key: 'ui',
     name: 'UI',
     role: 'This page',
-    namespace: 'c4-factory-ui',
-    selector: 'app.kubernetes.io/name=c4-factory-ui',
+    namespace: 'theos-ui',
+    selector: 'app.kubernetes.io/name=theos-ui',
     optional: true,
   },
   {
@@ -76,8 +76,8 @@ export const DEFAULT_COMPONENTS = [
 ]
 
 /** The label on every agent sandbox pod, and the one naming its Task (internal/controller/task_sandbox.go). */
-export const SANDBOX_SELECTOR = 'c4.factory.io/agent-sandbox=true'
-const TASK_LABEL = 'c4.factory.io/task'
+export const SANDBOX_SELECTOR = 'theos.factory.io/agent-sandbox=true'
+const TASK_LABEL = 'theos.factory.io/task'
 
 /** The operator's --max-agent-sandboxes when its arguments don't say (cmd/main.go). */
 export const DEFAULT_MAX_SANDBOXES = 1
@@ -88,7 +88,7 @@ const RECENT_RESTART_MS = 15 * 60_000
 const CACHE_MS = 5_000
 
 /** Every Project, one per namespace: where the agent sandboxes run. */
-const PROJECTS_PATH = '/apis/c4.factory.io/v1beta1/projects'
+const PROJECTS_PATH = '/apis/theos.factory.io/v1beta1/projects'
 
 const SUFFIXES = {
   n: 1e-9,

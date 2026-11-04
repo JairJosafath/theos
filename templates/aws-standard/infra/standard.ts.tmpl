@@ -15,9 +15,9 @@ import path from 'node:path';
 
 /** The tags on every stack, and on every resource in it that takes tags. */
 export const STANDARD_TAGS: Readonly<Record<string, string>> = {
-  'c4factory:project': '{{ .Project }}',
-  'c4factory:system': '{{ .SoftwareSystem }}',
-  'c4factory:container': '{{ .Container }}',
+  'theos:project': '{{ .Project }}',
+  'theos:system': '{{ .SoftwareSystem }}',
+  'theos:container': '{{ .Container }}',
 };
 
 /**

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -22,7 +22,7 @@ var sessionFlag = regexp.MustCompile(`(?m)^\s*- --session-binary-url=(\S+)$`)
 
 // TestReleasedChartNamesItsSessionClient packages the chart as Release does
 // and renders it: the operator tells scaffolded devcontainers where to download
-// c4session. By default that is the UI, whose image carries the client under
+// theos-session. By default that is the UI, whose image carries the client under
 // /downloads/, so a release of the private repository needs no GitHub login
 // (#1151): the port-forward's localhost, or behind an Ingress the first
 // ui.allowedHosts entry over ui.sessionBinaryScheme, https unless set
@@ -38,21 +38,21 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 		"--destination", dir).CombinedOutput(); err != nil {
 		t.Fatalf("helm package: %v\n%s", err, out)
 	}
-	pkg := filepath.Join(dir, "c4-factory-"+version+".tgz")
+	pkg := filepath.Join(dir, "theos-"+version+".tgz")
 	manager := "templates/manager/manager.yaml"
-	github := "https://github.com/JairJosafath/c4factory/releases/download/v" + version + "/c4session-linux-${arch}"
+	github := "https://github.com/JairJosafath/theos/releases/download/v" + version + "/theos-session-linux-${arch}"
 
 	cases := []struct {
 		name string
 		set  []string
 		want string
 	}{
-		{"default: the UI over port-forward", nil, "http://localhost:8080/downloads/c4session-linux-${arch}"},
-		{"the UI's port", []string{"ui.service.port=9090"}, "http://localhost:9090/downloads/c4session-linux-${arch}"},
+		{"default: the UI over port-forward", nil, "http://localhost:8080/downloads/theos-session-linux-${arch}"},
+		{"the UI's port", []string{"ui.service.port=9090"}, "http://localhost:9090/downloads/theos-session-linux-${arch}"},
 		{"behind an Ingress: the first allowed host", []string{"ui.allowedHosts={factory.example.com,other.example.com}"},
-			"https://factory.example.com/downloads/c4session-linux-${arch}"},
+			"https://factory.example.com/downloads/theos-session-linux-${arch}"},
 		{"#1704: an Ingress without TLS", []string{"ui.allowedHosts={factory.example.com}", "ui.sessionBinaryScheme=http"},
-			"http://factory.example.com/downloads/c4session-linux-${arch}"},
+			"http://factory.example.com/downloads/theos-session-linux-${arch}"},
 		{"the UI off: the release's files", []string{"ui.enabled=false"}, github},
 		{"a set value replaces the default", []string{"sessionBinaryURL=https://x.example.com/${arch}"},
 			"https://x.example.com/${arch}"},
@@ -86,10 +86,10 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 		}
 	}
 	// Both places the chart's default downloads from serve a SHA256SUMS over
-	// both binaries next to them, which the c4session feature checks the
+	// both binaries next to them, which the theos-session feature checks the
 	// download against (#1175): the release's files and the UI image's
 	// /downloads/ (ui/Dockerfile; ui/server.mjs serves it, its test shows).
-	sums := "sha256sum c4session-linux-amd64 c4session-linux-arm64 >SHA256SUMS"
+	sums := "sha256sum theos-session-linux-amd64 theos-session-linux-arm64 >SHA256SUMS"
 	if !strings.Contains(string(create), " SHA256SUMS") {
 		t.Errorf("release.yml's gh release create doesn't attach SHA256SUMS: %s", create)
 	}

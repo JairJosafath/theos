@@ -89,15 +89,15 @@ export TEMPLATES_DIR=$T/templates PROJECTS=webshop
 CREDS=$T/creds
 SCOPES=write:admin,write:issue,write:organization,write:package,write:repository,read:user
 seed() { CREDENTIALS_DIR=$CREDS "$SEED" >"$T/out" 2>&1; }
-token() { sed -n 's/^C4_GITEA_TOKEN=//p' "$CREDS/webshop.env"; }
+token() { sed -n 's/^THEOS_GITEA_TOKEN=//p' "$CREDS/webshop.env"; }
 
 # First run: the file holds a working token; no kubectl, no runner token.
 seed; check "file mode: seed succeeds" $? 0
 check "file mode: credentials file is mode 0600" "$(stat -c %a "$CREDS/webshop.env" 2>&1)" 600
-check "file mode: file names the URL" "$(sed -n 's/^C4_GITEA_URL=//p' "$CREDS/webshop.env")" "$GITEA_URL"
-check "file mode: file names the username" "$(sed -n 's/^C4_GITEA_USERNAME=//p' "$CREDS/webshop.env")" admin
-check "file mode: file holds the token Gitea made" "$(token)" "$(cat "$T/gitea/tokens/c4factory-webshop")"
-check "file mode: file records the scopes" "$(sed -n 's/^C4_GITEA_TOKEN_SCOPES=//p' "$CREDS/webshop.env")" "$SCOPES"
+check "file mode: file names the URL" "$(sed -n 's/^THEOS_GITEA_URL=//p' "$CREDS/webshop.env")" "$GITEA_URL"
+check "file mode: file names the username" "$(sed -n 's/^THEOS_GITEA_USERNAME=//p' "$CREDS/webshop.env")" admin
+check "file mode: file holds the token Gitea made" "$(token)" "$(cat "$T/gitea/tokens/theos-webshop")"
+check "file mode: file records the scopes" "$(sed -n 's/^THEOS_GITEA_TOKEN_SCOPES=//p' "$CREDS/webshop.env")" "$SCOPES"
 check "file mode: no kubectl" "$(test -e "$T/gitea/kubectl" && echo called)" ""
 check "file mode: no runner token" "$(grep -c runners "$T/gitea/calls")" 0
 check "file mode: templates and webshop organizations" "$(ls "$T/gitea/orgs" | tr '\n' ' ')" "templates webshop "
@@ -113,10 +113,10 @@ check "second run: keeps the token" "$(token)" "$first"
 grep -q "holds a working token; keeping it" "$T/out"; check "second run: says it keeps it" $? 0
 
 # A token Gitea no longer accepts is replaced.
-rm "$T/gitea/tokens/c4factory-webshop"
+rm "$T/gitea/tokens/theos-webshop"
 seed; check "revoked token: succeeds" $? 0
 grep -q "holds a token Gitea rejects; replacing it" "$T/out"; check "revoked token: says it replaces it" $? 0
-check "revoked token: file holds the new token" "$(token)" "$(cat "$T/gitea/tokens/c4factory-webshop")"
+check "revoked token: file holds the new token" "$(token)" "$(cat "$T/gitea/tokens/theos-webshop")"
 [ "$(token)" != "$first" ]; check "revoked token: the token changed" $? 0
 
 # A token with other scopes is replaced, and the old one deleted.
@@ -128,10 +128,10 @@ grep -q "holds a token with scopes 'read:user'; replacing it" "$T/out"; check "o
 check "other scopes: one token in Gitea" "$(ls "$T/gitea/tokens" | wc -l)" 1
 
 # A file without a token is replaced.
-printf 'C4_GITEA_URL=x\n' >"$CREDS/webshop.env"
+printf 'THEOS_GITEA_URL=x\n' >"$CREDS/webshop.env"
 seed; check "file without a token: succeeds" $? 0
 grep -q "holds no token; replacing it" "$T/out"; check "file without a token: says it replaces it" $? 0
-check "file without a token: file holds the token" "$(token)" "$(cat "$T/gitea/tokens/c4factory-webshop")"
+check "file without a token: file holds the token" "$(token)" "$(cat "$T/gitea/tokens/theos-webshop")"
 
 # Without CREDENTIALS_DIR the seed stores Secrets as before, and the runner token.
 "$SEED" >"$T/out" 2>&1; check "secret mode: succeeds" $? 0
@@ -141,14 +141,14 @@ grep -q "create secret generic gitea-runner" "$T/gitea/kubectl"; check "secret m
 # instance (#1140): its token, annotated with its owner.
 grep -q "orgs/templates/actions/runners/registration-token" "$T/gitea/calls"; check "secret mode: the templates organization's runner token" $? 0
 grep -q "admin/actions/runners" "$T/gitea/calls"; check "secret mode: no instance runner token" $? 1
-grep -q "c4.factory.io/token-owner=org/templates" "$T/gitea/kubectl"; check "secret mode: the runner token names its owner" $? 0
+grep -q "theos.factory.io/token-owner=org/templates" "$T/gitea/kubectl"; check "secret mode: the runner token names its owner" $? 0
 grep -q "projects" "$T/gitea/kubectl"; check "secret mode: no Project without PROJECT_OBJECTS" $? 1
 
 # The chart's seed (PROJECT_OBJECTS=true) creates the project's Project when
 # the namespace has none; get finds none here.
 : >"$T/gitea/kubectl"
 PROJECT_OBJECTS=true "$SEED" >"$T/out" 2>&1; check "project objects: succeeds" $? 0
-grep -q "kubectl -n webshop get projects.c4.factory.io webshop" "$T/gitea/kubectl"; check "project objects: looks for the Project first" $? 0
+grep -q "kubectl -n webshop get projects.theos.factory.io webshop" "$T/gitea/kubectl"; check "project objects: looks for the Project first" $? 0
 grep -q "Created Project webshop/webshop" "$T/out"; check "project objects: creates Project webshop" $? 0
 PROJECT_OBJECTS=true CREDENTIALS_DIR=$CREDS "$SEED" >"$T/out" 2>&1; check "project objects, file mode: succeeds" $? 0
 grep -q "Project" "$T/out"; check "project objects, file mode: no Project" $? 1
@@ -158,7 +158,7 @@ grep -q "Project" "$T/out"; check "project objects, file mode: no Project" $? 1
 grep -q "namespace" "$T/gitea/kubectl"; check "share secrets off: no namespace label" $? 1
 : >"$T/gitea/kubectl"
 SHARE_SECRETS=true "$SEED" >"$T/out" 2>&1; check "share secrets: succeeds" $? 0
-grep -q "kubectl label namespace webshop c4.factory.io/shared-secrets=true --overwrite" "$T/gitea/kubectl"
+grep -q "kubectl label namespace webshop theos.factory.io/shared-secrets=true --overwrite" "$T/gitea/kubectl"
 check "share secrets: labels namespace webshop" $? 0
 : >"$T/gitea/kubectl"
 SHARE_SECRETS=true CREDENTIALS_DIR=$CREDS "$SEED" >"$T/out" 2>&1; check "share secrets, file mode: succeeds" $? 0

@@ -239,7 +239,7 @@ export default function App() {
   )
 
   const project = data.project
-  const pageTitle = `${objectPage ? `${url.kind} ${url.name}` : areaLabel(area)}${demo ? ' (demo)' : ''} · C4 Factory`
+  const pageTitle = `${objectPage ? `${url.kind} ${url.name}` : areaLabel(area)}${demo ? ' (demo)' : ''} · theos`
   useEffect(() => {
     document.title = pageTitle
   }, [pageTitle])

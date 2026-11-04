@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
+	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -48,14 +48,14 @@ func webhookCertScheme(t *testing.T) *runtime.Scheme {
 }
 
 func newWebhookCert(c client.Client, now *time.Time) *WebhookCert {
-	return &WebhookCert{Client: c, Namespace: "c4-factory-system", Secret: "c4-webhook-cert",
+	return &WebhookCert{Client: c, Namespace: "theos-system", Secret: "c4-webhook-cert",
 		Service: "c4-webhook-service", CRDs: []string{}, Now: func() time.Time { return *now }}
 }
 
 func readWebhookSecret(t *testing.T, c client.Client) map[string][]byte {
 	t.Helper()
 	var s corev1.Secret
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "c4-factory-system",
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "theos-system",
 		Name: "c4-webhook-cert"}, &s); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestWebhookCertIssuesReusesAndReissues(t *testing.T) {
 	}
 	issued := readWebhookSecret(t, c)
 	cert := served(t, w)
-	if err := cert.VerifyHostname("c4-webhook-service.c4-factory-system.svc"); err != nil {
+	if err := cert.VerifyHostname("c4-webhook-service.theos-system.svc"); err != nil {
 		t.Errorf("issued for the wrong host: %v", err)
 	}
 	if got := cert.NotAfter.Sub(now); got < 364*24*time.Hour || got > 366*24*time.Hour {
@@ -164,7 +164,7 @@ func TestWebhookCertReissuesForAnotherHostAndTakesTheFirstReplicas(t *testing.T)
 	if err := w.Ensure(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := served(t, w).VerifyHostname("renamed.c4-factory-system.svc"); err != nil {
+	if err := served(t, w).VerifyHostname("renamed.theos-system.svc"); err != nil {
 		t.Errorf("not re-issued for the renamed Service: %v", err)
 	}
 
@@ -200,15 +200,15 @@ func TestWebhookCertPatchesTheCAIntoWebhookCRDs(t *testing.T) {
 	ctx := context.Background()
 	now := webhookCertStart
 	webhookCRD := &apiextensionsv1.CustomResourceDefinition{}
-	webhookCRD.Name = "crews.c4.factory.io"
+	webhookCRD.Name = "crews.theos.factory.io"
 	webhookCRD.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
 		Strategy: apiextensionsv1.WebhookConverter,
 		Webhook: &apiextensionsv1.WebhookConversion{ConversionReviewVersions: []string{"v1"},
 			ClientConfig: &apiextensionsv1.WebhookClientConfig{Service: &apiextensionsv1.ServiceReference{
-				Namespace: "c4-factory-system", Name: "c4-webhook-service"}}},
+				Namespace: "theos-system", Name: "c4-webhook-service"}}},
 	}
 	noneCRD := &apiextensionsv1.CustomResourceDefinition{}
-	noneCRD.Name = "tasks.c4.factory.io"
+	noneCRD.Name = "tasks.theos.factory.io"
 	noneCRD.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{Strategy: apiextensionsv1.NoneConverter}
 	c := fake.NewClientBuilder().WithScheme(webhookCertScheme(t)).WithObjects(webhookCRD, noneCRD).Build()
 	w := newWebhookCert(c, &now)
@@ -234,12 +234,12 @@ func TestWebhookCertPatchesTheCAIntoWebhookCRDs(t *testing.T) {
 
 // #1830: a CRD converts by the operator's webhook only while its kind's
 // versions differ in shape; the mark is the annotation
-// c4.factory.io/conversion: webhook on the base, from a +kubebuilder:metadata
+// theos.factory.io/conversion: webhook on the base, from a +kubebuilder:metadata
 // marker on the kind's hub type. A kind whose versions' schemas match carries
 // no mark, and one whose schemas differ carries it: the change that first
 // makes a shape differ switches the kind to the webhook.
 func TestConversionMarkFollowsTheShapes(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "c4.factory.io_*.yaml"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "theos.factory.io_*.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,16 +263,16 @@ func TestConversionMarkFollowsTheShapes(t *testing.T) {
 			}
 		}
 		hooked := slices.Contains(c4v1alpha1.HookedKinds(), crd.Spec.Names.Kind)
-		marked := crd.Annotations["c4.factory.io/conversion"] == "webhook"
+		marked := crd.Annotations["theos.factory.io/conversion"] == "webhook"
 		switch {
 		case differs && !marked:
 			t.Errorf("%s: its versions differ in shape but its hub type lacks the marker "+
-				"+kubebuilder:metadata:annotations=\"c4.factory.io/conversion=webhook\" (#1830)", crd.Name)
+				"+kubebuilder:metadata:annotations=\"theos.factory.io/conversion=webhook\" (#1830)", crd.Name)
 		case hooked && !marked:
 			t.Errorf("%s: has a conversion hook, which strategy None never runs, but its hub type lacks the marker "+
-				"+kubebuilder:metadata:annotations=\"c4.factory.io/conversion=webhook\" (#1830)", crd.Name)
+				"+kubebuilder:metadata:annotations=\"theos.factory.io/conversion=webhook\" (#1830)", crd.Name)
 		case marked && !differs && !hooked:
-			t.Errorf("%s: marked c4.factory.io/conversion: webhook, but its versions share a shape and no hook: "+
+			t.Errorf("%s: marked theos.factory.io/conversion: webhook, but its versions share a shape and no hook: "+
 				"drop the marker, strategy None serves them (#1830)", crd.Name)
 		}
 	}
@@ -338,14 +338,14 @@ func TestShapeOfKeepsAFieldNamedDescription(t *testing.T) {
 // #1614: WebhookCRDs and the RBAC marker that lets the operator patch them
 // name every CRD in config/crd/bases.
 func TestWebhookCRDsAreEveryCRD(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "c4.factory.io_*.yaml"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "theos.factory.io_*.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := make([]string, 0, len(files))
 	for _, f := range files {
-		plural := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), "c4.factory.io_"), ".yaml")
-		want = append(want, plural+".c4.factory.io")
+		plural := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), "theos.factory.io_"), ".yaml")
+		want = append(want, plural+".theos.factory.io")
 	}
 	if !slices.Equal(want, slices.Sorted(slices.Values(WebhookCRDs))) {
 		t.Errorf("WebhookCRDs = %v, want %v", WebhookCRDs, want)
@@ -369,9 +369,9 @@ func TestWebhookCRDsAreEveryCRD(t *testing.T) {
 	}
 	plurals := make([]string, 0, len(want))
 	for _, name := range want {
-		plurals = append(plurals, strings.TrimSuffix(name, ".c4.factory.io"))
+		plurals = append(plurals, strings.TrimSuffix(name, ".theos.factory.io"))
 	}
-	if !strings.Contains(string(src), "groups=c4.factory.io,resources="+strings.Join(plurals, ";")+",verbs=list;patch\n") {
-		t.Error("storage_migrator.go's c4.factory.io RBAC marker doesn't name exactly WebhookCRDs' kinds")
+	if !strings.Contains(string(src), "groups=theos.factory.io,resources="+strings.Join(plurals, ";")+",verbs=list;patch\n") {
+		t.Error("storage_migrator.go's theos.factory.io RBAC marker doesn't name exactly WebhookCRDs' kinds")
 	}
 }

@@ -11,12 +11,12 @@ holds across versions and builds the second served version.
 
 ## Goal
 
-A device that upgrades keeps every object it stored: `c4.factory.io` serves
+A device that upgrades keeps every object it stored: `theos.factory.io` serves
 `v1beta1` as its storage version beside `v1alpha1`, every object of every
 kind reads and writes at either version through a conversion the operator
 serves, and a written promise says what a served version keeps, how one is
 deprecated and when one may be dropped. The first roadmap criterion of 1.0
-("a written compatibility promise for `c4.factory.io`, and a served version
+("a written compatibility promise for `theos.factory.io`, and a served version
 past `v1alpha1` that existing objects convert to") holds.
 
 Done when every step below is merged: the promise is in `docs/design.md`;
@@ -37,7 +37,7 @@ with a warning naming the release that may drop it. Test output goes to
   issues a certificate.
 - `test/compat` compares `config/crd/bases` with the last release's copy
   in `test/compat/baseline/`, one version per CRD assumed.
-- `c4.factory.io/v1alpha1` is written in the UI (`ui/src/k8s/types.ts`,
+- `theos.factory.io/v1alpha1` is written in the UI (`ui/src/k8s/types.ts`,
   `VERSION`), the planner (`model.PlanAPIVersion`, what a Brief's plan
   says), the samples, the seed, the e2e fixture, the templates' docs and
   the guides; the controllers import `api/v1alpha1` in about 2,700
@@ -57,7 +57,7 @@ with a warning naming the release that may drop it. Test output goes to
      version, never a change to a served one.
    - Every served version converts to and from the storage version without
      failing and without loss: a field with no home in the target version
-     rides in the annotation `c4.factory.io/<version>-fields` as JSON, so a
+     rides in the annotation `theos.factory.io/<version>-fields` as JSON, so a
      round trip gives the object back exactly. A kind's conversion is
      tested as a round trip over fuzzed objects of every served version.
    - A release deprecates a version by saying so under *Deprecated* in its
@@ -113,7 +113,7 @@ with a warning naming the release that may drop it. Test output goes to
    API server converts by rewriting `apiVersion`, and nothing in the read
    path depends on the operator. The change that first makes a kind's
    shape differ (its first hook in the generic converter) also marks its
-   hub type `+kubebuilder:metadata:annotations="c4.factory.io/conversion=webhook"`;
+   hub type `+kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"`;
    the annotation lands on the base CRD, kustomize's conversion patch
    selects on it, the chart's generator (`hack/chart-crds.sh`) reads it,
    and a unit test in `internal/controller` fails when the mark and the
@@ -139,7 +139,7 @@ with a warning naming the release that may drop it. Test output goes to
    and creates the Secret; it re-issues when under 30 days remain; a second
    replica reads what the first wrote (create, then get on conflict). It
    then patches the CA into the `conversion` stanza of every
-   `c4.factory.io` CRD. The generated role gains `secrets` get/create/update
+   `theos.factory.io` CRD. The generated role gains `secrets` get/create/update
    in its own namespace and `customresourcedefinitions` get/patch by name.
    Readiness includes the webhook server's started check, so the Service
    has the pod before any cache needs a conversion, and controller-runtime

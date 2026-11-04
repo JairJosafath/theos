@@ -23,8 +23,8 @@ existing roles run the plan, plus one new one, the verifier watch.
 | Step-0 session | one headless session that `start.sh` starts | Files the parent and the steps, readies the relay's steps, checks the relay runs, hands off, ends. |
 | Relay workers and maintainer | `hack/relay.sh`, as today | Work steps 1 to 7, one per session. The maintainer closes what finishes, decides escalations and keeps main green. Step 8 retires them. |
 | Verifier watch | [`self-hosting/verifier-watch.sh`](self-hosting/verifier-watch.sh), a systemd user timer that `start.sh` installs | Hourly: starts one verifier session when a `Verifier:` step has every `Depends on` closed. Turns itself off when the parent is closed. |
-| Verifier sessions | the sessions the watch starts, with `C4_HUMAN_CLUSTER=1` | Steps 8 to 10. The only agents that touch a cluster, Gitea's admin API or the GitHub repository's settings. |
-| The factory's Crew | Agents in cluster `c4factory-self` | From step 8 on, works the factory's own issues in Gitea. |
+| Verifier sessions | the sessions the watch starts, with `THEOS_HUMAN_CLUSTER=1` | Steps 8 to 10. The only agents that touch a cluster, Gitea's admin API or the GitHub repository's settings. |
+| The factory's Crew | Agents in cluster `theos-self` | From step 8 on, works the factory's own issues in Gitea. |
 
 The rules:
 
@@ -75,9 +75,9 @@ The factory develops itself:
 
 Done when:
 - **Steps 1 to 7** are merged on GitHub's main, and release N carries them.
-- **The cluster:** `c4factory-self` runs release N and step 8's fence check
+- **The cluster:** `theos-self` runs release N and step 8's fence check
   passed.
-- **The Container:** `c4factory` is `Ready` through adoption, with main
+- **The Container:** `theos` is `Ready` through adoption, with main
   protected and `factory-self`'s paths protected.
 - **The mirror:** GitHub's main is Gitea's main within minutes of every merge.
 - **The relay:** the watch is uninstalled and no relay session runs.
@@ -85,7 +85,7 @@ Done when:
   comment gives per Task the outcome, rounds, cost, minutes, and what stopped
   it if it failed.
 - **Promotion:** release N+1 passed its check on a fresh pool cluster and runs
-  in `c4factory-self` (step 10).
+  in `theos-self` (step 10).
 
 ## Where we stand (main 658111d)
 
@@ -117,7 +117,7 @@ Done when:
 - **No real CNI has enforced the fence yet.**
   - Sandbox egress denies the private ranges: `model.PrivateRanges`, and
     `fenceEgress` in `internal/controller/ci_runner_pod.go`. The policy
-    `c4-agent-sandbox` selects pods labelled `c4.factory.io/agent-sandbox=true`.
+    `c4-agent-sandbox` selects pods labelled `theos.factory.io/agent-sandbox=true`.
   - But [testenv.md](../dev/testenv.md) lists "the fence enforced by a CNI"
     as untested, and Kind runs kindnet.
 - **Sizes:**
@@ -148,7 +148,7 @@ Done when:
 2. **Gitea is the source of truth, and GitHub a private mirror.**
    - Gitea is the only Git host the factory has (design.md, "One Git host"),
      its limits are the owner's, and its protected files are the fence.
-   - Gitea's push mirror syncs every push to `JairJosafath/c4factory`.
+   - Gitea's push mirror syncs every push to `JairJosafath/theos`.
      Nothing is written on the GitHub side again.
    - GitHub keeps one job: `release.yml` builds the releases from the tags
      the mirror pushes. Every other workflow there is disabled.
@@ -157,7 +157,7 @@ Done when:
 
 3. **Kind on this device: not k3s, and not EKS yet.**
    - k3s needs root to install, and everything here already runs on Kind.
-   - The cluster is `c4factory-self`, made with `make cluster` outside the
+   - The cluster is `theos-self`, made with `make cluster` outside the
      pool, so no `cluster acquire --fresh` ever recreates it.
    - Step 8 checks the fence on it, and switches to Calico if kindnet
      doesn't enforce it.
@@ -166,7 +166,7 @@ Done when:
 4. **A Container can adopt a repository** (step 1).
    - `spec.adopt: true` takes a repository that already has history. The
      operator writes nothing to it.
-   - The person proves intent first, by committing a `.c4factory.yaml` that
+   - The person proves intent first, by committing a `.theos.yaml` that
      names the project and the Container; else `IdentityMismatch`.
    - The operator compares the Standard's files on main directly with what
      the Standard renders at its ref; a difference fails
@@ -191,15 +191,15 @@ Done when:
    | `.claude/`, `CLAUDE.md`, `GOVERNANCE.md` | the agents' settings and rules |
    | `hack/` | all of it, until someone narrows it |
 
-   `AGENTS.md`, `docs/agents/`, `.c4factory.yaml` and `.gitea/` are
+   `AGENTS.md`, `docs/agents/`, `.theos.yaml` and `.gitea/` are
    protected already.
 
 6. **How the factory models itself:**
    - Project `factory`, which is also the namespace and the Gitea org.
-   - SoftwareSystem `c4factory`.
-   - Container `c4factory`: type `operator`, `adopt: true`, Framework
+   - SoftwareSystem `theos`.
+   - Container `theos`: type `operator`, `adopt: true`, Framework
      `go-kubebuilder`, Standard `factory-self`, GitProvider `gitea`.
-   - Crew `c4factory`: the chart's `implementer` and `reviewer` Agents,
+   - Crew `theos`: the chart's `implementer` and `reviewer` Agents,
      `parallel: 1`, `taskBudgetUSD: 30`.
    - The Agents get `timeoutMinutes: 120`, because one `make check` is about
      14 minutes.
@@ -298,7 +298,7 @@ ways ([done/api-versions.md](done/api-versions.md) has how conversion works).
 
 **The controller.** On `HistoryAdopt`, `container_scaffold.go` writes nothing
 and checks two things on main:
-- **`.c4factory.yaml` names this project and Container.** Otherwise the
+- **`.theos.yaml` names this project and Container.** Otherwise the
   Container fails with `IdentityMismatch`, saying what the file holds.
 - **Every file of the Container's Standard is there, with the content the
   Standard renders for this Container at its ref.** Otherwise it fails with
@@ -311,7 +311,7 @@ does.
 **The docs.**
 - `docs/design.md`'s rules table and "Out of scope" say that an existing
   repository may be adopted with `spec.adopt` and that monorepos stay out.
-- The Container section says what `.c4factory.yaml` an adopted repository
+- The Container section says what `.theos.yaml` an adopted repository
   carries: the identity file's fields, with `scaffoldedFrom` empty.
 
 **Done when** these pass:
@@ -319,7 +319,7 @@ does.
 - envtest cases:
   - an adopted Container whose repository has history and the right files
     goes `Ready` with main protected;
-  - one without `.c4factory.yaml` fails `IdentityMismatch`;
+  - one without `.theos.yaml` fails `IdentityMismatch`;
   - one on an empty repository fails `NothingToAdopt`;
   - changing `spec.adopt` is refused.
 
@@ -339,7 +339,7 @@ finds each definition only in `fence.go`.
 ### Step 3: the factory-self Standard (relay; depends on step 2)
 
 **The template:** `templates/factory-self/` holds one file,
-`.c4factory/ci/giteaActions/.gitea/workflows/check.yaml`.
+`.theos/ci/giteaActions/.gitea/workflows/check.yaml`.
 - It is plain YAML, not a `.tmpl`, so the repository's copy is the same
   bytes.
 - Its job is named `check`, so its status context is `check*`.
@@ -440,8 +440,8 @@ passes.
      develops itself (docs/plans/self-hosting.md). The relay, its triage and
      its maintainer are retired, and what this file says about them is
      history."*
-   - **`.c4factory.yaml`**, as step 1 documents it, for project `factory`,
-     SoftwareSystem `c4factory`, Container `c4factory`, type `operator`.
+   - **`.theos.yaml`**, as step 1 documents it, for project `factory`,
+     SoftwareSystem `theos`, Container `theos`, type `operator`.
    - **`.gitea/workflows/check.yaml`**, byte for byte `factory-self`'s file.
    - **Delete** `.claude/skills/handoff`, `maintainer` and `triage`.
 4. **Cut release N** with `hack/release.sh minor`, and wait for the *Release*
@@ -450,7 +450,7 @@ passes.
    (`hack/lib/github.sh cluster pool`), run `make down KIND_CLUSTER=<name>`.
    `make up` brings one back later.
 6. **Build the cluster and install the release.**
-   1. Run `make cluster KIND_CLUSTER=c4factory-self`.
+   1. Run `make cluster KIND_CLUSTER=theos-self`.
    2. Install release N as [getting-started.md](../getting-started.md)
       section 1 says, with:
       - `gitea.projects` set to `[factory]`;
@@ -462,9 +462,9 @@ passes.
    If the device's GitHub token lacks `read:packages`, use this instead of
    the pull secret: build the release's images from tag `vN` as
    `release.yml` does, and `kind load docker-image` them into
-   `c4factory-self`.
+   `theos-self`.
 7. **Check the fence** with a pod in namespace `factory` labelled
-   `c4.factory.io/agent-sandbox=true`.
+   `theos.factory.io/agent-sandbox=true`.
    - It must fail to reach the Kind node's address on port 6443, and the
      Docker network's gateway.
    - It must reach `https://proxy.golang.org`.
@@ -478,10 +478,10 @@ passes.
       `gitea-admin` (the `factory-ops` skill; never print it).
    2. `POST /api/v1/repos/migrate` with:
       - `service: github`;
-      - `clone_addr` `https://github.com/JairJosafath/c4factory.git`;
+      - `clone_addr` `https://github.com/JairJosafath/theos.git`;
       - `auth_token`: the device's GitHub token, the one `gh_token` in
         `hack/lib/github.sh` reads from the git credential helper;
-      - `repo_owner: factory`, `repo_name: c4factory`, `private: true`;
+      - `repo_owner: factory`, `repo_name: theos`, `private: true`;
       - issues, labels, milestones, pull requests and releases on;
       - `mirror` off.
 
@@ -489,13 +489,13 @@ passes.
    stops growing. Then check that #1876 is a pull request and #1870 an
    issue, with their GitHub titles.
 9. **Set up the mirror.**
-   1. Add a push mirror on `factory/c4factory` to
-      `https://github.com/JairJosafath/c4factory.git`, with the same token,
+   1. Add a push mirror on `factory/theos` to
+      `https://github.com/JairJosafath/theos.git`, with the same token,
       `sync_on_commit: true` and an interval of 8 hours.
    2. On GitHub, `gh workflow disable` every workflow except `release.yml`.
    3. If main's branch rule refuses the mirror's push, turn off its admin
       enforcement
-      (`gh api -X DELETE repos/JairJosafath/c4factory/branches/main/protection/enforce_admins`).
+      (`gh api -X DELETE repos/JairJosafath/theos/branches/main/protection/enforce_admins`).
    4. Sync, then check that both mains are the same commit.
 
    If Gitea's mirror can't push at all (GitHub refuses a ref it won't
@@ -557,10 +557,10 @@ passes.
       to the first app's scaffold and an `Idle` Crew, on the `stand-in`
       Agent, with no token.
    3. Release the lease.
-4. **Promote.** Run `helm upgrade` on `c4factory-self` to `vX.Y.Z`, with the
+4. **Promote.** Run `helm upgrade` on `theos-self` to `vX.Y.Z`, with the
    same values. Within 30 minutes:
    - the operator is `Ready`;
-   - Container `c4factory` is `Ready`;
+   - Container `theos` is `Ready`;
    - the Crew isn't `Failed`;
    - no Task failed for an operator reason.
 
@@ -570,7 +570,7 @@ passes.
 6. **Close everything.**
    1. Comment the results and close step 10.
    2. Close the parent (every step is closed).
-   3. Run `systemctl --user disable --now c4factory-verifier.timer`.
+   3. Run `systemctl --user disable --now theos-verifier.timer`.
 
 ## The one command
 
@@ -580,7 +580,7 @@ check the device, start, leave it. Run it from a plain shell in the main
 checkout, on main, on the device that runs the relay:
 
 ```bash
-cd ~/c4factory && git pull --ff-only origin main && docs/plans/self-hosting/start.sh
+cd ~/theos && git pull --ff-only origin main && docs/plans/self-hosting/start.sh
 ```
 
 First it checks what the plan uses and can't make itself, and starts nothing
@@ -601,7 +601,7 @@ skipping any that are already done:
 
 `start.sh --check` only checks. The watch logs to
 `.dev/self-hosting-verifier.log`. To stop it at any time:
-`systemctl --user disable --now c4factory-verifier.timer`.
+`systemctl --user disable --now theos-verifier.timer`.
 
 ## What can still reach the owner
 

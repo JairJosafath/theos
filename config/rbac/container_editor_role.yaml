@@ -1,7 +1,7 @@
-# This rule is not used by the project c4-factory itself.
+# This rule is not used by the project theos itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants permissions to create, update, and delete resources within the c4.factory.io.
+# Grants permissions to create, update, and delete resources within theos.factory.io.
 # This role is intended for users who need to manage these resources
 # but should not control RBAC or manage permissions for others.
 
@@ -9,12 +9,12 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
-    app.kubernetes.io/name: c4-factory
+    app.kubernetes.io/name: theos
     app.kubernetes.io/managed-by: kustomize
   name: container-editor-role
 rules:
 - apiGroups:
-  - c4.factory.io
+  - theos.factory.io
   resources:
   - containers
   verbs:
@@ -26,7 +26,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - c4.factory.io
+  - theos.factory.io
   resources:
   - containers/status
   verbs:

@@ -1,6 +1,6 @@
 {{- if and .Values.gitea.enabled .Values.projectNamespaces.create }}
-{{- $skip := list .Release.Namespace (include "c4-factory.giteaNamespace" .) }}
-{{- range include "c4-factory.projectNames" . | fromJsonArray }}
+{{- $skip := list .Release.Namespace (include "theos.giteaNamespace" .) }}
+{{- range include "theos.projectNames" . | fromJsonArray }}
 {{- if not (has . $skip) }}
 {{- $existing := lookup "v1" "Namespace" "" . }}
 {{- $annotations := dig "metadata" "annotations" (dict) $existing }}
@@ -16,8 +16,8 @@ kind: Namespace
 metadata:
   name: {{ . }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "project" "context" $) | nindent 4 }}
-    c4.factory.io/shared-secrets: "true"
+    {{- include "theos.giteaLabels" (dict "name" "project" "context" $) | nindent 4 }}
+    theos.factory.io/shared-secrets: "true"
   annotations:
     helm.sh/resource-policy: keep
 {{- end }}

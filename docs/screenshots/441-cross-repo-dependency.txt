@@ -11,4 +11,4 @@
 === RUN   TestAddIssueDependency
 --- PASS: TestAddIssueDependency (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/gitprovider	2.877s
+ok  	github.com/JairJosafath/theos/internal/gitprovider	2.877s

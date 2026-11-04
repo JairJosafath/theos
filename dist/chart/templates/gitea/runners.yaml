@@ -1,5 +1,5 @@
 {{- if .Values.gitea.enabled }}
-{{- $ns := include "c4-factory.giteaNamespace" . }}
+{{- $ns := include "theos.giteaNamespace" . }}
 {{- $enabled := list }}
 {{- range $label, $r := .Values.runners }}{{ if $r.enabled }}{{ $enabled = append $enabled $label }}{{ end }}{{ end }}
 {{- if $enabled }}
@@ -17,7 +17,7 @@ metadata:
   name: ci-runner
   namespace: {{ $ns }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "ci-runner" "context" $) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "ci-runner" "context" $) | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -25,7 +25,7 @@ spec:
   policyTypes: [Ingress, Egress]
   egress:
     - to:
-        {{- include "c4-factory.clusterDNSPeers" $ | trim | nindent 8 }}
+        {{- include "theos.clusterDNSPeers" $ | trim | nindent 8 }}
       ports:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
@@ -55,7 +55,7 @@ metadata:
   name: {{ $name }}-env
   namespace: {{ $ns }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" $name "context" $) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" $name "context" $) | nindent 4 }}
 data:
   # Read by the runner for every job (env_file in hack/runner/config.yaml).
   job.env: |
@@ -77,7 +77,7 @@ metadata:
   name: {{ $name }}
   namespace: {{ $ns }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" $name "context" $) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" $name "context" $) | nindent 4 }}
 spec:
   replicas: {{ hasKey $r "replicas" | ternary $r.replicas 1 }}
   strategy:
@@ -89,11 +89,11 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "c4-factory.giteaLabels" (dict "name" $name "context" $) | nindent 8 }}
+        {{- include "theos.giteaLabels" (dict "name" $name "context" $) | nindent 8 }}
         app.kubernetes.io/component: ci-runner
     spec:
       automountServiceAccountToken: false
-      {{- include "c4-factory.imagePullSecrets" $ | nindent 6 }}
+      {{- include "theos.imagePullSecrets" $ | nindent 6 }}
       initContainers:
         # Registers the runner, writing /data/.runner: the only container given
         # the registration token, which the jobs in the runner container must
@@ -104,7 +104,7 @@ spec:
           command: [c4-runner-register]
           env:
             - name: GITEA_INSTANCE
-              value: {{ include "c4-factory.giteaURL" $ | quote }}
+              value: {{ include "theos.giteaURL" $ | quote }}
             - name: RUNNER_TOKEN
               valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
             - name: RUNNER_LABELS

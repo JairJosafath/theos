@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // The AWS Frameworks render the Container's spec.operations into

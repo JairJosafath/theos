@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -33,7 +33,7 @@ const runnersSource = "templates/gitea/runners.yaml"
 // register for the templates organization only, a project's checks run on
 // the per-project pool its GitProvider's spec.ci.giteaActions.runners names.
 // Every GitProvider the chart renders, the Gitea projects' in ConfigMap
-// c4factory-catalog and the user's in c4factory-gitproviders, carries a pool
+// theos-catalog and the user's in theos-gitproviders, carries a pool
 // with a runner for each runs-on label of the templates' check workflows, on
 // the image the shared runner of that label runs, and the go one with the
 // Go cache.
@@ -138,11 +138,11 @@ func TestGitProvidersCarryRunnerPool(t *testing.T) {
 }
 
 // checkLabels returns the runs-on labels of the templates' check workflows
-// (templates/*/.c4factory/ci/giteaActions/.gitea/workflows/check.yaml*), sorted
+// (templates/*/.theos/ci/giteaActions/.gitea/workflows/check.yaml*), sorted
 // and unique.
 func checkLabels(t *testing.T) []string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join("..", "..", "templates", "*", ".c4factory", "ci", "giteaActions",
+	files, err := filepath.Glob(filepath.Join("..", "..", "templates", "*", ".theos", "ci", "giteaActions",
 		".gitea", "workflows", "check.yaml*"))
 	if err != nil {
 		t.Fatal(err)

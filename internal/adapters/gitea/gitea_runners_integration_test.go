@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // TestGiteaRunnersIntegration registers ephemeral runners with two new
@@ -22,11 +22,11 @@ import (
 // in the other's, online once it has called Gitea and offline until then.
 // Like TestGiteaIntegration; the organizations and runners go when it ends.
 func TestGiteaRunnersIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 

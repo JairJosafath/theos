@@ -19,7 +19,7 @@ entry() {
 	local f=$1 ns=$2 kind=$3 name=$4 types=$5 fws=${6:-} self=${7:-}
 	{
 		echo "---"
-		echo "apiVersion: c4.factory.io/v1beta1"
+		echo "apiVersion: theos.factory.io/v1beta1"
 		echo "kind: $kind"
 		echo "metadata:"
 		echo "  name: $name"
@@ -41,7 +41,7 @@ bundle() {
 	shift 3
 	{
 		echo "---"
-		echo "apiVersion: c4.factory.io/v1beta1"
+		echo "apiVersion: theos.factory.io/v1beta1"
 		echo "kind: Bundle"
 		echo "metadata:"
 		echo "  name: $name"

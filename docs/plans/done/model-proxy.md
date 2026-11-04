@@ -12,7 +12,7 @@ a sandbox or a project namespace, and the docs say so.
 - The token's one source is the Secret `agents.credentialsSecret`
   (`claude-credentials`, key `CLAUDE_CODE_OAUTH_TOKEN`) in the release
   namespace. The ProjectReconciler copies it into every namespace labelled
-  `c4.factory.io/shared-secrets=true` (`project_shared_secrets.go`, the
+  `theos.factory.io/shared-secrets=true` (`project_shared_secrets.go`, the
   `--shared-secret` flag).
 - An Agent names a Secret in its own namespace with `credentialsSecretRef`;
   `buildSandbox` (`task_sandbox.go`) puts every key of it into the agent
@@ -48,8 +48,8 @@ a sandbox or a project namespace, and the docs say so.
 4. **The sandbox gets the proxy's address and a placeholder.** For an Agent
    on the shared token, `buildSandbox` sets no `envFrom` and instead
    `ANTHROPIC_BASE_URL=http://c4-model-proxy.<release namespace>.svc:8080` (under
-   kustomize, `config/default`'s `namePrefix: c4-factory-` names the Service
-   `c4-factory-model-proxy`, so its `--model-proxy-url` says that) and
+   kustomize, `config/default`'s `namePrefix: theos-` names the Service
+   `theos-model-proxy`, so its `--model-proxy-url` says that) and
    `ANTHROPIC_AUTH_TOKEN=c4-model-proxy` (not a secret; Claude Code needs some
    credential to start and sends it as `Authorization: Bearer`). The proxy
    drops whatever `Authorization` and `x-api-key` the client sent and adds the
@@ -72,8 +72,8 @@ a sandbox or a project namespace, and the docs say so.
    NetworkPolicy can't filter by host name, and needn't.
 7. **The proxy takes traffic only from sandboxes.** A NetworkPolicy on its
    pods admits ingress only from pods labelled
-   `c4.factory.io/agent-sandbox=true` in namespaces labelled
-   `c4.factory.io/shared-secrets=true`, the same label that today decides
+   `theos.factory.io/agent-sandbox=true` in namespaces labelled
+   `theos.factory.io/shared-secrets=true`, the same label that today decides
    who gets a copy of the token, and that a namespace's own users can't set.
    The proxy forwards to its one upstream (`--upstream`, default
    `https://api.anthropic.com`) and nowhere else, streams responses
@@ -82,7 +82,7 @@ a sandbox or a project namespace, and the docs say so.
 8. **The token stays in the release namespace.** Once sandboxes use the
    proxy, nothing in a project namespace needs the token: the operator stops
    copying it and deletes the copies it made (they carry
-   `c4.factory.io/shared-from`). The pull secret is still copied. The
+   `theos.factory.io/shared-from`). The pull secret is still copied. The
    pre-flight check (`CredentialsNotFound`) reads the release namespace's
    Secret for a shared-token Agent.
 

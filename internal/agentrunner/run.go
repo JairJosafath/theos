@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // Result is what one sandbox run reports. It travels in the pod's termination
@@ -57,7 +57,7 @@ type Result struct {
 	// bad credentials); RetryAt is when it said it is back.
 	Unavailable bool       `json:"unavailable,omitempty"`
 	RetryAt     *time.Time `json:"retryAt,omitempty"`
-	// Interrupted means c4agent was told to stop (SIGTERM: a node shutdown, an
+	// Interrupted means theos-agent was told to stop (SIGTERM: a node shutdown, an
 	// eviction, a preemption) before the run finished, or its Git host stayed
 	// unreachable: the infrastructure ended it, not the agent.
 	Interrupted bool `json:"interrupted,omitempty"`
@@ -75,7 +75,7 @@ type Result struct {
 	// this pod's: the operator counted the earlier pods' when they ended.
 	ResumedFrom string `json:"resumedFrom,omitempty"`
 	// Paused means the run stopped because the factory asked it to (the pod's
-	// c4.factory.io/pause annotation) and saved a clean checkpoint: the
+	// theos.factory.io/pause annotation) and saved a clean checkpoint: the
 	// operator suspends the Sandbox with no round or rerun spent. PauseReason
 	// is the annotation's value.
 	Paused      bool   `json:"paused,omitempty"`
@@ -223,14 +223,14 @@ func shortenWords(s string, n int) string {
 // checkFixAttempts is how often the agent is sent back when the check fails.
 const checkFixAttempts = 2
 
-// stopGrace is how long a failed run waits for c4agent to be told to stop. A
+// stopGrace is how long a failed run waits for theos-agent to be told to stop. A
 // node restart signals every process of the pod at once, so the agent may die
-// before c4agent's own SIGTERM cancels ctx.
+// before theos-agent's own SIGTERM cancels ctx.
 var stopGrace = 2 * time.Second
 
 // Run does one job in dir and reports the outcome. Failures of the work itself
 // are in Result.Error; the run as such does not fail. A run that fails when ctx
-// is cancelled, or within stopGrace after, is Interrupted: c4agent was told to
+// is cancelled, or within stopGrace after, is Interrupted: theos-agent was told to
 // stop, and the kill of the agent that comes with it is not the agent's failure.
 // So is a run whose Git host stayed unreachable through every retry: a Gitea
 // restart, not the agent, failed it.
@@ -242,7 +242,7 @@ var stopGrace = 2 * time.Second
 // or step, saves a clean checkpoint (a hard one when it is still busy
 // pauseGrace later), and reports Paused (pause.go). A run whose agent's
 // service was unavailable saves a clean checkpoint before it reports
-// Unavailable, to go on from when the agent is back; one c4agent was told to
+// Unavailable, to go on from when the agent is back; one theos-agent was told to
 // stop is interrupted instead, whatever the agent printed.
 func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	sessions := &sessionLog{}
@@ -278,7 +278,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		result.Commit, result.Blocked = "", ""
 		return result
 	}
-	// A run c4agent was told to stop (a SIGTERM, or the run's deadline) is
+	// A run theos-agent was told to stop (a SIGTERM, or the run's deadline) is
 	// interrupted, whatever the agent printed before it was killed: an
 	// earlier "overloaded" in its output doesn't make the stop a wait for the
 	// service, which would resume it with no round spent (#1996).
@@ -298,7 +298,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 	}
 	if result.Unavailable {
 		// The agent's own process ended with the service's error, and
-		// nobody stopped c4agent: its transcript is whole, and the same
+		// nobody stopped theos-agent: its transcript is whole, and the same
 		// session can go on.
 		kind := CheckpointClean
 		if saved, err := saveCheckpoint(context.Background(), job, prog, sessions, result, kind, nil); err != nil {

@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // TestGiteaPackagesIntegration publishes a release's npm tarball, wheel and
@@ -26,11 +26,11 @@ import (
 // publish runs with or without the tools; only an install subtest skips when
 // its tool is not on PATH, and says so (#1702).
 func TestGiteaPackagesIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
@@ -57,7 +57,7 @@ func TestGiteaPackagesIntegration(t *testing.T) {
 	// package has no dependencies, so the install reaches the local Gitea
 	// alone. The packages are the organisation's, not the repository's:
 	// deleting the repository leaves them, so the test deletes them itself.
-	npmName := "@c4factory/" + name
+	npmName := "@theos/" + name
 	npmFile := name + "-0.1.0.tgz"
 	pyName := name
 	wheelFile := strings.ReplaceAll(pyName, "-", "_") + "-0.1.0-py3-none-any.whl"
@@ -103,7 +103,7 @@ func TestGiteaPackagesIntegration(t *testing.T) {
 		}
 		project := t.TempDir()
 		u, _ := url.Parse(base)
-		npmrc := fmt.Sprintf("@c4factory:registry=%s\n//%s/api/packages/webshop/npm/:_authToken=%s\n",
+		npmrc := fmt.Sprintf("@theos:registry=%s\n//%s/api/packages/webshop/npm/:_authToken=%s\n",
 			repo.NpmRegistry, u.Host, creds.Token)
 		if err := os.WriteFile(filepath.Join(project, ".npmrc"), []byte(npmrc), 0o600); err != nil {
 			t.Fatal(err)
@@ -144,8 +144,8 @@ func TestGiteaPackagesIntegration(t *testing.T) {
 		}
 		project := t.TempDir()
 		pyproject := fmt.Sprintf("[project]\nname = \"app\"\nversion = \"0.0.0\"\nrequires-python = \">=3.12\"\n"+
-			"dependencies = []\n\n[[tool.uv.index]]\nname = \"c4factory\"\nurl = %q\nexplicit = true\n\n"+
-			"[tool.uv.sources]\n%s = { index = \"c4factory\" }\n", repo.PyPIIndex, pyName)
+			"dependencies = []\n\n[[tool.uv.index]]\nname = \"theos\"\nurl = %q\nexplicit = true\n\n"+
+			"[tool.uv.sources]\n%s = { index = \"theos\" }\n", repo.PyPIIndex, pyName)
 		if err := os.WriteFile(filepath.Join(project, "pyproject.toml"), []byte(pyproject), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -153,7 +153,7 @@ func TestGiteaPackagesIntegration(t *testing.T) {
 		cmd.Dir = project
 		cmd.Env = append(os.Environ(), "HOME="+project, "UV_CACHE_DIR="+filepath.Join(project, ".uv-cache"),
 			"UV_PYTHON_PREFERENCE=only-system", "UV_NO_CONFIG=1",
-			"UV_INDEX_C4FACTORY_USERNAME="+creds.Username, "UV_INDEX_C4FACTORY_PASSWORD="+creds.Token)
+			"UV_INDEX_THEOS_USERNAME="+creds.Username, "UV_INDEX_THEOS_PASSWORD="+creds.Token)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("uv add: %v\n%s", err, out)
 		}

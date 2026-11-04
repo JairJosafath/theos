@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/adapters/github"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/adapters/github"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // fakeGitHub is GitHub's release and issues API over httptest, for the repositories made
@@ -300,7 +300,7 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 	}
 	if req.URL.Path == "/user" && req.Method == http.MethodGet {
 		// Every repository's token is the factory's account.
-		reply(w, http.StatusOK, fakeGitHubUser{"c4factory-bot"})
+		reply(w, http.StatusOK, fakeGitHubUser{"theos-bot"})
 		return
 	}
 	if token, ok := strings.CutPrefix(req.URL.Path, "/app/installations/"); ok {

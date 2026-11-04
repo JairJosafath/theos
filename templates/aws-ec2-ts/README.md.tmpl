@@ -3,7 +3,7 @@
 The `{{ .Container }}` service of {{ .SoftwareSystem }}, in project {{ .Project }}: an HTTP
 server in TypeScript on EC2 instances in an Auto Scaling group, behind an
 internal Application Load Balancer, keeping items in a DynamoDB table, with
-its infrastructure as a CDK app. Scaffolded by C4 Factory.
+its infrastructure as a CDK app. Scaffolded by theos.
 
 ## The API
 
@@ -88,7 +88,7 @@ never backed up.
 
 What the app promises whatever the tier, the backups' retention and copy
 region, the recovery objectives and who the alarms tell, is in
-`infra/operations.ts`, which C4 Factory renders from the Container's
+`infra/operations.ts`, which theos renders from the Container's
 `spec.operations`: change the block, and the file follows it. A deploy sets
 two parameters per environment: `CertificateArn`, the load balancer's
 certificate, which it needs, and `AlertEmail`, who the alarms tell. The
@@ -136,7 +136,7 @@ to come up healthy, the update stops and CloudFormation rolls back.
   The stack is named after the package. `infra/operations.ts` holds what the
   Container promises.
 - `infra/connectors.ts` lists the data stores the Container's Relationships
-  connect it to, which C4 Factory renders from their Connectors; the stack
+  connect it to, which theos renders from their Connectors; the stack
   connects each to the instances, alarms on it and backs it up.
 {{- if has .Connectors "dynamodb" }} The
   `dynamodb` DataStore's table is made by `infra/connector_dynamodb.ts`, and

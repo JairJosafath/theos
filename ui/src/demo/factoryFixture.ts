@@ -140,7 +140,7 @@ export function demoHealth(now: number): FactoryHealth {
     metrics: true,
     nodes: [
       {
-        name: 'c4factory-control-plane',
+        name: 'theos-control-plane',
         ready: true,
         pressure: [],
         cpuAllocatableMilli: 12000,
@@ -154,11 +154,11 @@ export function demoHealth(now: number): FactoryHealth {
         key: 'operator',
         name: 'Operator',
         role: 'Scaffolds Containers and runs Tasks',
-        namespace: 'c4-factory-system',
+        namespace: 'theos-system',
         optional: false,
         state: 'ok',
         pods: [
-          pod('c4-factory-system', 'c4-factory-controller-manager-7d9c', 6, 41, {
+          pod('theos-system', 'theos-controller-manager-7d9c', 6, 41, {
             restarts: 2,
             lastRestart: { at: at(190), reason: 'Error', exitCode: 1 },
           }),
@@ -210,10 +210,10 @@ export function demoHealth(now: number): FactoryHealth {
         key: 'ui',
         name: 'UI',
         role: 'This page',
-        namespace: 'c4-factory-ui',
+        namespace: 'theos-ui',
         optional: true,
         state: 'ok',
-        pods: [pod('c4-factory-ui', 'c4-factory-ui-6c9f', 3, 46)],
+        pods: [pod('theos-ui', 'theos-ui-6c9f', 3, 46)],
       },
       {
         key: 'dns',

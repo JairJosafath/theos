@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -19,9 +19,9 @@ import (
 	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 // appSource is the files of orders-api at v0.1.0 for module path, the
@@ -35,7 +35,7 @@ func appSource(module string) (all []fake.SourceFile, app map[string]string) {
 		{Path: "LICENSE", Mode: ports.SourcePlain, Data: "MIT License\n"},
 		{Path: "README.md", Mode: ports.SourcePlain, Data: "# orders-api\n"},
 		{Path: "AGENTS.md", Mode: ports.SourcePlain, Data: "# Agents\n"},
-		{Path: ".c4factory.yaml", Mode: ports.SourcePlain, Data: "container: orders-api\n"},
+		{Path: ".theos.yaml", Mode: ports.SourcePlain, Data: "container: orders-api\n"},
 		{Path: ".gitea/workflows/ci.yaml", Mode: ports.SourcePlain, Data: "on: push\n"},
 		{Path: "docs/agents/review.md", Mode: ports.SourcePlain, Data: "Review well.\n"},
 	}
@@ -106,7 +106,7 @@ func sourcePublished(ns, repository, path string, app map[string]string) {
 	var made fakeGitCommit
 	for c := source.Commit; c != ""; {
 		commit := githubFake.commitOf(repository, c)
-		if commit.message == "orders-api v0.1.0: source\n\nC4factory-Source: "+ns+"/orders-api "+path+"-v0.1.0\n" {
+		if commit.message == "orders-api v0.1.0: source\n\ntheos-Source: "+ns+"/orders-api "+path+"-v0.1.0\n" {
 			made = commit
 			break
 		}

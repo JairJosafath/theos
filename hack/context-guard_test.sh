@@ -5,8 +5,8 @@
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 HOOK="$(cd "$(dirname "$0")" && pwd)/context-guard.sh"
-export C4_CONTEXT_STATE_DIR=$T/state
-unset C4_CONTEXT_SOFT C4_CONTEXT_HARD IS_SANDBOX # an agent sandbox sets the last; the hook does nothing there (#1894)
+export THEOS_CONTEXT_STATE_DIR=$T/state
+unset THEOS_CONTEXT_SOFT THEOS_CONTEXT_HARD IS_SANDBOX # an agent sandbox sets the last; the hook does nothing there (#1894)
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 
@@ -46,8 +46,8 @@ for i in 1 2; do
   check "at hard, call $i: exit 0, never blocks" "$rc" 0
 done
 
-out=$(C4_CONTEXT_SOFT=1000 C4_CONTEXT_HARD=2000 run s3 "$T/small.jsonl")
-check "C4_CONTEXT_HARD overrides" "$(has "$out" 'hard limit of 2k')" yes
+out=$(THEOS_CONTEXT_SOFT=1000 THEOS_CONTEXT_HARD=2000 run s3 "$T/small.jsonl")
+check "THEOS_CONTEXT_HARD overrides" "$(has "$out" 'hard limit of 2k')" yes
 
 out=$(run s4 "$T/missing.jsonl"); rc=$?
 check "missing transcript: silent" "$out" ""

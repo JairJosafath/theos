@@ -1,7 +1,7 @@
 # Agent guide
 
 This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` {{ .Type }} of {{ .SoftwareSystem }}: one Python
-project managed with uv, scaffolded by C4 Factory with the `{{ .Standard }}`
+project managed with uv, scaffolded by theos with the `{{ .Standard }}`
 Standard. Build it to the rules below. What it is for, and what it must never
 do, is in the issue you were given and the system's needs: follow those.
 
@@ -37,9 +37,9 @@ change here.
 4. Make the smallest change that meets every criterion. One concern per commit.
 5. `make check`, then commit with a Conventional Commit message
    (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
-6. `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` never change. Other protected files
+6. `AGENTS.md`, `docs/agents/` and `.theos.yaml` never change. Other protected files
    change only through a Standard change (see your role guide), never in a normal pull
-   request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
+   request. `.devcontainer/`, `.theos.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `ruff.toml`, `mypy.ini`, `.editorconfig`, `AGENTS.md`, `docs/style/`
    and `docs/agents/` belong to the Standard. ruff and mypy read their own files
    first, so a `[tool.ruff]` or `[tool.mypy]` table in `pyproject.toml` changes
@@ -63,16 +63,16 @@ change here.
 
   ```toml
   [[tool.uv.index]]
-  name = "c4factory"
+  name = "theos"
   url = "<index>"
   explicit = true
 
   [tool.uv.sources]
-  <container> = { index = "c4factory" }
+  <container> = { index = "theos" }
   ```
 
   then `uv add <container>==<version>`. The index URL is the one your pod's
-  `C4_PYPI_INDEX` names (the owner's Gitea by default,
+  `THEOS_PYPI_INDEX` names (the owner's Gitea by default,
   `<gitea>/api/packages/<owner>/pypi/simple`); the credentials come from
   `~/.netrc`, which your pod and CI write, never from `pyproject.toml`.
 

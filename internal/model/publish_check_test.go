@@ -167,7 +167,7 @@ func TestPublishChecks(t *testing.T) {
 // #1602: lines the mark skipped are said when no secret is found.
 func TestPublishProblemsMessageAllowed(t *testing.T) {
 	got := PublishProblemsMessage([]PublishProblem{{Reason: PublishReadmeMissing}}, 2)
-	if !strings.HasSuffix(got, "(2 lines marked c4factory:allow-secret were skipped)") {
+	if !strings.HasSuffix(got, "(2 lines marked theos:allow-secret were skipped)") {
 		t.Errorf("message %q doesn't say the lines skipped", got)
 	}
 	if got := PublishProblemsMessage([]PublishProblem{{Reason: PublishSecretFound, Path: "a", Line: 1,

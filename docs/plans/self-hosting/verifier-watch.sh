@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The verifier watch of docs/plans/self-hosting.md. The owner installs it once,
-# with the plan's one command, as the systemd user timer c4factory-verifier,
+# with the plan's one command, as the systemd user timer theos-verifier,
 # which runs it every hour inside the project environment (./dev run). Each
-# session it starts gets C4_HUMAN_CLUSTER=1: the owner's opt-in for verifier
+# session it starts gets THEOS_HUMAN_CLUSTER=1: the owner's opt-in for verifier
 # sessions (AGENTS.md, "Agents Never Touch a Cluster"), given by installing
 # the timer (the plan's rule 3).
 #
@@ -19,7 +19,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
-repo=JairJosafath/c4factory
+repo=JairJosafath/theos
 state_dir=.dev/self-hosting
 parent_file=.dev/self-hosting-parent
 log=.dev/self-hosting-verifier.log
@@ -50,7 +50,7 @@ state() { gh issue view "$1" -R "$repo" --json state -q .state; }
 
 if [ "$(state "$parent")" = CLOSED ]; then
   echo "$(date -Is) parent #$parent is closed; turning the timer off" >>"$log"
-  systemctl --user disable --now c4factory-verifier.timer >/dev/null 2>&1 || true
+  systemctl --user disable --now theos-verifier.timer >/dev/null 2>&1 || true
   exit 0
 fi
 
@@ -99,7 +99,7 @@ echo "$(date -Is) #$due: verifier session $((attempts + 1))" >>"$log"
 # The ~/.claude login: unset, not set to ~/.claude, which would move the
 # config to ~/.claude/.claude.json, where the workspace isn't trusted and
 # .claude/settings.json's allow rules are ignored.
-env -u CLAUDE_CONFIG_DIR C4_HUMAN_CLUSTER=1 \
+env -u CLAUDE_CONFIG_DIR THEOS_HUMAN_CLUSTER=1 \
   claude -p --permission-mode auto --model opus \
   "You are the verifier session of docs/plans/self-hosting.md for issue #$due. Do its step as the plan says, close the issue when its Done when holds, or comment on it what stopped you, then end. Project commands bare, as the plan says." \
   >>"$log" 2>&1 || echo "$(date -Is) #$due: the session exited $?" >>"$log"

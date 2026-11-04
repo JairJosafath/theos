@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -25,13 +25,13 @@ type AgentSpec struct {
 	// +optional
 	Description string `json:"description,omitempty"`
 
-	// image runs c4agent, the agent CLI and the toolchain of the Containers it works on.
+	// image runs theos-agent, the agent CLI and the toolchain of the Containers it works on.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=512
 	// +required
 	Image string `json:"image"`
 
-	// harness is the agent program c4agent runs: claude-code (Claude Code, headless)
+	// harness is the agent program theos-agent runs: claude-code (Claude Code, headless)
 	// or stand-in (a scripted change, review and plan from the catalog, for tests
 	// and demos).
 	// +kubebuilder:validation:Enum=claude-code;stand-in
@@ -78,7 +78,7 @@ type AgentSpec struct {
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
-	// env adds plain settings to the sandbox, such as C4AGENT_FAKE=1 for the stand-in agent.
+	// env adds plain settings to the sandbox, such as THEOS_AGENT_FAKE=1 for the stand-in agent.
 	// +listType=map
 	// +listMapKey=name
 	// +optional
@@ -95,7 +95,7 @@ const (
 )
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced,categories=c4;c4catalog
+// +kubebuilder:resource:scope=Namespaced,categories=theos;c4catalog
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Display Name",type=string,JSONPath=".spec.displayName"
 // +kubebuilder:printcolumn:name="Harness",type=string,JSONPath=".spec.harness"

@@ -10,7 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 func tree(kv ...string) Tree {
@@ -35,8 +35,8 @@ func webshopLayers() []Layer {
 		{Side: model.SideFramework, Name: "python-fastapi", Ref: "v1.2.0", Files: tree(
 			"pyproject.toml.tmpl", `name = "{{ .Container }}"{{ if has .Connectors "postgres" }} # psycopg{{ end }}`,
 			"app/main.py", "print('{{ not a template }}')",
-			".c4factory/devcontainer.json", `{"image": "python:3.12", "features": {"ghcr.io/x/uv:1": {}}, "postCreateCommand": "a && b"}`,
-			".c4factory/README.md", "about the template",
+			".theos/devcontainer.json", `{"image": "python:3.12", "features": {"ghcr.io/x/uv:1": {}}, "postCreateCommand": "a && b"}`,
+			".theos/README.md", "about the template",
 		)},
 		{Side: model.SideCompute, Name: "small", Ref: "v1.0.0", Files: tree(
 			"deploy/k8s/compute.yaml.tmpl", "name: {{ .Container }}",
@@ -46,7 +46,7 @@ func webshopLayers() []Layer {
 			"deploy/k8s/service.yaml.tmpl", `{{ if eq .Type "service" }}kind: Service{{ end }}`,
 		)},
 		{Side: model.SideConnector, Name: "postgres", Ref: "v1.1.0", Files: tree(
-			".c4factory/compose.yaml.tmpl", "services:\n  postgres:\n    image: postgres:17\n  app:\n    environment:\n      DB: {{ snake .Container }}\n",
+			".theos/compose.yaml.tmpl", "services:\n  postgres:\n    image: postgres:17\n  app:\n    environment:\n      DB: {{ snake .Container }}\n",
 			"deploy/k8s/connector-postgres.yaml", "kind: ConfigMap",
 		)},
 	}
@@ -59,7 +59,7 @@ func TestBuildRendersLayers(t *testing.T) {
 	}
 
 	wantPaths := []string{
-		".c4factory.yaml",
+		".theos.yaml",
 		".devcontainer/compose.postgres.yaml",
 		".devcontainer/compose.yaml",
 		".devcontainer/devcontainer.json",
@@ -152,10 +152,10 @@ func TestBuildConflicts(t *testing.T) {
 		{
 			name: "a layer writes the identity file",
 			mutate: func(l []Layer) []Layer {
-				l[1].Files[".c4factory.yaml"] = File{Data: []byte("x")}
+				l[1].Files[".theos.yaml"] = File{Data: []byte("x")}
 				return l
 			},
-			want: "small and the operator both write .c4factory.yaml",
+			want: "small and the operator both write .theos.yaml",
 		},
 	}
 	for _, tt := range tests {
@@ -255,10 +255,10 @@ func TestBuildRejectsBadInput(t *testing.T) {
 			in:   ordersAPI,
 			layers: func() []Layer {
 				l := webshopLayers()
-				l[0].Files[".c4factory/devcontainer.json"] = File{Data: []byte("null")}
+				l[0].Files[".theos/devcontainer.json"] = File{Data: []byte("null")}
 				return l
 			},
-			want: "python-fastapi: .c4factory/devcontainer.json:",
+			want: "python-fastapi: .theos/devcontainer.json:",
 		},
 	}
 	for _, tt := range tests {
@@ -273,8 +273,8 @@ func TestBuildRejectsBadInput(t *testing.T) {
 
 func TestDevcontainerWithConnectorsUsesCompose(t *testing.T) {
 	res, err := Build(ordersAPI, webshopLayers(), Options{
-		Features:          map[string]any{"./c4session": map[string]any{}},
-		DevcontainerFiles: tree("c4session/install.sh", "#!/bin/sh"),
+		Features:          map[string]any{"./theos-session": map[string]any{}},
+		DevcontainerFiles: tree("theos-session/install.sh", "#!/bin/sh"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -297,7 +297,7 @@ func TestDevcontainerWithConnectorsUsesCompose(t *testing.T) {
 	if _, ok := features["ghcr.io/x/uv:1"]; !ok {
 		t.Error("base features were dropped")
 	}
-	if _, ok := features["./c4session"]; !ok {
+	if _, ok := features["./theos-session"]; !ok {
 		t.Error("session feature missing")
 	}
 	if !strings.Contains(string(res.Files[".devcontainer/devcontainer.json"].Data), `"a && b"`) {
@@ -312,13 +312,13 @@ func TestDevcontainerWithConnectorsUsesCompose(t *testing.T) {
 	if err := yaml.Unmarshal(res.Files[".devcontainer/compose.yaml"].Data, &compose); err != nil {
 		t.Fatalf("compose.yaml is not valid YAML: %v", err)
 	}
-	if cmd := compose.Services["app"].Command; len(cmd) != 3 || !strings.Contains(cmd[2], "pkill -TERM -x c4session") {
+	if cmd := compose.Services["app"].Command; len(cmd) != 3 || !strings.Contains(cmd[2], "pkill -TERM -x theos-session") {
 		t.Errorf("app command = %q, want it to stop the Session client on SIGTERM", cmd)
 	}
 	if !strings.Contains(string(res.Files[".devcontainer/compose.yaml"].Data), "image: python:3.12") {
 		t.Error("compose.yaml doesn't carry the Framework image")
 	}
-	if _, ok := res.Files[".devcontainer/c4session/install.sh"]; !ok {
+	if _, ok := res.Files[".devcontainer/theos-session/install.sh"]; !ok {
 		t.Error("devcontainer files missing")
 	}
 }

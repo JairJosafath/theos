@@ -5,24 +5,24 @@ alone); the chart renders none, so no token lands in a values file or in Helm's
 release record. Not release objects: on an install their kind exists only once
 the release's CRDs do. Not hooks: Helm re-creates a hook on every upgrade, and
 a Git step in the gap fails for want of its GitProvider. They are rendered into
-ConfigMap c4factory-gitproviders, which Job gitproviders (apply.yaml) applies in
-place after every install and upgrade, as the seed does c4factory-catalog
+ConfigMap theos-gitproviders, which Job gitproviders (apply.yaml) applies in
+place after every install and upgrade, as the seed does theos-catalog
 (docs/plans/done/upgrade-in-place.md).
 */}}
 {{- with .Values.gitProviders }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: c4factory-gitproviders
+  name: theos-gitproviders
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "gitproviders" "context" $) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "gitproviders" "context" $) | nindent 4 }}
 data:
   objects.yaml: |
-    {{- include "c4-factory.gitProviderObjects" $ | trim | nindent 4 }}
+    {{- include "theos.gitProviderObjects" $ | trim | nindent 4 }}
 {{- end }}
 
-{{- define "c4-factory.gitProviderObjects" -}}
+{{- define "theos.gitProviderObjects" -}}
 {{- range $i, $gp := .Values.gitProviders }}
 {{- $ns := required (printf "gitProviders[%d].namespace is required" $i) $gp.namespace }}
 {{- $name := $gp.name | default "git" }}
@@ -30,13 +30,13 @@ data:
 {{- fail (printf "gitProviders[%d].token and username are gone: create a Secret with keys username and token, and name it in gitProviders[%d].existingSecret" $i $i) }}
 {{- end }}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: GitProvider
 metadata:
   name: {{ $name }}
   namespace: {{ $ns }}
   labels:
-    app.kubernetes.io/managed-by: c4factory-chart
+    app.kubernetes.io/managed-by: theos-chart
     app.kubernetes.io/instance: {{ $.Release.Name }}
 spec:
   provider: {{ $gp.provider | default "gitea" }}
@@ -48,6 +48,6 @@ spec:
   packages:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- include "c4-factory.gitProviderCI" $ | nindent 2 }}
+  {{- include "theos.gitProviderCI" $ | nindent 2 }}
 {{- end }}
 {{- end }}

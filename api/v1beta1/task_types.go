@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -86,13 +86,13 @@ type TaskSpec struct {
 	Issue int32 `json:"issue,omitempty"`
 
 	// allowedProtectedPaths are Standard-protected files, other than AGENTS.md,
-	// docs/agents/ and .c4factory.yaml, that this Task may change. The agent
+	// docs/agents/ and .theos.yaml, that this Task may change. The agent
 	// still proposes them, and the change goes through its own review. It needs
 	// an issue, and it can't change.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=20
 	// +kubebuilder:validation:items:MaxLength=256
-	// +kubebuilder:validation:XValidation:rule="self.all(p, p != 'AGENTS.md' && p != '.c4factory.yaml' && p != 'docs/agents' && !p.startsWith('docs/agents/'))",message="allowedProtectedPaths may not include AGENTS.md, docs/agents/ or .c4factory.yaml"
+	// +kubebuilder:validation:XValidation:rule="self.all(p, p != 'AGENTS.md' && p != '.theos.yaml' && p != 'docs/agents' && !p.startsWith('docs/agents/'))",message="allowedProtectedPaths may not include AGENTS.md, docs/agents/ or .theos.yaml"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="allowedProtectedPaths is immutable"
 	// +optional
 	AllowedProtectedPaths []string `json:"allowedProtectedPaths,omitempty"`
@@ -157,7 +157,7 @@ type TaskAgentRun struct {
 	// +required
 	Round int32 `json:"round"`
 
-	// role is implement, review or plan; empty when neither c4agent nor the
+	// role is implement, review or plan; empty when neither theos-agent nor the
 	// sandbox's name said.
 	// +kubebuilder:validation:MaxLength=32
 	// +optional
@@ -382,7 +382,7 @@ type TaskStatus struct {
 	Sandbox string `json:"sandbox,omitempty"`
 
 	// sandboxPod is the UID of the pod the running sandbox's run started on.
-	// Agent Sandbox replaces a pod that went away without c4agent ending it (a
+	// Agent Sandbox replaces a pod that went away without theos-agent ending it (a
 	// forced delete, a lost node); another pod, or none, under the same sandbox
 	// means the run was interrupted.
 	// +optional
@@ -440,7 +440,7 @@ type TaskStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Container",type=string,JSONPath=".spec.containerRef.name"
 // +kubebuilder:printcolumn:name="Issue",type=integer,JSONPath=".spec.issue"

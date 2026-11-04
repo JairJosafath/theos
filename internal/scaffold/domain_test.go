@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // domainLayers are two Domains after the webshop layers, sorted by name.
@@ -18,7 +18,7 @@ func domainLayers() []Layer {
 		Layer{Side: model.SideDomain, Name: "webshop", Ref: "v0.1.0", Files: tree(
 			"README.md.tmpl", "# Webshop\n\nFor {{ .Container }}.\n",
 			"carts.md", "# Carts\n",
-			".c4factory/README.md", "about the template",
+			".theos/README.md", "about the template",
 		)},
 	)
 }

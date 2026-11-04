@@ -4,7 +4,7 @@
 // rest of the area still shows, and no banner speaks for the whole page.
 //
 // Needs a build and Chromium:  npm run test:e2e
-// C4_UI_SHOTS=DIR also saves pictures of the refused reads in DIR (docs/screenshots).
+// THEOS_UI_SHOTS=DIR also saves pictures of the refused reads in DIR (docs/screenshots).
 
 import assert from 'node:assert/strict'
 import path from 'node:path'
@@ -53,9 +53,9 @@ describe('the shell with refused reads', () => {
   })
 
   const shot = async (name) => {
-    if (!process.env.C4_UI_SHOTS) return
+    if (!process.env.THEOS_UI_SHOTS) return
     await page.waitForTimeout(300)
-    await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, name), fullPage: true })
+    await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, name), fullPage: true })
   }
   const panel = (title) =>
     page.locator('.panel').filter({ has: page.getByRole('heading', { name: title, exact: true }) })

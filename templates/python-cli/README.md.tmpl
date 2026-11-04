@@ -2,7 +2,7 @@
 {{ if eq .Type "worker" }}
 The `{{ .Container }}` worker of {{ .SoftwareSystem }}, in project {{ .Project }}: a
 long-running process in Python 3.12 or later, managed with [uv](https://docs.astral.sh/uv/)
-and scaffolded by C4 Factory.
+and scaffolded by theos.
 
 ## Run it
 
@@ -21,7 +21,7 @@ grace period (30 seconds unless the Deployment says otherwise).
 {{ else if eq .Type "job" }}
 The `{{ .Container }}` job of {{ .SoftwareSystem }}, in project {{ .Project }}: a program
 in Python 3.12 or later that runs once to completion, managed with
-[uv](https://docs.astral.sh/uv/) and scaffolded by C4 Factory.
+[uv](https://docs.astral.sh/uv/) and scaffolded by theos.
 
 ## Run it
 
@@ -39,7 +39,7 @@ Kubernetes a Job runs it, and a run that exits non-zero runs again, up to the Jo
 {{ else }}
 The `{{ .Container }}` command-line program of {{ .SoftwareSystem }}, in project {{ .Project }}:
 a command in Python 3.12 or later, managed with [uv](https://docs.astral.sh/uv/) and
-scaffolded by C4 Factory.
+scaffolded by theos.
 
 ## Use it
 

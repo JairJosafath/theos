@@ -3,7 +3,7 @@
 // is done, and the shell opening on Needs you only while something waits.
 //
 // Needs a build and Chromium:  npm run test:e2e
-// C4_UI_SHOTS=DIR also saves a picture of the list in DIR (docs/screenshots).
+// THEOS_UI_SHOTS=DIR also saves a picture of the list in DIR (docs/screenshots).
 
 import assert from 'node:assert/strict'
 import path from 'node:path'
@@ -229,9 +229,9 @@ describe('Needs you', () => {
         name === 'tickets' ? 1 : 0,
       )
     }
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-needs-you.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-needs-you.png'), fullPage: true })
     }
   })
 
@@ -246,14 +246,14 @@ describe('Needs you', () => {
 
   it('shows a copyable kubectl line where no page can do it', async () => {
     const li = item('Container', 'storefront')
-    const line = 'kubectl -n shop annotate container storefront c4.factory.io/retry=$(date +%s) --overwrite'
+    const line = 'kubectl -n shop annotate container storefront theos.factory.io/retry=$(date +%s) --overwrite'
     assert.equal(await li.locator('.need-command code').textContent(), line)
     await li.getByRole('button', { name: 'Copy' }).click()
     await li.getByRole('button', { name: 'Copied' }).waitFor({ timeout: 5000 })
     assert.equal(await page.evaluate(() => globalThis.navigator.clipboard.readText()), line)
     assert.equal(
       await item('Crew', 'orders').locator('.need-command code').textContent(),
-      'kubectl -n shop annotate crew orders c4.factory.io/rerun-release=$(date +%s) --overwrite',
+      'kubectl -n shop annotate crew orders theos.factory.io/rerun-release=$(date +%s) --overwrite',
     )
   })
 

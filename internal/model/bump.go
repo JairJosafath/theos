@@ -85,7 +85,7 @@ type Bump struct {
 
 // BumpMarker is the line that ties a bump issue to its Container and release.
 func BumpMarker(bundled, tag string) string {
-	return "<!-- c4factory:bump " + bundled + " " + tag + " -->"
+	return "<!-- theos:bump " + bundled + " " + tag + " -->"
 }
 
 // HasBumpMarker reports whether body carries the marker of bundled's tag on a

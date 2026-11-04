@@ -11,7 +11,7 @@
 #      readies the relay's steps and checks the relay runs;
 #   2. your binding comment on the parent, from your account (it makes the
 #      plan's decisions yours, GOVERNANCE.md "The owner's word wins");
-#   3. the verifier watch: the systemd user timer c4factory-verifier, which
+#   3. the verifier watch: the systemd user timer theos-verifier, which
 #      starts the cluster steps when they are due.
 # Running it again is safe: it skips what is already done.
 set -euo pipefail
@@ -19,7 +19,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
 # Inside the project environment (./dev run): its tools on PATH.
-if [ -z "${C4_DEV:-}" ]; then
+if [ -z "${THEOS_DEV:-}" ]; then
   exec ./dev run "$root/docs/plans/self-hosting/start.sh" "$@"
 fi
 
@@ -30,7 +30,7 @@ case "${1:-}" in
   *) echo "usage: docs/plans/self-hosting/start.sh [--check]" >&2; exit 64 ;;
 esac
 
-repo=JairJosafath/c4factory
+repo=JairJosafath/theos
 here=docs/plans/self-hosting
 parent_file=.dev/self-hosting-parent
 units="$HOME/.config/systemd/user"
@@ -42,7 +42,7 @@ echo "Checking what the plan needs:"
 
 # The main checkout, on main, clean: step 0 refuses anything else.
 if [ -d .git ]; then ok "the main checkout ($root)"; else
-  bad "this is a worktree" "run it from the main checkout (cd ~/c4factory)"; fi
+  bad "this is a worktree" "run it from the main checkout (cd ~/theos)"; fi
 branch=$(git rev-parse --abbrev-ref HEAD)
 if [ "$branch" = main ]; then ok "on main"; else
   bad "on branch $branch" "git switch main"; fi
@@ -133,18 +133,18 @@ else
 fi
 
 # 3. The verifier watch.
-install -D -m 644 -t "$units" "$here/c4factory-verifier.service" "$here/c4factory-verifier.timer"
+install -D -m 644 -t "$units" "$here/theos-verifier.service" "$here/theos-verifier.timer"
 systemctl --user daemon-reload
-systemctl --user enable --now c4factory-verifier.timer >/dev/null
+systemctl --user enable --now theos-verifier.timer >/dev/null
 loginctl enable-linger "$USER" >/dev/null 2>&1 ||
   echo "Note: loginctl enable-linger failed; the watch then runs only while you are logged in to this device."
-echo "The verifier watch runs hourly (systemctl --user list-timers c4factory-verifier.timer)."
+echo "The verifier watch runs hourly (systemctl --user list-timers theos-verifier.timer)."
 
 cat <<EOF
 
 Started. From here nothing waits for you except a change to the fence.
   The plan's parent:  https://github.com/$repo/issues/$parent
   The watch's log:    $root/.dev/self-hosting-verifier.log
-  Stop the watch:     systemctl --user disable --now c4factory-verifier.timer
+  Stop the watch:     systemctl --user disable --now theos-verifier.timer
   Stop the relay:     hack/relay-watch.sh --uninstall
 EOF

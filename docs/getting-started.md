@@ -30,7 +30,7 @@ samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
 VERSION=0.30.0
-gh repo clone JairJosafath/c4factory && cd c4factory && git checkout "v$VERSION"
+gh repo clone JairJosafath/theos && cd theos && git checkout "v$VERSION"
 ```
 
 ## What the factory trusts
@@ -75,12 +75,12 @@ kubectl -n agent-sandbox-system patch deployment agent-sandbox-controller --type
   -p '[{"op":"replace","path":"/spec/template/spec/containers/0/args/0","value":"--leader-elect=false"}]'
 ```
 
-**Namespaces.** The release goes in `c4-factory-system` and Gitea in `gitea`.
+**Namespaces.** The release goes in `theos-system` and Gitea in `gitea`.
 Each project lives in a namespace of its own name, which the chart makes; this
 guide's is `webshop`:
 
 ```bash
-for ns in c4-factory-system gitea; do
+for ns in theos-system gitea; do
   kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
 done
 ```
@@ -96,14 +96,14 @@ sees the token anywhere else.
 ```bash
 gh auth refresh -s read:packages
 gh auth token | helm registry login ghcr.io -u "$(gh api user -q .login)" --password-stdin
-for ns in c4-factory-system gitea; do
+for ns in theos-system gitea; do
   kubectl -n $ns create secret docker-registry ghcr --docker-server=ghcr.io \
     --docker-username="$(gh api user -q .login)" --docker-password="$(gh auth token)"
 done
 ```
 
 **The release.** `gitea.projects` lists the projects: for each one the chart
-makes its namespace, labeled `c4.factory.io/shared-secrets=true` so the
+makes its namespace, labeled `theos.factory.io/shared-secrets=true` so the
 operator shares the pull secret into it and its agents reach the model proxy,
 and the seed
 makes a Gitea organization, Secret `gitea-credentials` with its token
@@ -123,8 +123,8 @@ leave them out ([the chart's README](../dist/chart/README.md#values)). On a fres
 when the seed starts, so give `helm install` time:
 
 ```bash
-helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
-  -n c4-factory-system --wait --timeout 10m \
+helm install theos oci://ghcr.io/jairjosafath/theos/charts/theos --version "$VERSION" \
+  -n theos-system --wait --timeout 10m \
   --set gitea.createNamespace=false \
   --set 'gitea.projects={webshop}' \
   --set 'global.imagePullSecrets[0].name=ghcr' \
@@ -136,7 +136,7 @@ that everything runs and that the project has its GitProvider, catalog and
 Agents:
 
 ```bash
-kubectl -n c4-factory-system get pods
+kubectl -n theos-system get pods
 kubectl -n gitea get pods
 kubectl -n webshop get gitprovider,secret,c4catalog,agents
 ```
@@ -149,7 +149,7 @@ down.
 
 The agents run Claude Code, which signs in with a long-lived token. Make one
 with `claude setup-token` and store it once in Secret `claude-credentials` in
-the release's namespace, `c4-factory-system`; the model proxy in that
+the release's namespace, `theos-system`; the model proxy in that
 namespace reads it and adds it to the agents' requests, so a new token reaches
 every project and never enters a sandbox. The Agents name the Secret and hold
 no token. Run
@@ -162,10 +162,10 @@ claude setup-token
 
 ```bash
 read -rs -p 'Claude token: ' CLAUDE_TOKEN; echo
-[ -n "$CLAUDE_TOKEN" ] && printf '%s' "$CLAUDE_TOKEN" | kubectl -n c4-factory-system create secret generic claude-credentials \
+[ -n "$CLAUDE_TOKEN" ] && printf '%s' "$CLAUDE_TOKEN" | kubectl -n theos-system create secret generic claude-credentials \
   --from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin
 unset CLAUDE_TOKEN
-kubectl -n c4-factory-system get secret claude-credentials -o go-template='{{len .data.CLAUDE_CODE_OAUTH_TOKEN}}{{"\n"}}'
+kubectl -n theos-system get secret claude-credentials -o go-template='{{len .data.CLAUDE_CODE_OAUTH_TOKEN}}{{"\n"}}'
 ```
 
 The last line prints the stored token's length in base64, never the token;
@@ -224,12 +224,12 @@ makes Project `cel-lens`, so the UI offers the project.
 Open the UI:
 
 ```bash
-kubectl -n c4-factory-system port-forward svc/c4-factory-ui 8080 &   # http://localhost:8080
+kubectl -n theos-system port-forward svc/theos-ui 8080 &   # http://localhost:8080
 ```
 
-The UI also serves the Session client, `c4session`, under `/downloads/`: a
+The UI also serves the Session client, `theos-session`, under `/downloads/`: a
 scaffolded devcontainer's build fetches it from there, by default
-`http://localhost:8080/downloads/c4session-linux-${arch}` (the port-forward
+`http://localhost:8080/downloads/theos-session-linux-${arch}` (the port-forward
 above) or `https://<ui.allowedHosts[0]>/downloads/...` behind an Ingress,
 with no GitHub login, and checks it against the `SHA256SUMS` served next to
 it. The build must reach that address: a port-forward's localhost is the
@@ -256,7 +256,7 @@ the webshop's Brief; for cel-lens's, write `-n cel-lens` and `cel-lens`:
 ```bash
 kubectl -n webshop wait brief/webshop --for=jsonpath='{.status.phase}'=Planned --timeout=45m
 kubectl -n webshop get brief webshop -o jsonpath='{range .status.choices[*]}- {@}{"\n"}{end}'
-kubectl -n webshop get c4
+kubectl -n webshop get theos
 ```
 
 Steer it with a follow-up in the card's prompt field, such as "Show the
@@ -314,7 +314,7 @@ Crew picks the issue up. It plans in a minute or so:
 ```bash
 kubectl apply -f config/samples/brief/stand-in.yaml
 kubectl -n webshop wait brief/stand-in-demo --for=jsonpath='{.status.phase}'=Planned --timeout=15m
-kubectl -n webshop get c4
+kubectl -n webshop get theos
 ```
 
 The stand-in implements and reviews the issue, and once it is merged the
@@ -360,7 +360,7 @@ Apply it and wait for the Container to be scaffolded:
 ```bash
 kubectl apply -k config/samples/first-app
 kubectl -n webshop wait container/orders-cli --for=jsonpath='{.status.phase}'=Ready --timeout=5m
-kubectl -n webshop get c4
+kubectl -n webshop get theos
 ```
 
 Gitea now holds `webshop/orders-cli`: a Go module, the Standard's `Makefile`,
@@ -432,14 +432,14 @@ issue `status/needs-human` with the reason in a comment; label it
 
 | What you see | Why, and what to do |
 | --- | --- |
-| A pod in `ImagePullBackOff` in `c4-factory-system` or `gitea` | The images are private and that namespace has no `ghcr` Secret, or the install lacks the `imagePullSecrets` settings. |
-| A sandbox pod in `ImagePullBackOff` in `webshop` | Secret `c4-factory-system/ghcr` is missing, the install lacks `global.imagePullSecrets`, or namespace `webshop` lacks the label `c4.factory.io/shared-secrets=true`; `kubectl -n webshop get project webshop -o jsonpath='{.status.conditions[?(@.type=="SecretsShared")].message}'` says which. Fix it, then delete the pod. |
+| A pod in `ImagePullBackOff` in `theos-system` or `gitea` | The images are private and that namespace has no `ghcr` Secret, or the install lacks the `imagePullSecrets` settings. |
+| A sandbox pod in `ImagePullBackOff` in `webshop` | Secret `theos-system/ghcr` is missing, the install lacks `global.imagePullSecrets`, or namespace `webshop` lacks the label `theos.factory.io/shared-secrets=true`; `kubectl -n webshop get project webshop -o jsonpath='{.status.conditions[?(@.type=="SecretsShared")].message}'` says which. Fix it, then delete the pod. |
 | `helm install` times out | Gitea's image is still pulling; `kubectl -n gitea get pods`, then `helm upgrade` with the same settings. |
 | Container `orders-cli` not `Ready` | `kubectl -n webshop describe container orders-cli`: the condition's message says which template or GitProvider is missing. |
 | The issue is labelled `status/needs-human` before any Task | The Crew rejected it and said why in a comment, such as a missing checklist; fix the body and label it `status/ready` again. |
 | The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |
 | A Brief stays `NeedsInput` | `kubectl -n webshop get brief webshop -o jsonpath='{.status.conditions[?(@.type=="NeedsInput")].message}'` (or its card in the UI) says what it waits for in one sentence, such as Secret `claude-credentials` missing (step 2); it goes on within a minute of the fix. |
-| The agent says it isn't logged in | Secret `c4-factory-system/claude-credentials` (or the project's own `webshop/claude-credentials`) is missing, empty (step 2's length check prints `0`), or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
+| The agent says it isn't logged in | Secret `theos-system/claude-credentials` (or the project's own `webshop/claude-credentials`) is missing, empty (step 2's length check prints `0`), or its key isn't `CLAUDE_CODE_OAUTH_TOKEN`. |
 
 ## Publish releases to GitHub
 
@@ -528,7 +528,7 @@ releases take Latest.
 **The source.** With `source`, each release also puts the app's source, as of
 its tag, into that folder of the repository: everything the Container's
 repository holds at the tag but the factory's own files (`AGENTS.md`,
-`docs/agents/`, `.c4factory.yaml`, `.devcontainer/`, `.gitea/`). It is one
+`docs/agents/`, `.theos.yaml`, `.devcontainer/`, `.gitea/`). It is one
 commit on the default branch that replaces only the folder, so files removed
 from the app disappear from it too, and whatever was in it before (a copy made
 by hand) is replaced on the first publish; every other file stays. It is
@@ -1024,8 +1024,8 @@ install (`--reuse-values` keeps them):
 
 ```bash
 VERSION=0.30.0
-helm upgrade c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION" \
-  -n c4-factory-system --reuse-values --wait --timeout 10m
+helm upgrade theos oci://ghcr.io/jairjosafath/theos/charts/theos --version "$VERSION" \
+  -n theos-system --reuse-values --wait --timeout 10m
 ```
 
 **Running Tasks carry on**, in the same sandbox, at the same round, with the
@@ -1061,7 +1061,7 @@ README](../dist/chart/README.md#values)), or turn `agents.enabled` or
 `catalog.enabled` off and keep your own. An object the chart stops rendering
 stays until you delete it.
 
-**Your objects keep working.** Write them at `c4.factory.io/v1beta1`. An
+**Your objects keep working.** Write them at `theos.factory.io/v1beta1`. An
 object at `v1alpha1` still works: the version is deprecated, the API server
 warns on every request at it (kubectl prints the warning), and a release 90
 or more days after v0.30.0 may drop it (#1963). Within a served
@@ -1089,7 +1089,7 @@ kubectl -n webshop get tasks
 
 Resume with `false`, or a Brief with its card's Resume button. Resuming a
 Brief unpauses only the Crews it paused (the annotation
-`c4.factory.io/paused-by: brief` marks them), so a Crew you paused by hand
+`theos.factory.io/paused-by: brief` marks them), so a Crew you paused by hand
 stays paused.
 
 ## UI actions behind an Ingress
@@ -1106,7 +1106,7 @@ as them, so your cluster's RBAC decides who does what.
    Ingress host, and keep its client secret in a Secret:
 
    ```bash
-   kubectl -n c4-factory-system create secret generic c4-factory-ui-oidc \
+   kubectl -n theos-system create secret generic theos-ui-oidc \
      --from-file=client-secret=./client-secret   # a file holding the secret, mode 0600
    ```
 
@@ -1120,25 +1120,25 @@ as them, so your cluster's RBAC decides who does what.
      auth:
        oidc:
          issuerURL: https://dex.example.com   # exactly as the ID tokens name it
-         clientID: c4-factory-ui
-         existingSecret: c4-factory-ui-oidc
+         clientID: theos-ui
+         existingSecret: theos-ui-oidc
          scopes: [openid, email, profile, groups]   # groups only if the issuer has it
          actionGroups: [factory-actors]            # may take every action
    ```
 
-   Then put your Ingress in front of Service `c4-factory-ui`, port 8080, with
+   Then put your Ingress in front of Service `theos-ui`, port 8080, with
    TLS: the session cookie is `Secure`, so sign-in needs `https`.
 
 3. Grant the people. The UI acts as `oidc:` + their verified email and as
    `oidc:` + each of their groups (`usernamePrefix` and `groupsPrefix` change
    the prefixes), so no one signed in becomes a cluster user or a `system:`
-   group. `actionGroups` binds ClusterRole `c4-factory-ui-actions` (exactly
+   group. `actionGroups` binds ClusterRole `theos-ui-actions` (exactly
    the UI's writes) to those groups; grant anyone else with your own binding,
    in one namespace if you like:
 
    ```bash
    kubectl -n webshop create rolebinding ui-actions-alice \
-     --clusterrole=c4-factory-ui-actions --user=oidc:alice@example.com
+     --clusterrole=theos-ui-actions --user=oidc:alice@example.com
    ```
 
 4. Sign in. With OIDC on, the UI's top bar shows **Sign in** (it opens
@@ -1159,4 +1159,4 @@ restart of the UI, or the ID token's expiry, signs everyone out.
   same values ([Upgrading](#upgrading)).
 - [docs/design.md](design.md) explains the model, the catalog, Crews and
   Standards; [the chart's README](../dist/chart/README.md) lists its values.
-- A problem with the release: [report it](https://github.com/JairJosafath/c4factory/issues/new?template=user-report.yml).
+- A problem with the release: [report it](https://github.com/JairJosafath/theos/issues/new?template=user-report.yml).

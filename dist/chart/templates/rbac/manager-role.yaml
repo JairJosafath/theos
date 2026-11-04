@@ -8,7 +8,7 @@ metadata:
 {{- if .Values.rbac.namespaced }}
   namespace: {{ .Release.Namespace }}
 {{- end }}
-  name: {{ include "c4-factory.resourceName" (dict "suffix" "manager-role" "context" $) }}
+  name: {{ include "theos.resourceName" (dict "suffix" "manager-role" "context" $) }}
 rules:
 - apiGroups:
   - ""
@@ -75,26 +75,26 @@ rules:
 - apiGroups:
   - apiextensions.k8s.io
   resourceNames:
-  - agents.c4.factory.io
-  - briefs.c4.factory.io
-  - bundles.c4.factory.io
-  - computes.c4.factory.io
-  - connectors.c4.factory.io
-  - containers.c4.factory.io
-  - crews.c4.factory.io
-  - datastores.c4.factory.io
-  - deployments.c4.factory.io
-  - deploytargets.c4.factory.io
-  - domains.c4.factory.io
-  - frameworks.c4.factory.io
-  - gitproviders.c4.factory.io
-  - people.c4.factory.io
-  - projects.c4.factory.io
-  - relationships.c4.factory.io
-  - sessions.c4.factory.io
-  - softwaresystems.c4.factory.io
-  - standards.c4.factory.io
-  - tasks.c4.factory.io
+  - agents.theos.factory.io
+  - briefs.theos.factory.io
+  - bundles.theos.factory.io
+  - computes.theos.factory.io
+  - connectors.theos.factory.io
+  - containers.theos.factory.io
+  - crews.theos.factory.io
+  - datastores.theos.factory.io
+  - deployments.theos.factory.io
+  - deploytargets.theos.factory.io
+  - domains.theos.factory.io
+  - frameworks.theos.factory.io
+  - gitproviders.theos.factory.io
+  - people.theos.factory.io
+  - projects.theos.factory.io
+  - relationships.theos.factory.io
+  - sessions.theos.factory.io
+  - softwaresystems.theos.factory.io
+  - standards.theos.factory.io
+  - tasks.theos.factory.io
   resources:
   - customresourcedefinitions
   verbs:
@@ -103,26 +103,26 @@ rules:
 - apiGroups:
   - apiextensions.k8s.io
   resourceNames:
-  - agents.c4.factory.io
-  - briefs.c4.factory.io
-  - bundles.c4.factory.io
-  - computes.c4.factory.io
-  - connectors.c4.factory.io
-  - containers.c4.factory.io
-  - crews.c4.factory.io
-  - datastores.c4.factory.io
-  - deployments.c4.factory.io
-  - deploytargets.c4.factory.io
-  - domains.c4.factory.io
-  - frameworks.c4.factory.io
-  - gitproviders.c4.factory.io
-  - people.c4.factory.io
-  - projects.c4.factory.io
-  - relationships.c4.factory.io
-  - sessions.c4.factory.io
-  - softwaresystems.c4.factory.io
-  - standards.c4.factory.io
-  - tasks.c4.factory.io
+  - agents.theos.factory.io
+  - briefs.theos.factory.io
+  - bundles.theos.factory.io
+  - computes.theos.factory.io
+  - connectors.theos.factory.io
+  - containers.theos.factory.io
+  - crews.theos.factory.io
+  - datastores.theos.factory.io
+  - deployments.theos.factory.io
+  - deploytargets.theos.factory.io
+  - domains.theos.factory.io
+  - frameworks.theos.factory.io
+  - gitproviders.theos.factory.io
+  - people.theos.factory.io
+  - projects.theos.factory.io
+  - relationships.theos.factory.io
+  - sessions.theos.factory.io
+  - softwaresystems.theos.factory.io
+  - standards.theos.factory.io
+  - tasks.theos.factory.io
   resources:
   - customresourcedefinitions/status
   verbs:
@@ -144,88 +144,6 @@ rules:
   verbs:
   - get
   - list
-  - watch
-- apiGroups:
-  - c4.factory.io
-  resources:
-  - agents
-  - bundles
-  - computes
-  - connectors
-  - deployments
-  - domains
-  - frameworks
-  - gitproviders
-  - standards
-  verbs:
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - c4.factory.io
-  resources:
-  - briefs
-  - containers
-  - crews
-  - datastores
-  - deploytargets
-  - projects
-  - relationships
-  - sessions
-  - softwaresystems
-  - tasks
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - c4.factory.io
-  resources:
-  - briefs/finalizers
-  - containers/finalizers
-  - crews/finalizers
-  - datastores/finalizers
-  - deploytargets/finalizers
-  - projects/finalizers
-  - relationships/finalizers
-  - sessions/finalizers
-  - softwaresystems/finalizers
-  - tasks/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - c4.factory.io
-  resources:
-  - briefs/status
-  - containers/status
-  - crews/status
-  - datastores/status
-  - deploytargets/status
-  - projects/status
-  - relationships/status
-  - sessions/status
-  - softwaresystems/status
-  - tasks/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - c4.factory.io
-  resources:
-  - people
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - events.k8s.io
@@ -258,6 +176,88 @@ rules:
   resources:
   - rolebindings
   - roles
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - theos.factory.io
+  resources:
+  - agents
+  - bundles
+  - computes
+  - connectors
+  - deployments
+  - domains
+  - frameworks
+  - gitproviders
+  - standards
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - theos.factory.io
+  resources:
+  - briefs
+  - containers
+  - crews
+  - datastores
+  - deploytargets
+  - projects
+  - relationships
+  - sessions
+  - softwaresystems
+  - tasks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - theos.factory.io
+  resources:
+  - briefs/finalizers
+  - containers/finalizers
+  - crews/finalizers
+  - datastores/finalizers
+  - deploytargets/finalizers
+  - projects/finalizers
+  - relationships/finalizers
+  - sessions/finalizers
+  - softwaresystems/finalizers
+  - tasks/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - theos.factory.io
+  resources:
+  - briefs/status
+  - containers/status
+  - crews/status
+  - datastores/status
+  - deploytargets/status
+  - projects/status
+  - relationships/status
+  - sessions/status
+  - softwaresystems/status
+  - tasks/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - theos.factory.io
+  resources:
+  - people
   verbs:
   - create
   - get

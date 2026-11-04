@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -29,8 +29,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // ConditionNameMatchesNamespace is False when a Project isn't named after its
@@ -61,7 +61,7 @@ type ProjectReconciler struct {
 	// agent fence then lets sandboxes reach the proxy's pods.
 	ModelProxyURL string
 	// OperatorVersion and ChartVersion are written to status.factory:
-	// buildinfo.Version and the chart's C4_CHART_VERSION.
+	// buildinfo.Version and the chart's THEOS_CHART_VERSION.
 	OperatorVersion string
 	ChartVersion    string
 	// UIServiceAccount is the UI's ServiceAccount, let read the pods of every
@@ -88,15 +88,15 @@ type ProjectReconciler struct {
 	packagesApplied sync.Map
 }
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=projects,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=projects/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=projects/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=projects,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=projects/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=projects/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;create;update;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;domains;bundles;agents,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=people;gitproviders;frameworks;standards;computes;deployments;connectors;domains;bundles;agents,verbs=get;list;watch;update;patch
 
 // Reconcile adopts the Project's direct children and updates the roll-up.
 func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

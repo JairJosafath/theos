@@ -4,10 +4,10 @@
 # fallbacks below let it run alone (make -f Makefile -f hack/ui.mk ...).
 KIND ?= kind
 KUBECTL ?= kubectl
-KIND_CLUSTER ?= c4factory
+KIND_CLUSTER ?= theos
 CONTAINER_TOOL ?= docker
 NPM ?= npm
-UI_IMG ?= c4factory/ui:dev
+UI_IMG ?= theos/ui:dev
 # Local port for ui-forward and ui-serve, and for the kubectl proxy behind ui-dev and ui-serve.
 UI_PORT ?= 8080
 UI_PROXY_PORT ?= 8001
@@ -15,7 +15,7 @@ UI_PROXY_PORT ?= 8001
 # Every kubectl call names the Kind context, so these targets never touch
 # whatever cluster the current context happens to point at.
 UI_KUBECTL = $(KUBECTL) --context kind-$(KIND_CLUSTER)
-UI_NAMESPACE = c4-factory-ui
+UI_NAMESPACE = theos-ui
 
 # Starts a kubectl proxy for the recipe and stops it when the recipe ends. If a
 # proxy already listens on the port, the new one exits and that one is used.
@@ -60,15 +60,15 @@ ui-serve: ui-build ## Serve ui/dist with ui/server.mjs on http://localhost:8080,
 ui: ## Build the UI image, load it into Kind and deploy config/ui.
 	$(call build-load,$(UI_IMG),-f ui/Dockerfile .)
 	$(UI_KUBECTL) apply -k config/ui
-	$(UI_KUBECTL) -n $(UI_NAMESPACE) set image deployment/c4-factory-ui ui=$(UI_IMG)
+	$(UI_KUBECTL) -n $(UI_NAMESPACE) set image deployment/theos-ui ui=$(UI_IMG)
 	@# Same tag, new image: restart so the Pod picks up what was just loaded.
-	$(UI_KUBECTL) -n $(UI_NAMESPACE) rollout restart deployment/c4-factory-ui
-	$(UI_KUBECTL) -n $(UI_NAMESPACE) rollout status deployment/c4-factory-ui --timeout=180s
+	$(UI_KUBECTL) -n $(UI_NAMESPACE) rollout restart deployment/theos-ui
+	$(UI_KUBECTL) -n $(UI_NAMESPACE) rollout status deployment/theos-ui --timeout=180s
 
 .PHONY: ui-forward
 ui-forward: ## Forward the in-cluster UI to http://localhost:8080 (Ctrl-C to stop).
-	$(UI_KUBECTL) -n $(UI_NAMESPACE) port-forward svc/c4-factory-ui $(UI_PORT):8080
+	$(UI_KUBECTL) -n $(UI_NAMESPACE) port-forward svc/theos-ui $(UI_PORT):8080
 
 .PHONY: ui-undeploy
-ui-undeploy: ## Remove the UI from the Kind cluster (namespace c4-factory-ui and its ClusterRole).
+ui-undeploy: ## Remove the UI from the Kind cluster (namespace theos-ui and its ClusterRole).
 	$(UI_KUBECTL) delete -k config/ui --ignore-not-found

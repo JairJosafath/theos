@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -18,14 +18,14 @@ import (
 	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // ordersModule is the module path of orders-api in namespace ns: the fake
 // host's registry is shared by every spec.
 func ordersModule(ns string) string {
-	return "c4factory.local/" + ns + "/orders-api"
+	return "theos.local/" + ns + "/orders-api"
 }
 
 // moduleEvents lists the Crew's Events of reason.
@@ -267,7 +267,7 @@ var _ = Describe("Crew Go modules", func() {
 		mergedIssue(ns)
 		taggingCrew(ns)
 
-		message := "Uploaded " + module + " v0.1.0 to the registry, which go get reads only for c4factory.local/ " +
+		message := "Uploaded " + module + " v0.1.0 to the registry, which go get reads only for theos.local/ " +
 			"paths; " + goProxyFake.server.URL + " can't fetch it (not found: " + module +
 			"@v0.1.0: invalid version: unknown revision v0.1.0): nothing in this Crew publishes to github.com; " +
 			"push the tag there by hand"

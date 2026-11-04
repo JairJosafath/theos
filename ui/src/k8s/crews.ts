@@ -17,13 +17,13 @@ import {
 import { errorFromResponse } from './watch'
 
 /** The annotation that asks the operator to re-run a failed release's runs, once per value. */
-export const RERUN_RELEASE = 'c4.factory.io/rerun-release'
+export const RERUN_RELEASE = 'theos.factory.io/rerun-release'
 
 /** The label naming the Brief that made a Crew. */
-export const LABEL_BRIEF = 'c4.factory.io/brief'
+export const LABEL_BRIEF = 'theos.factory.io/brief'
 
 /** The annotation holding the release target a Crew's Brief last set on it (docs/plans/done/brief-release-target.md). */
-export const BRIEF_PUBLISH_RELEASES = 'c4.factory.io/brief-publish-releases'
+export const BRIEF_PUBLISH_RELEASES = 'theos.factory.io/brief-publish-releases'
 
 /** Where a Crew publishes its releases; undefined publishes nowhere. */
 export type PublishReleases = NonNullable<Crew['spec']['publishReleases']>

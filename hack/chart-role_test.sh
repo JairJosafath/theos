@@ -26,7 +26,7 @@ fresh; sed -i '0,/^  - people$/s//  - persons/' "$T/role.yaml"
 "$HACK/chart-role.sh" --write "$T/role.yaml" "$T/chart.yaml" >"$T/wrote" 2>&1; check "--write exits 0" $? 0
 run; check "--write gives the chart the role's rules" $? 0
 grep -q '^  - persons$' "$T/chart.yaml"; check "the chart has the renamed resource" $? 0
-grep -q 'c4-factory.resourceName' "$T/chart.yaml"; check "the chart keeps its templated metadata" $? 0
+grep -q 'theos.resourceName' "$T/chart.yaml"; check "the chart keeps its templated metadata" $? 0
 grep -q 'rules written' "$T/wrote"; check "--write says it wrote" $? 0
 touch -d '2001-01-01' "$T/chart.yaml"
 "$HACK/chart-role.sh" --write "$T/role.yaml" "$T/chart.yaml" >"$T/out" 2>&1

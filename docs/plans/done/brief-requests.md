@@ -95,7 +95,7 @@ they built.
    reasons. The rules live in `internal/model`. The stand-in planner files an
    issue per request, so the loop is tested without a model.
 9. **The operator speaks on the issue, once per stage, with a marker.**
-   Every comment carries `<!-- c4factory:request brief=NAME stage=S -->`, and
+   Every comment carries `<!-- theos:request brief=NAME stage=S -->`, and
    the operator looks for its own before posting, so a retry never posts
    twice. Its own is one written by the token's account (`GET /user`, read
    once per read of the repository): anyone can copy a marker into a
@@ -213,7 +213,7 @@ Choices the decisions left open, made in #801:
   request let through in the same reconcile is in `model/requests.yaml`
   before the planner starts.
 - **The planned comment names its round.** It ends with a second marker,
-  `<!-- c4factory:request brief=NAME round=N -->`, and the Brief looks for
+  `<!-- theos:request brief=NAME round=N -->`, and the Brief looks for
   that one, so a request reopened on GitHub and answered by a later round
   hears that round's answer too. A reopened request that an applied round
   took counts as new and starts a round.
@@ -254,7 +254,7 @@ Choices the decisions left open, made in #802:
   when the latest release of one of their Crews changes, which reconciles the
   Brief. A request waits for its planned comment first, so the two come in
   order; the released comment ends with
-  `<!-- c4factory:request brief=NAME released=N -->`, N the round that
+  `<!-- theos:request brief=NAME released=N -->`, N the round that
   planned it, which the Brief looks for before posting.
 
 ## What step 6 settled

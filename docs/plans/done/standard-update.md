@@ -34,7 +34,7 @@ revisit them on the pull request.
   a possible follow-up.
 - **One update per Container at a time, recorded in Kubernetes.**
   `status.standard` holds the Standard's name, the ref its files are at, and the
-  update in flight. `scaffoldedFrom` and `.c4factory.yaml` keep recording the
+  update in flight. `scaffoldedFrom` and `.theos.yaml` keep recording the
   scaffold.
 - **A person can stop it.** Closing the update's pull request drops it until the
   Standard's ref changes again. Failed CI is not final: the update merges once a

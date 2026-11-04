@@ -40,7 +40,7 @@ func hangingClaude(n int) int {
 }
 
 // interruptedRun runs an implement job on a stand-in Claude Code that hangs
-// mid-session, and sends c4agent's process SIGTERM, as the kubelet does when
+// mid-session, and sends theos-agent's process SIGTERM, as the kubelet does when
 // it stops the sandbox's pod. It returns the repository, the checkpoint
 // directory, the stand-in's log directory and the result.
 func interruptedRun(t *testing.T) (url, checkpoints, log string, result Result) {
@@ -243,7 +243,7 @@ func TestRunGoesOnFromAHardCheckpoint(t *testing.T) {
 					err == nil, tt.resumed)
 			}
 			log, _ := exec.Command("git", "-C", dir, "log", "--format=%s").Output()
-			if strings.Contains(string(log), "c4agent checkpoint") {
+			if strings.Contains(string(log), "theos-agent checkpoint") {
 				t.Errorf("the branch's history has the checkpoint's commit:\n%s", log)
 			}
 		})

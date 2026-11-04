@@ -7,7 +7,7 @@ model table tests and the envtest specs of "A Task's checks".
     --- PASS: TestKilledChecksRunAgain (0.00s)
     === RUN   TestPushedAgainRerunsChecks
     --- PASS: TestPushedAgainRerunsChecks (0.00s)
-    ok  	github.com/JairJosafath/c4factory/internal/model	(cached)
+    ok  	github.com/JairJosafath/theos/internal/model	(cached)
     A Task's checks waits while its run is queued on an online runner, and fails when no runner is online
     A Task's checks runs the failed jobs the machine killed again, in the same round, and doesn't read the killed run
     A Task's checks fails a Task whose checks are killed a third time in a round, costing no try
@@ -16,4 +16,4 @@ model table tests and the envtest specs of "A Task's checks".
     A Task's checks runs the failed jobs again when a round pushes the commit whose checks failed, and doesn't read the old run
     Ran 6 of 299 Specs in 26.632 seconds
     SUCCESS! -- 6 Passed | 0 Failed | 0 Pending | 293 Skipped
-    ok  	github.com/JairJosafath/c4factory/internal/controller	26.713s
+    ok  	github.com/JairJosafath/theos/internal/controller	26.713s

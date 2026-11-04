@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // DefaultBranch is the branch every Container repository starts with and
@@ -32,13 +32,13 @@ type Config struct {
 	Credentials Credentials
 	// Packages is where the owner's npm and PyPI packages are published and
 	// installed from, the GitProvider's spec.packages. A field left "" takes
-	// its default: the scope @c4factory, and the host's own registries.
+	// its default: the scope @theos, and the host's own registries.
 	Packages Packages
 }
 
 // DefaultNpmScope is the npm scope the factory's packages share when the
 // GitProvider names none.
-const DefaultNpmScope = "@c4factory"
+const DefaultNpmScope = "@theos"
 
 // Packages names the registries of the owner's npm and PyPI packages. Any
 // registry that takes npm publish's PUT document, and any index that takes
@@ -76,7 +76,7 @@ type Repository struct {
 	ImageRegistry string
 	// NpmScope is the scope the owner's npm packages are named under, and
 	// NpmRegistry the registry they are published to and installed from, with
-	// a trailing slash: the GitProvider's settings, else "@c4factory" and the
+	// a trailing slash: the GitProvider's settings, else "@theos" and the
 	// host's own registry.
 	NpmScope    string
 	NpmRegistry string

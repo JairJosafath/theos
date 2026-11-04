@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // Client builds the client of a GitLab project. It is what the operator uses;
@@ -573,7 +573,7 @@ func (g *gitlabProject) request(ctx context.Context, method, path string, body i
 		return nil, &ports.ReleaseError{Reason: ReasonGitLabError, Message: "gitlab: " + err.Error()}
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "c4factory")
+	req.Header.Set("User-Agent", "theos")
 	req.Header.Set("PRIVATE-TOKEN", g.token)
 	return req, nil
 }

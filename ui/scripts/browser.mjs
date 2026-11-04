@@ -49,7 +49,7 @@ export const LIB_PACKAGES = {
 /** Where the unpacked libraries live: the XDG cache, which ./dev keeps in .dev/cache. */
 export function libsDir(env = process.env) {
   const cache = env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache')
-  return path.join(cache, 'c4factory', 'chromium-libs')
+  return path.join(cache, 'theos', 'chromium-libs')
 }
 
 /** The executable a loader error names, or undefined when the error is something else. */
@@ -156,7 +156,7 @@ function missingError(libs, unknown, failed) {
     if (unknown.length) lines.push(`No known package holds: ${unknown.join(', ')} (see ui/scripts/browser.mjs).`)
   }
   const err = new Error(lines.join('\n'))
-  err.code = 'C4_CHROMIUM_LIBS'
+  err.code = 'THEOS_CHROMIUM_LIBS'
   return err
 }
 
@@ -194,7 +194,7 @@ export async function launchChromiumOrExit(options) {
   try {
     return await launchChromium(options)
   } catch (err) {
-    if (err.code !== 'C4_CHROMIUM_LIBS') throw err
+    if (err.code !== 'THEOS_CHROMIUM_LIBS') throw err
     console.error(err.message)
     process.exit(1)
   }

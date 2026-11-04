@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // transcriptLine is a Claude Code transcript's line for a turn of size tokens.
@@ -90,7 +90,7 @@ func TestSessionGuard(t *testing.T) {
 }
 
 func TestSessionGuardSettings(t *testing.T) {
-	g, err := newSessionGuard("/usr/local/bin/c4 agent", 130000, "/etc/c4agent/podinfo/annotations", false)
+	g, err := newSessionGuard("/usr/local/bin/c4 agent", 130000, "/etc/theos-agent/podinfo/annotations", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestSessionGuardSettings(t *testing.T) {
 	// Step 12 of docs/plans/self-hosting.md: every session's settings have
 	// the pause-guard as their PostToolUse hook.
 	want := `{"hooks":{"PostToolUse":[{"hooks":[{"command":"'/usr/local/bin/c4 agent' pause-guard ` +
-		`--annotations '/etc/c4agent/podinfo/annotations' --stopped '` + g.pausedMark() + `'","type":"command"}],` +
+		`--annotations '/etc/theos-agent/podinfo/annotations' --stopped '` + g.pausedMark() + `'","type":"command"}],` +
 		`"matcher":"*"}],"PreToolUse":[{"hooks":[{"command":"'/usr/local/bin/c4 agent' session-guard --limit 130000 ` +
 		`--handoff '` + g.handoff() + `'","type":"command"}],"matcher":"*"}]}}`
 	if string(data) != want {
@@ -113,7 +113,7 @@ func TestSessionGuardSettings(t *testing.T) {
 	}
 
 	// The session after the last handoff has no limit, and still the pause-guard.
-	unlimited, err := newSessionGuard("c4agent", 0, "/etc/c4agent/podinfo/annotations", false)
+	unlimited, err := newSessionGuard("theos-agent", 0, "/etc/theos-agent/podinfo/annotations", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestSessionGuardSettings(t *testing.T) {
 	if strings.Contains(string(data), "PreToolUse") || !strings.Contains(string(data), "PostToolUse") {
 		t.Errorf("settings without a limit = %s, want the pause-guard alone", data)
 	}
-	if none, err := newSessionGuard("c4agent", 0, "", false); none != nil || err != nil {
+	if none, err := newSessionGuard("theos-agent", 0, "", false); none != nil || err != nil {
 		t.Errorf("newSessionGuard() without a limit or a pause = %v, %v; want no guard", none, err)
 	}
 }
@@ -135,8 +135,8 @@ func TestSessionGuardSettings(t *testing.T) {
 // two turns, and so does any session after three unguarded turns. It keeps
 // each prompt in standInClaudeDir.
 const (
-	standInClaudeMode = "C4_TEST_CLAUDE"
-	standInClaudeDir  = "C4_TEST_CLAUDE_DIR"
+	standInClaudeMode = "THEOS_TEST_CLAUDE"
+	standInClaudeDir  = "THEOS_TEST_CLAUDE_DIR"
 	standInTurn       = 30000
 )
 
@@ -192,7 +192,7 @@ func standInClaude(mode string) int {
 		}
 		if mode == "ignore" {
 			if size > 150000 {
-				// Past the limit by half again: c4agent ends it here.
+				// Past the limit by half again: theos-agent ends it here.
 				time.Sleep(time.Minute)
 			}
 			continue
@@ -322,7 +322,7 @@ func TestAgentSessionThatWontStopIsEnded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Past 150k by half again: c4agent ends each guarded session at its 180k turn.
+	// Past 150k by half again: theos-agent ends each guarded session at its 180k turn.
 	if answer != "done in session 4" || !reflect.DeepEqual(usage.Handoffs, []int64{180000, 180000, 180000}) {
 		t.Errorf("RunReportingUsage() = %q, handoffs %v; want session 4's answer after 3 handoffs at 180000",
 			answer, usage.Handoffs)

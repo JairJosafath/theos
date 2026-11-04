@@ -1,4 +1,4 @@
-# Kind cluster for the C4 Factory test environment: `make cluster`.
+# Kind cluster for the theos test environment: `make cluster`.
 # One node runs everything (Gitea, the operator, the sample and a test Session),
 # which keeps the footprint small on a laptop. Gitea is reached with
 # `make gitea-forward`, so no host ports are mapped here.
@@ -8,9 +8,9 @@
 # registry.mirrors patch is ignored once containerd reads certs.d).
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-# make cluster passes --name, so every cluster of the pool (c4factory,
-# c4factory-2, ...) is made from this file.
-name: c4factory
+# make cluster passes --name, so every cluster of the pool (theos,
+# theos-2, ...) is made from this file.
+name: theos
 # The node's disk is shared with the rest of the machine (on WSL, one virtual
 # disk), and agents and CI write gigabytes to it. etcd syncing each write to it
 # took up to 7 s, so the API stalled and the scheduler and controller-manager

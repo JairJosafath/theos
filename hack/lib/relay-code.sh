@@ -4,13 +4,13 @@
 # watch and every worker run their scripts from a worktree of their own,
 # .claude/worktrees/relay-code, kept detached at origin/main, and keep their
 # state (.relay/, the workers' worktrees) in the checkout they were started
-# from, which C4_RELAY_REPO names to the copy in relay-code. A script started
+# from, which THEOS_RELAY_REPO names to the copy in relay-code. A script started
 # from the checkout moves to its copy in relay-code at its first pull; after
 # each pull, one whose copy there changed restarts on it. The scripts read
-# C4_RELAY_REPO once and unset it, so no session inherits it, and pass it to
+# THEOS_RELAY_REPO once and unset it, so no session inherits it, and pass it to
 # the scripts they start.
 #
-# Each script sets CODE (the checkout it runs from), REPO (C4_RELAY_REPO, else
+# Each script sets CODE (the checkout it runs from), REPO (THEOS_RELAY_REPO, else
 # CODE), DIR ($REPO/.relay), log and code_sum before calling these.
 
 # relay_code: the worktree the relay runs its code from.

@@ -67,19 +67,19 @@ func TestGoProxyRoutes(t *testing.T) {
 		wantRegistry string // the path the registry is asked; empty: the public proxy is asked
 		wantPublic   string
 	}{
-		{name: "a factory module", path: "/c4factory.local/webshop/orders/@v/list",
-			wantRegistry: "/api/packages/webshop/go/c4factory.local/webshop/orders/@v/list"},
-		{name: "a factory module's zip", path: "/c4factory.local/webshop/orders/@v/v0.1.0.zip",
-			wantRegistry: "/api/packages/webshop/go/c4factory.local/webshop/orders/@v/v0.1.0.zip"},
-		{name: "the factory's prefix alone", path: "/c4factory.local/@v/list",
-			wantRegistry: "/api/packages/webshop/go/c4factory.local/@v/list"},
+		{name: "a factory module", path: "/theos.local/webshop/orders/@v/list",
+			wantRegistry: "/api/packages/webshop/go/theos.local/webshop/orders/@v/list"},
+		{name: "a factory module's zip", path: "/theos.local/webshop/orders/@v/v0.1.0.zip",
+			wantRegistry: "/api/packages/webshop/go/theos.local/webshop/orders/@v/v0.1.0.zip"},
+		{name: "the factory's prefix alone", path: "/theos.local/@v/list",
+			wantRegistry: "/api/packages/webshop/go/theos.local/@v/list"},
 		{name: "a public module", path: "/golang.org/x/mod/@v/list", wantPublic: "/golang.org/x/mod/@v/list"},
-		{name: "a module named like the factory", path: "/c4factory.localhost/x/@v/list",
-			wantPublic: "/c4factory.localhost/x/@v/list"},
+		{name: "a module named like the factory", path: "/theos.localhost/x/@v/list",
+			wantPublic: "/theos.localhost/x/@v/list"},
 		{name: "the checksum database", path: "/sumdb/sum.golang.org/supported",
 			wantPublic: "/sumdb/sum.golang.org/supported"},
-		{name: "a path that steps out of a public one", path: "/golang.org/../c4factory.local/webshop/orders/@v/list",
-			wantRegistry: "/api/packages/webshop/go/c4factory.local/webshop/orders/@v/list"},
+		{name: "a path that steps out of a public one", path: "/golang.org/../theos.local/webshop/orders/@v/list",
+			wantRegistry: "/api/packages/webshop/go/theos.local/webshop/orders/@v/list"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			registry := newUpstream(t, false, http.StatusOK, "v0.1.0\n")
@@ -119,7 +119,7 @@ func TestGoProxyMissingFactoryModule(t *testing.T) {
 	public := newUpstream(t, false, http.StatusOK, "v0.1.0\n")
 	proxy := &GoProxy{Registry: mustURL(t, registry.URL+"/api/packages/webshop/go"),
 		Public: mustURL(t, public.URL), Username: "bot", Token: "secret", Client: registry.Client()}
-	for _, p := range []string{"/c4factory.local/webshop/orders/@v/list", "/golang.org/x/mod/@v/list"} {
+	for _, p := range []string{"/theos.local/webshop/orders/@v/list", "/golang.org/x/mod/@v/list"} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:3127"+p, nil)
 		proxy.ServeHTTP(rec, req)
@@ -140,7 +140,7 @@ func TestGoProxyMissingFactoryModule(t *testing.T) {
 		t.Errorf("public proxy asked %v with %v, want only the public module, without credentials", pubPaths, pubAuth)
 	}
 	rec := httptest.NewRecorder()
-	proxy.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "http://127.0.0.1:3127/c4factory.local/x/@v/list", nil))
+	proxy.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "http://127.0.0.1:3127/theos.local/x/@v/list", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST: HTTP %d, want 405", rec.Code)
 	}
@@ -161,11 +161,11 @@ func TestGoProxyWithTheGoCommand(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	home := t.TempDir()
-	for _, module := range []string{"c4factory.local/webshop/orders@v0.1.0", "golang.org/x/mod@v0.1.0"} {
+	for _, module := range []string{"theos.local/webshop/orders@v0.1.0", "golang.org/x/mod@v0.1.0"} {
 		cmd := exec.CommandContext(ctx, goBin, "mod", "download", module)
 		cmd.Dir = home
 		// off, not direct, after the proxy: the test has no network.
-		cmd.Env = append(os.Environ(), "HOME="+home, "GOPROXY="+proxy.URL+",off", "GONOSUMDB=c4factory.local",
+		cmd.Env = append(os.Environ(), "HOME="+home, "GOPROXY="+proxy.URL+",off", "GONOSUMDB=theos.local",
 			"GOMODCACHE="+filepath.Join(home, "mod"), "GOFLAGS=-modcacherw", "GOTOOLCHAIN=local", "GOWORK=off",
 			"GO111MODULE=on", "GOSUMDB=off")
 		if out, err := cmd.CombinedOutput(); err == nil {
@@ -175,11 +175,11 @@ func TestGoProxyWithTheGoCommand(t *testing.T) {
 	regPaths, _ := registry.asked()
 	pubPaths, _ := public.asked()
 	for _, p := range pubPaths {
-		if strings.Contains(p, "c4factory.local") {
+		if strings.Contains(p, "theos.local") {
 			t.Errorf("the public proxy was asked for a factory module: %s", p)
 		}
 	}
-	if !slices.ContainsFunc(regPaths, func(p string) bool { return strings.Contains(p, "c4factory.local/webshop/orders") }) {
+	if !slices.ContainsFunc(regPaths, func(p string) bool { return strings.Contains(p, "theos.local/webshop/orders") }) {
 		t.Errorf("the registry wasn't asked for the factory module: %v", regPaths)
 	}
 	if !slices.ContainsFunc(pubPaths, func(p string) bool { return strings.Contains(p, "golang.org/x/mod") }) {

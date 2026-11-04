@@ -134,7 +134,7 @@ func TestPlannerGuideShowsUses(t *testing.T) {
 	}
 	// #1233: the guide's lines are the operator's, one per ecosystem.
 	for _, line := range []string{
-		UsesLine(UsedPackage{Ecosystem: EcosystemGo, Name: "c4factory.local/<project>/cel-lens-core", Version: "v0.1.0"}),
+		UsesLine(UsedPackage{Ecosystem: EcosystemGo, Name: "theos.local/<project>/cel-lens-core", Version: "v0.1.0"}),
 		UsesLine(UsedPackage{Ecosystem: EcosystemNpm, Name: "<scope>/cel-lens-core", Version: "0.1.0"}),
 		UsesLine(UsedPackage{Ecosystem: EcosystemPyPI, Name: "cel-lens-core", Version: "0.1.0", Index: "<index>"}),
 	} {

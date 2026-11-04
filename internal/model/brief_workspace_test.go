@@ -129,7 +129,7 @@ func TestBriefWorkspaceBriefNamesWhatNoIssueCanChange(t *testing.T) {
 
 func TestBriefWorkspaceModelRoundTrip(t *testing.T) {
 	objects, err := parsePlanModel(happyModel + `---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: worker
@@ -145,7 +145,7 @@ spec:
   computeRef: {name: small}
   deploymentRef: {name: k8s}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: mailer
@@ -156,14 +156,14 @@ spec:
   gitProviderRef: {name: gitea}
   bundleRef: {name: go-worker}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Person
 metadata:
   name: ann
 spec:
   displayName: Ann
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: payments

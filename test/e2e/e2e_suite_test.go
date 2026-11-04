@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -27,8 +27,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/test/e2e/standin"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/test/e2e/standin"
 )
 
 // Four specs on the hello-html page and stand-in agents, against the Kind
@@ -49,8 +49,8 @@ var (
 
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting C4 Factory e2e suite\n")
-	RunSpecs(t, "C4 Factory e2e")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting theos e2e suite\n")
+	RunSpecs(t, "theos e2e")
 }
 
 var _ = BeforeSuite(func() {
@@ -63,7 +63,7 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.Background())
 	cluster := os.Getenv("KIND_CLUSTER")
 	if cluster == "" {
-		cluster = "c4factory"
+		cluster = "theos"
 	}
 	kubeCtx = "kind-" + cluster
 
@@ -83,7 +83,7 @@ var _ = BeforeSuite(func() {
 	Eventually(func(g Gomega) {
 		var d appsv1.Deployment
 		g.Expect(k8s.Get(ctx, types.NamespacedName{
-			Namespace: "c4-factory-system", Name: "c4-factory-controller-manager",
+			Namespace: "theos-system", Name: "theos-controller-manager",
 		}, &d)).To(Succeed())
 		g.Expect(d.Status.AvailableReplicas).To(BeEquivalentTo(1))
 	}).WithTimeout(2 * time.Minute).Should(Succeed())

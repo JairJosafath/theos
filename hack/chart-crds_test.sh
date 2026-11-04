@@ -19,10 +19,10 @@ fresh; run; st=$?; check "the committed chart matches" $st 0
 
 # A CRD whose kind's versions share a shape converts by the API server,
 # strategy None, webhook.enabled or not (#1830). One whose base is marked
-# c4.factory.io/conversion: webhook converts by the operator's webhook at
+# theos.factory.io/conversion: webhook converts by the operator's webhook at
 # /convert under webhook.enabled (#1615), and the render fails without it.
 # The committed chart follows the committed bases' marks, whichever they are.
-mark='^    c4.factory.io/conversion: webhook$'
+mark='^    theos.factory.io/conversion: webhook$'
 n=0; for base in "$ROOT"/config/crd/bases/*.yaml; do
 	name=$(basename "$base" .yaml)
 	want=None; grep -q "$mark" "$base" && want=Webhook
@@ -38,54 +38,54 @@ check "the chart CRDs naming /convert are the marked bases (#1830)" \
 HELM=${HELM:-$ROOT/bin/helm}
 if [ -x "$HELM" ]; then
 	fresh
-	sed -i 's|^  annotations:$|  annotations:\n    c4.factory.io/conversion: webhook|' "$T/bases/c4.factory.io_people.yaml"
+	sed -i 's|^  annotations:$|  annotations:\n    theos.factory.io/conversion: webhook|' "$T/bases/theos.factory.io_people.yaml"
 	"$HACK/chart-crds.sh" --write "$T/bases" "$T/crd" >/dev/null 2>&1
-	f=$T/crd/people.c4.factory.io.yaml
+	f=$T/crd/people.theos.factory.io.yaml
 	awk '$0 == "spec:" { s = 1; next }
 		s == 1 && $0 == "  conversion:" { c = 1 }
 		s == 1 && c && $0 == "    strategy: Webhook" { w = 1 }
 		s == 1 && c && /path: \/convert$/ { p = 1 }
-		s == 1 && $0 == "  group: c4.factory.io" { exit }
+		s == 1 && $0 == "  group: theos.factory.io" { exit }
 		END { exit !(w && p) }' "$f"; check "a kind marked as differing converts at /convert by webhook (#1830)" $? 0
 	grep -q 'strategy: None' "$f"; check "and not by strategy None" $? 1
 	rm -rf "$T/chart"; cp -r "$ROOT/dist/chart" "$T/chart"; cp "$f" "$T/chart/templates/crd/"
-	render() { "$HELM" template c4-factory "$T/chart" --namespace c4-factory-system --set "webhook.enabled=$1" >"$T/rendered.yaml" 2>"$T/render-err"; }
+	render() { "$HELM" template theos "$T/chart" --namespace theos-system --set "webhook.enabled=$1" >"$T/rendered.yaml" 2>"$T/render-err"; }
 	render true; check "the chart renders it with webhook.enabled" $? 0
 	check "the rendered CRD converts at the release's webhook Service" \
-		"$(awk '/^  name: people.c4.factory.io$/ { s = 1 } s && /path: \/convert$/ { f = 1 } s && /^---$/ { exit } END { print f + 0 }' "$T/rendered.yaml")" 1
+		"$(awk '/^  name: people.theos.factory.io$/ { s = 1 } s && /path: \/convert$/ { f = 1 } s && /^---$/ { exit } END { print f + 0 }' "$T/rendered.yaml")" 1
 	check "the rest stay at strategy None" "$(grep -c 'strategy: None' "$T/rendered.yaml")" "$(grep -L 'path: /convert' "$T"/crd/*.yaml | wc -l)"
 	render false; check "without webhook.enabled the render fails (#1830)" $? 1
-	grep -q 'people.c4.factory.io: its versions differ in shape' "$T/render-err"; check "and names the kind" $? 0
+	grep -q 'people.theos.factory.io: its versions differ in shape' "$T/render-err"; check "and names the kind" $? 0
 else
 	echo "FAIL the marked-kind render specs: no helm at $HELM (make install-helm; make test-hack installs it)"; fail=1
 fi
 
 fresh
-sed -i 's/^            properties:$/            properties:\n              addedField:\n                type: string/' "$T/bases/c4.factory.io_people.yaml"
+sed -i 's/^            properties:$/            properties:\n              addedField:\n                type: string/' "$T/bases/theos.factory.io_people.yaml"
 run; check "a field added to the API, chart not regenerated: fails" $? 1
 grep -q '^-.*addedField:' "$T/out"; check "the diff names the field" $? 0
 grep -q 'run make manifests' "$T/out"; check "says how to fix it" $? 0
 
-fresh; rm "$T/crd/people.c4.factory.io.yaml"
+fresh; rm "$T/crd/people.theos.factory.io.yaml"
 run; check "a CRD missing from the chart: fails" $? 1
-grep -q 'people.c4.factory.io.yaml: missing' "$T/out"; check "names the missing file" $? 0
+grep -q 'people.theos.factory.io.yaml: missing' "$T/out"; check "names the missing file" $? 0
 
-fresh; cp "$T/crd/people.c4.factory.io.yaml" "$T/crd/gone.c4.factory.io.yaml"
+fresh; cp "$T/crd/people.theos.factory.io.yaml" "$T/crd/gone.theos.factory.io.yaml"
 run; check "a chart CRD with no base: fails" $? 1
-grep -q 'gone.c4.factory.io.yaml: no CRD' "$T/out"; check "names the left-over file" $? 0
+grep -q 'gone.theos.factory.io.yaml: no CRD' "$T/out"; check "names the left-over file" $? 0
 
 # --write, what make manifests runs (#1689): the bases gain a field, the chart
 # lacks a CRD and has one no base makes.
 fresh
-sed -i 's/^            properties:$/            properties:\n              addedField:\n                type: string/' "$T/bases/c4.factory.io_people.yaml"
-rm "$T/crd/people.c4.factory.io.yaml"
-cp "$T/crd/standards.c4.factory.io.yaml" "$T/crd/gone.c4.factory.io.yaml"
-touch -d '2001-01-01' "$T/crd/standards.c4.factory.io.yaml"
+sed -i 's/^            properties:$/            properties:\n              addedField:\n                type: string/' "$T/bases/theos.factory.io_people.yaml"
+rm "$T/crd/people.theos.factory.io.yaml"
+cp "$T/crd/standards.theos.factory.io.yaml" "$T/crd/gone.theos.factory.io.yaml"
+touch -d '2001-01-01' "$T/crd/standards.theos.factory.io.yaml"
 "$HACK/chart-crds.sh" --write "$T/bases" "$T/crd" >"$T/wrote" 2>&1; check "--write exits 0" $? 0
 run; check "--write makes the chart match the bases" $? 0
-grep -q 'addedField' "$T/crd/people.c4.factory.io.yaml"; check "the written CRD has the field" $? 0
-[ ! -e "$T/crd/gone.c4.factory.io.yaml" ]; check "--write removes the left-over file" $? 0
-[ "$(stat -c %Y "$T/crd/standards.c4.factory.io.yaml")" = "$(date -d 2001-01-01 +%s)" ]; check "--write leaves a matching file untouched" $? 0
+grep -q 'addedField' "$T/crd/people.theos.factory.io.yaml"; check "the written CRD has the field" $? 0
+[ ! -e "$T/crd/gone.theos.factory.io.yaml" ]; check "--write removes the left-over file" $? 0
+[ "$(stat -c %Y "$T/crd/standards.theos.factory.io.yaml")" = "$(date -d 2001-01-01 +%s)" ]; check "--write leaves a matching file untouched" $? 0
 check "--write says what it wrote" "$(grep -c 'written from\|removed' "$T/wrote")" 2
 
 make -n -C "$ROOT" manifests 2>/dev/null | grep -q 'chart-crds.sh --write'; check "make manifests runs it" $? 0
@@ -96,23 +96,23 @@ make -n -C "$ROOT" manifests 2>/dev/null | grep -q 'chart-crds.sh --write'; chec
 R=$T/repo
 git init -q -b main "$R"
 mkdir -p "$R/config/crd/bases" "$R/config/rbac" "$R/api" "$R/cmd" "$R/internal" "$R/dist/chart/templates/crd" "$R/dist/chart/templates/rbac"
-cp "$ROOT/config/crd/bases/c4.factory.io_people.yaml" "$R/config/crd/bases/"
-cp "$ROOT/dist/chart/templates/crd/people.c4.factory.io.yaml" "$R/dist/chart/templates/crd/"
+cp "$ROOT/config/crd/bases/theos.factory.io_people.yaml" "$R/config/crd/bases/"
+cp "$ROOT/dist/chart/templates/crd/people.theos.factory.io.yaml" "$R/dist/chart/templates/crd/"
 echo readme >"$R/README.md"
 git -C "$R" add -A && git -C "$R" -c user.name=t -c user.email=t@t commit -qm init
 gen() { make -I "$ROOT" -f "$ROOT/Makefile" -C "$R" check-generated >"$T/gen" 2>/dev/null; }
 gen; check "make check-generated on a clean tree: passes" $? 0
 echo changed >>"$R/README.md"
 gen; check "make check-generated with a change outside the generated paths: passes" $? 0
-echo '# edited' >>"$R/dist/chart/templates/crd/people.c4.factory.io.yaml"
-cp "$R/config/crd/bases/c4.factory.io_people.yaml" "$R/dist/chart/templates/crd/new.c4.factory.io.yaml"
+echo '# edited' >>"$R/dist/chart/templates/crd/people.theos.factory.io.yaml"
+cp "$R/config/crd/bases/theos.factory.io_people.yaml" "$R/dist/chart/templates/crd/new.theos.factory.io.yaml"
 gen; check "make check-generated on a chart CRD left uncommitted and one untracked: fails" $? 2
-grep -q '^ M dist/chart/templates/crd/people.c4.factory.io.yaml$' "$T/gen"; check "names the uncommitted chart CRD" $? 0
-grep -q '^?? dist/chart/templates/crd/new.c4.factory.io.yaml$' "$T/gen"; check "names the untracked chart CRD (#1705)" $? 0
+grep -q '^ M dist/chart/templates/crd/people.theos.factory.io.yaml$' "$T/gen"; check "names the uncommitted chart CRD" $? 0
+grep -q '^?? dist/chart/templates/crd/new.theos.factory.io.yaml$' "$T/gen"; check "names the untracked chart CRD (#1705)" $? 0
 grep -q 'run make manifests generate and commit them' "$T/gen"; check "says how to fix it" $? 0
 git -C "$R" add -A && git -C "$R" -c user.name=t -c user.email=t@t commit -qm crds
 gen; check "make check-generated once they are committed: passes" $? 0
-cp "$R/config/crd/bases/c4.factory.io_people.yaml" "$R/dist/chart/templates/crd/other.c4.factory.io.yaml"
+cp "$R/config/crd/bases/theos.factory.io_people.yaml" "$R/dist/chart/templates/crd/other.theos.factory.io.yaml"
 gen; check "make check-generated on an untracked chart CRD alone: fails (#1705)" $? 2
 
 exit $fail

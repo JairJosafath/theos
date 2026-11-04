@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Proposal branch: `standard/<task>`, cut from the base; the patch stays in Git, the result carries branch, paths and reason only (result ≤ 4000 bytes).
-- Ineligible ("never") paths: `AGENTS.md`, `docs/agents/`, `.c4factory.yaml`. Every other protected path is eligible (Makefile, `.gitea/`, lint config, `.editorconfig`, `docs/style/`, `.devcontainer/`, `tsconfig.json`, …).
+- Ineligible ("never") paths: `AGENTS.md`, `docs/agents/`, `.theos.yaml`. Every other protected path is eligible (Makefile, `.gitea/`, lint config, `.editorconfig`, `docs/style/`, `.devcontainer/`, `tsconfig.json`, …).
 - The issue: title `Standard change for #<n>: <paths>`, authored by the operator, labels `kind/standard-change` (created if missing) and `status/ready`, in the waiting issue's milestone, blocking the waiting issue in Gitea.
 - Phase `Blocked`: runs no agent, spends no round, does not count against the Crew's `parallel`.
 - `spec.allowedProtectedPaths` is set only by the Crew, only from a Task's `status.standardChange`; a label alone grants nothing. A gated Task may change exactly its allowed paths and nothing else.
@@ -24,7 +24,7 @@
 - `make check` passes at the end of every code task; `make ui-test` for UI changes.
 - Conventional Commits, one per task at least; every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Don't push.
 - Templates are pinned: a guide change is a new version in `templates/versions.txt`, published with `make seed`; existing Containers keep theirs.
-- Live steps run only against the Kind cluster `c4factory`. Never print a secret; the Gitea admin password contains `/`, so it never goes in a URL or a sed pattern (`curl -u`). Kill every port-forward in the step that opened it.
+- Live steps run only against the Kind cluster `theos`. Never print a secret; the Gitea admin password contains `/`, so it never goes in a URL or a sed pattern (`curl -u`). Kill every port-forward in the step that opened it.
 
 ## Review Focus
 
@@ -132,7 +132,7 @@ Expected: no output.
 
 **Interfaces:**
 - Produces:
-  - `var AgentNeverPaths = []string{"AGENTS.md", "docs/agents/", ".c4factory.yaml"}`
+  - `var AgentNeverPaths = []string{"AGENTS.md", "docs/agents/", ".theos.yaml"}`
   - `const MaxStandardChanges = 2`, `const MaxProposalPaths = 20`
   - `const LabelStandardChange = "kind/standard-change"`; `func StandardChangeLabel() IssueLabel` (color `#5319e7`, description "Changes protected files for another issue; filed by the operator", not exclusive)
   - `type Proposal struct { Branch string \`json:"branch"\`; Paths []string \`json:"paths"\`; Reason string \`json:"reason,omitempty"\` }`
@@ -140,7 +140,7 @@ Expected: no output.
   - `func SplitChange(changed, protected, allowed []string, canPropose bool) ChangeSplit`
   - `func EligibleAllowance(paths []string) []string`
   - `func ProposalBranch(task string) string` → `"standard/" + task`
-  - `func ProposalMarker(branch string) string` → `"<!-- c4factory:standard-change " + branch + " -->"`
+  - `func ProposalMarker(branch string) string` → `"<!-- theos:standard-change " + branch + " -->"`
   - `func ProposalReason(summary string) string`
   - `func StandardChangeIssue(issue int, task string, p Proposal) (title, body string)`
 
@@ -160,8 +160,8 @@ func TestSplitChange(t *testing.T) {
 			ChangeSplit{Task: []string{"src/a.ts"}, Proposal: []string{"Makefile"}}},
 		{"platform directory is eligible", []string{".gitea/workflows/release.yaml"}, std, nil, true,
 			ChangeSplit{Proposal: []string{".gitea/workflows/release.yaml"}}},
-		{"agents' rules and contract refused", []string{"AGENTS.md", "docs/agents/reviewer.md", ".c4factory.yaml"}, std, nil, true,
-			ChangeSplit{Refused: []string{"AGENTS.md", "docs/agents/reviewer.md", ".c4factory.yaml"}}},
+		{"agents' rules and contract refused", []string{"AGENTS.md", "docs/agents/reviewer.md", ".theos.yaml"}, std, nil, true,
+			ChangeSplit{Refused: []string{"AGENTS.md", "docs/agents/reviewer.md", ".theos.yaml"}}},
 		{"mixed", []string{"Makefile", "AGENTS.md", "src/a.ts"}, std, nil, true,
 			ChangeSplit{Task: []string{"src/a.ts"}, Proposal: []string{"Makefile"}, Refused: []string{"AGENTS.md"}}},
 		{"no issue, no proposal", []string{"Makefile"}, std, nil, false, ChangeSplit{Refused: []string{"Makefile"}}},
@@ -180,7 +180,7 @@ func TestSplitChange(t *testing.T) {
 }
 
 func TestEligibleAllowance(t *testing.T) {
-	got := EligibleAllowance([]string{"Makefile", "AGENTS.md", "docs/agents/x.md", ".c4factory.yaml", ".gitea/workflows/check.yaml"})
+	got := EligibleAllowance([]string{"Makefile", "AGENTS.md", "docs/agents/x.md", ".theos.yaml", ".gitea/workflows/check.yaml"})
 	want := []string{"Makefile", ".gitea/workflows/check.yaml"}
 	// assert reflect.DeepEqual(got, want); and EligibleAllowance(nil) == nil
 }
@@ -352,7 +352,7 @@ Expected: PASS.
 **Interfaces:**
 - Consumes: `SplitChange`, `Proposal`, `ProposalBranch`, `ProposalReason`, `MaxProposalPaths`, `AgentProtectedPaths` (Task 2).
 - Produces:
-  - `EnvAllowedPaths = "C4_ALLOWED_PATHS"` (comma-separated), `EnvResumed = "C4_RESUMED"` (`strconv.ParseBool`, empty is false)
+  - `EnvAllowedPaths = "THEOS_ALLOWED_PATHS"` (comma-separated), `EnvResumed = "THEOS_RESUMED"` (`strconv.ParseBool`, empty is false)
   - `Job.AllowedPaths []string`, `Job.Resumed bool`
   - `Result.Proposal *model.Proposal \`json:"proposal,omitempty"\``, `Result.Empty bool \`json:"empty,omitempty"\`` (set in Task 6)
   - `func (r *repo) proposeBranch(ctx context.Context, base, branch string, paths []string, message string) error`: branch from `origin/<base>`, each path taken from the work head (or removed when the head deleted it), one commit, `push --force`, back on the work branch
@@ -377,7 +377,7 @@ TestRunImplementKeepsNoProtectedEditWhenTheCheckFails: check "sh -c 'exit 1'", a
 	Error contains "still fails" and "was not kept"; Proposal == nil; no standard/add-crop; task/add-crop's Makefile == "check:\n"
 TestResultEncodeKeepsTheProposal: Summary 10 KB, Proposal{Branch, 20 paths, Reason 10 KB}
 	len(Encode()) <= MaxResultBytes; decoded Proposal.Branch and Paths unchanged
-TestJobFromEnv rows: C4_ALLOWED_PATHS "Makefile, .gitea/" -> [Makefile .gitea/]; C4_RESUMED "true" -> true; "" -> false; "maybe" -> error
+TestJobFromEnv rows: THEOS_ALLOWED_PATHS "Makefile, .gitea/" -> [Makefile .gitea/]; THEOS_RESUMED "true" -> true; "" -> false; "maybe" -> error
 ```
 
 The existing "protected path" and "path the Standard protects" subtests have no issue, so they still expect the refusal; leave them.
@@ -441,13 +441,13 @@ Expected: PASS.
 
 **Files:**
 - Modify: `api/v1alpha1/task_types.go:23-74` (spec, phase enum), `:111-224` (status)
-- Generated: `config/crd/bases/c4.factory.io_tasks.yaml`, `api/v1alpha1/zz_generated.deepcopy.go` (by `make manifests generate`)
+- Generated: `config/crd/bases/theos.factory.io_tasks.yaml`, `api/v1alpha1/zz_generated.deepcopy.go` (by `make manifests generate`)
 - Create: `internal/controller/task_standard_test.go`
 
 **Interfaces:**
 - Produces:
   - `TaskBlocked TaskPhase = "Blocked"`; enum `Pending;Implementing;Checking;Reviewing;Blocked;Merged;Failed`
-  - `TaskSpec.AllowedProtectedPaths []string \`json:"allowedProtectedPaths,omitempty"\``: `+listType=atomic`, `MaxItems=20`, `items:MaxLength=256`, and on the field `self.all(p, p != 'AGENTS.md' && p != '.c4factory.yaml' && p != 'docs/agents' && !p.startsWith('docs/agents/'))` with message `allowedProtectedPaths may not include AGENTS.md, docs/agents/ or .c4factory.yaml`
+  - `TaskSpec.AllowedProtectedPaths []string \`json:"allowedProtectedPaths,omitempty"\``: `+listType=atomic`, `MaxItems=20`, `items:MaxLength=256`, and on the field `self.all(p, p != 'AGENTS.md' && p != '.theos.yaml' && p != 'docs/agents' && !p.startsWith('docs/agents/'))` with message `allowedProtectedPaths may not include AGENTS.md, docs/agents/ or .theos.yaml`
   - on `TaskSpec`: `!has(self.allowedProtectedPaths) || has(self.issue)` ("allowedProtectedPaths needs an issue") and `has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)` ("allowedProtectedPaths is immutable"); on the field `self == oldSelf` (same message)
   - `TaskStatus.StandardChange *TaskStandardChange \`json:"standardChange,omitempty"\``
   - `type TaskStandardChange struct { Issue int32 \`json:"issue"\`; IssueURL string \`json:"issueURL,omitempty"\`; Paths []string \`json:"paths"\` (+listType=atomic, MaxItems=20); Branch string \`json:"branch,omitempty"\`; Count int32 \`json:"count"\`; ResumedRound int32 \`json:"resumedRound,omitempty"\` }`, each field with a doc comment in the file's style
@@ -544,7 +544,7 @@ Expected: PASS (the controller tests still pass with the stricter fake merge: th
 **Interfaces:**
 - Consumes: `ActionPropose`, `TaskBlocked`, `StandardChangeIssue`, `ProposalMarker`, `StandardChangeLabel`, `LabelStandardChange`, `LabelReady` (model); `AddIssueDependency`, `Issue.Milestone`, `ListIssues`, `CreateIssue`, `EnsureLabels` (gitprovider); `TaskStandardChange` (API); `EnvAllowedPaths`, `EnvResumed`, `Result.Proposal`, `Result.Empty` (runner).
 - Produces:
-  - `sandboxRun.allowedPaths []string` (from `task.Spec.AllowedProtectedPaths`, both roles) and `sandboxRun.resumed bool` (implement only; set in Task 12); env `C4_ALLOWED_PATHS` when non-empty, `C4_RESUMED=true` when resumed
+  - `sandboxRun.allowedPaths []string` (from `task.Spec.AllowedProtectedPaths`, both roles) and `sandboxRun.resumed bool` (implement only; set in Task 12); env `THEOS_ALLOWED_PATHS` when non-empty, `THEOS_RESUMED=true` when resumed
   - `runState` copies `Proposal` and `Empty` into `model.RunResult`
   - facts: `StandardChanges = status.StandardChange.Count`, `Change.Issue`/`Change.Paths` from `status.StandardChange`
   - `func (r *TaskReconciler) propose(ctx context.Context, task *c4v1alpha1.Task, status *c4v1alpha1.TaskStatus, container *c4v1alpha1.Container, step model.TaskStep) (ctrl.Result, error)`
@@ -553,7 +553,7 @@ Expected: PASS (the controller tests still pass with the stricter fake merge: th
 
 - [ ] **Step 1: Write the failing tests**
 
-Unit (`task_sandbox_unit_test.go`): a Task with `AllowedProtectedPaths: [Makefile, .gitea/]` gives env `C4_ALLOWED_PATHS=Makefile,.gitea/` for both roles; `resumed: true` on implement gives `C4_RESUMED=true`; neither set gives neither variable.
+Unit (`task_sandbox_unit_test.go`): a Task with `AllowedProtectedPaths: [Makefile, .gitea/]` gives env `THEOS_ALLOWED_PATHS=Makefile,.gitea/` for both roles; `resumed: true` on implement gives `THEOS_RESUMED=true`; neither set gives neither variable.
 
 envtest (`task_standard_test.go`):
 
@@ -624,7 +624,7 @@ It("runs a Standard change beside the Task it blocks, with its allowance", func(
 	g.Expect(getTask(g, ns, "orders-api-1").Status.Phase).To(Equal(c4v1alpha1.TaskBlocked))
 	gated := getTask(g, ns, "orders-api-2")
 	g.Expect(gated.Spec.AllowedProtectedPaths).To(Equal([]string{"Makefile"}))
-	g.Expect(sandboxEnv(g, ns, "orders-api-2-r1-implement")).To(ContainElement(map[string]any{"name": "C4_ALLOWED_PATHS", "value": "Makefile"}))
+	g.Expect(sandboxEnv(g, ns, "orders-api-2-r1-implement")).To(ContainElement(map[string]any{"name": "THEOS_ALLOWED_PATHS", "value": "Makefile"}))
 	g.Expect(getCrew(g, ns).Status.ActiveTasks).To(ConsistOf("orders-api-1", "orders-api-2"))
 })
 It("leaves a kind/standard-change issue no Task filed waiting", func() {
@@ -674,8 +674,8 @@ It("refuses a Standard change that touches a path it may not", func() {
 	// as above, setPullFiles(…, "Makefile", "README.md"): Task Failed, Succeeded reason "GatedMergeRefused",
 	// message contains "README.md"; PR not merged; issue n labelled status/needs-human
 })
-// Branch B model test: LiftedPaths([.c4factory.yaml .devcontainer/ .gitea/ AGENTS.md Makefile], [Makefile])
-//   == [.c4factory.yaml .devcontainer/ .gitea/ AGENTS.md]; with allowed [.gitea/workflows/release.yaml] .gitea/ goes
+// Branch B model test: LiftedPaths([.theos.yaml .devcontainer/ .gitea/ AGENTS.md Makefile], [Makefile])
+//   == [.theos.yaml .devcontainer/ .gitea/ AGENTS.md]; with allowed [.gitea/workflows/release.yaml] .gitea/ goes
 ```
 
 - [ ] **Step 2: Run them to see them fail**
@@ -726,7 +726,7 @@ It("resumes when its Standard change merges, and ends when that did the whole is
 	g.Expect(task1.Status.Feedback).To(ContainSubstring("#2"))
 	g.Expect(task1.Status.History).To(ContainElement(HaveField("Reason", "Resumed")))
 	// delete pod orders-api-1-r1-implement and wait for a fresh sandbox of that name (as the conflict test does)
-	g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).To(ContainElement(map[string]any{"name": "C4_RESUMED", "value": "true"}))
+	g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).To(ContainElement(map[string]any{"name": "THEOS_RESUMED", "value": "true"}))
 	// finishSandbox(… &agentrunner.Result{Role: "implement", Empty: true}, "")
 	g.Expect(task1.Status.Phase).To(Equal(c4v1alpha1.TaskMerged))
 	g.Expect(condition(task1.Status.Conditions, ConditionSucceeded).Reason).To(Equal("DoneByStandardChange"))
@@ -774,7 +774,7 @@ func TestStandardChangePrompts(t *testing.T) {
 	issue := Job{Container: "c", Project: "p", Issue: 4, Goal: "Issue #4", Branch: "task/x", Base: "main",
 		ProtectedPaths: []string{"AGENTS.md", "Makefile"}, CheckCommand: []string{"make", "check"}}
 	p := ImplementPrompt(issue, Workspace{})
-	// p contains "Standard change:", "on main alone", "hook", "AGENTS.md, docs/agents/ and .c4factory.yaml",
+	// p contains "Standard change:", "on main alone", "hook", "AGENTS.md, docs/agents/ and .theos.yaml",
 	//   "even if your role guide or AGENTS.md says to stop"                    (Review Focus 1)
 	goal := issue; goal.Issue = 0
 	// ImplementPrompt(goal, …) contains "do not change" and not "Standard change:"
@@ -792,7 +792,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Write the prompt text**
 
-Issue Task: the protected paths are listed; a change to one of them that the issue truly needs goes in the same work, is moved by the runner to a Standard change that a separate Task merges, and must work on `main` alone (a hook such as `npm run dist --if-present`, not a call to a file only this branch has); end the summary with `Standard change: <why the issue needs it>`; never `AGENTS.md`, `docs/agents/` and `.c4factory.yaml`; this holds even if your role guide or AGENTS.md says to stop. Written goal: today's "do not change" line. Gated Task: this Task carries a Standard change; the issue names the proposal branch: start with `git merge origin/<branch>`; change only the allowed paths, nothing else. Reviewer, every Task: the protected list; such changes come through a Standard change, so don't require them in this pull request. Gated reviewer: the three checks.
+Issue Task: the protected paths are listed; a change to one of them that the issue truly needs goes in the same work, is moved by the runner to a Standard change that a separate Task merges, and must work on `main` alone (a hook such as `npm run dist --if-present`, not a call to a file only this branch has); end the summary with `Standard change: <why the issue needs it>`; never `AGENTS.md`, `docs/agents/` and `.theos.yaml`; this holds even if your role guide or AGENTS.md says to stop. Written goal: today's "do not change" line. Gated Task: this Task carries a Standard change; the issue names the proposal branch: start with `git merge origin/<branch>`; change only the allowed paths, nothing else. Reviewer, every Task: the protected list; such changes come through a Standard change, so don't require them in this pull request. Gated reviewer: the three checks.
 
 - [ ] **Step 4: Run the tests**
 
@@ -808,7 +808,7 @@ Expected: PASS.
 **Files:**
 - Modify: `templates/go-standard/docs/agents/implementer.md:34-35`, `templates/ts-standard/docs/agents/implementer.md` (the "Never change the Standard's or the platform's files" bullet), both `docs/agents/reviewer.md`, both `AGENTS.md.tmpl` (the "Leave … alone" rule), `templates/versions.txt` (`go-standard v1.1.0`, `ts-standard v1.1.0`), `config/samples/cel-lens/factory.yaml:39,68` (`ref: v1.1.0`)
 
-- [ ] **Step 1: Write the guides**: the implementer bullet becomes a short "Standard changes" section matching the prompt (hook that works on `main` alone, the `Standard change:` line, never the agents' rules or `.c4factory.yaml`); each reviewer guide gets the three gated checks and "don't require a protected file in a normal pull request"; the `AGENTS.md` rule says protected files change only through a Standard change.
+- [ ] **Step 1: Write the guides**: the implementer bullet becomes a short "Standard changes" section matching the prompt (hook that works on `main` alone, the `Standard change:` line, never the agents' rules or `.theos.yaml`); each reviewer guide gets the three gated checks and "don't require a protected file in a normal pull request"; the `AGENTS.md` rule says protected files change only through a Standard change.
 
 - [ ] **Step 2: Bump the versions** in `templates/versions.txt` and the two sample `ref`s.
 
@@ -882,7 +882,7 @@ kubectl -n cel-lens get tasks --no-headers | awk '$4 ~ /Implementing|Checking|Re
 ```
 Expected: the second command prints nothing (repeat until it does).
 
-- [ ] **Step 2: Rebuild the agent image** (the CEL Lens Agents run `c4factory/agent-go:dev`; `make agent-image` builds the Flutter one, not needed here)
+- [ ] **Step 2: Rebuild the agent image** (the CEL Lens Agents run `theos/agent-go:dev`; `make agent-image` builds the Flutter one, not needed here)
 
 Run: `make agent-image-go`, then `kubectl -n gitea get pods` and, if Gitea restarted, `kubectl -n gitea rollout status deploy/gitea --timeout=300s`.
 Expected: Gitea Running and Ready.
@@ -894,8 +894,8 @@ Expected: the log tags `go-standard` and `ts-standard` `v1.1.0`; "Seed Job compl
 
 - [ ] **Step 4: Deploy the operator and the UI**
 
-Run: `make deploy && kubectl -n c4-factory-system rollout status deploy/c4-factory-controller-manager --timeout=300s && make ui`
-Expected: rolled out; `kubectl get crd tasks.c4.factory.io -o jsonpath='{.spec.versions[0].schema.openAPIV3Schema.properties.status.properties.phase.enum}'` lists `Blocked`.
+Run: `make deploy && kubectl -n theos-system rollout status deploy/theos-controller-manager --timeout=300s && make ui`
+Expected: rolled out; `kubectl get crd tasks.theos.factory.io -o jsonpath='{.spec.versions[0].schema.openAPIV3Schema.properties.status.properties.phase.enum}'` lists `Blocked`.
 
 - [ ] **Step 5: Point the sample Standards at v1.1.0** (patched, not re-applied, so live Agent tweaks stay)
 
@@ -935,7 +935,7 @@ Expected: `{"number":30,"state":"closed","merged":false}`; #4's labels include `
 - [ ] **Step 2: Follow the Tasks** without acting: `kubectl -n cel-lens get tasks` every 10 minutes (a Monitor loop is fine).
 Expected, in order: `vscode-extension-4-2` Implementing → `Blocked` (`kubectl -n cel-lens get task vscode-extension-4-2 -o jsonpath='{.status.standardChange}'` names issue `<m>` and `Makefile`); `vscode-extension-<m>` runs with `spec.allowedProtectedPaths: [Makefile]` and merges; `vscode-extension-4-2` resumes in the same round and reaches `Merged`. If anything stalls or fails, record it as it is; don't fix it by hand.
 
-- [ ] **Step 3: Check `make dist` on `main`** with a throwaway Job in `cel-lens` (image `c4factory/agent-go:dev`, `imagePullPolicy: Never`, env `TOKEN` from Secret `gitea-credentials` key `token`), running:
+- [ ] **Step 3: Check `make dist` on `main`** with a throwaway Job in `cel-lens` (image `theos/agent-go:dev`, `imagePullPolicy: Never`, env `TOKEN` from Secret `gitea-credentials` key `token`), running:
 
 ```bash
 git -c http.extraHeader="Authorization: token $TOKEN" clone -q http://gitea.gitea.svc.cluster.local:3000/cel-lens/vscode-extension.git /tmp/w \

@@ -1,14 +1,14 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
 
 // Package v1beta1 contains API Schema definitions for the c4 v1beta1 API group.
 // +kubebuilder:object:generate=true
-// +groupName=c4.factory.io
+// +groupName=theos.factory.io
 package v1beta1
 
 import (
@@ -20,7 +20,7 @@ import (
 var (
 	// SchemeGroupVersion is group version used to register these objects.
 	// This name is used by applyconfiguration generators (e.g. controller-gen).
-	SchemeGroupVersion = schema.GroupVersion{Group: "c4.factory.io", Version: "v1beta1"}
+	SchemeGroupVersion = schema.GroupVersion{Group: "theos.factory.io", Version: "v1beta1"}
 
 	// GroupVersion is an alias for SchemeGroupVersion, for backward compatibility.
 	GroupVersion = SchemeGroupVersion

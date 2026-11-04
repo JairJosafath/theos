@@ -15,11 +15,11 @@ import (
 
 // AgentNeverPaths are the protected paths no agent may change, even through a
 // Standard change: the agents' own rules and the platform's contract.
-var AgentNeverPaths = []string{"AGENTS.md", "docs/agents/", ".c4factory.yaml"}
+var AgentNeverPaths = []string{"AGENTS.md", "docs/agents/", ".theos.yaml"}
 
 // OperatorPaths are the operator's own files in every Container, whatever its
 // CI system: the identity file and the dev container.
-var OperatorPaths = []string{".c4factory.yaml", ".devcontainer/"}
+var OperatorPaths = []string{".theos.yaml", ".devcontainer/"}
 
 // AgentProtectedPaths returns the paths agents may not change in a Container:
 // the platform's for its CI system and its Standard's, sorted and without
@@ -71,7 +71,7 @@ func renderNeverPaths() string {
 }
 
 // NeverPathNamed returns the first path under AgentNeverPaths that text names
-// as a word (AGENTS.md, docs/agents/reviewer.md, .c4factory.yaml, with or
+// as a word (AGENTS.md, docs/agents/reviewer.md, .theos.yaml, with or
 // without backticks), as written, or "" when it names none. A file of the
 // same name elsewhere (pkg/AGENTS.md) is not under them.
 func NeverPathNamed(text string) string {

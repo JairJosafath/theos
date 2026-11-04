@@ -8,14 +8,14 @@ import (
 
 // ec2Plan is a planner's plan for a service on EC2 instances: aws-ec2-ts with
 // aws-standard, and no Compute or Deployment (plans/done/aws.md, step 4).
-const ec2Plan = `apiVersion: c4.factory.io/v1beta1
+const ec2Plan = `apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: notes
 spec:
   description: Keeps notes
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: notes-api

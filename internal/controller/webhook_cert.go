@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -55,21 +55,21 @@ const (
 )
 
 // WebhookCRDs are the CRDs the operator may serve conversion for: every kind
-// of c4.factory.io (a test keeps the list equal to config/crd/bases). The RBAC
+// of theos.factory.io (a test keeps the list equal to config/crd/bases). The RBAC
 // marker below names the same CRDs. Only one whose versions differ in shape is
 // at strategy Webhook and gets the CA; the rest convert by the API server
 // (#1830, docs/plans/done/api-versions.md, decision 3).
 var WebhookCRDs = []string{
-	"agents.c4.factory.io", "briefs.c4.factory.io", "bundles.c4.factory.io", "computes.c4.factory.io",
-	"connectors.c4.factory.io", "containers.c4.factory.io", "crews.c4.factory.io",
-	"datastores.c4.factory.io", "deployments.c4.factory.io", "deploytargets.c4.factory.io", "domains.c4.factory.io",
-	"frameworks.c4.factory.io", "gitproviders.c4.factory.io", "people.c4.factory.io",
-	"projects.c4.factory.io", "relationships.c4.factory.io", "sessions.c4.factory.io",
-	"softwaresystems.c4.factory.io", "standards.c4.factory.io", "tasks.c4.factory.io",
+	"agents.theos.factory.io", "briefs.theos.factory.io", "bundles.theos.factory.io", "computes.theos.factory.io",
+	"connectors.theos.factory.io", "containers.theos.factory.io", "crews.theos.factory.io",
+	"datastores.theos.factory.io", "deployments.theos.factory.io", "deploytargets.theos.factory.io", "domains.theos.factory.io",
+	"frameworks.theos.factory.io", "gitproviders.theos.factory.io", "people.theos.factory.io",
+	"projects.theos.factory.io", "relationships.theos.factory.io", "sessions.theos.factory.io",
+	"softwaresystems.theos.factory.io", "standards.theos.factory.io", "tasks.theos.factory.io",
 }
 
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;patch,resourceNames=agents.c4.factory.io;briefs.c4.factory.io;bundles.c4.factory.io;computes.c4.factory.io;connectors.c4.factory.io;containers.c4.factory.io;crews.c4.factory.io;datastores.c4.factory.io;deployments.c4.factory.io;deploytargets.c4.factory.io;domains.c4.factory.io;frameworks.c4.factory.io;gitproviders.c4.factory.io;people.c4.factory.io;projects.c4.factory.io;relationships.c4.factory.io;sessions.c4.factory.io;softwaresystems.c4.factory.io;standards.c4.factory.io;tasks.c4.factory.io
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;patch,resourceNames=agents.theos.factory.io;briefs.theos.factory.io;bundles.theos.factory.io;computes.theos.factory.io;connectors.theos.factory.io;containers.theos.factory.io;crews.theos.factory.io;datastores.theos.factory.io;deployments.theos.factory.io;deploytargets.theos.factory.io;domains.theos.factory.io;frameworks.theos.factory.io;gitproviders.theos.factory.io;people.theos.factory.io;projects.theos.factory.io;relationships.theos.factory.io;sessions.theos.factory.io;softwaresystems.theos.factory.io;standards.theos.factory.io;tasks.theos.factory.io
 
 // WebhookCert keeps the webhook server's certificate: it reads the Secret
 // Namespace/Secret or issues a CA and a serving certificate for
@@ -293,7 +293,7 @@ func issueWebhookCert(old map[string][]byte, host string, now time.Time) (map[st
 			return nil, err
 		}
 		tmpl := &x509.Certificate{
-			Subject:               pkix.Name{CommonName: "c4-factory webhook CA"},
+			Subject:               pkix.Name{CommonName: "theos webhook CA"},
 			NotBefore:             now.Add(-time.Hour),
 			NotAfter:              now.Add(webhookCALifetime),
 			IsCA:                  true,

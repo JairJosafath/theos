@@ -3,13 +3,13 @@
 # The in-cluster test environment from docs/design.md: a Kind cluster, Gitea and
 # the seed Job. Included from the Makefile; the fallbacks below let it run alone
 # (make -f Makefile -f hack/testenv.mk ...). Every target works on the Kind
-# cluster $(KIND_CLUSTER): one of the device's pool (c4factory, c4factory-2,
+# cluster $(KIND_CLUSTER): one of the device's pool (theos, theos-2,
 # ...), by default the one this checkout leased.
 KIND ?= kind
 KUBECTL ?= kubectl
-KIND_CLUSTER ?= c4factory
+KIND_CLUSTER ?= theos
 CONTAINER_TOOL ?= docker
-SEED_IMG ?= c4factory/seed:dev
+SEED_IMG ?= theos/seed:dev
 SEED_TIMEOUT ?= 300
 
 # Every kubectl call names the Kind context, so these targets never touch
@@ -17,7 +17,7 @@ SEED_TIMEOUT ?= 300
 TESTENV_KUBECTL = $(KUBECTL) --context kind-$(KIND_CLUSTER)
 
 # Every checkout on the device shares one Docker daemon, so a build tags
-# IMAGE-$(CHECKOUT_TAG) (c4factory/operator:dev-relay-2-1a2b3c), never the
+# IMAGE-$(CHECKOUT_TAG) (theos/operator:dev-relay-2-1a2b3c), never the
 # shared IMAGE: another checkout's build can't replace it before the load.
 # hack/kind.sh load puts it into $(KIND_CLUSTER) under IMAGE, the name the
 # manifests use.
@@ -30,10 +30,10 @@ $(CONTAINER_TOOL) build -t $(1)-$(CHECKOUT_TAG) $(2)
 hack/kind.sh load '$(KIND_CLUSTER)' $(1)
 endef
 
-# The local port Gitea is forwarded to: 3000 for c4factory, 3000+K-1 for
-# c4factory-K, so each pool cluster's forward has its own.
-GITEA_PORT ?= $(if $(filter c4factory-%,$(KIND_CLUSTER)),$(shell \
-	expr 2999 + '$(patsubst c4factory-%,%,$(KIND_CLUSTER))' 2>/dev/null || echo 3000),3000)
+# The local port Gitea is forwarded to: 3000 for theos, 3000+K-1 for
+# theos-K, so each pool cluster's forward has its own.
+GITEA_PORT ?= $(if $(filter theos-%,$(KIND_CLUSTER)),$(shell \
+	expr 2999 + '$(patsubst theos-%,%,$(KIND_CLUSTER))' 2>/dev/null || echo 3000),3000)
 
 .PHONY: cluster
 cluster: ## Create the Kind cluster (hack/kind.yaml) if it does not exist.
@@ -45,7 +45,7 @@ cluster: ## Create the Kind cluster (hack/kind.yaml) if it does not exist.
 	@hack/kind.sh registry-hosts '$(KIND_CLUSTER)'
 
 GITEA_ADMIN ?= c4admin
-GITEA_ADMIN_EMAIL ?= c4admin@c4.factory.io
+GITEA_ADMIN_EMAIL ?= c4admin@theos.factory.io
 
 .PHONY: gitea
 gitea: ## Install Gitea (config/gitea) with a generated admin password, and wait until it is ready.
@@ -56,7 +56,7 @@ gitea: ## Install Gitea (config/gitea) with a generated admin password, and wait
 		$(TESTENV_KUBECTL) -n gitea create secret generic gitea-admin \
 			--from-literal=username='$(GITEA_ADMIN)' --from-literal=email='$(GITEA_ADMIN_EMAIL)' \
 			--from-literal=password="$$(head -c 24 /dev/urandom | base64 | tr -d '\n')" && \
-		$(TESTENV_KUBECTL) -n gitea label secret gitea-admin app.kubernetes.io/part-of=c4factory-testenv && \
+		$(TESTENV_KUBECTL) -n gitea label secret gitea-admin app.kubernetes.io/part-of=theos-testenv && \
 		if $(TESTENV_KUBECTL) -n gitea get deployment gitea >/dev/null 2>&1; then \
 			echo "Restarting Gitea so its admin takes the new password"; \
 			$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea; \
@@ -78,7 +78,7 @@ seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.
 	$(call build-load,$(SEED_IMG),-f hack/seed/Dockerfile .)
 	@# Labeled, so the operator copies its shared Secrets (claude-credentials) into them.
 	for ns in webshop apps; do $(TESTENV_KUBECTL) create namespace $$ns --dry-run=client -o yaml | \
-		$(TESTENV_KUBECTL) label --local -f - c4.factory.io/shared-secrets=true -o yaml | $(TESTENV_KUBECTL) apply -f -; done
+		$(TESTENV_KUBECTL) label --local -f - theos.factory.io/shared-secrets=true -o yaml | $(TESTENV_KUBECTL) apply -f -; done
 	$(TESTENV_KUBECTL) apply -f hack/seed/rbac.yaml
 	@# Foreground: the old pods are gone before the new Job starts.
 	$(TESTENV_KUBECTL) -n gitea delete job seed --ignore-not-found --cascade=foreground --wait=true
@@ -103,7 +103,7 @@ seed: ## Seed Gitea: orgs, tagged template repos, Secret gitea-credentials.
 	esac
 
 .PHONY: gitea-forward
-gitea-forward: ## Forward Gitea to http://localhost:$(GITEA_PORT): 3000 for c4factory, 3001 for c4factory-2 (Ctrl-C to stop).
+gitea-forward: ## Forward Gitea to http://localhost:$(GITEA_PORT): 3000 for theos, 3001 for theos-2 (Ctrl-C to stop).
 	$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea $(GITEA_PORT):3000
 
 .PHONY: cluster-delete
@@ -111,9 +111,9 @@ cluster-delete: ## Delete the Kind cluster and everything in it.
 	$(KIND) delete cluster --name '$(KIND_CLUSTER)'
 
 .PHONY: test-gitea
-test-gitea: ## Run the Gitea adapter's integration tests: against C4_GITEA_URL if set, else a local Gitea (make gitea-local).
-	@if [ -n "$$C4_GITEA_URL" ]; then \
-		echo "Testing against C4_GITEA_URL=$$C4_GITEA_URL"; \
+test-gitea: ## Run the Gitea adapter's integration tests: against THEOS_GITEA_URL if set, else a local Gitea (make gitea-local).
+	@if [ -n "$$THEOS_GITEA_URL" ]; then \
+		echo "Testing against THEOS_GITEA_URL=$$THEOS_GITEA_URL"; \
 	else \
 		$(MAKE) --no-print-directory gitea-local && hack/gitea-local.sh fixtures && \
 		set -a && . .gitea-local/credentials.env && set +a; \
@@ -124,9 +124,9 @@ test-gitea: ## Run the Gitea adapter's integration tests: against C4_GITEA_URL i
 test-gitea-kind: ## Run the Gitea adapter's integration tests against the seeded Gitea of the Kind cluster.
 	@$(TESTENV_KUBECTL) -n gitea port-forward svc/gitea $(GITEA_PORT):3000 >/dev/null 2>&1 & pf=$$!; \
 	trap 'kill $$pf 2>/dev/null || true' EXIT; sleep 2; \
-	C4_GITEA_URL=http://localhost:$(GITEA_PORT) \
-	C4_GITEA_USERNAME="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)" \
-	C4_GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
+	THEOS_GITEA_URL=http://localhost:$(GITEA_PORT) \
+	THEOS_GITEA_USERNAME="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)" \
+	THEOS_GITEA_TOKEN="$$($(TESTENV_KUBECTL) -n webshop get secret gitea-credentials -o jsonpath='{.data.token}' | base64 -d)" \
 	go test -count=1 -v ./internal/adapters/gitea/ -run Integration
 
 ##@ Local Gitea
@@ -170,31 +170,31 @@ kind-load: ## Load this checkout's build of the operator image into the Kind clu
 sample: ## Apply the webshop story (config/samples/webshop).
 	$(TESTENV_KUBECTL) apply -k config/samples
 
-SESSION_IMG ?= c4factory/c4session:dev
+SESSION_IMG ?= theos/theos-session:dev
 
 .PHONY: session-image
 session-image: ## Build the Session client image and load it into the Kind cluster.
 	$(call build-load,$(SESSION_IMG),-f hack/session/Dockerfile .)
 
 .PHONY: session
-session: session-image ## Run the test Session: a pod that clones orders-api and runs c4session.
+session: session-image ## Run the test Session: a pod that clones orders-api and runs theos-session.
 	$(TESTENV_KUBECTL) -n webshop delete pod session-orders-api --ignore-not-found --wait=true
 	$(TESTENV_KUBECTL) apply -f hack/session/pod.yaml
 	$(TESTENV_KUBECTL) -n webshop wait pod/session-orders-api --for=condition=Ready --timeout=120s
 
 .PHONY: session-kill
 session-kill: ## Kill the test Session's client abruptly, as a crashed devcontainer would.
-	$(TESTENV_KUBECTL) -n webshop exec session-orders-api -c client -- pkill -KILL c4session
+	$(TESTENV_KUBECTL) -n webshop exec session-orders-api -c client -- pkill -KILL theos-session
 
 ##@ Agents
 
-GO_TOOLCHAIN_IMG ?= c4factory/go:1.26
-RUNNER_GO_IMG ?= c4factory/gitea-runner-go:dev
-AGENT_GO_IMG ?= c4factory/agent-go:dev
-BASE_TOOLCHAIN_IMG ?= c4factory/base:dev
-RUNNER_BASE_IMG ?= c4factory/gitea-runner-base:dev
-RUNNER_IMAGE_IMG ?= c4factory/gitea-runner-image:dev
-AGENT_BASE_IMG ?= c4factory/agent-base:dev
+GO_TOOLCHAIN_IMG ?= theos/go:1.26
+RUNNER_GO_IMG ?= theos/gitea-runner-go:dev
+AGENT_GO_IMG ?= theos/agent-go:dev
+BASE_TOOLCHAIN_IMG ?= theos/base:dev
+RUNNER_BASE_IMG ?= theos/gitea-runner-base:dev
+RUNNER_IMAGE_IMG ?= theos/gitea-runner-image:dev
+AGENT_BASE_IMG ?= theos/agent-base:dev
 
 .PHONY: toolchain-go
 toolchain-go: ## Build the Go, Node and uv toolchain (Go and Python Containers, VS Code extensions, kubebuilder operators), with a warm Go build cache.
@@ -246,10 +246,10 @@ argocd: ## Install Argo CD core (config/argocd, v3.5.6), which deploys the websh
 
 # Where make claude-secret stores the token: the operator's namespace, from
 # which it copies Secret claude-credentials into every project namespace labeled
-# c4.factory.io/shared-secrets=true (config/manager, make seed). A project of its
+# theos.factory.io/shared-secrets=true (config/manager, make seed). A project of its
 # own token: CLAUDE_NAMESPACE=<project>, where a Secret the operator didn't make
 # is left alone.
-CLAUDE_NAMESPACE ?= c4-factory-system
+CLAUDE_NAMESPACE ?= theos-system
 
 # The Claude token make claude-secret reads when CLAUDE_TOKEN is not given: one
 # file per device, outside git, mode 0600 (docs/dev/testenv.md).
@@ -276,7 +276,7 @@ up: ## Bring a stopped factory back: Docker, the Kind node, pods left in back-of
 
 .PHONY: down
 down: ## Stop the factory to free the machine (the Kind node keeps its state; make up resumes).
-	@active=$$($(TESTENV_KUBECTL) get tasks.c4.factory.io -A -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' 2>/dev/null | grep -cvE '^(Merged|Failed|)$$' || true); \
+	@active=$$($(TESTENV_KUBECTL) get tasks.theos.factory.io -A -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' 2>/dev/null | grep -cvE '^(Merged|Failed|)$$' || true); \
 	if [ "$${active:-0}" -gt 0 ]; then echo "Note: $$active Task(s) still active; they pick up where they were after make up"; fi
 	$(CONTAINER_TOOL) stop $(KIND_CLUSTER)-control-plane
 

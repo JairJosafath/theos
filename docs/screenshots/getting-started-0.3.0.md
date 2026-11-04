@@ -2,7 +2,7 @@
 
 On 2026-10-06, heron-161 followed [docs/getting-started.md](../getting-started.md) step by
 step against the published release `0.3.0` on a fresh Kind cluster of the
-pool, `c4factory-2`, with nothing built or loaded locally: the chart and every
+pool, `theos-2`, with nothing built or loaded locally: the chart and every
 image came from GHCR through the guide's `ghcr` pull secret. A Crew merged a
 Task in the scaffolded Container: issue #1 in `webshop/orders-cli` went from
 `status/ready` to a merged pull request in about four minutes, in one round.
@@ -12,11 +12,11 @@ Task in the scaffolded Container: issue #1 in `webshop/orders-cli` went from
 How it was run, and where it left the guide:
 
 - **The cluster.** `hack/lib/github.sh cluster acquire --fresh` recreated
-  `c4factory-2`, but with the testenv's Gitea and seed (`make cluster gitea
+  `theos-2`, but with the testenv's Gitea and seed (`make cluster gitea
   seed`); namespaces `gitea`, `webshop` and `apps` were deleted before step 1,
   so the release met a bare cluster (#234).
 - **The commands** ran from a clone of main (f26c1c7), as written, with
-  `KUBECONFIG` naming only `kind-c4factory-2`. `gh auth refresh -s
+  `KUBECONFIG` naming only `kind-theos-2`. `gh auth refresh -s
   read:packages` was skipped: the token already had the scope.
 - **Step 2, the token,** stored an empty `CLAUDE_CODE_OAUTH_TOKEN` the first
   time: the block was pasted at once, so `read` never got the token, and
@@ -39,17 +39,17 @@ deployment.apps/agent-sandbox-controller created
 customresourcedefinition.apiextensions.k8s.io/sandboxes.agents.x-k8s.io created
 clusterrole.rbac.authorization.k8s.io/agent-sandbox-controller created
 
-$ for ns in c4-factory-system gitea webshop; do
+$ for ns in theos-system gitea webshop; do
   kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
 done
-namespace/c4-factory-system created
+namespace/theos-system created
 namespace/gitea created
 namespace/webshop created
 
 $ gh auth token | helm registry login ghcr.io -u "$(gh api user -q .login)" --password-stdin
 Login Succeeded
 
-$ for ns in c4-factory-system gitea webshop; do
+$ for ns in theos-system gitea webshop; do
   kubectl -n $ns create secret docker-registry ghcr --docker-server=ghcr.io     --docker-username="$(gh api user -q .login)" --docker-password="$(gh auth token)"
 done
 secret/ghcr created
@@ -63,26 +63,26 @@ serviceaccount/default patched
 `helm install` (output trimmed after the notes' first lines):
 
 ```
-$ helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version "$VERSION"   -n c4-factory-system --wait --timeout 10m   --set gitea.createNamespace=false   --set 'gitea.projects={webshop}'   --set 'global.imagePullSecrets[0].name=ghcr'   --set 'manager.imagePullSecrets[0].name=ghcr'
-Pulled: ghcr.io/jairjosafath/c4factory/charts/c4-factory:0.3.0
+$ helm install theos oci://ghcr.io/jairjosafath/theos/charts/theos --version "$VERSION"   -n theos-system --wait --timeout 10m   --set gitea.createNamespace=false   --set 'gitea.projects={webshop}'   --set 'global.imagePullSecrets[0].name=ghcr'   --set 'manager.imagePullSecrets[0].name=ghcr'
+Pulled: ghcr.io/jairjosafath/theos/charts/theos:0.3.0
 Digest: sha256:88affe95765b42b104f59d6b192b594d93b200db1e076d115e0419638ac41e7d
-NAME: c4-factory
+NAME: theos
 LAST DEPLOYED: Tue Oct  6 06:30:12 2026
-NAMESPACE: c4-factory-system
+NAMESPACE: theos-system
 STATUS: deployed
 REVISION: 1
 DESCRIPTION: Install complete
 TEST SUITE: None
 NOTES:
-c4factory is installed in namespace c4-factory-system as release c4-factory.
+theos is installed in namespace theos-system as release theos.
 
 ```
 
 ```
-$ kubectl -n c4-factory-system get pods
+$ kubectl -n theos-system get pods
 NAME                                             READY   STATUS    RESTARTS   AGE
-c4-factory-controller-manager-65ccb5b6cf-pn99s   1/1     Running   0          6m40s
-c4-factory-ui-74f88d7cd7-64rxj                   1/1     Running   0          6m40s
+theos-controller-manager-65ccb5b6cf-pn99s   1/1     Running   0          6m40s
+theos-ui-74f88d7cd7-64rxj                   1/1     Running   0          6m40s
 
 $ kubectl -n gitea get pods
 NAME                                READY   STATUS    RESTARTS   AGE
@@ -92,7 +92,7 @@ gitea-runner-go-6cffb89647-wbfc4    2/2     Running   0          6m40s
 
 $ kubectl -n webshop get gitprovider,secret
 NAME                              PROVIDER   URL                                         OWNER     AGE
-gitprovider.c4.factory.io/gitea   gitea      http://gitea.gitea.svc.cluster.local:3000   webshop   8s
+gitprovider.theos.factory.io/gitea   gitea      http://gitea.gitea.svc.cluster.local:3000   webshop   8s
 
 NAME                       TYPE                             DATA   AGE
 secret/ghcr                kubernetes.io/dockerconfigjson   1      6m51s
@@ -110,56 +110,56 @@ $ kubectl -n webshop get secret claude-credentials -o go-template='{{len .data.C
 
 ```
 $ kubectl apply -k config/samples/first-app
-agent.c4.factory.io/claude-implementer created
-agent.c4.factory.io/claude-reviewer created
-container.c4.factory.io/orders-cli created
-crew.c4.factory.io/orders-cli created
-framework.c4.factory.io/go-cli created
-person.c4.factory.io/staff created
-project.c4.factory.io/webshop created
-relationship.c4.factory.io/staff-uses-orders-cli created
-relationship.c4.factory.io/staff-uses-webshop-core created
-softwaresystem.c4.factory.io/webshop-core created
-standard.c4.factory.io/go-standard created
+agent.theos.factory.io/claude-implementer created
+agent.theos.factory.io/claude-reviewer created
+container.theos.factory.io/orders-cli created
+crew.theos.factory.io/orders-cli created
+framework.theos.factory.io/go-cli created
+person.theos.factory.io/staff created
+project.theos.factory.io/webshop created
+relationship.theos.factory.io/staff-uses-orders-cli created
+relationship.theos.factory.io/staff-uses-webshop-core created
+softwaresystem.theos.factory.io/webshop-core created
+standard.theos.factory.io/go-standard created
 
 $ kubectl -n webshop wait container/orders-cli --for=jsonpath={.status.phase}=Ready --timeout=5m
-container.c4.factory.io/orders-cli condition met
+container.theos.factory.io/orders-cli condition met
 
-$ kubectl -n webshop get c4
+$ kubectl -n webshop get theos
 NAME                                     DISPLAY NAME                        HARNESS       MODEL               IMAGE                                           ROUNDS   AGE
-agent.c4.factory.io/claude-implementer   Claude Code, Sonnet (implementer)   claude-code   claude-sonnet-5-5   ghcr.io/jairjosafath/c4factory/agent-go:0.3.0   3        1s
-agent.c4.factory.io/claude-reviewer      Claude Code, Opus (reviewer)        claude-code   claude-opus-5-5     ghcr.io/jairjosafath/c4factory/agent-go:0.3.0   3        1s
+agent.theos.factory.io/claude-implementer   Claude Code, Sonnet (implementer)   claude-code   claude-sonnet-5-5   ghcr.io/jairjosafath/theos/agent-go:0.3.0   3        1s
+agent.theos.factory.io/claude-reviewer      Claude Code, Opus (reviewer)        claude-code   claude-opus-5-5     ghcr.io/jairjosafath/theos/agent-go:0.3.0   3        1s
 
 NAME                                 TYPE   PHASE   CHECKS   SESSIONS   AGE
-container.c4.factory.io/orders-cli   cli    Ready            0          1s
+container.theos.factory.io/orders-cli   cli    Ready            0          1s
 
 NAME                            CONTAINER    IMPLEMENTER          REVIEWER          PHASE   PARALLEL   TASKS   AGE
-crew.c4.factory.io/orders-cli   orders-cli   claude-implementer   claude-reviewer   Idle    1                  1s
+crew.theos.factory.io/orders-cli   orders-cli   claude-implementer   claude-reviewer   Idle    1                  1s
 
 NAME                             DISPLAY NAME              TYPES     REF      AGE
-framework.c4.factory.io/go-cli   Go command-line program   ["cli"]   v1.0.0   1s
+framework.theos.factory.io/go-cli   Go command-line program   ["cli"]   v1.0.0   1s
 
 NAME                              PROVIDER   URL                                         OWNER     AGE
-gitprovider.c4.factory.io/gitea   gitea      http://gitea.gitea.svc.cluster.local:3000   webshop   8m21s
+gitprovider.theos.factory.io/gitea   gitea      http://gitea.gitea.svc.cluster.local:3000   webshop   8m21s
 
 NAME                         DISPLAY NAME   AGE
-person.c4.factory.io/staff   Shop staff     1s
+person.theos.factory.io/staff   Shop staff     1s
 
 NAME                            SYSTEMS   CONTAINERS   READY   SESSIONS   AGE
-project.c4.factory.io/webshop   1         1            1       0          1s
+project.theos.factory.io/webshop   1         1            1       0          1s
 
 NAME                                                 SOURCE   TARGET         DESCRIPTION                               APPLIED   AGE
-relationship.c4.factory.io/staff-uses-orders-cli     staff    orders-cli     Totals and lists orders from a terminal             1s
-relationship.c4.factory.io/staff-uses-webshop-core   staff    webshop-core   Packs and ships orders                              1s
+relationship.theos.factory.io/staff-uses-orders-cli     staff    orders-cli     Totals and lists orders from a terminal             1s
+relationship.theos.factory.io/staff-uses-webshop-core   staff    webshop-core   Packs and ships orders                              1s
 
 NAME                                        DISPLAY NAME   CONTAINERS   READY   SESSIONS   AGE
-softwaresystem.c4.factory.io/webshop-core   Webshop Core   1            1       0          1s
+softwaresystem.theos.factory.io/webshop-core   Webshop Core   1            1       0          1s
 
 NAME                                 DISPLAY NAME          FRAMEWORKS   REF      AGE
-standard.c4.factory.io/go-standard   Go quality standard   ["go-cli"]   v1.1.3   1s
+standard.theos.factory.io/go-standard   Go quality standard   ["go-cli"]   v1.1.3   1s
 
 $ kubectl -n webshop wait crew/orders-cli --for=jsonpath={.status.phase}=Idle --timeout=5m
-crew.c4.factory.io/orders-cli condition met
+crew.theos.factory.io/orders-cli condition met
 ```
 
 ## 4. The first issue
@@ -193,9 +193,9 @@ $ kubectl -n webshop get pod orders-cli-1-r1-implement -o jsonpath='serviceAccou
 serviceAccount=default imagePullSecrets=ghcr
 $ kubectl -n webshop get events --field-selector involvedObject.name=orders-cli-1-r1-implement
 SandboxPodCreated   Created Pod "orders-cli-1-r1-implement"
-Scheduled           Successfully assigned webshop/orders-cli-1-r1-implement to c4factory-2-control-plane
-Pulling             Pulling image "ghcr.io/jairjosafath/c4factory/agent-go:0.3.0"
-Pulled              Successfully pulled image "ghcr.io/jairjosafath/c4factory/agent-go:0.3.0" in 25.627s (25.627s including waiting). Image size: 1057909654 bytes.
+Scheduled           Successfully assigned webshop/orders-cli-1-r1-implement to theos-2-control-plane
+Pulling             Pulling image "ghcr.io/jairjosafath/theos/agent-go:0.3.0"
+Pulled              Successfully pulled image "ghcr.io/jairjosafath/theos/agent-go:0.3.0" in 25.627s (25.627s including waiting). Image size: 1057909654 bytes.
 Created             Container created
 Started             Container started
 ```
@@ -257,12 +257,12 @@ gitea-runner-base-d78c9644c-r2g79  status=online  labels=base
 $ kubectl -n gitea get deploy -o custom-columns=NAME:.metadata.name,IMAGES:.spec.template.spec.containers[*].image
 NAME                IMAGES
 gitea               gitea/gitea:1.27.3-rootless
-gitea-runner-base   ghcr.io/jairjosafath/c4factory/gitea-runner-base:0.3.0
-gitea-runner-go     ghcr.io/jairjosafath/c4factory/gitea-runner-go:0.3.0,ghcr.io/jairjosafath/c4factory/gitea-runner-go:0.3.0
-$ kubectl -n c4-factory-system get deploy -o custom-columns=NAME:.metadata.name,IMAGES:.spec.template.spec.containers[*].image,READY:.status.readyReplicas
+gitea-runner-base   ghcr.io/jairjosafath/theos/gitea-runner-base:0.3.0
+gitea-runner-go     ghcr.io/jairjosafath/theos/gitea-runner-go:0.3.0,ghcr.io/jairjosafath/theos/gitea-runner-go:0.3.0
+$ kubectl -n theos-system get deploy -o custom-columns=NAME:.metadata.name,IMAGES:.spec.template.spec.containers[*].image,READY:.status.readyReplicas
 NAME                            IMAGES                                          READY
-c4-factory-controller-manager   ghcr.io/jairjosafath/c4factory/operator:0.3.0   1
-c4-factory-ui                   ghcr.io/jairjosafath/c4factory/ui:0.3.0         1
+theos-controller-manager   ghcr.io/jairjosafath/theos/operator:0.3.0   1
+theos-ui                   ghcr.io/jairjosafath/theos/ui:0.3.0         1
 $ kubectl -n gitea get pvc
 NAME         STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
 gitea-data   Bound    pvc-7e125a1e-614b-4409-a420-7230a20a6665   1Gi        RWO            standard       <unset>                 7m10s
@@ -270,7 +270,7 @@ $ kubectl -n gitea get deploy gitea-runner-go -o jsonpath=... (volumes and Go ca
 volume data: {}
 volume work: {"medium":"Memory","sizeLimit":"2Gi"}
 volume tmp: {"medium":"Memory","sizeLimit":"1Gi"}
-volume go-cache: /var/cache/c4factory/go/ci
+volume go-cache: /var/cache/theos/go/ci
 volume job-env: 
 runner: GITEA_INSTANCE=http://gitea.gitea.svc.cluster.local:3000 RUNNER_TOKEN= RUNNER_LABELS=go:host 
 go-cache-trim: 
@@ -282,20 +282,20 @@ guide's first app, in the same project):
 ```
 $ kubectl apply -k config/samples
 namespace/webshop configured
-deployment.c4.factory.io/k8s-manifests created
-compute.c4.factory.io/small created
-connector.c4.factory.io/postgres created
-container.c4.factory.io/orders-api created
-datastore.c4.factory.io/orders-db created
-framework.c4.factory.io/python-fastapi created
+deployment.theos.factory.io/k8s-manifests created
+compute.theos.factory.io/small created
+connector.theos.factory.io/postgres created
+container.theos.factory.io/orders-api created
+datastore.theos.factory.io/orders-db created
+framework.theos.factory.io/python-fastapi created
 Warning: resource gitproviders/gitea is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
-gitprovider.c4.factory.io/gitea configured
-person.c4.factory.io/customer created
-relationship.c4.factory.io/customer-uses-webshop-core created
-relationship.c4.factory.io/orders-api-to-orders-db created
+gitprovider.theos.factory.io/gitea configured
+person.theos.factory.io/customer created
+relationship.theos.factory.io/customer-uses-webshop-core created
+relationship.theos.factory.io/orders-api-to-orders-db created
 
 $ kubectl -n webshop wait container/orders-api --for=jsonpath={.status.phase}=Ready --timeout=5m
-container.c4.factory.io/orders-api condition met
+container.theos.factory.io/orders-api condition met
 
 $ kubectl -n webshop get container -o wide
 NAME         TYPE      PHASE   CHECKS   SESSIONS   REPOSITORY                                                     AGE
@@ -307,7 +307,7 @@ NAME      SYSTEMS   CONTAINERS   READY   SESSIONS   AGE
 webshop   1         2            2       0          11m
 
 $ curl .../api/v1/repos/webshop/orders-api/contents | jq -r "[.[].name] | join(\" \")"
-.c4factory.yaml .devcontainer .dockerignore .gitignore .python-version Dockerfile README.md app deploy pyproject.toml tests
+.theos.yaml .devcontainer .dockerignore .gitignore .python-version Dockerfile README.md app deploy pyproject.toml tests
 ```
 
 ![The webshop organization in the release's Gitea](release-v0.3.0-pool-gitea.png)

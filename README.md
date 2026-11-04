@@ -1,8 +1,12 @@
-# C4 Factory
+# theos
 
-**Tell the story first. The factory builds the workspace.**
+**THE Open Software-factory. Tell the story first; the factory builds the workspace.**
 
-C4 Factory turns an idea into working, scaffolded repositories. You describe your
+theos began as [C4 Factory](https://github.com/JairJosafath/c4factory) and
+keeps its history: issue and pull request numbers in the docs (`#1094`) are
+c4factory's, and its links point there.
+
+theos turns an idea into working, scaffolded repositories. You describe your
 software as a small [C4](https://c4model.com)-style model: who uses it, which
 systems exist, and which applications and data stores they are made of. A Kubernetes
 operator reads that model and creates a ready-to-code repository for every
@@ -17,7 +21,7 @@ Person ──uses──▶ SoftwareSystem ──contains──▶ Container ─�
 
 ## How it works
 
-[![How C4 Factory works: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](docs/images/how-it-works.png)](docs/images/how-it-works.svg)
+[![How theos works: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](docs/images/how-it-works.png)](docs/images/how-it-works.svg)
 
 The board's source is [docs/images/how-it-works.excalidraw](docs/images/how-it-works.excalidraw); open it in Excalidraw to edit it. What runs where, the code layers and where state lives are on the [architecture board](docs/images/architecture.png) in [docs/architecture.md](docs/architecture.md).
 
@@ -65,7 +69,7 @@ project shell, which every VS Code terminal opens in; see
 ```sh
 make cluster gitea seed   # a Kind cluster with Gitea and the tagged templates
 make deploy sample        # the operator, and the webshop story
-kubectl get c4 -n webshop # the story as the operator sees it
+kubectl get theos -n webshop # the story as the operator sees it
 make session              # a test Session: a pod working on orders-api
 make ui ui-forward        # the UI on http://localhost:8080
 make e2e                  # all of the above, then check the whole loop
@@ -77,7 +81,7 @@ FastAPI, Kubernetes manifests and a devcontainer with Postgres, pushed as one co
 in, `make gitea-admin` prints the admin password, which `make gitea` generates for
 each cluster.
 
-To use c4factory on your own cluster instead, install a release: apply Agent
+To use theos on your own cluster instead, install a release: apply Agent
 Sandbox, make the project namespaces, then `helm install` the chart with
 `gitea.projects`, which brings the operator, the UI and a seeded Gitea with its
 CI runners. The chart and images are published to GHCR by a version tag.
@@ -92,7 +96,7 @@ values and how to pull private images.
 The Kind cluster wants about 32 GB of disk. A device with less can still work the
 factory's issues with the light setup, `./dev setup --lite`: Go, Node, git, the
 GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
-`C4_CLUSTER=none` set.
+`THEOS_CLUSTER=none` set.
 
 - **It can** build and test the operator (`make check`: envtest runs a local API
   server, no cluster), test against a local Gitea (`make test-gitea`), change
@@ -101,30 +105,30 @@ GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
   ready; `hack/relay-watch.sh` starts it again when one is.
 
 No issue needs the cluster: Go tests are the gate, and a Kind cluster runs only
-when a human asks for it (`C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster
+when a human asks for it (`THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster
 acquire`; agents never lease one). So a device without it works every ready
 issue.
 
 To set one up:
 
-1. Clone `JairJosafath/c4factory` on Linux or WSL and run `./dev setup --lite` in
+1. Clone `JairJosafath/theos` on Linux or WSL and run `./dev setup --lite` in
    it; the choice is remembered, and VS Code runs `./dev setup` on every open
    after that. Run `gh auth login` and then `gh auth setup-git`: the git
    credential helper gives `hack/lib/github.sh` its token.
 2. Open a new terminal (the project shell), run `claude` once to log in, and
-   check that `echo $C4_CLUSTER` prints `none`.
+   check that `echo $THEOS_CLUSTER` prints `none`.
 3. `hack/relay.sh`, or `hack/relay-watch.sh` to keep it ready for new issues; the
    logs are in `.relay/relay-1.log` and `.relay/watch.log`, `touch .relay/stop`
    stops it.
 
 Opening the folder in VS Code, and `hack/relay-watch.sh` every 30 minutes, trim Go's build cache,
-oldest entries first, when it has grown past 4 GB (`hack/trim-go-cache.sh`, `C4_GOCACHE_MAX_GB`),
+oldest entries first, when it has grown past 4 GB (`hack/trim-go-cache.sh`, `THEOS_GOCACHE_MAX_GB`),
 on every device.
 
 ## Report an issue
 
-Report a problem from a device that runs c4factory with the form:
-<https://github.com/JairJosafath/c4factory/issues/new?template=user-report.yml>.
+Report a problem from a device that runs theos with the form:
+<https://github.com/JairJosafath/theos/issues/new?template=user-report.yml>.
 Fill in `Reported by` with the device's name (for example `laptop-2`); the issue
 gets the labels `source/user` and `user/laptop-2`.
 
@@ -135,7 +139,7 @@ From a terminal, copy this layout into `report.md` and send it with the GitHub C
 
 laptop-2
 
-### c4factory version
+### theos version
 
 v0.1.0
 
@@ -153,7 +157,7 @@ v0.1.0
 ```
 
 ```
-gh issue create -R JairJosafath/c4factory --title "Crew stalls" --label source/user --body-file report.md
+gh issue create -R JairJosafath/theos --title "Crew stalls" --label source/user --body-file report.md
 ```
 
 ## Contributing

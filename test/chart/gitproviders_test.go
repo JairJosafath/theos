@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -21,15 +21,15 @@ import (
 )
 
 const (
-	gitProvidersConfigMap = "c4factory-gitproviders"
+	gitProvidersConfigMap = "theos-gitproviders"
 	gitProvidersSource    = "templates/gitprovider/gitproviders.yaml"
 	gitProvidersApply     = "templates/gitprovider/apply.yaml"
 	gitProvidersAccount   = release + "-gitproviders"
 )
 
 // TestGitProvidersApplyInPlace renders the chart without Gitea as two
-// releases apart, and applies ConfigMap c4factory-gitproviders' objects with
-// hack/seed/catalog.sh, as Job c4-factory-gitproviders' ServiceAccount under
+// releases apart, and applies ConfigMap theos-gitproviders' objects with
+// hack/seed/catalog.sh, as Job theos-gitproviders' ServiceAccount under
 // the rendered RBAC, against envtest's API server: the second apply keeps
 // every GitProvider's UID, changes its url in place and keeps a label a
 // person set. A GitProvider an older chart made as a Helm hook is taken over,

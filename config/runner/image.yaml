@@ -13,7 +13,7 @@ metadata:
   name: gitea-runner-image
   namespace: gitea
   labels:
-    app.kubernetes.io/part-of: c4factory-testenv
+    app.kubernetes.io/part-of: theos-testenv
 spec:
   replicas: 1
   strategy:
@@ -25,7 +25,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: gitea-runner-image
-        app.kubernetes.io/part-of: c4factory-testenv
+        app.kubernetes.io/part-of: theos-testenv
         # The CI fence selects it: config/runner/network-policy.yaml.
         app.kubernetes.io/component: ci-runner
     spec:
@@ -35,7 +35,7 @@ spec:
         # the registration token, which the jobs in the runner container must
         # not read (hack/runner/register.sh).
         - name: register
-          image: c4factory/gitea-runner-image:dev
+          image: theos/gitea-runner-image:dev
           imagePullPolicy: Never
           command: [c4-runner-register]
           env:
@@ -53,7 +53,7 @@ spec:
               mountPath: /data
       containers:
         - name: runner
-          image: c4factory/gitea-runner-image:dev
+          image: theos/gitea-runner-image:dev
           imagePullPolicy: Never
           # The one loosening of the CI fence, on this container alone: rootless
           # BuildKit makes user namespaces, which the runtime's default seccomp

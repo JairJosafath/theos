@@ -9,7 +9,7 @@ something another app can fetch, and orders by release.
 
 In gray-lenovo's `cel-lens`, the engine (`cel-lens-core`) and the CLI
 (`cel-lens-cli`) stay two Go apps, and the CLI depends on a released version
-of the engine's module: `go get c4factory.local/cel-lens/cel-lens-core@v0.1.0`
+of the engine's module: `go get theos.local/cel-lens/cel-lens-core@v0.1.0`
 works in the CLI's agent pod and in its CI. Today nothing can fetch that name
 (the issue's probe log), so a plan that asks for it sets the issue up to fail.
 
@@ -33,7 +33,7 @@ choices under it.
    `<gitea>/api/packages/<owner>/go`, and takes uploads of module zips
    (`PUT .../go/upload`, 201; a version that exists is refused, so a version
    is immutable). A proxy serves any module path, so the name the template
-   already gives, `c4factory.local/<project>/<container>`, works as is: no
+   already gives, `theos.local/<project>/<container>`, works as is: no
    template change, no rename of apps already scaffolded. The other way, a
    module named after its Gitea repository and fetched straight from Git,
    doesn't work here: a module path can't carry a port
@@ -55,13 +55,13 @@ choices under it.
    `Progressing` message says why.
 4. **Pods fetch through the proxy, never directly.** Agent pods get
    `GOPROXY=<gitea>/api/packages/<owner>/go,https://proxy.golang.org,direct`
-   and `GONOSUMDB=c4factory.local` (the checksum database has never heard of
+   and `GONOSUMDB=theos.local` (the checksum database has never heard of
    it), and the agent runner writes a `~/.netrc` for the Gitea host from the
-   credentials it already has (`C4_GIT_USERNAME`/`C4_GIT_TOKEN`), which Go
+   credentials it already has (`THEOS_GIT_USERNAME`/`THEOS_GIT_TOKEN`), which Go
    uses for proxy auth. Gitea comes first so our module names never go to
    proxy.golang.org; a module Gitea lacks returns 404 and falls through to the
    public proxy (wrong, see #518 below). Not `GOPRIVATE`: it would also set `GONOPROXY` and send
-   `c4factory.local` straight to a host that doesn't exist. The fence already
+   `theos.local` straight to a host that doesn't exist. The fence already
    lets an agent pod reach Gitea's namespace. The go-standard Standard's CI
    (`check.yaml`) sets the same, with the job's `gitea.token` in `~/.netrc`,
    so a pull request that uses the module passes CI.
@@ -83,16 +83,16 @@ choices under it.
    proxy after a 404, so a module Gitea lacks (not released yet, or a typo)
    went to proxy.golang.org with the project's and Container's names, and Go
    has no per-path proxy. Agent pods now get
-   `GOPROXY=http://127.0.0.1:3127,direct` and `C4_GO_REGISTRY=<gitea>/api/packages/<owner>/go`:
-   c4agent serves a proxy on loopback (`agentrunner.GoProxy`) that sends
-   `c4factory.local/` paths to the registry alone, adding the bot's
+   `GOPROXY=http://127.0.0.1:3127,direct` and `THEOS_GO_REGISTRY=<gitea>/api/packages/<owner>/go`:
+   theos-agent serves a proxy on loopback (`agentrunner.GoProxy`) that sends
+   `theos.local/` paths to the registry alone, adding the bot's
    credentials over https, and the rest to proxy.golang.org. A factory module
    the registry lacks is a 404, the go command tries direct, and
-   `c4factory.local` resolves nowhere. go-standard v1.1.5's CI can't run
-   c4agent, and needs no new modules: a step downloads the `c4factory.local/`
+   `theos.local` resolves nowhere. go-standard v1.1.5's CI can't run
+   theos-agent, and needs no new modules: a step downloads the `theos.local/`
    modules `go.sum` lists (`go mod tidy` loads dependencies' test imports too,
    which only `go.sum` has) with `GOPROXY` set to the registry alone, and
-   `make check` runs with `GOPRIVATE=c4factory.local`, so it finds them in the
+   `make check` runs with `GOPRIVATE=theos.local`, so it finds them in the
    module cache and asks no proxy for them.
 5. **The plan says who uses whom.** An issue file's front matter takes
    `uses:`, the Containers whose released code it builds on:
@@ -120,7 +120,7 @@ choices under it.
    Container it uses has a published module version: the newest at that
    moment, which for a library released in the same round is the round's
    release. Its body gets a line per used module above the Brief's marker,
-   `Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that
+   `Uses theos.local/cel-lens/cel-lens-core v0.1.0: go get it at that
    version.` so the implementer pins a release, never a branch. While it
    waits, the Brief stays `Applying` and its message names the issue and the
    app it waits for, and why if the release had no `go.mod`.
@@ -142,7 +142,7 @@ Each step is a GitHub issue, `status/proposed`, one pull request each.
    go.mod" and "exists" as results, not errors. Done when the unit tests
    cover the zip (prefix, excluded files, a nested module left out) and
    `make test-gitea` publishes a tagged repository's module and then
-   `go mod download c4factory.local/<owner>/<repo>@v0.1.0` with only
+   `go mod download theos.local/<owner>/<repo>@v0.1.0` with only
    `GOPROXY` set to the local Gitea succeeds, and a repeat publishes nothing.
 2. **Pods and CI fetch through Gitea** (#459, `internal/controller` pod spec,
    `internal/agentrunner`, `templates/go-standard`). Decision 4's env on the
@@ -185,7 +185,7 @@ Each step is a GitHub issue, `status/proposed`, one pull request each.
 ## What only Kind would show
 
 That the CLI's agent, on a real node with the real agent-go image, runs
-`go get c4factory.local/cel-lens/cel-lens-core@v0.1.0` and builds, and that
+`go get theos.local/cel-lens/cel-lens-core@v0.1.0` and builds, and that
 its CI run on the Gitea Actions runner does the same. `make test-gitea`
 covers the publish and the fetch through the proxy with a real Gitea and the
 real `go` command; envtest covers the pod's env and the round's order.

@@ -9,10 +9,10 @@ import (
 )
 
 // FactoryModules is the prefix of the module path the Go templates give an
-// app (c4factory.local/<project>/<container>). No public proxy knows it.
-const FactoryModules = "c4factory.local"
+// app (theos.local/<project>/<container>). No public proxy knows it.
+const FactoryModules = "theos.local"
 
-// GoProxyAddr is where c4agent serves GoProxy in the sandbox, and GoProxyURL
+// GoProxyAddr is where theos-agent serves GoProxy in the sandbox, and GoProxyURL
 // the GOPROXY the operator sets for it: the go command asks it first and,
 // for a 404 or 410, fetches directly.
 const (
@@ -23,14 +23,14 @@ const (
 // PublicGoProxy is the proxy for every module that isn't the factory's.
 const PublicGoProxy = "https://proxy.golang.org"
 
-// GoProxy is the Go module proxy c4agent serves on loopback. It sends the
+// GoProxy is the Go module proxy theos-agent serves on loopback. It sends the
 // factory's module paths to the owner's Go package registry and nowhere else,
 // and everything else, the checksum database's proxy included, to the public
 // proxy. The go command has no per-path proxy: with
 // GOPROXY=<registry>,<public>, a module the registry lacks (a 404) is asked of
 // the public proxy next, which would learn the project's and Container's names.
 // Here a factory module the registry lacks is a 404, the go command goes on to
-// direct, and c4factory.local resolves nowhere.
+// direct, and theos.local resolves nowhere.
 type GoProxy struct {
 	// Registry is the owner's Go package registry; Public the public proxy.
 	Registry, Public *url.URL

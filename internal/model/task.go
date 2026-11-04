@@ -78,7 +78,7 @@ type RunResult struct {
 	Unavailable bool
 	// RetryAt is when the service said it is back; zero when it didn't say.
 	RetryAt time.Time
-	// Checkpoint means c4agent saved the run to its sandbox's checkpoint
+	// Checkpoint means theos-agent saved the run to its sandbox's checkpoint
 	// volume before it reported: an unavailable agent's run then resumes in
 	// place once the agent is back, instead of starting its step again.
 	Checkpoint bool
@@ -92,7 +92,7 @@ type RunResult struct {
 	// SessionHandoffs are the sizes, in tokens, at which the run's agent
 	// sessions handed off to fresh ones.
 	SessionHandoffs []int64
-	// Role is the sandbox's role as c4agent reported it: implement, review or plan.
+	// Role is the sandbox's role as theos-agent reported it: implement, review or plan.
 	Role string
 	// Paused means the run stopped because the factory asked it to (its
 	// sandbox's pause annotation) and saved a checkpoint; PauseReason is the
@@ -170,7 +170,7 @@ type RunState struct {
 	// out-of-memory kill is the agent's.
 	Interrupted bool
 	// Checkpoint means the sandbox has the checkpoint volume and has not
-	// expired: an interrupted run can resume in place from what c4agent saved
+	// expired: an interrupted run can resume in place from what theos-agent saved
 	// there. A sandbox made before checkpoints has none, and is rerun.
 	Checkpoint bool
 	// Suspended means the operator suspended the sandbox to resume its run:
@@ -279,7 +279,7 @@ func AfterInterruption(run RunState, resumes, reruns int) Interruption {
 
 // MaxSuspendWait bounds how long a suspended sandbox's run waits for its old
 // pod to go before it resumes. Agent Sandbox deletes the pod at once, and
-// c4agent has its grace period to save the run; a pod still there long after
+// theos-agent has its grace period to save the run; a pod still there long after
 // (kept, or stuck terminating on a lost node) would hold the Task forever, as
 // the operator deletes no pods. Once the pod is gone the bound is over: a run
 // whose resume waits, for the end of a pause, its agent or a raised cost
@@ -1074,7 +1074,7 @@ const (
 	// sandbox, which keeps its checkpoint volume: the run resumes in place.
 	ActionSuspendRun TaskAction = "SuspendRun"
 	// ActionResumeRun resumes a suspended sandbox, its pod gone, with the
-	// current Agent and the run's remaining time: c4agent goes on from the
+	// current Agent and the run's remaining time: theos-agent goes on from the
 	// checkpoint.
 	ActionResumeRun TaskAction = "ResumeRun"
 	// ActionPauseRun counts what a run that paused at the factory's ask cost

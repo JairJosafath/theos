@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -34,16 +34,16 @@ const (
 	uiName      = release + "-ui"
 	uiRBAC      = "templates/ui/rbac.yaml"
 	uiDeploy    = "templates/ui/deployment.yaml"
-	c4Group     = "c4.factory.io"
+	c4Group     = "theos.factory.io"
 	uiActionsOn = "ui.actions.enabled=true"
 	uiIngress   = "ui.allowedHosts={factory.example.com}"
-	oidcSecret  = "c4-factory-ui-oidc"
+	oidcSecret  = "theos-ui-oidc"
 )
 
 // uiAuthOIDC are the settings ui.auth.oidc needs.
 var uiAuthOIDC = []string{
 	"ui.auth.oidc.issuerURL=https://issuer.example",
-	"ui.auth.oidc.clientID=c4-factory-ui",
+	"ui.auth.oidc.clientID=theos-ui",
 	"ui.auth.oidc.existingSecret=" + oidcSecret,
 }
 
@@ -233,7 +233,7 @@ func TestUIOIDCSettings(t *testing.T) {
 	}
 	defaults := map[string]string{
 		"OIDC_ISSUER_URL":      "https://issuer.example",
-		"OIDC_CLIENT_ID":       "c4-factory-ui",
+		"OIDC_CLIENT_ID":       "theos-ui",
 		"OIDC_SCOPES":          "openid email profile",
 		"OIDC_USERNAME_CLAIM":  "email",
 		"OIDC_USERNAME_PREFIX": "oidc:",

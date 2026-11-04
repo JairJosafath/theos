@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -17,16 +17,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 // The package files a release of orders-api attaches, and what they hold.
 var (
-	ordersTarball = fake.ReleaseFile{Name: "c4factory-orders-api-0.1.0.tgz", Data: []byte("tgz")}
+	ordersTarball = fake.ReleaseFile{Name: "theos-orders-api-0.1.0.tgz", Data: []byte("tgz")}
 	ordersWheel   = fake.ReleaseFile{Name: "orders_api-0.1.0-py3-none-any.whl", Data: []byte("whl")}
-	ordersNpm     = fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@c4factory/orders-api", Version: "0.1.0",
+	ordersNpm     = fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@theos/orders-api", Version: "0.1.0",
 		File: ordersTarball.Name}
 	ordersPyPI = fake.Package{Ecosystem: ports.EcosystemPyPI, Name: "orders-api", Version: "0.1.0",
 		File: ordersWheel.Name}
@@ -99,13 +99,13 @@ var _ = Describe("Crew release packages", func() {
 		releaseRun(ns, "completed", "success")
 		Eventually(func(g Gomega) {
 			packages := releasePackages(g, ns, "Published", metav1.ConditionTrue, "PackagesPublished")
-			g.Expect(packages.Message).To(Equal("Published npm @c4factory/orders-api 0.1.0 and PyPI orders-api 0.1.0"))
+			g.Expect(packages.Message).To(Equal("Published npm @theos/orders-api 0.1.0 and PyPI orders-api 0.1.0"))
 			g.Expect(packages.Published).To(Equal([]c4v1beta1.CrewReleasePackage{
-				{Ecosystem: "npm", Name: "@c4factory/orders-api", Version: "0.1.0"},
+				{Ecosystem: "npm", Name: "@theos/orders-api", Version: "0.1.0"},
 				{Ecosystem: "PyPI", Name: "orders-api", Version: "0.1.0"}}))
 			g.Expect(moduleEvents(g, ns, "PackagePublished")).To(ConsistOf(
 				And(HaveField("Type", "Normal"), HaveField("Action", "PublishNpmPackage"),
-					HaveField("Note", "Published npm @c4factory/orders-api 0.1.0")),
+					HaveField("Note", "Published npm @theos/orders-api 0.1.0")),
 				And(HaveField("Type", "Normal"), HaveField("Action", "PublishPyPIPackage"),
 					HaveField("Note", "Published PyPI orders-api 0.1.0"))))
 		}).Should(Succeed())
@@ -113,7 +113,7 @@ var _ = Describe("Crew release packages", func() {
 		// package, would show. A Crew read from a cache that lags its status
 		// may ask once more, and finds the packages in their registries.
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.PackageUploads(ns, "npm", "@c4factory/orders-api", "0.1.0")).To(Equal(1))
+			g.Expect(gitFake.PackageUploads(ns, "npm", "@theos/orders-api", "0.1.0")).To(Equal(1))
 			g.Expect(gitFake.PackageUploads(ns, "PyPI", "orders-api", "0.1.0")).To(Equal(1))
 			g.Expect(gitFake.PackagePublishes(ns + "/orders-api@v0.1.0")).To(BeNumerically("<=", 2))
 			events := moduleEvents(g, ns, "PackagePublished")
@@ -151,7 +151,7 @@ var _ = Describe("Crew release packages", func() {
 		Eventually(func(g Gomega) {
 			packages := releasePackages(g, ns, "Published", metav1.ConditionTrue, "PackagesPublished")
 			g.Expect(packages.Message).To(Equal("Published PyPI orders-api 0.1.0; left orders-api-0.1.0.tgz alone: " +
-				"orders-api is not under the scope @c4factory"))
+				"orders-api is not under the scope @theos"))
 			g.Expect(packages.Published).To(Equal([]c4v1beta1.CrewReleasePackage{
 				{Ecosystem: "PyPI", Name: "orders-api", Version: "0.1.0"}}))
 			g.Expect(moduleEvents(g, ns, "PackagePublished")).To(HaveLen(1))
@@ -164,12 +164,12 @@ var _ = Describe("Crew release packages", func() {
 
 	It("reports a tarball whose version isn't the tag's as Invalid, once", func() {
 		ns := newProjectNamespace()
-		wrong := fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@c4factory/orders-api", Version: "0.2.0",
-			File: "c4factory-orders-api-0.2.0.tgz"}
+		wrong := fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@theos/orders-api", Version: "0.2.0",
+			File: "theos-orders-api-0.2.0.tgz"}
 		packagedRelease(ns, "completed", "success",
 			[]fake.ReleaseFile{{Name: wrong.File, Data: []byte("tgz")}, ordersWheel}, wrong, ordersPyPI)
 
-		message := "Did not publish c4factory-orders-api-0.2.0.tgz: version 0.2.0 is not the tag's, 0.1.0"
+		message := "Did not publish theos-orders-api-0.2.0.tgz: version 0.2.0 is not the tag's, 0.1.0"
 		Eventually(func(g Gomega) {
 			packages := releasePackages(g, ns, "Invalid", metav1.ConditionFalse, "InvalidPackage")
 			g.Expect(packages.Message).To(Equal(message))
@@ -179,7 +179,7 @@ var _ = Describe("Crew release packages", func() {
 				HaveField("Note", message))))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.PackageUploads(ns, "npm", "@c4factory/orders-api", "0.2.0")).To(BeZero())
+			g.Expect(gitFake.PackageUploads(ns, "npm", "@theos/orders-api", "0.2.0")).To(BeZero())
 			g.Expect(gitFake.PackageUploads(ns, "PyPI", "orders-api", "0.1.0")).To(Equal(1))
 			g.Expect(gitFake.PackagePublishes(ns + "/orders-api@v0.1.0")).To(BeNumerically("<=", 2))
 			events := moduleEvents(g, ns, "InvalidPackage")
@@ -202,7 +202,7 @@ var _ = Describe("Crew release packages", func() {
 			g.Expect(packages.Published).To(HaveLen(2))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.PackageUploads(ns, "npm", "@c4factory/orders-api", "0.1.0")).To(Equal(1))
+			g.Expect(gitFake.PackageUploads(ns, "npm", "@theos/orders-api", "0.1.0")).To(Equal(1))
 			g.Expect(gitFake.PackageUploads(ns, "PyPI", "orders-api", "0.1.0")).To(Equal(1))
 			g.Expect(moduleEvents(g, ns, "PackagePublished")).To(HaveLen(2))
 		}, 3*time.Second).Should(Succeed())
@@ -212,18 +212,18 @@ var _ = Describe("Crew release packages", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
 		setNpmScope(ns, "@acme")
-		other := fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@c4factory/x", Version: "0.1.0",
-			File: "c4factory-x-0.1.0.tgz"}
+		other := fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@theos/x", Version: "0.1.0",
+			File: "theos-x-0.1.0.tgz"}
 		packagedReleaseOf(ns, "completed", "success", []fake.ReleaseFile{{Name: other.File, Data: []byte("tgz")}}, other)
 
 		Eventually(func(g Gomega) {
 			packages := releasePackages(g, ns, "NoPackage", metav1.ConditionTrue, "NoPackage")
 			g.Expect(packages.Message).To(Equal("v0.1.0 attached no npm tarball, wheel or sdist; no package to publish; " +
-				"left c4factory-x-0.1.0.tgz alone: @c4factory/x is not under the scope @acme"))
+				"left theos-x-0.1.0.tgz alone: @theos/x is not under the scope @acme"))
 			g.Expect(packages.Published).To(BeEmpty())
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
-			g.Expect(gitFake.PackageUploads(ns, "npm", "@c4factory/x", "0.1.0")).To(BeZero())
+			g.Expect(gitFake.PackageUploads(ns, "npm", "@theos/x", "0.1.0")).To(BeZero())
 			g.Expect(moduleEvents(g, ns, "PackagePublished")).To(BeEmpty())
 			g.Expect(moduleEvents(g, ns, "InvalidPackage")).To(BeEmpty())
 		}, 3*time.Second).Should(Succeed())
@@ -239,7 +239,7 @@ var _ = Describe("Crew release packages", func() {
 		provider := &c4v1beta1.GitProvider{}
 		Expect(k8sClient.Get(ctx, key(ns, "gitea"), provider)).To(Succeed())
 		provider.Spec.Packages = &c4v1beta1.PackagesSpec{
-			NPM: &c4v1beta1.NpmPackagesSpec{Scope: "@c4factory", Registry: "https://npm.example.com/",
+			NPM: &c4v1beta1.NpmPackagesSpec{Scope: "@theos", Registry: "https://npm.example.com/",
 				CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "acme-npm"}},
 			PyPI: &c4v1beta1.PyPIPackagesSpec{Index: "https://pypi.example.com/simple",
 				Upload: "https://pypi.example.com/legacy/", CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "acme-pypi"}}}
@@ -249,7 +249,7 @@ var _ = Describe("Crew release packages", func() {
 		Eventually(func(g Gomega) {
 			releasePackages(g, ns, "Published", metav1.ConditionTrue, "PackagesPublished")
 		}).Should(Succeed())
-		Expect(gitFake.PackageUploadToken(ns, "npm", "@c4factory/orders-api", "0.1.0")).To(Equal(npmToken))
+		Expect(gitFake.PackageUploadToken(ns, "npm", "@theos/orders-api", "0.1.0")).To(Equal(npmToken))
 		Expect(gitFake.PackageUploadToken(ns, "PyPI", "orders-api", "0.1.0")).To(BeEmpty(),
 			"a Secret without the token key publishes with none")
 		crew := getCrew(Default, ns)

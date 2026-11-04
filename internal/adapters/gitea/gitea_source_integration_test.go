@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // TestGiteaSourceIntegration reads a tagged repository holding an executable
@@ -21,14 +21,14 @@ import (
 // content, and fails on a submodule. The repository is pushed with the git command, as the factory's own
 // writes can't make a symlink. Like TestGiteaIntegration.
 func TestGiteaSourceIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git command")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	p, err := Client{}.Provider(ports.Config{URL: base, Owner: "webshop", Credentials: creds})

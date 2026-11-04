@@ -8,4 +8,4 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
-- The extension, scaffolded by C4 Factory, with a Say Hello command.
+- The extension, scaffolded by theos, with a Say Hello command.

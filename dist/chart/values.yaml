@@ -16,7 +16,7 @@ manager:
   replicas: 1
 
   image:
-    repository: ghcr.io/jairjosafath/c4factory/operator
+    repository: ghcr.io/jairjosafath/theos/operator
     ## Image tag (defaults to Chart.appVersion if not set): a released chart
     ## runs its own version's images
     ##
@@ -31,10 +31,10 @@ manager:
     - --leader-elect
     - --sandbox-workspace-memory=3Gi
     - --max-agent-sandboxes=4
-    - --sandbox-go-cache=/var/cache/c4factory/go/sandbox
+    - --sandbox-go-cache=/var/cache/theos/go/sandbox
     # Each project's CI runner pool mounts its own directory under this one, a
     # sibling of the shared runners' cache (runners.go.goCache).
-    - --ci-go-cache=/var/cache/c4factory/go/projects
+    - --ci-go-cache=/var/cache/theos/go/projects
 
   ## Health probes.
   ## The manager serves the liveness (/healthz) and readiness (/readyz) endpoints on this port.
@@ -208,7 +208,7 @@ prometheus:
   # annotations: {}
 
 ## The Go proxy the operator asks whether go get finds a released Go module
-## whose path is outside c4factory.local/ (the operator's --go-proxy). off asks
+## whose path is outside theos.local/ (the operator's --go-proxy). off asks
 ## none, for an install without that egress: the Crew's own GitHub source tag
 ## is then the answer.
 ##
@@ -238,7 +238,7 @@ checkpointStorageClass: ""
 clusterDNS:
   - kube-system/k8s-app=kube-dns
 
-## Where a scaffolded devcontainer's c4session feature downloads the Session
+## Where a scaffolded devcontainer's theos-session feature downloads the Session
 ## client (the operator's --session-binary-url); ${arch} becomes amd64 or
 ## arm64. The default is the UI, whose image carries the client and serves it
 ## under /downloads/ (so a private repository's release needs no GitHub login,
@@ -253,7 +253,7 @@ clusterDNS:
 ## Empty sets none: a devcontainer then registers a Session only if it has Go
 ## and can go install the client.
 ##
-sessionBinaryURL: '{{ include "c4-factory.sessionBinaryURL" . }}'
+sessionBinaryURL: '{{ include "theos.sessionBinaryURL" . }}'
 
 ## Network policies for controlling traffic flow.
 ## Enable to restrict ingress to the controller manager.
@@ -262,7 +262,7 @@ networkPolicy:
   enabled: false
 
 
-## The read-only UI (ui/): it reads the c4.factory.io resources in every
+## The read-only UI (ui/): it reads theos.factory.io resources in every
 ## namespace and changes none of them. Open it with
 ##   kubectl -n <namespace> port-forward svc/<release>-ui 8080
 ##
@@ -270,7 +270,7 @@ ui:
   enabled: true
 
   image:
-    repository: ghcr.io/jairjosafath/c4factory/ui
+    repository: ghcr.io/jairjosafath/theos/ui
     ## Image tag (defaults to Chart.appVersion if not set): a released chart
     ## runs its own version's images
     ##
@@ -335,8 +335,8 @@ ui:
   auth: {}
   #   oidc:
   #     issuerURL: https://dex.example.com
-  #     clientID: c4-factory-ui
-  #     existingSecret: c4-factory-ui-oidc
+  #     clientID: theos-ui
+  #     existingSecret: theos-ui-oidc
   #     scopes: [openid, email, profile, groups]
   #     actionGroups: [factory-actors]
 
@@ -389,21 +389,21 @@ ui:
 ## that Secret before the install; the chart renders none:
 ##
 ##   kubectl -n webshop create secret generic git-credentials \
-##     --from-literal=username=c4factory --from-literal=token="$GIT_TOKEN"
+##     --from-literal=username=theos --from-literal=token="$GIT_TOKEN"
 ##
-## Job c4-factory-gitproviders (on the seed image, gitea.seed.image) applies
+## Job theos-gitproviders (on the seed image, gitea.seed.image) applies
 ## them in place after every install and upgrade, so an upgrade keeps them, and
 ## `helm uninstall` leaves them in place. With gitea.enabled, gitea.projects
 ## makes these instead.
 ##
 ## packages, optional, is the GitProvider's spec.packages: the owner's npm and
 ## PyPI registries the agents install from and the published Containers
-## publish to. Unset, they are the host's own (scope @c4factory, and
+## publish to. Unset, they are the host's own (scope @theos, and
 ## <url>/api/packages/<owner>/npm/ and .../pypi) and the GitProvider's token
 ## reads them. A registry of your own names a Secret you make, with key
 ## "token" (publishes; only the operator reads it) and, optionally,
 ## "readToken" (installs: the agents' pods and the owner's Actions secret
-## C4_NPM_TOKEN or C4_PYPI_TOKEN); the chart renders none.
+## THEOS_NPM_TOKEN or THEOS_PYPI_TOKEN); the chart renders none.
 ##
 gitProviders: []
 #  - namespace: webshop
@@ -475,7 +475,7 @@ gitea:
   ##
   admin:
     username: c4admin
-    email: c4admin@c4.factory.io
+    email: c4admin@theos.factory.io
     # existingSecret: ""
   persistence:
     ## Empty: the cluster's default StorageClass.
@@ -508,7 +508,7 @@ gitea:
   #        scope: "@acme"
   seed:
     image:
-      repository: ghcr.io/jairjosafath/c4factory/seed
+      repository: ghcr.io/jairjosafath/theos/seed
       ## Defaults to Chart.appVersion
       tag: ""
       pullPolicy: IfNotPresent
@@ -534,7 +534,7 @@ runners:
   base:
     enabled: true
     image:
-      repository: ghcr.io/jairjosafath/c4factory/gitea-runner-base
+      repository: ghcr.io/jairjosafath/theos/gitea-runner-base
       tag: ""
       pullPolicy: IfNotPresent
     resources:
@@ -550,7 +550,7 @@ runners:
   go:
     enabled: true
     image:
-      repository: ghcr.io/jairjosafath/c4factory/gitea-runner-go
+      repository: ghcr.io/jairjosafath/theos/gitea-runner-go
       tag: ""
       pullPolicy: IfNotPresent
     resources:
@@ -558,7 +558,7 @@ runners:
       limits: {cpu: "4", memory: 6Gi}
     workSize: 2Gi
     tmpSize: 1Gi
-    goCache: /var/cache/c4factory/go/ci
+    goCache: /var/cache/theos/go/ci
     pool:
       size: 1
   ## Rootless BuildKit, for release runs that build a Container's image:
@@ -571,7 +571,7 @@ runners:
   image:
     enabled: true
     image:
-      repository: ghcr.io/jairjosafath/c4factory/gitea-runner-image
+      repository: ghcr.io/jairjosafath/theos/gitea-runner-image
       tag: ""
       pullPolicy: IfNotPresent
     replicas: 1
@@ -771,7 +771,7 @@ catalog:
       ref: v1.0.0
       spec:
         displayName: The factory's own standard
-        description: "For the C4 Factory's own repository, adopted: the make check CI and nothing else. Its protected paths are the fence agents may not change (docs/plans/self-hosting.md, decision 5)."
+        description: "For the theos's own repository, adopted: the make check CI and nothing else. Its protected paths are the fence agents may not change (docs/plans/self-hosting.md, decision 5)."
         supportedTypes: [operator]
         supportedFrameworks: [go-kubebuilder]
         # The fence: the runner and prompt, the model credential, the sandbox and
@@ -903,7 +903,7 @@ catalog:
 agents:
   enabled: true
   image:
-    repository: ghcr.io/jairjosafath/c4factory/agent-go
+    repository: ghcr.io/jairjosafath/theos/agent-go
     ## Defaults to Chart.appVersion
     tag: ""
   credentialsSecret: claude-credentials

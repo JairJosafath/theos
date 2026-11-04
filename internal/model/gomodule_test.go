@@ -38,10 +38,10 @@ func TestDecideModule(t *testing.T) {
 			said: []string{"Did not publish " + engine + " v2.0.0: module path lacks /v2"}},
 		{name: "no go.mod", facts: ModuleFacts{Version: "v0.15.1", Registry: RegistryNoGoMod},
 			state: ModuleStateNotGo, ok: true, reason: ModuleReasonNotGo, said: []string{"no go.mod"}},
-		{name: "a factory path is published on upload", facts: ModuleFacts{Path: "c4factory.local/shop/api",
+		{name: "a factory path is published on upload", facts: ModuleFacts{Path: "theos.local/shop/api",
 			Version: "v1.2.0", Registry: RegistryUploaded, Proxy: "https://proxy.golang.org", Now: now},
 			state: ModuleStatePublished, ok: true, reason: ModuleReasonPublished,
-			said: []string{"Published c4factory.local/shop/api v1.2.0"}},
+			said: []string{"Published theos.local/shop/api v1.2.0"}},
 		{name: "the issue's case: no source tag, Published refused",
 			facts: celLens(func(f *ModuleFacts) {
 				f.PublishedReason, f.PublishedMessage = "Unauthorized", "GitHub refused the token"

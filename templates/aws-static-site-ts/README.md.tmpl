@@ -3,7 +3,7 @@
 The `{{ .Container }}` static site of {{ .SoftwareSystem }}, in project {{ .Project }}: a page in
 TypeScript, built with Vite, served from a private S3 bucket through a
 CloudFront distribution, with its infrastructure as a CDK app. Scaffolded by
-C4 Factory.
+theos.
 
 ## Develop
 
@@ -45,7 +45,7 @@ stack and keeps logs a month. Both tiers log every request, alarm and have
 a dashboard. There is no AWS Backup plan: the site's source is in git.
 
 What the app promises whatever the tier, the recovery objectives and who the
-alarms tell, is in `infra/operations.ts`, which C4 Factory renders from the
+alarms tell, is in `infra/operations.ts`, which theos renders from the
 Container's `spec.operations`: change the block, and the file follows it.
 
 A deploy sets the stack's parameters per environment:

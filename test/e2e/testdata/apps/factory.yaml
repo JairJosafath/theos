@@ -1,6 +1,6 @@
 # Where repositories go, the hello-world page catalog, and the stand-in Agent that does Tasks.
 # Templates are pinned to tags pushed by the seed job (templates/versions.txt).
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: GitProvider
 metadata:
   name: gitea
@@ -19,14 +19,14 @@ spec:
     giteaActions:
       runners:
         - label: base
-          image: c4factory/gitea-runner-base:dev
+          image: theos/gitea-runner-base:dev
           size: 1
         - label: go
-          image: c4factory/gitea-runner-go:dev
+          image: theos/gitea-runner-go:dev
           size: 1
           goCache: true
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Framework
 metadata:
   name: hello-html
@@ -38,7 +38,7 @@ spec:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/hello-html
     ref: v1.1.0
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Standard
 metadata:
   name: hello-html-standard
@@ -56,14 +56,14 @@ spec:
 # A stand-in that makes a scripted change and approves it: proves the loop
 # without spending tokens. Every Agent here runs on the stand-in and names no
 # credentials Secret; the suite's BeforeSuite fails otherwise (test/e2e/standin).
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Agent
 metadata:
   name: stand-in
 spec:
   displayName: Stand-in agent
   description: Adds a line to STAND-IN.md; asks for changes once, then approves.
-  image: c4factory/agent-base:dev
+  image: theos/agent-base:dev
   harness: stand-in
   maxRounds: 2
   timeoutMinutes: 15
@@ -72,5 +72,5 @@ spec:
     requests: {cpu: 100m}
     limits: {cpu: "1"}
   env:
-    - name: C4AGENT_FAKE_CHANGES_FIRST
+    - name: THEOS_AGENT_FAKE_CHANGES_FIRST
       value: "true"

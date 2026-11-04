@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs go test on the packages make test chose, the controller envtest suite
-# in C4_TEST_PROCS processes at once (#1283). The suite runs its specs one
+# in THEOS_TEST_PROCS processes at once (#1283). The suite runs its specs one
 # after another, so it is the long pole of every make test; each process is a
-# go test of the package with C4_TEST_SHARD=i/n, which runs the top-level
+# go test of the package with THEOS_TEST_SHARD=i/n, which runs the top-level
 # containers of part i of n against its own control plane and manager
 # (internal/controller/suite_test.go). go test's cache answers each part on
 # its own, as it answers every other package. The other packages run in one
@@ -10,14 +10,14 @@
 # exit code is 1 when any failed.
 #
 # With -coverprofile FILE, each go test writes its own profile and they are
-# merged into FILE. With C4_SLOWEST_SPECS=FILE, each part writes FILE.i and
+# merged into FILE. With THEOS_SLOWEST_SPECS=FILE, each part writes FILE.i and
 # they are merged into FILE: the 10 slowest specs of the whole suite.
 #
 #   hack/go-test.sh [GO TEST FLAGS] -- PACKAGE...
 #
-#   C4_TEST_PROCS        processes the controller suite runs in (default 2;
+#   THEOS_TEST_PROCS        processes the controller suite runs in (default 2;
 #                        1 runs it in one go test, as before)
-#   C4_TEST_MIN_MEM_GIB  below this much MemAvailable an unset C4_TEST_PROCS
+#   THEOS_TEST_MIN_MEM_GIB  below this much MemAvailable an unset THEOS_TEST_PROCS
 #                        means 1 (default 4): each part takes about a GiB more
 #                        (docs/dev/devices.md, "Memory on the cluster device")
 #   RELAY_MEMINFO        file to read instead of /proc/meminfo (the test fakes it)
@@ -25,7 +25,7 @@
 set -uo pipefail
 
 GO=${GO:-go}
-SHARDED=github.com/JairJosafath/c4factory/internal/controller
+SHARDED=github.com/JairJosafath/theos/internal/controller
 say() { echo "make test: $*" >&2; }
 
 flags=() pkgs=() cover=
@@ -41,16 +41,16 @@ done
 pkgs=("$@")
 [ ${#pkgs[@]} -gt 0 ] || { say "no packages"; exit 2; }
 
-procs=${C4_TEST_PROCS:-}
+procs=${THEOS_TEST_PROCS:-}
 if [ -z "$procs" ]; then
   procs=2
   avail=$(awk '/^MemAvailable:/ {print int($2 / 1048576); exit}' "${RELAY_MEMINFO:-/proc/meminfo}" 2>/dev/null)
-  if [ -n "$avail" ] && [ "$avail" -lt "${C4_TEST_MIN_MEM_GIB:-4}" ]; then
-    say "${avail} GiB available, under C4_TEST_MIN_MEM_GIB=${C4_TEST_MIN_MEM_GIB:-4}: the controller suite runs in 1 process"
+  if [ -n "$avail" ] && [ "$avail" -lt "${THEOS_TEST_MIN_MEM_GIB:-4}" ]; then
+    say "${avail} GiB available, under THEOS_TEST_MIN_MEM_GIB=${THEOS_TEST_MIN_MEM_GIB:-4}: the controller suite runs in 1 process"
     procs=1
   fi
 fi
-[[ $procs =~ ^[1-9][0-9]*$ ]] || { say "C4_TEST_PROCS=$procs: want a number from 1"; exit 2; }
+[[ $procs =~ ^[1-9][0-9]*$ ]] || { say "THEOS_TEST_PROCS=$procs: want a number from 1"; exit 2; }
 
 rest=() sharded=
 for p in "${pkgs[@]}"; do
@@ -80,13 +80,13 @@ start() {
   names[$!]=$name
 }
 
-say "the controller suite runs in $procs processes (C4_TEST_PROCS)"
+say "the controller suite runs in $procs processes (THEOS_TEST_PROCS)"
 [ ${#rest[@]} -eq 0 ] || start rest -- "${rest[@]}"
 # A part an earlier run left must not be merged into this one's report.
-[ -z "${C4_SLOWEST_SPECS:-}" ] || rm -f "$C4_SLOWEST_SPECS".*
+[ -z "${THEOS_SLOWEST_SPECS:-}" ] || rm -f "$THEOS_SLOWEST_SPECS".*
 # The package's plain Go tests run in the first part only.
-start shard-1 C4_TEST_SHARD=1/"$procs" -- "$SHARDED"
-for i in $(seq 2 "$procs"); do start "shard-$i" "C4_TEST_SHARD=$i/$procs" -- -run '^TestControllers$' "$SHARDED"; done
+start shard-1 THEOS_TEST_SHARD=1/"$procs" -- "$SHARDED"
+for i in $(seq 2 "$procs"); do start "shard-$i" "THEOS_TEST_SHARD=$i/$procs" -- -run '^TestControllers$' "$SHARDED"; done
 
 rc=0
 while [ ${#names[@]} -gt 0 ]; do
@@ -113,10 +113,10 @@ fi
 # The parts' slowest specs as one report: the specs and the longest part's
 # time from their first lines, the 10 slowest of their other lines. A part
 # go test's cache answered ran nothing and wrote nothing; the report says so.
-if [ -n "${C4_SLOWEST_SPECS:-}" ]; then
+if [ -n "${THEOS_SLOWEST_SPECS:-}" ]; then
   parts=() missing=() specs=0 secs=0
   for i in $(seq "$procs"); do
-    f=$C4_SLOWEST_SPECS.$i
+    f=$THEOS_SLOWEST_SPECS.$i
     if [ ! -f "$f" ]; then missing+=("$i"); continue; fi
     parts+=("$f")
     read -r n t < <(sed -nE '1s/^.*: ([0-9]+) specs in ([0-9]+)s;.*$/\1 \2/p' "$f")
@@ -129,7 +129,7 @@ if [ -n "${C4_SLOWEST_SPECS:-}" ]; then
       [ ${#missing[@]} -eq 0 ] || echo -n " (parts ${missing[*]} cached, not here)"
       echo "; the 10 slowest:"
       tail -q -n +2 "${parts[@]}" | sort -rn | head -n 10
-    } >"$C4_SLOWEST_SPECS"
+    } >"$THEOS_SLOWEST_SPECS"
     rm -f "${parts[@]}"
   fi
 fi

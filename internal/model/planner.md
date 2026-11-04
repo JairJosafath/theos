@@ -414,7 +414,7 @@ Push the branch `plan/<round>` with these files:
 
 15. **File no issue that no change may make.** The paths `brief.md`'s *What
     no issue can change* section names (`AGENTS.md`, `docs/agents/` and
-    `.c4factory.yaml`) are the agents' rules and the platform's settings: no
+    `.theos.yaml`) are the agents' rules and the platform's settings: no
     pull request may change them, so an issue that asks to could only end
     blocked. No issue asks to change them, and none names them in its title
     or acceptance criteria; the factory keeps them as they are, so a
@@ -471,12 +471,12 @@ of Frameworks, Standards, Computes, Deployments, Connectors and the Git
 provider from `model/catalog.yaml` and `brief.md`, not from here.
 
 `plan/model.yaml` holds one document per object, split by `---` lines. Every
-document has `apiVersion: c4.factory.io/v1beta1`, a `kind`, a
+document has `apiVersion: theos.factory.io/v1beta1`, a `kind`, a
 `metadata.name` and a `spec`. This one has every kind and every field a plan
 may write:
 
 ```yaml plan/model.yaml
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Project
 metadata:
   name: shop
@@ -484,7 +484,7 @@ spec:
   displayName: Shop
   description: Everything the shop's team builds.
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Person
 metadata:
   name: shopper
@@ -492,7 +492,7 @@ spec:
   displayName: Shopper
   description: Someone who buys from the shop.
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
@@ -506,7 +506,7 @@ spec:
   location: Internal # the default: the factory builds it
   domainRefs: [webshop] # the installed Domains the idea is about (rule 1)
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: payments
@@ -515,7 +515,7 @@ spec:
   description: Takes the shoppers' money; another company runs it.
   location: External # the story only names it (rule 1)
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: web
@@ -528,7 +528,7 @@ spec:
   bundleRef: {name: react-web} # a Bundle that supports static-site, in place of the sides (rule 2)
   checks: BeforeRelease # only when a new prompt asks (rule 16)
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: api
@@ -547,7 +547,7 @@ spec:
     recovery: {rpo: 15m, rto: 4h}
     alerts: {email: ops@shop.example}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: DataStore
 metadata:
   name: orders-db
@@ -557,7 +557,7 @@ spec:
   softwareSystemRef: {name: shop}
   connectorRef: {name: postgres}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: shopper-uses-web
@@ -566,7 +566,7 @@ spec:
   target: {kind: Container, name: web}
   description: Orders products
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: web-calls-api
@@ -576,7 +576,7 @@ spec:
   description: Sends orders
   bundles: false
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: api-takes-payments
@@ -585,7 +585,7 @@ spec:
   target: {kind: SoftwareSystem, name: payments}
   description: Charges the shopper
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: api-keeps-orders
@@ -721,15 +721,15 @@ uses: [cel-lens-core]
 ```
 
 The CLI's issue is readied once `cel-lens-core`'s release, say `v0.1.0`, has
-published `c4factory.local/<project>/cel-lens-core`, and its body then says:
+published `theos.local/<project>/cel-lens-core`, and its body then says:
 
 ```
-Uses c4factory.local/<project>/cel-lens-core v0.1.0: go get it at that version.
+Uses theos.local/<project>/cel-lens-core v0.1.0: go get it at that version.
 ```
 
 Were the engine a TypeScript `node-cli` with `gitea-release`, its release
 would publish the npm package `<scope>/cel-lens-core` (`<scope>` is the Git
-host's npm scope, `@c4factory` by default), and the line would read:
+host's npm scope, `@theos` by default), and the line would read:
 
 ```
 Uses npm package <scope>/cel-lens-core 0.1.0: npm install --save-exact <scope>/cel-lens-core@0.1.0.
@@ -740,7 +740,7 @@ the PyPI package `cel-lens-core` to the Git host's index (`<index>`), and the
 line would read:
 
 ```
-Uses PyPI package cel-lens-core 0.1.0 from the c4factory index <index>: uv add cel-lens-core==0.1.0, pinned to that index as AGENTS.md says.
+Uses PyPI package cel-lens-core 0.1.0 from the theos index <index>: uv add cel-lens-core==0.1.0, pinned to that index as AGENTS.md says.
 ```
 
 `plan/releases.yaml`, releasing the web shop, which the example's issue is

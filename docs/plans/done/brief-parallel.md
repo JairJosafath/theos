@@ -22,7 +22,7 @@ a plan writing it with no new prompt, or out of 1 to 5, is refused; and
 ## Decisions, and why
 
 1. **The Brief owns its Crews' `parallel`.** A Crew the Brief made (label
-   `c4.factory.io/brief`) has its `spec.parallel` set from the Brief every
+   `theos.factory.io/brief`) has its `spec.parallel` set from the Brief every
    reconcile, whatever the round is doing, as `syncReleases` does for
    releases: a change reaches Crews of earlier rounds without waiting for
    one. The reporter's Crews exist already; a setting that only reached new

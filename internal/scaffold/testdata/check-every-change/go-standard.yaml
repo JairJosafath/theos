@@ -13,7 +13,7 @@ jobs:
     # Go's build cache stays where the toolchain image puts it: the image ships
     # it warm, so the Kubernetes libraries aren't compiled on every run.
     # The factory publishes its apps' releases to the owner's package registry,
-    # under c4factory.local module paths no public proxy or checksum database
+    # under theos.local module paths no public proxy or checksum database
     # knows. Those come from the registry alone, in the step before make check;
     # with GOPRIVATE, make check never asks a proxy for them, so a module the
     # registry lacks fails on a host that doesn't exist instead of going to
@@ -21,7 +21,7 @@ jobs:
     # proxy: the go command asks the next proxy after a 404.
     env:
       GOPROXY: https://proxy.golang.org,direct
-      GOPRIVATE: c4factory.local
+      GOPRIVATE: theos.local
     steps:
       - name: Check out
         run: |
@@ -67,12 +67,12 @@ jobs:
         env:
           GOPROXY: ${{ gitea.server_url }}/api/packages/${{ gitea.repository_owner }}/go
           GOPRIVATE: ""
-          GONOSUMDB: c4factory.local
+          GONOSUMDB: theos.local
         # From go.sum, not go.mod's require lines: go mod tidy also loads the
         # test imports of dependencies, which only go.sum lists; a module
         # replaced by a local directory has no line there.
         run: |
-          mods=$( [ ! -f go.sum ] || awk '$1 ~ /^c4factory\.local\// { sub("/go.mod$", "", $2); print $1 "@" $2 }' go.sum | sort -u)
+          mods=$( [ ! -f go.sum ] || awk '$1 ~ /^theos\.local\// { sub("/go.mod$", "", $2); print $1 "@" $2 }' go.sum | sort -u)
           if [ -n "$mods" ]; then
             # Outside the module, so only these are fetched.
             cd "$(mktemp -d)" && go mod download $mods

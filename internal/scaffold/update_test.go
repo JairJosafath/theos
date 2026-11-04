@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 func TestPlanUpdate(t *testing.T) {
@@ -161,7 +161,7 @@ func TestRenderLayerRendersLikeBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderLayer() error = %v", err)
 	}
-	// The template's .c4factory/ input is never copied.
+	// The template's .theos/ input is never copied.
 	if want := []string{"app/main.py", "pyproject.toml"}; !slices.Equal(got.Paths(), want) {
 		t.Fatalf("paths = %v, want %v", got.Paths(), want)
 	}
@@ -238,7 +238,7 @@ func TestChangedPaths(t *testing.T) {
 func TestRenderLayerRefusesOperatorPaths(t *testing.T) {
 	for _, tt := range []struct{ path, want string }{
 		{".devcontainer/devcontainer.json", "python-standard and the operator both write .devcontainer/devcontainer.json"},
-		{".c4factory.yaml", "python-standard and the operator both write .c4factory.yaml"},
+		{".theos.yaml", "python-standard and the operator both write .theos.yaml"},
 	} {
 		t.Run(tt.path, func(t *testing.T) {
 			layer := withStandard(webshopLayers())[1]
@@ -259,7 +259,7 @@ func TestUpdateMessage(t *testing.T) {
 	u := Update{Files: tree("AGENTS.md", "x")}
 	want := "Update the Standard go-standard to v1.1.1\n\n" +
 		"Brings the files of go-standard from v1.0.0 to v1.1.1 for Container cel-language-server.\n\n" +
-		"C4-Factory-Container: tools/cel-language-server\n" +
+		"theos-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
 	if got := UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.0.0"}, model.StandardVersion{Ref: "v1.1.1"}, u); got != want {
 		t.Errorf("UpdateMessage() =\n%s\nwant\n%s", got, want)
@@ -269,7 +269,7 @@ func TestUpdateMessage(t *testing.T) {
 	want = "Update the Standard go-standard to v1.1.1\n\n" +
 		"Brings the files of go-standard from v1.0.0 to v1.1.1 for Container cel-language-server.\n" +
 		"Left out, changed in the repository since v1.0.0: Makefile and docs/style/go.md.\n\n" +
-		"C4-Factory-Container: tools/cel-language-server\n" +
+		"theos-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
 	if got := UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.0.0"}, model.StandardVersion{Ref: "v1.1.1"}, u); got != want {
 		t.Errorf("UpdateMessage() with paths left out =\n%s\nwant\n%s", got, want)
@@ -280,7 +280,7 @@ func TestUpdateMessage(t *testing.T) {
 		"Brings the files of go-standard from v1.0.0 to v1.1.1 for Container cel-language-server.\n" +
 		"Merged with the repository's changes since v1.0.0: .gitea/workflows/check.yaml.\n" +
 		"Left out, changed in the repository since v1.0.0: Makefile and docs/style/go.md.\n\n" +
-		"C4-Factory-Container: tools/cel-language-server\n" +
+		"theos-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n"
 	if got := UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.0.0"}, model.StandardVersion{Ref: "v1.1.1"}, u); got != want {
 		t.Errorf("UpdateMessage() with paths merged =\n%s\nwant\n%s", got, want)
@@ -293,7 +293,7 @@ func TestUpdateMessageBetweenChecksModes(t *testing.T) {
 	want := "Update the Standard go-standard to v1.1.1, with the full check before release\n\n" +
 		"Brings the files of go-standard from v1.0.0 to v1.1.1 for Container cel-language-server.\n" +
 		"CI runs the full check only before a release.\n\n" +
-		"C4-Factory-Container: tools/cel-language-server\n" +
+		"theos-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.0.0..v1.1.1\n" +
 		"Checks: EveryChange..BeforeRelease\n"
 	got := UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.0.0"},
@@ -305,7 +305,7 @@ func TestUpdateMessageBetweenChecksModes(t *testing.T) {
 	want = "Update the Standard go-standard to v1.1.1, with the full check on every change\n\n" +
 		"Brings the files of go-standard from v1.1.1 to v1.1.1 for Container cel-language-server.\n" +
 		"CI runs the full check on every change.\n\n" +
-		"C4-Factory-Container: tools/cel-language-server\n" +
+		"theos-Container: tools/cel-language-server\n" +
 		"Standard-Update: go-standard@v1.1.1..v1.1.1\n" +
 		"Checks: BeforeRelease..EveryChange\n"
 	got = UpdateMessage(in, "go-standard", model.StandardVersion{Ref: "v1.1.1", Checks: model.ChecksBeforeRelease},
@@ -395,7 +395,7 @@ func TestTakeMessage(t *testing.T) {
 		"Takes the version of go-standard at v1.1.6 of .gitea/workflows/check.yaml for Container cel-lens-core, " +
 		"as a person answered: merged with the repository's changes, the Standard's lines kept where both " +
 		"changed the same ones.\n\n" +
-		"C4-Factory-Container: tools/cel-lens-core\n" +
+		"theos-Container: tools/cel-lens-core\n" +
 		"Standard-Take: go-standard@v1.1.6\n"
 	if got := TakeMessage(in, "go-standard", "v1.1.6", take); got != want {
 		t.Errorf("TakeMessage() =\n%s\nwant\n%s", got, want)

@@ -224,7 +224,7 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
         person: 'Nothing: its client stopped sending heartbeats. It turns Active again when they come back.',
       },
     ],
-    moves: 'Its client (c4session) sends heartbeats; the operator marks it Stale when they stop.',
+    moves: 'Its client (theos-session) sends heartbeats; the operator marks it Stale when they stop.',
     describe: (phase) => ({
       ...describeSessionPhase(phase as SessionPhase | undefined),
       tone: SESSION_TONES[phase as SessionPhase] ?? 'unknown',
@@ -337,7 +337,7 @@ export function failedCondition(container: Container): Condition | undefined {
 /** The command that makes the operator try a Failed Container's scaffold again. */
 export function retryCommand(container: Container): string {
   const ns = container.metadata.namespace ?? 'default'
-  return `kubectl -n ${ns} annotate containers.c4.factory.io ${container.metadata.name} c4.factory.io/retry=$(date +%s) --overwrite`
+  return `kubectl -n ${ns} annotate containers.theos.factory.io ${container.metadata.name} theos.factory.io/retry=$(date +%s) --overwrite`
 }
 
 /** The exact next step for a person on a Container, when there is one. */
@@ -384,7 +384,7 @@ export function containerNextStep(container: Container): NextStep | undefined {
         }
       case 'IdentityMismatch':
         return {
-          text: 'Make main’s .c4factory.yaml name this project and container, then retry.',
+          text: 'Make main’s .theos.yaml name this project and container, then retry.',
           command,
           link: repo,
         }
@@ -457,7 +457,7 @@ export function containerNextStep(container: Container): NextStep | undefined {
     const files = behind.map((b) => `${b.path} (at ${b.ref})`).join(', ')
     const url = behind.findLast((b) => b.pullRequestURL)?.pullRequestURL
     return {
-      text: `${standard.name}’s updates left ${n === 1 ? 'a file' : `${n} files`} out that the repository changed in the same lines: ${files}. Take ${standard.name} ${standard.ref}’s version with the command below, or keep the repository’s with c4.factory.io/standard-keep=${standard.ref} instead.`,
+      text: `${standard.name}’s updates left ${n === 1 ? 'a file' : `${n} files`} out that the repository changed in the same lines: ${files}. Take ${standard.name} ${standard.ref}’s version with the command below, or keep the repository’s with theos.factory.io/standard-keep=${standard.ref} instead.`,
       command: standardTakeCommand(container),
       link: url ? { href: url, label: 'Open the update pull request' } : undefined,
     }
@@ -468,13 +468,13 @@ export function containerNextStep(container: Container): NextStep | undefined {
 /** The command that takes the Standard's version of the files its updates left out (design.md, *A Standard's fixes reach its Containers*). */
 export function standardTakeCommand(container: Container): string {
   const ns = container.metadata.namespace ?? 'default'
-  return `kubectl -n ${ns} annotate container ${container.metadata.name} c4.factory.io/standard-take=${container.status?.standard?.ref ?? ''}`
+  return `kubectl -n ${ns} annotate container ${container.metadata.name} theos.factory.io/standard-take=${container.status?.standard?.ref ?? ''}`
 }
 
 /** The command that keeps the repository's version of the files the Standard's updates left out. */
 export function standardKeepCommand(container: Container): string {
   const ns = container.metadata.namespace ?? 'default'
-  return `kubectl -n ${ns} annotate container ${container.metadata.name} c4.factory.io/standard-keep=${container.status?.standard?.ref ?? ''}`
+  return `kubectl -n ${ns} annotate container ${container.metadata.name} theos.factory.io/standard-keep=${container.status?.standard?.ref ?? ''}`
 }
 
 /**
@@ -510,13 +510,13 @@ export function describeStandardUpdate(container: Container): { title: string; t
 /** The command that re-runs a Crew's failed release runs (design.md, *Crews and releases*, "The release run"). */
 export function rerunReleaseCommand(crew: Crew): string {
   const ns = crew.metadata.namespace ?? 'default'
-  return `kubectl -n ${ns} annotate crews.c4.factory.io ${crew.metadata.name} c4.factory.io/rerun-release=$(date +%s) --overwrite`
+  return `kubectl -n ${ns} annotate crews.theos.factory.io ${crew.metadata.name} theos.factory.io/rerun-release=$(date +%s) --overwrite`
 }
 
 /** The command that resumes a paused Crew. */
 export function resumeCrewCommand(crew: Crew): string {
   const ns = crew.metadata.namespace ?? 'default'
-  return `kubectl -n ${ns} patch crews.c4.factory.io ${crew.metadata.name} --type merge -p '{"spec":{"paused":false}}'`
+  return `kubectl -n ${ns} patch crews.theos.factory.io ${crew.metadata.name} --type merge -p '{"spec":{"paused":false}}'`
 }
 
 /**

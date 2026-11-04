@@ -144,7 +144,7 @@ const names = (s: WatchState<K8sObject>) => s.items.map((i) => i.metadata.name).
 const noSleep = () => Promise.resolve()
 
 describe('ResourceWatcher', () => {
-  const path = '/apis/c4.factory.io/v1beta1/namespaces/webshop/containers'
+  const path = '/apis/theos.factory.io/v1beta1/namespaces/webshop/containers'
 
   it('lists, then applies watch events from the list resourceVersion', async () => {
     const api = fakeFetch([
@@ -171,7 +171,7 @@ describe('ResourceWatcher', () => {
   })
 
   it('keeps the deprecation warning the list response carried in its Warning header (#1618)', async () => {
-    const DEPRECATED = 'c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1.'
+    const DEPRECATED = 'theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1.'
     const warned = (rv: string) =>
       new Response(JSON.stringify({ metadata: { resourceVersion: rv }, items: [] }), {
         status: 200,

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -34,8 +34,8 @@ import (
 const (
 	modelProxyName        = "c4-model-proxy"
 	modelProxyCredentials = "claude-credentials"
-	sandboxPodLabel       = "c4.factory.io/agent-sandbox"
-	sharedSecretsNSLabel  = "c4.factory.io/shared-secrets"
+	sandboxPodLabel       = "theos.factory.io/agent-sandbox"
+	sharedSecretsNSLabel  = "theos.factory.io/shared-secrets"
 )
 
 // modelProxyObjects is what a render holds of the model proxy.
@@ -247,7 +247,7 @@ func TestModelProxyManagerFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = managerModelProxyArg + "http://c4-factory-model-proxy.c4-factory-system.svc:8080"
+	want = managerModelProxyArg + "http://theos-model-proxy.theos-system.svc:8080"
 	if got := managerArg(t, "config/manager", manifest, managerModelProxyArg); got != want {
 		t.Errorf("config/manager's manager has %q, want %q", got, want)
 	}

@@ -78,9 +78,9 @@ the rollout itself is the one tier only Kind shows.
      or not Argo CD is installed, as it names Agent Sandbox's.
 
 2. **`Ship` writes one `Application`; nothing is written to the
-   repository.** Server-side apply, field manager `c4factory`, in
+   repository.** Server-side apply, field manager `theos`, in
    `argoCD.namespace`, named `<container namespace>-<container name>`,
-   labeled `c4.factory.io/namespace` and `c4.factory.io/container`, with
+   labeled `theos.factory.io/namespace` and `theos.factory.io/container`, with
    Argo CD's `resources-finalizer` so a person deleting the Application
    removes the app. The spec:
    - `source`: `repoURL` the Container repository's clone URL (new on the
@@ -102,7 +102,7 @@ the rollout itself is the one tier only Kind shows.
    - The joined name is readable, not unique: `a-b/c` and `a/b-c` both
      join to `a-b-c` (#1669). As two layers writing one file fail the
      Container with the path, `Ship` and `State` refuse an Application
-     whose `c4.factory.io/namespace` and `c4.factory.io/container` labels
+     whose `theos.factory.io/namespace` and `theos.factory.io/container` labels
      name another Container, with that Container in the message
      ("belongs to Container a/b-c, whose name joins to the same: rename
      one of them"); `Ship` writes nothing, and `State` reports nothing.

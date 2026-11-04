@@ -8,7 +8,7 @@ Actions runners. Issue #142.
 
 **Why:** The cluster has become the bottleneck for the work around it:
 - **Issues:** 9 of 10 open issues carry `needs/cluster`, and a lite device
-  (`C4_CLUSTER=none`) has about one issue it can take.
+  (`THEOS_CLUSTER=none`) has about one issue it can take.
 - **The cluster device:** it leases from a pool of two Kind clusters at
   1.1–4.5 GiB each, with waits of up to 30 minutes, and its heavy jobs queue
   for two slots.
@@ -84,7 +84,7 @@ another names it too. None of them needs the cluster.
 Steps 2, 4, 5, 7, 8 and 9 are independent and can run in parallel.
 
 **Decided against** (#152, closed): a local factory mode. It would have run
-the Crew and Task loop on envtest, the local Gitea and `c4agent` as a
+the Crew and Task loop on envtest, the local Gitea and `theos-agent` as a
 subprocess, for live evidence without Kind. That is a second runtime to keep
 in step with the sandbox one, and it can't prove the sandbox fence
 (ServiceAccount token, NetworkPolicy, deadline). The tiers above cover a lite
@@ -97,6 +97,6 @@ device, and *Verify Release* runs the whole release on a hosted Kind cluster.
 - Every CEL rule in `config/crd/bases` has a fixture or an envtest spec.
 - `make test` renders every template.
 - `make test-gitea` and `make seed-local` run on a device with
-  `C4_CLUSTER=none`.
+  `THEOS_CLUSTER=none`.
 - The decisions listed in steps 7–9 live in `internal/model` with table tests.
 - `needs/cluster` is on an open issue only when it needs a real node.

@@ -141,7 +141,7 @@ cd src && golangci-lint run
 0 issues.
 node_modules/.bin/tsc --noEmit
 cd src && go test -race -count=1 ./...
-ok  	c4factory.local/webshop/lambda-go	1.376s
+ok  	theos.local/webshop/lambda-go	1.376s
 node_modules/.bin/vitest run
  RUN  v5.0.3 $TMPDIR/<scratch>/lambda-go
  ✓ infra/standard.test.ts (75 tests) 50889ms
@@ -312,10 +312,10 @@ uvx cfn-lint==1.57.2 --include-checks I --ignore-checks W3005 -- cdk.out/product
 ec2-ts exit 0
 
 ## 9. aws-lambda-ts v1.3.0 with infra/backups.ts's selection put back to the tag alone: make check fails
-# sed: props.tables.map((table) => BackupResource.fromArn(table.tableArn)) -> [BackupResource.fromTag('c4factory:container', 'tagged')]
+# sed: props.tables.map((table) => BackupResource.fromArn(table.tableArn)) -> [BackupResource.fromTag('theos:container', 'tagged')]
 
 Rendered 46 files from aws-lambda-ts@local, aws-standard@local into $TMPDIR/<scratch>/tagged
-85:      resources: [BackupResource.fromTag('c4factory:container', 'tagged')],
+85:      resources: [BackupResource.fromTag('theos:container', 'tagged')],
 npm ci --no-audit --no-fund
 added 178 packages in 9s
 node_modules/.bin/prettier --check .

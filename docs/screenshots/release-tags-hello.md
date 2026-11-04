@@ -1,6 +1,6 @@
 # The Crew tags a done release (#78)
 
-Kind cluster `c4factory-2`, operator built from `feat/78-the-crew-tags-a-release-when-its`
+Kind cluster `theos-2`, operator built from `feat/78-the-crew-tags-a-release-when-its`
 (`make deploy`), 2026-10-05 23:07–23:10 UTC. Setup, as a person would do it:
 
 - Container `apps/hello-rel`: the hello Framework, `hello-standard` and the
@@ -38,8 +38,8 @@ $ kubectl -n apps get events.events.k8s.io --field-selector regarding.name=hello
 TIME                          TYPE     REASON     ACTION       NOTE
 2026-10-05T23:09:15.689901Z   Normal   Released   TagRelease   Released v0.1.0 at 2ea9c85ce22efd94d2b4808986ae762dfb6bf963
 
-$ kubectl -n c4-factory-system logs deploy/c4-factory-controller-manager | grep "Released milestone"
-2026-10-05T23:09:15Z	INFO	Released milestone	{"controller": "crew", "controllerGroup": "c4.factory.io", "controllerKind": "Crew", "Crew": {"name":"hello-rel","namespace":"apps"}, "namespace": "apps", "name": "hello-rel", "reconcileID": "bf772ae4-dc6e-4153-ab09-11ddcc1b4d05", "tag": "v0.1.0", "commit": "2ea9c85ce22efd94d2b4808986ae762dfb6bf963", "created": true}
+$ kubectl -n theos-system logs deploy/theos-controller-manager | grep "Released milestone"
+2026-10-05T23:09:15Z	INFO	Released milestone	{"controller": "crew", "controllerGroup": "theos.factory.io", "controllerKind": "Crew", "Crew": {"name":"hello-rel","namespace":"apps"}, "namespace": "apps", "name": "hello-rel", "reconcileID": "bf772ae4-dc6e-4153-ab09-11ddcc1b4d05", "tag": "v0.1.0", "commit": "2ea9c85ce22efd94d2b4808986ae762dfb6bf963", "created": true}
 
 $ Gitea: GET /repos/apps/hello-rel/tags/v0.1.0
 {"name":"v0.1.0","commit":"2ea9c85ce22efd94d2b4808986ae762dfb6bf963","message":"Release v0.1.0\n"}

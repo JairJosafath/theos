@@ -56,7 +56,7 @@ in its subnet group and security groups, with its key; then add its writer
 and its reader as step 2 of the restore adds a writer, and set
 again what a restore doesn't carry: the Data API
 (`aws rds enable-http-endpoint`), IAM database authentication, deletion
-protection, the 35 days of points in time and the three `c4factory:` tags.
+protection, the 35 days of points in time and the three `theos:` tags.
 The stack's secret still holds the user; deploy the stack again, as
 above, to put its alarms and rotation back.
 {{- end }}
@@ -265,7 +265,7 @@ with `--target-table-name` the old name. Then set again what a restore
 doesn't carry: point-in-time recovery
 (`aws dynamodb update-continuous-backups`), deletion protection,{{ if $idempotency }} time to
 live (`expiration`, for the `Idempotency` table){{ end }} and the three
-`c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names each table that holds data by its ARN, which a
+`theos:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names each table that holds data by its ARN, which a
 table restored under the same name in the same account and region keeps,
 so it is backed up again from the next day. {{ end }}Deploy the stack again
 (`{{ $deploy }}`) and check it reports no drift.
@@ -562,8 +562,8 @@ account, by its owner, and never by a stack here:
 - CloudTrail, recording every API call to an S3 bucket kept apart.
 - AWS Config, recording how resources change.
 - AWS Budgets, with an alert on what the account spends.
-- The cost allocation tags' activation: `c4factory:project`,
-  `c4factory:system` and `c4factory:container` attribute costs only once the
+- The cost allocation tags' activation: `theos:project`,
+  `theos:system` and `theos:container` attribute costs only once the
   account activates them in Billing.
 {{- if and (ne $ops.Backups.RetentionDays 0) $ops.Backups.CopyToRegion }}
 - AWS Backup's advanced features for DynamoDB, on in the stack's region
@@ -730,7 +730,7 @@ point-in-time recovery from the deleted table's system backup
 with `--target-table-name` the old name. Then set again what a restore
 doesn't carry: point-in-time recovery
 (`aws dynamodb update-continuous-backups`), deletion protection and the
-three `c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the table by its ARN, which a
+three `theos:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the table by its ARN, which a
 table restored under the same name in the same account and region keeps,
 so it is backed up again from the next day. {{ end }}Deploy the stack
 again (`{{ $deploy }}`) and check it reports no drift.
@@ -870,8 +870,8 @@ account, by its owner, and never by a stack here:
 - CloudTrail, recording every API call to an S3 bucket kept apart.
 - AWS Config, recording how resources change.
 - AWS Budgets, with an alert on what the account spends.
-- The cost allocation tags' activation: `c4factory:project`,
-  `c4factory:system` and `c4factory:container` attribute costs only once the
+- The cost allocation tags' activation: `theos:project`,
+  `theos:system` and `theos:container` attribute costs only once the
   account activates them in Billing.
 - The ACM certificate the load balancer serves (the `CertificateArn`
   parameter) and the DNS record pointing its domain at `EntryPoint`.
@@ -1031,8 +1031,8 @@ account, by its owner, and never by a stack here:
 - CloudTrail, recording every API call to an S3 bucket kept apart.
 - AWS Config, recording how resources change.
 - AWS Budgets, with an alert on what the account spends.
-- The cost allocation tags' activation: `c4factory:project`,
-  `c4factory:system` and `c4factory:container` attribute costs only once the
+- The cost allocation tags' activation: `theos:project`,
+  `theos:system` and `theos:container` attribute costs only once the
   account activates them in Billing.
 
 A domain is the deploy's: its certificate, in ACM in us-east-1, is the
@@ -1195,7 +1195,7 @@ point-in-time recovery from the deleted table's system backup
 with `--target-table-name` the old name. Then set again what a restore
 doesn't carry: point-in-time recovery
 (`aws dynamodb update-continuous-backups`), deletion protection and the
-three `c4factory:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the table by its ARN, which a
+three `theos:` tags. {{ if ne $ops.Backups.RetentionDays 0 }}The backup plan names the table by its ARN, which a
 table restored under the same name in the same account and region keeps,
 so it is backed up again from the next day. {{ end }}Deploy the stack again
 (`{{ $deploy }}`) and check it reports no drift.
@@ -1289,8 +1289,8 @@ account, by its owner, and never by a stack here:
 - CloudTrail, recording every API call to an S3 bucket kept apart.
 - AWS Config, recording how resources change.
 - AWS Budgets, with an alert on what the account spends.
-- The cost allocation tags' activation: `c4factory:project`,
-  `c4factory:system` and `c4factory:container` attribute costs only once the
+- The cost allocation tags' activation: `theos:project`,
+  `theos:system` and `theos:container` attribute costs only once the
   account activates them in Billing.
 {{- if and (ne $ops.Backups.RetentionDays 0) $ops.Backups.CopyToRegion }}
 - AWS Backup's advanced features for DynamoDB, on in the stack's region

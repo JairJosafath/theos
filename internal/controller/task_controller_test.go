@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -25,17 +25,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // newAgent returns the Agent "claude" with the given number of rounds.
 func newAgent(ns string, rounds int32) *c4v1beta1.Agent {
 	return &c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "claude"),
-		Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}}
+		Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev", MaxRounds: rounds}}
 }
 
 // newTask returns a Task on the Container orders-api.
@@ -88,7 +88,7 @@ func expectSandboxGone(ns, name string) {
 	}).Should(BeTrue(), "Sandbox %s is deleted", name)
 }
 
-// finishSandbox plays Agent Sandbox and c4agent: it creates the sandbox's pod,
+// finishSandbox plays Agent Sandbox and theos-agent: it creates the sandbox's pod,
 // owned by the sandbox, and ends it with result as termination message, or with
 // reason and no message. Its writes are tried again: a loaded API server can
 // time a request out (#829), and nothing else writes the pod.
@@ -148,15 +148,15 @@ var _ = Describe("Task", func() {
 		Expect(containers).To(HaveLen(1))
 		env := containers[0].(map[string]any)["env"]
 		Expect(env).To(ContainElements(
-			map[string]any{"name": "C4_ROUND", "value": "1"},
-			map[string]any{"name": "C4_MAX_ROUNDS", "value": "3"},
-			map[string]any{"name": "C4_BRANCH", "value": "task/add-crop"},
-			map[string]any{"name": "C4_ROLE", "value": "implement"},
+			map[string]any{"name": "THEOS_ROUND", "value": "1"},
+			map[string]any{"name": "THEOS_MAX_ROUNDS", "value": "3"},
+			map[string]any{"name": "THEOS_BRANCH", "value": "task/add-crop"},
+			map[string]any{"name": "THEOS_ROLE", "value": "implement"},
 		))
-		Expect(env).To(ContainElement(map[string]any{"name": "C4_PROTECTED_PATHS",
-			"value": ".c4factory.yaml,.devcontainer/,.gitea/,Makefile,ruff.toml"}))
+		Expect(env).To(ContainElement(map[string]any{"name": "THEOS_PROTECTED_PATHS",
+			"value": ".theos.yaml,.devcontainer/,.gitea/,Makefile,ruff.toml"}))
 		rule, tags := gitFake.BranchRule(ns, "orders-api")
-		Expect(rule.ProtectedPaths).To(Equal([]string{".c4factory.yaml", ".devcontainer/", ".gitea/", "Makefile", "ruff.toml"}),
+		Expect(rule.ProtectedPaths).To(Equal([]string{".theos.yaml", ".devcontainer/", ".gitea/", "Makefile", "ruff.toml"}),
 			"the Git host refuses changes to the Standard's and the platform's files")
 		Expect(tags).To(Equal([]string{"v*"}), "only the operator tags releases")
 		Expect(sandbox.GetOwnerReferences()).To(ContainElement(HaveField("Kind", "Task")))
@@ -165,10 +165,10 @@ var _ = Describe("Task", func() {
 		Expect(string(secret.Data["username"])).To(Equal(ns + "-orders-api-agent"))
 		Expect(string(secret.Data["scopes"])).To(Equal(ports.AgentTokenScopes))
 		Expect(env).To(ContainElements(
-			map[string]any{"name": "C4_GO_REGISTRY", "value": "http://gitea.gitea.svc.cluster.local:3000/api/packages/" + ns + "/go"},
+			map[string]any{"name": "THEOS_GO_REGISTRY", "value": "http://gitea.gitea.svc.cluster.local:3000/api/packages/" + ns + "/go"},
 			map[string]any{"name": "GOPROXY", "value": "http://127.0.0.1:3127,direct"},
-			map[string]any{"name": "GONOSUMDB", "value": "c4factory.local"},
-		), "the agent fetches the owner's released Go modules from the Git host, through c4agent's proxy only")
+			map[string]any{"name": "GONOSUMDB", "value": "theos.local"},
+		), "the agent fetches the owner's released Go modules from the Git host, through theos-agent's proxy only")
 
 		By("opening a pull request for the pushed branch")
 		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r1")
@@ -214,7 +214,7 @@ var _ = Describe("Task", func() {
 			review := sandboxExists(g, ns, "add-crop-r2-review-a1")
 			containers, _, _ := unstructured.NestedSlice(review.Object, "spec", "podTemplate", "spec", "containers")
 			g.Expect(containers[0].(map[string]any)["env"]).To(ContainElement(
-				And(HaveKeyWithValue("name", "C4_FEEDBACK"), HaveKeyWithValue("value", ContainSubstring("Test an empty image.")))),
+				And(HaveKeyWithValue("name", "THEOS_FEEDBACK"), HaveKeyWithValue("value", ContainSubstring("Test an empty image.")))),
 				"the reviewer checks the last round's feedback was addressed")
 		}).Should(Succeed())
 		finishSandbox(ns, "add-crop-r2-review-a1", "add-crop",
@@ -933,7 +933,7 @@ var _ = Describe("Task with an interrupted run", func() {
 		Eventually(func(g Gomega) {
 			var agent c4v1beta1.Agent
 			g.Expect(k8sClient.Get(ctx, key(ns, "claude"), &agent)).To(Succeed())
-			agent.Spec.Image = "c4factory/agent-go:new"
+			agent.Spec.Image = "theos/agent-go:new"
 			g.Expect(k8sClient.Update(ctx, &agent)).To(Succeed())
 		}).Should(Succeed())
 		Expect(k8sClient.Delete(ctx, running, client.GracePeriodSeconds(0))).To(Succeed())
@@ -946,7 +946,7 @@ var _ = Describe("Task with an interrupted run", func() {
 			g.Expect(mode).To(Equal(operatingModeRunning))
 			pod := sandboxPodSpec(g, sandbox)
 			g.Expect(pod.ActiveDeadlineSeconds).To(HaveValue(Equal(remaining)), "the run's remaining time")
-			g.Expect(pod.Containers[0].Image).To(Equal("c4factory/agent-go:new"), "the current Agent's image")
+			g.Expect(pod.Containers[0].Image).To(Equal("theos/agent-go:new"), "the current Agent's image")
 			g.Expect(pod.TerminationGracePeriodSeconds).To(HaveValue(Equal(int64(60))))
 			shutdown, _, _ := unstructured.NestedString(sandbox.Object, "spec", "shutdownTime")
 			g.Expect(parseTime(shutdown)).To(BeTemporally(">", time.Now().Add(time.Duration(remaining)*time.Second)),
@@ -974,7 +974,7 @@ var _ = Describe("Task with an interrupted run", func() {
 		readyContainer(ns)
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-implement") }, "20s").Should(Succeed())
-		// Gitea restarting through every retry of the clone, as c4agent reports it.
+		// Gitea restarting through every retry of the clone, as theos-agent reports it.
 		unreachable := &agentrunner.Result{Role: "implement", Interrupted: true, Error: "the Git host stayed " +
 			"unreachable: git clone: exit status 128: fatal: unable to access 'http://gitea/apps/x.git/': " +
 			"Couldn't connect to server"}
@@ -1143,7 +1143,7 @@ var _ = Describe("Task with an unavailable agent", func() {
 		Eventually(func(g Gomega) {
 			var agent c4v1beta1.Agent
 			g.Expect(k8sClient.Get(ctx, key(ns, "claude"), &agent)).To(Succeed())
-			agent.Spec.Image = "c4factory/agent-go:new"
+			agent.Spec.Image = "theos/agent-go:new"
 			g.Expect(k8sClient.Update(ctx, &agent)).To(Succeed())
 		}).Should(Succeed())
 
@@ -1152,7 +1152,7 @@ var _ = Describe("Task with an unavailable agent", func() {
 			sandbox := sandboxExists(g, ns, name)
 			g.Expect(sandboxMode(g, ns, name)).To(Equal(operatingModeRunning))
 			g.Expect(sandbox.GetAnnotations()).NotTo(HaveKey(annotationAgentBack))
-			g.Expect(sandboxPodSpec(g, sandbox).Containers[0].Image).To(Equal("c4factory/agent-go:new"))
+			g.Expect(sandboxPodSpec(g, sandbox).Containers[0].Image).To(Equal("theos/agent-go:new"))
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.Sandbox).To(Equal(name))
 			g.Expect(task.Status.SandboxPod).To(BeEmpty(), "the Task forgets the old pod")

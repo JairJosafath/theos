@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The fake host's CI runners: a registration token per owner organization,

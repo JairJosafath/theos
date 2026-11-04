@@ -1,7 +1,7 @@
 # make check from a second worktree on the same commit, after a pass in relay-2
-$ cd /tmp/claude-1000/-home-asus-www-github-com-jairjosafath-c4factory--claude-worktrees-relay-2/949faaa0-bc50-4b3d-b657-a1d4487d4ecc/scratchpad/wt166  # a second worktree on 26d2aef
+$ cd /tmp/claude-1000/-home-asus-www-github-com-jairjosafath-theos--claude-worktrees-relay-2/949faaa0-bc50-4b3d-b657-a1d4487d4ecc/scratchpad/wt166  # a second worktree on 26d2aef
 $ time make check
-make check: passed on tree 568db7a50ea4a3b65ea76dc11fec8c4e16c328d5 at 2026-10-06 01:56 in /home/asus/www/github.com/jairjosafath/c4factory/.claude/worktrees/relay-2 by otter-166 (cached); FORCE=1 to rerun
+make check: passed on tree 568db7a50ea4a3b65ea76dc11fec8c4e16c328d5 at 2026-10-06 01:56 in /home/asus/www/github.com/jairjosafath/theos/.claude/worktrees/relay-2 by otter-166 (cached); FORCE=1 to rerun
 
 real	0m2.079s
 user	0m0.104s

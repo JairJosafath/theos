@@ -7,7 +7,7 @@
 // shows without a reload.
 //
 // Needs a build and Chromium:  npm run test:e2e
-// C4_UI_SHOTS=DIR also saves a picture of the page in DIR (docs/screenshots).
+// THEOS_UI_SHOTS=DIR also saves a picture of the page in DIR (docs/screenshots).
 
 import { AxeBuilder } from '@axe-core/playwright'
 import assert from 'node:assert/strict'
@@ -47,7 +47,7 @@ const waiting = (number, title) => ({
 })
 
 const brief = {
-  apiVersion: 'c4.factory.io/v1beta1',
+  apiVersion: 'theos.factory.io/v1beta1',
   kind: 'Brief',
   metadata: { name: 'lens' },
   spec: { idea: 'A lens on CEL expressions.', releases: [lens] },
@@ -115,7 +115,7 @@ describe('a Brief’s requests in the browser', () => {
   const button = (name) => page.getByRole('button', { name, exact: true })
 
   /** The Brief as the fake API has it now. */
-  const current = async () => (await fetch(`${apiUrl}/apis/c4.factory.io/v1beta1/namespaces/${NS}/briefs/lens`)).json()
+  const current = async () => (await fetch(`${apiUrl}/apis/theos.factory.io/v1beta1/namespaces/${NS}/briefs/lens`)).json()
 
   /** Clicks, and resolves to the JSON patch the API got for it, without its test of the resourceVersion. */
   async function patchOf(click) {
@@ -125,7 +125,7 @@ describe('a Brief’s requests in the browser', () => {
     const write = api.writes[count]
     assert.ok(write, 'the fake API got no write')
     assert.equal(write.method, 'PATCH')
-    assert.equal(write.path, `/apis/c4.factory.io/v1beta1/namespaces/${NS}/briefs/lens`)
+    assert.equal(write.path, `/apis/theos.factory.io/v1beta1/namespaces/${NS}/briefs/lens`)
     const [test, ...ops] = write.body
     assert.deepEqual({ ...test, value: undefined }, { op: 'test', path: '/metadata/resourceVersion', value: undefined })
     assert.match(test.value, /^\d+$/)
@@ -142,9 +142,9 @@ describe('a Brief’s requests in the browser', () => {
         .getAttribute('href'),
       `https://github.com/${REPO}/issues/12`,
     )
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-brief-requests.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-brief-requests.png'), fullPage: true })
     }
   })
 
@@ -250,7 +250,7 @@ describe('a Brief’s requests in the browser', () => {
     await alert.waitFor({ timeout: 5000 })
     assert.equal(
       (await alert.textContent()).trim(),
-      'Brief.c4.factory.io "lens" is invalid: spec.releases[0].requests: Invalid value: "object": requests need authors or teams unless mode is Off',
+      'Brief.theos.factory.io "lens" is invalid: spec.releases[0].requests: Invalid value: "object": requests need authors or teams unless mode is Off',
     )
     // Nothing changed.
     assert.equal((await current()).spec.releases[0].requests.mode, 'On')

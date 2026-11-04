@@ -6,7 +6,7 @@
 # RELAY_MIN_MEM_GIB (default 2, the relay's own threshold) it names what uses
 # the memory: the processes with the most, and the Kind node. An interactive
 # session then asks the user before running the job; a headless one
-# (C4_HEADLESS=1, set by hack/relay.sh) gets the warning
+# (THEOS_HEADLESS=1, set by hack/relay.sh) gets the warning
 # in its context instead and the job runs: in `claude -p` a question nobody
 # can answer blocks the command. When every heavy-job slot is taken
 # (hack/heavy-slot.sh), a make job will wait for one: the session is told so,
@@ -16,14 +16,14 @@
 # make check is their gate, and Kind is a tier only a human runs. For a human
 # it reads the lease of the Kind cluster the command targets
 # (hack/lib/github.sh cluster): KIND_CLUSTER= in the command, else
-# KIND_CLUSTER, else the one this checkout leased, else c4factory. While
+# KIND_CLUSTER, else the one this checkout leased, else theos. While
 # another checkout holds a live lease on it, it denies the command and tells
-# the human to lease one (C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster
+# the human to lease one (THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster
 # acquire); without a holder the command goes on to the memory check, as before.
 # Other commands cost one bash, with no subprocess and no file read.
 #   RELAY_MEMINFO   file to read instead of /proc/meminfo (hack/heavy-guard_test.sh fakes it)
 #   KIND_CLUSTER    the Kind cluster a cluster command targets and whose node it names
-#                   (default: this checkout's leased cluster, else c4factory)
+#                   (default: this checkout's leased cluster, else theos)
 set -uo pipefail
 
 # In an agent sandbox (IS_SANDBOX=1, hack/agent/Dockerfile) the hook does
@@ -56,7 +56,7 @@ cluster="make([[:blank:]][^;&|$nl]*)?[[:blank:]](deploy|sample|e2e|test-e2e|up|d
 unquoted=$(sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" <<<"$cmd")
 if [[ $unquoted =~ $sep$cluster$end ]]; then
   job=${BASH_REMATCH[2]}
-  if [ "${C4_HEADLESS:-}" = 1 ]; then
+  if [ "${THEOS_HEADLESS:-}" = 1 ]; then
     msg="Agents never deploy to or run a Kind cluster, so \`make $job\` is not for this session: make check (Go tests, validate-yaml, envtest) is the gate, and Kind is a tier only a human runs. Land the code with the tests the lower tiers can give, and say in the pull request what a human run of Kind would check."
     jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $m}}'
     exit 0
@@ -64,12 +64,12 @@ if [[ $unquoted =~ $sep$cluster$end ]]; then
   # shellcheck source=hack/lib/github.sh
   . "$(dirname "${BASH_SOURCE[0]}")/lib/github.sh"
   kc=${KIND_CLUSTER:-}
-  # On $cmd, not $unquoted: the quotes of KIND_CLUSTER="c4factory-2" are taken off there with the name.
+  # On $cmd, not $unquoted: the quotes of KIND_CLUSTER="theos-2" are taken off there with the name.
   [[ $cmd =~ (^|[[:space:]])KIND_CLUSTER=[\"\']?([^\"\'[:space:]\;\&\|]+) ]] && kc=${BASH_REMATCH[2]}
   [ -n "$kc" ] || kc=$(gh_cluster name 2>/dev/null)
-  kc=${kc:-c4factory}
+  kc=${kc:-theos}
   if holder=$(gh_lease_holder "$kc" 2>/dev/null); then
-    msg="The Kind cluster $kc is in use: $holder holds its lease, so \`make $job\` would change or stop it under that session. Lease one first, \`C4_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire\`: it leases a free cluster of the pool to this checkout (or waits up to 30m), and make here then uses that one; exit 4 means every cluster is held."
+    msg="The Kind cluster $kc is in use: $holder holds its lease, so \`make $job\` would change or stop it under that session. Lease one first, \`THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster acquire\`: it leases a free cluster of the pool to this checkout (or waits up to 30m), and make here then uses that one; exit 4 means every cluster is held."
     jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $m}}'
     exit 0
   fi
@@ -103,7 +103,7 @@ top=$(ps -eo rss=,args= 2>/dev/null | awk '
   END { for (c in sum) printf "%d\t%s\t%d\n", sum[c], c, n[c] }' |
   sort -rn | head -5 | awk -F'\t' '
   { printf "%s%s%s %.1f GiB", (NR > 1 ? ", " : ""), $2, ($3 > 1 ? " (" $3 ")" : ""), $1 / 1048576 }')
-node="${kc:-${KIND_CLUSTER:-c4factory}}-control-plane"
+node="${kc:-${KIND_CLUSTER:-theos}}-control-plane"
 kind=
 if command -v docker >/dev/null; then
   use=$(timeout 5 docker stats --no-stream --format '{{.MemUsage}}' "$node" 2>/dev/null) &&
@@ -111,7 +111,7 @@ if command -v docker >/dev/null; then
 fi
 
 msg="Memory is low: $(awk -v kb="$avail" 'BEGIN { printf "%.1f", kb / 1048576 }') GiB available, under the $min GiB a heavy job like \`$job\` needs (RELAY_MIN_MEM_GIB). Using the most: ${top:-unknown}$kind. Running it now can stall every session on this device; close a session or wait for other builds to finish first (docs/dev/devices.md, \"Memory on the cluster device\").${queue:+ $queue}"
-if [ "${C4_HEADLESS:-}" = 1 ]; then
+if [ "${THEOS_HEADLESS:-}" = 1 ]; then
   say "$msg"
 else
   jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: $m}}'

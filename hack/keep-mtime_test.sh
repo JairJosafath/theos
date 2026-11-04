@@ -55,13 +55,13 @@ check "generate: keeps the DeepCopy code" $? 0
 # gotest VAR=VALUE...: the flags make test passes go test (through
 # hack/go-test.sh, before the packages), with TEST_TIMEOUT=7m.
 gotest() {
-  env -u COVER -u FORCE C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true \
+  env -u COVER -u FORCE THEOS_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true \
     TEST_TIMEOUT=7m "$@" 2>/dev/null | sed -n 's/.* hack\/go-test\.sh -trimpath \(.*\) -- \$pkgs$/\1/p' | xargs
 }
 check "make test: TEST_TIMEOUT, no flag Go won't cache" "$(gotest)" "-timeout 7m"
 check "COVER=1: writes cover.out" "$(gotest COVER=1)" "-timeout 7m -coverprofile cover.out"
 check "FORCE=1: reruns every package" "$(gotest FORCE=1)" "-timeout 7m -count=1"
-line=$(C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true 2>/dev/null | grep ' hack/go-test.sh ')
+line=$(THEOS_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true 2>/dev/null | grep ' hack/go-test.sh ')
 [[ $line == *' hack/go-test.sh -trimpath '* ]]; check "GO_TRIM still passed" $? 0
 [[ $line == KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=*' ETCD_ELECTION_TIMEOUT='*' ETCD_HEARTBEAT_INTERVAL='*' hack/go-test.sh '* ]]
 check "ENVTEST_ENV still set" $? 0
@@ -72,12 +72,12 @@ check "tests: GOCACHE kept" "$(sed -n 's/.* GOCACHE="\([^"]*\)" .*/\1/p' <<<"$li
 # The cache home is one per device: the session's TMPDIR, inside the checkout
 # or per-session scratch the relay empties, never moves it (#1314).
 xdgfor() {
-  C4_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true 2>/dev/null |
+  THEOS_HEAVY_SLOT=1 timeout 120 make -n test ENVTEST_LOCKED=true CONTROLLER_GEN=/bin/true 2>/dev/null |
     grep ' hack/go-test.sh ' | sed -n 's/.* XDG_CACHE_HOME="\([^"]*\)" .*/\1/p'
 }
 unset_xdg=$(env -u TMPDIR bash -c "$(declare -f xdgfor); xdgfor")
 check "#1314: TMPDIR inside the worktree, same cache home" "$(TMPDIR="$ROOT/.dev/tmp" xdgfor)" "$unset_xdg"
-check "#1314: TMPDIR in the relay's scratch, same cache home" "$(TMPDIR="$HOME/.cache/c4factory/tmp/relay-4" xdgfor)" "$unset_xdg"
+check "#1314: TMPDIR in the relay's scratch, same cache home" "$(TMPDIR="$HOME/.cache/theos/tmp/relay-4" xdgfor)" "$unset_xdg"
 [ -n "$unset_xdg" ] && [[ $unset_xdg != "$ROOT"/* ]]; check "#1314: the cache home lies outside the module" $? 0
 
 exit $fail

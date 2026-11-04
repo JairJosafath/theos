@@ -40,7 +40,7 @@ it to save the machine, `make doctor` says what is wrong.
   only names, states, restarts and usage, never pod specs (which carry
   environment and arguments). Its RBAC is a Role per component namespace for
   pods and a ClusterRole for `metrics.k8s.io`; the browser still can't name any
-  path outside `c4.factory.io`.
+  path outside `theos.factory.io`.
 - **Slots come from the operator's arguments.** The health endpoint reads
   `--max-agent-sandboxes` from the operator pod's arguments, server-side.
 - **Polling only while looking.** The Factory view polls health every 10 seconds

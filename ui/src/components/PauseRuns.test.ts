@@ -64,7 +64,7 @@ describe("a Brief card's Pause runs and Resume", () => {
   it('Pause runs patches pauseRuns with paused', async () => {
     const fetchImpl = vi.fn(async () => ok())
     const { url, ops } = await click(briefCard(brief(), fetchImpl), 'Pause runs', fetchImpl)
-    expect(url).toBe('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/lens')
+    expect(url).toBe('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/briefs/lens')
     expect(ops).toEqual([
       { op: 'add', path: '/spec/paused', value: true },
       { op: 'add', path: '/spec/pauseRuns', value: true },
@@ -114,7 +114,7 @@ describe("a Crew's Pause runs and Resume", () => {
   it('Pause runs patches pauseRuns with paused', async () => {
     const fetchImpl = vi.fn(async () => ok())
     const { url, ops } = await click(crewButtons(crew(), fetchImpl), 'Pause runs', fetchImpl)
-    expect(url).toBe('k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/crews/orders-api')
+    expect(url).toBe('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/crews/orders-api')
     expect(ops).toEqual([
       { op: 'add', path: '/spec/paused', value: true },
       { op: 'add', path: '/spec/pauseRuns', value: true },

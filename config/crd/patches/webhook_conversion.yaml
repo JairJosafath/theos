@@ -1,5 +1,5 @@
-# A c4.factory.io CRD whose kind's versions differ in shape (its base carries
-# the annotation c4.factory.io/conversion: webhook, from a +kubebuilder:metadata
+# A theos.factory.io CRD whose kind's versions differ in shape (its base carries
+# the annotation theos.factory.io/conversion: webhook, from a +kubebuilder:metadata
 # marker on the kind's hub type) converts by the operator's webhook, at path
 # /convert of config/default's webhook Service; the operator patches its CA
 # in (docs/plans/done/api-versions.md, decision 3).

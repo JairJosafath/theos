@@ -534,13 +534,13 @@ describe('deploys (#1163)', () => {
 describe('a refused read of an optional kind', () => {
   const refused: Connection = {
     ...LIVE,
-    unread: [{ what: 'standards', code: 403, message: 'standards.c4.factory.io is forbidden', resource: 'standards' }],
+    unread: [{ what: 'standards', code: 403, message: 'standards.theos.factory.io is forbidden', resource: 'standards' }],
   }
 
   it('shows on a Bundle page before its entries, instead of “not in the catalog” alone', () => {
     const data = { ...demoStory(NOW), standards: [] }
     const t = text(page('Bundle', 'python-service', data, refused))
-    expect(t).toContain('Could not read standards (403): standards.c4.factory.io is forbidden')
+    expect(t).toContain('Could not read standards (403): standards.theos.factory.io is forbidden')
     expect(t).toMatch(/Standard python-standard · not in the catalog/)
   })
 
@@ -548,7 +548,7 @@ describe('a refused read of an optional kind', () => {
     const data = { ...demoStory(NOW), standards: [] }
     const t = text(page('Standard', 'python-standard', data, refused))
     expect(t).toContain('Could not read standards. The UI is not allowed to read these.')
-    expect(t).toContain('(403: standards.c4.factory.io is forbidden)')
+    expect(t).toContain('(403: standards.theos.factory.io is forbidden)')
     expect(t).not.toContain('There is no Standard')
   })
 

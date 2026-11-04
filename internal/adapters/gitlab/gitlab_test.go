@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/adapters/gitlab"
-	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/adapters/gitlab"
+	"github.com/JairJosafath/theos/internal/adapters/gitlab/gitlabtest"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 func gitlabReason(t *testing.T, err error, reason string) *ports.ReleaseError {
@@ -113,7 +113,7 @@ func gitlabShipFiles(t *testing.T, gl gitlab.GitLabProject, fp *gitlabtest.Proje
 // gitlabShipRelease creates the release with its links and reads it back.
 func gitlabShipRelease(t *testing.T, srv *gitlabtest.Server, gl gitlab.GitLabProject, fp *gitlabtest.Project) {
 	ctx := context.Background()
-	marker := "<!-- c4factory:web -->"
+	marker := "<!-- theos:web -->"
 	created, err := gl.CreateRelease(ctx, gitlab.GitLabRelease{Tag: "web-1.0.0", Name: "web 1.0.0",
 		Description: "notes\n" + marker, Ref: "main", Links: []gitlab.GitLabReleaseLink{
 			{Name: "web.tar.gz", URL: srv.URL() + "/x", DirectAssetPath: "/web.tar.gz", LinkType: "package"}}})

@@ -92,7 +92,7 @@
     ✔ refuses every write with 401, the three Brief writes included, and writes nothing upstream (3.667999ms)
   ✔ the action table behind an Ingress (UI_ACTIONS=oidc), before anyone can sign in (6.773424ms)
   ✔ refuses an unknown UI_ACTIONS (0.439404ms)
-  ✔ refuses API paths outside c4.factory.io, including through .. and escapes (5.198143ms)
+  ✔ refuses API paths outside theos.factory.io, including through .. and escapes (5.198143ms)
   ✔ refuses /k8s-watch for other methods, other API groups and malformed requests (4.863562ms)
     ✔ refuses reads, writes and files for Host evil.example (4.299195ms)
     ✔ refuses reads, writes and files for Host evil.example:8080 (2.72179ms)

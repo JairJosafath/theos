@@ -1,5 +1,5 @@
 # expect: spec.frameworkRef: Required value
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Bundle
 metadata:
   name: no-framework

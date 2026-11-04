@@ -1,5 +1,5 @@
 # expect: path must have no '.', '..' or '.git' folder in it
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Crew
 metadata:
   name: engine

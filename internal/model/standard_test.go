@@ -22,8 +22,8 @@ func TestSplitChange(t *testing.T) {
 			ChangeSplit{Task: []string{"src/a.ts"}, Proposal: []string{"Makefile"}}},
 		{"platform directory is eligible", []string{".gitea/workflows/release.yaml"}, std, nil, true,
 			ChangeSplit{Proposal: []string{".gitea/workflows/release.yaml"}}},
-		{"agents' rules and contract refused", []string{"AGENTS.md", "docs/agents/reviewer.md", ".c4factory.yaml"}, std, nil, true,
-			ChangeSplit{Refused: []string{"AGENTS.md", "docs/agents/reviewer.md", ".c4factory.yaml"}}},
+		{"agents' rules and contract refused", []string{"AGENTS.md", "docs/agents/reviewer.md", ".theos.yaml"}, std, nil, true,
+			ChangeSplit{Refused: []string{"AGENTS.md", "docs/agents/reviewer.md", ".theos.yaml"}}},
 		{"mixed", []string{"Makefile", "AGENTS.md", "src/a.ts"}, std, nil, true,
 			ChangeSplit{Task: []string{"src/a.ts"}, Proposal: []string{"Makefile"}, Refused: []string{"AGENTS.md"}}},
 		{"no issue, no proposal", []string{"Makefile"}, std, nil, false, ChangeSplit{Refused: []string{"Makefile"}}},
@@ -45,7 +45,7 @@ func TestSplitChange(t *testing.T) {
 }
 
 func TestEligibleAllowance(t *testing.T) {
-	got := EligibleAllowance([]string{"Makefile", "AGENTS.md", "docs/agents/x.md", ".c4factory.yaml", ".gitea/workflows/check.yaml"})
+	got := EligibleAllowance([]string{"Makefile", "AGENTS.md", "docs/agents/x.md", ".theos.yaml", ".gitea/workflows/check.yaml"})
 	want := []string{"Makefile", ".gitea/workflows/check.yaml"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("EligibleAllowance = %v, want %v", got, want)
@@ -59,7 +59,7 @@ func TestProposalNames(t *testing.T) {
 	if got := ProposalBranch("vscode-extension-4-2"); got != "standard/vscode-extension-4-2" {
 		t.Errorf("ProposalBranch = %q", got)
 	}
-	want := "<!-- c4factory:standard-change standard/x -->"
+	want := "<!-- theos:standard-change standard/x -->"
 	if got := ProposalMarker("standard/x"); got != want {
 		t.Errorf("ProposalMarker = %q, want %q", got, want)
 	}
@@ -326,8 +326,8 @@ func TestStandardUpdateBodyChangingChecks(t *testing.T) {
 }
 
 func TestStandardUpdateBodyLeftOut(t *testing.T) {
-	take := "kubectl -n shop annotate container orders-api c4.factory.io/standard-take=v1.2.1"
-	keep := "kubectl -n shop annotate container orders-api c4.factory.io/standard-keep=v1.2.1"
+	take := "kubectl -n shop annotate container orders-api theos.factory.io/standard-take=v1.2.1"
+	keep := "kubectl -n shop annotate container orders-api theos.factory.io/standard-keep=v1.2.1"
 	makefile := LeftOutFile{Path: "Makefile", Ref: "v1.1.6",
 		Diff: []string{"@@ -1,2 +1,2 @@", " check:", "-\ttrue", "+\tmake lint test"},
 		Take: TakenFile{Path: "Makefile", Dropped: [][]string{{"\tpytest\n"}}}}

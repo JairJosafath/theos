@@ -1,7 +1,7 @@
 # Agent guide
 
 This repository is {{ if .DisplayName }}{{ .DisplayName }}{{ else }}{{ .Container }}{{ end }}, the `{{ .Container }}` operator of {{ .SoftwareSystem }}: a
-Kubernetes operator in Go, scaffolded by C4 Factory with kubebuilder and the
+Kubernetes operator in Go, scaffolded by theos with kubebuilder and the
 `{{ .Standard }}` Standard. Build it to the rules below. What the operator is for,
 and what it must never do, is in the issue you were given and the system's
 needs: follow those.
@@ -40,9 +40,9 @@ change here.
    `make manifests generate` and commit what they write.
 6. `make check`, then commit with a Conventional Commit message
    (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
-7. `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` never change. Other protected files
+7. `AGENTS.md`, `docs/agents/` and `.theos.yaml` never change. Other protected files
    change only through a Standard change (see your role guide), never in a normal pull
-   request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
+   request. `.devcontainer/`, `.theos.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `.golangci.yml`, `.editorconfig`, `AGENTS.md`, `docs/style/` and
    `docs/agents/` belong to the Standard.
 

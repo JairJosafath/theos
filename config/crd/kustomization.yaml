@@ -2,26 +2,26 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/c4.factory.io_projects.yaml
-- bases/c4.factory.io_softwaresystems.yaml
-- bases/c4.factory.io_containers.yaml
-- bases/c4.factory.io_datastores.yaml
-- bases/c4.factory.io_relationships.yaml
-- bases/c4.factory.io_sessions.yaml
-- bases/c4.factory.io_people.yaml
-- bases/c4.factory.io_gitproviders.yaml
-- bases/c4.factory.io_frameworks.yaml
-- bases/c4.factory.io_computes.yaml
-- bases/c4.factory.io_deployments.yaml
-- bases/c4.factory.io_connectors.yaml
-- bases/c4.factory.io_standards.yaml
-- bases/c4.factory.io_agents.yaml
-- bases/c4.factory.io_tasks.yaml
-- bases/c4.factory.io_crews.yaml
-- bases/c4.factory.io_briefs.yaml
-- bases/c4.factory.io_deploytargets.yaml
-- bases/c4.factory.io_bundles.yaml
-- bases/c4.factory.io_domains.yaml
+- bases/theos.factory.io_projects.yaml
+- bases/theos.factory.io_softwaresystems.yaml
+- bases/theos.factory.io_containers.yaml
+- bases/theos.factory.io_datastores.yaml
+- bases/theos.factory.io_relationships.yaml
+- bases/theos.factory.io_sessions.yaml
+- bases/theos.factory.io_people.yaml
+- bases/theos.factory.io_gitproviders.yaml
+- bases/theos.factory.io_frameworks.yaml
+- bases/theos.factory.io_computes.yaml
+- bases/theos.factory.io_deployments.yaml
+- bases/theos.factory.io_connectors.yaml
+- bases/theos.factory.io_standards.yaml
+- bases/theos.factory.io_agents.yaml
+- bases/theos.factory.io_tasks.yaml
+- bases/theos.factory.io_crews.yaml
+- bases/theos.factory.io_briefs.yaml
+- bases/theos.factory.io_deploytargets.yaml
+- bases/theos.factory.io_bundles.yaml
+- bases/theos.factory.io_domains.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
@@ -30,11 +30,11 @@ patches:
 - path: patches/webhook_conversion.yaml
   target:
     kind: CustomResourceDefinition
-    annotationSelector: c4.factory.io/conversion=webhook
+    annotationSelector: theos.factory.io/conversion=webhook
 - path: patches/none_conversion.yaml
   target:
     kind: CustomResourceDefinition
-    annotationSelector: c4.factory.io/conversion!=webhook
+    annotationSelector: theos.factory.io/conversion!=webhook
 # +kubebuilder:scaffold:crdkustomizewebhookpatch
 
 # Teaches kustomize to name config/default's webhook Service in the CRDs.

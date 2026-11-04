@@ -17,7 +17,7 @@ can take or skip suggestions, envtest shows it, and the card lists them.
    while reviewing ... for #N (Task `...`)."). No new marker: the issues
    v0.5.0 already filed match too, so gray-lenovo's six show up after an
    upgrade. Only the repositories of Containers the Brief made (label
-   `c4.factory.io/brief`) count: other Containers belong to someone else.
+   `theos.factory.io/brief`) count: other Containers belong to someone else.
 2. **Where the Brief reads them.** The workspace already lists every
    Container's open issues each reconcile; the suggestions come from the same
    listing, so no new Git calls. A Brief that made a Container requeues every

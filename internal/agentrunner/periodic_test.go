@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // Step 14 of docs/plans/self-hosting.md (#1997): between tool calls,
-// pause-guard has c4agent save a hard checkpoint when the last is
+// pause-guard has theos-agent save a hard checkpoint when the last is
 // CheckpointEvery old, and the session goes on.
 
 // periodicTurns is how many tool calls the stand-in in mode "periodic"
@@ -30,7 +30,7 @@ const periodicTurns = 4
 // periodicClaude is the stand-in Claude Code in mode "periodic": session n
 // keeps its --session-id, leaves crop.go in the working tree and makes
 // periodicTurns tool calls, each followed by its PostToolUse hook. Before
-// hook k it writes ready-k and waits for go-k, so the test sets c4agent's
+// hook k it writes ready-k and waits for go-k, so the test sets theos-agent's
 // clock for that hook; after the last it writes ready-(periodicTurns+1)
 // and waits for its go, then ends with a result line.
 func periodicClaude(n int, postHook string) int {
@@ -81,7 +81,7 @@ func periodicClaude(n int, postHook string) int {
 	return 0
 }
 
-// checkpointClock makes c4agent's clock one the test sets: base, which the
+// checkpointClock makes theos-agent's clock one the test sets: base, which the
 // run starts at, plus what set says.
 func checkpointClock(t *testing.T) (set func(time.Duration)) {
 	t.Helper()
@@ -94,7 +94,7 @@ func checkpointClock(t *testing.T) (set func(time.Duration)) {
 }
 
 // periodicRun runs an implement job on the stand-in in mode "periodic",
-// with c4agent's clock at ats[k-1] for hook k. It returns the state.json
+// with theos-agent's clock at ats[k-1] for hook k. It returns the state.json
 // each hook left ("" for none), the result, the stand-in's log, and copies
 // of the checkpoint directory and the origin as they were after the last
 // hook: what a pod killed then, with no report, leaves.
@@ -142,7 +142,7 @@ func periodicRun(t *testing.T, ats []time.Duration) (states []string, result Res
 	return states, result, log, checkpoints, "file://" + origin
 }
 
-// periodicAts are c4agent's clock at each hook: twice before
+// periodicAts are theos-agent's clock at each hook: twice before
 // CheckpointEvery, then at it, then again at once.
 var periodicAts = []time.Duration{CheckpointEvery / 2, CheckpointEvery - time.Second, CheckpointEvery,
 	CheckpointEvery}
@@ -303,7 +303,7 @@ func TestPeriodicCheckpointsSaveOnceDue(t *testing.T) {
 	}
 }
 
-// #1997: pause-guard allows a tool when it can't ask c4agent for a
+// #1997: pause-guard allows a tool when it can't ask theos-agent for a
 // checkpoint, or gets no answer within its bound, and doesn't ask at all
 // when the pause ends the session.
 func TestPauseGuardAllowsWhenTheCheckpointAskFails(t *testing.T) {
@@ -354,7 +354,7 @@ func TestPauseGuardAllowsWhenTheCheckpointAskFails(t *testing.T) {
 // #1997: a session with the checkpoint socket alone still gets the
 // pause-guard as its PostToolUse hook, which asks on the socket.
 func TestSessionGuardWithTheCheckpointSocketAlone(t *testing.T) {
-	g, err := newSessionGuard("c4agent", 0, "", true)
+	g, err := newSessionGuard("theos-agent", 0, "", true)
 	if err != nil || g == nil {
 		t.Fatalf("newSessionGuard() with the socket alone = %v, %v; want a guard", g, err)
 	}
@@ -363,13 +363,13 @@ func TestSessionGuardWithTheCheckpointSocketAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"hooks":{"PostToolUse":[{"hooks":[{"command":"'c4agent' pause-guard --checkpoint '` +
+	want := `{"hooks":{"PostToolUse":[{"hooks":[{"command":"'theos-agent' pause-guard --checkpoint '` +
 		filepath.Join(g.dir, checkpointSocket) + `'","type":"command"}],"matcher":"*"}]}}`
 	if string(data) != want {
 		t.Errorf("settings = %s\nwant %s", data, want)
 	}
 
-	all, err := newSessionGuard("c4agent", 130000, "/etc/c4agent/podinfo/annotations", true)
+	all, err := newSessionGuard("theos-agent", 130000, "/etc/theos-agent/podinfo/annotations", true)
 	if err != nil {
 		t.Fatal(err)
 	}

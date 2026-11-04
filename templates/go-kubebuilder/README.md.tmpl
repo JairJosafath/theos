@@ -3,7 +3,7 @@
 {{ .Description }}
 {{ end }}
 The `{{ .Container }}` Kubernetes operator of {{ .SoftwareSystem }}, in project
-{{ .Project }}: a kubebuilder `go/v4` project, scaffolded by C4 Factory. It
+{{ .Project }}: a kubebuilder `go/v4` project, scaffolded by theos. It
 needs Go 1.26.0 or later (`go.mod`'s `go` line); the devcontainer has it,
 with kubebuilder, controller-gen, kustomize and the envtest binaries.
 
@@ -22,7 +22,7 @@ controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
 {{- end }}
 ```
 
-The kind's API group is `<group>.{{ .Project }}.c4factory.local`. Its types go in
+The kind's API group is `<group>.{{ .Project }}.theos.local`. Its types go in
 `api/v1alpha1/`, its reconciler in `internal/controller/`; the files under
 `config/crd/bases/`, `config/rbac/role.yaml` and `zz_generated.*.go` are
 generated, never edited.

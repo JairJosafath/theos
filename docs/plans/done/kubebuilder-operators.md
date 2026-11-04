@@ -19,7 +19,7 @@ type exists and the planner picks it for an idea that extends Kubernetes; the
 scaffolds with no layer conflict and the rendered repo's `make check` passes,
 before and after `kubebuilder create api`; the release attaches the binaries
 and `install.yaml`; one command regenerates the template; design.md and the
-templates' `.c4factory/README.md` contracts say what ships.
+templates' `.theos/README.md` contracts say what ships.
 
 ## Where things stand
 
@@ -34,7 +34,7 @@ templates' `.c4factory/README.md` contracts say what ships.
 - A catalog entry ships whole (catalog-breadth C8): its folder, a
   `templates/versions.txt` pin, a chart `catalog.entries` item at the same
   ref, a `templateCombos` row (`internal/scaffold/templates_test.go`), its
-  `.c4factory/README.md` and a `docs/getting-started.md` line.
+  `.theos/README.md` and a `docs/getting-started.md` line.
 - The `go` toolchain image (`hack/toolchain-go/Dockerfile`) has Go 1.26,
   Node, uv and golangci-lint 2.14.0, and warms client-go v0.37.0 and
   controller-runtime v0.25.0 into its build cache. The default agent image,
@@ -80,8 +80,8 @@ opt-in test. These are the choices it left to the plan.
    in every CI run, so the Standard uses the toolchain's golangci-lint with
    kubebuilder's linters minus that plugin. Every `.go` file is a `.tmpl`
    (go-cli's rule) so the module path renders.
-4. **Names.** Module `c4factory.local/<project>/<container>` (go-cli's);
-   domain `<project>.c4factory.local`; `PROJECT`'s `projectName` and the
+4. **Names.** Module `theos.local/<project>/<container>` (go-cli's);
+   domain `<project>.theos.local`; `PROJECT`'s `projectName` and the
    `config/` name prefix the Container's name. *Why:* the module path lets
    App modules import the operator's `api/` package; one domain per Project
    keeps two operators' groups apart.
@@ -90,7 +90,7 @@ opt-in test. These are the choices it left to the plan.
    `.dev/make/bin`, runs `kubebuilder init --plugins go/v4` with placeholder
    names in a temp dir, applies the table in decision 3, turns the
    placeholders into template fields, renames `.go` files to `.go.tmpl`, and
-   replaces `templates/go-kubebuilder/` except its `.c4factory/`. A Go test
+   replaces `templates/go-kubebuilder/` except its `.theos/`. A Go test
    holds the placeholder list and the drop list, so a kubebuilder bump that
    writes a new path fails the test instead of slipping into a layer. *Why:*
    a bump is one command and a diff to review, not hand edits.
@@ -144,7 +144,7 @@ Each step is its own issue and pull request and leaves main working.
    tests pass.
 4. **go-kubebuilder and go-operator-standard.** (#730) Depends on steps 2 and 3.
    Decisions 2 to 6: the regeneration target and its test, both templates
-   with their `.c4factory/README.md` contracts, the opt-in
+   with their `.theos/README.md` contracts, the opt-in
    `make test-templates-operator`, and catalog-breadth C8 for both (tags,
    `versions.txt`, chart entries, `small` supporting `operator`,
    `templateCombos` row, `docs/getting-started.md`), design.md's catalog

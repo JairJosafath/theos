@@ -37,7 +37,7 @@ cd src && golangci-lint run
 0 issues.
 node_modules/.bin/tsc --noEmit
 cd src && go test -race -count=1 ./...
-ok  	c4factory.local/webshop/sample-app	1.019s
+ok  	theos.local/webshop/sample-app	1.019s
 node_modules/.bin/vitest run
  Test Files  2 passed (2)
       Tests  81 passed (81)

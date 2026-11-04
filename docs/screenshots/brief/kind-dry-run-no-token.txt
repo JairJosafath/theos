@@ -1,28 +1,28 @@
-# #282 dry run on Kind (c4factory-2), 2026-10-06T11:31:52Z: chart from this branch (operator f1ef257), gitea.projects={cel-lens},
-# agents on c4factory/agent-base, runners off, NO Secret claude-credentials: the Brief created from the UI's box must say so.
+# #282 dry run on Kind (theos-2), 2026-10-06T11:31:52Z: chart from this branch (operator f1ef257), gitea.projects={cel-lens},
+# agents on theos/agent-base, runners off, NO Secret claude-credentials: the Brief created from the UI's box must say so.
 
 $ kubectl -n cel-lens get project,gitprovider,agents
 NAME                             SYSTEMS   CONTAINERS   READY   SESSIONS   AGE
-project.c4.factory.io/cel-lens   0         0            0       0          12m
+project.theos.factory.io/cel-lens   0         0            0       0          12m
 
 NAME                              PROVIDER   URL                                         OWNER      AGE
-gitprovider.c4.factory.io/gitea   gitea      http://gitea.gitea.svc.cluster.local:3000   cel-lens   117s
+gitprovider.theos.factory.io/gitea   gitea      http://gitea.gitea.svc.cluster.local:3000   cel-lens   117s
 
 NAME                              DISPLAY NAME                        HARNESS       MODEL               IMAGE                       ROUNDS   AGE
-agent.c4.factory.io/designer      Claude Code, Opus (designer)        claude-code   claude-opus-5-5     c4factory/agent-base:b282   3        118s
-agent.c4.factory.io/implementer   Claude Code, Sonnet (implementer)   claude-code   claude-sonnet-5-5   c4factory/agent-base:b282   3        117s
-agent.c4.factory.io/planner       Claude Code, Opus (planner)         claude-code   claude-opus-5-5     c4factory/agent-base:b282   3        116s
-agent.c4.factory.io/reviewer      Claude Code, Opus (reviewer)        claude-code   claude-opus-5-5     c4factory/agent-base:b282   3        116s
+agent.theos.factory.io/designer      Claude Code, Opus (designer)        claude-code   claude-opus-5-5     theos/agent-base:b282   3        118s
+agent.theos.factory.io/implementer   Claude Code, Sonnet (implementer)   claude-code   claude-sonnet-5-5   theos/agent-base:b282   3        117s
+agent.theos.factory.io/planner       Claude Code, Opus (planner)         claude-code   claude-opus-5-5     theos/agent-base:b282   3        116s
+agent.theos.factory.io/reviewer      Claude Code, Opus (reviewer)        claude-code   claude-opus-5-5     theos/agent-base:b282   3        116s
 
 $ kubectl -n cel-lens get frameworks,standards
 NAME                                       DISPLAY NAME                     TYPES           REF      AGE
-framework.c4.factory.io/go-cli             Go command-line program          ["cli"]         v1.0.0   117s
-framework.c4.factory.io/python-fastapi     Python, FastAPI (uv)             ["service"]     v1.2.1   116s
-framework.c4.factory.io/vscode-extension   VS Code extension (TypeScript)   ["extension"]   v1.0.0   115s
+framework.theos.factory.io/go-cli             Go command-line program          ["cli"]         v1.0.0   117s
+framework.theos.factory.io/python-fastapi     Python, FastAPI (uv)             ["service"]     v1.2.1   116s
+framework.theos.factory.io/vscode-extension   VS Code extension (TypeScript)   ["extension"]   v1.0.0   115s
 
 NAME                                 DISPLAY NAME                  FRAMEWORKS             REF      AGE
-standard.c4.factory.io/go-standard   Go quality standard           ["go-cli"]             v1.1.3   117s
-standard.c4.factory.io/ts-standard   TypeScript quality standard   ["vscode-extension"]   v1.1.3   115s
+standard.theos.factory.io/go-standard   Go quality standard           ["go-cli"]             v1.1.3   117s
+standard.theos.factory.io/ts-standard   TypeScript quality standard   ["vscode-extension"]   v1.1.3   115s
 
 # The seed made Project cel-lens at install; the helm upgrade that deployed the
 # fix re-ran it, and the Project stayed (its age predates the upgrade, while the
@@ -30,10 +30,10 @@ standard.c4.factory.io/ts-standard   TypeScript quality standard   ["vscode-exte
 
 $ kubectl -n cel-lens get brief,tasks
 NAME                           PHASE        ROUND   AGE
-brief.c4.factory.io/cel-lens   NeedsInput   1       10m
+brief.theos.factory.io/cel-lens   NeedsInput   1       10m
 
 NAME                                 CONTAINER   ISSUE   PHASE     ROUND   CHECKS   REVIEW   AGE
-task.c4.factory.io/cel-lens-plan-1                       Pending                             10m
+task.theos.factory.io/cel-lens-plan-1                       Pending                             10m
 
 $ kubectl -n cel-lens get brief cel-lens -o jsonpath='{range .status.conditions[*]}...'
 NeedsInput=True NotFound: Secret claude-credentials of Agent planner is missing: make it in namespace cel-lens with the Agents' token, so the Brief's planner can start

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests of the chart's c4-factory.clusterDNSPeers helper
+# Tests of the chart's theos.clusterDNSPeers helper
 # (dist/chart/templates/_helpers.tpl): it accepts exactly the clusterDNS
 # entries the operator's --cluster-dns accepts (internal/controller/cluster_dns.go,
 # ParseClusterDNS; its TestParseClusterDNS table is mirrored here), so a value
@@ -24,7 +24,7 @@ render() {
 		[ $# -gt 0 ] || echo "  []"
 		for e; do printf '  - "%s"\n' "$e"; done
 	} >"$T/values.yaml"
-	"$HELM" template c4-factory "$ROOT/dist/chart" --namespace c4-factory-system \
+	"$HELM" template theos "$ROOT/dist/chart" --namespace theos-system \
 		--set 'gitea.projects={apps}' -f "$T/values.yaml" >"$T/out" 2>&1
 }
 # accepts ENTRY...: the render passes.

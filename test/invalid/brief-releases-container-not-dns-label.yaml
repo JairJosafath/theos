@@ -1,5 +1,5 @@
 # expect: container must be a DNS label
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Brief
 metadata:
   name: cel-lens

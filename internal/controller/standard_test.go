@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -14,8 +14,8 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // newStandard returns a Standard that fits the named Frameworks, served by the
@@ -123,7 +123,7 @@ var _ = Describe("Container Standard", func() {
 		ns := newProjectNamespace()
 		standard := newStandard(ns, "python-strict", "python-fastapi")
 		agent := &c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "claude"),
-			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev"}}
+			Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev"}}
 		mustCreate(standard, agent)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "python-strict"), standard)).To(Succeed())

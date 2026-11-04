@@ -1,5 +1,5 @@
 name: Report from a device
-description: Something went wrong, or could be better, on a device that runs c4factory
+description: Something went wrong, or could be better, on a device that runs theos
 labels: [source/user]
 body:
   - type: input
@@ -12,7 +12,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: c4factory version
+      label: theos version
   - type: textarea
     id: happened
     attributes:

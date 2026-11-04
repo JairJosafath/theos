@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // issuePageSize is how many issues one list call returns; maxIssuePages bounds a list.

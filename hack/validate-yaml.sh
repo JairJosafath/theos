@@ -84,53 +84,53 @@ go run ./hack/render -out "$OUT/backup-operator" -type operator -container backu
 "$KUSTOMIZE" build "$OUT/backup-operator/config/default" >"$OUT/backup-operator.yaml"
 
 # The chart's GitProviders, catalog and Agents are the objects in ConfigMap
-# c4factory-catalog, which the seed applies (hack/seed/catalog.sh): validated
+# theos-catalog, which the seed applies (hack/seed/catalog.sh): validated
 # below as chart-*-catalog.yaml. With Gitea, the chart renders no
-# c4.factory.io object of its own and none of them is a Helm hook, so an
+# theos.factory.io object of its own and none of them is a Helm hook, so an
 # upgrade changes them in place (docs/plans/done/upgrade-in-place.md).
 # catalog_objects FILE [CONFIGMAP] prints the objects in ConfigMap CONFIGMAP
-# (default c4factory-catalog) of the render FILE.
+# (default theos-catalog) of the render FILE.
 catalog_objects() {
-	awk -v cm_name="${2:-c4factory-catalog}" '/^---/ { cm = 0; data = 0 } $0 == "  name: " cm_name { cm = 1 }
+	awk -v cm_name="${2:-theos-catalog}" '/^---/ { cm = 0; data = 0 } $0 == "  name: " cm_name { cm = 1 }
 		data { sub(/^    /, ""); print } cm && /^  objects\.yaml: \|$/ { data = 1 }' "$1"
 }
 for f in chart-gitea chart-gitea-bare; do
 	catalog_objects "$OUT/$f.yaml" >"$OUT/$f-catalog.yaml"
 	if ! grep -q '^kind: GitProvider$' "$OUT/$f-catalog.yaml"; then
-		echo "The chart ($f.yaml) renders no GitProvider into ConfigMap c4factory-catalog" >&2
+		echo "The chart ($f.yaml) renders no GitProvider into ConfigMap theos-catalog" >&2
 		exit 1
 	fi
-	outside=$(grep -A1 '^apiVersion: c4.factory.io/' "$OUT/$f.yaml" | grep '^kind:' || true)
+	outside=$(grep -A1 '^apiVersion: theos.factory.io/' "$OUT/$f.yaml" | grep '^kind:' || true)
 	if [ -n "$outside" ]; then
-		echo "The chart ($f.yaml) renders c4.factory.io objects outside ConfigMap c4factory-catalog; the seed applies them:" >&2
+		echo "The chart ($f.yaml) renders theos.factory.io objects outside ConfigMap theos-catalog; the seed applies them:" >&2
 		sort <<<"$outside" | uniq -c >&2
 		exit 1
 	fi
 done
 if grep -q 'helm\.sh/hook' "$OUT/chart-gitea-catalog.yaml"; then
-	echo "An object in ConfigMap c4factory-catalog is a Helm hook" >&2
+	echo "An object in ConfigMap theos-catalog is a Helm hook" >&2
 	exit 1
 fi
-echo "The chart's GitProviders, catalog and Agents are in ConfigMap c4factory-catalog, none a hook"
+echo "The chart's GitProviders, catalog and Agents are in ConfigMap theos-catalog, none a hook"
 # Without Gitea, the chart's gitProviders are the objects in ConfigMap
-# c4factory-gitproviders, which Job c4-factory-gitproviders applies with the
+# theos-gitproviders, which Job theos-gitproviders applies with the
 # same catalog.sh: validated below as chart-gitproviders.yaml, none a hook.
-catalog_objects "$OUT/chart.yaml" c4factory-gitproviders >"$OUT/chart-gitproviders.yaml"
+catalog_objects "$OUT/chart.yaml" theos-gitproviders >"$OUT/chart-gitproviders.yaml"
 if ! grep -q '^kind: GitProvider$' "$OUT/chart-gitproviders.yaml"; then
-	echo "The chart (chart.yaml) renders no GitProvider into ConfigMap c4factory-gitproviders" >&2
+	echo "The chart (chart.yaml) renders no GitProvider into ConfigMap theos-gitproviders" >&2
 	exit 1
 fi
-outside=$(grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart.yaml" | grep '^kind:' || true)
+outside=$(grep -A1 '^apiVersion: theos.factory.io/' "$OUT/chart.yaml" | grep '^kind:' || true)
 if [ -n "$outside" ]; then
-	echo "The chart (chart.yaml) renders c4.factory.io objects outside ConfigMap c4factory-gitproviders:" >&2
+	echo "The chart (chart.yaml) renders theos.factory.io objects outside ConfigMap theos-gitproviders:" >&2
 	sort <<<"$outside" | uniq -c >&2
 	exit 1
 fi
 if grep -q 'helm\.sh/hook' "$OUT/chart-gitproviders.yaml"; then
-	echo "A GitProvider in ConfigMap c4factory-gitproviders is a Helm hook" >&2
+	echo "A GitProvider in ConfigMap theos-gitproviders is a Helm hook" >&2
 	exit 1
 fi
-echo "The chart's gitProviders are in ConfigMap c4factory-gitproviders, none a hook"
+echo "The chart's gitProviders are in ConfigMap theos-gitproviders, none a hook"
 # Every GitProvider the chart renders carries a base and a go runner pool
 # (hack/chart-pools.sh, #1698).
 hack/chart-pools.sh "$OUT/chart-gitea-catalog.yaml" "$OUT/chart-gitea-bare-catalog.yaml" "$OUT/chart-gitproviders.yaml"
@@ -139,7 +139,7 @@ hack/chart-pools.sh "$OUT/chart-gitea-catalog.yaml" "$OUT/chart-gitea-bare-catal
 # render some.
 hack/chart-bundles.sh "$OUT/chart-gitea-catalog.yaml"
 if ! grep -q '^kind: Bundle$' "$OUT/chart-gitea-catalog.yaml"; then
-	echo "The chart renders no Bundle into ConfigMap c4factory-catalog; values.yaml's catalog.bundles has python-service and go-cli" >&2
+	echo "The chart renders no Bundle into ConfigMap theos-catalog; values.yaml's catalog.bundles has python-service and go-cli" >&2
 	exit 1
 fi
 
@@ -173,7 +173,7 @@ if [ "$pinned" != "$want" ]; then
 	diff <(echo "$pinned") <(echo "$want") >&2 || true
 	exit 1
 fi
-if grep -A1 '^apiVersion: c4.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml" |
+if grep -A1 '^apiVersion: theos.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml" |
 	grep -qE '^kind: (Agent|Framework|Standard|Compute|Deployment|Connector|Domain|Bundle)$'; then
 	echo "The chart renders catalog entries, bundles or Agents with catalog.enabled=false and agents.enabled=false" >&2
 	exit 1
@@ -206,60 +206,60 @@ if [ -n "$(doc "$OUT/chart-gitea-bare.yaml" Namespace apps)" ]; then
 	exit 1
 fi
 for f in chart-gitea chart-gitea-bare; do
-	role=$(doc "$OUT/$f.yaml" ClusterRole c4-factory-seed-namespaces)
+	role=$(doc "$OUT/$f.yaml" ClusterRole theos-seed-namespaces)
 	want "$f: the seed's ClusterRole doesn't grant get and patch on namespaces apps only" "$role" \
 		'^    resourceNames: \[apps\]$'
 	want "$f: the seed's ClusterRole doesn't grant get and patch" "$role" '^    verbs: \[get, patch\]$'
-	want "$f: the seed's ClusterRole isn't bound" "$(doc "$OUT/$f.yaml" ClusterRoleBinding c4-factory-seed-namespaces)" \
+	want "$f: the seed's ClusterRole isn't bound" "$(doc "$OUT/$f.yaml" ClusterRoleBinding theos-seed-namespaces)" \
 		'^    name: seed$'
 	want "$f: the seed doesn't label the project namespaces" "$(doc "$OUT/$f.yaml" Job seed)" '^            - name: SHARE_SECRETS$'
-	want "$f: the operator lacks POD_NAMESPACE" "$(doc "$OUT/$f.yaml" Deployment c4-factory-controller-manager)" \
+	want "$f: the operator lacks POD_NAMESPACE" "$(doc "$OUT/$f.yaml" Deployment theos-controller-manager)" \
 		'^        - name: POD_NAMESPACE$'
 done
-manager=$(doc "$OUT/chart-gitea.yaml" Deployment c4-factory-controller-manager)
+manager=$(doc "$OUT/chart-gitea.yaml" Deployment theos-controller-manager)
 want "the operator isn't told the Agents' token" "$manager" '^        - --shared-secret=claude-credentials$'
 want "the operator doesn't share pull Secret ghcr" "$manager" '^        - --shared-pull-secret=ghcr$'
-if grep -qE -e '--shared-(pull-)?secret' <<<"$(doc "$OUT/chart-gitea-bare.yaml" Deployment c4-factory-controller-manager)"; then
+if grep -qE -e '--shared-(pull-)?secret' <<<"$(doc "$OUT/chart-gitea-bare.yaml" Deployment theos-controller-manager)"; then
 	echo "The chart: the operator shares a Secret with agents.enabled=false and no pull Secrets" >&2
 	exit 1
 fi
 echo "The chart makes the project Namespaces, lets the seed label them and turns sharing on"
 
 # The UI reads pods only where the factory runs (#1080): no ClusterRole bound to
-# its ServiceAccount grants pods; ClusterRole c4-factory-ui-pods is bound by a
+# its ServiceAccount grants pods; ClusterRole theos-ui-pods is bound by a
 # RoleBinding in each namespace of its components (ui.components and Gitea's),
 # and the operator binds the same rules in every project namespace
 # (--ui-service-account), never without the UI. Nodes and their metrics stay
 # cluster-wide.
 # The ClusterRoles bound to the UI's ServiceAccount: each ClusterRoleBinding's
-# roleRef name when one of its subjects is c4-factory-ui.
+# roleRef name when one of its subjects is theos-ui.
 bound_to_ui=$(awk 'function flush() { if (b && ui && r != "") print r; b = 0; ui = 0; r = ""; sec = "" }
 	/^---/ { flush(); next } /^kind: ClusterRoleBinding$/ { b = 1 } /^[a-z]/ { sec = $1 }
-	sec == "roleRef:" && /^  name: / { r = $2 } sec == "subjects:" && $0 == "  name: c4-factory-ui" { ui = 1 }
+	sec == "roleRef:" && /^  name: / { r = $2 } sec == "subjects:" && $0 == "  name: theos-ui" { ui = 1 }
 	END { flush() }' "$OUT/chart-gitea.yaml")
-want "can't find the ClusterRoles bound to the UI's ServiceAccount" "$bound_to_ui" '^c4-factory-ui-health$'
+want "can't find the ClusterRoles bound to the UI's ServiceAccount" "$bound_to_ui" '^theos-ui-health$'
 for role in $bound_to_ui; do
 	# pods in a flow list or a block list of resources
 	if awk '/^  resources:/ { r = 1 } /^  [a-z]/ && !/^  resources:/ { r = 0 } /^- / { r = 0 }
 		r && /(\[|, |^  - )pods(\]|,|$)/ { found = 1 } END { exit !found }' \
 		<<<"$(doc "$OUT/chart-gitea.yaml" ClusterRole "$role")"; then
-		echo "The chart: ClusterRole $role grants the UI pods cluster-wide; bind c4-factory-ui-pods per namespace" >&2
+		echo "The chart: ClusterRole $role grants the UI pods cluster-wide; bind theos-ui-pods per namespace" >&2
 		exit 1
 	fi
 done
-want "the UI can't read nodes cluster-wide" "$(doc "$OUT/chart-gitea.yaml" ClusterRole c4-factory-ui-health)" \
+want "the UI can't read nodes cluster-wide" "$(doc "$OUT/chart-gitea.yaml" ClusterRole theos-ui-health)" \
 	'^  resources: \[nodes\]$'
-want "ClusterRole c4-factory-ui-pods doesn't grant pods" "$(doc "$OUT/chart-gitea.yaml" ClusterRole c4-factory-ui-pods)" \
+want "ClusterRole theos-ui-pods doesn't grant pods" "$(doc "$OUT/chart-gitea.yaml" ClusterRole theos-ui-pods)" \
 	'^  resources: \[pods\]$'
-bound=$(awk '/^---/ { k = 0; n = 0 } /^kind: RoleBinding$/ { k = 1 } k && $0 == "  name: c4-factory-ui-pods" { n = 1 }
+bound=$(awk '/^---/ { k = 0; n = 0 } /^kind: RoleBinding$/ { k = 1 } k && $0 == "  name: theos-ui-pods" { n = 1 }
 	k && n && /^  namespace: / { print $2; k = 0 }' "$OUT/chart-gitea.yaml" | sort | tr '\n' ' ')
-if [ "$bound" != "agent-sandbox-system c4-factory-system gitea kube-system " ]; then
-	echo "The chart binds c4-factory-ui-pods in [$bound], not in its components' namespaces" >&2
+if [ "$bound" != "agent-sandbox-system theos-system gitea kube-system " ]; then
+	echo "The chart binds theos-ui-pods in [$bound], not in its components' namespaces" >&2
 	exit 1
 fi
 want "the operator doesn't let the UI read project namespaces' pods" "$manager" \
-	'^        - --ui-service-account=c4-factory-system/c4-factory-ui$'
-if grep -qF -- '--ui-service-account' <<<"$(doc "$OUT/chart-gitea-bare.yaml" Deployment c4-factory-controller-manager)"; then
+	'^        - --ui-service-account=theos-system/theos-ui$'
+if grep -qF -- '--ui-service-account' <<<"$(doc "$OUT/chart-gitea-bare.yaml" Deployment theos-controller-manager)"; then
 	echo "The chart: the operator names a UI ServiceAccount with ui.enabled=false" >&2
 	exit 1
 fi
@@ -275,8 +275,8 @@ for want in '--shared-secret=claude-credentials' 'name: POD_NAMESPACE' 'fieldPat
 	fi
 done
 for f in config/samples/webshop/namespace.yaml test/e2e/testdata/apps/namespace.yaml; do
-	if ! grep -qF 'c4.factory.io/shared-secrets: "true"' "$f"; then
-		echo "$f lacks label c4.factory.io/shared-secrets: \"true\": the operator wouldn't share the pull secret into it, and its agents wouldn't reach the model proxy" >&2
+	if ! grep -qF 'theos.factory.io/shared-secrets: "true"' "$f"; then
+		echo "$f lacks label theos.factory.io/shared-secrets: \"true\": the operator wouldn't share the pull secret into it, and its agents wouldn't reach the model proxy" >&2
 		exit 1
 	fi
 done
@@ -298,11 +298,11 @@ fence=$(doc "$OUT/chart-gitea-dns.yaml" NetworkPolicy ci-runner)
 want "the CI fence doesn't let DNS out to NodeLocal DNSCache's address" "$fence" '^ *cidr: 169\.254\.20\.10/32$'
 want "the CI fence doesn't let DNS out to the openshift-dns namespace" "$fence" '^ *matchLabels: \{kubernetes\.io/metadata\.name: "openshift-dns"\}$'
 want "the CI fence doesn't select OpenShift's DNS pods" "$fence" '^ *"dns\.operator\.openshift\.io/daemonset-dns": "default"$'
-manager=$(doc "$OUT/chart-gitea-dns.yaml" Deployment c4-factory-controller-manager)
+manager=$(doc "$OUT/chart-gitea-dns.yaml" Deployment theos-controller-manager)
 want "the manager lacks --cluster-dns for NodeLocal DNSCache" "$manager" '^ *- --cluster-dns=169\.254\.20\.10/32$'
 want "the manager lacks --cluster-dns for openshift-dns" "$manager" '^ *- --cluster-dns=openshift-dns/dns\.operator\.openshift\.io/daemonset-dns=default$'
 want "the manager's default --cluster-dns isn't kube-dns in kube-system" \
-	"$(doc "$OUT/chart-gitea.yaml" Deployment c4-factory-controller-manager)" '^ *- --cluster-dns=kube-system/k8s-app=kube-dns$'
+	"$(doc "$OUT/chart-gitea.yaml" Deployment theos-controller-manager)" '^ *- --cluster-dns=kube-system/k8s-app=kube-dns$'
 echo "The CI fence and the manager take clusterDNS"
 
 # test/invalid holds YAML each create-time CEL rule must reject: each file's

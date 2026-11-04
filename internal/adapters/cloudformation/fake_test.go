@@ -25,7 +25,7 @@ import (
 	ststypes "github.com/aws/aws-sdk-go-v2/service/sts/types"
 	"github.com/aws/smithy-go"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // fakeAWS is an in-memory AWS of accounts, each with CloudFormation stacks
@@ -400,7 +400,7 @@ func (c *fakeCFN) ExecuteChangeSet(_ context.Context, in *cfn.ExecuteChangeSetIn
 	for _, t := range cs.in.Tags {
 		tags[aws.ToString(t.Key)] = aws.ToString(t.Value)
 	}
-	a.executions = append(a.executions, fakeExecution{Stack: name, App: tags["c4factory.io/app"], Token: token,
+	a.executions = append(a.executions, fakeExecution{Stack: name, App: tags["theos.io/app"], Token: token,
 		Caller: who})
 	st.prevTags, st.prevParams = st.tags, st.params
 	st.tags, st.params = tags, map[string]string{}

@@ -17,8 +17,8 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/registry"
 
-	"github.com/JairJosafath/c4factory/internal/oci/ocitest"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/oci/ocitest"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // imageHost is a Gitea serving the release of v1.0.0 of webshop/orders-api

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The fake host's releases. A milestone's due date is the one its issues were

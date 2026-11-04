@@ -18,7 +18,7 @@ CHART=${2:-dist/chart/templates/crd}
 # The chart's copy of a base CRD: kubebuilder's helm plugin wraps it in
 # crd.enabled and adds the crd.keep annotation. A CRD whose versions share a
 # shape converts by the API server, strategy None, so a read never waits on
-# the operator (#1830). One the base marks c4.factory.io/conversion: webhook
+# the operator (#1830). One the base marks theos.factory.io/conversion: webhook
 # (the kind's versions differ) converts by the operator's webhook, which
 # patches its CA in (docs/plans/done/api-versions.md, decision 3); it needs
 # webhook.enabled, and the render fails without it, since strategy None would
@@ -32,7 +32,7 @@ guarded() {
 			print "    {{- end }}"
 			done = 1
 		}
-		$0 == "    c4.factory.io/conversion: webhook" { webhook = 1 }
+		$0 == "    theos.factory.io/conversion: webhook" { webhook = 1 }
 		$0 == "spec:" && webhook {
 			print "  {{- if not .Values.webhook.enabled }}"
 			print "  {{- fail \"" crd ": its versions differ in shape and convert by the operator (webhook.enabled)\" }}"
@@ -42,7 +42,7 @@ guarded() {
 			print "    webhook:"
 			print "      clientConfig:"
 			print "        service:"
-			print "          name: {{ include \"c4-factory.resourceName\" (dict \"suffix\" \"webhook-service\" \"context\" $) }}"
+			print "          name: {{ include \"theos.resourceName\" (dict \"suffix\" \"webhook-service\" \"context\" $) }}"
 			print "          namespace: {{ .Release.Namespace }}"
 			print "          path: /convert"
 			print "      conversionReviewVersions:"

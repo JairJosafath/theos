@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -22,8 +22,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 // poolPods lists a namespace's CI runner pool pods, the kept records included.
@@ -94,7 +94,7 @@ func newCIProvider(ns string) *c4v1beta1.GitProvider {
 			Owner:                ns,
 			CredentialsSecretRef: c4v1beta1.LocalRef{Name: "gitea-credentials"},
 			CI: &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: []c4v1beta1.CIRunnerSpec{
-				{Label: "go", Image: "c4factory/gitea-runner-go:dev", Size: 2, GoCache: true},
+				{Label: "go", Image: "theos/gitea-runner-go:dev", Size: 2, GoCache: true},
 			}}},
 		},
 	}
@@ -243,7 +243,7 @@ var _ = Describe("CI runner pool", func() {
 		old := livePoolPods(ns)
 		busy = old[0]
 		busyPod(busy)
-		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Image = "c4factory/gitea-runner-go:next" })).To(Succeed())
+		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Image = "theos/gitea-runner-go:next" })).To(Succeed())
 		Eventually(func(g Gomega) {
 			live := livePoolPods(ns)
 			g.Expect(live).To(HaveLen(2))
@@ -251,8 +251,8 @@ var _ = Describe("CI runner pool", func() {
 			g.Expect(names(live)).NotTo(ContainElement(old[1].Name))
 			for _, pod := range live {
 				if pod.Name != busy.Name {
-					g.Expect(pod.Spec.Containers[0].Image).To(Equal("c4factory/gitea-runner-go:next"))
-					g.Expect(pod.Spec.InitContainers[0].Image).To(Equal("c4factory/gitea-runner-go:next"))
+					g.Expect(pod.Spec.Containers[0].Image).To(Equal("theos/gitea-runner-go:next"))
+					g.Expect(pod.Spec.InitContainers[0].Image).To(Equal("theos/gitea-runner-go:next"))
 				}
 			}
 		}).Should(Succeed())
@@ -263,7 +263,7 @@ var _ = Describe("CI runner pool", func() {
 			live := livePoolPods(ns)
 			g.Expect(live).To(HaveLen(2))
 			for _, pod := range live {
-				g.Expect(pod.Spec.Containers[0].Image).To(Equal("c4factory/gitea-runner-go:next"))
+				g.Expect(pod.Spec.Containers[0].Image).To(Equal("theos/gitea-runner-go:next"))
 				g.Expect(pod.Annotations).To(HaveKey(AnnotationRunnerSpec))
 			}
 		}).Should(Succeed())
@@ -311,7 +311,7 @@ var _ = Describe("CI runner pool", func() {
 				URL: "http://gitea.gitea.svc.cluster.local:3000", Owner: ns,
 				CredentialsSecretRef: c4v1beta1.LocalRef{Name: "missing"},
 				CI: &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: []c4v1beta1.CIRunnerSpec{
-					{Label: "go", Image: "c4factory/gitea-runner-go:dev"},
+					{Label: "go", Image: "theos/gitea-runner-go:dev"},
 				}}},
 			},
 		})
@@ -391,7 +391,7 @@ var _ = Describe("CI runner pool", func() {
 
 		By("keeping a pod of an old image, since the host says no runner's job")
 		kept := livePoolPods(ns)[0]
-		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Image = "c4factory/gitea-runner-go:next" })).To(Succeed())
+		Expect(patch(provider, func() { provider.Spec.CI.GiteaActions.Runners[0].Image = "theos/gitea-runner-go:next" })).To(Succeed())
 		Consistently(func() []string {
 			names := make([]string, 0, 1)
 			for _, pod := range livePoolPods(ns) {

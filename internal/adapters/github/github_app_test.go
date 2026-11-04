@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // fakeGitHubApp is GitHub's endpoint minting an installation token, for one

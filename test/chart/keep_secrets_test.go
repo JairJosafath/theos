@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -47,8 +47,8 @@ import (
 )
 
 const (
-	release    = "c4-factory"
-	releaseNS  = "c4-factory-system"
+	release    = "theos"
+	releaseNS  = "theos-system"
 	giteaNS    = "gitea"
 	hookName   = "gitea-keep-secrets"
 	keepSource = "templates/gitea/keep-secrets.yaml"
@@ -235,7 +235,7 @@ func helmOwner(release string) map[string]string {
 func keepDocs(out string) string {
 	var docs []string
 	for doc := range strings.SplitSeq(out, "\n---\n") {
-		if strings.Contains(doc, "# Source: c4-factory/"+keepSource+"\n") {
+		if strings.Contains(doc, "# Source: theos/"+keepSource+"\n") {
 			docs = append(docs, doc)
 		}
 	}

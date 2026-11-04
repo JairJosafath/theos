@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -43,7 +43,7 @@ func TestProbesWaitForABusyHost(t *testing.T) {
 
 	for file, name := range map[string]string{
 		"config/manager/manager.yaml": "controller-manager",
-		"config/ui/deployment.yaml":   "c4-factory-ui",
+		"config/ui/deployment.yaml":   "theos-ui",
 	} {
 		b, err := os.ReadFile(filepath.Join("..", "..", file))
 		if err != nil {

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -21,10 +21,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 const briefRepo = "brief-cel-lens"
@@ -35,13 +35,13 @@ func briefAgents(ns string, rounds int32) {
 	GinkgoHelper()
 	for _, name := range []string{"planner", "implementer", "reviewer"} {
 		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, name),
-			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}})
+			Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev", MaxRounds: rounds}})
 	}
 }
 
 // projectDoc is the namespace's Project as a plan holds it, unchanged.
 func projectDoc(ns string) string {
-	return fmt.Sprintf(`apiVersion: c4.factory.io/v1beta1
+	return fmt.Sprintf(`apiVersion: theos.factory.io/v1beta1
 kind: Project
 metadata:
   name: %s
@@ -55,21 +55,21 @@ spec:
 // between them. A real planner's model starts with a Person, which the
 // operator's role must let it create (#371).
 const linterDocs = `---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Person
 metadata:
   name: rule-author
 spec:
   displayName: Rule author
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: cel-lens
 spec:
   displayName: CEL lens
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: linter
@@ -82,7 +82,7 @@ spec:
   computeRef: {name: small}
   deploymentRef: {name: k8s-manifests}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: DataStore
 metadata:
   name: rules-db
@@ -90,7 +90,7 @@ spec:
   softwareSystemRef: {name: cel-lens}
   connectorRef: {name: postgres}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: linter-to-rules-db
@@ -415,13 +415,13 @@ var _ = Describe("Brief rounds", func() {
 		bad[model.PlanChoicesFile] = scaffold.File{Data: []byte("\n")}
 		bad["plan/issues/01-linter.md"] = scaffold.File{Data: []byte("---\ntitle: Lint\n---\nJust lint.\n")}
 		bad[model.PlanModelFile] = scaffold.File{Data: []byte(projectDoc(ns) + fmt.Sprintf(`---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Person
 metadata:
   name: rule-author
 spec:
   description: %s
-`, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: c4.factory.io/v1beta1\nkind: SoftwareSystem"):])}
+`, strings.Repeat("x", 1001)) + linterDocs[strings.Index(linterDocs, "---\napiVersion: theos.factory.io/v1beta1\nkind: SoftwareSystem"):])}
 
 		By("refusing the first try, whose planner doesn't say what it cost")
 		planRoundCosting(ns, 1, 1, bad, nil)
@@ -560,7 +560,7 @@ spec:
 		createFactory(ns)
 		for _, name := range []string{"planner", "implementer", "reviewer"} {
 			mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, name), Spec: c4v1beta1.AgentSpec{
-				Image: "c4factory/agent-go:dev", MaxRounds: 3,
+				Image: "theos/agent-go:dev", MaxRounds: 3,
 				CredentialsSecretRef: &c4v1beta1.LocalRef{Name: "claude-credentials"}}})
 		}
 		mustCreate(newBrief(ns, "cel-lens"))
@@ -610,7 +610,7 @@ spec:
 		createFactory(shared)
 		for _, name := range []string{"planner", "implementer", "reviewer"} {
 			mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(shared, name), Spec: c4v1beta1.AgentSpec{
-				Image: "c4factory/agent-go:dev", MaxRounds: 3,
+				Image: "theos/agent-go:dev", MaxRounds: 3,
 				CredentialsSecretRef: &c4v1beta1.LocalRef{Name: sharedToken}}})
 		}
 		mustCreate(newBrief(shared, "cel-lens"))
@@ -677,7 +677,7 @@ spec:
 		By("naming a catalog entry the plan needs that went since it was checked")
 		Expect(k8sClient.Delete(ctx, &c4v1beta1.Connector{ObjectMeta: objectMeta(ns, "postgres")})).To(Succeed())
 		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "late-implementer"),
-			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev"}})
+			Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev"}})
 		Eventually(func(g Gomega) {
 			g.Expect(condition(getBrief(g, ns).Status.Conditions, c4v1beta1.ConditionNeedsInput)).
 				To(HaveField("Message", HavePrefix("The plan of round 1 needs Connector postgres, missing")))
@@ -709,7 +709,7 @@ spec:
 		mustCreate(newBrief(ns, "cel-lens"))
 		plan := linterPlan(ns, 1)
 		plan[model.PlanModelFile] = scaffold.File{Data: append(plan[model.PlanModelFile].Data, []byte(`---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: checker
@@ -763,7 +763,7 @@ spec:
 		By("a person making a Container of the planned name meanwhile")
 		mustCreate(newContainer(ns, "linter", "cel-lens", c4v1beta1.ContainerTypeWorker))
 		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "late-implementer"),
-			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev"}})
+			Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev"}})
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
 			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefFailed))
@@ -783,10 +783,10 @@ spec:
 		mustCreate(newBrief(ns, "cel-lens"))
 		By("a ResourceQuota that allows no Person, which the plan check can't see")
 		quota := &corev1.ResourceQuota{ObjectMeta: objectMeta(ns, "no-people"), Spec: corev1.ResourceQuotaSpec{
-			Hard: corev1.ResourceList{"count/people.c4.factory.io": resource.MustParse("0")}}}
+			Hard: corev1.ResourceList{"count/people.theos.factory.io": resource.MustParse("0")}}}
 		mustCreate(quota)
 		quota.Status = corev1.ResourceQuotaStatus{Hard: quota.Spec.Hard,
-			Used: corev1.ResourceList{"count/people.c4.factory.io": resource.MustParse("0")}}
+			Used: corev1.ResourceList{"count/people.theos.factory.io": resource.MustParse("0")}}
 		Expect(k8sClient.Status().Update(ctx, quota)).To(Succeed())
 		planRound(ns, 1, 1, linterPlan(ns, 1))
 

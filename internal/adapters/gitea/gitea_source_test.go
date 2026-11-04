@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // sourceEntry is a file of a test archive, with the mode its zip header says.

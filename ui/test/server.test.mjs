@@ -16,7 +16,7 @@ import { actionsFromEnv, allowedHostsFromEnv, createServer, resolveUpstream } fr
 // The SHA256SUMS ui/Dockerfile writes next to the Session client binaries, in
 // sha256sum's format, over the fixtures below (#1175).
 const SUMS = ['amd64', 'arm64']
-  .map((arch) => `${createHash('sha256').update(`ELF ${arch}`).digest('hex')}  c4session-linux-${arch}\n`)
+  .map((arch) => `${createHash('sha256').update(`ELF ${arch}`).digest('hex')}  theos-session-linux-${arch}\n`)
   .join('')
 
 /** Starts a server on a free port and returns its base URL. */
@@ -82,8 +82,8 @@ describe('server.mjs', () => {
       if (req.method === 'POST' || req.method === 'PATCH') {
         return json(req.method === 'POST' ? 201 : 200, { kind: 'Brief', metadata: { name: 'echo' } })
       }
-      const briefs = '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/'
-      if (url.pathname === '/apis/c4.factory.io/v1beta1/namespaces/webshop/projects') {
+      const briefs = '/apis/theos.factory.io/v1beta1/namespaces/webshop/briefs/'
+      if (url.pathname === '/apis/theos.factory.io/v1beta1/namespaces/webshop/projects') {
         return json(200, { kind: 'ProjectList', metadata: {}, items: [{ metadata: { name: 'webshop' } }] })
       }
       if (url.pathname === `${briefs}lens`) {
@@ -101,7 +101,7 @@ describe('server.mjs', () => {
       if (url.pathname === `${briefs}fresh`) {
         return json(200, { kind: 'Brief', metadata: { name: 'fresh', resourceVersion: '8' }, spec: { idea: 'x' } })
       }
-      if (url.pathname === '/apis/c4.factory.io/v1beta1/namespaces/webshop/crews/orders-api') {
+      if (url.pathname === '/apis/theos.factory.io/v1beta1/namespaces/webshop/crews/orders-api') {
         return json(200, { kind: 'Crew', metadata: { name: 'orders-api', resourceVersion: '7' }, spec: {} })
       }
       if (url.pathname === `${briefs}gone`) {
@@ -122,7 +122,7 @@ describe('server.mjs', () => {
       const headers = { 'content-type': 'application/json', 'set-cookie': 'upstream=1', 'www-authenticate': 'x' }
       if (url.pathname.includes('/v1alpha1/')) {
         // What the API server adds to a response at a deprecated version.
-        headers.warning = '299 - "c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1."'
+        headers.warning = '299 - "theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1."'
       }
       res.writeHead(200, headers)
       res.end(JSON.stringify({ kind: 'ContainerList', metadata: { resourceVersion: '1' }, items: [] }))
@@ -131,12 +131,12 @@ describe('server.mjs', () => {
 
     dist = await mkdtemp(path.join(tmpdir(), 'c4ui-dist-'))
     await mkdir(path.join(dist, 'assets'))
-    await writeFile(path.join(dist, 'index.html'), '<!doctype html><title>C4 Factory</title>')
+    await writeFile(path.join(dist, 'index.html'), '<!doctype html><title>theos</title>')
     await writeFile(path.join(dist, 'assets', 'app-123.js'), 'console.log(1)')
     await writeFile(path.join(path.dirname(dist), 'c4ui-secret.txt'), 'outside dist')
     await mkdir(path.join(dist, 'downloads'))
-    await writeFile(path.join(dist, 'downloads', 'c4session-linux-amd64'), 'ELF amd64')
-    await writeFile(path.join(dist, 'downloads', 'c4session-linux-arm64'), 'ELF arm64')
+    await writeFile(path.join(dist, 'downloads', 'theos-session-linux-amd64'), 'ELF amd64')
+    await writeFile(path.join(dist, 'downloads', 'theos-session-linux-arm64'), 'ELF arm64')
     await writeFile(path.join(dist, 'downloads', 'SHA256SUMS'), SUMS)
     await writeFile(path.join(dist, 'downloads', 'notes.txt'), 'not a download')
 
@@ -176,7 +176,7 @@ describe('server.mjs', () => {
       seen.map((r) => r.url).sort(),
       [
         '/api/v1/nodes',
-        '/apis/c4.factory.io/v1beta1/projects',
+        '/apis/theos.factory.io/v1beta1/projects',
         '/apis/metrics.k8s.io/v1beta1/nodes',
         ...namespaces.map((ns) => `/api/v1/namespaces/${ns}/pods`),
         ...namespaces.map((ns) => `/apis/metrics.k8s.io/v1beta1/namespaces/${ns}/pods`),
@@ -192,7 +192,7 @@ describe('server.mjs', () => {
 
   it('proxies GET to the API with path and query, and without client credentials', async () => {
     seen.length = 0
-    const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers?limit=5`, {
+    const res = await fetch(`${base}/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers?limit=5`, {
       headers: {
         authorization: `Bearer ${browserToken}`,
         cookie: `session=${browserToken}`,
@@ -206,7 +206,7 @@ describe('server.mjs', () => {
     assert.equal(seen.length, 1)
     const [req] = seen
     assert.equal(req.method, 'GET')
-    assert.equal(req.url, '/apis/c4.factory.io/v1beta1/namespaces/webshop/containers?limit=5')
+    assert.equal(req.url, '/apis/theos.factory.io/v1beta1/namespaces/webshop/containers?limit=5')
     assert.equal(req.headers.authorization, undefined)
     assert.equal(req.headers.cookie, undefined)
     assert.equal(req.headers['impersonate-user'], undefined)
@@ -218,25 +218,25 @@ describe('server.mjs', () => {
   })
 
   it('passes the deprecation Warning header of a response at a deprecated version to the browser (#1618)', async () => {
-    const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1alpha1/namespaces/webshop/containers`)
+    const res = await fetch(`${base}/k8s/apis/theos.factory.io/v1alpha1/namespaces/webshop/containers`)
     assert.equal(res.status, 200)
     assert.equal(
       res.headers.get('warning'),
-      '299 - "c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1."',
+      '299 - "theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1."',
     )
     // A response at the current version carries none.
-    const current = await fetch(`${base}/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers`)
+    const current = await fetch(`${base}/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers`)
     assert.equal(current.headers.get('warning'), null)
   })
 
   it('reads the factory kinds across namespaces: Tasks, Agents and Crews', async () => {
     for (const plural of ['tasks', 'agents', 'crews']) {
       seen.length = 0
-      const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1beta1/${plural}`)
+      const res = await fetch(`${base}/k8s/apis/theos.factory.io/v1beta1/${plural}`)
       assert.equal(res.status, 200)
       assert.deepEqual(
         seen.map((r) => [r.method, r.url]),
-        [['GET', `/apis/c4.factory.io/v1beta1/${plural}`]],
+        [['GET', `/apis/theos.factory.io/v1beta1/${plural}`]],
       )
     }
   })
@@ -244,7 +244,7 @@ describe('server.mjs', () => {
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']) {
     it(`rejects ${method} under /k8s/ with 405 and never calls the API`, async () => {
       seen.length = 0
-      const res = await fetch(`${base}/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api`, {
+      const res = await fetch(`${base}/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api`, {
         method,
         body: method === 'POST' || method === 'PUT' || method === 'PATCH' ? '{}' : undefined,
       })
@@ -255,9 +255,9 @@ describe('server.mjs', () => {
   }
 
   describe('the three writes', () => {
-    const briefsPath = '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs'
+    const briefsPath = '/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/briefs'
     const brief = {
-      apiVersion: 'c4.factory.io/v1beta1',
+      apiVersion: 'theos.factory.io/v1beta1',
       kind: 'Brief',
       metadata: { name: 'lens', namespace: 'webshop', labels: { x: 'y' }, finalizers: ['f'] },
       spec: { idea: 'A camera app that reads labels aloud' },
@@ -284,15 +284,15 @@ describe('server.mjs', () => {
       assert.deepEqual(
         seen.map((r) => [r.method, r.url]),
         [
-          ['GET', '/apis/c4.factory.io/v1beta1/namespaces/webshop/projects'],
-          ['POST', '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs?fieldManager=c4-factory-ui'],
+          ['GET', '/apis/theos.factory.io/v1beta1/namespaces/webshop/projects'],
+          ['POST', '/apis/theos.factory.io/v1beta1/namespaces/webshop/briefs?fieldManager=theos-ui'],
         ],
       )
       const post = seen[1]
       assert.equal(post.headers['content-type'], 'application/json')
       assert.equal(post.headers.authorization, undefined)
       assert.deepEqual(post.body, {
-        apiVersion: 'c4.factory.io/v1beta1',
+        apiVersion: 'theos.factory.io/v1beta1',
         kind: 'Brief',
         metadata: { name: 'lens', namespace: 'webshop' },
         spec: { idea: 'A camera app that reads labels aloud' },
@@ -306,8 +306,8 @@ describe('server.mjs', () => {
       assert.deepEqual(
         seen.map((r) => [r.method, r.url]),
         [
-          ['GET', '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/lens'],
-          ['PATCH', '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/lens?fieldManager=c4-factory-ui'],
+          ['GET', '/apis/theos.factory.io/v1beta1/namespaces/webshop/briefs/lens'],
+          ['PATCH', '/apis/theos.factory.io/v1beta1/namespaces/webshop/briefs/lens?fieldManager=theos-ui'],
         ],
       )
       assert.equal(seen[1].headers['content-type'], 'application/json-patch+json')
@@ -343,7 +343,7 @@ describe('server.mjs', () => {
         assert.equal(res.status, 200)
         assert.deepEqual(
           seen.map((r) => [r.method, r.url]),
-          [['PATCH', '/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs/lens?fieldManager=c4-factory-ui']],
+          [['PATCH', '/apis/theos.factory.io/v1beta1/namespaces/webshop/briefs/lens?fieldManager=theos-ui']],
         )
         assert.deepEqual(seen[0].body, [{ op: 'add', path: '/spec/paused', value }])
       }
@@ -425,7 +425,7 @@ describe('server.mjs', () => {
       [
         'a patch of another kind',
         'PATCH',
-        '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers/orders-api',
+        '/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api',
         prompt(),
         405,
       ],
@@ -440,11 +440,11 @@ describe('server.mjs', () => {
       ],
       ['a server-side apply', 'PATCH', `${briefsPath}/lens`, brief, 415, 'application/apply-patch+yaml'],
       ['a POST of another kind to the Brief path', 'POST', briefsPath, { ...brief, kind: 'Container' }, 403],
-      ['a POST of another API version', 'POST', briefsPath, { ...brief, apiVersion: 'c4.factory.io/v2' }, 403],
+      ['a POST of another API version', 'POST', briefsPath, { ...brief, apiVersion: 'theos.factory.io/v2' }, 403],
       [
         'a POST of another kind',
         'POST',
-        '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers',
+        '/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers',
         { ...brief, kind: 'Container' },
         405,
       ],
@@ -458,7 +458,7 @@ describe('server.mjs', () => {
       [
         'a POST to a namespace without a Project',
         'POST',
-        '/k8s/apis/c4.factory.io/v1beta1/namespaces/empty/briefs',
+        '/k8s/apis/theos.factory.io/v1beta1/namespaces/empty/briefs',
         brief,
         403,
       ],
@@ -508,7 +508,7 @@ describe('server.mjs', () => {
   describe('the action table, over port-forward (UI_ACTIONS=service-account)', () => {
     let actionServer
     let actionBase
-    const api = '/apis/c4.factory.io/v1beta1/namespaces/webshop'
+    const api = '/apis/theos.factory.io/v1beta1/namespaces/webshop'
     const write = (method, p, body, type, headers = {}) =>
       fetch(`${actionBase}/k8s${api}${p}`, {
         method,
@@ -519,7 +519,7 @@ describe('server.mjs', () => {
     const MP = 'application/merge-patch+json'
     const add = (p, value) => ({ op: 'add', path: p, value })
     const task = {
-      apiVersion: 'c4.factory.io/v1beta1',
+      apiVersion: 'theos.factory.io/v1beta1',
       kind: 'Task',
       metadata: { generateName: 'orders-api-', labels: { x: 'y' } },
       spec: {
@@ -585,14 +585,14 @@ describe('server.mjs', () => {
         'PATCH',
         '/crews/orders-api',
         MP,
-        { metadata: { annotations: { 'c4.factory.io/rerun-release': '2026-10-09T01:00:00Z' } } },
+        { metadata: { annotations: { 'theos.factory.io/rerun-release': '2026-10-09T01:00:00Z' } } },
       ],
       [
         "a Container's scaffold retry",
         'PATCH',
         '/containers/orders-api',
         MP,
-        { metadata: { annotations: { 'c4.factory.io/retry': '1' } } },
+        { metadata: { annotations: { 'theos.factory.io/retry': '1' } } },
       ],
       ["a Container's checks", 'PATCH', '/containers/orders-api', JP, [add('/spec/checks', 'BeforeRelease')]],
       [
@@ -622,14 +622,14 @@ describe('server.mjs', () => {
         'PATCH',
         '/containers/orders-api',
         MP,
-        { metadata: { annotations: { 'c4.factory.io/standard-take': 'v1.4.0' } } },
+        { metadata: { annotations: { 'theos.factory.io/standard-take': 'v1.4.0' } } },
       ],
       [
         "a Container's keep of its Standard's files left out",
         'PATCH',
         '/containers/orders-api',
         MP,
-        { metadata: { annotations: { 'c4.factory.io/standard-keep': 'v1.4.0' } } },
+        { metadata: { annotations: { 'theos.factory.io/standard-keep': 'v1.4.0' } } },
       ],
       [
         'a Task from a goal, with only its name and spec',
@@ -648,7 +648,7 @@ describe('server.mjs', () => {
         assert.equal(res.status, method === 'POST' ? 201 : 200)
         assert.deepEqual(
           seen.map((r) => [r.method, r.url]),
-          [[method, `${api}${p}?fieldManager=c4-factory-ui`]],
+          [[method, `${api}${p}?fieldManager=theos-ui`]],
         )
         assert.equal(seen[0].headers['content-type'], type)
         assert.equal(seen[0].headers.authorization, undefined)
@@ -659,7 +659,7 @@ describe('server.mjs', () => {
     it('still creates a Brief and adds a prompt as with actions off', async () => {
       seen.length = 0
       const brief = {
-        apiVersion: 'c4.factory.io/v1beta1',
+        apiVersion: 'theos.factory.io/v1beta1',
         kind: 'Brief',
         metadata: { name: 'b' },
         spec: { idea: 'x' },
@@ -684,7 +684,7 @@ describe('server.mjs', () => {
         seen.map((r) => [r.method, r.url]),
         [
           ['GET', `${api}/briefs/lens`],
-          ['PATCH', `${api}/briefs/lens?fieldManager=c4-factory-ui`],
+          ['PATCH', `${api}/briefs/lens?fieldManager=theos-ui`],
         ],
       )
       assert.deepEqual(seen[1].body, body)
@@ -717,7 +717,7 @@ describe('server.mjs', () => {
           seen.map((r) => [r.method, r.url]),
           [
             ['GET', `${api}/crews/orders-api`],
-            ['PATCH', `${api}/crews/orders-api?fieldManager=c4-factory-ui`],
+            ['PATCH', `${api}/crews/orders-api?fieldManager=theos-ui`],
           ],
         )
         assert.deepEqual(seen[1].body, body)
@@ -759,14 +759,14 @@ describe('server.mjs', () => {
       // Other paths.
       ['a patch of a Brief status', 'PATCH', '/briefs/lens/status', JP, [add('/spec/paused', true)], 405],
       ['a patch of a Crew list', 'PATCH', '/crews', JP, [add('/spec/paused', true)], 405],
-      ['a patch of a Container list', 'PATCH', '/containers', MP, crewAnn('c4.factory.io/retry'), 405],
+      ['a patch of a Container list', 'PATCH', '/containers', MP, crewAnn('theos.factory.io/retry'), 405],
       ['a patch of one Task', 'PATCH', '/tasks/t1', JP, [add('/spec/goal', 'x')], 405],
       ['a patch of a System', 'PATCH', '/softwaresystems/shop', JP, [add('/spec/x', 1)], 405],
       ['a patch of an Agent', 'PATCH', '/agents/claude', JP, [add('/spec/model', 'x')], 405],
       ['a POST of a Crew', 'POST', '/crews', 'application/json', { kind: 'Crew' }, 405],
       // Other methods on a path the table writes.
       ['a POST to one Crew', 'POST', '/crews/orders-api', 'application/json', {}, 403],
-      ['a POST to one Container', 'POST', '/containers/orders-api', MP, crewAnn('c4.factory.io/retry'), 403],
+      ['a POST to one Container', 'POST', '/containers/orders-api', MP, crewAnn('theos.factory.io/retry'), 403],
       ['a PATCH of the Task list', 'PATCH', '/tasks', JP, [add('/spec/goal', 'x')], 403],
       ['a PUT of a Crew', 'PUT', '/crews/orders-api', 'application/json', {}, 405],
       ['a DELETE of a Container', 'DELETE', '/containers/orders-api', 'application/json', {}, 405],
@@ -837,23 +837,23 @@ describe('server.mjs', () => {
         [add('/spec/template', { ref: 'v2' })],
         403,
       ],
-      ['another Crew annotation', 'PATCH', '/crews/orders-api', MP, crewAnn('c4.factory.io/paused-by'), 403],
-      ['the retry annotation on a Crew', 'PATCH', '/crews/orders-api', MP, crewAnn('c4.factory.io/retry'), 403],
+      ['another Crew annotation', 'PATCH', '/crews/orders-api', MP, crewAnn('theos.factory.io/paused-by'), 403],
+      ['the retry annotation on a Crew', 'PATCH', '/crews/orders-api', MP, crewAnn('theos.factory.io/retry'), 403],
       [
         'the re-run annotation on a Container',
         'PATCH',
         '/containers/orders-api',
         MP,
-        crewAnn('c4.factory.io/rerun-release'),
+        crewAnn('theos.factory.io/rerun-release'),
         403,
       ],
-      ['a retry annotation removed', 'PATCH', '/containers/orders-api', MP, crewAnn('c4.factory.io/retry', null), 403],
+      ['a retry annotation removed', 'PATCH', '/containers/orders-api', MP, crewAnn('theos.factory.io/retry', null), 403],
       [
         'a retry with a label',
         'PATCH',
         '/containers/orders-api',
         MP,
-        { metadata: { annotations: { 'c4.factory.io/retry': '1' }, labels: { a: 'b' } } },
+        { metadata: { annotations: { 'theos.factory.io/retry': '1' }, labels: { a: 'b' } } },
         403,
       ],
       [
@@ -861,7 +861,7 @@ describe('server.mjs', () => {
         'PATCH',
         '/containers/orders-api',
         MP,
-        { ...crewAnn('c4.factory.io/retry'), spec: { x: 1 } },
+        { ...crewAnn('theos.factory.io/retry'), spec: { x: 1 } },
         403,
       ],
       ['a retry as null', 'PATCH', '/containers/orders-api', MP, 'null', 403],
@@ -1032,7 +1032,7 @@ describe('server.mjs', () => {
         'PATCH',
         '/containers/orders-api',
         MP,
-        { metadata: { annotations: { 'c4.factory.io/standard-take': 'v1', 'c4.factory.io/standard-keep': 'v1' } } },
+        { metadata: { annotations: { 'theos.factory.io/standard-take': 'v1', 'theos.factory.io/standard-keep': 'v1' } } },
         403,
       ],
       [
@@ -1040,13 +1040,13 @@ describe('server.mjs', () => {
         'PATCH',
         '/containers/orders-api',
         MP,
-        { metadata: { annotations: { 'c4.factory.io/standard-take': 'v1', 'c4.factory.io/retry': '1' } } },
+        { metadata: { annotations: { 'theos.factory.io/standard-take': 'v1', 'theos.factory.io/retry': '1' } } },
         403,
       ],
-      ['another Container annotation', 'PATCH', '/containers/orders-api', MP, crewAnn('c4.factory.io/standard'), 403],
-      ['a take as a number', 'PATCH', '/containers/orders-api', MP, crewAnn('c4.factory.io/standard-take', 1), 403],
-      ['a keep removed', 'PATCH', '/containers/orders-api', MP, crewAnn('c4.factory.io/standard-keep', null), 403],
-      ['the take annotation on a Crew', 'PATCH', '/crews/orders-api', MP, crewAnn('c4.factory.io/standard-take'), 403],
+      ['another Container annotation', 'PATCH', '/containers/orders-api', MP, crewAnn('theos.factory.io/standard'), 403],
+      ['a take as a number', 'PATCH', '/containers/orders-api', MP, crewAnn('theos.factory.io/standard-take', 1), 403],
+      ['a keep removed', 'PATCH', '/containers/orders-api', MP, crewAnn('theos.factory.io/standard-keep', null), 403],
+      ['the take annotation on a Crew', 'PATCH', '/crews/orders-api', MP, crewAnn('theos.factory.io/standard-take'), 403],
       [
         'a Task of kind Plan',
         'POST',
@@ -1168,14 +1168,14 @@ describe('server.mjs', () => {
         assert.equal(res.status, status)
         const answer = await res.json()
         assert.equal(answer.kind, 'Status')
-        if (status === 403 && !headers) assert.match(answer.message, /The C4 Factory UI writes/)
+        if (status === 403 && !headers) assert.match(answer.message, /The theos UI writes/)
         assert.equal(seen.length, 0, `${what}: ${seen.map((r) => r.method).join()}`)
       })
     }
   })
 
   describe('the action table behind an Ingress (UI_ACTIONS=oidc), as the person signed in', () => {
-    const clientID = 'c4-factory-ui'
+    const clientID = 'theos-ui'
     /** The client secret only the UI server and the issuer know. */
     const clientSecret = randomBytes(18).toString('base64url')
     const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 })
@@ -1189,7 +1189,7 @@ describe('server.mjs', () => {
     let oidcBase
     let bare
     let bareBase
-    const api = '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop'
+    const api = '/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop'
     const pause = [{ op: 'add', path: '/spec/paused', value: true }]
 
     before(async () => {
@@ -1385,7 +1385,7 @@ describe('server.mjs', () => {
       const res = await fetch(`${oidcBase}${api}/briefs`, {
         method: 'POST',
         headers: { cookie, 'content-type': 'application/json' },
-        body: JSON.stringify({ apiVersion: 'c4.factory.io/v1beta1', kind: 'Brief', spec: { idea: 'x' } }),
+        body: JSON.stringify({ apiVersion: 'theos.factory.io/v1beta1', kind: 'Brief', spec: { idea: 'x' } }),
       })
       assert.equal(res.status, 201)
       assert.deepEqual(
@@ -1565,7 +1565,7 @@ describe('server.mjs', () => {
       const res = await fetch(`${bareBase}${api}/briefs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ apiVersion: 'c4.factory.io/v1beta1', kind: 'Brief', spec: {} }),
+        body: JSON.stringify({ apiVersion: 'theos.factory.io/v1beta1', kind: 'Brief', spec: {} }),
       })
       assert.equal(res.status, 401)
       assert.equal(seen.length, 0)
@@ -1587,13 +1587,13 @@ describe('server.mjs', () => {
     assert.equal(actionsFromEnv({ UI_ACTIONS: 'service-account' }), 'service-account')
   })
 
-  it('refuses API paths outside c4.factory.io, including through .. and escapes', async () => {
+  it('refuses API paths outside theos.factory.io, including through .. and escapes', async () => {
     seen.length = 0
     for (const p of [
       '/k8s/api/v1/namespaces/webshop/secrets',
-      '/k8s/apis/c4.factory.io/../../api/v1/secrets',
-      '/k8s/apis/c4.factory.io/%2e%2e/%2e%2e/api/v1/secrets',
-      '/k8s/apis/c4.factory.io/v1beta1/..%2f..%2f..%2fapi%2fv1%2fsecrets',
+      '/k8s/apis/theos.factory.io/../../api/v1/secrets',
+      '/k8s/apis/theos.factory.io/%2e%2e/%2e%2e/api/v1/secrets',
+      '/k8s/apis/theos.factory.io/v1beta1/..%2f..%2f..%2fapi%2fv1%2fsecrets',
       '/k8s/version',
     ]) {
       const res = await fetch(`${base}${p}`)
@@ -1604,7 +1604,7 @@ describe('server.mjs', () => {
 
   it('streams a watch without waiting for it to end', async () => {
     const res = await fetch(
-      `${base}/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/containers?watch=1&resourceVersion=1`,
+      `${base}/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers?watch=1&resourceVersion=1`,
     )
     assert.equal(res.status, 200)
     const reader = res.body.getReader()
@@ -1623,9 +1623,9 @@ describe('server.mjs', () => {
     seen.length = 0
     watches.length = 0
     const q = new URLSearchParams()
-    q.append('w', '/apis/c4.factory.io/v1beta1/namespaces/webshop/containers')
+    q.append('w', '/apis/theos.factory.io/v1beta1/namespaces/webshop/containers')
     q.append('rv', '7')
-    q.append('w', '/apis/c4.factory.io/v1beta1/namespaces/webshop/sessions')
+    q.append('w', '/apis/theos.factory.io/v1beta1/namespaces/webshop/sessions')
     q.append('rv', 'old')
     q.set('timeoutSeconds', '300')
     const res = await fetch(`${base}/k8s-watch?${q}`, {
@@ -1673,12 +1673,12 @@ describe('server.mjs', () => {
 
   it('refuses /k8s-watch for other methods, other API groups and malformed requests', async () => {
     seen.length = 0
-    const ok = '/apis/c4.factory.io/v1beta1/projects'
+    const ok = '/apis/theos.factory.io/v1beta1/projects'
     const cases = [
       ['POST', `w=${ok}&rv=1`, 405],
       ['GET', `w=/api/v1/secrets&rv=1`, 403],
-      ['GET', `w=${encodeURIComponent('/apis/c4.factory.io/../../api/v1/secrets')}&rv=1`, 403],
-      ['GET', `w=${encodeURIComponent('/apis/c4.factory.io/v1beta1/x?watch=0')}&rv=1`, 403],
+      ['GET', `w=${encodeURIComponent('/apis/theos.factory.io/../../api/v1/secrets')}&rv=1`, 403],
+      ['GET', `w=${encodeURIComponent('/apis/theos.factory.io/v1beta1/x?watch=0')}&rv=1`, 403],
       ['GET', `w=${ok}&rv=1&timeoutSeconds=abc`, 403],
       ['GET', `w=${ok}`, 400],
       ['GET', '', 400],
@@ -1710,13 +1710,13 @@ describe('server.mjs', () => {
   // address so a private repository needs no GitHub login (#1151).
   it('serves the Session client for each architecture under /downloads, and nothing else', async () => {
     for (const arch of ['amd64', 'arm64']) {
-      const res = await fetch(`${base}/downloads/c4session-linux-${arch}`)
+      const res = await fetch(`${base}/downloads/theos-session-linux-${arch}`)
       assert.equal(res.status, 200, arch)
       assert.equal(await res.text(), `ELF ${arch}`)
       assert.equal(res.headers.get('content-type'), 'application/octet-stream')
-      assert.match(res.headers.get('content-disposition'), new RegExp(`c4session-linux-${arch}`))
+      assert.match(res.headers.get('content-disposition'), new RegExp(`theos-session-linux-${arch}`))
     }
-    const head = await fetch(`${base}/downloads/c4session-linux-amd64`, { method: 'HEAD' })
+    const head = await fetch(`${base}/downloads/theos-session-linux-amd64`, { method: 'HEAD' })
     assert.equal(head.status, 200)
     assert.equal(head.headers.get('content-length'), String('ELF amd64'.length))
     // The checksums the feature verifies the binary against, from the same
@@ -1729,30 +1729,30 @@ describe('server.mjs', () => {
     const byService = await request(
       base,
       'GET',
-      '/downloads/c4session-linux-arm64',
-      'c4-factory-ui.c4-factory-system.svc:8080',
+      '/downloads/theos-session-linux-arm64',
+      'theos-ui.theos-system.svc:8080',
     )
     assert.equal(byService.status, 200)
     assert.equal(byService.text, 'ELF arm64')
 
     for (const p of [
       '/downloads/notes.txt',
-      '/downloads/c4session-linux-386',
+      '/downloads/theos-session-linux-386',
       '/downloads/',
-      '/downloads/c4session-linux-amd64/',
+      '/downloads/theos-session-linux-amd64/',
     ]) {
       const res = await fetch(`${base}${p}`)
       assert.equal(res.status, 404, p)
     }
-    const post = await fetch(`${base}/downloads/c4session-linux-amd64`, { method: 'POST' })
+    const post = await fetch(`${base}/downloads/theos-session-linux-amd64`, { method: 'POST' })
     assert.equal(post.status, 405)
   })
 
   describe('the Host it answers (DNS rebinding)', () => {
-    const projects = '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/projects'
-    const briefs = '/k8s/apis/c4.factory.io/v1beta1/namespaces/webshop/briefs'
+    const projects = '/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/projects'
+    const briefs = '/k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/briefs'
     const brief = {
-      apiVersion: 'c4.factory.io/v1beta1',
+      apiVersion: 'theos.factory.io/v1beta1',
       kind: 'Brief',
       metadata: { name: 'lens' },
       spec: { idea: 'A camera app that reads labels aloud' },
@@ -1784,7 +1784,7 @@ describe('server.mjs', () => {
         ]) {
           const res = await request(base, method, p, host, body)
           assert.equal(res.status, 421, `${method} ${p}`)
-          assert.doesNotMatch(res.text, /C4 Factory|ProjectList/)
+          assert.doesNotMatch(res.text, /theos|ProjectList/)
         }
         assert.deepEqual(seen, [])
       })
@@ -1824,7 +1824,7 @@ describe('server.mjs', () => {
     })
     const deadBase = await listen(dead)
     try {
-      const res = await fetch(`${deadBase}/k8s/apis/c4.factory.io/v1beta1/projects`)
+      const res = await fetch(`${deadBase}/k8s/apis/theos.factory.io/v1beta1/projects`)
       assert.equal(res.status, 502)
       assert.equal((await res.json()).kind, 'Status')
     } finally {

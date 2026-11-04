@@ -156,7 +156,7 @@ against the fake GitHub the publish tests use; no real GitHub is touched.
    library: a hit stops a release with no person in the loop, so the list
    must be high-precision, short and tested per rule; gitleaks's hundreds of
    rules and its config are a dependency to weigh when a user asks for
-   more. A line marked `c4factory:allow-secret` (a test fixture, a sample
+   more. A line marked `theos:allow-secret` (a test fixture, a sample
    key) is skipped, and the message says so when nothing else is found.
 
 5. **The image goes to GHCR by digest.** When decision 1 says the image

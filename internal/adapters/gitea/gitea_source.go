@@ -9,7 +9,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // maxSourceArchive bounds the archive ReadSource downloads. The archive goes to

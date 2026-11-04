@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -34,14 +34,14 @@ import (
 )
 
 const (
-	catalogConfigMap = "c4factory-catalog"
+	catalogConfigMap = "theos-catalog"
 	catalogSource    = "templates/gitea/catalog-configmap.yaml"
 	seedSource       = "templates/gitea/seed.yaml"
 	project          = "apps"
 )
 
 // TestSeedAppliesTheCatalogInPlace renders the chart as two releases apart,
-// and applies ConfigMap c4factory-catalog's objects with the seed's
+// and applies ConfigMap theos-catalog's objects with the seed's
 // hack/seed/catalog.sh, as the seed's ServiceAccount under the rendered RBAC,
 // against envtest's API server: the second apply keeps every object's UID,
 // changes the Agents' image in place and keeps a field a person set that the
@@ -262,7 +262,7 @@ func applier(
 // to v0.12 made it: a Helm hook, created by helm.
 func hookGitProvider(name, url, secret string) *unstructured.Unstructured {
 	hook := &unstructured.Unstructured{}
-	hook.SetAPIVersion("c4.factory.io/v1beta1")
+	hook.SetAPIVersion("theos.factory.io/v1beta1")
 	hook.SetKind("GitProvider")
 	hook.SetName(name)
 	hook.SetNamespace(project)
@@ -325,7 +325,7 @@ func objectRef(kind, name string) *unstructured.Unstructured {
 }
 
 func gvr(resource string) schema.GroupVersionResource {
-	return schema.GroupVersionResource{Group: "c4.factory.io", Version: "v1beta1", Resource: resource}
+	return schema.GroupVersionResource{Group: "theos.factory.io", Version: "v1beta1", Resource: resource}
 }
 
 func key(u *unstructured.Unstructured) string { return u.GetKind() + "/" + u.GetName() }

@@ -1,0 +1,8 @@
+# theos's identity file. Container theos adopted this repository
+# (spec.adopt): nothing was scaffolded, so scaffoldedFrom is empty.
+# The Session client reads it to find this repository's Container.
+project: factory
+softwareSystem: theos
+container: theos
+type: operator
+scaffoldedFrom: []

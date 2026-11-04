@@ -22,7 +22,7 @@ export GIT_CEILING_DIRECTORIES=$T
 # Only this shell cleans up (#544): a job killed just after it is forked, before
 # it resets the traps it inherits, runs this trap too, and would remove $T.
 trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi' EXIT
-unset C4_CLUSTER
+unset THEOS_CLUSTER
 # Git looks no further up than $T: with $TMPDIR inside a checkout, $T/repo
 # would be that checkout, and --install refuses a worktree.
 export GIT_CEILING_DIRECTORIES=${T%/*}
@@ -101,7 +101,7 @@ aged() { sed -i "1s/^[0-9]*/$(($(date +%s) - TRIAGE_EVERY))/" "$DIR/triaged"; }
 logged() { grep -c "$1" "$LOG" 2>/dev/null || true; }
 
 # Nothing ready, on a device without the cluster: wait, and say so once.
-C4_CLUSTER=none
+THEOS_CLUSTER=none
 round; round
 check "idle: no relay" "$(starts)" 0
 check "idle: logged once" "$(logged 'nothing ready; waiting')" 1
@@ -1257,7 +1257,7 @@ mkdir -p "$T/login"
 echo '{}' >"$T/login/.credentials.json"
 export CLAUDE_CONFIG_DIR=$T/login
 RELAY_MAX_WORKERS=5 install_watch >/dev/null 2>"$T/install.err"
-unit=$T/home/.config/systemd/user/c4factory-relay-watch.service
+unit=$T/home/.config/systemd/user/theos-relay-watch.service
 check "install: warns of the manager's missing group" \
   "$(grep -c '^relay-watch: the systemd user manager lacks the group(s) docker that math has in /etc/group: .*wsl --shutdown' "$T/install.err")" 1
 check "install: writes the unit" "$([ -s "$unit" ] && echo yes)" yes
@@ -1271,7 +1271,7 @@ check "install: passes the relay settings" "$(grep -c '^Environment="RELAY_MAX_W
 check "install: no placeholder left" "$(grep -c @ "$unit")" 0
 check "install: enables and starts it" \
   "$(grep -E 'enable|restart|daemon-reload' "$T/calls" | tr '\n' ';')" \
-  "systemctl --user daemon-reload;systemctl --user enable c4factory-relay-watch.service;systemctl --user restart c4factory-relay-watch.service;loginctl enable-linger $(id -un);"
+  "systemctl --user daemon-reload;systemctl --user enable theos-relay-watch.service;systemctl --user restart theos-relay-watch.service;loginctl enable-linger $(id -un);"
 check "install: removes the stop file" "$([ -e "$STOP" ] && echo there)" ""
 check "install: no crontab" "$([ -e "$T/crontab" ] && echo there)" ""
 
@@ -1329,7 +1329,7 @@ rm "$T/no-systemd"
 : >"$T/calls"
 uninstall_watch >/dev/null
 check "uninstall: removes the unit" "$([ -e "$unit" ] && echo there)" ""
-check "uninstall: disables and stops it" "$(grep -c 'disable --now c4factory-relay-watch.service' "$T/calls")" 1
+check "uninstall: disables and stops it" "$(grep -c 'disable --now theos-relay-watch.service' "$T/calls")" 1
 
 # --install without systemd: two crontab lines that start the watch with --cron,
 # the user's other lines kept; installing again doesn't add more.
@@ -1342,7 +1342,7 @@ RELAY_MAX_WORKERS=5 install_watch >/dev/null
 RELAY_MAX_WORKERS=5 install_watch >/dev/null
 check "cron: no unit" "$([ -e "$unit" ] && echo there)" ""
 check "cron: keeps the other lines" "$(grep -c backup "$T/crontab")" 1
-check "cron: at boot, under the installer's login (#1435)" "$(grep -c "^@reboot cd $REPO && PATH=.* ./dev run env CLAUDE_CONFIG_DIR=$T/login hack/relay-watch.sh --cron --workers 3 .*# c4factory relay watch: $REPO$" "$T/crontab")" 1
+check "cron: at boot, under the installer's login (#1435)" "$(grep -c "^@reboot cd $REPO && PATH=.* ./dev run env CLAUDE_CONFIG_DIR=$T/login hack/relay-watch.sh --cron --workers 3 .*# theos relay watch: $REPO$" "$T/crontab")" 1
 check "cron: passes the relay settings" "$(grep -c ' RELAY_MAX_WORKERS=5 .*./dev run' "$T/crontab")" 2
 check "cron: every 5 minutes" "$(grep -c "^\*/5 \* \* \* \* cd $REPO && .* --cron --workers 3 " "$T/crontab")" 1
 check "cron: starts the watch now, under the installer's login (#1435)" "$(cat "$T/started")" \

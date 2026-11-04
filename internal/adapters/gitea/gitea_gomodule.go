@@ -14,7 +14,7 @@ import (
 	"golang.org/x/mod/module"
 	modzip "golang.org/x/mod/zip"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // PublishGoModule publishes the Go module at the root of repo, as of tag, to

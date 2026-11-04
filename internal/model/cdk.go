@@ -19,10 +19,10 @@ import (
 // State tells them apart, and the number of stacks of the assembly, so
 // State knows a version runs only once all of them run it.
 const (
-	CloudFormationTagApp     = "c4factory.io/app"
-	CloudFormationTagVersion = "c4factory.io/version"
-	CloudFormationTagTier    = "c4factory.io/tier"
-	CloudFormationTagStacks  = "c4factory.io/stacks"
+	CloudFormationTagApp     = "theos.io/app"
+	CloudFormationTagVersion = "theos.io/version"
+	CloudFormationTagTier    = "theos.io/tier"
+	CloudFormationTagStacks  = "theos.io/stacks"
 )
 
 // CDK artifact types of a manifest.json.
@@ -459,7 +459,7 @@ const cfnNameMax = 128
 const (
 	cdkTokenPrefix     = "c4f-"
 	cdkTokenSep        = "--"
-	cdkChangeSetPrefix = "c4factory-"
+	cdkChangeSetPrefix = "theos-"
 )
 
 // cdkEncode keeps [A-Za-z0-9] and writes any other byte as -XX, lowercase
@@ -549,7 +549,7 @@ func CDKTokenVersion(token string) (version string, ok bool) {
 }
 
 // CDKChangeSetName is the name of the change set that ships version:
-// "c4factory-" and version encoded. A name over CloudFormation's 128
+// "theos-" and version encoded. A name over CloudFormation's 128
 // characters, or an empty version, is an error.
 func CDKChangeSetName(version string) (string, error) {
 	if version == "" {

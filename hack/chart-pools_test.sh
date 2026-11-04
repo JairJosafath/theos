@@ -17,7 +17,7 @@ provider() {
 	shift
 	{
 		echo "---"
-		echo "apiVersion: c4.factory.io/v1beta1"
+		echo "apiVersion: theos.factory.io/v1beta1"
 		echo "kind: GitProvider"
 		echo "spec:"
 		echo "  ci:"
@@ -25,7 +25,7 @@ provider() {
 		echo "      runners:"
 		for l in "$@"; do
 			echo "      - label: $l"
-			echo "        image: ghcr.io/c4factory/runner-$l:v1"
+			echo "        image: ghcr.io/theos/runner-$l:v1"
 		done
 	} >>"$f"
 }

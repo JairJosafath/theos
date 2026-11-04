@@ -46,7 +46,7 @@ func WriteNpmrc(home string, job Job) error {
 
 // DefaultNpmScope is the scope the factory's npm packages share unless the
 // GitProvider names another.
-const DefaultNpmScope = "@c4factory"
+const DefaultNpmScope = "@theos"
 
 // registryToken is the token a package registry takes: the agent's Git
 // token when the registry is on the Git host, else the registry's own.

@@ -8,7 +8,7 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
-- The event consumer, scaffolded by C4 Factory: an EventBridge rule on the
+- The event consumer, scaffolded by theos: an EventBridge rule on the
   default event bus that sends each `ItemSubmitted` event of this Container
   to a Lambda function, which stores the item it carries in a DynamoDB table
   once per event id, retrying an event that fails and moving it to a

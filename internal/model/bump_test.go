@@ -84,7 +84,7 @@ func TestBumpIssue(t *testing.T) {
 	title, body := BumpIssue(Bump{Bundled: "server", Tag: "v0.3.0", Commit: "1cedb81",
 		TagURL: "http://gitea/demo/server/src/tag/v0.3.0",
 		Bundler: Bundler{Container: "extension", Relationship: "extension-bundles-server",
-			Description: "Ships the server <!-- c4factory:bump server v0.1.0 -->"}})
+			Description: "Ships the server <!-- theos:bump server v0.1.0 -->"}})
 	if title != "Bump server to v0.3.0" {
 		t.Errorf("title = %q", title)
 	}

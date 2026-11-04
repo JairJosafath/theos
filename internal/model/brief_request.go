@@ -149,7 +149,7 @@ func RequestCommentStage(stage string) string {
 // RequestMarker is the hidden line that starts each comment the operator
 // posts on a request, so it finds its own before posting again.
 func RequestMarker(brief, stage string) string {
-	return fmt.Sprintf("<!-- c4factory:request brief=%s stage=%s -->", brief, stage)
+	return fmt.Sprintf("<!-- theos:request brief=%s stage=%s -->", brief, stage)
 }
 
 // RequestRoundMarker is the hidden line that ends the planned comment of the
@@ -157,11 +157,11 @@ func RequestMarker(brief, stage string) string {
 // marker alone, so a request reopened on GitHub and answered by a later
 // round hears that round's answer too.
 func RequestRoundMarker(brief string, round int) string {
-	return fmt.Sprintf("<!-- c4factory:request brief=%s round=%d -->", brief, round)
+	return fmt.Sprintf("<!-- theos:request brief=%s round=%d -->", brief, round)
 }
 
 // requestMarker reads a marker back: the Brief and the stage.
-var requestMarker = regexp.MustCompile(`<!-- c4factory:request brief=(\S+) stage=(\S+) -->`)
+var requestMarker = regexp.MustCompile(`<!-- theos:request brief=(\S+) stage=(\S+) -->`)
 
 // HasRequestComment reports whether one of an issue's comments is the
 // Brief's comment for stage.
@@ -248,7 +248,7 @@ func ReleasedComment(brief string, shipped []Shipped) string {
 // the round that planned a request, so a request reopened and planned again
 // hears when that round's work ships too.
 func RequestReleasedMarker(brief string, round int) string {
-	return fmt.Sprintf("<!-- c4factory:request brief=%s released=%d -->", brief, round)
+	return fmt.Sprintf("<!-- theos:request brief=%s released=%d -->", brief, round)
 }
 
 // ShipIssue is what the Brief knows of one issue a request became, to tell

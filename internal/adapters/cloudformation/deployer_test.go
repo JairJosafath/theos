@@ -23,10 +23,10 @@ import (
 	"github.com/aws/smithy-go"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/oci"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/contract"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/oci"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/contract"
 )
 
 const (
@@ -317,7 +317,7 @@ func TestShipChangeSet(t *testing.T) {
 	if !slices.Equal(in.Capabilities, capabilities) || len(capabilities) != 3 {
 		t.Errorf("Capabilities = %v", in.Capabilities)
 	}
-	if aws.ToString(in.ChangeSetName) != "c4factory-v1-2e1-2e0" {
+	if aws.ToString(in.ChangeSetName) != "theos-v1-2e1-2e0" {
 		t.Errorf("ChangeSetName = %s", aws.ToString(in.ChangeSetName))
 	}
 	tags := map[string]string{}
@@ -325,7 +325,7 @@ func TestShipChangeSet(t *testing.T) {
 		tags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 	}
 	for k, v := range map[string]string{model.CloudFormationTagApp: testApp, model.CloudFormationTagVersion: "v1.1.0",
-		model.CloudFormationTagTier: "production", "c4factory:container": "price-fn"} {
+		model.CloudFormationTagTier: "production", "theos:container": "price-fn"} {
 		if tags[k] != v {
 			t.Errorf("tag %s = %q, want %q", k, tags[k], v)
 		}
@@ -775,7 +775,7 @@ func TestPortError(t *testing.T) {
 }
 
 func TestSessionName(t *testing.T) {
-	if got := sessionName("webshop/aws prod"); got != "c4factory-webshop-aws-prod" {
+	if got := sessionName("webshop/aws prod"); got != "theos-webshop-aws-prod" {
 		t.Errorf("sessionName = %q", got)
 	}
 	if got := sessionName(strings.Repeat("n", 100) + "/t"); len(got) != 64 {

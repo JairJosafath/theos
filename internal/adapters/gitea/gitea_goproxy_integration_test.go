@@ -18,30 +18,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // TestGiteaGoProxyIntegration checks what an agent's pod relies on to fetch
 // the factory's released Go modules: the owner's Go package registry serves a
 // module to the go command as a restricted agent account, through the .netrc
-// c4agent writes, and answers a module it lacks with a 404, so the go command
+// theos-agent writes, and answers a module it lacks with a 404, so the go command
 // goes on to the next proxy. Uploading needs the admin's password: the seeded
 // token has no package scope. Like TestGiteaIntegration.
 func TestGiteaGoProxyIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	password := os.Getenv("C4_GITEA_PASSWORD")
+	password := os.Getenv("THEOS_GITEA_PASSWORD")
 	if password == "" {
-		t.Skip("C4_GITEA_PASSWORD not set")
+		t.Skip("THEOS_GITEA_PASSWORD not set")
 	}
 	goBin, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("no go command")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	admin := ports.Credentials{Username: creds.Username, Token: password}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -61,7 +61,7 @@ func TestGiteaGoProxyIntegration(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = p.RemoveAgentAccess(context.Background(), repo, bot.Username) })
 
-	module := "c4factory.local/webshop/" + name
+	module := "theos.local/webshop/" + name
 	putModule(t, ctx, repo.GoProxy+"/upload", admin, module, "v0.1.0")
 	t.Cleanup(func() {
 		packageCall(t, context.Background(), http.MethodDelete,
@@ -76,7 +76,7 @@ func TestGiteaGoProxyIntegration(t *testing.T) {
 			{module, http.StatusOK},
 			// A 404, not a 401 or 403: only on 404 and 410 does the go command try
 			// the next proxy, and it sends credentials over https after a first 4xx.
-			{"c4factory.local/webshop/" + name + "-missing", http.StatusNotFound},
+			{"theos.local/webshop/" + name + "-missing", http.StatusNotFound},
 			{"golang.org/x/mod", http.StatusNotFound},
 		} {
 			got := packageCall(t, ctx, http.MethodGet, repo.GoProxy+"/"+tt.module+"/@v/list", bot)
@@ -127,7 +127,7 @@ func TestGiteaGoProxyIntegration(t *testing.T) {
 				cmd := exec.CommandContext(ctx, goBin, args...)
 				cmd.Dir = home
 				cmd.Env = append(os.Environ(), "HOME="+home, "GOPROXY="+tt.repo.GoProxy+",off",
-					"GONOSUMDB=c4factory.local", "GOMODCACHE="+filepath.Join(home, "mod"), "GOFLAGS=-modcacherw",
+					"GONOSUMDB=theos.local", "GOMODCACHE="+filepath.Join(home, "mod"), "GOFLAGS=-modcacherw",
 					"GOTOOLCHAIN=local", "GOWORK=off", "GO111MODULE=on", "SSL_CERT_FILE="+certs)
 				out, err := cmd.CombinedOutput()
 				return string(out), err
@@ -147,13 +147,13 @@ func TestGiteaGoProxyIntegration(t *testing.T) {
 		})
 	}
 
-	// What the pod's go command asks: c4agent's proxy, which sends the factory's
+	// What the pod's go command asks: theos-agent's proxy, which sends the factory's
 	// modules to the registry and nothing of them to the public proxy, here a
 	// fake that records what it is asked.
-	t.Run("the go command fetches through c4agent's proxy", func(t *testing.T) {
+	t.Run("the go command fetches through theos-agent's proxy", func(t *testing.T) {
 		var leaked atomic.Int32
 		public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.Contains(r.URL.Path, "c4factory.local") {
+			if strings.Contains(r.URL.Path, "theos.local") {
 				leaked.Add(1)
 			}
 			http.NotFound(w, r)
@@ -174,7 +174,7 @@ func TestGiteaGoProxyIntegration(t *testing.T) {
 			cmd := exec.CommandContext(ctx, goBin, args...)
 			cmd.Dir = home
 			cmd.Env = append(os.Environ(), "HOME="+home, "GOPROXY="+local.URL+",off",
-				"GONOSUMDB=c4factory.local", "GOMODCACHE="+filepath.Join(home, "mod"), "GOFLAGS=-modcacherw",
+				"GONOSUMDB=theos.local", "GOMODCACHE="+filepath.Join(home, "mod"), "GOFLAGS=-modcacherw",
 				"GOTOOLCHAIN=local", "GOWORK=off", "GO111MODULE=on")
 			out, err := cmd.CombinedOutput()
 			return string(out), err

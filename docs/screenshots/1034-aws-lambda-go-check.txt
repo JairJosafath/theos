@@ -23,7 +23,7 @@ cd src && golangci-lint run
 0 issues.
 node_modules/.bin/tsc --noEmit
 cd src && go test -race -count=1 ./...
-ok  	c4factory.local/webshop/sample-app	1.024s
+ok  	theos.local/webshop/sample-app	1.024s
 node_modules/.bin/vitest run
 
  RUN  v5.0.3 /tmp/aws-1034

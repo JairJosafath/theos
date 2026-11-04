@@ -93,7 +93,7 @@ lesson gives the AWS templates.
    assertions and stubbed SDK clients.
 10. **A layer that isn't in the chart doesn't exist for a Brief** (catalog
     C8). *Rule:* each step adds its catalog entry, a `templateCombos` row in
-    `internal/scaffold/templates_test.go`, `.c4factory/README.md` and a line
+    `internal/scaffold/templates_test.go`, `.theos/README.md` and a line
     in `docs/getting-started.md`, and teaches the planner guide when to pick
     it.
 

@@ -61,7 +61,7 @@ async function submit(form: HTMLFormElement) {
 
 describe('a refused Brief create', () => {
   const message =
-    'Brief.c4.factory.io "plant-care" is invalid: spec.parallel: Invalid value: 9: spec.parallel in body should be less than or equal to 5'
+    'Brief.theos.factory.io "plant-care" is invalid: spec.parallel: Invalid value: 9: spec.parallel in body should be less than or equal to 5'
 
   it('sends what was typed and shows the API server’s message', async () => {
     const fetchImpl = vi.fn(async () => refused(message))
@@ -101,7 +101,7 @@ describe('a refused Brief create', () => {
   it('takes any name and leaves its rule to the server', async () => {
     const fetchImpl = vi.fn(async () =>
       refused(
-        'Brief.c4.factory.io "Plant Care" is invalid: metadata.name: Invalid value: "Plant Care": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters',
+        'Brief.theos.factory.io "Plant Care" is invalid: metadata.name: Invalid value: "Plant Care": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters',
       ),
     )
     const page = await render(
@@ -112,7 +112,7 @@ describe('a refused Brief create', () => {
     expect(page.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
     await submit(page.querySelector('form')!)
     expect(page.querySelector('[role="alert"]')?.textContent).toMatch(
-      /^Brief.c4.factory.io "Plant Care" is invalid: metadata.name/,
+      /^Brief.theos.factory.io "Plant Care" is invalid: metadata.name/,
     )
   })
 })
@@ -120,7 +120,7 @@ describe('a refused Brief create', () => {
 describe('a refused prompt', () => {
   it('shows the API server’s message and keeps the prompt', async () => {
     const message =
-      'Brief.c4.factory.io "returns" is invalid: spec.prompts: Invalid value: a Brief lists at most 50 prompts: in the write that appends, drop the oldest prompts rounds have planned (status.promptsPlanned counts them) and raise promptsRetired by as many'
+      'Brief.theos.factory.io "returns" is invalid: spec.prompts: Invalid value: a Brief lists at most 50 prompts: in the write that appends, drop the oldest prompts rounds have planned (status.promptsPlanned counts them) and raise promptsRetired by as many'
     const fetchImpl = vi.fn(async () => refused(message))
     const page = await render(
       createElement(PromptForm, {

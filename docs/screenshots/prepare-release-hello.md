@@ -1,6 +1,6 @@
 # The Crew prepares a release, then tags it (#117)
 
-Kind cluster `c4factory`, operator built from `feat/117-the-crew-files-the-prepare-release-issue`
+Kind cluster `theos`, operator built from `feat/117-the-crew-files-the-prepare-release-issue`
 (`make deploy`), 2026-10-05 23:53–23:58 UTC. Setup, as a person would do it:
 
 - Container `apps/hello-prep`: the hello Framework and `hello-standard`.
@@ -39,7 +39,7 @@ TIME                          TYPE     REASON             ACTION           NOTE
 2026-10-05T23:57:02.235654Z   Normal   PreparingRelease   PrepareRelease   Filed #4 to prepare v0.1.0
 2026-10-05T23:57:29.463327Z   Normal   Released           TagRelease       Released v0.1.0 at 463640455c2621a2f79964233820fb6c8cd9534b
 
-$ kubectl -n c4-factory-system logs deploy/c4-factory-controller-manager | grep -E "Filed release preparation|Released milestone" | grep hello-prep
+$ kubectl -n theos-system logs deploy/theos-controller-manager | grep -E "Filed release preparation|Released milestone" | grep hello-prep
 2026-10-05T23:57:02Z	INFO	Filed release preparation	{"controller": "crew", "Crew": {"name":"hello-prep","namespace":"apps"}, ..., "tag": "v0.1.0", "issue": 4}
 2026-10-05T23:57:29Z	INFO	Released milestone	{"controller": "crew", "Crew": {"name":"hello-prep","namespace":"apps"}, ..., "tag": "v0.1.0", "commit": "463640455c2621a2f79964233820fb6c8cd9534b", "created": true}
 

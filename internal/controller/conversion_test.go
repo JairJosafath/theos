@@ -6,8 +6,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 )
 
 // conversionSpecs are a minimal valid spec of every kind but Project, which

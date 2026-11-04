@@ -11,13 +11,13 @@ metadata:
 {{- end }}
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/name: {{ include "c4-factory.name" . }}
+    app.kubernetes.io/name: {{ include "theos.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
-  name: {{ include "c4-factory.resourceName" (dict "suffix" "crew-editor-role" "context" $) }}
+  name: {{ include "theos.resourceName" (dict "suffix" "crew-editor-role" "context" $) }}
 rules:
 - apiGroups:
-  - c4.factory.io
+  - theos.factory.io
   resources:
   - crews
   verbs:
@@ -29,7 +29,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - c4.factory.io
+  - theos.factory.io
   resources:
   - crews/status
   verbs:

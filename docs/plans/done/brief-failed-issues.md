@@ -21,7 +21,7 @@ Task; and the card shows the failed issues and says to answer them in a prompt.
 ## Decisions, and why
 
 1. **What a failed issue is.** An open issue labelled `status/needs-human` in
-   the repository of a Container the Brief made (label `c4.factory.io/brief`).
+   the repository of a Container the Brief made (label `theos.factory.io/brief`).
    That label is the one way the factory hands an issue back: a failed Task
    (`handBack`) and a Crew refusing an issue (`NotReady`) both set it. No new
    marker, so the issues v0.5.0 already handed back show up after an upgrade.

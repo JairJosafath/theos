@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -326,10 +326,10 @@ type DeployTargetStatus struct {
 	CheckedTime *metav1.Time `json:"checkedTime,omitempty"`
 }
 
-// +kubebuilder:deprecatedversion:warning="c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
+// +kubebuilder:deprecatedversion:warning="theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:printcolumn:name="Repository",type=string,JSONPath=".spec.github.repository"
 // +kubebuilder:printcolumn:name="Region",type=string,JSONPath=".spec.cloudFormation.region",priority=1
 // +kubebuilder:printcolumn:name="Tier",type=string,JSONPath=".spec.tier"

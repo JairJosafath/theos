@@ -5,10 +5,10 @@
 //   GET /k8s/<api path>   the Kubernetes API, as-is: lists, gets, single watches
 //   GET /k8s-watch?...    several watches over one response (see watchMany)
 //   GET /factory/health   the factory's components, node, agent sandboxes and last hour, summarized (health.mjs)
-//   GET /downloads/c4session-linux-<amd64|arm64>
+//   GET /downloads/theos-session-linux-<amd64|arm64>
 //                         the Session client, from downloads/ (the image builds it; #1151)
 //   GET /downloads/SHA256SUMS
-//                         its checksums, which the c4session feature verifies (#1175)
+//                         its checksums, which the theos-session feature verifies (#1175)
 //   GET /...              files from dist/
 //
 //   GET /ui/session       whether actions are on, who makes them, who is signed in, and the writes
@@ -17,7 +17,7 @@
 //                         sign-in with OIDC, with UI_ACTIONS=oidc (oidc.mjs)
 //
 // Read-only but for the action table's writes: GET reaches the API only under
-// /apis/c4.factory.io/. With actions off (UI_ACTIONS unset) the only writes
+// /apis/theos.factory.io/. With actions off (UI_ACTIONS unset) the only writes
 // are creating a Brief in a namespace that holds a Project, and a JSON patch
 // on a Brief that appends a prompt at /spec/prompts/- (to a full list, the
 // server retires the planned prompts past the newest ten in the same patch)
@@ -49,8 +49,8 @@ import { createOIDC, oidcFromEnv } from './oidc.mjs'
 
 const SERVICE_ACCOUNT_DIR = '/var/run/secrets/kubernetes.io/serviceaccount'
 
-/** Only the c4.factory.io API group is reachable: the UI needs nothing else. */
-const ALLOWED_PREFIX = '/apis/c4.factory.io/'
+/** Only theos.factory.io API group is reachable: the UI needs nothing else. */
+const ALLOWED_PREFIX = '/apis/theos.factory.io/'
 
 /** The JSON patch paths the UI may write: append a prompt, and pause or resume a Brief or its running Tasks. */
 const PROMPT_PATH = '/spec/prompts/-'
@@ -61,19 +61,19 @@ const PAUSE_RUNS_PATH = '/spec/pauseRuns'
 const MAX_WRITE_BYTES = 64 * 1024
 
 /** Who the API server records as writing the UI's changes. */
-const FIELD_MANAGER = 'c4-factory-ui'
+const FIELD_MANAGER = 'theos-ui'
 
 /** Most watches one /k8s-watch request may carry. */
 const MAX_WATCHES = 32
 
 /**
  * The files under /downloads/: the Session client the image builds for each
- * architecture (ui/Dockerfile), which a scaffolded devcontainer's c4session
+ * architecture (ui/Dockerfile), which a scaffolded devcontainer's theos-session
  * feature fetches from the chart's default sessionBinaryURL (#1151), and the
  * SHA256SUMS over both, which the feature checks the download against (#1175).
  * Any other name is 404.
  */
-export const DOWNLOADS = ['c4session-linux-amd64', 'c4session-linux-arm64', 'SHA256SUMS']
+export const DOWNLOADS = ['theos-session-linux-amd64', 'theos-session-linux-arm64', 'SHA256SUMS']
 
 /** Request headers passed upstream. Everything else, auth and cookies included, is dropped. */
 const FORWARDED_REQUEST_HEADERS = ['accept', 'user-agent']
@@ -81,7 +81,7 @@ const FORWARDED_REQUEST_HEADERS = ['accept', 'user-agent']
 /**
  * Response headers passed back to the browser. `warning` carries the API
  * server's deprecation notice for a request at a deprecated version
- * (c4.factory.io/v1alpha1, #1618), which the project page shows.
+ * (theos.factory.io/v1alpha1, #1618), which the project page shows.
  */
 const FORWARDED_RESPONSE_HEADERS = ['content-type', 'cache-control', 'date', 'audit-id', 'warning']
 
@@ -147,7 +147,7 @@ function sendStatus(res, code, reason, message, headers = {}) {
 }
 
 /**
- * True for an API path the UI may read: inside c4.factory.io, plain characters
+ * True for an API path the UI may read: inside theos.factory.io, plain characters
  * only (resource paths never need escapes, so no encoded slashes or dots), and
  * no "." or ".." segments.
  */
@@ -184,7 +184,7 @@ const MAX_JSON_BYTES = 32 * 1024 * 1024
 
 /**
  * Reads one API path for the server itself (not for the browser, so not limited
- * to c4.factory.io). Resolves to { status, body }.
+ * to theos.factory.io). Resolves to { status, body }.
  */
 function getJson(upstream, apiPath) {
   return requestJson(upstream, apiPath)
@@ -287,7 +287,7 @@ function isCrossSite(req) {
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** A namespaced c4.factory.io resource path: the collection, or one object with `one`. */
+/** A namespaced theos.factory.io resource path: the collection, or one object with `one`. */
 const resourcePath = (plural, one = false) =>
   new RegExp(
     `^/apis/c4\\.factory\\.io/v1beta1/namespaces/([a-z0-9-]{1,63})/${plural}${one ? '/([a-z0-9.-]{1,253})' : ''}$`,
@@ -347,7 +347,7 @@ function setsAnnotation(key) {
  */
 function createsObject(kind, specFields, fixed = {}) {
   return (body, namespace) => {
-    if (!isObject(body) || body.apiVersion !== 'c4.factory.io/v1beta1' || body.kind !== kind) return undefined
+    if (!isObject(body) || body.apiVersion !== 'theos.factory.io/v1beta1' || body.kind !== kind) return undefined
     const meta = isObject(body.metadata) ? body.metadata : {}
     if (meta.namespace !== undefined && meta.namespace !== namespace) return undefined
     if (specFields && !(isObject(body.spec) && Object.keys(body.spec).every((f) => specFields.includes(f)))) {
@@ -523,32 +523,32 @@ const ACTIONS = [
     write: writeTested('Crew'),
   },
   {
-    what: 'set annotation c4.factory.io/rerun-release on a Crew',
+    what: 'set annotation theos.factory.io/rerun-release on a Crew',
     method: 'PATCH',
     path: resourcePath('crews', true),
     type: MERGE_PATCH,
-    check: setsAnnotation('c4.factory.io/rerun-release'),
+    check: setsAnnotation('theos.factory.io/rerun-release'),
   },
   {
-    what: 'set annotation c4.factory.io/retry on a Container',
+    what: 'set annotation theos.factory.io/retry on a Container',
     method: 'PATCH',
     path: resourcePath('containers', true),
     type: MERGE_PATCH,
-    check: setsAnnotation('c4.factory.io/retry'),
+    check: setsAnnotation('theos.factory.io/retry'),
   },
   {
-    what: 'set annotation c4.factory.io/standard-take on a Container',
+    what: 'set annotation theos.factory.io/standard-take on a Container',
     method: 'PATCH',
     path: resourcePath('containers', true),
     type: MERGE_PATCH,
-    check: setsAnnotation('c4.factory.io/standard-take'),
+    check: setsAnnotation('theos.factory.io/standard-take'),
   },
   {
-    what: 'set annotation c4.factory.io/standard-keep on a Container',
+    what: 'set annotation theos.factory.io/standard-keep on a Container',
     method: 'PATCH',
     path: resourcePath('containers', true),
     type: MERGE_PATCH,
-    check: setsAnnotation('c4.factory.io/standard-keep'),
+    check: setsAnnotation('theos.factory.io/standard-keep'),
   },
   {
     what: "set a Container's /spec/checks",
@@ -610,7 +610,7 @@ async function actionWrite(req, res, apiPath, upstream, log, table, mode, oidc) 
   const writes = table.map((entry) => `${entry.method} ${entry.what}`).join('; ')
   const entries = table.filter((entry) => entry.method === req.method && entry.path.test(apiPath))
   if (!entries.length) {
-    return sendStatus(res, 403, 'Forbidden', `The C4 Factory UI writes only these: ${writes}`)
+    return sendStatus(res, 403, 'Forbidden', `The theos UI writes only these: ${writes}`)
   }
   if (isCrossSite(req)) return sendStatus(res, 403, 'Forbidden', 'Writes come only from the UI itself')
   const as = mode === 'oidc' ? oidc?.who(req) : undefined
@@ -633,12 +633,12 @@ async function actionWrite(req, res, apiPath, upstream, log, table, mode, oidc) 
     return write({ res, upstream, log, apiPath, namespace, name, entry, body: checked, as })
   }
   const here = typed.map((entry) => entry.what).join('; or ')
-  return sendStatus(res, 403, 'Forbidden', `The C4 Factory UI writes here only: ${here}`)
+  return sendStatus(res, 403, 'Forbidden', `The theos UI writes here only: ${here}`)
 }
 
 /** Creates a Brief, once the namespace is known to hold a Project. */
 async function createBrief({ res, upstream, log, apiPath, namespace, body, as }) {
-  const projects = await requestJson(upstream, `/apis/c4.factory.io/v1beta1/namespaces/${namespace}/projects`)
+  const projects = await requestJson(upstream, `/apis/theos.factory.io/v1beta1/namespaces/${namespace}/projects`)
   if (projects.status !== 200) return send(res, projects.status, `${JSON.stringify(projects.body)}\n`, JSON_TYPE)
   if (!projects.body?.items?.length) {
     return sendStatus(res, 403, 'Forbidden', `Namespace ${namespace} holds no Project, so the UI makes no Brief there`)
@@ -891,7 +891,7 @@ export function createApiHandler({
     }
     if (url.pathname === '/factory/health') {
       if (req.method !== 'GET') {
-        sendStatus(res, 405, 'MethodNotAllowed', 'The C4 Factory UI is read-only: only GET is allowed', {
+        sendStatus(res, 405, 'MethodNotAllowed', 'The theos UI is read-only: only GET is allowed', {
           allow: 'GET',
         })
         return true
@@ -943,7 +943,7 @@ export function createApiHandler({
         res,
         405,
         'MethodNotAllowed',
-        `Only GET is allowed here: the C4 Factory UI writes nothing but ${only}`,
+        `Only GET is allowed here: the theos UI writes nothing but ${only}`,
         {
           allow: 'GET',
         },
@@ -1064,7 +1064,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const sampleEveryMs = Number(process.env.FACTORY_SAMPLE_SECONDS ?? 15) * 1000
   const server = createServer({ upstream, sampleEveryMs })
   server.listen(port, () => {
-    console.log(`C4 Factory UI on http://localhost:${port} (Kubernetes API: ${upstream.url.origin}, ${upstream.mode})`)
+    console.log(`theos UI on http://localhost:${port} (Kubernetes API: ${upstream.url.origin}, ${upstream.mode})`)
   })
   const shutdown = () => {
     server.close(() => process.exit(0))

@@ -11,7 +11,7 @@ import (
 // FactoryModulePrefix starts the module paths the factory's own apps read from
 // the Git host's Go package registry; every other path is read through the
 // public Go proxy.
-const FactoryModulePrefix = "c4factory.local/"
+const FactoryModulePrefix = "theos.local/"
 
 // ModuleCheckEvery is how often the Go proxy is asked about a version it
 // hasn't confirmed yet.
@@ -142,7 +142,7 @@ type ModuleDecision struct {
 }
 
 // DecideModule says whether go get <path>@<version> finds a release's Go
-// module where its path is read. A c4factory.local/ path is read from the
+// module where its path is read. A theos.local/ path is read from the
 // registry, so the upload is the publish. Any other path is read through the
 // Go proxy: the Crew's own GitHub source folder waits for its source tag, then
 // the proxy is asked, at most every ModuleCheckEvery until it finds the

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -15,8 +15,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The owner's Actions variables and secrets that name its package
@@ -24,11 +24,11 @@ import (
 // spec.packages leaves everything to the host's own registries, none is set
 // (docs/plans/done/app-packages.md, decision 5).
 const (
-	ActionsVarNpmScope     = "C4_NPM_SCOPE"
-	ActionsVarNpmRegistry  = "C4_NPM_REGISTRY"
-	ActionsVarPyPIIndex    = "C4_PYPI_INDEX"
-	ActionsSecretNpmToken  = "C4_NPM_TOKEN"  //nolint:gosec // the name of an Actions secret
-	ActionsSecretPyPIToken = "C4_PYPI_TOKEN" //nolint:gosec // the name of an Actions secret
+	ActionsVarNpmScope     = "THEOS_NPM_SCOPE"
+	ActionsVarNpmRegistry  = "THEOS_NPM_REGISTRY"
+	ActionsVarPyPIIndex    = "THEOS_PYPI_INDEX"
+	ActionsSecretNpmToken  = "THEOS_NPM_TOKEN"  //nolint:gosec // the name of an Actions secret
+	ActionsSecretPyPIToken = "THEOS_PYPI_TOKEN" //nolint:gosec // the name of an Actions secret
 )
 
 // packagesActions is what the owner's Actions hold for its package
@@ -44,8 +44,8 @@ func (a packagesActions) equal(b packagesActions) bool {
 
 // ensurePackagesActions keeps, for every GitProvider of the project's
 // namespace whose host has owner Actions, the owner's Actions variables
-// (C4_NPM_SCOPE, C4_NPM_REGISTRY, C4_PYPI_INDEX) and secrets (C4_NPM_TOKEN
-// and C4_PYPI_TOKEN, from the registry Secrets' readToken): set when
+// (THEOS_NPM_SCOPE, THEOS_NPM_REGISTRY, THEOS_PYPI_INDEX) and secrets (THEOS_NPM_TOKEN
+// and THEOS_PYPI_TOKEN, from the registry Secrets' readToken): set when
 // spec.packages departs from the host's own registries, with the defaults
 // filled in for what it leaves out, and deleted, all five, when it is the
 // default. A Secret or readToken that is missing deletes its Actions secret.

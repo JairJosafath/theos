@@ -39,7 +39,7 @@ and the reviewer to read them before they plan or review a change.
   commit, and the controller's `scaffoldedDomains` reads the status, never
   inferring them from `scaffoldedFrom` (#1757).
 - `model.AgentNeverPaths` (`internal/model/fence.go`) is `AGENTS.md`,
-  `docs/agents/` and `.c4factory.yaml`: the fence refuses an agent's change
+  `docs/agents/` and `.theos.yaml`: the fence refuses an agent's change
   there and the plan check refuses an issue asking for one. A file under
   `docs/agents/domain/` is already covered.
 - Every Standard's `AGENTS.md.tmpl` points the agent at

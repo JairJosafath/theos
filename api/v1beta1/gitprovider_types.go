@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -55,7 +55,7 @@ type GitProviderSpec struct {
 	// packages names the npm and PyPI registries the owner's packages are
 	// published to and installed from. Without it, and for each registry
 	// left out, the Git host's own registries under the owner, with the
-	// scope @c4factory: the operator publishes with the GitProvider's
+	// scope @theos: the operator publishes with the GitProvider's
 	// credentials and the agents install with the agent bot's.
 	// +optional
 	Packages *PackagesSpec `json:"packages,omitempty"`
@@ -75,7 +75,7 @@ type PackagesSpec struct {
 // NpmPackagesSpec is the owner's npm registry.
 type NpmPackagesSpec struct {
 	// scope is the scope the owner's packages are named under, such as
-	// @c4factory; the registry serves it.
+	// @theos; the registry serves it.
 	// +kubebuilder:validation:Pattern=`^@[a-z0-9][a-z0-9._-]*$`
 	// +kubebuilder:validation:MaxLength=214
 	// +optional
@@ -149,7 +149,7 @@ type CIRunnerSpec struct {
 	// +required
 	Label string `json:"label"`
 
-	// image is the runner image, such as c4factory/gitea-runner-go:dev; it
+	// image is the runner image, such as theos/gitea-runner-go:dev; it
 	// registers in an init container and runs the jobs.
 	// +kubebuilder:validation:MinLength=1
 	// +required
@@ -174,7 +174,7 @@ type CIRunnerSpec struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=".spec.provider"
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=".spec.url"

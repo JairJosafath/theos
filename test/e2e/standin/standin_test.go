@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -17,12 +17,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 )
 
 func agent(name string, harness c4v1beta1.AgentHarness, edit func(*c4v1beta1.AgentSpec)) c4v1beta1.Agent {
 	a := c4v1beta1.Agent{ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-base:dev", Harness: harness}}
+		Spec: c4v1beta1.AgentSpec{Image: "theos/agent-base:dev", Harness: harness}}
 	if edit != nil {
 		edit(&a.Spec)
 	}
@@ -77,12 +77,12 @@ func TestFixture(t *testing.T) {
 
 func TestAgentsReadsOnlyAgents(t *testing.T) {
 	dir := t.TempDir()
-	yaml := `apiVersion: c4.factory.io/v1beta1
+	yaml := `apiVersion: theos.factory.io/v1beta1
 kind: Framework
 metadata: {name: hello-html}
 spec: {supportedTypes: [static-site], template: {url: http://gitea/templates/hello-html, ref: v1.0.0}}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Agent
 metadata: {name: claude}
 spec: {image: agent:dev, harness: claude-code, credentialsSecretRef: {name: claude-credentials}}

@@ -1,6 +1,6 @@
 # Proves the Task loop without spending tokens: the stand-in agent adds a line,
 # the stand-in reviewer asks for changes once, then approves and it merges.
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Task
 metadata:
   name: stand-in-loop

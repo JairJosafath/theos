@@ -17,9 +17,9 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/oci"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/oci"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // Projects builds the client of a GitLab project: Client on the

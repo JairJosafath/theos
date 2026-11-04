@@ -106,7 +106,7 @@ with its image. No test uses an AWS account.
    roles `cdk deploy` would assume: the deploy role for CloudFormation, the
    file-publishing role for S3, the image-publishing role for ECR, and the
    cfn-exec role CloudFormation runs the stack as; the adapter assumes them
-   with STS, session name `c4factory-<namespace>-<target>`, and resolves
+   with STS, session name `theos-<namespace>-<target>`, and resolves
    `${AWS::AccountId}` and `${AWS::Region}` from the credential's identity
    and the target's region, as cdk-assets does. The credential itself needs
    only `sts:AssumeRole` on the `cdk-<qualifier>-*-role-<account>-<region>`
@@ -155,11 +155,11 @@ with its image. No test uses an AWS account.
      `RoleARN` the cfn-exec role; `CAPABILITY_IAM`, `CAPABILITY_NAMED_IAM`,
      `CAPABILITY_AUTO_EXPAND`; the template's parameters filled from
      `Target.Parameters` by name, the others ignored; tags
-     `c4factory.io/app`, `c4factory.io/tier`, `c4factory.io/version` and
-     `c4factory.io/stacks`, the assembly's stack count) and `ExecuteChangeSet`
+     `theos.io/app`, `theos.io/tier`, `theos.io/version` and
+     `theos.io/stacks`, the assembly's stack count) and `ExecuteChangeSet`
      with a `ClientRequestToken` carrying the version. An empty change set
      (nothing changed) is deleted and counts as deployed. A stack whose
-     `c4factory.io/app` tag names another app fails `StackTaken`, as the
+     `theos.io/app` tag names another app fails `StackTaken`, as the
      GitHub member's `TagTaken`. Repeating `Ship` for a version the stack is
      deploying or runs starts nothing.
    - **State** is `DescribeStacks` plus the newest stack-level event: the
@@ -172,7 +172,7 @@ with its image. No test uses an AWS account.
      stack (complete, or `UPDATE_ROLLBACK_COMPLETE`) tagged the version
      `State` is asked for runs it, so wanting the version a rollback
      returned to is `Deployed`; fewer stacks running the version than their
-     `c4factory.io/stacks` tag says are `Deploying`. The table is
+     `theos.io/stacks` tag says are `Deploying`. The table is
      `model.CloudFormationDeployState`, pure and table-tested.
    - **Health is the stack status**: `Healthy` on a complete state,
      `Progressing` in progress, `Degraded` on a failed state. Alarms are not

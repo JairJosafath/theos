@@ -43,7 +43,7 @@ blocked. The issue failed its third try with its work done.
    still wanted (on #155, the description), and the implementer and reviewer
    get it as round 1's feedback.
 4. **No commit is a round, when there is a pull request.** The sandbox gets
-   `C4_PULL_REQUEST` when the Task has one (a continued try, or any round
+   `THEOS_PULL_REQUEST` when the Task has one (a continued try, or any round
    after the first). The implementer is told so, and that a change to the
    pull request alone needs no commit. A run that commits nothing then
    reports the branch's head instead of `NoChangeNoReason`; the Task treats it
@@ -57,6 +57,6 @@ blocked. The issue failed its third try with its work done.
 ## Steps
 
 One pull request: the design change, `model.EarlierTry` with its table test,
-the controller's adoption, `C4_PULL_REQUEST` in the sandbox and the runner,
+the controller's adoption, `THEOS_PULL_REQUEST` in the sandbox and the runner,
 the prompt line, and the envtest.
 Evidence: [../../screenshots/607-try-continues-open-pr.txt](../../screenshots/607-try-continues-open-pr.txt).

@@ -17,8 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 func briefScheme(t *testing.T) *runtime.Scheme {
@@ -40,9 +40,9 @@ func briefScheme(t *testing.T) *runtime.Scheme {
 func TestMissingAgentSecretSaysWhereTheTokenGoes(t *testing.T) {
 	const (
 		ns     = "shop"
-		source = "c4-factory-system"
+		source = "theos-system"
 		secret = "claude-credentials"
-		proxy  = "http://c4-model-proxy.c4-factory-system.svc:8080"
+		proxy  = "http://c4-model-proxy.theos-system.svc:8080"
 	)
 	tests := []struct {
 		name          string
@@ -65,29 +65,29 @@ func TestMissingAgentSecretSaysWhereTheTokenGoes(t *testing.T) {
 		{
 			name: "no label: label the namespace or make the Secret", shared: true,
 			want: "Secret claude-credentials of Agent coder is missing: label namespace shop " +
-				"c4.factory.io/shared-secrets=true, so the factory shares it from namespace c4-factory-system, " +
+				"theos.factory.io/shared-secrets=true, so the factory shares it from namespace theos-system, " +
 				"or make it in shop for this project only",
 		},
 		{
 			name: "no label with the proxy: label the namespace", shared: true, proxied: true,
 			want: "Agent coder is on the factory's shared Secret claude-credentials: label namespace shop " +
-				"c4.factory.io/shared-secrets=true, so its agents reach the factory's model proxy",
+				"theos.factory.io/shared-secrets=true, so its agents reach the factory's model proxy",
 		},
 		{
 			name: "label and no source: make the Secret in the operator's namespace", shared: true, labeled: true,
-			want: "Secret claude-credentials of Agent coder is missing: make it in namespace c4-factory-system, " +
+			want: "Secret claude-credentials of Agent coder is missing: make it in namespace theos-system, " +
 				"which the factory shares with every project, or in shop for this project only",
 		},
 		{
 			name: "label and no source with the proxy: make the Secret the proxy uses", shared: true, labeled: true,
 			proxied: true,
-			want: "Secret claude-credentials of Agent coder is missing: make it in namespace c4-factory-system " +
+			want: "Secret claude-credentials of Agent coder is missing: make it in namespace theos-system " +
 				"with the Agents' token, which the factory's model proxy uses for every project",
 		},
 		{
 			name: "label and source: the copy is on its way", shared: true, labeled: true, sourcePresent: true,
 			want: "Secret claude-credentials of Agent coder is not in namespace shop yet: the factory is " +
-				"copying it from namespace c4-factory-system, so the Brief's planner can start",
+				"copying it from namespace theos-system, so the Brief's planner can start",
 		},
 		{
 			name: "label and source with the proxy: nothing is missing", shared: true, labeled: true,

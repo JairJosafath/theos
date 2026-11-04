@@ -18,10 +18,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/oci"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/contract"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/oci"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/contract"
 )
 
 // startRemote runs a second envtest with Argo CD's CRDs, the cluster an
@@ -41,7 +41,7 @@ func startRemote(t *testing.T) (client.WithWatch, []byte) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = env.Stop() })
-	user, err := env.AddUser(envtest.User{Name: "c4factory", Groups: []string{"system:masters"}}, nil)
+	user, err := env.AddUser(envtest.User{Name: "theos", Groups: []string{"system:masters"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

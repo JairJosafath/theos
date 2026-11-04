@@ -8,7 +8,7 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
-- The scheduled job, scaffolded by C4 Factory: an EventBridge Scheduler
+- The scheduled job, scaffolded by theos: an EventBridge Scheduler
   schedule that runs a Lambda function every day at 03:00 UTC, keeping a
   record of each run in a DynamoDB table once per scheduled time, retrying a
   run that fails and moving it to a dead-letter queue after the last try,

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -32,10 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // ContainerReconciler makes a Container a child of its SoftwareSystem, checks its
@@ -96,13 +96,13 @@ type ContainerReconciler struct {
 	uids sync.Map
 }
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=containers/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=containers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=containers/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=containers/finalizers,verbs=update
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;frameworks;standards;computes;deployments;connectors;bundles;domains,verbs=get;list;watch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=crews;deploytargets;projects,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=gitproviders;frameworks;standards;computes;deployments;connectors;bundles;domains,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=relationships;datastores;sessions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=crews;deploytargets;projects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 

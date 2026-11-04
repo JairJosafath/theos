@@ -6,7 +6,7 @@
 # gitea/gitea-runner; the runner container, where jobs run, never gets it.
 # config/runner/network-policy.yaml fences it.
 #
-# Jobs keep their Go build cache on the node (/var/cache/c4factory/go/ci), so a
+# Jobs keep their Go build cache on the node (/var/cache/theos/go/ci), so a
 # job compiles only what changed since the last. Only this runner mounts it:
 # Go trusts what it reads from its cache, and agent sandboxes, which run
 # untrusted code, share a sibling of their own (the operator's
@@ -18,7 +18,7 @@ metadata:
   name: gitea-runner-go-env
   namespace: gitea
   labels:
-    app.kubernetes.io/part-of: c4factory-testenv
+    app.kubernetes.io/part-of: theos-testenv
 data:
   # Read by the runner for every job (env_file in hack/runner/config.yaml).
   job.env: |
@@ -31,7 +31,7 @@ metadata:
   name: gitea-runner-go
   namespace: gitea
   labels:
-    app.kubernetes.io/part-of: c4factory-testenv
+    app.kubernetes.io/part-of: theos-testenv
 spec:
   replicas: 1
   strategy:
@@ -43,7 +43,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: gitea-runner-go
-        app.kubernetes.io/part-of: c4factory-testenv
+        app.kubernetes.io/part-of: theos-testenv
         # The CI fence selects it: config/runner/network-policy.yaml.
         app.kubernetes.io/component: ci-runner
     spec:
@@ -53,7 +53,7 @@ spec:
         # the registration token, which the jobs in the runner container must
         # not read (hack/runner/register.sh).
         - name: register
-          image: c4factory/gitea-runner-go:dev
+          image: theos/gitea-runner-go:dev
           imagePullPolicy: Never
           command: [c4-runner-register]
           env:
@@ -70,7 +70,7 @@ spec:
             - name: data
               mountPath: /data
         - name: go-cache
-          image: c4factory/gitea-runner-go:dev
+          image: theos/gitea-runner-go:dev
           imagePullPolicy: Never
           command: [c4-go-cache, /cache/go]
           volumeMounts:
@@ -78,7 +78,7 @@ spec:
               mountPath: /cache/go
       containers:
         - name: runner
-          image: c4factory/gitea-runner-go:dev
+          image: theos/gitea-runner-go:dev
           imagePullPolicy: Never
           # A job takes at most 4 of the node's cores, so a build can't starve etcd,
           # the API server and Gitea: docs/dev/devices.md, "CPU on the cluster device".
@@ -99,7 +99,7 @@ spec:
               subPath: job.env
         # Keeps the cache under its bound between jobs; Go drops nothing for five days.
         - name: go-cache-trim
-          image: c4factory/gitea-runner-go:dev
+          image: theos/gitea-runner-go:dev
           imagePullPolicy: Never
           command: [sh, -c, "while sleep 3600; do c4-go-cache /cache/go; done"]
           resources:
@@ -118,6 +118,6 @@ spec:
         - name: tmp
           emptyDir: {medium: Memory, sizeLimit: 1Gi}
         - name: go-cache
-          hostPath: {path: /var/cache/c4factory/go/ci, type: DirectoryOrCreate}
+          hostPath: {path: /var/cache/theos/go/ci, type: DirectoryOrCreate}
         - name: job-env
           configMap: {name: gitea-runner-go-env}

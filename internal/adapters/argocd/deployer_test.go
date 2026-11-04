@@ -25,9 +25,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/contract"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/contract"
 )
 
 // startAPIServer runs envtest with Argo CD's CRDs (test/crds/argocd) and
@@ -547,7 +547,7 @@ func TestCheckErrors(t *testing.T) {
 			&meta.NoKindMatchError{GroupKind: AppProjectGVK.GroupKind(), SearchedVersions: []string{"v1alpha1"}},
 			ports.ErrCredentialRefused, "Argo CD isn't installed (no argoproj.io/v1alpha1 in the cluster)"},
 		{"Forbidden names the verb",
-			apierrors.NewForbidden(projects, "default", errors.New("User \"system:serviceaccount:c4factory:operator\" cannot get resource")),
+			apierrors.NewForbidden(projects, "default", errors.New("User \"system:serviceaccount:theos:operator\" cannot get resource")),
 			ports.ErrCredentialRefused, "can't get appprojects in namespace argocd"},
 		{"Unauthorized refuses the credential", apierrors.NewUnauthorized("bad token"),
 			ports.ErrCredentialRefused, "can't get appprojects in namespace argocd"},

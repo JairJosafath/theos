@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // gitPath is /repos/{owner}/{repo}/git/ and its rest.

@@ -11,7 +11,7 @@ resources:
 - deploytarget.yaml
 patches:
 - target:
-    group: c4.factory.io
+    group: theos.factory.io
     kind: Container
     name: orders-cli
   patch: |-

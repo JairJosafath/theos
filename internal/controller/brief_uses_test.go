@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -15,18 +15,18 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // The package files a release of the core attaches, and what they hold.
 var (
-	coreTarball = fake.ReleaseFile{Name: "c4factory-core-0.1.0.tgz", Data: []byte("tgz")}
+	coreTarball = fake.ReleaseFile{Name: "theos-core-0.1.0.tgz", Data: []byte("tgz")}
 	coreWheel   = fake.ReleaseFile{Name: "core-0.1.0-py3-none-any.whl", Data: []byte("whl")}
-	coreNpm     = fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@c4factory/core", Version: "0.1.0",
+	coreNpm     = fake.Package{Ecosystem: ports.EcosystemNpm, Name: "@theos/core", Version: "0.1.0",
 		File: coreTarball.Name}
 	corePyPI = fake.Package{Ecosystem: ports.EcosystemPyPI, Name: "core", Version: "0.1.0", File: coreWheel.Name}
 )
@@ -37,14 +37,14 @@ var (
 func usesPlan(ns string) scaffold.Tree {
 	return scaffold.Tree{
 		model.PlanModelFile: {Data: []byte(projectDoc(ns) + `---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: cel-lens
 spec:
   displayName: CEL lens
 ` + engineContainer("core", "Core") + engineContainer("cli", "CLI") + `---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: cli-to-core
@@ -85,7 +85,7 @@ The CLI checks a file with the core's checker.
 
 // coreModule is the core's module path in namespace ns.
 func coreModule(ns string) string {
-	return "c4factory.local/" + ns + "/core"
+	return "theos.local/" + ns + "/core"
 }
 
 // releaseCore sets the core Crew's latest release, v0.1.0, as tagging it would, its
@@ -267,8 +267,8 @@ var _ = Describe("Brief issues that use another app", func() {
 			g.Expect(cliTaskStarted(ns)).To(BeTrue(), "readied, the CLI's Crew takes it")
 		}, "30s").Should(Succeed())
 		cli := gitFake.Issue(ns, "cli", 1)
-		Expect(cli.Body).To(ContainSubstring("\nUses npm package @c4factory/core 0.1.0: " +
-			"npm install --save-exact @c4factory/core@0.1.0.\n"))
+		Expect(cli.Body).To(ContainSubstring("\nUses npm package @theos/core 0.1.0: " +
+			"npm install --save-exact @theos/core@0.1.0.\n"))
 		Expect(cli.Body).NotTo(ContainSubstring("go get"), "the core is no Go module")
 		Expect(model.HasIssueMarker(cli.Body, "cel-lens", 1, 2)).To(BeTrue())
 		Expect(getBrief(Default, ns).Status.Issues).To(ConsistOf(
@@ -305,7 +305,7 @@ var _ = Describe("Brief issues that use another app", func() {
 		Expect(gitFake.OpenIssues(ns, "core")).To(HaveLen(1))
 		Expect(gitFake.OpenIssues(ns, "cli")).To(HaveLen(1))
 		cli := gitFake.Issue(ns, "cli", 1)
-		Expect(cli.Body).To(ContainSubstring("\nUses PyPI package core 0.1.0 from the c4factory index " +
+		Expect(cli.Body).To(ContainSubstring("\nUses PyPI package core 0.1.0 from the theos index " +
 			corePyPIIndex(ns) + ": uv add core==0.1.0, pinned to that index as AGENTS.md says.\n"))
 		Expect(cli.Body).NotTo(ContainSubstring("go get"), "the core is no Go module")
 		Expect(getBrief(Default, ns).Status.Issues).To(HaveLen(2))

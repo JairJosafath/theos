@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // Client builds Providers. It is what the operator uses; tests substitute

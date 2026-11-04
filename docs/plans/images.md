@@ -113,7 +113,7 @@ image is the one tier only Kind shows.
    archive (a Framework with no Dockerfile at the root) is `NoImage`.
 
 6. **The workflows.**
-   - **`k8s-manifests`** gains `.c4factory/ci/giteaActions/.gitea/workflows/image.yaml`,
+   - **`k8s-manifests`** gains `.theos/ci/giteaActions/.gitea/workflows/image.yaml`,
      a release run on `v*` tags, `runs-on: image`. With a `Dockerfile` at
      the root it builds both platforms with the attestations into
      `<repository>-<tag>.oci.tar` and attaches it to the tag's release,

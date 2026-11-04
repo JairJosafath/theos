@@ -9,7 +9,7 @@ T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || exit 1
-unset FORCE C4_HEAVY_SLOT
+unset FORCE THEOS_HEAVY_SLOT
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 

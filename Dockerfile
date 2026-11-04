@@ -33,10 +33,10 @@ COPY . .
 # after a small change takes seconds.
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
-    -ldflags=-X=github.com/JairJosafath/c4factory/internal/buildinfo.Version=${VERSION} \
+    -ldflags=-X=github.com/JairJosafath/theos/internal/buildinfo.Version=${VERSION} \
     -o manager cmd/main.go \
     && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
-    -ldflags=-X=github.com/JairJosafath/c4factory/internal/buildinfo.Version=${VERSION} \
+    -ldflags=-X=github.com/JairJosafath/theos/internal/buildinfo.Version=${VERSION} \
     -o model-proxy ./cmd/model-proxy
 
 # Use distroless as minimal base image to package the manager binary and the

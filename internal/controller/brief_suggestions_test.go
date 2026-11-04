@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -17,9 +17,9 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/meta"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // suggestionsPlan keeps the linter's model, answering the reviewers' suggestions as answers says.
@@ -32,7 +32,7 @@ func suggestionsPlan(ns, answers string) scaffold.Tree {
 // extensionDoc is a second Container of cel-lens, the editor extension, which
 // sorts after the linter (the engine), as cel-lens-vscode does after cel-lens.
 const extensionDoc = `---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: linter-vscode

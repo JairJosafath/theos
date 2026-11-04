@@ -5,8 +5,8 @@ dependencies may point.
 
 ```
 cmd/main.go                        Manager entry (registers controllers, Session feature flags)
-cmd/c4session/                     Session client CLI, run in devcontainers
-cmd/c4agent/                       Task runner, run in agent sandboxes
+cmd/theos-session/                     Session client CLI, run in devcontainers
+cmd/theos-agent/                       Task runner, run in agent sandboxes
 cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
 api/v1beta1/*_types.go             CRD schemas for all twenty kinds (+kubebuilder markers); the hub and storage version the operator imports
 api/v1beta1/shared_types.go        Refs, Container types, condition names and labels
@@ -22,7 +22,7 @@ internal/modelproxy/               The model proxy's handler: drop the client's 
 internal/oci/                      Images in OCI registries: push a layout archive as a stream, resolve a tag, copy by digest
 internal/oci/ocitest/              Test archives: the OCI layout tar of a two-platform index with an attestation
 internal/buildinfo/                What a build stamps into the binary: the release Version (-ldflags -X)
-features/src/c4session/            The c4session devcontainer feature, embedded by the operator
+features/src/theos-session/            The theos-session devcontainer feature, embedded by the operator
 config/crd/bases/*                 Generated CRDs (DO NOT EDIT)
 config/rbac/role.yaml              Generated RBAC (DO NOT EDIT)
 config/policy/                     ValidatingAdmissionPolicy (Project name equals namespace)

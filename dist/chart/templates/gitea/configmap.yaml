@@ -1,5 +1,5 @@
 {{- if .Values.gitea.enabled }}
-{{- $ns := include "c4-factory.giteaNamespace" . }}
+{{- $ns := include "theos.giteaNamespace" . }}
 # Gitea's settings as GITEA__<section>__<KEY> variables, applied to app.ini on
 # every start; the same as config/gitea/gitea.env, with gitea.config on top.
 # Reference: https://docs.gitea.com/administration/config-cheat-sheet
@@ -9,12 +9,12 @@ metadata:
   name: gitea-env
   namespace: {{ $ns }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "gitea" "context" .) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "gitea" "context" .) | nindent 4 }}
 data:
   {{- $env := dict
     "GITEA__server__DOMAIN" (printf "gitea.%s.svc.cluster.local" $ns)
     "GITEA__server__HTTP_PORT" "3000"
-    "GITEA__server__ROOT_URL" (printf "%s/" (include "c4-factory.giteaURL" .))
+    "GITEA__server__ROOT_URL" (printf "%s/" (include "theos.giteaURL" .))
     "GITEA__server__DISABLE_SSH" "true"
     "GITEA__server__START_SSH_SERVER" "false"
     "GITEA__server__OFFLINE_MODE" "true"

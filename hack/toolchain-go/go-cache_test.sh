@@ -20,7 +20,7 @@ EOF
 chmod +x "$T/bin/du"
 export SIZES=$T/sizes
 sizes() { printf '%s\n' "$@" >"$SIZES"; }
-run() { PATH="$T/bin:$PATH" C4_GO_CACHE_SEED=$T/seed bash "$SCRIPT" "$T/cache" 4 >"$T/out" 2>&1; }
+run() { PATH="$T/bin:$PATH" THEOS_GO_CACHE_SEED=$T/seed bash "$SCRIPT" "$T/cache" 4 >"$T/out" 2>&1; }
 
 mkdir -p "$T/seed/go-build/ab" "$T/seed/golangci-lint/cd"
 echo warm >"$T/seed/go-build/ab/warm-d"

@@ -56,7 +56,7 @@ and have a dashboard.
 
 What the app promises whatever the tier, the backups' retention and copy
 region, the recovery objectives and who the alarms tell, is in
-`infra/operations.ts`, which C4 Factory renders from the Container's
+`infra/operations.ts`, which theos renders from the Container's
 `spec.operations`: change the block, and the file follows it. The alert email is the
 stack's `AlertEmail` parameter, which a deploy can set per environment. Each
 stack outputs `EntryPoint`, the API's URL, and `AlarmTopicArn`, the topic its
@@ -80,7 +80,7 @@ owner, with their own credentials.
   production, the backups (`infra/backups.ts`). The stack is named after the
   package. `infra/operations.ts` holds what the Container promises.
 - `infra/connectors.ts` lists the data stores the Container's Relationships
-  connect it to, which C4 Factory renders from their Connectors; the stack
+  connect it to, which theos renders from their Connectors; the stack
   connects each to the function, alarms on it and backs it up.
 {{- if has .Connectors "dynamodb" }} The
   `dynamodb` DataStore's table is made by `infra/connector_dynamodb.ts`, and

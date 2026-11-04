@@ -59,7 +59,7 @@ describe('libraryPath', () => {
 
 describe('libsDir', () => {
   it('lives in the XDG cache, else ~/.cache', () => {
-    assert.equal(libsDir({ XDG_CACHE_HOME: '/x/.dev/cache' }), '/x/.dev/cache/c4factory/chromium-libs')
-    assert.match(libsDir({}), new RegExp(`${path.join('.cache', 'c4factory', 'chromium-libs')}$`))
+    assert.equal(libsDir({ XDG_CACHE_HOME: '/x/.dev/cache' }), '/x/.dev/cache/theos/chromium-libs')
+    assert.match(libsDir({}), new RegExp(`${path.join('.cache', 'theos', 'chromium-libs')}$`))
   })
 })

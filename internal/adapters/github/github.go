@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // Client builds the GitHub clients: a ReleaseTarget, an IssueTracker, and a
@@ -334,7 +334,7 @@ func (g *githubAPI) request(ctx context.Context, method string, host *url.URL, p
 func setGitHubHeaders(req *http.Request, token string) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "c4factory")
+	req.Header.Set("User-Agent", "theos")
 	req.Header.Set("Authorization", "Bearer "+token)
 }
 

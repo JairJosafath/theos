@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -21,14 +21,14 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 )
 
 // #1616: the migrator rewrites what was stored at v1alpha1 once v1beta1 is the
 // storage version, and brings the CRD's storedVersions down to it.
 var _ = Describe("Storage migrator", func() {
-	const crdName = "people.c4.factory.io"
+	const crdName = "people.theos.factory.io"
 
 	// setStorage makes version the CRD's storage version.
 	setStorage := func(version string) {

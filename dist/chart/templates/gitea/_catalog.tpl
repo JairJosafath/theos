@@ -1,28 +1,28 @@
 {{/*
 The objects the seed applies in place (hack/seed/catalog.sh): each project's
-GitProvider, catalog entries and bundles, and Agents, rendered into ConfigMap c4factory-catalog
+GitProvider, catalog entries and bundles, and Agents, rendered into ConfigMap theos-catalog
 (catalog-configmap.yaml). Not release objects: on an install their kinds exist
 only once the release's CRDs do. Not hooks: Helm re-creates a hook on every
 upgrade, so running Tasks would lose their Agent and Git steps their
 GitProvider, and hand edits would be lost (docs/plans/done/upgrade-in-place.md).
 */}}
-{{- define "c4-factory.catalogObjects" -}}
+{{- define "theos.catalogObjects" -}}
 {{- if .Values.gitea.enabled }}
-{{- range include "c4-factory.projects" . | fromJsonArray }}
+{{- range include "theos.projects" . | fromJsonArray }}
 ---
 # Project {{ .name }} scaffolds into its organization in the release's Gitea,
 # with the token the seed stored.
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: GitProvider
 metadata:
   name: gitea
   namespace: {{ .name }}
   labels:
-    app.kubernetes.io/managed-by: c4factory-chart
+    app.kubernetes.io/managed-by: theos-chart
     app.kubernetes.io/instance: {{ $.Release.Name }}
 spec:
   provider: gitea
-  url: {{ include "c4-factory.giteaURL" $ | quote }}
+  url: {{ include "theos.giteaURL" $ | quote }}
   owner: {{ .name | quote }}
   credentialsSecretRef:
     name: gitea-credentials
@@ -30,42 +30,42 @@ spec:
   packages:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- include "c4-factory.gitProviderCI" $ | nindent 2 }}
+  {{- include "theos.gitProviderCI" $ | nindent 2 }}
 {{- end }}
 {{- end }}
 {{- if and .Values.gitea.enabled .Values.catalog.enabled }}
-{{- range $project := include "c4-factory.projectNames" . | fromJsonArray }}
+{{- range $project := include "theos.projectNames" . | fromJsonArray }}
 {{- range $.Values.catalog.entries }}
 ---
 # Project {{ $project }}'s catalog entry {{ .name }}: the template the seed
 # pushed to the templates organization, pinned to its tag. The template is
 # named like the entry unless the entry's template says otherwise (the Domain
 # webshop is templates/webshop-domain).
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: {{ .kind }}
 metadata:
   name: {{ .name }}
   namespace: {{ $project }}
   labels:
-    app.kubernetes.io/managed-by: c4factory-chart
+    app.kubernetes.io/managed-by: theos-chart
     app.kubernetes.io/instance: {{ $.Release.Name }}
 spec:
   {{- toYaml (omit .spec "template") | nindent 2 }}
   template:
-    url: {{ printf "%s/templates/%s" (include "c4-factory.giteaURL" $) (.template | default .name) | quote }}
+    url: {{ printf "%s/templates/%s" (include "theos.giteaURL" $) (.template | default .name) | quote }}
     ref: {{ required (printf "catalog.entries: %s needs a ref, a tag the seed pushes" .name) .ref | quote }}
 {{- end }}
 {{- range $.Values.catalog.bundles }}
 ---
 # Project {{ $project }}'s bundle {{ .name }}: entries above picked together,
 # which a Container names with bundleRef instead of its four sides.
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Bundle
 metadata:
   name: {{ .name }}
   namespace: {{ $project }}
   labels:
-    app.kubernetes.io/managed-by: c4factory-chart
+    app.kubernetes.io/managed-by: theos-chart
     app.kubernetes.io/instance: {{ $.Release.Name }}
 spec:
   {{- toYaml (required (printf "catalog.bundles: %s needs a spec with frameworkRef" .name) .spec) | nindent 2 }}
@@ -75,7 +75,7 @@ spec:
 {{- if and .Values.gitea.enabled .Values.agents.enabled }}
 {{- $a := .Values.agents }}
 {{- $image := printf "%s:%s" $a.image.repository ($a.image.tag | default .Chart.AppVersion) }}
-{{- range $project := include "c4-factory.projectNames" . | fromJsonArray }}
+{{- range $project := include "theos.projectNames" . | fromJsonArray }}
 {{- range $role := list "planner" "designer" "implementer" "reviewer" }}
 {{- $agent := get $a $role }}
 {{- if regexMatch "(?i)fable" $agent.model }}
@@ -84,13 +84,13 @@ spec:
 ---
 # Project {{ $project }}'s {{ $role }}: Claude Code reading Secret
 # {{ $a.credentialsSecret }}, which the person creates.
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Agent
 metadata:
   name: {{ $role }}
   namespace: {{ $project }}
   labels:
-    app.kubernetes.io/managed-by: c4factory-chart
+    app.kubernetes.io/managed-by: theos-chart
     app.kubernetes.io/instance: {{ $.Release.Name }}
 spec:
   displayName: {{ printf "Claude Code, %s (%s)" ($agent.model | trimPrefix "claude-" | splitList "-" | first | title) $role | quote }}
@@ -111,13 +111,13 @@ spec:
 {{- if .enabled }}
 ---
 # Project {{ $project }}'s stand-in: no model and no token, for trying the loop.
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Agent
 metadata:
   name: stand-in
   namespace: {{ $project }}
   labels:
-    app.kubernetes.io/managed-by: c4factory-chart
+    app.kubernetes.io/managed-by: theos-chart
     app.kubernetes.io/instance: {{ $.Release.Name }}
 spec:
   displayName: Stand-in
@@ -143,7 +143,7 @@ runner's image and resources, kept by the operator in the project's
 namespace. Without it a project's checks have no runner: the shared runners
 serve the templates organization only (#1698). Empty when no label has a pool.
 */}}
-{{- define "c4-factory.gitProviderCI" -}}
+{{- define "theos.gitProviderCI" -}}
 {{- $pools := list }}
 {{- range $label, $r := .Values.runners }}
 {{- if $r.pool }}{{ if gt (int $r.pool.size) 0 }}{{ $pools = append $pools $label }}{{ end }}{{ end }}

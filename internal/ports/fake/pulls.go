@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The fake host's pull requests: opening, reading, commenting, merging and

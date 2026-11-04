@@ -1,14 +1,14 @@
 > The design as it grew, version by version, up to 2026-10-20; kept unchanged for its reasons and dates. The spec is [design.md](design.md).
 
-# C4 Factory: Design
+# theos: Design
 
 Sep 30, 2026 · @Jeremy Jo.
 
-[![How C4 Factory works today: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](images/how-it-works.png)](images/how-it-works.svg)
+[![How theos works today: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](images/how-it-works.png)](images/how-it-works.svg)
 
 ## Purpose
 
-C4 Factory turns an idea into a working, scaffolded repository by first telling its story as a C4-inspired model. The model lives in Kubernetes custom resources, a kubebuilder operator acts on it, and a UI draws the story on top.
+theos turns an idea into a working, scaffolded repository by first telling its story as a C4-inspired model. The model lives in Kubernetes custom resources, a kubebuilder operator acts on it, and a UI draws the story on top.
 
 - **Storytelling first.** The model shows who uses what, what exists and why, and who is working on it right now.
 - **The CRDs are the truth.** Anything can write them: kubectl, GitOps, agents or the UI. The UI enforces nothing; the rules live in the CRD schemas and the operator.
@@ -41,7 +41,7 @@ These were settled in the design discussion on 30 September 2026 and shape every
 
 ## The model
 
-Seventeen namespaced kinds in `c4.factory.io/v1alpha1`: six tell the story, four track work (Session, Task since v2, Crew since v4, and Brief), and seven configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
+Seventeen namespaced kinds in `theos.factory.io/v1alpha1`: six tell the story, four track work (Session, Task since v2, Crew since v4, and Brief), and seven configure the factory. Every child names its parent in `spec`; the operator turns that into the ownerReference, so deletion follows the tree.
 
 &#91;embedded content: ownership tree · 9 boxes, 1 relationship\]
 
@@ -154,10 +154,10 @@ A Container is scaffolded exactly once, from the catalog entries it picks and th
 3. **Create the repository** in the GitProvider's organization, named after the Container.
 4. **Render the layers** in a fixed order: Framework, Compute, Deployment, then each Connector. Templates are Go `text/template` files that receive the project, system, container and type names, the names of the chosen Framework, Compute and Deployment (empty when the Container picks none), plus the list of Connectors. A layer after the Framework also receives the paths the Framework rendered (`.FrameworkFiles`), so it tells what that version of the Framework has by its files, `{{ if has .FrameworkFiles "infra/operations.ts" }}`, rather than by the Framework's name or a ref to compare: a ref may be a commit, and a file says what the Standard depends on. A Standard update renders with the Framework's paths at the ref `scaffoldedFrom` recorded, so it brings a repository files for the Framework version it was scaffolded from, not the newest; a scaffold that recorded none passes none (#1249).
 5. **Assemble the devcontainer.** The operator writes `.devcontainer/devcontainer.json` itself: the Framework's base settings plus one compose file per Connector, such as a Postgres service for local development and tests.
-6. **Write the identity file** `.c4factory.yaml` with the project and container names.
+6. **Write the identity file** `.theos.yaml` with the project and container names.
 7. **Push one initial commit,** then set `Ready`, `repositoryURL` and `scaffoldedFrom`.
 
-Two rules keep this safe to retry. Every file belongs to exactly one layer, so two layers writing the same path fail the Container with that path in the message. And if the repository exists but is empty, the operator retries the commit; if it has commits the operator didn't make, it stops with `Failed`. A `Failed` Container tries again when something it depends on changes (its spec, a catalog entry, the GitProvider, a DataStore or a Relationship), or when someone sets or changes its `c4.factory.io/retry` annotation, for example after emptying the repository.
+Two rules keep this safe to retry. Every file belongs to exactly one layer, so two layers writing the same path fail the Container with that path in the message. And if the repository exists but is empty, the operator retries the commit; if it has commits the operator didn't make, it stops with `Failed`. A `Failed` Container tries again when something it depends on changes (its spec, a catalog entry, the GitProvider, a DataStore or a Relationship), or when someone sets or changes its `theos.factory.io/retry` annotation, for example after emptying the repository.
 
 ### Relationships
 
@@ -169,7 +169,7 @@ Two rules keep this safe to retry. Every file belongs to exactly one layer, so t
 ### Sessions
 
 1. A devcontainer feature installs the client, a small Go CLI.
-2. On start, the client reads `.c4factory.yaml` and creates a Session on its Container, with the actor (agent or human) and a one-line summary of the work.
+2. On start, the client reads `.theos.yaml` and creates a Session on its Container, with the actor (agent or human) and a one-line summary of the work.
 3. It sends a heartbeat every 30 seconds and deletes the Session when the devcontainer stops.
 4. The operator marks a Session `Stale` after 2 minutes without a heartbeat and counts the Active ones on the Container.
 
@@ -179,7 +179,7 @@ In v1, the client authenticates with a per-namespace ServiceAccount that may onl
 
 - **Container phase:** `Pending`, `Scaffolding`, then `Ready` or `Failed`, with conditions `ReferencesResolved`, `ChoicesValid`, `RepositoryCreated` and `Scaffolded`.
 - **Roll-up:** SoftwareSystem and Project show counts, such as "3 of 4 containers Ready, 2 active sessions".
-- **Versions:** Project status carries `factory: {operatorVersion, chartVersion}`, the operator's release (`dev` for an unreleased build, stamped at build time in `internal/buildinfo`) and the Helm chart's it was installed with (`C4_CHART_VERSION`, empty outside the chart). The UI shows them beside its own version and the CRD API version it reads, and warns when its version and the operator's differ (two `dev` builds don't; no Project reporting one yet shows "unknown").
+- **Versions:** Project status carries `factory: {operatorVersion, chartVersion}`, the operator's release (`dev` for an unreleased build, stamped at build time in `internal/buildinfo`) and the Helm chart's it was installed with (`THEOS_CHART_VERSION`, empty outside the chart). The UI shows them beside its own version and the CRD API version it reads, and warns when its version and the operator's differ (two `dev` builds don't; no Project reporting one yet shows "unknown").
 - **kubectl:** printer columns (Type, Phase, Sessions, Age) make `kubectl get containers` a quick text view.
 
 ## v2: agents build the apps
@@ -388,13 +388,13 @@ without kubectl, and cheaply: it lives on a laptop.
   [plans/done/session-tokens.md](plans/done/session-tokens.md).
 - **A long session hands off to a fresh one.** A session whose context passes
   its Agent's `sessionTokenLimit` (default 130000) is told, at its next tool
-  call, to write where it stands and stop; c4agent starts a fresh session on
+  call, to write where it stands and stop; theos-agent starts a fresh session on
   the same job with that note and the working tree, and ends a session that
   doesn't stop (past the limit by half again), writing that note itself from
   the session's last words and `git status`; such a session ends without a
   result line, so its tokens come from its turns and the run's cost goes
   unreported. After three handoffs in one call the last session runs to its
-  end. A custom `C4AGENT_COMMAND` runs one session, unguarded. The Task counts
+  end. A custom `THEOS_AGENT_COMMAND` runs one session, unguarded. The Task counts
   handoffs in `status.tokens.sessionHandoffs`, with a `SessionHandedOff` Event
   for each run that handed off, saying the sizes it happened at. It also
   keeps a record of each agent run as it ends in `status.runs` (the newest
@@ -413,7 +413,7 @@ without kubectl, and cheaply: it lives on a laptop.
   their Agent's session token limit, agent slots, and what needs a look.
 - **The UI server reads the factory's health itself** (`GET /factory/health`):
   pods, nodes and metrics-server, summarized; pod specs never reach the browser,
-  which still reads only `c4.factory.io`. It samples every 15 seconds and keeps
+  which still reads only `theos.factory.io`. It samples every 15 seconds and keeps
   an hour in memory, including its own API round trip. Nodes and their metrics
   it reads cluster-wide; pods and theirs only where the factory runs: the
   components' namespaces, where the chart binds a Role, and each Project's,
@@ -588,7 +588,7 @@ model and context it needs.
   the log line `Release run overdue`, and a note on the `Released` condition's
   message until they end; the watch carries on and reports their end as usual.
 - **A failed release run re-runs on request.** Setting or changing the
-  annotation `c4.factory.io/rerun-release` on a Crew with `tagReleases` whose
+  annotation `theos.factory.io/rerun-release` on a Crew with `tagReleases` whose
   `status.lastRelease.run` is `Failed` makes the operator re-run the failed
   jobs of that release's failed runs (each workflow's newest run) through the
   GitProvider (Gitea's `rerun-failed-jobs`), once per value: the Crew records
@@ -619,7 +619,7 @@ model and context it needs.
   invalid module is a Warning Event `InvalidModule`, once per release. See
   [plans/done/app-modules.md](plans/done/app-modules.md).
   `ModulePublished` is True only once `go get <path>@<version>` finds the
-  version where that path is read (#1001). A `c4factory.local/` path is read
+  version where that path is read (#1001). A `theos.local/` path is read
   from the registry, so the upload is the publish. Any other path is read
   through the public Go proxy, and the upload, still made, counts for
   nothing there: the operator asks the proxy (`--go-proxy`, by default
@@ -647,7 +647,7 @@ model and context it needs.
   builds nothing; it moves bytes with the credentials it holds. A file is
   known by its content, and is published only at the tag's version (PEP 440
   normalised for Python), once, never replaced. An npm package is named
-  `@c4factory/<container>`, the one scope pods and CI send to the owner's
+  `@theos/<container>`, the one scope pods and CI send to the owner's
   registry; a tarball by another name is the app's own release file, and stays
   unpublished. A PyPI package keeps its `pyproject.toml` name; the consumer
   pins it to the owner's index, declared `explicit`, so it never comes from
@@ -659,7 +659,7 @@ model and context it needs.
   `PackagesPublished` says why they aren't published. An upload is a Normal
   Event `PackagePublished` and the log line `Published package`; an invalid
   file is a Warning Event `InvalidPackage`, once per release. Agent pods get
-  `C4_NPM_REGISTRY` and `C4_PYPI_INDEX`, and c4agent writes `~/.npmrc` with
+  `THEOS_NPM_REGISTRY` and `THEOS_PYPI_INDEX`, and theos-agent writes `~/.npmrc` with
   the scope and the bot's token (uv reads the `~/.netrc` it writes). The
   TypeScript and Python Standards' checks and gitea-release's release run
   write the same from the job's token. See
@@ -690,12 +690,12 @@ model and context it needs.
   redirects to another name fails `RepositoryRenamed`, and one with the same
   name but another id fails `RepositoryReplaced`, before anything is written
   to it, until the target is changed or the annotation
-  `c4.factory.io/accept-repository: <id>` accepts the new one. See
+  `theos.factory.io/accept-repository: <id>` accepts the new one. See
   [plans/done/brief-release-target.md](plans/done/brief-release-target.md).
   With `publishReleases.source.path`, the release also brings the app's
   source as of its tag into that folder of the repository (`.` is the whole
   repository), the factory's own files (`model.FactoryOwnPaths`: `AGENTS.md`,
-  `docs/agents/`, `.c4factory.yaml`, `.devcontainer/`, `.gitea/`) left out,
+  `docs/agents/`, `.theos.yaml`, `.devcontainer/`, `.gitea/`) left out,
   tagged `source.tagPrefix` + the tag (by default `<path>/vX.Y.Z`, the tag Go
   reads in a subfolder). It is one commit on the default branch that replaces
   only that folder, made through GitHub's Git Data API with the same token,
@@ -768,7 +768,7 @@ model and context it needs.
 - **A protected file without a person.** An issue that needs a protected file, such
   as the Makefile or a CI workflow, gets its own gated Task: the operator files a
   `kind/standard-change` issue, the waiting Task is `Blocked`, and the operator
-  merges the reviewed change itself. The agents' rules and `.c4factory.yaml` stay
+  merges the reviewed change itself. The agents' rules and `.theos.yaml` stay
   out of reach. The gated Task may also change files no Standard protects where
   the repository's checks fail without them, such as a test that pins what the
   protected file produces; its history and pull request name them, and its
@@ -811,9 +811,9 @@ model and context it needs.
   and at the new one, and the repository's lines a take would drop, per file
   in the update's pull request and, bounded, in `status.standard.behind` and
   on the Container's page (#975). The person settles it with one annotation naming the
-  ref: `c4.factory.io/standard-take` has the operator open and merge a pull
+  ref: `theos.factory.io/standard-take` has the operator open and merge a pull
   request of the Standard's version (the repository's other changes kept, the
-  lines it drops listed), `c4.factory.io/standard-keep` keeps the repository's
+  lines it drops listed), `theos.factory.io/standard-keep` keeps the repository's
   (`status.standard.kept`) until the Standard changes the file again. The
   operator removes the annotation once it acted on it; one naming another ref,
   given while an update is in flight, or both at once is ignored and removed.
@@ -827,7 +827,7 @@ model and context it needs.
   Closing the pull request drops the update until the Standard's ref, or the
   Container's checks, change again. `status.standard` records the ref the Standard's files are at and the
   update in flight, the condition `StandardUpdated` how it went;
-  `scaffoldedFrom` and `.c4factory.yaml` keep the scaffold's refs. See
+  `scaffoldedFrom` and `.theos.yaml` keep the scaffold's refs. See
   [plans/done/standard-update.md](plans/done/standard-update.md),
   [plans/done/standard-left-out.md](plans/done/standard-left-out.md) and
   [plans/done/standard-left-out-diff.md](plans/done/standard-left-out-diff.md).
@@ -843,7 +843,7 @@ model and context it needs.
   (`StandardRunsFullChecks`). The Standard's `check.yaml` renders the choice;
   changing it reaches the repository through the Standard update's pull
   request, and `status.standard.checks` records what the repository runs:
-  the scaffold's (also in `.c4factory.yaml`), then each merged update's.
+  the scaffold's (also in `.theos.yaml`), then each merged update's.
   Until it matches what the Container asks, `ChecksApplied` is False: reason
   `Pending` naming the update's pull request, the update's stop as its reason
   (such as `ChecksLeftOut` or `UpdateClosed`), or `AddedAfterScaffold` for a
@@ -1006,7 +1006,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Connectors are part of the scaffold), makes a Crew for each new Container
   with the Brief's Agents and as many places as the Brief says (below), and
   files the issues in each Container's repository once it is Ready, ready for
-  its Crew. What it made carries the label `c4.factory.io/brief`; deleting the
+  its Crew. What it made carries the label `theos.factory.io/brief`; deleting the
   Brief keeps it. When
   a step fails, the Brief stays `Applying` and tries again, and its `Planned`
   condition, reason `ApplyFailed`, and an `ApplyFailed` Event say where it
@@ -1035,10 +1035,10 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   neither a release made nor one the round makes (named in `releases.yaml`,
   with an issue of the round for it). When the Crew tags a release of a repository with a `go.mod` at its
   root, the operator publishes the module to the owner's Go registry in Gitea;
-  agent pods and the Go Standard's CI fetch `c4factory.local/...` modules
+  agent pods and the Go Standard's CI fetch `theos.local/...` modules
   through it. A TypeScript or Python app's release publishes its npm or PyPI
   package the same way (#1087), and the same pods and Standards install
-  `@c4factory/...` packages and the owner's index from it. A `uses:` issue is
+  `@theos/...` packages and the owner's index from it. A `uses:` issue is
   filed without `status/ready` and labelled ready only once each app it uses
   has a published version: the round's release for an app the round
   releases, else its newest. A version counts as published once its Go module
@@ -1085,14 +1085,14 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   sentence the operator adds.
 - **A Brief pauses and resumes its Crews in one step** (#677). While
   `spec.paused` is true, the Brief sets `spec.paused` on every Crew it made,
-  marking each with `c4.factory.io/paused-by: brief`, starts no new round and
+  marking each with `theos.factory.io/paused-by: brief`, starts no new round and
   tends no failed issue; a Task already started, its planner's included, runs
   to its end. Its condition `Paused` names the Tasks still running, then says
   nothing is. Set back to false, it unpauses only the Crews it marked, so a
   Crew a person paused by hand stays paused. The Brief's card pauses and
   resumes it. See [plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md).
 - **A Brief files no issue that no change may make** (#909). `AGENTS.md`,
-  `docs/agents/` and `.c4factory.yaml` (`model.AgentNeverPaths`) change
+  `docs/agents/` and `.theos.yaml` (`model.AgentNeverPaths`) change
   through no pull request, so `brief.md` names them and a prompt that asks
   for a change to them gets no issue: the round's summary and choices say
   what wasn't planned, why, and that notes for the agents go in
@@ -1126,7 +1126,7 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   also has the Crew publish its releases there. Releases only turn on; a Crew
   the Brief didn't make is left alone. The Brief owns the target it sets: it keeps
   the target it last wrote in the Crew's annotation
-  `c4.factory.io/brief-publish-releases`, the Crew's condition `ReleaseTarget`
+  `theos.factory.io/brief-publish-releases`, the Crew's condition `ReleaseTarget`
   (`SetByBrief`) says the Brief sets it, and the Crew page's release form
   edits the Brief's entry. A target changed on the Crew itself is neither
   undone nor used: the Brief leaves it, the Crew publishes nothing while the
@@ -1402,8 +1402,8 @@ server's message when it refuses one. The UI still enforces nothing.
   | Brief | `POST` | a new Brief (as today) |
   | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.autopilot`, `spec.parallel`, `spec.releases` (only after a `test` of the `resourceVersion` it was worked out from; a stale one is refused) |
   | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (set, or removed to stop publishing; only after a `test` of the `resourceVersion` it was worked out from, and a stale one is refused) |
-  | Crew | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` |
-  | Container | `PATCH`, merge patch | annotations `c4.factory.io/retry`, `c4.factory.io/standard-take` and `c4.factory.io/standard-keep` |
+  | Crew | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` |
+  | Container | `PATCH`, merge patch | annotations `theos.factory.io/retry`, `theos.factory.io/standard-take` and `theos.factory.io/standard-keep` |
   | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of that entry's `target` and, when it had one, of its `approved` |
   | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
   | Standard | `PATCH`, JSON patch | `spec.template.ref` |
@@ -1416,13 +1416,13 @@ server's message when it refuses one. The UI still enforces nothing.
   Ingress the chart binds it to `ui.auth.oidc.actionGroups`, when set, for a
   cluster admin to grant the signed-in people.
 - **A Crew re-runs its failed release run on request.** Setting or changing
-  `c4.factory.io/rerun-release` on a Crew whose `status.lastRelease.run` is
+  `theos.factory.io/rerun-release` on a Crew whose `status.lastRelease.run` is
   `Failed` re-runs that release's failed workflow runs on the Git host, once
   per value, and the Crew watches them as before. A value set while the run
   hasn't failed does nothing, with a Normal Event saying so.
 - **Retrying a Container's scaffold warns first.** The UI says the
   repository must be empty and links to it before it sets
-  `c4.factory.io/retry`.
+  `theos.factory.io/retry`.
 - **Bumping a Standard's `ref` asks first.** The dialog names how many
   Containers on that Standard will get an update pull request.
 - **Out:** deletes (they cascade and can't be undone), Secrets and
@@ -1488,11 +1488,11 @@ implementation and no port.
   Container's is its Git host's own CI system (`model.HostCI`) until
   `GitProvider.spec.ci` comes with a second one. `scaffold.Input` names the CI
   system, and a template keeps each system's files under
-  `.c4factory/ci/<name>/` (`.c4factory/ci/giteaActions/.gitea/...`), which
+  `.theos/ci/<name>/` (`.theos/ci/giteaActions/.gitea/...`), which
   renders at the repository root only for the Container's system. A template
   with CI files but none for the Container's system fails the Container with
   reason `UnsupportedCI`, naming the systems it has; one without
-  `.c4factory/ci/` works on any (#1095).
+  `.theos/ci/` works on any (#1095).
 
 **A port is a narrow Go interface, with its shared types in its own file, one
 fake and one contract suite.** A host adapter implements several ports (Gitea
@@ -1689,7 +1689,7 @@ steps.
 
 This repository develops the factory and holds no product. The factory ships
 as a Helm release, and other devices build their products with it. Every issue
-on `JairJosafath/c4factory` carries one source label: `source/dev` when it was
+on `JairJosafath/theos` carries one source label: `source/dev` when it was
 made while developing the factory, or `source/user` with one `user/<name>`
 label when a device running the release reported it. A device reports through
 the issue form *Report from a device*, or with `gh issue create` and a body
@@ -1698,7 +1698,7 @@ whose `### Reported by` heading names the device; the intake workflow
 files it as `status/proposed` for the owner to ready like any other issue.
 
 A `vX.Y.Z` tag publishes the release: the chart at
-`oci://ghcr.io/jairjosafath/c4factory/charts` and its images on GHCR. The
+`oci://ghcr.io/jairjosafath/theos/charts` and its images on GHCR. The
 release installs the whole factory:
 
 | Part | Where | Notes |
@@ -1706,11 +1706,11 @@ release installs the whole factory:
 | Operator, CRDs, RBAC, admission policy | release namespace | always |
 | UI | release namespace | `ui.enabled`, on by default; its actions off until `ui.actions.enabled`, and behind an Ingress only with `ui.auth.oidc` (*UI actions*) |
 | Gitea | `gitea.namespace` (`gitea`) | `gitea.enabled`, on by default; admin password and the runners' registration token generated in the cluster by Gitea's pod into Secrets `gitea-admin` and `gitea-runner` when missing, never rendered by Helm, and kept on upgrade; namespace and volume kept on uninstall |
-| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects`; labels a project namespace the chart didn't make so it receives the shared Secrets; applies the catalog, the Agents and the GitProviders the chart renders into ConfigMap `c4factory-catalog` with server-side apply, so an upgrade updates them in place, keeping their UIDs and the fields the chart doesn't set |
-| Project namespaces | each of `gitea.projects` | `projectNamespaces.create`, on by default; made when missing, labeled `c4.factory.io/shared-secrets: "true"` and kept on uninstall; a namespace that already exists is left to the person |
+| Seed job | Gitea's namespace | a hook Job after every install and upgrade: template organization and tags, a `gitea-credentials` Secret, a GitProvider and, when the namespace has none, a Project for each project in `gitea.projects`; labels a project namespace the chart didn't make so it receives the shared Secrets; applies the catalog, the Agents and the GitProviders the chart renders into ConfigMap `theos-catalog` with server-side apply, so an upgrade updates them in place, keeping their UIDs and the fields the chart doesn't set |
+| Project namespaces | each of `gitea.projects` | `projectNamespaces.create`, on by default; made when missing, labeled `theos.factory.io/shared-secrets: "true"` and kept on uninstall; a namespace that already exists is left to the person |
 | Shared Secrets | the release namespace, copied to each project namespace | the Agents' token Secret (`agents.credentialsSecret`) and the pull Secrets (`global.imagePullSecrets`), which the person makes once; the operator copies each into every labeled namespace, before it has a Project too (a Brief there needs the token for the round that makes it), keeps its copies in step with the source, and never touches a Secret of that name it didn't make, which is how a project keeps a token of its own; Task sandboxes list the pull Secrets |
 | CI runners `base` and `go` | Gitea's namespace | on the released `gitea-runner-*` images |
-| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values; a hook Job on the seed image applies them in place from ConfigMap `c4factory-gitproviders` |
+| GitProviders | named namespaces | `gitProviders`, for a Gitea the release does not run (`gitea.enabled=false`); each names a Secret the user creates (`existingSecret`), as the chart renders no Secret and takes no token in its values; a hook Job on the seed image applies them in place from ConfigMap `theos-gitproviders` |
 
 A device installs itself only what is another project's or its own: Agent
 Sandbox (its controller and CRDs) before the chart, the Agents' token in the
@@ -1734,7 +1734,7 @@ condition to say nothing is running. See
 ## Compatibility
 
 **An object a client stored keeps validating across upgrades** (#1097). All
-of `c4.factory.io` serves `v1alpha1` only, and until a later version is
+of `theos.factory.io` serves `v1alpha1` only, and until a later version is
 served, a release keeps every `v1alpha1` object of the one before valid and
 meaning what it meant. Within `v1alpha1` a release never:
 
@@ -1801,7 +1801,7 @@ The highlighted operator is the main thing being built. Gitea and kind are off t
 | --- | --- | --- |
 | Gitea | `gitea` | Single container with SQLite and a small volume. Holds the template repositories and the Container repositories. Its admin password is generated per cluster into Secret `gitea-admin`, never committed. |
 | Seed job | `gitea` | Creates the `templates` and `webshop` organizations, pushes and tags the template repositories, and stores an access token as Secret `gitea-credentials` in `webshop`. |
-| Operator | `c4-factory-system` | The kubebuilder manager with all controllers. |
+| Operator | `theos-system` | The kubebuilder manager with all controllers. |
 | Sample project | `webshop` | Project, GitProvider, catalog entries and the story resources. |
 | Test Session | `webshop` | A pod that clones `orders-api` from Gitea and runs the client under the Session ServiceAccount. |
 
@@ -1816,7 +1816,7 @@ An AWS data store is a DataStore too. The `dynamodb` Connector writes `infra/con
 
 The sample in `config/samples/webshop/` tells a small story: a `customer` Person uses `webshop-core`, whose `orders-api` service reads and writes the `orders-db` DataStore.
 
-The agent loop runs on a second project, the e2e fixture `apps` in `test/e2e/testdata/apps`: one hello-world page scaffolded from the templates `hello-html` (Framework) and `hello-html-standard` (Standard, the agents' role guides), whose CI runner and stand-in agent use the minimal `c4factory/base:dev` toolchain (Node, bash, git, make). `make e2e` builds no Flutter or Go toolchain image.
+The agent loop runs on a second project, the e2e fixture `apps` in `test/e2e/testdata/apps`: one hello-world page scaffolded from the templates `hello-html` (Framework) and `hello-html-standard` (Standard, the agents' role guides), whose CI runner and stand-in agent use the minimal `theos/base:dev` toolchain (Node, bash, git, make). `make e2e` builds no Flutter or Go toolchain image.
 
 Make targets:
 

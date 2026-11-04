@@ -9,7 +9,7 @@
 # Deploying {{ .Container }} to Kubernetes
 
 This folder holds plain Kubernetes manifests for {{ .Container }}, built with
-kustomize. C4 Factory ships them through an `argoCD` DeployTarget: at each
+kustomize. theos ships them through an `argoCD` DeployTarget: at each
 release, Argo CD syncs this folder at the release's tag, with the release's
 image. To ship them yourself, point Argo CD, Flux or a pipeline at
 `deploy/k8s`, or apply it by hand as below. Run the commands from the

@@ -2,7 +2,7 @@
 # Checks that every job of the GitHub workflows can run on the self-hosted
 # runners (hack/gh-runner, docs/dev/devices.md): its runs-on uses vars.RUNS_ON,
 # and a job that makes a Kind cluster (kind create cluster, the e2e target)
-# asks for the label c4factory-kind, which only runner 1 of a device carries,
+# asks for the label theos-kind, which only runner 1 of a device carries,
 # so a device runs one of them at a time. A workflow that runs on pushes to a
 # branch carries the concurrency group ${{ github.workflow }}-${{ github.ref }}
 # (one pending run per branch; GitHub drops the superseded pending runs) or
@@ -101,8 +101,8 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
     elif [ "$runs_on" != uses ] && [[ $runs_on != *vars.RUNS_ON* ]]; then
       echo "$f: job $job runs on $runs_on, not \${{ vars.RUNS_ON || ... }}" >&2
       fail=1
-    elif [ "$kind" = kind ] && [[ $runs_on != *c4factory-kind* ]]; then
-      echo "$f: job $job makes a Kind cluster but doesn't ask for the label c4factory-kind" >&2
+    elif [ "$kind" = kind ] && [[ $runs_on != *theos-kind* ]]; then
+      echo "$f: job $job makes a Kind cluster but doesn't ask for the label theos-kind" >&2
       fail=1
     fi
     if [ "$runs_on" != uses ] && [ "$timeout" = - ]; then

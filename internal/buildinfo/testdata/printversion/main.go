@@ -4,7 +4,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/JairJosafath/c4factory/internal/buildinfo"
+	"github.com/JairJosafath/theos/internal/buildinfo"
 )
 
 func main() { fmt.Println(buildinfo.Version) }

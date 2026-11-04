@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: c4-factory-ui
+  name: theos-ui
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 spec:
   selector:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
   ports:
   - name: http
     port: 8080

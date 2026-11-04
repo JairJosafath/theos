@@ -63,7 +63,7 @@ Task that reviews and merges it. Then:
   (`[ ! -x scripts/dist.sh ] || scripts/dist.sh`).
 - The rest of your work merges after it and may rely on it.
 - End your summary with a line: `Standard change: <why the issue needs it>`.
-- Never change `AGENTS.md`, `docs/agents/` or `.c4factory.yaml`. No Standard
+- Never change `AGENTS.md`, `docs/agents/` or `.theos.yaml`. No Standard
   change can.
 - When your own Task is the Standard change, change the paths the issue names.
   Change another file only where `make check` fails without it, such as a test

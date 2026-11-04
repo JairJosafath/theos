@@ -23,13 +23,13 @@ const (
 
 // PlanAPIVersion is the apiVersion the planner writes on every object in a
 // plan: the storage version (docs/plans/done/api-versions.md, decision 5).
-const PlanAPIVersion = "c4.factory.io/v1beta1"
+const PlanAPIVersion = "theos.factory.io/v1beta1"
 
 // planAPIVersions are the apiVersions a plan may carry: every served version,
 // since a plan a person wrote by hand, or one written before the upgrade, may
 // still say v1alpha1. Nothing is converted: the operator reads a plan's fields
 // the same at either version and applies them as v1beta1 objects.
-var planAPIVersions = []string{PlanAPIVersion, "c4.factory.io/v1alpha1"}
+var planAPIVersions = []string{PlanAPIVersion, "theos.factory.io/v1alpha1"}
 
 // LabelDesign marks an issue that is a design idea for a Crew's designer.
 const LabelDesign = "status/design"
@@ -1409,7 +1409,7 @@ func UsesLine(p UsedPackage) string {
 	case EcosystemNpm:
 		return fmt.Sprintf("Uses npm package %s %s: npm install --save-exact %s@%s.", p.Name, p.Version, p.Name, p.Version)
 	case EcosystemPyPI:
-		return fmt.Sprintf("Uses PyPI package %s %s from the c4factory index %s: uv add %s==%s, pinned to that index "+
+		return fmt.Sprintf("Uses PyPI package %s %s from the theos index %s: uv add %s==%s, pinned to that index "+
 			"as AGENTS.md says.", p.Name, p.Version, p.Index, p.Name, p.Version)
 	}
 	return fmt.Sprintf("Uses %s %s: go get it at that version.", p.Name, p.Version)

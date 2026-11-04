@@ -21,7 +21,7 @@ touch "$CALLS.ready"
 while :; do sleep 0.1; done
 EOF
 chmod +x "$T/buildkitd"
-export C4_BUILDKITD="$T/buildkitd" CALLS="$T/calls"
+export THEOS_BUILDKITD="$T/buildkitd" CALLS="$T/calls"
 
 mkdir -p "$T/job/tmp" "$T/old/tmp/buildkit/snapshots/9" "$T/old/tmp/other"
 echo layer >"$T/old/tmp/buildkit/snapshots/9/file"

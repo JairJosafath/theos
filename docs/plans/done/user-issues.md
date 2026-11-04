@@ -1,7 +1,7 @@
 # Issues from users, and a factory without a product
 
-**Goal:** This repository is about developing c4factory and nothing else.
-Products are built on other devices that run c4factory as a Helm release, and
+**Goal:** This repository is about developing theos and nothing else.
+Products are built on other devices that run theos as a Helm release, and
 those devices report their problems here as issues. Every issue says at a
 glance whether it came from developing the factory or from a device using it,
 and which device.
@@ -17,7 +17,7 @@ authored by `JairJosafath`, so nothing says where it came from.
 ### Two sources of issues
 
 - Every issue carries exactly one source label:
-  - `source/dev`: made while developing c4factory (by a person, an agent
+  - `source/dev`: made while developing theos (by a person, an agent
     session or the relay).
   - `source/user`: reported from a device that runs the Helm release.
 - An issue with `source/user` also carries exactly one `user/<name>` label
@@ -33,12 +33,12 @@ authored by `JairJosafath`, so nothing says where it came from.
 ### How a device reports
 
 A device needs no checkout of this repo. It files an issue on
-`JairJosafath/c4factory` in one of two ways:
+`JairJosafath/theos` in one of two ways:
 
 - the issue form **Report from a device** (`.github/ISSUE_TEMPLATE/user-report.yml`)
-  with the fields *Reported by* (required), *c4factory version*, *What
+  with the fields *Reported by* (required), *theos version*, *What
   happened*, *What you expected* and *Logs*; the form applies `source/user`, or
-- `gh issue create -R JairJosafath/c4factory --title … --body-file …` with a
+- `gh issue create -R JairJosafath/theos --title … --body-file …` with a
   body in the form's layout. The one required part is the heading and the
   device name under it:
 

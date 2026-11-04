@@ -16,14 +16,14 @@ import (
 // registration token as GITEA_RUNNER_REGISTRATION_TOKEN, and a ConfigMap
 // and a comment the check passes over.
 const fenced = `
-# Source: c4-factory/templates/gitea/deployment.yaml
+# Source: theos/templates/gitea/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata: {name: gitea, namespace: gitea}
 spec:
   template:
     metadata:
-      labels: {app.kubernetes.io/name: gitea, app.kubernetes.io/instance: c4-factory}
+      labels: {app.kubernetes.io/name: gitea, app.kubernetes.io/instance: theos}
     spec:
       containers:
         - name: gitea
@@ -31,7 +31,7 @@ spec:
             - name: GITEA_RUNNER_REGISTRATION_TOKEN
               valueFrom: {secretKeyRef: {name: gitea-runner, key: token}}
 ---
-# Source: c4-factory/templates/gitea/runners.yaml
+# Source: theos/templates/gitea/runners.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: gitea-runner-go-env, namespace: gitea}
@@ -105,7 +105,7 @@ spec:
         - {protocol: TCP, port: 53}
     - to:
         - podSelector:
-            matchLabels: {app.kubernetes.io/name: gitea, app.kubernetes.io/instance: c4-factory}
+            matchLabels: {app.kubernetes.io/name: gitea, app.kubernetes.io/instance: theos}
       ports:
         - {protocol: TCP, port: 3000}
     - to:
@@ -205,7 +205,7 @@ func TestCheck(t *testing.T) {
 		{"the go runner's Go cache on the node", func(o *objects) {
 			spec := &runner(o).Spec.Template.Spec
 			spec.Volumes = append(spec.Volumes, corev1.Volume{Name: "go-cache", VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{Path: "/var/cache/c4factory/go/ci"}}})
+				HostPath: &corev1.HostPathVolumeSource{Path: "/var/cache/theos/go/ci"}}})
 		}, ""},
 		{"Unconfined on another runner's job container", func(o *objects) {
 			runnerContainer(o).SecurityContext = &corev1.SecurityContext{SeccompProfile: unconfinedSeccomp()}

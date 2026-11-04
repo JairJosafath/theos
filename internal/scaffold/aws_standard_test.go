@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // aws-standard is a whole TypeScript Standard copied from ts-standard

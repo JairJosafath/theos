@@ -8,7 +8,7 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
-- The worker, scaffolded by C4 Factory: an SQS queue whose messages, each an
+- The worker, scaffolded by theos: an SQS queue whose messages, each an
   item, a Lambda function stores in a DynamoDB table, delivering a message
   that fails again alone and moving it to a dead-letter queue after five
   tries, with alarms and a dashboard, and in production backups and tracing.

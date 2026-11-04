@@ -128,7 +128,7 @@ describe('needs', () => {
         reason: 'ForeignCommits',
         message: 'The repository has commits the factory did not make',
         links: [repo.repositoryURL],
-        command: 'kubectl -n shop annotate container api c4.factory.io/retry=$(date +%s) --overwrite',
+        command: 'kubectl -n shop annotate container api theos.factory.io/retry=$(date +%s) --overwrite',
         place: 'Container',
       },
     },
@@ -183,8 +183,8 @@ describe('needs', () => {
         links: ['https://git.example/shop/api/pulls/3'],
         standardAnswer: {
           ref: 'v3',
-          take: 'kubectl -n shop annotate container api c4.factory.io/standard-take=v3',
-          keep: 'kubectl -n shop annotate container api c4.factory.io/standard-keep=v3',
+          take: 'kubectl -n shop annotate container api theos.factory.io/standard-take=v3',
+          keep: 'kubectl -n shop annotate container api theos.factory.io/standard-keep=v3',
           files: [
             makefileBehind,
             { path: 'check.yaml', ref: 'v2', pullRequestURL: 'https://git.example/shop/api/pulls/3' },
@@ -288,7 +288,7 @@ describe('needs', () => {
         reason: 'ReleaseRunFailed',
         message: 'status.lastRelease.run is Failed for v1.1.0 at abcdef012345',
         links: ['https://git.example/run/4'],
-        command: 'kubectl -n shop annotate crew api c4.factory.io/rerun-release=$(date +%s) --overwrite',
+        command: 'kubectl -n shop annotate crew api theos.factory.io/rerun-release=$(date +%s) --overwrite',
         place: 'Crew',
       },
     },

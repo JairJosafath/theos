@@ -8,7 +8,7 @@ const refused: WatchState<unknown> = {
   items: [],
   phase: 'connecting',
   loaded: false,
-  error: new ApiError(403, 'standards.c4.factory.io is forbidden'),
+  error: new ApiError(403, 'standards.theos.factory.io is forbidden'),
 }
 
 describe('combineConnection', () => {
@@ -34,7 +34,7 @@ describe('combineConnection', () => {
     expect(c.problems).toEqual([])
     expect(unreadOf(c, 'standards')).toEqual({
       what: 'standards',
-      message: 'standards.c4.factory.io is forbidden',
+      message: 'standards.theos.factory.io is forbidden',
       code: 403,
       resource: 'standards',
     })
@@ -50,7 +50,7 @@ describe('combineConnection', () => {
 
 describe('combineConnection warnings', () => {
   it('collects what the API server warned on each list, each once (#1618)', () => {
-    const deprecated = 'c4.factory.io/v1alpha1 is deprecated since v0.30.0; use c4.factory.io/v1beta1.'
+    const deprecated = 'theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1.'
     const warned: WatchState<unknown> = { ...live, warning: deprecated }
     const c = combineConnection([
       { what: 'containers', state: warned, resource: 'containers' },

@@ -18,21 +18,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/adapters/git"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/adapters/git"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // TestGiteaIntegration runs against the seeded Gitea of the test environment.
-// It is skipped unless C4_GITEA_URL is set; `make test-gitea` sets it up:
+// It is skipped unless THEOS_GITEA_URL is set; `make test-gitea` sets it up:
 //
-//	C4_GITEA_URL=http://localhost:3000 C4_GITEA_TOKEN=... go test ./internal/adapters/gitea/ -run Integration
+//	THEOS_GITEA_URL=http://localhost:3000 THEOS_GITEA_TOKEN=... go test ./internal/adapters/gitea/ -run Integration
 func TestGiteaIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	client := Client{}
@@ -44,7 +44,7 @@ func TestGiteaIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, p := range []string{"pyproject.toml.tmpl", "app/main.py.tmpl", ".c4factory/devcontainer.json"} {
+		for _, p := range []string{"pyproject.toml.tmpl", "app/main.py.tmpl", ".theos/devcontainer.json"} {
 			if _, ok := tree[p]; !ok {
 				t.Errorf("template misses %s", p)
 			}
@@ -73,7 +73,7 @@ func TestGiteaIntegration(t *testing.T) {
 			t.Fatalf("History(new) = %v, %v", commits, err)
 		}
 		hash, err := p.PushInitialCommit(ctx, repo, scaffold.Tree{"README.md": {Data: []byte("hi")}},
-			"Scaffold\n\nC4-Factory-Container: webshop/"+name+"\n", testAuthor)
+			"Scaffold\n\ntheos-Container: webshop/"+name+"\n", testAuthor)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -155,9 +155,9 @@ func pinnedTemplateTag(t *testing.T, template string) string {
 // TestGiteaTemplatesIntegration checks that the seeded Gitea has every template
 // the catalog pins, at its tag, like TestGiteaIntegration.
 func TestGiteaTemplatesIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -180,11 +180,11 @@ func TestGiteaTemplatesIntegration(t *testing.T) {
 // TestGiteaChecksIntegration protects a branch and reads the checks on it against
 // the seeded Gitea, like TestGiteaIntegration.
 func TestGiteaChecksIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	client := Client{}
@@ -236,11 +236,11 @@ func TestGiteaChecksIntegration(t *testing.T) {
 // Gitea and reads its run and the runners, like TestGiteaIntegration. The
 // local Gitea has Actions on and no runner, so the run stays queued.
 func TestGiteaCommitRunsIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -306,11 +306,11 @@ func TestGiteaCommitRunsIntegration(t *testing.T) {
 // moved reads as behind, and that updating it merges the base in, or fails with
 // ErrConflict when they conflict, like TestGiteaIntegration.
 func TestGiteaPullRequestUpdateIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	p, err := Client{}.Provider(ports.Config{URL: base, Owner: "webshop", Credentials: creds})
@@ -393,11 +393,11 @@ func TestGiteaPullRequestUpdateIntegration(t *testing.T) {
 // TestGiteaIssuesIntegration runs the issue flow against the seeded Gitea, like
 // TestGiteaIntegration.
 func TestGiteaIssuesIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	client := Client{}
@@ -469,11 +469,11 @@ func TestGiteaIssuesIntegration(t *testing.T) {
 // issue of another repository against the seeded Gitea, like
 // TestGiteaIntegration: a CLI's issue on its engine's.
 func TestGiteaCrossRepositoryDependencyIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -512,11 +512,11 @@ func TestGiteaCrossRepositoryDependencyIntegration(t *testing.T) {
 // TestGiteaReleasesIntegration reads a release, streams its asset and sets its
 // notes against the seeded Gitea, like TestGiteaIntegration.
 func TestGiteaReleasesIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -583,11 +583,11 @@ func TestGiteaReleasesIntegration(t *testing.T) {
 }
 
 func TestGiteaMilestonesIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -772,11 +772,11 @@ func deleteRepo(t *testing.T, base, owner, name, token string) {
 // seeded Gitea's registry and fetches it with the go command through that
 // registry alone, like TestGiteaIntegration.
 func TestGiteaGoModuleIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -790,7 +790,7 @@ func TestGiteaGoModuleIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	modPath := "c4factory.local/webshop/" + name
+	modPath := "theos.local/webshop/" + name
 	commit, err := p.PushInitialCommit(ctx, repo, scaffold.Tree{
 		"go.mod":           {Data: []byte("module " + modPath + "\n\ngo 1.24\n")},
 		"greet/greet.go":   {Data: []byte("package greet\n\nfunc Hello() string { return \"hello\" }\n")},
@@ -821,7 +821,7 @@ func TestGiteaGoModuleIntegration(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "go", "mod", "download", "-json", modPath+"@v0.1.0")
 	cmd.Dir = home
 	cmd.Env = append(os.Environ(), "GOPROXY="+strings.TrimSuffix(base, "/")+"/api/packages/webshop/go",
-		"GONOSUMDB=c4factory.local", "GOFLAGS=-modcacherw", "GOMODCACHE="+modCache, "NETRC="+netrc,
+		"GONOSUMDB=theos.local", "GOFLAGS=-modcacherw", "GOMODCACHE="+modCache, "NETRC="+netrc,
 		"GOWORK=off", "GO111MODULE=on", "GOTOOLCHAIN=local")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

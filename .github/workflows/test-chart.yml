@@ -24,18 +24,18 @@ jobs:
       contents: read
     name: Run on Ubuntu
     # On self-hosted runners (make gh-runner) only runner 1 of a device carries
-    # c4factory-kind, so a device makes one Kind cluster at a time.
-    runs-on: ${{ vars.RUNS_ON == 'self-hosted' && fromJSON('["self-hosted", "c4factory-kind"]') || vars.RUNS_ON || 'ubuntu-latest' }}
+    # theos-kind, so a device makes one Kind cluster at a time.
+    runs-on: ${{ vars.RUNS_ON == 'self-hosted' && fromJSON('["self-hosted", "theos-kind"]') || vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 30
     # A cluster and image tags of its own: on a self-hosted runner (make
     # gh-runner) it shares the device's Docker with the Kind pool and its :dev
     # images.
     env:
-      IMG: c4factory/operator:chart-test
-      UI_IMG: c4factory/ui:chart-test
-      SEED_IMG: c4factory/seed:chart-test
-      RUNNER_IMG: c4factory/gitea-runner-base:chart-test
-      RUNNER_IMAGE_IMG: c4factory/gitea-runner-image:chart-test
+      IMG: theos/operator:chart-test
+      UI_IMG: theos/ui:chart-test
+      SEED_IMG: theos/seed:chart-test
+      RUNNER_IMG: theos/gitea-runner-base:chart-test
+      RUNNER_IMAGE_IMG: theos/gitea-runner-image:chart-test
       KIND_CLUSTER_NAME: chart-test
       AGENT_SANDBOX: https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
     steps:
@@ -74,11 +74,11 @@ jobs:
           docker build -t "$IMG" .
           docker build -t "$UI_IMG" -f ui/Dockerfile .
           docker build -t "$SEED_IMG" -f hack/seed/Dockerfile .
-          docker build -t c4factory/base:chart-test hack/toolchain-base
-          docker build -t "$RUNNER_IMG" --build-arg BASE=c4factory/base:chart-test -f hack/runner/Dockerfile .
+          docker build -t theos/base:chart-test hack/toolchain-base
+          docker build -t "$RUNNER_IMG" --build-arg BASE=theos/base:chart-test -f hack/runner/Dockerfile .
           docker build -t "$RUNNER_IMAGE_IMG" -f hack/runner/Dockerfile.image .
           # The chart doesn't run the agent, but Release builds it; its Go stage
-          # fails here, not at a tag, when its ignore file drops a file c4agent needs.
+          # fails here, not at a tag, when its ignore file drops a file theos-agent needs.
           docker build --target build -f hack/agent/Dockerfile .
           kind load docker-image "$IMG" "$UI_IMG" "$SEED_IMG" "$RUNNER_IMG" "$RUNNER_IMAGE_IMG"
 
@@ -112,8 +112,8 @@ jobs:
       - name: Check the release
         run: |
           make helm-status
-          kubectl -n c4-factory-system get deployments,pods
-          kubectl -n c4-factory-system rollout status deployment/c4-factory-ui --timeout=120s
+          kubectl -n theos-system get deployments,pods
+          kubectl -n theos-system rollout status deployment/theos-ui --timeout=120s
           kubectl -n gitea get deployments,pods
           kubectl -n gitea rollout status deployment/gitea-runner-base --timeout=120s
           kubectl -n gitea rollout status deployment/gitea-runner-go --timeout=120s
@@ -140,7 +140,7 @@ jobs:
           # misnamed Project gets in, so delete it and try again.
           for i in $(seq 1 12); do
             if ! kubectl -n webshop create -f - <<'EOF' 2>err.txt; then
-          apiVersion: c4.factory.io/v1beta1
+          apiVersion: theos.factory.io/v1beta1
           kind: Project
           metadata:
             name: not-webshop
@@ -157,7 +157,7 @@ jobs:
       - name: Show the logs
         if: failure()
         run: |
-          kubectl -n c4-factory-system logs deployment/c4-factory-controller-manager --tail=100 || true
+          kubectl -n theos-system logs deployment/theos-controller-manager --tail=100 || true
           kubectl -n gitea get events --sort-by=.lastTimestamp | tail -30 || true
           kubectl -n gitea logs job/seed --tail=50 || true
           kubectl -n gitea logs deployment/gitea-runner-base --tail=30 || true

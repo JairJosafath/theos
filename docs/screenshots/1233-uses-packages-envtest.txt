@@ -12,4 +12,4 @@ Brief issues that use another app readies a Python CLI's issue a restart left un
 Ran 5 of 464 Specs in 26.080 seconds
 SUCCESS! -- 5 Passed | 0 Failed | 0 Pending | 459 Skipped
 --- PASS: TestControllers (26.08s)
-ok  	github.com/JairJosafath/c4factory/internal/controller	26.434s
+ok  	github.com/JairJosafath/theos/internal/controller	26.434s

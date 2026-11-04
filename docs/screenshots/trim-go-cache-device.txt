@@ -1,12 +1,12 @@
 # hack/trim-go-cache.sh on the cluster device, 2026-10-05T23:53:44Z
 $ du -sh GOCACHE (before)
-16G	/home/math/www/github.com/jairjosafath/c4factory/.dev/cache/go-build
+16G	/home/math/www/github.com/jairjosafath/theos/.dev/cache/go-build
 entries used in the last day: 93018 of 93018
 $ hack/trim-go-cache.sh
-trim-go-cache: /home/math/www/github.com/jairjosafath/c4factory/.dev/cache/go-build was 15511 MB, limit 4096 MB; dropped 0 MB of entries unused for 1+ days, now 15511 MB
-trim-go-cache: /home/math/www/github.com/jairjosafath/c4factory/.dev/cache/go-build is still over the limit; what is left was used in the last day
+trim-go-cache: /home/math/www/github.com/jairjosafath/theos/.dev/cache/go-build was 15511 MB, limit 4096 MB; dropped 0 MB of entries unused for 1+ days, now 15511 MB
+trim-go-cache: /home/math/www/github.com/jairjosafath/theos/.dev/cache/go-build is still over the limit; what is left was used in the last day
 $ du -sh GOCACHE (after)
-16G	/home/math/www/github.com/jairjosafath/c4factory/.dev/cache/go-build
+16G	/home/math/www/github.com/jairjosafath/theos/.dev/cache/go-build
 entries used in the last day: 93018
 $ hack/trim-go-cache_test.sh
 ok   under the limit: keeps every entry

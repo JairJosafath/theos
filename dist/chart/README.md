@@ -1,6 +1,6 @@
-# c4factory Helm chart
+# theos Helm chart
 
-Installs the whole C4 Factory: the operator, its CRDs and RBAC, the admission
+Installs the whole theos: the operator, its CRDs and RBAC, the admission
 policy (a Project is named after its namespace), the UI (it writes only Briefs
 unless `ui.actions.enabled` is set), and Gitea,
 seeded with the tagged templates, with its `base`, `go` and `image` CI runners. A device
@@ -55,9 +55,9 @@ pull request.
    step:
 
    ```bash
-   kubectl create namespace c4-factory-system
+   kubectl create namespace theos-system
    claude setup-token   # then:
-   read -rs -p 'Claude token: ' T; echo; printf '%s' "$T" | kubectl -n c4-factory-system \
+   read -rs -p 'Claude token: ' T; echo; printf '%s' "$T" | kubectl -n theos-system \
      create secret generic claude-credentials --from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin; unset T
    ```
 
@@ -65,8 +65,8 @@ pull request.
    the seed starts, so give `helm install` time:
 
    ```bash
-   helm install c4-factory oci://ghcr.io/jairjosafath/c4factory/charts/c4-factory --version VERSION \
-     -n c4-factory-system --create-namespace --wait --timeout 10m \
+   helm install theos oci://ghcr.io/jairjosafath/theos/charts/theos --version VERSION \
+     -n theos-system --create-namespace --wait --timeout 10m \
      --set 'gitea.projects={webshop}'
    ```
 
@@ -77,7 +77,7 @@ turn a runner off (`runners.go.enabled=false`; with `runners.image.enabled=false
 no release builds an image, its run waiting for a runner).
 
 That is the whole factory. The chart made namespace `webshop`, labeled
-`c4.factory.io/shared-secrets=true` and kept on uninstall like Gitea's; a
+`theos.factory.io/shared-secrets=true` and kept on uninstall like Gitea's; a
 project namespace that already exists and the release didn't make (by hand, as
 on v0.5.0) is left as it is, and the seed only adds the label
 (`projectNamespaces.create=false`: you make every one). Upgrading from v0.5.0,
@@ -100,8 +100,8 @@ operator's copy of step 2's, or the project's own when you make one there,
 which the operator never changes; the chart holds no token, and Project
 `webshop`'s condition `SecretsShared` says which one it has. The chart
 renders the GitProvider, the catalog and the Agents into ConfigMap
-`gitea/c4factory-catalog`, and the seed applies them with server-side apply
-(field manager `c4factory-chart`), so a `helm upgrade` changes them in place:
+`gitea/theos-catalog`, and the seed applies them with server-side apply
+(field manager `theos-chart`), so a `helm upgrade` changes them in place:
 they keep their UIDs, a running Task keeps its Agent, a field you set that
 the chart doesn't (an Agent's `env`) stays, and a field the chart sets is the
 chart's. One the chart stops rendering stays until you delete it. Describe the
@@ -149,7 +149,7 @@ same values. `helm uninstall` keeps namespace `gitea` and Gitea's volume, so
 the repositories survive a reinstall, and the project namespaces with their
 models; delete a namespace to drop it.
 
-An upgrade keeps your `c4.factory.io` objects valid: write them at `v1beta1`;
+An upgrade keeps your `theos.factory.io` objects valid: write them at `v1beta1`;
 `v1alpha1` still works, deprecated (the API server warns on every request at
 it, and a release 90 or more days after v0.30.0 may drop it, #1963), and
 converts to `v1beta1`. Within a served version a release never removes, renames or retypes
@@ -177,7 +177,7 @@ The images come in one of two ways:
   (the operator):
 
   ```bash
-  for ns in c4-factory-system gitea; do
+  for ns in theos-system gitea; do
     kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
     kubectl -n $ns create secret docker-registry ghcr --docker-server=ghcr.io \
       --docker-username=USER --docker-password="$(gh auth token)"
@@ -200,8 +200,8 @@ The images come in one of two ways:
 
 A `vX.Y.Z` tag publishes the chart and its images: the *Release* workflow
 (`.github/workflows/release.yml`) pushes the chart to
-`oci://ghcr.io/jairjosafath/c4factory/charts`, attaches it to the GitHub release
-and pushes `ghcr.io/jairjosafath/c4factory/<name>:X.Y.Z` for `operator`, `ui`, `seed`,
+`oci://ghcr.io/jairjosafath/theos/charts`, attaches it to the GitHub release
+and pushes `ghcr.io/jairjosafath/theos/<name>:X.Y.Z` for `operator`, `ui`, `seed`,
 the toolchains `base` and `go`, `agent-base`, `agent-go`, `gitea-runner-base`
 and `gitea-runner-go` (all `linux/amd64`). A released chart runs its own
 version's operator and UI images. From a checkout, `helm install ... dist/chart`
@@ -224,7 +224,7 @@ as the run's artifact); a failing release gets an issue titled
 | --- | --- |
 | `manager.image`, `ui.image` | repository, tag (default `Chart.appVersion`), pullPolicy |
 | `manager.args` | the operator's flags (`go run ./cmd --help`); the defaults are the Kind environment's. The chart adds the ones its values decide: with `agents.enabled`, `--shared-secret=<agents.credentialsSecret>` and `--model-proxy-url=http://c4-model-proxy.<release namespace>.svc:8080`, the `agents.modelProxy` Service that a sandbox whose Agent names the shared Secret reaches Claude through, holding no token itself (the operator refuses `--shared-secret` without it) |
-| `sessionBinaryURL` | where scaffolded devcontainers download `c4session`, the Session client (`--session-binary-url`, `${arch}` becomes `amd64` or `arm64`); default the UI, whose image carries the client under `/downloads/`: `http://localhost:<ui.service.port>/...` for the port-forward, `<ui.sessionBinaryScheme>://<ui.allowedHosts[0]>/...` behind an Ingress, so a private repository's release needs no GitHub login. The devcontainer's build must reach that address (a port-forward's localhost is the laptop's, not a container's), so set one it reaches when it doesn't. With `ui.enabled` false, the binaries attached to this chart's GitHub release. Both serve a `SHA256SUMS` next to the binaries, which the feature checks the download against; a URL of your own needs one too. Empty sets none |
+| `sessionBinaryURL` | where scaffolded devcontainers download `theos-session`, the Session client (`--session-binary-url`, `${arch}` becomes `amd64` or `arm64`); default the UI, whose image carries the client under `/downloads/`: `http://localhost:<ui.service.port>/...` for the port-forward, `<ui.sessionBinaryScheme>://<ui.allowedHosts[0]>/...` behind an Ingress, so a private repository's release needs no GitHub login. The devcontainer's build must reach that address (a port-forward's localhost is the laptop's, not a container's), so set one it reaches when it doesn't. With `ui.enabled` false, the binaries attached to this chart's GitHub release. Both serve a `SHA256SUMS` next to the binaries, which the feature checks the download against; a URL of your own needs one too. Empty sets none |
 | `checkpointStorageClass` | the StorageClass of each agent sandbox's 1Gi checkpoint volume, where an interrupted run is saved to resume in place (`--sandbox-checkpoint-storage-class`). Empty (the default) uses the cluster's default class; on a cluster without one the claim never binds and no sandbox pod schedules, so name a class there, or set `none`: sandboxes then get no checkpoint volume, and an interrupted run runs again from the start |
 | `clusterDNS` | where cluster DNS runs: the peers the agent and CI fences let port 53 out to (the operator's `--cluster-dns`, one per entry, and the CI runners' NetworkPolicy). Each entry is `namespace/key=value[,key=value]` (a namespace and pod labels) or an address block inside the private ranges (a bare address means `/32`). Default `kube-system/k8s-app=kube-dns`, which fits kube-dns or CoreDNS in `kube-system`. A cluster whose pods resolve through NodeLocal DNSCache needs its link-local address (`169.254.20.10/32`; keep the default too when some pods still use the Service), and one with DNS in another namespace its pods' labels (OpenShift: `openshift-dns/dns.operator.openshift.io/daemonset-dns=default`). Without the right entry, sandboxes and CI runners resolve nothing. The UI's `ui.components` dns entry is separate: set it too when DNS runs elsewhere |
 | `ui.enabled` | install the UI (default true); `ui.service` and `ui.resources` |
@@ -237,7 +237,7 @@ as the run's artifact); a failing release gets an issue titled
 | `gitea.namespace`, `gitea.createNamespace` | Gitea's namespace (default `gitea`) and whether the chart makes it |
 | `gitea.image`, `gitea.resources`, `gitea.persistence`, `gitea.config` | Gitea's image, its share of the node, its volume and extra `GITEA__section__KEY` settings |
 | `gitea.admin` | the admin's name and email; `existingSecret` for one of your own, else the password is generated |
-| `gitea.projects` | project names, or objects `{name, packages}` (`packages` as `gitProviders[].packages`): a namespace each (see `projectNamespaces.create`), labeled `c4.factory.io/shared-secrets=true` by the chart or the seed, with an organization, Secret `gitea-credentials`, GitProvider `gitea` and, when there is none, Project `<name>` |
+| `gitea.projects` | project names, or objects `{name, packages}` (`packages` as `gitProviders[].packages`): a namespace each (see `projectNamespaces.create`), labeled `theos.factory.io/shared-secrets=true` by the chart or the seed, with an organization, Secret `gitea-credentials`, GitProvider `gitea` and, when there is none, Project `<name>` |
 | `projectNamespaces.create` | make each of `gitea.projects`' namespaces, kept on uninstall, unless it exists and isn't the release's (default on); off, you make them and the seed labels them |
 | `gitea.seed.image`, `gitea.seed.waitSeconds` | the seed Job's image (default tag `Chart.appVersion`) and how long it waits for Gitea |
 | `catalog.enabled`, `catalog.entries` | for each of `gitea.projects`, the catalog entries of the templates the seed pushes (Frameworks, Standards, Compute, Deployments, Connectors, Domains), each pinned to its tag in `templates/versions.txt`; an entry whose folder under `templates/` differs from its name says so with `template` (the Domain `webshop` is `webshop-domain`) (default on) |
@@ -274,7 +274,7 @@ keys `username` and `token`, before the install:
 
 ```bash
 kubectl -n webshop create secret generic git-credentials \
-  --from-literal=username=c4factory --from-literal=token="$GIT_TOKEN"
+  --from-literal=username=theos --from-literal=token="$GIT_TOKEN"
 ```
 
 Each of them carries the same `ci` block as the release's own GitProviders:
@@ -291,8 +291,8 @@ the PyPI index the agents' pods install from and the published Containers
 publish to. Unset, they are the host's own package registries, read with the
 GitProvider's token. A registry of your own names a Secret you make, with key
 `token` (publishes; only the operator reads it) and, optionally, `readToken`
-(installs); when it is set the operator sets `C4_NPM_SCOPE`, `C4_NPM_REGISTRY`
-and `C4_PYPI_INDEX` as the owner's Actions variables and the read tokens as
+(installs); when it is set the operator sets `THEOS_NPM_SCOPE`, `THEOS_NPM_REGISTRY`
+and `THEOS_PYPI_INDEX` as the owner's Actions variables and the read tokens as
 its Actions secrets, and deletes them when `packages` is unset again.
 
 ```yaml
@@ -313,8 +313,8 @@ gitProviders:
 ```
 
 The CRDs are part of the release, so the GitProviders are not release objects:
-the chart renders them into ConfigMap `c4factory-gitproviders`, and Job
-`c4-factory-gitproviders`, a `post-install` and `post-upgrade` hook on the seed
+the chart renders them into ConfigMap `theos-gitproviders`, and Job
+`theos-gitproviders`, a `post-install` and `post-upgrade` hook on the seed
 image (`gitea.seed.image`), applies them in place with server-side apply, under
 a Role in each `gitProviders[].namespace` that grants only GitProviders. An
 upgrade changes them in place, keeping their UIDs and any field the chart

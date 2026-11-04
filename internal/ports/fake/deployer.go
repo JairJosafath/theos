@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // Deployer is a ports.Deployer in memory. It records the deploys it starts,

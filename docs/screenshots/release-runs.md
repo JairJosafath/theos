@@ -1,6 +1,6 @@
 # The Crew watches the release run and reports a failure (#116)
 
-Kind cluster `c4factory-2`, operator built from `feat/116-the-crew-watches-the-release-run-and`
+Kind cluster `theos-2`, operator built from `feat/116-the-crew-watches-the-release-run-and`
 (`make deploy`), 2026-10-06 00:44–00:50 UTC. The setup is #78's
 (`docs/screenshots/release-tags-hello.md`): Container `apps/hello-rel` whose
 `gitea-release` layer runs `.gitea/workflows/release.yaml` on a `v*` tag, and its
@@ -26,7 +26,7 @@ $ kubectl -n apps get events.events.k8s.io --field-selector regarding.name=hello
 TIME                          TYPE      REASON             ACTION            NOTE
 2026-10-06T00:47:15.152511Z   Warning   ReleaseRunFailed   WatchReleaseRun   Release run release.yaml of v0.1.0 ended cancelled: http://gitea.gitea.svc.cluster.local:3000/apps/hello-rel/actions/runs/5
 
-$ kubectl -n c4-factory-system logs deploy/c4-factory-controller-manager | grep "Release run"
+$ kubectl -n theos-system logs deploy/theos-controller-manager | grep "Release run"
 2026-10-06T00:47:15Z	INFO	Release run failed	{"controller": "crew", ..., "name": "hello-rel", "tag": "v0.1.0", "workflow": "release.yaml", "conclusion": "cancelled", "url": "http://gitea.gitea.svc.cluster.local:3000/apps/hello-rel/actions/runs/5"}
 
 # two minutes and two polls later (lastPolled 00:49:16): still one Warning, no series, one log line

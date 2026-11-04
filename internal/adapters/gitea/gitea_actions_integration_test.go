@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // TestGiteaActionsIntegration pins what gitea_actions.go assumes of Gitea's
@@ -20,11 +20,11 @@ import (
 // deleting either twice is no error. Like TestGiteaIntegration; the
 // organization goes when the test ends.
 func TestGiteaActionsIntegration(t *testing.T) {
-	base := os.Getenv("C4_GITEA_URL")
+	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
-		t.Skip("C4_GITEA_URL not set")
+		t.Skip("THEOS_GITEA_URL not set")
 	}
-	creds := ports.Credentials{Username: os.Getenv("C4_GITEA_USERNAME"), Token: os.Getenv("C4_GITEA_TOKEN")}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -61,19 +61,19 @@ func TestGiteaActionsIntegration(t *testing.T) {
 			Data string `json:"data"`
 		}
 		for i, value := range []string{"@acme", "@acme-again"} {
-			if err := actions.SetActionsVariable(ctx, "C4_NPM_SCOPE", value); err != nil {
+			if err := actions.SetActionsVariable(ctx, "THEOS_NPM_SCOPE", value); err != nil {
 				t.Fatalf("SetActionsVariable #%d: %v", i+1, err)
 			}
-			if status := get("variables/C4_NPM_SCOPE", &variable); status != http.StatusOK || variable.Data != value {
+			if status := get("variables/THEOS_NPM_SCOPE", &variable); status != http.StatusOK || variable.Data != value {
 				t.Fatalf("after SetActionsVariable #%d, GET: HTTP %d, data %q; want %q", i+1, status, variable.Data, value)
 			}
 		}
 		for i := range 2 {
-			if err := actions.DeleteActionsVariable(ctx, "C4_NPM_SCOPE"); err != nil {
+			if err := actions.DeleteActionsVariable(ctx, "THEOS_NPM_SCOPE"); err != nil {
 				t.Fatalf("DeleteActionsVariable #%d: %v", i+1, err)
 			}
 		}
-		if status := get("variables/C4_NPM_SCOPE", nil); status != http.StatusNotFound {
+		if status := get("variables/THEOS_NPM_SCOPE", nil); status != http.StatusNotFound {
 			t.Errorf("after the delete, GET: HTTP %d, want 404", status)
 		}
 	})
@@ -93,19 +93,19 @@ func TestGiteaActionsIntegration(t *testing.T) {
 			return out
 		}
 		for i, value := range []string{"read-token", "read-token-again"} {
-			if err := actions.SetActionsSecret(ctx, "C4_NPM_TOKEN", value); err != nil {
+			if err := actions.SetActionsSecret(ctx, "THEOS_NPM_TOKEN", value); err != nil {
 				t.Fatalf("SetActionsSecret #%d: %v", i+1, err)
 			}
-			if got := names(); !slices.Contains(got, "C4_NPM_TOKEN") {
+			if got := names(); !slices.Contains(got, "THEOS_NPM_TOKEN") {
 				t.Fatalf("after SetActionsSecret #%d, the secrets are %v", i+1, got)
 			}
 		}
 		for i := range 2 {
-			if err := actions.DeleteActionsSecret(ctx, "C4_NPM_TOKEN"); err != nil {
+			if err := actions.DeleteActionsSecret(ctx, "THEOS_NPM_TOKEN"); err != nil {
 				t.Fatalf("DeleteActionsSecret #%d: %v", i+1, err)
 			}
 		}
-		if got := names(); slices.Contains(got, "C4_NPM_TOKEN") {
+		if got := names(); slices.Contains(got, "THEOS_NPM_TOKEN") {
 			t.Errorf("after the delete, the secrets are %v", got)
 		}
 	})

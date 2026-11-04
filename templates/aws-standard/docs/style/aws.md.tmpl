@@ -275,8 +275,8 @@ says why each rule matters.
   other context value or environment variable is read at synth. [test: the
   Standard's per-tier checks]
 {{- end }}
-- Every stack carries the Standard's tags (`c4factory:project`,
-  `c4factory:system`, `c4factory:container`). [test: tags every stack]
+- Every stack carries the Standard's tags (`theos:project`,
+  `theos:system`, `theos:container`). [test: tags every stack]
 - Every stateful resource says its removal policy. [test]
 - A CDK Nag finding is fixed in the resource. An acknowledgement
   (`Validations.of(construct).acknowledge({ id, reason })`), on the construct
@@ -418,8 +418,8 @@ says why each rule matters.
 - No account in `env`, no `fromLookup`, so synth needs no account. The
   stack's region is us-east-1, because CloudFront takes its firewall and
   certificate only there. [review]
-- Every stack carries the Standard's tags (`c4factory:project`,
-  `c4factory:system`, `c4factory:container`). [test: tags every stack]
+- Every stack carries the Standard's tags (`theos:project`,
+  `theos:system`, `theos:container`). [test: tags every stack]
 - Every stateful resource says its removal policy. [test]
 - A CDK Nag finding is fixed in the resource. An acknowledgement
   (`Validations.of(construct).acknowledge({ id, reason })`), on the construct
@@ -1055,8 +1055,8 @@ says why each rule matters.
   other context value or environment variable is read at synth. [test: the
   Standard's per-tier checks]
 {{- end }}
-- Every stack carries the Standard's tags (`c4factory:project`,
-  `c4factory:system`, `c4factory:container`). [test: tags every stack]
+- Every stack carries the Standard's tags (`theos:project`,
+  `theos:system`, `theos:container`). [test: tags every stack]
 - Every stateful resource says its removal policy. [test]
 - A CDK Nag finding is fixed in the resource. An acknowledgement
   (`Validations.of(construct).acknowledge({ id, reason })`), on the construct

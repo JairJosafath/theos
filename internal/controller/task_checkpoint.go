@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -23,19 +23,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // A run continues from a checkpoint (docs/design.md, "A run continues from a
 // checkpoint"). Each sandbox has a small volume of its own, from a
-// volumeClaimTemplates entry, that outlives its pod. Told to stop, c4agent
+// volumeClaimTemplates entry, that outlives its pod. Told to stop, theos-agent
 // saves the run there. When the infrastructure interrupts a run, the operator
 // suspends the sandbox (spec.operatingMode Suspended): Agent Sandbox deletes
 // the pod and keeps the volume. Once the pod is gone, the operator writes the
 // current Agent's pod template, with the run's remaining time, and sets the
-// sandbox Running again: the new pod's c4agent goes on from the checkpoint.
+// sandbox Running again: the new pod's theos-agent goes on from the checkpoint.
 
 // The checkpoint volume: its claim template's name, where the agent
 // container mounts it, and its size.
@@ -46,7 +46,7 @@ const (
 )
 
 // checkpointGrace is the sandbox pod's terminationGracePeriodSeconds: the
-// time c4agent, told to stop, has to end its session and save the run.
+// time theos-agent, told to stop, has to end its session and save the run.
 const checkpointGrace int64 = 60
 
 // Agent Sandbox's spec.operatingMode values.
@@ -61,24 +61,24 @@ const fieldSpec = "spec"
 // annotationRanSeconds on a Sandbox is how long its run ran, in seconds, on
 // the pods before the current one: a resumed run gets what is left of its
 // timeout.
-const annotationRanSeconds = "c4.factory.io/ran-seconds"
+const annotationRanSeconds = "theos.factory.io/ran-seconds"
 
 // annotationSuspendedAt on a suspended Sandbox is when the operator suspended
 // it, in RFC 3339: its run waits model.MaxSuspendWait at most for the old pod
 // to go.
-const annotationSuspendedAt = "c4.factory.io/suspended-at"
+const annotationSuspendedAt = "theos.factory.io/suspended-at"
 
 // annotationPausedRun on a suspended Sandbox says its run paused at the
 // factory's ask, rather than being interrupted; its value is the pause's
 // reason. Such a run resumes once the pause ends, counting no resume, and
 // waits however long that takes (step 12 of docs/plans/self-hosting.md).
-const annotationPausedRun = "c4.factory.io/paused-run"
+const annotationPausedRun = "theos.factory.io/paused-run"
 
 // annotationAgentBack on a suspended Sandbox says its run waits for its
 // agent's service, which was unavailable; its value is when the agent is
 // due back, in RFC 3339 (the Task's status.agentBackAt). Such a run resumes
 // then, counting no resume (step 13 of docs/plans/self-hosting.md).
-const annotationAgentBack = "c4.factory.io/agent-back-at"
+const annotationAgentBack = "theos.factory.io/agent-back-at"
 
 // suspension is why a run's sandbox is suspended, when its run was not
 // interrupted: it paused at the factory's ask (pause, the pause's reason),

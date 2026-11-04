@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -587,40 +587,40 @@ func TestCompareCRDs(t *testing.T) {
 	}
 	parse := func(versions ...string) crd {
 		var c crd
-		y := fmt.Sprintf("metadata: {name: things.c4.factory.io}\nspec: {versions: [%s]}", strings.Join(versions, ", "))
+		y := fmt.Sprintf("metadata: {name: things.theos.factory.io}\nspec: {versions: [%s]}", strings.Join(versions, ", "))
 		if err := utilyaml.Unmarshal([]byte(y), &c); err != nil {
 			t.Fatal(err)
 		}
 		return c
 	}
-	base := map[string]crd{"things.c4.factory.io": parse(version("v1alpha1", true))}
+	base := map[string]crd{"things.theos.factory.io": parse(version("v1alpha1", true))}
 	cases := []struct {
 		name string
 		cur  map[string]crd
 		want []string
 	}{
 		{"a new served version is accepted",
-			map[string]crd{"things.c4.factory.io": parse(version("v1alpha1", true), version("v1beta1", true))}, nil},
-		{"a removed CRD is refused", map[string]crd{}, []string{"things.c4.factory.io: removed"}},
+			map[string]crd{"things.theos.factory.io": parse(version("v1alpha1", true), version("v1beta1", true))}, nil},
+		{"a removed CRD is refused", map[string]crd{}, []string{"things.theos.factory.io: removed"}},
 		{"a version no longer served is refused",
-			map[string]crd{"things.c4.factory.io": parse(version("v1alpha1", false))},
-			[]string{"things.c4.factory.io/v1alpha1: no longer served"}},
+			map[string]crd{"things.theos.factory.io": parse(version("v1alpha1", false))},
+			[]string{"things.theos.factory.io/v1alpha1: no longer served"}},
 		// #1616: the drop is accepted only when dropped.txt names the version.
 		{"a dropped version named in dropped.txt is accepted",
-			map[string]crd{"things.c4.factory.io": parse(version("v1alpha1", false), version("v1beta1", true))}, nil},
+			map[string]crd{"things.theos.factory.io": parse(version("v1alpha1", false), version("v1beta1", true))}, nil},
 		{"a dropped version named for one CRD in dropped.txt is accepted",
-			map[string]crd{"things.c4.factory.io": parse(version("v1beta1", true))}, nil},
+			map[string]crd{"things.theos.factory.io": parse(version("v1beta1", true))}, nil},
 		{"a dropped version named for another CRD is refused",
-			map[string]crd{"things.c4.factory.io": parse(version("v1beta1", true))},
-			[]string{"things.c4.factory.io/v1alpha1: no longer served"}},
+			map[string]crd{"things.theos.factory.io": parse(version("v1beta1", true))},
+			[]string{"things.theos.factory.io/v1alpha1: no longer served"}},
 	}
 	dropped := map[string]map[string]bool{
 		"a dropped version named in dropped.txt is accepted": parseDropped(
 			"# notes\nv1alpha1  Removed the v1alpha1 API versions.\n"),
 		"a dropped version named for one CRD in dropped.txt is accepted": parseDropped(
-			"things.c4.factory.io/v1alpha1 Removed things' v1alpha1.\n"),
+			"things.theos.factory.io/v1alpha1 Removed things' v1alpha1.\n"),
 		"a dropped version named for another CRD is refused": parseDropped(
-			"others.c4.factory.io/v1alpha1 Removed others' v1alpha1.\n"),
+			"others.theos.factory.io/v1alpha1 Removed others' v1alpha1.\n"),
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -647,19 +647,19 @@ func TestStaleDropped(t *testing.T) {
 		return crdVersion{Name: name, Served: served}
 	}
 	things := func(versions ...crdVersion) map[string]crd {
-		return map[string]crd{"things.c4.factory.io": {Spec: crdSpec{Versions: versions}}}
+		return map[string]crd{"things.theos.factory.io": {Spec: crdSpec{Versions: versions}}}
 	}
 	base := things(version("v1alpha1", true))
 	cur := things(version("v1alpha1", true), version("v1beta1", true))
 	got := staleDropped(base, cur, parseDropped(
-		"v1alpha1 x\nthings.c4.factory.io/v1alpha1 x\nv0 x\nothers.c4.factory.io/v1alpha1 x\n"))
-	want := []string{"others.c4.factory.io/v1alpha1: the baseline never served it",
-		"things.c4.factory.io/v1alpha1: still served", "v0: the baseline never served it", "v1alpha1: still served"}
+		"v1alpha1 x\nthings.theos.factory.io/v1alpha1 x\nv0 x\nothers.theos.factory.io/v1alpha1 x\n"))
+	want := []string{"others.theos.factory.io/v1alpha1: the baseline never served it",
+		"things.theos.factory.io/v1alpha1: still served", "v0: the baseline never served it", "v1alpha1: still served"}
 	if !slices.Equal(got, want) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	cur = things(version("v1beta1", true))
-	if got := staleDropped(base, cur, parseDropped("v1alpha1 x\nthings.c4.factory.io/v1alpha1 x\n")); len(got) > 0 {
+	if got := staleDropped(base, cur, parseDropped("v1alpha1 x\nthings.theos.factory.io/v1alpha1 x\n")); len(got) > 0 {
 		t.Errorf("got %q, want none", got)
 	}
 }

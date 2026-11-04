@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 // The CRD as `make manifests` wrote it.
-import briefCRD from '../../../config/crd/bases/c4.factory.io_briefs.yaml?raw'
+import briefCRD from '../../../config/crd/bases/theos.factory.io_briefs.yaml?raw'
 import { BRIEF_LIMITS, isBriefName } from './limits'
 
 interface Schema {

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -22,13 +22,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // Step 11 of docs/plans/self-hosting.md: every sandbox has the checkpoint
-// volume, mounted where c4agent saves the run, and gives c4agent a minute to
+// volume, mounted where theos-agent saves the run, and gives theos-agent a minute to
 // save it when told to stop.
 func TestBuildSandboxHasTheCheckpointVolume(t *testing.T) {
 	scheme := runtime.NewScheme()
@@ -66,7 +66,7 @@ func TestBuildSandboxHasTheCheckpointVolume(t *testing.T) {
 		env[e.Name] = e.Value
 	}
 	if !mounted || env[agentrunner.EnvCheckpointDir] != agentrunner.CheckpointDir {
-		t.Errorf("mounts %v, %s=%q; want the checkpoint volume at %s, and c4agent told so", pod.Containers[0].VolumeMounts,
+		t.Errorf("mounts %v, %s=%q; want the checkpoint volume at %s, and theos-agent told so", pod.Containers[0].VolumeMounts,
 			agentrunner.EnvCheckpointDir, env[agentrunner.EnvCheckpointDir], agentrunner.CheckpointDir)
 	}
 	for _, v := range pod.Volumes {

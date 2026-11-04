@@ -14,8 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/go-logr/logr"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // capabilities are what a CDK stack's change set acknowledges, as cdk
@@ -155,7 +155,7 @@ func changeSetInput(t ports.Target, stack model.CDKStack, env model.CDKEnv, st *
 	}
 	in := &cfn.CreateChangeSetInput{StackName: aws.String(stack.StackName), ChangeSetName: aws.String(name),
 		ChangeSetType: typ, TemplateURL: aws.String(env.TemplateURL(bucket, key)), Capabilities: capabilities,
-		Description: aws.String(fmt.Sprintf("c4factory ships %s %s", s.App, s.Version))}
+		Description: aws.String(fmt.Sprintf("theos ships %s %s", s.App, s.Version))}
 	if stack.ExecutionRoleArn != "" {
 		in.RoleARN = aws.String(env.Substitute(stack.ExecutionRoleArn))
 	}

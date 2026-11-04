@@ -48,15 +48,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -73,15 +73,15 @@
     "RetentionInDays": 365,
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -101,15 +101,15 @@
     "InstanceTenancy": "default",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -145,15 +145,15 @@
       "Value": "Isolated"
      },
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -174,15 +174,15 @@
    "Properties": {
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -235,15 +235,15 @@
       "Value": "Isolated"
      },
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -264,15 +264,15 @@
    "Properties": {
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -319,15 +319,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -392,15 +392,15 @@
     "ResourceType": "VPC",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -439,15 +439,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -489,15 +489,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -548,15 +548,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -607,15 +607,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -666,15 +666,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      },
      {
@@ -715,15 +715,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -771,9 +771,9 @@
     },
     "SmsVerificationMessage": "The verification code to your new account is {####}",
     "UserPoolTags": {
-     "c4factory:container": "search",
-     "c4factory:project": "webshop",
-     "c4factory:system": "shop"
+     "theos:container": "search",
+     "theos:project": "webshop",
+     "theos:system": "shop"
     },
     "UsernameAttributes": [
      "email"
@@ -823,15 +823,15 @@
     "RetentionInDays": 365,
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -859,15 +859,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -961,15 +961,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1064,15 +1064,15 @@
        "ResourceType": "instance",
        "Tags": [
         {
-         "Key": "c4factory:container",
+         "Key": "theos:container",
          "Value": "search"
         },
         {
-         "Key": "c4factory:project",
+         "Key": "theos:project",
          "Value": "webshop"
         },
         {
-         "Key": "c4factory:system",
+         "Key": "theos:system",
          "Value": "shop"
         },
         {
@@ -1085,15 +1085,15 @@
        "ResourceType": "volume",
        "Tags": [
         {
-         "Key": "c4factory:container",
+         "Key": "theos:container",
          "Value": "search"
         },
         {
-         "Key": "c4factory:project",
+         "Key": "theos:project",
          "Value": "webshop"
         },
         {
-         "Key": "c4factory:system",
+         "Key": "theos:system",
          "Value": "shop"
         },
         {
@@ -1151,15 +1151,15 @@
       "ResourceType": "launch-template",
       "Tags": [
        {
-        "Key": "c4factory:container",
+        "Key": "theos:container",
         "Value": "search"
        },
        {
-        "Key": "c4factory:project",
+        "Key": "theos:project",
         "Value": "webshop"
        },
        {
-        "Key": "c4factory:system",
+        "Key": "theos:system",
         "Value": "shop"
        },
        {
@@ -1261,15 +1261,15 @@
     "PendingWindowInDays": 7,
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -1291,15 +1291,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -1573,15 +1573,15 @@
     "DashboardName": "search",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -1621,15 +1621,15 @@
     "Statistic": "Sum",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1671,15 +1671,15 @@
     "Statistic": "Sum",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1721,15 +1721,15 @@
     "Period": 300,
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1822,15 +1822,15 @@
     "Statistic": "Minimum",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1869,15 +1869,15 @@
     "Statistic": "Average",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1916,15 +1916,15 @@
     "Statistic": "Average",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -1980,15 +1980,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -2044,15 +2044,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -2303,15 +2303,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -2361,17 +2361,17 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "PropagateAtLaunch": true,
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "PropagateAtLaunch": true,
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "PropagateAtLaunch": true,
       "Value": "shop"
      }
@@ -2465,15 +2465,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -2598,15 +2598,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -2684,15 +2684,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -2731,15 +2731,15 @@
     "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-2021-06",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -2763,15 +2763,15 @@
     "Protocol": "HTTP",
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ],
@@ -2832,15 +2832,15 @@
     },
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]
@@ -2856,9 +2856,9 @@
    "Properties": {
     "BackupVaultName": "searchBackupsVault6FD9F3BF",
     "BackupVaultTags": {
-     "c4factory:container": "search",
-     "c4factory:project": "webshop",
-     "c4factory:system": "shop"
+     "theos:container": "search",
+     "theos:project": "webshop",
+     "theos:system": "shop"
     },
     "EncryptionKeyArn": {
      "Fn::GetAtt": [
@@ -2896,9 +2896,9 @@
      ]
     },
     "BackupPlanTags": {
-     "c4factory:container": "search",
-     "c4factory:project": "webshop",
-     "c4factory:system": "shop"
+     "theos:container": "search",
+     "theos:project": "webshop",
+     "theos:system": "shop"
     }
    },
    "Metadata": {
@@ -2936,15 +2936,15 @@
     ],
     "Tags": [
      {
-      "Key": "c4factory:container",
+      "Key": "theos:container",
       "Value": "search"
      },
      {
-      "Key": "c4factory:project",
+      "Key": "theos:project",
       "Value": "webshop"
      },
      {
-      "Key": "c4factory:system",
+      "Key": "theos:system",
       "Value": "shop"
      }
     ]

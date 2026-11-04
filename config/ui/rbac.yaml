@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: c4-factory-ui
+  name: theos-ui
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 ---
 # Read-only access to the story, the Sessions, the catalog and the factory's
 # work (Agents, Tasks, Crews), in every namespace (one Project per namespace, so
@@ -13,11 +13,11 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: c4-factory-ui-reader
+  name: theos-ui-reader
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 rules:
-- apiGroups: [c4.factory.io]
+- apiGroups: [theos.factory.io]
   resources:
   - projects
   - people
@@ -43,17 +43,17 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: c4-factory-ui-reader
+  name: theos-ui-reader
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: c4-factory-ui-reader
+  name: theos-ui-reader
 subjects:
 - kind: ServiceAccount
-  name: c4-factory-ui
-  namespace: c4-factory-ui
+  name: theos-ui
+  namespace: theos-ui
 ---
 # For GET /factory/health, read by server.mjs itself: the node, and its CPU
 # and memory from metrics-server. The server sends the browser only a summary
@@ -62,9 +62,9 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: c4-factory-ui-health
+  name: theos-ui-health
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 rules:
 - apiGroups: [""]
   resources: [nodes]
@@ -76,17 +76,17 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: c4-factory-ui-health
+  name: theos-ui-health
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: c4-factory-ui-health
+  name: theos-ui-health
 subjects:
 - kind: ServiceAccount
-  name: c4-factory-ui
-  namespace: c4-factory-ui
+  name: theos-ui
+  namespace: theos-ui
 ---
 # The pods and their metrics, for the same summary: only in the namespaces of
 # ui/health.mjs's components, bound below. The operator lets the UI read them
@@ -94,9 +94,9 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: c4-factory-ui-pods
+  name: theos-ui-pods
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 rules:
 - apiGroups: [""]
   resources: [pods]
@@ -108,82 +108,82 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: c4-factory-ui-pods
-  namespace: c4-factory-system
+  name: theos-ui-pods
+  namespace: theos-system
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: c4-factory-ui-pods
+  name: theos-ui-pods
 subjects:
 - kind: ServiceAccount
-  name: c4-factory-ui
-  namespace: c4-factory-ui
+  name: theos-ui
+  namespace: theos-ui
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: c4-factory-ui-pods
+  name: theos-ui-pods
   namespace: gitea
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: c4-factory-ui-pods
+  name: theos-ui-pods
 subjects:
 - kind: ServiceAccount
-  name: c4-factory-ui
-  namespace: c4-factory-ui
+  name: theos-ui
+  namespace: theos-ui
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: c4-factory-ui-pods
+  name: theos-ui-pods
   namespace: agent-sandbox-system
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: c4-factory-ui-pods
+  name: theos-ui-pods
 subjects:
 - kind: ServiceAccount
-  name: c4-factory-ui
-  namespace: c4-factory-ui
+  name: theos-ui
+  namespace: theos-ui
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: c4-factory-ui-pods
-  namespace: c4-factory-ui
+  name: theos-ui-pods
+  namespace: theos-ui
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: c4-factory-ui-pods
+  name: theos-ui-pods
 subjects:
 - kind: ServiceAccount
-  name: c4-factory-ui
-  namespace: c4-factory-ui
+  name: theos-ui
+  namespace: theos-ui
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: c4-factory-ui-pods
+  name: theos-ui-pods
   namespace: kube-system
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: c4-factory-ui-pods
+  name: theos-ui-pods
 subjects:
 - kind: ServiceAccount
-  name: c4-factory-ui
-  namespace: c4-factory-ui
+  name: theos-ui
+  namespace: theos-ui
 ---
 # The UI's only three writes (ui/server.mjs checks them first): create a
 # Brief, the box for an idea, and patch one to append a follow-up prompt or to
@@ -191,25 +191,25 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: c4-factory-ui-brief-writer
+  name: theos-ui-brief-writer
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 rules:
-- apiGroups: [c4.factory.io]
+- apiGroups: [theos.factory.io]
   resources: [briefs]
   verbs: [create, patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: c4-factory-ui-brief-writer
+  name: theos-ui-brief-writer
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: c4-factory-ui-brief-writer
+  name: theos-ui-brief-writer
 subjects:
 - kind: ServiceAccount
-  name: c4-factory-ui
-  namespace: c4-factory-ui
+  name: theos-ui
+  namespace: theos-ui

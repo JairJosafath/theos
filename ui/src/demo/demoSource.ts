@@ -59,13 +59,13 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
    */
   async create(namespace: string, name: string, idea: string, options?: BriefOptions): Promise<void> {
     const data = this.snapshot.data
-    const invalid = (detail: string) => new Error(`Brief.c4.factory.io "${name}" is invalid: ${detail}`)
+    const invalid = (detail: string) => new Error(`Brief.theos.factory.io "${name}" is invalid: ${detail}`)
     if (!isBriefName(name))
       throw invalid(
         `metadata.name: Invalid value: "${name}": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.'`,
       )
     if (data.briefs.some((b) => b.metadata.name === name))
-      throw new Error(`briefs.c4.factory.io "${name}" already exists`)
+      throw new Error(`briefs.theos.factory.io "${name}" already exists`)
     const { idea: ideaLimit } = BRIEF_LIMITS
     if (idea.length < ideaLimit.min)
       throw invalid(`spec.idea: Invalid value: "": should be at least ${ideaLimit.min} chars long`)
@@ -80,8 +80,8 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
   async addPrompt(_namespace: string, name: string, prompt: string): Promise<void> {
     const data = this.snapshot.data
     const brief = data.briefs.find((b) => b.metadata.name === name)
-    if (!brief) throw new Error(`briefs.c4.factory.io "${name}" not found`)
-    const invalid = (detail: string) => new Error(`Brief.c4.factory.io "${name}" is invalid: ${detail}`)
+    if (!brief) throw new Error(`briefs.theos.factory.io "${name}" not found`)
+    const invalid = (detail: string) => new Error(`Brief.theos.factory.io "${name}" is invalid: ${detail}`)
     const prompts = brief.spec.prompts ?? []
     const at = `spec.prompts[${prompts.length}]`
     if (prompt.length < BRIEF_LIMITS.prompt.min)
@@ -113,7 +113,7 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
   private pause(name: string, paused: boolean | undefined, pauseRuns: boolean | undefined) {
     const data = this.snapshot.data
     const brief = data.briefs.find((b) => b.metadata.name === name)
-    if (!brief) throw new Error(`briefs.c4.factory.io "${name}" not found`)
+    if (!brief) throw new Error(`briefs.theos.factory.io "${name}" not found`)
     const spec = { ...brief.spec }
     if (paused !== undefined) spec.paused = paused
     if (pauseRuns !== undefined) spec.pauseRuns = pauseRuns
@@ -132,8 +132,8 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
   async setSettings(_namespace: string, name: string, settings: BriefSettings): Promise<void> {
     const data = this.snapshot.data
     const brief = data.briefs.find((b) => b.metadata.name === name)
-    if (!brief) throw new Error(`briefs.c4.factory.io "${name}" not found`)
-    checkParallel(settings.parallel, (detail) => new Error(`Brief.c4.factory.io "${name}" is invalid: ${detail}`))
+    if (!brief) throw new Error(`briefs.theos.factory.io "${name}" not found`)
+    checkParallel(settings.parallel, (detail) => new Error(`Brief.theos.factory.io "${name}" is invalid: ${detail}`))
     const spec = { ...brief.spec }
     if (settings.autopilot !== undefined) spec.autopilot = settings.autopilot
     if (settings.parallel !== undefined) spec.parallel = settings.parallel as number

@@ -1,20 +1,20 @@
-# make deploy on c4factory-2 from relay-2 (#123, otter-123), 2026-10-05T22:50:01Z
-docker build  -t c4factory/operator:dev-relay-2-744282 .
-hack/kind.sh load 'c4factory-2' c4factory/operator:dev
-Loaded c4factory/operator:dev-relay-2-744282 into Kind cluster c4factory-2 as c4factory/operator:dev
-deployment "c4-factory-controller-manager" successfully rolled out
+# make deploy on theos-2 from relay-2 (#123, otter-123), 2026-10-05T22:50:01Z
+docker build  -t theos/operator:dev-relay-2-744282 .
+hack/kind.sh load 'theos-2' theos/operator:dev
+Loaded theos/operator:dev-relay-2-744282 into Kind cluster theos-2 as theos/operator:dev
+deployment "theos-controller-manager" successfully rolled out
 
 # docker image inspect: the checkout build
 sha256:a3d97e8909242ec5985f14272f278bb88b19d88f5ac8b4f70eaf93f79e542cab
 
 # containerd in the node: shared name only, same digest family
-docker.io/c4factory/operator:dev
+docker.io/theos/operator:dev
 
 # running pod image
-c4-factory-controller-manager-6ddbdc787c-6wfsw docker.io/c4factory/operator:dev docker.io/library/import-2026-10-05@sha256:1c70efc539aeebefc1ed7a9fce4fc4c7719cf8788906bf23b0f692455a2c4c7f
+theos-controller-manager-6ddbdc787c-6wfsw docker.io/theos/operator:dev docker.io/library/import-2026-10-05@sha256:1c70efc539aeebefc1ed7a9fce4fc4c7719cf8788906bf23b0f692455a2c4c7f
 
 # crictl image id in node
-sha256:bb01b29e36c88b23e36a1fc4c4fd28b5cae0e0a796f19a9c00d4f586141102a8 ["docker.io/c4factory/operator:dev"]
+sha256:bb01b29e36c88b23e36a1fc4c4fd28b5cae0e0a796f19a9c00d4f586141102a8 ["docker.io/theos/operator:dev"]
 
 # kubeconfig current-context after deploy
 error: current-context is not set

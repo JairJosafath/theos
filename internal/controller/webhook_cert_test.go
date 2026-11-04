@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -19,7 +19,7 @@ import (
 
 // #1614: the operator, under the generated role, issues its webhook
 // certificate into a Secret in its namespace and patches the CA into every
-// c4.factory.io CRD that converts by webhook.
+// theos.factory.io CRD that converts by webhook.
 var _ = Describe("Webhook certificate", func() {
 	It("issues the Secret and patches the CA into the webhook CRDs under the generated role", func() {
 		// Every CRD converts by webhook, envtest's for the suite (#1615); the
@@ -40,7 +40,7 @@ var _ = Describe("Webhook certificate", func() {
 		operator, err := client.New(managerCfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).NotTo(HaveOccurred())
 		w := &WebhookCert{Client: operator, Namespace: operatorNamespace,
-			Secret: "c4-factory-webhook-cert", Service: "c4-factory-webhook-service"}
+			Secret: "theos-webhook-cert", Service: "theos-webhook-service"}
 		Expect(w.Ensure(ctx)).To(Succeed())
 		_, err = w.GetCertificate(nil)
 		Expect(err).NotTo(HaveOccurred())

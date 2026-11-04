@@ -40,13 +40,13 @@ What the old Kind tier covered goes here:
 - **Node and kubelet behaviour:** not tested before release.
 
 **The human opt-in.** `hack/lib/github.sh cluster acquire` refuses unless
-`C4_HUMAN_CLUSTER=1` is set. The relay never sets it and no prompt or skill
+`THEOS_HUMAN_CLUSTER=1` is set. The relay never sets it and no prompt or skill
 tells an agent to; a human sets it in their own shell. `make e2e`, `make
 cluster` and the other targets stay as they are: a human runs them.
 
 **`needs/cluster` goes.** `pick` and `take` ignore it, it leaves the label set
 in `hack/lib/github.sh labels`, and it is removed from open issues. A lite
-device (`C4_CLUSTER=none`) then picks every ready issue.
+device (`THEOS_CLUSTER=none`) then picks every ready issue.
 
 **The e2e suite.** One hello-world static page and four specs:
 
@@ -81,10 +81,10 @@ cluster. #344 closes with this plan; step 9 carries the *Done when* below.
 1. **Plan and design** (#344). This plan, and *Test tiers* in
    `docs/design.md`.
 2. **The opt-in and the label** (#348). `cluster acquire` refuses without
-   `C4_HUMAN_CLUSTER=1`; `pick` and `take` ignore `needs/cluster`; the label
+   `THEOS_HUMAN_CLUSTER=1`; `pick` and `take` ignore `needs/cluster`; the label
    leaves `labels` and the open issues. `hack/lib/github_test.sh` shows the
    refusal and `pick` handing a former `needs/cluster` issue to a device with
-   `C4_CLUSTER=none`.
+   `THEOS_CLUSTER=none`.
 3. **No prompt tells an agent to use a cluster** (#353, after 2). The relay's
    worker prompt, the handoff, factory-ops and maintainer skills,
    `hack/heavy-guard.sh`, `hack/doctor.sh` and `hack/up.sh`. `grep -rn

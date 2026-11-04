@@ -44,11 +44,11 @@ chmod 555 "$H/stuff/ro"
 chmod 000 "$H/.kube/locked"
 ln -s "$T/outside" "$H/link"
 echo 'export JOB=1' >>"$H/.bashrc"
-mkdir -p "$W/c4factory/c4factory/bin/k8s/ro" "$W/_temp"
-mkdir -p "$W/c4factory/c4factory/locked/inner"
-touch "$W/c4factory/c4factory/bin/k8s/ro/kube-apiserver" "$W/c4factory/c4factory/locked/inner/f"
-chmod 555 "$W/c4factory/c4factory/bin/k8s/ro" "$W/c4factory/c4factory/bin/k8s"
-chmod 000 "$W/c4factory/c4factory/locked/inner" "$W/c4factory/c4factory/locked"
+mkdir -p "$W/theos/theos/bin/k8s/ro" "$W/_temp"
+mkdir -p "$W/theos/theos/locked/inner"
+touch "$W/theos/theos/bin/k8s/ro/kube-apiserver" "$W/theos/theos/locked/inner/f"
+chmod 555 "$W/theos/theos/bin/k8s/ro" "$W/theos/theos/bin/k8s"
+chmod 000 "$W/theos/theos/locked/inner" "$W/theos/theos/locked"
 
 out=$(hook 2>&1)
 check "hook: exit" "$?" 0
@@ -65,7 +65,7 @@ for p in .bashrc .profile config.sh run.sh bin/Runner.Listener externals/node20/
   bin.2.338.0/Runner.Listener externals.2.338.0 new-in-2.338.sh .service.template run-helper.sh .cache/go-mod/m .cache/make-bin/kind; do
   check "$p stays" "$(gone "$p")" kept
 done
-rm -rf "$W/c4factory" 2>/dev/null
+rm -rf "$W/theos" 2>/dev/null
 check "checkout can be cleaned" "$(ls "$W")" _temp
 
 # GH_RUNNER_WORK names the work directory when there's no .runner.

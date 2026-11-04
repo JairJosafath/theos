@@ -76,7 +76,7 @@ Done when the steps below are merged.
    orders-api."), so it needs no new write and no new planner rule, and the
    Brief's history shows what was said.
 10. **A release re-run is a Crew annotation.** The UI never calls the Git
-    host. `c4.factory.io/rerun-release` on a Crew, set or changed while
+    host. `theos.factory.io/rerun-release` on a Crew, set or changed while
     `status.lastRelease.run` is `Failed`, makes the operator re-run that
     release's failed workflow runs through the GitProvider, once per value;
     the Crew's watch then sees the newest runs as it does when a person

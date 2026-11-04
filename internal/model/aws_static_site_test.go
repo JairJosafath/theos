@@ -9,14 +9,14 @@ import (
 // staticSitePlan is a planner's plan for a static site on AWS:
 // aws-static-site-ts with aws-standard, and no Compute or Deployment
 // (plans/aws-production.md, step 9).
-const staticSitePlan = `apiVersion: c4.factory.io/v1beta1
+const staticSitePlan = `apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: bakery
 spec:
   description: Tells people about the bakery
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: bakery-site

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -26,8 +26,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // BriefReconciler turns a Brief's idea and prompts into the model, a round at
@@ -139,13 +139,13 @@ func (r *BriefReconciler) needsInputRecheck() time.Duration {
 	return defaultBriefNeedsInputRecheck
 }
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=briefs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=briefs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=briefs/finalizers,verbs=update
-// +kubebuilder:rbac:groups=c4.factory.io,resources=gitproviders;agents,verbs=get;list;watch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=projects;people;softwaresystems;containers;datastores;relationships,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=crews;tasks,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=frameworks;standards;computes;deployments;connectors;bundles,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=briefs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=briefs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=briefs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=gitproviders;agents,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=projects;people;softwaresystems;containers;datastores;relationships,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=crews;tasks,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=frameworks;standards;computes;deployments;connectors;bundles,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;patch
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch

@@ -1,5 +1,5 @@
 # expect: an issue number can't be both accepted and declined
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Brief
 metadata:
   name: cel-lens

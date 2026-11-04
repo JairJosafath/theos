@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 )
 
 // scaffoldCommits counts the commits on main of apps/<repo> that scaffolded it.
@@ -33,7 +33,7 @@ func scaffoldCommits(repo string) int {
 	giteaGet(fmt.Sprintf("/api/v1/repos/apps/%s/commits?sha=main&limit=50", repo), &commits)
 	n := 0
 	for _, c := range commits {
-		if strings.Contains(c.Commit.Message, "C4-Factory-Container:") {
+		if strings.Contains(c.Commit.Message, "theos-Container:") {
 			n++
 		}
 	}
@@ -103,7 +103,7 @@ var _ = Describe("Briefs", Ordered, func() {
 		Eventually(func(g Gomega) {
 			var tasks c4v1beta1.TaskList
 			g.Expect(k8s.List(ctx, &tasks, client.InNamespace(ns), client.MatchingLabels{
-				"c4.factory.io/crew": name, "c4.factory.io/issue": fmt.Sprint(issue),
+				"theos.factory.io/crew": name, "theos.factory.io/issue": fmt.Sprint(issue),
 			})).To(Succeed())
 			g.Expect(tasks.Items).To(HaveLen(1))
 		}).WithTimeout(15 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())

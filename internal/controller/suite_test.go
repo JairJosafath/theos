@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -43,17 +43,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/features"
-	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
-	githubdeploy "github.com/JairJosafath/c4factory/internal/adapters/github"
-	"github.com/JairJosafath/c4factory/internal/adapters/gitlab"
-	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/oci"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/features"
+	"github.com/JairJosafath/theos/internal/adapters/argocd"
+	githubdeploy "github.com/JairJosafath/theos/internal/adapters/github"
+	"github.com/JairJosafath/theos/internal/adapters/gitlab"
+	"github.com/JairJosafath/theos/internal/adapters/gitlab/gitlabtest"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/oci"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -70,7 +70,7 @@ const (
 	testChartVersion    = "0.9.0"
 	// testCIGoCache is the node root of the CI runner pools' Go caches, and
 	// testRunnerRecordKept how long an ended pool pod stays readable, in tests.
-	testCIGoCache        = "/var/cache/c4factory/go/ci"
+	testCIGoCache        = "/var/cache/theos/go/ci"
 	testRunnerRecordKept = 3 * time.Second
 	// testRunnerBackoff is a pool's first wait after a pod failed, in tests.
 	testRunnerBackoff = 500 * time.Millisecond
@@ -78,7 +78,7 @@ const (
 
 // testUIAccount is the UI's ServiceAccount, in the operator's namespace, that
 // the Project reconciler lets read each project namespace's pods.
-const testUIAccount = "c4-factory-ui"
+const testUIAccount = "theos-ui"
 
 // testScaffoldTimeout bounds a scaffold attempt in tests; the fake Git host answers at once.
 const testScaffoldTimeout = 3 * time.Second
@@ -123,12 +123,12 @@ var (
 
 // The operator's namespace in the suite, and the Secrets it shares from there.
 const (
-	operatorNamespace = "c4-factory-system"
+	operatorNamespace = "theos-system"
 	sharedToken       = "shared-token"
 	sharedPullSecret  = "shared-pull"
 	// testModelProxyURL is the chart's real configuration: the model proxy's
 	// Service in the release namespace (dist/chart/templates/model-proxy).
-	testModelProxyURL = "http://c4-model-proxy.c4-factory-system.svc:8080"
+	testModelProxyURL = "http://c4-model-proxy.theos-system.svc:8080"
 )
 
 // managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
@@ -150,12 +150,12 @@ func TestControllers(t *testing.T) {
 	if deadline, ok := t.Deadline(); ok {
 		suiteConfig.Timeout = time.Until(deadline) - 30*time.Second
 	}
-	if s := os.Getenv("C4_TEST_SHARD"); s != "" {
+	if s := os.Getenv("THEOS_TEST_SHARD"); s != "" {
 		if _, err := fmt.Sscanf(s, "%d/%d", &shard.index, &shard.total); err != nil || shard.index < 1 || shard.index > shard.total {
-			t.Fatalf("C4_TEST_SHARD=%q: want i/n, 1 <= i <= n", s)
+			t.Fatalf("THEOS_TEST_SHARD=%q: want i/n, 1 <= i <= n", s)
 		}
 		if len(suiteConfig.FocusFiles) > 0 {
-			t.Fatal("C4_TEST_SHARD focuses the shard's files; drop -ginkgo.focus-file, or C4_TEST_SHARD")
+			t.Fatal("THEOS_TEST_SHARD focuses the shard's files; drop -ginkgo.focus-file, or THEOS_TEST_SHARD")
 		}
 		suiteConfig.FocusFiles, shard.specs = shardFocus(PreviewSpecs(suiteName), shard.index, shard.total)
 	}
@@ -165,8 +165,8 @@ func TestControllers(t *testing.T) {
 const suiteName = "Controller Suite"
 
 // shard is this process's part of the suite. hack/go-test.sh runs the suite as
-// C4_TEST_PROCS processes at once, each with its own control plane and
-// manager, C4_TEST_SHARD=i/n naming which part (#1283); go test's cache
+// THEOS_TEST_PROCS processes at once, each with its own control plane and
+// manager, THEOS_TEST_SHARD=i/n naming which part (#1283); go test's cache
 // answers each part on its own. Unset, the process runs the whole suite.
 var shard struct {
 	index, total int
@@ -238,12 +238,12 @@ var _ = ReportAfterSuite("the shard ran its specs", func(report Report) {
 // slowestSpecs is how many specs the report names.
 const slowestSpecs = 10
 
-// When C4_SLOWEST_SPECS names a file, the suite writes its slowest specs there,
+// When THEOS_SLOWEST_SPECS names a file, the suite writes its slowest specs there,
 // so the Tests job's log names what made a slow run slow (go test shows no
 // output of a package that passes). A shard writes FILE.i, which
 // hack/go-test.sh merges into FILE.
 var _ = ReportAfterSuite("slowest specs", func(report Report) {
-	path := os.Getenv("C4_SLOWEST_SPECS")
+	path := os.Getenv("THEOS_SLOWEST_SPECS")
 	if path == "" {
 		return
 	}

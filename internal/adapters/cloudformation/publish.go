@@ -14,9 +14,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-logr/logr"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/oci"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/oci"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // publish puts each file asset of stack, its template among them, where

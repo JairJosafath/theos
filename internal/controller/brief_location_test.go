@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -13,9 +13,9 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // paymentsPlan is linterPlan with a payment provider the story only names,
@@ -23,7 +23,7 @@ import (
 func paymentsPlan(ns, location, description string) scaffold.Tree {
 	files := linterPlan(ns, 1)
 	files[model.PlanModelFile] = scaffold.File{Data: append(files[model.PlanModelFile].Data, []byte(`---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: payments
@@ -31,7 +31,7 @@ spec:
   description: `+description+`
   location: `+location+`
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: linter-bills

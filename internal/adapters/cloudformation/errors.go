@@ -7,10 +7,10 @@ import (
 
 	"github.com/aws/smithy-go"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// StackTakenError is a stack whose c4factory.io/app tag names another app:
+// StackTakenError is a stack whose theos.io/app tag names another app:
 // the member leaves it alone, and the deploy fails.
 type StackTakenError struct {
 	Stack, App, Owner string

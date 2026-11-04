@@ -7,7 +7,7 @@
 
 # GET /api/v1/repos/templates/hello-html/tags, then /contents
 v1.0.0 d15a8e9
-.c4factory
+.theos
 .gitea
 Makefile
 README.md.tmpl

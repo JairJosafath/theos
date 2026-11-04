@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -25,9 +25,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // ConditionPublished says how publishing a Crew's last release went, and why it
@@ -336,7 +336,7 @@ func publishFacts(crew *c4v1beta1.Crew, container *c4v1beta1.Container, release 
 
 // recordTarget records in status the repository the Crew published to, after a
 // pass that read facts and ended in last, with a Normal Event when a person's
-// c4.factory.io/accept-repository took another.
+// theos.factory.io/accept-repository took another.
 func (r *CrewReconciler) recordTarget(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	facts model.PublishFacts, last model.PublishStep) {
 	target, accepted := model.NextPublishTarget(facts, last)
@@ -354,7 +354,7 @@ func (r *CrewReconciler) recordTarget(ctx context.Context, crew *c4v1beta1.Crew,
 		c4v1beta1.AnnotationAcceptRepository))
 }
 
-// dropAccepted removes c4.factory.io/accept-repository once status records the
+// dropAccepted removes theos.factory.io/accept-repository once status records the
 // id it accepts: recorded first, then removed, so a failed status write loses
 // nothing.
 func (r *CrewReconciler) dropAccepted(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus) {

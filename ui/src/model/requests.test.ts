@@ -26,7 +26,7 @@ const cli: BriefRelease = {
 
 function brief(status: Brief['status'], releases: BriefRelease[] = [lens]): Brief {
   return {
-    apiVersion: 'c4.factory.io/v1beta1',
+    apiVersion: 'theos.factory.io/v1beta1',
     kind: 'Brief',
     metadata: { name: 'lens', namespace: 'p', resourceVersion: '7' },
     spec: { idea: 'A lens', releases },

@@ -1,6 +1,6 @@
-# C4 Factory UI
+# theos UI
 
-A view of a C4 Factory project, drawn live from the custom resources.
+A view of a theos project, drawn live from the custom resources.
 Milestone 6 in [the MVP plan](../docs/plans/done/mvp-v1.md): someone who has
 never used kubectl can read the story in a browser. It reads everything and,
 with actions off, changes only three things: it creates a Brief from an app
@@ -95,7 +95,7 @@ From the repository root, with the Kind cluster from `make cluster` running:
 | ----------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `make ui-dev`     | Vite dev server with live reload on <http://localhost:5173>, reading the cluster through a `kubectl proxy` it starts. |
 | `make ui-serve`   | Builds `dist/` and serves it with `server.mjs` on <http://localhost:8080>, also through a `kubectl proxy`.            |
-| `make ui`         | Builds the image `c4factory/ui:dev`, loads it into Kind, applies [config/ui](../config/ui) and waits for the rollout. |
+| `make ui`         | Builds the image `theos/ui:dev`, loads it into Kind, applies [config/ui](../config/ui) and waits for the rollout. |
 | `make ui-forward` | Forwards the in-cluster UI to <http://localhost:8080>.                                                                |
 | `make ui-test`    | Typecheck, lint and all tests.                                                                                        |
 
@@ -124,13 +124,13 @@ rewrites the address to the area's.
 ## Read-only but for three writes
 
 The UI enforces nothing; the rules live in the CRDs and the operator. It reads
-every C4 Factory kind and writes only three things: it creates a Brief, it
+every theos kind and writes only three things: it creates a Brief, it
 appends a prompt to one, and it pauses or resumes one. Three layers keep it
 that way:
 
 1. The browser sends GET requests to `/k8s/...` and `/k8s-watch`, plus the three
    writes ([src/k8s/briefs.ts](src/k8s/briefs.ts)).
-2. [server.mjs](server.mjs) passes on only GET under `/apis/c4.factory.io/`,
+2. [server.mjs](server.mjs) passes on only GET under `/apis/theos.factory.io/`,
    and these writes:
    - `POST .../namespaces/<ns>/briefs`, `Content-Type: application/json`: a
      Brief, only into a namespace that holds a Project. Only its `name` (or
@@ -151,11 +151,11 @@ application/json-patch+json`: a patch whose one operation is `add` at
    to say; the page shows its answer.
 
 3. In the cluster, the ServiceAccount's reader ClusterRole allows only `get`,
-   `list` and `watch` on the `c4.factory.io` resources (Briefs included), plus
+   `list` and `watch` on the `theos.factory.io` resources (Briefs included), plus
    `get` and `list` on nodes and their `metrics.k8s.io` figures for the health
    summary below, cluster-wide. Pods and theirs it may read only where the
    factory runs: a RoleBinding in each component's namespace, and one the
-   operator makes in each project namespace (`--ui-service-account`). A separate ClusterRole, `c4-factory-ui-brief-writer`, grants only
+   operator makes in each project namespace (`--ui-service-account`). A separate ClusterRole, `theos-ui-brief-writer`, grants only
    `create` and `patch` on `briefs`. No Secrets, no other writes.
 
 ### Actions: `ui.actions.enabled`
@@ -169,8 +169,8 @@ takes more writes, each one method, path, content type and body shape:
 | Brief     | `POST`, JSON         | a new Brief, as above                                                                                                                                                                                                                                                                                      |
 | Brief     | `PATCH`, JSON patch  | `add` at `/spec/prompts/-` alone, as above; or `add` of any of `/spec/paused`, `/spec/autopilot`, `/spec/parallel`, `/spec/releases`; `/spec/releases` only after a `test` of `/metadata/resourceVersion`, and a Brief changed since that version is refused with `409 Conflict`                           |
 | Crew      | `PATCH`, JSON patch  | `add` of any of `/spec/paused`, `/spec/parallel`, `/spec/tagReleases`, `/spec/prepareReleases`, `/spec/publishReleases` (or `remove` of it), `/spec/publishReleases` only after a `test` of `/metadata/resourceVersion`, and a Crew changed since that version is refused with `409 Conflict`              |
-| Crew      | `PATCH`, merge patch | annotation `c4.factory.io/rerun-release` alone                                                                                                                                                                                                                                                             |
-| Container | `PATCH`, merge patch | one annotation alone: `c4.factory.io/retry`, or the answer to its Standard's bump, `c4.factory.io/standard-take` or `c4.factory.io/standard-keep`                                                                                                                                                          |
+| Crew      | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` alone                                                                                                                                                                                                                                                             |
+| Container | `PATCH`, merge patch | one annotation alone: `theos.factory.io/retry`, or the answer to its Standard's bump, `theos.factory.io/standard-take` or `theos.factory.io/standard-keep`                                                                                                                                                          |
 | Container | `PATCH`, JSON patch  | `add` at `/spec/checks`                                                                                                                                                                                                                                                                                    |
 | Container | `PATCH`, JSON patch  | the approval of a deploy: a `test` of `/spec/deploy/N/target` (a string), optionally a `test` of `/spec/deploy/N/approved` as it was, then its one write, `add` of a string at `/spec/deploy/N/approved`, the same N; the tests refuse a list reordered since the page read it, and an approval made since |
 | Task      | `POST`, JSON         | `spec.kind: Implement` with `containerRef`, `agentRef`, `reviewerRef`, `goal`; only its name and spec go upstream                                                                                                                                                                                          |
@@ -182,12 +182,12 @@ back as-is. The chart sets `UI_ACTIONS` from the values:
 
 - over port-forward (`ui.allowedHosts` empty), `service-account`: the UI's
   ServiceAccount makes the writes, bound to ClusterRole
-  `c4-factory-ui-actions` (`create` on briefs and tasks, `patch` on briefs,
+  `theos-ui-actions` (`create` on briefs and tasks, `patch` on briefs,
   crews, containers and standards) in place of the brief writer;
 - with `ui.auth.oidc`, `oidc`: each write is made as the person signed in
   (below), and the ServiceAccount has no write binding, only `impersonate`
   on users and groups; `ui.auth.oidc.actionGroups` binds
-  `c4-factory-ui-actions` to those groups, prefixed;
+  `theos-ui-actions` to those groups, prefixed;
 - with `ui.allowedHosts` and no `ui.auth.oidc`, the chart refuses to render.
 
 `GET /ui/session` tells the page whether actions are on, the mode (`off`,
@@ -319,7 +319,7 @@ libnss3, libasound2). `sudo npx playwright install-deps chromium` installs them;
 without root (a headless agent), the scripts fetch them themselves: on the first
 launch that fails for a missing library, `scripts/browser.mjs` downloads the
 packages with `apt-get download`, unpacks them into
-`$XDG_CACHE_HOME/c4factory/chromium-libs` (`.dev/cache/` in the project shell) and
+`$XDG_CACHE_HOME/theos/chromium-libs` (`.dev/cache/` in the project shell) and
 launches again with `LD_LIBRARY_PATH` set. Where it can't (no `apt-get`, or a
 library it doesn't know), it exits saying which libraries are missing and the
 command that installs them.
@@ -361,15 +361,15 @@ npm run screenshot:views -- /tmp/after --compare /tmp/before
 `--compare` exits 1 naming the pictures that differ; `--only <prefix>` limits
 the run.
 
-### What ships: `C4_UI_SHOTS`
+### What ships: `THEOS_UI_SHOTS`
 
 The end-to-end tests save the pictures in `docs/screenshots/` that show what
 ships: each area (`ui-shell-*.png`), each object page (`ui-object-*.png`),
 _Needs you_, the version line with and without a skew, the actions' dialogs and
-the refused reads. Set `C4_UI_SHOTS` to the directory:
+the refused reads. Set `THEOS_UI_SHOTS` to the directory:
 
 ```
-C4_UI_SHOTS=$PWD/../docs/screenshots npm run test:e2e
+THEOS_UI_SHOTS=$PWD/../docs/screenshots npm run test:e2e
 ```
 
 ### Terminal output: `scripts/term-shot.mjs`

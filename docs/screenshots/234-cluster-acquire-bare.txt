@@ -1,9 +1,9 @@
 $ hack/lib/github.sh cluster acquire --wait 10m --fresh --bare
-github: --bare: creating Kind cluster c4factory with nothing installed (make cluster KIND_CLUSTER=c4factory)
+github: --bare: creating Kind cluster theos with nothing installed (make cluster KIND_CLUSTER=theos)
 ...
-c4factory
+theos
 
-$ kubectl --context kind-c4factory get ns
+$ kubectl --context kind-theos get ns
 NAME                 STATUS   AGE
 default              Active   43s
 kube-node-lease      Active   43s

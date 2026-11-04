@@ -15,7 +15,7 @@ Each step is one commit with a test that fails first.
 1. **A Failed Container stops.** The Container's own status writes no longer
    trigger a reconcile. It tries again when an input changes (its spec, a catalog
    entry, the GitProvider, a DataStore or a Relationship), or when someone sets the
-   `c4.factory.io/retry` annotation after fixing the repository.
+   `theos.factory.io/retry` annotation after fixing the repository.
 2. **Ready stays Ready.** A missing SoftwareSystem sets `ReferencesResolved=False`
    on a scaffolded Container but doesn't change its phase.
 3. **Git calls get their own deadline,** so a timed-out attempt still records its
@@ -48,7 +48,7 @@ All eight steps are done, each with a spec that failed first. Along the way:
 
 - **The repeat-reconcile check had gone quiet.** The "a repeat reconcile changing
   nothing" spec poked the Container with an annotation that step 1 now ignores, so
-  it pokes with `c4.factory.io/retry` instead.
+  it pokes with `theos.factory.io/retry` instead.
 - **Two templates were released.** `k8s-manifests` v1.1.0 guards the Compute patch,
   and `python-fastapi` v1.2.1 lists the new template inputs in its README; tags
   never move.

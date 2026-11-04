@@ -20,7 +20,7 @@ edited() {
 	rm -rf "$T/chart"
 	cp -r "$ROOT/dist/chart" "$T/chart"
 	sed -i "$1" "$T/chart/$MANIFEST"
-	"$HELM" template c4-factory "$T/chart" --namespace c4-factory-system \
+	"$HELM" template theos "$T/chart" --namespace theos-system \
 		--set 'gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >"$T/rendered.yaml"
 }
 run() { "$HACK/chart-manager.sh" "$T/rendered.yaml" >"$T/out" 2>&1; }
@@ -37,10 +37,10 @@ grep -q 'lacks the tmp emptyDir volume' "$T/out"; check "names the volume" $? 0
 edited '/- name: POD_NAMESPACE$/,/fieldPath: metadata.namespace$/d'; run; check "no POD_NAMESPACE: fails" $? 1
 grep -q 'lacks the POD_NAMESPACE env' "$T/out"; check "names the env" $? 0
 
-edited '/- name: C4_CHART_VERSION$/,+1d'; run; check "no C4_CHART_VERSION: fails" $? 1
-grep -q 'lacks C4_CHART_VERSION' "$T/out"; check "names the chart version env" $? 0
+edited '/- name: THEOS_CHART_VERSION$/,+1d'; run; check "no THEOS_CHART_VERSION: fails" $? 1
+grep -q 'lacks THEOS_CHART_VERSION' "$T/out"; check "names the chart version env" $? 0
 
-edited 's/value: {{ .Chart.Version | quote }}/value: "0.0.1"/'; run; check "C4_CHART_VERSION not the chart's: fails" $? 1
+edited 's/value: {{ .Chart.Version | quote }}/value: "0.0.1"/'; run; check "THEOS_CHART_VERSION not the chart's: fails" $? 1
 
 edited '/--shared-secret=/d'; run; check "no --shared-secret: fails" $? 1
 edited '/--shared-pull-secret=/d'; run; check "no --shared-pull-secret: fails" $? 1

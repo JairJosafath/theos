@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // trailerUpdate marks the operator's commit that updates a Standard's files, as

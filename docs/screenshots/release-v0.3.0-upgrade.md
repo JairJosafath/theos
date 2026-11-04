@@ -8,9 +8,9 @@ with the same values, then check). Three dispatches of
 
 | Run | Upgrade | Result |
 | --- | --- | --- |
-| [37449727784](https://github.com/JairJosafath/c4factory/actions/runs/37449727784) | v0.2.0 → v0.3.0, found from the tags | **fails, rightly**: Secrets `gitea-admin` and `gitea-runner` change (v0.3.0 dropped the chart templates that rendered them, so `helm upgrade` deletes them and Gitea's credentials container makes new ones). CRDs, objects, logs and repositories pass. |
-| [37453408885](https://github.com/JairJosafath/c4factory/actions/runs/37453408885) | v0.3.0 → v0.3.0, branch `demo/307-upgrade-catches-a-break`: the new chart drops Crew `spec.containerRef`, which the first-app Crew sets | **fails, as meant**: `Crew webshop/orders-cli was phase Idle, Ready True; after the upgrade phase Waiting, Ready False` |
-| [37454594924](https://github.com/JairJosafath/c4factory/actions/runs/37454594924) | v0.3.0 → v0.3.0 (`-f from=v0.3.0`), at 81675a5 | **green**: install and upgrade |
+| [37449727784](https://github.com/JairJosafath/theos/actions/runs/37449727784) | v0.2.0 → v0.3.0, found from the tags | **fails, rightly**: Secrets `gitea-admin` and `gitea-runner` change (v0.3.0 dropped the chart templates that rendered them, so `helm upgrade` deletes them and Gitea's credentials container makes new ones). CRDs, objects, logs and repositories pass. |
+| [37453408885](https://github.com/JairJosafath/theos/actions/runs/37453408885) | v0.3.0 → v0.3.0, branch `demo/307-upgrade-catches-a-break`: the new chart drops Crew `spec.containerRef`, which the first-app Crew sets | **fails, as meant**: `Crew webshop/orders-cli was phase Idle, Ready True; after the upgrade phase Waiting, Ready False` |
+| [37454594924](https://github.com/JairJosafath/theos/actions/runs/37454594924) | v0.3.0 → v0.3.0 (`-f from=v0.3.0`), at 81675a5 | **green**: install and upgrade |
 
 No pair of published releases can be green yet: v0.2.0 → v0.3.0 really
 rotates the Gitea Secrets, and v0.1.0's chart has no Gitea to start from. The
@@ -76,6 +76,6 @@ Standard	webshop	go-standard	-	-
 
 ```
 REVISION	UPDATED                 	STATUS    	CHART           	APP VERSION	DESCRIPTION     
-1       	Tue Oct  6 11:20:00 2026	superseded	c4-factory-0.3.0	0.3.0      	Install complete
-2       	Tue Oct  6 11:21:12 2026	deployed  	c4-factory-0.3.0	0.3.0      	Upgrade complete
+1       	Tue Oct  6 11:20:00 2026	superseded	theos-0.3.0	0.3.0      	Install complete
+2       	Tue Oct  6 11:21:12 2026	deployed  	theos-0.3.0	0.3.0      	Upgrade complete
 ```

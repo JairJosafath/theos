@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -171,7 +171,7 @@ const (
 	// default branch to main before adopting it.
 	ReasonNoDefaultBranch = "NoDefaultBranch"
 	// ReasonIdentityMismatch: an adopted repository's main has no
-	// .c4factory.yaml, or one naming another project or Container.
+	// .theos.yaml, or one naming another project or Container.
 	ReasonIdentityMismatch = "IdentityMismatch"
 	// ReasonStandardFilesDiffer: an adopted repository's main is missing a
 	// file of the Container's Standard, or holds one with other content than
@@ -242,16 +242,16 @@ const (
 
 // Labels the operator sets so a resource can be found by its ancestors.
 const (
-	LabelProject        = "c4.factory.io/project"
-	LabelSoftwareSystem = "c4.factory.io/software-system"
-	LabelContainer      = "c4.factory.io/container"
+	LabelProject        = "theos.factory.io/project"
+	LabelSoftwareSystem = "theos.factory.io/software-system"
+	LabelContainer      = "theos.factory.io/container"
 	// LabelBrief names the Brief an object came from.
-	LabelBrief = "c4.factory.io/brief"
+	LabelBrief = "theos.factory.io/brief"
 	// LabelBriefRound is the Brief round an object came from, or a Plan Task plans.
-	LabelBriefRound = "c4.factory.io/brief-round"
+	LabelBriefRound = "theos.factory.io/brief-round"
 	// LabelBriefRoundKind on a Plan Task is "tend" when its round is a tending
 	// round: no new prompt, it decides the Brief's failed issues.
-	LabelBriefRoundKind = "c4.factory.io/brief-round-kind"
+	LabelBriefRoundKind = "theos.factory.io/brief-round-kind"
 )
 
 // BriefRoundKindTend is LabelBriefRoundKind's value on a tending round's Plan Task.
@@ -262,25 +262,25 @@ const BriefRoundKindTend = "tend"
 const (
 	// LabelSharedSecrets on a Namespace, "true", opts it in. Only an admin or
 	// the chart can label a Namespace, so a Project alone receives nothing.
-	LabelSharedSecrets = "c4.factory.io/shared-secrets" //nolint:gosec // a label's name, not a credential
+	LabelSharedSecrets = "theos.factory.io/shared-secrets" //nolint:gosec // a label's name, not a credential
 	// LabelSharedFrom marks a Secret the operator copied, naming its source.
 	// A Secret without it is the project's own, which the operator never touches.
-	LabelSharedFrom = "c4.factory.io/shared-from"
+	LabelSharedFrom = "theos.factory.io/shared-from"
 )
 
 // The Brief's verdict on a Plan Task's plan, written by the Brief on the Task.
 const (
 	// AnnotationPlanChecked is the commit of the plan the Brief checked.
-	AnnotationPlanChecked = "c4.factory.io/plan-checked"
+	AnnotationPlanChecked = "theos.factory.io/plan-checked"
 	// AnnotationPlanRefusals are the Brief's reasons for refusing the checked
 	// plan; absent when it accepted it.
-	AnnotationPlanRefusals = "c4.factory.io/plan-refusals"
+	AnnotationPlanRefusals = "theos.factory.io/plan-refusals"
 )
 
 // AnnotationPausedBy on a Crew says who paused it: PausedByBrief when its
 // Brief did, which then unpauses it on resume. A Crew without it was paused
 // by hand and stays paused.
-const AnnotationPausedBy = "c4.factory.io/paused-by"
+const AnnotationPausedBy = "theos.factory.io/paused-by"
 
 // PausedByBrief is AnnotationPausedBy's value on a Crew its Brief paused.
 const PausedByBrief = "brief"
@@ -290,7 +290,7 @@ const PausedByBrief = "brief"
 // (docs/plans/done/brief-release-target.md). A Crew whose spec.publishReleases
 // differs from it was changed under the Brief and publishes nothing until the
 // two agree. A Crew without it publishes where its own spec says.
-const AnnotationBriefPublishReleases = "c4.factory.io/brief-publish-releases"
+const AnnotationBriefPublishReleases = "theos.factory.io/brief-publish-releases"
 
 // ConditionReleaseTarget on a Crew with AnnotationBriefPublishReleases says
 // that its Brief sets where it publishes: True, reason
@@ -308,27 +308,27 @@ const (
 
 // AnnotationRetry, set or changed on a Failed Container, makes the operator try
 // to scaffold it again: after emptying its repository, for example.
-const AnnotationRetry = "c4.factory.io/retry"
+const AnnotationRetry = "theos.factory.io/retry"
 
 // AnnotationStandardTake and AnnotationStandardKeep, set on a Container to the
 // Standard ref its files are at, settle the files its Standard updates left
 // out (status.standard.behind): take the Standard's version, or keep the
 // repository's. An answer for another ref is ignored.
 const (
-	AnnotationStandardTake = "c4.factory.io/standard-take"
-	AnnotationStandardKeep = "c4.factory.io/standard-keep"
+	AnnotationStandardTake = "theos.factory.io/standard-take"
+	AnnotationStandardKeep = "theos.factory.io/standard-keep"
 )
 
 // AnnotationRerunRelease, set or changed on a Crew whose last release's run
 // Failed, makes the operator re-run that release's failed workflow runs, once
 // per value.
-const AnnotationRerunRelease = "c4.factory.io/rerun-release"
+const AnnotationRerunRelease = "theos.factory.io/rerun-release"
 
 // AnnotationAcceptRepository, set on a Crew to the GitHub id of its publish
 // target, accepts that repository in place of the one the Crew published to
 // before (status.publishTarget), which was deleted or renamed and a new one
 // took its name. The operator records the id and removes the annotation.
-const AnnotationAcceptRepository = "c4.factory.io/accept-repository"
+const AnnotationAcceptRepository = "theos.factory.io/accept-repository"
 
 // CheckStatus is the combined state of the CI checks on one commit.
 type CheckStatus struct {

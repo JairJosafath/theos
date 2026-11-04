@@ -1,4 +1,4 @@
-module github.com/JairJosafath/c4factory
+module github.com/JairJosafath/theos
 
 go 1.26.0
 

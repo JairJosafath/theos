@@ -1,10 +1,10 @@
-# C4 Factory v2: the Agent Factory
+# theos v2: the Agent Factory
 
 Sep 30, 2026 · design agreed step by step with @Jeremy Jo., written up by Claude.
 
 ## Goal
 
-Agents build complete, high-quality apps on C4 Factory when asked, and stay inside
+Agents build complete, high-quality apps on theos when asked, and stay inside
 their workspace while they do. The first proving ground is small mobile tool apps
 that need no internet; the platform must stay open to other shapes, such as AWS
 serverless functions, without a redesign.
@@ -90,13 +90,13 @@ kind: Agent
 metadata: {name: claude-flutter}
 spec:
   displayName: Claude Code with the Flutter toolchain
-  image: c4factory/agent-flutter:dev
+  image: theos/agent-flutter:dev
   credentialsSecretRef: {name: claude-credentials}   # key CLAUDE_CODE_OAUTH_TOKEN
   maxRounds: 3                                       # default 3
 ```
 
-The image holds the stack's toolchain, the agent CLI and `c4agent`, the runner
-(below). A stand-in Agent (`image` with `C4AGENT_FAKE=1`) makes a scripted change,
+The image holds the stack's toolchain, the agent CLI and `theos-agent`, the runner
+(below). A stand-in Agent (`image` with `THEOS_AGENT_FAKE=1`) makes a scripted change,
 so envtest and e2e can prove the loop without spending tokens.
 
 ### Task (new)
@@ -121,9 +121,9 @@ status:
 A Task waits (`Pending`) until its Container is `Ready`. One Task per Container runs at
 a time; others wait in creation order.
 
-## The runner: c4agent
+## The runner: theos-agent
 
-`cmd/c4agent` is the sandbox's entrypoint, a small Go CLI with its logic in
+`cmd/theos-agent` is the sandbox's entrypoint, a small Go CLI with its logic in
 `internal/agentrunner`. It has no Kubernetes credentials (the sandbox pod does not
 mount a ServiceAccount token). It reads its job from environment variables, does the
 work, and reports one JSON result in the pod's termination message, which the
@@ -148,7 +148,7 @@ What an agent can reach, and what it can't:
 | Kubernetes | No ServiceAccount token in the sandbox. Results go out through the termination message only. |
 | Git | A per-Container bot user in Gitea, a collaborator on that one repository only. Its token lives in a Secret owned by the Container. |
 | `main` | Branch protection: no direct pushes, required status check `check`, and only the operator's Git user may merge, and only the reviewed commit (`head_commit_id`). The Git host enforces this, not the sandbox. |
-| Protected files | The Git host refuses to merge changes to `.gitea/`, `.devcontainer/`, `.c4factory.yaml` and the Standard's `protectedPaths` (its Makefile, lint config, agent guide). c4agent refuses them earlier, so honest rounds never get that far. Applied at scaffold and again at every Task start, so older repositories catch up. |
+| Protected files | The Git host refuses to merge changes to `.gitea/`, `.devcontainer/`, `.theos.yaml` and the Standard's `protectedPaths` (its Makefile, lint config, agent guide). theos-agent refuses them earlier, so honest rounds never get that far. Applied at scaffold and again at every Task start, so older repositories catch up. |
 | Release tags | Only the operator's Git user may push `v*` tags, since release jobs hold the signing keys. |
 | Unprotected repositories | A Task on a Container without a Standard fails at once: no checks means no protection. |
 | Network | A NetworkPolicy on sandbox pods allows DNS, Gitea, and HTTPS to addresses outside the cluster. The Kubernetes API and other in-cluster services are unreachable. |
@@ -205,7 +205,7 @@ Standard, and a SAM or CDK Deployment. Nothing in the operator changes but the e
 | `internal/gitprovider` | New: protect branch, bot user and collaborator, PR open/merge/comment, combined commit status. |
 | `internal/agentrunner` | The runner's logic: git, prompt, agent command, result. No Kubernetes. |
 | `internal/controller` | Task reconciler: sandboxes, results, PRs, merge. Container reconciler: Standard, protection, bot user, checks status. |
-| `cmd/c4agent` | The runner entrypoint. |
+| `cmd/theos-agent` | The runner entrypoint. |
 
 Agent Sandbox's `Sandbox` type is used through `unstructured` to keep the dependency
 light; its CRD is installed in envtest from a pinned copy under `test/crds/`.

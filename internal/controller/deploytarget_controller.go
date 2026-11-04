@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -30,9 +30,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // DeployTargetReconciler checks each DeployTarget's credential with its
@@ -57,9 +57,9 @@ type DeployTargetReconciler struct {
 	checked sync.Map
 }
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=deploytargets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=deploytargets/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=deploytargets/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=deploytargets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=deploytargets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=deploytargets/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 // +kubebuilder:rbac:groups=argoproj.io,resources=applications,verbs=get;list;watch;create;patch
 // +kubebuilder:rbac:groups=argoproj.io,resources=appprojects,verbs=get;list;watch

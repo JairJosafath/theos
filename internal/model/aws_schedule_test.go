@@ -8,14 +8,14 @@ import (
 
 // schedulePlan is a planner's plan for a scheduled job on AWS: a job on
 // aws-schedule-ts with aws-standard, and no Compute or Deployment.
-const schedulePlan = `apiVersion: c4.factory.io/v1beta1
+const schedulePlan = `apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
 spec:
   description: Sells lamps
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: nightly-report

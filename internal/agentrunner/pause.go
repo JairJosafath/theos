@@ -22,10 +22,10 @@ import (
 // Running Tasks pause at a tool boundary (docs/plans/self-hosting.md, step
 // 12). To pause a run, the operator sets the PauseAnnotation on its Sandbox's
 // pod, which sees its own annotations at PodInfoDir through the downward API.
-// Every Claude Code session runs c4agent pause-guard as its PostToolUse hook:
+// Every Claude Code session runs theos-agent pause-guard as its PostToolUse hook:
 // once the annotation is there, it ends the session after the tool that just
-// ran, and c4agent saves a clean checkpoint and reports Paused. Between agent
-// calls c4agent stops at its next call, and a check that runs is killed: it
+// ran, and theos-agent saves a clean checkpoint and reports Paused. Between agent
+// calls theos-agent stops at its next call, and a check that runs is killed: it
 // runs again on resume. A session still running PauseGrace after the request
 // (a tool that doesn't end) is ended as on SIGTERM: a hard checkpoint, still
 // Paused. A clean checkpoint on the same model resumes the same session with
@@ -33,11 +33,11 @@ import (
 // with the stopped one's note.
 
 // PauseAnnotation is v1beta1.AnnotationPause: the runner has no cluster
-// access and doesn't import the API, so cmd/c4agent's tests pin that the two
+// access and doesn't import the API, so cmd/theos-agent's tests pin that the two
 // match.
-const PauseAnnotation = "c4.factory.io/pause"
+const PauseAnnotation = "theos.factory.io/pause"
 
-// PauseGuardCommand is the c4agent subcommand every session's PostToolUse
+// PauseGuardCommand is the theos-agent subcommand every session's PostToolUse
 // hook runs.
 const PauseGuardCommand = "pause-guard"
 
@@ -46,17 +46,17 @@ const PauseGuardCommand = "pause-guard"
 const podAnnotationsFile = "annotations"
 
 // pausedFile is what pause-guard writes in a session's guard directory when
-// it ends the session: so c4agent tells a paused session from one that ended.
+// it ends the session: so theos-agent tells a paused session from one that ended.
 const pausedFile = "PAUSED"
 
-// pauseGrace and pausePoll are PauseGrace and how often c4agent reads the
+// pauseGrace and pausePoll are PauseGrace and how often theos-agent reads the
 // annotations; tests shorten them.
 var (
 	pauseGrace = PauseGrace
 	pausePoll  = 5 * time.Second
 )
 
-// errPaused is an agent call the pause ended, or one c4agent didn't start
+// errPaused is an agent call the pause ended, or one theos-agent didn't start
 // because of it.
 var errPaused = errors.New("paused by the factory")
 
@@ -114,10 +114,10 @@ func parseAnnotations(data []byte) map[string]string {
 	return annotations
 }
 
-// PauseGuardMain is c4agent pause-guard: every session's PostToolUse hook.
+// PauseGuardMain is theos-agent pause-guard: every session's PostToolUse hook.
 // It reads the hook's input on stdin and, while the pod's annotations ask for
 // a pause, writes the reason to --stopped and tells Claude Code on stdout to
-// end the session. Else, with --checkpoint, it asks c4agent on that socket to
+// end the session. Else, with --checkpoint, it asks theos-agent on that socket to
 // save the run when its last checkpoint is CheckpointEvery old, and waits
 // for it (periodic.go). It allows what it can't judge: a broken guard never
 // stops an agent.
@@ -127,13 +127,13 @@ func PauseGuardMain(args []string, stdin io.Reader, stdout, stderr io.Writer) in
 	annotations := flags.String("annotations", "",
 		"the downward API file of the pod's annotations; none: no pause")
 	stopped := flags.String("stopped", "", "where to write the reason when the session is ended")
-	checkpoint := flags.String("checkpoint", "", "the socket c4agent saves a checkpoint on when asked")
+	checkpoint := flags.String("checkpoint", "", "the socket theos-agent saves a checkpoint on when asked")
 	err := flags.Parse(args)
 	if err == nil {
 		err = guardPause(stdin, stdout, *annotations, *stopped, *checkpoint)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "c4agent %s: %v\n", PauseGuardCommand, err)
+		_, _ = fmt.Fprintf(stderr, "theos-agent %s: %v\n", PauseGuardCommand, err)
 	}
 	return 0
 }

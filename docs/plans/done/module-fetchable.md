@@ -27,10 +27,10 @@ writes it there already, as the target).
 - The operator uploads every release's module to Gitea's Go registry under
   the path `go.mod` declares, whatever host the path names, and calls that
   `Published` (`crew_gomodule.go`).
-- Only `c4factory.local/` paths are ever read from that registry: the agent
+- Only `theos.local/` paths are ever read from that registry: the agent
   pods' proxy (`agentrunner.GoProxy`) sends every other path to
   proxy.golang.org, and the go-standard CI reads the registry only for
-  `c4factory.local/` modules. An upload of a `github.com/...` path is read by
+  `theos.local/` modules. An upload of a `github.com/...` path is read by
   nobody.
 - `publishReleases.source` puts the app's source in a folder of the GitHub
   repository and tags it `<folder>/vX.Y.Z` (`release-source.md`). That tag is
@@ -42,7 +42,7 @@ writes it there already, as the target).
 
 1. **`ModulePublished` is about the reader of the path, not the upload.**
    True means `go get <path>@<version>` finds the version for whoever reads
-   that path. A path under `c4factory.local/` is read by the factory's apps,
+   that path. A path under `theos.local/` is read by the factory's apps,
    from the registry: the upload is the publish, as today. Any other path is
    read by the public go command, through proxy.golang.org: the upload counts
    for nothing there. Why: the condition's reader acts on it by telling
@@ -133,7 +133,7 @@ what the Crew says before step 2.
    and design.md's text is checked against it. envtest with a fake proxy:
    the issue's case is `WaitsForRelease` and turns True after the source
    tag and a 200; a 404 is `NotFetchable` with one Warning Event; a
-   `c4factory.local/` path is True on upload as before; an old `Published`
+   `theos.local/` path is True on upload as before; an old `Published`
    status with no `checkedTime` is checked again.
    Done when `make check` passes with those specs.
 3. **People see it.** The UI's *Needs you*, the Crew page's module line and

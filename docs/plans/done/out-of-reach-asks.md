@@ -6,7 +6,7 @@ otter-909.
 ## Goal
 
 When a prompt or a request asks for a change no pull request may make (text
-in `AGENTS.md`, a role guide in `docs/agents/`, `.c4factory.yaml`), the
+in `AGENTS.md`, a role guide in `docs/agents/`, `.theos.yaml`), the
 Brief says so in the round that plans it, with why and where such a request
 can go, instead of filing an issue whose Task can only end `Blocked`. And a
 project has a supported place to tell its agents something about its
@@ -35,7 +35,7 @@ that.
 ## Decisions
 
 1. **The paths out of reach are `model.AgentNeverPaths`, and only those.**
-   `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` change through no pull
+   `AGENTS.md`, `docs/agents/` and `.theos.yaml` change through no pull
    request at all. Every other protected path (the Makefile, a lint config,
    `.gitea/` workflows, `.devcontainer/`) may be what an issue needs: the
    implementer then makes it as a Standard change (its own gated Task), so
@@ -90,7 +90,7 @@ that.
 5. **The operator checks it, too.** The plan check refuses an issue whose
    title or `## Acceptance criteria` names a path under
    `model.AgentNeverPaths` (as a word: `AGENTS.md`, `docs/agents/...`,
-   `.c4factory.yaml`, with or without backticks), naming the issue and the
+   `.theos.yaml`, with or without backticks), naming the issue and the
    path, and saying that no change may make it and that agents' notes go in
    `docs/project-notes.md`. The planner's guide states the same rule
    (decision 2), so a sound plan never trips it, and a refused plan costs a

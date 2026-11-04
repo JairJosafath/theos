@@ -210,11 +210,11 @@ describe('crewTasks', () => {
       metadata: { name: 'api', namespace: 'shop' },
       spec: { containerRef: { name: 'api' }, implementer: { name: 'dev' }, reviewer: { name: 'rev' } },
     } as Crew
-    const label = { 'c4.factory.io/crew': 'api' }
+    const label = { 'theos.factory.io/crew': 'api' }
     const tasks = [
       task('api-6', { phase: 'Merged', history: [step('Implementing', 1)] }, label),
       task('api-7', { phase: 'Checking', history: [step('Implementing', 2)] }, label),
-      task('web-1', { history: [step('Implementing', 3)] }, { 'c4.factory.io/crew': 'web' }),
+      task('web-1', { history: [step('Implementing', 3)] }, { 'theos.factory.io/crew': 'web' }),
       { ...task('api-8', {}, label), metadata: { name: 'api-8', namespace: 'other', labels: label } },
     ]
     expect(crewTasks(crew, tasks)).toEqual([

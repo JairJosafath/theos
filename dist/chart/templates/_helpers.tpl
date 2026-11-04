@@ -1,7 +1,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "c4-factory.name" -}}
+{{- define "theos.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -10,7 +10,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "c4-factory.fullname" -}}
+{{- define "theos.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -27,7 +27,7 @@ If release name contains chart name it will be used as a full name.
 Namespace for generated references.
 Always uses the Helm release namespace.
 */}}
-{{- define "c4-factory.namespaceName" -}}
+{{- define "theos.namespaceName" -}}
 {{- .Release.Namespace }}
 {{- end }}
 
@@ -38,8 +38,8 @@ Takes a dict with:
   - .context: Template context (root context with .Values, .Release, etc.)
 Dynamically calculates safe truncation to ensure total name length <= 63 chars.
 */}}
-{{- define "c4-factory.resourceName" -}}
-{{- $fullname := include "c4-factory.fullname" .context }}
+{{- define "theos.resourceName" -}}
+{{- $fullname := include "theos.fullname" .context }}
 {{- $suffix := .suffix }}
 {{- $maxLen := sub 62 (len $suffix) | int }}
 {{- if gt (len $fullname) $maxLen }}
@@ -54,9 +54,9 @@ ServiceAccount name to use.
 When enabled, use the chart's ServiceAccount name.
 When disabled, serviceAccount.name must be set; use "default" to pick the namespace default ServiceAccount.
 */}}
-{{- define "c4-factory.serviceAccountName" -}}
+{{- define "theos.serviceAccountName" -}}
 {{- if .Values.serviceAccount.enabled }}
-{{- include "c4-factory.resourceName" (dict "suffix" "controller-manager" "context" .) }}
+{{- include "theos.resourceName" (dict "suffix" "controller-manager" "context" .) }}
 {{- else }}
 {{- required "serviceAccount.name is required when serviceAccount.enabled=false (set name: default explicitly to use the namespace default ServiceAccount)" .Values.serviceAccount.name }}
 {{- end }}
@@ -67,7 +67,7 @@ gitea.projects, one object per name in order: an entry is a name, or an object
 with a name and, optionally, the GitProvider's packages (spec.packages). A JSON
 list; read it with fromJsonArray.
 */}}
-{{- define "c4-factory.projects" -}}
+{{- define "theos.projects" -}}
 {{- $projects := list }}
 {{- $seen := dict }}
 {{- range $i, $p := .Values.gitea.projects }}
@@ -87,9 +87,9 @@ list; read it with fromJsonArray.
 The names of gitea.projects, each once, in order. A JSON list; read it with
 fromJsonArray.
 */}}
-{{- define "c4-factory.projectNames" -}}
+{{- define "theos.projectNames" -}}
 {{- $names := list }}
-{{- range include "c4-factory.projects" . | fromJsonArray }}
+{{- range include "theos.projects" . | fromJsonArray }}
 {{- $names = append $names .name }}
 {{- end }}
 {{- $names | toJson }}
@@ -105,7 +105,7 @@ list, a public block or a selector expression fails the render: the operator
 would refuse the same value, and a DNS rule with no peer would let port 53 out
 to every address.
 */}}
-{{- define "c4-factory.clusterDNSPeers" -}}
+{{- define "theos.clusterDNSPeers" -}}
 {{- if not .Values.clusterDNS }}
 {{- fail "clusterDNS: want at least one entry, where cluster DNS runs (kube-system/k8s-app=kube-dns by default); none would open the CI fence on port 53 to every address" }}
 {{- end }}

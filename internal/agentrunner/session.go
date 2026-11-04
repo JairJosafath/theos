@@ -15,17 +15,17 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // A Claude Code session whose context passes its Agent's sessionTokenLimit
 // hands its work to a fresh session (docs/plans/done/session-tokens.md, decisions
-// 6-9). Its PreToolUse hook, c4agent session-guard, denies every tool but
+// 6-9). Its PreToolUse hook, theos-agent session-guard, denies every tool but
 // writing the handoff note once the session's newest turn is past the limit;
-// a session past it by half again is ended by c4agent, which writes the note
+// a session past it by half again is ended by theos-agent, which writes the note
 // itself. The fresh session gets the same prompt and the note.
 
-// SessionGuardCommand is the c4agent subcommand the session's hook runs.
+// SessionGuardCommand is the theos-agent subcommand the session's hook runs.
 const SessionGuardCommand = "session-guard"
 
 // maxSessionHandoffs is how often one agent call hands off; the session after
@@ -36,7 +36,7 @@ const maxSessionHandoffs = 3
 // repository so it never lands in a commit.
 const handoffFile = "HANDOFF.md"
 
-// maxHandoffNote bounds the last words c4agent carries into the fresh prompt
+// maxHandoffNote bounds the last words theos-agent carries into the fresh prompt
 // from a session it ended.
 const maxHandoffNote = 4000
 
@@ -47,20 +47,20 @@ type session struct {
 	err    error
 	// size is the main session's biggest turn's prompt; zero without a stream.
 	size int64
-	// lastText is the main session's last words, for a note c4agent writes.
+	// lastText is the main session's last words, for a note theos-agent writes.
 	lastText string
-	// stopped means c4agent ended the session for passing its limit by half again.
+	// stopped means theos-agent ended the session for passing its limit by half again.
 	stopped bool
 }
 
 // sessionGuard is one guarded session's settings: a directory outside the
 // repository with the Claude Code settings file and, once written, the note,
-// the pause's mark and c4agent's checkpoint socket.
+// the pause's mark and theos-agent's checkpoint socket.
 type sessionGuard struct {
 	dir string
 	// limit is the session's token limit; zero: none.
 	limit int64
-	// checkpoints means pause-guard asks c4agent for a checkpoint on the
+	// checkpoints means pause-guard asks theos-agent for a checkpoint on the
 	// socket after each tool (periodic.go).
 	checkpoints bool
 }
@@ -68,13 +68,13 @@ type sessionGuard struct {
 // newSessionGuard writes the settings that make program's session-guard the
 // session's PreToolUse hook, with a limit, and its pause-guard its
 // PostToolUse hook, with the downward API file of the pod's annotations, or
-// with checkpoints, the socket it asks c4agent for one on, or both. It is nil
+// with checkpoints, the socket it asks theos-agent for one on, or both. It is nil
 // with none of the three.
 func newSessionGuard(program string, limit int64, annotations string, checkpoints bool) (*sessionGuard, error) {
 	if limit <= 0 && annotations == "" && !checkpoints {
 		return nil, nil
 	}
-	dir, err := os.MkdirTemp("", "c4agent-session-")
+	dir, err := os.MkdirTemp("", "theos-agent-session-")
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (g *sessionGuard) remove()          { _ = os.RemoveAll(g.dir) }
 
 func (g *sessionGuard) pausedMark() string { return filepath.Join(g.dir, pausedFile) }
 
-// checkpointSocket is where c4agent answers pause-guard's asks for a
+// checkpointSocket is where theos-agent answers pause-guard's asks for a
 // checkpoint; "" without them.
 func (g *sessionGuard) checkpointSocket() string {
 	if g == nil || !g.checkpoints {
@@ -134,11 +134,11 @@ func (g *sessionGuard) paused() (string, bool) {
 	return string(data), err == nil
 }
 
-// stopAt is the size past which c4agent ends a session that didn't stop.
+// stopAt is the size past which theos-agent ends a session that didn't stop.
 func (g *sessionGuard) stopAt() int64 { return g.limit + g.limit/2 }
 
 // note is what the session hands the next one, or "" when it didn't hand
-// off: the note it wrote or, when c4agent ended it or it ended past its limit
+// off: the note it wrote or, when theos-agent ended it or it ended past its limit
 // without one, its last words and the working tree's state. A session that
 // failed otherwise doesn't hand off: its error, such as a usage limit, says more.
 func (g *sessionGuard) note(ctx context.Context, dir string, s session) string {
@@ -163,7 +163,7 @@ func (g *sessionGuard) note(ctx context.Context, dir string, s session) string {
 }
 
 // endedNote is the note for a session that ended without writing one: why
-// it ended, its last words and the working tree's state. c4agent writes it
+// it ended, its last words and the working tree's state. theos-agent writes it
 // for a session it ended past its limit, and for one its sandbox's stop
 // ended (checkpoint.go).
 func endedNote(ctx context.Context, dir, headline, lastText string) string {
@@ -304,7 +304,7 @@ func mainTurn(raw []byte) (size int64, text string) {
 	return size, text
 }
 
-// SessionGuardMain is c4agent session-guard: Claude Code's PreToolUse hook
+// SessionGuardMain is theos-agent session-guard: Claude Code's PreToolUse hook
 // for a session with a token limit. It reads the hook's input on stdin and
 // denies the tool on stdout when the session is past the limit. It allows
 // what it can't judge: a broken guard never blocks an agent.
@@ -318,7 +318,7 @@ func SessionGuardMain(args []string, stdin io.Reader, stdout, stderr io.Writer) 
 		err = guardSession(stdin, stdout, *limit, *handoff)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "c4agent %s: %v\n", SessionGuardCommand, err)
+		_, _ = fmt.Fprintf(stderr, "theos-agent %s: %v\n", SessionGuardCommand, err)
 	}
 	return 0
 }

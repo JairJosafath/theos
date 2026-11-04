@@ -33,12 +33,12 @@ Brief autopilot never retries an exhausted issue, and refuses a tending round th
 • [7.460 seconds]
 Ran 6 of 207 Specs in 40.282 seconds
 SUCCESS! -- 6 Passed | 0 Failed | 0 Pending | 201 Skipped
-ok  	github.com/JairJosafath/c4factory/internal/controller	40.554s
+ok  	github.com/JairJosafath/theos/internal/controller	40.554s
 
 $ go test ./internal/model -run "TestAutopilotMode|TestStartsTend" -v
 --- PASS: TestAutopilotMode (0.00s)
 --- PASS: TestStartsTend (0.00s)
-ok  	github.com/JairJosafath/c4factory/internal/model	0.005s
+ok  	github.com/JairJosafath/theos/internal/model	0.005s
 
 $ cd ui && npx vitest run src/model/brief.test.ts -t describeAutopilot
       Tests  5 passed | 51 skipped (56)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for hack/check-workflows.sh: the repository's workflows pass, and a job
 # off vars.RUNS_ON, without runs-on, without timeout-minutes (#1655), or
-# making a Kind cluster without the c4factory-kind label fails, and so does a workflow on pushes to a branch
+# making a Kind cluster without the theos-kind label fails, and so does a workflow on pushes to a branch
 # without the concurrency group, or one that cancels the run in progress; and
 # Lint and UI off pull requests or with other paths there, Lint without its
 # test-hack job (#1101), and Tests off pull requests or off pushes to main
@@ -27,7 +27,7 @@ wf() { rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  push:\n\njobs:
 timeout="    timeout-minutes: 10"
 good="    runs-on: \${{ vars.RUNS_ON || 'ubuntu-latest' }}
 $timeout"
-kind="    runs-on: \${{ vars.RUNS_ON == 'self-hosted' && fromJSON('[\"self-hosted\", \"c4factory-kind\"]') || vars.RUNS_ON || 'ubuntu-latest' }}
+kind="    runs-on: \${{ vars.RUNS_ON == 'self-hosted' && fromJSON('[\"self-hosted\", \"theos-kind\"]') || vars.RUNS_ON || 'ubuntu-latest' }}
 $timeout"
 
 wf ok "  a:

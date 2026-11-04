@@ -37,15 +37,15 @@ describe('WatchMux', () => {
       }) as typeof fetch,
     })
     const signal = new AbortController().signal
-    const a = collect(mux.watch('/apis/c4.factory.io/v1beta1/namespaces/w/containers', '10', 300, signal))
-    const b = collect(mux.watch('/apis/c4.factory.io/v1beta1/namespaces/w/sessions', '20', 300, signal))
+    const a = collect(mux.watch('/apis/theos.factory.io/v1beta1/namespaces/w/containers', '10', 300, signal))
+    const b = collect(mux.watch('/apis/theos.factory.io/v1beta1/namespaces/w/sessions', '20', 300, signal))
     await new Promise((r) => setTimeout(r, 20))
 
     expect(urls).toHaveLength(1)
     expect(urls[0].pathname).toBe('/k8s-watch')
     expect(urls[0].searchParams.getAll('w')).toEqual([
-      '/apis/c4.factory.io/v1beta1/namespaces/w/containers',
-      '/apis/c4.factory.io/v1beta1/namespaces/w/sessions',
+      '/apis/theos.factory.io/v1beta1/namespaces/w/containers',
+      '/apis/theos.factory.io/v1beta1/namespaces/w/sessions',
     ])
     expect(urls[0].searchParams.getAll('rv')).toEqual(['10', '20'])
     expect(urls[0].searchParams.get('timeoutSeconds')).toBe('300')
@@ -73,8 +73,8 @@ describe('WatchMux', () => {
       fetch: (() => Promise.resolve(stream.response)) as typeof fetch,
     })
     const signal = new AbortController().signal
-    const a = collect(mux.watch('/apis/c4.factory.io/v1beta1/a', '1', 300, signal))
-    const b = collect(mux.watch('/apis/c4.factory.io/v1beta1/b', '1', 300, signal))
+    const a = collect(mux.watch('/apis/theos.factory.io/v1beta1/a', '1', 300, signal))
+    const b = collect(mux.watch('/apis/theos.factory.io/v1beta1/b', '1', 300, signal))
     await new Promise((r) => setTimeout(r, 10))
     stream.fail(new TypeError('network error'))
     await expect(a).rejects.toThrow('network error')
@@ -89,7 +89,7 @@ describe('WatchMux', () => {
         Promise.resolve(new Response('{"kind":"Status","message":"nope"}', { status: 403 }))) as typeof fetch,
     })
     await expect(
-      collect(mux.watch('/apis/c4.factory.io/v1beta1/a', '1', 300, new AbortController().signal)),
+      collect(mux.watch('/apis/theos.factory.io/v1beta1/a', '1', 300, new AbortController().signal)),
     ).rejects.toEqual(new ApiError(403, 'nope'))
   })
 
@@ -105,8 +105,8 @@ describe('WatchMux', () => {
     })
     const one = new AbortController()
     const two = new AbortController()
-    const a = collect(mux.watch('/apis/c4.factory.io/v1beta1/a', '1', 300, one.signal)).catch(() => 'stopped')
-    const b = collect(mux.watch('/apis/c4.factory.io/v1beta1/b', '1', 300, two.signal)).catch(() => 'stopped')
+    const a = collect(mux.watch('/apis/theos.factory.io/v1beta1/a', '1', 300, one.signal)).catch(() => 'stopped')
+    const b = collect(mux.watch('/apis/theos.factory.io/v1beta1/b', '1', 300, two.signal)).catch(() => 'stopped')
     await new Promise((r) => setTimeout(r, 10))
     one.abort()
     await a
@@ -135,7 +135,7 @@ describe('WatchMux', () => {
     const watchers = Array.from({ length: 10 }, (_, i) => {
       const w = new ResourceWatcher<K8sObject>({
         baseUrl: 'k8s',
-        path: `/apis/c4.factory.io/v1beta1/namespaces/w/kind${i}`,
+        path: `/apis/theos.factory.io/v1beta1/namespaces/w/kind${i}`,
         fetch: fetchFn,
         openWatch: (path, rv, timeout, signal) => mux.watch(path, rv, timeout, signal),
       })

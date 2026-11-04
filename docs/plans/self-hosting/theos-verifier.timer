@@ -1,0 +1,12 @@
+# Runs theos-verifier.service five minutes after it is enabled, then an
+# hour after each run ends. The watch turns this timer off once the plan's
+# parent issue is closed.
+[Unit]
+Description=theos self-hosting plan: the verifier watch, hourly
+
+[Timer]
+OnActiveSec=5min
+OnUnitInactiveSec=1h
+
+[Install]
+WantedBy=timers.target

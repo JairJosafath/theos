@@ -3,7 +3,7 @@
 # the operator's, which shares it with every labeled project namespace, or a
 # project's, for a token of its own. make claude-secret runs it.
 #
-#   KUBECTL="kubectl --context kind-c4factory" hack/claude-secret.sh NAMESPACE
+#   KUBECTL="kubectl --context kind-theos" hack/claude-secret.sh NAMESPACE
 #
 # The token comes from CLAUDE_TOKEN in the environment when it is set, else from
 # the file CLAUDE_TOKEN_FILE (make sets the device's .dev/secrets/claude-token),
@@ -36,5 +36,5 @@ fi
 
 printf '%s' "$token" | "${kubectl[@]}" -n "$ns" create secret generic claude-credentials \
   --from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin --dry-run=client -o yaml |
-  "${kubectl[@]}" apply --server-side --field-manager=c4factory-testenv -f - >/dev/null
+  "${kubectl[@]}" apply --server-side --field-manager=theos-testenv -f - >/dev/null
 echo "Stored Secret $ns/claude-credentials"

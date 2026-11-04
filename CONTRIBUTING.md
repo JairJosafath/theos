@@ -1,6 +1,6 @@
 # Contributing
 
-Work on C4 Factory runs through GitHub issues. Agents work them through the
+Work on theos runs through GitHub issues. Agents work them through the
 relay, and the maintainer looks after the project
 ([GOVERNANCE.md](GOVERNANCE.md)). Everyone follows the
 [Code of Conduct](CODE_OF_CONDUCT.md).
@@ -46,7 +46,7 @@ Vulnerabilities go to [SECURITY.md](SECURITY.md), never to an issue.
 
 ## License
 
-C4 Factory is proprietary; all rights are reserved ([LICENSE](LICENSE)). By
+theos is proprietary; all rights are reserved ([LICENSE](LICENSE)). By
 contributing, you agree that the owner may use, license and relicense your
 contribution under any terms, including an open-source license later. Every
 new Go file starts with the header in `hack/boilerplate.go.txt`.

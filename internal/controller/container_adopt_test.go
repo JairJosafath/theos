@@ -25,13 +25,13 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // adoptableFiles is the tree an orders-api repository holds when the factory
 // scaffolded it for project ns: the webshop is scaffolded in a fresh namespace
-// and its .c4factory.yaml rewritten to name ns, with nothing scaffolded.
+// and its .theos.yaml rewritten to name ns, with nothing scaffolded.
 func adoptableFiles(ns string) scaffold.Tree {
 	GinkgoHelper()
 	return adoptableFilesWith(ns, nil)
@@ -156,7 +156,7 @@ var _ = Describe("Container adoption", func() {
 		Expect(container.Status.OperationsUpdate).To(BeNil())
 	})
 
-	It("fails IdentityMismatch when main has no .c4factory.yaml", func() {
+	It("fails IdentityMismatch when main has no .theos.yaml", func() {
 		ns := newProjectNamespace()
 		files := adoptableFiles(ns)
 		delete(files, scaffold.IdentityPath)
@@ -164,11 +164,11 @@ var _ = Describe("Container adoption", func() {
 		createAdoptingWebshop(ns)
 
 		cond := failedAdoption(ns, c4v1beta1.ReasonIdentityMismatch)
-		Expect(cond.Message).To(ContainSubstring("has no .c4factory.yaml on main"))
+		Expect(cond.Message).To(ContainSubstring("has no .theos.yaml on main"))
 		Expect(gitFake.ProtectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
 	})
 
-	It("fails IdentityMismatch when .c4factory.yaml names another project, saying what it holds", func() {
+	It("fails IdentityMismatch when .theos.yaml names another project, saying what it holds", func() {
 		ns := newProjectNamespace()
 		files := adoptableFiles(ns)
 		id, err := scaffold.ParseIdentity(files[scaffold.IdentityPath].Data)

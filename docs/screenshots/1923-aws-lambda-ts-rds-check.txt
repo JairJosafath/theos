@@ -18,7 +18,7 @@ All matched files use Prettier code style!
 node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
- RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-6/tmp.cpExBQYqbG/rds
+ RUN  v5.0.3 /home/josaf/.cache/theos/tmp/relay-6/tmp.cpExBQYqbG/rds
  ✓ src/api.test.ts (8 tests) 5ms
  ✓ src/items.test.ts (25 tests) 7ms
  ✓ src/once.test.ts (7 tests) 5ms
@@ -61,7 +61,7 @@ All matched files use Prettier code style!
 node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
- RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-6/tmp.cpExBQYqbG/both
+ RUN  v5.0.3 /home/josaf/.cache/theos/tmp/relay-6/tmp.cpExBQYqbG/both
  ✓ src/api.test.ts (8 tests) 8ms
  ✓ src/items.test.ts (25 tests) 7ms
  ✓ src/once.test.ts (7 tests) 6ms

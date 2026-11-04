@@ -37,7 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 const (

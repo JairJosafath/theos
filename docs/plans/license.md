@@ -19,7 +19,7 @@ says how to set one. Found by otter-1602; readied by triage as design work.
 - No template under `templates/` ships a license file (all 30 checked in the
   review of #1787), so every newly scaffolded Container that publishes source
   fails its first release. The `webshop-github` sample is one.
-- The scaffold already writes files no layer owns: `.c4factory.yaml` and
+- The scaffold already writes files no layer owns: `.theos.yaml` and
   `.devcontainer/` (`scaffold.Build`, `isOperatorPath`); a layer writing one
   of those paths fails the Container with the path. The Container controller
   builds `scaffold.Input` from the Container, its choices and its
@@ -59,11 +59,11 @@ says how to set one. Found by otter-1602; readied by triage as design work.
    for one line is more API than it is worth; the file is the app's after
    the scaffold and anyone may edit it.
 5. **The operator writes it, once, as an operator path.** `LICENSE` joins
-   `.c4factory.yaml` and `.devcontainer/` in `scaffold.Build`: a layer that
+   `.theos.yaml` and `.devcontainer/` in `scaffold.Build`: a layer that
    writes `LICENSE` while a license is set is the existing two-layers
    collision, with the path in the message. It is read at scaffold only
    ("Scaffold once"): changing the setting later rewrites nothing, a
-   Standard update never touches it, and `.c4factory.yaml` records the id
+   Standard update never touches it, and `.theos.yaml` records the id
    written so a reader sees which. It is the app's file, not one of
    `model.FactoryOwnPaths`: a published source carries it, and agents may
    change it. A Container scaffolded before the setting existed, or before
@@ -90,7 +90,7 @@ Each step is a GitHub issue that names #1788 and lands on its own with
 | --- | --- | --- | --- |
 | 1. This plan and the design change | #1788 (`Refs`) | | landed in `docs/plans/` and `docs/design.md` |
 | 2. `spec.license` on Project and Container | #1859 | | the field on both kinds, optional, the enum of decision 3; `make manifests`; the webshop sample's Project sets `MIT` and `first-app`'s has the comment; `make validate-yaml` passes; envtest: an id outside the set is refused on both kinds, naming the field |
-| 3. The scaffold writes `LICENSE` | #1861 | #1859 | the texts embedded, a test that the enum and the files match; `scaffold.Input` carries the id, the holder and the year; `scaffold.Build` writes `LICENSE` and records the id in `.c4factory.yaml`; `internal/scaffold` table tests (#1788): the set license, the Container's over the Project's, none set, a layer writing `LICENSE`, the copyright line filled and not; the controller reads the Project's `spec.license` and the Container's; envtest: a Container in a Project with a license is scaffolded with a non-empty `LICENSE` |
+| 3. The scaffold writes `LICENSE` | #1861 | #1859 | the texts embedded, a test that the enum and the files match; `scaffold.Input` carries the id, the holder and the year; `scaffold.Build` writes `LICENSE` and records the id in `.theos.yaml`; `internal/scaffold` table tests (#1788): the set license, the Container's over the Project's, none set, a layer writing `LICENSE`, the copyright line filled and not; the controller reads the Project's `spec.license` and the Container's; envtest: a Container in a Project with a license is scaffolded with a non-empty `LICENSE` |
 | 4. `LicenseMissing` names the setting | #1862 | #1859 | `PublishProblem.String` for `LicenseMissing` says decision 6; the `internal/model` table case and the envtest messages in `crew_publish_source_test.go` and `container_deploy_test.go` updated |
 | 5. The UI shows the license | #1863 | #1859 | the Project page and the Container page show the license when set, the Container's with "from the Project" when it is the Project's; a UI test for each; `make ui-test` passes |
 

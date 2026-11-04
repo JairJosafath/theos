@@ -48,7 +48,7 @@ published to GitHub*, says what they built.
 2. **The factory's own files are a list the model already keeps.** Left out
    of the published source: `model.AgentNeverPaths` and
    `model.PlatformProtectedPaths` together (today `AGENTS.md`,
-   `docs/agents/`, `.c4factory.yaml`, `.devcontainer/`, `.gitea/`), as
+   `docs/agents/`, `.theos.yaml`, `.devcontainer/`, `.gitea/`), as
    `model.FactoryOwnPaths`. They are exactly what the reporter named, and
    they are the paths the operator and the agents' contract own: a path added
    to either list later is left out too, with no second list to forget. A
@@ -83,7 +83,7 @@ published to GitHub*, says what they built.
    from the app disappear from the folder too); every other path is the
    head's, untouched. The commit's parent is the head, and the branch moves
    by a fast-forward, never a force. Its message is `<app name> <tag>:
-   source` with a trailer `C4factory-Source: <namespace>/<container> <tag>`.
+   source` with a trailer `theos-Source: <namespace>/<container> <tag>`.
    The folder is the app's: whatever was in it before (the hand-made copies)
    is replaced on the first publish. History stays linear; two apps sharing
    the repository each add their own commits.

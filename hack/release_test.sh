@@ -18,7 +18,7 @@ tree() {
   echo "kind: CustomResourceDefinition # $2" >"$1/config/crd/bases/things.yaml"
   echo "kind: CustomResourceDefinition # old" >"$1/test/compat/baseline/gone.yaml"
   printf '# Versions the last release served that this tree no longer serves.\n#\n#   v1alpha1  Removed the v1alpha1 API versions.\nv1alpha1  Removed the v1alpha1 API versions.\n' >"$1/test/compat/dropped.txt"
-  printf 'apiVersion: v2\nname: c4-factory\nversion: %s\nappVersion: "dev"\n' "$2" >"$1/dist/chart/Chart.yaml"
+  printf 'apiVersion: v2\nname: theos\nversion: %s\nappVersion: "dev"\n' "$2" >"$1/dist/chart/Chart.yaml"
   printf 'The commands use the release `%s`; for a later one, change `VERSION`.\n\n```bash\nVERSION=%s\n```\n\nVERSION=%s\n' \
     "$2" "$2" "$2" >"$1/docs/getting-started.md"
 }
@@ -70,7 +70,7 @@ cat >"$T/bin/gh" <<EOF
 #!/usr/bin/env bash
 echo "gh \$*" >>"$T/gh.log"
 case "\$1 \$2" in
-"pr create") echo https://github.com/o/c4factory/pull/7 ;;
+"pr create") echo https://github.com/o/theos/pull/7 ;;
 "pr merge")
   rm -rf "$T/merge"
   git clone --quiet "$T/origin.git" "$T/merge"
@@ -92,7 +92,7 @@ check "patch: bumps, merges and tags" $? 0
 check "  the tag is origin's main, the merge commit" "$(git -C "$T/origin.git" rev-parse v1.2.1^{commit})" "$(git -C "$T/origin.git" rev-parse main)"
 check "  main names the release" "$(git -C "$T/origin.git" show main:dist/chart/Chart.yaml | grep -c '^version: 1.2.1$')" 1
 check "  main's baseline is its CRDs" "$(git -C "$T/origin.git" ls-tree --name-only main test/compat/baseline/)" test/compat/baseline/things.yaml
-check "  merged with a merge commit" "$(grep -c 'pr merge https://github.com/o/c4factory/pull/7 --merge' "$T/gh.log")" 1
+check "  merged with a merge commit" "$(grep -c 'pr merge https://github.com/o/theos/pull/7 --merge' "$T/gh.log")" 1
 check "  the bump branch is gone" "$(git -C "$T/origin.git" branch --list 'chore/*' | wc -l)" 0
 check "  the clone's checkout is untouched" "$(sed -n 's/^version: //p' "$T/clone/dist/chart/Chart.yaml")" 1.2.0
 check "  no worktree is left" "$(git -C "$T/clone" worktree list | wc -l)" 1

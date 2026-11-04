@@ -3,8 +3,8 @@
 # run in the base toolchain image (hack/toolchain-base, uv 0.12.21) the base runner is built on.
 $ go run ./hack/render -out ci1 -container orders-api -type service Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres
 Rendered 33 files from python-fastapi@local, python-standard@local, small@local, k8s-manifests@local, postgres@local into ci1
-$ docker build -t c4factory/base:otter-450 hack/toolchain-base
-$ docker run --rm -v $PWD/ci1:/data/work/job -w /data/work/job c4factory/base:otter-450 bash -c 'git init && git add -A && git commit -m scaffold && export UV_CACHE_DIR="$PWD/.uv/cache" UV_PYTHON_INSTALL_DIR="$PWD/.uv/python" && uv --version && make check && make dist && du -sh .uv .venv && git status --short && echo CLEAN'
+$ docker build -t theos/base:otter-450 hack/toolchain-base
+$ docker run --rm -v $PWD/ci1:/data/work/job -w /data/work/job theos/base:otter-450 bash -c 'git init && git add -A && git commit -m scaffold && export UV_CACHE_DIR="$PWD/.uv/cache" UV_PYTHON_INSTALL_DIR="$PWD/.uv/python" && uv --version && make check && make dist && du -sh .uv .venv && git status --short && echo CLEAN'
 uv 0.12.21 (x86_64-unknown-linux-musl)
 uv sync --locked
 Downloading cpython-3.12.14-linux-x86_64-gnu (download) (32.7MiB)

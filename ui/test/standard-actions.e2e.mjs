@@ -5,7 +5,7 @@
 // actions on in front of it, and the built UI in Chromium.
 //
 // Needs a build and Chromium:  npm run test:e2e
-// C4_UI_SHOTS=DIR also saves the dialog, the refusal and the signed-out page in
+// THEOS_UI_SHOTS=DIR also saves the dialog, the refusal and the signed-out page in
 // DIR (docs/screenshots).
 
 import assert from 'node:assert/strict'
@@ -72,12 +72,12 @@ async function stop({ api, ui }) {
   await new Promise((r) => api.server.close(r))
 }
 
-/** A picture of the viewport around the actions panel, in C4_UI_SHOTS. */
+/** A picture of the viewport around the actions panel, in THEOS_UI_SHOTS. */
 async function shot(page, name) {
-  if (!process.env.C4_UI_SHOTS) return
+  if (!process.env.THEOS_UI_SHOTS) return
   await page.getByRole('region', { name: 'Act on it' }).scrollIntoViewIfNeeded()
   await page.waitForTimeout(200)
-  await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, name) })
+  await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, name) })
 }
 
 describe('the Standard page’s ref bump', () => {
@@ -130,7 +130,7 @@ describe('the Standard page’s ref bump', () => {
       assert.equal(env.api.writes.length, 1)
       const [w] = env.api.writes
       assert.equal(w.method, 'PATCH')
-      assert.equal(w.path, `/apis/c4.factory.io/v1beta1/namespaces/${NS}/standards/python-standard`)
+      assert.equal(w.path, `/apis/theos.factory.io/v1beta1/namespaces/${NS}/standards/python-standard`)
       assert.deepEqual(w.body, [{ op: 'add', path: '/spec/template/ref', value: 'v1.3.0' }])
       // The watch brings the new ref to the page's template facts.
       await page.locator('.facts dd', { hasText: /^v1\.3\.0$/ }).waitFor({ timeout: 5000 })

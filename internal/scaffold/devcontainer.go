@@ -10,7 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // defaultImage is used when the Framework brings no devcontainer settings.
@@ -112,13 +112,13 @@ const appCommand = `    # Keeps the container up. When the devcontainer stops, i
       - /bin/sh
       - -c
       - >-
-        trap 'pkill -TERM -x c4session; for i in 1 2 3 4 5 6 7 8 9 10; do pkill -0 -x c4session || break; sleep 0.5; done; exit 0' TERM INT;
+        trap 'pkill -TERM -x theos-session; for i in 1 2 3 4 5 6 7 8 9 10; do pkill -0 -x theos-session || break; sleep 0.5; done; exit 0' TERM INT;
         sleep infinity & wait
 `
 
 func appCompose(image string) string {
 	var b strings.Builder
-	b.WriteString("# Written by C4 Factory. The application's devcontainer; each\n")
+	b.WriteString("# Written by theos. The application's devcontainer; each\n")
 	b.WriteString("# compose.<connector>.yaml next to this file adds a service it talks to.\n")
 	b.WriteString("services:\n")
 	b.WriteString("  app:\n")

@@ -8,7 +8,7 @@ import { crewSummaries } from '../model/crews'
 import { CrewsPanel } from './factory/Crews'
 import { PanelState, type PanelStateProps } from './PanelState'
 
-const forbidden: Problem = { what: 'crews', code: 403, message: 'crews.c4.factory.io is forbidden', resource: 'crews' }
+const forbidden: Problem = { what: 'crews', code: 403, message: 'crews.theos.factory.io is forbidden', resource: 'crews' }
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
 
@@ -41,7 +41,7 @@ describe('PanelState', () => {
       const html = state({ ...props, problems: [forbidden] })
       expect(html).toContain('role="alert"')
       expect(text(html)).toContain('Could not read crews. The UI is not allowed to read these.')
-      expect(text(html)).toContain('(403: crews.c4.factory.io is forbidden)')
+      expect(text(html)).toContain('(403: crews.theos.factory.io is forbidden)')
       expect(text(html)).not.toMatch(/Loading|No Crews yet/)
     }
   })

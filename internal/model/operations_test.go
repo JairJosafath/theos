@@ -89,7 +89,7 @@ func TestOperationsProblems(t *testing.T) {
 // lengths and range to the Container CRD's markers, so the plan check refuses
 // what the API server would (#1210).
 func TestOperationsPatternsMatchTheCRD(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "config", "crd", "bases", "c4.factory.io_containers.yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "config", "crd", "bases", "theos.factory.io_containers.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

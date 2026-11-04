@@ -4,14 +4,14 @@ import "testing"
 
 // pythonJobPlan is a planner's plan for a job on Kubernetes: python-cli with
 // python-standard, run by k8s-manifests' Job on small.
-const pythonJobPlan = `apiVersion: c4.factory.io/v1beta1
+const pythonJobPlan = `apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
 spec:
   description: Sells lamps
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: nightly-report

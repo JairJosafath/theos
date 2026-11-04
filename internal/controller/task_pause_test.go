@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -19,9 +19,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // pauseAsked is the pause annotation on the pod template of a sandbox, and
@@ -123,7 +123,7 @@ var _ = Describe("Paused runs", func() {
 		const name = "add-crop-r1-implement"
 		runningPod(ns, name, "add-crop")
 
-		By("mounting the pod's own annotations for c4agent's pause guard")
+		By("mounting the pod's own annotations for theos-agent's pause guard")
 		pod := sandboxPodSpec(Default, sandboxExists(Default, ns, name))
 		Expect(pod.Volumes).To(ContainElement(podInfo()))
 		Expect(pod.Containers[0].VolumeMounts).To(ContainElement(

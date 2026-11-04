@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/mod/module"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // archiveZip builds a repository archive as Gitea makes it: every file below
@@ -54,10 +54,10 @@ func zipNames(t *testing.T, data []byte) []string {
 	return names
 }
 
-const coreGoMod = "module c4factory.local/cel-lens/cel-lens-core\n\ngo 1.24\n"
+const coreGoMod = "module theos.local/cel-lens/cel-lens-core\n\ngo 1.24\n"
 
 func TestRepackModule(t *testing.T) {
-	mod := module.Version{Path: "c4factory.local/cel-lens/cel-lens-core", Version: "v0.1.0"}
+	mod := module.Version{Path: "theos.local/cel-lens/cel-lens-core", Version: "v0.1.0"}
 	for _, tt := range []struct {
 		name    string
 		files   map[string]string
@@ -75,7 +75,7 @@ func TestRepackModule(t *testing.T) {
 		files: map[string]string{
 			"go.mod": coreGoMod, "main.go": "package main\n",
 			"vendor/example.com/dep/dep.go": "package dep\n",
-			"tools/go.mod":                  "module c4factory.local/cel-lens/cel-lens-core/tools\n",
+			"tools/go.mod":                  "module theos.local/cel-lens/cel-lens-core/tools\n",
 			"tools/gen/gen.go":              "package gen\n",
 		},
 		want: []string{"go.mod", "main.go"},
@@ -176,7 +176,7 @@ func newGoRegistry(t *testing.T) (*goRegistry, ports.Provider) {
 
 func TestPublishGoModule(t *testing.T) {
 	ctx := context.Background()
-	const modPath = "c4factory.local/cel-lens/cel-lens-core"
+	const modPath = "theos.local/cel-lens/cel-lens-core"
 
 	t.Run("publishes the module at the tag", func(t *testing.T) {
 		h, p := newGoRegistry(t)

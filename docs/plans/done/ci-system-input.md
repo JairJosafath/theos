@@ -24,13 +24,13 @@ Container renders and is protected as before.
   operator cannot make. It comes with the second CI system, with its CEL rule
   allowing exactly one member. Until then the controllers take the CI from
   `GitProvider.spec.provider`.
-- **A template keeps each CI system's files under `.c4factory/ci/<name>/`.**
+- **A template keeps each CI system's files under `.theos/ci/<name>/`.**
   That folder is rendered at the repository root, as the rest of the layer
   is, only when it names the Container's CI system; the other systems'
-  folders are left out. A template with a `.c4factory/ci/` folder but none
+  folders are left out. A template with a `.theos/ci/` folder but none
   for the Container's CI system doesn't support it: `scaffold` fails with an
   `UnsupportedCIError` and the Container with reason `UnsupportedCI`, as an
-  unsupported Container type fails it. A template with no `.c4factory/ci/`
+  unsupported Container type fails it. A template with no `.theos/ci/`
   (a Framework) works with any CI system. This needs no path templating:
   a CI system's files differ in content as well as in path (a workflow folder
   against one `.gitlab-ci.yml`), so a whole subtree per system is simpler
@@ -38,12 +38,12 @@ Container renders and is protected as before.
 - **`Input.CI` is the `CI` row**, so a template's text can name the system
   (`{{ .CI.Name }}`) and the check contexts.
 - **The eight templates move their `.gitea/` folder under
-  `.c4factory/ci/giteaActions/`,** unchanged inside, and take a new minor tag: an older operator would
+  `.theos/ci/giteaActions/`,** unchanged inside, and take a new minor tag: an older operator would
   leave their CI files out.
   They render the same files for Gitea Actions; a Standard update to the new
   tag plans no change for them.
 - **The agent runner trusts the operator's list.** The sandbox already gets
-  the full protected list (`C4_PROTECTED_PATHS`, from `AgentProtectedPaths`);
+  the full protected list (`THEOS_PROTECTED_PATHS`, from `AgentProtectedPaths`);
   the runner adds only the operator's own paths, which are the same for every
   CI system.
 

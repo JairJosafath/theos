@@ -8,4 +8,4 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
-- The web app, scaffolded by C4 Factory, with a page that greets you by name.
+- The web app, scaffolded by theos, with a page that greets you by name.

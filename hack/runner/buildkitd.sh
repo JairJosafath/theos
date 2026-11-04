@@ -7,7 +7,7 @@
 # The removal runs here, inside rootlesskit's user namespace, where it owns
 # every file a build made: the runner, outside it, can't remove one a RUN step
 # gave another user, so the job's own cleanup would leave layers behind.
-# C4_BUILDKITD is for the tests.
+# THEOS_BUILDKITD is for the tests.
 set -u
 root=${RUNNER_TEMP:?RUNNER_TEMP is unset: c4-buildkitd runs in a job}/buildkit
 # Inside rootlesskit's namespace every file is ours to change: open a
@@ -21,7 +21,7 @@ for old in "$(dirname "$(dirname "$RUNNER_TEMP")")"/*/tmp/buildkit; do
 done
 pid= stopping=
 trap 'stopping=1; [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null' TERM INT
-"${C4_BUILDKITD:-buildkitd}" --root "$root" "$@" &
+"${THEOS_BUILDKITD:-buildkitd}" --root "$root" "$@" &
 pid=$!
 [ -z "$stopping" ] || kill -TERM "$pid" 2>/dev/null
 wait "$pid"

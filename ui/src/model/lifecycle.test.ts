@@ -154,7 +154,7 @@ describe('failedCondition', () => {
 describe('retryCommand', () => {
   it('annotates the Container in its namespace, overwriting an earlier value', () => {
     expect(retryCommand(container({ phase: 'Failed' }))).toBe(
-      'kubectl -n shop annotate containers.c4.factory.io api c4.factory.io/retry=$(date +%s) --overwrite',
+      'kubectl -n shop annotate containers.theos.factory.io api theos.factory.io/retry=$(date +%s) --overwrite',
     )
   })
 })
@@ -260,8 +260,8 @@ describe('containerNextStep', () => {
     expect(next?.text).toMatch(/left 2 files out .*: Makefile \(at v1\.1\.0\), \.golangci\.yml \(at v1\.2\.0\)\./)
     expect(next?.text).toMatch(/c4\.factory\.io\/standard-keep=v1\.3\.0/)
     expect(next?.text).not.toMatch(/by hand/)
-    expect(next?.command).toBe('kubectl -n shop annotate container api c4.factory.io/standard-take=v1.3.0')
-    expect(standardKeepCommand(c)).toBe('kubectl -n shop annotate container api c4.factory.io/standard-keep=v1.3.0')
+    expect(next?.command).toBe('kubectl -n shop annotate container api theos.factory.io/standard-take=v1.3.0')
+    expect(standardKeepCommand(c)).toBe('kubectl -n shop annotate container api theos.factory.io/standard-keep=v1.3.0')
     expect(next?.link).toEqual({ href: 'https://git.example/shop/api/pulls/6', label: 'Open the update pull request' })
   })
 
@@ -396,7 +396,7 @@ describe('crewNextStep', () => {
     const c = crew({ phase: 'Idle', lastRelease: release({ run: 'Failed', runURL: 'http://gitea/runs/7' }) })
     expect(crewNextStep(c, [])).toEqual({
       text: expect.stringMatching(/^Release v1\.2\.0’s CI runs failed/),
-      command: 'kubectl -n shop annotate crews.c4.factory.io api c4.factory.io/rerun-release=$(date +%s) --overwrite',
+      command: 'kubectl -n shop annotate crews.theos.factory.io api theos.factory.io/rerun-release=$(date +%s) --overwrite',
       link: { href: 'http://gitea/runs/7', label: 'Open the failed run' },
     })
     expect(rerunReleaseCommand(c)).toBe(crewNextStep(c, [])?.command)
@@ -419,8 +419,8 @@ describe('crewNextStep', () => {
       },
       { publishReleases: { github: { repository: 'acme/api-v2', tokenSecretRef: { name: 'gh' } } } },
     )
-    c.metadata.labels = { 'c4.factory.io/brief': 'shop' }
-    c.metadata.annotations = { 'c4.factory.io/brief-publish-releases': JSON.stringify(brief) }
+    c.metadata.labels = { 'theos.factory.io/brief': 'shop' }
+    c.metadata.annotations = { 'theos.factory.io/brief-publish-releases': JSON.stringify(brief) }
     expect(crewNextStep(c, [])).toEqual({
       text: expect.stringMatching(
         /differs from Brief shop’s: the Crew says acme\/api-v2, the Brief acme\/api\. Nothing is published/,
@@ -463,7 +463,7 @@ describe('crewNextStep', () => {
     const briefs = [brief('shop', false, [{ kind: 'Crew', name: 'api' }])]
     expect(crewNextStep(c, briefs)).toEqual({
       text: 'Resume it when it should pick up issues again:',
-      command: `kubectl -n shop patch crews.c4.factory.io api --type merge -p '{"spec":{"paused":false}}'`,
+      command: `kubectl -n shop patch crews.theos.factory.io api --type merge -p '{"spec":{"paused":false}}'`,
     })
     expect(resumeCrewCommand(c)).toBe(crewNextStep(c, briefs)?.command)
   })

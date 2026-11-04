@@ -1,6 +1,6 @@
 # Development environment
 
-C4 Factory develops directly on Linux or WSL, without a dev container. VS Code
+theos develops directly on Linux or WSL, without a dev container. VS Code
 sets the environment up when you open the folder, and everything the project
 downloads or writes lives in `.dev/` inside the checkout. Delete the folder and
 the project is gone from the machine.
@@ -12,8 +12,8 @@ Desktop with WSL integration turned on for your distro (not needed on a lite
 device).
 
 ```sh
-git clone https://github.com/JairJosafath/c4factory.git
-cd c4factory
+git clone https://github.com/JairJosafath/theos.git
+cd theos
 code .
 ```
 
@@ -43,7 +43,7 @@ starts none: `git config --global user.name 'Your Name'` and
 | Command | What it does |
 | --- | --- |
 | `./dev setup` | Downloads what is missing into `.dev/`. Safe to run again. |
-| `./dev setup --lite` | The same without Kind, kubectl, Helm and Docker, and with `C4_CLUSTER=none`. The choice is remembered. |
+| `./dev setup --lite` | The same without Kind, kubectl, Helm and Docker, and with `THEOS_CLUSTER=none`. The choice is remembered. |
 | `./dev setup --full` | Switches a lite device back. |
 | `./dev setup --upgrade` | Downloads the newest version of every tool again. |
 | `./dev shell` | Opens the project shell outside VS Code, for example in Windows Terminal. |
@@ -65,7 +65,7 @@ the gate, so it verifies every issue:
   [docs/dev/testenv.md](docs/dev/testenv.md#local-gitea)), and `make
   seed-local`, which seeds that Gitea like Kind's.
 
-Kind runs only when a human asks (`C4_HUMAN_CLUSTER=1`; agents never lease a
+Kind runs only when a human asks (`THEOS_HUMAN_CLUSTER=1`; agents never lease a
 cluster), and no issue needs it: the `needs/cluster` label is gone, and `pick`
 hands a lite device every ready issue. What only a real node would catch
 (Agent Sandbox pods running, node or kubelet behaviour, the Gitea Actions
@@ -82,7 +82,7 @@ runner itself) is not tested before release.
 | `.dev/kube/config` | Contexts of the Kind clusters created from this folder |
 | `.dev/zsh/` | oh-my-zsh, plugins and shell history |
 | `.dev/claude/` | Claude Code login, settings and history for this project |
-| `.dev/secrets/claude-token` | The agents' Claude token, mode 0600; `make claude-secret` stores it once in the Kind cluster's `c4-factory-system`, where the model proxy reads it ([docs/dev/devices.md](docs/dev/devices.md#the-agents-claude-token)) |
+| `.dev/secrets/claude-token` | The agents' Claude token, mode 0600; `make claude-secret` stores it once in the Kind cluster's `theos-system`, where the model proxy reads it ([docs/dev/devices.md](docs/dev/devices.md#the-agents-claude-token)) |
 | `.dev/make/bin/` | Tools the Makefile downloads (controller-gen, golangci-lint, kustomize, setup-envtest and the envtest binaries in `k8s/`), under versioned names |
 | `bin/` | What `make build` writes (`bin/manager`) |
 

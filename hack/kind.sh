@@ -10,7 +10,7 @@
 #   hack/kind.sh registry-hosts CLUSTER   write containerd's hosts.toml for Gitea into CLUSTER's nodes
 #   hack/kind.sh gitea-service CLUSTER    delete CLUSTER's Gitea Service when its ClusterIP isn't the fixed one
 #
-# A build tags IMAGE-<checkout> (c4factory/operator:dev-relay-2-1a2b3c), never
+# A build tags IMAGE-<checkout> (theos/operator:dev-relay-2-1a2b3c), never
 # the shared IMAGE, so another checkout's build can't replace it between the
 # build and the load. The cluster's manifests keep naming IMAGE: the load tags
 # the image IMAGE inside the cluster's nodes, where only this cluster's lease

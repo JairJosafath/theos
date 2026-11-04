@@ -15,4 +15,4 @@ $ make test-gitea  # TestGiteaGoModuleIntegration and the unit tests, 2026-10-07
     --- PASS: TestPublishGoModule/a_failed_read_is_an_error (0.00s)
 --- PASS: TestGiteaGoModuleIntegration (1.67s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/gitprovider	1.691s
+ok  	github.com/JairJosafath/theos/internal/gitprovider	1.691s

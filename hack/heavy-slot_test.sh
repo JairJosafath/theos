@@ -9,7 +9,7 @@ trap 'if [ "$BASHPID" = $$ ]; then kill $(jobs -p) 2>/dev/null; rm -rf "$T"; fi'
 HACK="$(cd "$(dirname "$0")" && pwd)"
 SLOT=$HACK/heavy-slot.sh
 export HEAVY_SLOTS_DIR=$T/slots HEAVY_JOBS=2 HEAVY_POLL=0.2
-unset C4_HEAVY_SLOT C4_HEAVY_FIRST
+unset THEOS_HEAVY_SLOT THEOS_HEAVY_FIRST
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 # job: start a stand-in heavy job; its PID in $job.
@@ -171,12 +171,12 @@ make_waits() {
 }
 make_waits lint; check "make lint, slots taken: says it waits, and waits" $? 0
 grep -q "goes first" "$T/make"; check "make lint: does not go first" $? 1
-C4_HEAVY_FIRST=1 make_waits lint && grep -q "it goes first" "$T/make"; check "C4_HEAVY_FIRST=1 make lint: waits, going first" $? 0
-check "C4_HEAVY_FIRST: the recipes don't inherit it" \
-  "$(C4_HEAVY_FIRST=1 C4_HEAVY_SLOT=1 timeout 120 make -s --no-print-directory --eval 'heavy-first: ; @echo "[$$C4_HEAVY_FIRST]"' heavy-first 2>/dev/null)" "[]"
+THEOS_HEAVY_FIRST=1 make_waits lint && grep -q "it goes first" "$T/make"; check "THEOS_HEAVY_FIRST=1 make lint: waits, going first" $? 0
+check "THEOS_HEAVY_FIRST: the recipes don't inherit it" \
+  "$(THEOS_HEAVY_FIRST=1 THEOS_HEAVY_SLOT=1 timeout 120 make -s --no-print-directory --eval 'heavy-first: ; @echo "[$$THEOS_HEAVY_FIRST]"' heavy-first 2>/dev/null)" "[]"
 make_waits manifests generate check; check "make manifests generate check: says it waits, and waits" $? 0
 timeout 120 make -n manifests generate >/dev/null 2>&1; check "make manifests generate: no wait" $? 0
-C4_HEAVY_SLOT=1 timeout 120 make -n lint >/dev/null 2>&1; check "sub-make of a job with a slot: no wait" $? 0
+THEOS_HEAVY_SLOT=1 timeout 120 make -n lint >/dev/null 2>&1; check "sub-make of a job with a slot: no wait" $? 0
 kill "$a"; wait "$a" 2>/dev/null
 until_ok eval '[ "$(free)" = "heavy-slot: 1 of 2 slots free, 0 waiting" ]'
 timeout 120 make -n lint >/dev/null 2>&1; check "make lint, a slot free: runs" $? 0

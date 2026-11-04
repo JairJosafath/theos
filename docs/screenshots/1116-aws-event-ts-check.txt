@@ -99,7 +99,7 @@ Downloading cfn-lint (5.4MiB)
 Installed 9 packages in 75ms
 exit 0
 
-# The same copy with infra/backups.ts's selection put back to BackupResource.fromTag('c4factory:container', 'order-events'):
+# The same copy with infra/backups.ts's selection put back to BackupResource.fromTag('theos:container', 'order-events'):
 # node_modules/.bin/vitest run infra/
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
 

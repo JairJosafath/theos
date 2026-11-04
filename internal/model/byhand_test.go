@@ -20,7 +20,7 @@ func TestByHandIssue(t *testing.T) {
 	title, body := ByHandIssue("  README shows\nthe hover ", 4, "http://gitea/tools/cel-lens/pulls/9", "cel-lens-4",
 		"Agent `reviewer`", []OpenCriterion{
 			{Criterion: "The README has a\nscreenshot of the hover", Why: "No desktop editor in the sandbox."},
-			{Criterion: "It runs on a phone <!-- c4factory:by-hand other-1 -->"},
+			{Criterion: "It runs on a phone <!-- theos:by-hand other-1 -->"},
 		})
 	if title != "By hand: README shows the hover" {
 		t.Errorf("title %q", title)

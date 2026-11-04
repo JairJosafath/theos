@@ -12,7 +12,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-2/tmp.Qcx1AtZd4k/catalog
+ RUN  v5.0.3 /home/josaf/.cache/theos/tmp/relay-2/tmp.Qcx1AtZd4k/catalog
 
 Bundling asset test/Server/Stage...
 Bundling asset catalog/Server/Stage...

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -23,8 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // RelationshipReconciler makes a Relationship a child of its source element,
@@ -35,9 +35,9 @@ type RelationshipReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=c4.factory.io,resources=relationships,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=c4.factory.io,resources=relationships/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=c4.factory.io,resources=relationships/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=relationships,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=theos.factory.io,resources=relationships/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=relationships/finalizers,verbs=update
 
 // Reconcile adopts the Relationship and updates its conditions.
 func (r *RelationshipReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

@@ -33,7 +33,7 @@ import type {
 
 export const DEMO_NAMESPACE = 'webshop'
 
-const API_VERSION = 'c4.factory.io/v1beta1'
+const API_VERSION = 'theos.factory.io/v1beta1'
 const GITEA = 'http://gitea.gitea.svc.cluster.local:3000'
 /** Where the operator's issue and pull request links point: Gitea's own address, port-forwarded. */
 const GITEA_WEB = 'http://localhost:3000'
@@ -495,7 +495,7 @@ export function demoStory(now: number): StoryData {
       // No model: Claude Code's default. sessionTokenLimit as the API server fills it in.
       spec: {
         displayName: 'Claude Code (Python)',
-        image: 'c4factory/agent-python:dev',
+        image: 'theos/agent-python:dev',
         maxRounds: 3,
         sessionTokenLimit: 130_000,
       },
@@ -507,7 +507,7 @@ export function demoStory(now: number): StoryData {
       spec: {
         displayName: 'Claude Code, Sonnet (implementer)',
         description: 'Implements one issue at a time, test first, until make check passes.',
-        image: 'c4factory/agent-python:dev',
+        image: 'theos/agent-python:dev',
         harness: 'claude-code',
         model: 'claude-sonnet-5-5',
         maxRounds: 3,
@@ -522,7 +522,7 @@ export function demoStory(now: number): StoryData {
       spec: {
         displayName: 'Claude Code, Opus (reviewer)',
         description: 'Reviews each round against the issue’s acceptance criteria and the Standard’s checklist.',
-        image: 'c4factory/agent-python:dev',
+        image: 'theos/agent-python:dev',
         harness: 'claude-code',
         model: 'claude-opus-5-5',
         maxRounds: 3,
@@ -570,7 +570,7 @@ export function demoStory(now: number): StoryData {
       kind: 'Task',
       metadata: {
         ...meta(name, at(createdMinutesAgo)),
-        labels: { 'c4.factory.io/crew': repo, 'c4.factory.io/issue': `${issue}` },
+        labels: { 'theos.factory.io/crew': repo, 'theos.factory.io/issue': `${issue}` },
       },
       spec: {
         containerRef: { name: repo },
@@ -852,8 +852,8 @@ export function demoStory(now: number): StoryData {
     ...c,
     metadata: {
       ...c.metadata,
-      labels: { 'c4.factory.io/brief': 'webshop' },
-      annotations: { 'c4.factory.io/brief-publish-releases': JSON.stringify(ordersPublish) },
+      labels: { 'theos.factory.io/brief': 'webshop' },
+      annotations: { 'theos.factory.io/brief-publish-releases': JSON.stringify(ordersPublish) },
     },
   })
   const crews: Crew[] = [
@@ -890,7 +890,7 @@ export function demoStory(now: number): StoryData {
               'ModulePublished',
               'False',
               'WaitsForRelease',
-              'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for c4factory.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
+              'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for theos.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
               ago(3 * 3600),
             ),
             cond(
@@ -917,7 +917,7 @@ export function demoStory(now: number): StoryData {
               path: 'github.com/webshop-co/orders-api',
               version: 'v0.2.0',
               message:
-                'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for c4factory.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
+                'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for theos.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
             },
           },
         },
@@ -1139,7 +1139,7 @@ export function demoStory(now: number): StoryData {
               moduleState: 'Waiting',
               modulePath: 'github.com/webshop-co/orders-api',
               moduleMessage:
-                'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for c4factory.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
+                'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for theos.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
             },
             message:
               'Release v0.2.0 could not be published to webshop-co/orders-api; the Crew says why and tries again.',

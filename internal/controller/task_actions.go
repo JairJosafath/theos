@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -24,9 +24,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // taskAgents are the Agents of a Task's roles; one Agent may play both.
@@ -473,7 +473,7 @@ func agentGitSecret(container string) string {
 // annotationOldTokensBefore, on an agent Git Secret, is when its token was made
 // again (RFC 3339): the bot's tokens made before it, with other scopes, may
 // still be live in sandboxes started before it.
-const annotationOldTokensBefore = "c4.factory.io/old-tokens-before" //nolint:gosec // an annotation's name
+const annotationOldTokensBefore = "theos.factory.io/old-tokens-before" //nolint:gosec // an annotation's name
 
 // revokeOldAgentTokens revokes the bot tokens of Container name made before
 // its Secret's annotationOldTokensBefore, once no sandbox of the Container may
@@ -1104,7 +1104,7 @@ func firstLine(s string) string {
 // authored by the operator's Git user, who only merged.
 func mergeMessage(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, container *c4v1beta1.Container) string {
 	bot := model.AgentUsername(container.Namespace, container.Name)
-	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s@agents.c4.factory.io>",
+	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s@agents.theos.factory.io>",
 		task.Name, status.Round, bot, bot)
 }
 

@@ -12,10 +12,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/adapters/gitlab/gitlabtest"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/contract"
+	"github.com/JairJosafath/theos/internal/adapters/gitlab/gitlabtest"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/contract"
 )
 
 // projects numbers the fake's projects, one fresh per target.

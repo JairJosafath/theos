@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/contract"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/contract"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 func TestDeployerContract(t *testing.T) {

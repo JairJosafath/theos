@@ -31,7 +31,7 @@ TypeScript, built by Vite, served from a private S3 bucket through a
 CloudFront distribution{{ else }}function of {{ .SoftwareSystem }}: an AWS
 Lambda function in {{ if $go }}Go, on the AWS SDK for Go v2,{{ else if $py }}Python, on boto3,{{ else }}TypeScript{{ end }} behind an API Gateway HTTP API{{ end }}{{ if not $site }}, keeping its data
 in DynamoDB{{ end }}, with its infrastructure as a CDK app in `infra/`, scaffolded by
-C4 Factory with the `{{ .Standard }}` Standard. Build it to the rules below. What
+theos with the `{{ .Standard }}` Standard. Build it to the rules below. What
 it is for, and what it must never do, is in the issue you were given
 and the system's needs: follow those.
 
@@ -95,9 +95,9 @@ change here.
 4. Make the smallest change that meets every criterion. One concern per commit.
 5. `make check`, then commit with a Conventional Commit message
    (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
-6. `AGENTS.md`, `docs/agents/` and `.c4factory.yaml` never change. Other protected files
+6. `AGENTS.md`, `docs/agents/` and `.theos.yaml` never change. Other protected files
    change only through a Standard change (see your role guide), never in a normal pull
-   request. `.devcontainer/`, `.c4factory.yaml` and `.gitea/` belong to the platform.
+   request. `.devcontainer/`, `.theos.yaml` and `.gitea/` belong to the platform.
    `Makefile`, `eslint.config.mjs`, {{ if $go }}`.golangci.yml`, {{ else if $py }}`ruff.toml`, `mypy.ini`, {{ end }}`.prettierrc.json`, `.prettierignore`,
    `.editorconfig`, `AGENTS.md`, `docs/style/`, `docs/agents/`,
    `docs/well-architected.md`, {{ if $ops }}`docs/runbook.md`, {{ end }}`infra/main.ts`, `infra/standard.ts`,

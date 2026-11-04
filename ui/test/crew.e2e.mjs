@@ -5,7 +5,7 @@
 // in instead of offering the buttons.
 //
 // Needs a build and Chromium:  npm run test:e2e
-// C4_UI_SHOTS=DIR also saves pictures of the page in DIR (docs/screenshots).
+// THEOS_UI_SHOTS=DIR also saves pictures of the page in DIR (docs/screenshots).
 
 import assert from 'node:assert/strict'
 import path from 'node:path'
@@ -58,7 +58,7 @@ describe('a Crew page’s actions', () => {
       actions: 'oidc',
       oidc: oidcFromEnv({
         OIDC_ISSUER_URL: 'https://issuer.invalid',
-        OIDC_CLIENT_ID: 'c4factory-ui',
+        OIDC_CLIENT_ID: 'theos-ui',
         OIDC_CLIENT_SECRET: 'not-a-secret',
       }),
     })
@@ -173,15 +173,15 @@ describe('a Crew page’s actions', () => {
     api.modify('crews', failed)
     const rerun = button('Re-run v0.2.0’s failed runs')
     await rerun.waitFor()
-    if (process.env.C4_UI_SHOTS) {
+    if (process.env.THEOS_UI_SHOTS) {
       // From the top, so the sticky top bar is where it belongs.
       await page.mouse.wheel(0, -100000)
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-crew-actions.png'), fullPage: true })
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-crew-actions.png'), fullPage: true })
     }
     await rerun.click()
     await page.getByText('Asked the operator to re-run them').waitFor()
     assert.equal(await rerun.isDisabled(), true, 'asked once, until the release’s re-run time changes')
-    const asked = crew().metadata.annotations?.['c4.factory.io/rerun-release']
+    const asked = crew().metadata.annotations?.['theos.factory.io/rerun-release']
     assert.ok(asked && !Number.isNaN(Date.parse(asked)), `the annotation is a time: ${asked}`)
     assert.equal(api.writes.at(-1).contentType, 'application/merge-patch+json')
   })
@@ -195,8 +195,8 @@ describe('a Crew page’s actions', () => {
       assert.equal(await button(name).count(), 0, `no ${name} button`)
     }
     assert.equal(await page.getByRole('button', { name: /^Re-run/ }).count(), 0)
-    if (process.env.C4_UI_SHOTS) {
-      await page.screenshot({ path: path.join(process.env.C4_UI_SHOTS, 'ui-crew-sign-in.png') })
+    if (process.env.THEOS_UI_SHOTS) {
+      await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-crew-sign-in.png') })
     }
     assert.deepEqual(errors, [])
   })

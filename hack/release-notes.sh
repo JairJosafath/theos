@@ -39,8 +39,8 @@
 # (#1270). Each line is the title without a counted prefix, then (#N).
 #
 #   VERSION   the version the image list and install command name (default TO without its v)
-#   REGISTRY  the images' registry (default ghcr.io/jairjosafath/c4factory)
-#   REPO      owner/name, for the getting-started link (default JairJosafath/c4factory)
+#   REGISTRY  the images' registry (default ghcr.io/jairjosafath/theos)
+#   REPO      owner/name, for the getting-started link (default JairJosafath/theos)
 set -euo pipefail
 
 prs=
@@ -51,8 +51,8 @@ else
   to=${1:-HEAD}
   from=${2-$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$to^" 2>/dev/null || true)}
 fi
-REPO=${REPO:-JairJosafath/c4factory}
-REGISTRY=${REGISTRY:-ghcr.io/jairjosafath/c4factory}
+REPO=${REPO:-JairJosafath/theos}
+REGISTRY=${REGISTRY:-ghcr.io/jairjosafath/theos}
 if [ -z "${VERSION:-}" ]; then
   case $to in v[0-9]*) VERSION=${to#v} ;; *) VERSION=X.Y.Z ;; esac
 fi
@@ -131,11 +131,11 @@ release's namespace and Gitea's, then the chart with the projects in
 kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
 kubectl -n agent-sandbox-system patch deployment agent-sandbox-controller --type=json \\
   -p '[{"op":"replace","path":"/spec/template/spec/containers/0/args/0","value":"--leader-elect=false"}]'
-for ns in c4-factory-system gitea; do
+for ns in theos-system gitea; do
   kubectl create namespace \$ns --dry-run=client -o yaml | kubectl apply -f -
 done
-helm install c4-factory oci://$REGISTRY/charts/c4-factory --version $VERSION \\
-  -n c4-factory-system --wait --timeout 10m \\
+helm install theos oci://$REGISTRY/charts/theos --version $VERSION \\
+  -n theos-system --wait --timeout 10m \\
   --set gitea.createNamespace=false \\
   --set 'gitea.projects={webshop}'
 \`\`\`

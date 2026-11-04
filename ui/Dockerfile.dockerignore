@@ -1,9 +1,9 @@
-# Build context for ui/Dockerfile: the Go module (c4session's sources, like the
+# Build context for ui/Dockerfile: the Go module (theos-session's sources, like the
 # operator's root .dockerignore) and the UI's own sources.
 **
 !**/*.go
 **/*_test.go
-# The files c4session embeds with //go:embed; cmd/dockerignore_test.go fails
+# The files theos-session embeds with //go:embed; cmd/dockerignore_test.go fails
 # when one is missing here.
 !features/src/**
 !internal/model/planner.md

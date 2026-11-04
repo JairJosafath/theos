@@ -14,7 +14,7 @@ Task on an issue an earlier try left a pull request for starts its own branch wh
   STEP: tearing down the test environment @ 10/08/26 20:03:01.4
 Ran 2 of 231 Specs in 8.090 seconds
 SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 229 Skipped
-ok  	github.com/JairJosafath/c4factory/internal/controller	8.122s
+ok  	github.com/JairJosafath/theos/internal/controller	8.122s
 
 $ go test ./internal/model/ -run TestEarlierTry -v
 --- PASS: TestEarlierTry (0.00s)
@@ -27,9 +27,9 @@ $ go test ./internal/model/ -run TestEarlierTry -v
     --- PASS: TestEarlierTry/the_Task_itself_is_not_its_earlier_try (0.00s)
     --- PASS: TestEarlierTry/a_written_goal_continues_nothing (0.00s)
     --- PASS: TestEarlierTry/ties_go_by_name (0.00s)
-ok  	github.com/JairJosafath/c4factory/internal/model	0.004s
+ok  	github.com/JairJosafath/theos/internal/model	0.004s
 
 $ go test ./internal/agentrunner/ -run "TestRunImplementWithoutCommitOnAPullRequest|TestPrompts" -v
 --- PASS: TestPrompts (0.00s)
 --- PASS: TestRunImplementWithoutCommitOnAPullRequest (0.13s)
-ok  	github.com/JairJosafath/c4factory/internal/agentrunner	0.134s
+ok  	github.com/JairJosafath/theos/internal/agentrunner	0.134s

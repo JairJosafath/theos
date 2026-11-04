@@ -1,22 +1,22 @@
 # Interrupted runs rerun the same round (#52, verifying #10 / PR #49)
 
-Kind cluster c4factory, 2026-10-05, operator at 190d405 (make deploy), Agent Sandbox
-v1.0.4, c4factory/agent-base:dev, the e2e fixture (test/e2e/testdata/apps).
+Kind cluster theos, 2026-10-05, operator at 190d405 (make deploy), Agent Sandbox
+v1.0.4, theos/agent-base:dev, the e2e fixture (test/e2e/testdata/apps).
 
 The stand-in finishes a whole Task (two rounds, merged) before a pod can be caught
 Running, so the run to interrupt came from an Agent whose command sleeps:
 
-    apiVersion: c4.factory.io/v1alpha1
+    apiVersion: theos.factory.io/v1alpha1
     kind: Agent
     metadata: {name: slow, namespace: apps}
     spec:
-      image: c4factory/agent-base:dev
+      image: theos/agent-base:dev
       maxRounds: 2
       timeoutMinutes: 15
       env:
-        - {name: C4AGENT_COMMAND, value: sleep 900}
+        - {name: THEOS_AGENT_COMMAND, value: sleep 900}
     ---
-    apiVersion: c4.factory.io/v1alpha1
+    apiVersion: theos.factory.io/v1alpha1
     kind: Task
     metadata: {name: rerun, namespace: apps}
     spec:
@@ -37,7 +37,7 @@ Running, so the run to interrupt came from an Agent whose command sleeps:
     Implementing r1 Running: Starting round 1 in sandbox rerun-r1-implement-x1
     Implementing r1 Waiting: The agent is working on round 1
 
-What the pod leaves behind: no pod reason, no DisruptionTarget condition. c4agent
+What the pod leaves behind: no pod reason, no DisruptionTarget condition. theos-agent
 catches SIGTERM, kills the agent and ends cleanly with interrupted set, which
 runState reads from the termination message:
 
@@ -54,7 +54,7 @@ runState reads from the termination message:
     pod uid fb868696 created 19:24:26  Pending -> Running, owner Sandbox/rerun-r1-implement-x1
     19:24:29 INFO Starting job role=implement container=hello branch=task/rerun round=1
 
-Agent Sandbox replaced the pod in the same sandbox and c4agent started round 1
+Agent Sandbox replaced the pod in the same sandbox and theos-agent started round 1
 over. The Task recorded nothing: no Interrupted step, reruns still 1. The old pod
 was gone before the operator could read it, so there is no signal to add to
 podDisrupted; follow-up #111 (an uncounted rerun inside one sandbox).
@@ -78,6 +78,6 @@ termination as in 1 (exit 0, Completed, "interrupted":true).
 
 ## Not done
 
-`docker restart c4factory-control-plane` (a node restart) was refused by the
+`docker restart theos-control-plane` (a node restart) was refused by the
 headless session's permission mode, so which pod reason a node restart leaves
 (ContainerStatusUnknown or other) is still unverified: #112.

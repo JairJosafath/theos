@@ -18,7 +18,7 @@ $ go test ./internal/scaffold -run "RDS|Relational|Connector" -v; go test ./inte
 --- PASS: TestDevcontainerWithConnectorsUsesCompose (0.00s)
 --- PASS: TestDevcontainerWithoutConnectorsUsesImage (0.00s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.868s
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.868s
 --- PASS: TestPlannerGuidePlansADynamoDBDataStoreForAnAWSContainer (0.00s)
 --- PASS: TestPlannerGuidePlansARelationalDataStoreOnTheOneItsFrameworkTakes (0.00s)
 --- PASS: TestPlansWithARelationalDataStoreValidate (0.07s)
@@ -47,7 +47,7 @@ ok  	github.com/JairJosafath/c4factory/internal/scaffold	0.868s
 --- PASS: TestPlannerGuideSaysWhenASystemIsExternal (0.00s)
 --- PASS: TestPlannerGuidePrefersABundle (0.00s)
 --- PASS: TestPlannerGuideStatesTheOperatorCue (0.00s)
-ok  	github.com/JairJosafath/c4factory/internal/model	0.193s
+ok  	github.com/JairJosafath/theos/internal/model	0.193s
 
 # Rendered docs with rds pass Prettier 3 (hack/render, Standard=aws-standard)
 $ (aws-fargate-ts) npx prettier --check 'docs/**/*.md' AGENTS.md

@@ -65,10 +65,10 @@ What an upgrade does to running work today, from the code:
    quiet moment for their own reasons.
 2. **The seed applies the Agents, the catalog and the GitProviders in place,
    instead of Helm re-creating them.** The chart renders them into a
-   ConfigMap `c4factory-catalog` (an ordinary release object), and the seed
+   ConfigMap `theos-catalog` (an ordinary release object), and the seed
    job, already a post-install and post-upgrade hook that runs once the CRDs
    exist, applies it with `kubectl apply --server-side --force-conflicts
-   --field-manager=c4factory-chart`. The objects keep their UIDs, there is no
+   --field-manager=theos-chart`. The objects keep their UIDs, there is no
    gap, and a value the chart sets (an Agent's image, a Standard's ref) is
    updated in place. A field a person added that the chart doesn't set (an
    Agent's `env`) is kept; a field the chart sets is the chart's, as now. The
@@ -92,7 +92,7 @@ What an upgrade does to running work today, from the code:
    label, starts no new round (a new prompt waits) and tends no failed issue;
    a planner Task already started runs to its end, as a Crew's Tasks do. The
    Brief marks each Crew it paused with the annotation
-   `c4.factory.io/paused-by: brief`; set back to false, it unpauses only the
+   `theos.factory.io/paused-by: brief`; set back to false, it unpauses only the
    Crews carrying that mark and removes it, so a Crew a person paused by hand
    stays paused. This is unlike `parallel`, which the Brief owns outright: a
    person pausing one app of a Brief is a fair thing to want, and the

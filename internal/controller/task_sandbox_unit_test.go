@@ -16,11 +16,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/adapters/gitea"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/adapters/gitea"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 func TestBuildSandboxWorkspace(t *testing.T) {
@@ -76,11 +76,11 @@ func TestBuildSandboxGoCache(t *testing.T) {
 		cache string
 	}{
 		{name: "none by default"},
-		{name: "the node's shared cache when set", cache: "/var/cache/c4factory/go/sandbox"},
+		{name: "the node's shared cache when set", cache: "/var/cache/theos/go/sandbox"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			agent := &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")}
-			agent.Spec.Image = "c4factory/agent-go:dev"
+			agent.Spec.Image = "theos/agent-go:dev"
 			agent.Spec.Env = []corev1.EnvVar{{Name: "GOCACHE", Value: "/agent/own"}}
 			run := sandboxRun{
 				task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
@@ -251,7 +251,7 @@ func TestRunStateTellsAnInterruptedRun(t *testing.T) {
 		term        corev1.ContainerStateTerminated
 		interrupted bool
 	}{
-		{name: "c4agent told to stop", term: corev1.ContainerStateTerminated{Reason: "Completed",
+		{name: "theos-agent told to stop", term: corev1.ContainerStateTerminated{Reason: "Completed",
 			Message: `{"role":"implement","error":"claude failed: signal: killed","interrupted":true}`},
 			interrupted: true},
 		{name: "the agent killed on its own", term: corev1.ContainerStateTerminated{Reason: "Completed",
@@ -264,7 +264,7 @@ func TestRunStateTellsAnInterruptedRun(t *testing.T) {
 			term: corev1.ContainerStateTerminated{Reason: "ContainerStatusUnknown", ExitCode: 137}, interrupted: true},
 		{name: "a container containerd lost across a node restart",
 			term: corev1.ContainerStateTerminated{Reason: "Unknown", ExitCode: 255}, interrupted: true},
-		{name: "c4agent stopped at the pod's deadline", reason: "DeadlineExceeded",
+		{name: "theos-agent stopped at the pod's deadline", reason: "DeadlineExceeded",
 			term: corev1.ContainerStateTerminated{Reason: "Completed",
 				Message: `{"role":"implement","error":"claude failed: signal: killed","interrupted":true}`}},
 		{name: "an out-of-memory kill", term: corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137}},
@@ -324,7 +324,7 @@ func TestRunStateTellsAClusterOutage(t *testing.T) {
 			failure: "ContainerStatusUnknown (exit code 137)"},
 		{name: "a container lost in an outage past the shutdown time", expired: late, term: lost, interrupted: true,
 			failure: "ContainerStatusUnknown (exit code 137)"},
-		{name: "c4agent stopped by Agent Sandbox after an outage", expired: late,
+		{name: "theos-agent stopped by Agent Sandbox after an outage", expired: late,
 			term: &corev1.ContainerStateTerminated{Reason: "Completed",
 				Message: `{"role":"review","error":"claude failed: signal: terminated","interrupted":true}`},
 			interrupted: true},
@@ -379,13 +379,13 @@ func TestRunStateTellsADeadlineAcrossAnOutage(t *testing.T) {
 		term        corev1.ContainerStateTerminated
 		interrupted bool
 	}{
-		{name: "c4agent stopped at the deadline", interrupted: false,
+		{name: "theos-agent stopped at the deadline", interrupted: false,
 			term: corev1.ContainerStateTerminated{Reason: "Completed", Message: stopped,
 				FinishedAt: metav1.NewTime(deadline.Add(3 * time.Second))}},
 		{name: "killed after its grace period", interrupted: false,
 			term: corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 137,
 				FinishedAt: metav1.NewTime(deadline.Add(31 * time.Second))}},
-		{name: "c4agent stopped when the node came back", interrupted: true,
+		{name: "theos-agent stopped when the node came back", interrupted: true,
 			term: corev1.ContainerStateTerminated{Reason: "Completed", Message: stopped,
 				FinishedAt: metav1.NewTime(deadline.Add(5 * time.Minute))}},
 		{name: "died with the node before the deadline", interrupted: true,
@@ -555,9 +555,9 @@ func TestBuildSandboxImplementEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"C4_ROLE", "C4_REPO_URL", "C4_BRANCH", "C4_BASE", "C4_GOAL", "C4_CONTEXT", "C4_PROJECT",
-		"C4_CONTAINER", "C4_TASK", "C4_ROUND", "C4_MAX_ROUNDS", "C4_HARNESS", "C4_PROTECTED_PATHS",
-		"C4_GIT_USERNAME", "C4_GIT_TOKEN", "C4_CHECKPOINT_DIR"}
+	want := []string{"THEOS_ROLE", "THEOS_REPO_URL", "THEOS_BRANCH", "THEOS_BASE", "THEOS_GOAL", "THEOS_CONTEXT", "THEOS_PROJECT",
+		"THEOS_CONTAINER", "THEOS_TASK", "THEOS_ROUND", "THEOS_MAX_ROUNDS", "THEOS_HARNESS", "THEOS_PROTECTED_PATHS",
+		"THEOS_GIT_USERNAME", "THEOS_GIT_TOKEN", "THEOS_CHECKPOINT_DIR"}
 	if got := envNames(podOf(t, sandbox).Containers[0].Env); !reflect.DeepEqual(got, want) {
 		t.Errorf("env %v, want %v", got, want)
 	}
@@ -567,7 +567,7 @@ func TestBuildSandboxImplementEnv(t *testing.T) {
 }
 
 // The Go package registry comes from the GitProvider's URL and owner, in
-// cluster or not, and goes to c4agent; the go command asks only c4agent's
+// cluster or not, and goes to theos-agent; the go command asks only theos-agent's
 // loopback proxy, never a list with the public proxy after the registry, which
 // it would ask for a factory module the registry lacks. The Agent's own setting
 // comes last, so it wins.
@@ -582,20 +582,20 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 		want      []corev1.EnvVar
 	}{
 		{name: "an in-cluster Gitea", url: "http://gitea.gitea.svc.cluster.local:3000", want: []corev1.EnvVar{
-			{Name: "C4_GO_REGISTRY", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/go"},
+			{Name: "THEOS_GO_REGISTRY", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/go"},
 			{Name: "GOPROXY", Value: "http://127.0.0.1:3127,direct"},
-			{Name: "GONOSUMDB", Value: "c4factory.local"},
+			{Name: "GONOSUMDB", Value: "theos.local"},
 		}},
 		{name: "an external Gitea", url: "https://git.example.com/", want: []corev1.EnvVar{
-			{Name: "C4_GO_REGISTRY", Value: "https://git.example.com/api/packages/apps/go"},
+			{Name: "THEOS_GO_REGISTRY", Value: "https://git.example.com/api/packages/apps/go"},
 			{Name: "GOPROXY", Value: "http://127.0.0.1:3127,direct"},
-			{Name: "GONOSUMDB", Value: "c4factory.local"},
+			{Name: "GONOSUMDB", Value: "theos.local"},
 		}},
 		{name: "the Agent's own", url: "https://git.example.com", own: []corev1.EnvVar{{Name: "GOPROXY", Value: "off"}},
 			want: []corev1.EnvVar{
-				{Name: "C4_GO_REGISTRY", Value: "https://git.example.com/api/packages/apps/go"},
+				{Name: "THEOS_GO_REGISTRY", Value: "https://git.example.com/api/packages/apps/go"},
 				{Name: "GOPROXY", Value: "http://127.0.0.1:3127,direct"},
-				{Name: "GONOSUMDB", Value: "c4factory.local"},
+				{Name: "GONOSUMDB", Value: "theos.local"},
 				{Name: "GOPROXY", Value: "off"},
 			}},
 	} {
@@ -620,7 +620,7 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 			}
 			var got []corev1.EnvVar
 			for _, e := range podOf(t, sandbox).Containers[0].Env {
-				if strings.HasPrefix(e.Name, "GO") || e.Name == "C4_GO_REGISTRY" {
+				if strings.HasPrefix(e.Name, "GO") || e.Name == "THEOS_GO_REGISTRY" {
 					got = append(got, e)
 				}
 			}
@@ -648,25 +648,25 @@ func TestBuildSandboxPackages(t *testing.T) {
 		want                []corev1.EnvVar
 	}{
 		{name: "an in-cluster Gitea", url: "http://gitea.gitea.svc.cluster.local:3000", want: []corev1.EnvVar{
-			{Name: "C4_NPM_SCOPE", Value: "@c4factory"},
-			{Name: "C4_NPM_REGISTRY", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/npm/"},
-			{Name: "C4_PYPI_INDEX", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/pypi/simple"},
+			{Name: "THEOS_NPM_SCOPE", Value: "@theos"},
+			{Name: "THEOS_NPM_REGISTRY", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/npm/"},
+			{Name: "THEOS_PYPI_INDEX", Value: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/pypi/simple"},
 		}},
 		{name: "an external Gitea", url: "https://git.example.com/", want: []corev1.EnvVar{
-			{Name: "C4_NPM_SCOPE", Value: "@c4factory"},
-			{Name: "C4_NPM_REGISTRY", Value: "https://git.example.com/api/packages/apps/npm/"},
-			{Name: "C4_PYPI_INDEX", Value: "https://git.example.com/api/packages/apps/pypi/simple"},
+			{Name: "THEOS_NPM_SCOPE", Value: "@theos"},
+			{Name: "THEOS_NPM_REGISTRY", Value: "https://git.example.com/api/packages/apps/npm/"},
+			{Name: "THEOS_PYPI_INDEX", Value: "https://git.example.com/api/packages/apps/pypi/simple"},
 		}},
 		{name: "a spec.packages of its own", url: "https://git.example.com",
 			packages: ports.Packages{NpmScope: "@acme", NpmRegistry: "https://npm.example.com/registry",
 				PyPIIndex: "https://pypi.example.com/simple", PyPIUpload: "https://pypi.example.com/upload"},
 			npmSecret: "acme-npm", pySecret: "acme-pypi",
 			want: []corev1.EnvVar{
-				{Name: "C4_NPM_SCOPE", Value: "@acme"},
-				{Name: "C4_NPM_REGISTRY", Value: "https://npm.example.com/registry/"},
-				readTokenEnv("C4_NPM_TOKEN", "acme-npm"),
-				{Name: "C4_PYPI_INDEX", Value: "https://pypi.example.com/simple"},
-				readTokenEnv("C4_PYPI_TOKEN", "acme-pypi"),
+				{Name: "THEOS_NPM_SCOPE", Value: "@acme"},
+				{Name: "THEOS_NPM_REGISTRY", Value: "https://npm.example.com/registry/"},
+				readTokenEnv("THEOS_NPM_TOKEN", "acme-npm"),
+				{Name: "THEOS_PYPI_INDEX", Value: "https://pypi.example.com/simple"},
+				readTokenEnv("THEOS_PYPI_TOKEN", "acme-pypi"),
 			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -692,7 +692,7 @@ func TestBuildSandboxPackages(t *testing.T) {
 				}
 				var got []corev1.EnvVar
 				for _, e := range podOf(t, sandbox).Containers[0].Env {
-					if strings.HasPrefix(e.Name, "C4_NPM_") || strings.HasPrefix(e.Name, "C4_PYPI_") {
+					if strings.HasPrefix(e.Name, "THEOS_NPM_") || strings.HasPrefix(e.Name, "THEOS_PYPI_") {
 						got = append(got, e)
 					}
 				}
@@ -717,7 +717,7 @@ func TestBuildSandboxPackages(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, e := range podOf(t, sandbox).Containers[0].Env {
-			if strings.HasPrefix(e.Name, "C4_NPM_") || strings.HasPrefix(e.Name, "C4_PYPI_") {
+			if strings.HasPrefix(e.Name, "THEOS_NPM_") || strings.HasPrefix(e.Name, "THEOS_PYPI_") {
 				t.Errorf("planner pod has %s=%q, want no package env", e.Name, e.Value)
 			}
 		}
@@ -726,7 +726,7 @@ func TestBuildSandboxPackages(t *testing.T) {
 
 func TestBuildSandboxPlanEnv(t *testing.T) {
 	if model.RolePlanner != agentrunner.RolePlan {
-		t.Fatalf("model.RolePlanner = %q, but c4agent plans as %q", model.RolePlanner, agentrunner.RolePlan)
+		t.Fatalf("model.RolePlanner = %q, but theos-agent plans as %q", model.RolePlanner, agentrunner.RolePlan)
 	}
 	scheme := runtime.NewScheme()
 	if err := c4v1beta1.AddToScheme(scheme); err != nil {
@@ -737,41 +737,41 @@ func TestBuildSandboxPlanEnv(t *testing.T) {
 		want                 []corev1.EnvVar
 	}{
 		{name: "a first try", want: []corev1.EnvVar{
-			{Name: "C4_ROLE", Value: "plan"},
-			{Name: "C4_REPO_URL", Value: "http://gitea/apps/brief-cel-lens.git"},
-			{Name: "C4_BRANCH", Value: "plan/4"},
-			{Name: "C4_BASE", Value: "main"},
-			{Name: "C4_BRIEF", Value: "cel-lens"},
-			{Name: "C4_PROJECT", Value: "apps"},
-			{Name: "C4_TASK", Value: "cel-lens-plan-4"},
-			{Name: "C4_ROUND", Value: "4"},
-			{Name: "C4_MAX_ROUNDS", Value: "3"},
-			{Name: "C4_HARNESS", Value: "stand-in"},
-			secretEnv("C4_GIT_USERNAME", "brief-cel-lens-git", "username"),
-			secretEnv("C4_GIT_TOKEN", "brief-cel-lens-git", "token"),
-			{Name: "C4_MODEL", Value: "opus"},
-			{Name: "C4AGENT_SESSION_TOKEN_LIMIT", Value: "130000"},
-			{Name: "C4_CHECKPOINT_DIR", Value: "/checkpoint"},
+			{Name: "THEOS_ROLE", Value: "plan"},
+			{Name: "THEOS_REPO_URL", Value: "http://gitea/apps/brief-cel-lens.git"},
+			{Name: "THEOS_BRANCH", Value: "plan/4"},
+			{Name: "THEOS_BASE", Value: "main"},
+			{Name: "THEOS_BRIEF", Value: "cel-lens"},
+			{Name: "THEOS_PROJECT", Value: "apps"},
+			{Name: "THEOS_TASK", Value: "cel-lens-plan-4"},
+			{Name: "THEOS_ROUND", Value: "4"},
+			{Name: "THEOS_MAX_ROUNDS", Value: "3"},
+			{Name: "THEOS_HARNESS", Value: "stand-in"},
+			secretEnv("THEOS_GIT_USERNAME", "brief-cel-lens-git", "username"),
+			secretEnv("THEOS_GIT_TOKEN", "brief-cel-lens-git", "token"),
+			{Name: "THEOS_MODEL", Value: "opus"},
+			{Name: "THEOS_AGENT_SESSION_TOKEN_LIMIT", Value: "130000"},
+			{Name: "THEOS_CHECKPOINT_DIR", Value: "/checkpoint"},
 		}},
 		{name: "a try after a refusal, with a goal", goal: "Keep it small.", feedback: "The Brief refused the plan:\nx",
 			want: []corev1.EnvVar{
-				{Name: "C4_ROLE", Value: "plan"},
-				{Name: "C4_REPO_URL", Value: "http://gitea/apps/brief-cel-lens.git"},
-				{Name: "C4_BRANCH", Value: "plan/4"},
-				{Name: "C4_BASE", Value: "main"},
-				{Name: "C4_BRIEF", Value: "cel-lens"},
-				{Name: "C4_GOAL", Value: "Keep it small."},
-				{Name: "C4_PROJECT", Value: "apps"},
-				{Name: "C4_TASK", Value: "cel-lens-plan-4"},
-				{Name: "C4_ROUND", Value: "4"},
-				{Name: "C4_MAX_ROUNDS", Value: "3"},
-				{Name: "C4_HARNESS", Value: "stand-in"},
-				secretEnv("C4_GIT_USERNAME", "brief-cel-lens-git", "username"),
-				secretEnv("C4_GIT_TOKEN", "brief-cel-lens-git", "token"),
-				{Name: "C4_MODEL", Value: "opus"},
-				{Name: "C4AGENT_SESSION_TOKEN_LIMIT", Value: "130000"},
-				{Name: "C4_CHECKPOINT_DIR", Value: "/checkpoint"},
-				{Name: "C4_FEEDBACK", Value: "The Brief refused the plan:\nx"},
+				{Name: "THEOS_ROLE", Value: "plan"},
+				{Name: "THEOS_REPO_URL", Value: "http://gitea/apps/brief-cel-lens.git"},
+				{Name: "THEOS_BRANCH", Value: "plan/4"},
+				{Name: "THEOS_BASE", Value: "main"},
+				{Name: "THEOS_BRIEF", Value: "cel-lens"},
+				{Name: "THEOS_GOAL", Value: "Keep it small."},
+				{Name: "THEOS_PROJECT", Value: "apps"},
+				{Name: "THEOS_TASK", Value: "cel-lens-plan-4"},
+				{Name: "THEOS_ROUND", Value: "4"},
+				{Name: "THEOS_MAX_ROUNDS", Value: "3"},
+				{Name: "THEOS_HARNESS", Value: "stand-in"},
+				secretEnv("THEOS_GIT_USERNAME", "brief-cel-lens-git", "username"),
+				secretEnv("THEOS_GIT_TOKEN", "brief-cel-lens-git", "token"),
+				{Name: "THEOS_MODEL", Value: "opus"},
+				{Name: "THEOS_AGENT_SESSION_TOKEN_LIMIT", Value: "130000"},
+				{Name: "THEOS_CHECKPOINT_DIR", Value: "/checkpoint"},
+				{Name: "THEOS_FEEDBACK", Value: "The Brief refused the plan:\nx"},
 			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -855,12 +855,12 @@ func TestBuildSandboxModelProxy(t *testing.T) {
 	if err := c4v1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	const proxy = "http://c4-model-proxy.c4-factory-system.svc:8080"
+	const proxy = "http://c4-model-proxy.theos-system.svc:8080"
 	withSecret := func(name string) *c4v1beta1.Agent {
 		return &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude"), Spec: c4v1beta1.AgentSpec{
 			CredentialsSecretRef: &c4v1beta1.LocalRef{Name: name}}}
 	}
-	r := &TaskReconciler{SharedSecrets: []string{"claude-credentials"}, SourceNamespace: "c4-factory-system",
+	r := &TaskReconciler{SharedSecrets: []string{"claude-credentials"}, SourceNamespace: "theos-system",
 		ModelProxyURL: proxy}
 	for _, tt := range []struct {
 		name      string
@@ -874,7 +874,7 @@ func TestBuildSandboxModelProxy(t *testing.T) {
 		{name: "another Secret comes in as env", agent: withSecret("my-token"), r: r, wantFrom: "my-token"},
 		{name: "a stand-in has neither", agent: &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "stand-in")}, r: r},
 		{name: "the shared token without a proxy comes in as env", agent: withSecret("claude-credentials"),
-			r:        &TaskReconciler{SharedSecrets: []string{"claude-credentials"}, SourceNamespace: "c4-factory-system"},
+			r:        &TaskReconciler{SharedSecrets: []string{"claude-credentials"}, SourceNamespace: "theos-system"},
 			wantFrom: "claude-credentials"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

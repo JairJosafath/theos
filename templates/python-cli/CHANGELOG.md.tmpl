@@ -9,11 +9,11 @@ Every user-visible change, newest first. The format follows
 ### Added
 
 {{ if eq .Type "worker" -}}
-- The worker, scaffolded by C4 Factory, which does a round of work every
+- The worker, scaffolded by theos, which does a round of work every
   10 seconds, backs off while rounds fail, and stops cleanly on SIGTERM.
 {{- else if eq .Type "job" -}}
-- The job, scaffolded by C4 Factory, which does its work once and exits 0
+- The job, scaffolded by theos, which does its work once and exits 0
   when done, 1 when it failed.
 {{- else -}}
-- The command, scaffolded by C4 Factory, which greets you by name.
+- The command, scaffolded by theos, which greets you by name.
 {{- end }}

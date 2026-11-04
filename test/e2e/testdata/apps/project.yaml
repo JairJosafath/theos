@@ -1,5 +1,5 @@
 # One Project per namespace, named after it.
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Project
 metadata:
   name: apps

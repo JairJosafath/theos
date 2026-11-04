@@ -3,33 +3,33 @@ hack/lib/github.sh intake N), on GitHub, 2026-10-06, for #225. Agent: otter-225.
 Spec: docs/plans/done/user-issues.md, "Intake"; plan: docs/plans/done/user-issues-steps.md, Task 2 Step 5.
 
 # 1. An issue in the issue form's layout, with a "### Reported by" name
-$ gh issue create -R JairJosafath/c4factory --title 'Intake check: from a device (#225)' \
-    --body $'### Reported by\n\nintake-check\n\n### c4factory version\n\n_No response_\n\n### What happened\n\nLive check of the issue intake (#225), filed in the issue form\'s layout. Close it.\n\n### What you expected\n\n_No response_\n\n### Logs\n\n_No response_'
-https://github.com/JairJosafath/c4factory/issues/227
+$ gh issue create -R JairJosafath/theos --title 'Intake check: from a device (#225)' \
+    --body $'### Reported by\n\nintake-check\n\n### theos version\n\n_No response_\n\n### What happened\n\nLive check of the issue intake (#225), filed in the issue form\'s layout. Close it.\n\n### What you expected\n\n_No response_\n\n### Logs\n\n_No response_'
+https://github.com/JairJosafath/theos/issues/227
 
 # 2. An issue without that name
-$ gh issue create -R JairJosafath/c4factory --title 'Intake check: from development (#225)' \
+$ gh issue create -R JairJosafath/theos --title 'Intake check: from development (#225)' \
     --body 'Live check of the issue intake (#225): no Reported by heading, so it should get source/dev. Close it.'
-https://github.com/JairJosafath/c4factory/issues/228
+https://github.com/JairJosafath/theos/issues/228
 
 # 3. The intake workflow ran on both, and the labels each one got
-$ gh run list -R JairJosafath/c4factory --workflow issue-intake.yml -L 2
+$ gh run list -R JairJosafath/theos --workflow issue-intake.yml -L 2
 completed	success	Intake check: from development (#225)	Issue intake	main	issues	37407010312	10s	2026-10-06T03:01:39Z
 completed	success	Intake check: from a device (#225)	Issue intake	main	issues	37407008347	10s	2026-10-06T03:01:38Z
 
-$ gh issue view 227 -R JairJosafath/c4factory --json number,labels --jq '{number, labels: [.labels[].name]}'
+$ gh issue view 227 -R JairJosafath/theos --json number,labels --jq '{number, labels: [.labels[].name]}'
 {"labels":["status/proposed","source/user","user/intake-check"],"number":227}
 
-$ gh issue view 228 -R JairJosafath/c4factory --json number,labels --jq '{number, labels: [.labels[].name]}'
+$ gh issue view 228 -R JairJosafath/theos --json number,labels --jq '{number, labels: [.labels[].name]}'
 {"labels":["status/proposed","source/dev"],"number":228}
 
 # 4. Close both, saying they were the check, and remove the test device's label
-$ gh issue close 227 -R JairJosafath/c4factory --reason "not planned" --comment "This was the live check of the issue intake for #225; closing it. Agent: otter-225"
-✓ Closed issue JairJosafath/c4factory#227 (Intake check: from a device (#225))
-$ gh issue close 228 -R JairJosafath/c4factory --reason "not planned" --comment "This was the live check of the issue intake for #225; closing it. Agent: otter-225"
-✓ Closed issue JairJosafath/c4factory#228 (Intake check: from development (#225))
-$ gh label delete user/intake-check -R JairJosafath/c4factory --yes
-$ gh label list -R JairJosafath/c4factory --search user/ --json name --jq '.[].name'
+$ gh issue close 227 -R JairJosafath/theos --reason "not planned" --comment "This was the live check of the issue intake for #225; closing it. Agent: otter-225"
+✓ Closed issue JairJosafath/theos#227 (Intake check: from a device (#225))
+$ gh issue close 228 -R JairJosafath/theos --reason "not planned" --comment "This was the live check of the issue intake for #225; closing it. Agent: otter-225"
+✓ Closed issue JairJosafath/theos#228 (Intake check: from development (#225))
+$ gh label delete user/intake-check -R JairJosafath/theos --yes
+$ gh label list -R JairJosafath/theos --search user/ --json name --jq '.[].name'
 status/needs-human
 source/user
 status/proposed

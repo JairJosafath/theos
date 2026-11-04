@@ -6,20 +6,20 @@ the jobs that make a Kind cluster run one at a time per device.
 
 ## Decisions
 
-- **Names and volumes.** Runner *i* is container `c4factory-gh-runner-i`,
-  `c4factory-<hostname>-i` on GitHub, registration volume
-  `c4factory-gh-runner-i-config`, tool cache `c4factory-gh-runner-i-toolcache`,
+- **Names and volumes.** Runner *i* is container `theos-gh-runner-i`,
+  `theos-<hostname>-i` on GitHub, registration volume
+  `theos-gh-runner-i-config`, tool cache `theos-gh-runner-i-toolcache`,
   work directory `work/i`. `up` finds the runners a device has by their
   containers and registration volumes, and removes those above N.
 - **Shared and own caches.** The Go module and build caches, golangci-lint's
   and npm's are one shared volume: each tool locks what it writes. The tool
   cache is per runner: setup-go and setup-node unpack into it without a lock.
-- **The old single runner** (container `c4factory-gh-runner`, name
-  `c4factory-<hostname>`) is removed and registered again as runner 1: it
+- **The old single runner** (container `theos-gh-runner`, name
+  `theos-<hostname>`) is removed and registered again as runner 1: it
   needs the new name and the Kind label, both of which take a new
   registration, and its registration volume's name doesn't fit the scheme.
 - **One Kind job per device: a label.** Only runner 1 carries
-  `c4factory-kind`; *Test Chart*, *E2E Tests* and *Verify Release*'s Kind job
+  `theos-kind`; *Test Chart*, *E2E Tests* and *Verify Release*'s Kind job
   ask for it when `RUNS_ON` is `self-hosted`. A `concurrency` group spans the
   repository, not a device, and cancels all but the newest pending run;
   per-runner cluster names would still put two clusters in one device's
@@ -27,7 +27,7 @@ the jobs that make a Kind cluster run one at a time per device.
 - **The check** is `hack/check-workflows.sh`, run by its test in
   `make test-hack` (so `make check`): every job's `runs-on` uses
   `vars.RUNS_ON`, and a job with `kind create cluster` or the e2e target asks
-  for `c4factory-kind`.
+  for `theos-kind`.
 - **The image** already has what the workflows use beyond `actions/*`
   (gh, jq, yq, kubectl, kind, helm, docker, sudo, build tools); nothing added.
 

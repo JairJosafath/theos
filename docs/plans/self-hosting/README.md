@@ -21,7 +21,7 @@ The script checks all of these, changes nothing, and says how to fix what's
 missing:
 
 ```bash
-cd ~/c4factory
+cd ~/theos
 git switch main && git pull --ff-only origin main
 docs/plans/self-hosting/start.sh --check
 ```
@@ -40,7 +40,7 @@ It checks again, then:
    runs.
 2. **Posts your `binding` comment** on the parent, from your account.
 3. **Installs the verifier watch**, the systemd user timer
-   `c4factory-verifier`, which starts steps 8 to 10 when they're due.
+   `theos-verifier`, which starts steps 8 to 10 when they're due.
 
 It prints the parent's link at the end. Running it again is safe; it skips
 what is done.
@@ -51,7 +51,7 @@ Keep the PC on, with WSL and Docker Desktop running, as the relay already
 needs. The order:
 1. The relay builds steps 1 to 7.
 2. The watch runs the cut-over, which moves the repository to Gitea in
-   cluster `c4factory-self` and retires the relay.
+   cluster `theos-self` and retires the relay.
 3. The factory works its own issues.
 4. The watch runs one promotion drill, closes the plan and turns itself off.
 
@@ -73,6 +73,6 @@ needs. The order:
 ## Stopping it
 
 ```bash
-systemctl --user disable --now c4factory-verifier.timer   # the verifier watch
+systemctl --user disable --now theos-verifier.timer   # the verifier watch
 hack/relay-watch.sh --uninstall                           # the relay, before the cut-over
 ```

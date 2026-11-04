@@ -3,9 +3,9 @@
 # Kind node: DIR/build for GOCACHE and DIR/golangci-lint for GOLANGCI_LINT_CACHE.
 # Agent sandboxes run it in an init container, the go runner on start and hourly.
 #
-# - Seeds an empty cache from the image's warm one (C4_GO_CACHE_SEED, default
+# - Seeds an empty cache from the image's warm one (THEOS_GO_CACHE_SEED, default
 #   /root/.cache), so the Kubernetes CEL libraries aren't compiled cold again.
-# - Bounds it to MAX_GB (default C4_GO_CACHE_MAX_GB, else 8): Go only drops
+# - Bounds it to MAX_GB (default THEOS_GO_CACHE_MAX_GB, else 8): Go only drops
 #   entries unused for five days. Past the bound it drops the entries unused for
 #   a day (Go refreshes an entry's time when it uses it, at most hourly), and if
 #   that is not enough, all of them, then seeds again.
@@ -15,8 +15,8 @@
 # turns through a lock in DIR.
 set -euo pipefail
 dir=${1:?usage: c4-go-cache DIR [MAX_GB]}
-max=${2:-${C4_GO_CACHE_MAX_GB:-8}}
-seed=${C4_GO_CACHE_SEED:-/root/.cache}
+max=${2:-${THEOS_GO_CACHE_MAX_GB:-8}}
+seed=${THEOS_GO_CACHE_SEED:-/root/.cache}
 
 mkdir -p "$dir/build" "$dir/golangci-lint"
 exec 9>"$dir/.lock"

@@ -12,7 +12,7 @@ metadata:
   name: ci-runner
   namespace: gitea
   labels:
-    app.kubernetes.io/part-of: c4factory-testenv
+    app.kubernetes.io/part-of: theos-testenv
 spec:
   podSelector:
     matchLabels:

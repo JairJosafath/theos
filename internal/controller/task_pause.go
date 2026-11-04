@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -19,15 +19,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // Running Tasks pause at a tool boundary (step 12 of
 // docs/plans/self-hosting.md). A Crew's or Brief's spec.pauseRuns makes the
-// operator set c4.factory.io/pause on the pod template of each working run's
+// operator set theos.factory.io/pause on the pod template of each working run's
 // Sandbox; Agent Sandbox copies a template's annotations onto the running
-// pod, and the pod sees its own through the downward API. c4agent's pause
+// pod, and the pod sees its own through the downward API. theos-agent's pause
 // guard then stops the agent, saves a clean checkpoint and reports Paused;
 // the operator suspends the Sandbox as it does an interrupted run's, with no
 // round, rerun or resume spent. Unset, each paused run resumes in place.

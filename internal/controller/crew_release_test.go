@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -19,10 +19,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 var releaseDue = time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
@@ -445,7 +445,7 @@ var _ = Describe("Crew releases", func() {
 		setRerunRelease(ns, "1")
 		warned := And(HaveField("Type", "Warning"), HaveField("Reason", "ReleaseRunRerunFailed"),
 			HaveField("Note", "Could not re-run the failed runs of v0.1.0: re-run of run 5 refused; "+
-				"set a new c4.factory.io/rerun-release value to try again"))
+				"set a new theos.factory.io/rerun-release value to try again"))
 		Eventually(func(g Gomega) {
 			status := getCrew(g, ns).Status
 			g.Expect(status.RerunRelease).To(Equal("1"))
@@ -493,7 +493,7 @@ var _ = Describe("Crew releases", func() {
 		setRerunRelease(ns, "1")
 		warned := And(HaveField("Type", "Warning"), HaveField("Reason", "ReleaseRunRerunFailed"),
 			HaveField("Note", "Re-ran release.yaml of v0.1.0, but could not re-run lint.yaml: re-run of run 6 refused; "+
-				"set a new c4.factory.io/rerun-release value to try those again"))
+				"set a new theos.factory.io/rerun-release value to try those again"))
 		Eventually(func(g Gomega) {
 			status := getCrew(g, ns).Status
 			g.Expect(status.RerunRelease).To(Equal("1"))

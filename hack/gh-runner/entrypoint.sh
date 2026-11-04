@@ -68,7 +68,7 @@ case "${1:-run}" in
   configure)
     : "${RUNNER_TOKEN:?}" "${RUNNER_URL:?}" "${RUNNER_NAME:?}" "${RUNNER_WORKDIR:?}"
     ./config.sh --unattended --replace --url "$RUNNER_URL" --token "$RUNNER_TOKEN" \
-      --name "$RUNNER_NAME" --labels "${RUNNER_LABELS:-c4factory}" --work "$RUNNER_WORKDIR"
+      --name "$RUNNER_NAME" --labels "${RUNNER_LABELS:-theos}" --work "$RUNNER_WORKDIR"
     save
     ;;
   remove)

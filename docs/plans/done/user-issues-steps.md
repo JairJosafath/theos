@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Issues say whether they come from developing c4factory or from a
+**Goal:** Issues say whether they come from developing theos or from a
 device using it (and which device), and the repo holds no product.
 
 **Architecture:** Labels and intake live in `hack/lib/github.sh` (new
@@ -19,8 +19,8 @@ GitHub Actions and issue forms, Go/Ginkgo e2e, the React UI under `ui/`.
 ## Global Constraints
 
 - Labels, verbatim (name|color|description):
-  - `source/dev|bfd4f2|Made while developing c4factory`
-  - `source/user|f9d0c4|Reported from a device that runs c4factory; user/<name> names it`
+  - `source/dev|bfd4f2|Made while developing theos`
+  - `source/user|f9d0c4|Reported from a device that runs theos; user/<name> names it`
   - `user/<name>`: color `fef2c0`, description `Reported by the device <name>`
 - Reporter heading: a line exactly `### Reported by` (after stripping `\r` and
   trailing spaces), outside fenced code blocks.
@@ -69,7 +69,7 @@ Each task is one GitHub issue filed in Task 0. Its subagent:
 
 - [ ] **Step 1:** `git tag archive/product-coupled 1437554 && git push origin archive/product-coupled`
 - [ ] **Step 2:** Create the two source labels now, with the Global Constraints values, so issues can carry them before Task 1 lands:
-  `gh label create source/dev -R JairJosafath/c4factory -c bfd4f2 -d 'Made while developing c4factory'` (and the same for `source/user`).
+  `gh label create source/dev -R JairJosafath/theos -c bfd4f2 -d 'Made while developing theos'` (and the same for `source/user`).
 - [ ] **Step 3:** File the five issues with `hack/lib/github.sh create TITLE FILE status/proposed source/dev kind/<kind>`; each body links this plan's task and, from Task 3 on, says `Depends on #<previous>`:
   - Task 1: "Label issues by source and name the reporting device" (`kind/feature`)
   - Task 3: "Remove the evaluator and release backups" (`kind/chore`)
@@ -91,7 +91,7 @@ Each task is one GitHub issue filed in Task 0. Its subagent:
 
 - [ ] **Step 1: Extend the test stub.** In `github_test.sh`'s `gh_api`: append every call whose args contain `--method POST` or `--method DELETE` to `$T/calls` as `METHOD URL`, followed by ` ` and `jq -c .` of stdin when `--input -` is given. Add cases before `*)`: `*/issues/9[0-9]) cat "$T/issue-${url##*/}.json"`; `*/labels/user%2Flaptop-2) echo '{}'`; `*/labels/user%2F*) return 1`. Add a toggle so the open-issues call in `gh_create` can return nothing, and make `POST */issues` print `99`.
 
-- [ ] **Step 2: Write the failing tests** (after the existing ones, before `exit $fail`), with `R=repos/JairJosafath/c4factory` and a helper `issue N ASSOC LABELS BODY` that writes `$T/issue-N.json` as `{number, author_association, body, labels:[{name}]}` and empties `$T/calls`:
+- [ ] **Step 2: Write the failing tests** (after the existing ones, before `exit $fail`), with `R=repos/JairJosafath/theos` and a helper `issue N ASSOC LABELS BODY` that writes `$T/issue-N.json` as `{number, author_association, body, labels:[{name}]}` and empties `$T/calls`:
 
   ```
   form=$'### Reported by\n\nlaptop-2\n\n### What happened\n\nCrew stalls'
@@ -119,11 +119,11 @@ Each task is one GitHub issue filed in Task 0. Its subagent:
 
 - [ ] **Step 5:** Run the tests again. Expected: every line `ok`, exit 0.
 
-- [ ] **Step 6: Issue form** `.github/ISSUE_TEMPLATE/user-report.yml`: `name: Report from a device`, `labels: [source/user]`, body fields in order: `input` id `reporter` label `Reported by` (required, description "The device's name, e.g. laptop-2"), `input` id `version` label `c4factory version`, `textarea` id `happened` label `What happened` (required), `textarea` id `expected` label `What you expected`, `textarea` id `logs` label `Logs` (`render: shell`).
+- [ ] **Step 6: Issue form** `.github/ISSUE_TEMPLATE/user-report.yml`: `name: Report from a device`, `labels: [source/user]`, body fields in order: `input` id `reporter` label `Reported by` (required, description "The device's name, e.g. laptop-2"), `input` id `version` label `theos version`, `textarea` id `happened` label `What happened` (required), `textarea` id `expected` label `What you expected`, `textarea` id `logs` label `Logs` (`render: shell`).
 
-- [ ] **Step 7: Workflow** `.github/workflows/issue-intake.yml`: on `issues: types [opened, edited]`; `permissions: {issues: write, contents: read}`; one job on `ubuntu-latest`: `actions/checkout@v4`, then `run: hack/lib/github.sh intake "$ISSUE"` with env `GH_TOKEN: ${{ github.token }}`, `ISSUE: ${{ github.event.issue.number }}`, `C4_GITHUB_REPO: ${{ github.repository }}`. No `${{ }}` inside `run:`.
+- [ ] **Step 7: Workflow** `.github/workflows/issue-intake.yml`: on `issues: types [opened, edited]`; `permissions: {issues: write, contents: read}`; one job on `ubuntu-latest`: `actions/checkout@v4`, then `run: hack/lib/github.sh intake "$ISSUE"` with env `GH_TOKEN: ${{ github.token }}`, `ISSUE: ${{ github.event.issue.number }}`, `THEOS_GITHUB_REPO: ${{ github.repository }}`. No `${{ }}` inside `run:`.
 
-- [ ] **Step 8: Docs.** README *Report an issue*: the form link (`https://github.com/JairJosafath/c4factory/issues/new?template=user-report.yml`) and the `gh issue create -R JairJosafath/c4factory --title … --label source/user --body-file report.md` route with a `report.md` to copy in the form's layout. `handoff/SKILL.md:26`: replace the `source/evaluator` line with "`source/dev` or `source/user` says where an issue came from; `create` adds `source/dev`; `user/<name>` names the reporting device."
+- [ ] **Step 8: Docs.** README *Report an issue*: the form link (`https://github.com/JairJosafath/theos/issues/new?template=user-report.yml`) and the `gh issue create -R JairJosafath/theos --title … --label source/user --body-file report.md` route with a `report.md` to copy in the form's layout. `handoff/SKILL.md:26`: replace the `source/evaluator` line with "`source/dev` or `source/user` says where an issue came from; `create` adds `source/dev`; `user/<name>` names the reporting device."
 
 - [ ] **Step 9:** `actionlint .github/workflows/issue-intake.yml` if available (else note it), `make check`, PR, merge.
 
@@ -133,7 +133,7 @@ Each task is one GitHub issue filed in Task 0. Its subagent:
 - [ ] **Step 2:** Close #80 with a comment: "Product-specific (CEL Lens); see tag archive/product-coupled." (`hack/lib/github.sh close 80 -`).
 - [ ] **Step 3:** Delete the ten GitHub default labels: `bug enhancement documentation duplicate 'good first issue' 'help wanted' invalid question wontfix accessibility` (`gh label delete NAME --yes`).
 - [ ] **Step 4:** On every closed issue, remove `status/*` and `priority/*` labels (`gh issue edit N --remove-label …`).
-- [ ] **Step 5: Live check.** File `gh issue create -R JairJosafath/c4factory --title 'Intake check' --body $'### Reported by\n\ntest-device\n\n### What happened\n\ncheck'`; within a minute `gh issue view N --json labels` shows `user/test-device`, `source/user`, `status/proposed`. Close it, `gh label delete user/test-device --yes`. Save the output to `docs/screenshots/user-issues-intake.txt` (committed in Task 6).
+- [ ] **Step 5: Live check.** File `gh issue create -R JairJosafath/theos --title 'Intake check' --body $'### Reported by\n\ntest-device\n\n### What happened\n\ncheck'`; within a minute `gh issue view N --json labels` shows `user/test-device`, `source/user`, `status/proposed`. Close it, `gh label delete user/test-device --yes`. Save the output to `docs/screenshots/user-issues-intake.txt` (committed in Task 6).
 
 ### Task 3: Remove the evaluator and release backups
 
@@ -180,7 +180,7 @@ Each task is one GitHub issue filed in Task 0. Its subagent:
 - Modify: `docs/design.md` (title :1, v2 section :176-215, v4 section :244-333, test environment :344-379, MVP plan :380-404, timeline :405-416), `AGENTS.md` (:21 if still there, :92-93, :119-120, :149), `README.md` (Status), `docs/dev/structure.md` (:25-26, :40), `docs/dev/testenv.md` (:17-21, :119-122, :139, :148-149, :160), `DEVELOPMENT.md` (drop the "From the dev container" table), `templates/go-standard/docs/style/go.md:49`, `templates/ts-standard/docs/style/vscode.md:44-60`
 - Add: `docs/screenshots/user-issues-intake.txt` (from Task 2)
 
-- [ ] **Step 1: design.md.** Title `# C4 Factory: Design`; delete the MVP plan and timeline sections; the test environment section keeps what is still true (Kind, webshop, `apps` fixture); v2 and v4 keep their rules with webshop examples or none (drop design-board-v2 and the Pocket Tools/CEL Lens sentences, and the go-cli/vscode-extension list at :330 becomes "the template catalog in `templates/`"); add *Distribution and issues* (Helm release on devices; the source, user and intake rules from the spec, in four or five sentences).
+- [ ] **Step 1: design.md.** Title `# theos: Design`; delete the MVP plan and timeline sections; the test environment section keeps what is still true (Kind, webshop, `apps` fixture); v2 and v4 keep their rules with webshop examples or none (drop design-board-v2 and the Pocket Tools/CEL Lens sentences, and the go-cli/vscode-extension list at :330 becomes "the template catalog in `templates/`"); add *Distribution and issues* (Helm release on devices; the source, user and intake rules from the spec, in four or five sentences).
 - [ ] **Step 2: AGENTS.md.** Drop the six-milestones bullet, "Product work stays in Gitea with the Crews." and the `devcontainer up` clause; add under *Working in Sessions*: "Every issue carries `source/dev` (developing the factory) or `source/user` with `user/<name>` (reported from a device running the Helm release)."
 - [ ] **Step 3:** README status (what exists today, the Helm release as next), structure.md, testenv.md, DEVELOPMENT.md as listed; the two style guides get a neutral doc-comment example (`// Parse reads a config file and reports its errors.`) and a generic language-client example.
 - [ ] **Step 4:** Deletes and moves; `git grep -n 'results-v[24]\|design-board\|superpowers/specs'` shows no dead links; check every relative link in changed `.md` files resolves (a small loop over `git grep -o '](\.\?\.\?/[^)]*)'`).

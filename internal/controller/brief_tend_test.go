@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -18,10 +18,10 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // briefSkew moves the Brief's clock ahead of the real one, so a test sees a
@@ -247,7 +247,7 @@ var _ = Describe("Brief autopilot", func() {
 					"Question": Equal("Container `orders-api` is at python-strict v1.2.0, but its updates left out " +
 						"Makefile (at v1.0.0): the repository changed them in lines the Standard changed too."),
 					"Recommend": Equal("Take the Standard's version: annotate the Container " +
-						"`c4.factory.io/standard-take=v1.2.0`."),
+						"`theos.factory.io/standard-take=v1.2.0`."),
 					"Why":   HavePrefix("The Standard's fix (python-strict v1.2.0) reaches the app"),
 					"Since": Not(BeNil()),
 				})))

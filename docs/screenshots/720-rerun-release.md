@@ -17,14 +17,14 @@ $ make test-gitea
 --- PASS: TestGiteaMilestonesIntegration (0.13s)
 --- PASS: TestGiteaGoModuleIntegration (1.41s)
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/gitprovider	11.747s
+ok  	github.com/JairJosafath/theos/internal/gitprovider	11.747s
 
 $ go test ./internal/model/ ./internal/gitprovider/ -run "FailedReleaseRuns|ReleaseRerun|RerunFailedJobs" -v
 --- PASS: TestFailedReleaseRuns (0.00s)
 --- PASS: TestReleaseRerun (0.00s)
-ok  	github.com/JairJosafath/c4factory/internal/model	0.005s
+ok  	github.com/JairJosafath/theos/internal/model	0.005s
 --- PASS: TestRerunFailedJobs (0.00s)
-ok  	github.com/JairJosafath/c4factory/internal/gitprovider	0.009s
+ok  	github.com/JairJosafath/theos/internal/gitprovider	0.009s
 ```
 
 ```text

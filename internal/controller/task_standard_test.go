@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -28,10 +28,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 var _ = Describe("Task allowedProtectedPaths", func() {
@@ -386,7 +386,7 @@ var _ = Describe("Task with a Standard change", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, "orders-api-1").Status.StandardChange).To(PointTo(HaveField("ResumedRound", int32(1))))
 			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement-s1")).To(ContainElement(
-				map[string]any{"name": "C4_RESUMED", "value": "true"}))
+				map[string]any{"name": "THEOS_RESUMED", "value": "true"}))
 		}).Should(Succeed(), fmt.Sprintf("resumed after Standard change #%d", m))
 
 		By("the resumed run changing the branch, so a pull request is opened and reviewed")
@@ -409,7 +409,7 @@ var _ = Describe("Task with a Standard change", func() {
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement-s2")).NotTo(ContainElement(
-				map[string]any{"name": "C4_RESUMED", "value": "true"}))
+				map[string]any{"name": "THEOS_RESUMED", "value": "true"}))
 		}).Should(Succeed())
 	})
 
@@ -569,7 +569,7 @@ func finishResumed(ns string, round int) {
 	GinkgoHelper()
 	name := fmt.Sprintf("orders-api-1-r%d-implement-s1", round)
 	Eventually(func(g Gomega) {
-		g.Expect(sandboxEnv(g, ns, name)).To(ContainElement(map[string]any{"name": "C4_RESUMED", "value": "true"}))
+		g.Expect(sandboxEnv(g, ns, name)).To(ContainElement(map[string]any{"name": "THEOS_RESUMED", "value": "true"}))
 	}).Should(Succeed())
 	finishSandbox(ns, name, "orders-api-1", &agentrunner.Result{Role: "implement", Empty: true}, "")
 }
@@ -585,7 +585,7 @@ var _ = Describe("Crew with a Standard change", func() {
 		mustCreate(crew)
 		Eventually(func(g Gomega) {
 			g.Expect(sandboxEnv(g, ns, "orders-api-1-r1-implement")).
-				NotTo(ContainElement(HaveKeyWithValue("name", "C4_ALLOWED_PATHS")), "an ordinary issue is ungated")
+				NotTo(ContainElement(HaveKeyWithValue("name", "THEOS_ALLOWED_PATHS")), "an ordinary issue is ungated")
 		}).Should(Succeed())
 		Expect(getTask(Default, ns, "orders-api-1").Spec.AllowedProtectedPaths).To(BeEmpty())
 		gitFake.PushBranchHead(ns, "orders-api", "task/orders-api-1", "sha-1")
@@ -599,7 +599,7 @@ var _ = Describe("Crew with a Standard change", func() {
 			g.Expect(gated.Spec.AllowedProtectedPaths).To(Equal([]string{"Makefile"}))
 			g.Expect(gated.Labels).To(HaveKeyWithValue(LabelCrew, "orders-api"))
 			g.Expect(sandboxEnv(g, ns, "orders-api-2-r1-implement")).
-				To(ContainElement(map[string]any{"name": "C4_ALLOWED_PATHS", "value": "Makefile"}))
+				To(ContainElement(map[string]any{"name": "THEOS_ALLOWED_PATHS", "value": "Makefile"}))
 			g.Expect(getCrew(g, ns).Status.ActiveTasks).To(ConsistOf("orders-api-1", "orders-api-2"))
 		}).Should(Succeed())
 	})

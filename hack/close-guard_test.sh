@@ -8,7 +8,7 @@
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 HOOK="$(cd "$(dirname "$0")" && pwd)/close-guard.sh"
-export GH_TOKEN=x FAKE=$T/github CALLED=$T/called C4_GITHUB_REPO=JairJosafath/c4factory
+export GH_TOKEN=x FAKE=$T/github CALLED=$T/called THEOS_GITHUB_REPO=JairJosafath/theos
 unset IS_SANDBOX # an agent sandbox sets it; the hook does nothing there (#1894)
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
@@ -31,7 +31,7 @@ if [ -n "$jqx" ]; then jq -r "$jqx" "$f"; else cat "$f"; fi
 EOF
 chmod +x "$T/bin/gh"
 PATH=$T/bin:$PATH
-R=repos_JairJosafath_c4factory
+R=repos_JairJosafath_theos
 issue() { jq -n --arg s "$2" --arg b "${3:-}" '{state: $s, body: $b}' >"$FAKE/${R}_issues_$1"; }
 issue 467 open $'Depends on #472\nDepends on #475'
 issue 472 closed
@@ -46,7 +46,7 @@ jq -n '{title: "fix(300): it works", body: "Closes #300"}' >"$FAKE/${R}_pulls_51
 jq -n '[{commit: {message: "fix(300): the first part\n\nRefs #300"}}, {commit: {message: "fix(300): it works"}}]' >"$FAKE/${R}_pulls_512_commits?per_page=100"
 
 git init -q "$T/repo"
-git -C "$T/repo" remote add origin https://github.com/JairJosafath/c4factory.git
+git -C "$T/repo" remote add origin https://github.com/JairJosafath/theos.git
 git init -q "$T/other"
 git -C "$T/other" remote add origin https://example.com/someone/else.git
 
@@ -88,7 +88,7 @@ check "commit: the last step closes it and its parent, allowed" "$(decision)" no
 
 hook 'gh pr merge 510 --merge'
 check "pr merge: the pull request's commits are read, denied" "$(decision) $(reason | grep -c 'Steps: #506')" "deny 1"
-hook 'gh pr merge https://github.com/JairJosafath/c4factory/pull/511 --merge --delete-branch'
+hook 'gh pr merge https://github.com/JairJosafath/theos/pull/511 --merge --delete-branch'
 check "pr merge: a clean pull request by URL, allowed" "$(decision)" none
 hook 'gh pr merge 512 --merge'
 check "pr merge: the body's Closes #N, a commit's Refs #N, allowed (#1200)" "$(decision)" none
@@ -123,7 +123,7 @@ hook 'gh issue close 467'
 check "issue close: a parent with an open step is denied, naming it" "$(decision) $(reason | grep -c 'refused to close #467: its step #475 is open')" "deny 1"
 hook 'gh issue close 300 --reason completed'
 check "issue close: an issue without steps, allowed" "$(decision)" none
-hook 'gh issue close https://github.com/JairJosafath/c4factory/issues/467 -c "done; really"'
+hook 'gh issue close https://github.com/JairJosafath/theos/issues/467 -c "done; really"'
 check "issue close: by URL, a ; inside the comment" "$(decision)" deny
 hook 'gh issue close --reason "not planned" 467'
 check "issue close: the number after a quoted flag value" "$(decision)" deny
@@ -147,24 +147,24 @@ git status"
 check "a heredoc's body is text, not commands: allowed, no gh call" "$(decision) $(calls)" "none 0"
 hook 'gh issue close 467' "$T/other"
 check "issue close: another repository's checkout, not guarded" "$(decision) $(calls)" "none 0"
-hook 'gh api -X PATCH repos/JairJosafath/c4factory/issues/467 -f state=closed'
+hook 'gh api -X PATCH repos/JairJosafath/theos/issues/467 -f state=closed'
 check "api: -f state=closed on a parent with an open step, denied" "$(decision) $(reason | grep -c 'its step #475 is open')" "deny 1"
 hook 'out=$(gh api repos/{owner}/{repo}/issues/467 -X PATCH -F state=closed -f state_reason=completed --jq .state)'
 check "api: {owner}/{repo}, -F, inside \$(...), denied" "$(decision)" deny
-hook "gh api --method PATCH /repos/JairJosafath/c4factory/issues/467 --input - <<'EOF'
+hook "gh api --method PATCH /repos/JairJosafath/theos/issues/467 --input - <<'EOF'
 {\"state\": \"closed\"}
 EOF"
 check "api: a JSON body from a heredoc, denied" "$(decision)" deny
 printf '{"state":"closed","state_reason":"completed"}\n' >"$T/repo/close.json"
-hook 'gh api -X PATCH repos/JairJosafath/c4factory/issues/467 --input close.json'
+hook 'gh api -X PATCH repos/JairJosafath/theos/issues/467 --input close.json'
 check "api: a JSON body from a file, denied" "$(decision)" deny
-hook 'gh api repos/JairJosafath/c4factory/issues/467 --jq .state'
+hook 'gh api repos/JairJosafath/theos/issues/467 --jq .state'
 check "api: reading an issue, allowed, no gh call" "$(decision) $(calls)" "none 0"
-hook "gh api -X POST repos/JairJosafath/c4factory/issues/467/comments -f body='set state=closed later'"
+hook "gh api -X POST repos/JairJosafath/theos/issues/467/comments -f body='set state=closed later'"
 check "api: a comment, allowed, no gh call" "$(decision) $(calls)" "none 0"
 hook 'gh api -X PATCH repos/someone/else/issues/467 -f state=closed'
 check "api: another repository's issue, no gh call" "$(decision) $(calls)" "none 0"
-hook 'gh api -X PATCH "repos/$C4_GITHUB_REPO/issues/$n" -f state=closed'
+hook 'gh api -X PATCH "repos/$THEOS_GITHUB_REPO/issues/$n" -f state=closed'
 check "api: an issue it can't name is denied" "$(decision) $(reason | grep -c 'could not tell which issue')" "deny 1"
 hook 'hack/lib/github.sh duplicate 467 300'
 check "duplicate: a parent with an open step, denied" "$(decision) $(reason | grep -c 'its step #475 is open')" "deny 1"

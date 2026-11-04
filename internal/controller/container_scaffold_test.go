@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -23,9 +23,9 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 var ordersAPIScaffoldedFrom = []string{
@@ -137,7 +137,7 @@ var _ = Describe("Container scaffolding", func() {
 		By("pushing the uv project, the manifests and a devcontainer with Postgres")
 		repo := gitFake.Repo(ns, "orders-api")
 		Expect(repo.Commits).To(HaveLen(1))
-		Expect(repo.Commits[0].Message).To(ContainSubstring("C4-Factory-Container: " + ns + "/orders-api"))
+		Expect(repo.Commits[0].Message).To(ContainSubstring("theos-Container: " + ns + "/orders-api"))
 		Expect(repo.Files).To(HaveKey("pyproject.toml"))
 		Expect(string(repo.Files["pyproject.toml"].Data)).To(ContainSubstring(`name = "orders-api"`))
 		Expect(string(repo.Files["pyproject.toml"].Data)).To(ContainSubstring("psycopg"))
@@ -149,7 +149,7 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(repo.Files).To(HaveKey(".devcontainer/compose.yaml"))
 		Expect(repo.Files).To(HaveKey(".devcontainer/compose.postgres.yaml"))
 		for p := range repo.Files {
-			Expect(p).NotTo(HavePrefix(".c4factory/"), "a template's inputs are never pushed")
+			Expect(p).NotTo(HavePrefix(".theos/"), "a template's inputs are never pushed")
 		}
 		Expect(repo.Files).NotTo(HaveKey(scaffold.LicensePath), "no license set writes no LICENSE (#1788)")
 
@@ -157,9 +157,9 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(json.Unmarshal(repo.Files[".devcontainer/devcontainer.json"].Data, &devcontainer)).To(Succeed())
 		Expect(devcontainer).To(HaveKeyWithValue("name", "Orders API"))
 		Expect(devcontainer).To(HaveKeyWithValue("service", "app"))
-		Expect(devcontainer).To(HaveKeyWithValue("features", HaveKey("./c4session")),
+		Expect(devcontainer).To(HaveKeyWithValue("features", HaveKey("./theos-session")),
 			"the Session client is part of every devcontainer")
-		Expect(repo.Files[".devcontainer/c4session/install.sh"].Executable).To(BeTrue())
+		Expect(repo.Files[".devcontainer/theos-session/install.sh"].Executable).To(BeTrue())
 
 		identity, err := scaffold.ParseIdentity(repo.Files[scaffold.IdentityPath].Data)
 		Expect(err).NotTo(HaveOccurred())
@@ -336,7 +336,7 @@ var _ = Describe("Container scaffolding", func() {
 		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonForeignCommits))
-		Expect(cond.Message).To(ContainSubstring("has commits C4 Factory didn't make"))
+		Expect(cond.Message).To(ContainSubstring("has commits theos didn't make"))
 
 		By("not trying again on its own")
 		reads := gitFake.HistoryCount(ns, "orders-api")
@@ -540,7 +540,7 @@ var _ = Describe("Container scaffolding", func() {
 	It("fails a template that has no files for the Git host's CI system, naming the ones it has", func() {
 		ns := newProjectNamespace()
 		gitFake.AddTemplate(templatesURL+"gitlab-compute", "v1.0.0", scaffold.Tree{
-			".c4factory/ci/gitlabCI/.gitlab-ci.yml": {Data: []byte("check:\n")},
+			".theos/ci/gitlabCI/.gitlab-ci.yml": {Data: []byte("check:\n")},
 		})
 		createFactory(ns)
 		mustCreate(&c4v1beta1.Compute{ObjectMeta: objectMeta(ns, "gitlab-only"),

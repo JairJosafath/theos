@@ -1,0 +1,125 @@
+{{- /*
+  .Checks picks the workflow: EveryChange (or empty) runs make check on every
+  change; BeforeRelease runs make check-light on every change and make check,
+  in the job full, on a push to a release-check/** branch. {{`${{ … }}`}}
+  writes a Gitea expression as is.
+*/ -}}
+{{- $beforeRelease := eq .Checks "BeforeRelease" -}}
+{{- define "job" }}
+    runs-on: go
+    # Go's build cache stays where the toolchain image puts it: the image ships
+    # it warm, so the Kubernetes libraries aren't compiled on every run.
+    # The factory publishes its apps' releases to the owner's package registry,
+    # under theos.local module paths no public proxy or checksum database
+    # knows. Those come from the registry alone, in the step before make check;
+    # with GOPRIVATE, make check never asks a proxy for them, so a module the
+    # registry lacks fails on a host that doesn't exist instead of going to
+    # proxy.golang.org. Not a GOPROXY list of the registry, then the public
+    # proxy: the go command asks the next proxy after a 404.
+    env:
+      GOPROXY: https://proxy.golang.org,direct
+      GOPRIVATE: theos.local
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git -c http.extraHeader="Authorization: token {{`${{ gitea.token }}`}}" \
+            fetch -q --depth 1 "{{`${{ gitea.server_url }}`}}/{{`${{ gitea.repository }}`}}.git" "{{`${{ gitea.sha }}`}}"
+          git checkout -q FETCH_HEAD
+{{- end -}}
+{{- /* registry: the steps that fetch the factory's modules; with true, only
+  when the change touches code. */ -}}
+{{- define "registry" }}
+      - name: Credentials for the package registry
+{{- if . }}
+        if: steps.changes.outputs.code == 'true'
+{{- end }}
+        # Go sends them over https only; over http it fetches without them.
+        env:
+          TOKEN: {{`${{ gitea.token }}`}}
+          SERVER: {{`${{ gitea.server_url }}`}}
+        run: |
+          host=${SERVER#*://}
+          umask 077
+          printf 'machine %s\nlogin %s\npassword %s\n' "${host%%/*}" "{{`${{ gitea.actor }}`}}" "$TOKEN" > "$HOME/.netrc"
+      - name: The factory's modules, from the package registry only
+{{- if . }}
+        if: steps.changes.outputs.code == 'true'
+{{- end }}
+        env:
+          GOPROXY: {{`${{ gitea.server_url }}`}}/api/packages/{{`${{ gitea.repository_owner }}`}}/go
+          GOPRIVATE: ""
+          GONOSUMDB: theos.local
+        # From go.sum, not go.mod's require lines: go mod tidy also loads the
+        # test imports of dependencies, which only go.sum lists; a module
+        # replaced by a local directory has no line there.
+        run: |
+          mods=$( [ ! -f go.sum ] || awk '$1 ~ /^theos\.local\// { sub("/go.mod$", "", $2); print $1 "@" $2 }' go.sum | sort -u)
+          if [ -n "$mods" ]; then
+            # Outside the module, so only these are fetched.
+            cd "$(mktemp -d)" && go mod download $mods
+          fi
+{{- end -}}
+{{- if $beforeRelease -}}
+# Runs the light check, make check-light, on every pull request and on main,
+# and the full check, make check, on a push to a release-check/** branch: the
+# commit a release will be tagged at. The branch protection of main requires
+# a passing "check" context before a merge.
+{{- else -}}
+# Runs the quality contract on every pull request and on main. The branch
+# protection of main requires a passing "check" context before a merge.
+{{- end }}
+name: check
+
+on:
+  push:
+    branches: [main{{ if $beforeRelease }}, "release-check/**"{{ end }}]
+  pull_request:
+
+jobs:
+  check:
+{{- if $beforeRelease }}
+    if: {{`${{ !startsWith(gitea.ref, 'refs/heads/release-check/') }}`}}
+{{- end }}
+{{- template "job" }}
+      # A change to only the changelog, docs/ or images has nothing for the
+      # steps below to verify: the job passes without them, so the required
+      # "check" context still reports and the change merges. Any other file,
+      # a first push, or a base git can't fetch or compare runs them as always.
+      - name: What the change touches
+        id: changes
+        env:
+          TOKEN: {{`${{ gitea.token }}`}}
+          URL: {{`${{ gitea.server_url }}`}}/{{`${{ gitea.repository }}`}}.git
+          BASE: {{`${{ gitea.event.pull_request.base.sha || gitea.event.before }}`}}
+        run: |
+          code=true
+          case $BASE in
+          *[!0]*)
+            if git -c http.extraHeader="Authorization: token $TOKEN" fetch -q --depth 1 "$URL" "$BASE" &&
+              files=$(git diff --no-renames --name-only "$BASE" HEAD) && [ -n "$files" ] &&
+              ! printf '%s\n' "$files" | grep -qvE '^CHANGELOG\.md$|^docs/|\.(png|jpg|gif|svg)$'; then
+              code=false
+              echo "Only the changelog, docs/ or images changed; skipping the checks."
+            fi
+            ;;
+          esac
+          echo "code=$code" >>"$GITHUB_OUTPUT"
+{{- template "registry" true }}
+{{- if $beforeRelease }}
+      - name: make check-light
+        if: steps.changes.outputs.code == 'true'
+        run: make check-light
+  # The full check, on the commit a release will be tagged at: always, whatever
+  # the commit changes since the branch's previous push.
+  full:
+    if: startsWith(gitea.ref, 'refs/heads/release-check/')
+{{- template "job" }}
+{{- template "registry" false }}
+      - name: make check
+        run: make check
+{{- else }}
+      - name: make check
+        if: steps.changes.outputs.code == 'true'
+        run: make check
+{{- end }}

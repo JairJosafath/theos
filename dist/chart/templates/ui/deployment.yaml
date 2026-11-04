@@ -3,21 +3,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "c4-factory.uiName" . }}
+  name: {{ include "theos.uiName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+    {{- include "theos.uiLabels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "c4-factory.uiSelectorLabels" . | nindent 6 }}
+      {{- include "theos.uiSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "c4-factory.uiLabels" . | nindent 8 }}
+        {{- include "theos.uiLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "c4-factory.uiName" . }}
+      serviceAccountName: {{ include "theos.uiName" . }}
       {{- with .Values.ui.imagePullSecrets | default .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -40,18 +40,18 @@ spec:
         # The health view's components (ui/health.mjs); an empty namespace is
         # the release's.
         - name: FACTORY_COMPONENTS
-          value: {{ include "c4-factory.uiComponents" . | quote }}
+          value: {{ include "theos.uiComponents" . | quote }}
         {{- with .Values.ui.allowedHosts }}
         # Host names answered besides localhost (an Ingress's).
         - name: UI_ALLOWED_HOSTS
           value: {{ join "," . | quote }}
         {{- end }}
-        {{- with include "c4-factory.uiActions" . }}
+        {{- with include "theos.uiActions" . }}
         # Who makes the action table's writes: service-account or oidc.
         - name: UI_ACTIONS
           value: {{ . | quote }}
         {{- end }}
-        {{- if eq (include "c4-factory.uiActions" .) "oidc" }}
+        {{- if eq (include "theos.uiActions" .) "oidc" }}
         {{- $oidc := .Values.ui.auth.oidc }}
         # Sign-in (ui/oidc.mjs). The client secret comes from the Secret the
         # person made, never from values.
@@ -73,11 +73,11 @@ spec:
         - name: OIDC_USERNAME_CLAIM
           value: {{ $oidc.usernameClaim | default "email" | quote }}
         - name: OIDC_USERNAME_PREFIX
-          value: {{ include "c4-factory.uiOIDC" (list $oidc "usernamePrefix" "oidc:") | quote }}
+          value: {{ include "theos.uiOIDC" (list $oidc "usernamePrefix" "oidc:") | quote }}
         - name: OIDC_GROUPS_CLAIM
           value: {{ $oidc.groupsClaim | default "groups" | quote }}
         - name: OIDC_GROUPS_PREFIX
-          value: {{ include "c4-factory.uiOIDC" (list $oidc "groupsPrefix" "oidc:") | quote }}
+          value: {{ include "theos.uiOIDC" (list $oidc "groupsPrefix" "oidc:") | quote }}
         {{- end }}
         ports:
         - name: http

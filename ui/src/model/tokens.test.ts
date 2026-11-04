@@ -4,7 +4,7 @@ import type { Agent, Task, TaskAgentRun } from '../k8s/types'
 import { agentTokens, describeRun, outcomeRows, spreadInRounds, tokenAxis, totalTokens, type RunPoint } from './tokens'
 
 const agent = (name: string, sessionTokenLimit?: number, namespace = 'shop'): Agent => ({
-  apiVersion: 'c4.factory.io/v1beta1',
+  apiVersion: 'theos.factory.io/v1beta1',
   kind: 'Agent',
   metadata: { name, namespace },
   spec: { displayName: `${name} (display)`, image: 'agent:dev', sessionTokenLimit },
@@ -19,7 +19,7 @@ const run = (round: number, role: string | undefined, largestSession?: number, m
 })
 
 const task = (name: string, created: string, spec: Partial<Task['spec']>, status: Task['status']): Task => ({
-  apiVersion: 'c4.factory.io/v1beta1',
+  apiVersion: 'theos.factory.io/v1beta1',
   kind: 'Task',
   metadata: { name, namespace: 'shop', creationTimestamp: created },
   spec: { agentRef: { name: 'impl' }, reviewerRef: { name: 'rev' }, goal: `Goal of ${name}`, ...spec },

@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 )
 
 // startAPIServer runs envtest with the CRDs and returns a client, or skips when
@@ -157,7 +157,7 @@ func TestRunRegistersAgainWhenDeleted(t *testing.T) {
 
 func TestFindIdentity(t *testing.T) {
 	root := t.TempDir()
-	identity := filepath.Join(root, ".c4factory.yaml")
+	identity := filepath.Join(root, ".theos.yaml")
 	if err := os.WriteFile(identity, []byte("project: webshop\ncontainer: orders-api\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

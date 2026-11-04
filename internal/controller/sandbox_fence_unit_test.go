@@ -16,8 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // These tests check what only a real node used to: that an agent's pod can't
@@ -121,7 +121,7 @@ func TestAgentNetworkFence(t *testing.T) {
 		return &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": ns}}
 	}
 	want := networkingv1.NetworkPolicySpec{
-		PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"c4.factory.io/agent-sandbox": "true"}},
+		PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"theos.factory.io/agent-sandbox": "true"}},
 		// Both types, so the empty ingress list denies all traffic in.
 		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
 		Egress: []networkingv1.NetworkPolicyEgressRule{
@@ -172,12 +172,12 @@ func TestAgentNetworkFence(t *testing.T) {
 
 	// With a model proxy, one more rule: its pods in the release namespace, on
 	// its port, and nothing else of that namespace (#1136).
-	proxied := fence(t, &ProjectReconciler{SourceNamespace: "c4-factory-system",
-		ModelProxyURL: "http://c4-model-proxy.c4-factory-system.svc:8080"})
+	proxied := fence(t, &ProjectReconciler{SourceNamespace: "theos-system",
+		ModelProxyURL: "http://c4-model-proxy.theos-system.svc:8080"})
 	proxyPort := intstr.FromInt32(8080)
 	want.Egress = append(want.Egress, networkingv1.NetworkPolicyEgressRule{
 		To: []networkingv1.NetworkPolicyPeer{{
-			NamespaceSelector: namespace("c4-factory-system"),
+			NamespaceSelector: namespace("theos-system"),
 			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/name": "c4-model-proxy"}},
 		}},
 		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxyPort}},

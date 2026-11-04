@@ -17,7 +17,7 @@ func dynamodbDataStore(system, container string) string {
 // to it.
 func dataStoreOn(connector, system, container string) string {
 	return fmt.Sprintf(`---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: DataStore
 metadata:
   name: %[2]s-table
@@ -26,7 +26,7 @@ spec:
   description: What %[2]s keeps
   connectorRef: {name: %[3]s}
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
   name: %[2]s-keeps-data

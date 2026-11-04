@@ -1,6 +1,6 @@
 == step6 (2026-10-24, #1618): cd ui && npx vitest run src/k8s/watch.test.ts src/components/Status.test.ts
 
- RUN  v5.0.2 /home/josaf/c4factory/.claude/worktrees/relay-4/ui
+ RUN  v5.0.2 /home/josaf/theos/.claude/worktrees/relay-4/ui
 
 
  Test Files  2 passed (2)

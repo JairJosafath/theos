@@ -11,9 +11,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gitea
-  namespace: {{ include "c4-factory.giteaNamespace" . }}
+  namespace: {{ include "theos.giteaNamespace" . }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "gitea" "context" .) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "gitea" "context" .) | nindent 4 }}
 spec:
   replicas: 1
   # SQLite on a ReadWriteOnce volume: never run two pods at once.
@@ -26,7 +26,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "c4-factory.giteaLabels" (dict "name" "gitea" "context" .) | nindent 8 }}
+        {{- include "theos.giteaLabels" (dict "name" "gitea" "context" .) | nindent 8 }}
       annotations:
         # A change of settings rolls the pod. The Secrets are not rendered, so
         # a rotation restarts the pod by hand (values.yaml, gitea.admin).
@@ -36,7 +36,7 @@ spec:
       # Gitea itself gets no API access; only the credentials container mounts
       # a token.
       automountServiceAccountToken: false
-      {{- include "c4-factory.imagePullSecrets" . | nindent 6 }}
+      {{- include "theos.imagePullSecrets" . | nindent 6 }}
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
@@ -108,11 +108,11 @@ spec:
             - name: GITEA_APP_INI
               value: /var/lib/gitea/custom/conf/app.ini
             - name: ADMIN_USERNAME
-              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: username}}
+              valueFrom: {secretKeyRef: {name: {{ include "theos.giteaAdminSecret" . }}, key: username}}
             - name: ADMIN_PASSWORD
-              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: password}}
+              valueFrom: {secretKeyRef: {name: {{ include "theos.giteaAdminSecret" . }}, key: password}}
             - name: ADMIN_EMAIL
-              valueFrom: {secretKeyRef: {name: {{ include "c4-factory.giteaAdminSecret" . }}, key: email}}
+              valueFrom: {secretKeyRef: {name: {{ include "theos.giteaAdminSecret" . }}, key: email}}
           resources:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {memory: 256Mi}

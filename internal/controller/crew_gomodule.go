@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -21,9 +21,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // ConditionModulePublished says whether go get finds a Crew's last release's
@@ -61,7 +61,7 @@ type moduleAnswer struct {
 // its path is read, as model.DecideModule rules, asking the Go proxy when the
 // rule says to. A repository with no go.mod and a module Go can't take at the
 // tag are recorded, a failed upload is tried again on the next poll. An upload
-// of a c4factory.local/ path, or the first time any other path turns
+// of a theos.local/ path, or the first time any other path turns
 // fetchable, is a Normal Event; a module Go can't take, or can't fetch, a
 // Warning Event, once per release.
 func (r *CrewReconciler) publishGoModule(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,

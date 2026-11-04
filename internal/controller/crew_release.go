@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -21,9 +21,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // ConditionReleased says whether a Crew's next release went out, and why not.
@@ -361,7 +361,7 @@ func (r *CrewReconciler) event(crew *c4v1beta1.Crew, eventType, reason, action, 
 	}
 }
 
-// rerunRelease answers the Crew's c4.factory.io/rerun-release annotation, once
+// rerunRelease answers the Crew's theos.factory.io/rerun-release annotation, once
 // per value: while its last release's run Failed, it re-runs the failed jobs of
 // that release's failed runs, and the watch follows their new attempts;
 // otherwise it says with a Normal Event that there is nothing to re-run. It

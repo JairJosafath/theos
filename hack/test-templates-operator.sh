@@ -51,14 +51,14 @@ ln -s "$GOLANGCI_LINT" "$T/bin/golangci-lint"
 unset KUBEBUILDER CONTROLLER_GEN KUSTOMIZE ENVTEST GOLANGCI_LINT
 export PATH="$T/bin:$PATH" ENVTEST_SYSTEM_DIR="$ENVTEST_ASSETS"
 # The rendered repo's make is its own, not a sub-make of this repository's.
-unset MAKEFLAGS MFLAGS MAKELEVEL MAKEOVERRIDES C4_HEAVY_SLOT
+unset MAKEFLAGS MFLAGS MAKELEVEL MAKEOVERRIDES THEOS_HEAVY_SLOT
 
 repo="$T/backup-operator"
 (cd "$ROOT" && go run ./hack/render -out "$repo" -type operator -container backup-operator \
 	-display-name "Backup Operator" Framework=go-kubebuilder Standard=go-operator-standard Compute=small Deployment=gitea-release)
 cd "$repo"
 
-git() { command git -c user.name="test-templates-operator" -c user.email="test@c4factory.local" \
+git() { command git -c user.name="test-templates-operator" -c user.email="test@theos.local" \
 	-c core.hooksPath=/dev/null -c commit.gpgsign=false "$@"; }
 git init -q -b main
 git add -A

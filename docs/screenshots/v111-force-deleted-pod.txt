@@ -1,9 +1,9 @@
 # A force-deleted sandbox pod counts as an interrupted run (#111)
 
-Kind cluster c4factory-2, 2026-10-06, operator at b31aae1 (make deploy), Agent
-Sandbox from make agent-sandbox, c4factory/agent-base:dev, the e2e fixture
+Kind cluster theos-2, 2026-10-06, operator at b31aae1 (make deploy), Agent
+Sandbox from make agent-sandbox, theos/agent-base:dev, the e2e fixture
 (test/e2e/testdata/apps), and the sleeping Agent and Task of
-v4-interrupted-rerun.txt (Agent slow, C4AGENT_COMMAND=sleep 900; Task rerun).
+v4-interrupted-rerun.txt (Agent slow, THEOS_AGENT_COMMAND=sleep 900; Task rerun).
 
 The operator remembers the pod the run started on (status.sandboxPod):
 

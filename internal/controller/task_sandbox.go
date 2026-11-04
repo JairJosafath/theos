@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -27,9 +27,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // SandboxGVK is Agent Sandbox's Sandbox, used as unstructured to keep the
@@ -39,14 +39,14 @@ var SandboxGVK = schema.GroupVersionKind{Group: "agents.x-k8s.io", Version: "v1b
 // Labels on agent sandboxes and their pods.
 const (
 	// LabelTask names the Task a sandbox works for.
-	LabelTask = "c4.factory.io/task"
+	LabelTask = "theos.factory.io/task"
 	// LabelAgentSandbox marks agent pods; the project's NetworkPolicy selects it.
-	LabelAgentSandbox = "c4.factory.io/agent-sandbox"
+	LabelAgentSandbox = "theos.factory.io/agent-sandbox"
 	// agentSandboxValue is the value of LabelAgentSandbox.
 	agentSandboxValue = "true"
 )
 
-// agentContainer is the sandbox pod's container that runs c4agent.
+// agentContainer is the sandbox pod's container that runs theos-agent.
 const agentContainer = "agent"
 
 // sandboxGrace is how long a sandbox object outlives its pod's deadline.
@@ -94,7 +94,7 @@ type sandboxRun struct {
 	// sandboxes share.
 	goCache string
 	// goProxy, when set, is the Git host's Go module proxy for the owner's
-	// released modules, the only one c4agent asks for the factory's modules.
+	// released modules, the only one theos-agent asks for the factory's modules.
 	goProxy string
 	// npmScope, npmRegistry and pypiIndex, when set, are the owner's npm
 	// scope, the registry that serves it and the simple index of the
@@ -104,7 +104,7 @@ type sandboxRun struct {
 	npmScope, npmRegistry, pypiIndex string
 	npmSecret, pypiSecret            string
 	// brief is the Brief a plan run plans, and briefRound the Brief's round it
-	// plans: C4_ROUND, while the Task's own round counts the planner's tries.
+	// plans: THEOS_ROUND, while the Task's own round counts the planner's tries.
 	brief      string
 	briefRound int
 	// pullSecrets are the shared pull Secrets the pod lists in imagePullSecrets.
@@ -178,7 +178,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	}
 	checkpoint := run.checkpointClass != NoCheckpointClass
 	if checkpoint {
-		// c4agent saves an interrupted run on the sandbox's checkpoint volume,
+		// theos-agent saves an interrupted run on the sandbox's checkpoint volume,
 		// and goes on from it in the sandbox's next pod.
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvCheckpointDir, Value: checkpointMount})
 	}
@@ -195,7 +195,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			corev1.EnvVar{Name: "GOLANGCI_LINT_CACHE", Value: goCacheMount + "/golangci-lint"})
 	}
 	if run.goProxy != "" {
-		// c4agent's loopback proxy sends the factory's module paths to the Git
+		// theos-agent's loopback proxy sends the factory's module paths to the Git
 		// host's registry and nowhere else, and the rest to the public proxy.
 		// Not a list of the two: the go command asks the next proxy after a 404,
 		// so a module the registry lacks would be asked of the public one. Not
@@ -207,7 +207,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			corev1.EnvVar{Name: "GONOSUMDB", Value: agentrunner.FactoryModules})
 	}
 	// npm sends the scope, and uv each package, to its own registry, so no
-	// proxy: c4agent writes ~/.npmrc and ~/.netrc from these. A Secret
+	// proxy: theos-agent writes ~/.npmrc and ~/.netrc from these. A Secret
 	// without readToken gives no credential: a public registry.
 	if run.npmRegistry != "" {
 		env = append(env,
@@ -261,7 +261,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 		mounts = append(mounts, corev1.VolumeMount{Name: checkpointVolume, MountPath: checkpointMount})
 	}
 	volumes := []corev1.Volume{{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: workspace}}}
-	// The pod's own annotations, which the kubelet keeps up to date: c4agent's
+	// The pod's own annotations, which the kubelet keeps up to date: theos-agent's
 	// pause guard reads the pause the operator asks for there.
 	mounts = append(mounts, corev1.VolumeMount{Name: podInfoVolume, MountPath: agentrunner.PodInfoDir, ReadOnly: true})
 	volumes = append(volumes, podInfo())
@@ -352,7 +352,7 @@ func runTimeout(agent *c4v1beta1.Agent) time.Duration {
 	return time.Duration(agent.Spec.TimeoutMinutes) * time.Minute
 }
 
-// runEnv is the start of a run's environment: what c4agent needs to know of
+// runEnv is the start of a run's environment: what theos-agent needs to know of
 // the job. A plan run has a Brief in place of a Container, its goal and
 // context; its round is the Brief's.
 func runEnv(run sandboxRun) []corev1.EnvVar {
@@ -425,7 +425,7 @@ func toAnyMap(m map[string]string) map[string]any {
 
 // runState reads what a sandbox's pod has done. The pod has the sandbox's name.
 // startedOn is the UID of the pod the run started on, if the operator saw it:
-// Agent Sandbox replaces a pod that went away without c4agent ending it, and
+// Agent Sandbox replaces a pod that went away without theos-agent ending it, and
 // the replacement would run the round again without the Task knowing.
 func runState(ctx context.Context, c client.Client, ns, name, startedOn string) (model.RunState, error) {
 	var state model.RunState
@@ -480,7 +480,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 	state.Failure = pod.Status.Reason
 	state.Interrupted = podDisrupted(&pod)
 	// Its own deadline or its sandbox's shutdown time ends a run that took too
-	// long: the run's failure, though c4agent sees the same SIGTERM. A deadline
+	// long: the run's failure, though theos-agent sees the same SIGTERM. A deadline
 	// or shutdown time the node or the cluster was down at is not the run's limit.
 	ownLimit := expired && !missed
 	if pod.Status.Reason == "DeadlineExceeded" {
@@ -500,7 +500,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 				Proposal:         result.Proposal, Extra: result.Extra, Empty: result.Empty, Blocked: result.Blocked,
 				FollowUps: result.FollowUps, Open: result.Open, Unavailable: result.Unavailable,
 			}
-			// A result c4agent wrote before an outage stands.
+			// A result theos-agent wrote before an outage stands.
 			state.Interrupted = (podDisrupted(&pod) || result.Interrupted) && !ownLimit
 			if result.RetryAt != nil {
 				state.Result.RetryAt = *result.RetryAt

@@ -1,10 +1,10 @@
 # The operator as a Helm chart
 
-**Goal:** A device installs c4factory with `helm install`: the operator, its CRDs,
+**Goal:** A device installs theos with `helm install`: the operator, its CRDs,
 RBAC, the admission policy and the UI, with values for the images and the Git
 provider. Issue #98; spec in [user-issues.md](user-issues.md), *Not in this plan*.
 
-**Why:** Devices build their products with c4factory as a Helm release, but the
+**Why:** Devices build their products with theos as a Helm release, but the
 operator installs only through kustomize into the Kind test cluster.
 
 ## Shape

@@ -2,14 +2,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "c4-factory.uiName" . }}
+  name: {{ include "theos.uiName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "c4-factory.uiLabels" . | nindent 4 }}
+    {{- include "theos.uiLabels" . | nindent 4 }}
 spec:
   type: {{ .Values.ui.service.type }}
   selector:
-    {{- include "c4-factory.uiSelectorLabels" . | nindent 4 }}
+    {{- include "theos.uiSelectorLabels" . | nindent 4 }}
   ports:
   - name: http
     port: {{ .Values.ui.service.port }}

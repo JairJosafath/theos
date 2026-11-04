@@ -38,7 +38,7 @@ func engineSource() []SourceFile {
 }
 
 func TestFactoryOwnPaths(t *testing.T) {
-	want := []string{".c4factory.yaml", ".devcontainer/", ".gitea/", "AGENTS.md", "docs/agents/"}
+	want := []string{".theos.yaml", ".devcontainer/", ".gitea/", "AGENTS.md", "docs/agents/"}
 	if got := FactoryOwnPaths(giteaActions); !slices.Equal(got, want) {
 		t.Errorf("FactoryOwnPaths(giteaActions) = %q, want %q", got, want)
 	}
@@ -112,7 +112,7 @@ func TestNewSource(t *testing.T) {
 	own := []SourceFile{
 		{Path: "AGENTS.md", Mode: ModeFile, Blob: runSh},
 		{Path: "docs/agents/coder.md", Mode: ModeFile, Blob: runSh},
-		{Path: ".c4factory.yaml", Mode: ModeFile, Blob: runSh},
+		{Path: ".theos.yaml", Mode: ModeFile, Blob: runSh},
 		{Path: ".devcontainer/devcontainer.json", Mode: ModeFile, Blob: runSh},
 		{Path: ".gitea/workflows/ci.yaml", Mode: ModeFile, Blob: runSh},
 	}
@@ -174,7 +174,7 @@ func TestSourceTag(t *testing.T) {
 		t.Errorf("SourceURL(ghe) = %q", got)
 	}
 	if got, want := SourceMessage("CEL engine", "cel-lens/engine", "v0.6.1", "core-v0.6.1"),
-		"CEL engine v0.6.1: source\n\nC4factory-Source: cel-lens/engine core-v0.6.1\n"; got != want {
+		"CEL engine v0.6.1: source\n\ntheos-Source: cel-lens/engine core-v0.6.1\n"; got != want {
 		t.Errorf("SourceMessage = %q, want %q", got, want)
 	}
 }
@@ -303,7 +303,7 @@ func TestNextPublishStepSource(t *testing.T) {
 		f.GitHubSource = &GitHubSource{Head: ours, HeadTree: sourceTree, TagCommit: ours, TagTree: sourceTree}
 	}
 	commit := &SourceCommit{Path: "engine", Files: src.Files, Tree: sourceTree, Parent: head,
-		Message: "CEL engine v0.6.1: source\n\nC4factory-Source: cel-lens/engine core-v0.6.1\n",
+		Message: "CEL engine v0.6.1: source\n\ntheos-Source: cel-lens/engine core-v0.6.1\n",
 		// engine.go's blob is in the head's folder already, and parse.go's is
 		// the same blob.
 		Upload: []SourceFile{src.Files[0], src.Files[2], src.Files[3], src.Files[5]}}

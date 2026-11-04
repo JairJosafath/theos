@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Trims Go's build cache, and golangci-lint's, when one has grown past
-# C4_GOCACHE_MAX_GB (default 4; C4_GOCACHE_MAX_MB overrides it, for tests).
+# THEOS_GOCACHE_MAX_GB (default 4; THEOS_GOCACHE_MAX_MB overrides it, for tests).
 # Go only drops cache entries unused for five days, and builds from several
 # worktrees fill it fast (18 GB in 8 hours with nine relay workers). VS Code
 # runs it when the folder opens (.vscode/tasks.json), and hack/relay-watch.sh
@@ -17,7 +17,7 @@
 # cache and Go's default cache ~/.cache/go-build, which go runs outside ./dev
 # fill, when GOCACHE is elsewhere)
 set -uo pipefail
-max_kb=$((${C4_GOCACHE_MAX_MB:-$((${C4_GOCACHE_MAX_GB:-4} * 1024))} * 1024))
+max_kb=$((${THEOS_GOCACHE_MAX_MB:-$((${THEOS_GOCACHE_MAX_GB:-4} * 1024))} * 1024))
 
 size_kb() { du -skH "$1" 2>/dev/null | cut -f1; }
 mb() { echo "$(($1 / 1024)) MB"; }

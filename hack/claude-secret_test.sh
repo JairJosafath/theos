@@ -61,7 +61,7 @@ check "file: says so" "$(cat "$T/out")" "Stored Secret apps/claude-credentials"
 check "file: the token, on stdin" "$(cat "$T/applied")" "token: $fake_token"
 # The two ends of the pipe start in either order.
 check "file: kubectl calls" "$(LC_ALL=C sort "$T/calls")" "--context kind-test -n apps create secret generic claude-credentials --from-file=CLAUDE_CODE_OAUTH_TOKEN=/dev/stdin --dry-run=client -o yaml
---context kind-test apply --server-side --field-manager=c4factory-testenv -f -"
+--context kind-test apply --server-side --field-manager=theos-testenv -f -"
 check "file: token not in argv or output" "$(leaked)" 0
 chmod 400 "$file"
 run
@@ -81,7 +81,7 @@ check "command line: its token" "$(cat "$T/applied")" "token: $cli_token"
 # By default the token goes to the operator's namespace, which shares it.
 rm -f "$T/calls" "$T/applied"
 make -s -C "$ROOT" claude-secret KUBECTL="$T/kubectl" KIND_CLUSTER=test CLAUDE_TOKEN_FILE="$file" >"$T/out" 2>&1
-check "default: the operator's namespace" "$(cat "$T/out")" "Stored Secret c4-factory-system/claude-credentials"
+check "default: the operator's namespace" "$(cat "$T/out")" "Stored Secret theos-system/claude-credentials"
 
 # An empty file fails.
 chmod 600 "$file"; : >"$file"

@@ -7,16 +7,16 @@ import (
 )
 
 func TestDecidePackages(t *testing.T) {
-	npm := ReleasePackage{Outcome: PackagePublished, Ecosystem: "npm", Name: "@c4factory/orders-api",
-		Version: "0.1.0", File: "c4factory-orders-api-0.1.0.tgz"}
+	npm := ReleasePackage{Outcome: PackagePublished, Ecosystem: "npm", Name: "@theos/orders-api",
+		Version: "0.1.0", File: "theos-orders-api-0.1.0.tgz"}
 	wheel := ReleasePackage{Outcome: PackagePublished, Ecosystem: "PyPI", Name: "orders-api", Version: "0.1.0",
 		File: "orders_api-0.1.0-py3-none-any.whl"}
 	exists := func(p ReleasePackage) ReleasePackage { p.Outcome = PackageExists; return p }
 	unscoped := ReleasePackage{Outcome: PackageUnscoped, Ecosystem: "npm", Name: "orders-api", Version: "0.1.0",
-		File: "orders-api-0.1.0.tgz", Reason: "orders-api is not under the scope @c4factory"}
-	invalid := ReleasePackage{Outcome: PackageInvalid, Ecosystem: "npm", Name: "@c4factory/orders-api",
-		Version: "0.2.0", File: "c4factory-orders-api-0.2.0.tgz", Reason: "version 0.2.0 is not the tag's, 0.1.0"}
-	both := []PublishedPackage{{Ecosystem: "npm", Name: "@c4factory/orders-api", Version: "0.1.0"},
+		File: "orders-api-0.1.0.tgz", Reason: "orders-api is not under the scope @theos"}
+	invalid := ReleasePackage{Outcome: PackageInvalid, Ecosystem: "npm", Name: "@theos/orders-api",
+		Version: "0.2.0", File: "theos-orders-api-0.2.0.tgz", Reason: "version 0.2.0 is not the tag's, 0.1.0"}
+	both := []PublishedPackage{{Ecosystem: "npm", Name: "@theos/orders-api", Version: "0.1.0"},
 		{Ecosystem: "PyPI", Name: "orders-api", Version: "0.1.0"}}
 	tests := []struct {
 		name  string
@@ -42,12 +42,12 @@ func TestDecidePackages(t *testing.T) {
 		{name: "a tarball and a wheel are published", facts: PackagesFacts{Tag: "v0.1.0", Run: RunSucceeded,
 			Packages: []ReleasePackage{npm, wheel}},
 			state: PackagesStatePublished, done: true, reason: PackagesReasonPublished,
-			said:      []string{"Published npm @c4factory/orders-api 0.1.0 and PyPI orders-api 0.1.0"},
+			said:      []string{"Published npm @theos/orders-api 0.1.0 and PyPI orders-api 0.1.0"},
 			published: both},
 		{name: "a repeat finds them there", facts: PackagesFacts{Tag: "v0.1.0", Run: RunSucceeded,
 			Packages: []ReleasePackage{exists(npm), exists(wheel)}},
 			state: PackagesStatePublished, done: true, reason: PackagesReasonPublished,
-			said:      []string{"Published npm @c4factory/orders-api 0.1.0 and PyPI orders-api 0.1.0"},
+			said:      []string{"Published npm @theos/orders-api 0.1.0 and PyPI orders-api 0.1.0"},
 			published: both},
 		{name: "no package file", facts: PackagesFacts{Tag: "v0.1.0", Run: RunSucceeded},
 			state: PackagesStateNoPackage, done: true, reason: PackagesReasonNoPackage,
@@ -56,17 +56,17 @@ func TestDecidePackages(t *testing.T) {
 			Run: RunSucceeded, Packages: []ReleasePackage{unscoped, wheel}},
 			state: PackagesStatePublished, done: true, reason: PackagesReasonPublished,
 			said: []string{"Published PyPI orders-api 0.1.0; left orders-api-0.1.0.tgz alone: " +
-				"orders-api is not under the scope @c4factory"},
+				"orders-api is not under the scope @theos"},
 			published: both[1:]},
 		{name: "an unscoped tarball alone is no package", facts: PackagesFacts{Tag: "v0.1.0", Run: RunSucceeded,
 			Packages: []ReleasePackage{unscoped}},
 			state: PackagesStateNoPackage, done: true, reason: PackagesReasonNoPackage,
 			said: []string{"no package to publish; left orders-api-0.1.0.tgz alone: " +
-				"orders-api is not under the scope @c4factory"}},
+				"orders-api is not under the scope @theos"}},
 		{name: "a version that isn't the tag's fails the release, the wheel still listed",
 			facts: PackagesFacts{Tag: "v0.1.0", Run: RunSucceeded, Packages: []ReleasePackage{invalid, wheel}},
 			state: PackagesStateInvalid, reason: PackagesReasonInvalid,
-			said:      []string{"Did not publish c4factory-orders-api-0.2.0.tgz: version 0.2.0 is not the tag's, 0.1.0"},
+			said:      []string{"Did not publish theos-orders-api-0.2.0.tgz: version 0.2.0 is not the tag's, 0.1.0"},
 			published: both[1:]},
 	}
 	for _, tt := range tests {

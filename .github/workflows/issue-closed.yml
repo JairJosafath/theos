@@ -26,10 +26,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
-          C4_GITHUB_REPO: ${{ github.repository }}
+          THEOS_GITHUB_REPO: ${{ github.repository }}
       - name: Close the plans' parents it finishes
         run: hack/lib/github.sh parents --apply "$ISSUE"
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
-          C4_GITHUB_REPO: ${{ github.repository }}
+          THEOS_GITHUB_REPO: ${{ github.repository }}

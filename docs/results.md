@@ -44,7 +44,7 @@ each at the version in [`templates/versions.txt`](../templates/versions.txt).
 
 The webshop sample, as `kubectl` sees it. Every kind is in category `c4`.
 
-![kubectl get c4 -n webshop](screenshots/m2-story.png)
+![kubectl get theos -n webshop](screenshots/m2-story.png)
 
 Children name their parent in `spec`; the operator turns that into the owner
 reference, so deleting a parent deletes its children. `make e2e` deletes a
@@ -80,7 +80,7 @@ is checked in Kind, above.
 
 ![orders-api Ready](screenshots/m4-container.png)
 
-The repository in Gitea: one commit, by C4 Factory, with trailers the operator uses
+The repository in Gitea: one commit, by theos, with trailers the operator uses
 to recognise its own work when it retries.
 
 ![The orders-api repository](screenshots/m4-gitea-repo.png)
@@ -95,7 +95,7 @@ Postgres into the app service.
 
 ## 5. Sessions
 
-The test pod clones `orders-api` and runs `c4session` under the project's
+The test pod clones `orders-api` and runs `theos-session` under the project's
 `c4-session` ServiceAccount. Its Session shows on the Container and rolls up to the
 SoftwareSystem and the Project.
 
@@ -107,7 +107,7 @@ operator marks the Session `Stale`.
 ![The Session turns Stale](screenshots/m5-stale.png)
 
 The same, from a real devcontainer. `devcontainer up` on a freshly scaffolded
-repository (`carts-api`) built the image with the c4session feature, which installed
+repository (`carts-api`) built the image with the theos-session feature, which installed
 the client, and the devcontainer registered a `human` Session. Inside it the tests
 pass and Postgres, from `compose.postgres.yaml`, answers. Two things were set by
 hand, as a user would: the feature's `binaryUrl` (the operator's
@@ -149,7 +149,7 @@ added after scaffolding, drawn dashed and marked as not applied.
 ![Demo mode](screenshots/m6-ui-demo-containers.png)
 
 The UI can't change anything. Its gateway forwards only GET requests, only under
-`c4.factory.io`, and its ServiceAccount may only get, list and watch.
+`theos.factory.io`, and its ServiceAccount may only get, list and watch.
 
 ![The UI is read-only](screenshots/m6-ui-readonly.png)
 
@@ -159,7 +159,7 @@ As the design says, v1 doesn't ship, doesn't read runtime health, doesn't adopt
 existing repositories, and only supports Gitea. Things found while building:
 
 - **The devcontainer feature needs a binary to download.** The repository is
-  private, so `go install` can't fetch the client, and the `c4session`
+  private, so `go install` can't fetch the client, and the `theos-session`
   binaries each release attaches need a GitHub login too. So the UI image
   carries the client for linux/amd64 and arm64 and serves it under
   `/downloads/`, and the chart's `sessionBinaryURL` points the operator's

@@ -12,7 +12,7 @@ holds the rules.
 **Architecture:** A new namespaced kind, `Brief` (`spec.idea`, append-only
 `spec.prompts`). Each round (the idea, then each batch of new prompts) is a
 Task with `spec.kind: Plan` owned by the Brief, run in an agent sandbox with
-`C4_ROLE=plan`. The planner works in the Brief's own Gitea repository, where
+`THEOS_ROLE=plan`. The planner works in the Brief's own Gitea repository, where
 the operator writes the brief, the current model and the installed catalog,
 and pushes its plan to `plan/<round>`. The operator reads the plan, checks it
 with pure functions in `internal/model`, applies it, makes the Crews, files the
@@ -44,7 +44,7 @@ decision on #240 set B1, B3, B9 and B10; the rest fill in what it left open.
 | B5 | The plan | The planner pushes `plan/<round>`: `plan/model.yaml` (story kinds), `plan/issues/<nn>-<container>.md` (front matter: title, labels), `plan/choices.md` (one line per choice, in plain words) and, only when stuck, `plan/needs-input.md` (one sentence). The termination message carries a short summary | The design Task's channel (a branch read by the operator), sized for a whole model |
 | B6 | What a plan may write | Project (only when the namespace has none), Person, SoftwareSystem, Container, DataStore, Relationship. Nothing else: no GitProvider, Secret, Agent, Crew, catalog entry, Task or Brief | Everything else costs money or touches access (B10) |
 | B7 | Checks on a plan | In `internal/model`, pure: names are DNS labels; kinds are B6's; at most 20 objects and 10 issues per round; a Container names catalog entries that exist and support its type, and the Brief's GitProvider; an existing object changes only its story text (`displayName`, `description`, `needs`, `kpis`); nothing is deleted; an issue targets a Container of the namespace or of the plan and has acceptance criteria (`MissingAcceptanceCriteria`) unless it's a design idea for a Crew with a designer; `choices.md` is not empty. A refused plan starts the next round of the same Task with the reasons, up to the planner Agent's `maxRounds` | The planner is checked, not trusted, like every agent |
-| B8 | Applying | In order, each step idempotent: Project, Persons, SoftwareSystems, DataStores, Relationships (before the Containers they start from, so each Connector is in the scaffold, not `AddedAfterScaffold`), Containers; then, once each new Container is `Ready`, its Crew and its issues. Every object gets the label `c4.factory.io/brief: <name>`, no ownerReference to the Brief | Deleting a Brief must not delete the product it built; the label says where an object came from |
+| B8 | Applying | In order, each step idempotent: Project, Persons, SoftwareSystems, DataStores, Relationships (before the Containers they start from, so each Connector is in the scaffold, not `AddedAfterScaffold`), Containers; then, once each new Container is `Ready`, its Crew and its issues. Every object gets the label `theos.factory.io/brief: <name>`, no ownerReference to the Brief | Deleting a Brief must not delete the product it built; the label says where an object came from |
 | B9 | Crews | One Crew per new Container, named after it, with the Brief's implementer, reviewer and designer, `parallel: 1`, releases off; the planner can't change it | Agents' models and the Crew's size cost money |
 | B10 | Asking | The Brief's condition `NeedsInput`, phase `NeedsInput`, with one sentence saying what and why, and nothing applied. Set by the operator when an Agent, the GitProvider, its credentials or a catalog entry the plan needs is missing, and by the planner through `needs-input.md`. Fixing it (or a new prompt) starts the round again | The only time it asks the person, as #240 wants |
 | B11 | Issues | Filed in the Container's repository, `status/ready` (or `status/design` once the v5 designer exists and the Crew has one), in no milestone; each body ends with a marker `<!-- c4-brief: <brief>/<round>/<n> -->`, found again before filing, so a restart files no duplicate | v5's designer is not built yet, so the planner writes ready issues with acceptance criteria; the marker is the bumps' pattern |
@@ -65,7 +65,7 @@ leaves main working: nothing plans until step 5 lands. Each issue says
 | --- | --- | --- | --- | --- |
 | 1 | #275 | API: the `Brief` kind (`kubebuilder create api`), B2's spec and CEL, B13's status, a controller that only sets `Pending`; envtest for the CEL rules | none | no |
 | 2 | #276 | Model: `internal/model/brief.go`, parse and check a plan (B5, B6, B7), the round's prompts (B12), the issue marker (B11); table tests for every refusal | none | no |
-| 3 | #277 | API and runner: Task `spec.kind` (`Implement` default, `Plan`; immutable) and `spec.briefRef` with CEL (exactly one parent; a Plan Task has a brief and no reviewer); `C4_ROLE=plan` in `internal/agentrunner`: clone the brief repository, run the planner with `PLANNER.md`, push `plan/<round>` | 1 | no |
+| 3 | #277 | API and runner: Task `spec.kind` (`Implement` default, `Plan`; immutable) and `spec.briefRef` with CEL (exactly one parent; a Plan Task has a brief and no reviewer); `THEOS_ROLE=plan` in `internal/agentrunner`: clone the brief repository, run the planner with `PLANNER.md`, push `plan/<round>` | 1 | no |
 | 4 | #278 | Workspace: the operator makes the brief repository and its bot (B4), writes `brief.md`, `model/` and `PLANNER.md` to `main` before each round; fake provider and envtest | 1, 2 | no |
 | 5 | #279 | Controller: the Brief starts a Plan Task per round, reads and checks the plan, applies it (B8), makes Crews (B9), files issues (B11), sets status (B13) and `NeedsInput` (B10), merges the plan; envtest with the fake provider, including a restart halfway through applying | 2, 3, 4 | no |
 | 6 | #280 | Chart: B14's catalog entries and Agents per project; `make validate-yaml` | none | no |
@@ -77,7 +77,7 @@ leaves main working: nothing plans until step 5 lands. Each issue says
 What B5 and B7 leave open, settled in step 2 (`internal/model/brief.go`):
 
 - **`plan/model.yaml` is the whole story model the round leaves,** as
-  manifests (`apiVersion: c4.factory.io/v1alpha1`, `kind`, `metadata.name`,
+  manifests (`apiVersion: theos.factory.io/v1alpha1`, `kind`, `metadata.name`,
   `spec` as in the CRDs), one per document: what the namespace holds, changed
   or not, and what the round adds. A deletion is an object of the namespace
   left out, and is refused. B7's 20 counts the objects the round creates or
@@ -110,8 +110,8 @@ What B3 and B5 leave open, settled in step 3:
   skips the empty one.
 - **The Task controller left a Plan Task alone** until step 5 gave the Brief
   its rounds; step 5 runs it (see below).
-- **The runner, `C4_ROLE=plan`,** takes `C4_BRIEF` in place of `C4_GOAL` and
-  `C4_CONTAINER`; its branch is `plan/<C4_ROUND>`, and any other `C4_BRANCH`
+- **The runner, `THEOS_ROLE=plan`,** takes `THEOS_BRIEF` in place of `THEOS_GOAL` and
+  `THEOS_CONTAINER`; its branch is `plan/<THEOS_ROUND>`, and any other `THEOS_BRANCH`
   is refused. Each run starts from the base branch (`main`), removes `plan/`
   from the working tree (earlier rounds' plans stay in the history), and
   fails without `PLANNER.md` or `brief.md` there. After the agent, the branch
@@ -120,7 +120,7 @@ What B3 and B5 leave open, settled in step 3:
   no `plan/` fails and pushes nothing. The summary is cut to 1000 bytes; the
   plan itself is on the branch.
 - **The runner doesn't check the plan.** The operator does (B7), and a
-  refusal comes back as `C4_FEEDBACK` in the next round.
+  refusal comes back as `THEOS_FEEDBACK` in the next round.
 - **The stand-in planner** (`harness: stand-in`) copies `model/model.yaml` into
   `plan/model.yaml` and writes one choice: a plan that changes nothing, for
   demos and e2e.
@@ -164,7 +164,7 @@ What B4 leaves open, settled in step 4 (`internal/model/brief_workspace.go`,
   records the repository it was given access to, so a moved repository gets
   its bot again.
 - **Left for step 5:** B16's deletion of the bot user in Gitea (the Secret
-  already goes with the Brief; done in #326: a `c4.factory.io/brief-bot`
+  already goes with the Brief; done in #326: a `theos.factory.io/brief-bot`
   finalizer, put on before the bot is made, deletes the user through
   `RemoveAgentAccess`, and lets the Brief go without it when its GitProvider
   or credentials are gone; #335: a host that fails the delete is retried
@@ -180,10 +180,10 @@ What B3, B8 and B10-B13 leave open, settled in step 5
 `internal/model/brief_round.go`):
 
 - **A round is one Plan Task,** `<brief>-plan-<round>`, owned by the Brief,
-  labelled `c4.factory.io/brief: <brief>` and `c4.factory.io/brief-round:
+  labelled `theos.factory.io/brief: <brief>` and `theos.factory.io/brief-round:
   <round>`, its agent the Brief's planner. Its status rounds are the
   planner's tries at that Brief round: `status.round` counts tries, and every
-  try pushes to the same `plan/<round>` (`C4_ROUND` is the Brief's round).
+  try pushes to the same `plan/<round>` (`THEOS_ROUND` is the Brief's round).
 - **The Task controller runs a Plan Task** with the Implement Task's machinery
   (`NextTaskStep` with `Plan` set): no Container, protection or queue to wait
   for; the sandbox clones the brief repository with the bot's Secret
@@ -191,8 +191,8 @@ What B3, B8 and B10-B13 leave open, settled in step 5
   as for any Task. A try that pushes a plan goes to `Checking`, where it waits
   for the Brief's verdict.
 - **The verdict is two annotations on the Task,** written by the Brief:
-  `c4.factory.io/plan-checked: <commit>` and, when refused,
-  `c4.factory.io/plan-refusals: <reasons>`. The Task controller acts on a
+  `theos.factory.io/plan-checked: <commit>` and, when refused,
+  `theos.factory.io/plan-refusals: <reasons>`. The Task controller acts on a
   verdict for its `status.commit` only: accepted ends the Task `Merged`
   ("the Brief accepted the plan"); refused starts its next try with the
   reasons as feedback, or fails it after the planner's `maxRounds`. So the
@@ -220,8 +220,8 @@ What B3, B8 and B10-B13 leave open, settled in step 5
   while it lasts; the Brief looks again each minute and on Agent changes.
 - **Applying (B8)** reads the plan again at the Task's commit, in order:
   Project, Persons, SoftwareSystems, DataStores, Relationships, Containers.
-  Absent objects are created with the labels `c4.factory.io/brief` and
-  `c4.factory.io/brief-round`; present ones get only their story text. Every
+  Absent objects are created with the labels `theos.factory.io/brief` and
+  `theos.factory.io/brief-round`; present ones get only their story text. Every
   step is idempotent, so a restart applies the rest.
 - **Then, per new Container and per Container an issue targets,** once it is
   `Ready` (the round waits for each; a Container that isn't Ready keeps it
@@ -282,7 +282,7 @@ stand-in implementer and reviewer already do for Crews.
   both, if any. The round files one issue for that Container. A round of
   prompts changes no object and files one issue per new prompt, for the
   Brief's Container (else the model's first). With no Framework, it writes
-  `needs-input.md`. `FakeAgent` runs it for `C4_ROLE=plan`.
+  `needs-input.md`. `FakeAgent` runs it for `THEOS_ROLE=plan`.
 - **Tier 1 proves the plan is valid:** for catalogs with and without a
   Standard, for a model with and without a SoftwareSystem, and for a round
   of prompts, `ParsePlan` and `CheckPlan` take the stand-in's plan with no

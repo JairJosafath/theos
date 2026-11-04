@@ -1,17 +1,17 @@
 $ make test-templates   # on main + #1469, 2026-10-20
-KUSTOMIZE="/home/josaf/c4factory/.dev/make/bin/kustomize-v5.8.1" hack/test-templates.sh
+KUSTOMIZE="/home/josaf/theos/.dev/make/bin/kustomize-v5.8.1" hack/test-templates.sh
 
 === fastapi service with postgres (Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres)
-Rendered 33 files from python-fastapi@local, python-standard@local, small@local, k8s-manifests@local, postgres@local into /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders
+Rendered 33 files from python-fastapi@local, python-standard@local, small@local, k8s-manifests@local, postgres@local into /home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/orders
 
 $ make check
 uv sync --locked
 Using CPython 3.12.15
 Creating virtual environment at: .venv
 Resolved 40 packages in 1ms
-   Building orders @ file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders
+   Building orders @ file:///home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/orders
 warning: `build_system.requires = ["uv-build>=0.12.21,<0.13"]` does not contain the current uv version 0.13.1
-      Built orders @ file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders
+      Built orders @ file:///home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/orders
 Prepared 1 package in 5ms
 Installed 37 packages in 40ms
  + annotated-doc==0.0.5
@@ -30,7 +30,7 @@ Installed 37 packages in 40ms
  + mypy==2.4.0
  + mypy-extensions==1.1.0
  + opentelemetry-api==1.45.1
- + orders==0.1.0 (from file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders)
+ + orders==0.1.0 (from file:///home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/orders)
  + packaging==26.3
  + pathspec==1.1.1
  + pluggy==1.6.0
@@ -60,7 +60,7 @@ Success: no issues found in 3 source files
 uv run --no-sync pytest --strict-markers --strict-config
 ============================= test session starts ==============================
 platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/orders
+rootdir: /home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/orders
 configfile: pyproject.toml
 testpaths: tests
 plugins: anyio-4.15.1
@@ -74,16 +74,16 @@ $ kustomize build deploy/k8s
 deploy/k8s builds 3 objects
 
 === python cli (Framework=python-cli Standard=python-standard Deployment=gitea-release)
-Rendered 28 files from python-cli@local, python-standard@local, gitea-release@local into /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
+Rendered 28 files from python-cli@local, python-standard@local, gitea-release@local into /home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
 
 $ make check
 uv sync --locked
 Using CPython 3.12.15
 Creating virtual environment at: .venv
 Resolved 14 packages in 1ms
-   Building shop-admin @ file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
+   Building shop-admin @ file:///home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
 warning: `build_system.requires = ["uv-build>=0.12.21,<0.13"]` does not contain the current uv version 0.13.1
-      Built shop-admin @ file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
+      Built shop-admin @ file:///home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
 Prepared 1 package in 6ms
 Installed 13 packages in 59ms
  + ast-serialize==0.12.1
@@ -97,7 +97,7 @@ Installed 13 packages in 59ms
  + pygments==2.21.0
  + pytest==9.1.1
  + ruff==0.16.10
- + shop-admin==0.1.0 (from file:///home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin)
+ + shop-admin==0.1.0 (from file:///home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin)
  + typing-extensions==4.16.0
 uv run --no-sync ruff format --diff .
 16 files already formatted
@@ -108,7 +108,7 @@ Success: no issues found in 6 source files
 uv run --no-sync pytest --strict-markers --strict-config
 ============================= test session starts ==============================
 platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
+rootdir: /home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/shop-admin
 configfile: pyproject.toml
 testpaths: tests
 collected 10 items
@@ -135,7 +135,7 @@ shop_admin-0.1.0-py3-none-any.whl
 shop_admin-0.1.0.tar.gz
 
 === react web app on kubernetes (Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests)
-Rendered 37 files from react-vite@local, ts-standard@local, small@local, k8s-manifests@local into /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/storefront
+Rendered 37 files from react-vite@local, ts-standard@local, small@local, k8s-manifests@local into /home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/storefront
 
 $ make check
 npm ci --no-audit --no-fund
@@ -148,7 +148,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/storefront
+ RUN  v5.0.3 /home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/storefront
 
 
  Test Files  1 passed (1)
@@ -171,7 +171,7 @@ $ kustomize build deploy/k8s
 deploy/k8s builds 2 objects
 
 === node cli (Framework=node-cli Standard=ts-standard Deployment=gitea-release)
-Rendered 31 files from node-cli@local, ts-standard@local, gitea-release@local into /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-tool
+Rendered 31 files from node-cli@local, ts-standard@local, gitea-release@local into /home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/shop-tool
 
 $ make check
 npm ci --no-audit --no-fund
@@ -184,7 +184,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 /home/josaf/.cache/c4factory/tmp/relay-2/tmp.XJsOF9BUMa/shop-tool
+ RUN  v5.0.3 /home/josaf/.cache/theos/tmp/relay-2/tmp.XJsOF9BUMa/shop-tool
 
 
  Test Files  2 passed (2)

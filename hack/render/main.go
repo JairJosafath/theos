@@ -16,8 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 	flag.StringVar(&in.DisplayName, "display-name", "Sample App", "Container display name")
 	flag.StringVar(&in.Type, "type", "cli", "Container type")
 	flag.StringVar(&in.Checks, "checks", "", "when CI runs the full check: EveryChange (the default) or BeforeRelease")
-	flag.StringVar(&in.NpmScope, "npm-scope", "@c4factory", "the npm scope the Container's package is named under")
+	flag.StringVar(&in.NpmScope, "npm-scope", "@theos", "the npm scope the Container's package is named under")
 	ci := flag.String("ci", model.CIGiteaActions, "the CI system the repository runs")
 	// The Container's spec.operations, each left out when empty (-retention-days -1).
 	var ops model.OperationsChoices

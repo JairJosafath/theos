@@ -23,7 +23,7 @@ fake() {
 }
 # left: the ages in hours of the entries still there.
 left() { find "$T/cache" -mindepth 2 -type f -printf '%f\n' | sed 's/^h\([0-9]*\)-.*/\1/' | sort -nu | tr '\n' ' '; }
-trim() { C4_GOCACHE_MAX_MB=$1 "$TRIM" "$T/cache"; }
+trim() { THEOS_GOCACHE_MAX_MB=$1 "$TRIM" "$T/cache"; }
 
 fake; out=$(trim 13)
 check "under the limit: keeps every entry" "$(left)" "0 4 13 48 120 240 "
@@ -53,13 +53,13 @@ check "over even then: keeps entries used in the last 2 hours" "$(left)" "0 "
 check "over even then: keeps top-level files" "$(cat "$T/cache/README")" "fake"
 echo "$out" | grep -q "still over the limit"; check "over even then: says so" $? 0
 
-check "missing directory: exit 0" "$(trim 1 >/dev/null; C4_GOCACHE_MAX_MB=1 "$TRIM" "$T/none"; echo $?)" 0
+check "missing directory: exit 0" "$(trim 1 >/dev/null; THEOS_GOCACHE_MAX_MB=1 "$TRIM" "$T/none"; echo $?)" 0
 
 # With no arguments (#1343): GOCACHE, golangci-lint's cache and Go's default
 # cache ~/.cache/go-build, once when that is GOCACHE. A stub go names GOCACHE.
 mkdir -p "$T/bin" "$T/home/.cache"
 printf '#!/bin/sh\necho "$GOCACHE_STUB"\n' >"$T/bin/go" && chmod +x "$T/bin/go"
-noargs() { HOME=$T/home XDG_CACHE_HOME= GOLANGCI_LINT_CACHE=$T/lint GOCACHE_STUB=$1 PATH="$T/bin:$PATH" C4_GOCACHE_MAX_MB=1 "$TRIM"; }
+noargs() { HOME=$T/home XDG_CACHE_HOME= GOLANGCI_LINT_CACHE=$T/lint GOCACHE_STUB=$1 PATH="$T/bin:$PATH" THEOS_GOCACHE_MAX_MB=1 "$TRIM"; }
 fake; rm -rf "$T/home/.cache/go-build"; cp -a "$T/cache" "$T/home/.cache/go-build"
 out=$(noargs "$T/cache")
 check "no arguments: trims GOCACHE" "$(left)" "0 "

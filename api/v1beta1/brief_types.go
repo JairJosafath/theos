@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -91,7 +91,7 @@ type BriefSpec struct {
 
 	// paused stops the Brief's work in one step (docs/plans/done/upgrade-in-place.md):
 	// while true, the Brief pauses every Crew it made, marking each with
-	// c4.factory.io/paused-by: brief, starts no new round (a new prompt waits)
+	// theos.factory.io/paused-by: brief, starts no new round (a new prompt waits)
 	// and tends no failed issue; a planner Task already started runs to its
 	// end. Set back to false, it unpauses only the Crews it marked, so a Crew
 	// paused by hand stays paused. The Paused condition says what still runs.
@@ -929,7 +929,7 @@ type BriefStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Round",type=integer,JSONPath=".status.round"

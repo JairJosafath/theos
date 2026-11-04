@@ -47,7 +47,7 @@ _Run and monitor the system, and improve it in small, reversible changes._
   costs per trace and needs `xray:Put*` on `*`, which CDK Nag flags
   (`AwsSolutions-IAM5`); acknowledge that finding with the reason.
 - Tag everything so cost and ownership are traceable: every stack carries
-  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  `theos:project`, `theos:system` and `theos:container`
   (`infra/standard.ts`, tested).
 - By hand: alarms on errors, 5xx answers, unhealthy targets and CPU, and written steps for answering each, when the
   system's needs ask for them.
@@ -232,7 +232,7 @@ _Run and monitor the system, and improve it in small, reversible changes._
   - `AwsSolutions-EC28`: detailed monitoring on the instances.
   - `infra/standard.test.ts` checks that every log group has a retention.
 - Tag everything so cost and ownership are traceable: every stack carries
-  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  `theos:project`, `theos:system` and `theos:container`
   (`infra/standard.ts`, tested), and the Auto Scaling group passes them to
   its instances.
 - By hand: alarms on 5xx responses, unhealthy hosts and latency, and written
@@ -392,7 +392,7 @@ _Run and monitor the system, and improve it in small, reversible changes._
   costs per trace and needs `xray:Put*` on `*`, which CDK Nag flags
   (`AwsSolutions-IAM5`); acknowledge that finding with the reason.
 - Tag everything so cost and ownership are traceable: every stack carries
-  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  `theos:project`, `theos:system` and `theos:container`
   (`infra/standard.ts`, tested).
 - By hand: alarms on errors, throttles and duration, and written steps for
   answering each, when the system's needs ask for them.
@@ -633,7 +633,7 @@ _Run and monitor the system, and improve it in small, reversible changes._
   first, how to restore the data and how a deployment rolls back. A change
   to what the stacks keep updates it, as a Standard change.
 - Tag everything so cost and ownership are traceable: every stack carries
-  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  `theos:project`, `theos:system` and `theos:container`
   (`infra/standard.ts`, tested).
 - By hand, and why: whether the alarms fire for the right reasons, and
   which are missing (REL06-BP06), only a deployed stack's history shows;
@@ -950,7 +950,7 @@ _Run and monitor the system, and improve it in small, reversible changes._
   first, how to restore the data and how to roll a deployment back. A
   change to what the stacks keep updates it, as a Standard change.
 - Tag everything so cost and ownership are traceable: every stack carries
-  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  `theos:project`, `theos:system` and `theos:container`
   (`infra/standard.ts`, tested), and the Auto Scaling group passes them to
   its instances.
 - By hand, and why: whether the alarms fire for the right reasons, and
@@ -1269,7 +1269,7 @@ _Run and monitor the system, and improve it in small, reversible changes._
   first, how to restore the data and how to roll a deployment back. A
   change to what the stacks keep updates it, as a Standard change.
 - Tag everything so cost and ownership are traceable: every stack carries
-  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  `theos:project`, `theos:system` and `theos:container`
   (`infra/standard.ts`, tested).
 - By hand, and why: whether the alarms fire for the right reasons, and
   which are missing (REL06-BP06), only a deployed stack's history shows;
@@ -1692,7 +1692,7 @@ _Run and monitor the system, and improve it in small, reversible changes._
   deployment back. A change to what the stack keeps updates it, as a
   Standard change.
 - Tag everything so cost and ownership are traceable: every stack carries
-  `c4factory:project`, `c4factory:system` and `c4factory:container`
+  `theos:project`, `theos:system` and `theos:container`
   (`infra/standard.ts`, tested).
 - By hand, and why: whether the alarms fire for the right reasons, and
   which are missing (REL06-BP06), only a deployed stack's history shows;

@@ -38,7 +38,7 @@ function issueTask(status: Task['status'] = {}): Task {
       name: 'cel-language-server-3',
       namespace: 'tools',
       creationTimestamp: at(0),
-      labels: { 'c4.factory.io/crew': 'cel-language-server', 'c4.factory.io/issue': '3' },
+      labels: { 'theos.factory.io/crew': 'cel-language-server', 'theos.factory.io/issue': '3' },
     },
     spec: {
       containerRef: { name: 'cel-language-server' },
@@ -51,7 +51,7 @@ function issueTask(status: Task['status'] = {}): Task {
 }
 
 function agent(name: string, spec: Partial<Agent['spec']> = {}, namespace = 'tools'): Agent {
-  return { metadata: { name, namespace }, spec: { image: 'c4factory/agent-go:dev', ...spec } }
+  return { metadata: { name, namespace }, spec: { image: 'theos/agent-go:dev', ...spec } }
 }
 
 const agents = [

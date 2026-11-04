@@ -1,4 +1,4 @@
-// A tiny in-memory Kubernetes API for the c4.factory.io kinds, with lists and
+// A tiny in-memory Kubernetes API for theos.factory.io kinds, with lists and
 // watches, for the end-to-end test and the screenshots of every view. It
 // answers GETs of collections, and the factory health's Pods and Nodes as
 // empty lists; a GET of one object; a POST that creates an object
@@ -18,14 +18,14 @@ import { RESOURCES } from '../src/k8s/types.ts'
 const REFUSE = {
   tasks: (obj) =>
     typeof obj.spec?.goal === 'string' && obj.spec.goal.length < 1
-      ? `Task.c4.factory.io "${obj.metadata.name}" is invalid: spec.goal: Invalid value: "": spec.goal in body should be at least 1 chars long`
+      ? `Task.theos.factory.io "${obj.metadata.name}" is invalid: spec.goal: Invalid value: "": spec.goal in body should be at least 1 chars long`
       : undefined,
   crews: (obj) => {
     if (obj.spec?.parallel > 5) {
-      return `Crew.c4.factory.io "${obj.metadata.name}" is invalid: spec.parallel: Invalid value: ${obj.spec.parallel}: spec.parallel in body should be less than or equal to 5`
+      return `Crew.theos.factory.io "${obj.metadata.name}" is invalid: spec.parallel: Invalid value: ${obj.spec.parallel}: spec.parallel in body should be less than or equal to 5`
     }
     if (obj.spec?.publishReleases && !obj.spec.tagReleases) {
-      return `Crew.c4.factory.io "${obj.metadata.name}" is invalid: spec: Invalid value: "object": publishReleases needs tagReleases: only a release the Crew tagged is published`
+      return `Crew.theos.factory.io "${obj.metadata.name}" is invalid: spec: Invalid value: "object": publishReleases needs tagReleases: only a release the Crew tagged is published`
     }
     return undefined
   },
@@ -35,11 +35,11 @@ const REFUSE = {
     )
     return i < 0
       ? undefined
-      : `Brief.c4.factory.io "${obj.metadata.name}" is invalid: spec.releases[${i}].requests: Invalid value: "object": requests need authors or teams unless mode is Off`
+      : `Brief.theos.factory.io "${obj.metadata.name}" is invalid: spec.releases[${i}].requests: Invalid value: "object": requests need authors or teams unless mode is Off`
   },
   standards: (obj) =>
     typeof obj.spec?.template?.ref === 'string' && obj.spec.template.ref.length < 1
-      ? `Standard.c4.factory.io "${obj.metadata.name}" is invalid: spec.template.ref: Invalid value: "": spec.template.ref in body should be at least 1 chars long`
+      ? `Standard.theos.factory.io "${obj.metadata.name}" is invalid: spec.template.ref: Invalid value: "": spec.template.ref in body should be at least 1 chars long`
       : undefined,
 }
 
@@ -210,7 +210,7 @@ export function fakeApi(namespace) {
           kind: 'Status',
           code: 403,
           reason: 'Forbidden',
-          message: `${plural}.c4.factory.io is forbidden: the UI's role cannot list it`,
+          message: `${plural}.theos.factory.io is forbidden: the UI's role cannot list it`,
         }),
       )
     }

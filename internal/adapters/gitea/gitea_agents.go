@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // agentTokenName is the name of the access token made for an agent bot user
@@ -28,7 +28,7 @@ var agentTokenName = func() string {
 
 // agentTokenPrefix starts the name of every token the operator made for an
 // agent bot, with whatever scopes.
-const agentTokenPrefix = "c4factory-agent"
+const agentTokenPrefix = "theos-agent"
 
 // ProtectBranch makes branch accept changes only through pull requests whose
 // status checks matching statusContexts (glob patterns) pass.
@@ -172,7 +172,7 @@ func (g *gitea) EnsureAgentAccess(ctx context.Context, repo ports.Repository, us
 	account := map[string]any{
 		"login_name":           user,
 		"source_id":            0,
-		"email":                user + "@agents.c4.factory.io",
+		"email":                user + "@agents.theos.factory.io",
 		"password":             password,
 		"must_change_password": false,
 		"restricted":           true,

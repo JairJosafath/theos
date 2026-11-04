@@ -60,7 +60,7 @@ func ArgoCDApplicationName(app string) (string, error) {
 }
 
 // ArgoCDApplicationConflict says whether app may ship to, or read, the
-// Application whose c4.factory.io/namespace and c4.factory.io/container
+// Application whose theos.factory.io/namespace and theos.factory.io/container
 // labels are namespace and container: nil when they name app, or name
 // nothing; else a DeployNameError naming the Container they do name. Two Containers'
 // names can join to the same (a-b/c and a/b-c), and the second must not

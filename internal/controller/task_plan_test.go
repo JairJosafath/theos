@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -17,8 +17,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
 )
 
 // newPlanTask is a planning round of the Brief cel-lens.
@@ -120,7 +120,7 @@ var _ = Describe("Plan Task run", func() {
 		brief := newBrief(ns, "cel-lens")
 		brief.Spec.Agents.Planner.Name = "absent"
 		mustCreate(brief, &c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "planner"),
-			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", MaxRounds: rounds}})
+			Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev", MaxRounds: rounds}})
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "brief-cel-lens-git"), &corev1.Secret{})).To(Succeed())
 		}).Should(Succeed())
@@ -161,17 +161,17 @@ var _ = Describe("Plan Task run", func() {
 			g.Expect(task.Status.Branch).To(Equal("plan/2"))
 		}).Should(Succeed())
 		Expect(env).To(ContainElements(
-			map[string]any{"name": "C4_ROLE", "value": "plan"},
-			map[string]any{"name": "C4_ROUND", "value": "2"},
-			map[string]any{"name": "C4_BRANCH", "value": "plan/2"},
-			map[string]any{"name": "C4_BRIEF", "value": "cel-lens"},
-			map[string]any{"name": "C4_REPO_URL",
+			map[string]any{"name": "THEOS_ROLE", "value": "plan"},
+			map[string]any{"name": "THEOS_ROUND", "value": "2"},
+			map[string]any{"name": "THEOS_BRANCH", "value": "plan/2"},
+			map[string]any{"name": "THEOS_BRIEF", "value": "cel-lens"},
+			map[string]any{"name": "THEOS_REPO_URL",
 				"value": "http://gitea.gitea.svc.cluster.local:3000/" + ns + "/brief-cel-lens.git"},
 			HaveKeyWithValue("valueFrom", HaveKeyWithValue("secretKeyRef",
 				HaveKeyWithValue("name", "brief-cel-lens-git"))),
 		))
-		Expect(env).NotTo(ContainElement(HaveKeyWithValue("name", "C4_CONTAINER")))
-		Expect(env).NotTo(ContainElement(HaveKeyWithValue("name", "C4_GOAL")))
+		Expect(env).NotTo(ContainElement(HaveKeyWithValue("name", "THEOS_CONTAINER")))
+		Expect(env).NotTo(ContainElement(HaveKeyWithValue("name", "THEOS_GOAL")))
 
 		By("waiting for the Brief's verdict on the pushed plan")
 		finishSandbox(ns, "cel-lens-plan-2-r1-plan", "cel-lens-plan-2",
@@ -222,7 +222,7 @@ var _ = Describe("Plan Task run", func() {
 		Eventually(func(g Gomega) {
 			var agent c4v1beta1.Agent
 			g.Expect(k8sClient.Get(ctx, key(ns, "planner"), &agent)).To(Succeed())
-			agent.Spec.Image = "c4factory/agent-go:new"
+			agent.Spec.Image = "theos/agent-go:new"
 			g.Expect(k8sClient.Update(ctx, &agent)).To(Succeed())
 		}).Should(Succeed())
 		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}},
@@ -232,11 +232,11 @@ var _ = Describe("Plan Task run", func() {
 			mode, _, _ := unstructured.NestedString(sandbox.Object, "spec", "operatingMode")
 			g.Expect(mode).To(Equal(operatingModeRunning))
 			pod := sandboxPodSpec(g, sandbox)
-			g.Expect(pod.Containers[0].Image).To(Equal("c4factory/agent-go:new"), "the current Agent's image")
+			g.Expect(pod.Containers[0].Image).To(Equal("theos/agent-go:new"), "the current Agent's image")
 			g.Expect(pod.Containers[0].Env).To(ContainElements(
-				corev1.EnvVar{Name: "C4_ROLE", Value: "plan"},
-				corev1.EnvVar{Name: "C4_ROUND", Value: "3"},
-				corev1.EnvVar{Name: "C4_BRANCH", Value: "plan/3"}))
+				corev1.EnvVar{Name: "THEOS_ROLE", Value: "plan"},
+				corev1.EnvVar{Name: "THEOS_ROUND", Value: "3"},
+				corev1.EnvVar{Name: "THEOS_BRANCH", Value: "plan/3"}))
 			task := getTask(g, ns, "cel-lens-plan-3")
 			g.Expect(task.Status.SandboxPod).To(BeEmpty(), "the Task forgets the old pod")
 			g.Expect(task.Status.Sandbox).To(Equal(name))
@@ -263,8 +263,8 @@ var _ = Describe("Plan Task run", func() {
 			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 			g.Expect(task.Status.Feedback).To(Equal("The Brief refused the plan:\nContainer/web: type is missing"))
 			g.Expect(sandboxEnv(g, "cel-lens-plan-1-r2-plan")).To(ContainElements(
-				map[string]any{"name": "C4_ROUND", "value": "1"},
-				map[string]any{"name": "C4_FEEDBACK", "value": task.Status.Feedback},
+				map[string]any{"name": "THEOS_ROUND", "value": "1"},
+				map[string]any{"name": "THEOS_FEEDBACK", "value": task.Status.Feedback},
 			), "every try plans the same Brief round")
 		}).Should(Succeed())
 

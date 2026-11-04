@@ -71,8 +71,8 @@ the choices under that, and where they differ from Go.
    setting.** npm sends a scope to a registry, and nothing finer: an
    unscoped name is fetched from the default registry, npmjs.org. So the
    factory's packages share one scope, and pods and CI send it to the npm
-   registry decision 5 names, as `c4factory.local/` is for Go. The scope is
-   `GitProvider.spec.packages.npm.scope`, `@c4factory` by default.
+   registry decision 5 names, as `theos.local/` is for Go. The scope is
+   `GitProvider.spec.packages.npm.scope`, `@theos` by default.
    - The name is unique within the owner, as repository names are.
    - Why not `@<project>`: a project named like a public scope (`types`,
      `aws-sdk`) would hide that scope from its own apps.
@@ -108,9 +108,9 @@ the choices under that, and where they differ from Go.
    unless the user publishes there.
 4. **PyPI packages keep the name `pyproject.toml` declares** (`{{ .Container }}`).
    PyPI has no scopes, but uv pins a package to one index. The consumer's
-   `pyproject.toml` declares the factory's index as `c4factory`, with
+   `pyproject.toml` declares the factory's index as `theos`, with
    `explicit = true`, and `[tool.uv.sources]` pins each factory package to
-   it. `c4factory` is the index's name inside `pyproject.toml`, whatever its
+   it. `theos` is the index's name inside `pyproject.toml`, whatever its
    URL (decision 5); it claims nothing anywhere. An explicit index serves
    only the packages pinned to it. So a factory
    package never comes from pypi.org, and a public package never comes from
@@ -122,7 +122,7 @@ the choices under that, and where they differ from Go.
 
    ```yaml
    spec:
-     packages:            # absent: the host's own registries, scope @c4factory
+     packages:            # absent: the host's own registries, scope @theos
        npm:
          scope: "@acme"
          registry: https://npm.example.com/
@@ -133,7 +133,7 @@ the choices under that, and where they differ from Go.
          credentialsSecretRef: {name: pypi-acme}
    ```
 
-   Each field has a default: the scope `@c4factory`, and the URLs the host's
+   Each field has a default: the scope `@theos`, and the URLs the host's
    own (Gitea 1.27: `<url>/api/packages/<owner>/npm/`,
    `<url>/api/packages/<owner>/pypi/simple` and
    `<url>/api/packages/<owner>/pypi`). A URL matches `^https?://`. With no
@@ -154,14 +154,14 @@ the choices under that, and where they differ from Go.
    - **Agent pods.** `gitprovider.Repository` gains `NpmScope`,
      `NpmRegistry`, `PyPIIndex` and `PyPIUpload`, built from `spec.packages`
      with the defaults from the GitProvider's URL and owner, as `GoProxy`
-     is. The implementer's and reviewer's pods get `C4_NPM_SCOPE`,
-     `C4_NPM_REGISTRY` and `C4_PYPI_INDEX`; the planner's gets none, as
+     is. The implementer's and reviewer's pods get `THEOS_NPM_SCOPE`,
+     `THEOS_NPM_REGISTRY` and `THEOS_PYPI_INDEX`; the planner's gets none, as
      with Go. The token a pod installs with is the agent bot's for the
      host's own registry, else the Secret's `readToken`, an env from the
      Secret as the bot token is.
-   - **c4agent.** It writes `~/.npmrc` (mode 0600) with
+   - **theos-agent.** It writes `~/.npmrc` (mode 0600) with
      `<scope>:registry=<registry>` and the token as `_authToken` for the
-     registry's host and path. uv reads the `~/.netrc` that c4agent already
+     registry's host and path. uv reads the `~/.netrc` that theos-agent already
      writes; an index on another host gets its own line there.
    - **Token.** The agent bot's token already has `read:package`
      (`AgentTokenScopes`).
@@ -171,12 +171,12 @@ the choices under that, and where they differ from Go.
      never reach ours.
    - **CI.** The workflows read the settings from the owner's Actions
      variables and secrets, with the host's own as the fallback:
-     `vars.C4_NPM_SCOPE` (else `@c4factory`), `vars.C4_NPM_REGISTRY` and
-     `vars.C4_PYPI_INDEX` (else `gitea.server_url` and
-     `gitea.repository_owner` in the paths above), `secrets.C4_NPM_TOKEN`
-     and `secrets.C4_PYPI_TOKEN`. The fallback to `gitea.token` holds only
+     `vars.THEOS_NPM_SCOPE` (else `@theos`), `vars.THEOS_NPM_REGISTRY` and
+     `vars.THEOS_PYPI_INDEX` (else `gitea.server_url` and
+     `gitea.repository_owner` in the paths above), `secrets.THEOS_NPM_TOKEN`
+     and `secrets.THEOS_PYPI_TOKEN`. The fallback to `gitea.token` holds only
      while the matching variable is unset (the host's own registry); with
-     `vars.C4_NPM_REGISTRY` or `vars.C4_PYPI_INDEX` set and its secret
+     `vars.THEOS_NPM_REGISTRY` or `vars.THEOS_PYPI_INDEX` set and its secret
      unset, the workflow installs without a credential, never sending
      `gitea.token` to another registry. The operator sets
      them on the GitProvider's owner (Gitea's organisation Actions variables
@@ -229,11 +229,11 @@ the choices under that, and where they differ from Go.
 
    The issue's body gets one line per thing published, above the Brief's
    marker, each pinning the release:
-   - `Uses c4factory.local/cel-lens/cel-lens-core v0.1.0: go get it at that version.`
+   - `Uses theos.local/cel-lens/cel-lens-core v0.1.0: go get it at that version.`
      (unchanged)
-   - `Uses npm package @c4factory/cel-lens-core 0.1.0: npm install --save-exact it at that version.`
-     (`@c4factory` is the scope setting's value)
-   - `Uses PyPI package cel-lens-core 0.1.0 from the c4factory index <url>: uv add it at that version, pinned to that index.`
+   - `Uses npm package @theos/cel-lens-core 0.1.0: npm install --save-exact it at that version.`
+     (`@theos` is the scope setting's value)
+   - `Uses PyPI package cel-lens-core 0.1.0 from the theos index <url>: uv add it at that version, pinned to that index.`
      (`<url>` is the index setting's)
 
    Step 5 settles the exact words. Step 1's test shows the commands work.
@@ -267,9 +267,9 @@ each and its own Done when. Their bodies name #1087.
 
 | Step | Issue | Depends on | Done when |
 | --- | --- | --- | --- |
-| 1. Publish a release's npm and PyPI files to Gitea (`internal/gitprovider`) | #1229 | | Unit tests cover recognising and reading an npm tarball, a wheel and an sdist, the name and version checks (unscoped, a version that isn't the tag's, PEP 440 normalisation) and the upload requests, with the default and a custom scope and registry URLs: under scope `@acme`, a tarball named `@c4factory/x` is left alone, and an upload goes to the custom registry and upload URLs. `make test-gitea` publishes a release's tarball, wheel and sdist, then installs each with the real `npm` (scope routed to the local Gitea) and the real `uv` (explicit index), using decision 7's commands; skipped with a message when `npm` or `uv` is not on `PATH`. A repeat publishes nothing. |
-| 2. The Crew publishes its release's packages (`internal/controller`, `api/v1alpha1`) | #1232 | #1229 | envtest on the fake Git shows `packages` `Waiting` while the release runs run, `Published` with the list after they succeed, `NoPackage` for a release with no package file, an unscoped tarball left alone and named, `Invalid` for a version that isn't the tag's, and `Failed` retried, with decision 6's Events; and, on a GitProvider whose `spec.packages` sets scope `@acme`, a tarball named `@c4factory/x` left alone and named with the scope. |
-| 3. Agent pods fetch from the npm registry and PyPI index the GitProvider names (`api/v1alpha1` `spec.packages`, `internal/controller` pod spec, `internal/agentrunner`, `cmd/c4agent`) | #1230 | | `GitProvider.spec.packages` is in the CRD with its CEL (the scope pattern, `^https?://`), and envtest shows a bad scope refused. Pod-spec unit tests show `C4_NPM_SCOPE`, `C4_NPM_REGISTRY` and `C4_PYPI_INDEX` for an in-cluster and an external GitProvider URL with the defaults, and for a `spec.packages` with its own scope, URLs and `readToken`; none on the planner's pod. The runner's test shows `~/.npmrc` written with mode 0600, with the default and a custom scope. A unit test on the fake Git shows the owner's Actions variables and secrets set for a non-default `spec.packages` and deleted for the default. `make test-gitea` installs a published scoped package as the restricted agent account with c4agent's `.npmrc`, over the TLS front the Go proxy test uses. |
+| 1. Publish a release's npm and PyPI files to Gitea (`internal/gitprovider`) | #1229 | | Unit tests cover recognising and reading an npm tarball, a wheel and an sdist, the name and version checks (unscoped, a version that isn't the tag's, PEP 440 normalisation) and the upload requests, with the default and a custom scope and registry URLs: under scope `@acme`, a tarball named `@theos/x` is left alone, and an upload goes to the custom registry and upload URLs. `make test-gitea` publishes a release's tarball, wheel and sdist, then installs each with the real `npm` (scope routed to the local Gitea) and the real `uv` (explicit index), using decision 7's commands; skipped with a message when `npm` or `uv` is not on `PATH`. A repeat publishes nothing. |
+| 2. The Crew publishes its release's packages (`internal/controller`, `api/v1alpha1`) | #1232 | #1229 | envtest on the fake Git shows `packages` `Waiting` while the release runs run, `Published` with the list after they succeed, `NoPackage` for a release with no package file, an unscoped tarball left alone and named, `Invalid` for a version that isn't the tag's, and `Failed` retried, with decision 6's Events; and, on a GitProvider whose `spec.packages` sets scope `@acme`, a tarball named `@theos/x` left alone and named with the scope. |
+| 3. Agent pods fetch from the npm registry and PyPI index the GitProvider names (`api/v1alpha1` `spec.packages`, `internal/controller` pod spec, `internal/agentrunner`, `cmd/theos-agent`) | #1230 | | `GitProvider.spec.packages` is in the CRD with its CEL (the scope pattern, `^https?://`), and envtest shows a bad scope refused. Pod-spec unit tests show `THEOS_NPM_SCOPE`, `THEOS_NPM_REGISTRY` and `THEOS_PYPI_INDEX` for an in-cluster and an external GitProvider URL with the defaults, and for a `spec.packages` with its own scope, URLs and `readToken`; none on the planner's pod. The runner's test shows `~/.npmrc` written with mode 0600, with the default and a custom scope. A unit test on the fake Git shows the owner's Actions variables and secrets set for a non-default `spec.packages` and deleted for the default. `make test-gitea` installs a published scoped package as the restricted agent account with theos-agent's `.npmrc`, over the TLS front the Go proxy test uses. |
 | 4. The Standards and the release workflow fetch from the registry settings; node-cli names its package `<scope>/<container>` (`templates/`, `versions.txt`, the chart's catalog, `internal/scaffold`) | #1231 | | ts-standard, python-standard, aws-standard and gitea-release write `~/.npmrc` and `~/.netrc` from the owner's Actions variables and secrets, falling back to `gitea.server_url` and `gitea.token`. The AGENTS.md of ts-standard and python-standard say how to add a factory package. node-cli's `package.json` and lock carry the scoped name, and a scaffold test shows it with the default scope and with a custom one. New tags are in `versions.txt` and the catalog. `make validate-yaml` and the scaffold tests pass. |
 | 5. `uses:` takes npm and PyPI packages (`internal/model`, `internal/controller/brief_uses.go`, the planner guide) | #1233 | #1232, #1230, #1231 | Table tests show the body line for each ecosystem, with the default and a custom scope, and the message when nothing is published. envtest applies a two-Container round whose TypeScript CLI issue uses a TypeScript core: it stays unready until the core's packages are `Published`, then is ready with the npm line. A Python pair does the same, and a restart in between finishes the round. `internal/model/planner.md` documents decision 7. This plan moves to `done/`. |
 
@@ -280,7 +280,7 @@ name it under `Depends on`, and it closed with the amendment.
 ## What only Kind would show
 
 That a TypeScript or Python CLI's agent, on a real node with the real agent
-image, installs `@c4factory/cel-lens-core@0.1.0` or `cel-lens-core==0.1.0`
+image, installs `@theos/cel-lens-core@0.1.0` or `cel-lens-core==0.1.0`
 from the in-cluster Gitea and builds, and, with a `spec.packages` naming a
 registry outside the cluster, from that registry with its `readToken`. Also that the consumer's check and
 release runs, on the Gitea Actions runner, install the same version from its

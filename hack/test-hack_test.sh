@@ -48,17 +48,17 @@ done
 
 # A test sees no make variables, even when the runner is a recipe of make check.
 mkdir -p "$T/envfail"
-printf '[ -z "${MAKEFLAGS-}${MAKELEVEL-}${C4_HEAVY_SLOT-}${IS_SANDBOX-}" ]\n' >"$T/envfail/e_test.sh"
-MAKEFLAGS=k MAKELEVEL=1 C4_HEAVY_SLOT=1 IS_SANDBOX=1 "$RUN" "$T/envfail" >/dev/null
+printf '[ -z "${MAKEFLAGS-}${MAKELEVEL-}${THEOS_HEAVY_SLOT-}${IS_SANDBOX-}" ]\n' >"$T/envfail/e_test.sh"
+MAKEFLAGS=k MAKELEVEL=1 THEOS_HEAVY_SLOT=1 IS_SANDBOX=1 "$RUN" "$T/envfail" >/dev/null
 check "under make, in a sandbox: the test sees none of make's variables, nor IS_SANDBOX (#1894)" $? 0
 
 # No tests at all is an error, not a pass.
 mkdir -p "$T/empty"
 "$RUN" "$T/empty" 2>/dev/null; check "no tests: exit 1" $? 1
 
-# make check runs the shell tests (C4_HEAVY_SLOT=1: no slot for a dry run).
+# make check runs the shell tests (THEOS_HEAVY_SLOT=1: no slot for a dry run).
 cd "$HACK/.." || exit 1
-C4_HEAVY_SLOT=1 timeout 60 make -n check 2>/dev/null | grep -qx 'hack/test-hack.sh'
+THEOS_HEAVY_SLOT=1 timeout 60 make -n check 2>/dev/null | grep -qx 'hack/test-hack.sh'
 check "make check: runs hack/test-hack.sh" $? 0
 
 exit $fail

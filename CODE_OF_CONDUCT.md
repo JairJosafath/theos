@@ -1,6 +1,6 @@
 # Code of Conduct
 
-C4 Factory follows the
+theos follows the
 [CNCF Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md),
 version 1.3. It applies to everyone in the project's spaces, people and
 agents alike: issues, pull requests, comments, commit messages, and the Gitea

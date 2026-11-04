@@ -87,7 +87,7 @@ func TestRunRecord(t *testing.T) {
 	} {
 		got, _ = RunState{Started: true, Done: true, Result: &RunResult{Role: reported}}.Record(1, "add-crop-r1-review-a1", at)
 		if got.Role != want || len(got.Role) > 32 {
-			t.Errorf("c4agent reported role %q: recorded %q, want %q", reported, got.Role, want)
+			t.Errorf("theos-agent reported role %q: recorded %q, want %q", reported, got.Role, want)
 		}
 	}
 	got, _ = RunState{Started: true, Done: true, Result: &RunResult{Role: strings.Repeat("x", 40)}}.Record(1, "add-crop", at)

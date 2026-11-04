@@ -11,7 +11,7 @@
 # claude-credentials, which you create yourself (docs/getting-started.md).
 # Not in kustomization.yaml: apply it after the model with
 # kubectl apply -n webshop -f config/samples/webshop/brief.yaml
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Brief
 metadata:
   name: webshop

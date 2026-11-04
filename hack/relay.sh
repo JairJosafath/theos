@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Relay: runs fresh headless Claude sessions on the factory's own GitHub issues
-# (JairJosafath/c4factory), so work carries on overnight without a person
+# (JairJosafath/theos), so work carries on overnight without a person
 # starting each session. Each session works one issue and hands off through a
 # comment on it (the handoff skill); hack/lib/github.sh has the GitHub helpers.
 # Product work stays in Gitea, where the Crews work it.
@@ -68,7 +68,7 @@
 # Agents never lease, create or deploy to a Kind cluster: make check (Go
 # tests, validate-yaml, envtest) is the gate, and Kind is a manual tier only a
 # human runs (hack/lib/github.sh cluster acquire refuses without
-# C4_HUMAN_CLUSTER=1, which the relay never sets). No prompt here tells a
+# THEOS_HUMAN_CLUSTER=1, which the relay never sets). No prompt here tells a
 # session to use one, and every issue is any worker's.
 #
 # Workers run origin/main's code, whatever branch this checkout has (#1126):
@@ -85,7 +85,7 @@
 # sessions run as from a plain project shell: hack/lib/session-env.sh drops that
 # session's variables (CLAUDECODE, CLAUDE_CODE_SESSION_ID, VSCODE_*, ...).
 #
-# Each session gets TMPDIR=~/.cache/c4factory/tmp/<its worktree> (#1269,
+# Each session gets TMPDIR=~/.cache/theos/tmp/<its worktree> (#1269,
 # #1307): on disk, not the device's /tmp, a small tmpfs every session shares,
 # which one session's scratch, Go's build dirs and envtest's filled; and outside
 # any git checkout, so a test that runs git in a mktemp -d directory finds no
@@ -97,7 +97,7 @@
 #   hack/relay.sh --triage         start one triage session, unless one runs
 #   hack/relay.sh --maintain       start one maintainer session, unless one runs
 #
-# On the device with the Kind cluster (C4_CLUSTER not none), memory is the
+# On the device with the Kind cluster (THEOS_CLUSTER not none), memory is the
 # limit: at most RELAY_MAX_WORKERS workers run (default 9, so the memory gate,
 # not a count, holds them). On every device a worker waits before each pick
 # until MemAvailable is at least RELAY_MIN_MEM_GIB (default 2) and the last
@@ -146,14 +146,14 @@
 set -uo pipefail
 
 CODE=$(cd "$(dirname "$0")/.." && pwd)
-REPO=${C4_RELAY_REPO:-$CODE}
-unset C4_RELAY_REPO
+REPO=${THEOS_RELAY_REPO:-$CODE}
+unset THEOS_RELAY_REPO
 DIR="$REPO/.relay"
 STOP="$DIR/stop"
 MAX_SESSIONS=${MAX_SESSIONS:-8}
 SESSION_TIMEOUT=${SESSION_TIMEOUT:-6h}
-TRIAGE=${C4_RELAY_TRIAGE:-}
-MAINTAIN=${C4_RELAY_MAINTAIN:-}
+TRIAGE=${THEOS_RELAY_TRIAGE:-}
+MAINTAIN=${THEOS_RELAY_MAINTAIN:-}
 DRY_RUN=${RELAY_DRY_RUN:-}
 [ "$DRY_RUN" = 0 ] && DRY_RUN=
 PULL=${RELAY_PULL:-1}
@@ -163,7 +163,7 @@ while [ $# -gt 0 ]; do
   case $1 in
     --workers) WORKERS=${2:-}; shift 2 || shift ;;
     --workers=*) WORKERS=${1#*=}; shift ;;
-    # The flag says what this run is; C4_RELAY_TRIAGE and C4_RELAY_MAINTAIN
+    # The flag says what this run is; THEOS_RELAY_TRIAGE and THEOS_RELAY_MAINTAIN
     # are for the detached child, which gets no flag, and a shell inherits
     # them from a relay session (#1564).
     --triage) TRIAGE=1 MAINTAIN=; shift ;;
@@ -187,10 +187,10 @@ STRIKE_TTL=${RELAY_STRIKE_TTL:-24h} # a strike older than this doesn't count
 IDLE=${RELAY_IDLE:-45m}             # a session whose transcript doesn't change this long is ended
 IDLE_KILL=${RELAY_IDLE_KILL:-1m}    # from its SIGTERM to its SIGKILL
 IDLE_POLL=${RELAY_IDLE_POLL:-60}    # seconds between looks at the transcript
-SCRATCH=${RELAY_SCRATCH:-$HOME/.cache/c4factory/tmp} # the sessions' TMPDIRs, outside any checkout (#1307); not XDG_CACHE_HOME, which ./dev puts in .dev/ (#1326)
+SCRATCH=${RELAY_SCRATCH:-$HOME/.cache/theos/tmp} # the sessions' TMPDIRs, outside any checkout (#1307); not XDG_CACHE_HOME, which ./dev puts in .dev/ (#1326)
 RELAY_MODEL=${RELAY_MODEL:-opus} # the model every session runs on (claude -p --model); subagents pick theirs by the task's weight (#1534, #1727)
 
-K=${C4_RELAY_WORKER:-1}
+K=${THEOS_RELAY_WORKER:-1}
 # The maintainer and the triage are no numbered workers: each has its own
 # worktree, log and lock.
 [ -n "$TRIAGE" ] && K=triage
@@ -224,7 +224,7 @@ prompt() {
   cat <<EOF
 You run headless, started by hack/relay.sh while the user sleeps; no person is
 watching and nobody can answer a question. Your work is GitHub issue #$n on
-$C4_GITHUB_REPO, "$title" ($url), and only that issue. The relay has claimed
+$THEOS_GITHUB_REPO, "$title" ($url), and only that issue. The relay has claimed
 it for you and labeled it status/in-progress: you are $name, and the issue's
 branch is $branch, checked out in this worktree, relay-$K. Other agents work
 other issues at the same time in other checkouts; stay in this one. $start
@@ -308,7 +308,7 @@ triage_prompt() {
   cat <<EOF
 You run headless, started by hack/relay-watch.sh (hack/relay.sh --triage)
 while the user sleeps; no person is watching and nobody can answer a question.
-You are the maintainer's triage session for $C4_GITHUB_REPO, while the relay
+You are the maintainer's triage session for $THEOS_GITHUB_REPO, while the relay
 works the ready issues or waits for one; these wait in status/proposed: $1.
 Load the \`triage\` skill and follow it: ready each one that is sound, say on
 the others what they lack, and send what needs a decision to the maintainer.
@@ -340,7 +340,7 @@ maintain_prompt() {
   cat <<EOF
 You run headless, started by hack/relay-watch.sh (hack/relay.sh --maintain)
 while the user sleeps; no person is watching and nobody can answer a question.
-You are the project's maintainer for $C4_GITHUB_REPO, acting on the owner's
+You are the project's maintainer for $THEOS_GITHUB_REPO, acting on the owner's
 behalf: follow GOVERNANCE.md and the maintainer skill (load it first), and run
 its sweep. $([ "$1" = never ] && echo "No sweep ran before this one: look at everything open, and the
 last week of closed issues and merged pull requests." || echo "The last sweep was at $1; look at what changed since then, plus
@@ -493,7 +493,7 @@ code_sum() {
 update() {
   local left=$1 out
   [ "$PULL" = 0 ] && return 0
-  out=$(C4_PULL_REPO=$REPO "$CODE/hack/pull.sh" 2>&1)
+  out=$(THEOS_PULL_REPO=$REPO "$CODE/hack/pull.sh" 2>&1)
   [ -n "$out" ] && log "${out//$'\n'/; }"
   relay_code_stale || return 0
   [ -e "$STOP" ] && { log "stop file found; stopping"; exit 0; }
@@ -503,7 +503,7 @@ update() {
     log "moving to origin/main's code ($(relay_code) at $(git -C "$(relay_code)" rev-parse --short HEAD)) from $CODE; restarting with $left sessions left"
   fi
   # The new worker keeps this one's lock on fd 9.
-  exec env MAX_SESSIONS="$left" C4_RELAY_RESTART=1 C4_RELAY_REPO="$REPO" bash "$(relay_code)/hack/relay.sh"
+  exec env MAX_SESSIONS="$left" THEOS_RELAY_RESTART=1 THEOS_RELAY_REPO="$REPO" bash "$(relay_code)/hack/relay.sh"
 }
 
 # switch_branch BRANCH: switch the worktree to BRANCH: the local branch
@@ -536,7 +536,7 @@ handoff_id() {
 # nothing.
 outcome() {
   local n=$1 before=$2 state latest
-  state=$(gh_api "repos/$C4_GITHUB_REPO/issues/$n" \
+  state=$(gh_api "repos/$THEOS_GITHUB_REPO/issues/$n" \
     --jq '"\(.state) \(.labels | map(.name) | join(","))"') || return 1
   case $state in
     closed*) echo closed; return 0 ;;
@@ -579,7 +579,7 @@ running_workers() {
 # would pass it.
 cap() {
   local n=$1 k running new=0
-  [ "${C4_CLUSTER:-}" = none ] && return 0
+  [ "${THEOS_CLUSTER:-}" = none ] && return 0
   running=$(running_workers)
   for k in $(seq 1 "$n"); do
     { [ -e "$DIR/lock-$k" ] && ! flock -n "$DIR/lock-$k" true; } || new=$((new + 1))
@@ -982,9 +982,9 @@ session() {
   # environment (#645). Its TMPDIR is under SCRATCH, not the shared /tmp
   # (#1269) nor in a checkout (#1307), and starts empty: what a dead session
   # left there goes first.
-  # C4_RELAY_WORKER names the worker (1, 2, ..., triage, maintainer): create
+  # THEOS_RELAY_WORKER names the worker (1, 2, ..., triage, maintainer): create
   # --next reserves only for a numbered one's next session. The relay's own
-  # child variables (C4_RELAY_CHILD, C4_RELAY_TRIAGE, C4_RELAY_MAINTAIN) stay
+  # child variables (THEOS_RELAY_CHILD, THEOS_RELAY_TRIAGE, THEOS_RELAY_MAINTAIN) stay
   # with the relay: a session that inherited them ran hack/relay_test.sh's
   # --triage dry run as the maintainer (#1564).
   # OLDPWD is the worktree too: the cd would leave it at the main checkout,
@@ -992,7 +992,7 @@ session() {
   scratch_clear "$tmp"
   mkdir -p "$tmp"
   dirty=$(git -C "$REPO" status --porcelain 2>/dev/null)
-  (cd "$WT" && export OLDPWD=$WT && drop_session_env && unset C4_RELAY_CHILD C4_RELAY_TRIAGE C4_RELAY_MAINTAIN && TMPDIR=$tmp C4_HEADLESS=1 C4_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model "$RELAY_MODEL" \
+  (cd "$WT" && export OLDPWD=$WT && drop_session_env && unset THEOS_RELAY_CHILD THEOS_RELAY_TRIAGE THEOS_RELAY_MAINTAIN && TMPDIR=$tmp THEOS_HEADLESS=1 THEOS_RELAY_WORKER=$K exec timeout "$SESSION_TIMEOUT" claude -p --permission-mode auto --model "$RELAY_MODEL" \
     --session-id "$id" --output-format json "$4") >"$out.json" 2>"$out.err" 9>&- &
   pid=$!
   # For stray_session (#1341): the pid and its start time, while it runs.
@@ -1108,7 +1108,7 @@ unescalated() {
 # label_events N: issue N's events as one JSON array.
 label_events() {
   local pages
-  pages=$(gh_api --paginate --slurp "repos/$C4_GITHUB_REPO/issues/$1/events?per_page=100") || return 1
+  pages=$(gh_api --paginate --slurp "repos/$THEOS_GITHUB_REPO/issues/$1/events?per_page=100") || return 1
   jq -c '[.[][] | {event, created_at, label: {name: .label.name}}]' <<<"$pages"
 }
 
@@ -1213,7 +1213,7 @@ start_triage() {
   [ -e "$STOP" ] && { echo "the stop file is there; no triage"; return 0; }
   flock -n "$LOCK" true || { echo "relay: a triage runs already; no second one: tail -f $LOG" >&2; return 1; }
   gh_token || { untriaged; return 1; }
-  C4_RELAY_CHILD=1 C4_RELAY_TRIAGE=1 C4_RELAY_REPO="$REPO" setsid nohup bash "$1" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
+  THEOS_RELAY_CHILD=1 THEOS_RELAY_TRIAGE=1 THEOS_RELAY_REPO="$REPO" setsid nohup bash "$1" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
   echo "triage started (pid $!): tail -f $LOG"
 }
 
@@ -1348,7 +1348,7 @@ work() {
     fi
 
     for try in 1 2 3 4 5; do
-      claim=$(C4_SESSION_ID=$id gh_take "$ISSUE" 2>>"$LOG")
+      claim=$(THEOS_SESSION_ID=$id gh_take "$ISSUE" 2>>"$LOG")
       rc=$?
       [ "$rc" = 4 ] || break
       log "#$ISSUE is claimed by another agent (try $try); picking again"
@@ -1392,7 +1392,7 @@ work() {
       if released=$(gh_release "$reason" 2>&1); then
         log "${released//$'\n'/; }"
       else
-        log "could not release the claim on #$ISSUE; it expires after $C4_LEASE_TTL: ${released//$'\n'/; }"
+        log "could not release the claim on #$ISSUE; it expires after $THEOS_LEASE_TTL: ${released//$'\n'/; }"
       fi
     fi
     case $result in
@@ -1436,25 +1436,25 @@ work() {
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 drop_session_env
 # Headless, and its sessions too: no cluster lease code (gh_headless).
-export C4_HEADLESS=1
+export THEOS_HEADLESS=1
 
 mkdir -p "$DIR"
 [ -e "$DIR/.gitignore" ] || echo '*' >"$DIR/.gitignore"
-[ "${C4_RELAY_CHILD:-}" = 1 ] || [ -n "$TRIAGE" ] || [ -n "$MAINTAIN" ] || cap "$WORKERS" || exit 1
+[ "${THEOS_RELAY_CHILD:-}" = 1 ] || [ -n "$TRIAGE" ] || [ -n "$MAINTAIN" ] || cap "$WORKERS" || exit 1
 
 # --maintain from a terminal or the watch: start the maintainer, detached,
 # unless it runs. It doesn't count against RELAY_MAX_WORKERS.
-if [ -n "$MAINTAIN" ] && [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; then
+if [ -n "$MAINTAIN" ] && [ -z "$DRY_RUN" ] && [ "${THEOS_RELAY_CHILD:-}" != 1 ]; then
   [ -e "$STOP" ] && { echo "the stop file is there; no sweep"; exit 0; }
   flock -n "$LOCK" true || { echo "the maintainer is already running: tail -f $LOG"; exit 0; }
   gh_token || exit 1
-  C4_RELAY_CHILD=1 C4_RELAY_MAINTAIN=1 C4_RELAY_REPO="$REPO" setsid nohup bash "$0" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
+  THEOS_RELAY_CHILD=1 THEOS_RELAY_MAINTAIN=1 THEOS_RELAY_REPO="$REPO" setsid nohup bash "$0" >>"$DIR/relay-$K.out" 2>&1 </dev/null &
   echo "maintainer started (pid $!): tail -f $LOG"
   exit 0
 fi
 
 # --triage from a terminal or the watch: start one triage session, detached.
-if [ -n "$TRIAGE" ] && [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; then
+if [ -n "$TRIAGE" ] && [ -z "$DRY_RUN" ] && [ "${THEOS_RELAY_CHILD:-}" != 1 ]; then
   start_triage "$0"
   exit
 fi
@@ -1462,7 +1462,7 @@ fi
 # Started from a terminal: start the workers that aren't running, detached,
 # and return. The token is read here, where the git credential helper answers;
 # the workers and their sessions inherit it in the environment.
-if [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; then
+if [ -z "$DRY_RUN" ] && [ "${THEOS_RELAY_CHILD:-}" != 1 ]; then
   gh_token || exit 1
   rm -f "$STOP"
   for k in $(seq 1 "$WORKERS"); do
@@ -1470,7 +1470,7 @@ if [ -z "$DRY_RUN" ] && [ "${C4_RELAY_CHILD:-}" != 1 ]; then
       echo "worker $k is already running; see $DIR/relay-$k.log"
       continue
     fi
-    C4_RELAY_CHILD=1 C4_RELAY_WORKER=$k C4_RELAY_REPO="$REPO" setsid nohup bash "$0" >>"$DIR/relay-$k.out" 2>&1 </dev/null &
+    THEOS_RELAY_CHILD=1 THEOS_RELAY_WORKER=$k THEOS_RELAY_REPO="$REPO" setsid nohup bash "$0" >>"$DIR/relay-$k.out" 2>&1 </dev/null &
     echo "worker $k started (pid $!): tail -f $DIR/relay-$k.log"
   done
   echo "stop: touch $STOP"
@@ -1479,7 +1479,7 @@ fi
 
 cd "$REPO" || exit 1
 if [ -z "$DRY_RUN" ]; then
-  if [ "${C4_RELAY_RESTART:-}" = 1 ]; then
+  if [ "${THEOS_RELAY_RESTART:-}" = 1 ]; then
     flock -n 9 || { log "restarted without the lock of worker $K; exiting"; exit 1; }
   else
     exec 9>"$LOCK"
@@ -1490,7 +1490,7 @@ fi
 [ -n "$DRY_RUN" ] || stray_session
 CODE_SUM=$(code_sum)
 gh_token 2>/dev/null || { log "no GitHub token; stopping"; [ -z "$TRIAGE" ] || untriaged; exit 1; }
-log "worker $K started: pid $$${DRY_RUN:+, dry run}${C4_CLUSTER:+, C4_CLUSTER=$C4_CLUSTER}, worktree $WT, code $CODE at $(git -C "$CODE" rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $C4_GITHUB_REPO"
+log "worker $K started: pid $$${DRY_RUN:+, dry run}${THEOS_CLUSTER:+, THEOS_CLUSTER=$THEOS_CLUSTER}, worktree $WT, code $CODE at $(git -C "$CODE" rev-parse --short HEAD), at most $MAX_SESSIONS sessions of $SESSION_TIMEOUT, issues on $THEOS_GITHUB_REPO"
 if [ -n "$MAINTAIN" ]; then
   # Only a sweep that ran says so; one held off, cut short or not recorded said why (#1322).
   maintain && log "the maintainer finished its sweep"
@@ -1502,7 +1502,7 @@ if [ -n "$TRIAGE" ]; then
   exit 0
 fi
 # Workers started together would all race for the same first issue.
-[ -n "$DRY_RUN" ] || [ "${C4_RELAY_RESTART:-}" = 1 ] || sleep $(((K - 1) * 20))
+[ -n "$DRY_RUN" ] || [ "${THEOS_RELAY_RESTART:-}" = 1 ] || sleep $(((K - 1) * 20))
 
 work
 log "worker $K finished"

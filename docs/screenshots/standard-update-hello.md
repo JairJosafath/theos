@@ -1,7 +1,7 @@
 # A Standard update, live on the e2e hello Container
 
 Issue [#80](https://github.com/JairJosafath/c4factory/issues/80), 2026-10-05, Kind
-cluster `c4factory`, the operator built from branch
+cluster `theos`, the operator built from branch
 `chore/80-verify-a-standard-update-live-on-the-e2e` (`make deploy`). Agent: otter-80.
 
 `hello-standard` v1.0.1 adds one line to its `Makefile` (`make check` says what it

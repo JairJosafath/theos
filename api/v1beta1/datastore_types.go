@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -48,7 +48,7 @@ type DataStoreStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced,categories=c4
+// +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Connector",type=string,JSONPath=".spec.connectorRef.name"
 // +kubebuilder:printcolumn:name="Resolved",type=string,JSONPath=".status.conditions[?(@.type=='ReferencesResolved')].status"

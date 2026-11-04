@@ -148,7 +148,7 @@ function containerNeeds(c: Container): Need[] {
       ...why(failed, 'Failed'),
       place,
       links: c.status.repositoryURL ? [{ label: 'Its repository', url: c.status.repositoryURL }] : [],
-      command: `kubectl -n ${ns} annotate container ${c.metadata.name} c4.factory.io/retry=$(date +%s) --overwrite`,
+      command: `kubectl -n ${ns} annotate container ${c.metadata.name} theos.factory.io/retry=$(date +%s) --overwrite`,
     })
   }
   const updated = findCondition(c.status?.conditions, 'StandardUpdated')
@@ -335,7 +335,7 @@ function crewNeeds(crew: Crew, containers: Container[]): Need[] {
       since: last.time,
       place,
       links: last.runURL ? [{ label: 'The failed run', url: last.runURL }] : [],
-      command: `kubectl -n ${ns} annotate crew ${crew.metadata.name} c4.factory.io/rerun-release=$(date +%s) --overwrite`,
+      command: `kubectl -n ${ns} annotate crew ${crew.metadata.name} theos.factory.io/rerun-release=$(date +%s) --overwrite`,
     })
   }
   return items

@@ -2,7 +2,7 @@
 	// Terminals open in the project shell: zsh configured by hack/dev/zshrc, with
 	// every tool and cache in .dev/. ZDOTDIR keeps your own ~/.zshrc out of it.
 	"terminal.integrated.env.linux": {
-		"C4_ROOT": "${workspaceFolder}",
+		"THEOS_ROOT": "${workspaceFolder}",
 		"ZDOTDIR": "${workspaceFolder}/.dev/zsh"
 	},
 	"terminal.integrated.defaultProfile.linux": "zsh",

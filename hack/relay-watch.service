@@ -8,7 +8,7 @@
 # KillMode=process stops only the watch: the relay workers it started finish
 # their sessions.
 [Unit]
-Description=C4 Factory relay watch (@REPO@)
+Description=theos relay watch (@REPO@)
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=0

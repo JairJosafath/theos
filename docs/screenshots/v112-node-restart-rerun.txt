@@ -1,35 +1,35 @@
 # A node restart reruns the interrupted round (#112, after #52 and #70)
 
-Kind cluster c4factory, 2026-10-05, operator built from this branch (make deploy),
-c4factory/agent-base:dev rebuilt from this branch (make agent-image-base), Agent
+Kind cluster theos, 2026-10-05, operator built from this branch (make deploy),
+theos/agent-base:dev rebuilt from this branch (make agent-image-base), Agent
 Sandbox v1.0.4, the e2e fixture (test/e2e/testdata/apps). The Agent sleeps, as in
 v4-interrupted-rerun.txt:
 
-    apiVersion: c4.factory.io/v1alpha1
+    apiVersion: theos.factory.io/v1alpha1
     kind: Agent
     metadata: {name: slow, namespace: apps}     # slow-5: timeoutMinutes 5
     spec:
-      image: c4factory/agent-base:dev
+      image: theos/agent-base:dev
       maxRounds: 2
       timeoutMinutes: 15
       env:
-        - {name: C4AGENT_COMMAND, value: sleep 900}
+        - {name: THEOS_AGENT_COMMAND, value: sleep 900}
 
 ## 1. docker restart, before the fix: the round is spent
 
-    22:26:34 $ docker restart c4factory-control-plane
+    22:26:34 $ docker restart theos-control-plane
     Implementing r1 Running: Starting round 1 in sandbox restart-r1-implement
     Implementing r1 Waiting: The agent is working on round 1
     Implementing r2 NextRound: Round 1 was not accepted (sleep failed: signal: terminated:); starting round 2
 
 The node's systemd sends SIGTERM to every process of the pod at once. The agent
-(`sleep`) died of it before c4agent's own SIGTERM cancelled its context, so c4agent
+(`sleep`) died of it before theos-agent's own SIGTERM cancelled its context, so theos-agent
 wrote a plain failure, without "interrupted". Fix: a failed run waits up to 2s
 for the stop before deciding (agentrunner.Run, stopGrace).
 
 ## 2. docker restart, after the fix: rerun 1 of 2
 
-    22:36:43 $ docker restart c4factory-control-plane
+    22:36:43 $ docker restart theos-control-plane
     pod restart-2-r1-implement after the restart:
       phase: Running (then removed with its sandbox); reason: none; no DisruptionTarget
       containerStatuses[agent].state.terminated:
@@ -53,8 +53,8 @@ replaced in the same sandbox (#111 is a different case).
 Agent slow-5 (timeoutMinutes 5, activeDeadlineSeconds 300).
 
     pod deadline-r1-implement started 22:42:17Z, deadline 22:47:17Z
-    22:42:25 $ docker stop c4factory-control-plane
-    22:48:32 $ docker start c4factory-control-plane
+    22:42:25 $ docker stop theos-control-plane
+    22:48:32 $ docker start theos-control-plane
       phase: Failed, reason: DeadlineExceeded
       containerStatuses[agent].state.terminated:
         reason: Unknown, exitCode: 255
@@ -71,8 +71,8 @@ did ContainerStatusUnknown (containerLost in internal/controller/task_sandbox.go
 ## 4. Node down across the deadline, after the fix: rerun 1 of 2
 
     pod deadline-2-r1-implement started 22:54:10Z, deadline 22:59:10Z
-    22:54:32 $ docker stop c4factory-control-plane
-    23:00:33 $ docker start c4factory-control-plane
+    22:54:32 $ docker stop theos-control-plane
+    23:00:33 $ docker start theos-control-plane
       phase: Failed, reason: DeadlineExceeded
       terminated: reason Unknown, exitCode 255, finishedAt 23:00:42Z,
         message {"role":"implement","error":"sleep failed: signal: terminated: ","interrupted":true}

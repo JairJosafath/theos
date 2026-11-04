@@ -167,11 +167,11 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - README: `README.md.tmpl`: use, install the tarball, develop, `make dist`,
   layout.
 - Deploy: gitea-release in "node cli" attaches
-  `dist/<scope sans @>-<container>-<version>.tgz` (`c4factory-<container>-<version>.tgz`
+  `dist/<scope sans @>-<container>-<version>.tgz` (`theos-<container>-<version>.tgz`
   by default, how `npm pack` names a scoped package) to the tag's release, and
   the Crew publishes the tarball to the owner's npm registry (#1229). Since
   v1.1.0 `package.json` names the package `<scope>/<container>`, the scope
-  from the GitProvider's `spec.packages` (`@c4factory` by default), set at
+  from the GitProvider's `spec.packages` (`@theos` by default), set at
   scaffold time and never again (#1231); since v1.1.1 the README names the
   scoped tarball, as ts-standard's `make dist` help does since v1.6.1 (#1695).
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
@@ -181,12 +181,12 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 
 The Python rulebook and its `make check`. Since v1.5.0 the check workflow
 writes `~/.npmrc` and `~/.netrc` from the owner's Actions variables and
-secrets (`C4_NPM_SCOPE`, `C4_NPM_REGISTRY`, `C4_PYPI_INDEX`, `C4_NPM_TOKEN`,
-`C4_PYPI_TOKEN`), falling back to the host's own registries and the
+secrets (`THEOS_NPM_SCOPE`, `THEOS_NPM_REGISTRY`, `THEOS_PYPI_INDEX`, `THEOS_NPM_TOKEN`,
+`THEOS_PYPI_TOKEN`), falling back to the host's own registries and the
 workflow's token, so `uv` fetches factory packages; `AGENTS.md` says how a
 package is declared (#1231). Since v1.5.1 `~/.netrc` names the index's host
 without its port, which `uv` matches on, and its login is `__token__` when
-`C4_PYPI_TOKEN` is set (#1696). Since v1.6.0 it supports a `job` with
+`THEOS_PYPI_TOKEN` is set (#1696). Since v1.6.0 it supports a `job` with
 python-cli, and `AGENTS.md` has a job's rules: run once, exit non-zero on
 failure, safe to redo (#1595).
 Since v1.7.0 `AGENTS.md` tells the implementer which Domains the system is
@@ -197,7 +197,7 @@ each domain's common mistakes; without Domains both read as before (#1758).
 - CI: its `make check` in `make test-templates`' combos "fastapi service
   with postgres" and "python cli".
 - Tests: `Makefile.tmpl`, target `test` (pytest, strict markers and config),
-  part of `check`; `.c4factory/ci/giteaActions/.gitea/workflows/check.yaml.tmpl`
+  part of `check`; `.theos/ci/giteaActions/.gitea/workflows/check.yaml.tmpl`
   runs `make check`.
 - Lint: `Makefile.tmpl`: `fmt-check` (ruff format), `lint` (ruff, `ruff.toml`),
   `typecheck` (mypy, `mypy.ini`), `package-check` (uv build).
@@ -211,12 +211,12 @@ each domain's common mistakes; without Domains both read as before (#1758).
 
 The TypeScript rulebook for react-vite, node-cli and vscode-extension. Since
 v1.6.0 the check workflow writes `~/.npmrc` and `~/.netrc` from the owner's
-Actions variables and secrets (`C4_NPM_SCOPE`, `C4_NPM_REGISTRY`,
-`C4_PYPI_INDEX`, `C4_NPM_TOKEN`, `C4_PYPI_TOKEN`), falling back to the host's
+Actions variables and secrets (`THEOS_NPM_SCOPE`, `THEOS_NPM_REGISTRY`,
+`THEOS_PYPI_INDEX`, `THEOS_NPM_TOKEN`, `THEOS_PYPI_TOKEN`), falling back to the host's
 own registries and the workflow's token, so `npm ci` fetches factory
 packages; `AGENTS.md` says how one is added (#1231). Since v1.6.2 `~/.netrc`
 names the index's host without its port, which `uv` matches on, and its
-login is `__token__` when `C4_PYPI_TOKEN` is set (#1696).
+login is `__token__` when `THEOS_PYPI_TOKEN` is set (#1696).
 Since v1.7.0 `AGENTS.md` tells the implementer which Domains the system is
 about and to read `docs/agents/domain/<name>/README.md` and its topic files
 before planning a change, and the reviewer guide to check the change against
@@ -337,7 +337,7 @@ Actions variables and secrets before `make dist`, falling back to the
 host's own registries and the workflow's token, so a build that installs
 factory packages finds them (#1231). Since v1.5.1 `~/.netrc` names the
 index's host without its port, which `uv` matches on, and its login is
-`__token__` when `C4_PYPI_TOKEN` is set (#1696). Since v1.5.2 `RELEASING.md`
+`__token__` when `THEOS_PYPI_TOKEN` is set (#1696). Since v1.5.2 `RELEASING.md`
 renders its lists loose, a blank line before the step that watches the run
 and before each item of "When a run fails", so ts-standard's Prettier check
 passes it (#1707). Since v1.6.0 it supports `function`, `service` and
@@ -479,7 +479,7 @@ each domain's common mistakes; without Domains both read as before (#1758).
 ### factory-self (v1.0.0)
 
 The Standard of the factory's own repository, adopted by Container
-`c4factory` ([self-hosting.md](plans/self-hosting.md), decision 5). Its only
+`theos` ([self-hosting.md](plans/self-hosting.md), decision 5). Its only
 file is a plain `.gitea/workflows/check.yaml`, the same bytes in the
 repository; its `protectedPaths` are the fence agents may not change.
 

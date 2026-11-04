@@ -53,7 +53,7 @@ order). These are the choices it left to the plan.
    three writes (create a Brief, add a prompt, pause or resume). For anything
    else the header shows a link (the Gitea pull request or issue) or a
    `kubectl` line with a copy button, built from the object's own fields, for
-   example `kubectl -n shop annotate container api c4.factory.io/retry=$(date +%s) --overwrite`.
+   example `kubectl -n shop annotate container api theos.factory.io/retry=$(date +%s) --overwrite`.
    Adding a write is its own issue, after design.md changes.
 5. **The *Needs you* list is a pure function over what the UI already
    watches.** `model/needs.ts` takes the cross-namespace data the Factory
@@ -70,10 +70,10 @@ order). These are the choices it left to the plan.
    `-ldflags -X`), with no Kubernetes import. The operator `Dockerfile` takes
    `ARG VERSION=dev` into the ldflags, and `release.yml` passes
    `--build-arg VERSION=$VERSION` to the operator and UI builds. The chart
-   gives the manager `C4_CHART_VERSION={{ .Chart.Version }}`. The Project
+   gives the manager `THEOS_CHART_VERSION={{ .Chart.Version }}`. The Project
    reconciler writes both into an additive status field,
    `status.factory: {operatorVersion, chartVersion}`, so the browser still
-   reads only `c4.factory.io`. The UI image gets `VERSION` as a build arg that
+   reads only `theos.factory.io`. The UI image gets `VERSION` as a build arg that
    Vite `define`s as `__C4_UI_VERSION__` (`dev` otherwise). The CRD API
    version is the `apiVersion` the UI reads. The UI warns when its version and
    the operator's differ, not when both are `dev`, and says "unknown" when no

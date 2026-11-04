@@ -1,4 +1,4 @@
-# C4 Factory v5: a design team per Container
+# theos v5: a design team per Container
 
 Oct 3, 2026 · asked for by @Jeremy Jo., designed together with Claude in one
 session. Every decision is in the table below so it can be overruled.
@@ -149,7 +149,7 @@ inside its platform: a web UI Container gets a web UX expert, a CLI one works fr
 - **Task**: `spec.kind` (`Implement` or `Design`, immutable). A design Task runs
   Pending → Designing → Designed, or Failed. Its Agent is the designer; it has no
   reviewer, no pull request and no checks.
-- **Runner**: a design role (`C4_ROLE=design`), `docs/agents/designer.md` in
+- **Runner**: a design role (`THEOS_ROLE=design`), `docs/agents/designer.md` in
   `roleGuides`, read from the base branch, and a design prompt that carries the
   team's profiles.
 - **Output**: the designer pushes `design/<issue>` with `.design/issue.md` (the

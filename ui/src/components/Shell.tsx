@@ -62,7 +62,7 @@ export function Shell({
       <header className="topbar">
         <div className="brand">
           <LogoMark size={22} />
-          <span className="brand-name">C4 Factory</span>
+          <span className="brand-name">theos</span>
         </div>
         <nav className="modes areas" aria-label="Areas">
           {AREAS.map((a) => (
@@ -101,7 +101,7 @@ export function Shell({
       )}
 
       <footer className="footer">
-        This page reads the C4 Factory resources in the cluster and updates as they change.{' '}
+        This page reads the theos resources in the cluster and updates as they change.{' '}
         {acts === 'none'
           ? 'It can change only three things: create a Brief from an app idea, add a prompt to a Brief, and pause or resume a Brief.'
           : "With actions on, it also changes Brief and Crew settings, retries a Container, reruns a release, starts a Task and moves a Standard's template ref."}{' '}

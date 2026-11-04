@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // issueHost is an in-memory Gitea with labels, milestones, issues, dependencies,

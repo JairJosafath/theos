@@ -3,9 +3,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: gitea
-  namespace: {{ include "c4-factory.giteaNamespace" . }}
+  namespace: {{ include "theos.giteaNamespace" . }}
   labels:
-    {{- include "c4-factory.giteaLabels" (dict "name" "gitea" "context" .) | nindent 4 }}
+    {{- include "theos.giteaLabels" (dict "name" "gitea" "context" .) | nindent 4 }}
 spec:
   selector:
     app.kubernetes.io/name: gitea

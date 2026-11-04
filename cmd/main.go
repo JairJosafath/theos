@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -37,20 +37,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
-	c4v1alpha1 "github.com/JairJosafath/c4factory/api/v1alpha1"
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/features"
-	"github.com/JairJosafath/c4factory/internal/adapters/argocd"
-	"github.com/JairJosafath/c4factory/internal/adapters/cloudformation"
-	"github.com/JairJosafath/c4factory/internal/adapters/git"
-	"github.com/JairJosafath/c4factory/internal/adapters/gitea"
-	"github.com/JairJosafath/c4factory/internal/adapters/github"
-	"github.com/JairJosafath/c4factory/internal/adapters/gitlab"
-	"github.com/JairJosafath/c4factory/internal/buildinfo"
-	"github.com/JairJosafath/c4factory/internal/controller"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/features"
+	"github.com/JairJosafath/theos/internal/adapters/argocd"
+	"github.com/JairJosafath/theos/internal/adapters/cloudformation"
+	"github.com/JairJosafath/theos/internal/adapters/git"
+	"github.com/JairJosafath/theos/internal/adapters/gitea"
+	"github.com/JairJosafath/theos/internal/adapters/github"
+	"github.com/JairJosafath/theos/internal/adapters/gitlab"
+	"github.com/JairJosafath/theos/internal/buildinfo"
+	"github.com/JairJosafath/theos/internal/controller"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -110,7 +110,7 @@ func main() {
 	flag.StringVar(&webhookService, "webhook-service", "",
 		"The manager's webhook Service in the operator's namespace (POD_NAMESPACE): the operator issues the webhook "+
 			"certificate for <service>.<namespace>.svc into --webhook-cert-secret and patches its CA into the "+
-			"c4.factory.io CRDs that convert by webhook. None: no webhook server, unless --webhook-cert-path names "+
+			"theos.factory.io CRDs that convert by webhook. None: no webhook server, unless --webhook-cert-path names "+
 			"certificates.")
 	flag.StringVar(&webhookCertSecret, "webhook-cert-secret", "",
 		"The Secret in the operator's namespace the webhook certificate is kept in; needs --webhook-service.")
@@ -136,11 +136,11 @@ func main() {
 			" gives sandboxes no checkpoint volume, for a cluster without a class to provision one: an "+
 			"interrupted run then runs again.")
 	flag.StringVar(&sandboxGoCache, "sandbox-go-cache", "",
-		"When set, a directory on the node, such as /var/cache/c4factory/go/sandbox, that agent sandboxes "+
+		"When set, a directory on the node, such as /var/cache/theos/go/sandbox, that agent sandboxes "+
 			"share as their Go and golangci-lint build cache, so a round doesn't compile what an earlier one did. "+
 			"Never the CI runner's cache: agents run untrusted code, and Go trusts its cache.")
 	flag.StringVar(&ciGoCache, "ci-go-cache", "",
-		"When set, a directory on the node, such as /var/cache/c4factory/go/ci, under which each project's "+
+		"When set, a directory on the node, such as /var/cache/theos/go/ci, under which each project's "+
 			"CI runner pods get their own Go and golangci-lint build cache, <dir>/<project namespace>; a job "+
 			"compiles only what changed. Never shared with the agent sandboxes' cache.")
 	flag.Var(&clusterDNS, "cluster-dns",
@@ -148,7 +148,7 @@ func main() {
 			"(a namespace and pod labels) or an address block inside the private ranges (169.254.20.10/32 for "+
 			"NodeLocal DNSCache; a bare address means /32). Repeatable. Default "+controller.DefaultClusterDNS+".")
 	flag.StringVar(&goProxy, "go-proxy", controller.DefaultGoProxy,
-		"The Go proxy asked whether go get finds a released Go module whose path is outside c4factory.local/; "+
+		"The Go proxy asked whether go get finds a released Go module whose path is outside theos.local/; "+
 			"off asks none, and the Crew's own GitHub source tag is the answer.")
 	flag.DurationVar(&leaseDuration, "leader-elect-lease-duration", time.Minute,
 		"How long the leader's lease lasts. It renews within two thirds of that, retrying every twelfth. "+
@@ -160,15 +160,15 @@ func main() {
 		"How scaffolded devcontainers get the Session client: local (write the feature into each repository), "+
 			"none, or a feature reference such as an OCI image.")
 	flag.StringVar(&sessionBinaryURL, "session-binary-url", "",
-		"URL of a linux c4session binary for the feature to download; ${arch} becomes amd64 or arm64.")
+		"URL of a linux theos-session binary for the feature to download; ${arch} becomes amd64 or arm64.")
 	flag.Var(&sharedSecrets, "shared-secret",
 		"The Agents' token Secret in the operator's namespace (POD_NAMESPACE), such as claude-credentials, read "+
 			"by the model proxy and never copied: an Agent in a project namespace labeled "+
-			"c4.factory.io/shared-secrets=true whose credentialsSecretRef names it is on the factory's shared "+
+			"theos.factory.io/shared-secrets=true whose credentialsSecretRef names it is on the factory's shared "+
 			"token; repeatable, needs --model-proxy-url. None: every Agent's Secret is its project's own.")
 	flag.Var(&sharedPullSecrets, "shared-pull-secret",
 		"An image pull Secret in the operator's namespace to copy into every project namespace labeled "+
-			"c4.factory.io/shared-secrets=true; repeatable. None: no pull Secret is shared.")
+			"theos.factory.io/shared-secrets=true; repeatable. None: no pull Secret is shared.")
 	flag.StringVar(&modelProxyURL, "model-proxy-url", "",
 		"The model proxy's URL, such as http://c4-model-proxy.<namespace>.svc:8080: an agent sandbox whose Agent "+
 			"names a --shared-secret Secret holds no token and reaches Claude through it. None: no shared token.")
@@ -358,7 +358,7 @@ func main() {
 		SourceNamespace:   podNamespace,
 		ModelProxyURL:     modelProxyURL,
 		OperatorVersion:   buildinfo.Version,
-		ChartVersion:      os.Getenv("C4_CHART_VERSION"),
+		ChartVersion:      os.Getenv("THEOS_CHART_VERSION"),
 		UIServiceAccount:  uiAccount,
 		Git:               gitClient{},
 		CIGoCache:         ciGoCache,
@@ -484,7 +484,7 @@ func main() {
 
 	webhookOn := webhookCert != nil || webhookCertPath != ""
 	if webhookOn {
-		// Every c4.factory.io kind converts between its versions here: each
+		// Every theos.factory.io kind converts between its versions here: each
 		// v1alpha1 type is Convertible to its v1beta1 hub
 		// (docs/plans/done/api-versions.md, decision 3).
 		mgr.GetWebhookServer().Register("/convert",
@@ -530,7 +530,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("Starting manager", "version", buildinfo.Version, "chartVersion", os.Getenv("C4_CHART_VERSION"))
+	setupLog.Info("Starting manager", "version", buildinfo.Version, "chartVersion", os.Getenv("THEOS_CHART_VERSION"))
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)

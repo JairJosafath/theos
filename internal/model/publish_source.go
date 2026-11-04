@@ -282,7 +282,7 @@ func SourceURL(web, repository, path, tag string) string {
 // SourceMessage is the message of a source commit: the release's name, and a
 // trailer naming its owner, the Container as namespace/name, and the GitHub tag.
 func SourceMessage(app, owner, crewTag, tag string) string {
-	return fmt.Sprintf("%s: source\n\nC4factory-Source: %s %s\n", ReleaseName(app, crewTag), owner, tag)
+	return fmt.Sprintf("%s: source\n\ntheos-Source: %s %s\n", ReleaseName(app, crewTag), owner, tag)
 }
 
 // FoldersOverlap says two source folders of one repository are equal, or one

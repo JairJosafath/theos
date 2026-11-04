@@ -17,7 +17,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // File is one file in a repository tree.
@@ -90,10 +90,10 @@ type Input struct {
 	// infra/operations.ts from. It holds no tier: that is the deploy target's.
 	Operations model.Operations
 	// CI is the CI system the Container's repository runs. A layer's
-	// .c4factory/ci/<CI.Name>/ folder renders at the repository root.
+	// .theos/ci/<CI.Name>/ folder renders at the repository root.
 	CI model.CI
 	// NpmScope is the npm scope the Container's package is named under
-	// (@c4factory by default; the GitProvider's spec.packages sets another).
+	// (@theos by default; the GitProvider's spec.packages sets another).
 	// A Framework that publishes an npm package names it
 	// {{ .NpmScope }}/{{ .Container }}; the name is set at scaffold time and
 	// never again. The controller fills it: an empty scope is a bug there.
@@ -107,7 +107,7 @@ type Input struct {
 	FrameworkFiles []string
 	// License is the license the repository is scaffolded with: the
 	// Container's spec.license, else its Project's (ResolveLicense). Build
-	// writes its text as LICENSE and records the id in .c4factory.yaml; with
+	// writes its text as LICENSE and records the id in .theos.yaml; with
 	// an empty ID it writes none, and a layer may.
 	License License
 }
@@ -140,7 +140,7 @@ type Result struct {
 
 const (
 	// metaDir holds a template's input for the factory. It is never copied.
-	metaDir = ".c4factory/"
+	metaDir = ".theos/"
 	// ciDir holds a folder per CI system the template supports, named after
 	// it, such as giteaActions. Only the Container's CI system's folder is
 	// rendered, at the repository root.
@@ -148,7 +148,7 @@ const (
 	// templateSuffix marks files rendered with text/template.
 	templateSuffix = ".tmpl"
 	// IdentityPath is the identity file the Session client reads.
-	IdentityPath = ".c4factory.yaml"
+	IdentityPath = ".theos.yaml"
 	// devcontainerDir is written by the operator, never by a layer.
 	devcontainerDir = ".devcontainer/"
 	// operatorOwner names the operator in conflict messages.
@@ -323,7 +323,7 @@ func checkLayers(in Input, layers []Layer) error {
 }
 
 // checkCI fails a layer that keeps files for CI systems but none for the
-// Container's. A layer without .c4factory/ci/ works with any CI system.
+// Container's. A layer without .theos/ci/ works with any CI system.
 func checkCI(in Input, layer Layer) error {
 	var supported []string
 	for _, p := range layer.Files.Paths() {
@@ -355,7 +355,7 @@ func (in Input) isOperatorPath(p string) bool {
 }
 
 // renderLayer returns the files a layer adds to the repository: everything except
-// .c4factory/, and what .c4factory/ci/ holds for the Container's CI system, at
+// .theos/, and what .theos/ci/ holds for the Container's CI system, at
 // the root, with .tmpl files rendered and whitespace-only results left out.
 // A Domain layer's files are Markdown only, hold a README.md, and land under
 // docs/agents/domain/<name>/.
@@ -441,7 +441,7 @@ func renderFile(in Input, p string, data []byte) (target string, out []byte, kee
 	return target, buf.Bytes(), true, nil
 }
 
-// metaFile returns a layer's .c4factory/<name> input, rendered when it is a template.
+// metaFile returns a layer's .theos/<name> input, rendered when it is a template.
 func metaFile(in Input, layer Layer, name string) ([]byte, bool, error) {
 	for _, p := range []string{metaDir + name, metaDir + name + templateSuffix} {
 		f, ok := layer.Files[p]

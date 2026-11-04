@@ -12,4 +12,4 @@ Crew publishing a release's source leaves a source tag someone else made alone
 • [3.497 seconds]
 Ran 4 of 331 Specs in 28.124 seconds
 PASS
-ok  	github.com/JairJosafath/c4factory/internal/controller	28.160s
+ok  	github.com/JairJosafath/theos/internal/controller	28.160s

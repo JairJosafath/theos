@@ -5,9 +5,9 @@
 # setup-envtest v0.25.0 with the Kubernetes 1.37.0 envtest binaries, golangci-lint v2.13.1 (this repository's pin;
 # the toolchain image has v2.14.0), go1.26.8, 2026-10-09. The heavy-job slot line and timing are left out.
 
-KUBEBUILDER="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/kubebuilder-v4.16.0" CONTROLLER_GEN="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/controller-gen-v0.22.0" KUSTOMIZE="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/kustomize-v5.8.1" ENVTEST="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/setup-envtest-v0.25.0" \
-	GOLANGCI_LINT="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/golangci-lint-v2.13.1" \
-	ENVTEST_ASSETS="/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/k8s/1.37.0-linux-amd64" \
+KUBEBUILDER="/home/asus/www/github.com/jairjosafath/theos/.dev/make/bin/kubebuilder-v4.16.0" CONTROLLER_GEN="/home/asus/www/github.com/jairjosafath/theos/.dev/make/bin/controller-gen-v0.22.0" KUSTOMIZE="/home/asus/www/github.com/jairjosafath/theos/.dev/make/bin/kustomize-v5.8.1" ENVTEST="/home/asus/www/github.com/jairjosafath/theos/.dev/make/bin/setup-envtest-v0.25.0" \
+	GOLANGCI_LINT="/home/asus/www/github.com/jairjosafath/theos/.dev/make/bin/golangci-lint-v2.13.1" \
+	ENVTEST_ASSETS="/home/asus/www/github.com/jairjosafath/theos/.dev/make/bin/k8s/1.37.0-linux-amd64" \
 	hack/test-templates-operator.sh
 Rendered 47 files from go-kubebuilder@local, go-operator-standard@local, small@local into /tmp/tmp.RyBP4w7hC6/backup-operator
 
@@ -21,9 +21,9 @@ Generated files are up to date.
 go vet ./...
 "/tmp/tmp.RyBP4w7hC6/bin/golangci-lint" run
 0 issues.
-KUBEBUILDER_ASSETS=/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/k8s/1.37.0-linux-amd64
-?   	c4factory.local/webshop/backup-operator/cmd	[no test files]
-?   	c4factory.local/webshop/backup-operator/test/utils	[no test files]
+KUBEBUILDER_ASSETS=/home/asus/www/github.com/jairjosafath/theos/.dev/make/bin/k8s/1.37.0-linux-amd64
+?   	theos.local/webshop/backup-operator/cmd	[no test files]
+?   	theos.local/webshop/backup-operator/test/utils	[no test files]
 
 $ kubebuilder create api --group demo --version v1 --kind Widget --resource --controller
 INFO Writing kustomize manifests for you to edit... 
@@ -55,11 +55,11 @@ Generated files are up to date.
 go vet ./...
 "/tmp/tmp.RyBP4w7hC6/bin/golangci-lint" run
 0 issues.
-KUBEBUILDER_ASSETS=/home/asus/www/github.com/jairjosafath/c4factory/.dev/make/bin/k8s/1.37.0-linux-amd64
-?   	c4factory.local/webshop/backup-operator/api/v1	[no test files]
-?   	c4factory.local/webshop/backup-operator/cmd	[no test files]
-ok  	c4factory.local/webshop/backup-operator/internal/controller	7.358s
-?   	c4factory.local/webshop/backup-operator/test/utils	[no test files]
+KUBEBUILDER_ASSETS=/home/asus/www/github.com/jairjosafath/theos/.dev/make/bin/k8s/1.37.0-linux-amd64
+?   	theos.local/webshop/backup-operator/api/v1	[no test files]
+?   	theos.local/webshop/backup-operator/cmd	[no test files]
+ok  	theos.local/webshop/backup-operator/internal/controller	7.358s
+?   	theos.local/webshop/backup-operator/test/utils	[no test files]
 
 test-templates-operator: the operator combo passes make check before and after kubebuilder create api
 

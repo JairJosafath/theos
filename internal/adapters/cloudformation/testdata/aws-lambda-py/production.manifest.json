@@ -16,9 +16,9 @@
         "templateFile": "production.tax-fn.template.json",
         "terminationProtection": true,
         "tags": {
-          "c4factory:container": "tax-fn",
-          "c4factory:project": "webshop",
-          "c4factory:system": "shop"
+          "theos:container": "tax-fn",
+          "theos:project": "webshop",
+          "theos:system": "shop"
         },
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-deploy-role-${AWS::AccountId}-${AWS::Region}",

@@ -515,7 +515,7 @@ describe('a backup selection', () => {
       {
         ListOfTags: [
           {
-            ConditionKey: 'c4factory:container',
+            ConditionKey: 'theos:container',
             ConditionType: 'STRINGEQUALS',
             ConditionValue: 'orders',
           },
@@ -532,7 +532,7 @@ describe('a backup selection', () => {
         Resources: ['*'],
         Conditions: {
           StringEquals: [
-            { ConditionKey: 'aws:ResourceTag/c4factory:container', ConditionValue: 'orders' },
+            { ConditionKey: 'aws:ResourceTag/theos:container', ConditionValue: 'orders' },
           ],
         },
       },

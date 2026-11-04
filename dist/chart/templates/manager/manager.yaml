@@ -4,7 +4,7 @@ kind: Deployment
 metadata:
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/name: {{ include "c4-factory.name" . }}
+    app.kubernetes.io/name: {{ include "theos.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     control-plane: controller-manager
@@ -13,7 +13,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
     {{- end }}
-  name: {{ include "c4-factory.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  name: {{ include "theos.resourceName" (dict "suffix" "controller-manager" "context" $) }}
   namespace: {{ .Release.Namespace }}
   {{- if .Values.manager.annotations }}
   annotations:
@@ -26,7 +26,7 @@ spec:
   replicas: {{ .Values.manager.replicas }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "c4-factory.name" . }}
+      app.kubernetes.io/name: {{ include "theos.name" . }}
       control-plane: controller-manager
   template:
     metadata:
@@ -40,7 +40,7 @@ spec:
         {{- end }}
         {{- end }}
       labels:
-        app.kubernetes.io/name: {{ include "c4-factory.name" . }}
+        app.kubernetes.io/name: {{ include "theos.name" . }}
         helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/managed-by: {{ .Release.Service }}
@@ -88,7 +88,7 @@ spec:
         # The operator issues the webhook certificate into this Secret and
         # patches its CA into the CRDs (docs/plans/done/api-versions.md, decision 3).
         - --webhook-port={{ .Values.webhook.port }}
-        - --webhook-service={{ include "c4-factory.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+        - --webhook-service={{ include "theos.resourceName" (dict "suffix" "webhook-service" "context" $) }}
         - --webhook-cert-secret={{ .Release.Name }}-webhook-cert
         {{- end }}
         {{- range .Values.manager.args }}
@@ -108,18 +108,18 @@ spec:
         {{- end }}
         {{- if .Values.agents.enabled }}
         - --shared-secret={{ .Values.agents.credentialsSecret }}
-        - --model-proxy-url=http://{{ include "c4-factory.modelProxyName" . }}.{{ .Release.Namespace }}.svc:8080
+        - --model-proxy-url=http://{{ include "theos.modelProxyName" . }}.{{ .Release.Namespace }}.svc:8080
         {{- end }}
         {{- range .Values.global.imagePullSecrets }}
         - --shared-pull-secret={{ .name }}
         {{- end }}
         {{- if .Values.ui.enabled }}
-        - --ui-service-account={{ .Release.Namespace }}/{{ include "c4-factory.uiName" . }}
+        - --ui-service-account={{ .Release.Namespace }}/{{ include "theos.uiName" . }}
         {{- end }}
         command:
         - /manager
         # The namespace the shared Secrets are read from, into every project
-        # namespace labeled c4.factory.io/shared-secrets=true.
+        # namespace labeled theos.factory.io/shared-secrets=true.
         env:
         - name: POD_NAMESPACE
           valueFrom:
@@ -127,7 +127,7 @@ spec:
               fieldPath: metadata.namespace
         # The chart this operator was installed with, reported in Project
         # status for the UI's version line.
-        - name: C4_CHART_VERSION
+        - name: THEOS_CHART_VERSION
           value: {{ .Chart.Version | quote }}
         image: "{{ .Values.manager.image.repository | default "controller" }}{{- if not (contains "@" (.Values.manager.image.repository | default "controller")) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.manager.image.pullPolicy }}
@@ -185,7 +185,7 @@ spec:
         {{- else }}
         {}
         {{- end }}
-      serviceAccountName: {{ include "c4-factory.serviceAccountName" . }}
+      serviceAccountName: {{ include "theos.serviceAccountName" . }}
       {{- if and (hasKey .Values.manager "terminationGracePeriodSeconds") (ne .Values.manager.terminationGracePeriodSeconds nil) }}
       terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
       {{- end }}

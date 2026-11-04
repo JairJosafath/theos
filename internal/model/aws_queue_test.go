@@ -9,14 +9,14 @@ import (
 // queuePlan is a planner's plan for a queue consumer on AWS: a worker on
 // aws-queue-ts with aws-standard, and no Compute or Deployment
 // (plans/aws-production.md, step 8).
-const queuePlan = `apiVersion: c4.factory.io/v1beta1
+const queuePlan = `apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: shop
 spec:
   description: Sells lamps
 ---
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Container
 metadata:
   name: stock-updates

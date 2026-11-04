@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/model"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 func giteaActions(t *testing.T) model.CI {
@@ -24,7 +24,7 @@ func giteaActions(t *testing.T) model.CI {
 var gitlabCI = model.CI{Name: "gitlabCI", CheckContexts: []string{"check"}, ProtectedPaths: []string{".gitlab-ci.yml"}}
 
 // todaysLayout moves a layer's Gitea Actions files back to the root, where
-// they were before templates kept them under .c4factory/ci/giteaActions/.
+// they were before templates kept them under .theos/ci/giteaActions/.
 func todaysLayout(layer Layer) Layer {
 	files := Tree{}
 	for p, f := range layer.Files {
@@ -119,7 +119,7 @@ func TestTemplatesRefuseACISystemTheyDontSupport(t *testing.T) {
 }
 
 // TestTemplatesKeepingCIFiles names the templates that keep CI files, so one
-// that writes a CI system's files outside .c4factory/ci/ can't go unnoticed.
+// that writes a CI system's files outside .theos/ci/ can't go unnoticed.
 func TestTemplatesKeepingCIFiles(t *testing.T) {
 	want := []string{"aws-standard", "factory-self", "gitea-release", "go-operator-standard", "go-standard", "hello-html",
 		"hello-standard", "k8s-manifests", "python-standard", "ts-standard"}
@@ -175,8 +175,8 @@ func TestRenderLayerCI(t *testing.T) {
 		{name: "a file beside the CI folders names no CI system", ci: gitlabCI,
 			files: tree("main.go", "package main", ciDir+"README.md", "about"), want: tree("main.go", "package main")},
 		{name: "CI files can't write the template's own folder", ci: gitea,
-			files:   tree(ciDir+"giteaActions/.c4factory/x", "y"),
-			wantErr: "std: .c4factory/ci/giteaActions/.c4factory/x: CI files can't write .c4factory/"},
+			files:   tree(ciDir+"giteaActions/.theos/x", "y"),
+			wantErr: "std: .theos/ci/giteaActions/.theos/x: CI files can't write .theos/"},
 		{name: "a CI file and a root file on one path conflict", ci: gitea,
 			files:   tree("Makefile", "a", ciDir+"giteaActions/Makefile", "b"),
 			wantErr: "std and std both write Makefile"},

@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -22,10 +22,10 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
-	"github.com/JairJosafath/c4factory/internal/scaffold"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports/fake"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // updatedStandard is the Standard the Container in these tests uses.
@@ -55,7 +55,7 @@ func standardRefs() map[string]scaffold.Tree {
 		makefile:       file("check:\n\ttrue\n"),
 	}
 	v101 := maps.Clone(v100)
-	v101[".c4factory/README.md"] = file("Notes, never copied\n")
+	v101[".theos/README.md"] = file("Notes, never copied\n")
 	v110 := maps.Clone(v100)
 	v110[agentsTemplate] = file("Rules for {{ .Container }}, which uses{{ range .Connectors }} {{ . }}{{ end }}.\n" +
 		"Run make check.\n")
@@ -319,7 +319,7 @@ var _ = Describe("Container Standard update", func() {
 		update := openedUpdate(ns, "v1.2.0")
 		Expect(update.Paths).To(Equal([]string{"AGENTS.md", implementer, reviewer}))
 		Expect(update.LeftOut).To(Equal([]string{makefile}))
-		annotate := "kubectl -n " + ns + " annotate container orders-api c4.factory.io/standard-"
+		annotate := "kubectl -n " + ns + " annotate container orders-api theos.factory.io/standard-"
 		_, body := gitFake.PullText(ns, "orders-api", int(update.PullRequest))
 		Expect(body).To(ContainSubstring("- take the Standard's version: `" + annotate + "take=v1.2.0`\n" +
 			"- or keep the repository's: `" + annotate + "keep=v1.2.0`\n"))
@@ -554,7 +554,7 @@ var _ = Describe("Container Standard update", func() {
 		gitFake.SetChecks(ns, "orders-api", update.Commit, "success")
 		eventuallyAt(ns, "v1.1.0")
 		Expect(mainFile(ns, licenseDoc)).To(Equal("Licensed under MIT.\n"),
-			"the update renders with the id .c4factory.yaml records, not spec.license as it stands")
+			"the update renders with the id .theos.yaml records, not spec.license as it stands")
 		Expect(mainFile(ns, scaffold.IdentityPath)).To(ContainSubstring("license: MIT"))
 		Expect(mainFile(ns, scaffold.LicensePath)).To(ContainSubstring("Permission is hereby granted"),
 			"the scaffolded LICENSE stays")

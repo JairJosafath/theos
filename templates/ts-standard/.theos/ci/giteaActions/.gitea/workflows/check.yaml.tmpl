@@ -1,0 +1,124 @@
+{{- /*
+  .Checks picks the workflow: EveryChange (or empty) runs make check on every
+  change; BeforeRelease runs make check-light on every change and make check,
+  in the job full, on a push to a release-check/** branch. {{`${{ … }}`}}
+  writes a Gitea expression as is.
+*/ -}}
+{{- $beforeRelease := eq .Checks "BeforeRelease" -}}
+{{- define "job" }}
+    runs-on: go
+    env:
+      # The runner's /tmp is in memory. npm's cache on its disk stalls the
+      # node, and with it the whole cluster.
+      npm_config_cache: /tmp/npm-cache
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git -c http.extraHeader="Authorization: token {{`${{ gitea.token }}`}}" \
+            fetch -q --depth 1 "{{`${{ gitea.server_url }}`}}/{{`${{ gitea.repository }}`}}.git" "{{`${{ gitea.sha }}`}}"
+          git checkout -q FETCH_HEAD
+{{- end -}}
+{{- /* registries: the step that routes the factory's npm and PyPI packages to
+  the owner's registries; with true, only when the change touches code. */ -}}
+{{- define "registries" }}
+      - name: Credentials for the package registries
+{{- if . }}
+        if: steps.changes.outputs.code == 'true'
+{{- end }}
+        # The factory's packages (other apps of this project) come from the
+        # owner's npm registry and PyPI index, the Git host's own unless the
+        # GitProvider's spec.packages names others: then the operator sets
+        # these Actions variables and secrets, and empty ones mean the host.
+        # npm sends the scope to the registry through ~/.npmrc; uv logs in to
+        # the index with ~/.netrc, whose machine is the hostname alone: uv, pip
+        # and requests match it without the port, which npm keeps. A token of
+        # the index is the password of the user __token__. A package the
+        # registry lacks fails here instead of being asked of npmjs.org or
+        # pypi.org.
+        env:
+          NPM_SCOPE: {{`${{ vars.THEOS_NPM_SCOPE }}`}}
+          NPM_REGISTRY: {{`${{ vars.THEOS_NPM_REGISTRY }}`}}
+          NPM_TOKEN: {{`${{ secrets.THEOS_NPM_TOKEN }}`}}
+          PYPI_INDEX: {{`${{ vars.THEOS_PYPI_INDEX }}`}}
+          PYPI_TOKEN: {{`${{ secrets.THEOS_PYPI_TOKEN }}`}}
+          SERVER: {{`${{ gitea.server_url }}`}}
+          OWNER: {{`${{ gitea.repository_owner }}`}}
+          ACTOR: {{`${{ gitea.actor }}`}}
+          TOKEN: {{`${{ gitea.token }}`}}
+        run: |
+          registry=${NPM_REGISTRY:-$SERVER/api/packages/$OWNER/npm/}
+          registry=${registry%/}/
+          index=${PYPI_INDEX:-$SERVER/api/packages/$OWNER/pypi/simple}
+          host=${index#*://}
+          host=${host%%/*}
+          host=${host%%:*}
+          login=${PYPI_TOKEN:+__token__}
+          login=${login:-$ACTOR}
+          umask 077
+          printf '%s:registry=%s\n//%s:_authToken=%s\n' "${NPM_SCOPE:-@theos}" "$registry" "${registry#*://}" "${NPM_TOKEN:-$TOKEN}" > "$HOME/.npmrc"
+          printf 'machine %s\nlogin %s\npassword %s\n' "$host" "$login" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
+{{- end -}}
+{{- if $beforeRelease -}}
+# Runs the light check, make check-light, on every pull request and on main,
+# and the full check, make check, on a push to a release-check/** branch: the
+# commit a release will be tagged at. The branch protection of main requires
+# a passing "check" context before a merge.
+{{- else -}}
+# Runs the quality contract on every pull request and on main. The branch
+# protection of main requires a passing "check" context before a merge.
+{{- end }}
+name: check
+
+on:
+  push:
+    branches: [main{{ if $beforeRelease }}, "release-check/**"{{ end }}]
+  pull_request:
+
+jobs:
+  check:
+{{- if $beforeRelease }}
+    if: {{`${{ !startsWith(gitea.ref, 'refs/heads/release-check/') }}`}}
+{{- end }}
+{{- template "job" }}
+      # A change to only the changelog, docs/ or images has nothing for the
+      # steps below to verify: the job passes without them, so the required
+      # "check" context still reports and the change merges. Any other file,
+      # a first push, or a base git can't fetch or compare runs them as always.
+      - name: What the change touches
+        id: changes
+        env:
+          TOKEN: {{`${{ gitea.token }}`}}
+          URL: {{`${{ gitea.server_url }}`}}/{{`${{ gitea.repository }}`}}.git
+          BASE: {{`${{ gitea.event.pull_request.base.sha || gitea.event.before }}`}}
+        run: |
+          code=true
+          case $BASE in
+          *[!0]*)
+            if git -c http.extraHeader="Authorization: token $TOKEN" fetch -q --depth 1 "$URL" "$BASE" &&
+              files=$(git diff --no-renames --name-only "$BASE" HEAD) && [ -n "$files" ] &&
+              ! printf '%s\n' "$files" | grep -qvE '^CHANGELOG\.md$|^docs/|\.(png|jpg|gif|svg)$'; then
+              code=false
+              echo "Only the changelog, docs/ or images changed; skipping the checks."
+            fi
+            ;;
+          esac
+          echo "code=$code" >>"$GITHUB_OUTPUT"
+{{- template "registries" true }}
+{{- if $beforeRelease }}
+      - name: make check-light
+        if: steps.changes.outputs.code == 'true'
+        run: make check-light
+  # The full check, on the commit a release will be tagged at: always, whatever
+  # the commit changes since the branch's previous push.
+  full:
+    if: startsWith(gitea.ref, 'refs/heads/release-check/')
+{{- template "job" }}
+{{- template "registries" false }}
+      - name: make check
+        run: make check
+{{- else }}
+      - name: make check
+        if: steps.changes.outputs.code == 'true'
+        run: make check
+{{- end }}

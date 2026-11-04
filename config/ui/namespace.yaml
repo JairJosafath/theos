@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: c4-factory-ui
+  name: theos-ui
   labels:
-    app.kubernetes.io/name: c4-factory-ui
+    app.kubernetes.io/name: theos-ui
     # The UI runs as the "restricted" Pod Security Standard requires.
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest

@@ -8,4 +8,4 @@ Every user-visible change, newest first. The format follows
 
 ### Added
 
-- The command, scaffolded by C4 Factory, which greets you by name.
+- The command, scaffolded by theos, which greets you by name.

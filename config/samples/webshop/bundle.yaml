@@ -1,7 +1,7 @@
 # A Bundle names the catalog entries a team picked together, from factory.yaml:
 # a Container may name it instead of the four (docs/plans/done/catalog-bundles.md).
 # The webshop's own Containers keep naming their sides.
-apiVersion: c4.factory.io/v1beta1
+apiVersion: theos.factory.io/v1beta1
 kind: Bundle
 metadata:
   name: python-service

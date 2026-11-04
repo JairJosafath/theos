@@ -31,7 +31,7 @@ const lens: BriefRelease = {
 }
 const repo = 'gray-lenovo/cel-lens'
 const brief: Brief = {
-  apiVersion: 'c4.factory.io/v1beta1',
+  apiVersion: 'theos.factory.io/v1beta1',
   kind: 'Brief',
   metadata: { name: 'lens', namespace: 'p', resourceVersion: '7' },
   spec: { idea: 'A lens on CEL', releases: [lens] },
@@ -191,7 +191,7 @@ describe("a Brief's requests", () => {
   })
 
   it('show the API server’s message when it refuses an answer', async () => {
-    const message = 'Brief.c4.factory.io "lens" is invalid: spec.releases[0].requests.accepted: Too many: 201'
+    const message = 'Brief.theos.factory.io "lens" is invalid: spec.releases[0].requests.accepted: Too many: 201'
     const refuse = vi.fn(
       async () =>
         new Response(JSON.stringify({ kind: 'Status', status: 'Failure', code: 422, reason: 'Invalid', message }), {

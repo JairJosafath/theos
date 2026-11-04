@@ -16,7 +16,7 @@ func TestWriteNpmrc(t *testing.T) {
 		{"the default scope on the Git host's registry, with the agent's Git token",
 			Job{RepoURL: repoURL, Token: gitToken,
 				NpmRegistry: "http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/npm/"},
-			"@c4factory:registry=http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/npm/\n" +
+			"@theos:registry=http://gitea.gitea.svc.cluster.local:3000/api/packages/apps/npm/\n" +
 				"//gitea.gitea.svc.cluster.local:3000/api/packages/apps/npm/:_authToken=" + gitToken + "\n"},
 		{"an own scope on an external registry, with its own token",
 			Job{RepoURL: "https://git.example.com/apps/image-shrink.git", Token: gitToken,
@@ -25,7 +25,7 @@ func TestWriteNpmrc(t *testing.T) {
 				"//npm.example.com/registry/:_authToken=npm-read\n"},
 		{"an external registry without a token sends none",
 			Job{RepoURL: repoURL, Token: gitToken, NpmRegistry: "https://registry.npmjs.org/"},
-			"@c4factory:registry=https://registry.npmjs.org/\n"},
+			"@theos:registry=https://registry.npmjs.org/\n"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			home := t.TempDir()

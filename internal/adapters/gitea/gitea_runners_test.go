@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // ownerRunners is a Gitea at handler, as the webshop organization's runners.

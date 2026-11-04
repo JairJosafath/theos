@@ -1,7 +1,7 @@
 /*
 Copyright 2026 JairJosafath. All rights reserved.
 
-This file is part of C4 Factory, which is proprietary. No license is granted
+This file is part of theos, which is proprietary. No license is granted
 to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
@@ -19,11 +19,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	c4v1beta1 "github.com/JairJosafath/c4factory/api/v1beta1"
-	"github.com/JairJosafath/c4factory/internal/agentrunner"
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
-	"github.com/JairJosafath/c4factory/internal/ports/fake"
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/agentrunner"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 const clearIssue = "## Goal\n\nValidate orders.\n\n## Acceptance criteria\n\n- [ ] Rejects an empty order\n"
@@ -49,7 +49,7 @@ func crewAgents(ns string, rounds int32) {
 	implementer := newAgent(ns, rounds)
 	implementer.Spec.Model = "claude-sonnet-5-5"
 	reviewer := &c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "reviewer"),
-		Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", Model: "claude-opus-5-5", MaxRounds: rounds}}
+		Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev", Model: "claude-opus-5-5", MaxRounds: rounds}}
 	mustCreate(implementer, reviewer)
 }
 
@@ -131,11 +131,11 @@ var _ = Describe("Crew", func() {
 		Eventually(func(g Gomega) {
 			env := sandboxEnv(g, ns, "orders-api-3-r1-implement")
 			g.Expect(env).To(ContainElements(
-				map[string]any{"name": "C4_ISSUE", "value": "3"},
-				map[string]any{"name": "C4_MODEL", "value": "claude-sonnet-5-5"},
-				map[string]any{"name": "C4_HARNESS", "value": "claude-code"},
+				map[string]any{"name": "THEOS_ISSUE", "value": "3"},
+				map[string]any{"name": "THEOS_MODEL", "value": "claude-sonnet-5-5"},
+				map[string]any{"name": "THEOS_HARNESS", "value": "claude-code"},
 			))
-			g.Expect(env).To(ContainElement(And(HaveKeyWithValue("name", "C4_GOAL"),
+			g.Expect(env).To(ContainElement(And(HaveKeyWithValue("name", "THEOS_GOAL"),
 				HaveKeyWithValue("value", ContainSubstring("Issue #3: Validate orders")))))
 			issue := gitFake.Issue(ns, "orders-api", first)
 			g.Expect(issue.Labels).To(Equal([]string{model.LabelInProgress}))
@@ -153,7 +153,7 @@ var _ = Describe("Crew", func() {
 		By("reviewing with the reviewer Agent's model")
 		Eventually(func(g Gomega) {
 			g.Expect(sandboxEnv(g, ns, "orders-api-3-r1-review-a1")).
-				To(ContainElement(map[string]any{"name": "C4_MODEL", "value": "claude-opus-5-5"}))
+				To(ContainElement(map[string]any{"name": "THEOS_MODEL", "value": "claude-opus-5-5"}))
 		}).Should(Succeed())
 		pr := gitFake.PullRequests(ns, "orders-api")[0]
 		Expect(gitFake.PullAuthor(ns, "orders-api", pr.Number)).To(Equal(ns+"-orders-api-agent"),
@@ -600,7 +600,7 @@ var _ = Describe("Crew", func() {
 
 		By("running the labelled issue on the routed implementer and the Crew's reviewer, the other on the Crew's own")
 		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "haiku"),
-			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", Model: "claude-haiku-4-5-20251001", MaxRounds: 2}})
+			Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev", Model: "claude-haiku-4-5-20251001", MaxRounds: 2}})
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, fmt.Sprintf("orders-api-%d", docs))
 			g.Expect(task.Spec.AgentRef).To(Equal(c4v1beta1.LocalRef{Name: "haiku"}))
@@ -611,9 +611,9 @@ var _ = Describe("Crew", func() {
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(sandboxEnv(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", docs))).To(
-				ContainElement(map[string]any{"name": "C4_MODEL", "value": "claude-haiku-4-5-20251001"}))
+				ContainElement(map[string]any{"name": "THEOS_MODEL", "value": "claude-haiku-4-5-20251001"}))
 			g.Expect(sandboxEnv(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", other))).To(
-				ContainElement(map[string]any{"name": "C4_MODEL", "value": "claude-sonnet-5-5"}))
+				ContainElement(map[string]any{"name": "THEOS_MODEL", "value": "claude-sonnet-5-5"}))
 		}).Should(Succeed())
 	})
 
@@ -637,7 +637,7 @@ var _ = Describe("Crew", func() {
 
 		By("running the labelled issue on the Crew's implementer and the routed reviewer")
 		mustCreate(&c4v1beta1.Agent{ObjectMeta: objectMeta(ns, "auditor"),
-			Spec: c4v1beta1.AgentSpec{Image: "c4factory/agent-go:dev", Model: "claude-opus-5-5", MaxRounds: 2}})
+			Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev", Model: "claude-opus-5-5", MaxRounds: 2}})
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, fmt.Sprintf("orders-api-%d", security))
 			g.Expect(task.Spec.AgentRef).To(Equal(c4v1beta1.LocalRef{Name: "claude"}))

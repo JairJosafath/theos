@@ -15,8 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
-	"github.com/JairJosafath/c4factory/internal/model"
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // Keys of the credential in the target's Secret.
@@ -131,10 +131,10 @@ func targetConfig(t ports.Target) (aws.Config, error) {
 
 var sessionNameUnsafe = regexp.MustCompile(`[^\w+=,.@-]`)
 
-// sessionName is the role session name of target: c4factory-<namespace>-<name>,
+// sessionName is the role session name of target: theos-<namespace>-<name>,
 // in STS's characters and length.
 func sessionName(target string) string {
-	n := sessionNameUnsafe.ReplaceAllString("c4factory-"+strings.ReplaceAll(target, "/", "-"), "-")
+	n := sessionNameUnsafe.ReplaceAllString("theos-"+strings.ReplaceAll(target, "/", "-"), "-")
 	if len(n) > 64 {
 		n = n[:64]
 	}

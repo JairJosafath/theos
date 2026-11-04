@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"maps"
 
-	"github.com/JairJosafath/c4factory/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The fake host's agent access: a bot user per repository, with a fresh
