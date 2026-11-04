@@ -27,6 +27,7 @@ n=0; for base in "$ROOT"/config/crd/bases/*.yaml; do
 	name=$(basename "$base" .yaml)
 	want=None; grep -q "$mark" "$base" && want=Webhook
 	awk -v want="$want" '$0 == "spec:" { s = 1; next }
+		s == 1 && /^  \{\{/ { next }
 		s == 1 { ok = $0 == "  conversion:"; s = 2; next }
 		s == 2 { ok = ok && $0 == "    strategy: " want; exit }
 		END { exit !ok }' "$ROOT/dist/chart/templates/crd/${name#*_}.${name%%_*}.yaml" || n=$((n + 1))

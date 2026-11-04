@@ -236,6 +236,33 @@ type ContainerDeployStatus struct {
 	// since is when the phase, reason or wanted version last changed.
 	// +optional
 	Since *metav1.Time `json:"since,omitempty"`
+
+	// issue is the last bug the operator filed in the Container's repository
+	// for this entry: a Degraded health or a failed deploy of a version. It
+	// stays through a recovery, so the same state of the same version files
+	// once.
+	// +optional
+	Issue *ContainerDeployIssue `json:"issue,omitempty"`
+}
+
+// ContainerDeployIssue is a bug the operator filed for a deploy entry.
+type ContainerDeployIssue struct {
+	// number is the issue's number in the Container's repository.
+	// +required
+	Number int32 `json:"number"`
+
+	// version is the version the bug is about.
+	// +required
+	Version string `json:"version"`
+
+	// state is Degraded or Failed.
+	// +kubebuilder:validation:Enum=Degraded;Failed
+	// +required
+	State string `json:"state"`
+
+	// url is the issue's address on the Git host.
+	// +optional
+	URL string `json:"url,omitempty"`
 }
 
 // OperationsSpec is what a Container promises in any tier. Every field is
@@ -673,6 +700,7 @@ type ContainerStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:storageversion
+// +kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Checks",type=string,JSONPath=".status.checks.state"

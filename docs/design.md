@@ -833,6 +833,18 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 - **Reports:** `status.deploys[]` per target (version running and wanted,
   phase, the tool's health, URL, the image a `github` target copied),
   summed by `Deployed`.
+- **Monitor** ([plans/sdlc-loop.md](plans/sdlc-loop.md)): when an entry's
+  health turns `Degraded`, or its deploy `Failed`, for the version shipped,
+  the operator files one issue in the Container's repository: `Deploy
+  <version> to <target> is <state>`, labelled `kind/bug` and
+  `status/proposed`, with the entry's message, when the operator saw it, and
+  the marker `<!-- theos-monitor: <target> <version> <state> -->`. The entry
+  records it in `status.deploys[].issue` (`number`, `version`, `state`, `url`),
+  kept through a recovery, so the same state of the same version files once;
+  after a lost status the marker on the repository's open bugs stops a
+  second. A new version or another state files again; recovering to `Healthy`
+  files nothing. A failure to reach the Git host is not filed.
+  (`model.DeployMonitorDue`.)
 - **Release images** (#1069): built by the `image` runner, pushed by digest,
   shipped by digest ([plans/images.md](plans/images.md)). When the
   Container's choice builds one (`model.BuildsImage`: `k8s-manifests`,

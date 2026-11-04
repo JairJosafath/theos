@@ -1,0 +1,100 @@
+/*
+Copyright 2026 JairJosafath. All rights reserved.
+
+This file is part of theos, which is proprietary. No license is granted
+to use, copy, modify or distribute it without the copyright holder's written
+permission. See the LICENSE file.
+*/
+
+package controller
+
+import (
+	"context"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+)
+
+// reasonDeployBugFiled is the Event of a bug filed for a deploy.
+const reasonDeployBugFiled = "DeployBugFiled"
+
+// monitorDeploys files the bug of each entry whose health turned Degraded or
+// whose deploy failed (model.DeployMonitorDue) and records the issue in the
+// entry's status.issue. Every entry keeps the issue its previous status
+// recorded, through a recovery, so a state of a version files once; the
+// marker in the Git host's issues covers a status that was lost. A failure is
+// logged and tried again on the next pass.
+func (r *ContainerReconciler) monitorDeploys(ctx context.Context, container *c4v1beta1.Container,
+	previous, deploys []c4v1beta1.ContainerDeployStatus) {
+	log := logf.FromContext(ctx)
+	for i := range deploys {
+		d := &deploys[i]
+		for _, p := range previous {
+			if p.Target == d.Target {
+				d.Issue = p.Issue
+			}
+		}
+		var filed *model.DeployMonitorFiled
+		if d.Issue != nil {
+			filed = &model.DeployMonitorFiled{Version: d.Issue.Version, State: d.Issue.State, Number: int(d.Issue.Number)}
+		}
+		report := model.DeployReport{Target: d.Target, Version: d.Version, WantedVersion: d.WantedVersion,
+			Phase: d.Phase, Health: d.Health, URL: d.URL, Image: d.Image, Reason: d.Reason, Message: d.Message}
+		version, state, due := model.DeployMonitorDue(report, filed)
+		if !due {
+			continue
+		}
+		provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace,
+			container.Spec.GitProviderRef.Name)
+		if err != nil {
+			log.Error(err, "Failed to reach the Git host to file a bug for a deploy", "target", d.Target)
+			continue
+		}
+		issue, isNew, err := fileDeployBug(ctx, provider, provider.Repository(container.Name), report, version, state,
+			time.Now())
+		if err != nil {
+			log.Error(err, "Failed to file a bug for a deploy", "target", d.Target, "version", version, "state", state)
+			continue
+		}
+		d.Issue = &c4v1beta1.ContainerDeployIssue{Number: int32(issue.Number), Version: version, State: state,
+			URL: issue.URL}
+		if !isNew {
+			continue
+		}
+		log.Info("Filed a bug for a deploy", "target", d.Target, "version", version, "state", state, "issue", issue.URL)
+		if r.Recorder != nil {
+			r.Recorder.Eventf(container, nil, corev1.EventTypeWarning, reasonDeployBugFiled, "Monitor",
+				"Filed %s: version %s is %s at %s", issue.URL, version, state, d.Target)
+		}
+	}
+}
+
+// fileDeployBug returns the open bug of the deploy in repo, found by its
+// marker, or files it there as kind/bug and status/proposed. isNew says it was
+// filed now.
+func fileDeployBug(ctx context.Context, provider ports.Issues, repo ports.Repository, report model.DeployReport,
+	version, state string, at time.Time) (ports.Issue, bool, error) {
+	l := model.BugLabel()
+	labels := append(issueLabels(),
+		ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+	if err := provider.EnsureLabels(ctx, repo, labels); err != nil {
+		return ports.Issue{}, false, err
+	}
+	open, err := provider.ListIssues(ctx, repo, model.LabelBug)
+	if err != nil {
+		return ports.Issue{}, false, err
+	}
+	for _, issue := range open {
+		if model.HasDeployMonitorMarker(issue.Body, report.Target, version, state) {
+			return issue, false, nil
+		}
+	}
+	title, body := model.DeployMonitorIssue(report, version, state, at)
+	issue, err := provider.CreateIssue(ctx, repo, title, body, []string{model.LabelBug, model.LabelProposed}, 0)
+	return issue, err == nil, err
+}

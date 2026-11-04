@@ -7,10 +7,22 @@ metadata:
     "helm.sh/resource-policy": keep
     {{- end }}
     controller-gen.kubebuilder.io/version: v0.22.0
+    theos.factory.io/conversion: webhook
   name: containers.theos.factory.io
 spec:
+  {{- if not .Values.webhook.enabled }}
+  {{- fail "containers.theos.factory.io: its versions differ in shape and convert by the operator (webhook.enabled)" }}
+  {{- end }}
   conversion:
-    strategy: None
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          name: {{ include "theos.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+          namespace: {{ .Release.Namespace }}
+          path: /convert
+      conversionReviewVersions:
+      - v1
   group: theos.factory.io
   names:
     categories:
@@ -1592,6 +1604,35 @@ spec:
                         when the target copies the release's image: a github target with a
                         packagesToken copies it to GHCR.
                       type: string
+                    issue:
+                      description: |-
+                        issue is the last bug the operator filed in the Container's repository
+                        for this entry: a Degraded health or a failed deploy of a version. It
+                        stays through a recovery, so the same state of the same version files
+                        once.
+                      properties:
+                        number:
+                          description: number is the issue's number in the Container's
+                            repository.
+                          format: int32
+                          type: integer
+                        state:
+                          description: state is Degraded or Failed.
+                          enum:
+                          - Degraded
+                          - Failed
+                          type: string
+                        url:
+                          description: url is the issue's address on the Git host.
+                          type: string
+                        version:
+                          description: version is the version the bug is about.
+                          type: string
+                      required:
+                      - number
+                      - state
+                      - version
+                      type: object
                     message:
                       description: message says it for a person.
                       type: string

@@ -116,6 +116,7 @@ func (r *ContainerReconciler) deploy(ctx context.Context, container *c4v1beta1.C
 			poll = r.deployPoll()
 		}
 	}
+	r.monitorDeploys(ctx, container, status.Deploys, deploys)
 	status.Deploys = deploys
 	ok, reason, message := model.DeployedCondition(steps)
 	value := metav1.ConditionFalse
