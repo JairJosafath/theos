@@ -115,7 +115,8 @@ describe('a Brief’s requests in the browser', () => {
   const button = (name) => page.getByRole('button', { name, exact: true })
 
   /** The Brief as the fake API has it now. */
-  const current = async () => (await fetch(`${apiUrl}/apis/theos.factory.io/v1beta1/namespaces/${NS}/briefs/lens`)).json()
+  const current = async () =>
+    (await fetch(`${apiUrl}/apis/theos.factory.io/v1beta1/namespaces/${NS}/briefs/lens`)).json()
 
   /** Clicks, and resolves to the JSON patch the API got for it, without its test of the resourceVersion. */
   async function patchOf(click) {

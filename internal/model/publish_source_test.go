@@ -38,7 +38,7 @@ func engineSource() []SourceFile {
 }
 
 func TestFactoryOwnPaths(t *testing.T) {
-	want := []string{".theos.yaml", ".devcontainer/", ".gitea/", "AGENTS.md", "docs/agents/"}
+	want := []string{".devcontainer/", ".gitea/", ".theos.yaml", "AGENTS.md", "docs/agents/"}
 	if got := FactoryOwnPaths(giteaActions); !slices.Equal(got, want) {
 		t.Errorf("FactoryOwnPaths(giteaActions) = %q, want %q", got, want)
 	}

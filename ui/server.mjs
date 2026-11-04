@@ -939,15 +939,9 @@ export function createApiHandler({
     }
     if (req.method !== 'GET') {
       const only = actions ? 'the writes GET /ui/session lists' : 'Briefs'
-      sendStatus(
-        res,
-        405,
-        'MethodNotAllowed',
-        `Only GET is allowed here: the theos UI writes nothing but ${only}`,
-        {
-          allow: 'GET',
-        },
-      )
+      sendStatus(res, 405, 'MethodNotAllowed', `Only GET is allowed here: the theos UI writes nothing but ${only}`, {
+        allow: 'GET',
+      })
       return true
     }
     if (isWatch) {

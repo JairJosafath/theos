@@ -8,7 +8,12 @@ import { crewSummaries } from '../model/crews'
 import { CrewsPanel } from './factory/Crews'
 import { PanelState, type PanelStateProps } from './PanelState'
 
-const forbidden: Problem = { what: 'crews', code: 403, message: 'crews.theos.factory.io is forbidden', resource: 'crews' }
+const forbidden: Problem = {
+  what: 'crews',
+  code: 403,
+  message: 'crews.theos.factory.io is forbidden',
+  resource: 'crews',
+}
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
 

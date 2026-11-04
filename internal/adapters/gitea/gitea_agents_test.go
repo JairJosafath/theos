@@ -372,7 +372,7 @@ func TestRevokeOldAgentTokens(t *testing.T) {
 	if err := p.RevokeOldAgentTokens(ctx, "photo-editor-agent"); err != nil {
 		t.Fatalf("RevokeOldAgentTokens() error = %v", err)
 	}
-	want := []string{agentTokenName, "someone-else"}
+	want := []string{"someone-else", agentTokenName}
 	if got := slices.Sorted(maps.Keys(g.botTokens)); !slices.Equal(got, want) {
 		t.Errorf("tokens = %v, want %v", got, want)
 	}

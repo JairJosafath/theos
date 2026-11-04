@@ -154,9 +154,9 @@ var _ = Describe("Task", func() {
 			map[string]any{"name": "THEOS_ROLE", "value": "implement"},
 		))
 		Expect(env).To(ContainElement(map[string]any{"name": "THEOS_PROTECTED_PATHS",
-			"value": ".theos.yaml,.devcontainer/,.gitea/,Makefile,ruff.toml"}))
+			"value": ".devcontainer/,.gitea/,.theos.yaml,Makefile,ruff.toml"}))
 		rule, tags := gitFake.BranchRule(ns, "orders-api")
-		Expect(rule.ProtectedPaths).To(Equal([]string{".theos.yaml", ".devcontainer/", ".gitea/", "Makefile", "ruff.toml"}),
+		Expect(rule.ProtectedPaths).To(Equal([]string{".devcontainer/", ".gitea/", ".theos.yaml", "Makefile", "ruff.toml"}),
 			"the Git host refuses changes to the Standard's and the platform's files")
 		Expect(tags).To(Equal([]string{"v*"}), "only the operator tags releases")
 		Expect(sandbox.GetOwnerReferences()).To(ContainElement(HaveField("Kind", "Task")))

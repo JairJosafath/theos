@@ -24,7 +24,7 @@ func TestHostCI(t *testing.T) {
 		wantErr             bool
 	}{
 		{host: "gitea", wantName: CIGiteaActions, wantContexts: []string{"check*"},
-			paths: []string{".theos.yaml", ".devcontainer/", ".gitea/"}},
+			paths: []string{".devcontainer/", ".gitea/", ".theos.yaml"}},
 		{host: "github", wantErr: true},
 		{host: "", wantErr: true},
 	}

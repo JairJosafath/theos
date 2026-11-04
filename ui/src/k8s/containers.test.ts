@@ -21,7 +21,9 @@ const at = new Date('2026-10-09T03:00:00Z')
 
 describe('retryPatch and taskManifest', () => {
   it('sets only the retry annotation, to the time', () => {
-    expect(retryPatch(at)).toEqual({ metadata: { annotations: { 'theos.factory.io/retry': '2026-10-09T03:00:00.000Z' } } })
+    expect(retryPatch(at)).toEqual({
+      metadata: { annotations: { 'theos.factory.io/retry': '2026-10-09T03:00:00.000Z' } },
+    })
   })
 
   it('sets only the take or the keep annotation, to the Standard’s ref', () => {
@@ -57,31 +59,40 @@ describe('LiveContainerWriter', () => {
   it('retries with a merge patch on the Container', async () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveContainerWriter('k8s', fetchImpl, () => at).retry('webshop', 'orders-api')
-    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
-      body: JSON.stringify(retryPatch(at)),
-    })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api',
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
+        body: JSON.stringify(retryPatch(at)),
+      },
+    )
   })
 
   it('answers the Standard’s files left out with a merge patch on the Container', async () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveContainerWriter('k8s', fetchImpl).answerStandard('webshop', 'orders-api', 'keep', 'v1.4.0')
-    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
-      body: JSON.stringify(standardAnswerPatch('keep', 'v1.4.0')),
-    })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api',
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/merge-patch+json', Accept: 'application/json' },
+        body: JSON.stringify(standardAnswerPatch('keep', 'v1.4.0')),
+      },
+    )
   })
 
   it('sets the checks with a JSON patch of spec.checks alone', async () => {
     const fetchImpl = vi.fn(async () => respond(200, {}))
     await new LiveContainerWriter('k8s', fetchImpl).setChecks('webshop', 'orders-api', 'BeforeRelease')
-    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
-      body: JSON.stringify([{ op: 'add', path: '/spec/checks', value: 'BeforeRelease' }]),
-    })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api',
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
+        body: JSON.stringify([{ op: 'add', path: '/spec/checks', value: 'BeforeRelease' }]),
+      },
+    )
     expect(checksPatch('EveryChange')).toEqual([{ op: 'add', path: '/spec/checks', value: 'EveryChange' }])
   })
 
@@ -94,15 +105,18 @@ describe('LiveContainerWriter', () => {
       { target: 'prod', approved: 'v1.2.0' },
       'v1.3.0',
     )
-    expect(fetchImpl).toHaveBeenCalledWith('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
-      body: JSON.stringify([
-        { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
-        { op: 'test', path: '/spec/deploy/1/approved', value: 'v1.2.0' },
-        { op: 'add', path: '/spec/deploy/1/approved', value: 'v1.3.0' },
-      ]),
-    })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api',
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
+        body: JSON.stringify([
+          { op: 'test', path: '/spec/deploy/1/target', value: 'prod' },
+          { op: 'test', path: '/spec/deploy/1/approved', value: 'v1.2.0' },
+          { op: 'add', path: '/spec/deploy/1/approved', value: 'v1.3.0' },
+        ]),
+      },
+    )
   })
 
   it('says the page is out of date when a first approval landed since it read the entry (#1461)', async () => {

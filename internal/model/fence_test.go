@@ -10,7 +10,7 @@ import (
 
 func TestAgentProtectedPaths(t *testing.T) {
 	got := AgentProtectedPaths(giteaActions, []string{"Makefile", ".gitea/", "docs/style/"})
-	want := []string{".theos.yaml", ".devcontainer/", ".gitea/", "Makefile", "docs/style/"}
+	want := []string{".devcontainer/", ".gitea/", ".theos.yaml", "Makefile", "docs/style/"}
 	if !slices.Equal(got, want) {
 		t.Errorf("AgentProtectedPaths() = %v, want %v", got, want)
 	}
@@ -18,7 +18,7 @@ func TestAgentProtectedPaths(t *testing.T) {
 		t.Errorf("AgentProtectedPaths(nil) = %v, want the platform's", got)
 	}
 	other := CI{Name: "other", ProtectedPaths: []string{".other-ci.yml"}}
-	want = []string{".theos.yaml", ".devcontainer/", ".other-ci.yml", "Makefile"}
+	want = []string{".devcontainer/", ".other-ci.yml", ".theos.yaml", "Makefile"}
 	if got := AgentProtectedPaths(other, []string{"Makefile"}); !slices.Equal(got, want) {
 		t.Errorf("AgentProtectedPaths(other) = %v, want %v", got, want)
 	}
