@@ -102,7 +102,14 @@ A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
 `.github/`, a top-level `*.md` or the rest of `hack/` outside its Go packages
 tests no package; `make test-hack` gates the shell scripts (#1318). A Go test
 that names a new `hack/` path fails `hack/test-packages_test.sh` until the
-path joins that list. `land`'s `make check` selects
+path joins that list. In the factory's own CI (`.gitea/workflows/check.yaml`,
+#2058) the checkout has `origin/main` and the commit's history without blobs, so
+a pull request selects against `origin/main` as on a device; a push to main
+sets `TEST_BASE` to main's previous head (`TEST_ALL=1` when that head is zeros
+or can't be fetched), since its detached HEAD is no branch. The workflow also
+sets `LINT_CHANGED_ONLY=1`, which makes `make check` lint only when
+`hack/go-changed.sh` finds a `*.go`, `go.mod`, `go.sum`, `.golangci.yml` or
+`.custom-gcl.yml` changed since the same base. `land`'s `make check` selects
 the same way, and so does the *Tests* workflow on a pull request (against
 its base branch); its `paths` filter skips a pull request that changes only
 `*.md`, `docs/`, `ui/`, `config/ui/`, `config/samples/`, `test/e2e/`, the

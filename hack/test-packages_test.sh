@@ -250,4 +250,16 @@ check "says no merge base" "$(grep -c 'no merge base with nope' "$T/err")" 1
 git switch -q main
 check "main: every package" "$(run)" "$every"
 
+# #2058: the factory's CI checks out a detached commit; a push to main sets
+# TEST_BASE to main's previous head, so only what the push changed is tested.
+change top/top.go
+git commit -qam three
+head=$(git rev-parse HEAD)
+git switch -q --detach "$head"
+check "#2058 detached, TEST_BASE a commit: what changed since it" "$(TEST_BASE=HEAD~1 run)" "top"
+check "#2058 detached, says the base" "$(grep -c 'testing 1 of 8 packages.*since HEAD~1' "$T/err")" 1
+check "#2058 detached, TEST_BASE the head itself: no package" "$(TEST_BASE=$head run)" ""
+check "#2058 detached, TEST_BASE a missing commit: every package" "$(TEST_BASE=0000000000000000000000000000000000000000 run)" "$every"
+git switch -q main
+
 exit $fail

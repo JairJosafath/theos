@@ -232,9 +232,15 @@ CHECK_UI := $(if $(wildcard ui/package.json),ui-test)
 CHECK_TIERS := validate-yaml test-hack $(CHECK_UI)
 check-tier-%: manifests generate fmt
 	@$(if $(findstring n,$(firstword -$(MAKEFLAGS))),,hack/check-cache.sh run $* )$(MAKE) --no-print-directory -o manifests $*
+# LINT_CHANGED_ONLY=1 (the factory's own CI sets it) lints only when Go can have
+# changed since TEST_BASE (hack/go-changed.sh, #2058).
+CHECK_LINT := $(if $(LINT_CHANGED_ONLY),lint-if-go-changed,lint)
+.PHONY: lint-if-go-changed
+lint-if-go-changed:
+	@if hack/go-changed.sh; then $(MAKE) --no-print-directory lint; else echo "make lint: skipped, no Go file or its config changed since the base"; fi
 .PHONY: check
 ifeq ($(CHECK_CACHED),)
-check: manifests generate fmt vet lint $(addprefix check-tier-,$(CHECK_TIERS)) test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
+check: manifests generate fmt vet $(CHECK_LINT) $(addprefix check-tier-,$(CHECK_TIERS)) test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
 	@dirty=$$($(GENERATED_DIRTY)); [ -z "$$dirty" ] || \
 		{ echo "Generated files changed; commit them with your change:"; echo "$$dirty"; }
 	@hack/check-cache.sh record
