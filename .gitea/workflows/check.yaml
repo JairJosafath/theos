@@ -12,12 +12,27 @@ jobs:
   check:
     runs-on: go
     steps:
+      # The commit and main's history come without blobs (a blob is fetched on
+      # demand, with the token header kept in the config), so make test and
+      # make lint can diff against the base and test only what a change can
+      # affect (Fence issue #2058). A pull request diffs against origin/main; a
+      # push to main against its previous head, and tests every package when
+      # that head is zeros or can't be fetched.
       - name: Check out
         run: |
           git init -q .
-          git -c http.extraHeader="Authorization: token ${{ gitea.token }}" \
-            fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
-          git checkout -q FETCH_HEAD
+          git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          git config http.extraHeader "Authorization: token ${{ gitea.token }}"
+          git fetch -q --filter=blob:none origin +refs/heads/main:refs/remotes/origin/main "${{ gitea.sha }}"
+          git checkout -q "${{ gitea.sha }}"
+          if [ "${{ gitea.event_name }}" = push ]; then
+            before="${{ gitea.event.before }}"
+            if git cat-file -e "$before^{commit}" 2>/dev/null; then
+              echo "TEST_BASE=$before" >>"$GITHUB_ENV"
+            else
+              echo "TEST_ALL=1" >>"$GITHUB_ENV"
+            fi
+          fi
       # The runner's /tmp and /data/work are memory-backed and small; /data is
       # on the node's disk (Fence issue #2043).
       - name: Scratch on disk
@@ -43,5 +58,6 @@ jobs:
           sys.exit(rc)
           PY
         env:
+          LINT_CHANGED_ONLY: "1"
           TMPDIR: /data/tmp
           GOTMPDIR: /data/tmp
