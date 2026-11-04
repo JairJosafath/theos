@@ -192,8 +192,11 @@ describe('live updates in the browser', () => {
   it('never sends anything but GET', async () => {
     const res = await page.evaluate(
       async () =>
-        (await fetch('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api', { method: 'DELETE' }))
-          .status,
+        (
+          await fetch('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/containers/orders-api', {
+            method: 'DELETE',
+          })
+        ).status,
     )
     assert.equal(res, 405)
   })

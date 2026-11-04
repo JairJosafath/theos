@@ -847,7 +847,14 @@ describe('server.mjs', () => {
         crewAnn('theos.factory.io/rerun-release'),
         403,
       ],
-      ['a retry annotation removed', 'PATCH', '/containers/orders-api', MP, crewAnn('theos.factory.io/retry', null), 403],
+      [
+        'a retry annotation removed',
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        crewAnn('theos.factory.io/retry', null),
+        403,
+      ],
       [
         'a retry with a label',
         'PATCH',
@@ -1032,7 +1039,9 @@ describe('server.mjs', () => {
         'PATCH',
         '/containers/orders-api',
         MP,
-        { metadata: { annotations: { 'theos.factory.io/standard-take': 'v1', 'theos.factory.io/standard-keep': 'v1' } } },
+        {
+          metadata: { annotations: { 'theos.factory.io/standard-take': 'v1', 'theos.factory.io/standard-keep': 'v1' } },
+        },
         403,
       ],
       [
@@ -1043,10 +1052,24 @@ describe('server.mjs', () => {
         { metadata: { annotations: { 'theos.factory.io/standard-take': 'v1', 'theos.factory.io/retry': '1' } } },
         403,
       ],
-      ['another Container annotation', 'PATCH', '/containers/orders-api', MP, crewAnn('theos.factory.io/standard'), 403],
+      [
+        'another Container annotation',
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        crewAnn('theos.factory.io/standard'),
+        403,
+      ],
       ['a take as a number', 'PATCH', '/containers/orders-api', MP, crewAnn('theos.factory.io/standard-take', 1), 403],
       ['a keep removed', 'PATCH', '/containers/orders-api', MP, crewAnn('theos.factory.io/standard-keep', null), 403],
-      ['the take annotation on a Crew', 'PATCH', '/crews/orders-api', MP, crewAnn('theos.factory.io/standard-take'), 403],
+      [
+        'the take annotation on a Crew',
+        'PATCH',
+        '/crews/orders-api',
+        MP,
+        crewAnn('theos.factory.io/standard-take'),
+        403,
+      ],
       [
         'a Task of kind Plan',
         'POST',

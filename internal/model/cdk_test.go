@@ -295,7 +295,7 @@ func TestCDKToken(t *testing.T) {
 	if n, _ := CDKChangeSetName("v1.2.3"); n != "theos-v1-2e2-2e3" {
 		t.Errorf("change set name = %s", n)
 	}
-	long := strings.Repeat(".", 40) // 120 encoded
+	long := strings.Repeat(".", 42) // 126 encoded
 	if _, err := CDKClientRequestToken(long, "0a1b2c3d"); err == nil {
 		t.Error("a token over 128 characters: no error")
 	}

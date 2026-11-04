@@ -396,7 +396,8 @@ describe('crewNextStep', () => {
     const c = crew({ phase: 'Idle', lastRelease: release({ run: 'Failed', runURL: 'http://gitea/runs/7' }) })
     expect(crewNextStep(c, [])).toEqual({
       text: expect.stringMatching(/^Release v1\.2\.0’s CI runs failed/),
-      command: 'kubectl -n shop annotate crews.theos.factory.io api theos.factory.io/rerun-release=$(date +%s) --overwrite',
+      command:
+        'kubectl -n shop annotate crews.theos.factory.io api theos.factory.io/rerun-release=$(date +%s) --overwrite',
       link: { href: 'http://gitea/runs/7', label: 'Open the failed run' },
     })
     expect(rerunReleaseCommand(c)).toBe(crewNextStep(c, [])?.command)

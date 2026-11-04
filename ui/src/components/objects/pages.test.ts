@@ -534,7 +534,9 @@ describe('deploys (#1163)', () => {
 describe('a refused read of an optional kind', () => {
   const refused: Connection = {
     ...LIVE,
-    unread: [{ what: 'standards', code: 403, message: 'standards.theos.factory.io is forbidden', resource: 'standards' }],
+    unread: [
+      { what: 'standards', code: 403, message: 'standards.theos.factory.io is forbidden', resource: 'standards' },
+    ],
   }
 
   it('shows on a Bundle page before its entries, instead of “not in the catalog” alone', () => {

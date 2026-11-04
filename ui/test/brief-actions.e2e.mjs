@@ -200,7 +200,8 @@ describe('the Brief page’s actions', () => {
   })
 
   it('shows the API server’s message when it refuses an answer', async () => {
-    const message = 'Brief.theos.factory.io "webshop" is invalid: spec.prompts: Too many: 51: must have at most 50 items'
+    const message =
+      'Brief.theos.factory.io "webshop" is invalid: spec.prompts: Too many: 51: must have at most 50 items'
     api.refuseNextWrite(message)
     await patchOf(() => button('Retry orders-api #15').click())
     // orders-api #15 was closed above and that prompt was taken; Retry is offered again.

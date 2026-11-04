@@ -59,10 +59,10 @@ func TestBuildRendersLayers(t *testing.T) {
 	}
 
 	wantPaths := []string{
-		".theos.yaml",
 		".devcontainer/compose.postgres.yaml",
 		".devcontainer/compose.yaml",
 		".devcontainer/devcontainer.json",
+		".theos.yaml",
 		"Dockerfile",
 		"app/main.py",
 		"deploy/k8s/compute.yaml",
