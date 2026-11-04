@@ -532,7 +532,7 @@ jobs:
           # for an instance token an earlier chart made).
           for s in gitea-admin gitea-runner; do
             hash=$($KUBECTL -n gitea get secret "$s" -o json | jq -cS .data | sha256sum | cut -c1-16)
-            owner=$($KUBECTL -n gitea get secret "$s" -o jsonpath='{.metadata.annotations.c4\.factory\.io/token-owner}')
+            owner=$($KUBECTL -n gitea get secret "$s" -o jsonpath='{.metadata.annotations.theos\.factory\.io/token-owner}')
             echo "$s $hash $owner"
           done >"$out/secrets.txt"
           user=$($KUBECTL -n gitea get secret gitea-admin -o jsonpath='{.data.username}' | base64 -d)

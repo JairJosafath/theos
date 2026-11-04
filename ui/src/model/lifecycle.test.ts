@@ -258,7 +258,7 @@ describe('containerNextStep', () => {
     })
     const next = containerNextStep(c)
     expect(next?.text).toMatch(/left 2 files out .*: Makefile \(at v1\.1\.0\), \.golangci\.yml \(at v1\.2\.0\)\./)
-    expect(next?.text).toMatch(/c4\.factory\.io\/standard-keep=v1\.3\.0/)
+    expect(next?.text).toMatch(/theos\.factory\.io\/standard-keep=v1\.3\.0/)
     expect(next?.text).not.toMatch(/by hand/)
     expect(next?.command).toBe('kubectl -n shop annotate container api theos.factory.io/standard-take=v1.3.0')
     expect(standardKeepCommand(c)).toBe('kubectl -n shop annotate container api theos.factory.io/standard-keep=v1.3.0')

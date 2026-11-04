@@ -179,7 +179,7 @@ export function fakeApi(namespace) {
   }
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x')
-    const one = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1beta1\/namespaces\/([^/]+)\/([a-z]+)(?:\/([^/]+))?$/)
+    const one = url.pathname.match(/^\/apis\/theos\.factory\.io\/v1beta1\/namespaces\/([^/]+)\/([a-z]+)(?:\/([^/]+))?$/)
     if (one && store.has(one[2]) && ((req.method === 'POST' && !one[3]) || (req.method === 'PATCH' && one[3]))) {
       void write(req, res, one[2], one[1], one[3] && decodeURIComponent(one[3]))
       return
@@ -197,7 +197,7 @@ export function fakeApi(namespace) {
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ metadata: { resourceVersion: String(rv) }, items: [] }))
     }
-    const m = url.pathname.match(/^\/apis\/c4\.factory\.io\/v1beta1(?:\/namespaces\/([^/]+))?\/([a-z]+)$/)
+    const m = url.pathname.match(/^\/apis\/theos\.factory\.io\/v1beta1(?:\/namespaces\/([^/]+))?\/([a-z]+)$/)
     if (req.method !== 'GET' || !m || !store.has(m[2])) {
       res.writeHead(404, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ kind: 'Status', code: 404, message: 'not found' }))
