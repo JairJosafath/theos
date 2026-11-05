@@ -128,6 +128,7 @@ describe('timeByStage', () => {
     expect(Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, v / 60_000]))).toEqual({
       queued: 0,
       blocked: 0,
+      verify: 0,
       approval: 0,
       slot: 5,
       implement: 35,
@@ -153,6 +154,7 @@ describe('currentStage and the board', () => {
     expect(currentStage(failed)).toBe('done')
     expect(currentStage(task('new'))).toBe('queued')
     expect(currentStage(task('api-4-spec', { phase: 'AwaitingApproval', round: 1 }))).toBe('approval')
+    expect(currentStage(task('api-5', { phase: 'Verifying', round: 1, sandbox: 'api-5-r1-verify-a1' }))).toBe('verify')
   })
 
   it('shows the newest done Tasks first', () => {

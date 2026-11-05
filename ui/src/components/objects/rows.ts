@@ -112,7 +112,7 @@ export function agentRuns(task: Task): AgentRun[] {
   })
   const status = task.status
   if (status?.sandbox && !isFinal(status.phase)) {
-    const role = sandboxRole(status.sandbox) ?? (status.phase === 'Reviewing' ? 'review' : runRole(task, {}))
+    const role = sandboxRole(status.sandbox) ?? phaseRole(status.phase) ?? runRole(task, {})
     const history = status.history ?? []
     const at = history[history.length - 1]?.at ?? status.phaseChangedAt ?? ''
     runs.push({
@@ -132,8 +132,15 @@ export function agentRuns(task: Task): AgentRun[] {
  * model.SandboxRole reads it: a review sandbox also runs while Checking.
  */
 function sandboxRole(sandbox: string): AgentRun['role'] | undefined {
-  const m = /-r\d+-(implement|review|plan)(?:-[ax]\d+)?$/.exec(sandbox)
+  const m = /-r\d+-(implement|review|verify|plan)(?:-[ax]\d+)?$/.exec(sandbox)
   return m ? (m[1] as AgentRun['role']) : undefined
+}
+
+/** The role of the run a reviewing or verifying phase waits on. */
+function phaseRole(phase: string | undefined): RunRole | undefined {
+  if (phase === 'Reviewing') return 'review'
+  if (phase === 'Verifying') return 'verify'
+  return undefined
 }
 
 function historyRuns(task: Task): AgentRun[] {
@@ -141,7 +148,7 @@ function historyRuns(task: Task): AgentRun[] {
   const history = task.status?.history ?? []
   let last: string | undefined
   for (const h of history) {
-    const role = h.phase === 'Implementing' ? 'implement' : h.phase === 'Reviewing' ? 'review' : undefined
+    const role = h.phase === 'Implementing' ? 'implement' : phaseRole(h.phase)
     if (!role || (h.reason && NOT_RUNNING.has(h.reason))) {
       last = undefined
       continue

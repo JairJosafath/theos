@@ -72,6 +72,27 @@ describe('agentTokens', () => {
     ])
   })
 
+  it('puts a verify run on the chart of the Task’s verifier', () => {
+    const tasks = [
+      task(
+        't1',
+        '2026-10-16T00:00:00Z',
+        { verifierRef: { name: 'ver' } },
+        {
+          phase: 'Merged',
+          round: 1,
+          runs: [run(1, 'implement', 90_000), run(1, 'review', 40_000), run(1, 'verify', 20_000)],
+        },
+      ),
+    ]
+    const charts = agentTokens(tasks, [...agents, agent('ver', 80_000)])
+    expect(charts.map((c) => [c.key, c.limit, c.points.map((p) => `${p.name}:${p.role}`)])).toEqual([
+      ['shop/impl', 130_000, ['t1:implement']],
+      ['shop/rev', 100_000, ['t1:review']],
+      ['shop/ver', 80_000, ['t1:verify']],
+    ])
+  })
+
   it('takes the limit from the Agent in the Task’s namespace, and only the name of one that is gone', () => {
     const tasks = [
       task(

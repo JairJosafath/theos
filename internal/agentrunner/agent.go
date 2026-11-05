@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"os/exec"
@@ -369,8 +371,9 @@ func (m *usageMeter) totalTokens() *model.TokenUsage {
 
 // FakeAgent stands in for a real agent in tests and demos. Implementing, it adds
 // a line to STAND-IN.md; reviewing, it approves, or first asks for changes, and
-// may file a follow-up; planning, it plans from the catalog alone
-// (model.StandInPlan); triaging, it decides from the issue's text
+// may file a follow-up; verifying, it reads STAND-IN.md and judges from it and
+// the issue's text (model.StandInVerify); planning, it plans from the catalog
+// alone (model.StandInPlan); triaging, it decides from the issue's text
 // (model.StandInTriage); writing a spec, it writes model.StandInSpec.
 type FakeAgent struct {
 	Role  string
@@ -399,6 +402,9 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	if a.Role == RoleTriage {
 		decision, err := json.Marshal(model.StandInTriage(a.Goal))
 		return "Read the issue.\n" + string(decision), err
+	}
+	if a.Role == RoleVerify {
+		return a.verify(dir)
 	}
 	if a.Role == RoleReview {
 		if a.ChangesFirst && a.Round == 1 {
@@ -431,6 +437,18 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("Added round %d to STAND-IN.md.", a.Round), nil
+}
+
+// verify reads STAND-IN.md, as the stand-in's way to run the change, and
+// reports model.StandInVerify's verdict on it.
+func (a FakeAgent) verify(dir string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "STAND-IN.md")) //nolint:gosec // in the checkout
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	verdict, summary := model.StandInVerify(a.Goal, a.Round, string(data))
+	report, err := json.Marshal(map[string]string{"verdict": verdict, "summary": summary})
+	return "Ran cat STAND-IN.md.\n" + string(report), err
 }
 
 // writeSpec writes the stand-in spec of the issue in its spec file.

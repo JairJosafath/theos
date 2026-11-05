@@ -366,6 +366,9 @@ func run(ctx context.Context, job Job, agent Agent, dir string, prog *runProgres
 	if job.Role == RoleReview {
 		return review(ctx, job, agent, r, ws, prog, result)
 	}
+	if job.Role == RoleVerify {
+		return verify(ctx, job, agent, r, ws, prog, result)
+	}
 	if job.Role == RoleTriage {
 		return triage(ctx, job, agent, r, ws, prog, result)
 	}

@@ -19,7 +19,7 @@ export const OUTCOMES: { key: Outcome; label: string }[] = [
   { key: 'active', label: 'Still going' },
 ]
 
-export type RunRole = 'implement' | 'review' | 'plan'
+export type RunRole = 'implement' | 'review' | 'verify' | 'plan'
 
 /** One recorded agent run that reported its tokens. */
 export interface RunPoint {
@@ -89,13 +89,18 @@ export function outcomeOf(task: Task): Outcome {
 
 /** A recorded run's role; one that didn't say is its Task's own: implement, or plan for a Plan Task. */
 export function runRole(task: Task, run: Pick<TaskAgentRun, 'role'>): RunRole {
-  if (run.role === 'implement' || run.role === 'review' || run.role === 'plan') return run.role
+  if (run.role === 'implement' || run.role === 'review' || run.role === 'verify' || run.role === 'plan') return run.role
   return task.spec.kind === 'Plan' ? 'plan' : 'implement'
 }
 
-/** The Agent that ran a role of a Task: the reviewer reviews, when the Task has one; the agentRef does the rest. */
+/**
+ * The Agent that ran a role of a Task: the reviewer reviews, when the Task has
+ * one, the verifier verifies; the agentRef does the rest.
+ */
 export function runAgentName(task: Task, role: RunRole): string {
-  return role === 'review' ? (task.spec.reviewerRef?.name ?? task.spec.agentRef.name) : task.spec.agentRef.name
+  if (role === 'review') return task.spec.reviewerRef?.name ?? task.spec.agentRef.name
+  if (role === 'verify') return task.spec.verifierRef?.name ?? task.spec.agentRef.name
+  return task.spec.agentRef.name
 }
 
 /** Every token a run reported; undefined when it reported none of the four kinds. */

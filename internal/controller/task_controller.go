@@ -218,11 +218,17 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 	agents := taskAgents{implementer: &agent, reviewer: &agent}
-	if ref := task.Spec.ReviewerRef; ref != nil {
-		agents.reviewer = &c4v1beta1.Agent{}
-		err = r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: ref.Name}, agents.reviewer)
+	for _, role := range []struct {
+		ref   *c4v1beta1.LocalRef
+		agent **c4v1beta1.Agent
+	}{{task.Spec.ReviewerRef, &agents.reviewer}, {task.Spec.VerifierRef, &agents.verifier}} {
+		if role.ref == nil {
+			continue
+		}
+		*role.agent = &c4v1beta1.Agent{}
+		err = r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: role.ref.Name}, *role.agent)
 		if apierrors.IsNotFound(err) {
-			r.progress(&task, status, metav1.ConditionFalse, "AgentNotFound", "Agent "+ref.Name+" not found")
+			r.progress(&task, status, metav1.ConditionFalse, "AgentNotFound", "Agent "+role.ref.Name+" not found")
 			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
 		}
 		if err != nil {
@@ -372,6 +378,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 	if err := r.specFacts(ctx, task, status, container, &facts); err != nil {
 		return facts, err
 	}
+	verifyFacts(task, status, &facts)
 	return facts, nil
 }
 
@@ -669,8 +676,8 @@ func waitsSuspended(sandbox *unstructured.Unstructured) bool {
 func (r *TaskReconciler) pullFacts(ctx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.TaskStatus, facts *model.TaskFacts) error {
 	run := facts.Run
-	approved := status.Phase == c4v1beta1.TaskReviewing && run.Done && run.Result != nil &&
-		run.Result.Verdict == model.VerdictApprove
+	judging := status.Phase == c4v1beta1.TaskReviewing || status.Phase == c4v1beta1.TaskVerifying
+	approved := judging && run.Done && run.Result != nil && run.Result.Verdict == model.VerdictApprove
 	updated := status.Phase == c4v1beta1.TaskChecking && status.MergeWhenChecksPass &&
 		facts.Checks == ports.CheckSuccess
 	if !approved && !updated || status.PullRequest == 0 {
@@ -705,6 +712,8 @@ func runRole(phase c4v1beta1.TaskPhase) string {
 		return model.RoleImplementer
 	case c4v1beta1.TaskReviewing:
 		return model.RoleReviewer
+	case c4v1beta1.TaskVerifying:
+		return model.RoleVerifier
 	}
 	return ""
 }

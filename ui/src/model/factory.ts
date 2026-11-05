@@ -6,7 +6,7 @@ import type { Agent, Task, TaskPhase, TaskTransition } from '../k8s/types'
 import { findCondition } from '../k8s/types'
 
 /** Where a Task's time goes. Each timeline step falls in one stage. */
-export type Stage = 'queued' | 'slot' | 'implement' | 'checks' | 'review' | 'approval' | 'blocked'
+export type Stage = 'queued' | 'slot' | 'implement' | 'checks' | 'review' | 'verify' | 'approval' | 'blocked'
 
 export const STAGES: { key: Stage; label: string; doing: string; explanation: string }[] = [
   {
@@ -29,6 +29,12 @@ export const STAGES: { key: Stage; label: string; doing: string; explanation: st
   },
   { key: 'checks', label: 'CI checks', doing: 'waiting for CI', explanation: 'CI runs make check on the pull request' },
   { key: 'review', label: 'Reviewing', doing: 'in review', explanation: 'An agent reviews the pull request' },
+  {
+    key: 'verify',
+    label: 'Verifying',
+    doing: 'being verified',
+    explanation: 'A verifier builds and runs the approved change and checks each acceptance criterion',
+  },
   {
     key: 'approval',
     label: 'Awaiting approval',
@@ -63,6 +69,8 @@ export function stageOf(step: Pick<TaskTransition, 'phase' | 'reason'>): Stage |
       return 'checks'
     case 'Reviewing':
       return 'review'
+    case 'Verifying':
+      return 'verify'
     case 'AwaitingApproval':
       return 'approval'
     case 'Blocked':
@@ -126,6 +134,7 @@ export function timeByStage(segments: Segment[]): Record<Stage, number> {
     implement: 0,
     checks: 0,
     review: 0,
+    verify: 0,
     approval: 0,
     blocked: 0,
   }
@@ -234,6 +243,7 @@ export const COLUMNS: { key: Column; label: string }[] = [
   { key: 'implement', label: 'Implementing' },
   { key: 'checks', label: 'CI checks' },
   { key: 'review', label: 'Reviewing' },
+  { key: 'verify', label: 'Verifying' },
   { key: 'approval', label: 'Awaiting approval' },
   { key: 'blocked', label: 'Blocked' },
   { key: 'done', label: 'Done' },
@@ -250,6 +260,7 @@ export function boardColumns(tasks: Task[], doneLimit = 8): Record<Column, Task[
     implement: [],
     checks: [],
     review: [],
+    verify: [],
     approval: [],
     blocked: [],
     done: [],
@@ -322,6 +333,7 @@ export function factoryStats(tasks: Task[], now: number): FactoryStats {
     implement: 0,
     checks: 0,
     review: 0,
+    verify: 0,
     approval: 0,
     blocked: 0,
   }

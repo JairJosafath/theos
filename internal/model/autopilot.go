@@ -52,6 +52,8 @@ const (
 	StageImplement = "implement"
 	StageChecks    = "checks"
 	StageReview    = "review"
+	// StageVerify is an approved change its verifier builds, starts and checks.
+	StageVerify = "verify"
 	// StageApproval is a spec waiting for a person to approve it.
 	StageApproval = "approval"
 	StageBlocked  = "blocked"
@@ -65,8 +67,10 @@ var StuckAfter = map[string]time.Duration{
 	StageImplement: 2 * time.Hour,
 	StageChecks:    30 * time.Minute,
 	StageReview:    time.Hour,
-	StageApproval:  24 * time.Hour,
-	StageBlocked:   24 * time.Hour,
+	// A verifier builds and starts the change before it checks it.
+	StageVerify:   2 * time.Hour,
+	StageApproval: 24 * time.Hour,
+	StageBlocked:  24 * time.Hour,
 }
 
 // The heal windows (decision 3), from when the item began.

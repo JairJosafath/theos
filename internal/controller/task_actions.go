@@ -29,14 +29,18 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// taskAgents are the Agents of a Task's roles; one Agent may play both.
+// taskAgents are the Agents of a Task's roles; one Agent may play several.
+// verifier is nil for a Task without one.
 type taskAgents struct {
-	implementer, reviewer *c4v1beta1.Agent
+	implementer, reviewer, verifier *c4v1beta1.Agent
 }
 
 func (a taskAgents) forRole(role string) *c4v1beta1.Agent {
-	if role == model.RoleReviewer {
+	switch role {
+	case model.RoleReviewer:
 		return a.reviewer
+	case model.RoleVerifier:
+		return a.verifier
 	}
 	return a.implementer
 }
@@ -49,12 +53,11 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 	case model.ActionWait:
 		return r.wait(task, status, step), nil
 
-	case model.ActionStartImplement, model.ActionStartReview:
-		role := model.RoleImplementer
-		if step.Action == model.ActionStartReview {
-			role = model.RoleReviewer
-		}
-		return r.startRun(ctx, task, status, container, agents, role, step.Message)
+	case model.ActionStartImplement, model.ActionStartReview, model.ActionStartVerify:
+		return r.startRun(ctx, task, status, container, agents, startRole(step.Action), step.Message)
+
+	case model.ActionVerify, model.ActionRetryVerify:
+		return r.applyVerify(ctx, task, status, container, agents, step)
 
 	case model.ActionOpenPR:
 		return r.openPR(ctx, task, status, container, agents, step)
@@ -114,22 +117,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		return ctrl.Result{RequeueAfter: back.Sub(r.now())}, nil
 
 	case model.ActionRetry:
-		review := r.reviewFrom(ctx, task, status)
-		if review != nil && review.Verdict == model.VerdictChanges && status.Phase == c4v1beta1.TaskReviewing {
-			r.review(ctx, task, status, container, agents.reviewer, ports.ReviewRequestChanges, review.Summary)
-		} else {
-			r.comment(ctx, task, status, container, fmt.Sprintf("Round %d was not accepted.\n\n%s", status.Round, step.Feedback))
-		}
-		if err := r.endRun(ctx, task, status); err != nil {
-			return ctrl.Result{}, err
-		}
-		if review != nil {
-			status.Review = review
-		}
-		setProgress(status, model.NextRound(progressOf(status), step.Feedback))
-		r.progress(task, status, metav1.ConditionTrue, "NextRound", step.Message)
-		log.Info("Started next round of Task", "round", status.Round, "feedback", firstLine(step.Feedback))
-		return ctrl.Result{}, nil // the status write triggers the next step
+		return ctrl.Result{}, r.nextRound(ctx, task, status, container, agents, step) // the status write triggers the next step
 
 	case model.ActionReviewAgain:
 		r.comment(ctx, task, status, container, step.Message+".")
@@ -156,6 +144,45 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		return ctrl.Result{}, r.fail(ctx, task, status, container, reason, step.Message)
 	}
 	return ctrl.Result{}, nil
+}
+
+// startRole is the role of the run a start action starts.
+func startRole(action model.TaskAction) string {
+	switch action {
+	case model.ActionStartReview:
+		return model.RoleReviewer
+	case model.ActionStartVerify:
+		return model.RoleVerifier
+	}
+	return model.RoleImplementer
+}
+
+// nextRound starts the Task's next round with the step's feedback. A
+// reviewer's or verifier's request for changes goes on the pull request as a
+// review; any other reason, as a comment.
+func (r *TaskReconciler) nextRound(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) error {
+	review := r.reviewFrom(ctx, task, status)
+	verification := status.Verification
+	switch {
+	case review != nil && review.Verdict == model.VerdictChanges && status.Phase == c4v1beta1.TaskReviewing:
+		r.review(ctx, task, status, container, agents.reviewer, ports.ReviewRequestChanges, review.Summary)
+	case verification != nil && verification.Verdict == model.VerdictChanges &&
+		status.Phase == c4v1beta1.TaskVerifying:
+		r.postVerification(ctx, task, status, container, agents.verifier, ports.ReviewRequestChanges)
+	default:
+		r.comment(ctx, task, status, container, fmt.Sprintf("Round %d was not accepted.\n\n%s", status.Round, step.Feedback))
+	}
+	if err := r.endRun(ctx, task, status); err != nil {
+		return err
+	}
+	if review != nil {
+		status.Review = review
+	}
+	setProgress(status, model.NextRound(progressOf(status), step.Feedback))
+	r.progress(task, status, metav1.ConditionTrue, "NextRound", step.Message)
+	logf.FromContext(ctx).Info("Started next round of Task", "round", status.Round, "feedback", firstLine(step.Feedback))
+	return nil
 }
 
 // reasonAgentUnavailable is the Progressing reason of a Task waiting for its
@@ -593,7 +620,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 		return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
 	case model.MergeSquash:
 		var refusal string
-		refusal, skip, err = r.mergeReviewed(ctx, provider, repo, task, status, container, agents.reviewer, pr.Behind)
+		refusal, skip, err = r.mergeReviewed(ctx, provider, repo, task, status, container, agents, pr.Behind)
 		pending := errors.Is(err, errChecksPending)
 		if err != nil && !pending {
 			return ctrl.Result{}, err
@@ -621,12 +648,8 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 			return ctrl.Result{}, err
 		}
 	} else if task.Spec.Issue > 0 {
-		var followUps []model.FollowUp
-		var open []model.OpenCriterion
-		if reviewRun != nil {
-			followUps, open = reviewRun.FollowUps, reviewRun.Open
-		}
-		status.FollowUps = r.closeIssue(ctx, provider, repo, task, status, agents.reviewer, followUps, open)
+		followUps, open, openBy := mergeFindings(task, status, agents, reviewRun)
+		status.FollowUps = r.closeIssue(ctx, provider, repo, task, status, agents.reviewer, openBy, followUps, open)
 	}
 	r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, "Merged", step.Message)
 	logf.FromContext(ctx).Info("Merged Task", "url", status.PullRequestURL, "round", status.Round)
@@ -695,14 +718,19 @@ func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost
 // main's push run (#2060) returns what carryChecks needs.
 func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider ports.GitHost,
 	repo ports.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	container *c4v1beta1.Container, reviewer *c4v1beta1.Agent, behind bool) (refusal string, skip *pushSkip, err error) {
+	container *c4v1beta1.Container, agents taskAgents, behind bool) (refusal string, skip *pushSkip, err error) {
 	if len(task.Spec.AllowedProtectedPaths) > 0 {
-		refusal, err = r.gatedMerge(ctx, provider, repo, task, status, container, reviewer)
+		refusal, err = r.gatedMerge(ctx, provider, repo, task, status, container, agents.reviewer)
 		return refusal, nil, err
 	}
-	if !isSpec(task) || status.Phase != c4v1beta1.TaskAwaitingApproval {
+	switch {
+	case verifies(task):
+		// The reviewer's approval went on the pull request as the verification
+		// began; the verifier's goes with the merge.
+		r.postVerification(ctx, task, status, container, agents.verifier, ports.ReviewApprove)
+	case !isSpec(task) || status.Phase != c4v1beta1.TaskAwaitingApproval:
 		// A waiting spec's approval went on its pull request as it began to wait.
-		r.approve(ctx, task, status, container, reviewer)
+		r.approve(ctx, task, status, container, agents.reviewer)
 	}
 	skip = r.planSkip(ctx, provider, repo, status, container, behind)
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
@@ -732,12 +760,13 @@ func (r *TaskReconciler) reviewFrom(ctx context.Context, task *c4v1beta1.Task,
 
 // reviewRun reads the current review sandbox's result, if it gave a verdict:
 // in review, or while the approved change's branch, with main merged in, is
-// checked again.
+// checked again. The verifier's sandbox, which a verified change keeps then,
+// is not a review's.
 func (r *TaskReconciler) reviewRun(ctx context.Context, task *c4v1beta1.Task,
 	status *c4v1beta1.TaskStatus) *model.RunResult {
 	reviewing := status.Phase == c4v1beta1.TaskReviewing ||
 		status.Phase == c4v1beta1.TaskChecking && status.MergeWhenChecksPass
-	if !reviewing || status.Sandbox == "" {
+	if !reviewing || status.Sandbox == "" || model.SandboxRole(status.Sandbox) == model.RoleVerifier {
 		return nil
 	}
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
@@ -1103,8 +1132,12 @@ func pullBody(task *c4v1beta1.Task, agents taskAgents, round int32, summary stri
 		// Gitea links the issue, and closes it on merge.
 		fmt.Fprintf(&b, "Closes #%d.\n\n", task.Spec.Issue)
 	}
-	fmt.Fprintf(&b, "Task `%s`: implemented by %s, reviewed by %s.\n", task.Name,
+	fmt.Fprintf(&b, "Task `%s`: implemented by %s, reviewed by %s", task.Name,
 		agentName(agents.implementer), agentName(agents.reviewer))
+	if agents.verifier != nil {
+		fmt.Fprintf(&b, ", verified by %s", agentName(agents.verifier))
+	}
+	b.WriteString(".\n")
 	if task.Spec.Issue == 0 {
 		fmt.Fprintf(&b, "\n## Goal\n\n%s\n", task.Spec.Goal)
 	}

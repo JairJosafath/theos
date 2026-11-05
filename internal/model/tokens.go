@@ -122,7 +122,7 @@ func (s RunState) Record(round int, sandbox string, at time.Time) (RunRecord, bo
 	rec.CostMilliUSD, _ = s.Cost()
 	if s.Result != nil {
 		rec.CostReported = s.Result.CostReported
-		if slices.Contains([]string{RoleImplementer, RoleReviewer, RolePlanner}, s.Result.Role) {
+		if slices.Contains([]string{RoleImplementer, RoleReviewer, RoleVerifier, RolePlanner}, s.Result.Role) {
 			rec.Role = s.Result.Role
 		}
 		rec.SessionHandoffs = slices.Clone(s.Result.SessionHandoffs[:min(len(s.Result.SessionHandoffs), MaxRecordedHandoffs)])
@@ -133,7 +133,7 @@ func (s RunState) Record(round int, sandbox string, at time.Time) (RunRecord, bo
 // SandboxRole is the role in a sandbox's name (SandboxName), or "" when the
 // name has none.
 func SandboxRole(sandbox string) string {
-	for _, role := range []string{RoleImplementer, RoleReviewer, RolePlanner} {
+	for _, role := range []string{RoleImplementer, RoleReviewer, RoleVerifier, RolePlanner} {
 		i := strings.LastIndex(sandbox, "-"+role)
 		if i < 0 {
 			continue

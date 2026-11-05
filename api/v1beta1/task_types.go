@@ -47,6 +47,8 @@ const (
 // +kubebuilder:validation:XValidation:rule="(has(self.kind) ? self.kind : 'Implement') == (has(oldSelf.kind) ? oldSelf.kind : 'Implement')",message="kind is immutable; create a new Task"
 // +kubebuilder:validation:XValidation:rule="has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)",message="goal and issue are immutable; create a new Task"
 // +kubebuilder:validation:XValidation:rule="has(self.reviewerRef) == has(oldSelf.reviewerRef)",message="reviewerRef is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.verifierRef) == has(oldSelf.verifierRef)",message="verifierRef is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(self.verifierRef) || ((!has(self.kind) || self.kind == 'Implement') && !has(self.allowedProtectedPaths))",message="only an Implement Task without allowedProtectedPaths has a verifierRef: a spec, a plan, a triage and a Standard change are not verified"
 // +kubebuilder:validation:XValidation:rule="!has(self.allowedProtectedPaths) || has(self.issue)",message="allowedProtectedPaths needs an issue"
 // +kubebuilder:validation:XValidation:rule="has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)",message="allowedProtectedPaths is immutable"
 type TaskSpec struct {
@@ -84,6 +86,16 @@ type TaskSpec struct {
 	// +optional
 	ReviewerRef *LocalRef `json:"reviewerRef,omitempty"`
 
+	// verifierRef names the Agent that verifies the change once the reviewer
+	// approved it, before it merges: it builds and starts the change and
+	// checks each acceptance criterion against what runs, in the phase
+	// Verifying (docs/design.md, "Verify"). Only an Implement Task without
+	// allowedProtectedPaths has one. Unset, the reviewer's approval merges. It
+	// can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="verifierRef is immutable"
+	// +optional
+	VerifierRef *LocalRef `json:"verifierRef,omitempty"`
+
 	// goal says what the change must achieve, in plain words. It can't change.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=8000
@@ -113,7 +125,7 @@ type TaskSpec struct {
 }
 
 // TaskPhase is where a Task is in its rounds.
-// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;AwaitingApproval;Blocked;Merged;Failed
+// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;Verifying;AwaitingApproval;Blocked;Merged;Failed
 type TaskPhase string
 
 // Task phases.
@@ -122,6 +134,10 @@ const (
 	TaskImplementing TaskPhase = "Implementing"
 	TaskChecking     TaskPhase = "Checking"
 	TaskReviewing    TaskPhase = "Reviewing"
+	// TaskVerifying is a change the reviewer approved, which the Task's
+	// verifier builds, starts and checks against its acceptance criteria
+	// before it merges.
+	TaskVerifying TaskPhase = "Verifying"
 	// TaskAwaitingApproval is a Spec Task whose spec passed CI and the
 	// reviewer: it waits for a person to approve its pull request.
 	TaskAwaitingApproval TaskPhase = "AwaitingApproval"
@@ -139,6 +155,81 @@ type TaskReview struct {
 	// summary is what the reviewer found.
 	// +optional
 	Summary string `json:"summary,omitempty"`
+
+	// followUps are the work an approving reviewer suggested for later, kept
+	// here while its change is verified, and filed as issues when it merges.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=3
+	// +optional
+	FollowUps []TaskFollowUp `json:"followUps,omitempty"`
+
+	// open are the acceptance criteria an approving reviewer accepted as left
+	// open for a person, kept here while its change is verified.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=3
+	// +optional
+	Open []TaskOpenCriterion `json:"open,omitempty"`
+}
+
+// TaskFollowUp is work a reviewer suggested for later: the title, body and
+// acceptance criteria of the issue it becomes.
+type TaskFollowUp struct {
+	// title is the issue's title.
+	// +kubebuilder:validation:MaxLength=256
+	// +required
+	Title string `json:"title"`
+
+	// body says what and why.
+	// +kubebuilder:validation:MaxLength=2000
+	// +optional
+	Body string `json:"body,omitempty"`
+
+	// criteria are the issue's acceptance criteria.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=3
+	// +kubebuilder:validation:items:MaxLength=512
+	// +optional
+	Criteria []string `json:"criteria,omitempty"`
+}
+
+// TaskOpenCriterion is an acceptance criterion an approval left open, as it
+// needs what no agent's sandbox has, and why.
+type TaskOpenCriterion struct {
+	// criterion is the acceptance criterion.
+	// +kubebuilder:validation:MaxLength=512
+	// +required
+	Criterion string `json:"criterion"`
+
+	// why says what it needs that no sandbox has.
+	// +kubebuilder:validation:MaxLength=512
+	// +optional
+	Why string `json:"why,omitempty"`
+}
+
+// TaskVerification is the verifier's verdict on a round's change, which it
+// built, started and checked against the acceptance criteria.
+type TaskVerification struct {
+	// verdict is approve or changes.
+	// +optional
+	Verdict string `json:"verdict,omitempty"`
+
+	// summary is what the verifier ran and found: each acceptance criterion
+	// met, not met or open, with the command it ran and what that printed.
+	// +optional
+	Summary string `json:"summary,omitempty"`
+
+	// commit is the head the verifier ran.
+	// +kubebuilder:validation:MaxLength=64
+	// +optional
+	Commit string `json:"commit,omitempty"`
+
+	// open are the acceptance criteria an approving verifier left open, as no
+	// sandbox can meet them, each with why; they go to a person with the
+	// review's when the change merges.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=3
+	// +optional
+	Open []TaskOpenCriterion `json:"open,omitempty"`
 }
 
 // TaskTransition is one step in a Task's timeline: from at on, the Task was in
@@ -174,8 +265,8 @@ type TaskAgentRun struct {
 	// +required
 	Round int32 `json:"round"`
 
-	// role is implement, review, plan or triage; empty when neither theos-agent nor the
-	// sandbox's name said.
+	// role is implement, review, verify, plan or triage; empty when neither
+	// theos-agent nor the sandbox's name said.
 	// +kubebuilder:validation:MaxLength=32
 	// +optional
 	Role string `json:"role,omitempty"`
@@ -331,9 +422,10 @@ type TaskStandardChange struct {
 
 // TaskStatus defines the observed state of Task.
 type TaskStatus struct {
-	// phase is Pending, then Implementing, Checking and Reviewing each round, then
-	// Merged or Failed. Blocked means the Task waits for a Standard change, and
-	// AwaitingApproval a Spec Task's spec for a person's approval.
+	// phase is Pending, then Implementing, Checking and Reviewing each round,
+	// and Verifying when the Task has a verifier, then Merged or Failed.
+	// Blocked means the Task waits for a Standard change, and AwaitingApproval
+	// a Spec Task's spec for a person's approval.
 	// +optional
 	Phase TaskPhase `json:"phase,omitempty"`
 
@@ -341,7 +433,8 @@ type TaskStatus struct {
 	// +optional
 	Round int32 `json:"round,omitempty"`
 
-	// reviewAttempts counts reviewer runs in this round that gave no verdict.
+	// reviewAttempts counts reviewer runs in this round that gave no verdict,
+	// and, once the Task is Verifying, the verifier's.
 	// +optional
 	ReviewAttempts int32 `json:"reviewAttempts,omitempty"`
 
@@ -449,9 +542,15 @@ type TaskStatus struct {
 	// +optional
 	Review *TaskReview `json:"review,omitempty"`
 
-	// mergeWhenChecksPass means the reviewer approved the change and the
-	// operator merged main into its branch, since main had moved since the
-	// change's checks ran: commit merges once its checks pass, with no new review.
+	// verification is the verifier's latest verdict, once it gave one: what it
+	// ran and found, and the criteria it left open.
+	// +optional
+	Verification *TaskVerification `json:"verification,omitempty"`
+
+	// mergeWhenChecksPass means the reviewer (and the verifier, when the Task
+	// has one) approved the change and the operator merged main into its
+	// branch, since main had moved since the change's checks ran: commit
+	// merges once its checks pass, with no new review or verification.
 	// +optional
 	MergeWhenChecksPass bool `json:"mergeWhenChecksPass,omitempty"`
 
@@ -569,6 +668,7 @@ type TaskStatus struct {
 // +kubebuilder:printcolumn:name="Round",type=integer,JSONPath=".status.round"
 // +kubebuilder:printcolumn:name="Checks",type=string,JSONPath=".status.checks.state"
 // +kubebuilder:printcolumn:name="Review",type=string,JSONPath=".status.review.verdict"
+// +kubebuilder:printcolumn:name="Verified",type=string,JSONPath=".status.verification.verdict",priority=1
 // +kubebuilder:printcolumn:name="PR",type=string,JSONPath=".status.pullRequestURL",priority=1
 // +kubebuilder:printcolumn:name="Kind",type=string,JSONPath=".spec.kind",priority=1
 // +kubebuilder:printcolumn:name="Brief",type=string,JSONPath=".spec.briefRef.name",priority=1
@@ -578,8 +678,9 @@ type TaskStatus struct {
 
 // Task is a goal for a Container. The operator runs an Agent in a sandbox to
 // implement it on a branch, opens a pull request, waits for CI, runs the Agent
-// again as reviewer, and merges when both pass. It is owned by its Container. A
-// Plan Task is a planning round of a Brief, owned by the Brief. A Triage Task
+// again as reviewer, and merges when both pass; with a verifier, that Agent
+// first builds, starts and checks the approved change. It is owned by its
+// Container. A Plan Task is a planning round of a Brief, owned by the Brief. A Triage Task
 // runs a triager on one proposed issue and applies what it decided. A Spec
 // Task writes an issue's spec in a pull request that a person approves.
 type Task struct {

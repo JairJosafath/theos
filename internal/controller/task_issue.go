@@ -63,6 +63,11 @@ func announcement(task *c4v1beta1.Task, agents taskAgents) string {
 			"criteria come into this description.", task.Name, model.SpecPath(int(task.Spec.Issue)),
 			agentName(agents.implementer), agentName(agents.reviewer), agents.implementer.Spec.MaxRounds)
 	}
+	if agents.verifier != nil {
+		return fmt.Sprintf("Task `%s` picked this up: %s implements, %s reviews, %s builds and runs the approved "+
+			"change to check each acceptance criterion, in up to %d rounds.", task.Name, agentName(agents.implementer),
+			agentName(agents.reviewer), agentName(agents.verifier), agents.implementer.Spec.MaxRounds)
+	}
 	return fmt.Sprintf("Task `%s` picked this up: %s implements, %s reviews, in up to %d rounds.",
 		task.Name, agentName(agents.implementer), agentName(agents.reviewer), agents.implementer.Spec.MaxRounds)
 }
@@ -156,13 +161,20 @@ func (r *TaskReconciler) noteContinued(ctx context.Context, provider ports.GitHo
 // review posts the reviewer's verdict as a review of the round's commit.
 func (r *TaskReconciler) review(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, reviewer *c4v1beta1.Agent, event, summary string) {
+	r.postReview(ctx, task, status, container, event,
+		fmt.Sprintf("Review by %s, round %d.\n\n%s", agentName(reviewer), status.Round, summary))
+}
+
+// postReview posts a review of the round's commit on the Task's pull request,
+// if it has one: event, with body.
+func (r *TaskReconciler) postReview(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, event, body string) {
 	if status.PullRequest == 0 {
 		return
 	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err == nil {
 		gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
-		body := fmt.Sprintf("Review by %s, round %d.\n\n%s", agentName(reviewer), status.Round, summary)
 		err = provider.ReviewPullRequest(gitCtx, repo, int(status.PullRequest), status.Commit, event, body)
 		cancel()
 	}
@@ -170,15 +182,16 @@ func (r *TaskReconciler) review(ctx context.Context, task *c4v1beta1.Task, statu
 }
 
 // closeIssue reports the merge on the issue, files the reviewer's follow-ups as
-// proposed issues and the criteria the review left open as one kind/by-hand
-// issue for a person (status.byHand), both in the Later milestone, outside any
-// release, and closes it. It returns the follow-ups' addresses.
+// proposed issues and the criteria the review (and the verification) left open
+// as one kind/by-hand issue for a person (status.byHand), both in the Later
+// milestone, outside any release, and closes it. openBy names the Agents that
+// left them open. It returns the follow-ups' addresses.
 func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 	ports.GitHost
 	ports.Issues
 }, repo ports.Repository,
-	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, reviewer *c4v1beta1.Agent, followUps []model.FollowUp,
-	open []model.OpenCriterion) []string {
+	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, reviewer *c4v1beta1.Agent, openBy string,
+	followUps []model.FollowUp, open []model.OpenCriterion) []string {
 	n := int(task.Spec.Issue)
 	var filed []string
 	var notes []error
@@ -215,7 +228,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 		}
 	}
 	if byHand {
-		url, err := r.fileByHand(ctx, provider, repo, task, status, reviewer, open, milestone)
+		url, err := r.fileByHand(ctx, provider, repo, task, status, openBy, open, milestone)
 		notes = append(notes, err)
 		if err == nil {
 			status.ByHand = url
@@ -224,7 +237,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 	}
 	comment := fmt.Sprintf("Merged in %s after %d %s.", status.PullRequestURL, status.Round, plural(int(status.Round), "round", "rounds"))
 	if status.ByHand != "" {
-		comment += "\n\nThe reviewer accepted criteria that need a person as open; they wait in " + status.ByHand +
+		comment += "\n\n" + openBy + " accepted criteria that need a person as open; they wait in " + status.ByHand +
 			", " + model.LabelByHand + "."
 	}
 	if len(filed) > 0 {
@@ -250,7 +263,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 // status/needs-human so no Crew picks it, and returns its address. When the
 // Task's status lost the address, the issue is found again by its marker.
 func (r *TaskReconciler) fileByHand(ctx context.Context, provider ports.Issues, repo ports.Repository,
-	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, reviewer *c4v1beta1.Agent, open []model.OpenCriterion,
+	task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, by string, open []model.OpenCriterion,
 	milestone int64) (string, error) {
 	var existing []ports.Issue
 	if err := r.gitCall(ctx, func(ctx context.Context) (err error) {
@@ -265,7 +278,7 @@ func (r *TaskReconciler) fileByHand(ctx context.Context, provider ports.Issues, 
 		}
 	}
 	title, body := model.ByHandIssue(status.IssueTitle, int(task.Spec.Issue), status.PullRequestURL, task.Name,
-		agentName(reviewer), open)
+		by, open)
 	var issue ports.Issue
 	err := r.gitCall(ctx, func(ctx context.Context) (err error) {
 		issue, err = provider.CreateIssue(ctx, repo, title, body, []string{model.LabelByHand, model.LabelNeedsHuman},
