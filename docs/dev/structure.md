@@ -8,14 +8,15 @@ cmd/main.go                        Manager entry (registers controllers, Session
 cmd/theos-session/                     Session client CLI, run in devcontainers
 cmd/theos-agent/                       Task runner, run in agent sandboxes
 cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
-api/v1beta1/*_types.go             CRD schemas for all twenty kinds (+kubebuilder markers); the hub and storage version the operator imports
+api/v1beta1/*_types.go             CRD schemas for all twenty-one kinds (+kubebuilder markers); the hub and storage version the operator imports
 api/v1beta1/shared_types.go        Refs, Container types, condition names and labels
-api/v1alpha1/                      The deprecated older version, still served: the same shapes, converting to the hub (conversion.go)
+api/v1alpha1/                      The deprecated older version, still served: the same shapes, converting to the hub (conversion.go); Chat, born after, is v1beta1 only
 api/*/zz_generated.*               Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status
 internal/model/                    Pure business rules: choices, bundles, relationships, roll-up, staleness
 internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
 internal/adapters/gitea/           The Gitea adapter: the Git host ports over REST (+ go-git through adapters/git)
+internal/adapters/matrix/          The Matrix adapter: the ChatHost port over the client-server API; matrixtest/ is its fake homeserver
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
 internal/modelproxy/               The model proxy's handler: drop the client's credential, add the Secret's, forward unbuffered

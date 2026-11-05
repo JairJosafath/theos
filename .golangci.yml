@@ -60,14 +60,15 @@ linters:
           deny:
             - pkg: github.com/JairJosafath/theos/internal/scaffold
               desc: model is the lowest layer; scaffold builds on it (docs/architecture.md)
-        # Argo CD's adapter talks to the cluster; the Git host's and the
-        # releases' adapters don't.
+        # Argo CD's adapter talks to the cluster; the Git host's, the
+        # releases' and the chat's adapters don't.
         adapters-stay-out-of-kubernetes:
           files:
             - "**/internal/adapters/gitea/**"
             - "**/internal/adapters/git/**"
             - "**/internal/adapters/github/**"
             - "**/internal/adapters/gitlab/**"
+            - "**/internal/adapters/matrix/**"
           deny:
             - pkg: k8s.io
               desc: adapters must not import Kubernetes (docs/architecture.md)

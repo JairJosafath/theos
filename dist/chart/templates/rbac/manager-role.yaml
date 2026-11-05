@@ -241,6 +241,7 @@ rules:
   - theos.factory.io
   resources:
   - briefs/status
+  - chats/status
   - containers/status
   - crews/status
   - datastores/status
@@ -254,6 +255,14 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - theos.factory.io
+  resources:
+  - chats
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - theos.factory.io
   resources:

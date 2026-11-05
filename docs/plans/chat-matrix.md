@@ -82,6 +82,32 @@ bot edits as the item moves, so a room reads as a list of live items.
 1. `Chat` (API, CEL rules), the model's rules (event → room, message text,
    command parsing, the allowlist), the `ChatHost` port, the Matrix adapter
    and its fake, and the operator's `Chat` controller; tests at every tier.
+   Built, with these choices where the plan was silent:
+   - `Chat` is in `v1beta1` alone: `v1alpha1` was deprecated before it was
+     born, so no client stored one there; its CRD serves one version at
+     strategy None and stays out of `WebhookCRDs` and the storage migrator.
+   - `homeserver` unset is the operator's `--chat-homeserver` (the chart's
+     in-cluster one, step 3), else `HomeserverUnset`; `digest` is
+     `digestMinutes` (0 to 1440, default 10), as `timeoutMinutes` is.
+   - Rooms are found by the IDs in status, then by alias
+     (`#<aliasPrefix>-<purpose>:<server>`, `aliasPrefix` immutable, default
+     `theos-<namespace>`), and only among rooms the bot is in: an alias
+     another account holds is `AliasTaken`, never joined, so nobody can
+     squat a name and read the project's news. A second Chat in a
+     namespace is `Duplicate`. People are not kicked when removed from
+     `people`; their commands stop running.
+   - `people[].user` and `groups` refuse `system:` names (CEL), so a Chat
+     can't make `theos-chat` act as the cluster's own identities.
+   - The allowlist (`model.CheckChatRequest`) is the UI's entries a command
+     reaches, each no wider than the UI's: a Brief made with a generated
+     name and an idea, the three appends of `addPrompt`, pause and resume,
+     a Container's retry, a deploy's approval. `changes: <text>` and a
+     triage answer are Task annotations too, like the spec approval:
+     `theos.factory.io/spec-changes` (`<head commit> <text>`) and
+     `theos.factory.io/answer`, so `theos-chat` needs no Git host
+     credential; step 2's operator acts on them.
+   - A message is `m.notice`, so other bots don't answer it; a link is one
+     only when it is http or https; every field is escaped.
 2. `cmd/theos-chat`: posting (threads, edits, the updates digest,
    idempotence) and commands (sync, the people check, impersonated writes,
    refusals posted back), and the spec approval annotation in the operator.

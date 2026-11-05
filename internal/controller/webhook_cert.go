@@ -55,7 +55,8 @@ const (
 )
 
 // WebhookCRDs are the CRDs the operator may serve conversion for: every kind
-// of theos.factory.io (a test keeps the list equal to config/crd/bases). The RBAC
+// of theos.factory.io served at more than one version (a test keeps the list
+// equal to config/crd/bases, less the kinds born at v1beta1, such as Chat). The RBAC
 // marker below names the same CRDs. Only one whose versions differ in shape is
 // at strategy Webhook and gets the CA; the rest convert by the API server
 // (#1830, docs/plans/done/api-versions.md, decision 3).

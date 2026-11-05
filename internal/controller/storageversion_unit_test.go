@@ -37,6 +37,15 @@ type crdStorage struct {
 	} `json:"spec"`
 }
 
+// bornAtV1beta1 are the kinds added after v1alpha1 was deprecated: served
+// at v1beta1 alone, since no client ever stored one at v1alpha1, so their
+// CRDs, at strategy None, have nothing to convert or migrate and stay out of
+// WebhookCRDs (docs/plans/chat-matrix.md).
+var bornAtV1beta1 = map[string]bool{"Chat": true}
+
+// bornAtV1beta1Plurals are bornAtV1beta1's resources.
+var bornAtV1beta1Plurals = map[string]bool{"chats": true}
+
 // TestEveryCRDStoresTheHub holds every generated CRD of our group to
 // docs/plans/done/api-versions.md: the version with storage: true is the v1beta1
 // hub, so an object written today is already at the version that stays when
@@ -109,6 +118,9 @@ func TestEveryCRDDeprecatesV1alpha1(t *testing.T) {
 			continue
 		}
 		checked++
+		if bornAtV1beta1[crd.Spec.Names.Kind] {
+			continue
+		}
 		found := false
 		for _, v := range crd.Spec.Versions {
 			if v.Name != old {
