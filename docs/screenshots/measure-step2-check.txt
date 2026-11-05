@@ -1,0 +1,13 @@
+# make -k check on 5183d1a (measure-and-improve step 2): every tier passed but hack/relay_test.sh,
+# which fails in the agents' sandbox on untouched code. make test-gitea was not run: Gitea refuses to run as root.
+#   FAIL hack/relay_test.sh (exit 1, 71s):
+#       FAIL stray #1341: the session and its child are gone: got [child] want []
+#       ok   lease: this host's crashed one taken over
+All 16 invalid files rejected
+      Tests  914 passed (914)
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	0.875s
+ok  	github.com/JairJosafath/theos/internal/chatbot	0.406s
+ok  	github.com/JairJosafath/theos/internal/model	0.642s
+ok  	github.com/JairJosafath/theos/test/chart	42.734s
+ok  	github.com/JairJosafath/theos/internal/controller	519.780s
+ok  	github.com/JairJosafath/theos/internal/controller	653.268s
