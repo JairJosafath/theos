@@ -1,0 +1,50 @@
+# ProRivals (docs/plans/prorivals.md): the checks, run on 2026-11-05 in a cloud session
+
+## go test ./internal/scaffold -run TestDomainTemplatesHaveTheShape -v
+=== RUN   TestDomainTemplatesHaveTheShape
+=== RUN   TestDomainTemplatesHaveTheShape/esports-domain
+=== RUN   TestDomainTemplatesHaveTheShape/webshop-domain
+--- PASS: TestDomainTemplatesHaveTheShape (0.00s)
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.006s
+
+## go test ./internal/scaffold -run 'TestEveryTemplateHasACombo|TestEveryTemplateRenders'
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.289s
+
+## make test-templates COMBO="python worker on kubernetes with postgres" (the ladder-worker, with Domain=esports-domain)
+Rendered 45 files from python-cli@local, python-standard@local, small@local, k8s-manifests@local, postgres@local, esports@local into /tmp/tmp.awAXEAgt2U/ladder-worker
+$ make check
+All checks passed!
+Success: no issues found in 6 source files
+============================== 10 passed in 0.03s ==============================
+$ kustomize build deploy/k8s
+deploy/k8s builds 4 objects
+test-templates: 1 combos pass their make check and their Deployment's build
+exit 0
+
+## make check: validate-yaml (the first run; make -k check's second run found it cached)
+Validating 54 files
+All valid
+The chart's catalog matches templates/versions.txt; off, it renders no catalog, bundles or Agents
+The manager shares claude-credentials into the labeled sample namespaces
+All 16 invalid files rejected
+
+## make -k check: what failed, none of it touched by this change
+
+hack/relay_test.sh, which fails the same way on an unchanged main in this
+container (process timing):
+FAIL hack/relay_test.sh (exit 1, 71s):
+    FAIL idle: what claude started ended too: got [running] want []
+    FAIL stray #1341: the session and its child are gone: got [child] want []
+
+envtest, controller suite part 1/2: one Chat spec (from the chat-matrix
+commit on main), seen once; the Space took the namespace's name, not the
+Project's displayName:
+  Expected
+      <string>: story-bnxt6
+  to equal
+      <string>: Test story
+  [FAIL] Chat [It] makes its Space and six rooms once, invites its people and reports Ready
+FAIL! -- 329 Passed | 1 Failed | 0 Pending | 329 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	669.524s
+
+lint: 0 issues; the UI's check: 0 errors.
