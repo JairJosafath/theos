@@ -768,7 +768,7 @@ describe('the demo', () => {
   it('has issue Tasks in several phases, with follow-ups and an agent wait', () => {
     const issueTasks = data.tasks.filter((t) => t.spec.issue)
     expect(new Set(issueTasks.map((t) => t.status?.phase))).toEqual(
-      new Set(['Merged', 'Failed', 'Implementing', 'Checking']),
+      new Set(['Merged', 'Failed', 'Implementing', 'Checking', 'Reviewing', 'Verifying', 'AwaitingApproval']),
     )
     expect(issueTasks.some((t) => followUpLinks(t).length)).toBe(true)
     expect(issueTasks.filter((t) => agentBackAt(t) !== undefined).map((t) => t.metadata.name)).toEqual([

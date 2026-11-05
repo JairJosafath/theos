@@ -717,7 +717,10 @@ The UI draws the story and the factory from the resources, live through
 watches, and enforces nothing: its writes are checked by the API server, whose
 refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 
-- **Six areas:** *Needs you* (what waits on a person, across projects),
+- **Seven areas:** *Needs you* (what waits on a person, across projects),
+  *Loop* (one project's development cycle in ten stages, from an idea or a
+  bug to a monitored release, with the two reviews that wait on a person
+  drawn apart; `ui/src/model/loop.ts`, from the resources alone),
   *Briefs*, *Story* (system context and one system's containers), *Work*
   (Tasks by stage, Crews and releases, time and tokens, what needs a look),
   *Factory* (health and agent slots) and *About*. It opens on *Needs you*

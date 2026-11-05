@@ -292,6 +292,16 @@ export interface ContainerDeployStatus {
   since?: string
   /** The release's image at the target, host/repository@digest, once copied there (a github target's GHCR, a gitlab target's project registry). */
   image?: string
+  /** The bug the operator filed for a degraded or failed deploy of a version, in the Container's repository. */
+  issue?: ContainerDeployIssue
+}
+
+/** A bug the monitor filed for a deploy entry (api's ContainerDeployIssue). */
+export interface ContainerDeployIssue {
+  number: number
+  version: string
+  state: 'Degraded' | 'Failed'
+  url?: string
 }
 
 /**
@@ -505,7 +515,16 @@ export function findCondition(conditions: Condition[] | undefined, type: string)
   return conditions?.find((c) => c.type === type)
 }
 
-export type TaskPhase = 'Pending' | 'Implementing' | 'Checking' | 'Reviewing' | 'Blocked' | 'Merged' | 'Failed'
+export type TaskPhase =
+  | 'Pending'
+  | 'Implementing'
+  | 'Checking'
+  | 'Reviewing'
+  | 'Verifying'
+  | 'AwaitingApproval'
+  | 'Blocked'
+  | 'Merged'
+  | 'Failed'
 
 /** One step in a Task's timeline: from `at` on, the Task was in phase and round, for reason. */
 export interface TaskTransition {
@@ -544,8 +563,11 @@ export const LABEL_ISSUE = 'theos.factory.io/issue'
 
 export interface Task extends K8sObject {
   spec: {
-    /** Implement (the default), or Plan: a planning round of a Brief. */
-    kind?: 'Implement' | 'Plan'
+    /**
+     * Implement (the default), or Plan: a planning round of a Brief; Triage
+     * and Spec are the loop's first two stages (docs/plans/sdlc-loop.md).
+     */
+    kind?: 'Implement' | 'Plan' | 'Triage' | 'Spec'
     /** Every Task but a Plan Task names its Container. */
     containerRef?: LocalRef
     /** A Plan Task names its Brief in place of a Container. */

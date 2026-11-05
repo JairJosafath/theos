@@ -7,7 +7,7 @@ import type { Brief, Condition, Container, Crew, Project, StandardFile, Task } f
 import { findCondition } from '../k8s/types'
 import type { Area } from './areas'
 import { failureAnswered } from './attention'
-import { approveCommand, deploysOf } from './deploys'
+import { approveCommand, deploysOf, type DeployRow } from './deploys'
 import { time } from './factory'
 import { hasPage, standardKeepCommand, standardTakeCommand } from './lifecycle'
 
@@ -182,6 +182,24 @@ function containerNeeds(c: Container): Need[] {
   return items
 }
 
+/** A deploy row the operator says waits for approval of `awaiting`, whose spec entry is known. */
+export type AwaitingRow = DeployRow & { entry: NonNullable<DeployRow['entry']>; awaiting: string }
+
+/**
+ * The Container's deploys that wait for a person's approval: the entries the
+ * operator says wait (rows, each with the version in awaiting), and whether
+ * Deployed says a deploy waits while no entry names it. The Needs you item and
+ * the Loop's "Reviewing the product" stage both read it from here.
+ */
+export function approvalWaits(c: Container): { rows: AwaitingRow[]; unnamed: boolean } {
+  const deployed = findCondition(c.status?.conditions, 'Deployed')
+  const all = deploysOf(c)
+  const rows = all.filter((r): r is AwaitingRow => Boolean(r.awaiting && r.entry))
+  const unnamed =
+    deployed?.status === 'False' && deployed.reason === 'WaitingForApproval' && !all.some((r) => r.awaiting)
+  return { rows, unnamed }
+}
+
 /** The Deployed reasons that wait on a person (docs/plans/done/deploy.md, decision 6). */
 export const DEPLOY_HELD = ['WaitingForApproval', 'DeployFailed']
 
@@ -198,6 +216,7 @@ function deployNeeds(c: Container, place: Need['place']): Need[] {
   const deployed = findCondition(c.status?.conditions, 'Deployed')
   const held = deployed?.status === 'False' && DEPLOY_HELD.includes(deployed.reason ?? '') ? deployed.reason : undefined
   const rows = deploysOf(c)
+  const approvals = approvalWaits(c)
   const items: Need[] = []
   const entry = (row: (typeof rows)[number]) => ({
     reason: row.status?.reason || deployed?.reason || 'Deployed',
@@ -207,14 +226,15 @@ function deployNeeds(c: Container, place: Need['place']): Need[] {
   const link = (row: (typeof rows)[number]) =>
     row.status?.url ? [{ label: `At ${row.target}`, url: row.status.url }] : []
   for (const row of rows) {
-    if (row.awaiting && row.entry) {
+    const approval = approvals.rows.find((r) => r.target === row.target)
+    if (approval) {
       items.push({
         ...base('Container', c, `Approve|${row.target}`),
         title: `waits for your approval of ${row.awaiting} at ${row.target}`,
         ...entry(row),
         place,
         links: [],
-        command: approveCommand(c, row.index, row.entry, row.awaiting),
+        command: approveCommand(c, row.index, approval.entry, approval.awaiting),
       })
     }
     if (row.status?.phase === 'Failed') {

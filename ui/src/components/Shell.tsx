@@ -1,5 +1,5 @@
 // The page's shell (docs/plans/done/ui-lifecycle.md, decisions 1 and 2): navigation
-// for the six areas, a freshness line, the area on screen or an object's page,
+// for the seven areas, a freshness line, the area on screen or an object's page,
 // and a footer with the versions running.
 
 import type { MouseEvent, ReactNode } from 'react'
@@ -33,7 +33,7 @@ export interface ShellProps {
   /** The demo and problem banners. */
   banners: ReactNode
   /** What each area but About shows. */
-  areas: Record<'needs' | 'briefs' | 'story' | 'work' | 'factory', ReactNode>
+  areas: Record<'needs' | 'loop' | 'briefs' | 'story' | 'work' | 'factory', ReactNode>
   /** The object page the URL names, for kinds that have one. */
   objectPage?: ReactNode
 }
