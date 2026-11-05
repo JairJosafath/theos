@@ -77,6 +77,11 @@
   gap: 16px;
 }
 
+/* How well it works is a wide table: it takes the row above the two charts. */
+.work-time > .metrics-panel {
+  grid-column: 1 / -1;
+}
+
 .placeholder.small {
   min-height: 0;
   margin-top: 8px;

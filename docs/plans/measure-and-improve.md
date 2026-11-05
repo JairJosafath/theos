@@ -192,6 +192,28 @@ needs 3; 7 needs 3 and 6.
   `TestGiteaPullRequestUpdateIntegration` for `make test-gitea`, not run
   here: the agents' sandbox runs as root, which Gitea refuses.
 
+### Step 3, as built
+
+- `ui/src/model/metrics.ts` computes, over the Tasks that merged a pull
+  request in the last 7 or 30 days, for all of them and per implementer
+  configuration (the harness and model of a Task's newest implement run that
+  recorded one; "not recorded" otherwise, last): merged, autonomy (of those
+  whose commits were read), the share merged in round 1, the medians from
+  the first `Implementing` step to the first `Checking` (the pull request),
+  the first `Reviewing` and the merge, and the median cost; and the median
+  cost of a merged Task per size, with the Tasks not sized counted.
+- *How well it works* in the Work area's *Time & tokens* tab, across its
+  width above the two charts: the period as two chips, the two tables, and a
+  note on what Autonomy counts and what is left out.
+- The demo's orders-api Tasks record their runs' configuration, sizes and
+  person commits, so the demo shows the panel.
+- Tests: `ui/src/model/metrics.test.ts` (each metric, the period, the
+  grouping, the sizes, nothing merged) and
+  `ui/src/components/factory/MetricsPanel.test.ts` (the demo's rows, the
+  sizes, the period and the notes, the empty state). Evidence:
+  [ui-work-metrics.png](../screenshots/ui-work-metrics.png) and
+  [the dark one](../screenshots/ui-work-metrics-dark.png), from the demo.
+
 ## Done when
 
 - `make check` passes after each step.

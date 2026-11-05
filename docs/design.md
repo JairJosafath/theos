@@ -671,7 +671,7 @@ The operator moves bytes with credentials it holds; it builds nothing.
 ## Measuring the factory
 
 Planned in [plans/measure-and-improve.md](plans/measure-and-improve.md);
-only the record (its step 2) is built yet. A change to how the factory works (an Agent's
+the record and the metrics (its steps 2 and 3) are built. A change to how the factory works (an Agent's
 model, a route, a Standard's agent guide, `docs/project-notes.md`) should
 be judged by numbers the factory keeps itself.
 
@@ -686,7 +686,7 @@ be judged by numbers the factory keeps itself.
   metrics from Tasks: merged, autonomy (merged with no person's commit;
   approving a spec or a deploy is a decision, not code), cycle time per
   stage, and cost per merged Task by size, per period and per
-  configuration. No metrics store.
+  configuration: *How well it works*, in the Work area. No metrics store.
 - **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent,
   a deterministic sample and a daily cap. Each verdict is a `Score` per
   criterion (`Pass`, `Fail`, `Unclear`) with its reason, made by a read-only
