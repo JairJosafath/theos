@@ -668,6 +668,35 @@ The operator moves bytes with credentials it holds; it builds nothing.
   `Published` with `LicenseMissing`, `ReadmeMissing` or `SecretFound`. It
   moves over with the copy, as the target's `source`.
 
+## Measuring the factory
+
+Planned in [plans/measure-and-improve.md](plans/measure-and-improve.md);
+nothing of it is built yet. A change to how the factory works (an Agent's
+model, a route, a Standard's agent guide, `docs/project-notes.md`) should
+be judged by numbers the factory keeps itself.
+
+- **The record is on the Task.** Each run records the Agent, harness and
+  model that ran it; a Task records how many of its pull request's commits
+  a person wrote (`personCommits`) and its merged size. The UI computes the
+  metrics from Tasks: merged, autonomy (merged with no person's commit;
+  approving a spec or a deploy is a decision, not code), cycle time per
+  stage, and cost per merged Task by size, per period and per
+  configuration. No metrics store.
+- **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent,
+  a deterministic sample and a daily cap. Each verdict is a `Score` per
+  criterion (`Pass`, `Fail`, `Unclear`) with its reason, made by a read-only
+  judge run on the finished pull request. Scores advise; the reviewer, the
+  checks and the fence still decide what merges.
+- **A Benchmark compares configurations on the same work.** The same goals,
+  from one pinned commit, under two or more variants, repeated; its Tasks
+  end `Approved` instead of merging, touch no issue and take no Crew slot.
+  Its status gives each variant's rates with their 95% intervals and says
+  "no clear difference" rather than pick a winner when they overlap.
+- **Self-improvement files an issue, never a change.** A criterion that keeps
+  failing for one configuration files one `status/proposed` issue, where the
+  fix lives (the Container's repository, or the Standard's for the agent
+  guides), and the normal loop decides.
+
 ## Standards and the catalog
 
 **A Standard** is the rules as a layer: lint and format config, `AGENTS.md`
