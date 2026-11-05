@@ -115,12 +115,12 @@ function Ring({ stages }: { stages: LoopStage[] }) {
           >
             <circle cx={p.x} cy={p.y} r={NODE} className="loop-disc" />
             {s.person ? (
-              <g transform={`translate(${p.x - 8} ${p.y - NODE - 1}) scale(0.67)`} className="loop-person-icon">
+              <g transform={`translate(${p.x - 8} ${p.y - 23}) scale(0.67)`} className="loop-person-icon">
                 <circle cx="12" cy="8" r="4" />
                 <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" />
               </g>
             ) : null}
-            <text x={p.x} y={p.y + 6} textAnchor="middle" className="loop-count">
+            <text x={p.x} y={s.person ? p.y + 14 : p.y + 6} textAnchor="middle" className="loop-count">
               {s.count}
             </text>
             <text x={lx} y={ly} textAnchor={top || bottom ? 'middle' : anchor} className="loop-label">

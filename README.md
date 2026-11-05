@@ -41,6 +41,54 @@ CloudFormation, Argo CD or Flux): the factory hands it each release and shows
 the health that tool reports. Monitoring the apps and provisioning real
 databases are left to existing tools such as Crossplane.
 
+## The loop
+
+theos carries work around the whole software-development cycle, with a person
+only where a person should decide:
+
+```
+idea or bug ─▶ triage ─▶ spec ─▶ [you review the spec] ─▶ implement ─▶ code review
+     ▲                                                                     │
+     └── monitor ◀── ship ◀── [you review the product] ◀── verify ◀────────┘
+```
+
+- **Triage.** A triager Agent reads each proposed issue and decides: ready
+  (it writes the acceptance criteria), needs a spec, parked with a question
+  for a person, or a duplicate.
+- **Spec.** A spec writer opens a pull request with `docs/specs/<issue>.md`:
+  the problem, the approach and the acceptance criteria. You approve it on the
+  Git host (or let the reviewer, with `specApproval: Reviewer`), and the issue
+  goes on to be built.
+- **Implement and review.** As before: an implementer in a sandbox, CI, a
+  reviewer Agent, rounds until it merges.
+- **Verify.** A verifier runs the change and checks each acceptance criterion
+  against what it does before it merges.
+- **Ship and review the product.** Releases, and the deploys you approve.
+- **Monitor.** A deploy that turns degraded or fails files a bug, which goes
+  back to triage.
+
+Each stage is off until a Crew names its Agent:
+
+```yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: orders-cli
+spec:
+  containerRef: {name: orders-cli}
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  triager: {name: triager}        # sorts status/proposed issues
+  specWriter: {name: implementer} # writes specs for status/needs-spec issues
+  specApproval: Person            # or Reviewer, for a factory nobody watches
+  verifier: {name: reviewer}      # runs each change against its criteria
+```
+
+The UI's **Loop** area draws one project on this cycle, with the two places
+that wait for you marked
+([screenshot](docs/screenshots/sdlc-loop-ui.png)).
+[docs/plans/sdlc-loop.md](docs/plans/sdlc-loop.md) has the design.
+
 ## Status
 
 The factory runs end to end in a local Kind cluster: the story model, the
