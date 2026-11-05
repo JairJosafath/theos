@@ -66,6 +66,7 @@ follows the tree. `metadata.name` is the stable id; `displayName` and
 | Agent | Project | none | Who does Tasks: a harness, a model, a toolchain image, credentials and limits |
 | DeployTarget | Project | none | A place releases ship to, with its credential |
 | Scorer | Project | none | Plain-words criteria a judge Agent checks finished Tasks against; each judge run is a Task of kind `Score` it owns |
+| Benchmark | Container | `spec.containerRef` | The same goals from one pinned commit under two or more Agent variants, repeated; its Tasks end `Approved` and never merge |
 
 ```yaml
 kind: Container                    # the other kinds are in config/samples/
@@ -672,7 +673,7 @@ The operator moves bytes with credentials it holds; it builds nothing.
 ## Measuring the factory
 
 Planned in [plans/measure-and-improve.md](plans/measure-and-improve.md);
-the record, the metrics, the Scorers and their place in the UI (its steps 2 to 5) are built. A change to how the factory works (an Agent's
+its steps 2 to 6 are built: the record, the metrics, the Scorers, their place in the UI and the Benchmarks. A change to how the factory works (an Agent's
 model, a route, a Standard's agent guide, `docs/project-notes.md`) should
 be judged by numbers the factory keeps itself.
 
@@ -705,11 +706,25 @@ be judged by numbers the factory keeps itself.
   adopts them. Scores advise; the reviewer, the checks and the fence still
   decide what merges. A Task's page shows its Scores, and the Work area each
   Scorer's pass rates by configuration (*What the Scorers found*).
-- **A Benchmark compares configurations on the same work.** The same goals,
-  from one pinned commit, under two or more variants, repeated; its Tasks
-  end `Approved` instead of merging, touch no issue and take no Crew slot.
-  Its status gives each variant's rates with their 95% intervals and says
-  "no clear difference" rather than pick a winner when they overlap.
+- **A Benchmark compares configurations on the same work.** The same goals
+  (text, or an issue read once), from one pinned commit (`base`, 40 hex),
+  under two to four variants (an implementer, reviewer and verifier Agent
+  each), repeated (`repetitions`), `parallel` at a time, within a required
+  `budgetUSD`; it can't change once made. Its Tasks are Implement Tasks with
+  `spec.benchmark`, owned by the Benchmark and adopted by no Container,
+  made repetition by repetition so an early stop compared the same goals.
+  Each branches from `base` (the operator makes `task/<name>` there), opens
+  a pull request titled as one that never merges, never takes in main, and
+  ends in the phase `Approved` where it would have merged; it touches no
+  issue, takes no Crew slot and holds no other Task up. The Scorers it
+  names (`scorerRefs`) judge every finished run, whatever their sample and
+  selection, on `git diff <base> <head>`; once they have, the Benchmark
+  closes the run's pull request and deletes its branch. Its status gives
+  each variant's approval rate, mean rounds, median minutes and cost, and
+  each Scorer criterion's pass rate, each rate with its 95% Wilson
+  interval, and says "no clear difference" rather than pick a winner while
+  the intervals overlap. Neither its runs nor the judge runs alarm anyone:
+  the Chat and the Needs-you list leave them out.
 - **Self-improvement files an issue, never a change.** A criterion that keeps
   failing for one configuration files one `status/proposed` issue, where the
   fix lives (the Container's repository, or the Standard's for the agent

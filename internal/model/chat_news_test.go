@@ -194,6 +194,11 @@ func TestChatTaskNewsTriage(t *testing.T) {
 	if news := ChatTaskNews(judge); len(news) != 0 {
 		t.Errorf("a Score Task's failure is news: %+v", news)
 	}
+	run := ChatTaskView{Name: "cmp-fast-g1-r1", Kind: "Implement", Phase: "Failed", Benchmark: true,
+		ReviewVerdict: "changes"}
+	if news := ChatTaskNews(run); len(news) != 0 {
+		t.Errorf("a Benchmark's run is news: %+v", news)
+	}
 }
 
 // A Container: a failed scaffold's thread, done when Ready; a deploy waiting

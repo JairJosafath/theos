@@ -269,6 +269,46 @@ needs 3; 7 needs 3 and 6.
   Evidence: [ui-work-scores.png](../screenshots/ui-work-scores.png),
   [ui-task-scores.png](../screenshots/ui-task-scores.png) and their dark ones.
 
+### Step 6, as built
+
+- `Benchmark` (`kubebuilder create api`, v1beta1 alone): `containerRef`,
+  `base` (40 hex), `goals` (each a goal or an issue, exactly one),
+  `variants` (2 to 4, named once, an implementer and optional reviewer and
+  verifier), `repetitions` (1 to 5), `scorerRefs`, `parallel` (1 to 5) and a
+  required `budgetUSD`; CEL makes the whole spec immutable. Its status: the
+  goals as read, the cost, each variant's tasks, finished, approval rate,
+  mean rounds, median minutes and median cost, each Scorer criterion's pass
+  rate, the comparison, the runs it cleaned up, and `Done` (Running,
+  OverBudget, ContainerNotFound, IssueUnreadable, Finished).
+- A run is an Implement Task with `spec.benchmark` (the Benchmark, variant,
+  goal, repetition and base; immutable; only with a goal), owned by the
+  Benchmark: no Container adopts it, so its controller reference stays
+  the Benchmark's. The Task reconciler makes its branch at `base` before its
+  first implement run, skips the green-base wait and the turn-taking, never
+  merges main in or waits for the pull request to merge, titles the pull
+  request "Benchmark …, never merges", and at the merge step ends it
+  `Approved` (a new phase, final like Merged and Failed) without merging.
+- Decision 8's draft pull request: the Git host port opens none, so the
+  title says it never merges, and the Benchmark closes it after.
+- A Scorer the Benchmark names judges each of its finished runs (Approved
+  included) whatever its selection and sample, even at a sample of 0, on
+  the branch's diff from the base. The Benchmark cleans a run up (closes
+  its pull request, deletes its branch) only once every named Scorer that
+  exists judged it, so the judge can still read the branch.
+- `model.Wilson` is the 95% Wilson score interval; `model.CompareVariants`
+  calls a variant ahead only when its interval's low end is above
+  another's high end.
+- The Chat, the Needs-you list and the Work area's stats leave Benchmark
+  runs out; the UI knows the phase `Approved`.
+- Sample: `config/samples/webshop/benchmark.yaml`.
+- Tests: `internal/model` `TestBenchmarkRuns`, `TestWilson`,
+  `TestCompareVariants`, a Benchmark case each in `TestScorerSelects`,
+  `TestScoreGoal` and the chat news; envtest "Benchmark" (a run per
+  variant from the base, Approved without a merge, a failed run, the
+  Scorer judging both at a sample of 0, the clean-up, the comparison and
+  the rates; the budget; each CEL rule's failing case);
+  `ui/src/model/lifecycle.test.ts`'s Approved case.
+
 ## Done when
 
 - `make check` passes after each step.

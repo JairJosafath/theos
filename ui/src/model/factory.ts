@@ -54,7 +54,7 @@ export function stageLabel(stage: Stage): string {
 }
 
 export function isFinal(phase: TaskPhase | undefined): boolean {
-  return phase === 'Merged' || phase === 'Failed'
+  return phase === 'Merged' || phase === 'Failed' || phase === 'Approved'
 }
 
 /** The stage of one timeline step; undefined for Merged and Failed, which end the timeline. */
@@ -317,8 +317,8 @@ export function median(values: number[]): number | undefined {
 }
 
 export function factoryStats(all: Task[], now: number): FactoryStats {
-  // A Scorer's judge runs measure the work; they aren't the work.
-  const tasks = all.filter((t) => t.spec.kind !== 'Score')
+  // A Scorer's judge runs and a Benchmark's runs measure the work; they aren't the work.
+  const tasks = all.filter((t) => t.spec.kind !== 'Score' && !t.spec.benchmark)
   const merged = tasks.filter((t) => t.status?.phase === 'Merged')
   const failed = tasks.filter((t) => t.status?.phase === 'Failed')
   const finished = [...merged, ...failed]

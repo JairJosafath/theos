@@ -178,7 +178,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	labels := projectLabels(task.Namespace)
 	labels[c4v1beta1.LabelContainer] = container.Name
-	if err := adopt(ctx, r.Client, r.Scheme, &container, &task, labels); err != nil {
+	if err := adoptTask(ctx, r.Client, r.Scheme, &container, &task, labels); err != nil {
 		return ctrl.Result{}, err
 	}
 	// Adopting reads the Task back with a newer resourceVersion: take its status
@@ -333,27 +333,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		return facts, err
 	}
 
-	// A Crew's Tasks leave their concurrency to the Crew; others take turns.
-	if status.Phase == c4v1beta1.TaskPending && task.Labels[LabelCrew] == "" {
-		var tasks c4v1beta1.TaskList
-		if err := r.List(ctx, &tasks, client.InNamespace(task.Namespace),
-			client.MatchingFields{indexTaskContainer: container.Name}); err != nil {
-			return facts, err
-		}
-		refs := make([]model.TaskRef, 0, len(tasks.Items))
-		for _, t := range tasks.Items {
-			if pushesNothing(&t) {
-				continue // a triage and a judge push nothing, so they hold no other Task up
-			}
-			refs = append(refs, model.TaskRef{Name: t.Name, Created: t.CreationTimestamp.Unix(),
-				Active: !isFinal(t.Status.Phase) && t.DeletionTimestamp.IsZero()})
-		}
-		facts.BlockedBy = model.BlockingTask(task.Name, refs)
-	}
-	if status.Phase == c4v1beta1.TaskPending && facts.Protected && facts.ContainerReady && facts.BlockedBy == "" {
-		if err := r.baseFacts(ctx, container, &facts); err != nil {
-			return facts, err
-		}
+	if err := r.turnFacts(ctx, task, status, container, &facts); err != nil {
+		return facts, err
 	}
 
 	if role := runRole(status.Phase); role != "" {
@@ -378,7 +359,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		}
 	}
 
-	if err := r.pullFacts(ctx, container, status, &facts); err != nil {
+	if err := r.pullFacts(ctx, task, container, status, &facts); err != nil {
 		return facts, err
 	}
 	r.approvalFacts(ctx, task, status, &facts)
@@ -408,6 +389,38 @@ func (r *TaskReconciler) crewFacts(ctx context.Context, task *c4v1beta1.Task, st
 		facts.CostMilliUSD = status.CostMilliUSD
 		facts.Pause = crewPause(&crew)
 		facts.SpecApproval = string(crew.Spec.SpecApproval)
+	}
+	return nil
+}
+
+// turnFacts reads, for a Pending Task, whether an earlier Task on its
+// Container holds it up, and whether main is green to start from. A Crew's
+// Tasks leave their concurrency to the Crew, and a Benchmark's to the
+// Benchmark, as they merge nothing; others take turns. A Benchmark's Task
+// starts from its pinned base, not main's head.
+func (r *TaskReconciler) turnFacts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, facts *model.TaskFacts) error {
+	if status.Phase != c4v1beta1.TaskPending || task.Spec.Benchmark != nil {
+		return nil
+	}
+	if task.Labels[LabelCrew] == "" {
+		var tasks c4v1beta1.TaskList
+		if err := r.List(ctx, &tasks, client.InNamespace(task.Namespace),
+			client.MatchingFields{indexTaskContainer: container.Name}); err != nil {
+			return err
+		}
+		refs := make([]model.TaskRef, 0, len(tasks.Items))
+		for _, t := range tasks.Items {
+			if pushesNothing(&t) {
+				continue // a triage and a judge push nothing, so they hold no other Task up
+			}
+			refs = append(refs, model.TaskRef{Name: t.Name, Created: t.CreationTimestamp.Unix(),
+				Active: !isFinal(t.Status.Phase) && t.DeletionTimestamp.IsZero()})
+		}
+		facts.BlockedBy = model.BlockingTask(task.Name, refs)
+	}
+	if facts.Protected && facts.ContainerReady && facts.BlockedBy == "" {
+		return r.baseFacts(ctx, container, facts)
 	}
 	return nil
 }
@@ -680,8 +693,13 @@ func waitsSuspended(sandbox *unstructured.Unstructured) bool {
 // pullFacts reads whether an approved change's pull request misses what merged
 // into main since its checks ran, and whether the Git host says it merges: an approved change merges
 // only on checks that ran against the main it merges into.
-func (r *TaskReconciler) pullFacts(ctx context.Context, container *c4v1beta1.Container,
+func (r *TaskReconciler) pullFacts(ctx context.Context, task *c4v1beta1.Task, container *c4v1beta1.Container,
 	status *c4v1beta1.TaskStatus, facts *model.TaskFacts) error {
+	if task.Spec.Benchmark != nil {
+		// A Benchmark's Task stays on its pinned base and never merges:
+		// whether main moved, or would conflict, is nothing to it.
+		return nil
+	}
 	run := facts.Run
 	judging := status.Phase == c4v1beta1.TaskReviewing || status.Phase == c4v1beta1.TaskVerifying
 	approved := judging && run.Done && run.Result != nil && run.Result.Verdict == model.VerdictApprove
@@ -730,14 +748,25 @@ func sandboxName(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, role string
 		int(status.ReviewAttempts+status.ReviewAgains)+1, int(status.Reruns))
 }
 
-// pushesNothing reports whether t's runs push nothing: a Triage or a Score
-// Task's.
+// adoptTask has the Container adopt task, unless a Benchmark made it: then it
+// is its Benchmark's, which gave it these labels.
+func adoptTask(ctx context.Context, c client.Client, scheme *runtime.Scheme, container *c4v1beta1.Container,
+	task *c4v1beta1.Task, labels map[string]string) error {
+	if task.Spec.Benchmark != nil {
+		return nil
+	}
+	return adopt(ctx, c, scheme, container, task, labels)
+}
+
+// pushesNothing reports whether t holds no other Task on its Container up: a
+// Triage or a Score Task pushes nothing, and a Benchmark's Task merges
+// nothing.
 func pushesNothing(t *c4v1beta1.Task) bool {
-	return t.Spec.Kind == c4v1beta1.TaskTriage || t.Spec.Kind == c4v1beta1.TaskScore
+	return t.Spec.Kind == c4v1beta1.TaskTriage || t.Spec.Kind == c4v1beta1.TaskScore || t.Spec.Benchmark != nil
 }
 
 func isFinal(phase c4v1beta1.TaskPhase) bool {
-	return phase == c4v1beta1.TaskMerged || phase == c4v1beta1.TaskFailed
+	return phase == c4v1beta1.TaskMerged || phase == c4v1beta1.TaskFailed || phase == c4v1beta1.TaskApproved
 }
 
 // failedNoCI reports whether a Task failed through its CI runner's fault (CI

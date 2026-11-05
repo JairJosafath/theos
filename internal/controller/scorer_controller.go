@@ -47,6 +47,7 @@ type ScorerReconciler struct {
 // +kubebuilder:rbac:groups=theos.factory.io,resources=scorers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=theos.factory.io,resources=tasks,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=theos.factory.io,resources=agents,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=benchmarks,verbs=get;list;watch
 
 // Reconcile makes the Scorer's due Score Tasks and writes what it judged.
 func (r *ScorerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -116,9 +117,6 @@ func (r *ScorerReconciler) startScores(ctx context.Context, scorer *c4v1beta1.Sc
 	if p := scorer.Spec.SamplePercent; p != nil {
 		percent = int(*p)
 	}
-	if percent == 0 {
-		return model.ScorerPaused, "samplePercent is 0: it judges nothing", nil
-	}
 	var judge c4v1beta1.Agent
 	err := r.Get(ctx, client.ObjectKey{Namespace: scorer.Namespace, Name: scorer.Spec.JudgeRef.Name}, &judge)
 	if apierrors.IsNotFound(err) {
@@ -134,6 +132,10 @@ func (r *ScorerReconciler) startScores(ctx context.Context, scorer *c4v1beta1.Sc
 	for _, p := range scorer.Spec.Select.Phases {
 		sel.Phases = append(sel.Phases, string(p))
 	}
+	benchmarks, err := r.benchmarksNaming(ctx, scorer)
+	if err != nil {
+		return "", "", err
+	}
 	var due []*c4v1beta1.Task
 	for i := range tasks {
 		t := &tasks[i]
@@ -144,10 +146,11 @@ func (r *ScorerReconciler) startScores(ctx context.Context, scorer *c4v1beta1.Sc
 		if t.Status.CompletedAt != nil {
 			completed = t.Status.CompletedAt.Time
 		}
+		benchmarked := t.Spec.Benchmark != nil && benchmarks[t.Spec.Benchmark.BenchmarkRef.Name]
 		judged := model.ScoredTask{Name: t.Name, Kind: string(t.Spec.Kind), Container: t.Spec.ContainerRef.Name,
-			Phase: string(t.Status.Phase), Completed: completed}
+			Phase: string(t.Status.Phase), Completed: completed, Benchmarked: benchmarked}
 		if !model.ScorerSelects(sel, scorer.CreationTimestamp.Time, judged) ||
-			!model.ScoreSampled(string(scorer.UID), t.Name, percent) {
+			!benchmarked && !model.ScoreSampled(string(scorer.UID), t.Name, percent) {
 			continue
 		}
 		if _, made := scores[model.ScoreTaskName(scorer.Name, t.Name)]; made {
@@ -172,7 +175,28 @@ func (r *ScorerReconciler) startScores(ctx context.Context, scorer *c4v1beta1.Sc
 		status.CostTodayMilliUSD, int(scorer.Spec.BudgetUSD)); reason != "" {
 		return reason, message, nil
 	}
+	if percent == 0 {
+		return model.ScorerPaused, "samplePercent is 0: it judges only the Tasks of the Benchmarks that name it", nil
+	}
 	return "", "", nil
+}
+
+// benchmarksNaming are the Benchmarks of the Scorer's namespace that name it:
+// it judges every finished Task of theirs.
+func (r *ScorerReconciler) benchmarksNaming(ctx context.Context, scorer *c4v1beta1.Scorer) (map[string]bool, error) {
+	var benchmarks c4v1beta1.BenchmarkList
+	if err := r.List(ctx, &benchmarks, client.InNamespace(scorer.Namespace)); err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, b := range benchmarks.Items {
+		for _, ref := range b.Spec.ScorerRefs {
+			if ref.Name == scorer.Name {
+				out[b.Name] = true
+			}
+		}
+	}
+	return out, nil
 }
 
 // makeScoreTask makes the Score Task in which the Scorer judges t, owned by
@@ -223,6 +247,10 @@ func scoreEvidence(t *c4v1beta1.Task) model.ScoreEvidence {
 	if s.PersonCommits != nil {
 		n := int(*s.PersonCommits)
 		e.PersonCommits = &n
+	}
+	if b := t.Spec.Benchmark; b != nil && s.MergeCommit == "" {
+		// A Benchmark's change is its branch's, from the pinned base.
+		e.Head, e.Base = s.Commit, b.Base
 	}
 	return e
 }

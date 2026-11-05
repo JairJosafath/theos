@@ -325,7 +325,8 @@ func taskView(t *c4v1beta1.Task) model.ChatTaskView {
 	s := t.Status
 	v := model.ChatTaskView{Name: t.Name, Kind: string(t.Spec.Kind), Phase: string(s.Phase), Round: int(s.Round),
 		Issue: int(t.Spec.Issue), IssueTitle: s.IssueTitle, IssueURL: s.IssueURL, PullRequest: int(s.PullRequest),
-		PullURL: s.PullRequestURL, Commit: s.Commit, Message: conditionMessage(s.Conditions, conditionProgressing)}
+		PullURL: s.PullRequestURL, Commit: s.Commit, Message: conditionMessage(s.Conditions, conditionProgressing),
+		Benchmark: t.Spec.Benchmark != nil}
 	if s.Phase == c4v1beta1.TaskFailed {
 		v.Message = conditionMessage(s.Conditions, conditionSucceeded)
 	}

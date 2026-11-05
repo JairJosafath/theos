@@ -1,0 +1,38 @@
+# A Benchmark for the webshop (docs/plans/measure-and-improve.md): orders-api
+# builds the same two goals from one commit with the chart's implementer
+# Agent and with the reviewer's stronger model as implementer, three times
+# each, and compares how often each variant's change was approved. Its Tasks
+# never merge: an approved one ends Approved, and once Scorer tests-and-why
+# (scorer.yaml) judged it, the Benchmark closes its pull request and deletes
+# its branch. Set base to a commit of orders-api's main. Not in
+# kustomization.yaml: apply it on its own with
+#   kubectl apply -n webshop -f config/samples/webshop/benchmark.yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Benchmark
+metadata:
+  name: implementer-models
+spec:
+  containerRef:
+    name: orders-api
+  base: 0000000000000000000000000000000000000000
+  goals:
+    - goal: |-
+        Add GET /orders/{id}/receipt, returning the order's lines, totals and
+        payment as JSON, with a test for an order that doesn't exist.
+    - issue: 12
+  variants:
+    - name: implementer
+      implementerRef:
+        name: implementer
+      reviewerRef:
+        name: reviewer
+    - name: reviewer-model
+      implementerRef:
+        name: reviewer
+      reviewerRef:
+        name: reviewer
+  repetitions: 3
+  scorerRefs:
+    - name: tests-and-why
+  parallel: 2
+  budgetUSD: 30

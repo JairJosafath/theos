@@ -308,6 +308,13 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, sta
 	if status.Branch == "" {
 		status.Branch = model.TaskBranch(task.Name)
 	}
+	if b := task.Spec.Benchmark; b != nil && role == model.RoleImplementer {
+		// A Benchmark's Task branches from its pinned base: the implementer
+		// works on the branch it finds.
+		if err := ensureBranchAt(gitCtx, in.provider, in.repo, status.Branch, b.Base); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	name := sandboxName(task, status, role)
 	sandbox, err := r.runSandbox(ctx, task, status, container, agents, role, name, in)
 	if err != nil {
@@ -580,6 +587,18 @@ func (r *TaskReconciler) revokeOldAgentTokensOnce(ctx context.Context, namespace
 // merge squashes the approved pull request into main.
 func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
+	if task.Spec.Benchmark != nil {
+		// A Benchmark's Task never merges: approved, it ends Approved, and its
+		// Benchmark closes its pull request once its Scorers judged it.
+		status.Review = r.reviewFrom(ctx, task, status)
+		if err := r.endRun(ctx, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.finish(task, status, c4v1beta1.TaskApproved, metav1.ConditionTrue, model.TaskApproved,
+			"Approved with green checks; a Benchmark's Task never merges")
+		logf.FromContext(ctx).Info("Approved Benchmark Task", "url", status.PullRequestURL, "round", status.Round)
+		return ctrl.Result{}, nil
+	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -1145,6 +1164,10 @@ func (r *TaskReconciler) comment(ctx context.Context, task *c4v1beta1.Task, stat
 }
 
 func pullTitle(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) string {
+	if b := task.Spec.Benchmark; b != nil {
+		return model.BenchmarkPullTitle(b.BenchmarkRef.Name, b.Variant, int(b.Goal), int(b.Repetition),
+			firstLine(task.Spec.Goal))
+	}
 	if isSpec(task) {
 		return firstLine(model.SpecTitle(status.IssueTitle))
 	}
@@ -1152,6 +1175,15 @@ func pullTitle(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) string {
 		return firstLine(status.IssueTitle)
 	}
 	return firstLine(task.Spec.Goal)
+}
+
+// ensureBranchAt makes branch at commit, unless the Git host has it already.
+func ensureBranchAt(ctx context.Context, provider ports.GitHost, repo ports.Repository, branch, commit string) error {
+	has, err := provider.HasBranch(ctx, repo, branch)
+	if err != nil || has {
+		return err
+	}
+	return provider.CreateBranch(ctx, repo, branch, commit)
 }
 
 // pullBody is a pull request's description; extra are the unprotected files a

@@ -551,6 +551,8 @@ export type TaskPhase =
   | 'Blocked'
   | 'Merged'
   | 'Failed'
+  /** A Benchmark's run whose change passed its checks and review: it would have merged, and never does. */
+  | 'Approved'
 
 /** One step in a Task's timeline: from `at` on, the Task was in phase and round, for reason. */
 export interface TaskTransition {
@@ -645,6 +647,8 @@ export interface Task extends K8sObject {
     allowedProtectedPaths?: string[]
     /** A Score Task's Scorer, the Task it judges and the criteria, as they were. */
     score?: TaskScoreSpec
+    /** A Benchmark's run: which Benchmark, variant, goal (from 0) and repetition, and the base it branches from. */
+    benchmark?: { benchmarkRef: LocalRef; variant: string; goal?: number; repetition: number; base: string }
   }
   status?: {
     phase?: TaskPhase

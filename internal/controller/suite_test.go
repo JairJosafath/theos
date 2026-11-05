@@ -431,6 +431,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&ChatReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), ChatHosts: matrix.Hosts(nil),
 			PollInterval: time.Second, CheckInterval: time.Second},
 		&ScorerReconciler{Client: c, Scheme: s},
+		&BenchmarkReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
+			PollInterval: time.Second},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

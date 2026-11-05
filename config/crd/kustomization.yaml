@@ -24,6 +24,7 @@ resources:
 - bases/theos.factory.io_domains.yaml
 - bases/theos.factory.io_chats.yaml
 - bases/theos.factory.io_scorers.yaml
+- bases/theos.factory.io_benchmarks.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

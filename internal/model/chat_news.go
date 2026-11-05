@@ -189,6 +189,8 @@ type ChatTaskView struct {
 	ReviewSummary string
 	// Message says why the Task waits, or why it failed.
 	Message string
+	// Benchmark means a Benchmark's run, which never merges.
+	Benchmark bool
 	// PageURL is the Task's page in the UI (ChatPageURL), "" for none.
 	PageURL string
 }
@@ -237,9 +239,10 @@ func (t ChatTaskView) issue() string {
 // decision, a review's verdict and a failure are plain posts; a merge is in
 // the updates digest.
 func ChatTaskNews(t ChatTaskView) []ChatNews {
-	if t.Kind == "Score" {
-		// A judge run for a Scorer is the factory measuring itself: its
-		// verdicts are the Scorer's to show, and its failure no alert.
+	if t.Kind == "Score" || t.Benchmark {
+		// A judge run for a Scorer, or a Benchmark's run, is the factory
+		// measuring itself: what it found is theirs to show, and a failure no
+		// alert.
 		return nil
 	}
 	var news []ChatNews

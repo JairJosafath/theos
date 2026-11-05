@@ -103,6 +103,12 @@ export function describeTaskPhase(phase: TaskPhase | undefined): PhaseInfo {
       return { label: 'Blocked', tone: 'waiting', explanation: 'Waits for the Standard change it filed to merge.' }
     case 'Failed':
       return { label: 'Failed', tone: 'error', explanation: 'It stopped without merging; its conditions say why.' }
+    case 'Approved':
+      return {
+        label: 'Approved',
+        tone: 'ok',
+        explanation: 'A Benchmark’s run: its change passed its checks and review, and never merges.',
+      }
     default:
       return { label: 'No status yet', tone: 'unknown', explanation: 'The factory has not reported on this Task yet.' }
   }

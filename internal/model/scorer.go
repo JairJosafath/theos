@@ -54,6 +54,9 @@ type ScoredTask struct {
 	Name, Kind, Container, Phase string
 	// Completed is when it finished; zero while it hasn't.
 	Completed time.Time
+	// Benchmarked means a Benchmark that names the Scorer made it: the Scorer
+	// judges it whatever its selection, and its sample (ScoreSampled) too.
+	Benchmarked bool
 }
 
 // ScorerSelects reports whether a Scorer made at created, of selection s,
@@ -69,9 +72,14 @@ func ScorerSelects(s ScorerSelection, created time.Time, t ScoredTask) bool {
 	if len(phases) == 0 {
 		phases = []string{TaskMerged}
 	}
-	return kind != "Score" && slices.Contains(kinds, kind) && slices.Contains(phases, t.Phase) &&
-		(len(s.Containers) == 0 || slices.Contains(s.Containers, t.Container)) &&
-		!t.Completed.IsZero() && !t.Completed.Before(created)
+	if kind == "Score" || t.Completed.IsZero() || t.Completed.Before(created) {
+		return false
+	}
+	if t.Benchmarked {
+		return slices.Contains([]string{TaskMerged, TaskFailed, TaskApproved}, t.Phase)
+	}
+	return slices.Contains(kinds, kind) && slices.Contains(phases, t.Phase) &&
+		(len(s.Containers) == 0 || slices.Contains(s.Containers, t.Container))
 }
 
 // ScoreSampled reports whether the Scorer of UID scorer judges Task task, at
@@ -110,8 +118,9 @@ type ScoreEvidence struct {
 	Rounds                       int
 	PullRequest                  int
 	// Commit is the merge commit on the default branch; empty for a Task
-	// that didn't merge.
-	Commit, Branch                string
+	// that didn't merge. Head and Base are an unmerged change's last commit
+	// and where it branched from, when known.
+	Commit, Branch, Head, Base    string
 	ReviewVerdict, ReviewSummary  string
 	Summary, Checks, FailedReason string
 	PersonCommits                 *int
@@ -130,6 +139,9 @@ func ScoreGoal(e ScoreEvidence) string {
 	case e.Commit != "":
 		fmt.Fprintf(&b, "Its change merged as commit %s on the default branch (pull request #%d): "+
 			"read it with git show %s.\n", e.Commit, e.PullRequest, e.Commit)
+	case e.Head != "" && e.Base != "":
+		fmt.Fprintf(&b, "It merged nothing; its change is commit %s on branch %s (pull request #%d), from %s: "+
+			"read it with git diff %s %s.\n", e.Head, e.Branch, e.PullRequest, e.Base, e.Base, e.Head)
 	case e.Branch != "":
 		fmt.Fprintf(&b, "It merged nothing; its last commit was on branch %s (pull request #%d), which may be gone.\n",
 			e.Branch, e.PullRequest)

@@ -34,6 +34,13 @@ func TestScorerSelects(t *testing.T) {
 		{"never a Score Task", ScorerSelection{Kinds: []string{"Score"}}, ScoredTask{Kind: "Score",
 			Phase: TaskMerged, Completed: after}, false},
 		{"only the Containers named", ScorerSelection{Containers: []string{"web"}}, merged, false},
+		{"a Benchmark's Task whatever the selection, Approved too", ScorerSelection{Containers: []string{"web"}},
+			ScoredTask{Kind: "Implement", Container: "api", Phase: TaskApproved, Completed: after, Benchmarked: true},
+			true},
+		{"but not one finished before the Scorer", ScorerSelection{}, ScoredTask{Kind: "Implement",
+			Phase: TaskApproved, Completed: before, Benchmarked: true}, false},
+		{"nor an Approved Task of no Benchmark", ScorerSelection{Phases: []string{TaskMerged, TaskFailed}},
+			ScoredTask{Kind: "Implement", Phase: TaskApproved, Completed: after}, false},
 	}
 	for _, tt := range tests {
 		if got := ScorerSelects(tt.sel, made, tt.task); got != tt.want {
@@ -97,6 +104,12 @@ func TestScoreGoal(t *testing.T) {
 		if !strings.Contains(goal, want) {
 			t.Errorf("goal lacks %q:\n%s", want, goal)
 		}
+	}
+	approved := ScoreGoal(ScoreEvidence{Task: "b-fast-g1-r1", Container: "api", Phase: TaskApproved,
+		Branch: "task/b-fast-g1-r1", Head: "def456", Base: "abc123", PullRequest: 11})
+	if !strings.Contains(approved, "its change is commit def456 on branch task/b-fast-g1-r1 (pull request #11), "+
+		"from abc123: read it with git diff abc123 def456.") {
+		t.Errorf("a Benchmark's Task's goal:\n%s", approved)
 	}
 	failed := ScoreGoal(ScoreEvidence{Task: "api-5", Kind: "Implement", Container: "api", Phase: TaskFailed,
 		Branch: "task/api-5", PullRequest: 10, FailedReason: "Out of rounds"})

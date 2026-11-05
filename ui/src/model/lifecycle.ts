@@ -194,6 +194,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
         phase: 'Failed',
         person: 'Read why it failed. To try again, give the work a new Task, or do it by hand.',
       },
+      {
+        phase: 'Approved',
+        person: 'Nothing: a Benchmark’s run ends here instead of merging; its Benchmark compares it with the others.',
+      },
     ],
     moves: 'The agent, CI and the reviewer, round by round, up to its implementer’s maxRounds.',
     describe: (phase) => describeTaskPhase(phase as TaskPhase | undefined),

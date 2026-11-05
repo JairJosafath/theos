@@ -166,6 +166,7 @@ spec:
                       - Blocked
                       - Merged
                       - Failed
+                      - Approved
                       type: string
                     maxItems: 2
                     type: array

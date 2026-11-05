@@ -60,6 +60,8 @@ const (
 // +kubebuilder:validation:XValidation:rule="(has(self.kind) && self.kind == 'Score') == has(self.score)",message="a Score Task needs score, and only a Score Task has one"
 // +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Score' || (has(self.goal) && has(self.containerRef) && !has(self.reviewerRef) && !has(self.verifierRef) && !has(self.allowedProtectedPaths))",message="a Score Task has a goal and a containerRef, and no reviewerRef, verifierRef or allowedProtectedPaths"
 // +kubebuilder:validation:XValidation:rule="has(self.score) == has(oldSelf.score)",message="score is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(self.benchmark) || ((!has(self.kind) || self.kind == 'Implement') && has(self.goal) && !has(self.allowedProtectedPaths))",message="a Benchmark's Task is an Implement Task with a goal and no allowedProtectedPaths"
+// +kubebuilder:validation:XValidation:rule="has(self.benchmark) == has(oldSelf.benchmark)",message="benchmark is immutable"
 type TaskSpec struct {
 	// kind is Implement (the default): implement the goal in the Container's
 	// repository; Plan: plan a round of the Brief named by briefRef; Triage:
@@ -139,6 +141,35 @@ type TaskSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="score is immutable"
 	// +optional
 	Score *TaskScoreSpec `json:"score,omitempty"`
+
+	// benchmark makes the Task one of a Benchmark's runs: it branches from
+	// the Benchmark's base commit, never takes in main, and ends Approved
+	// instead of merging. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="benchmark is immutable"
+	// +optional
+	Benchmark *TaskBenchmarkSpec `json:"benchmark,omitempty"`
+}
+
+// TaskBenchmarkSpec is which Benchmark run a Task is.
+type TaskBenchmarkSpec struct {
+	// benchmarkRef names the Benchmark.
+	// +required
+	BenchmarkRef LocalRef `json:"benchmarkRef"`
+	// variant, goal and repetition say which run: the variant's name, the
+	// goal's place (from 0) and the repetition (from 1).
+	// +kubebuilder:validation:MaxLength=16
+	// +required
+	Variant string `json:"variant"`
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Goal int32 `json:"goal,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Repetition int32 `json:"repetition"`
+	// base is the commit the Task branches from.
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{40}$`
+	// +required
+	Base string `json:"base"`
 }
 
 // TaskScoreSpec is what a Score Task judges.
@@ -222,7 +253,7 @@ type TaskScoreStatus struct {
 }
 
 // TaskPhase is where a Task is in its rounds.
-// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;Verifying;AwaitingApproval;Blocked;Merged;Failed
+// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;Verifying;AwaitingApproval;Blocked;Merged;Failed;Approved
 type TaskPhase string
 
 // Task phases.
@@ -241,6 +272,10 @@ const (
 	TaskBlocked          TaskPhase = "Blocked"
 	TaskMerged           TaskPhase = "Merged"
 	TaskFailed           TaskPhase = "Failed"
+	// TaskApproved ends a Benchmark's Task whose change passed its checks and
+	// its review: it would have merged, and never does
+	// (docs/plans/measure-and-improve.md, step 6).
+	TaskApproved TaskPhase = "Approved"
 )
 
 // TaskReview is the reviewer's verdict on a round.
