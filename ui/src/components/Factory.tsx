@@ -19,6 +19,7 @@ import { TaskCard } from './factory/TaskBoard'
 import { CrewsPanel } from './factory/Crews'
 import { ReleasesPanel } from './factory/Releases'
 import { MetricsPanel } from './factory/MetricsPanel'
+import { ScoresPanel } from './factory/ScoresPanel'
 import { TimePanel } from './factory/TimePanel'
 import { TokensPanel } from './factory/TokensPanel'
 import { PanelState } from './PanelState'
@@ -198,6 +199,7 @@ export function FactoryPage({ data, connection, health, healthLoaded, onSelectTa
                     loaded={read(RESOURCES.tasks)}
                     problems={problems(RESOURCES.tasks)}
                   />
+                  <ScoresPanel tasks={data.tasks} loaded={read(RESOURCES.tasks)} problems={problems(RESOURCES.tasks)} />
                   <TimePanel stats={stats} />
                   <TokensPanel
                     tasks={data.tasks}

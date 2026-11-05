@@ -894,6 +894,58 @@ export function demoStory(now: number): StoryData {
     }),
   ]
 
+  // Scorer tests-and-why (config/samples/webshop/scorer.yaml) judged two of the
+  // merged Tasks: a Score Task each, its verdicts in status.score
+  // (docs/plans/measure-and-improve.md, steps 4 and 5).
+  const scoreCriteria = [
+    'The change has a test that fails without it.',
+    'The pull request’s description says why the change is made, not only what it does.',
+  ]
+  const scoreTask = (
+    judged: string,
+    endedMinutesAgo: number,
+    verdicts: { verdict: 'Pass' | 'Fail' | 'Unclear'; reason: string }[],
+  ): Task => ({
+    apiVersion: API_VERSION,
+    kind: 'Task',
+    metadata: {
+      ...meta(`tests-and-why-${judged}`, at(endedMinutesAgo + 4)),
+      labels: { 'theos.factory.io/scorer': 'tests-and-why', 'theos.factory.io/container': 'orders-api' },
+    },
+    spec: {
+      kind: 'Score',
+      containerRef: { name: 'orders-api' },
+      agentRef: { name: 'claude-reviewer' },
+      goal: `Task ${judged} (Implement) on Container orders-api ended Merged.`,
+      score: {
+        scorerRef: { name: 'tests-and-why' },
+        scorerGeneration: 1,
+        taskRef: { name: judged },
+        criteria: scoreCriteria,
+        config: { agent: 'claude-implementer', harness: 'claude-code', model: 'claude-sonnet-5-5' },
+      },
+    },
+    status: {
+      phase: 'Merged',
+      round: 1,
+      completedAt: at(endedMinutesAgo),
+      summary: `Judged ${judged}`,
+      costMilliUSD: 210,
+      score: { criteria: verdicts.map((v, i) => ({ criterion: scoreCriteria[i], ...v })) },
+      conditions: [cond('Succeeded', 'True', 'Scored', `Judged ${judged}`, at(endedMinutesAgo))],
+    },
+  })
+  tasks.push(
+    scoreTask('orders-api-10', 112, [
+      { verdict: 'Pass', reason: 'orders_test.go’s empty-history case fails without the new query.' },
+      { verdict: 'Pass', reason: 'It says customers asked to see their orders without calling support.' },
+    ]),
+    scoreTask('orders-api-11', 80, [
+      { verdict: 'Pass', reason: 'reorder_test.go covers a sold-out line.' },
+      { verdict: 'Fail', reason: 'The description lists the endpoint and its fields, but not why.' },
+    ]),
+  )
+
   const crew = (
     name: string,
     displayName: string,

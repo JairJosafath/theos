@@ -316,7 +316,9 @@ export function median(values: number[]): number | undefined {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
-export function factoryStats(tasks: Task[], now: number): FactoryStats {
+export function factoryStats(all: Task[], now: number): FactoryStats {
+  // A Scorer's judge runs measure the work; they aren't the work.
+  const tasks = all.filter((t) => t.spec.kind !== 'Score')
   const merged = tasks.filter((t) => t.status?.phase === 'Merged')
   const failed = tasks.filter((t) => t.status?.phase === 'Failed')
   const finished = [...merged, ...failed]

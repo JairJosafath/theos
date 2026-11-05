@@ -138,7 +138,7 @@ function pageFor(
     }
     case 'Task': {
       const task = named(data.tasks)
-      return task && <TaskPage task={task} agents={data.agents} />
+      return task && <TaskPage task={task} agents={data.agents} tasks={data.tasks} />
     }
     case 'Project': {
       const project = data.project?.metadata.name === name ? data.project : undefined
