@@ -7,6 +7,12 @@ memory, disk and CPU numbers behind the relay's and the heavy jobs' limits.
 How to test, deploy and run the relay is in [testenv.md](testenv.md); how to
 set a device up is in [DEVELOPMENT.md](../../DEVELOPMENT.md).
 
+The relay is retired (GOVERNANCE.md) and its scripts, `hack/relay.sh` and
+`hack/relay-watch.sh`, are gone with their tests: what this file says about
+the relay's workers, its admission by memory and disk, and its watch is
+history, kept for the numbers. The heavy-job slots, the guards and the
+cluster leases are still in use.
+
 ## Caches every checkout shares
 
 Every checkout on a device shares one Go build cache. `make test`, `vet` and
@@ -162,51 +168,25 @@ hold none.
 and `down` while another checkout holds the cluster the command targets
 (`KIND_CLUSTER=` in the command, else the checkout's lease, else
 `theos`). The memory gates below stay as they are.
-`hack/lib/github_test.sh`, `hack/relay_test.sh` and `hack/heavy-guard_test.sh`
-test the leases.
+`hack/lib/github_test.sh` and `hack/heavy-guard_test.sh` test the leases.
 
 Raise `THEOS_CLUSTERS` only after measuring: each idle cluster takes about 1.1
 GiB, and up to 4.5 GiB with a Crew running.
 
-## The relay watch as a service
+## Removing an installed relay watch
 
-Install the watch once on each device that runs the relay overnight, from the
-main checkout: `hack/relay-watch.sh --install --workers N`. It writes the
-systemd user unit `theos-relay-watch.service` (from
-`hack/relay-watch.service`, with this checkout, N and your `PATH`), enables and
-starts it, and turns on `loginctl enable-linger`, so the watch starts at boot
-without a login. A crash, an OOM kill or `kill <pid>` brings the watch back
-within a minute; a watch you started by hand keeps running, and the unit's
-watch waits for its lock and takes over when it ends. On a device without
-systemd, `--install` adds two crontab lines instead, at boot and every 5
-minutes, which start the watch unless one runs. `touch .relay/stop` still stops
-it for good: the unit doesn't restart a watch that exits for the stop file, and
-cron doesn't start one while the file is there. `hack/relay-watch.sh` starts
-the unit again (with the unit's worker count); on a cron install, `rm -f
-.relay/stop` alone, and cron's next tick starts the watch under its own
-login ([testenv.md](testenv.md), "The restore depends on the install").
-`--uninstall` removes the unit or the crontab lines. Install from the main checkout, not a worktree; the unit and
-cron get your `PATH` and `RELAY_*`, `WATCH_*`, `HEAVY_JOBS` and `THEOS_CLUSTER*`
-settings, and the GitHub token from the git credential helper, not `GH_TOKEN`.
-They also get the Claude Code login of the shell you install from
-(`CLAUDE_CONFIG_DIR`, or `~/.claude` when unset), set after `./dev run`, which
-would otherwise point every session at `.dev/claude` (#1435); `--install`
-refuses a login without `.credentials.json`, so install from a logged-in
-shell: `CLAUDE_CONFIG_DIR=$HOME/.claude hack/relay-watch.sh --install` uses
-the VS Code login. `systemctl --user status theos-relay-watch` shows the
-unit.
+`hack/relay-watch.sh --uninstall` went with the script. A device that still
+has the watch installed runs a script that is no longer there; remove it by
+hand. With systemd:
 
-On the device with the Kind cluster, the systemd user manager must have the
-`docker` group: the watch, its workers and their sessions inherit the
-manager's groups, and a process keeps the groups it started with, so a manager
-that started before you joined `docker` can't reach Docker however
-`/etc/group` reads now. Check it with
-`grep Groups /proc/$(pgrep -u "$USER" -x systemd)/status`: the list must hold
-the gid of `docker` (`getent group docker`). If it doesn't, restart the user
-manager: log out and in again, or on WSL run `wsl --shutdown` from Windows.
-`--install` warns when the manager lacks one of your groups, and the watch logs
-it when it starts. Until then its sessions can't reach Docker, so
-`make test-gitea` fails in them; they never need a cluster.
+```bash
+systemctl --user disable --now theos-relay-watch
+rm -f ~/.config/systemd/user/theos-relay-watch.service
+systemctl --user daemon-reload
+```
+
+Without systemd, delete the two `hack/relay-watch.sh` lines from `crontab -e`.
+`.relay/` in a checkout can go too.
 
 ## Memory on the cluster device
 
@@ -339,8 +319,7 @@ queue:
   tells the session a `make` job will wait, and that the wait is not a hang.
   Other commands cost one `bash` and nothing more.
 
-`hack/relay_test.sh` tests the defaults, the cap and the wait against a faked
-`/proc/meminfo` (`RELAY_MEMINFO`), `hack/heavy-guard_test.sh` the hook,
+`hack/heavy-guard_test.sh` tests the hook,
 with `ps` and `docker` faked too, and `hack/heavy-slot_test.sh` the slots: two
 jobs running while a third waits, a slot freed by a job that ends or is killed,
 the oldest waiter taking the next free slot and a dead waiter skipped, a
@@ -406,10 +385,7 @@ the disk). So what the disks hold has to stay under the peak they already
 reached: the release images are deleted once pushed (#1636), and the floor is
 15 GB, down from 30 once C: no longer got back there (#1635).
 
-`hack/relay_test.sh` tests the guard with a stub `df`: no session below the
-minimum on any watched path and the path in the log, sessions above it, the
-settings, one line an hour; and the `.vhdx` lookup with stub `reg.exe` and
-`wslpath`, the `/mnt/c` fallback included.
+The relay's disk guard went with `hack/relay.sh`.
 
 ## CPU on the cluster device
 

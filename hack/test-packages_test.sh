@@ -125,7 +125,7 @@ for f in go.mod hack/agent/Dockerfile leaf/testdata/in.txt Makefile .github/work
   check "$f: says why" "$(grep -c "every package (8): $f changed" "$T/err")" 1
 done
 
-for f in hack/relay.sh hack/lib/github.sh; do
+for f in hack/pull.sh hack/lib/github.sh; do
   change "$f"
   check "$f: no package (#1318)" "$(run)" ""
 done

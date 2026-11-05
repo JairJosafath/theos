@@ -304,7 +304,7 @@ and its tests) too, so a UI change can't merge with what would turn *UI* red
 
 ## Work on the factory: GitHub issues by hand
 
-The relay (`hack/relay.sh`, `hack/relay-watch.sh`) is retired: the factory works
+The relay is retired, and its scripts are gone: the factory works
 its own issues in Gitea, through the Crew `theos`. How that runs is in
 [docs/plans/self-hosting.md](../plans/self-hosting.md).
 

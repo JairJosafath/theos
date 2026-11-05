@@ -171,9 +171,8 @@ GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
 
 - **It can** build and test the operator (`make check`: envtest runs a local API
   server, no cluster), test against a local Gitea (`make test-gitea`), change
-  scripts, templates and docs, and run the relay.
-- **It can't** deploy, run Crews or `make e2e`. Its relay stops when no issue is
-  ready; `hack/relay-watch.sh` starts it again when one is.
+  scripts, templates and docs.
+- **It can't** deploy, run Crews or `make e2e`.
 
 No issue needs the cluster: Go tests are the gate, and a Kind cluster runs only
 when a human asks for it (`THEOS_HUMAN_CLUSTER=1 hack/lib/github.sh cluster
@@ -188,11 +187,8 @@ To set one up:
    credential helper gives `hack/lib/github.sh` its token.
 2. Open a new terminal (the project shell), run `claude` once to log in, and
    check that `echo $THEOS_CLUSTER` prints `none`.
-3. `hack/relay.sh`, or `hack/relay-watch.sh` to keep it ready for new issues; the
-   logs are in `.relay/relay-1.log` and `.relay/watch.log`, `touch .relay/stop`
-   stops it.
 
-Opening the folder in VS Code, and `hack/relay-watch.sh` every 30 minutes, trim Go's build cache,
+Opening the folder in VS Code trims Go's build cache,
 oldest entries first, when it has grown past 4 GB (`hack/trim-go-cache.sh`, `THEOS_GOCACHE_MAX_GB`),
 on every device.
 
