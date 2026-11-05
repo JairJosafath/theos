@@ -1,5 +1,5 @@
-// The page: the shell's six areas (Needs you, Briefs, Story, Work, Factory and
-// About) and the object pages, with the sources each one watches. Only what is
+// The page: the shell's seven areas (Needs you, Loop, Briefs, Story, Work, Factory
+// and About) and the object pages, with the sources each one watches. Only what is
 // on screen watches the cluster.
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
@@ -10,6 +10,7 @@ import { StoryLine } from './components/StoryLine'
 import { ViewCaption } from './components/ViewCaption'
 import { FactoryPage } from './components/Factory'
 import { WarningIcon } from './components/icons'
+import { LoopArea } from './components/Loop'
 import { NeedsArea } from './components/Needs'
 import { FactoryArea, Shell } from './components/Shell'
 import { pageHref } from './components/objects/links'
@@ -111,6 +112,9 @@ const WORKING_KINDS = [
   RESOURCES.agents,
 ]
 
+/** The kinds the Loop area's stages read. */
+const LOOP_KINDS = [RESOURCES.briefs, RESOURCES.tasks, RESOURCES.containers, RESOURCES.crews]
+
 export default function App() {
   const [url, setUrl] = useUrlState()
   const demo = url.demo
@@ -142,10 +146,10 @@ export default function App() {
   // there if anything waits on a person, else goes to Story (the effect below).
   const area = url.area ?? 'needs'
   const objectPage = Boolean(url.kind && url.name)
-  // Story and Briefs show one project; Needs you, Work and Factory every one.
+  // Story, Briefs and Loop show one project; Needs you, Work and Factory every one.
   const factoryView = !objectPage && (area === 'work' || area === 'factory')
   const needsView = !objectPage && area === 'needs'
-  const storyView = objectPage ? Boolean(objectKind) : area === 'story' || area === 'briefs'
+  const storyView = objectPage ? Boolean(objectKind) : area === 'story' || area === 'briefs' || area === 'loop'
 
   // Only the area on screen watches the cluster.
   const storySource = useMemo<Source<StoryData>>(() => {
@@ -434,6 +438,24 @@ export default function App() {
             setUrl={setUrl}
             writer={CONTAINER_WRITER}
           />
+        ),
+        loop: noProjects ? (
+          <EmptyProjects />
+        ) : (
+          (projectsFailed ??
+          (namespace ? (
+            <LoopArea
+              data={data}
+              title={project ? titleOf(project) : namespace}
+              loaded={readOf(story.connection, ...LOOP_KINDS)}
+              problems={problemsOf(story.connection, ...LOOP_KINDS)}
+              setUrl={setUrl}
+            />
+          ) : (
+            <div className="placeholder" role="status">
+              Loading the projects…
+            </div>
+          )))
         ),
         briefs: noProjects ? (
           <EmptyProjects />

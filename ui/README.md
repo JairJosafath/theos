@@ -9,7 +9,7 @@ and pauses or resumes one ([docs/plans/done/upgrade-in-place.md](../docs/plans/d
 With actions on it takes a few more (_Actions_ below). design.md's _The UI:
 areas and object pages_ says what it shows and why.
 
-The top bar has six areas; the page opens on _Needs you_ when it has items,
+The top bar has seven areas; the page opens on _Needs you_ when it has items,
 else on _Story_:
 
 - **Needs you**, across all projects, grouped by project: what waits on a
@@ -22,6 +22,18 @@ else on _Story_:
   whose release run failed. Each item says why in the condition's own words,
   since when, and where it is done: the object's page, a link out, or a
   `kubectl` line to copy.
+- **Loop** of one project: its software-development cycle drawn from the
+  resources alone ([src/model/loop.ts](src/model/loop.ts)), read only. A ring
+  of ten stages with a count each, then the items of each, linked to their
+  object pages or out to the Git host: _Idea or bug_ (Briefs Pending or
+  Planning), _Triage_, _Spec_ (Tasks by `spec.kind` and phase), _Reviewing the
+  spec_ (a Spec Task `AwaitingApproval`; person), _Implement_, _Reviewing the
+  code_, _Verify_ (Implement Tasks by phase), _Reviewing the product_ (deploys
+  waiting for approval, the same logic as _Needs you_; person), _Ship_ (Crews
+  whose release run is Waiting or Running, deploys on their way) and _Monitor_
+  (degraded or failed deploys with the bug the monitor filed, and how many are
+  healthy). The two stages that wait on a person are drawn with a person's
+  icon and a dashed border.
 - **Briefs** of one project: a _Describe an app_ box that creates a Brief (an
   idea and a name, suggested from the idea, and optionally its autopilot mode
   and how many issues each of its crews works on at once), and a card per Brief with its

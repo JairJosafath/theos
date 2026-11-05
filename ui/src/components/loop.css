@@ -1,0 +1,211 @@
+/* The shell's Loop area (Loop.tsx). */
+
+.loop-ring {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  margin: 4px auto 18px;
+}
+
+.loop-edge {
+  stroke: var(--edge);
+  stroke-width: 1.5;
+}
+
+.loop-arrowhead {
+  fill: var(--edge);
+}
+
+.loop-node {
+  cursor: pointer;
+}
+
+.loop-node:focus-visible .loop-disc {
+  stroke: var(--link);
+  stroke-width: 3;
+}
+
+.loop-disc {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 2;
+}
+
+.loop-node-busy .loop-disc {
+  fill: var(--progress-bg);
+  stroke: var(--progress);
+}
+
+.loop-node-review .loop-disc {
+  stroke-dasharray: 5 4;
+}
+
+.loop-node-person .loop-disc {
+  fill: var(--waiting-bg);
+  stroke: var(--waiting);
+}
+
+.loop-node-problem .loop-disc {
+  fill: var(--error-bg);
+  stroke: var(--error);
+}
+
+.loop-person-icon {
+  fill: var(--surface);
+  stroke: var(--waiting);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.loop-count {
+  font-size: 18px;
+  font-weight: 650;
+  fill: var(--text);
+}
+
+.loop-node-idle .loop-count {
+  fill: var(--text-3);
+}
+
+.loop-label {
+  font-size: 12.5px;
+  font-weight: 550;
+  fill: var(--text-2);
+}
+
+.loop-centre {
+  font-size: 15px;
+  font-weight: 650;
+  fill: var(--text-2);
+}
+
+.loop-centre-sub {
+  font-size: 12px;
+  fill: var(--text-3);
+}
+
+.loop-stages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loop-stage {
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  scroll-margin-top: 12px;
+}
+
+.loop-stage-person {
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1px dashed var(--waiting);
+  border-radius: 12px;
+}
+
+.loop-stage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.loop-stage-number {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.loop-person-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--waiting);
+}
+
+.loop-stage-count {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.loop-stage-about {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.loop-none {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.loop-items {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loop-item {
+  padding: 8px 0 8px 12px;
+  border-left: 3px solid var(--border-strong);
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.loop-item-problem {
+  border-left-color: var(--error);
+}
+
+.loop-item-kind {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.loop-item-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.loop-item-title {
+  margin: 2px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.loop-item-problem .loop-item-title svg {
+  color: var(--error);
+  vertical-align: -2px;
+}
+
+.loop-item-detail {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.loop-item-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+  font-size: 13px;
+}

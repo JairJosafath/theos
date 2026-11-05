@@ -494,7 +494,7 @@ describe('deploys (#1163)', () => {
     const html = page('Container', 'orders-api')
     const t = text(html)
     expect(t).toContain('Where it ships')
-    expect(t).toContain('staging Deployed Healthy')
+    expect(t).toContain('staging Deployed Degraded')
     expect(html).toContain('href="https://github.com/webshop-co/orders-staging/releases/tag/v0.2.0"')
     expect(t).toContain('prod Waiting Healthy')
     expect(t).toContain('Runs v0.1.0 Wanted v0.2.0 After staging Approved v0.1.0')

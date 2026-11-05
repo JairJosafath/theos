@@ -199,11 +199,18 @@ export function demoStory(now: number): StoryData {
             version: 'v0.2.0',
             wantedVersion: 'v0.2.0',
             phase: 'Deployed',
-            health: 'Healthy',
+            health: 'Degraded',
             url: 'https://github.com/webshop-co/orders-staging/releases/tag/v0.2.0',
             reason: 'Deployed',
-            message: 'staging runs v0.2.0',
-            since: ago(2 * 3600),
+            message: 'staging runs v0.2.0, and its tool reports it Degraded',
+            since: ago(40 * 60),
+            // The monitor filed a bug in the Container's repository for this version.
+            issue: {
+              number: 19,
+              version: 'v0.2.0',
+              state: 'Degraded',
+              url: `${GITEA_WEB}/webshop/orders-api/issues/19`,
+            },
           },
           {
             target: 'prod',
@@ -582,6 +589,19 @@ export function demoStory(now: number): StoryData {
     }
   }
 
+  // A Task of the loop's kinds: the same shape as an issue Task, with its kind.
+  const loopTask = (
+    repo: string,
+    issue: number,
+    title: string,
+    createdMinutesAgo: number,
+    kind: NonNullable<Task['spec']['kind']> | undefined,
+    status: Task['status'],
+  ): Task => {
+    const t = issueTask(repo, issue, title, createdMinutesAgo, status)
+    return { ...t, spec: { ...t.spec, ...(kind ? { kind } : {}) } }
+  }
+
   const back = now + 38 * MIN
   const unavailable = `The agent is unavailable (usage limit reached); round 2 waits for it; trying again at ${new Date(back).toISOString().replace(/\.\d+Z$/, 'Z')}`
 
@@ -806,6 +826,41 @@ export function demoStory(now: number): StoryData {
         step(6, 'Implementing', 2, 'AgentUnavailable', unavailable),
       ],
     }),
+    // The loop's other stages (docs/plans/sdlc-loop.md): the bug the monitor filed is triaged, a spec is
+    // written and waits for a person, and two Implement Tasks are in review and in verification.
+    loopTask('orders-api', 19, 'Orders API runs v0.2.0 degraded at staging', 30, 'Triage', {
+      phase: 'Implementing',
+      round: 1,
+      conditions: [cond('Progressing', 'True', 'Triaging', 'The triager is reading the bug', at(5))],
+    }),
+    loopTask('orders-api', 20, 'Paginate the order list', 90, 'Spec', {
+      phase: 'Implementing',
+      round: 1,
+      conditions: [cond('Progressing', 'True', 'Writing', 'The agent is writing the spec', at(9))],
+    }),
+    loopTask('orders-api', 21, 'Let a customer cancel an unshipped order', 70, 'Spec', {
+      phase: 'AwaitingApproval',
+      round: 1,
+      summary: 'Cancel only while the order has not left the warehouse; refund through the payment provider.',
+      ...pr('orders-api', 9),
+      conditions: [
+        cond('Progressing', 'True', 'AwaitingApproval', 'The spec waits for a person to approve it', at(12)),
+      ],
+    }),
+    loopTask('orders-api', 22, 'Add a health endpoint', 50, undefined, {
+      phase: 'Reviewing',
+      round: 1,
+      checks: { state: 'success' },
+      ...pr('orders-api', 10),
+      conditions: [cond('Progressing', 'True', 'Reviewing', 'Checks passed; the review is running', at(4))],
+    }),
+    loopTask('orders-api', 23, 'Log a request id on every line', 45, 'Implement', {
+      phase: 'Verifying',
+      round: 1,
+      checks: { state: 'success' },
+      ...pr('orders-api', 11),
+      conditions: [cond('Progressing', 'True', 'Verifying', 'Merged; verifying the change before it ships', at(3))],
+    }),
     issueTask('orders-api', 15, 'Email the customer when an order ships', 25, {
       phase: 'Checking',
       round: 1,
@@ -932,6 +987,14 @@ export function demoStory(now: number): StoryData {
     crew('storefront', 'Storefront crew', true, {
       phase: 'Paused',
       ready: [2, 3],
+      // A tag pushed before the pause: its CI run is still going.
+      lastRelease: {
+        tag: 'v0.1.0',
+        commit: '5d8e2a71c3b4e5f60718293a4b5c6d7e8f90a1b2',
+        time: ago(8 * 60),
+        run: 'Running',
+        runURL: `${GITEA_WEB}/webshop/storefront/actions/runs/3`,
+      },
       lastPolled: ago(40),
       conditions: [cond('Ready', 'True', 'Paused', 'Paused; not picking up issues', ago(3600))],
     }),
