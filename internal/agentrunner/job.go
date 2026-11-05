@@ -59,6 +59,10 @@ const (
 	EnvResumed = "THEOS_RESUMED"
 	// EnvIssue is the number of the issue the goal comes from, if any.
 	EnvIssue = "THEOS_ISSUE"
+	// EnvSpecPath is the spec file of a Spec Task's issue, docs/specs/<issue>.md:
+	// its implement run writes the spec there and changes nothing else, and
+	// its review run reviews that spec.
+	EnvSpecPath = "THEOS_SPEC_PATH"
 	// EnvPullRequest is the number of the Task's open pull request, when an
 	// implement run's branch already has one.
 	EnvPullRequest = "THEOS_PULL_REQUEST"
@@ -134,6 +138,10 @@ type Job struct {
 	Resumed bool
 	// Issue is the issue the goal comes from; 0 for a written goal.
 	Issue int
+	// SpecPath is a Spec Task's spec file: the implement run writes the spec
+	// there and nothing else, and the review run reviews it. Empty for any
+	// other Task.
+	SpecPath string
 	// PullRequest is the open pull request of the branch an implement run
 	// works on; 0 when it has none yet. With one, a run that commits nothing
 	// is a round for the reviewer: it may have changed only the pull request.
@@ -189,6 +197,7 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		NpmToken:    getenv(EnvNpmToken),
 		PyPIIndex:   getenv(EnvPyPIIndex),
 		PyPIToken:   getenv(EnvPyPIToken),
+		SpecPath:    getenv(EnvSpecPath),
 
 		CheckpointDir: getenv(EnvCheckpointDir),
 		PodInfoDir:    PodInfoDir,
@@ -309,6 +318,10 @@ func (job *Job) check() error {
 	}
 	if job.Branch == job.Base {
 		return errors.New("the work branch must not be the base branch")
+	}
+	if job.SpecPath != "" && (job.Issue == 0 || job.SpecPath != model.SpecPath(job.Issue)) {
+		// A Spec Task writes its own issue's spec, there and nowhere else.
+		return fmt.Errorf("%s=%q is not the spec of %s=%d", EnvSpecPath, job.SpecPath, EnvIssue, job.Issue)
 	}
 	return nil
 }

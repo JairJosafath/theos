@@ -86,6 +86,10 @@ type Issue struct {
 	Prepare bool
 	// Labels are the issue's labels, which pick its Agents (Routes).
 	Labels []string
+	// Spec is set for an issue labelled status/needs-spec, read for a Crew
+	// with a spec writer: its Task writes the issue's spec, and it needs no
+	// acceptance criteria yet.
+	Spec bool
 }
 
 // Release is a milestone with a due date. A Crew works releases one at a time,
@@ -115,6 +119,9 @@ type CrewTask struct {
 	Release *Release
 	// Prepare means the Task's issue is a release's prepare issue.
 	Prepare bool
+	// Spec means a Spec Task: its tries and merge are the issue's spec's,
+	// apart from those of the Tasks that build it.
+	Spec bool
 }
 
 // IssueChange is a Standard change issue a Task filed, and the protected paths it
@@ -186,15 +193,19 @@ type IssueStart struct {
 	// Standard change issue a Task named.
 	AllowedPaths []string
 	// Implementer and Reviewer are the Agents a route gave the issue; empty
-	// for the Crew's own.
+	// for the Crew's own. A Spec Task's implementer is the Crew's spec writer.
 	Implementer, Reviewer string
+	// Spec means a Spec Task, for an issue labelled status/needs-spec.
+	Spec bool
 }
 
-// IssueRejection is a ready issue that agents must not take, and why: it goes
-// back to a person with status/needs-human.
+// IssueRejection is a ready issue, or one that needs a spec (Spec), that
+// agents must not take, and why: it goes back to a person with
+// status/needs-human.
 type IssueRejection struct {
 	Issue  int
 	Reason string
+	Spec   bool
 }
 
 // CrewStep is what a Crew does next, and what its status shows.
@@ -236,39 +247,18 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	allowances := map[int][]string{}
 	urgent := map[int]bool{}
 	prepare := map[int]bool{}
-	labels := map[int][]string{}
+	picked := map[int]Issue{}
 	for _, issue := range issues {
 		if working[issue.Number] {
 			// Taken a moment ago; its label changes when its Task starts.
 			continue
 		}
-		if reason := MissingAcceptanceCriteria(issue.Body); reason != "" {
-			step.NotReady = append(step.NotReady, IssueRejection{Issue: issue.Number, Reason: reason})
+		if rejection := rejectIssue(f.Tasks, issue); rejection != nil {
+			step.NotReady = append(step.NotReady, *rejection)
 			continue
-		}
-		var tried []string
-		merged := ""
-		for _, t := range f.Tasks {
-			if t.Issue != issue.Number || !t.Final {
-				continue
-			}
-			switch {
-			case !t.Failed:
-				merged = t.Name
-			case t.NoCI:
-				continue
-			}
-			tried = append(tried, t.Name)
 		}
 		allowance := standardAllowance(f.Tasks, issue)
 		switch {
-		case merged != "":
-			step.NotReady = append(step.NotReady, IssueRejection{Issue: issue.Number, Reason: fmt.Sprintf(
-				"Task %s already merged this issue; close it, or file the rest as a new issue", merged)})
-		case len(tried) >= MaxIssueAttempts:
-			step.NotReady = append(step.NotReady, IssueRejection{Issue: issue.Number, Reason: fmt.Sprintf(
-				"Agents tried this issue %d times (Tasks %s) and failed each time; it needs a person: split it, "+
-					"clarify it, or do it by hand", len(tried), strings.Join(tried, ", "))})
 		case len(issue.OpenBlockers) > 0, issue.StandardChange && len(allowance) == 0:
 			// A Standard change waits until a Task's status names it, so it never
 			// starts without its allowance.
@@ -278,7 +268,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			allowances[issue.Number] = allowance
 			urgent[issue.Number] = issue.Urgent
 			prepare[issue.Number] = issue.Prepare
-			labels[issue.Number] = issue.Labels
+			picked[issue.Number] = issue
 		}
 	}
 	// An urgent issue goes first: a person asked for it at once. Then a Standard
@@ -329,26 +319,81 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 			continue
 		}
 		others = true // started now, it merges before a prepare issue
-		attempt := 1
-		for _, t := range f.Tasks {
-			if t.Issue == issue {
-				attempt++
-			}
-		}
-		name := IssueTaskName(container, issue, attempt)
-		implementer, reviewer := RouteAgents(f.Routes, labels[issue])
-		step.Start = append(step.Start, IssueStart{Issue: issue, Task: name, Attempt: attempt,
-			AllowedPaths: allowances[issue], Implementer: implementer, Reviewer: reviewer})
-		kind := "issue"
-		if urgent[issue] {
-			kind = "urgent issue"
-		}
-		started = append(started, fmt.Sprintf("Task %s for %s #%d", name, kind, issue))
+		start, note := issueStart(container, f, picked[issue], allowances[issue])
+		step.Start = append(step.Start, start)
+		started = append(started, note)
 		free--
 	}
 
 	step.Phase, step.Message = crewProgress(step, started, activeIssues, held, onDependencies)
 	return step
+}
+
+// rejectIssue says why agents must not take issue, from the Crew's ended
+// Tasks on it, or returns nil: a ready issue has no acceptance criteria, a
+// Task merged it (or its spec) already, or MaxIssueAttempts Tasks failed at it,
+// not counting those CI never reported on. A spec's tries and merge count
+// apart from the build's.
+func rejectIssue(tasks []CrewTask, issue Issue) *IssueRejection {
+	if reason := MissingAcceptanceCriteria(issue.Body); reason != "" && !issue.Spec {
+		return &IssueRejection{Issue: issue.Number, Reason: reason}
+	}
+	var tried []string
+	merged := ""
+	for _, t := range tasks {
+		if t.Issue != issue.Number || !t.Final || t.Spec != issue.Spec {
+			continue
+		}
+		switch {
+		case !t.Failed:
+			merged = t.Name
+		case t.NoCI:
+			continue
+		}
+		tried = append(tried, t.Name)
+	}
+	what := "this issue"
+	if issue.Spec {
+		what = "this issue's spec"
+	}
+	switch {
+	case merged != "" && issue.Spec:
+		return &IssueRejection{Issue: issue.Number, Spec: true, Reason: fmt.Sprintf(
+			"Task %s already merged this issue's spec; label it %s to build it, or close it", merged, LabelReady)}
+	case merged != "":
+		return &IssueRejection{Issue: issue.Number, Reason: fmt.Sprintf(
+			"Task %s already merged this issue; close it, or file the rest as a new issue", merged)}
+	case len(tried) >= MaxIssueAttempts:
+		return &IssueRejection{Issue: issue.Number, Spec: issue.Spec, Reason: fmt.Sprintf(
+			"Agents tried %s %d times (Tasks %s) and failed each time; it needs a person: split it, clarify it, "+
+				"or do it by hand", what, len(tried), strings.Join(tried, ", "))}
+	}
+	return nil
+}
+
+// issueStart is the Task a Crew starts for issue, with allowance, and the
+// note its message gives it: the next try of its kind, a Spec Task for an
+// issue that needs a spec, on the Agents its routes give it (a Spec Task's
+// writer is the Crew's own).
+func issueStart(container string, f CrewFacts, issue Issue, allowance []string) (IssueStart, string) {
+	attempt := 1
+	for _, t := range f.Tasks {
+		if t.Issue == issue.Number && t.Spec == issue.Spec {
+			attempt++
+		}
+	}
+	start := IssueStart{Issue: issue.Number, Task: IssueTaskName(container, issue.Number, attempt), Attempt: attempt,
+		AllowedPaths: allowance, Spec: issue.Spec}
+	start.Implementer, start.Reviewer = RouteAgents(f.Routes, issue.Labels)
+	kind := "issue"
+	if issue.Urgent {
+		kind = "urgent issue"
+	}
+	if issue.Spec {
+		start.Task, start.Implementer = SpecTaskName(container, issue.Number, attempt), ""
+		kind = "the spec of " + kind
+	}
+	return start, fmt.Sprintf("Task %s for %s #%d", start.Task, kind, issue.Number)
 }
 
 // crewProgress is a Crew's phase and message after its step: what it starts,

@@ -60,3 +60,34 @@ func TestIssuesHandOutACopyOfTheLabels(t *testing.T) {
 		t.Errorf("the labels GetIssue returned changed to %v, want still %v (#1820)", got.Labels, want)
 	}
 }
+
+// The fake lists a pull request's reviews with who submitted each: the
+// operator's own, and a person's (docs/plans/sdlc-loop.md, step 3).
+func TestPullRequestReviews(t *testing.T) {
+	git := fake.New()
+	repo := ports.Repository{Owner: "tools", Name: "cel-lens"}
+	ctx := context.Background()
+	agent := git.For(ports.Config{Credentials: ports.Credentials{Username: "tools-cel-lens-agent"}})
+	operator := git.For(ports.Config{Credentials: ports.Credentials{Username: "theos"}})
+	git.PushBranchHead(repo.Owner, repo.Name, "task/x", "sha-1")
+	pr, err := agent.OpenPullRequest(ctx, repo, "task/x", ports.DefaultBranch, "Spec: x", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := operator.ReviewPullRequest(ctx, repo, pr.Number, "sha-1", ports.ReviewApprove, "Fine."); err != nil {
+		t.Fatal(err)
+	}
+	git.AddReview(repo.Owner, repo.Name, pr.Number, fake.Review{User: "ada", Event: ports.ReviewApprove,
+		Commit: "sha-1", Body: "Agreed."})
+	got, err := operator.PullRequestReviews(ctx, repo, pr.Number)
+	want := []ports.PullReview{
+		{User: "theos", State: ports.ReviewApprove, Commit: "sha-1", Body: "Fine."},
+		{User: "ada", State: ports.ReviewApprove, Commit: "sha-1", Body: "Agreed."},
+	}
+	if err != nil || !slices.Equal(got, want) {
+		t.Errorf("PullRequestReviews() = %+v, %v; want %+v", got, err, want)
+	}
+	if _, err := operator.PullRequestReviews(ctx, repo, pr.Number+1); err == nil {
+		t.Error("PullRequestReviews() of a missing pull request: no error")
+	}
+}

@@ -457,3 +457,49 @@ func (g *gitea) ReviewPullRequest(ctx context.Context, repo ports.Repository, nu
 	}
 	return nil
 }
+
+// giteaReview is a pull request review as Gitea's API lists it.
+type giteaReview struct {
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	State     string `json:"state"`
+	CommitID  string `json:"commit_id"`
+	Body      string `json:"body"`
+	Stale     bool   `json:"stale"`
+	Dismissed bool   `json:"dismissed"`
+}
+
+// PullRequestReviews lists the reviews submitted on a pull request, oldest
+// first. Gitea lists a draft as PENDING and a review asked of someone as
+// REQUEST_REVIEW; neither is submitted, so both are left out.
+func (g *gitea) PullRequestReviews(ctx context.Context, repo ports.Repository, number int) ([]ports.PullReview, error) {
+	var out []ports.PullReview
+	for page := 1; page <= maxIssuePages; page++ {
+		status, data, err := g.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/repos/%s/pulls/%d/reviews?page=%d&limit=%d",
+			repoPath(repo), number, page, issuePageSize), nil)
+		if err != nil {
+			return nil, err
+		}
+		if status == http.StatusNotFound {
+			return nil, fmt.Errorf("gitea: reviews of pull request %d of %s: %w", number, repoPath(repo),
+				ports.ErrPullRequestNotFound)
+		}
+		var reviews []giteaReview
+		if status != http.StatusOK || json.Unmarshal(data, &reviews) != nil {
+			return nil, fmt.Errorf("gitea: listing the reviews of pull request %d of %s failed (HTTP %d): %s",
+				number, repoPath(repo), status, apiMessage(data))
+		}
+		for _, r := range reviews {
+			if r.State != ports.ReviewApprove && r.State != ports.ReviewRequestChanges && r.State != ports.ReviewComment {
+				continue
+			}
+			out = append(out, ports.PullReview{User: r.User.Login, State: r.State, Commit: r.CommitID, Body: r.Body,
+				Stale: r.Stale, Dismissed: r.Dismissed})
+		}
+		if len(reviews) < issuePageSize {
+			break
+		}
+	}
+	return out, nil
+}

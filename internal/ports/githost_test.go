@@ -18,3 +18,13 @@ func TestSameHost(t *testing.T) {
 		}
 	}
 }
+
+func TestFileURL(t *testing.T) {
+	for _, web := range []string{"http://gitea:3000/webshop/orders-api", "http://gitea:3000/webshop/orders-api/"} {
+		repo := Repository{WebURL: web}
+		if got, want := repo.FileURL("docs/specs/12.md"),
+			"http://gitea:3000/webshop/orders-api/src/branch/main/docs/specs/12.md"; got != want {
+			t.Errorf("FileURL() of %q = %q, want %q", web, got, want)
+		}
+	}
+}

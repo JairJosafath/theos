@@ -361,7 +361,7 @@ func run(ctx context.Context, job Job, agent Agent, dir string, prog *runProgres
 	if job.Role == RolePlan {
 		return plan(ctx, job, agent, r, prog, result)
 	}
-	ws := Workspace{Guide: r.showBase(ctx, job.Base, roleGuides[job.Role]), Conflicts: r.conflicts}
+	ws := Workspace{Guide: r.showBase(ctx, job.Base, roleGuides[guideFor(job)]), Conflicts: r.conflicts}
 	ws.Related = cloneRelated(ctx, job, filepath.Join(filepath.Dir(dir), "related"))
 	if job.Role == RoleReview {
 		return review(ctx, job, agent, r, ws, prog, result)
@@ -383,7 +383,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		summary = prog.from.Summary
 	} else {
 		var err error
-		if summary, err = prog.session(ctx, agent, r.dir, ImplementPrompt(job, ws)); err != nil {
+		if summary, err = prog.session(ctx, agent, r.dir, implementPrompt(job, ws)); err != nil {
 			result.Summary = summary
 			return agentFailed(result, err)
 		}
@@ -434,6 +434,11 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	}
 	if empty {
 		result.Empty = true
+		return result
+	}
+	if refusal := specScope(job, changed); refusal != "" {
+		// A spec changes its spec file alone: nothing else is pushed.
+		result.Error = refusal
 		return result
 	}
 	split := model.SplitChange(changed, protectedList(job), job.AllowedPaths, job.Issue > 0)
@@ -660,7 +665,7 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 		result.Error = err.Error()
 		return result
 	}
-	output, err := prog.session(ctx, agent, r.dir, ReviewPrompt(job, ws))
+	output, err := prog.session(ctx, agent, r.dir, reviewPrompt(job, ws))
 	if err != nil {
 		return agentFailed(result, err)
 	}

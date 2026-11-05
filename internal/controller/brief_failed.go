@@ -87,7 +87,9 @@ func failedRelease(ctx context.Context, provider interface {
 func issueTasks(tasks []c4v1beta1.Task) map[string][]model.IssueTask {
 	out := map[string][]model.IssueTask{}
 	for _, t := range tasks {
-		if t.Spec.Issue == 0 || t.Spec.ContainerRef.Name == "" || t.Spec.Kind == c4v1beta1.TaskTriage {
+		if t.Spec.Issue == 0 || t.Spec.ContainerRef.Name == "" || t.Spec.Kind == c4v1beta1.TaskTriage ||
+			isSpec(&t) && t.Status.Phase == c4v1beta1.TaskMerged {
+			// A merged spec leaves its issue to be built: it merged no issue.
 			continue
 		}
 		it := model.IssueTask{Name: t.Name, Issue: int(t.Spec.Issue), Merged: t.Status.Phase == c4v1beta1.TaskMerged,

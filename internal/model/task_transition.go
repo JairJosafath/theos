@@ -282,6 +282,18 @@ func ReviewAgain(p TaskProgress) TaskProgress {
 	return p
 }
 
+// AwaitApproval is the progress of a Spec Task whose reviewer approved its
+// spec: it waits for its review point, in the same round.
+func AwaitApproval(p TaskProgress) TaskProgress {
+	p.Phase = TaskAwaitingApproval
+	return p
+}
+
+// SpecDeclined fails a Spec Task whose pull request a person closed unmerged.
+func SpecDeclined(pullURL string) TaskEnd {
+	return TaskEnd{Phase: TaskFailed, Reason: ReasonSpecDeclined, Message: SpecDeclinedMessage(pullURL)}
+}
+
 // UpdatedBranch is the progress of an approved Task whose branch took in main
 // at head, as main had moved since its checks ran: it waits for head's checks,
 // and merges once they pass, in the same round and with no new review.

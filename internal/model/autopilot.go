@@ -52,7 +52,9 @@ const (
 	StageImplement = "implement"
 	StageChecks    = "checks"
 	StageReview    = "review"
-	StageBlocked   = "blocked"
+	// StageApproval is a spec waiting for a person to approve it.
+	StageApproval = "approval"
+	StageBlocked  = "blocked"
 )
 
 // StuckAfter is how long a Task may stay in a stage before the Factory view
@@ -63,6 +65,7 @@ var StuckAfter = map[string]time.Duration{
 	StageImplement: 2 * time.Hour,
 	StageChecks:    30 * time.Minute,
 	StageReview:    time.Hour,
+	StageApproval:  24 * time.Hour,
 	StageBlocked:   24 * time.Hour,
 }
 
@@ -332,6 +335,13 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 			fmt.Sprintf("Task `%s` has waited %s for main to turn green.", t.Name, waited),
 			"Fix main's checks, or revert the change that broke them.",
 			sentence(t.Message, "round 1 starts only on a green base"), t.Since}
+	case t.Reason == ReasonAwaitingApproval:
+		// A spec's review point: only a person approves it (docs/plans/sdlc-loop.md).
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` waits for you to approve its spec: %s", t.Name, sentence(t.Message,
+				"its pull request passed CI and the reviewer")),
+			"Approve the spec's pull request on the Git host, ask for changes there, or close it to decline the spec.",
+			"A spec merges, and its issue is built, only once a person approved it.", t.Since}
 	case t.Reason == ReasonOverBudget:
 		// Nothing heals a cost cap: only a person raises it (#1893).
 		return nil, &NeedsYou{AttentionTask, t.Name,

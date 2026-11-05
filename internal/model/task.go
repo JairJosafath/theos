@@ -17,6 +17,9 @@ const (
 	TaskImplementing = "Implementing"
 	TaskChecking     = "Checking"
 	TaskReviewing    = "Reviewing"
+	// TaskAwaitingApproval is a Spec Task whose spec passed CI and the
+	// reviewer, waiting for a person to approve its pull request.
+	TaskAwaitingApproval = "AwaitingApproval"
 	// TaskBlocked waits for a Standard change that the Task's change needs.
 	TaskBlocked = "Blocked"
 	TaskMerged  = "Merged"
@@ -441,6 +444,28 @@ type TaskFacts struct {
 	// the operator applies. It has no protection, queue, CI or review, and no
 	// second round: a failed run fails the Task, and its Crew tries again.
 	Triage bool
+	// Spec means a Spec Task: the implement flow writes the issue's spec, and
+	// an approved spec waits for its review point (AwaitingApproval) before it
+	// merges. SpecApproval is who approves it: SpecApprovalPerson (also when
+	// empty) or SpecApprovalReviewer.
+	Spec         bool
+	SpecApproval string
+	// SpecRefusal says why the round's spec can't go to review (SpecRefusal),
+	// read once its checks passed; empty when it can.
+	SpecRefusal string
+	// SpecPull is the spec's pull request and what people said of it, read
+	// while the Task is AwaitingApproval.
+	SpecPull SpecPullFacts
+}
+
+// SpecPullFacts is a spec's pull request while it waits for its approval:
+// merged or closed on the Git host, moved past the reviewed commit, and what
+// people other than the factory's accounts said of that commit.
+type SpecPullFacts struct {
+	Merged    bool
+	Closed    bool
+	HeadMoved bool
+	People    PersonVerdict
 }
 
 // ChangeFacts is a Standard change a Task filed.
@@ -1118,7 +1143,13 @@ const (
 	// ActionTriaged applies a triager's decision to its issue and ends the
 	// Triage Task.
 	ActionTriaged TaskAction = "Triaged"
-	ActionFail    TaskAction = "Fail"
+	// ActionAwaitApproval posts the reviewer's approval of a spec and has it
+	// wait for a person's (AwaitingApproval).
+	ActionAwaitApproval TaskAction = "AwaitApproval"
+	// ActionSpecDeclined fails a Spec Task whose pull request a person closed
+	// unmerged, and hands its issue back.
+	ActionSpecDeclined TaskAction = "SpecDeclined"
+	ActionFail         TaskAction = "Fail"
 )
 
 // TaskStep is the next action, with the feedback for the next round when the
@@ -1264,13 +1295,7 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		}
 		switch f.Checks {
 		case checkSuccess:
-			switch {
-			case f.MergeWhenChecksPass && f.ApprovalEnded:
-				return reviewAgainStep(f, "with main merged in")
-			case f.MergeWhenChecksPass:
-				return approvedStep(f, "Checks passed on the branch with main merged in; merging")
-			}
-			return TaskStep{Action: ActionStartReview, Message: "Checks passed; starting the review"}
+			return checksPassedStep(f)
 		case checkFailure, checkError:
 			if RunnerOutOfSpace(f.ChecksLog) {
 				return TaskStep{Action: ActionFail, Reason: ReasonRunnerOutOfSpace, Message: fmt.Sprintf(
@@ -1308,6 +1333,9 @@ func nextTaskStep(f TaskFacts) TaskStep {
 
 	case TaskReviewing:
 		return reviewingStep(f)
+
+	case TaskAwaitingApproval:
+		return awaitingApprovalStep(f)
 	}
 	return TaskStep{Action: ActionNone}
 }
@@ -1556,9 +1584,66 @@ func reviewingStep(f TaskFacts) TaskStep {
 		return noVerdictStep(f)
 	}
 	if f.Run.Result.Verdict == VerdictApprove {
+		if f.Spec && f.SpecApproval != SpecApprovalReviewer {
+			return TaskStep{Action: ActionAwaitApproval,
+				Message: "The reviewer approved the spec; it waits for a person to approve its pull request"}
+		}
 		return approvedStep(f, "Approved; merging")
 	}
 	return roundFailed(f, "The reviewer asked for changes:\n"+f.Run.Result.Summary)
+}
+
+// checksPassedStep decides what follows a round's passed checks: the merge
+// of an approved change whose branch took in main (or its review again, when
+// the approval ran out), a spec's refusal, else the review.
+func checksPassedStep(f TaskFacts) TaskStep {
+	switch {
+	case f.MergeWhenChecksPass && f.ApprovalEnded:
+		return reviewAgainStep(f, "with main merged in")
+	case f.MergeWhenChecksPass:
+		return approvedStep(f, "Checks passed on the branch with main merged in; merging")
+	case f.Spec && f.SpecRefusal != "":
+		return specRefusedStep(f)
+	}
+	return TaskStep{Action: ActionStartReview, Message: "Checks passed; starting the review"}
+}
+
+// specRefusedStep sends back a spec round whose pull request can't go to
+// review (TaskFacts.SpecRefusal). A round that changed files beside its spec
+// after one turned back for that stops the Task, as for any scope refusal.
+func specRefusedStep(f TaskFacts) TaskStep {
+	if IsScopeRefusal(f.SpecRefusal) && IsScopeRefusal(f.Feedback) {
+		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Feedback: f.SpecRefusal,
+			Message: ScopeBlockedMessage(f.SpecRefusal)}
+	}
+	return roundFailed(f, f.SpecRefusal)
+}
+
+// awaitingApprovalStep decides what follows for a spec waiting for its
+// review point: a pull request a person merged ends the Task as merged, one
+// closed unmerged declines the spec, and a branch that moved is checked and
+// reviewed again (ActionMerge reads all three on the Git host). Otherwise a
+// person's request for changes starts the next round with it, and a person's
+// approval, or the reviewer's when the Crew says it is enough, merges it.
+func awaitingApprovalStep(f TaskFacts) TaskStep {
+	pull := f.SpecPull
+	switch {
+	case pull.Merged:
+		return TaskStep{Action: ActionMerge, Message: "A person merged the spec's pull request"}
+	case pull.Closed:
+		return TaskStep{Action: ActionSpecDeclined, Reason: ReasonSpecDeclined, Message: "The spec was declined"}
+	case pull.HeadMoved:
+		return TaskStep{Action: ActionMerge, Message: "The spec's branch moved after the review; checking it again"}
+	case f.SpecApproval == SpecApprovalReviewer:
+		return approvedStep(f, "The reviewer's approval is enough for the spec; merging")
+	case pull.People.ChangesBy != "":
+		return roundFailed(f, fmt.Sprintf("%s asked for changes to the spec on its pull request:\n%s",
+			pull.People.ChangesBy, orUnknown(pull.People.Changes)))
+	case pull.People.ApprovedBy != "":
+		return approvedStep(f, pull.People.ApprovedBy+" approved the spec; merging")
+	}
+	return TaskStep{Action: ActionWait, Recheck: true, Reason: ReasonAwaitingApproval,
+		Message: "The spec waits for a person to approve its pull request"}
 }
 
 // ConflictStep sends an approved change that conflicts with main back to its

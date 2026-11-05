@@ -108,7 +108,7 @@ func (r *TaskReconciler) abandonedPullFacts(ctx context.Context, task *c4v1beta1
 	}
 	for _, t := range tasks.Items {
 		if t.Spec.ContainerRef.Name != container.Name || t.Spec.Issue != task.Spec.Issue ||
-			t.Spec.Kind == c4v1beta1.TaskPlan || t.Spec.Kind == c4v1beta1.TaskTriage {
+			t.Spec.Kind == c4v1beta1.TaskPlan || t.Spec.Kind == c4v1beta1.TaskTriage || !sameKind(&t, task) {
 			continue
 		}
 		if t.Name == task.Name {

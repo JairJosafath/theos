@@ -175,6 +175,24 @@ const (
 	ReviewComment        = "COMMENT"
 )
 
+// PullReview is a review submitted on a pull request: who submitted it, its
+// state (ReviewApprove, ReviewRequestChanges or ReviewComment), the commit it
+// reviewed and what it says. Stale means the branch moved past Commit since,
+// and Dismissed that someone dismissed it; neither counts any more.
+type PullReview struct {
+	User      string
+	State     string
+	Commit    string
+	Body      string
+	Stale     bool
+	Dismissed bool
+}
+
+// FileURL is the address of path on r's default branch, as the host shows it.
+func (r Repository) FileURL(path string) string {
+	return strings.TrimSuffix(r.WebURL, "/") + "/src/branch/" + DefaultBranch + "/" + strings.TrimPrefix(path, "/")
+}
+
 // SourceMode is how git stores a file, as its tree entry's mode.
 type SourceMode string
 
@@ -323,6 +341,10 @@ type GitHost interface {
 	// ReviewPullRequest posts a review of commit: ReviewApprove,
 	// ReviewRequestChanges or ReviewComment, with body.
 	ReviewPullRequest(ctx context.Context, repo Repository, number int, commit, event, body string) error
+	// PullRequestReviews lists the reviews submitted on a pull request, oldest
+	// first, with who submitted each: pending drafts and requests for a review
+	// are left out.
+	PullRequestReviews(ctx context.Context, repo Repository, number int) ([]PullReview, error)
 	// DeleteBranch deletes branch; a branch already gone is no error.
 	DeleteBranch(ctx context.Context, repo Repository, branch string) error
 	// HasBranch reports whether repo has branch.

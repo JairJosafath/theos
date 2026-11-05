@@ -779,7 +779,8 @@ spec:
           implement it on a branch, opens a pull request, waits for CI, runs the Agent
           again as reviewer, and merges when both pass. It is owned by its Container. A
           Plan Task is a planning round of a Brief, owned by the Brief. A Triage Task
-          runs a triager on one proposed issue and applies what it decided.
+          runs a triager on one proposed issue and applies what it decided. A Spec
+          Task writes an issue's spec in a pull request that a person approves.
         properties:
           apiVersion:
             description: |-
@@ -892,13 +893,16 @@ spec:
                 default: Implement
                 description: |-
                   kind is Implement (the default): implement the goal in the Container's
-                  repository; Plan: plan a round of the Brief named by briefRef; or Triage:
+                  repository; Plan: plan a round of the Brief named by briefRef; Triage:
                   decide what the issue needs next, which the operator then applies to the
-                  issue. It can't change.
+                  issue; or Spec: write the issue's spec, docs/specs/<issue>.md, which
+                  merges after its review point and gives the issue its acceptance
+                  criteria. It can't change.
                 enum:
                 - Implement
                 - Plan
                 - Triage
+                - Spec
                 type: string
               reviewerRef:
                 description: |-
@@ -935,6 +939,9 @@ spec:
               rule: '!has(self.kind) || self.kind != ''Triage'' || has(self.issue)'
             - message: a Triage Task has no reviewerRef and no allowedProtectedPaths
               rule: '!has(self.kind) || self.kind != ''Triage'' || (!has(self.reviewerRef)
+                && !has(self.allowedProtectedPaths))'
+            - message: a Spec Task needs an issue and has no allowedProtectedPaths
+              rule: '!has(self.kind) || self.kind != ''Spec'' || (has(self.issue)
                 && !has(self.allowedProtectedPaths))'
             - message: containerRef and briefRef are immutable; create a new Task
               rule: has(self.containerRef) == has(oldSelf.containerRef) && has(self.briefRef)
@@ -1009,7 +1016,9 @@ spec:
                 format: date-time
                 type: string
               conditions:
-                description: 'conditions: Progressing and Succeeded.'
+                description: |-
+                  conditions: Progressing and Succeeded, and NeedsYou while a Spec Task's
+                  spec waits for a person's approval.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -1123,6 +1132,7 @@ spec:
                       - Implementing
                       - Checking
                       - Reviewing
+                      - AwaitingApproval
                       - Blocked
                       - Merged
                       - Failed
@@ -1170,12 +1180,14 @@ spec:
               phase:
                 description: |-
                   phase is Pending, then Implementing, Checking and Reviewing each round, then
-                  Merged or Failed. Blocked means the Task waits for a Standard change.
+                  Merged or Failed. Blocked means the Task waits for a Standard change, and
+                  AwaitingApproval a Spec Task's spec for a person's approval.
                 enum:
                 - Pending
                 - Implementing
                 - Checking
                 - Reviewing
+                - AwaitingApproval
                 - Blocked
                 - Merged
                 - Failed
@@ -1364,6 +1376,45 @@ spec:
                   longest waiter gets the next one.
                 format: date-time
                 type: string
+              spec:
+                description: |-
+                  spec is a Spec Task's spec: its file, who approved it, and what the
+                  operator did to the issue once it merged.
+                properties:
+                  applied:
+                    description: applied says what the operator did to the issue once
+                      the spec merged.
+                    maxLength: 1024
+                    type: string
+                  approval:
+                    description: 'approval is who the spec waits for: Person or Reviewer.'
+                    enum:
+                    - Person
+                    - Reviewer
+                    type: string
+                  approvedBy:
+                    description: |-
+                      approvedBy is the Git host user who approved the pull request, once a
+                      person did; empty when the reviewer's approval was enough.
+                    maxLength: 256
+                    type: string
+                  criteria:
+                    description: |-
+                      criteria are the spec's acceptance criteria, copied into the issue's
+                      description once the spec merged.
+                    items:
+                      maxLength: 512
+                      type: string
+                    maxItems: 20
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  path:
+                    description: path is the spec's file, docs/specs/<issue>.md.
+                    maxLength: 256
+                    type: string
+                required:
+                - path
+                type: object
               standardChange:
                 description: |-
                   standardChange is the Standard change the Task filed last: the one it

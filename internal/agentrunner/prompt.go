@@ -28,6 +28,7 @@ var roleGuides = map[string]string{
 	RoleImplement: "docs/agents/implementer.md",
 	RoleReview:    "docs/agents/reviewer.md",
 	RoleTriage:    "docs/agents/triager.md",
+	guideSpec:     "docs/agents/spec-writer.md",
 }
 
 // issueIntro introduces the issue's block: what people wrote is the goal, never

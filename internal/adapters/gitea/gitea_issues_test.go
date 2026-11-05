@@ -35,8 +35,10 @@ type issueHost struct {
 	milestonePages int
 	issues         map[int]*hostIssue
 	reviews        []map[string]string
-	comments       map[int][]string
-	depPosts       []map[string]any
+	// listedReviews are the reviews of pull request 4, as Gitea lists them.
+	listedReviews []map[string]any
+	comments      map[int][]string
+	depPosts      []map[string]any
 	// tags maps a tag to the commit it names; tagPosts are the create requests.
 	tags     map[string]string
 	tagPosts []map[string]string
@@ -254,6 +256,16 @@ func newIssueHost(t *testing.T) (*issueHost, ports.Provider) {
 		d.Repository.FullName = owner + "/" + name
 		i.deps = append(i.deps, d)
 		reply(w, http.StatusCreated, i.giteaIssue)
+	})
+	mux.HandleFunc("GET "+repo+"/pulls/{n}/reviews", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("n") != "4" {
+			reply(w, http.StatusNotFound, map[string]string{"message": "no pull request"})
+			return
+		}
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		from, to := min((page-1)*limit, len(h.listedReviews)), min(page*limit, len(h.listedReviews))
+		reply(w, http.StatusOK, h.listedReviews[from:to])
 	})
 	mux.HandleFunc("POST "+repo+"/pulls/{n}/reviews", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
@@ -683,6 +695,48 @@ func TestReviewPullRequest(t *testing.T) {
 	want := []map[string]string{{"event": "REQUEST_CHANGES", "body": "Test it", "commit_id": "abc", "pull": "4"}}
 	if err != nil || !reflect.DeepEqual(h.reviews, want) {
 		t.Errorf("ReviewPullRequest() = %v, reviews %v", err, h.reviews)
+	}
+}
+
+func TestPullRequestReviews(t *testing.T) {
+	h, p := newIssueHost(t)
+	review := func(login, state, commit string, stale, dismissed bool) map[string]any {
+		return map[string]any{"id": 1, "user": map[string]any{"login": login}, "state": state, "commit_id": commit,
+			"body": "Looks right.", "stale": stale, "dismissed": dismissed}
+	}
+	h.listedReviews = []map[string]any{
+		review("theos", "APPROVED", "abc", false, false),
+		review("ada", "PENDING", "abc", false, false),
+		review("ada", "REQUEST_REVIEW", "", false, false),
+		review("ada", "REQUEST_CHANGES", "old", true, false),
+		review("grace", "APPROVED", "abc", false, true),
+	}
+	// A second page, so the list is read past the first.
+	for range issuePageSize {
+		h.listedReviews = append(h.listedReviews, review("bot", "COMMENT", "abc", false, false))
+	}
+	h.listedReviews = append(h.listedReviews, review("ada", "APPROVED", "abc", false, false))
+	got, err := p.PullRequestReviews(context.Background(), p.Repository("orders-api"), 4)
+	if err != nil {
+		t.Fatalf("PullRequestReviews() error = %v", err)
+	}
+	if n := len(got); n != 3+issuePageSize+1 {
+		t.Fatalf("PullRequestReviews() = %d reviews, want the %d submitted ones", n, 3+issuePageSize+1)
+	}
+	want := []ports.PullReview{
+		{User: "theos", State: ports.ReviewApprove, Commit: "abc", Body: "Looks right."},
+		{User: "ada", State: ports.ReviewRequestChanges, Commit: "old", Body: "Looks right.", Stale: true},
+		{User: "grace", State: ports.ReviewApprove, Commit: "abc", Body: "Looks right.", Dismissed: true},
+	}
+	if !reflect.DeepEqual(got[:3], want) {
+		t.Errorf("PullRequestReviews()[:3] = %+v, want %+v", got[:3], want)
+	}
+	if last := got[len(got)-1]; last.User != "ada" || last.State != ports.ReviewApprove {
+		t.Errorf("PullRequestReviews() last = %+v, want ada's approval", last)
+	}
+	if _, err := p.PullRequestReviews(context.Background(), p.Repository("orders-api"), 5); !errors.Is(err,
+		ports.ErrPullRequestNotFound) {
+		t.Errorf("PullRequestReviews() of a missing pull request error = %v, want ErrPullRequestNotFound", err)
 	}
 }
 

@@ -273,6 +273,19 @@ function taskNeeds(task: Task, input: NeedsInput): Need[] {
       },
     ]
   }
+  if (s?.phase === 'AwaitingApproval' && findCondition(s.conditions, 'NeedsYou')?.status === 'True') {
+    return [
+      {
+        ...base('Task', task, 'AwaitingApproval'),
+        title: 'waits for you to approve its spec',
+        ...why(findCondition(s.conditions, 'NeedsYou'), 'WaitingForApproval'),
+        place,
+        links: s.pullRequestURL
+          ? [{ label: `The spec's pull request #${s.pullRequest ?? ''}`, url: s.pullRequestURL }]
+          : [],
+      },
+    ]
+  }
   if (s?.phase === 'Failed') {
     if (failureAnswered(task, time(s.completedAt) ?? 0, input.tasks, input.briefs)) return []
     const links = []

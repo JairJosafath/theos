@@ -18,6 +18,7 @@ import (
 // pick up ready issues.
 // +kubebuilder:validation:XValidation:rule="!has(self.publishReleases) || (has(self.tagReleases) && self.tagReleases)",message="publishReleases needs tagReleases: only a release the Crew tagged is published"
 // +kubebuilder:validation:XValidation:rule="!has(self.pauseRuns) || !self.pauseRuns || (has(self.paused) && self.paused)",message="pauseRuns needs paused: a Crew pauses its running Tasks only while it picks up no new issue"
+// +kubebuilder:validation:XValidation:rule="!has(self.specApproval) || has(self.specWriter)",message="specApproval needs specWriter"
 type CrewSpec struct {
 	// containerRef names the Container whose repository's issues the Crew works
 	// on. It can't change.
@@ -52,6 +53,24 @@ type CrewSpec struct {
 	// from parallel. Unset, people triage.
 	// +optional
 	Triager *LocalRef `json:"triager,omitempty"`
+
+	// specWriter names the Agent that writes the specs of the Container's
+	// issues labelled status/needs-spec: the Crew starts a Spec Task for each
+	// as it starts an Implement Task for a ready issue, within parallel and
+	// with the same tries. The agent writes docs/specs/<issue>.md in a pull
+	// request; once CI and the reviewer pass it and specApproval is met, the
+	// operator merges it, copies its acceptance criteria into the issue and
+	// labels the issue status/ready (docs/design.md, "Spec"). Unset, people
+	// write specs.
+	// +optional
+	SpecWriter *LocalRef `json:"specWriter,omitempty"`
+
+	// specApproval is who approves a spec's pull request before it merges:
+	// Person, a person other than the factory's own accounts on the Git host;
+	// or Reviewer, the reviewer Agent's approval alone, for a factory no person
+	// watches. Unset means Person. It needs specWriter.
+	// +optional
+	SpecApproval SpecApproval `json:"specApproval,omitempty"`
 
 	// paused stops the Crew from picking up new issues. A Task already started
 	// runs to its end.

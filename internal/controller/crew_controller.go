@@ -217,7 +217,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		repo = provider.Repository(container.Name)
 		gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-		err = readIssues(gitCtx, provider, repo, &facts, &triage)
+		err = readIssues(gitCtx, provider, repo, crew.Spec.SpecWriter != nil, &facts, &triage)
 		cancel()
 		if err != nil {
 			log.Error(err, "Failed to read the ready issues", "container", container.Name)
@@ -236,49 +236,17 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 	step := model.NextCrewStep(container.Name, facts)
 	if len(step.NotReady) > 0 {
-		gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-		for _, n := range step.NotReady {
-			notes := []error{
-				provider.AddIssueLabel(gitCtx, repo, n.Issue, model.LabelNeedsHuman),
-				// The exclusive scope drops it too, but not where the labels came
-				// over non-exclusive from a migration (#2039).
-				provider.RemoveIssueLabel(gitCtx, repo, n.Issue, model.LabelReady),
-				provider.CommentIssue(gitCtx, repo, n.Issue, n.Reason),
-			}
-			for _, err := range notes {
-				if err != nil {
-					log.Error(err, "Failed to hand an issue back", "issue", n.Issue)
-				}
-			}
-		}
-		cancel()
+		handBackIssues(ctx, provider, repo, step.NotReady)
 	}
 	status.ActiveTasks = slices.Clone(step.Active)
 	for _, s := range step.Start {
-		implementer, reviewer := crew.Spec.Implementer.Name, crew.Spec.Reviewer.Name
-		if s.Implementer != "" {
-			implementer = s.Implementer
-		}
-		if s.Reviewer != "" {
-			reviewer = s.Reviewer
-		}
-		task := &c4v1beta1.Task{
-			ObjectMeta: metav1.ObjectMeta{Namespace: crew.Namespace, Name: s.Task, Labels: map[string]string{
-				LabelCrew: crew.Name, LabelIssue: strconv.Itoa(s.Issue)}},
-			Spec: c4v1beta1.TaskSpec{
-				ContainerRef: c4v1beta1.LocalRef{Name: container.Name},
-				AgentRef:     c4v1beta1.LocalRef{Name: implementer},
-				ReviewerRef:  &c4v1beta1.LocalRef{Name: reviewer},
-				Issue:        int32(s.Issue),
-				// Set only for a Standard change, from the Task that filed it.
-				AllowedProtectedPaths: s.AllowedPaths,
-			},
-		}
+		task := crewIssueTask(&crew, &container, s)
 		if err := r.Create(ctx, task); err != nil && !apierrors.IsAlreadyExists(err) {
 			return ctrl.Result{}, err
 		}
-		log.Info("Started Task for issue", "task", s.Task, "issue", s.Issue, "attempt", s.Attempt,
-			"allowedPaths", s.AllowedPaths, "implementer", implementer, "reviewer", reviewer)
+		log.Info("Started Task for issue", "task", s.Task, "issue", s.Issue, "attempt", s.Attempt, "spec", s.Spec,
+			"allowedPaths", s.AllowedPaths, "implementer", task.Spec.AgentRef.Name,
+			"reviewer", task.Spec.ReviewerRef.Name)
 		status.ActiveTasks = append(status.ActiveTasks, s.Task)
 	}
 	if err := r.triage(ctx, &crew, &container, triage, status, &step); err != nil {
@@ -303,6 +271,63 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionModulePublished)
 	}
 	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
+}
+
+// handBackIssues gives the issues agents must not take back to a person,
+// status/needs-human with the reason, out of status/ready, or
+// status/needs-spec for one whose spec they must not write.
+func handBackIssues(ctx context.Context, provider ports.Issues, repo ports.Repository,
+	rejections []model.IssueRejection) {
+	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	for _, n := range rejections {
+		was := model.LabelReady
+		if n.Spec {
+			was = model.LabelNeedsSpec
+		}
+		notes := []error{
+			provider.AddIssueLabel(gitCtx, repo, n.Issue, model.LabelNeedsHuman),
+			// The exclusive scope drops it too, but not where the labels came
+			// over non-exclusive from a migration (#2039).
+			provider.RemoveIssueLabel(gitCtx, repo, n.Issue, was),
+			provider.CommentIssue(gitCtx, repo, n.Issue, n.Reason),
+		}
+		for _, err := range notes {
+			if err != nil {
+				logf.FromContext(ctx).Error(err, "Failed to hand an issue back", "issue", n.Issue)
+			}
+		}
+	}
+}
+
+// crewIssueTask is the Task a Crew starts for an issue, on the Agents its
+// route gave it, else the Crew's own: a Spec Task, written by the Crew's spec
+// writer, for an issue that needs a spec.
+func crewIssueTask(crew *c4v1beta1.Crew, container *c4v1beta1.Container, s model.IssueStart) *c4v1beta1.Task {
+	implementer, reviewer := crew.Spec.Implementer.Name, crew.Spec.Reviewer.Name
+	if s.Implementer != "" {
+		implementer = s.Implementer
+	}
+	if s.Reviewer != "" {
+		reviewer = s.Reviewer
+	}
+	var kind c4v1beta1.TaskKind
+	if s.Spec && crew.Spec.SpecWriter != nil {
+		kind, implementer = c4v1beta1.TaskKindSpec, crew.Spec.SpecWriter.Name
+	}
+	return &c4v1beta1.Task{
+		ObjectMeta: metav1.ObjectMeta{Namespace: crew.Namespace, Name: s.Task, Labels: map[string]string{
+			LabelCrew: crew.Name, LabelIssue: strconv.Itoa(s.Issue)}},
+		Spec: c4v1beta1.TaskSpec{
+			Kind:         kind,
+			ContainerRef: c4v1beta1.LocalRef{Name: container.Name},
+			AgentRef:     c4v1beta1.LocalRef{Name: implementer},
+			ReviewerRef:  &c4v1beta1.LocalRef{Name: reviewer},
+			Issue:        int32(s.Issue),
+			// Set only for a Standard change, from the Task that filed it.
+			AllowedProtectedPaths: s.AllowedPaths,
+		},
+	}
 }
 
 // release re-runs the last release's failed runs when asked, watches its run,
@@ -342,9 +367,9 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1beta1.Crew, cont
 }
 
 // crewAgentNames names every Agent a Crew may start a Task with: its own two,
-// its triager and those its routes name, each once.
+// its triager, its spec writer and those its routes name, each once.
 func crewAgentNames(spec *c4v1beta1.CrewSpec) []string {
-	names := make([]string, 0, 3+2*len(spec.Routes))
+	names := make([]string, 0, 4+2*len(spec.Routes))
 	add := func(ref *c4v1beta1.LocalRef) {
 		if ref != nil && !slices.Contains(names, ref.Name) {
 			names = append(names, ref.Name)
@@ -353,6 +378,7 @@ func crewAgentNames(spec *c4v1beta1.CrewSpec) []string {
 	add(&spec.Implementer)
 	add(&spec.Reviewer)
 	add(spec.Triager)
+	add(spec.SpecWriter)
 	for _, route := range spec.Routes {
 		add(route.Implementer)
 		add(route.Reviewer)
@@ -377,12 +403,15 @@ func crewRoutes(spec *c4v1beta1.CrewSpec) []model.AgentRoute {
 }
 
 // crewTask is what a Crew reads of a Task: its issue, whether it ended or waits on
-// a Standard change, and the Standard change it filed, which alone grants an
-// allowance.
+// a Standard change or a person's approval, whether it writes a spec, and the
+// Standard change it filed, which alone grants an allowance.
 func crewTask(t *c4v1beta1.Task) model.CrewTask {
 	out := model.CrewTask{Name: t.Name, Issue: int(t.Spec.Issue), Final: isFinal(t.Status.Phase),
 		Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
-		Blocked: t.Status.Phase == c4v1beta1.TaskBlocked}
+		// A spec waiting for a person runs no agent: like a Task waiting on a
+		// Standard change, it takes no place from parallel.
+		Blocked: t.Status.Phase == c4v1beta1.TaskBlocked || t.Status.Phase == c4v1beta1.TaskAwaitingApproval,
+		Spec:    isSpec(t)}
 	if change := t.Status.StandardChange; change != nil {
 		out.StandardChange = &model.IssueChange{Issue: int(change.Issue), Paths: slices.Clone(change.Paths)}
 	}
@@ -395,7 +424,23 @@ func readyIssues(ctx context.Context, provider ports.Issues, repo ports.Reposito
 	if err := provider.EnsureLabels(ctx, repo, issueLabels()); err != nil {
 		return nil, err
 	}
-	issues, err := provider.ListIssues(ctx, repo, model.LabelReady)
+	return labelledIssues(ctx, provider, repo, model.LabelReady)
+}
+
+// specIssues reads the open issues labelled status/needs-spec, and what
+// blocks each, for a Crew's spec writer.
+func specIssues(ctx context.Context, provider ports.Issues, repo ports.Repository) ([]model.Issue, error) {
+	issues, err := labelledIssues(ctx, provider, repo, model.LabelNeedsSpec)
+	for i := range issues {
+		issues[i].Spec = true
+	}
+	return issues, err
+}
+
+// labelledIssues reads the open issues labelled label, as a Crew picks them.
+func labelledIssues(ctx context.Context, provider ports.Issues, repo ports.Repository,
+	label string) ([]model.Issue, error) {
+	issues, err := provider.ListIssues(ctx, repo, label)
 	if err != nil {
 		return nil, err
 	}
@@ -413,13 +458,21 @@ func readyIssues(ctx context.Context, provider ports.Issues, repo ports.Reposito
 	return out, nil
 }
 
-// readIssues reads what a Crew picks from: the ready issues, the releases of
-// its Tasks' issues, and, with a triager, the proposed issues.
-func readIssues(ctx context.Context, provider ports.Issues, repo ports.Repository, facts *model.CrewFacts,
-	triage *model.TriageFacts) error {
+// readIssues reads what a Crew picks from: the ready issues, with a spec
+// writer those that need a spec, the releases of its Tasks' issues, and, with
+// a triager, the proposed issues.
+func readIssues(ctx context.Context, provider ports.Issues, repo ports.Repository, specs bool,
+	facts *model.CrewFacts, triage *model.TriageFacts) error {
 	var err error
 	if facts.Issues, err = readyIssues(ctx, provider, repo); err != nil {
 		return err
+	}
+	if specs {
+		spec, err := specIssues(ctx, provider, repo)
+		if err != nil {
+			return err
+		}
+		facts.Issues = append(facts.Issues, spec...)
 	}
 	if err := taskReleases(ctx, provider, repo, facts.Tasks, facts.Issues); err != nil {
 		return err

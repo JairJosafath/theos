@@ -505,7 +505,8 @@ export function findCondition(conditions: Condition[] | undefined, type: string)
   return conditions?.find((c) => c.type === type)
 }
 
-export type TaskPhase = 'Pending' | 'Implementing' | 'Checking' | 'Reviewing' | 'Blocked' | 'Merged' | 'Failed'
+export type TaskPhase =
+  'Pending' | 'Implementing' | 'Checking' | 'Reviewing' | 'AwaitingApproval' | 'Blocked' | 'Merged' | 'Failed'
 
 /** One step in a Task's timeline: from `at` on, the Task was in phase and round, for reason. */
 export interface TaskTransition {
@@ -542,13 +543,17 @@ export interface CheckStatus {
 export const LABEL_CREW = 'theos.factory.io/crew'
 export const LABEL_ISSUE = 'theos.factory.io/issue'
 
+/** Who approves a spec's pull request: a person on the Git host, or the reviewer Agent alone. */
+export type SpecApproval = 'Person' | 'Reviewer'
+
 export interface Task extends K8sObject {
   spec: {
     /**
-     * Implement (the default), Plan: a planning round of a Brief, or Triage:
-     * a triager's decision on a proposed issue.
+     * Implement (the default), Plan: a planning round of a Brief, Triage: a
+     * triager's decision on a proposed issue, or Spec: an issue's spec, written
+     * in a pull request a person approves.
      */
-    kind?: 'Implement' | 'Plan' | 'Triage'
+    kind?: 'Implement' | 'Plan' | 'Triage' | 'Spec'
     /** Every Task but a Plan Task names its Container. */
     containerRef?: LocalRef
     /** A Plan Task names its Brief in place of a Container. */
@@ -578,6 +583,14 @@ export interface Task extends K8sObject {
       criteria?: string[]
       question?: string
       duplicate?: number
+      applied?: string
+    }
+    /** A Spec Task's spec: its file, who approves it, and what the operator did to the issue once it merged. */
+    spec?: {
+      path: string
+      approval?: SpecApproval
+      approvedBy?: string
+      criteria?: string[]
       applied?: string
     }
     /** The Standard change the Task waits for while Blocked. */
@@ -670,6 +683,10 @@ export interface Crew extends K8sObject {
     routes?: CrewRoute[]
     /** The Agent that triages the proposed issues, one at a time; unset, people triage. */
     triager?: LocalRef
+    /** The Agent that writes the specs of the issues labelled status/needs-spec; unset, people write them. */
+    specWriter?: LocalRef
+    /** Who approves a spec's pull request before it merges; unset means Person. */
+    specApproval?: SpecApproval
   }
   status?: {
     phase?: CrewPhase
