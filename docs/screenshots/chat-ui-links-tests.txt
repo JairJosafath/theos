@@ -13,3 +13,24 @@ ok  	github.com/JairJosafath/theos/internal/chatbot	0.161s
 --- PASS: TestChatChartRefuses (0.69s)
 PASS
 ok  	github.com/JairJosafath/theos/test/chart	2.066s
+
+# make -k check on f730760: every tier passed but two.
+# - validate-yaml: hack/k8s-openapi.sh's listing through api.github.com is
+#   refused in this sandbox (HTTP 403, "GitHub access to this repository is not
+#   enabled for this session"); with the listing taken from a git clone of
+#   kubernetes v1.37.0 instead, make validate-yaml passes:
+#     All 16 invalid files rejected
+#     The chart's CRDs match config/crd/bases
+#     The chart's manager role matches config/rbac/role.yaml
+#     The chart's manager Deployment keeps /tmp, POD_NAMESPACE, THEOS_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount and the webhook
+# - hack/relay_test.sh, which fails in the agents' sandbox on untouched code:
+#     FAIL hack/relay_test.sh (exit 1, 70s):
+#         FAIL idle: what claude started ended too: got [running] want []
+#         FAIL stray #1341: the session and its child are gone: got [child] want []
+# The rest:
+#     ok  	github.com/JairJosafath/theos/internal/chatbot	0.254s
+#     ok  	github.com/JairJosafath/theos/internal/model	0.849s
+#     ok  	github.com/JairJosafath/theos/test/chart	51.240s
+#     ok  	github.com/JairJosafath/theos/internal/controller	528.826s
+#     ok  	github.com/JairJosafath/theos/internal/controller	672.636s
+#     ui:       Tests  914 passed (914)

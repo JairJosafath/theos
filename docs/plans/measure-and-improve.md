@@ -68,12 +68,19 @@ in *Done when* is in `docs/screenshots/`.
    repository's agent bot (`AgentAccess`) and its own signature; any other
    author on the Task's pull request is a person. `status.personCommits`
    counts them, read once when the pull request ends through a new GitHost
-   read, `PullRequestCommits` (author and SHA), with a contract case.
+   read, `PullRequestCommits` (SHA, author, parents), in the fake and the
+   Gitea adapter (`make test-gitea`; the contract suites of
+   [git-host-ports.md](git-host-ports.md) take it when they land). The agents
+   commit as `<bot>@agents.theos.factory.io` (`internal/agentrunner`), the
+   operator's merges of main are merge commits by the GitProvider's account;
+   any other author is a person.
    Approving a spec, answering a question or approving a deploy is a
    decision, not code, and doesn't count against autonomy; those are the
    factory's designed human points, shown on their own.
 4. **Size is the merged diff.** `status.pullRequestSize` (lines added and
-   removed, files) is read with the commits. The views bin it as Warp does
+   removed, files) is read with the commits, from the pull request itself
+   (`ports.PullRequest` gains `Additions`, `Deletions`, `ChangedFiles`, which
+   Gitea's pull request already carries). The views bin it as Warp does
    (S under 100 changed lines, M under 500, L under 1000, XL beyond), so the
    cost of a merged Task is compared within its size.
 5. **A Scorer is a new kind; a Score is its record.** `kubebuilder create
@@ -152,7 +159,7 @@ needs 3; 7 needs 3 and 6.
 | Step | Depends on | Done when |
 | --- | --- | --- |
 | 1. This plan and the design section | | landed; issues filed for steps 2 to 7 |
-| 2. A run records its configuration; a Task its person commits and size | | `status.runs[].agent`, `harness`, `model`; `status.personCommits`, `status.pullRequestSize`; `GitHost.PullRequestCommits` in the port, the fake, Gitea and the contract suite; envtest: a run records its Agent's harness and model, and keeps them after the Agent changes; a pull request with a person's commit counts it, the bot's and the operator's don't |
+| 2. A run records its configuration; a Task its person commits and size | | `status.runs[].agent`, `harness`, `model`; `status.personCommits`, `status.pullRequestSize`; `GitHost.PullRequestCommits` and the pull request's size in the port, the fake and Gitea (`make test-gitea`); envtest: a run records its Agent's harness and model, and keeps them after the Agent changes; a pull request with a person's commit counts it, the bot's and the operator's don't |
 | 3. Metrics in the Work area | 2 | `ui/src/model/metrics.ts`: per period (7 and 30 days) and per configuration, merged, autonomy (decision 3), first-round rate, cycle time to pull request, first review and merge (medians from `status.history`), cost per merged Task by size; `metrics.test.ts` cases for each, Tasks from before step 2 shown as "not recorded"; a panel beside *Where the time goes*; `make ui-test` |
 | 4. `Scorer` and `Score` | 2 | `kubebuilder create api` for both; CEL: criteria count and length, `samplePercent` 0..100, a Score immutable; `internal/model`: selection, sampling (decision 6), the judge's prompt with the data markers, parsing its verdicts (`Unclear` for anything unparsable); the Scorer controller makes a judge run on each selected finished Task and writes its Score; envtest: a sampled Task gets one Score after two passes and a restart, an unsampled one none, a judge run that fails writes `Unclear` with why, `maxPerDay` and `budgetUSD` stop it with `BudgetReached`; the reconciler runs under the generated role |
 | 5. Scores in the UI | 4 | the Task page's Scores (each criterion, verdict and reason); the Work area's pass rate per Scorer and configuration, with the counts; `make ui-test` |
