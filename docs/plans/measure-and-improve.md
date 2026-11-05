@@ -175,7 +175,9 @@ needs 3; 7 needs 3 and 6.
   changed Agent records the Agent it ended on. A Sandbox from before has
   none, and its run records none.
 - `status.pullRequestSize` and `status.personCommits` are read together, once,
-  right after the merge; a read that fails leaves both unset, and the merged
+  right after the merge (`personCommits` set means read; `pullRequestSize`
+  is a value, not a pointer, since step 4 found that the older API version
+  carries a field it lacks in an annotation that keeps no empty object); a read that fails leaves both unset, and the merged
   Task reads them again on its next pass, as it does a merge commit it
   couldn't read. That also fills them for Tasks merged before this step,
   once, at the operator's next start.
@@ -213,6 +215,59 @@ needs 3; 7 needs 3 and 6.
   sizes, the period and the notes, the empty state). Evidence:
   [ui-work-metrics.png](../screenshots/ui-work-metrics.png) and
   [the dark one](../screenshots/ui-work-metrics-dark.png), from the demo.
+
+### Step 4, as built
+
+- **Decision 5 changed: the judge run is a Task, and the Task is the
+  Score.** A separate `Score` kind would have needed its own sandbox, pod,
+  cost, pause, resume and slot handling, all of which a Task has. So a judge
+  run is a Task of the new kind `Score` (`spec.score`: the Scorer, its
+  generation, the judged Task, the criteria as they were, and the judged
+  implementer's configuration; `status.score`: the verdicts), run like a
+  Triage Task: one run, no protection, queue, CI, review or second round.
+  The Scorer owns it and names it after the pair (`model.ScoreTaskName`), so
+  a lost status write makes no second one. CEL keeps `score` to Score Tasks,
+  needs a goal and a Container, refuses a reviewer, verifier or
+  `allowedProtectedPaths`, and keeps `score` immutable.
+- The Scorer judges only Tasks that finish after it was made: the history
+  is a Benchmark's to compare. `select.kinds` takes Implement, Spec and
+  Triage (a Plan Task has no Container), `select.phases` Merged and Failed,
+  each by a CEL rule (the kinds' type enum would allow every kind).
+- theos-agent's `score` role reads the base on a branch it can't push, like
+  a triage; its criteria come in `THEOS_CRITERIA`, outside the evidence's
+  markers. `model.ParseScore` gives every criterion one verdict in order, a
+  skipped one `Unclear`; the stand-in judge passes each.
+- The cap and the budget count the Score Tasks made in the UTC day and what
+  they cost; at either the Scorer is `Ready=False` (`DailyCapReached`,
+  `BudgetReached`) and looks again at the next UTC midnight. `samplePercent:
+  0` is `Paused`; a missing judge `JudgeNotFound`.
+- Sample: `config/samples/webshop/scorer.yaml`, judged by the chart's
+  reviewer Agent.
+- Tests: `internal/model` `TestScorerSelects`, `TestScoreSampled`,
+  `TestScoreTaskName`, `TestScoreGoal`, `TestParseScore`,
+  `TestTallyScoresAndLimits`; `internal/agentrunner` `TestJobFromEnvScore`,
+  `TestRunScore` (the verdicts, the criteria outside the markers, nothing
+  pushed, no verdicts, the stand-in); envtest "Scorer": a merged Task judged
+  once with the sandbox's role and criteria, the verdicts kept and counted;
+  a judge run without verdicts failing every criterion Unclear; the daily
+  cap, a sample of 0 and a missing judge; and each CEL rule's failing case.
+
+### Step 5, as built
+
+- `ui/src/model/scores.ts` reads Scores from the Score Tasks alone, which
+  copy their Scorer's criteria and the judged implementer's configuration,
+  so the UI reads no Scorers: a Task's Scores (`scoresOf`), and each
+  Scorer's pass rate per criterion and configuration over its newest
+  generation (`scorerRates`), pass out of pass and fail, Unclear said apart.
+- A Task's page has a *Scores* section, each Scorer's verdicts with the
+  judge's why and a link to its judge run; a Score Task's page opens on its
+  *Verdicts* and links the Task it judged. The Work area's *Time & tokens*
+  tab has *What the Scorers found*, a table per Scorer. The Work area's
+  stats leave Score Tasks out: they measure the work, they aren't it.
+- The demo has Scorer `tests-and-why`'s two judge runs.
+- Tests: `ui/src/model/scores.test.ts`, `ui/src/components/factory/ScoresPanel.test.ts`.
+  Evidence: [ui-work-scores.png](../screenshots/ui-work-scores.png),
+  [ui-task-scores.png](../screenshots/ui-task-scores.png) and their dark ones.
 
 ## Done when
 

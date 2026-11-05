@@ -392,12 +392,17 @@ type FakeAgent struct {
 	FollowUp bool
 	// Open makes the approval accept one criterion as left open, for a person.
 	Open bool
+	// Criteria are a judge run's criteria: the stand-in judge passes each.
+	Criteria []string
 }
 
 // Run does the scripted work.
 func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	if a.Role == RolePlan {
 		return a.plan(dir)
+	}
+	if a.Role == RoleScore {
+		return "Read the change.\n" + model.StandInScore(a.Criteria), nil
 	}
 	if a.Role == RoleTriage {
 		decision, err := json.Marshal(model.StandInTriage(a.Goal))

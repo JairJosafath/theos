@@ -430,6 +430,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		// its own, so one that names none is HomeserverUnset.
 		&ChatReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), ChatHosts: matrix.Hosts(nil),
 			PollInterval: time.Second, CheckInterval: time.Second},
+		&ScorerReconciler{Client: c, Scheme: s},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

@@ -9,6 +9,7 @@
 package agentrunner
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -22,17 +23,24 @@ import (
 // change the reviewer approved, and pushes nothing. Plan is a Plan Task's
 // round: it plans a Brief in the Brief's repository. Triage is a Triage
 // Task's run: it reads the issue and the repository, and pushes nothing.
+// Score is a Score Task's run: it judges a finished change against a
+// Scorer's criteria, and pushes nothing.
 const (
 	RoleImplement = "implement"
 	RoleReview    = "review"
 	RoleVerify    = "verify"
 	RolePlan      = "plan"
 	RoleTriage    = "triage"
+	RoleScore     = model.RoleScorer
 )
 
 // triageBranch is the local branch a triage run reads the base on; it is
 // never pushed.
 const triageBranch = "triage"
+
+// scoreBranch is the local branch a judge run reads the base on; it is never
+// pushed.
+const scoreBranch = "score"
 
 // Environment variables the operator sets on the sandbox.
 const (
@@ -98,6 +106,10 @@ const (
 	// theos-agent saves an interrupted run there and goes on from it in the
 	// sandbox's next pod (checkpoint.go). Unset: no checkpoints.
 	EnvCheckpointDir = "THEOS_CHECKPOINT_DIR"
+	// EnvCriteria is a judge run's criteria, a JSON array of strings: what
+	// the Scorer asks, kept apart from the evidence in the goal, which the
+	// judge reads as data.
+	EnvCriteria = "THEOS_CRITERIA"
 )
 
 // CheckpointDir is where the operator mounts a sandbox's checkpoint volume.
@@ -173,6 +185,41 @@ type Job struct {
 	// PodInfoDir is where the pod sees its own annotations, which may ask the
 	// run to pause (pause.go); empty: the run never pauses.
 	PodInfoDir string
+	// Criteria are a judge run's criteria; empty for any other role.
+	Criteria []string
+}
+
+// parseRelated reads the related repositories, name=url pairs,
+// comma-separated; nil when there are none.
+func parseRelated(list string) (map[string]string, error) {
+	var out map[string]string
+	for pair := range strings.SplitSeq(list, ",") {
+		if pair = strings.TrimSpace(pair); pair == "" {
+			continue
+		}
+		name, repoURL, ok := strings.Cut(pair, "=")
+		if !ok || name == "" || repoURL == "" {
+			return nil, fmt.Errorf("%s: %q is not name=url", EnvRelated, pair)
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[name] = repoURL
+	}
+	return out, nil
+}
+
+// parseCriteria reads a judge run's criteria, a JSON array of strings; none
+// when unset.
+func parseCriteria(criteria string) ([]string, error) {
+	if criteria == "" {
+		return nil, nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(criteria), &out); err != nil {
+		return nil, fmt.Errorf("%s is not a JSON array of strings: %w", EnvCriteria, err)
+	}
+	return out, nil
 }
 
 // JobFromEnv reads a Job from environment variables.
@@ -235,19 +282,16 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		}
 		job.PullRequest = n
 	}
-	for pair := range strings.SplitSeq(getenv(EnvRelated), ",") {
-		if pair = strings.TrimSpace(pair); pair == "" {
-			continue
-		}
-		name, repoURL, ok := strings.Cut(pair, "=")
-		if !ok || name == "" || repoURL == "" {
-			return Job{}, fmt.Errorf("%s: %q is not name=url", EnvRelated, pair)
-		}
-		if job.Related == nil {
-			job.Related = map[string]string{}
-		}
-		job.Related[name] = repoURL
+	related, err := parseRelated(getenv(EnvRelated))
+	if err != nil {
+		return Job{}, err
 	}
+	job.Related = related
+	criteria, err := parseCriteria(getenv(EnvCriteria))
+	if err != nil {
+		return Job{}, err
+	}
+	job.Criteria = criteria
 	job.CheckCommand = strings.Fields(getenv(EnvCheckCommand))
 	if len(job.CheckCommand) == 0 {
 		job.CheckCommand = strings.Fields(model.CheckCommand)
@@ -294,6 +338,13 @@ func (job *Job) check() error {
 		// A triage reads the base, and pushes no branch.
 		job.Branch = triageBranch
 	}
+	if job.Role == RoleScore {
+		// A judge reads the base, and pushes no branch.
+		job.Branch = scoreBranch
+		if len(job.Criteria) == 0 || len(job.Criteria) > model.MaxScoreCriteria {
+			return fmt.Errorf("%s: a judge run needs 1 to %d criteria", EnvCriteria, model.MaxScoreCriteria)
+		}
+	}
 
 	required := map[string]string{
 		EnvRole: job.Role, EnvRepoURL: job.RepoURL, EnvBranch: job.Branch, EnvGoal: job.Goal,
@@ -314,9 +365,9 @@ func (job *Job) check() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing %s", strings.Join(sortedCopy(missing), ", "))
 	}
-	if !slices.Contains([]string{RoleImplement, RoleReview, RoleVerify, RolePlan, RoleTriage}, job.Role) {
-		return fmt.Errorf("%s=%q: want %s, %s, %s, %s or %s", EnvRole, job.Role, RoleImplement, RoleReview,
-			RoleVerify, RolePlan, RoleTriage)
+	if !slices.Contains([]string{RoleImplement, RoleReview, RoleVerify, RolePlan, RoleTriage, RoleScore}, job.Role) {
+		return fmt.Errorf("%s=%q: want %s, %s, %s, %s, %s or %s", EnvRole, job.Role, RoleImplement, RoleReview,
+			RoleVerify, RolePlan, RoleTriage, RoleScore)
 	}
 	if job.Branch == job.Base {
 		return errors.New("the work branch must not be the base branch")

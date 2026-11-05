@@ -55,6 +55,8 @@ type Result struct {
 	Open []model.OpenCriterion `json:"open,omitempty"`
 	// Triage is a triager's decision about its issue.
 	Triage *model.Triage `json:"triage,omitempty"`
+	// Score is a judge run's verdicts, one per criterion.
+	Score []model.ScoreCriterion `json:"score,omitempty"`
 	// Unavailable means the agent's service couldn't work (a limit, an overload,
 	// bad credentials); RetryAt is when it said it is back.
 	Unavailable bool       `json:"unavailable,omitempty"`
@@ -371,6 +373,9 @@ func run(ctx context.Context, job Job, agent Agent, dir string, prog *runProgres
 	}
 	if job.Role == RoleTriage {
 		return triage(ctx, job, agent, r, ws, prog, result)
+	}
+	if job.Role == RoleScore {
+		return score(ctx, job, agent, r, ws, prog, result)
 	}
 	return implement(ctx, job, agent, r, ws, prog, result)
 }

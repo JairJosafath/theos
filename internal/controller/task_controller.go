@@ -158,6 +158,8 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return r.reconcilePlan(ctx, &task)
 	case c4v1beta1.TaskTriage:
 		return r.reconcileTriage(ctx, &task)
+	case c4v1beta1.TaskScore:
+		return r.reconcileScore(ctx, &task)
 	}
 	status := task.Status.DeepCopy()
 	if status.Phase == "" {
@@ -191,7 +193,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			return result, r.writeStatus(ctx, &task, status)
 		}
 		if status.Phase != c4v1beta1.TaskMerged || status.PullRequest == 0 ||
-			status.MergeCommit != "" && status.PullRequestSize != nil {
+			status.MergeCommit != "" && status.PersonCommits != nil {
 			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
 		}
 		// Merged before the Task recorded merge commits, or pull requests'
@@ -340,8 +342,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		}
 		refs := make([]model.TaskRef, 0, len(tasks.Items))
 		for _, t := range tasks.Items {
-			if t.Spec.Kind == c4v1beta1.TaskTriage {
-				continue // a triage pushes nothing, so it holds no other Task up
+			if pushesNothing(&t) {
+				continue // a triage and a judge push nothing, so they hold no other Task up
 			}
 			refs = append(refs, model.TaskRef{Name: t.Name, Created: t.CreationTimestamp.Unix(),
 				Active: !isFinal(t.Status.Phase) && t.DeletionTimestamp.IsZero()})
@@ -726,6 +728,12 @@ func runRole(phase c4v1beta1.TaskPhase) string {
 func sandboxName(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, role string) string {
 	return model.SandboxName(task.Name, int(status.Round), int(status.Restarts), role,
 		int(status.ReviewAttempts+status.ReviewAgains)+1, int(status.Reruns))
+}
+
+// pushesNothing reports whether t's runs push nothing: a Triage or a Score
+// Task's.
+func pushesNothing(t *c4v1beta1.Task) bool {
+	return t.Spec.Kind == c4v1beta1.TaskTriage || t.Spec.Kind == c4v1beta1.TaskScore
 }
 
 func isFinal(phase c4v1beta1.TaskPhase) bool {

@@ -594,14 +594,41 @@ export const LABEL_ISSUE = 'theos.factory.io/issue'
 /** Who approves a spec's pull request: a person on the Git host, or the reviewer Agent alone. */
 export type SpecApproval = 'Person' | 'Reviewer'
 
+/** The Agent configuration an agent run ran on. */
+export interface RunConfig {
+  agent?: string
+  harness?: string
+  model?: string
+}
+
+/** What a Score Task judges (docs/plans/measure-and-improve.md). */
+export interface TaskScoreSpec {
+  scorerRef: LocalRef
+  scorerGeneration: number
+  taskRef: LocalRef
+  criteria: string[]
+  /** The judged Task's implementer's configuration. */
+  config?: RunConfig
+}
+
+export type ScoreVerdict = 'Pass' | 'Fail' | 'Unclear'
+
+/** A judge's verdict on one criterion, and why. */
+export interface ScoreCriterion {
+  criterion: string
+  verdict: ScoreVerdict
+  reason?: string
+}
+
 export interface Task extends K8sObject {
   spec: {
     /**
      * Implement (the default), Plan: a planning round of a Brief, Triage: a
-     * triager's decision on a proposed issue, or Spec: an issue's spec, written
-     * in a pull request a person approves.
+     * triager's decision on a proposed issue, Spec: an issue's spec, written
+     * in a pull request a person approves, or Score: a Scorer's judge run on
+     * another Task's finished change.
      */
-    kind?: 'Implement' | 'Plan' | 'Triage' | 'Spec'
+    kind?: 'Implement' | 'Plan' | 'Triage' | 'Spec' | 'Score'
     /** Every Task but a Plan Task names its Container. */
     containerRef?: LocalRef
     /** A Plan Task names its Brief in place of a Container. */
@@ -616,6 +643,8 @@ export interface Task extends K8sObject {
     issue?: number
     /** The protected paths a gated Task may change. */
     allowedProtectedPaths?: string[]
+    /** A Score Task's Scorer, the Task it judges and the criteria, as they were. */
+    score?: TaskScoreSpec
   }
   status?: {
     phase?: TaskPhase
@@ -627,6 +656,8 @@ export interface Task extends K8sObject {
     /** The issues filed from the reviewer's suggestions on merge, as URLs. */
     followUps?: string[]
     /** A Triage Task's decision, its reason, and what the operator did with it. */
+    /** A Score Task's verdicts, one per criterion; a failed run leaves each Unclear. */
+    score?: { criteria?: ScoreCriterion[] }
     triage?: {
       decision: 'ready' | 'spec' | 'park' | 'duplicate'
       reason?: string

@@ -1,0 +1,25 @@
+# A Scorer for the webshop (docs/plans/measure-and-improve.md): the reviewer
+# Agent the chart makes judges every merged Implement Task of the four
+# applications against these criteria, and the Scorer counts the verdicts, so
+# a change to an Agent, a route or a guide can be judged by them. Judging
+# costs model time: at most 20 judge runs and $5 a day. Each judge run is a
+# Task of kind Score that the Scorer owns; it reads the change and pushes
+# nothing. Not in kustomization.yaml: apply it on its own with
+#   kubectl apply -n webshop -f config/samples/webshop/scorer.yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Scorer
+metadata:
+  name: tests-and-why
+spec:
+  criteria:
+    - The change has a test that fails without it.
+    - The pull request's description says why the change is made, not only what it does.
+    - Every acceptance criterion of the issue is met, or the pull request says why one is left open.
+  judgeRef:
+    name: reviewer
+  select:
+    kinds: [Implement]
+    phases: [Merged]
+  samplePercent: 100
+  maxPerDay: 20
+  budgetUSD: 5

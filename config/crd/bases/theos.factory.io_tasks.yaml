@@ -900,14 +900,16 @@ spec:
                   kind is Implement (the default): implement the goal in the Container's
                   repository; Plan: plan a round of the Brief named by briefRef; Triage:
                   decide what the issue needs next, which the operator then applies to the
-                  issue; or Spec: write the issue's spec, docs/specs/<issue>.md, which
+                  issue; Spec: write the issue's spec, docs/specs/<issue>.md, which
                   merges after its review point and gives the issue its acceptance
-                  criteria. It can't change.
+                  criteria; or Score: judge another Task's finished change for the
+                  Scorer named in score. It can't change.
                 enum:
                 - Implement
                 - Plan
                 - Triage
                 - Spec
+                - Score
                 type: string
               reviewerRef:
                 description: |-
@@ -924,6 +926,73 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: reviewerRef is immutable
+                  rule: self == oldSelf
+              score:
+                description: |-
+                  score is what a Score Task judges: the Scorer that made it, the Task it
+                  judges and the criteria, copied from the Scorer when it was made. It
+                  can't change.
+                properties:
+                  config:
+                    description: |-
+                      config is the Agent configuration the judged Task's implementer ran on,
+                      copied from its runs, so Scores compare configurations.
+                    properties:
+                      agent:
+                        maxLength: 253
+                        type: string
+                      harness:
+                        maxLength: 32
+                        type: string
+                      model:
+                        maxLength: 100
+                        type: string
+                    type: object
+                  criteria:
+                    description: criteria are the Scorer's criteria, as they were.
+                    items:
+                      maxLength: 500
+                      type: string
+                    maxItems: 20
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  scorerGeneration:
+                    description: scorerGeneration is the Scorer's generation the criteria
+                      are of.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  scorerRef:
+                    description: scorerRef names the Scorer that made the Task.
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  taskRef:
+                    description: taskRef names the finished Task it judges.
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - criteria
+                - scorerGeneration
+                - scorerRef
+                - taskRef
+                type: object
+                x-kubernetes-validations:
+                - message: score is immutable
                   rule: self == oldSelf
               verifierRef:
                 description: |-
@@ -989,6 +1058,15 @@ spec:
               rule: '!has(self.allowedProtectedPaths) || has(self.issue)'
             - message: allowedProtectedPaths is immutable
               rule: has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)
+            - message: a Score Task needs score, and only a Score Task has one
+              rule: (has(self.kind) && self.kind == 'Score') == has(self.score)
+            - message: a Score Task has a goal and a containerRef, and no reviewerRef,
+                verifierRef or allowedProtectedPaths
+              rule: '!has(self.kind) || self.kind != ''Score'' || (has(self.goal)
+                && has(self.containerRef) && !has(self.reviewerRef) && !has(self.verifierRef)
+                && !has(self.allowedProtectedPaths))'
+            - message: score is immutable
+              rule: has(self.score) == has(oldSelf.score)
           status:
             description: status defines the observed state of Task
             properties:
@@ -1256,8 +1334,10 @@ spec:
               pullRequestSize:
                 description: |-
                   pullRequestSize is the size of the merged pull request's change, read
-                  once when it merged (docs/plans/measure-and-improve.md, decision 4);
-                  unset before then, or when the Git host couldn't be read.
+                  once when it merged with personCommits (docs/plans/measure-and-improve.md,
+                  decision 4); unset before then, or when the Git host couldn't be read.
+                  A value, not a pointer: the older version carries a field it lacks in an
+                  annotation, which keeps no empty object.
                 properties:
                   additions:
                     description: additions are the lines it adds.
@@ -1512,6 +1592,44 @@ spec:
                   forced delete, a lost node); another pod, or none, under the same sandbox
                   means the run was interrupted.
                 type: string
+              score:
+                description: |-
+                  score is a Score Task's verdicts, once its judge ran; a run that failed
+                  leaves each criterion Unclear with why. A value, as pullRequestSize is.
+                properties:
+                  criteria:
+                    description: criteria are the verdicts, one per criterion of spec.score,
+                      in its order.
+                    items:
+                      description: TaskScoreCriterion is the judge's verdict on one
+                        criterion, and why.
+                      properties:
+                        criterion:
+                          description: criterion is the criterion's text.
+                          maxLength: 500
+                          type: string
+                        reason:
+                          description: reason is the judge's why, in a sentence or
+                            two.
+                          maxLength: 1000
+                          type: string
+                        verdict:
+                          description: |-
+                            verdict is Pass, Fail, or Unclear when the judge couldn't tell or said
+                            nothing of it.
+                          enum:
+                          - Pass
+                          - Fail
+                          - Unclear
+                          type: string
+                      required:
+                      - criterion
+                      - verdict
+                      type: object
+                    maxItems: 20
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
               slotWaitSince:
                 description: |-
                   slotWaitSince is when the Task started waiting for a free agent slot; the

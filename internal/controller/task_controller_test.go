@@ -239,18 +239,18 @@ var _ = Describe("Task", func() {
 
 		By("keeping the merged pull request's size and its one person commit (measure-and-improve, decisions 3 and 4)")
 		merged := getTask(Default, ns, "add-crop")
-		Expect(merged.Status.PullRequestSize).To(Equal(&c4v1beta1.TaskPullRequestSize{Additions: 120, Deletions: 30,
+		Expect(merged.Status.PullRequestSize).To(Equal(c4v1beta1.TaskPullRequestSize{Additions: 120, Deletions: 30,
 			Files: 4}))
 		Expect(merged.Status.PersonCommits).To(Equal(new(int32(1))),
 			"Ada's commit is a person's; the agent's and main's merge are not")
 
 		By("reading them again for a Task merged before they were kept")
-		merged.Status.PullRequestSize, merged.Status.PersonCommits = nil, nil
+		merged.Status.PullRequestSize, merged.Status.PersonCommits = c4v1beta1.TaskPullRequestSize{}, nil
 		Expect(k8sClient.Status().Update(ctx, merged)).To(Succeed())
 		gitFake.SetPullSize(ns, "orders-api", 1, 121, 30, 4)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
-			g.Expect(task.Status.PullRequestSize).To(Equal(&c4v1beta1.TaskPullRequestSize{Additions: 121, Deletions: 30,
+			g.Expect(task.Status.PullRequestSize).To(Equal(c4v1beta1.TaskPullRequestSize{Additions: 121, Deletions: 30,
 				Files: 4}))
 			g.Expect(task.Status.PersonCommits).To(Equal(new(int32(1))))
 		}).Should(Succeed())

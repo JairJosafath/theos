@@ -719,7 +719,7 @@ func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost
 // again.
 func (r *TaskReconciler) recordPull(ctx context.Context, provider ports.GitHost, repo ports.Repository,
 	status *c4v1beta1.TaskStatus) {
-	if status.PullRequest == 0 || status.PullRequestSize != nil {
+	if status.PullRequest == 0 || status.PersonCommits != nil {
 		return
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
@@ -742,7 +742,7 @@ func (r *TaskReconciler) recordPull(ctx context.Context, provider ports.GitHost,
 	}
 	person := int32(model.PersonCommits(read))
 	status.PersonCommits = &person
-	status.PullRequestSize = &c4v1beta1.TaskPullRequestSize{Additions: int32(pr.Additions),
+	status.PullRequestSize = c4v1beta1.TaskPullRequestSize{Additions: int32(pr.Additions),
 		Deletions: int32(pr.Deletions), Files: int32(pr.ChangedFiles)}
 }
 

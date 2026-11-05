@@ -65,6 +65,7 @@ follows the tree. `metadata.name` is the stable id; `displayName` and
 | Bundle | Project | none | A catalog entry with no template: a Framework and, optionally, a Standard, Compute and Deployment a team picked together; it supports the types all its entries support |
 | Agent | Project | none | Who does Tasks: a harness, a model, a toolchain image, credentials and limits |
 | DeployTarget | Project | none | A place releases ship to, with its credential |
+| Scorer | Project | none | Plain-words criteria a judge Agent checks finished Tasks against; each judge run is a Task of kind `Score` it owns |
 
 ```yaml
 kind: Container                    # the other kinds are in config/samples/
@@ -671,7 +672,7 @@ The operator moves bytes with credentials it holds; it builds nothing.
 ## Measuring the factory
 
 Planned in [plans/measure-and-improve.md](plans/measure-and-improve.md);
-the record and the metrics (its steps 2 and 3) are built. A change to how the factory works (an Agent's
+the record, the metrics, the Scorers and their place in the UI (its steps 2 to 5) are built. A change to how the factory works (an Agent's
 model, a route, a Standard's agent guide, `docs/project-notes.md`) should
 be judged by numbers the factory keeps itself.
 
@@ -687,11 +688,23 @@ be judged by numbers the factory keeps itself.
   approving a spec or a deploy is a decision, not code), cycle time per
   stage, and cost per merged Task by size, per period and per
   configuration: *How well it works*, in the Work area. No metrics store.
-- **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent,
-  a deterministic sample and a daily cap. Each verdict is a `Score` per
-  criterion (`Pass`, `Fail`, `Unclear`) with its reason, made by a read-only
-  judge run on the finished pull request. Scores advise; the reviewer, the
-  checks and the fence still decide what merges.
+- **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent
+  (`judgeRef`), what it selects (kinds, Containers, outcomes; by default
+  merged Implement Tasks), a sample picked by a hash of the Scorer and the
+  Task (`samplePercent`), and a daily cap (`maxPerDay`) and budget
+  (`budgetUSD`); it judges only Tasks that finish after it was made. For each,
+  the operator makes a Task of kind `Score`, owned by the Scorer and named
+  after the pair, so none is judged twice: one `score` run of the judge on a
+  clone that pushes nothing, told the criteria (`THEOS_CRITERIA`) apart from
+  the evidence in its goal (the outcome, the issue's title, the summary, the
+  review, the merge commit to `git show`), which it reads as data. Its
+  verdicts, `Pass`, `Fail` or `Unclear` per criterion with the judge's why,
+  are its `status.score`; a failed run leaves each `Unclear`. The Scorer's
+  status counts the verdicts of its current generation. Score Tasks take an
+  agent slot but hold no other Task on their Container up, and no Container
+  adopts them. Scores advise; the reviewer, the checks and the fence still
+  decide what merges. A Task's page shows its Scores, and the Work area each
+  Scorer's pass rates by configuration (*What the Scorers found*).
 - **A Benchmark compares configurations on the same work.** The same goals,
   from one pinned commit, under two or more variants, repeated; its Tasks
   end `Approved` instead of merging, touch no issue and take no Crew slot.

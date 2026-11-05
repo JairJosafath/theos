@@ -109,7 +109,7 @@ func agentFor(job agentrunner.Job) agentrunner.Agent {
 		changesFirst, _ := strconv.ParseBool(os.Getenv("THEOS_AGENT_FAKE_CHANGES_FIRST"))
 		followUp, _ := strconv.ParseBool(os.Getenv("THEOS_AGENT_FAKE_FOLLOW_UP"))
 		return agentrunner.FakeAgent{Role: job.Role, Round: job.Round, Goal: job.Goal, Issue: job.Issue,
-			Spec: job.SpecPath, ChangesFirst: changesFirst, FollowUp: followUp}
+			Criteria: job.Criteria, Spec: job.SpecPath, ChangesFirst: changesFirst, FollowUp: followUp}
 	}
 	agent := agentrunner.ClaudeAgent{Model: job.Model}
 	if command := strings.Fields(os.Getenv("THEOS_AGENT_COMMAND")); len(command) > 0 {

@@ -190,6 +190,10 @@ func TestChatTaskNewsTriage(t *testing.T) {
 	if n := newsByEvent(ChatTaskNews(failed))[ChatEventTaskFailed]; n.Post.Status != "Out of rounds" {
 		t.Errorf("failed: %+v", n)
 	}
+	judge := ChatTaskView{Name: "tests-api-6", Kind: "Score", Phase: "Failed", Message: "no verdicts"}
+	if news := ChatTaskNews(judge); len(news) != 0 {
+		t.Errorf("a Score Task's failure is news: %+v", news)
+	}
 }
 
 // A Container: a failed scaffold's thread, done when Ready; a deploy waiting

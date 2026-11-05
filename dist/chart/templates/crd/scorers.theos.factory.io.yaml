@@ -1,0 +1,304 @@
+{{- if .Values.crd.enabled }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: scorers.theos.factory.io
+spec:
+  conversion:
+    strategy: None
+  group: theos.factory.io
+  names:
+    categories:
+    - theos
+    kind: Scorer
+    listKind: ScorerList
+    plural: scorers
+    singular: scorer
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.judgeRef.name
+      name: Judge
+      type: string
+    - jsonPath: .status.scored
+      name: Scored
+      type: integer
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Scorer judges finished Tasks against plain-words criteria
+          (docs/plans/measure-and-improve.md).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec is the criteria, the judge and what it judges.
+            properties:
+              budgetUSD:
+                description: |-
+                  budgetUSD caps what its judge runs may cost in a UTC day, in US dollars,
+                  summed from what the agents report; at the cap it starts no run until
+                  the next day, reason BudgetReached. Unset means no cap.
+                format: int32
+                minimum: 1
+                type: integer
+              criteria:
+                description: |-
+                  criteria are what the judge checks, each in plain words, such as "The
+                  change has a test that fails without it". A change makes a new
+                  generation: the Scorer's summary counts only the current one's Scores.
+                items:
+                  maxLength: 500
+                  minLength: 1
+                  type: string
+                maxItems: 20
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+              judgeRef:
+                description: |-
+                  judgeRef names the Agent that judges: its harness, model, image and
+                  limits, as any Agent's.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              maxPerDay:
+                default: 50
+                description: maxPerDay caps the judge runs it starts in a UTC day.
+                format: int32
+                maximum: 1000
+                minimum: 1
+                type: integer
+              samplePercent:
+                default: 100
+                description: |-
+                  samplePercent is how many of the selected Tasks it judges, picked by a
+                  hash of the Scorer's and the Task's names, so the same Tasks every
+                  time. 0 stops it.
+                format: int32
+                maximum: 100
+                minimum: 0
+                type: integer
+              select:
+                description: |-
+                  select says which finished Tasks it judges; empty means every merged
+                  Implement Task of the namespace.
+                properties:
+                  containers:
+                    description: |-
+                      containers names the Containers whose Tasks it judges; empty means every
+                      Container of the namespace.
+                    items:
+                      maxLength: 63
+                      type: string
+                    maxItems: 50
+                    type: array
+                    x-kubernetes-list-type: set
+                  kinds:
+                    description: |-
+                      kinds are the Task kinds it judges; empty means Implement. A Plan Task
+                      has no Container to judge, and a Score Task is never judged.
+                    items:
+                      description: |-
+                        TaskKind is what a Task does: implement a goal in a Container's repository,
+                        plan a round of a Brief, triage an issue, write an issue's spec, or judge
+                        another Task's finished change for a Scorer.
+                      enum:
+                      - Implement
+                      - Plan
+                      - Triage
+                      - Spec
+                      - Score
+                      type: string
+                    maxItems: 3
+                    type: array
+                    x-kubernetes-list-type: set
+                    x-kubernetes-validations:
+                    - message: a Scorer judges Implement, Spec and Triage Tasks
+                      rule: self.all(k, k in ['Implement', 'Spec', 'Triage'])
+                  phases:
+                    description: phases are the outcomes it judges; empty means Merged.
+                    items:
+                      description: TaskPhase is where a Task is in its rounds.
+                      enum:
+                      - Pending
+                      - Implementing
+                      - Checking
+                      - Reviewing
+                      - Verifying
+                      - AwaitingApproval
+                      - Blocked
+                      - Merged
+                      - Failed
+                      type: string
+                    maxItems: 2
+                    type: array
+                    x-kubernetes-list-type: set
+                    x-kubernetes-validations:
+                    - message: a Scorer judges Merged and Failed Tasks
+                      rule: self.all(p, p in ['Merged', 'Failed'])
+                type: object
+            required:
+            - criteria
+            - judgeRef
+            type: object
+          status:
+            description: status is what it judged.
+            properties:
+              conditions:
+                description: |-
+                  conditions: Ready, False with reason JudgeNotFound, Paused (a
+                  samplePercent of 0), DailyCapReached or BudgetReached.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              costTodayMilliUSD:
+                format: int64
+                type: integer
+              criteria:
+                description: criteria counts each current criterion's verdicts, in
+                  the spec's order.
+                items:
+                  description: |-
+                    ScorerCriterionCount is how the current generation's Scores judged one
+                    criterion.
+                  properties:
+                    criterion:
+                      description: criterion is the criterion's text.
+                      maxLength: 500
+                      type: string
+                    fail:
+                      format: int32
+                      type: integer
+                    pass:
+                      description: pass, fail and unclear count its verdicts.
+                      format: int32
+                      type: integer
+                    unclear:
+                      format: int32
+                      type: integer
+                  required:
+                  - criterion
+                  type: object
+                maxItems: 20
+                type: array
+                x-kubernetes-list-type: atomic
+              day:
+                description: day is the UTC day of startedToday, YYYY-MM-DD.
+                maxLength: 10
+                type: string
+              observedGeneration:
+                description: observedGeneration is the generation the status is of.
+                format: int64
+                type: integer
+              scored:
+                description: scored counts the current generation's finished Scores.
+                format: int32
+                type: integer
+              startedToday:
+                description: |-
+                  startedToday counts the judge runs it started in the UTC day of day,
+                  and costTodayMilliUSD what they cost so far, in thousandths of a US
+                  dollar.
+                format: int32
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

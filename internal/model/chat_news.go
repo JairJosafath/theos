@@ -237,6 +237,11 @@ func (t ChatTaskView) issue() string {
 // decision, a review's verdict and a failure are plain posts; a merge is in
 // the updates digest.
 func ChatTaskNews(t ChatTaskView) []ChatNews {
+	if t.Kind == "Score" {
+		// A judge run for a Scorer is the factory measuring itself: its
+		// verdicts are the Scorer's to show, and its failure no alert.
+		return nil
+	}
 	var news []ChatNews
 	final := t.Phase == chatPhaseMerged || t.Phase == chatPhaseFailed
 	if t.Kind == chatKindSpec && t.SpecApproval != "Reviewer" {

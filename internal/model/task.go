@@ -87,6 +87,8 @@ type RunResult struct {
 	Open []OpenCriterion
 	// Triage is a triager's decision; nil when it gave none.
 	Triage *Triage
+	// Score is a judge's verdicts; nil when it gave none.
+	Score []ScoreCriterion
 	// Unavailable means the agent's service couldn't work: a usage limit, an
 	// overload, a temporary server error or bad credentials. It is not the agent's fault and costs no round.
 	Unavailable bool
@@ -464,6 +466,10 @@ type TaskFacts struct {
 	// the operator applies. It has no protection, queue, CI or review, and no
 	// second round: a failed run fails the Task, and its Crew tries again.
 	Triage bool
+	// Score means a Score Task: one judge run on a finished change, whose
+	// verdicts are its record. Like a triage, it has no protection, queue, CI,
+	// review or second round.
+	Score bool
 	// Spec means a Spec Task: the implement flow writes the issue's spec, and
 	// an approved spec waits for its review point (AwaitingApproval) before it
 	// merges. SpecApproval is who approves it: SpecApprovalPerson (also when
@@ -1170,6 +1176,8 @@ const (
 	// ActionTriaged applies a triager's decision to its issue and ends the
 	// Triage Task.
 	ActionTriaged TaskAction = "Triaged"
+	// ActionScored records a judge's verdicts and ends the Score Task.
+	ActionScored TaskAction = "Scored"
 	// ActionAwaitApproval posts the reviewer's approval of a spec and has it
 	// wait for a person's (AwaitingApproval).
 	ActionAwaitApproval TaskAction = "AwaitApproval"
@@ -1289,7 +1297,7 @@ func nextTaskStep(f TaskFacts) TaskStep {
 	if f.Plan {
 		return planStep(f)
 	}
-	if f.Triage {
+	if f.Triage || f.Score {
 		return triageStep(f)
 	}
 	switch f.Phase {
@@ -1527,21 +1535,36 @@ func planStep(f TaskFacts) TaskStep {
 // fails the Task at once, with no second round: its Crew starts another
 // Triage Task for the issue (NextTriage).
 func triageStep(f TaskFacts) TaskStep {
+	what := "triage"
+	if f.Score {
+		what = "judge run"
+	}
 	switch f.Phase {
 	case "", TaskPending:
-		return TaskStep{Action: ActionStartImplement, Message: "Starting the triage"}
+		return TaskStep{Action: ActionStartImplement, Message: "Starting the " + what}
 	case TaskImplementing:
 		step := implementingStep(f)
 		if step.Action == ActionRetry || step.Action == ActionFail {
 			return TaskStep{Action: ActionFail, Feedback: step.Feedback,
-				Message: "The triage failed: " + gist(step.Feedback)}
+				Message: "The " + what + " failed: " + gist(step.Feedback)}
 		}
 		if step.Action == ActionStartImplement {
-			step.Message = "Starting the triage"
+			step.Message = "Starting the " + what
 		}
 		return step
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// scoredStep decides what follows a finished judge run that reported neither
+// an error nor an outage: its verdicts are recorded, or the Task fails when it
+// gave none.
+func scoredStep(f TaskFacts) TaskStep {
+	if f.Run.Result.Score == nil {
+		return TaskStep{Action: ActionFail, Feedback: "the judge reported no verdicts",
+			Message: "The judge run failed: the judge reported no verdicts"}
+	}
+	return TaskStep{Action: ActionScored, Message: "The judge gave its verdicts"}
 }
 
 // triagedStep decides what follows a finished triager run that reported
@@ -1586,7 +1609,7 @@ func implementingStep(f TaskFacts) TaskStep {
 		return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
 	case f.Run.Result.Unavailable:
 		return agentUnavailable(f)
-	case f.Run.Result.Blocked != "" && !f.Plan && !f.Triage:
+	case f.Run.Result.Blocked != "" && !f.Plan && !f.Triage && !f.Score:
 		// The agent says the issue can't start yet: more rounds won't change that.
 		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Message: BlockedMessage(f.Run.Result.Blocked)}
 	case IsScopeRefusal(f.Run.Result.Error) && IsScopeRefusal(f.Feedback):
@@ -1599,6 +1622,8 @@ func implementingStep(f TaskFacts) TaskStep {
 		return planPushedStep(f)
 	case f.Triage:
 		return triagedStep(f)
+	case f.Score:
+		return scoredStep(f)
 	}
 	return implementedStep(f)
 }

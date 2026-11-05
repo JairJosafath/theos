@@ -14,8 +14,9 @@ import (
 )
 
 // TaskKind is what a Task does: implement a goal in a Container's repository,
-// plan a round of a Brief, triage an issue, or write an issue's spec.
-// +kubebuilder:validation:Enum=Implement;Plan;Triage;Spec
+// plan a round of a Brief, triage an issue, write an issue's spec, or judge
+// another Task's finished change for a Scorer.
+// +kubebuilder:validation:Enum=Implement;Plan;Triage;Spec;Score
 type TaskKind string
 
 // Task kinds.
@@ -30,6 +31,11 @@ const (
 	// then copies its acceptance criteria into the issue (docs/design.md,
 	// "Spec").
 	TaskKindSpec TaskKind = "Spec"
+	// TaskScore judges another Task's finished change against a Scorer's
+	// criteria: one read-only run of the Scorer's judge, whose verdicts are
+	// its status.score (docs/plans/measure-and-improve.md). Its Scorer makes
+	// it and owns it.
+	TaskScore TaskKind = "Score"
 )
 
 // TaskSpec is a goal for one Container, done by an Agent: written here, or in an
@@ -51,13 +57,17 @@ const (
 // +kubebuilder:validation:XValidation:rule="!has(self.verifierRef) || ((!has(self.kind) || self.kind == 'Implement') && !has(self.allowedProtectedPaths))",message="only an Implement Task without allowedProtectedPaths has a verifierRef: a spec, a plan, a triage and a Standard change are not verified"
 // +kubebuilder:validation:XValidation:rule="!has(self.allowedProtectedPaths) || has(self.issue)",message="allowedProtectedPaths needs an issue"
 // +kubebuilder:validation:XValidation:rule="has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)",message="allowedProtectedPaths is immutable"
+// +kubebuilder:validation:XValidation:rule="(has(self.kind) && self.kind == 'Score') == has(self.score)",message="a Score Task needs score, and only a Score Task has one"
+// +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Score' || (has(self.goal) && has(self.containerRef) && !has(self.reviewerRef) && !has(self.verifierRef) && !has(self.allowedProtectedPaths))",message="a Score Task has a goal and a containerRef, and no reviewerRef, verifierRef or allowedProtectedPaths"
+// +kubebuilder:validation:XValidation:rule="has(self.score) == has(oldSelf.score)",message="score is immutable"
 type TaskSpec struct {
 	// kind is Implement (the default): implement the goal in the Container's
 	// repository; Plan: plan a round of the Brief named by briefRef; Triage:
 	// decide what the issue needs next, which the operator then applies to the
-	// issue; or Spec: write the issue's spec, docs/specs/<issue>.md, which
+	// issue; Spec: write the issue's spec, docs/specs/<issue>.md, which
 	// merges after its review point and gives the issue its acceptance
-	// criteria. It can't change.
+	// criteria; or Score: judge another Task's finished change for the
+	// Scorer named in score. It can't change.
 	// +kubebuilder:default=Implement
 	// +optional
 	Kind TaskKind `json:"kind,omitempty"`
@@ -122,6 +132,93 @@ type TaskSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="allowedProtectedPaths is immutable"
 	// +optional
 	AllowedProtectedPaths []string `json:"allowedProtectedPaths,omitempty"`
+
+	// score is what a Score Task judges: the Scorer that made it, the Task it
+	// judges and the criteria, copied from the Scorer when it was made. It
+	// can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="score is immutable"
+	// +optional
+	Score *TaskScoreSpec `json:"score,omitempty"`
+}
+
+// TaskScoreSpec is what a Score Task judges.
+type TaskScoreSpec struct {
+	// scorerRef names the Scorer that made the Task.
+	// +required
+	ScorerRef LocalRef `json:"scorerRef"`
+
+	// scorerGeneration is the Scorer's generation the criteria are of.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	ScorerGeneration int64 `json:"scorerGeneration"`
+
+	// taskRef names the finished Task it judges.
+	// +required
+	TaskRef LocalRef `json:"taskRef"`
+
+	// criteria are the Scorer's criteria, as they were.
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=500
+	// +required
+	Criteria []string `json:"criteria"`
+
+	// config is the Agent configuration the judged Task's implementer ran on,
+	// copied from its runs, so Scores compare configurations.
+	// +optional
+	Config TaskRunConfig `json:"config,omitzero"`
+}
+
+// TaskRunConfig is the Agent configuration an agent run ran on.
+type TaskRunConfig struct {
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	Agent string `json:"agent,omitempty"`
+	// +kubebuilder:validation:MaxLength=32
+	// +optional
+	Harness string `json:"harness,omitempty"`
+	// +kubebuilder:validation:MaxLength=100
+	// +optional
+	Model string `json:"model,omitempty"`
+}
+
+// ScoreVerdict is a judge's verdict on a criterion.
+// +kubebuilder:validation:Enum=Pass;Fail;Unclear
+type ScoreVerdict string
+
+// Score verdicts.
+const (
+	ScorePass    ScoreVerdict = "Pass"
+	ScoreFail    ScoreVerdict = "Fail"
+	ScoreUnclear ScoreVerdict = "Unclear"
+)
+
+// TaskScoreCriterion is the judge's verdict on one criterion, and why.
+type TaskScoreCriterion struct {
+	// criterion is the criterion's text.
+	// +kubebuilder:validation:MaxLength=500
+	// +required
+	Criterion string `json:"criterion"`
+
+	// verdict is Pass, Fail, or Unclear when the judge couldn't tell or said
+	// nothing of it.
+	// +required
+	Verdict ScoreVerdict `json:"verdict"`
+
+	// reason is the judge's why, in a sentence or two.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Reason string `json:"reason,omitempty"`
+}
+
+// TaskScoreStatus is what a Score Task's judge found.
+type TaskScoreStatus struct {
+	// criteria are the verdicts, one per criterion of spec.score, in its order.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +optional
+	Criteria []TaskScoreCriterion `json:"criteria,omitempty"`
 }
 
 // TaskPhase is where a Task is in its rounds.
@@ -587,10 +684,12 @@ type TaskStatus struct {
 	PullRequestEnded string `json:"pullRequestEnded,omitempty"`
 
 	// pullRequestSize is the size of the merged pull request's change, read
-	// once when it merged (docs/plans/measure-and-improve.md, decision 4);
-	// unset before then, or when the Git host couldn't be read.
+	// once when it merged with personCommits (docs/plans/measure-and-improve.md,
+	// decision 4); unset before then, or when the Git host couldn't be read.
+	// A value, not a pointer: the older version carries a field it lacks in an
+	// annotation, which keeps no empty object.
 	// +optional
-	PullRequestSize *TaskPullRequestSize `json:"pullRequestSize,omitempty"`
+	PullRequestSize TaskPullRequestSize `json:"pullRequestSize,omitzero"`
 
 	// personCommits counts the merged pull request's commits a person wrote:
 	// any not by an agent and not a merge (decision 3), read with
@@ -639,6 +738,11 @@ type TaskStatus struct {
 	// what the operator did with it.
 	// +optional
 	Triage *TriageDecision `json:"triage,omitempty"`
+
+	// score is a Score Task's verdicts, once its judge ran; a run that failed
+	// leaves each criterion Unclear with why. A value, as pullRequestSize is.
+	// +optional
+	Score TaskScoreStatus `json:"score,omitzero"`
 
 	// spec is a Spec Task's spec: its file, who approved it, and what the
 	// operator did to the issue once it merged.

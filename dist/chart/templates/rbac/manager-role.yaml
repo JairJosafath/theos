@@ -248,6 +248,7 @@ rules:
   - deploytargets/status
   - projects/status
   - relationships/status
+  - scorers/status
   - sessions/status
   - softwaresystems/status
   - tasks/status
@@ -259,6 +260,7 @@ rules:
   - theos.factory.io
   resources:
   - chats
+  - scorers
   verbs:
   - get
   - list

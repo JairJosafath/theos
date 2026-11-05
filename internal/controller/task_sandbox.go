@@ -384,7 +384,7 @@ func runEnv(run sandboxRun) []corev1.EnvVar {
 			secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
 		)
 	}
-	return []corev1.EnvVar{
+	env := []corev1.EnvVar{
 		{Name: agentrunner.EnvRole, Value: run.role},
 		{Name: agentrunner.EnvRepoURL, Value: run.repoURL},
 		{Name: agentrunner.EnvBranch, Value: run.status.Branch},
@@ -401,6 +401,12 @@ func runEnv(run sandboxRun) []corev1.EnvVar {
 		secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
 		secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
 	}
+	if score := task.Spec.Score; score != nil {
+		// A judge's criteria go apart from the evidence in its goal.
+		criteria, _ := json.Marshal(score.Criteria)
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvCriteria, Value: string(criteria)})
+	}
+	return env
 }
 
 func secretEnv(name, secret, key string) corev1.EnvVar {
@@ -506,6 +512,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 				CheckFailsOnBase: result.CheckFailsOnBase,
 				Proposal:         result.Proposal, Extra: result.Extra, Empty: result.Empty, Blocked: result.Blocked,
 				FollowUps: result.FollowUps, Open: result.Open, Unavailable: result.Unavailable, Triage: result.Triage,
+				Score: result.Score,
 			}
 			// A result theos-agent wrote before an outage stands.
 			state.Interrupted = (podDisrupted(&pod) || result.Interrupted) && !ownLimit
