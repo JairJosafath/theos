@@ -542,7 +542,7 @@ var _ = Describe("Crew", func() {
 		ns := newProjectNamespace()
 		crew := newCrew(ns)
 		crew.Spec.Routes = []c4v1beta1.CrewRoute{{Label: "kind/docs"}}
-		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("a route names an implementer, a reviewer or both")))
+		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("a route names an implementer, a reviewer, a verifier or more of them")))
 		haiku := &c4v1beta1.LocalRef{Name: "haiku"}
 		crew = newCrew(ns)
 		crew.Spec.Routes = []c4v1beta1.CrewRoute{{Label: "kind/docs", Implementer: haiku}, {Label: "kind/docs", Reviewer: haiku}}

@@ -17,6 +17,9 @@ const (
 	TaskImplementing = "Implementing"
 	TaskChecking     = "Checking"
 	TaskReviewing    = "Reviewing"
+	// TaskVerifying is a change the reviewer approved, which the Task's
+	// verifier builds, starts and checks against its criteria before it merges.
+	TaskVerifying = "Verifying"
 	// TaskAwaitingApproval is a Spec Task whose spec passed CI and the
 	// reviewer, waiting for a person to approve its pull request.
 	TaskAwaitingApproval = "AwaitingApproval"
@@ -30,6 +33,9 @@ const (
 const (
 	RoleImplementer = "implement"
 	RoleReviewer    = "review"
+	// RoleVerifier is the run that builds, starts and checks a change the
+	// reviewer approved, and pushes nothing.
+	RoleVerifier = "verify"
 	// RolePlanner is a Plan Task's run: the planner writes a Brief round's plan.
 	RolePlanner = "plan"
 	// RoleTriager is a Triage Task's run: the triager decides what an issue
@@ -363,7 +369,8 @@ type TaskFacts struct {
 	// are pending, and CheckingSince when the Task entered Checking.
 	CIRun         CIRun
 	CheckingSince time.Time
-	// ReviewAttempts counts reviewer runs without a verdict in this round.
+	// ReviewAttempts counts reviewer runs without a verdict in this round, and
+	// once it is Verifying, the verifier's.
 	ReviewAttempts int
 	// ReviewAgains counts the review runs in this round started again because
 	// an approval ran out (ReviewAgain).
@@ -456,6 +463,10 @@ type TaskFacts struct {
 	// SpecPull is the spec's pull request and what people said of it, read
 	// while the Task is AwaitingApproval.
 	SpecPull SpecPullFacts
+	// Verify means the Task has a verifier: a change its reviewer approved is
+	// built, started and checked against its criteria (Verifying) before it
+	// merges. A spec and a Standard change are never verified (Verifies).
+	Verify bool
 }
 
 // SpecPullFacts is a spec's pull request while it waits for its approval:
@@ -1149,7 +1160,15 @@ const (
 	// ActionSpecDeclined fails a Spec Task whose pull request a person closed
 	// unmerged, and hands its issue back.
 	ActionSpecDeclined TaskAction = "SpecDeclined"
-	ActionFail         TaskAction = "Fail"
+	// ActionVerify ends the approving review, keeps what it left for the
+	// merge, and has the change verified (Verifying), in the same round.
+	ActionVerify TaskAction = "Verify"
+	// ActionStartVerify starts the verifier's sandbox on the approved head.
+	ActionStartVerify TaskAction = "StartVerify"
+	// ActionRetryVerify runs the verifier again after a run that gave no
+	// verdict, and counts the attempt.
+	ActionRetryVerify TaskAction = "RetryVerify"
+	ActionFail        TaskAction = "Fail"
 )
 
 // TaskStep is the next action, with the feedback for the next round when the
@@ -1217,7 +1236,8 @@ func pauseState(f TaskFacts, step TaskStep) PauseState {
 func NextTaskStep(f TaskFacts) TaskStep {
 	f.Run = settleSuspended(f.Run)
 	step := nextTaskStep(f)
-	starts := step.Action == ActionStartImplement || step.Action == ActionStartReview
+	starts := step.Action == ActionStartImplement || step.Action == ActionStartReview ||
+		step.Action == ActionStartVerify
 	if f.Pause != "" && (starts || step.Action == ActionResumeRun) {
 		// A pause of the runs starts no agent and resumes none, for any reason.
 		return TaskStep{Action: ActionWait, Reason: ReasonPaused, Pause: PausePaused, Message: fmt.Sprintf(
@@ -1333,6 +1353,9 @@ func nextTaskStep(f TaskFacts) TaskStep {
 
 	case TaskReviewing:
 		return reviewingStep(f)
+
+	case TaskVerifying:
+		return verifyingStep(f)
 
 	case TaskAwaitingApproval:
 		return awaitingApprovalStep(f)
@@ -1587,6 +1610,10 @@ func reviewingStep(f TaskFacts) TaskStep {
 		if f.Spec && f.SpecApproval != SpecApprovalReviewer {
 			return TaskStep{Action: ActionAwaitApproval,
 				Message: "The reviewer approved the spec; it waits for a person to approve its pull request"}
+		}
+		if Verifies(f) {
+			return TaskStep{Action: ActionVerify, Message: fmt.Sprintf(
+				"The reviewer approved; the verifier runs the change before it merges, in round %d", f.Round)}
 		}
 		return approvedStep(f, "Approved; merging")
 	}
@@ -2012,7 +2039,7 @@ func AgentUsername(project, container string) string {
 }
 
 // SandboxName names the sandbox of one run: task, round, role, the round's
-// restart (conflicts, a resume), if any, for reviews the attempt, and the rerun
+// restart (conflicts, a resume), if any, for reviews and verifications the attempt, and the rerun
 // after an interruption, if any. A rerun or a restarted round's run gets a name
 // of its own, so the sandbox it replaces, still being deleted, is never read as
 // its own. It fits a DNS label.
@@ -2021,7 +2048,7 @@ func SandboxName(task string, round, restart int, role string, attempt, rerun in
 	if restart > 0 {
 		suffix += "-s" + strconv.Itoa(restart)
 	}
-	if role == RoleReviewer {
+	if role == RoleReviewer || role == RoleVerifier {
 		suffix += "-a" + strconv.Itoa(attempt)
 	}
 	if rerun > 0 {

@@ -31,7 +31,7 @@ func TestCloseIssueAfterALateAnswer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	r.closeIssue(ctx, provider, repo, task, status, reviewer,
+	r.closeIssue(ctx, provider, repo, task, status, reviewer, agentName(reviewer),
 		[]model.FollowUp{{Title: "Warn when the server is too old", Body: "Compare serverInfo.version."}}, nil)
 
 	got := git.Issue(repo.Owner, repo.Name, n)
@@ -67,7 +67,7 @@ func TestCloseIssueFilesByHandOnce(t *testing.T) {
 
 	status := &c4v1beta1.TaskStatus{Round: 1, IssueTitle: "README shows the hover",
 		PullRequestURL: "http://gitea/tools/cel-lens/pulls/2"}
-	r.closeIssue(context.Background(), provider, repo, task, status, reviewer, nil, open)
+	r.closeIssue(context.Background(), provider, repo, task, status, reviewer, agentName(reviewer), nil, open)
 	filed := byHand()
 	if len(filed) != 1 || status.ByHand != filed[0].URL {
 		t.Fatalf("by-hand issues %v, status.byHand %q; want one, recorded", filed, status.ByHand)
@@ -79,7 +79,7 @@ func TestCloseIssueFilesByHandOnce(t *testing.T) {
 	}{{"with status.byHand", status.ByHand}, {"with status.byHand lost", ""}} {
 		again := &c4v1beta1.TaskStatus{Round: 1, IssueTitle: status.IssueTitle, PullRequestURL: status.PullRequestURL,
 			ByHand: rerun.byHand}
-		r.closeIssue(context.Background(), provider, repo, task, again, reviewer, nil, open)
+		r.closeIssue(context.Background(), provider, repo, task, again, reviewer, agentName(reviewer), nil, open)
 		if got := byHand(); len(got) != 1 {
 			t.Errorf("%s: %d by-hand issues, want 1", rerun.name, len(got))
 		}

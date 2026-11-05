@@ -538,7 +538,7 @@ export interface TaskTransition {
 /** What a Task keeps of one agent run once it ended: its round, role, cost, tokens and handoff sizes. */
 export interface TaskAgentRun {
   round: number
-  /** implement, review or plan; omitted when neither theos-agent nor the sandbox's name said. */
+  /** implement, review, verify or plan; omitted when neither theos-agent nor the sandbox's name said. */
   role?: string
   sandbox?: string
   /** When the Task saw the run end. */
@@ -579,6 +579,8 @@ export interface Task extends K8sObject {
     /** Implements the goal, and reviews it when there is no reviewerRef. */
     agentRef: LocalRef
     reviewerRef?: LocalRef
+    /** Builds, starts and checks the change once the reviewer approved it, before it merges (phase Verifying). */
+    verifierRef?: LocalRef
     /** A Task has either a goal or an issue of its Container's repository. */
     goal?: string
     issue?: number
@@ -625,7 +627,15 @@ export interface Task extends K8sObject {
     pullRequest?: number
     pullRequestURL?: string
     checks?: CheckStatus
-    review?: { verdict?: string; summary?: string }
+    review?: {
+      verdict?: string
+      summary?: string
+      /** Kept while a verifier runs the approved change, for the merge to file. */
+      followUps?: { title: string; body?: string; criteria?: string[] }[]
+      open?: OpenCriterion[]
+    }
+    /** The verifier's latest verdict: what it ran and found, and the criteria it left open for a person. */
+    verification?: { verdict?: string; summary?: string; commit?: string; open?: OpenCriterion[] }
     summary?: string
     feedback?: string
     /** What the Task's agent runs cost over all rounds, in thousandths of a US dollar. */
@@ -705,6 +715,8 @@ export interface Crew extends K8sObject {
     specWriter?: LocalRef
     /** Who approves a spec's pull request before it merges; unset means Person. */
     specApproval?: SpecApproval
+    /** The Agent that builds, starts and checks each approved change before it merges; unset, the review merges it. */
+    verifier?: LocalRef
   }
   status?: {
     phase?: CrewPhase
@@ -743,6 +755,14 @@ export interface CrewRoute {
   label: string
   implementer?: LocalRef
   reviewer?: LocalRef
+  /** Verifies the label's issues, even in a Crew without a verifier. */
+  verifier?: LocalRef
+}
+
+/** An acceptance criterion an approval left open for a person, and why. */
+export interface OpenCriterion {
+  criterion: string
+  why?: string
 }
 
 /** A release a Crew tagged. */

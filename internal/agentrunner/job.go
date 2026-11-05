@@ -18,12 +18,14 @@ import (
 	"github.com/JairJosafath/theos/internal/model"
 )
 
-// Roles a sandbox can play in a Task round. Plan is a Plan Task's round: it
-// plans a Brief in the Brief's repository. Triage is a Triage Task's run: it
-// reads the issue and the repository, and pushes nothing.
+// Roles a sandbox can play in a Task round. Verify builds, starts and checks a
+// change the reviewer approved, and pushes nothing. Plan is a Plan Task's
+// round: it plans a Brief in the Brief's repository. Triage is a Triage
+// Task's run: it reads the issue and the repository, and pushes nothing.
 const (
 	RoleImplement = "implement"
 	RoleReview    = "review"
+	RoleVerify    = "verify"
 	RolePlan      = "plan"
 	RoleTriage    = "triage"
 )
@@ -107,7 +109,7 @@ const (
 	HarnessStandIn    = "stand-in"
 )
 
-// Job is one sandbox run: implement a goal on a branch, review that branch, or
+// Job is one sandbox run: implement a goal on a branch, review or verify that branch, or
 // plan a round of a Brief on plan/<round>.
 type Job struct {
 	Role     string
@@ -312,9 +314,9 @@ func (job *Job) check() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing %s", strings.Join(sortedCopy(missing), ", "))
 	}
-	if !slices.Contains([]string{RoleImplement, RoleReview, RolePlan, RoleTriage}, job.Role) {
-		return fmt.Errorf("%s=%q: want %s, %s, %s or %s", EnvRole, job.Role, RoleImplement, RoleReview, RolePlan,
-			RoleTriage)
+	if !slices.Contains([]string{RoleImplement, RoleReview, RoleVerify, RolePlan, RoleTriage}, job.Role) {
+		return fmt.Errorf("%s=%q: want %s, %s, %s, %s or %s", EnvRole, job.Role, RoleImplement, RoleReview,
+			RoleVerify, RolePlan, RoleTriage)
 	}
 	if job.Branch == job.Base {
 		return errors.New("the work branch must not be the base branch")

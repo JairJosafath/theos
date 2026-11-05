@@ -72,6 +72,17 @@ type CrewSpec struct {
 	// +optional
 	SpecApproval SpecApproval `json:"specApproval,omitempty"`
 
+	// verifier names the Agent that verifies each issue's change once the
+	// reviewer approved it, before it merges: it builds and starts the change
+	// at the pull request's head the way the repository says (make verify,
+	// else its README), exercises each acceptance criterion against what
+	// runs, and approves or asks for changes with the evidence, which start
+	// the next round as a reviewer's would (docs/design.md, "Verify"). A spec
+	// and a Standard change are not verified. A route may name another
+	// verifier for its issues. Unset, the reviewer's approval merges.
+	// +optional
+	Verifier *LocalRef `json:"verifier,omitempty"`
+
 	// paused stops the Crew from picking up new issues. A Task already started
 	// runs to its end.
 	// +optional
@@ -125,12 +136,13 @@ type CrewSpec struct {
 	// +optional
 	PublishReleases *CrewPublishReleases `json:"publishReleases,omitempty"`
 
-	// routes send the issues with a label to other Agents than implementer and
-	// reviewer, such as kind/docs to a cheaper model or a security label to a
-	// stronger reviewer. For each role, the first route in the list whose label
-	// the issue has and that names an Agent for the role decides; with none,
-	// the Crew's own Agent takes it. The labels are read as the Task starts,
-	// and its agentRef and reviewerRef name the Agents it got.
+	// routes send the issues with a label to other Agents than implementer,
+	// reviewer and verifier, such as kind/docs to a cheaper model or a
+	// security label to a stronger reviewer. For each role, the first route in
+	// the list whose label the issue has and that names an Agent for the role
+	// decides; with none, the Crew's own Agent takes it. The labels are read
+	// as the Task starts, and its agentRef, reviewerRef and verifierRef name
+	// the Agents it got.
 	// +listType=map
 	// +listMapKey=label
 	// +kubebuilder:validation:MaxItems=20
@@ -139,7 +151,7 @@ type CrewSpec struct {
 }
 
 // CrewRoute sends a Crew's issues with a label to other Agents.
-// +kubebuilder:validation:XValidation:rule="has(self.implementer) || has(self.reviewer)",message="a route names an implementer, a reviewer or both"
+// +kubebuilder:validation:XValidation:rule="has(self.implementer) || has(self.reviewer) || has(self.verifier)",message="a route names an implementer, a reviewer, a verifier or more of them"
 type CrewRoute struct {
 	// label is an issue label, such as kind/docs, matched exactly.
 	// +kubebuilder:validation:MinLength=1
@@ -154,6 +166,12 @@ type CrewRoute struct {
 	// reviewer names the Agent that reviews an issue with the label.
 	// +optional
 	Reviewer *LocalRef `json:"reviewer,omitempty"`
+
+	// verifier names the Agent that verifies an issue with the label once the
+	// reviewer approved it, such as one whose image has a browser for a UI's
+	// issues. Its issues are verified even when the Crew has no verifier.
+	// +optional
+	Verifier *LocalRef `json:"verifier,omitempty"`
 }
 
 // CrewPublishReleases is where a Crew publishes its releases.

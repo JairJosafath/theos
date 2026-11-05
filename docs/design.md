@@ -238,11 +238,12 @@ A Task is a goal for a Container, usually an issue of its repository
 `task/<name>`, opens a pull request, waits for CI, runs the reviewer, and
 squash-merges on approval. Failed checks, requested changes or a failed run
 start the next round with that feedback, up to the Agent's `maxRounds`.
-Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, `Blocked` (waiting
-on a Standard change), `AwaitingApproval` (a spec waiting for a person), then
-`Merged` or `Failed`. A Triage Task (`kind: Triage`) runs one triager on an
-issue instead and applies its decision, and a Spec Task (`kind: Spec`) writes
-an issue's spec; see *Triage* and *Spec* under Crews and releases.
+Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, `Verifying` (a
+verifier runs the approved change), `Blocked` (waiting on a Standard change),
+`AwaitingApproval` (a spec waiting for a person), then `Merged` or `Failed`. A
+Triage Task (`kind: Triage`) runs one triager on an issue instead and applies
+its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
+*Triage*, *Spec* and *Verify* under Crews and releases.
 
 - **A merge that passed skips main's push run.** When a Task's head has all
   its required checks green (the CI system's `CheckContexts`, else the
@@ -357,9 +358,9 @@ an issue's spec; see *Triage* and *Spec* under Crews and releases.
   when its agent was due back is a needs-you item, as before.
 - **Roles get their own model and guide.** An Agent has a `harness` and a
   `model`. A Standard ships `docs/agents/implementer.md` and `reviewer.md`,
-  read from the base branch so a change can't rewrite its own review. The
-  reviewer reports each criterion and may name up to three follow-ups, filed
-  `status/proposed` in the *Later* milestone.
+  and may ship `verifier.md`, read from the base branch so a change can't
+  rewrite its own review. The reviewer reports each criterion and may name
+  up to three follow-ups, filed `status/proposed` in the *Later* milestone.
 - **Context comes from the model:** the system's needs and KPIs, its users,
   the Container's Relationships, read-only clones of related repositories,
   and `docs/project-notes.md`, the project's own word to its agents.
@@ -495,9 +496,9 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   open while a later try may continue it on that branch, with its feedback
   (`status.continues`); the operator closes it, saying why, once none will.
 - **Routes by label.** `spec.routes` sends issues with a label to another
-  implementer or reviewer (`kind/docs` to a cheaper model); per role, the
-  first matching route wins, else the Crew's Agent. The Task records the
-  Agents it got. A missing Agent leaves the Crew `Ready=False`,
+  implementer, reviewer or verifier (`kind/docs` to a cheaper model); per
+  role, the first matching route wins, else the Crew's Agent. The Task
+  records the Agents it got. A missing Agent leaves the Crew `Ready=False`,
   `AgentNotFound`.
 - **Triage** (`spec.triager`). With a triager, the Crew starts one Triage
   Task (`kind: Triage`) at a time for the lowest open `status/proposed`
@@ -543,6 +544,35 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   person who closes the pull request unmerged declines the spec: the Task
   fails (`SpecDeclined`) and the issue goes back `status/needs-human`.
   Without `spec.specWriter`, people write specs.
+- **Verify** (`spec.verifier`). With a verifier, the Crew's Implement Tasks
+  name it in `spec.verifierRef` (a route's `verifier` takes its label's
+  issues, even in a Crew without one). Once the reviewer approves, the
+  review's approval goes on the pull request, what it left for the merge
+  (follow-ups, open criteria) is kept in `status.review`, and the Task
+  enters `Verifying` in the same round: the verifier runs in a sandbox of
+  its own (role `verify`) on the reviewed head, which pushes nothing. It
+  builds and starts the change the way the repository says (`make verify`
+  when the Makefile has that target, else its README), exercises each
+  acceptance criterion against what runs, and reports in the review's
+  verdict format: `approve`, or `changes` with each failing criterion and its
+  evidence, the command it ran and what that printed. A Standard's
+  `docs/agents/verifier.md`, read from the base branch, guides it; without
+  one the built-in prompt applies. `changes` goes on the pull request as a
+  request for changes and starts the next round with the evidence as its
+  feedback, as a reviewer's does (same rounds, `maxRounds`); `approve` merges
+  the change as a review's approval does, taking in a main that moved
+  without a second verification. A criterion no sandbox can meet stays open
+  with why, never faked, and goes to the by-hand issue with the review's.
+  A verifier run without a verdict runs again at no round, and the third in
+  a round fails the Task, as a reviewer's does; its outages, pauses and
+  interruptions are handled as any run's. `status.verification` keeps the
+  verdict, the summary, the head it ran and the criteria it left open; the
+  history shows the `Verifying` steps. A spec
+  and a Standard change are never verified (CEL refuses a `verifierRef` on
+  any Task but an Implement Task without `allowedProtectedPaths`): a spec has
+  its own review point, and a Standard change's gated merge needs the
+  approval of a review run that still lasts. Without a verifier, the
+  reviewer's approval merges.
 
 A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
 

@@ -977,12 +977,13 @@ spec:
                 type: object
               routes:
                 description: |-
-                  routes send the issues with a label to other Agents than implementer and
-                  reviewer, such as kind/docs to a cheaper model or a security label to a
-                  stronger reviewer. For each role, the first route in the list whose label
-                  the issue has and that names an Agent for the role decides; with none,
-                  the Crew's own Agent takes it. The labels are read as the Task starts,
-                  and its agentRef and reviewerRef name the Agents it got.
+                  routes send the issues with a label to other Agents than implementer,
+                  reviewer and verifier, such as kind/docs to a cheaper model or a
+                  security label to a stronger reviewer. For each role, the first route in
+                  the list whose label the issue has and that names an Agent for the role
+                  decides; with none, the Crew's own Agent takes it. The labels are read
+                  as the Task starts, and its agentRef, reviewerRef and verifierRef name
+                  the Agents it got.
                 items:
                   description: CrewRoute sends a Crew's issues with a label to other
                     Agents.
@@ -1017,12 +1018,27 @@ spec:
                       required:
                       - name
                       type: object
+                    verifier:
+                      description: |-
+                        verifier names the Agent that verifies an issue with the label once the
+                        reviewer approved it, such as one whose image has a browser for a UI's
+                        issues. Its issues are verified even when the Crew has no verifier.
+                      properties:
+                        name:
+                          description: name of the referenced object.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
                   required:
                   - label
                   type: object
                   x-kubernetes-validations:
-                  - message: a route names an implementer, a reviewer or both
-                    rule: has(self.implementer) || has(self.reviewer)
+                  - message: a route names an implementer, a reviewer, a verifier
+                      or more of them
+                    rule: has(self.implementer) || has(self.reviewer) || has(self.verifier)
                 maxItems: 20
                 type: array
                 x-kubernetes-list-map-keys:
@@ -1082,6 +1098,25 @@ spec:
                   decided yet, and labels, comments on or closes the issue as it decides
                   (docs/design.md, "Triage"). A triage costs no round and takes no place
                   from parallel. Unset, people triage.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              verifier:
+                description: |-
+                  verifier names the Agent that verifies each issue's change once the
+                  reviewer approved it, before it merges: it builds and starts the change
+                  at the pull request's head the way the repository says (make verify,
+                  else its README), exercises each acceptance criterion against what
+                  runs, and approves or asks for changes with the evidence, which start
+                  the next round as a reviewer's would (docs/design.md, "Verify"). A spec
+                  and a Standard change are not verified. A route may name another
+                  verifier for its issues. Unset, the reviewer's approval merges.
                 properties:
                   name:
                     description: name of the referenced object.

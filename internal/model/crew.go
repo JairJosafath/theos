@@ -149,12 +149,25 @@ type CrewFacts struct {
 }
 
 // AgentRoute sends the issues labelled Label to other Agents than the Crew's:
-// Implementer and Reviewer name them, empty for a role the route leaves to
-// the Crew's own Agent.
+// Implementer, Reviewer and Verifier name them, empty for a role the route
+// leaves to the Crew's own Agent.
 type AgentRoute struct {
 	Label       string
 	Implementer string
 	Reviewer    string
+	Verifier    string
+}
+
+// RouteVerifier is the verifier of an issue with labels: that of the first
+// route whose label the issue has and that names one, else empty for the
+// Crew's own, if it has one.
+func RouteVerifier(routes []AgentRoute, labels []string) string {
+	for _, r := range routes {
+		if r.Verifier != "" && slices.Contains(labels, r.Label) {
+			return r.Verifier
+		}
+	}
+	return ""
 }
 
 // RouteAgents is who works an issue with labels: for each role, the Agent of
@@ -192,9 +205,10 @@ type IssueStart struct {
 	// AllowedPaths are the protected paths the Task may change; set only for a
 	// Standard change issue a Task named.
 	AllowedPaths []string
-	// Implementer and Reviewer are the Agents a route gave the issue; empty
-	// for the Crew's own. A Spec Task's implementer is the Crew's spec writer.
-	Implementer, Reviewer string
+	// Implementer, Reviewer and Verifier are the Agents a route gave the
+	// issue; empty for the Crew's own. A Spec Task's implementer is the Crew's
+	// spec writer, and it has no verifier: a spec is not verified.
+	Implementer, Reviewer, Verifier string
 	// Spec means a Spec Task, for an issue labelled status/needs-spec.
 	Spec bool
 }
@@ -385,6 +399,10 @@ func issueStart(container string, f CrewFacts, issue Issue, allowance []string) 
 	start := IssueStart{Issue: issue.Number, Task: IssueTaskName(container, issue.Number, attempt), Attempt: attempt,
 		AllowedPaths: allowance, Spec: issue.Spec}
 	start.Implementer, start.Reviewer = RouteAgents(f.Routes, issue.Labels)
+	if !issue.Spec && len(allowance) == 0 {
+		// A spec and a Standard change are not verified.
+		start.Verifier = RouteVerifier(f.Routes, issue.Labels)
+	}
 	kind := "issue"
 	if issue.Urgent {
 		kind = "urgent issue"

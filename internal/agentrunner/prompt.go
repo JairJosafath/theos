@@ -27,6 +27,7 @@ const (
 var roleGuides = map[string]string{
 	RoleImplement: "docs/agents/implementer.md",
 	RoleReview:    "docs/agents/reviewer.md",
+	RoleVerify:    "docs/agents/verifier.md",
 	RoleTriage:    "docs/agents/triager.md",
 	guideSpec:     "docs/agents/spec-writer.md",
 }
@@ -66,6 +67,9 @@ type Workspace struct {
 	Conflicts []string
 	// Images are the images the change adds or changes, for the reviewer.
 	Images []ChangedImage
+	// MakeVerify means the repository's Makefile has a model.VerifyTarget
+	// target, which builds and starts the change for its verifier.
+	MakeVerify bool
 }
 
 // maxListedImages caps the images a review prompt lists.
@@ -498,7 +502,11 @@ func criteria(in []string) []string {
 // output that has a verdict. It keeps the titled follow-ups, up to
 // model.MaxFollowUps, and on an approval the named open criteria, trimmed, up to
 // model.MaxFollowUpCriteria.
-func ParseVerdict(output string) (Verdict, error) {
+func ParseVerdict(output string) (Verdict, error) { return parseVerdict(output, "reviewer") }
+
+// parseVerdict is ParseVerdict of who's output: the reviewer's, or the
+// verifier's, which reports in the same format.
+func parseVerdict(output, who string) (Verdict, error) {
 	for end := strings.LastIndex(output, "}"); end >= 0; end = strings.LastIndex(output[:end], "}") {
 		for start := strings.LastIndex(output[:end], "{"); start >= 0; start = strings.LastIndex(output[:start], "{") {
 			var v struct {
@@ -531,7 +539,7 @@ func ParseVerdict(output string) (Verdict, error) {
 			return out, nil
 		}
 	}
-	return Verdict{}, errors.New("the reviewer gave no JSON verdict")
+	return Verdict{}, fmt.Errorf("the %s gave no JSON verdict", who)
 }
 
 func sortedCopy(s []string) []string {

@@ -302,7 +302,8 @@ func handBackIssues(ctx context.Context, provider ports.Issues, repo ports.Repos
 
 // crewIssueTask is the Task a Crew starts for an issue, on the Agents its
 // route gave it, else the Crew's own: a Spec Task, written by the Crew's spec
-// writer, for an issue that needs a spec.
+// writer, for an issue that needs a spec; and, with a verifier, a build the
+// verifier runs once the reviewer approved it.
 func crewIssueTask(crew *c4v1beta1.Crew, container *c4v1beta1.Container, s model.IssueStart) *c4v1beta1.Task {
 	implementer, reviewer := crew.Spec.Implementer.Name, crew.Spec.Reviewer.Name
 	if s.Implementer != "" {
@@ -315,6 +316,16 @@ func crewIssueTask(crew *c4v1beta1.Crew, container *c4v1beta1.Container, s model
 	if s.Spec && crew.Spec.SpecWriter != nil {
 		kind, implementer = c4v1beta1.TaskKindSpec, crew.Spec.SpecWriter.Name
 	}
+	// A spec and a Standard change are not verified; a route's verifier
+	// verifies its issues even when the Crew has none.
+	var verifier *c4v1beta1.LocalRef
+	switch {
+	case s.Spec || len(s.AllowedPaths) > 0:
+	case s.Verifier != "":
+		verifier = &c4v1beta1.LocalRef{Name: s.Verifier}
+	case crew.Spec.Verifier != nil:
+		verifier = &c4v1beta1.LocalRef{Name: crew.Spec.Verifier.Name}
+	}
 	return &c4v1beta1.Task{
 		ObjectMeta: metav1.ObjectMeta{Namespace: crew.Namespace, Name: s.Task, Labels: map[string]string{
 			LabelCrew: crew.Name, LabelIssue: strconv.Itoa(s.Issue)}},
@@ -323,6 +334,7 @@ func crewIssueTask(crew *c4v1beta1.Crew, container *c4v1beta1.Container, s model
 			ContainerRef: c4v1beta1.LocalRef{Name: container.Name},
 			AgentRef:     c4v1beta1.LocalRef{Name: implementer},
 			ReviewerRef:  &c4v1beta1.LocalRef{Name: reviewer},
+			VerifierRef:  verifier,
 			Issue:        int32(s.Issue),
 			// Set only for a Standard change, from the Task that filed it.
 			AllowedProtectedPaths: s.AllowedPaths,
@@ -367,9 +379,10 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1beta1.Crew, cont
 }
 
 // crewAgentNames names every Agent a Crew may start a Task with: its own two,
-// its triager, its spec writer and those its routes name, each once.
+// its triager, its spec writer, its verifier and those its routes name, each
+// once.
 func crewAgentNames(spec *c4v1beta1.CrewSpec) []string {
-	names := make([]string, 0, 4+2*len(spec.Routes))
+	names := make([]string, 0, 5+3*len(spec.Routes))
 	add := func(ref *c4v1beta1.LocalRef) {
 		if ref != nil && !slices.Contains(names, ref.Name) {
 			names = append(names, ref.Name)
@@ -379,9 +392,11 @@ func crewAgentNames(spec *c4v1beta1.CrewSpec) []string {
 	add(&spec.Reviewer)
 	add(spec.Triager)
 	add(spec.SpecWriter)
+	add(spec.Verifier)
 	for _, route := range spec.Routes {
 		add(route.Implementer)
 		add(route.Reviewer)
+		add(route.Verifier)
 	}
 	return names
 }
@@ -396,6 +411,9 @@ func crewRoutes(spec *c4v1beta1.CrewSpec) []model.AgentRoute {
 		}
 		if route.Reviewer != nil {
 			r.Reviewer = route.Reviewer.Name
+		}
+		if route.Verifier != nil {
+			r.Verifier = route.Verifier.Name
 		}
 		out = append(out, r)
 	}

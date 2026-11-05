@@ -752,6 +752,10 @@ spec:
     - jsonPath: .status.review.verdict
       name: Review
       type: string
+    - jsonPath: .status.verification.verdict
+      name: Verified
+      priority: 1
+      type: string
     - jsonPath: .status.pullRequestURL
       name: PR
       priority: 1
@@ -777,8 +781,9 @@ spec:
         description: |-
           Task is a goal for a Container. The operator runs an Agent in a sandbox to
           implement it on a branch, opens a pull request, waits for CI, runs the Agent
-          again as reviewer, and merges when both pass. It is owned by its Container. A
-          Plan Task is a planning round of a Brief, owned by the Brief. A Triage Task
+          again as reviewer, and merges when both pass; with a verifier, that Agent
+          first builds, starts and checks the approved change. It is owned by its
+          Container. A Plan Task is a planning round of a Brief, owned by the Brief. A Triage Task
           runs a triager on one proposed issue and applies what it decided. A Spec
           Task writes an issue's spec in a pull request that a person approves.
         properties:
@@ -920,6 +925,26 @@ spec:
                 x-kubernetes-validations:
                 - message: reviewerRef is immutable
                   rule: self == oldSelf
+              verifierRef:
+                description: |-
+                  verifierRef names the Agent that verifies the change once the reviewer
+                  approved it, before it merges: it builds and starts the change and
+                  checks each acceptance criterion against what runs, in the phase
+                  Verifying (docs/design.md, "Verify"). Only an Implement Task without
+                  allowedProtectedPaths has one. Unset, the reviewer's approval merges. It
+                  can't change.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: verifierRef is immutable
+                  rule: self == oldSelf
             required:
             - agentRef
             type: object
@@ -953,6 +978,13 @@ spec:
               rule: has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)
             - message: reviewerRef is immutable
               rule: has(self.reviewerRef) == has(oldSelf.reviewerRef)
+            - message: verifierRef is immutable
+              rule: has(self.verifierRef) == has(oldSelf.verifierRef)
+            - message: 'only an Implement Task without allowedProtectedPaths has a
+                verifierRef: a spec, a plan, a triage and a Standard change are not
+                verified'
+              rule: '!has(self.verifierRef) || ((!has(self.kind) || self.kind == ''Implement'')
+                && !has(self.allowedProtectedPaths))'
             - message: allowedProtectedPaths needs an issue
               rule: '!has(self.allowedProtectedPaths) || has(self.issue)'
             - message: allowedProtectedPaths is immutable
@@ -1132,6 +1164,7 @@ spec:
                       - Implementing
                       - Checking
                       - Reviewing
+                      - Verifying
                       - AwaitingApproval
                       - Blocked
                       - Merged
@@ -1168,9 +1201,10 @@ spec:
                 type: string
               mergeWhenChecksPass:
                 description: |-
-                  mergeWhenChecksPass means the reviewer approved the change and the
-                  operator merged main into its branch, since main had moved since the
-                  change's checks ran: commit merges once its checks pass, with no new review.
+                  mergeWhenChecksPass means the reviewer (and the verifier, when the Task
+                  has one) approved the change and the operator merged main into its
+                  branch, since main had moved since the change's checks ran: commit
+                  merges once its checks pass, with no new review or verification.
                 type: boolean
               observedGeneration:
                 description: observedGeneration is the spec generation the status
@@ -1179,14 +1213,16 @@ spec:
                 type: integer
               phase:
                 description: |-
-                  phase is Pending, then Implementing, Checking and Reviewing each round, then
-                  Merged or Failed. Blocked means the Task waits for a Standard change, and
-                  AwaitingApproval a Spec Task's spec for a person's approval.
+                  phase is Pending, then Implementing, Checking and Reviewing each round,
+                  and Verifying when the Task has a verifier, then Merged or Failed.
+                  Blocked means the Task waits for a Standard change, and AwaitingApproval
+                  a Spec Task's spec for a person's approval.
                 enum:
                 - Pending
                 - Implementing
                 - Checking
                 - Reviewing
+                - Verifying
                 - AwaitingApproval
                 - Blocked
                 - Merged
@@ -1236,6 +1272,60 @@ spec:
               review:
                 description: review is the reviewer's latest verdict.
                 properties:
+                  followUps:
+                    description: |-
+                      followUps are the work an approving reviewer suggested for later, kept
+                      here while its change is verified, and filed as issues when it merges.
+                    items:
+                      description: |-
+                        TaskFollowUp is work a reviewer suggested for later: the title, body and
+                        acceptance criteria of the issue it becomes.
+                      properties:
+                        body:
+                          description: body says what and why.
+                          maxLength: 2000
+                          type: string
+                        criteria:
+                          description: criteria are the issue's acceptance criteria.
+                          items:
+                            maxLength: 512
+                            type: string
+                          maxItems: 3
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        title:
+                          description: title is the issue's title.
+                          maxLength: 256
+                          type: string
+                      required:
+                      - title
+                      type: object
+                    maxItems: 3
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  open:
+                    description: |-
+                      open are the acceptance criteria an approving reviewer accepted as left
+                      open for a person, kept here while its change is verified.
+                    items:
+                      description: |-
+                        TaskOpenCriterion is an acceptance criterion an approval left open, as it
+                        needs what no agent's sandbox has, and why.
+                      properties:
+                        criterion:
+                          description: criterion is the acceptance criterion.
+                          maxLength: 512
+                          type: string
+                        why:
+                          description: why says what it needs that no sandbox has.
+                          maxLength: 512
+                          type: string
+                      required:
+                      - criterion
+                      type: object
+                    maxItems: 3
+                    type: array
+                    x-kubernetes-list-type: atomic
                   summary:
                     description: summary is what the reviewer found.
                     type: string
@@ -1251,8 +1341,9 @@ spec:
                 format: int32
                 type: integer
               reviewAttempts:
-                description: reviewAttempts counts reviewer runs in this round that
-                  gave no verdict.
+                description: |-
+                  reviewAttempts counts reviewer runs in this round that gave no verdict,
+                  and, once the Task is Verifying, the verifier's.
                 format: int32
                 type: integer
               round:
@@ -1281,8 +1372,8 @@ spec:
                       type: string
                     role:
                       description: |-
-                        role is implement, review, plan or triage; empty when neither theos-agent nor the
-                        sandbox's name said.
+                        role is implement, review, verify, plan or triage; empty when neither
+                        theos-agent nor the sandbox's name said.
                       maxLength: 32
                       type: string
                     round:
@@ -1546,6 +1637,48 @@ spec:
                     type: string
                 required:
                 - decision
+                type: object
+              verification:
+                description: |-
+                  verification is the verifier's latest verdict, once it gave one: what it
+                  ran and found, and the criteria it left open.
+                properties:
+                  commit:
+                    description: commit is the head the verifier ran.
+                    maxLength: 64
+                    type: string
+                  open:
+                    description: |-
+                      open are the acceptance criteria an approving verifier left open, as no
+                      sandbox can meet them, each with why; they go to a person with the
+                      review's when the change merges.
+                    items:
+                      description: |-
+                        TaskOpenCriterion is an acceptance criterion an approval left open, as it
+                        needs what no agent's sandbox has, and why.
+                      properties:
+                        criterion:
+                          description: criterion is the acceptance criterion.
+                          maxLength: 512
+                          type: string
+                        why:
+                          description: why says what it needs that no sandbox has.
+                          maxLength: 512
+                          type: string
+                      required:
+                      - criterion
+                      type: object
+                    maxItems: 3
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  summary:
+                    description: |-
+                      summary is what the verifier ran and found: each acceptance criterion
+                      met, not met or open, with the command it ran and what that printed.
+                    type: string
+                  verdict:
+                    description: verdict is approve or changes.
+                    type: string
                 type: object
             type: object
         required:

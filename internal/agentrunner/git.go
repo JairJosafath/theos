@@ -79,11 +79,20 @@ func clone(ctx context.Context, job Job, dir string) (*repo, error) {
 			// Other changes may have merged since the last round: start from them.
 			return r, r.mergeBase(ctx, job.Base)
 		}
+		if job.Role == RoleVerify {
+			// The verification pushes nothing: a push from the clone fails.
+			if _, err := r.git(ctx, dir, "remote", "set-url", "--push", "origin", "theos-verify-pushes-nothing"); err != nil {
+				return nil, err
+			}
+		}
 		return r, nil
 	case transientGitError(err):
 		// Not knowing whether the branch exists is not the same as its absence:
 		// starting over from the base would lose the earlier rounds.
 		return nil, err
+	}
+	if job.Role == RoleVerify {
+		return nil, fmt.Errorf("branch %s is not on the Git host: there is no change to verify", job.Branch)
 	}
 	if _, err := r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Base); err != nil {
 		return nil, err

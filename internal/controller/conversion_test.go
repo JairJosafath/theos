@@ -201,4 +201,48 @@ var _ = Describe("API versions", func() {
 			g.Expect(kind).To(Equal("Spec"))
 		}).Should(Succeed())
 	})
+
+	// A Crew's verifier, a route's, and a Task's verifierRef and verification
+	// ride through v1alpha1 in its fields annotation (docs/plans/sdlc-loop.md,
+	// step 4).
+	It("carries a Crew's verifiers and a Task's verifier and verification through v1alpha1", func() {
+		ns := newProjectNamespace()
+		fields := fmt.Sprintf(c4v1alpha1.FieldsAnnotation, "v1beta1")
+		crew := newCrew(ns)
+		crew.Spec.Verifier = &c4v1beta1.LocalRef{Name: "verifier"}
+		routes := []c4v1beta1.CrewRoute{{Label: "kind/ui", Reviewer: &c4v1beta1.LocalRef{Name: "strict"},
+			Verifier: &c4v1beta1.LocalRef{Name: "browser"}}}
+		crew.Spec.Routes = routes
+		mustCreate(crew)
+		Eventually(func(g Gomega) {
+			old := readAt(g, alpha, "Crew", ns, "orders-api")
+			g.Expect(old.GetAnnotations()).To(HaveKeyWithValue(fields, And(
+				ContainSubstring(`"verifier":{"name":"verifier"}`), ContainSubstring(`"verifier":{"name":"browser"}`))))
+			g.Expect(unstructured.SetNestedField(old.Object, "Builds the orders API", "spec", "description")).To(Succeed())
+			g.Expect(k8sClient.Update(ctx, old)).To(Succeed())
+		}).Should(Succeed())
+		got := &c4v1beta1.Crew{}
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), got)).To(Succeed())
+		Expect(got.Spec.Verifier).To(Equal(&c4v1beta1.LocalRef{Name: "verifier"}))
+		Expect(got.Spec.Routes).To(Equal(routes))
+		Expect(got.Spec.Description).To(Equal("Builds the orders API"))
+
+		task := newTask(ns, "orders-api-4", "Export orders")
+		task.Spec.VerifierRef = &c4v1beta1.LocalRef{Name: "verifier"}
+		mustCreate(task)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, task.Name), task)).To(Succeed())
+			task.Status.Phase = c4v1beta1.TaskVerifying
+			task.Status.Verification = &c4v1beta1.TaskVerification{Verdict: "changes", Summary: "curl printed 404.",
+				Commit: "sha-1"}
+			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			old := readAt(g, alpha, "Task", ns, task.Name)
+			g.Expect(old.GetAnnotations()).To(HaveKeyWithValue(fields, And(
+				ContainSubstring(`"verifierRef":{"name":"verifier"}`), ContainSubstring(`"summary":"curl printed 404."`))))
+			phase, _, _ := unstructured.NestedString(old.Object, "status", "phase")
+			g.Expect(phase).To(Equal("Verifying"))
+		}).Should(Succeed())
+	})
 })

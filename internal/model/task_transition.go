@@ -55,9 +55,13 @@ func StartRun(p TaskProgress, role string) TaskProgress {
 	if p.Round == 0 {
 		p.Round = 1
 	}
-	p.Phase = TaskImplementing
-	if role == RoleReviewer {
+	switch role {
+	case RoleReviewer:
 		p.Phase = TaskReviewing
+	case RoleVerifier:
+		p.Phase = TaskVerifying
+	default:
+		p.Phase = TaskImplementing
 	}
 	return p
 }
