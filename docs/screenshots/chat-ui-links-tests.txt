@@ -1,0 +1,15 @@
+# Chat posts link to the UI's object pages (docs/plans/done/chat-ui-links.md)
+# go test -v -run '<the plan's tests>' ./internal/model/ ./internal/chatbot/ ./test/chart/
+
+--- PASS: TestChatUIURL (0.00s)
+--- PASS: TestChatPageURL (0.00s)
+--- PASS: TestChatNewsLinksToTheUI (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.026s
+--- PASS: TestPostsLinkToTheUI (0.14s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/chatbot	0.161s
+--- PASS: TestChatChartLinksToTheUI (1.35s)
+--- PASS: TestChatChartRefuses (0.69s)
+PASS
+ok  	github.com/JairJosafath/theos/test/chart	2.066s

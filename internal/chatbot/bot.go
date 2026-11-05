@@ -59,6 +59,9 @@ type Bot struct {
 	Interval time.Duration
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// UIURL is the UI's address (model.ChatUIURL), so a post links to its
+	// object's page; "" links to the Git host alone.
+	UIURL string
 
 	mu    sync.Mutex
 	hosts map[ports.ChatConfig]ports.ChatHost
@@ -283,10 +286,14 @@ func (b *Bot) news(ctx context.Context, namespace string) ([]model.ChatNews, err
 	})
 	var news []model.ChatNews
 	for i := range tasks.Items {
-		news = append(news, model.ChatTaskNews(taskView(&tasks.Items[i]))...)
+		v := taskView(&tasks.Items[i])
+		v.PageURL = model.ChatPageURL(b.UIURL, namespace, "Task", v.Name)
+		news = append(news, model.ChatTaskNews(v)...)
 	}
 	for i := range containers.Items {
-		news = append(news, model.ChatContainerNews(containerView(&containers.Items[i]))...)
+		v := containerView(&containers.Items[i])
+		v.PageURL = model.ChatPageURL(b.UIURL, namespace, "Container", v.Name)
+		news = append(news, model.ChatContainerNews(v)...)
 	}
 	for _, br := range briefs.Items {
 		news = append(news, model.ChatBriefNews(model.ChatBriefRound{Name: br.Name, Round: int(br.Status.Round),

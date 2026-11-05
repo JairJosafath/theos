@@ -916,6 +916,10 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
   restart says nothing twice and runs no command twice; a homeserver or room
   error is retried with backoff and keeps the other rooms going. Only a
   Chat's `people` are obeyed; anyone else gets a one-line refusal.
+  Each post about a Task or a Container links to its page in the UI under
+  `theos-chat`'s `--ui-url` (the chart's `chat.uiURL`, by default the UI's
+  own address), next to the Git host's links; without it, it links to the
+  Git host alone.
 - **Nobody acts in someone else's name.** `theos-chat` may impersonate users
   and groups, so two admission policies (`config/policy`) bound it: a Chat's
   `people` entry names only its writer's own user and groups

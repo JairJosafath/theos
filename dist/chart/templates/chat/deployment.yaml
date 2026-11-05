@@ -44,6 +44,9 @@ spec:
         args:
         - --health-probe-bind-address=:8081
         - --interval={{ .Values.chat.interval }}
+        {{- with include "theos.chatUIURL" . }}
+        - --ui-url={{ . }}
+        {{- end }}
         ports:
         - name: health
           containerPort: 8081

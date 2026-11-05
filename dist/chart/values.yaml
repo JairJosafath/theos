@@ -986,6 +986,13 @@ chat:
   ## How often theos-chat reads each Chat's rooms and posts its news, besides
   ## whenever a Task, Container or Brief in its namespace changes.
   interval: 5s
+  ## The UI's address theos-chat's posts link each Task's and Container's
+  ## page under (--ui-url), http(s)://host[:port][/path]. Empty: the UI's own,
+  ## <ui.sessionBinaryScheme>://<ui.allowedHosts[0]> behind an Ingress, else
+  ## http://localhost:<ui.service.port>, the port-forward's, which opens only
+  ## where that port-forward runs; with ui.enabled false, no links. Set it to
+  ## an address people's phones reach.
+  uiURL: ""
   resources:
     requests: {cpu: 10m, memory: 64Mi}
     limits: {cpu: 500m, memory: 256Mi}

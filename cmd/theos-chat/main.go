@@ -36,6 +36,7 @@ import (
 	"github.com/JairJosafath/theos/internal/adapters/matrix"
 	"github.com/JairJosafath/theos/internal/buildinfo"
 	"github.com/JairJosafath/theos/internal/chatbot"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 func main() {
@@ -43,6 +44,7 @@ func main() {
 		metricsAddr, probeAddr string
 		enableLeaderElection   bool
 		interval               time.Duration
+		uiURL                  string
 	)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to; 0 serves none.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -50,11 +52,18 @@ func main() {
 		"Elect a leader, for more than one replica; it needs leases in its namespace.")
 	flag.DurationVar(&interval, "interval", 5*time.Second,
 		"How often each Chat's rooms are read and its news posted, besides when its namespace changes.")
+	flag.StringVar(&uiURL, "ui-url", "",
+		"The UI's address, http(s)://host[:port][/path], so each post links to its object's page; empty links none.")
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	log := ctrl.Log.WithName("setup")
+	ui, err := model.ChatUIURL(uiURL)
+	if err != nil {
+		log.Error(err, "Refusing --ui-url", "ui-url", uiURL)
+		os.Exit(1)
+	}
 
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -73,7 +82,7 @@ func main() {
 		os.Exit(1)
 	}
 	bot := &chatbot.Bot{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Config: mgr.GetConfig(),
-		ChatHosts: matrix.Hosts(nil), Interval: interval}
+		ChatHosts: matrix.Hosts(nil), Interval: interval, UIURL: ui}
 	if err := bot.SetupWithManager(mgr); err != nil {
 		log.Error(err, "Failed to set up theos-chat")
 		os.Exit(1)

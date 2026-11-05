@@ -224,6 +224,16 @@ someone else. The operator invites them to the Space and its rooms, and
 they may do. The UI's About page and Settings show the project's Chat, its
 rooms with `matrix.to` links and whether it is `Ready`.
 
+Each post about a Task or a Container links to its page in the UI, at the
+UI's own address: behind an Ingress its first `ui.allowedHosts`, else the
+port-forward's `http://localhost:8080`, which opens only on the computer
+running that port-forward. To open them from a phone, give an address it
+reaches:
+
+```bash
+helm upgrade ... --set chat.uiURL=https://theos.example.com
+```
+
 ### Private images
 
 The chart and the images on GHCR are private until the owner makes them
@@ -318,6 +328,7 @@ as the run's artifact); a failing release gets an issue titled
 | `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default). A CRD whose kind's versions differ in shape converts by the operator's webhook, so while the operator is down, or after `helm uninstall` kept the CRDs, `kubectl get` of that kind fails and deleting a Project namespace waits (none today; the CRDs convert by the API server, and [the plan](../../docs/plans/done/api-versions.md) says which) |
 | `webhook.enabled` | the operator's conversion webhook (default on); a kind whose versions differ in shape refuses to render without it |
 | `chat.enabled` | install `theos-chat` (default off): Deployment `<release>-chat` on the operator image, with its own ServiceAccount and ClusterRole (read theos's objects, get Secrets, its own ConfigMaps, impersonate users and groups); `chat.interval` and `chat.resources` |
+| `chat.uiURL` | the UI's address `theos-chat`'s posts link each Task's and Container's page under (`--ui-url`), http(s) with no user, query or fragment; empty, the UI's own: `<ui.sessionBinaryScheme>://<ui.allowedHosts[0]>` behind an Ingress, else `http://localhost:<ui.service.port>`, which opens only where the port-forward runs; with `ui.enabled` false, no links. Set an address people's phones reach |
 | `chat.homeserverURL` | the homeserver of a Chat that names none, the operator's `--chat-homeserver`; empty, the in-cluster one with `chat.homeserver.enabled`, else none |
 | `chat.homeserver.enabled` | with `chat.enabled`, the in-cluster homeserver (default off): Tuwunel as StatefulSet and Service `<release>-matrix` on 8008, federation and registration off; `image` (pinned by `digest`), `serverName` (default `theos.internal`), `persistence`, `resources`, `config` (more `TUWUNEL_*` settings), `waitSeconds` |
 | `chat.homeserver.bot`, `chat.homeserver.accounts` | the bot's `localpart` (`theos`) and the Secret its token goes in (`secretName`, `matrix-bot`) in each of `gitea.projects` and `namespaces`; people's accounts by localpart, each with a first password in Secret `<release>-matrix-account-<name>` |

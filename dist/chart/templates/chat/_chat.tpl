@@ -76,6 +76,28 @@ none. Only with chat.enabled.
 {{- end }}
 
 {{/*
+theos-chat's --ui-url, the UI's address its posts link each object's page
+under: chat.uiURL, else the UI's own as the default sessionBinaryURL finds it
+(theos.sessionBinaryURL): behind an Ingress (ui.allowedHosts) its first host
+over ui.sessionBinaryScheme, else the port-forward's localhost and the UI's
+port; with the UI off, none.
+*/}}
+{{- define "theos.chatUIURL" -}}
+{{- $url := .Values.chat.uiURL }}
+{{- if $url }}
+{{- if not (regexMatch "^https?://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$" $url) }}
+{{- fail (printf "chat.uiURL %q must be an http or https address, with no user, query or fragment" $url) }}
+{{- end }}
+{{- trimSuffix "/" $url }}
+{{- else if not .Values.ui.enabled }}
+{{- else if .Values.ui.allowedHosts -}}
+{{ .Values.ui.sessionBinaryScheme | default "https" }}://{{ index .Values.ui.allowedHosts 0 }}
+{{- else -}}
+http://localhost:{{ .Values.ui.service.port }}
+{{- end }}
+{{- end }}
+
+{{/*
 The homeserver's image: repository:tag@digest, pinned by digest unless the
 digest is set empty.
 */}}
