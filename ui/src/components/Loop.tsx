@@ -1,4 +1,4 @@
-// The shell's Loop area (docs/plans/sdlc-loop.md, step 6): one project's
+// The shell's Loop area (docs/plans/done/sdlc-loop.md, step 6): one project's
 // software-development cycle in ten stages, each with its count and its items.
 // It reads the resources and writes nothing; the two stages that wait on a
 // person are drawn apart, with a person's icon and a dashed border.

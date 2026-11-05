@@ -87,7 +87,7 @@ spec:
 The UI's **Loop** area draws one project on this cycle, with the two places
 that wait for you marked
 ([screenshot](docs/screenshots/sdlc-loop-ui.png)).
-[docs/plans/sdlc-loop.md](docs/plans/sdlc-loop.md) has the design.
+[docs/plans/done/sdlc-loop.md](docs/plans/done/sdlc-loop.md) has the design.
 
 ## Status
 

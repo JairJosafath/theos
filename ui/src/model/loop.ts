@@ -1,4 +1,4 @@
-// The Loop area's stages (docs/plans/sdlc-loop.md, step 6): one project's
+// The Loop area's stages (docs/plans/done/sdlc-loop.md, step 6): one project's
 // software-development cycle, drawn from the resources alone. A pure function
 // over the lists the UI already watches; it reads kind, phase and status and
 // decides nothing, so the cycle is what the operator says it is.

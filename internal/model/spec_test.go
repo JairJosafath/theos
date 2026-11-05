@@ -43,7 +43,7 @@ func TestSpecCriteria(t *testing.T) {
 }
 
 // A spec round's pull request goes to review only with the spec file alone,
-// and criteria in it (docs/plans/sdlc-loop.md, step 3).
+// and criteria in it (docs/plans/done/sdlc-loop.md, step 3).
 func TestSpecRefusal(t *testing.T) {
 	const path = "docs/specs/12.md"
 	tests := []struct {
@@ -172,7 +172,7 @@ func TestWithSpecCriteria(t *testing.T) {
 }
 
 // What the operator does to the issue once its spec merged: criteria in,
-// status/ready, open (docs/plans/sdlc-loop.md, step 3).
+// status/ready, open (docs/plans/done/sdlc-loop.md, step 3).
 func TestPlanSpecMerged(t *testing.T) {
 	const (
 		path = "docs/specs/4.md"
@@ -206,7 +206,7 @@ func TestPlanSpecMerged(t *testing.T) {
 }
 
 // The spec's steps through the implement flow and its review point
-// (docs/plans/sdlc-loop.md, step 3).
+// (docs/plans/done/sdlc-loop.md, step 3).
 func TestSpecSteps(t *testing.T) {
 	done := func(result *RunResult) RunState { return RunState{Started: true, Done: true, Result: result} }
 	approved := done(&RunResult{Verdict: VerdictApprove, Summary: "Clear spec."})
@@ -301,7 +301,7 @@ func TestStandInSpec(t *testing.T) {
 
 // A Crew with a spec writer starts a Spec Task for an issue labelled
 // status/needs-spec as it starts an Implement Task for a ready one: in order,
-// within parallel, with tries of its own (docs/plans/sdlc-loop.md, step 3).
+// within parallel, with tries of its own (docs/plans/done/sdlc-loop.md, step 3).
 func TestNextCrewStepSpec(t *testing.T) {
 	needsSpec := func(n int) Issue { return Issue{Number: n, Title: "Export orders", Body: "Big.", Spec: true} }
 	routes := []AgentRoute{{Label: "kind/api", Implementer: "opus", Reviewer: "strict"}}

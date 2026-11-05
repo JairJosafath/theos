@@ -50,7 +50,7 @@ func triageResult(d model.Triage) *agentrunner.Result {
 	return &agentrunner.Result{Role: agentrunner.RoleTriage, Triage: &d}
 }
 
-// A Triage Task's CEL rules (docs/plans/sdlc-loop.md, step 2).
+// A Triage Task's CEL rules (docs/plans/done/sdlc-loop.md, step 2).
 var _ = Describe("Triage Task", func() {
 	It("needs an issue, and has no reviewer and no allowance", func() {
 		ns := newProjectNamespace()
@@ -72,7 +72,7 @@ var _ = Describe("Triage Task", func() {
 	})
 })
 
-// A Crew's triage (docs/plans/sdlc-loop.md, step 2): one Triage Task at a time
+// A Crew's triage (docs/plans/done/sdlc-loop.md, step 2): one Triage Task at a time
 // for a proposed issue outside Later, whose triager's decision the operator
 // applies to the issue.
 var _ = Describe("Crew triage", func() {

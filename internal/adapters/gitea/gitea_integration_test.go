@@ -392,7 +392,7 @@ func TestGiteaPullRequestUpdateIntegration(t *testing.T) {
 
 // TestGiteaPullRequestReviewsIntegration reads back the reviews of a pull
 // request an agent bot opened, with who submitted each: a spec merges only on
-// a person's approval, never the operator's own (docs/plans/sdlc-loop.md,
+// a person's approval, never the operator's own (docs/plans/done/sdlc-loop.md,
 // step 3).
 func TestGiteaPullRequestReviewsIntegration(t *testing.T) {
 	base := os.Getenv("THEOS_GITEA_URL")

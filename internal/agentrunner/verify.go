@@ -14,7 +14,7 @@ import (
 
 // verify has the verifier build and start the change at the branch's head,
 // the way the repository says, and check each acceptance criterion against
-// what runs (docs/plans/sdlc-loop.md, "Verify"). It reports the verdict in
+// what runs (docs/plans/done/sdlc-loop.md, "Verify"). It reports the verdict in
 // the review's format, and commits and pushes nothing: the clone's push URL
 // goes nowhere.
 func verify(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, prog *runProgress,

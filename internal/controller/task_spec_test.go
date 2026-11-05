@@ -54,7 +54,7 @@ func specCrew(ns string, approval c4v1beta1.SpecApproval) *c4v1beta1.Crew {
 const testSpec = "# Export orders\n\n## Problem\n\nOrders are copied by hand.\n\n## Approach\n\nA CSV endpoint.\n\n" +
 	"## Acceptance criteria\n\n- [ ] GET /orders.csv lists every order\n- [ ] A test covers an empty shop\n"
 
-// A Spec Task's CEL rules (docs/plans/sdlc-loop.md, step 3).
+// A Spec Task's CEL rules (docs/plans/done/sdlc-loop.md, step 3).
 var _ = Describe("Spec Task", func() {
 	It("needs an issue and has no allowance, and a Crew's specApproval needs a spec writer", func() {
 		ns := newProjectNamespace()
@@ -76,7 +76,7 @@ var _ = Describe("Spec Task", func() {
 	})
 })
 
-// A Crew's specs (docs/plans/sdlc-loop.md, step 3): a Spec Task for an issue
+// A Crew's specs (docs/plans/done/sdlc-loop.md, step 3): a Spec Task for an issue
 // labelled status/needs-spec writes docs/specs/<issue>.md in a pull request,
 // which merges after CI, the reviewer and its review point; the issue then
 // gets the spec's criteria and status/ready, and stays open.

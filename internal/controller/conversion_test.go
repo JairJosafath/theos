@@ -126,7 +126,7 @@ var _ = Describe("API versions", func() {
 		Expect(got.Annotations).To(BeEmpty())
 	})
 
-	// The first fields v1beta1 alone has (docs/plans/sdlc-loop.md, step 2) ride
+	// The first fields v1beta1 alone has (docs/plans/done/sdlc-loop.md, step 2) ride
 	// through v1alpha1 in its fields annotation, and a write there keeps them.
 	It("carries a Crew's triager and a Triage Task's decision through v1alpha1", func() {
 		ns := newProjectNamespace()
@@ -166,7 +166,7 @@ var _ = Describe("API versions", func() {
 	})
 
 	// A Crew's spec writer and a Spec Task's spec ride through v1alpha1 in its
-	// fields annotation (docs/plans/sdlc-loop.md, step 3).
+	// fields annotation (docs/plans/done/sdlc-loop.md, step 3).
 	It("carries a Crew's spec writer and a Spec Task's spec through v1alpha1", func() {
 		ns := newProjectNamespace()
 		fields := fmt.Sprintf(c4v1alpha1.FieldsAnnotation, "v1beta1")
@@ -203,7 +203,7 @@ var _ = Describe("API versions", func() {
 	})
 
 	// A Crew's verifier, a route's, and a Task's verifierRef and verification
-	// ride through v1alpha1 in its fields annotation (docs/plans/sdlc-loop.md,
+	// ride through v1alpha1 in its fields annotation (docs/plans/done/sdlc-loop.md,
 	// step 4).
 	It("carries a Crew's verifiers and a Task's verifier and verification through v1alpha1", func() {
 		ns := newProjectNamespace()

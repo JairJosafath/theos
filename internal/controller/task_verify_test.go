@@ -30,7 +30,7 @@ func verifierAgent(ns string) {
 		Spec: c4v1beta1.AgentSpec{Image: "theos/agent-go:dev", Model: "claude-haiku-5-5", MaxRounds: 3}})
 }
 
-// A verifierRef's CEL rules (docs/plans/sdlc-loop.md, step 4).
+// A verifierRef's CEL rules (docs/plans/done/sdlc-loop.md, step 4).
 var _ = Describe("Task verifierRef", func() {
 	verifier := func() *c4v1beta1.LocalRef { return &c4v1beta1.LocalRef{Name: "verifier"} }
 	const onlyImplement = "only an Implement Task without allowedProtectedPaths has a verifierRef"
@@ -87,7 +87,7 @@ var _ = Describe("Task verifierRef", func() {
 	})
 })
 
-// A Crew's verifier (docs/plans/sdlc-loop.md, step 4): an Implement Task whose
+// A Crew's verifier (docs/plans/done/sdlc-loop.md, step 4): an Implement Task whose
 // reviewer approved is Verifying until its verifier, in a sandbox of its own,
 // built and ran the reviewed head; the verifier's approval merges it, and its
 // changes start the next round with their evidence.

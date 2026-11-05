@@ -18,7 +18,7 @@ const (
 	LabelNeedsHuman = "status/needs-human"
 	// LabelNeedsSpec is an issue a triager found too big or unclear to build
 	// as it stands: a spec comes first. LabelSpecReview is one whose spec
-	// waits for its review (docs/plans/sdlc-loop.md).
+	// waits for its review (docs/plans/done/sdlc-loop.md).
 	LabelNeedsSpec  = "status/needs-spec"
 	LabelSpecReview = "status/spec-review"
 )

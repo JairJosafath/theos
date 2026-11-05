@@ -8,7 +8,7 @@ import (
 )
 
 // A Task with a verifier has its approved change built, started and checked
-// against its criteria before it merges (docs/plans/sdlc-loop.md, step 4).
+// against its criteria before it merges (docs/plans/done/sdlc-loop.md, step 4).
 func TestVerifySteps(t *testing.T) {
 	done := func(result *RunResult) RunState { return RunState{Started: true, Done: true, Result: result} }
 	approved := done(&RunResult{Verdict: VerdictApprove, Summary: "Every criterion met."})

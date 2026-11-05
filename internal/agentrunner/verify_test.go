@@ -51,7 +51,7 @@ func TestJobFromEnvVerify(t *testing.T) {
 
 // The verifier runs the approved head with the repository's make verify, its
 // role guide from the base and the issue's criteria as data; it reports in the
-// review's format and pushes nothing, whatever it tries (docs/plans/sdlc-loop.md,
+// review's format and pushes nothing, whatever it tries (docs/plans/done/sdlc-loop.md,
 // step 4).
 func TestRunVerify(t *testing.T) {
 	url := bareRepo(t, map[string]string{

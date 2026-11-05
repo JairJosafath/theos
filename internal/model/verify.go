@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// A Task with a verifier (docs/plans/sdlc-loop.md, "Verify") has the change
+// A Task with a verifier (docs/plans/done/sdlc-loop.md, "Verify") has the change
 // its reviewer approved verified before it merges: the verifier builds and
 // starts the change at the pull request's head the way the repository says
 // (make VerifyTarget, else its README), exercises each acceptance criterion

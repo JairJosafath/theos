@@ -913,7 +913,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 - **Reports:** `status.deploys[]` per target (version running and wanted,
   phase, the tool's health, URL, the image a `github` target copied),
   summed by `Deployed`.
-- **Monitor** ([plans/sdlc-loop.md](plans/sdlc-loop.md)): when an entry's
+- **Monitor** ([plans/done/sdlc-loop.md](plans/done/sdlc-loop.md)): when an entry's
   health turns `Degraded`, or its deploy `Failed`, for the version shipped,
   the operator files one issue in the Container's repository: `Deploy
   <version> to <target> is <state>`, labelled `kind/bug` and

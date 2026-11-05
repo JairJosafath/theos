@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// The monitor files a bug when a deploy goes wrong (docs/plans/sdlc-loop.md,
+// The monitor files a bug when a deploy goes wrong (docs/plans/done/sdlc-loop.md,
 // "Monitor"): the entry's health turns Degraded, or its deploy fails, for the
 // version shipped. One issue per target, version and state, so the same state
 // of the same version files once.

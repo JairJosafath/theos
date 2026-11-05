@@ -58,7 +58,7 @@ func (a specAgent) Run(_ context.Context, dir, _ string) (string, error) {
 }
 
 // A Spec Task's implement run writes the spec and pushes it, with the spec
-// writer's prompt and guide (docs/plans/sdlc-loop.md, step 3).
+// writer's prompt and guide (docs/plans/done/sdlc-loop.md, step 3).
 func TestRunSpec(t *testing.T) {
 	url := bareRepo(t, map[string]string{"AGENTS.md": "Rules.\n", "docs/agents/spec-writer.md": "Keep specs short.\n",
 		"docs/agents/implementer.md": "Write tests.\n"})
@@ -84,7 +84,7 @@ func TestRunSpec(t *testing.T) {
 }
 
 // A spec round that changes anything beside its spec file is refused, and
-// nothing is pushed (docs/plans/sdlc-loop.md, step 3).
+// nothing is pushed (docs/plans/done/sdlc-loop.md, step 3).
 func TestRunSpecRefusesOtherFiles(t *testing.T) {
 	url := bareRepo(t, map[string]string{"AGENTS.md": "Rules.\n"})
 	agent := specAgent{files: map[string]string{"docs/specs/4.md": model.StandInSpec(4, "Export"),

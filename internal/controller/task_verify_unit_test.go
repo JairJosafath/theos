@@ -17,7 +17,7 @@ import (
 )
 
 // A Crew's Implement Tasks name its verifier, or their route's; a spec and a
-// Standard change name none (docs/plans/sdlc-loop.md, step 4).
+// Standard change name none (docs/plans/done/sdlc-loop.md, step 4).
 func TestCrewIssueTaskVerifier(t *testing.T) {
 	container := &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "orders-api")}
 	withVerifier := newCrew("apps")

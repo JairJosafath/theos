@@ -94,7 +94,7 @@ The UI gets a *Loop* area that shows every item of a project on this cycle.
 
 ## Steps
 
-1. The rename to theos (`docs/plans/theos-rename.md`).
+1. The rename to theos (`docs/plans/done/theos-rename.md`).
 2. Triage: the `Triage` kind, `Crew.spec.triager`, the triager's prompt and
    result, the operator's labels and comments; table tests and envtest.
 3. Spec: the `Spec` kind, `Crew.spec.specWriter` and `spec.specApproval`, the

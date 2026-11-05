@@ -62,7 +62,7 @@ func TestIssuesHandOutACopyOfTheLabels(t *testing.T) {
 }
 
 // The fake lists a pull request's reviews with who submitted each: the
-// operator's own, and a person's (docs/plans/sdlc-loop.md, step 3).
+// operator's own, and a person's (docs/plans/done/sdlc-loop.md, step 3).
 func TestPullRequestReviews(t *testing.T) {
 	git := fake.New()
 	repo := ports.Repository{Owner: "tools", Name: "cel-lens"}

@@ -826,7 +826,7 @@ export function demoStory(now: number): StoryData {
         step(6, 'Implementing', 2, 'AgentUnavailable', unavailable),
       ],
     }),
-    // The loop's other stages (docs/plans/sdlc-loop.md): the bug the monitor filed is triaged, a spec is
+    // The loop's other stages (docs/plans/done/sdlc-loop.md): the bug the monitor filed is triaged, a spec is
     // written and waits for a person, and two Implement Tasks are in review and in verification.
     loopTask('orders-api', 19, 'Orders API runs v0.2.0 degraded at staging', 30, 'Triage', {
       phase: 'Implementing',

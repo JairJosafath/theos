@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// A Spec Task writes an issue's spec in a pull request (docs/plans/sdlc-loop.md,
+// A Spec Task writes an issue's spec in a pull request (docs/plans/done/sdlc-loop.md,
 // "Spec"): the problem, the approach and an "Acceptance criteria" checklist in
 // SpecPath. After CI and the reviewer it waits for its review point, then
 // merges, and the operator copies the spec's criteria into the issue, which is

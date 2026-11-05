@@ -340,7 +340,7 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 			"Fix main's checks, or revert the change that broke them.",
 			sentence(t.Message, "round 1 starts only on a green base"), t.Since}
 	case t.Reason == ReasonAwaitingApproval:
-		// A spec's review point: only a person approves it (docs/plans/sdlc-loop.md).
+		// A spec's review point: only a person approves it (docs/plans/done/sdlc-loop.md).
 		return nil, &NeedsYou{AttentionTask, t.Name,
 			fmt.Sprintf("Task `%s` waits for you to approve its spec: %s", t.Name, sentence(t.Message,
 				"its pull request passed CI and the reviewer")),
