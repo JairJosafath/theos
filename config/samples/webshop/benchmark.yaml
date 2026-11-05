@@ -14,7 +14,7 @@ metadata:
 spec:
   containerRef:
     name: orders-api
-  base: 0000000000000000000000000000000000000000
+  base: "0000000000000000000000000000000000000000"
   goals:
     - goal: |-
         Add GET /orders/{id}/receipt, returning the order's lines, totals and
