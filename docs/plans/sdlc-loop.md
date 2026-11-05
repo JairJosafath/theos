@@ -118,3 +118,47 @@ independent of them; step 6 follows 2 to 5.
   merging, a degraded deploy filing one issue and the same state filing no
   second.
 - The UI's tests cover the *Loop* area's stages from fixture resources.
+
+## As built
+
+All seven steps landed on 2026-11-05. Where the decisions above were silent:
+
+- **Triage.** A decided Triage Task ends `Merged`, reason `Triaged`, like a
+  Plan Task; `status.triage` holds the decision, its reason, the criteria,
+  the question or the duplicate, and what the operator did. A failed run is
+  retried by a new Task, up to three per issue. A decision the operator
+  can't apply (ready without criteria, park without a question) fails the
+  Task. A person's close or relabel during triage stands. The stand-in
+  triager answers from the issue text (`stand-in: spec`, `park`,
+  `duplicate of #N`).
+- **Spec.** A Spec Task is named `<container>-<issue>-spec` and has tries of
+  its own, apart from the build's. While it waits for approval it holds no
+  place in `parallel`. Only a person's approval of the reviewed commit
+  counts, never the operator's or a project bot's; a person's request for
+  changes starts the next round. The operator also checks the spec once CI
+  passes: a file outside `docs/specs/<n>.md`, no spec or no criteria sends
+  the round back. The spec's criteria replace any the issue had, with a link
+  to the spec on `main`.
+- **Verify.** `Task.spec.verifierRef` is immutable like `reviewerRef`; a
+  route may name a verifier too. Standard changes are not verified (their
+  gated merge needs the review run alive). The reviewer's approval is posted
+  when verification starts; the verifier's `changes` is posted as a request
+  for changes. Open criteria from the review and the verifier go into one
+  by-hand issue.
+- **Monitor.** Degraded means phase `Deployed` with health `Degraded`, for
+  `status.version`; failed means phase `Failed`, for the wanted version
+  (`GitHostUnreachable` files nothing). `status.deploys[].issue` survives a
+  recovery; the operator also looks for the marker among open `kind/bug`
+  issues before it files. A `DeployBugFiled` Event goes on the Container.
+- **Conversion.** Crew, Task and Container now differ in shape between
+  `v1alpha1` and `v1beta1`, so they convert by the operator's webhook, the
+  new fields riding through `v1alpha1` in its fields annotation.
+- **The *Loop* area** sits after *Needs you*, reads Briefs, Tasks,
+  Containers and Crews, and shares the product-review rule with *Needs you*
+  (`approvalWaits`). Screenshots: `docs/screenshots/sdlc-loop-ui.png` and
+  `sdlc-loop-ui-phone-dark.png` (demo data).
+
+Evidence: `docs/screenshots/sdlc-loop-check.md` has the last `make -k check`.
+In this sandbox `hack/relay_test.sh` fails on the untouched c4factory code
+too (its process-cleanup cases), so it is the one failing tier there.
+`TestGiteaPullRequestReviewsIntegration` needs a local Gitea and was not run.
