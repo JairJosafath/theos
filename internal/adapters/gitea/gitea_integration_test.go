@@ -385,7 +385,7 @@ func TestGiteaPullRequestUpdateIntegration(t *testing.T) {
 	eventually(a.Number, "caught up", func(pr ports.PullRequest) bool { return !pr.Behind && pr.Mergeable })
 
 	// The pull request's commits and size, for the factory's metrics
-	// (docs/plans/measure-and-improve.md): the branch's commit by its author,
+	// (docs/plans/done/measure-and-improve.md): the branch's commit by its author,
 	// and main's merge with two parents.
 	commits, err := p.PullRequestCommits(ctx, repo, a.Number)
 	if err != nil {

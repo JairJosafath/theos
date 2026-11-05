@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Benchmarks (docs/plans/measure-and-improve.md, step 6): the same goals,
+// Benchmarks (docs/plans/done/measure-and-improve.md, step 6): the same goals,
 // from one pinned commit, under two or more variants, each repeated; their
 // Tasks end Approved instead of merging, and the Benchmark compares what came
 // out with the uncertainty said.

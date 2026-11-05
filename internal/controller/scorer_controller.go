@@ -27,6 +27,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // LabelScorer names the Scorer a Score Task judges for.
@@ -34,11 +35,15 @@ const LabelScorer = "theos.factory.io/scorer"
 
 // ScorerReconciler makes a Score Task for each finished Task a Scorer selects
 // and samples, within its daily cap and budget, and counts the verdicts of
-// its Score Tasks (docs/plans/measure-and-improve.md, step 4). The Task
+// its Score Tasks (docs/plans/done/measure-and-improve.md, step 4). The Task
 // reconciler runs each Score Task's judge.
 type ScorerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// APIReader reads the Git provider's Secret live.
+	APIReader client.Reader
+	// Git reaches the Git host, where spec.improve files its issues.
+	Git GitClient
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }
@@ -48,6 +53,9 @@ type ScorerReconciler struct {
 // +kubebuilder:rbac:groups=theos.factory.io,resources=tasks,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=theos.factory.io,resources=agents,verbs=get;list;watch
 // +kubebuilder:rbac:groups=theos.factory.io,resources=benchmarks,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=containers,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=gitproviders,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile makes the Scorer's due Score Tasks and writes what it judged.
 func (r *ScorerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -85,6 +93,9 @@ func (r *ScorerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	reason, message, err := r.startScores(ctx, &scorer, status, tasks.Items, scores)
 	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.improve(ctx, &scorer, tasks.Items, scores); err != nil {
 		return ctrl.Result{}, err
 	}
 	condition := metav1.Condition{Type: c4v1beta1.ConditionScorerReady, Status: metav1.ConditionTrue,
@@ -226,6 +237,93 @@ func (r *ScorerReconciler) makeScoreTask(ctx context.Context, scorer *c4v1beta1.
 		return err
 	}
 	logf.FromContext(ctx).Info("Created Score Task", "task", name, "judged", t.Name)
+	return nil
+}
+
+// improve files an issue for each criterion of the current generation that
+// failed often enough for one configuration (spec.improve), unless one is
+// open: in the repository of the newest failing Task's Container.
+func (r *ScorerReconciler) improve(ctx context.Context, scorer *c4v1beta1.Scorer, tasks []c4v1beta1.Task,
+	scores map[string]*c4v1beta1.Task) error {
+	imp := scorer.Spec.Improve
+	if imp == nil {
+		return nil
+	}
+	judged := map[string]*c4v1beta1.Task{}
+	for i := range tasks {
+		judged[tasks[i].Name] = &tasks[i]
+	}
+	var records []model.ScoreRecord
+	for _, t := range scores {
+		if t.Spec.Score.ScorerGeneration != scorer.Generation || !isFinal(t.Status.Phase) ||
+			len(t.Status.Score.Criteria) == 0 || t.Status.CompletedAt == nil {
+			continue
+		}
+		c := t.Spec.Score.Config
+		config := model.NotRecordedConfig
+		if c.Harness != "" {
+			config = model.ConfigKey(c.Harness, c.Model)
+		}
+		rec := model.ScoreRecord{Task: t.Spec.Score.TaskRef.Name, Container: t.Spec.ContainerRef.Name, Config: config,
+			Completed: t.Status.CompletedAt.Time}
+		if j := judged[rec.Task]; j != nil {
+			rec.PullURL = j.Status.PullRequestURL
+		}
+		for _, v := range t.Status.Score.Criteria {
+			rec.Verdicts = append(rec.Verdicts, model.ScoreCriterion{Criterion: v.Criterion, Verdict: string(v.Verdict),
+				Reason: v.Reason})
+		}
+		records = append(records, rec)
+	}
+	for _, due := range model.ImprovementsDue(scorer.Spec.Criteria, records, int(imp.Failures), int(imp.Window)) {
+		if err := r.fileImprovement(ctx, scorer, due); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// fileImprovement files due's issue in its newest failure's Container's
+// repository, unless one is open there.
+func (r *ScorerReconciler) fileImprovement(ctx context.Context, scorer *c4v1beta1.Scorer, due model.Improvement) error {
+	var container c4v1beta1.Container
+	err := r.Get(ctx, client.ObjectKey{Namespace: scorer.Namespace, Name: due.Failures[0].Container}, &container)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	git, err := gitAccessFor(ctx, r.Client, r.APIReader, r.Git, scorer.Namespace, container.Spec.GitProviderRef.Name)
+	if err != nil {
+		return err
+	}
+	repo := git.provider.Repository(container.Name)
+	gitCtx, cancel := context.WithTimeout(ctx, defaultGitTimeout)
+	defer cancel()
+	l := model.ImprovementLabel()
+	labels := append(issueLabels(), ports.Label{Name: l.Name, Color: l.Color, Description: l.Description,
+		Exclusive: l.Exclusive})
+	if err := git.provider.EnsureLabels(gitCtx, repo, labels); err != nil {
+		return err
+	}
+	open, err := git.provider.ListIssues(gitCtx, repo, model.LabelImprovement)
+	if err != nil {
+		return err
+	}
+	for _, issue := range open {
+		if model.HasImprovementMarker(issue.Body, scorer.Name, due.Criterion, due.Config) {
+			return nil
+		}
+	}
+	title, body := model.ImprovementIssue(scorer.Name, due)
+	issue, err := git.provider.CreateIssue(gitCtx, repo, title, body,
+		[]string{model.LabelImprovement, model.LabelProposed}, 0)
+	if err != nil {
+		return err
+	}
+	logf.FromContext(ctx).Info("Filed improvement issue", "issue", issue.Number, "repository", container.Name,
+		"criterion", due.Criterion, "config", due.Config)
 	return nil
 }
 

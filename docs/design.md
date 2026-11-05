@@ -672,8 +672,7 @@ The operator moves bytes with credentials it holds; it builds nothing.
 
 ## Measuring the factory
 
-Planned in [plans/measure-and-improve.md](plans/measure-and-improve.md);
-its steps 2 to 6 are built: the record, the metrics, the Scorers, their place in the UI and the Benchmarks. A change to how the factory works (an Agent's
+Built as [plans/done/measure-and-improve.md](plans/done/measure-and-improve.md). A change to how the factory works (an Agent's
 model, a route, a Standard's agent guide, `docs/project-notes.md`) should
 be judged by numbers the factory keeps itself.
 
@@ -723,12 +722,16 @@ be judged by numbers the factory keeps itself.
   each variant's approval rate, mean rounds, median minutes and cost, and
   each Scorer criterion's pass rate, each rate with its 95% Wilson
   interval, and says "no clear difference" rather than pick a winner while
-  the intervals overlap. Neither its runs nor the judge runs alarm anyone:
-  the Chat and the Needs-you list leave them out.
-- **Self-improvement files an issue, never a change.** A criterion that keeps
-  failing for one configuration files one `status/proposed` issue, where the
-  fix lives (the Container's repository, or the Standard's for the agent
-  guides), and the normal loop decides.
+  the intervals overlap, which its page in the UI shows. Neither its runs
+  nor the judge runs alarm anyone: the Chat and the Needs-you list leave
+  them out.
+- **Self-improvement files an issue, never a change.** With
+  `spec.improve`, a criterion that failed `failures` times among a
+  configuration's newest `window` Scores files one `status/proposed`,
+  `kind/improvement` issue in the newest failing Task's Container's
+  repository: what fails, the judge's whys and the proposal (a line in
+  `docs/project-notes.md`, or the Standard's agent guides). It files no other
+  while that one is open, and the normal loop decides.
 
 ## Standards and the catalog
 

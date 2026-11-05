@@ -38,7 +38,7 @@ spec:
       openAPIV3Schema:
         description: |-
           Benchmark compares Agent configurations on the same goals
-          (docs/plans/measure-and-improve.md).
+          (docs/plans/done/measure-and-improve.md).
         properties:
           apiVersion:
             description: |-

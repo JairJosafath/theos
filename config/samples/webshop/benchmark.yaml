@@ -1,4 +1,4 @@
-# A Benchmark for the webshop (docs/plans/measure-and-improve.md): orders-api
+# A Benchmark for the webshop (docs/plans/done/measure-and-improve.md): orders-api
 # builds the same two goals from one commit with the chart's implementer
 # Agent and with the reviewer's stronger model as implementer, three times
 # each, and compares how often each variant's change was approved. Its Tasks

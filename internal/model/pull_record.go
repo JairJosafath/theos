@@ -3,7 +3,7 @@ package model
 import "strings"
 
 // What a Task keeps of its merged pull request for the factory's metrics
-// (docs/plans/measure-and-improve.md, decisions 3 and 4): how many of its
+// (docs/plans/done/measure-and-improve.md, decisions 3 and 4): how many of its
 // commits a person wrote, and how large it is.
 
 // AgentEmailDomain is the domain of every agent's commit email,

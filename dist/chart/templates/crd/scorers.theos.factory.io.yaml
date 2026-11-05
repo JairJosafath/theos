@@ -42,7 +42,7 @@ spec:
       openAPIV3Schema:
         description: |-
           Scorer judges finished Tasks against plain-words criteria
-          (docs/plans/measure-and-improve.md).
+          (docs/plans/done/measure-and-improve.md).
         properties:
           apiVersion:
             description: |-
@@ -85,6 +85,36 @@ spec:
                 minItems: 1
                 type: array
                 x-kubernetes-list-type: atomic
+              improve:
+                description: |-
+                  improve, when set, has a criterion that keeps failing for one
+                  configuration file an issue that proposes the fix: status/proposed,
+                  kind/improvement, in the repository of the newest failing Task's
+                  Container, and no other while it is open. Triage and the loop decide;
+                  nothing changes until a change merges. Unset: it files nothing.
+                properties:
+                  failures:
+                    default: 3
+                    description: |-
+                      failures is how many of the newest window Scores of one configuration
+                      must fail a criterion.
+                    format: int32
+                    maximum: 50
+                    minimum: 1
+                    type: integer
+                  window:
+                    default: 10
+                    description: |-
+                      window is how many of a configuration's newest finished Scores it looks
+                      at.
+                    format: int32
+                    maximum: 50
+                    minimum: 1
+                    type: integer
+                type: object
+                x-kubernetes-validations:
+                - message: failures can't exceed window
+                  rule: self.failures <= self.window
               judgeRef:
                 description: |-
                   judgeRef names the Agent that judges: its harness, model, image and

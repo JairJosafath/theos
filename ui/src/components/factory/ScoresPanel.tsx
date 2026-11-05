@@ -1,4 +1,4 @@
-// The Work area's "What the Scorers found" (docs/plans/measure-and-improve.md,
+// The Work area's "What the Scorers found" (docs/plans/done/measure-and-improve.md,
 // step 5): each Scorer's pass rate per criterion and per implementer
 // configuration, from its Score Tasks of its newest criteria. A table, so a
 // screen reader reads what a sighted reader sees.
@@ -7,17 +7,9 @@ import { useMemo } from 'react'
 import type { Problem } from '../../k8s/sources'
 import type { Task } from '../../k8s/types'
 import { NOT_RECORDED } from '../../model/metrics'
-import { scorerRates, type CriterionRate } from '../../model/scores'
+import { describeRate, scorerRates } from '../../model/scores'
 import { PanelState } from '../PanelState'
 import './tokens.css'
-
-/** "75% (3 of 4)", and how many were unclear; "–" when none was judged either way. */
-export function describeRate(r: CriterionRate | undefined): string {
-  if (!r) return '–'
-  const judged = r.pass + r.fail
-  const shown = judged ? `${Math.round((r.rate ?? 0) * 100)}% (${r.pass} of ${judged})` : '–'
-  return r.unclear ? `${shown}, ${r.unclear} unclear` : shown
-}
 
 export function ScoresPanel({ tasks, loaded, problems }: { tasks: Task[]; loaded: boolean; problems: Problem[] }) {
   const all = useMemo(() => scorerRates(tasks), [tasks])

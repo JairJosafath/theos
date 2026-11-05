@@ -21,7 +21,7 @@ import (
 	"github.com/JairJosafath/theos/internal/model"
 )
 
-// docs/plans/measure-and-improve.md, decision 2: a run's sandbox records the
+// docs/plans/done/measure-and-improve.md, decision 2: a run's sandbox records the
 // Agent configuration it runs on when it is made, the run's state reads it,
 // and a resume on a changed Agent records the Agent it resumes on.
 func TestSandboxRecordsItsRunsConfiguration(t *testing.T) {

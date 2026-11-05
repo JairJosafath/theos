@@ -22,7 +22,7 @@ import (
 )
 
 // A merged pull request's size and its commits, for the factory's metrics
-// (docs/plans/measure-and-improve.md, decisions 3 and 4).
+// (docs/plans/done/measure-and-improve.md, decisions 3 and 4).
 func TestPullRequestSizeAndCommits(t *testing.T) {
 	const repo = "/api/v1/repos/apps/photo-editor"
 	var queries []string

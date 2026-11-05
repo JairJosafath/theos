@@ -71,6 +71,14 @@ export function TaskPage({ task, agents, tasks = [] }: { task: Task; agents: Age
           ...(container ? [{ label: `Container ${container}`, href: pageHref(ns, 'Container', container) }] : []),
           ...(brief ? [{ label: `Brief ${brief}`, href: pageHref(ns, 'Brief', brief) }] : []),
           ...(crew ? [{ label: `Crew ${crew}`, href: pageHref(ns, 'Crew', crew) }] : []),
+          ...(task.spec.benchmark
+            ? [
+                {
+                  label: `Benchmark ${task.spec.benchmark.benchmarkRef.name}`,
+                  href: pageHref(ns, 'Benchmark', task.spec.benchmark.benchmarkRef.name),
+                },
+              ]
+            : []),
           ...(task.spec.score
             ? [
                 {

@@ -20,7 +20,7 @@ import (
 	"github.com/JairJosafath/theos/internal/model"
 )
 
-// docs/plans/measure-and-improve.md, step 6: a Benchmark runs the same goal
+// docs/plans/done/measure-and-improve.md, step 6: a Benchmark runs the same goal
 // from a pinned commit under each variant; its Tasks never merge, its
 // Scorers judge each, it cleans up after them and compares the variants.
 var _ = Describe("Benchmark", func() {

@@ -9,6 +9,8 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"slices"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -19,9 +21,10 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/agentrunner"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
-// docs/plans/measure-and-improve.md, step 4: a Scorer makes a Score Task for
+// docs/plans/done/measure-and-improve.md, step 4: a Scorer makes a Score Task for
 // each finished Task it selects and samples, the Score Task runs the judge
 // once on a clone that pushes nothing, and the Scorer counts the verdicts.
 var _ = Describe("Scorer", func() {
@@ -171,6 +174,48 @@ var _ = Describe("Scorer", func() {
 		Expect(scores).To(Equal([]string{"capped"}))
 	})
 
+	It("files one issue for a criterion that keeps failing, and no other while it is open (step 7)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3), newScorer(ns, "tests", func(s *c4v1beta1.Scorer) {
+			s.Spec.Improve = &c4v1beta1.ScorerImprove{Failures: 2, Window: 3}
+		}))
+		judge := func(judged string, first string) {
+			GinkgoHelper()
+			mergeTask(ns, judged)
+			name := model.ScoreTaskName("tests", judged)
+			Eventually(func(g Gomega) { sandboxExists(g, ns, name+"-r1-score") }).Should(Succeed())
+			finishSandbox(ns, name+"-r1-score", name, &agentrunner.Result{Role: "score", Score: []model.ScoreCriterion{
+				{Criterion: criteria[0], Verdict: first, Reason: judged + " has no test."},
+				{Criterion: criteria[1], Verdict: model.ScorePass}}}, "")
+			Eventually(func(g Gomega) {
+				g.Expect(getTask(g, ns, name).Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			}).Should(Succeed())
+		}
+		improvements := func() []fake.Issue {
+			var out []fake.Issue
+			for _, i := range gitFake.OpenIssues(ns, "orders-api") {
+				if slices.Contains(i.Labels, model.LabelImprovement) {
+					out = append(out, i)
+				}
+			}
+			return out
+		}
+
+		judge("add-crop", model.ScoreFail)
+		Consistently(improvements, "2s").Should(BeEmpty(), "one failure of two asked files nothing")
+		judge("add-blur", model.ScoreFail)
+		Eventually(improvements).Should(HaveLen(1))
+		issue := improvements()[0]
+		Expect(issue.Title).To(Equal(`Scorer tests: "The change has a test that fails without it" keeps failing ` +
+			`(claude-code · default model)`))
+		Expect(issue.Labels).To(ContainElements(model.LabelImprovement, model.LabelProposed))
+		Expect(issue.Body).To(ContainSubstring("add-blur has no test."))
+
+		judge("add-rotate", model.ScoreFail)
+		Consistently(improvements, "2s").Should(HaveLen(1), "no second issue while the first is open")
+	})
+
 	It("refuses what CEL refuses", func() {
 		ns := newProjectNamespace()
 		for _, s := range []*c4v1beta1.Scorer{
@@ -181,6 +226,9 @@ var _ = Describe("Scorer", func() {
 			}),
 			newScorer(ns, "pending", func(s *c4v1beta1.Scorer) {
 				s.Spec.Select.Phases = []c4v1beta1.TaskPhase{c4v1beta1.TaskPending}
+			}),
+			newScorer(ns, "improve", func(s *c4v1beta1.Scorer) {
+				s.Spec.Improve = &c4v1beta1.ScorerImprove{Failures: 5, Window: 3}
 			}),
 		} {
 			Expect(k8sClient.Create(ctx, s)).NotTo(Succeed(), s.Name)

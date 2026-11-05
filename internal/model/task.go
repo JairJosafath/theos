@@ -212,7 +212,7 @@ type RunState struct {
 // RunConfig is the Agent configuration an agent run ran on: the Agent's name,
 // harness and model, copied when its sandbox is made or resumed, so a later
 // change to the Agent doesn't rewrite the run's record
-// (docs/plans/measure-and-improve.md, decision 2).
+// (docs/plans/done/measure-and-improve.md, decision 2).
 type RunConfig struct {
 	Agent   string
 	Harness string

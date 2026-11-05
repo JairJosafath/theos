@@ -1,4 +1,4 @@
-// Scores in the UI (docs/plans/measure-and-improve.md, step 5): the verdicts
+// Scores in the UI (docs/plans/done/measure-and-improve.md, step 5): the verdicts
 // of the Score Tasks a Scorer made, on the page of the Task they judged, and
 // each Scorer's pass rate per criterion and implementer configuration in the
 // Work area. Read from the Score Tasks alone, which copy their Scorer's
@@ -122,4 +122,12 @@ export function scorerRates(tasks: Task[]): ScorerRates[] {
     })
   }
   return out.sort((a, b) => a.key.localeCompare(b.key))
+}
+
+/** "75% (3 of 4)", and how many were unclear; "–" when none was judged either way. */
+export function describeRate(r: CriterionRate | undefined): string {
+  if (!r) return '–'
+  const judged = r.pass + r.fail
+  const shown = judged ? `${Math.round((r.rate ?? 0) * 100)}% (${r.pass} of ${judged})` : '–'
+  return r.unclear ? `${shown}, ${r.unclear} unclear` : shown
 }

@@ -27,7 +27,7 @@ import (
 const reasonScored = "Scored"
 
 // reconcileScore takes the next step of a Score Task
-// (docs/plans/measure-and-improve.md, step 4): one judge run on the judged
+// (docs/plans/done/measure-and-improve.md, step 4): one judge run on the judged
 // change, on a clone it pushes nothing from, whose verdicts the Task keeps.
 // Its Scorer made and owns it, so its Container doesn't adopt it; a failed run
 // fails it with every criterion Unclear, and no second try.

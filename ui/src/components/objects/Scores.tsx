@@ -1,4 +1,4 @@
-// A Task's Scores (docs/plans/measure-and-improve.md, step 5): each Scorer's
+// A Task's Scores (docs/plans/done/measure-and-improve.md, step 5): each Scorer's
 // verdicts on its change, criterion by criterion with the judge's why, and on
 // a Score Task's own page its verdicts. Verdicts advise: they changed nothing
 // about the Task.

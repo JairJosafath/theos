@@ -528,6 +528,7 @@ export const RESOURCES = {
   crews: 'crews',
   briefs: 'briefs',
   chats: 'chats',
+  benchmarks: 'benchmarks',
 } as const
 
 /** API path of a theos.factory.io resource, in one namespace or across all of them. */
@@ -596,6 +597,45 @@ export const LABEL_ISSUE = 'theos.factory.io/issue'
 /** Who approves a spec's pull request: a person on the Git host, or the reviewer Agent alone. */
 export type SpecApproval = 'Person' | 'Reviewer'
 
+/** A share with its 95% Wilson interval, in whole percent. */
+export interface BenchmarkRate {
+  of?: number
+  percent?: number
+  low?: number
+  high?: number
+}
+
+/** The same goals from one pinned commit under two or more Agent variants (docs/plans/done/measure-and-improve.md). */
+export interface Benchmark extends K8sObject {
+  spec: {
+    containerRef: LocalRef
+    base: string
+    goals: { goal?: string; issue?: number }[]
+    variants: { name: string; implementerRef: LocalRef; reviewerRef?: LocalRef; verifierRef?: LocalRef }[]
+    repetitions?: number
+    scorerRefs?: LocalRef[]
+    parallel?: number
+    budgetUSD: number
+  }
+  status?: {
+    goals?: string[]
+    costMilliUSD?: number
+    variants?: {
+      name: string
+      tasks?: number
+      finished?: number
+      approval?: BenchmarkRate
+      meanRounds?: string
+      medianMinutes?: number
+      medianCostMilliUSD?: number
+      criteria?: { scorer: string; criterion: string; rate?: BenchmarkRate; unclear?: number }[]
+    }[]
+    comparison?: string
+    cleaned?: string[]
+    conditions?: Condition[]
+  }
+}
+
 /** The Agent configuration an agent run ran on. */
 export interface RunConfig {
   agent?: string
@@ -603,7 +643,7 @@ export interface RunConfig {
   model?: string
 }
 
-/** What a Score Task judges (docs/plans/measure-and-improve.md). */
+/** What a Score Task judges (docs/plans/done/measure-and-improve.md). */
 export interface TaskScoreSpec {
   scorerRef: LocalRef
   scorerGeneration: number

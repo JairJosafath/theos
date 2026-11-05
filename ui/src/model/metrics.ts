@@ -1,4 +1,4 @@
-// The Work area's "How well it works" (docs/plans/measure-and-improve.md, step
+// The Work area's "How well it works" (docs/plans/done/measure-and-improve.md, step
 // 3): over a period, how much merged, how much merged with no person's code,
 // how long each stage of a merged Task took and what a merged Task cost by its
 // size, for every Task and per Agent configuration. Plain functions over Tasks,

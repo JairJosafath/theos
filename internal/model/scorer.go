@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Scorers (docs/plans/measure-and-improve.md, step 4): plain-words criteria a
+// Scorers (docs/plans/done/measure-and-improve.md, step 4): plain-words criteria a
 // judge Agent checks finished Tasks against. For each finished Task a Scorer
 // selects and samples, the operator makes a Task of kind Score, one read-only
 // judge run on the finished change, whose verdicts are its status.score.

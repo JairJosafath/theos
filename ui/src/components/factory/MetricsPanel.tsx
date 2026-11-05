@@ -1,4 +1,4 @@
-// The Work area's "How well it works" (docs/plans/measure-and-improve.md, step
+// The Work area's "How well it works" (docs/plans/done/measure-and-improve.md, step
 // 3): over the last 7 or 30 days, what merged, how much with no person's code,
 // how long each stage took and what a merged Task cost, for every Task and per
 // Agent configuration, and the cost by the change's size. Tables, so a screen

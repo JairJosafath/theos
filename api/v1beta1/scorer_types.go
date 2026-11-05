@@ -40,7 +40,7 @@ type ScorerSelect struct {
 }
 
 // ScorerSpec is plain-words criteria a judge Agent checks finished Tasks
-// against (docs/plans/measure-and-improve.md). For each Task it selects and
+// against (docs/plans/done/measure-and-improve.md). For each Task it selects and
 // samples that finishes after the Scorer was made, the operator makes a Task
 // of kind Score: one read-only run of the judge on the finished change, whose
 // verdicts, one per criterion, are its status.score. Scores advise: nothing
@@ -89,6 +89,34 @@ type ScorerSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	BudgetUSD int32 `json:"budgetUSD,omitempty"`
+
+	// improve, when set, has a criterion that keeps failing for one
+	// configuration file an issue that proposes the fix: status/proposed,
+	// kind/improvement, in the repository of the newest failing Task's
+	// Container, and no other while it is open. Triage and the loop decide;
+	// nothing changes until a change merges. Unset: it files nothing.
+	// +optional
+	Improve *ScorerImprove `json:"improve,omitempty"`
+}
+
+// ScorerImprove is when a Scorer proposes a change.
+// +kubebuilder:validation:XValidation:rule="self.failures <= self.window",message="failures can't exceed window"
+type ScorerImprove struct {
+	// failures is how many of the newest window Scores of one configuration
+	// must fail a criterion.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=50
+	// +kubebuilder:default=3
+	// +optional
+	Failures int32 `json:"failures,omitempty"`
+
+	// window is how many of a configuration's newest finished Scores it looks
+	// at.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=50
+	// +kubebuilder:default=10
+	// +optional
+	Window int32 `json:"window,omitempty"`
 }
 
 // ScorerCriterionCount is how the current generation's Scores judged one
@@ -158,7 +186,7 @@ const ConditionScorerReady = "Ready"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // Scorer judges finished Tasks against plain-words criteria
-// (docs/plans/measure-and-improve.md).
+// (docs/plans/done/measure-and-improve.md).
 type Scorer struct {
 	metav1.TypeMeta `json:",inline"`
 

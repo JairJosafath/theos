@@ -48,7 +48,7 @@ type BenchmarkVariant struct {
 
 // BenchmarkSpec runs the same goals, from one pinned commit, under two or
 // more variants, each repeated, and compares what came out
-// (docs/plans/measure-and-improve.md, step 6). Its Tasks never merge: one the
+// (docs/plans/done/measure-and-improve.md, step 6). Its Tasks never merge: one the
 // reviewer approves with green checks ends Approved, and the Benchmark closes
 // its pull request and deletes its branch once the Scorers it names judged it.
 // It labels, closes and comments on no issue, and takes no Crew slot.
@@ -219,7 +219,7 @@ const ConditionBenchmarkDone = "Done"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // Benchmark compares Agent configurations on the same goals
-// (docs/plans/measure-and-improve.md).
+// (docs/plans/done/measure-and-improve.md).
 type Benchmark struct {
 	metav1.TypeMeta `json:",inline"`
 

@@ -1,4 +1,4 @@
-# make -k check on steps 4 and 5 of docs/plans/measure-and-improve.md (effab4b, 4dc9a7b): exit 0, every tier passed.
+# make -k check on steps 4 and 5 of docs/plans/done/measure-and-improve.md (effab4b, 4dc9a7b): exit 0, every tier passed.
 # make test-gitea was not run: Gitea refuses to run as root, as the agents' sandbox does.
 All 16 invalid files rejected
 test-hack: all 43 shell tests passed

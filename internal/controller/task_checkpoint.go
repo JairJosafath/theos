@@ -83,7 +83,7 @@ const annotationAgentBack = "theos.factory.io/agent-back-at"
 // annotationRunAgent, annotationRunHarness and annotationRunModel on a
 // Sandbox are the Agent configuration its run runs on: set when it is made
 // and again when it resumes on the current Agent, and copied into the run's
-// record when it ends (docs/plans/measure-and-improve.md, decision 2).
+// record when it ends (docs/plans/done/measure-and-improve.md, decision 2).
 const (
 	annotationRunAgent   = "theos.factory.io/run-agent"
 	annotationRunHarness = "theos.factory.io/run-harness"

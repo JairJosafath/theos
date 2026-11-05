@@ -1,6 +1,7 @@
 # Measure and improve: know whether a change to the factory made it better
 
-Written 2026-11-05, after the owner compared theos with Warp Factories
+**Status: done.** Steps 1 to 7 landed on 2026-11-05 (docs/screenshots/measure-*.txt
+and the screenshots each step names). Written 2026-11-05, after the owner compared theos with Warp Factories
 (docs.warp.dev/factories) and chose this as the first thing to take from it.
 No parent issue yet: step 1 files one per step, as the relay does.
 
@@ -37,7 +38,7 @@ in *Done when* is in `docs/screenshots/`.
 - **The UI already reads some of it.** `ui/src/model/factory.ts`
   `factoryStats` gives the success rate, mean rounds, the first-round rate,
   median lead time and time per stage (*Where the time goes*); the token
-  chart ([done/token-chart.md](done/token-chart.md)) plots runs against an
+  chart ([done/token-chart.md](token-chart.md)) plots runs against an
   Agent's `sessionTokenLimit`.
 - **What is missing.**
   - A run records its role but not the Agent, harness or model that ran it
@@ -70,7 +71,7 @@ in *Done when* is in `docs/screenshots/`.
    counts them, read once when the pull request ends through a new GitHost
    read, `PullRequestCommits` (SHA, author, parents), in the fake and the
    Gitea adapter (`make test-gitea`; the contract suites of
-   [git-host-ports.md](git-host-ports.md) take it when they land). The agents
+   [git-host-ports.md](../git-host-ports.md) take it when they land). The agents
    commit as `<bot>@agents.theos.factory.io` (`internal/agentrunner`), the
    operator's merges of main are merge commits by the GitProvider's account;
    any other author is a person.
@@ -213,8 +214,8 @@ needs 3; 7 needs 3 and 6.
   grouping, the sizes, nothing merged) and
   `ui/src/components/factory/MetricsPanel.test.ts` (the demo's rows, the
   sizes, the period and the notes, the empty state). Evidence:
-  [ui-work-metrics.png](../screenshots/ui-work-metrics.png) and
-  [the dark one](../screenshots/ui-work-metrics-dark.png), from the demo.
+  [ui-work-metrics.png](../../screenshots/ui-work-metrics.png) and
+  [the dark one](../../screenshots/ui-work-metrics-dark.png), from the demo.
 
 ### Step 4, as built
 
@@ -266,8 +267,8 @@ needs 3; 7 needs 3 and 6.
   stats leave Score Tasks out: they measure the work, they aren't it.
 - The demo has Scorer `tests-and-why`'s two judge runs.
 - Tests: `ui/src/model/scores.test.ts`, `ui/src/components/factory/ScoresPanel.test.ts`.
-  Evidence: [ui-work-scores.png](../screenshots/ui-work-scores.png),
-  [ui-task-scores.png](../screenshots/ui-task-scores.png) and their dark ones.
+  Evidence: [ui-work-scores.png](../../screenshots/ui-work-scores.png),
+  [ui-task-scores.png](../../screenshots/ui-task-scores.png) and their dark ones.
 
 ### Step 6, as built
 
@@ -308,6 +309,34 @@ needs 3; 7 needs 3 and 6.
   Scorer judging both at a sample of 0, the clean-up, the comparison and
   the rates; the budget; each CEL rule's failing case);
   `ui/src/model/lifecycle.test.ts`'s Approved case.
+
+### Step 7, as built
+
+- `Scorer.spec.improve` (`failures` of the newest `window` Scores of one
+  configuration, 3 of 10 by default; CEL keeps failures within the window).
+  `model.ImprovementsDue` finds each criterion of the current generation
+  that failed that often for one configuration, and `model.ImprovementIssue`
+  writes its issue: what fails, under which configuration, each failure's
+  why and pull request, the proposal (a line in `docs/project-notes.md`, or
+  the Standard's agent guides when every project needs it) and an
+  acceptance criterion, with a marker that ties it to the Scorer, the
+  criterion and the configuration.
+- Decision 10 as built: the issue goes in the repository of the newest
+  failing Task's Container, labelled `kind/improvement` (made if missing)
+  and `status/proposed`; the Scorer files none while one with its marker is
+  open there. Filing straight into a Standard's template repository is left
+  out: that repository is the catalog's, not always on the project's Git
+  host, and the proposal names the guides, so triage can move the work there.
+- The UI reads Benchmarks (an optional kind, in its reader role) and gives
+  each a page: the comparison, each variant's approval rate with its
+  interval, rounds, time and cost, its Scorers' criteria by variant, what it
+  compares and its runs; a Benchmark's run links to it.
+- Tests: `internal/model` `TestImprovementsDue`, `TestImprovementIssue`;
+  envtest "Scorer": two failures of a criterion file one issue, a third
+  none while it is open, and `improve`'s CEL rule;
+  `ui/src/components/objects/BenchmarkPage.test.ts`. Evidence:
+  [ui-benchmark.png](../../screenshots/ui-benchmark.png) and
+  [the dark one](../../screenshots/ui-benchmark-dark.png), from the demo.
 
 ## Done when
 

@@ -33,7 +33,7 @@ const (
 	TaskKindSpec TaskKind = "Spec"
 	// TaskScore judges another Task's finished change against a Scorer's
 	// criteria: one read-only run of the Scorer's judge, whose verdicts are
-	// its status.score (docs/plans/measure-and-improve.md). Its Scorer makes
+	// its status.score (docs/plans/done/measure-and-improve.md). Its Scorer makes
 	// it and owns it.
 	TaskScore TaskKind = "Score"
 )
@@ -274,7 +274,7 @@ const (
 	TaskFailed           TaskPhase = "Failed"
 	// TaskApproved ends a Benchmark's Task whose change passed its checks and
 	// its review: it would have merged, and never does
-	// (docs/plans/measure-and-improve.md, step 6).
+	// (docs/plans/done/measure-and-improve.md, step 6).
 	TaskApproved TaskPhase = "Approved"
 )
 
@@ -428,7 +428,7 @@ type TaskAgentRun struct {
 
 	// agent names the Agent the run ran as, copied when its sandbox was made
 	// or last resumed, so a later change to the Agent doesn't rewrite it
-	// (docs/plans/measure-and-improve.md, decision 2); empty for runs from
+	// (docs/plans/done/measure-and-improve.md, decision 2); empty for runs from
 	// before it was recorded.
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
@@ -719,7 +719,7 @@ type TaskStatus struct {
 	PullRequestEnded string `json:"pullRequestEnded,omitempty"`
 
 	// pullRequestSize is the size of the merged pull request's change, read
-	// once when it merged with personCommits (docs/plans/measure-and-improve.md,
+	// once when it merged with personCommits (docs/plans/done/measure-and-improve.md,
 	// decision 4); unset before then, or when the Git host couldn't be read.
 	// A value, not a pointer: the older version carries a field it lacks in an
 	// annotation, which keeps no empty object.

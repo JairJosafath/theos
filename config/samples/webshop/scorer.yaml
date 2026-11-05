@@ -1,4 +1,4 @@
-# A Scorer for the webshop (docs/plans/measure-and-improve.md): the reviewer
+# A Scorer for the webshop (docs/plans/done/measure-and-improve.md): the reviewer
 # Agent the chart makes judges every merged Implement Task of the four
 # applications against these criteria, and the Scorer counts the verdicts, so
 # a change to an Agent, a route or a guide can be judged by them. Judging
@@ -23,3 +23,9 @@ spec:
   samplePercent: 100
   maxPerDay: 20
   budgetUSD: 5
+  # A criterion that fails 3 of the newest 10 judged changes of one
+  # implementer configuration files a status/proposed issue that proposes
+  # telling the agents, and no other while it is open.
+  improve:
+    failures: 3
+    window: 10

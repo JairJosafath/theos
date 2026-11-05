@@ -2,7 +2,7 @@
 // go, and what needs a look. Across all projects; read-only. The headline
 // numbers, then a one-line Needs a look strip, then tabs (docs/plans/done/ui-shell.md,
 // step 2): Board, Crews, Releases, Time & tokens (with How well it works,
-// docs/plans/measure-and-improve.md); the health and the agent
+// docs/plans/done/measure-and-improve.md); the health and the agent
 // slots are the Factory area's.
 
 import { useMemo } from 'react'

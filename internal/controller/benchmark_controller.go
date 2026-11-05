@@ -33,7 +33,7 @@ import (
 // LabelBenchmark names the Benchmark a Task is a run of.
 const LabelBenchmark = "theos.factory.io/benchmark"
 
-// BenchmarkReconciler runs a Benchmark (docs/plans/measure-and-improve.md,
+// BenchmarkReconciler runs a Benchmark (docs/plans/done/measure-and-improve.md,
 // step 6): it reads its goals once, makes its Tasks in turn, up to parallel
 // and within its budget, closes each finished Task's pull request and deletes
 // its branch once its Scorers judged it, and compares the variants. The Task

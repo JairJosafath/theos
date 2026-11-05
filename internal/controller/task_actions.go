@@ -733,7 +733,7 @@ func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost
 }
 
 // recordPull keeps the merged pull request's size and how many of its
-// commits a person wrote (docs/plans/measure-and-improve.md, decisions 3 and
+// commits a person wrote (docs/plans/done/measure-and-improve.md, decisions 3 and
 // 4), once. A read that fails leaves them unset, for the merged Task to read
 // again.
 func (r *TaskReconciler) recordPull(ctx context.Context, provider ports.GitHost, repo ports.Repository,

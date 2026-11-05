@@ -9,7 +9,7 @@ import (
 	"github.com/JairJosafath/theos/internal/model"
 )
 
-// docs/plans/measure-and-improve.md, step 4: a judge run reads the base, is
+// docs/plans/done/measure-and-improve.md, step 4: a judge run reads the base, is
 // told the criteria apart from the evidence, which it reads as data, and
 // pushes nothing.
 

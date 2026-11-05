@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { demoStory } from '../../demo/fixture'
 import type { Task } from '../../k8s/types'
 import { ScoreTaskVerdicts, TaskScores } from '../objects/Scores'
-import { describeRate, ScoresPanel } from './ScoresPanel'
+import { describeRate } from '../../model/scores'
+import { ScoresPanel } from './ScoresPanel'
 
 const text = (html: string) =>
   html
