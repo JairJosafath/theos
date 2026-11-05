@@ -189,9 +189,16 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	var containerTasks []c4v1beta1.Task
 	for _, t := range tasks.Items {
 		if t.Spec.ContainerRef.Name == container.Name {
-			facts.Tasks = append(facts.Tasks, crewTask(&t))
 			containerTasks = append(containerTasks, t)
 		}
+	}
+	// A Triage Task is no try at its issue, takes no place from parallel and
+	// merges nothing a release could hold: the Crew reads them apart.
+	triage := model.TriageFacts{On: crew.Spec.Triager != nil, Paused: crew.Spec.Paused,
+		ContainerReady: facts.ContainerReady}
+	triage.Tasks, containerTasks = triageTasks(containerTasks)
+	for i := range containerTasks {
+		facts.Tasks = append(facts.Tasks, crewTask(&containerTasks[i]))
 	}
 
 	var provider interface {
@@ -210,10 +217,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		repo = provider.Repository(container.Name)
 		gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-		facts.Issues, err = readyIssues(gitCtx, provider, repo)
-		if err == nil {
-			err = taskReleases(gitCtx, provider, repo, facts.Tasks, facts.Issues)
-		}
+		err = readIssues(gitCtx, provider, repo, &facts, &triage)
 		cancel()
 		if err != nil {
 			log.Error(err, "Failed to read the ready issues", "container", container.Name)
@@ -277,6 +281,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			"allowedPaths", s.AllowedPaths, "implementer", implementer, "reviewer", reviewer)
 		status.ActiveTasks = append(status.ActiveTasks, s.Task)
 	}
+	if err := r.triage(ctx, &crew, &container, triage, status, &step); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	status.Phase = c4v1beta1.CrewPhase(step.Phase)
 	status.Ready, status.Waiting = int32s(step.Ready), int32s(step.Waiting)
@@ -334,10 +341,10 @@ func (r *CrewReconciler) release(ctx context.Context, crew *c4v1beta1.Crew, cont
 	return filed, preparing
 }
 
-// crewAgentNames names every Agent a Crew may start a Task with: its own two
-// and those its routes name, each once.
+// crewAgentNames names every Agent a Crew may start a Task with: its own two,
+// its triager and those its routes name, each once.
 func crewAgentNames(spec *c4v1beta1.CrewSpec) []string {
-	names := make([]string, 0, 2+2*len(spec.Routes))
+	names := make([]string, 0, 3+2*len(spec.Routes))
 	add := func(ref *c4v1beta1.LocalRef) {
 		if ref != nil && !slices.Contains(names, ref.Name) {
 			names = append(names, ref.Name)
@@ -345,6 +352,7 @@ func crewAgentNames(spec *c4v1beta1.CrewSpec) []string {
 	}
 	add(&spec.Implementer)
 	add(&spec.Reviewer)
+	add(spec.Triager)
 	for _, route := range spec.Routes {
 		add(route.Implementer)
 		add(route.Reviewer)
@@ -403,6 +411,80 @@ func readyIssues(ctx context.Context, provider ports.Issues, repo ports.Reposito
 			Labels: slices.Clone(i.Labels)})
 	}
 	return out, nil
+}
+
+// readIssues reads what a Crew picks from: the ready issues, the releases of
+// its Tasks' issues, and, with a triager, the proposed issues.
+func readIssues(ctx context.Context, provider ports.Issues, repo ports.Repository, facts *model.CrewFacts,
+	triage *model.TriageFacts) error {
+	var err error
+	if facts.Issues, err = readyIssues(ctx, provider, repo); err != nil {
+		return err
+	}
+	if err := taskReleases(ctx, provider, repo, facts.Tasks, facts.Issues); err != nil {
+		return err
+	}
+	if triage.On {
+		triage.Proposed, err = proposedIssues(ctx, provider, repo)
+	}
+	return err
+}
+
+// triage starts the Triage Task model.NextTriage starts, if any, and adds
+// the Triage Task at work, or started, to the Crew's step and active Tasks.
+func (r *CrewReconciler) triage(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
+	facts model.TriageFacts, status *c4v1beta1.CrewStatus, step *model.CrewStep) error {
+	triaging := model.NextTriage(container.Name, facts)
+	if err := r.startTriage(ctx, crew, container, triaging.Start); err != nil {
+		return err
+	}
+	switch {
+	case triaging.Start != nil:
+		status.ActiveTasks = append(status.ActiveTasks, triaging.Start.Task)
+	case triaging.Active != "":
+		status.ActiveTasks = append(status.ActiveTasks, triaging.Active)
+	}
+	step.AddTriage(triaging)
+	return nil
+}
+
+// proposedIssues reads the open issues labelled status/proposed, a Crew's
+// triager's to decide.
+func proposedIssues(ctx context.Context, provider ports.Issues, repo ports.Repository) ([]model.ProposedIssue, error) {
+	issues, err := provider.ListIssues(ctx, repo, model.LabelProposed)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.ProposedIssue, 0, len(issues))
+	for _, i := range issues {
+		out = append(out, model.ProposedIssue{Number: i.Number, Milestone: i.MilestoneTitle})
+	}
+	return out, nil
+}
+
+// startTriage creates the Triage Task model.NextTriage starts, if any: the
+// Crew's triager on the issue, with no reviewer.
+func (r *CrewReconciler) startTriage(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
+	start *model.TriageStart) error {
+	if start == nil || crew.Spec.Triager == nil {
+		return nil
+	}
+	task := &c4v1beta1.Task{
+		ObjectMeta: metav1.ObjectMeta{Namespace: crew.Namespace, Name: start.Task, Labels: map[string]string{
+			LabelCrew: crew.Name, LabelIssue: strconv.Itoa(start.Issue)}},
+		Spec: c4v1beta1.TaskSpec{
+			Kind:         c4v1beta1.TaskTriage,
+			ContainerRef: c4v1beta1.LocalRef{Name: container.Name},
+			AgentRef:     c4v1beta1.LocalRef{Name: crew.Spec.Triager.Name},
+			Issue:        int32(start.Issue),
+		},
+	}
+	if err := r.Create(ctx, task); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	logf.FromContext(ctx).Info("Started Triage Task for issue", "task", start.Task, "issue", start.Issue,
+		"attempt", start.Attempt, "triager", crew.Spec.Triager.Name)
+	return nil
 }
 
 // taskReleases sets the release of each active Task's issue, so that a release

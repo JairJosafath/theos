@@ -74,6 +74,9 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider ports.
 	byName := make(map[string]*c4v1beta1.Task, len(list.Items))
 	for i := range list.Items {
 		t := &list.Items[i]
+		if t.Spec.Kind == c4v1beta1.TaskTriage {
+			continue // a triage is no try at the issue: it has no pull request
+		}
 		byName[t.Name] = t
 		tries = append(tries, model.Try{Name: t.Name, Issue: int(t.Spec.Issue), Created: t.CreationTimestamp.Unix(),
 			Failed: t.Status.Phase == c4v1beta1.TaskFailed, PullRequest: int(t.Status.PullRequest)})

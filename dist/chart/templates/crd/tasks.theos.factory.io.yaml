@@ -7,10 +7,22 @@ metadata:
     "helm.sh/resource-policy": keep
     {{- end }}
     controller-gen.kubebuilder.io/version: v0.22.0
+    theos.factory.io/conversion: webhook
   name: tasks.theos.factory.io
 spec:
+  {{- if not .Values.webhook.enabled }}
+  {{- fail "tasks.theos.factory.io: its versions differ in shape and convert by the operator (webhook.enabled)" }}
+  {{- end }}
   conversion:
-    strategy: None
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          name: {{ include "theos.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+          namespace: {{ .Release.Namespace }}
+          path: /convert
+      conversionReviewVersions:
+      - v1
   group: theos.factory.io
   names:
     categories:
@@ -768,6 +780,10 @@ spec:
       name: Brief
       priority: 1
       type: string
+    - jsonPath: .status.triage.decision
+      name: Decision
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -778,7 +794,8 @@ spec:
           Task is a goal for a Container. The operator runs an Agent in a sandbox to
           implement it on a branch, opens a pull request, waits for CI, runs the Agent
           again as reviewer, and merges when both pass. It is owned by its Container. A
-          Plan Task is a planning round of a Brief, owned by the Brief.
+          Plan Task is a planning round of a Brief, owned by the Brief. A Triage Task
+          runs a triager on one proposed issue and applies what it decided.
         properties:
           apiVersion:
             description: |-
@@ -891,11 +908,13 @@ spec:
                 default: Implement
                 description: |-
                   kind is Implement (the default): implement the goal in the Container's
-                  repository; or Plan: plan a round of the Brief named by briefRef. It can't
-                  change.
+                  repository; Plan: plan a round of the Brief named by briefRef; or Triage:
+                  decide what the issue needs next, which the operator then applies to the
+                  issue. It can't change.
                 enum:
                 - Implement
                 - Plan
+                - Triage
                 type: string
               reviewerRef:
                 description: |-
@@ -928,6 +947,11 @@ spec:
               rule: '!has(self.kind) || self.kind != ''Plan'' || has(self.briefRef)'
             - message: a Plan Task has no reviewerRef
               rule: '!has(self.kind) || self.kind != ''Plan'' || !has(self.reviewerRef)'
+            - message: a Triage Task needs an issue
+              rule: '!has(self.kind) || self.kind != ''Triage'' || has(self.issue)'
+            - message: a Triage Task has no reviewerRef and no allowedProtectedPaths
+              rule: '!has(self.kind) || self.kind != ''Triage'' || (!has(self.reviewerRef)
+                && !has(self.allowedProtectedPaths))'
             - message: containerRef and briefRef are immutable; create a new Task
               rule: has(self.containerRef) == has(oldSelf.containerRef) && has(self.briefRef)
                 == has(oldSelf.briefRef)
@@ -1261,7 +1285,7 @@ spec:
                       type: string
                     role:
                       description: |-
-                        role is implement, review or plan; empty when neither theos-agent nor the
+                        role is implement, review, plan or triage; empty when neither theos-agent nor the
                         sandbox's name said.
                       maxLength: 32
                       type: string
@@ -1441,6 +1465,52 @@ spec:
                       fresh session.
                     format: int32
                     type: integer
+                type: object
+              triage:
+                description: |-
+                  triage is a Triage Task's decision, once its triager reported one, and
+                  what the operator did with it.
+                properties:
+                  applied:
+                    description: |-
+                      applied says what the operator did to the issue, or why it did nothing:
+                      a person closed or triaged the issue meanwhile.
+                    maxLength: 1024
+                    type: string
+                  criteria:
+                    description: |-
+                      criteria are the acceptance criteria a ready decision gave, which the
+                      operator writes into an issue body that has none.
+                    items:
+                      maxLength: 512
+                      type: string
+                    maxItems: 8
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  decision:
+                    description: |-
+                      decision is ready (clear, with acceptance criteria), spec (needs a spec
+                      first), park (needs a person's answer) or duplicate (of another issue).
+                    enum:
+                    - ready
+                    - spec
+                    - park
+                    - duplicate
+                    type: string
+                  duplicate:
+                    description: duplicate is the issue a duplicate decision names.
+                    format: int32
+                    type: integer
+                  question:
+                    description: question is what a park decision asks a person.
+                    maxLength: 2000
+                    type: string
+                  reason:
+                    description: reason is why, in the triager's words.
+                    maxLength: 2000
+                    type: string
+                required:
+                - decision
                 type: object
             type: object
         required:

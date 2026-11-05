@@ -53,6 +53,8 @@ type Result struct {
 	// Open are the acceptance criteria an approving reviewer accepted as left
 	// open, for a person.
 	Open []model.OpenCriterion `json:"open,omitempty"`
+	// Triage is a triager's decision about its issue.
+	Triage *model.Triage `json:"triage,omitempty"`
 	// Unavailable means the agent's service couldn't work (a limit, an overload,
 	// bad credentials); RetryAt is when it said it is back.
 	Unavailable bool       `json:"unavailable,omitempty"`
@@ -98,6 +100,9 @@ const (
 	maxFollowUpBody      = 400
 	maxFollowUpCriterion = 240
 	maxCriterionChars    = 200
+	// maxTriageText bounds a triager's reason and question; its criteria are
+	// bounded as a follow-up's.
+	maxTriageText = 600
 )
 
 // Encode returns the Result as JSON of at most MaxResultBytes, shortening the
@@ -120,6 +125,15 @@ func (r Result) Encode() []byte {
 	if r.Proposal != nil {
 		p := *r.Proposal
 		r.Proposal = &p
+	}
+	if r.Triage != nil {
+		t := *r.Triage
+		t.Reason, t.Question = shortenWords(t.Reason, maxTriageText), shortenWords(t.Question, maxTriageText)
+		t.Criteria = slices.Clone(t.Criteria)
+		for i, c := range t.Criteria {
+			t.Criteria[i] = shortenWords(c, maxFollowUpCriterion)
+		}
+		r.Triage = &t
 	}
 	for stage := 0; ; {
 		data, _ := json.Marshal(r)
@@ -150,6 +164,11 @@ func (r Result) Encode() []byte {
 		case len(r.Extra) > 0:
 			// The reviewer sees every path in the diff; the list only points at them.
 			r.Extra = r.Extra[:len(r.Extra)-1]
+		case r.Triage != nil && len(r.Triage.Criteria) > 1:
+			// A ready decision keeps its first criteria; a person adds the rest.
+			r.Triage.Criteria = r.Triage.Criteria[:len(r.Triage.Criteria)-1]
+		case r.Triage != nil && len(r.Triage.Reason)+len(r.Triage.Question) > 400:
+			r.Triage.Reason, r.Triage.Question = shortenWords(r.Triage.Reason, 200), shortenWords(r.Triage.Question, 200)
 		case stage == 0:
 			stage++
 			r.Summary, r.Error = shorten(r.Summary, 100), shorten(r.Error, 100)
@@ -346,6 +365,9 @@ func run(ctx context.Context, job Job, agent Agent, dir string, prog *runProgres
 	ws.Related = cloneRelated(ctx, job, filepath.Join(filepath.Dir(dir), "related"))
 	if job.Role == RoleReview {
 		return review(ctx, job, agent, r, ws, prog, result)
+	}
+	if job.Role == RoleTriage {
+		return triage(ctx, job, agent, r, ws, prog, result)
 	}
 	return implement(ctx, job, agent, r, ws, prog, result)
 }

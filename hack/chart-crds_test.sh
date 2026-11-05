@@ -26,8 +26,9 @@ mark='^    theos.factory.io/conversion: webhook$'
 n=0; for base in "$ROOT"/config/crd/bases/*.yaml; do
 	name=$(basename "$base" .yaml)
 	want=None; grep -q "$mark" "$base" && want=Webhook
+	# A marked CRD's spec opens with the guard that fails without webhook.enabled.
 	awk -v want="$want" '$0 == "spec:" { s = 1; next }
-		s == 1 && /^  \{\{/ { next }
+		s == 1 && /^  [{][{]-/ { next }
 		s == 1 { ok = $0 == "  conversion:"; s = 2; next }
 		s == 2 { ok = ok && $0 == "    strategy: " want; exit }
 		END { exit !ok }' "$ROOT/dist/chart/templates/crd/${name#*_}.${name%%_*}.yaml" || n=$((n + 1))
@@ -56,7 +57,10 @@ if [ -x "$HELM" ]; then
 		"$(awk '/^  name: people.theos.factory.io$/ { s = 1 } s && /path: \/convert$/ { f = 1 } s && /^---$/ { exit } END { print f + 0 }' "$T/rendered.yaml")" 1
 	check "the rest stay at strategy None" "$(grep -c 'strategy: None' "$T/rendered.yaml")" "$(grep -L 'path: /convert' "$T"/crd/*.yaml | wc -l)"
 	render false; check "without webhook.enabled the render fails (#1830)" $? 1
-	grep -q 'people.theos.factory.io: its versions differ in shape' "$T/render-err"; check "and names the kind" $? 0
+	# Helm stops at the first marked CRD it renders: people, or one the
+	# committed bases mark.
+	marked=$(grep -l 'path: /convert' "$T"/chart/templates/crd/*.yaml | sed 's|.*/||; s|\.yaml$||' | paste -sd '|')
+	grep -qE "($marked): its versions differ in shape" "$T/render-err"; check "and names a marked kind" $? 0
 else
 	echo "FAIL the marked-kind render specs: no helm at $HELM (make install-helm; make test-hack installs it)"; fail=1
 fi

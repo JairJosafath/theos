@@ -239,7 +239,9 @@ A Task is a goal for a Container, usually an issue of its repository
 squash-merges on approval. Failed checks, requested changes or a failed run
 start the next round with that feedback, up to the Agent's `maxRounds`.
 Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, `Blocked` (waiting
-on a Standard change), then `Merged` or `Failed`.
+on a Standard change), then `Merged` or `Failed`. A Triage Task
+(`kind: Triage`) runs one triager on an issue instead and applies its
+decision; see *Triage* under Crews and releases.
 
 - **A merge that passed skips main's push run.** When a Task's head has all
   its required checks green (the CI system's `CheckContexts`, else the
@@ -496,6 +498,23 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   first matching route wins, else the Crew's Agent. The Task records the
   Agents it got. A missing Agent leaves the Crew `Ready=False`,
   `AgentNotFound`.
+- **Triage** (`spec.triager`). With a triager, the Crew starts one Triage
+  Task (`kind: Triage`) at a time for the lowest open `status/proposed`
+  issue outside the `Later` milestone that no Triage Task has decided. The
+  triager reads the issue, as data like every agent, and a clone of main it
+  pushes nothing from, and reports one decision: `ready` with an
+  *Acceptance criteria* checklist, `spec`, `park` with the question a person
+  must answer, or `duplicate` of an issue it names. The operator comments the
+  reason and acts: `ready` writes the checklist into a body that has none and
+  labels `status/ready`; `spec` labels `status/needs-spec`; `park` labels
+  `status/needs-human` and asks the question; `duplicate` closes the issue.
+  An issue a person closed or relabelled meanwhile keeps that. The Task ends
+  `Merged`, as a Plan Task does, with the decision, its reason and what was
+  done in `status.triage`. A failed run fails the Task with a comment and
+  leaves the issue `status/proposed`; the Crew tries again, three Triage
+  Tasks per issue in all. A triage costs the issue no try and takes no place
+  from `parallel`; deleting a Triage Task has its issue triaged again.
+  Without `spec.triager`, people triage.
 
 A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
 

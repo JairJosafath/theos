@@ -183,7 +183,7 @@ func (r *TaskReconciler) changeFacts(ctx context.Context, task *c4v1beta1.Task, 
 	})
 	var changeTasks []model.ChangeTask
 	for _, t := range tasks.Items {
-		if t.Spec.Issue != change.Issue {
+		if t.Spec.Issue != change.Issue || t.Spec.Kind == c4v1beta1.TaskTriage {
 			continue
 		}
 		ct := model.ChangeTask{Name: t.Name, Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1beta1.TaskFailed}
