@@ -290,57 +290,71 @@ describe('the Crew and Task lifecycles', () => {
     [
       'Task',
       undefined,
-      'Pending:next Implementing:next Checking:next Reviewing:next Merged:next',
-      'Blocked:off Failed:off',
+      'Pending:next Implementing:next Checking:next Reviewing:next Verifying:next Merged:next',
+      'AwaitingApproval:off Blocked:off Failed:off',
       undefined,
     ],
     [
       'Task',
       'Pending',
-      'Pending:current Implementing:next Checking:next Reviewing:next Merged:next',
-      'Blocked:off Failed:off',
+      'Pending:current Implementing:next Checking:next Reviewing:next Verifying:next Merged:next',
+      'AwaitingApproval:off Blocked:off Failed:off',
       'Pending',
     ],
     [
       'Task',
       'Implementing',
-      'Pending:done Implementing:current Checking:next Reviewing:next Merged:next',
-      'Blocked:off Failed:off',
+      'Pending:done Implementing:current Checking:next Reviewing:next Verifying:next Merged:next',
+      'AwaitingApproval:off Blocked:off Failed:off',
       'Implementing',
     ],
     [
       'Task',
       'Checking',
-      'Pending:done Implementing:done Checking:current Reviewing:next Merged:next',
-      'Blocked:off Failed:off',
+      'Pending:done Implementing:done Checking:current Reviewing:next Verifying:next Merged:next',
+      'AwaitingApproval:off Blocked:off Failed:off',
       'Checking',
     ],
     [
       'Task',
       'Reviewing',
-      'Pending:done Implementing:done Checking:done Reviewing:current Merged:next',
-      'Blocked:off Failed:off',
+      'Pending:done Implementing:done Checking:done Reviewing:current Verifying:next Merged:next',
+      'AwaitingApproval:off Blocked:off Failed:off',
       'Reviewing',
     ],
     [
       'Task',
+      'Verifying',
+      'Pending:done Implementing:done Checking:done Reviewing:done Verifying:current Merged:next',
+      'AwaitingApproval:off Blocked:off Failed:off',
+      'Verifying',
+    ],
+    [
+      'Task',
+      'AwaitingApproval',
+      'Pending:off Implementing:off Checking:off Reviewing:off Verifying:off Merged:off',
+      'AwaitingApproval:current Blocked:off Failed:off',
+      'AwaitingApproval',
+    ],
+    [
+      'Task',
       'Merged',
-      'Pending:done Implementing:done Checking:done Reviewing:done Merged:current',
-      'Blocked:off Failed:off',
+      'Pending:done Implementing:done Checking:done Reviewing:done Verifying:done Merged:current',
+      'AwaitingApproval:off Blocked:off Failed:off',
       'Merged',
     ],
     [
       'Task',
       'Blocked',
-      'Pending:off Implementing:off Checking:off Reviewing:off Merged:off',
-      'Blocked:current Failed:off',
+      'Pending:off Implementing:off Checking:off Reviewing:off Verifying:off Merged:off',
+      'AwaitingApproval:off Blocked:current Failed:off',
       'Blocked',
     ],
     [
       'Task',
       'Failed',
-      'Pending:off Implementing:off Checking:off Reviewing:off Merged:off',
-      'Blocked:off Failed:current',
+      'Pending:off Implementing:off Checking:off Reviewing:off Verifying:off Merged:off',
+      'AwaitingApproval:off Blocked:off Failed:current',
       'Failed',
     ],
   ] as const)('%s in %s', (kind, phase, path, exits, current) => {
@@ -516,8 +530,16 @@ describe('taskNextStep', () => {
     })
   })
 
+  it('asks a person to approve a spec waiting for approval', () => {
+    const t = task({ phase: 'AwaitingApproval', pullRequest: 9, pullRequestURL: 'http://gitea/api/pulls/9' })
+    expect(taskNextStep(t)).toEqual({
+      text: expect.stringMatching(/^Its spec waits for you in pull request #9: read it and approve/),
+      link: { href: 'http://gitea/api/pulls/9', label: 'Open the spec #9' },
+    })
+  })
+
   it('asks nothing inside the loop, or of a Failed Task with a goal and no issue', () => {
-    for (const phase of ['Pending', 'Implementing', 'Checking', 'Reviewing', 'Merged'] as const)
+    for (const phase of ['Pending', 'Implementing', 'Checking', 'Reviewing', 'Verifying', 'Merged'] as const)
       expect(taskNextStep(task({ phase }))).toBeUndefined()
     expect(taskNextStep(task({ phase: 'Failed' }, { goal: 'Add a health endpoint' }))).toBeUndefined()
   })

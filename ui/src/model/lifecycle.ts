@@ -173,9 +173,19 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
         phase: 'Reviewing',
         person: 'Nothing: an agent reviews the pull request; changes it asks for start the next round.',
       },
+      {
+        phase: 'Verifying',
+        person:
+          'Nothing: where the Crew names a verifier, it runs the change against each acceptance criterion; a failure starts the next round.',
+      },
       { phase: 'Merged', person: 'Nothing: the change is in. Take or skip the follow-up issues the review proposed.' },
     ],
     exits: [
+      {
+        phase: 'AwaitingApproval',
+        person:
+          'A spec only: read it and approve its pull request on the Git host; then it merges and its issue is built.',
+      },
       {
         phase: 'Blocked',
         person: 'Review and merge the Standard change it filed; the Task goes on when it merges.',
@@ -593,7 +603,8 @@ export function crewNextStep(crew: Crew, briefs: Brief[]): NextStep | undefined 
 
 /**
  * What a person does next on this Task: a Blocked one waits on the Standard
- * change it filed; a Failed one handed its issue back. Undefined while the
+ * change it filed; a Spec awaiting approval waits for a person to approve its
+ * pull request; a Failed one handed its issue back. Undefined while the
  * loop needs nobody.
  */
 export function taskNextStep(task: Task): NextStep | undefined {
@@ -603,6 +614,15 @@ export function taskNextStep(task: Task): NextStep | undefined {
     return {
       text: `It waits for the Standard change it filed, #${change.issue}, for ${change.paths.join(', ')}. Review and merge it; the Task goes on when it merges.`,
       link: change.issueURL ? { href: change.issueURL, label: `Open the Standard change #${change.issue}` } : undefined,
+    }
+  }
+  if (status?.phase === 'AwaitingApproval') {
+    const pr = status.pullRequest
+    return {
+      text: `Its spec waits for you${pr ? ` in pull request #${pr}` : ''}: read it and approve the pull request on the Git host. The operator then merges it and the issue goes on to be built; close the pull request to decline the spec.`,
+      link: status.pullRequestURL
+        ? { href: status.pullRequestURL, label: `Open the spec${pr ? ` #${pr}` : ''}` }
+        : undefined,
     }
   }
   if (status?.phase === 'Failed' && task.spec.issue) {
