@@ -849,6 +849,37 @@ decides; the chart refuses actions behind an Ingress without OIDC. The browser
 never sees a token. Out of reach: deletes, Secrets, the Git host and editing
 the model ([plans/done/ui-actions.md](plans/done/ui-actions.md)).
 
+## Chat: the factory in Matrix
+
+People follow and steer a project from a chat app as well as the UI
+([plans/chat-matrix.md](plans/chat-matrix.md)). A `Chat`, one per project
+namespace, names a Matrix homeserver (unset: the operator's
+`--chat-homeserver`, the chart's own), a Secret with its bot's access token
+under `accessToken`, the Space's and rooms' names, the updates digest and its
+`people`: each Matrix user ID with the Kubernetes user and groups it acts as
+(`system:` ones refused).
+
+- **The operator makes the rooms and only reports.** It makes one Space,
+  named after the Project, with six rooms (`updates`, `general`, `triage`,
+  `specs`, `reviews`, `alerts`), private, invite only and unencrypted, invites
+  the `people`, and writes the IDs and `Ready` into status. It finds them again
+  by the IDs in status, then by alias (`#<aliasPrefix>-<purpose>:<server>`,
+  `theos-<namespace>` unless set, immutable), so a restart makes nothing
+  twice; an alias another account holds is never taken over (`AliasTaken`).
+  A second Chat in the namespace is `Duplicate` and does nothing.
+- **Chat enforces nothing.** A command becomes one request from a closed
+  allowlist in `internal/model` (`CheckChatRequest`), the UI's own entries
+  for what the UI can do (a Brief, its prompts, pause and resume, a
+  Container's retry and a deploy's approval) and three annotations a person
+  writes only from chat: `theos.factory.io/approve-spec` (the head commit),
+  `theos.factory.io/spec-changes` and `theos.factory.io/answer` on a Task.
+  `theos-chat` sends it as the person, by impersonation, and posts the API
+  server's refusal back.
+- **Matrix is behind the ChatHost port;** the adapter speaks the
+  client-server API over `net/http`, with no SDK, and tests run on a fake
+  homeserver (`internal/adapters/matrix/matrixtest`). No end-to-end
+  encryption until it is built.
+
 ## Factory components: ports and adapters
 
 The factory is built from parts a device can swap: another Git host, its own
@@ -865,12 +896,14 @@ controllers call, not by one product's API;
 | Registry | Go modules and the proxy; npm, PyPI and images to come | Gitea packages |
 | AgentRuntime | start a run, read its state and result, stop it | Agent Sandbox |
 | Deployer | ship a release to a target, read its state back | the GitHub release copy |
+| ChatHost | a Space and its rooms, invites, messages, thread replies, edits, reactions, sync | Matrix |
 
 - **A port is a narrow Go interface** with one fake and one contract suite,
   plain Go with no Kubernetes in `internal/ports`; each adapter is its own
   package under `internal/adapters`, and only `cmd/main.go` imports adapters
   (`make lint` enforces it). The Deployer and the Git host's five ports are
-  there today, with Gitea in `internal/adapters/gitea`.
+  there today, with Gitea in `internal/adapters/gitea`, and ChatHost, with
+  Matrix in `internal/adapters/matrix`.
 - **What a host lacks** its adapter emulates, or the port makes an optional
   capability (a second small interface, a condition reason when missing):
   Go modules, npm and PyPI, a project's own runners, webhooks.

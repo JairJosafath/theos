@@ -22,6 +22,7 @@ resources:
 - bases/theos.factory.io_deploytargets.yaml
 - bases/theos.factory.io_bundles.yaml
 - bases/theos.factory.io_domains.yaml
+- bases/theos.factory.io_chats.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

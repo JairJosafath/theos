@@ -56,6 +56,7 @@ func stopPolling(ns string) {
 	GinkgoHelper()
 	for _, obj := range []client.Object{
 		&c4v1beta1.Brief{}, &c4v1beta1.Crew{}, &c4v1beta1.Task{}, &c4v1beta1.Session{}, &c4v1beta1.Container{},
+		&c4v1beta1.Chat{},
 	} {
 		Expect(k8sClient.DeleteAllOf(ctx, obj, client.InNamespace(ns))).To(Succeed())
 	}

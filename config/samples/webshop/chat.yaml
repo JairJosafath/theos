@@ -1,0 +1,32 @@
+# The webshop's Chat: a Matrix Space named after the Project, with the six
+# rooms of docs/plans/chat-matrix.md (updates, general, triage, specs,
+# reviews, alerts), where the people below follow and steer the factory.
+# The operator makes the Space and the rooms, private and invite only, as
+# the bot whose access token Secret matrix-bot holds under accessToken, and
+# invites the people. Needs a homeserver: this one names its address; leave
+# homeserver out to use the chart's in-cluster one (chat.homeserver.enabled).
+# Make the bot an account there, then its Secret:
+#   kubectl -n webshop create secret generic matrix-bot --from-literal=accessToken=<the bot's token>
+# Not in kustomization.yaml: apply it on its own with
+# kubectl apply -n webshop -f config/samples/webshop/chat.yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Chat
+metadata:
+  name: webshop
+spec:
+  homeserver: https://matrix.example.com
+  credentialsSecretRef:
+    name: matrix-bot
+  # space defaults to the Project's displayName, each room's name to its
+  # purpose; general is the lobby here.
+  rooms:
+    general: lobby
+  # The updates room posts its news every 10 minutes (the default).
+  digestMinutes: 10
+  # Each person's commands are made as their Kubernetes user and groups, so
+  # the cluster's RBAC decides what they may do.
+  people:
+    - matrixID: "@ada:matrix.example.com"
+      user: ada@example.com
+      groups:
+        - webshop-team

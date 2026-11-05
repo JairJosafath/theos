@@ -253,7 +253,12 @@ func TestConversionMarkFollowsTheShapes(t *testing.T) {
 			t.Fatalf("%s: %v", f, err)
 		}
 		if len(crd.Spec.Versions) < 2 {
-			t.Errorf("%s: serves %d version(s), want v1alpha1 and v1beta1", crd.Name, len(crd.Spec.Versions))
+			if !bornAtV1beta1[crd.Spec.Names.Kind] {
+				t.Errorf("%s: serves %d version(s), want v1alpha1 and v1beta1", crd.Name, len(crd.Spec.Versions))
+			}
+			if crd.Annotations["theos.factory.io/conversion"] == "webhook" {
+				t.Errorf("%s: serves one version, so it converts nothing: drop its webhook marker", crd.Name)
+			}
 			continue
 		}
 		differs := false
@@ -336,7 +341,8 @@ func TestShapeOfKeepsAFieldNamedDescription(t *testing.T) {
 }
 
 // #1614: WebhookCRDs and the RBAC marker that lets the operator patch them
-// name every CRD in config/crd/bases.
+// name every CRD in config/crd/bases but those of the kinds born at v1beta1,
+// which serve one version.
 func TestWebhookCRDsAreEveryCRD(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "theos.factory.io_*.yaml"))
 	if err != nil {
@@ -345,6 +351,9 @@ func TestWebhookCRDsAreEveryCRD(t *testing.T) {
 	want := make([]string, 0, len(files))
 	for _, f := range files {
 		plural := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), "theos.factory.io_"), ".yaml")
+		if bornAtV1beta1Plurals[plural] {
+			continue
+		}
 		want = append(want, plural+".theos.factory.io")
 	}
 	if !slices.Equal(want, slices.Sorted(slices.Values(WebhookCRDs))) {

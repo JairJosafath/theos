@@ -46,6 +46,7 @@ import (
 	"github.com/JairJosafath/theos/internal/adapters/gitea"
 	"github.com/JairJosafath/theos/internal/adapters/github"
 	"github.com/JairJosafath/theos/internal/adapters/gitlab"
+	"github.com/JairJosafath/theos/internal/adapters/matrix"
 	"github.com/JairJosafath/theos/internal/buildinfo"
 	"github.com/JairJosafath/theos/internal/controller"
 	"github.com/JairJosafath/theos/internal/model"
@@ -93,6 +94,7 @@ func main() {
 	var sharedSecrets, sharedPullSecrets stringList
 	var uiServiceAccount string
 	var modelProxyURL string
+	var chatHomeserver string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -175,6 +177,9 @@ func main() {
 	flag.StringVar(&uiServiceAccount, "ui-service-account", "",
 		"The UI's ServiceAccount, as namespace/name, let read the pods and their metrics in every project "+
 			"namespace for the Factory view's health. None: the UI sees no agent sandboxes.")
+	flag.StringVar(&chatHomeserver, "chat-homeserver", "",
+		"The Matrix homeserver of a Chat that names none, such as the chart's in-cluster one. None: each Chat "+
+			"names its homeserver.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -478,6 +483,16 @@ func main() {
 		Deployers: deployers,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "deploytarget")
+		os.Exit(1)
+	}
+	if err := (&controller.ChatReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		APIReader:  mgr.GetAPIReader(),
+		ChatHosts:  matrix.Hosts(nil),
+		Homeserver: chatHomeserver,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "chat")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

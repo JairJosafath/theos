@@ -50,6 +50,8 @@ import (
 	githubdeploy "github.com/JairJosafath/theos/internal/adapters/github"
 	"github.com/JairJosafath/theos/internal/adapters/gitlab"
 	"github.com/JairJosafath/theos/internal/adapters/gitlab/gitlabtest"
+	"github.com/JairJosafath/theos/internal/adapters/matrix"
+	"github.com/JairJosafath/theos/internal/adapters/matrix/matrixtest"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/oci"
 	"github.com/JairJosafath/theos/internal/ports"
@@ -98,6 +100,9 @@ var (
 	// root /gitlab: a target whose url ends in a path (#1916). It shares
 	// httptest's certificate with gitlabFake, so gitlabProjects trusts both.
 	gitlabRootFake *gitlabtest.Server
+	// chatFake is the Matrix homeserver every Chat names: the Chat
+	// controller's matrix adapter calls it.
+	chatFake *matrixtest.Server
 	// ghcrFake stands in for GHCR, where the github member copies a
 	// release's image; registryFake is the owner's registry a spec pushes
 	// that image to first (#1600). gitlabRegistryFake stands in for a
@@ -344,6 +349,8 @@ var _ = BeforeSuite(func() {
 	DeferCleanup(gitlabFake.Close)
 	gitlabRootFake = gitlabtest.StartTLSUnder("/gitlab")
 	DeferCleanup(gitlabRootFake.Close)
+	chatFake = matrixtest.Start()
+	DeferCleanup(chatFake.Close)
 	ghcrFake, registryFake, gitlabRegistryFake = newFakeRegistry(), newFakeRegistry(), newFakeRegistry()
 	DeferCleanup(ghcrFake.server.Close)
 	DeferCleanup(registryFake.server.Close)
@@ -413,6 +420,10 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)}},
 		&DeployTargetReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second,
 			Deployers: deployers},
+		// Every Chat names chatFake; the suite's operator has no homeserver of
+		// its own, so one that names none is HomeserverUnset.
+		&ChatReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), ChatHosts: matrix.Hosts(nil),
+			PollInterval: time.Second, CheckInterval: time.Second},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err
