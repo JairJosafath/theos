@@ -7,6 +7,24 @@
     <meta name="description" content="theos: the story of a project, drawn live from the cluster." />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <title>theos</title>
+    <script>
+      // The theme and density chosen in this browser (src/lib/prefs.ts), before the first paint.
+      ;(function () {
+        var root = document.documentElement
+        var theme = 'system'
+        var density = 'comfortable'
+        try {
+          var t = window.localStorage.getItem('theos.theme')
+          var d = window.localStorage.getItem('theos.density')
+          if (t === 'light' || t === 'dark') theme = t
+          if (d === 'compact') density = d
+        } catch (e) {
+          // Storage refused: the defaults.
+        }
+        root.setAttribute('data-theme', theme)
+        root.setAttribute('data-density', density)
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

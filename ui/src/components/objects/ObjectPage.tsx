@@ -62,7 +62,7 @@ export function ObjectPage({
   if (page) return page
   const failed = problemsOf(connection, WHERE[kind].resource)
   return (
-    <main className="shell-page">
+    <div className="shell-page">
       <section className="panel" aria-label={`${kind} ${name}`}>
         <div className="eyebrow">
           {kind} · {data.namespace}
@@ -79,7 +79,7 @@ export function ObjectPage({
           </p>
         )}
       </section>
-    </main>
+    </div>
   )
 }
 

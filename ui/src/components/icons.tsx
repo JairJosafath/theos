@@ -132,3 +132,166 @@ export function LogoMark(props: IconProps) {
     </Icon>
   )
 }
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M16 16l4.5 4.5" />
+    </Icon>
+  )
+}
+
+export function MenuIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </Icon>
+  )
+}
+
+export function PlusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </Icon>
+  )
+}
+
+export function SunIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M4.6 4.6L6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4" />
+    </Icon>
+  )
+}
+
+export function MoonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+    </Icon>
+  )
+}
+
+/** The device's own setting: a screen. */
+export function MonitorIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+    </Icon>
+  )
+}
+
+export function SettingsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="10" cy="17" r="2" />
+    </Icon>
+  )
+}
+
+export function InfoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5" />
+      <circle cx="12" cy="7.8" r="0.6" fill="currentColor" />
+    </Icon>
+  )
+}
+
+/** The sidebar: shown or folded to its icons. */
+export function SidebarIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M9 4v16" />
+    </Icon>
+  )
+}
+
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 10l5 5 5-5" />
+    </Icon>
+  )
+}
+
+/** A page opened to its full width. */
+export function ExpandIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" />
+    </Icon>
+  )
+}
+
+/** Needs you: an inbox of what waits. */
+export function InboxIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 13l2.5-8h11L20 13v6H4z" />
+      <path d="M4 13h4.5l1 2.5h5l1-2.5H20" />
+    </Icon>
+  )
+}
+
+/** The Loop: a cycle. */
+export function LoopIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 11a8 8 0 0 0-14.6-4.5L4 8" />
+      <path d="M4 4v4h4" />
+      <path d="M4 13a8 8 0 0 0 14.6 4.5L20 16" />
+      <path d="M20 20v-4h-4" />
+    </Icon>
+  )
+}
+
+/** Briefs: an idea written down. */
+export function BriefIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M14 3v5h5M9 13h6M9 17h4" />
+    </Icon>
+  )
+}
+
+/** Story: the model's boxes and lines. */
+export function StoryIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="3.5" width="7" height="6" rx="1.5" />
+      <rect x="14" y="14.5" width="7" height="6" rx="1.5" />
+      <rect x="14" y="3.5" width="7" height="6" rx="1.5" />
+      <path d="M10 6.5h4M17.5 9.5v5" />
+    </Icon>
+  )
+}
+
+/** Work: a board of columns. */
+export function BoardIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16M15 4v16" />
+      <path d="M5.5 8h1.5M11.5 8h1.5M17.5 8h1.5M11.5 11h1.5" />
+    </Icon>
+  )
+}
+
+/** The factory: its health as a pulse. */
+export function PulseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />
+    </Icon>
+  )
+}

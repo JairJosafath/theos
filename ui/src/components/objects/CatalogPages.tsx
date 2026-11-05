@@ -64,7 +64,7 @@ export function CatalogPage({
   const name = entry.metadata.name
   const standard = kind === 'Standard' ? (entry as Standard) : undefined
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind={kind}
         name={name}
@@ -106,7 +106,7 @@ export function CatalogPage({
           ) : null}
         </dl>
       </section>
-    </main>
+    </div>
   )
 }
 
@@ -143,7 +143,7 @@ export function BundlePage({
     .map((k) => unreadOf(connection, RESOURCES[k]))
     .filter((p) => p !== undefined)
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="Bundle"
         name={name}
@@ -194,7 +194,7 @@ export function BundlePage({
           </div>
         </dl>
       </section>
-    </main>
+    </div>
   )
 }
 
@@ -233,7 +233,7 @@ export function DomainPage({
   const ns = domain.metadata.namespace ?? ''
   const name = domain.metadata.name
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="Domain"
         name={name}
@@ -262,7 +262,7 @@ export function DomainPage({
           </dd>
         </dl>
       </section>
-    </main>
+    </div>
   )
 }
 
@@ -274,7 +274,7 @@ export function GitProviderPage({ provider, containers }: { provider: GitProvide
   const ns = provider.metadata.namespace ?? ''
   const name = provider.metadata.name
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="GitProvider"
         name={name}
@@ -303,7 +303,7 @@ export function GitProviderPage({ provider, containers }: { provider: GitProvide
           </dd>
         </dl>
       </section>
-    </main>
+    </div>
   )
 }
 

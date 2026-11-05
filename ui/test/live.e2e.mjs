@@ -146,11 +146,20 @@ describe('live updates in the browser', () => {
 
   it('watches all kinds over a few connections, not one each', () => {
     // Browsers allow six connections per host, and each /k8s-watch request
-    // holds one. The page watches the project picker's Projects and every kind
-    // in the project's namespace; each watch opens when its list returns, so
-    // on a busy device they may come in a few batches, never one each.
+    // holds one. The page watches the project switcher's Projects, every kind
+    // in the project's namespace, and the work of every project that the
+    // sidebar's Needs you count reads; each watch opens when its list returns,
+    // so on a busy device they may come in a few batches, never one each.
     const want = new Set([
-      resourcePath(RESOURCES.projects),
+      ...[
+        RESOURCES.projects,
+        RESOURCES.tasks,
+        RESOURCES.agents,
+        RESOURCES.containers,
+        RESOURCES.sessions,
+        RESOURCES.crews,
+        RESOURCES.briefs,
+      ].map((k) => resourcePath(k)),
       ...Object.values(RESOURCES).map((k) => resourcePath(k, NS)),
     ])
     const watches = requests.filter((r) => r.url.pathname === '/k8s-watch')

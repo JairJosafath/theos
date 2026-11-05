@@ -38,7 +38,7 @@ export function ProjectPage({
   const ns = project.metadata.namespace ?? data.namespace
   const status = project.status
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="Project"
         name={project.metadata.name}
@@ -107,7 +107,7 @@ export function ProjectPage({
       <CatalogList ns={ns} data={data} connection={connection} />
 
       <DeployTargetList ns={ns} data={data} connection={connection} />
-    </main>
+    </div>
   )
 }
 
@@ -129,7 +129,7 @@ export function SystemPage({ system, data }: { system: SoftwareSystem; data: Sto
       .map((d) => ({ kind: 'DataStore', name: d.metadata.name, note: `Connector ${d.spec.connectorRef.name}` })),
   ]
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="SoftwareSystem"
         name={name}
@@ -191,7 +191,7 @@ export function SystemPage({ system, data }: { system: SoftwareSystem; data: Sto
           <a href={storyHref(ns, name)}>See its containers in the story</a>
         </p>
       </section>
-    </main>
+    </div>
   )
 }
 
@@ -230,7 +230,7 @@ export function RelationshipPage({ relationship, data }: { relationship: Relatio
       link: { href: repo, label: 'Open the repository' },
     }
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="Relationship"
         name={relationship.metadata.name}
@@ -245,7 +245,7 @@ export function RelationshipPage({ relationship, data }: { relationship: Relatio
         links={[]}
         next={next}
       />
-    </main>
+    </div>
   )
 }
 
@@ -259,7 +259,7 @@ export function SessionPage({ session, data }: { session: Session; data: StoryDa
     ? [{ href: session.status.openInEditor, label: 'Open in editor' }]
     : []
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="Session"
         name={session.metadata.name}
@@ -297,6 +297,6 @@ export function SessionPage({ session, data }: { session: Session; data: StoryDa
           ) : null}
         </dl>
       </section>
-    </main>
+    </div>
   )
 }

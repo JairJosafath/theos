@@ -1,6 +1,8 @@
 // The page: the shell's seven areas (Needs you, Loop, Briefs, Story, Work, Factory
-// and About) and the object pages, with the sources each one watches. Only what is
-// on screen watches the cluster.
+// and About) and the object pages, in a drawer over the area or full width, with
+// the sources each one watches. Only what is on screen watches the cluster: the
+// area, the object open over it, and the work of every project, which the
+// sidebar's Needs you count and Search or jump read.
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import './app.css'
@@ -9,12 +11,14 @@ import { Diagram } from './components/Diagram'
 import { StoryLine } from './components/StoryLine'
 import { ViewCaption } from './components/ViewCaption'
 import { FactoryPage } from './components/Factory'
-import { WarningIcon } from './components/icons'
+import { PlusIcon, WarningIcon } from './components/icons'
 import { LoopArea } from './components/Loop'
 import { NeedsArea } from './components/Needs'
 import { FactoryArea, Shell } from './components/Shell'
 import { pageHref } from './components/objects/links'
 import { ObjectPage } from './components/objects/ObjectPage'
+import { NewBrief } from './components/briefs/NewBrief'
+import { Modal } from './components/ui/Modal'
 import { ProblemsBanner, ReadProblems, WarningsBanner } from './components/Status'
 import { PanelState } from './components/PanelState'
 import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
@@ -42,8 +46,9 @@ import {
 } from './k8s/sources'
 import { GROUP, RESOURCES, VERSION, type Project } from './k8s/types'
 import { useDemo } from './lib/demo'
-import { RefreshSession, SessionContext, useSource, useUrlState } from './lib/hooks'
-import { areaLabel } from './model/areas'
+import { RefreshSession, SessionContext, UrlContext, useSource, useUrlState } from './lib/hooks'
+import { areaLabel, inNamespace } from './model/areas'
+import { paletteItems } from './model/search'
 import { plural, titleOf } from './model/describe'
 import { factoryVersions } from './model/versions'
 import { hasPage } from './model/lifecycle'
@@ -146,10 +151,12 @@ export default function App() {
   // there if anything waits on a person, else goes to Story (the effect below).
   const area = url.area ?? 'needs'
   const objectPage = Boolean(url.kind && url.name)
+  // An object's full page takes the area's place; in the drawer, the area stays behind it.
+  const objectFull = objectPage && Boolean(url.full)
   // Story, Briefs and Loop show one project; Needs you, Work and Factory every one.
-  const factoryView = !objectPage && (area === 'work' || area === 'factory')
-  const needsView = !objectPage && area === 'needs'
-  const storyView = objectPage ? Boolean(objectKind) : area === 'story' || area === 'briefs' || area === 'loop'
+  const factoryView = !objectFull && (area === 'work' || area === 'factory')
+  const needsView = !objectFull && area === 'needs'
+  const storyView = Boolean(objectKind) || (!objectFull && inNamespace(area))
 
   // Only the area on screen watches the cluster.
   const storySource = useMemo<Source<StoryData>>(() => {
@@ -157,11 +164,11 @@ export default function App() {
     if (!demo) return new LiveStorySource(namespace, API)
     return demoModule ? new demoModule.DemoStorySource() : NO_STORY
   }, [namespace, demo, demoModule, storyView])
+  // Every area: the sidebar counts what waits on a person, and search finds any Task or Crew.
   const factorySource = useMemo<Source<FactoryData>>(() => {
-    if (!factoryView && !needsView) return NO_FACTORY
     if (!demo) return new LiveFactorySource(API)
     return demoModule ? new demoModule.DemoFactorySource() : NO_FACTORY
-  }, [demo, demoModule, factoryView, needsView])
+  }, [demo, demoModule])
   const healthSource = useMemo<Source<FactoryHealth | undefined>>(() => {
     if (!factoryView) return NO_HEALTH
     if (!demo) return new HealthSource()
@@ -177,7 +184,8 @@ export default function App() {
   // a factory that can't be read goes to Story rather than waiting on it.
   const factoryRead = factory.connection.settled ?? factory.connection.loaded
   const factoryBroken = factory.connection.problems.length > 0 || Boolean(demoProblem)
-  const pickArea = !url.area && !objectPage && ((factory.connection.loaded && factoryRead) || factoryBroken)
+  // An object's link without an area picks one too, for behind its drawer.
+  const pickArea = !url.area && ((factory.connection.loaded && factoryRead) || factoryBroken)
   const firstArea = needItems.length > 0 ? 'needs' : 'story'
   useEffect(() => {
     // Once, so the area doesn't change under the person as items come and go.
@@ -262,32 +270,40 @@ export default function App() {
   const noProjects = !demo && projects.connection.loaded && sortedProjects.length === 0
   const systemTitle = systems.find((s) => s.name === systemName)?.title
 
-  const picker =
-    sortedProjects.length > 0 ? (
-      <label className="picker">
-        <span className="picker-label">Project</span>
-        <select
-          value={namespace}
-          onChange={(e) => setUrl({ project: e.target.value, view: 'context', system: undefined })}
-        >
-          {sortedProjects.map((p) => (
-            <option key={`${p.metadata.namespace}/${p.metadata.name}`} value={p.metadata.namespace}>
-              {titleOf(p)}
-            </option>
-          ))}
-        </select>
-      </label>
-    ) : null
+  const switchable = useMemo(
+    () =>
+      sortedProjects
+        .filter((p) => p.metadata.namespace)
+        .map((p) => ({ namespace: p.metadata.namespace!, title: titleOf(p) })),
+    [sortedProjects],
+  )
+  const needsCount = factory.connection.loaded && factoryRead ? needItems.length : undefined
+  const searchItems = useMemo(
+    () =>
+      paletteItems({
+        projects: sortedProjects,
+        story: storyView ? data : undefined,
+        factory: factory.data,
+        area,
+      }),
+    [sortedProjects, storyView, data, factory.data, area],
+  )
+
+  // New brief, in a modal: where the Briefs form showed, a namespace with a
+  // Project, from the top bar of the project's areas and from the Briefs area.
+  const [briefOpen, setBriefOpen] = useState(false)
+  const canCreateBrief = Boolean(namespace && data.project)
+  const openNewBrief = useCallback(() => setBriefOpen(true), [])
+  const primaryAction =
+    canCreateBrief && inNamespace(area) ? (
+      <button type="button" className="button topbar-action" onClick={openNewBrief}>
+        <PlusIcon size={16} />
+        <span>New brief</span>
+      </button>
+    ) : undefined
+
   const banners = (
     <>
-      {demo ? (
-        <div className="banner banner-demo" role="status">
-          <strong>Demo mode.</strong> You are looking at built-in example data, not a cluster. Nothing here is live.
-          <a href="?" className="banner-link">
-            Leave demo
-          </a>
-        </div>
-      ) : null}
       {/* Each panel says the reads behind it that failed; only demo mode's own failure is the page's. */}
       <ProblemsBanner problems={demoProblem ? [demoProblem] : []} />
       {/* A deprecation the API server put in a Warning header on a list of the model behind the page (#1618); the health read is not one. */}
@@ -307,12 +323,12 @@ export default function App() {
   // Without the list of projects there is no project to show.
   const projectsFailed =
     !namespace && projects.connection.problems.length ? (
-      <main className="shell-page">
+      <div className="shell-page">
         <section className="panel">
           <h1 className="panel-title">Projects</h1>
           <ReadProblems problems={projects.connection.problems} />
         </section>
-      </main>
+      </div>
     ) : null
   const storyBody = noProjects ? (
     <EmptyProjects />
@@ -356,7 +372,7 @@ export default function App() {
         ) : null}
       </nav>
 
-      <main className="workspace">
+      <div className="workspace">
         <section className="stage" aria-label="Diagram">
           <ViewCaption view={view} systemTitle={systemTitle} />
           <PanelState
@@ -413,7 +429,7 @@ export default function App() {
           />
           <Legend view={view} />
         </aside>
-      </main>
+      </div>
     </>
   )
   const page = (
@@ -425,8 +441,11 @@ export default function App() {
       namespace={namespace}
       versions={versions}
       onSignOut={onSignOut}
-      picker={picker}
+      projects={switchable}
+      needsCount={needsCount}
       banners={banners}
+      primaryAction={primaryAction}
+      paletteItems={searchItems}
       areas={{
         needs: (
           <NeedsArea
@@ -466,6 +485,7 @@ export default function App() {
               briefs={data.briefs}
               namespace={namespace}
               canCreate={Boolean(data.project)}
+              onNewBrief={openNewBrief}
               writer={writer}
               agents={data.agents}
               pageHref={(name) => pageHref(namespace, 'Brief', name)!}
@@ -517,9 +537,30 @@ export default function App() {
       }
     />
   )
+  const urlContext = useMemo(() => [url, setUrl] as const, [url, setUrl])
   return (
     <SessionContext.Provider value={session}>
-      <RefreshSession.Provider value={refreshSession}>{page}</RefreshSession.Provider>
+      <RefreshSession.Provider value={refreshSession}>
+        <UrlContext.Provider value={urlContext as [typeof url, typeof setUrl]}>
+          {page}
+          {namespace ? (
+            <Modal
+              open={briefOpen && canCreateBrief}
+              onClose={() => setBriefOpen(false)}
+              title="Describe an app"
+              description="A planner agent turns it into software systems, containers, crews and issues, round by round."
+            >
+              <NewBrief
+                key={namespace}
+                namespace={namespace}
+                taken={data.briefs.map((b) => b.metadata.name)}
+                writer={writer}
+                bare
+              />
+            </Modal>
+          ) : null}
+        </UrlContext.Provider>
+      </RefreshSession.Provider>
     </SessionContext.Provider>
   )
 }

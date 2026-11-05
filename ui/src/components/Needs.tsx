@@ -39,7 +39,7 @@ export function NeedsArea({
 }) {
   const groups = byProject(items, projects)
   return (
-    <main className="shell-page">
+    <div className="shell-page">
       <section className="panel needs">
         <h1 className="panel-title">Needs you</h1>
         <p className="panel-caption">
@@ -67,7 +67,7 @@ export function NeedsArea({
           ))}
         </PanelState>
       </section>
-    </main>
+    </div>
   )
 }
 
@@ -207,7 +207,8 @@ function Command({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="need-command">
-      <code>{text}</code>
+      {/* A long line scrolls; the keyboard reaches it too. */}
+      <code tabIndex={0}>{text}</code>
       <button
         type="button"
         className="button button-secondary button-small"

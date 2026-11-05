@@ -111,7 +111,7 @@ export function FactoryPage({
         </dl>
       </section>
 
-      <main className="workspace factory">
+      <div className="workspace factory">
         <section className="factory-main" aria-label="Work">
           {items.length || attentionProblems.length ? (
             <AttentionPanel items={items} problems={attentionProblems} onSelectTask={onSelectTask} />
@@ -194,7 +194,7 @@ export function FactoryPage({
             onSelectTask={onSelectTask}
           />
         </aside>
-      </main>
+      </div>
     </>
   )
 }

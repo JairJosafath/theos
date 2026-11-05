@@ -6,6 +6,7 @@ import type { BriefWriter } from '../k8s/briefs'
 import type { Brief } from '../k8s/types'
 import { FixedNow } from '../lib/hooks'
 import { Briefs } from './Briefs'
+import { NewBrief } from './briefs/NewBrief'
 
 const writer: BriefWriter = {
   create: async () => {},
@@ -212,9 +213,35 @@ describe('the Brief card paused or not', () => {
 })
 
 describe('the Describe an app form', () => {
+  // The form is in the New brief modal (docs/plans/ui-shell.md); the Briefs area opens it.
   const html = renderToStaticMarkup(
-    createElement(Briefs, { briefs: [], namespace: DEMO_NAMESPACE, canCreate: true, writer, pageHref }),
+    createElement(NewBrief, { namespace: DEMO_NAMESPACE, taken: [], writer, bare: true }),
   )
+
+  it('opens from a New brief button in the Briefs area, where a Brief can be made', () => {
+    const area = renderToStaticMarkup(
+      createElement(Briefs, {
+        briefs: [],
+        namespace: DEMO_NAMESPACE,
+        canCreate: true,
+        writer,
+        pageHref,
+        onNewBrief: () => {},
+      }),
+    )
+    expect(area).toContain('Describe an app')
+    expect(area).toMatch(/<button type="button" class="button brief-new-open">.*New brief<\/button>/)
+    expect(area).not.toContain('<form')
+  })
+
+  it('has its fields, with the idea taking the focus in the modal', () => {
+    expect(html).toContain('What is it for, and who uses it?')
+    expect(html).toMatch(/<textarea id="[^"]*-idea" class="input" rows="4"[^>]*data-autofocus="true"/)
+    expect(html).toContain('Create brief')
+    // The modal has the title and the panel.
+    expect(html).not.toContain('<h3')
+    expect(html).toContain('class="brief-new brief-new-bare"')
+  })
 
   it('copies none of the CRD’s limits or defaults', () => {
     expect(html).toContain('Parallel')

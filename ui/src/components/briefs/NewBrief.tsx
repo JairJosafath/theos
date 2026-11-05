@@ -1,4 +1,4 @@
-// The "Describe an app" box: the form that creates a Brief.
+// The "Describe an app" form that creates a Brief, in the New brief modal.
 
 import { useId, useState, type FormEvent } from 'react'
 import { nameFromIdea, type BriefWriter } from '../../k8s/briefs'
@@ -8,10 +8,21 @@ import { writeError, type WriteError } from './errors'
 import { FormError } from './PromptForm'
 
 /**
- * The "Describe an app" box: an idea and a name for it, prefilled from the idea.
+ * The "Describe an app" form: an idea and a name for it, prefilled from the idea.
  * It checks none of the CRD's rules; a create the API server refuses shows its message.
+ * `bare` drops its own panel and title, for a modal that has them.
  */
-export function NewBrief({ namespace, taken, writer }: { namespace: string; taken: string[]; writer: BriefWriter }) {
+export function NewBrief({
+  namespace,
+  taken,
+  writer,
+  bare,
+}: {
+  namespace: string
+  taken: string[]
+  writer: BriefWriter
+  bare?: boolean
+}) {
   const id = useId()
   const [idea, setIdea] = useState('')
   // Until the person types a name, it follows the idea.
@@ -48,8 +59,8 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
   }
 
   return (
-    <form className="panel brief-new" onSubmit={submit}>
-      <h3 className="panel-title small-title">Describe an app</h3>
+    <form className={bare ? 'brief-new brief-new-bare' : 'panel brief-new'} onSubmit={submit}>
+      {bare ? null : <h3 className="panel-title small-title">Describe an app</h3>}
       <label className="field" htmlFor={`${id}-idea`}>
         <span className="field-label">What is it for, and who uses it?</span>
       </label>
@@ -64,6 +75,7 @@ export function NewBrief({ namespace, taken, writer }: { namespace: string; take
           setCreated(undefined)
         }}
         disabled={sending}
+        data-autofocus={bare || undefined}
       />
       <label className="field" htmlFor={`${id}-name`}>
         <span className="field-label">Name</span>

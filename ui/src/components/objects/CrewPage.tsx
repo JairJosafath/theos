@@ -62,7 +62,7 @@ export function CrewPage({
   if (container?.status?.repositoryURL) links.push({ href: container.status.repositoryURL, label: 'Its repository' })
   if (release?.runURL) links.push({ href: release.runURL, label: `Release ${release.tag}’s CI run` })
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="Crew"
         name={name}
@@ -194,7 +194,7 @@ export function CrewPage({
         ) : null}
         {acts === 'act' ? <ReleaseForm crew={crew} writer={writer} brief={setBy} briefWriter={briefWriter} /> : null}
       </section>
-    </main>
+    </div>
   )
 }
 

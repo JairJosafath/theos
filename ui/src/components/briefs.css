@@ -1,7 +1,7 @@
 /* The Briefs view: Briefs.tsx and components/briefs/. */
 
 .briefs {
-  padding: 0 var(--gutter) 8px;
+  padding: 24px var(--gutter) 8px;
 }
 
 .briefs .view-caption {
@@ -33,6 +33,15 @@
 
 .brief-new .panel-title {
   margin-bottom: 4px;
+}
+
+/* The form in the New brief modal, which has the panel and the title. */
+.brief-new-bare {
+  border: 0;
+}
+
+.brief-new-open {
+  align-self: flex-start;
 }
 
 .field {

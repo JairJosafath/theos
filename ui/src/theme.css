@@ -1,4 +1,4 @@
-/* theos UI. Colours are tokens on :root, redefined for dark mode below.
+/* theos UI. Colours are tokens on :root, redefined for the dark theme below.
    The C4 fills follow the usual convention: people dark blue, systems blue,
    containers a lighter blue, anything outside grey. */
 
@@ -58,12 +58,17 @@
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.08), 0 2px 6px rgba(16, 24, 40, 0.08);
   --shadow-md: 0 4px 14px rgba(16, 24, 40, 0.16);
   --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.18);
+  /* Behind a dialog, a drawer or the phone's navigation. */
+  --overlay: rgba(16, 24, 40, 0.42);
 
   color-scheme: light;
 }
 
+/* Dark: the device's choice when the person picked System (or nothing), and
+   always when they picked Dark (src/lib/prefs.ts sets data-theme on <html>).
+   The two blocks hold the same tokens; prefs.test.ts checks they agree. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #0c1015;
     --surface: #141a21;
     --surface-2: #1b222b;
@@ -112,9 +117,64 @@
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
     --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.55);
+    --overlay: rgba(0, 0, 0, 0.6);
 
     color-scheme: dark;
   }
+}
+
+:root[data-theme='dark'] {
+  --bg: #0c1015;
+  --surface: #141a21;
+  --surface-2: #1b222b;
+  --border: #252d38;
+  --border-strong: #36404d;
+  --text: #e7ebf0;
+  --text-2: #b4bcc8;
+  --text-3: #97a1af;
+  --link: #74b0f0;
+  --select: #f4f6f8;
+  --canvas: #0f141a;
+  --canvas-dot: #1e2630;
+
+  --c4-person: #11427a;
+  --c4-system: #1b5ba3;
+  --c4-container: #2862a3;
+  --c4-external: #525a67;
+  --badge-on-c4: #0e1319;
+
+  --edge: #7f8998;
+  --edge-active: #eef1f5;
+  --warn: #f0a53c;
+  --boundary: #687386;
+  --boundary-bg: rgba(116, 176, 240, 0.035);
+
+  --ok: #4ade80;
+  --ok-bg: rgba(74, 222, 128, 0.14);
+  --progress: #86b8ff;
+  --progress-bg: rgba(134, 184, 255, 0.16);
+  --waiting: #fbbf24;
+  --waiting-bg: rgba(251, 191, 36, 0.13);
+  --error: #f87171;
+  --error-bg: rgba(248, 113, 113, 0.15);
+  --unknown: #adb5c1;
+  --unknown-bg: rgba(173, 181, 193, 0.13);
+
+  --agent: #c4b5fd;
+  --agent-bg: rgba(167, 139, 250, 0.18);
+  --human: #5eead4;
+  --human-bg: rgba(94, 234, 212, 0.15);
+  --demo: #cbbcff;
+  --demo-bg: rgba(139, 92, 246, 0.13);
+  --demo-border: rgba(139, 92, 246, 0.35);
+
+  --shadow-xs: none;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.55);
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
 }
 
 @media (max-width: 640px) {

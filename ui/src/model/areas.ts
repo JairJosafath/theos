@@ -1,21 +1,43 @@
 // The shell's areas (docs/plans/done/ui-lifecycle.md, decisions 1 and 2): their
-// order in the navigation, their names, and what each one is about.
+// order in the navigation, their names, what each one is about, and the
+// sidebar's group they sit in (docs/plans/ui-shell.md).
 
 export type Area = 'needs' | 'loop' | 'briefs' | 'story' | 'work' | 'factory' | 'about'
 
-export const AREAS: { key: Area; label: string; about: string }[] = [
-  { key: 'needs', label: 'Needs you', about: 'What waits on a person, across projects' },
+/** The sidebar's groups: Needs you on its own, Build, Operate, and About at the bottom. */
+export type AreaGroup = 'needs' | 'build' | 'operate' | 'bottom'
+
+export const GROUP_LABELS: Record<AreaGroup, string | undefined> = {
+  needs: undefined,
+  build: 'Build',
+  operate: 'Operate',
+  bottom: undefined,
+}
+
+export const AREAS: { key: Area; label: string; about: string; group: AreaGroup }[] = [
+  { key: 'needs', label: 'Needs you', about: 'What waits on a person, across projects', group: 'needs' },
   {
     key: 'loop',
     label: 'Loop',
     about: "The project's software-development cycle, from an idea or a bug to a monitored release",
+    group: 'build',
   },
-  { key: 'briefs', label: 'Briefs', about: "The project's ideas, their plans and prompts" },
-  { key: 'story', label: 'Story', about: "The project's model: its systems, containers and who uses them" },
-  { key: 'work', label: 'Work', about: 'Crews and their Tasks, across projects' },
-  { key: 'factory', label: 'Factory', about: "The factory's health and agent slots" },
-  { key: 'about', label: 'About', about: 'Versions, docs and release notes' },
+  { key: 'briefs', label: 'Briefs', about: "The project's ideas, their plans and prompts", group: 'build' },
+  {
+    key: 'story',
+    label: 'Story',
+    about: "The project's model: its systems, containers and who uses them",
+    group: 'build',
+  },
+  { key: 'work', label: 'Work', about: 'Crews and their Tasks, across projects', group: 'build' },
+  { key: 'factory', label: 'Factory', about: "The factory's health and agent slots", group: 'operate' },
+  { key: 'about', label: 'About', about: 'Versions, docs and release notes', group: 'bottom' },
 ]
+
+/** The label of the group an area sits in, for the breadcrumb; none for Needs you and About. */
+export function groupLabel(area: Area): string | undefined {
+  return GROUP_LABELS[AREAS.find((a) => a.key === area)!.group]
+}
 
 export function isArea(s: string | null | undefined): s is Area {
   return AREAS.some((a) => a.key === s)

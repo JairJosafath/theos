@@ -191,7 +191,7 @@ export function DeployTargetPage({ target, containers }: { target: DeployTarget;
   const ready = readinessOf(target)
   const parameters = Object.entries(target.spec.parameters ?? {}).sort(([a], [b]) => a.localeCompare(b))
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="DeployTarget"
         name={name}
@@ -275,7 +275,7 @@ export function DeployTargetPage({ target, containers }: { target: DeployTarget;
           </dd>
         </dl>
       </section>
-    </main>
+    </div>
   )
 }
 

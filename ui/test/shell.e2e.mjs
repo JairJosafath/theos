@@ -1,7 +1,7 @@
 // End-to-end check of the shell against a fake Kubernetes API serving the
-// demo fixture: each area opens by its link and Back returns through them,
-// every area is reachable by keyboard, and the links from before the areas
-// open the area they showed.
+// demo fixture: each area opens by its sidebar link and Back returns through
+// them, every area is reachable by keyboard, an object opens in the drawer over
+// the area, and the links from before the areas open the area they showed.
 //
 // Needs a build and Chromium:  npm run test:e2e
 // THEOS_UI_SHOTS=DIR also saves a picture of each area in DIR (docs/screenshots).
@@ -69,13 +69,18 @@ describe('the shell', () => {
 
   const nav = () => page.getByRole('navigation', { name: 'Areas' })
   const current = () => nav().locator('[aria-current="page"]')
+  // The name of the area marked current, without the Needs you count.
+  const currentLabel = () => current().locator('.nav-label').textContent()
+  // An area's sidebar link; Needs you's name carries its count ("Needs you, 4 waiting").
+  const areaLink = (label) => nav().getByRole('link', { name: new RegExp(`^${label}( ?, \\d+ waiting)?$`) })
   const areaOf = () => new URL(page.url()).searchParams.get('area')
   const heading = (text) => page.getByRole('heading', { name: text, exact: true }).first()
 
   it('opens on Needs you while something waits on a person, with the freshness line', async () => {
     await page.goto(`${base}/`)
     await page.locator('.need').first().waitFor({ timeout: 10000 })
-    assert.equal(await current().textContent(), 'Needs you')
+    assert.equal(await currentLabel(), 'Needs you')
+    assert.match(await current().textContent(), /^Needs you, \d+ waiting$/)
     assert.equal(areaOf(), 'needs')
     const fresh = page.locator('.freshness')
     await fresh.getByText('Live').waitFor({ timeout: 5000 })
@@ -87,10 +92,10 @@ describe('the shell', () => {
 
   it('opens each area by its link, and goes back with Back', async () => {
     for (const [label, area, title] of AREAS) {
-      await nav().getByRole('link', { name: label, exact: true }).click()
+      await areaLink(label).click()
       await heading(title).waitFor({ timeout: 10000 })
       assert.equal(areaOf(), area)
-      assert.equal(await current().textContent(), label)
+      assert.equal(await currentLabel(), label)
       assert.match(await page.title(), new RegExp(`^${label} · theos$`))
       if (process.env.THEOS_UI_SHOTS) {
         await page.waitForTimeout(300)
@@ -101,7 +106,7 @@ describe('the shell', () => {
       await page.goBack()
       await heading(title).waitFor({ timeout: 10000 })
       assert.equal(areaOf(), area)
-      assert.equal(await current().textContent(), label)
+      assert.equal(await currentLabel(), label)
     }
   })
 
@@ -129,7 +134,7 @@ describe('the shell', () => {
         await page.keyboard.press('Tab')
         focused = await page.evaluate(() => {
           const el = globalThis.document.activeElement
-          return el?.closest('nav[aria-label="Areas"]') ? el.textContent : ''
+          return el?.closest('nav[aria-label="Areas"]') ? el.querySelector('.nav-label')?.textContent : ''
         })
       }
       assert.equal(focused, label, `Tab reaches ${label}`)
@@ -150,14 +155,30 @@ describe('the shell', () => {
     assert.equal(await href('The repository'), 'https://github.com/JairJosafath/theos')
   })
 
-  it('keeps an object route in the URL', async () => {
-    await page.goto(`${base}/?ns=${namespace}&kind=Container&name=orders-api`)
-    await heading('orders-api').waitFor({ timeout: 5000 })
-    assert.equal(await current().count(), 0)
-    await nav().getByRole('link', { name: 'Work', exact: true }).click()
+  it('opens an object in the drawer over the area, full width on request, and Esc leaves the area', async () => {
+    await page.goto(`${base}/?area=work&ns=${namespace}&kind=Container&name=orders-api`)
+    const drawer = page.getByRole('dialog', { name: 'Container orders-api' })
+    await drawer.getByRole('heading', { name: 'orders-api' }).waitFor({ timeout: 10000 })
+    // The area stays behind it, and current.
+    assert.equal(await currentLabel(), 'Work')
     await heading('Tasks').waitFor({ timeout: 10000 })
-    const params = new URL(page.url()).searchParams
+    await page.keyboard.press('Escape')
+    await drawer.waitFor({ state: 'detached', timeout: 5000 })
+    let params = new URL(page.url()).searchParams
     assert.deepEqual([params.get('kind'), params.get('name'), params.get('ns')], [null, null, null])
+    assert.equal(areaOf(), 'work')
+
+    // Back opens it again, and Open full page shows it full width.
+    await page.goBack()
+    await drawer.getByRole('link', { name: 'Open full page' }).click()
+    await drawer.waitFor({ state: 'detached', timeout: 5000 })
+    await page.getByRole('main').getByRole('heading', { name: 'orders-api' }).waitFor({ timeout: 10000 })
+    params = new URL(page.url()).searchParams
+    assert.deepEqual([params.get('kind'), params.get('full')], ['Container', '1'])
+    await areaLink('Work').click()
+    await heading('Tasks').waitFor({ timeout: 10000 })
+    params = new URL(page.url()).searchParams
+    assert.deepEqual([params.get('kind'), params.get('full')], [null, null])
   })
 
   it('opens a Brief page from its card, and a Container page from what the Brief made', async () => {
@@ -222,14 +243,16 @@ describe('the shell', () => {
     await page.getByRole('link', { name: 'Orders API crew', exact: true }).click()
     const crew = page.getByRole('region', { name: 'Crew orders-api', exact: true })
     await crew.waitFor({ timeout: 10000 })
+    // The page opens in the drawer over Work, which shows some of the same.
+    const drawer = page.getByRole('dialog')
     let params = new URL(page.url()).searchParams
     assert.deepEqual([params.get('ns'), params.get('kind'), params.get('name')], [namespace, 'Crew', 'orders-api'])
     assert.match(await page.title(), /^Crew orders-api · theos$/)
     // Working, its Tasks, the places in use and its last release.
     assert.equal(await crew.locator('[aria-current="step"]').textContent(), 'Working')
-    await page.getByText('2 of 2 busy').waitFor({ timeout: 5000 })
+    await drawer.getByText('2 of 2 busy').waitFor({ timeout: 5000 })
     await heading('Last release: v0.2.0').waitFor({ timeout: 5000 })
-    await page.locator('dd', { hasText: /^succeeded Open the run/ }).waitFor({ timeout: 5000 })
+    await drawer.locator('dd', { hasText: /^succeeded Open the run/ }).waitFor({ timeout: 5000 })
     if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
       await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-object-crew.png'), fullPage: true })
@@ -247,18 +270,18 @@ describe('the shell', () => {
     // Three implement runs and the one review of round 1.
     await task.getByText('run 4', { exact: true }).waitFor({ timeout: 5000 })
     assert.equal(await task.getByText('run 5', { exact: true }).count(), 0)
-    await page.getByText('3 of 3', { exact: true }).waitFor({ timeout: 5000 })
-    await page.getByText('2 times an agent run handed off to a fresh one at the token limit of 130k').waitFor({
+    await drawer.getByText('3 of 3', { exact: true }).waitFor({ timeout: 5000 })
+    await drawer.getByText('2 times an agent run handed off to a fresh one at the token limit of 130k').waitFor({
       timeout: 5000,
     })
     // The Task recorded its runs, so the page names the one that handed off.
-    await page.getByText('Run 3 (round 2, implement) handed off 2 times, at 131k and 138k tokens.').waitFor({
+    await drawer.getByText('Run 3 (round 2, implement) handed off 2 times, at 131k and 138k tokens.').waitFor({
       timeout: 5000,
     })
     await task.getByText(/round 2, implement by claude-implementer · ended .* · handed off 2 times/).waitFor({
       timeout: 5000,
     })
-    assert.equal(await page.locator('.command-line code').count(), 0)
+    assert.equal(await drawer.locator('.command-line code').count(), 0)
     await task.getByRole('link', { name: 'Crew orders-api' }).waitFor({ timeout: 5000 })
     if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
@@ -381,7 +404,7 @@ describe('the shell', () => {
     const header = page.getByRole('region', { name: 'GitProvider gitea', exact: true })
     await header.waitFor({ timeout: 10000 })
     await page.getByText('the UI never reads Secrets').waitFor({ timeout: 5000 })
-    assert.match(await page.locator('main').textContent(), /Secret gitea-credentials/)
+    assert.match(await page.getByRole('dialog').textContent(), /Secret gitea-credentials/)
     assert.deepEqual(
       requests.filter((u) => /secrets/i.test(u)),
       [],
@@ -419,7 +442,7 @@ describe('the shell', () => {
         .first()
         .waitFor({ timeout: 10000 })
       assert.equal(areaOf(), area, `${query} opens ${area}`)
-      assert.equal(await current().textContent(), label, `${query} marks ${label}`)
+      assert.equal(await currentLabel(), label, `${query} marks ${label}`)
     }
     // A Task selected in the factory view opens its page.
     await page.goto(`${base}/?view=factory&task=${namespace}/orders-api-14`)
@@ -429,7 +452,8 @@ describe('the shell', () => {
       [params.get('area'), params.get('ns'), params.get('kind'), params.get('name'), params.get('task')],
       ['work', namespace, 'Task', 'orders-api-14', null],
     )
-    assert.equal(await current().count(), 0)
+    // In the drawer over Work, which stays current.
+    assert.equal(await currentLabel(), 'Work')
   })
 
   it('raises no page error', () => {

@@ -41,5 +41,7 @@ export default defineConfig({
     // take milliseconds past the 5 s timeout (#1193). Files stay isolated: some
     // stub `window` for the whole file, and Account.tsx reads it.
     maxWorkers: 3,
+    // theme.css as written, for the test that its two dark blocks agree; other CSS stays out.
+    css: { include: [/theme\.css/] },
   },
 })

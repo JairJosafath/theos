@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AREAS, areaLabel, inNamespace, isArea } from './areas'
+import { AREAS, areaLabel, groupLabel, inNamespace, isArea } from './areas'
 
 describe('areas', () => {
   it('lists the seven areas in the order of the plan', () => {
@@ -10,6 +10,24 @@ describe('areas', () => {
     expect(isArea('work')).toBe(true)
     expect(isArea('containers')).toBe(false)
     expect(isArea(null)).toBe(false)
+  })
+
+  it('sits each area in its sidebar group: Needs you alone, Build, Operate, About at the bottom', () => {
+    expect(AREAS.map((a) => `${a.key}:${a.group}`)).toEqual([
+      'needs:needs',
+      'loop:build',
+      'briefs:build',
+      'story:build',
+      'work:build',
+      'factory:operate',
+      'about:bottom',
+    ])
+    expect([groupLabel('work'), groupLabel('factory'), groupLabel('needs'), groupLabel('about')]).toEqual([
+      'Build',
+      'Operate',
+      undefined,
+      undefined,
+    ])
   })
 
   it("names an area, and says which ones show one project's namespace", () => {

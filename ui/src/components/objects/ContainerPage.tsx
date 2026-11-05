@@ -89,7 +89,7 @@ export function ContainerPage({
   // The license the scaffold writes: the Container's own, else the Project's (docs/plans/license.md).
   const license = container.spec.license ?? project?.spec?.license
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="Container"
         name={name}
@@ -285,6 +285,6 @@ export function ContainerPage({
           </ul>
         </section>
       ) : null}
-    </main>
+    </div>
   )
 }

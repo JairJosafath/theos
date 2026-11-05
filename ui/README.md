@@ -9,8 +9,24 @@ and pauses or resumes one ([docs/plans/done/upgrade-in-place.md](../docs/plans/d
 With actions on it takes a few more (_Actions_ below). design.md's _The UI:
 areas and object pages_ says what it shows and why.
 
-The top bar has seven areas; the page opens on _Needs you_ when it has items,
-else on _Story_:
+**The shell** ([docs/plans/ui-shell.md](../docs/plans/ui-shell.md)). A
+sidebar holds the project switcher and the areas in groups: _Needs you_, with
+a count of what waits; _Build_: Loop, Briefs, Story, Work; _Operate_: Factory;
+and at the bottom About, Settings and the versions running. Its button folds it
+to a rail of icons, remembered in this browser; below 768px it is a drawer
+behind the top bar's menu button. The sticky top bar says where you are, shows a
+_Demo data_ chip in demo mode (its popover says what that means and leaves
+it), how fresh the page is, _Search or jump_ (⌘K or Ctrl+K, or / when not
+typing: any area, project or object the page watches, by kind, name and
+namespace), the area's primary action (_New brief_ in the areas of one
+project, opening the _Describe an app_ form in a modal) and the theme: System,
+Light or Dark, kept in `localStorage` and applied as `data-theme` on `<html>`
+before the first paint. _Settings_ (a modal) also sets the density
+(`data-density`) and how the sidebar opens. The dialogs, the drawer, tabs,
+menus and the palette are one set of primitives in
+[src/components/ui/](src/components/ui/).
+
+The page opens on _Needs you_ when it has items, else on _Story_:
 
 - **Needs you**, across all projects, grouped by project: what waits on a
   person, read only from status ([src/model/needs.ts](src/model/needs.ts)): a
@@ -34,7 +50,7 @@ else on _Story_:
   (degraded or failed deploys with the bug the monitor filed, and how many are
   healthy). The two stages that wait on a person are drawn with a person's
   icon and a dashed border.
-- **Briefs** of one project: a _Describe an app_ box that creates a Brief (an
+- **Briefs** of one project: a _Describe an app_ card whose _New brief_ opens the form that creates a Brief (an
   idea and a name, suggested from the idea, and optionally its autopilot mode
   and how many issues each of its crews works on at once), and a card per Brief with its
   phase, what it waits for when it needs input, the planner's latest choices,
@@ -73,7 +89,8 @@ else on _Story_:
 **Object pages.** Brief, Container, Crew, Task, Project, SoftwareSystem,
 Relationship, Session, Standard, Compute, Deployment, Bundle, Domain,
 GitProvider and DeployTarget each have
-a page that opens with the same header
+a page, which opens in a drawer over the area it was opened from (Esc, × or
+Back closes it; _Open full page_ adds `full=1` for the page at full width), with the same header
 ([src/components/ObjectHeader.tsx](src/components/ObjectHeader.tsx)): kind,
 name and a breadcrumb to what it belongs to; the kind's lifecycle as a stepper
 ([src/model/lifecycle.ts](src/model/lifecycle.ts)), side exits such as Failed
@@ -91,13 +108,16 @@ tool and where (the `github` repository or the `gitlab` project), tier, approval
 Containers that ship to it, and of its credentials the Secret's name only; the
 Project page lists its DeployTargets.
 
-**Versions.** The footer of every page shows the UI's version (stamped by its
+**Versions.** The foot of the sidebar shows the UI's version (stamped by its
 build, `dev` otherwise), the operator's and the chart's (from Project status,
 `status.factory`), and the CRD API version, and warns when the UI and the
-operator differ; _About_ repeats them.
+operator differ; _About_ repeats them, with what the page reads and the writes
+it can make.
 
 Everything updates as the resources change: the browser lists each kind, then
-watches it.
+watches it. The area on screen and the object open over it watch their kinds;
+the work of every project (Tasks, Crews, Containers, Sessions, Agents, Briefs)
+is watched on every area, for the Needs you count and search.
 
 ## Run it
 

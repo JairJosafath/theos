@@ -56,7 +56,7 @@ export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
   const handedOff = all.filter((r) => r.handoffs?.length)
 
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="Task"
         name={name}
@@ -156,6 +156,6 @@ export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
           ) : null}
         </section>
       ) : null}
-    </main>
+    </div>
   )
 }

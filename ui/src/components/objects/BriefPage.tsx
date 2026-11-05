@@ -24,7 +24,7 @@ export function BriefPage({ brief, agents, writer }: { brief: Brief; agents: Age
   const view = describeBrief(brief, plannerLimit(agents, brief))
   const [pauseError, setPauseError] = useState<WriteError>()
   return (
-    <main className="shell-page object-page">
+    <div className="shell-page object-page">
       <ObjectHeader
         kind="Brief"
         name={brief.metadata.name}
@@ -60,6 +60,6 @@ export function BriefPage({ brief, agents, writer }: { brief: Brief; agents: Age
         <BriefBody view={view} namespace={ns} writer={writer} answering />
       </section>
       <BriefSettings brief={brief} writer={writer} />
-    </main>
+    </div>
   )
 }

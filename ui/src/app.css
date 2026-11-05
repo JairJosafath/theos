@@ -1,46 +1,6 @@
-/* The page App.tsx draws: top bar, banners, hero and stats, tabs, workspace,
-   footer and the mode switch, with their narrow-screen rules last. */
-
-.app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 56px;
-  padding: 8px var(--gutter);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--c4-system);
-  min-width: 0;
-}
-
-.brand-name {
-  font-weight: 650;
-  font-size: 15px;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
+/* The page App.tsx draws: the connection status, banners, hero and stats,
+   tabs and workspace, with their narrow-screen rules last. The shell around
+   them (sidebar, top bar) is in components/shell.css. */
 
 .status {
   display: inline-flex;
@@ -171,24 +131,6 @@
   border-radius: 10px;
   font-size: 13.5px;
   line-height: 1.45;
-}
-
-.banner-demo {
-  color: var(--demo);
-  background: var(--demo-bg);
-  border: 1px solid var(--demo-border);
-  align-items: center;
-}
-
-.banner-demo strong {
-  font-weight: 650;
-}
-
-.banner-link {
-  margin-left: auto;
-  color: inherit;
-  font-weight: 600;
-  white-space: nowrap;
 }
 
 .banner-problem {
@@ -456,13 +398,6 @@
   min-width: 0;
 }
 
-.footer {
-  padding: 28px var(--gutter) 32px;
-  font-size: 12.5px;
-  color: var(--text-3);
-  text-align: center;
-}
-
 .versions p {
   margin: 8px 0 0;
 }
@@ -498,33 +433,6 @@
   line-height: 1.55;
 }
 
-.modes {
-  display: inline-flex;
-  gap: 2px;
-  margin-right: auto;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--surface-2);
-}
-
-.mode {
-  padding: 5px 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 550;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.mode[aria-current='page'] {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-xs);
-}
-
 @media (max-width: 1180px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
@@ -536,14 +444,6 @@
 }
 
 @media (max-width: 640px) {
-  .topbar .picker-label {
-    display: none;
-  }
-
-  .topbar-right {
-    gap: 8px;
-  }
-
   .picker select {
     max-width: 150px;
   }
@@ -592,9 +492,5 @@
 
   .side {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .banner-demo {
-    flex-wrap: wrap;
   }
 }

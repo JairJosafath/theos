@@ -794,6 +794,13 @@ The UI draws the story and the factory from the resources, live through
 watches, and enforces nothing: its writes are checked by the API server, whose
 refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 
+- **The shell** ([plans/ui-shell.md](plans/ui-shell.md)): a sidebar with
+  the project switcher and the areas (*Needs you* with its count; *Build*;
+  *Operate*; About and Settings at the bottom), folding to icons; a top bar
+  with where you are, a *Demo data* chip in demo mode, freshness, *Search or
+  jump* (⌘K) and the area's one primary action, such as *New brief*, which
+  opens its form in a modal; and a theme (System, Light or Dark) and density
+  kept in the browser only.
 - **Seven areas:** *Needs you* (what waits on a person, across projects),
   *Loop* (one project's development cycle in ten stages, from an idea or a
   bug to a monitored release, with the two reviews that wait on a person
@@ -802,7 +809,9 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
   (Tasks by stage, Crews and releases, time and tokens, what needs a look),
   *Factory* (health and agent slots) and *About*. It opens on *Needs you*
   when it has items, else *Story*.
-- **Object pages** share one header (`ui/src/components/ObjectHeader.tsx`):
+- **Object pages** open in a drawer over the area they came from (full width
+  with `full=1`); the address keeps `ns`, `kind` and `name`, so a link opens
+  one. They share one header (`ui/src/components/ObjectHeader.tsx`):
   kind, name and breadcrumb, the lifecycle as a stepper from
   `ui/src/model/lifecycle.ts`, what a person does now, then conditions,
   timeline, children and links. A step the UI can't take shows a link or a
@@ -810,8 +819,8 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 - ***Needs you*** lists what the resources flag (`ui/src/model/needs.ts`),
   each in its condition's own words, every item from `status`, none from
   timing.
-- **Versions** of the UI, operator, chart and CRD API in every footer; a UI
-  and an operator of different versions get a warning.
+- **Versions** of the UI, operator, chart and CRD API at the foot of the
+  sidebar; a UI and an operator of different versions get a warning.
 - **The factory's health** comes from the UI server (`GET /factory/health`,
   sampled every 15 seconds, an hour kept). No Prometheus or Grafana.
 

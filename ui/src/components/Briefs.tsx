@@ -1,7 +1,7 @@
-// The Briefs of a project: a box to describe a new app, and a card per Brief
-// with what the planner made of it, a field to steer it with a prompt and a
-// button to pause or resume it. These are the UI's three writes when actions are off; the CRD
-// decides what is accepted.
+// The Briefs of a project: a card that opens the New brief modal to describe
+// a new app, and a card per Brief with what the planner made of it, a field to
+// steer it with a prompt and a button to pause or resume it. These are the UI's
+// three writes when actions are off; the CRD decides what is accepted.
 
 import { useState } from 'react'
 import type { BriefWriter } from '../k8s/briefs'
@@ -9,10 +9,9 @@ import type { Problem } from '../k8s/sources'
 import type { Agent, Brief } from '../k8s/types'
 import { describeBrief, pauseAction, pauseRunsAction, sortBriefs, type BriefView } from '../model/brief'
 import { UsageLine, When } from './bits'
-import { ExternalLinkIcon } from './icons'
+import { ExternalLinkIcon, PlusIcon } from './icons'
 import { PanelState } from './PanelState'
 import { plannerLimit } from './objects/rows'
-import { NewBrief } from './briefs/NewBrief'
 import { BriefDetails } from './briefs/BriefDetails'
 import { FormError, PromptForm } from './briefs/PromptForm'
 import { writeError, type WriteError } from './briefs/errors'
@@ -26,6 +25,7 @@ export function Briefs({
   briefs,
   namespace,
   canCreate,
+  onNewBrief,
   writer,
   agents = [],
   pageHref,
@@ -44,6 +44,8 @@ export function Briefs({
   agents?: Agent[]
   /** False when the namespace holds no Project: the server makes no Brief there. */
   canCreate: boolean
+  /** Opens the New brief modal (the form in briefs/NewBrief.tsx). */
+  onNewBrief?: () => void
   writer: BriefWriter
 }) {
   if (loaded && !problems?.length && !canCreate && !briefs.length) return null
@@ -63,7 +65,16 @@ export function Briefs({
       <PanelState loaded={loaded} problems={problems} loading="Loading the Briefs…">
         <div className="briefs-grid">
           {canCreate ? (
-            <NewBrief namespace={namespace} taken={briefs.map((b) => b.metadata.name)} writer={writer} />
+            <div className="panel brief-new">
+              <h3 className="panel-title small-title">Describe an app</h3>
+              <p className="panel-caption">
+                What is it for, and who uses it? A planner agent turns it into software systems, containers, crews and
+                issues.
+              </p>
+              <button type="button" className="button brief-new-open" onClick={onNewBrief} disabled={!onNewBrief}>
+                <PlusIcon size={16} /> New brief
+              </button>
+            </div>
           ) : null}
           {sorted.map((b) => (
             <BriefCard

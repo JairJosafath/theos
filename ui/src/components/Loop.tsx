@@ -33,7 +33,7 @@ export function LoopArea({
 }) {
   const stages = loopStages(data)
   return (
-    <main className="shell-page">
+    <div className="shell-page">
       <section className="panel loop">
         <h1 className="panel-title">Loop</h1>
         <p className="panel-caption">
@@ -49,7 +49,7 @@ export function LoopArea({
           </ol>
         </PanelState>
       </section>
-    </main>
+    </div>
   )
 }
 
