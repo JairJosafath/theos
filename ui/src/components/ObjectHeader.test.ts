@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { Container } from '../k8s/types'
 import { containerNextStep } from '../model/lifecycle'
+import { UrlContext } from '../lib/hooks'
 import { ObjectHeader, type ObjectHeaderProps } from './ObjectHeader'
 
 const failed: Container = {
@@ -108,5 +109,71 @@ describe('ObjectHeader for a Ready Container', () => {
     expect(text(html)).toContain('Work in its repository.')
     expect(html).not.toContain('<code>')
     expect(html).toMatch(/step step-done[^>]*>.*Pending/)
+  })
+})
+
+// The page's sections as tabs under its header (docs/plans/ui-shell.md, step 2).
+describe("an object page's tabs", () => {
+  /** The tabs' names, the selected one in brackets. */
+  function tabs(html: string) {
+    return [...html.matchAll(/<button[^>]*role="tab"[^>]*aria-selected="(true|false)"[^>]*>([^<]*)<\/button>/g)].map(
+      (m) => (m[1] === 'true' ? `[${m[2]}]` : m[2]),
+    )
+  }
+  /** Each tab panel's text, and whether it is hidden. */
+  function panels(html: string) {
+    return [...html.matchAll(/<div([^>]*role="tabpanel"[^>]*)>([^]*?)(?=<div[^>]*role="tabpanel"|$)/g)].map((m) => ({
+      hidden: m[1].includes('hidden'),
+      text: text(m[2]),
+    }))
+  }
+
+  it('keeps the header and What you do now above the tabs, and opens on the first', () => {
+    const html = render(failed, { sections: { overview: 'What it is made from' } })
+    expect(tabs(html)).toEqual(['[Overview]', 'Status', 'Related'])
+    expect(html.indexOf('What you do now')).toBeLessThan(html.indexOf('role="tablist"'))
+    expect(panels(html)[0]).toEqual({ hidden: false, text: ' What it is made from ' })
+  })
+
+  it('puts the conditions under Status, the timeline under Activity and the children and links under Related', () => {
+    const html = render(failed, {
+      timeline: [{ key: 'a', title: 'Scaffold failed' }],
+      children: [{ kind: 'Relationship', name: 'uses-db' }],
+      links: [{ href: 'https://gitea.example/webshop/catalog-api', label: 'Its repository' }],
+    })
+    // Without the kind's own sections there is no Overview: Status comes first.
+    expect(tabs(html)).toEqual(['[Status]', 'Activity', 'Related (1)'])
+    const [status, activity, related] = panels(html)
+    expect(status.text).toContain('Scaffolded: no · ForeignCommits')
+    expect(activity.text).toContain('Scaffold failed')
+    expect(related.text).toContain('Relationship uses-db')
+    expect(related.text).toContain('Its repository')
+  })
+
+  it('opens the tab the address names as otab=, every panel staying on the page', () => {
+    const url = { demo: false, view: 'context' as const, otab: 'related' }
+    const html = renderToStaticMarkup(
+      createElement(
+        UrlContext.Provider,
+        { value: [url, () => undefined] },
+        createElement(ObjectHeader, {
+          kind: 'Task',
+          name: 'orders-api-21',
+          namespace: 'webshop',
+          breadcrumb: [],
+          conditions: [],
+          timeline: [],
+          childrenTitle: 'Agent runs',
+          childrenTab: 'activity',
+          children: [{ kind: 'Agent run', name: 'run 1' }],
+          links: [{ href: 'https://gitea.example/webshop/orders-api/issues/21', label: 'Issue #21' }],
+          sections: { overview: 'Rounds and agent runs' },
+        }),
+      ),
+    )
+    // A Task's agent runs are its activity.
+    expect(tabs(html)).toEqual(['Overview', 'Status', 'Activity (1)', '[Related]'])
+    expect(panels(html).map((p) => p.hidden)).toEqual([true, true, true, false])
+    expect(panels(html)[3].text).toContain('Issue #21')
   })
 })

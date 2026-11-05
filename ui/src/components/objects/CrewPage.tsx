@@ -6,7 +6,8 @@
 // resumes it or its running Tasks, sets those and its release settings, and
 // re-runs a failed release's runs (CrewActions). Where
 // it publishes says so when its Brief sets that, and the form changes it on
-// the Brief.
+// the Brief. Its tabs: Overview (who works, routes), Status, Activity (the last
+// release and its runs) and Related (its Tasks, links).
 
 import type { BriefWriter } from '../../k8s/briefs'
 import { briefTarget, type CrewWriter } from '../../k8s/crews'
@@ -56,11 +57,11 @@ export function CrewPage({
   const system = container?.spec.softwareSystemRef.name
   const madeBy = briefs.find((b) => b.status?.created?.some((c) => c.kind === 'Crew' && c.name === name))
   const release = crew.status?.lastRelease
-  const target = briefTarget(crew)
-  const setBy = target && briefs.find((b) => (b.metadata.namespace ?? '') === ns && b.metadata.name === target.brief)
   const links: OutLink[] = []
   if (container?.status?.repositoryURL) links.push({ href: container.status.repositoryURL, label: 'Its repository' })
   if (release?.runURL) links.push({ href: release.runURL, label: `Release ${release.tag}’s CI run` })
+  const overview = <CrewOverview crew={crew} writer={writer} summary={summary} />
+  const activity = <CrewReleasePanel crew={crew} writer={writer} briefs={briefs} briefWriter={briefWriter} />
   return (
     <div className="shell-page object-page">
       <ObjectHeader
@@ -90,7 +91,25 @@ export function CrewPage({
             </>
           ) : undefined
         }
+        sections={{ overview, activity }}
       />
+    </div>
+  )
+}
+
+function CrewOverview({
+  crew,
+  writer,
+  summary,
+}: {
+  crew: Crew
+  writer: CrewWriter
+  summary: ReturnType<typeof crewSummary>
+}) {
+  const acts = useActs()
+  const ns = crew.metadata.namespace ?? ''
+  return (
+    <>
       {acts === 'sign-in' ? (
         <section className="panel">
           <SignInToAct />
@@ -150,51 +169,70 @@ export function CrewPage({
       </section>
 
       {summary.routes.length ? <RoutesPanel routes={summary.routes} /> : null}
+    </>
+  )
+}
 
-      <section className="panel" aria-labelledby="crew-release">
-        <h2 className="panel-title small-title" id="crew-release">
-          {release ? `Last release: ${release.tag}` : 'Releases'}
-        </h2>
-        <p className="panel-text">
-          {crew.spec.tagReleases
-            ? 'The Crew tags a release once its milestone is done.'
-            : 'The Crew tags no releases: a person tags them.'}
-          {crew.spec.prepareReleases ? ' It files each release’s prepare issue.' : ''}
-          {target
-            ? null
-            : crew.spec.publishReleases
-              ? ` It publishes them to ${crew.spec.publishReleases.github.repository}.`
-              : ''}
-          {target ? (
-            <PublishSetBy
-              ns={ns}
-              crew={crew}
-              brief={target.brief}
-              held={target.held}
-              briefRepo={target.target?.github.repository}
-            />
-          ) : null}
+function CrewReleasePanel({
+  crew,
+  writer,
+  briefs,
+  briefWriter,
+}: {
+  crew: Crew
+  writer: CrewWriter
+  briefs: Brief[]
+  briefWriter?: BriefWriter
+}) {
+  const acts = useActs()
+  const ns = crew.metadata.namespace ?? ''
+  const release = crew.status?.lastRelease
+  const target = briefTarget(crew)
+  const setBy = target && briefs.find((b) => (b.metadata.namespace ?? '') === ns && b.metadata.name === target.brief)
+  return (
+    <section className="panel" aria-labelledby="crew-release">
+      <h2 className="panel-title small-title" id="crew-release">
+        {release ? `Last release: ${release.tag}` : 'Releases'}
+      </h2>
+      <p className="panel-text">
+        {crew.spec.tagReleases
+          ? 'The Crew tags a release once its milestone is done.'
+          : 'The Crew tags no releases: a person tags them.'}
+        {crew.spec.prepareReleases ? ' It files each release’s prepare issue.' : ''}
+        {target
+          ? null
+          : crew.spec.publishReleases
+            ? ` It publishes them to ${crew.spec.publishReleases.github.repository}.`
+            : ''}
+        {target ? (
+          <PublishSetBy
+            ns={ns}
+            crew={crew}
+            brief={target.brief}
+            held={target.held}
+            briefRepo={target.target?.github.repository}
+          />
+        ) : null}
+      </p>
+      {crew.spec.publishReleases ? (
+        <p className="panel-text muted small">
+          <span className="mono">publishReleases</span> is deprecated: a <span className="mono">github</span>{' '}
+          DeployTarget and a <span className="mono">spec.deploy</span> entry on the Container ship the same release.{' '}
+          <a href={PUBLISH_MIGRATION_URL} target="_blank" rel="noreferrer">
+            How to move over <ExternalLinkIcon size={12} />
+          </a>
         </p>
-        {crew.spec.publishReleases ? (
-          <p className="panel-text muted small">
-            <span className="mono">publishReleases</span> is deprecated: a <span className="mono">github</span>{' '}
-            DeployTarget and a <span className="mono">spec.deploy</span> entry on the Container ship the same release.{' '}
-            <a href={PUBLISH_MIGRATION_URL} target="_blank" rel="noreferrer">
-              How to move over <ExternalLinkIcon size={12} />
-            </a>
-          </p>
-        ) : null}
-        {release ? (
-          <ReleaseFacts release={release} failure={publishFailure(crew)} />
-        ) : (
-          <p className="muted small">No release yet.</p>
-        )}
-        {acts === 'act' && release?.run === 'Failed' ? (
-          <RerunButton key={`${release.tag}|${release.rerunTime ?? ''}`} crew={crew} writer={writer} />
-        ) : null}
-        {acts === 'act' ? <ReleaseForm crew={crew} writer={writer} brief={setBy} briefWriter={briefWriter} /> : null}
-      </section>
-    </div>
+      ) : null}
+      {release ? (
+        <ReleaseFacts release={release} failure={publishFailure(crew)} />
+      ) : (
+        <p className="muted small">No release yet.</p>
+      )}
+      {acts === 'act' && release?.run === 'Failed' ? (
+        <RerunButton key={`${release.tag}|${release.rerunTime ?? ''}`} crew={crew} writer={writer} />
+      ) : null}
+      {acts === 'act' ? <ReleaseForm crew={crew} writer={writer} brief={setBy} briefWriter={briefWriter} /> : null}
+    </section>
   )
 }
 

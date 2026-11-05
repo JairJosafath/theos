@@ -3,7 +3,8 @@
 // runs; its issue, pull request and follow-ups), then its rounds against the
 // implementer's maxRounds, what its agent runs used and how often one handed
 // off at the token limit, which runs did and at what sizes, and the agents'
-// own words.
+// own words. Its tabs: Overview (rounds, the agents' words), Status, Activity
+// (the timeline and agent runs) and Related (issue, pull request, follow-ups).
 
 import { LABEL_CREW, type Agent, type Task } from '../../k8s/types'
 import { describeUsage, formatTokens } from '../../model/brief'
@@ -30,7 +31,6 @@ export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
   const brief = task.spec.briefRef?.name
   const limit = implementer?.spec.sessionTokenLimit
   const usage = describeUsage(status?.costMilliUSD, status?.runsWithoutCost, status?.tokens, limit)
-  const handoffs = status?.tokens?.sessionHandoffs ?? 0
 
   const links: OutLink[] = []
   if (headline.url) links.push({ href: headline.url, label: `Issue #${headline.issue}` })
@@ -50,10 +50,9 @@ export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
       </>
     ),
   }))
-  // A Task that records its runs names the ones that handed off; an older one
-  // has only the count, and the sizes in its events.
-  const recorded = all.some((r) => r.recorded)
-  const handedOff = all.filter((r) => r.handoffs?.length)
+  const rounds = (
+    <TaskOverview task={task} implementer={implementer} roles={roles} usage={usage} limit={limit} all={all} />
+  )
 
   return (
     <div className="shell-page object-page">
@@ -73,10 +72,40 @@ export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
         timeline={taskTimeline(task)}
         childrenTitle="Agent runs"
         children={runs}
+        childrenTab="activity"
         links={links}
         next={taskNextStep(task)}
+        sections={{ overview: rounds }}
       />
+    </div>
+  )
+}
 
+function TaskOverview({
+  task,
+  implementer,
+  roles,
+  usage,
+  limit,
+  all,
+}: {
+  task: Task
+  implementer?: Agent
+  roles: ReturnType<typeof taskRoles>
+  usage: ReturnType<typeof describeUsage>
+  limit?: number
+  all: ReturnType<typeof agentRuns>
+}) {
+  const ns = task.metadata.namespace ?? ''
+  const name = task.metadata.name
+  const status = task.status
+  const handoffs = status?.tokens?.sessionHandoffs ?? 0
+  // A Task that records its runs names the ones that handed off; an older one
+  // has only the count, and the sizes in its events.
+  const recorded = all.some((r) => r.recorded)
+  const handedOff = all.filter((r) => r.handoffs?.length)
+  return (
+    <>
       <section className="panel" aria-labelledby="task-rounds">
         <h2 className="panel-title small-title" id="task-rounds">
           Rounds and agent runs
@@ -156,6 +185,6 @@ export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
           ) : null}
         </section>
       ) : null}
-    </div>
+    </>
   )
 }

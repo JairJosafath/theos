@@ -7,6 +7,7 @@ import type { Brief } from '../k8s/types'
 import { FixedNow } from '../lib/hooks'
 import { Briefs } from './Briefs'
 import { NewBrief } from './briefs/NewBrief'
+import { BriefPage } from './objects/BriefPage'
 
 const writer: BriefWriter = {
   create: async () => {},
@@ -18,15 +19,25 @@ const writer: BriefWriter = {
 
 const pageHref = (name: string) => `?kind=Brief&name=${name}`
 
-/** The Brief cards of `briefs` as HTML, with the clock stopped at `now`. */
+/**
+ * The pages of `briefs` as HTML, with the clock stopped at `now`: what each
+ * Brief's card showed in full, before the card became a few lines that open
+ * the page in the drawer (docs/plans/ui-shell.md, step 2).
+ */
 function render(briefs: Brief[], now: number): string {
-  return renderToStaticMarkup(
-    createElement(
-      FixedNow.Provider,
-      { value: now },
-      createElement(Briefs, { briefs, namespace: DEMO_NAMESPACE, canCreate: false, writer, pageHref }),
-    ),
-  )
+  // A page's links read the URL it is on.
+  vi.stubGlobal('window', { location: { pathname: '/', search: '', hash: '' } })
+  try {
+    return renderToStaticMarkup(
+      createElement(
+        FixedNow.Provider,
+        { value: now },
+        briefs.map((brief) => createElement(BriefPage, { key: brief.metadata.name, brief, agents: [], writer })),
+      ),
+    )
+  } finally {
+    vi.unstubAllGlobals()
+  }
 }
 
 describe('the Brief card', () => {
@@ -168,10 +179,7 @@ describe('the Brief card with a Container whose Standard files are behind', () =
       needsYouWaiting: 1,
     },
   }
-  // An object's page link reads the URL it is on.
-  vi.stubGlobal('window', { location: { pathname: '/', search: '', hash: '' } })
   const html = render([brief], now)
-  vi.unstubAllGlobals()
 
   it('shows the question and what the Brief would do', () => {
     expect(html).toContain(question)
@@ -212,6 +220,51 @@ describe('the Brief card paused or not', () => {
   })
 })
 
+// The Briefs area is a grid of compact cards, each a link to its Brief's page in the drawer (docs/plans/ui-shell.md, step 2).
+describe('the Briefs area', () => {
+  const now = Date.parse('2026-10-07T12:00:00Z')
+  const briefs = demoStory(now).briefs
+  const html = renderToStaticMarkup(
+    createElement(
+      FixedNow.Provider,
+      { value: now },
+      createElement(Briefs, { briefs, canCreate: true, pageHref, onNewBrief: () => {} }),
+    ),
+  )
+  /** The card of the Brief `name`. */
+  const card = (name: string) => {
+    const from = html.indexOf(`aria-label="Brief ${name}:`)
+    return html.slice(html.lastIndexOf('<li', from), html.indexOf('</li>', from))
+  }
+
+  it('shows a card per Brief after the Describe an app card, in a list', () => {
+    expect(html).toMatch(/<ul class="briefs-grid"><li class="panel brief-new">/)
+    expect(html.match(/class="brief-card /g)).toHaveLength(briefs.length)
+  })
+
+  it('makes each card a link to the Brief’s page, with its name and phase', () => {
+    const c = card('webshop')
+    expect(c).toContain(`href="${pageHref('webshop').replace('&', '&amp;')}"`)
+    expect(c).toMatch(/aria-label="Brief webshop: Planned"/)
+    expect(c).toContain('class="brief-card-name mono">webshop</span>')
+  })
+
+  it('says what a Brief waits for, its round and cost, and its latest round cut short', () => {
+    const c = card('webshop')
+    expect(c).toContain('1 waiting for you')
+    expect(c).toMatch(/Round 3<span class="sep">·<\/span><span title="What planning cost over all rounds">\$0\.50/)
+    expect(c).toMatch(/class="brief-card-round" title="[^"]+"><strong>Round 3 · Tended:<\/strong>/)
+    expect(card('loyalty-points')).toContain('Waits for your answer: ')
+    expect(card('gift-cards')).toContain('Paused; 1 Task still running: gift-cards-api-3')
+  })
+
+  it('leaves the prompt box, the pause buttons and the details to the Brief’s page', () => {
+    expect(html).not.toContain('<form')
+    expect(html).not.toContain('Pause runs')
+    expect(html).not.toContain('Releases <span class="section-hint">')
+  })
+})
+
 describe('the Describe an app form', () => {
   // The form is in the New brief modal (docs/plans/ui-shell.md); the Briefs area opens it.
   const html = renderToStaticMarkup(
@@ -222,9 +275,7 @@ describe('the Describe an app form', () => {
     const area = renderToStaticMarkup(
       createElement(Briefs, {
         briefs: [],
-        namespace: DEMO_NAMESPACE,
         canCreate: true,
-        writer,
         pageHref,
         onNewBrief: () => {},
       }),

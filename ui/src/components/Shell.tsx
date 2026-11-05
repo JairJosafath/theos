@@ -26,7 +26,7 @@ import { absoluteTime, formatDuration } from '../model/format'
 import type { PaletteItem } from '../model/search'
 import { aboutLinks, type Versions } from '../model/versions'
 import { Account } from './Account'
-import { HealthPanel } from './factory/Health'
+import { HealthDashboard } from './factory/Health'
 import { SlotsPanel } from './factory/Slots'
 import {
   BoardIcon,
@@ -741,7 +741,7 @@ function ObjectPlaceholder({ ns, kind, name }: { ns?: string; kind: string; name
   )
 }
 
-/** The factory's health and agent slots: the Factory area. */
+/** The factory's health and agent slots: the Factory area, a dashboard grid. */
 export function FactoryArea({
   data,
   connection,
@@ -759,15 +759,30 @@ export function FactoryArea({
 }) {
   const now = useNow()
   return (
-    <div className="shell-page shell-columns">
-      <HealthPanel health={health} loaded={healthLoaded} problems={healthProblems} now={now} />
-      <SlotsPanel
-        tasks={data.tasks}
-        loaded={readOf(connection, RESOURCES.tasks)}
-        problems={problemsOf(connection, RESOURCES.tasks)}
+    <div className="shell-page">
+      <header className="area-head">
+        <div>
+          <h1 className="area-title">Factory</h1>
+          <p className="area-caption">
+            Whether each part of the factory is healthy, the node’s usage over the last hour, and the agent slots.
+          </p>
+        </div>
+      </header>
+      <HealthDashboard
         health={health}
+        loaded={healthLoaded}
+        problems={healthProblems}
         now={now}
-        onSelectTask={onSelectTask}
+        slots={
+          <SlotsPanel
+            tasks={data.tasks}
+            loaded={readOf(connection, RESOURCES.tasks)}
+            problems={problemsOf(connection, RESOURCES.tasks)}
+            health={health}
+            now={now}
+            onSelectTask={onSelectTask}
+          />
+        }
       />
     </div>
   )

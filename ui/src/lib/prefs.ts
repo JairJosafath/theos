@@ -4,7 +4,7 @@
 // window, blocked site data) still gets the page and the choice for this visit.
 // index.html applies the stored theme and density before the first paint.
 
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useState, useSyncExternalStore } from 'react'
 
 export type ThemeChoice = 'system' | 'light' | 'dark'
 export type Density = 'comfortable' | 'compact'
@@ -136,6 +136,58 @@ export function useMediaQuery(query: string): boolean {
     () => mediaQuery(query)?.matches ?? false,
     () => false,
   )
+}
+
+/** What else the page keeps in this browser: the Needs you groups folded, and the Story's side panel. */
+export const STORED_KEYS = {
+  needsFolded: 'theos.needs.folded',
+  storyPanel: 'theos.story.panel',
+}
+
+/**
+ * A set of names kept in this browser under `key`, such as the Needs you
+ * groups folded; like the choices above, it holds for the visit when storage
+ * refuses it.
+ */
+export function useStoredSet(key: string): [ReadonlySet<string>, (name: string, on: boolean) => void] {
+  const [set, setSet] = useState<ReadonlySet<string>>(() => new Set(readList(key)))
+  const toggle = useCallback(
+    (name: string, on: boolean) =>
+      setSet((prev) => {
+        const next = new Set(prev)
+        if (on) next.add(name)
+        else next.delete(name)
+        writeStored(key, JSON.stringify([...next]))
+        return next
+      }),
+    [key],
+  )
+  return [set, toggle]
+}
+
+/** A yes or no kept in this browser under `key`, such as the Story's side panel folded. */
+export function useStoredFlag(key: string, fallback: boolean): [boolean, (on: boolean) => void] {
+  const [flag, setFlag] = useState(() => {
+    const stored = readStored(key)
+    return stored === 'true' ? true : stored === 'false' ? false : fallback
+  })
+  const set = useCallback(
+    (on: boolean) => {
+      setFlag(on)
+      writeStored(key, String(on))
+    },
+    [key],
+  )
+  return [flag, set]
+}
+
+function readList(key: string): string[] {
+  try {
+    const list: unknown = JSON.parse(readStored(key) ?? '[]')
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 function mediaQuery(query: string): MediaQueryList | undefined {

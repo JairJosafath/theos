@@ -4,6 +4,13 @@
 // step: a link or a kubectl line to copy), then its conditions, its timeline,
 // its children and its links out. Everything comes from the object's status
 // and the kind's table in model/lifecycle.ts.
+//
+// Below the header the page's sections are tabs (docs/plans/ui-shell.md, step
+// 2), kept in the address as otab=: Overview (the kind's own sections),
+// Status (its conditions), Activity (its timeline, rounds and runs) and
+// Related (its children and links out), each only when the kind has it. Every
+// tab's panel stays on the page, hidden when not selected, so a draft typed in
+// one survives a switch.
 
 import { useState, type ReactNode } from 'react'
 import type { Condition } from '../k8s/types'
@@ -11,7 +18,18 @@ import { hasPhases, lifecycleOf, type LifecycleKind, type NextStep, type StepVie
 import { ConditionList, When } from './bits'
 import { ExternalLinkIcon } from './icons'
 import { pageHref } from './objects/links'
+import { Tabs, type TabItem } from './ui/Tabs'
 import './objects.css'
+
+/** An object page's tabs, in their order. */
+export type ObjectTab = 'overview' | 'status' | 'activity' | 'related'
+
+const OBJECT_TABS: Record<ObjectTab, string> = {
+  overview: 'Overview',
+  status: 'Status',
+  activity: 'Activity',
+  related: 'Related',
+}
 
 export interface Crumb {
   label: string
@@ -63,6 +81,10 @@ export interface ObjectHeaderProps {
   actions?: ReactNode
   /** The step the UI can't take, said exactly. */
   next?: NextStep
+  /** The kind's own sections, by the tab they belong in; each after what the header puts there. */
+  sections?: Partial<Record<ObjectTab, ReactNode>>
+  /** The tab the children go in: Related, or Activity for a Task's agent runs. */
+  childrenTab?: ObjectTab
 }
 
 export function ObjectHeader(props: ObjectHeaderProps) {
@@ -81,92 +103,14 @@ export function ObjectHeader(props: ObjectHeaderProps) {
     links,
     actions,
     next,
+    sections = {},
+    childrenTab = 'related',
   } = props
   const life = lifecycleOf(kind, phase)
   const stepper = phased && hasPhases(kind)
-  return (
-    <section className="panel object-header" aria-label={`${kind} ${name}`}>
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <ol>
-          {breadcrumb.map((c) => (
-            <li key={`${c.label}|${c.href ?? ''}`}>{c.href ? <a href={c.href}>{c.label}</a> : c.label}</li>
-          ))}
-          <li aria-current="page">
-            {kind} {name}
-          </li>
-        </ol>
-      </nav>
-      <div className="panel-head">
-        <div>
-          <div className="eyebrow">
-            {kind} · {namespace}
-          </div>
-          <h1 className="panel-title mono">{name}</h1>
-          {title && title !== name ? <p className="object-title">{title}</p> : null}
-        </div>
-        {stepper && life.current ? (
-          <span className={`badge badge-${life.current.tone}`} title={life.current.explanation}>
-            <span className="badge-dot" aria-hidden="true" />
-            {life.current.label}
-          </span>
-        ) : null}
-      </div>
 
-      {stepper ? <Stepper path={life.path} exits={life.exits} /> : null}
-      <p className="object-moves">{life.moves}</p>
-
-      <div className={`object-next object-next-${next ? 'person' : 'none'}`}>
-        <h2 className="object-section">What you do now</h2>
-        <p>{next?.text ?? life.person}</p>
-        {next?.command ? <CommandLine command={next.command} /> : null}
-        {next?.link ? (
-          <p>
-            <a href={next.link.href} target="_blank" rel="noreferrer">
-              {next.link.label} <ExternalLinkIcon size={12} />
-            </a>
-          </p>
-        ) : null}
-        {next?.page ? (
-          <p>
-            <a href={pageHref(namespace, next.page.kind, next.page.name)}>{next.page.label}</a>
-          </p>
-        ) : null}
-        {actions ? <div className="object-actions">{actions}</div> : null}
-      </div>
-
-      {conditions ? (
-        <>
-          <h2 className="object-section">Conditions</h2>
-          <ConditionList
-            conditions={conditions}
-            empty={`The factory has not reported conditions on this ${kind} yet.`}
-          />
-        </>
-      ) : null}
-
-      {timeline ? (
-        <>
-          <h2 className="object-section">Timeline</h2>
-          {timeline.length ? (
-            <ol className="timeline">
-              {timeline.map((t) => (
-                <li key={t.key} className={`timeline-${t.tone ?? 'ok'}`}>
-                  <span className="timeline-title">{t.title}</span>
-                  {t.at ? (
-                    <span className="timeline-at">
-                      <When at={t.at} full />
-                    </span>
-                  ) : null}
-                  {t.detail ? <span className="timeline-detail">{t.detail}</span> : null}
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="muted small">Nothing has happened yet.</p>
-          )}
-        </>
-      ) : null}
-
+  const childList = (
+    <section key="children" className="panel" aria-label={childrenTitle}>
       <h2 className="object-section">{childrenTitle}</h2>
       {children.length ? (
         <ul className="object-children">
@@ -187,18 +131,129 @@ export function ObjectHeader(props: ObjectHeaderProps) {
       ) : (
         <p className="muted small">Nothing yet.</p>
       )}
+    </section>
+  )
+  const linkList = links.length ? (
+    <section key="links" className="panel" aria-label="Links">
+      <h2 className="object-section">Links</h2>
+      <ul className="object-links">
+        {links.map((l) => (
+          <li key={l.href}>
+            <a href={l.href} target="_blank" rel="noreferrer">
+              {l.label} <ExternalLinkIcon size={12} />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ) : null
+  const own: Record<ObjectTab, ReactNode[]> = {
+    overview: [],
+    status: conditions
+      ? [
+          <section key="conditions" className="panel" aria-label="Conditions">
+            <h2 className="object-section">Conditions</h2>
+            <ConditionList
+              conditions={conditions}
+              empty={`The factory has not reported conditions on this ${kind} yet.`}
+            />
+          </section>,
+        ]
+      : [],
+    activity: timeline
+      ? [
+          <section key="timeline" className="panel" aria-label="Timeline">
+            <h2 className="object-section">Timeline</h2>
+            {timeline.length ? (
+              <ol className="timeline">
+                {timeline.map((t) => (
+                  <li key={t.key} className={`timeline-${t.tone ?? 'ok'}`}>
+                    <span className="timeline-title">{t.title}</span>
+                    {t.at ? (
+                      <span className="timeline-at">
+                        <When at={t.at} full />
+                      </span>
+                    ) : null}
+                    {t.detail ? <span className="timeline-detail">{t.detail}</span> : null}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="muted small">Nothing has happened yet.</p>
+            )}
+          </section>,
+        ]
+      : [],
+    related: [],
+  }
+  own[childrenTab].push(childList)
+  if (linkList) own.related.push(linkList)
+  const tabs: TabItem[] = (Object.keys(OBJECT_TABS) as ObjectTab[])
+    .filter((t) => own[t].length || sections[t])
+    .map((t) => ({
+      id: t,
+      label: t === childrenTab && children.length ? `${OBJECT_TABS[t]} (${children.length})` : OBJECT_TABS[t],
+      panel: (
+        <div className="object-tab">
+          {own[t]}
+          {sections[t]}
+        </div>
+      ),
+    }))
 
-      {links.length ? (
-        <ul className="object-links">
-          {links.map((l) => (
-            <li key={l.href}>
-              <a href={l.href} target="_blank" rel="noreferrer">
-                {l.label} <ExternalLinkIcon size={12} />
-              </a>
+  // One region for the object: its header, then its tabs.
+  return (
+    <section className="object-main" aria-label={`${kind} ${name}`}>
+      <div className="panel object-header">
+        <nav className="crumbs" aria-label="Breadcrumb">
+          <ol>
+            {breadcrumb.map((c) => (
+              <li key={`${c.label}|${c.href ?? ''}`}>{c.href ? <a href={c.href}>{c.label}</a> : c.label}</li>
+            ))}
+            <li aria-current="page">
+              {kind} {name}
             </li>
-          ))}
-        </ul>
-      ) : null}
+          </ol>
+        </nav>
+        <div className="panel-head">
+          <div>
+            <div className="eyebrow">
+              {kind} · {namespace}
+            </div>
+            <h1 className="panel-title mono">{name}</h1>
+            {title && title !== name ? <p className="object-title">{title}</p> : null}
+          </div>
+          {stepper && life.current ? (
+            <span className={`badge badge-${life.current.tone}`} title={life.current.explanation}>
+              <span className="badge-dot" aria-hidden="true" />
+              {life.current.label}
+            </span>
+          ) : null}
+        </div>
+
+        {stepper ? <Stepper path={life.path} exits={life.exits} /> : null}
+        <p className="object-moves">{life.moves}</p>
+
+        <div className={`object-next object-next-${next ? 'person' : 'none'}`}>
+          <h2 className="object-section">What you do now</h2>
+          <p>{next?.text ?? life.person}</p>
+          {next?.command ? <CommandLine command={next.command} /> : null}
+          {next?.link ? (
+            <p>
+              <a href={next.link.href} target="_blank" rel="noreferrer">
+                {next.link.label} <ExternalLinkIcon size={12} />
+              </a>
+            </p>
+          ) : null}
+          {next?.page ? (
+            <p>
+              <a href={pageHref(namespace, next.page.kind, next.page.name)}>{next.page.label}</a>
+            </p>
+          ) : null}
+          {actions ? <div className="object-actions">{actions}</div> : null}
+        </div>
+      </div>
+      <Tabs className="object-tabs" label={`${kind} ${name}`} tabs={tabs} syncUrl urlKey="otab" keepMounted />
     </section>
   )
 }

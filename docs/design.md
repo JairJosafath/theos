@@ -801,21 +801,29 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
   jump* (⌘K) and the area's one primary action, such as *New brief*, which
   opens its form in a modal; and a theme (System, Light or Dark) and density
   kept in the browser only.
-- **Seven areas:** *Needs you* (what waits on a person, across projects),
+- **Seven areas,** each a summary that fits a wide screen, in two or three
+  columns, and one column on a phone: *Needs you* (what waits on a person,
+  across projects, in groups per project that fold and with chips by kind),
   *Loop* (one project's development cycle in ten stages, from an idea or a
   bug to a monitored release, with the two reviews that wait on a person
-  drawn apart; `ui/src/model/loop.ts`, from the resources alone),
-  *Briefs*, *Story* (system context and one system's containers), *Work*
-  (Tasks by stage, Crews and releases, time and tokens, what needs a look),
-  *Factory* (health and agent slots) and *About*. It opens on *Needs you*
-  when it has items, else *Story*.
+  drawn apart; `ui/src/model/loop.ts`, from the resources alone; the ring
+  beside the stage a node selects, opening on the first review with items),
+  *Briefs* (a card per Brief that opens its page), *Story* (system context
+  and one system's containers, with a side panel that folds), *Work* (the
+  headline numbers, a one-line *Needs a look*, then tabs: the board of Tasks
+  by stage, Crews, releases, time and tokens), *Factory* (a dashboard of the
+  health, the last hour and the agent slots) and *About*. It opens on *Needs
+  you* when it has items, else *Story*. An area's tab or the Loop's stage is
+  `tab=` in the address; a fold is kept in the browser only.
 - **Object pages** open in a drawer over the area they came from (full width
   with `full=1`); the address keeps `ns`, `kind` and `name`, so a link opens
   one. They share one header (`ui/src/components/ObjectHeader.tsx`):
   kind, name and breadcrumb, the lifecycle as a stepper from
-  `ui/src/model/lifecycle.ts`, what a person does now, then conditions,
-  timeline, children and links. A step the UI can't take shows a link or a
-  `kubectl` line to copy.
+  `ui/src/model/lifecycle.ts` and what a person does now; then tabs, as the
+  kind has them, kept as `otab=`: *Overview* (its own sections), *Status*
+  (conditions), *Activity* (timeline, rounds, runs) and *Related* (children
+  and links). A step the UI can't take shows a link or a `kubectl` line to
+  copy.
 - ***Needs you*** lists what the resources flag (`ui/src/model/needs.ts`),
   each in its condition's own words, every item from `status`, none from
   timing.

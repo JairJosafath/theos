@@ -1,19 +1,21 @@
-// The Briefs of a project: a card that opens the New brief modal to describe
-// a new app, and a card per Brief with what the planner made of it, a field to
-// steer it with a prompt and a button to pause or resume it. These are the UI's
-// three writes when actions are off; the CRD decides what is accepted.
+// The Briefs of a project (docs/plans/ui-shell.md, step 2): a card that opens
+// the New brief modal to describe a new app, and a compact card per Brief (its
+// name, phase, what it waits for, cost and latest round) that opens its page
+// in the drawer. The page shows what the planner made of it, a field to steer
+// it with a prompt and a button to pause or resume it. These are the UI's three
+// writes when actions are off; the CRD decides what is accepted.
 
 import { useState } from 'react'
 import type { BriefWriter } from '../k8s/briefs'
 import type { Problem } from '../k8s/sources'
 import type { Agent, Brief } from '../k8s/types'
 import { describeBrief, pauseAction, pauseRunsAction, sortBriefs, type BriefView } from '../model/brief'
-import { UsageLine, When } from './bits'
+import { When } from './bits'
 import { ExternalLinkIcon, PlusIcon } from './icons'
 import { PanelState } from './PanelState'
 import { plannerLimit } from './objects/rows'
 import { BriefDetails } from './briefs/BriefDetails'
-import { FormError, PromptForm } from './briefs/PromptForm'
+import { PromptForm } from './briefs/PromptForm'
 import { writeError, type WriteError } from './briefs/errors'
 import { AnswerButtons, type AnswerContext } from './briefs/Answers'
 import { RequestButtons } from './briefs/RequestButtons'
@@ -23,10 +25,8 @@ import './briefs.css'
 
 export function Briefs({
   briefs,
-  namespace,
   canCreate,
   onNewBrief,
-  writer,
   agents = [],
   pageHref,
   loaded = true,
@@ -39,34 +39,34 @@ export function Briefs({
   problems?: Problem[]
   /** Each Brief's object page. */
   pageHref: (name: string) => string
-  namespace: string
   /** The namespace's Agents, for each planner's sessionTokenLimit. */
   agents?: Agent[]
   /** False when the namespace holds no Project: the server makes no Brief there. */
   canCreate: boolean
   /** Opens the New brief modal (the form in briefs/NewBrief.tsx). */
   onNewBrief?: () => void
-  writer: BriefWriter
 }) {
   if (loaded && !problems?.length && !canCreate && !briefs.length) return null
   const sorted = sortBriefs(briefs)
   return (
-    <section className="briefs" aria-labelledby="briefs-title">
-      <div className="view-head">
-        <h2 className="view-title" id="briefs-title">
-          Briefs
-        </h2>
-        <p className="view-caption">
-          Describe an app in plain words. A planner agent turns it into software systems, containers, crews and issues,
-          round by round; add a prompt to steer it. Creating a brief, adding a prompt and pausing or resuming a brief
-          are the only changes this page can make.
-        </p>
-      </div>
+    <section className="shell-page briefs" aria-labelledby="briefs-title">
+      <header className="area-head">
+        <div>
+          <h1 className="area-title" id="briefs-title">
+            Briefs
+          </h1>
+          <p className="area-caption">
+            Describe an app in plain words. A planner agent turns it into software systems, containers, crews and
+            issues, round by round; open a brief to steer it with a prompt, or to pause or resume it. Those, and
+            creating a brief, are the only changes this page can make.
+          </p>
+        </div>
+      </header>
       <PanelState loaded={loaded} problems={problems} loading="Loading the Briefs…">
-        <div className="briefs-grid">
+        <ul className="briefs-grid">
           {canCreate ? (
-            <div className="panel brief-new">
-              <h3 className="panel-title small-title">Describe an app</h3>
+            <li className="panel brief-new">
+              <h2 className="panel-title small-title">Describe an app</h2>
               <p className="panel-caption">
                 What is it for, and who uses it? A planner agent turns it into software systems, containers, crews and
                 issues.
@@ -74,85 +74,94 @@ export function Briefs({
               <button type="button" className="button brief-new-open" onClick={onNewBrief} disabled={!onNewBrief}>
                 <PlusIcon size={16} /> New brief
               </button>
-            </div>
+            </li>
           ) : null}
           {sorted.map((b) => (
             <BriefCard
               key={b.metadata.uid ?? b.metadata.name}
               brief={b}
-              namespace={namespace}
-              writer={writer}
               plannerLimit={plannerLimit(agents, b)}
               href={pageHref(b.metadata.name)}
             />
           ))}
-        </div>
+        </ul>
       </PanelState>
     </section>
   )
 }
 
+/**
+ * A Brief in a few lines: its name and phase, its idea, what it waits for,
+ * its round and cost, and its latest round's summary cut short. The whole
+ * card is a link to its page, which opens in the drawer.
+ */
 function BriefCard({
   brief,
-  namespace,
-  writer,
   plannerLimit,
   href,
 }: {
   brief: Brief
-  namespace: string
-  writer: BriefWriter
   plannerLimit?: number
   /** The Brief's page. */
   href: string
 }) {
   const view = describeBrief(brief, plannerLimit)
-  const [pauseError, setPauseError] = useState<WriteError>()
+  const latest = view.rounds[0]
+  const waits = waitsFor(view)
   return (
-    <article className={`panel brief brief-${view.phase.tone}`} aria-label={`Brief ${view.name}`}>
-      <div className="panel-head">
-        <div className="brief-title">
-          <h3 className="panel-title small-title mono">
-            <a href={href}>{view.name}</a>
-          </h3>
-          <span className="brief-meta">
-            {view.round ? `Round ${view.round}` : 'No round yet'}
-            {view.usage ? (
-              <>
-                <span className="sep">·</span>
-                <span title="What planning used over all rounds">
-                  <UsageLine usage={view.usage} />
-                </span>
-              </>
-            ) : null}
-            <span className="sep">·</span>
-            <span title={view.autopilot.explanation}>{view.autopilot.label}</span>
-            {brief.metadata.creationTimestamp ? (
-              <>
-                <span className="sep">·</span>
-                <span title={brief.metadata.creationTimestamp}>
-                  created <When at={brief.metadata.creationTimestamp} />
-                </span>
-              </>
-            ) : null}
-          </span>
-        </div>
-        <div className="brief-head-actions">
+    <li className={`brief-card tone-${view.phase.tone}`}>
+      <a className="panel brief-card-link" href={href} aria-label={`Brief ${view.name}: ${view.phase.label}`}>
+        <span className="brief-card-head">
+          <span className="brief-card-name mono">{view.name}</span>
           <span className={`badge badge-${view.phase.tone} badge-sm`} title={view.phase.explanation}>
             <span className="badge-dot" aria-hidden="true" />
             {view.phase.label}
           </span>
-          <PauseRunsButton namespace={namespace} view={view} writer={writer} onError={setPauseError} />
-          <PauseButton namespace={namespace} view={view} writer={writer} onError={setPauseError} />
-        </div>
-      </div>
-      <p className="brief-idea" title={view.idea}>
-        {view.idea}
-      </p>
-      {pauseError ? <FormError error={pauseError} /> : null}
-      <BriefBody view={view} namespace={namespace} writer={writer} />
-    </article>
+        </span>
+        <span className="brief-card-idea" title={view.idea}>
+          {view.idea}
+        </span>
+        {waits ? <span className={`brief-card-waits brief-card-waits-${waits.tone}`}>{waits.text}</span> : null}
+        <span className="brief-card-meta">
+          {view.round ? `Round ${view.round}` : 'No round yet'}
+          {view.usage?.cost ? (
+            <>
+              <span className="sep">·</span>
+              <span title="What planning cost over all rounds">{view.usage.cost}</span>
+            </>
+          ) : null}
+          <span className="sep">·</span>
+          <span title={view.autopilot.explanation}>{view.autopilot.label}</span>
+          {brief.metadata.creationTimestamp ? (
+            <>
+              <span className="sep">·</span>
+              <span title={brief.metadata.creationTimestamp}>
+                created <When at={brief.metadata.creationTimestamp} />
+              </span>
+            </>
+          ) : null}
+        </span>
+        {latest?.summary ? (
+          <span className="brief-card-round" title={latest.summary}>
+            <strong>
+              Round {latest.round}
+              {latest.outcome ? ` · ${latest.outcome}` : ''}:
+            </strong>{' '}
+            {latest.summary}
+          </span>
+        ) : null}
+      </a>
+    </li>
   )
+}
+
+/** What a Brief waits for, in a line: a person, its pause, or a failed round; nothing while it gets on. */
+function waitsFor(view: BriefView): { text: string; tone: 'waiting' | 'error' } | undefined {
+  if (view.paused) return { text: view.pausedNote ?? 'Paused', tone: 'waiting' }
+  if (view.needsInput) return { text: `Waits for your answer: ${view.needsInput}`, tone: 'waiting' }
+  if (view.needsYouWaiting) return { text: `${view.needsYouWaiting} waiting for you`, tone: 'waiting' }
+  if (view.failure) return { text: `The last round failed: ${view.failure}`, tone: 'error' }
+  return undefined
 }
 
 /**

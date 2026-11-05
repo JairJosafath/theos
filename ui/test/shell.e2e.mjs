@@ -183,7 +183,8 @@ describe('the shell', () => {
 
   it('opens a Brief page from its card, and a Container page from what the Brief made', async () => {
     await page.goto(`${base}/?area=briefs`)
-    await page.getByRole('link', { name: 'webshop', exact: true }).click()
+    // A Brief's card is a link to its page (docs/plans/ui-shell.md, step 2).
+    await page.getByRole('link', { name: /^Brief webshop: / }).click()
     const header = page.getByRole('region', { name: 'Brief webshop', exact: true })
     await header.waitFor({ timeout: 10000 })
     let params = new URL(page.url()).searchParams
@@ -191,9 +192,13 @@ describe('the shell', () => {
     assert.match(await page.title(), /^Brief webshop · theos$/)
     // The lifecycle with Planned current, the rounds, and its writes: pause and prompt.
     assert.equal(await header.locator('[aria-current="step"]').textContent(), 'Planned')
-    await header.getByText(/^Round 1 applied$/).waitFor({ timeout: 5000 })
     await header.getByRole('button', { name: /^(Pause|Resume) brief webshop$/ }).waitFor({ timeout: 5000 })
     await page.getByRole('heading', { name: 'Rounds' }).first().waitFor({ timeout: 5000 })
+    // Its sections are tabs: the timeline is its activity, what it made is related to it.
+    await header.getByRole('tab', { name: 'Activity' }).click()
+    await header.getByText(/^Round 1 applied$/).waitFor({ timeout: 5000 })
+    assert.equal(new URL(page.url()).searchParams.get('otab'), 'activity')
+    await header.getByRole('tab', { name: /^Related/ }).click()
     if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
       await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-object-brief.png'), fullPage: true })
@@ -205,8 +210,10 @@ describe('the shell', () => {
     await container.waitFor({ timeout: 10000 })
     params = new URL(page.url()).searchParams
     assert.deepEqual([params.get('kind'), params.get('name')], ['Container', 'storefront'])
-    // Failed, with the condition's reason and the exact retry line.
+    // Failed, with the condition's reason and the exact retry line; another object opens on its first tab.
     assert.equal(await container.locator('[aria-current="step"]').textContent(), 'Failed')
+    assert.equal(params.get('otab'), null)
+    await container.getByRole('tab', { name: 'Status' }).click()
     await container.getByText('Choices valid: no · UnsupportedType').waitFor({ timeout: 5000 })
     assert.equal(
       await container.locator('.command-line code').textContent(),
@@ -230,16 +237,18 @@ describe('the shell', () => {
     const container = page.getByRole('region', { name: 'Container orders-api', exact: true })
     await container.waitFor({ timeout: 10000 })
     assert.equal(await container.locator('[aria-current="step"]').textContent(), 'Ready')
+    await page.getByRole('heading', { name: 'What it is made from' }).waitFor({ timeout: 5000 })
+    await container.getByRole('tab', { name: /^Related/ }).click()
     await container
       .getByText(/Applied: True, AppliedAtScaffold/)
       .first()
       .waitFor({ timeout: 5000 })
-    await page.getByRole('heading', { name: 'What it is made from' }).waitFor({ timeout: 5000 })
-    assert.equal(await container.locator('.command-line').count(), 0)
+    // What a person does now names no command: the region holds the tabs too, whose deploys may.
+    assert.equal(await container.locator('.object-next .command-line').count(), 0)
   })
 
   it('opens a Crew page from Work, and a Task page from the Crew', async () => {
-    await page.goto(`${base}/?area=work`)
+    await page.goto(`${base}/?area=work&tab=crews`)
     await page.getByRole('link', { name: 'Orders API crew', exact: true }).click()
     const crew = page.getByRole('region', { name: 'Crew orders-api', exact: true })
     await crew.waitFor({ timeout: 10000 })
@@ -251,6 +260,7 @@ describe('the shell', () => {
     // Working, its Tasks, the places in use and its last release.
     assert.equal(await crew.locator('[aria-current="step"]').textContent(), 'Working')
     await drawer.getByText('2 of 2 busy').waitFor({ timeout: 5000 })
+    await crew.getByRole('tab', { name: 'Activity' }).click()
     await heading('Last release: v0.2.0').waitFor({ timeout: 5000 })
     await drawer.locator('dd', { hasText: /^succeeded Open the run/ }).waitFor({ timeout: 5000 })
     if (process.env.THEOS_UI_SHOTS) {
@@ -258,6 +268,7 @@ describe('the shell', () => {
       await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-object-crew.png'), fullPage: true })
     }
 
+    await crew.getByRole('tab', { name: /^Related/ }).click()
     await crew.getByRole('link', { name: 'orders-api-13', exact: true }).click()
     const task = page.getByRole('region', { name: 'Task orders-api-13', exact: true })
     await task.waitFor({ timeout: 10000 })
@@ -266,10 +277,6 @@ describe('the shell', () => {
     // Failed, with its issue to answer, the history, its agent runs and the handoffs.
     assert.equal(await task.locator('[aria-current="step"]').textContent(), 'Failed')
     await task.getByRole('link', { name: 'Open issue #13' }).waitFor({ timeout: 5000 })
-    await task.getByText('Failed, round 3 · RoundsExhausted').waitFor({ timeout: 5000 })
-    // Three implement runs and the one review of round 1.
-    await task.getByText('run 4', { exact: true }).waitFor({ timeout: 5000 })
-    assert.equal(await task.getByText('run 5', { exact: true }).count(), 0)
     await drawer.getByText('3 of 3', { exact: true }).waitFor({ timeout: 5000 })
     await drawer.getByText('2 times an agent run handed off to a fresh one at the token limit of 130k').waitFor({
       timeout: 5000,
@@ -278,6 +285,12 @@ describe('the shell', () => {
     await drawer.getByText('Run 3 (round 2, implement) handed off 2 times, at 131k and 138k tokens.').waitFor({
       timeout: 5000,
     })
+    // Its history and its agent runs are its activity.
+    await task.getByRole('tab', { name: /^Activity/ }).click()
+    await task.getByText('Failed, round 3 · RoundsExhausted').waitFor({ timeout: 5000 })
+    // Three implement runs and the one review of round 1.
+    await task.getByText('run 4', { exact: true }).waitFor({ timeout: 5000 })
+    assert.equal(await task.getByText('run 5', { exact: true }).count(), 0)
     await task.getByText(/round 2, implement by claude-implementer · ended .* · handed off 2 times/).waitFor({
       timeout: 5000,
     })
@@ -294,16 +307,20 @@ describe('the shell', () => {
 
   it('opens a Task page from a board card in Work, and lists the releases', async () => {
     await page.goto(`${base}/?area=work`)
+    // Work's releases are its Releases tab, the board its first (docs/plans/ui-shell.md, step 2).
+    await page.getByRole('tab', { name: 'Releases' }).click()
     const releases = page.getByRole('region', { name: 'Releases', exact: true })
     await releases.getByText('v0.2.0', { exact: true }).waitFor({ timeout: 10000 })
     assert.equal(
       await releases.getByRole('link', { name: 'Crew orders-api', exact: true }).getAttribute('href'),
-      `/?area=work&ns=${namespace}&kind=Crew&name=orders-api`,
+      // The Crew opens over Work's Releases tab.
+      `/?area=work&tab=releases&ns=${namespace}&kind=Crew&name=orders-api`,
     )
     if (process.env.THEOS_UI_SHOTS) {
       await page.waitForTimeout(300)
       await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-shell-work-board.png'), fullPage: true })
     }
+    await page.getByRole('tab', { name: /^Board/ }).click()
     await page.locator('.board a.task-card', { hasText: 'orders-api-14' }).click()
     const task = page.getByRole('region', { name: 'Task orders-api-14', exact: true })
     await task.waitFor({ timeout: 10000 })
@@ -362,18 +379,19 @@ describe('the shell', () => {
   })
 
   it('opens a read-only page of each remaining kind', async () => {
+    // Each with the tab its section is on: the first, unless it says.
     const PAGES = [
-      ['Project', namespace, 'Its catalog and Git hosts'],
+      ['Project', namespace, 'Its catalog and Git hosts', 'related'],
       ['SoftwareSystem', 'webshop-core', 'What it is for'],
-      ['Relationship', 'orders-api-to-cart-cache', 'Its ends'],
+      ['Relationship', 'orders-api-to-cart-cache', 'Its ends', 'related'],
       ['Session', session, 'Who and when'],
       ['Standard', 'python-standard', 'Its template'],
       ['Compute', 'small', 'Its template'],
       ['Deployment', 'k8s-manifests', 'Its template'],
       ['GitProvider', 'gitea', 'Where repositories go'],
     ]
-    for (const [kind, name, section] of PAGES) {
-      await page.goto(`${base}/?ns=${namespace}&kind=${kind}&name=${name}`)
+    for (const [kind, name, section, tab] of PAGES) {
+      await page.goto(`${base}/?ns=${namespace}&kind=${kind}&name=${name}${tab ? `&otab=${tab}` : ''}`)
       await page.getByRole('region', { name: `${kind} ${name}`, exact: true }).waitFor({ timeout: 10000 })
       await page.getByRole('heading', { name: section }).first().waitFor({ timeout: 5000 })
       assert.match(await page.title(), new RegExp(`^${kind} ${name} · theos$`))
@@ -392,10 +410,12 @@ describe('the shell', () => {
     await page.getByRole('link', { name: 'python-standard', exact: true }).click()
     const standard = page.getByRole('region', { name: 'Standard python-standard', exact: true })
     await standard.waitFor({ timeout: 10000 })
+    await standard.getByRole('tab', { name: /^Related/ }).click()
     await standard.getByRole('link', { name: 'orders-api', exact: true }).waitFor({ timeout: 5000 })
     await standard.getByRole('link', { name: `Project ${namespace}` }).click()
     const project = page.getByRole('region', { name: `Project ${namespace}`, exact: true })
     await project.waitFor({ timeout: 10000 })
+    await project.getByRole('tab', { name: /^Related/ }).click()
     await project.getByRole('link', { name: 'webshop-core', exact: true }).waitFor({ timeout: 5000 })
   })
 
@@ -416,7 +436,7 @@ describe('the shell', () => {
     api.refuse('standards')
     await page.goto(`${base}/?ns=${namespace}&kind=Standard&name=python-standard`)
     await page.getByText(/^Could not read standards\. The UI is not allowed/).waitFor({ timeout: 10000 })
-    await page.goto(`${base}/?ns=${namespace}&kind=Project&name=${namespace}`)
+    await page.goto(`${base}/?ns=${namespace}&kind=Project&name=${namespace}&otab=related`)
     const catalog = page.getByRole('region', { name: 'Its catalog and Git hosts' })
     await catalog.getByText(/^Could not read standards \(403\)/).waitFor({ timeout: 10000 })
     await catalog.getByRole('link', { name: 'small', exact: true }).waitFor({ timeout: 5000 })

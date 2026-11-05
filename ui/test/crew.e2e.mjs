@@ -126,6 +126,8 @@ describe('a Crew page’s actions', () => {
   }
 
   it('changes the release settings, naming the token Secret only', async () => {
+    // The last release and its settings are on the page's Activity tab (docs/plans/ui-shell.md, step 2).
+    await page.getByRole('tab', { name: 'Activity' }).click()
     const form = releaseForm()
     await form.getByLabel('Prepare releases').check()
     await form.getByLabel('Token Secret').fill('orders-api-release-token')

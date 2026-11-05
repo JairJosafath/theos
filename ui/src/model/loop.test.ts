@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Brief, Condition, Container, ContainerDeployStatus, Crew, Task } from '../k8s/types'
 import { demoStory } from '../demo/fixture'
 import { needs } from './needs'
-import { loopStages, taskStage, type LoopInput, type StageKey } from './loop'
+import { defaultStage, loopStages, selectedStage, taskStage, type LoopInput, type StageKey } from './loop'
 
 const T = '2026-06-01T10:00:00Z'
 
@@ -247,5 +247,37 @@ describe('loopStages', () => {
     expect(stages.filter((s) => s.count === 0).map((s) => s.label)).toEqual([])
     expect(stages.at(-1)?.healthy).toBeGreaterThan(0)
     expect(stages.at(-1)?.items[0].links[0].label).toBe('Bug #19')
+  })
+})
+
+// The Loop opens on one stage beside the ring (docs/plans/ui-shell.md, step 2).
+describe('defaultStage', () => {
+  it('opens on the first review point of a person that has items', () => {
+    const stages = loopStages({
+      ...none,
+      briefs: [brief('a', 'Pending')],
+      tasks: [task('x', 'Spec', 'AwaitingApproval'), task('y', undefined, 'Reviewing')],
+    })
+    expect(defaultStage(stages)).toBe('specReview')
+  })
+
+  it('skips a review point with nothing in it for the first stage with items', () => {
+    const stages = loopStages({
+      ...none,
+      tasks: [task('y', undefined, 'Implementing'), task('z', undefined, 'Verifying')],
+    })
+    expect(defaultStage(stages)).toBe('implement')
+  })
+
+  it('opens on the first stage when nothing is in flight', () => {
+    expect(defaultStage(loopStages(none))).toBe('idea')
+    expect(defaultStage([])).toBeUndefined()
+  })
+
+  it('opens on the stage the address names, if the loop has it', () => {
+    const stages = loopStages({ ...none, tasks: [task('x', 'Spec', 'AwaitingApproval')] })
+    expect(selectedStage(stages, 'monitor')).toBe('monitor')
+    expect(selectedStage(stages, 'nowhere')).toBe('specReview')
+    expect(selectedStage(stages, undefined)).toBe('specReview')
   })
 })

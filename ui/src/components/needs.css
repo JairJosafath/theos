@@ -1,13 +1,17 @@
-/* The shell's Needs you area (Needs.tsx). */
+/* The shell's Needs you area (Needs.tsx): a group per project that folds, and
+   its items in two columns on a wide screen. */
+
+.needs-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
 
 .needs-project {
-  margin-top: 18px;
+  padding: 10px 14px 14px;
 }
 
 .needs-project-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
   font-size: 15px;
   font-weight: 650;
 }
@@ -20,14 +24,24 @@
 }
 
 .needs-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
+  gap: 10px;
   margin: 8px 0 0;
   padding: 0;
   list-style: none;
 }
 
+.needs-list[hidden] {
+  display: none;
+}
+
 .need {
-  padding: 12px 0;
-  border-top: 1px solid var(--border);
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
 }
 
 .need-head {

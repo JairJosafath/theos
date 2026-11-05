@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { hrefFor, inPageLink, parseUrl, type UrlState } from './hooks'
+import { hrefFor, inPageLink, mergeUrl, parseUrl, type UrlState } from './hooks'
 
 const base: UrlState = { demo: false, view: 'context' }
 
@@ -79,6 +79,34 @@ describe('hrefFor', () => {
       '/?area=work&tab=crews&ns=shop&kind=Task&name=api-7&full=1',
     )
     expect(hrefFor({ full: true })).toBe('/?area=work&tab=crews')
+  })
+
+  // The object page's tabs (docs/plans/ui-shell.md, step 2) have their own parameter beside the area's tab=.
+  it("keeps the object page's tab as otab=, only beside its object", () => {
+    at('?area=work&tab=crews&ns=shop&kind=Task&name=api-7')
+    expect(hrefFor({ otab: 'activity' })).toBe('/?area=work&tab=crews&ns=shop&kind=Task&name=api-7&otab=activity')
+    at('?area=work&tab=crews&ns=shop&kind=Task&name=api-7&otab=activity')
+    expect(hrefFor({ full: true })).toBe('/?area=work&tab=crews&ns=shop&kind=Task&name=api-7&full=1&otab=activity')
+    // Closing the object drops its tab; another object opens on its first.
+    expect(hrefFor({ ns: undefined, kind: undefined, name: undefined })).toBe('/?area=work&tab=crews')
+    expect(hrefFor({ ns: 'shop', kind: 'Crew', name: 'api' })).toBe('/?area=work&tab=crews&ns=shop&kind=Crew&name=api')
+    expect(hrefFor({ ns: 'shop', kind: 'Crew', name: 'api', otab: 'related' })).toBe(
+      '/?area=work&tab=crews&ns=shop&kind=Crew&name=api&otab=related',
+    )
+  })
+
+  it('reads otab=, and mergeUrl drops it with its object', () => {
+    expect(parseUrl('?ns=shop&kind=Task&name=api-7&otab=status')).toEqual({
+      ...base,
+      ns: 'shop',
+      kind: 'Task',
+      name: 'api-7',
+      otab: 'status',
+    })
+    const now = parseUrl('?area=work&ns=shop&kind=Task&name=api-7&otab=status')
+    expect(mergeUrl(now, { area: 'loop' }).otab).toBe('status')
+    expect(mergeUrl(now, { kind: undefined, name: undefined }).otab).toBeUndefined()
+    expect(mergeUrl(now, { name: 'api-8' }).otab).toBeUndefined()
   })
 })
 

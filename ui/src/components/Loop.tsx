@@ -2,13 +2,18 @@
 // software-development cycle in ten stages, each with its count and its items.
 // It reads the resources and writes nothing; the two stages that wait on a
 // person are drawn apart, with a person's icon and a dashed border.
+//
+// The ring and the selected stage sit side by side (docs/plans/ui-shell.md,
+// step 2): a node selects its stage, kept in the address as tab=; the Loop
+// opens on the first review point with items. On a phone, the ring, then a
+// chip per stage, then the selected stage's items.
 
-import type { MouseEvent } from 'react'
+import { useContext, useState, type MouseEvent } from 'react'
 import type { Problem } from '../k8s/sources'
-import { hrefFor, type UrlState } from '../lib/hooks'
+import { hrefFor, UrlContext, type UrlState } from '../lib/hooks'
 import { plural } from '../model/describe'
 import { hasPage } from '../model/lifecycle'
-import { loopStages, type LoopInput, type LoopItem, type LoopStage } from '../model/loop'
+import { loopStages, selectedStage, type LoopInput, type LoopItem, type LoopStage, type StageKey } from '../model/loop'
 import { ExternalLinkIcon, HumanIcon, WarningIcon } from './icons'
 import { PanelState } from './PanelState'
 import './loop.css'
@@ -32,23 +37,45 @@ export function LoopArea({
   setUrl: (next: Partial<UrlState>) => void
 }) {
   const stages = loopStages(data)
+  const url = useContext(UrlContext)
+  const [own, setOwn] = useState<string>()
+  const selected = selectedStage(stages, url ? url[0].tab : own)
+  const stage = stages.find((s) => s.key === selected)
+  // Selecting a stage keeps it in the address without a history entry, as a tab does.
+  const select = (key: StageKey) => (url ? url[1]({ tab: key }, true) : setOwn(key))
   return (
-    <div className="shell-page">
-      <section className="panel loop">
-        <h1 className="panel-title">Loop</h1>
-        <p className="panel-caption">
-          {title}&rsquo;s cycle from an idea or a bug to a monitored release, as the resources say it. The two dashed
-          stages wait on a person; a bug found at Monitor starts the cycle again.
-        </p>
-        <PanelState loaded={loaded} problems={problems} loading="Loading the loop…">
-          <Ring stages={stages} />
-          <ol className="loop-stages">
+    <div className="shell-page loop">
+      <header className="area-head">
+        <div>
+          <h1 className="area-title">Loop</h1>
+          <p className="area-caption">
+            {title}&rsquo;s cycle from an idea or a bug to a monitored release, as the resources say it. The two dashed
+            stages wait on a person; a bug found at Monitor starts the cycle again.
+          </p>
+        </div>
+      </header>
+      <PanelState loaded={loaded} problems={problems} loading="Loading the loop…">
+        <div className="loop-layout">
+          <section className="panel loop-ring-panel" aria-label="The loop">
+            <Ring stages={stages} selected={selected} onSelect={select} />
+          </section>
+          <div className="loop-chips chips" role="group" aria-label="Stages">
             {stages.map((s) => (
-              <Stage key={s.key} stage={s} setUrl={setUrl} />
+              <button
+                key={s.key}
+                type="button"
+                className={`chip${s.person ? ' loop-chip-person' : ''}`}
+                aria-pressed={s.key === selected}
+                onClick={() => select(s.key)}
+              >
+                {s.number}. {s.short}
+                <span className="chip-count">{s.count}</span>
+              </button>
             ))}
-          </ol>
-        </PanelState>
-      </section>
+          </div>
+          {stage ? <Stage stage={stage} setUrl={setUrl} /> : null}
+        </div>
+      </PanelState>
     </div>
   )
 }
@@ -63,8 +90,16 @@ function position(i: number, total: number, radius = R) {
   return { x: CX + radius * Math.cos(angle), y: CY + radius * Math.sin(angle), cos: Math.cos(angle) }
 }
 
-/** The ten stages as a ring of nodes, an arrow from each to the next; a node jumps to its list. */
-function Ring({ stages }: { stages: LoopStage[] }) {
+/** The ten stages as a ring of nodes, an arrow from each to the next; a node selects its stage. */
+function Ring({
+  stages,
+  selected,
+  onSelect,
+}: {
+  stages: LoopStage[]
+  selected?: StageKey
+  onSelect: (key: StageKey) => void
+}) {
   const n = stages.length
   return (
     <svg className="loop-ring" viewBox="0 0 540 420" role="group" aria-label="The loop, stage by stage">
@@ -102,17 +137,22 @@ function Ring({ stages }: { stages: LoopStage[] }) {
         const lx = top || bottom ? p.x : label.x
         const problem = s.key === 'monitor' && s.count > 0
         const state = s.count === 0 ? 'idle' : problem ? 'problem' : s.person ? 'person' : 'busy'
+        const on = s.key === selected
         return (
           <a
             key={s.key}
-            href={`#loop-${s.key}`}
+            href={hrefFor({ tab: s.key })}
             className={`loop-node loop-node-${state}${s.person ? ' loop-node-review' : ''}`}
             aria-label={`${s.number}. ${s.label}: ${s.count}`}
+            aria-current={on ? 'true' : undefined}
+            aria-controls="loop-stage"
             onClick={(e) => {
+              if (!plainClick(e)) return
               e.preventDefault()
-              document.getElementById(`loop-${s.key}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+              onSelect(s.key)
             }}
           >
+            {on ? <circle cx={p.x} cy={p.y} r={NODE + 6} className="loop-halo" /> : null}
             <circle cx={p.x} cy={p.y} r={NODE} className="loop-disc" />
             {s.person ? (
               <g transform={`translate(${p.x - 8} ${p.y - 23}) scale(0.67)`} className="loop-person-icon">
@@ -142,10 +182,11 @@ function Ring({ stages }: { stages: LoopStage[] }) {
 function Stage({ stage, setUrl }: { stage: LoopStage; setUrl: (next: Partial<UrlState>) => void }) {
   const monitor = stage.key === 'monitor'
   return (
-    <li
-      id={`loop-${stage.key}`}
-      className={`loop-stage${stage.person ? ' loop-stage-person' : ''}`}
+    <section
+      id="loop-stage"
+      className={`panel loop-stage${stage.person ? ' loop-stage-person' : ''}`}
       aria-label={`${stage.number}. ${stage.label}`}
+      aria-live="polite"
     >
       <h2 className="loop-stage-head">
         <span className="loop-stage-number">{stage.number}</span>
@@ -170,7 +211,7 @@ function Stage({ stage, setUrl }: { stage: LoopStage; setUrl: (next: Partial<Url
       ) : (
         <p className="loop-none">{monitor && stage.healthy ? 'No problems.' : 'Nothing here.'}</p>
       )}
-    </li>
+    </section>
   )
 }
 

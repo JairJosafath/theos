@@ -21,7 +21,7 @@ import { NewBrief } from './components/briefs/NewBrief'
 import { Modal } from './components/ui/Modal'
 import { ProblemsBanner, ReadProblems, WarningsBanner } from './components/Status'
 import { PanelState } from './components/PanelState'
-import { DetailsPanel, Legend, SessionsPanel } from './components/Panels'
+import { DetailsPanel, Legend, PanelToggle, SessionsPanel, StoryWorkspace } from './components/Panels'
 import { LiveBriefWriter, type BriefWriter } from './k8s/briefs'
 import { LiveContainerWriter } from './k8s/containers'
 import { LiveCrewWriter } from './k8s/crews'
@@ -47,6 +47,7 @@ import {
 import { GROUP, RESOURCES, VERSION, type Project } from './k8s/types'
 import { useDemo } from './lib/demo'
 import { RefreshSession, SessionContext, UrlContext, useSource, useUrlState } from './lib/hooks'
+import { STORED_KEYS, useStoredFlag } from './lib/prefs'
 import { areaLabel, inNamespace } from './model/areas'
 import { paletteItems } from './model/search'
 import { plural, titleOf } from './model/describe'
@@ -219,14 +220,17 @@ export default function App() {
   const [selection, setSelection] = useState<{ scope: string; id: string }>()
   const selectedId = selection?.scope === scope ? selection.id : undefined
   const selectedNode = diagram?.nodes.find((n) => n.id === selectedId)
+  // The Story's side panel (details, who's working, legend) folds, remembered in this browser.
+  const [panelOpen, setPanelOpen] = useStoredFlag(STORED_KEYS.storyPanel, true)
   const onSelect = useCallback(
     (id: string) => {
-      // A box of a kind with a page opens it; any other is selected for its details.
+      // A box of a kind with a page opens it; any other is selected for its details, in the panel.
       const node = diagram?.nodes.find((n) => n.id === id)
       if (node && namespace && hasPage(node.kind)) return setUrl({ ns: namespace, kind: node.kind, name: node.name })
       setSelection((cur) => (cur?.scope === scope && cur.id === id ? undefined : { scope, id }))
+      if (!panelOpen) setPanelOpen(true)
     },
-    [scope, diagram, namespace, setUrl],
+    [scope, diagram, namespace, setUrl, panelOpen, setPanelOpen],
   )
   const nodeHref = useMemo(
     () => (namespace ? (node: DiagramNode) => pageHref(namespace, node.kind, node.name) : undefined),
@@ -358,78 +362,85 @@ export default function App() {
             <span className="tab-step">2</span> Containers
           </button>
         </div>
-        {view === 'containers' && systems.length > 1 ? (
-          <label className="picker">
-            <span className="picker-label">System</span>
-            <select value={systemName} onChange={(e) => setUrl({ view: 'containers', system: e.target.value })}>
-              {systems.map((s) => (
-                <option key={s.name} value={s.name}>
-                  {s.title} ({plural(s.containers, 'container')})
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
+        <div className="tabs-tools">
+          {view === 'containers' && systems.length > 1 ? (
+            <label className="picker">
+              <span className="picker-label">System</span>
+              <select value={systemName} onChange={(e) => setUrl({ view: 'containers', system: e.target.value })}>
+                {systems.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.title} ({plural(s.containers, 'container')})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <PanelToggle open={panelOpen} onToggle={setPanelOpen} />
+        </div>
       </nav>
 
-      <div className="workspace">
-        <section className="stage" aria-label="Diagram">
-          <ViewCaption view={view} systemTitle={systemTitle} />
-          <PanelState
-            loaded={readOf(story.connection, ...DIAGRAM_KINDS)}
-            problems={storyProblems(...DIAGRAM_KINDS)}
-            empty={!diagram || diagram.nodes.length + (diagram.boundary ? 1 : 0) === 0}
-            loading="Loading the story…"
-            emptyText={
-              view === 'context'
-                ? 'This project has no people or software systems yet. They appear here as soon as they are added.'
-                : 'Pick a software system to see its containers.'
-            }
-          >
-            {diagram ? (
-              <MemoDiagram
-                diagram={diagram}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                onOpenSystem={view === 'context' ? openSystem : undefined}
-                nodeHref={nodeHref}
-                emptyBoundaryText="No containers or data stores in this system yet."
+      <StoryWorkspace
+        open={panelOpen}
+        stage={
+          <section className="stage" aria-label="Diagram">
+            <ViewCaption view={view} systemTitle={systemTitle} />
+            <PanelState
+              loaded={readOf(story.connection, ...DIAGRAM_KINDS)}
+              problems={storyProblems(...DIAGRAM_KINDS)}
+              empty={!diagram || diagram.nodes.length + (diagram.boundary ? 1 : 0) === 0}
+              loading="Loading the story…"
+              emptyText={
+                view === 'context'
+                  ? 'This project has no people or software systems yet. They appear here as soon as they are added.'
+                  : 'Pick a software system to see its containers.'
+              }
+            >
+              {diagram ? (
+                <MemoDiagram
+                  diagram={diagram}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onOpenSystem={view === 'context' ? openSystem : undefined}
+                  nodeHref={nodeHref}
+                  emptyBoundaryText="No containers or data stores in this system yet."
+                />
+              ) : null}
+            </PanelState>
+            {diagram?.looseEnds.length ? (
+              <div className="loose-ends">
+                <h3 className="section-title">
+                  <WarningIcon size={14} /> Not drawn
+                </h3>
+                <ul>
+                  {diagram.looseEnds.map((text) => (
+                    <li key={text}>{text}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </section>
+        }
+        side={
+          <>
+            {selectedNode ? (
+              <DetailsPanel
+                node={selectedNode}
+                data={data}
+                onClose={() => setSelection(undefined)}
+                onOpenSystem={openSystem}
               />
             ) : null}
-          </PanelState>
-          {diagram?.looseEnds.length ? (
-            <div className="loose-ends">
-              <h3 className="section-title">
-                <WarningIcon size={14} /> Not drawn
-              </h3>
-              <ul>
-                {diagram.looseEnds.map((text) => (
-                  <li key={text}>{text}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </section>
-
-        <aside className="side">
-          {selectedNode ? (
-            <DetailsPanel
-              node={selectedNode}
-              data={data}
-              onClose={() => setSelection(undefined)}
-              onOpenSystem={openSystem}
+            <SessionsPanel
+              containers={sessionContainers}
+              tasks={crewTasks}
+              scope={view === 'containers' && systemTitle ? systemTitle : project ? titleOf(project) : 'this project'}
+              loaded={readOf(story.connection, ...WORKING_KINDS)}
+              problems={storyProblems(...WORKING_KINDS)}
             />
-          ) : null}
-          <SessionsPanel
-            containers={sessionContainers}
-            tasks={crewTasks}
-            scope={view === 'containers' && systemTitle ? systemTitle : project ? titleOf(project) : 'this project'}
-            loaded={readOf(story.connection, ...WORKING_KINDS)}
-            problems={storyProblems(...WORKING_KINDS)}
-          />
-          <Legend view={view} />
-        </aside>
-      </div>
+            <Legend view={view} />
+          </>
+        }
+      />
     </>
   )
   const page = (
@@ -483,10 +494,8 @@ export default function App() {
           (namespace ? (
             <Briefs
               briefs={data.briefs}
-              namespace={namespace}
               canCreate={Boolean(data.project)}
               onNewBrief={openNewBrief}
-              writer={writer}
               agents={data.agents}
               pageHref={(name) => pageHref(namespace, 'Brief', name)!}
               loaded={readOf(story.connection, RESOURCES.briefs, RESOURCES.projects)}
@@ -505,7 +514,6 @@ export default function App() {
             connection={factory.connection}
             health={health.data}
             healthLoaded={health.connection.loaded}
-            healthProblems={health.connection.problems}
             onSelectTask={openTask}
             pageHref={pageHref}
           />
@@ -603,7 +611,7 @@ function ProjectHeader({ data, namespace, loaded }: { data: StoryData; namespace
   const active = workingNow(data)
   const summary = project?.status?.summary?.trim()
   return (
-    <section className="hero">
+    <section className="hero hero-compact">
       <div className="hero-main">
         <div className="eyebrow">Project{namespace ? ` · ${namespace}` : ''}</div>
         <h1 className="hero-title">{project ? titleOf(project) : (namespace ?? 'Loading…')}</h1>

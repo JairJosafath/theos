@@ -1,15 +1,46 @@
 // The side panels: details of the selected box, who is working right now, and
-// the legend.
+// the legend; in the Story area they share one right panel that folds,
+// remembered in this browser, so the diagram takes the width
+// (docs/plans/ui-shell.md, step 2).
 
+import type { ReactNode } from 'react'
 import type { Problem, StoryData } from '../k8s/sources'
 import type { Condition, ContainerPhase } from '../k8s/types'
 import { describeContainerPhase, KIND_LABEL, plural, splitTemplateRef } from '../model/describe'
 import { crewDoing, issueList, type ActiveCrewTask, type CrewSummary } from '../model/crews'
 import { linksOf, type ContainerNode, type DiagramNode, type Link } from '../model/story'
 import { AgentName, ConditionList, CrewPhaseBadge, PhaseBadge, SessionRow } from './bits'
-import { AgentIcon, ArrowRightIcon, CrossIcon, ExternalLinkIcon, HumanIcon, WarningIcon } from './icons'
+import { AgentIcon, ArrowRightIcon, CrossIcon, ExternalLinkIcon, HumanIcon, PanelRightIcon, WarningIcon } from './icons'
 import { PanelState } from './PanelState'
 import './panels.css'
+
+/** The Story's diagram and, beside it, its side panel, which folds away. */
+export function StoryWorkspace({ open, stage, side }: { open: boolean; stage: ReactNode; side: ReactNode }) {
+  return (
+    <div className={`workspace story-workspace${open ? '' : ' panel-folded'}`}>
+      {stage}
+      <aside className="side" id="story-panel" aria-label="Details, who’s working and the legend" hidden={!open}>
+        {side}
+      </aside>
+    </div>
+  )
+}
+
+/** Shows or folds the Story's side panel. */
+export function PanelToggle({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      className="button button-secondary button-small panel-toggle"
+      aria-expanded={open}
+      aria-controls="story-panel"
+      onClick={() => onToggle(!open)}
+    >
+      <PanelRightIcon size={15} />
+      {open ? 'Hide the panel' : 'Show the panel'}
+    </button>
+  )
+}
 
 export function DetailsPanel({
   node,

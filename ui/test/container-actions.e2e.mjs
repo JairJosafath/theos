@@ -135,6 +135,8 @@ describe('the Container page’s actions', () => {
 
     it('sets when CI runs the full check, sending only spec.checks', async () => {
       env.api.writes.length = 0
+      // The checks are on the page's Status tab (docs/plans/ui-shell.md, step 2).
+      await page.getByRole('tab', { name: 'Status' }).click()
       const checks = page.getByRole('region', { name: 'When CI runs the full check' })
       await checks.getByLabel('Run the full check').selectOption('BeforeRelease')
       await checks.getByRole('button', { name: 'Save' }).click()
@@ -145,6 +147,7 @@ describe('the Container page’s actions', () => {
       assert.equal(w.path, `/apis/theos.factory.io/v1beta1/namespaces/${NS}/containers/orders-api`)
       assert.deepEqual(w.body, [{ op: 'add', path: '/spec/checks', value: 'BeforeRelease' }])
       await checks.getByText('The repository still runs the full check on every change').waitFor({ timeout: 5000 })
+      await page.getByRole('tab', { name: 'Overview' }).click()
     })
 
     it('starts a Task from a goal with the Crew’s Agents, and links to it', async () => {

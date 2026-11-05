@@ -1,7 +1,8 @@
 // Tabs (docs/plans/ui-shell.md): a tablist with roving focus, so Tab enters the
 // list once and the arrow keys, Home and End move between tabs and select the
-// one they land on. With `syncUrl`, the selected tab is the address's `tab=`, so
-// a link opens it and the page keeps it on reload.
+// one they land on. With `syncUrl`, the selected tab is the address's `tab=`
+// (an object page's is `otab=`, beside the area's), so a link opens it and the
+// page keeps it on reload.
 
 import { useContext, useId, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { UrlContext } from '../../lib/hooks'
@@ -21,24 +22,31 @@ export interface TabsProps {
   /** The selected tab, when the caller keeps it; else the Tabs keep their own, or the address's. */
   value?: string
   onChange?: (id: string) => void
-  /** Keep the selected tab in the address as tab=. */
+  /** Keep the selected tab in the address as tab=, or as `urlKey`. */
   syncUrl?: boolean
+  /** The address's parameter for the tab: tab= for an area, otab= for an object page in it. */
+  urlKey?: 'tab' | 'otab'
+  /**
+   * Keep every panel on the page, the others hidden, so what is typed in one
+   * survives a switch and the page's text is all there to find.
+   */
+  keepMounted?: boolean
   className?: string
 }
 
-export function Tabs({ tabs, label, value, onChange, syncUrl, className }: TabsProps) {
+export function Tabs({ tabs, label, value, onChange, syncUrl, urlKey = 'tab', keepMounted, className }: TabsProps) {
   const id = useId()
   const url = useContext(UrlContext)
   const [own, setOwn] = useState<string>()
   const enabled = tabs.filter((t) => !t.disabled)
-  const wanted = value ?? (syncUrl ? url?.[0].tab : own)
+  const wanted = value ?? (syncUrl ? url?.[0][urlKey] : own)
   const selected = enabled.find((t) => t.id === wanted) ?? enabled[0]
 
   function select(tabId: string) {
     if (tabId === selected?.id) return
     if (value === undefined) {
       // The address keeps the tab without a history entry of its own, so Back leaves the page.
-      if (syncUrl && url) url[1]({ tab: tabId }, true)
+      if (syncUrl && url) url[1]({ [urlKey]: tabId }, true)
       else setOwn(tabId)
     }
     onChange?.(tabId)
@@ -76,8 +84,8 @@ export function Tabs({ tabs, label, value, onChange, syncUrl, className }: TabsP
               id={`${id}-tab-${t.id}`}
               className="tabs-ui-tab"
               aria-selected={on}
-              // Only the selected tab's panel is on the page.
-              aria-controls={on ? `${id}-panel-${t.id}` : undefined}
+              // Only the selected tab's panel is on the page, unless they all are.
+              aria-controls={on || keepMounted ? `${id}-panel-${t.id}` : undefined}
               tabIndex={on ? 0 : -1}
               disabled={t.disabled}
               onClick={() => select(t.id)}
@@ -87,17 +95,19 @@ export function Tabs({ tabs, label, value, onChange, syncUrl, className }: TabsP
           )
         })}
       </div>
-      {selected ? (
+      {(keepMounted ? enabled : selected ? [selected] : []).map((t) => (
         <div
+          key={t.id}
           className="tabs-ui-panel"
           role="tabpanel"
-          id={`${id}-panel-${selected.id}`}
-          aria-labelledby={`${id}-tab-${selected.id}`}
+          id={`${id}-panel-${t.id}`}
+          aria-labelledby={`${id}-tab-${t.id}`}
           tabIndex={0}
+          hidden={t.id !== selected?.id}
         >
-          {selected.panel}
+          {t.panel}
         </div>
-      ) : null}
+      ))}
     </div>
   )
 }

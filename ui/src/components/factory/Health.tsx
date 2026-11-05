@@ -1,6 +1,9 @@
 // The factory's health: its components, the node's usage, and the history
-// charts of the last hours.
+// charts of the last hours, as the Factory area's dashboard grid
+// (docs/plans/ui-shell.md, step 2): a card per part of the factory, the node's
+// usage, the last hour's charts side by side, and the agent slots beside them.
 
+import type { ReactNode } from 'react'
 import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../../k8s/health'
 import { plural } from '../../model/describe'
 import { API_STALL_MS } from '../../model/attention'
@@ -18,47 +21,78 @@ const COMPONENT_TONE: Record<ComponentHealth['state'], string> = {
   unknown: 'unknown',
 }
 
-export function HealthPanel({
+export function HealthDashboard({
   health,
   loaded,
   problems = [],
   now,
+  slots,
 }: {
   health?: FactoryHealth
   loaded: boolean
   /** The health check that failed; what it read before still shows. */
   problems?: Problem[]
   now: number
+  /** The agent slots' panel, beside the charts. */
+  slots: ReactNode
 }) {
+  const reading = !loaded || !health
   return (
-    <div className="panel">
-      <h2 className="panel-title small-title">Health</h2>
-      <ReadProblems problems={problems} />
-      {problems.length && !health ? null : !loaded || !health ? (
-        <p className="panel-note">Reading the factory’s health…</p>
-      ) : (
-        <>
-          {health.nodes.map((node) => (
-            <NodeUsage key={node.name} node={node} metrics={health.metrics} />
-          ))}
-          <HistoryCharts health={health} now={now} />
+    <div className="dash">
+      <section className="panel dash-parts" aria-labelledby="dash-parts">
+        <div className="dash-head">
+          <h2 className="panel-title small-title" id="dash-parts">
+            Health
+          </h2>
+          {health ? (
+            <span className="panel-note">
+              Checked <When at={health.generatedAt} />
+            </span>
+          ) : null}
+        </div>
+        <ReadProblems problems={problems} />
+        {problems.length && !health ? null : reading ? (
+          <p className="panel-note">Reading the factory’s health…</p>
+        ) : (
           <ul className="components">
             {health.components.map((c) => (
               <ComponentRow key={c.key} component={c} />
             ))}
           </ul>
-          {!health.metrics ? (
-            <p className="panel-note">
-              No CPU or memory figures: metrics-server is not installed (
-              <span className="mono">make metrics-server</span>
-              ).
-            </p>
-          ) : null}
-          <p className="panel-note">
-            Checked <When at={health.generatedAt} />.
-          </p>
-        </>
-      )}
+        )}
+      </section>
+      <section className="panel dash-node" aria-labelledby="dash-node">
+        <h2 className="panel-title small-title" id="dash-node">
+          Node
+        </h2>
+        {reading ? (
+          <p className="panel-note">{problems.length ? 'Not read.' : 'Reading the node’s usage…'}</p>
+        ) : (
+          <>
+            {health.nodes.map((node) => (
+              <NodeUsage key={node.name} node={node} metrics={health.metrics} />
+            ))}
+            {!health.metrics ? (
+              <p className="panel-note">
+                No CPU or memory figures: metrics-server is not installed (
+                <span className="mono">make metrics-server</span>
+                ).
+              </p>
+            ) : null}
+          </>
+        )}
+      </section>
+      <section className="panel dash-charts" aria-labelledby="dash-charts">
+        <h2 className="panel-title small-title" id="dash-charts">
+          Last hour
+        </h2>
+        {reading ? (
+          <p className="panel-note">{problems.length ? 'Not read.' : 'Reading the last hour…'}</p>
+        ) : (
+          <HistoryCharts health={health} now={now} />
+        )}
+      </section>
+      <div className="dash-slots">{slots}</div>
     </div>
   )
 }
@@ -130,9 +164,9 @@ function ComponentRow({ component }: { component: ComponentHealth }) {
       <div className="component-main">
         <div className="component-name">
           {component.name}
-          {component.state === 'absent' ? <span className="muted"> · not installed</span> : null}
           {waiting ? <span className="badge badge-sm badge-error">{waiting}</span> : null}
         </div>
+        {component.state === 'absent' ? <div className="component-sub muted">not installed</div> : null}
         {component.pods.length ? (
           <div className="component-sub muted">
             {component.pods.filter((p) => p.ready).length}/{component.pods.length} ready
@@ -242,7 +276,6 @@ function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) 
   const stalls = points.filter((p) => p.apiFailed || p.apiMs >= API_STALL_MS)
   return (
     <div className="history">
-      <h3 className="section-title">Last hour</h3>
       <Sparkline
         title="API server response"
         summary={`now ${formatDuration(latest.apiMs, { fine: true })} · worst ${formatDuration(worstApi, { fine: true })}`}

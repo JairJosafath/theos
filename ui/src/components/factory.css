@@ -40,10 +40,41 @@
   background: var(--stage, var(--unknown));
 }
 
-.factory-main {
+/* Work: the Needs a look strip, then the tabs, the width of the page. */
+.work {
   display: grid;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
   min-width: 0;
+  padding: 0 var(--gutter);
+}
+
+.work-tabs {
+  min-width: 0;
+}
+
+.work-tabs > .tabs-ui-panel {
+  padding-top: 14px;
+}
+
+.tab-count {
+  margin-left: 6px;
+}
+
+.badge-link {
+  text-decoration: none;
+}
+
+.badge-link:hover {
+  text-decoration: underline;
+}
+
+/* Time & tokens: the two panels side by side on a wide screen. */
+.work-time {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+  align-items: start;
+  gap: 16px;
 }
 
 .placeholder.small {
@@ -283,22 +314,75 @@
 }
 
 .attention {
-  border-color: color-mix(in srgb, var(--waiting) 35%, var(--border));
+  padding: 4px 14px;
+  border: 1px solid color-mix(in srgb, var(--waiting) 35%, var(--border));
+  border-radius: 12px;
+  background: var(--surface);
 }
 
-.attention .panel-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.attention-error {
+  border-color: color-mix(in srgb, var(--error) 35%, var(--border));
+}
+
+.attention-bar {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.attention-toggle {
+  min-height: 36px;
+}
+
+.attention-icon {
+  flex: none;
   color: var(--waiting);
+}
+
+.attention-error .attention-icon {
+  color: var(--error);
+}
+
+.attention-label {
+  flex: none;
+  font-weight: 650;
+}
+
+/* The first item, cut short to keep the strip one line. */
+.attention-first {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attention-more {
+  flex: none;
+  color: var(--link);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.attention .fold-button[aria-expanded='false'] .fold-chevron {
+  transform: none;
+}
+
+.attention .fold-button[aria-expanded='true'] .fold-chevron {
+  transform: rotate(180deg);
 }
 
 .attention-list {
   display: grid;
-  gap: 8px;
-  margin: 10px 0 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: 8px 24px;
+  margin: 4px 0 10px;
   padding: 0;
   list-style: none;
+}
+
+.attention-list[hidden] {
+  display: none;
 }
 
 .attention-item {

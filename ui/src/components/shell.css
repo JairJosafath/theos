@@ -537,9 +537,115 @@
 
 .shell-page {
   width: 100%;
-  max-width: 960px;
-  margin: 24px auto 0;
+  margin: 20px 0 0;
   padding: 0 var(--gutter);
+}
+
+/* An area's head: its title and caption, with its tools (filter chips, a
+   picker) on the right of a wide screen and below them on a narrow one. */
+
+.area-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 24px;
+  margin-bottom: 14px;
+}
+
+.area-title {
+  font-size: 20px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+}
+
+.area-caption {
+  max-width: 82ch;
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+/* Filter chips: a toggle each, pressed while it filters. */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--link);
+  color: var(--text);
+  background: var(--progress-bg);
+}
+
+.chip-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A heading that folds what is under it. */
+
+.fold-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fold-chevron {
+  flex: none;
+  color: var(--text-3);
+  transition: transform 0.15s ease;
+}
+
+.fold-button[aria-expanded='false'] .fold-chevron {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fold-chevron {
+    transition: none;
+  }
 }
 
 .shell-columns {
@@ -733,8 +839,21 @@
   padding-block: 4px;
 }
 
-[data-density='compact'] .briefs-grid > * {
+[data-density='compact'] .briefs-grid,
+[data-density='compact'] .needs-groups,
+[data-density='compact'] .loop-layout,
+[data-density='compact'] .dash,
+[data-density='compact'] .work,
+[data-density='compact'] .object-tab {
+  gap: 10px;
+}
+
+[data-density='compact'] .area-head {
   margin-bottom: 10px;
+}
+
+[data-density='compact'] .need {
+  padding: 8px 10px;
 }
 
 [data-density='compact'] .drawer-body {

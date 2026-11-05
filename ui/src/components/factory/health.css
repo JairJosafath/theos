@@ -1,4 +1,71 @@
-/* The health panel of Health.tsx: node usage, components and sparklines. */
+/* The Factory area's dashboard of Health.tsx: a card per component, the
+   node's usage, the last hour's sparklines and the agent slots. */
+
+.dash {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas:
+    'parts parts node'
+    'charts charts slots';
+  align-items: start;
+  gap: 16px;
+}
+
+.dash-parts {
+  grid-area: parts;
+}
+
+.dash-node {
+  grid-area: node;
+  align-self: stretch;
+}
+
+.dash-charts {
+  grid-area: charts;
+}
+
+.dash-slots {
+  display: grid;
+  grid-area: slots;
+  min-width: 0;
+}
+
+.dash-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.dash-head .panel-note {
+  margin: 0;
+}
+
+.dash-charts .spark svg {
+  height: 64px;
+}
+
+@media (max-width: 1180px) {
+  .dash {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      'parts parts'
+      'node slots'
+      'charts charts';
+  }
+}
+
+@media (max-width: 767px) {
+  .dash {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'parts'
+      'node'
+      'slots'
+      'charts';
+  }
+}
 
 .node-usage {
   display: grid;
@@ -37,10 +104,12 @@
   background: var(--tone);
 }
 
+/* A card per component. */
 .components {
   display: grid;
-  gap: 2px;
-  margin: 14px 0 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -50,8 +119,11 @@
   grid-template-columns: 8px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: baseline;
-  padding: 7px 0;
-  border-top: 1px solid var(--border);
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
 }
 
 .component .badge-dot {
@@ -80,13 +152,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The last hour's charts side by side, as many as the width holds. */
 .history {
   display: grid;
-  gap: 10px;
-}
-
-.history .section-title {
-  margin-bottom: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px 20px;
+  margin-top: 10px;
 }
 
 .spark {
