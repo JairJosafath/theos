@@ -190,16 +190,21 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			result := r.tendAbandonedPull(ctx, &task, status, &container)
 			return result, r.writeStatus(ctx, &task, status)
 		}
-		if status.Phase != c4v1beta1.TaskMerged || status.MergeCommit != "" || status.PullRequest == 0 {
+		if status.Phase != c4v1beta1.TaskMerged || status.PullRequest == 0 ||
+			status.MergeCommit != "" && status.PullRequestSize != nil {
 			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
 		}
-		// Merged before the Task recorded merge commits, or the read failed: a Crew
-		// waits for it to tag the release.
+		// Merged before the Task recorded merge commits, or pull requests'
+		// sizes, or the read failed: a Crew waits for the merge commit to tag
+		// the release; the size and person commits are for the metrics.
 		provider, repo, err := r.gitRepo(ctx, &container)
 		if err != nil {
-			logf.FromContext(ctx).Error(err, "Failed to reach the Git host for the merge commit")
+			logf.FromContext(ctx).Error(err, "Failed to reach the Git host for the merged pull request")
 		} else {
-			status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
+			if status.MergeCommit == "" {
+				status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
+			}
+			r.recordPull(ctx, provider, repo, status)
 		}
 		var result ctrl.Result
 		if status.MergeCommit == "" {

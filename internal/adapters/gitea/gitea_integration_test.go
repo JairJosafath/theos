@@ -384,6 +384,33 @@ func TestGiteaPullRequestUpdateIntegration(t *testing.T) {
 	}
 	eventually(a.Number, "caught up", func(pr ports.PullRequest) bool { return !pr.Behind && pr.Mergeable })
 
+	// The pull request's commits and size, for the factory's metrics
+	// (docs/plans/measure-and-improve.md): the branch's commit by its author,
+	// and main's merge with two parents.
+	commits, err := p.PullRequestCommits(ctx, repo, a.Number)
+	if err != nil {
+		t.Fatalf("PullRequestCommits(): %v", err)
+	}
+	var merges, written int
+	for _, c := range commits {
+		switch {
+		case c.Parents > 1:
+			merges++
+		case c.SHA == a.HeadSHA:
+			written++
+			if c.AuthorEmail == "" {
+				t.Errorf("the branch's commit has no author email: %+v", c)
+			}
+		}
+	}
+	if merges != 1 || written != 1 {
+		t.Errorf("PullRequestCommits() = %+v; want the branch's commit and one merge of main", commits)
+	}
+	if pr := pull(a.Number); pr.Additions != 1 || pr.ChangedFiles != 1 {
+		t.Errorf("the pull request's size: %d added, %d removed, %d files; want 1 line added in 1 file",
+			pr.Additions, pr.Deletions, pr.ChangedFiles)
+	}
+
 	eventually(c.Number, "behind", func(pr ports.PullRequest) bool { return pr.Behind })
 	if err := p.UpdatePullRequest(ctx, repo, c.Number); !errors.Is(err, ports.ErrConflict) {
 		t.Errorf("UpdatePullRequest() of a conflicting branch = %v, want ErrConflict", err)

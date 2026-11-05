@@ -101,6 +101,8 @@ type RunRecord struct {
 	Round   int
 	Role    string
 	Sandbox string
+	// Config is the Agent configuration the run ran on (RunState.Config).
+	Config  RunConfig
 	EndedAt time.Time
 	// CostMilliUSD is what the run cost when CostReported.
 	CostMilliUSD int64
@@ -118,7 +120,8 @@ func (s RunState) Record(round int, sandbox string, at time.Time) (RunRecord, bo
 	if !s.Started {
 		return RunRecord{}, false
 	}
-	rec := RunRecord{Round: round, Role: SandboxRole(sandbox), Sandbox: sandbox, EndedAt: at, Tokens: s.Tokens()}
+	rec := RunRecord{Round: round, Role: SandboxRole(sandbox), Sandbox: sandbox, Config: s.Config, EndedAt: at,
+		Tokens: s.Tokens()}
 	rec.CostMilliUSD, _ = s.Cost()
 	if s.Result != nil {
 		rec.CostReported = s.Result.CostReported

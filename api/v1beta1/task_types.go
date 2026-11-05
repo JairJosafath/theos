@@ -259,6 +259,24 @@ type TaskTransition struct {
 	Message string `json:"message,omitempty"`
 }
 
+// TaskPullRequestSize is the size of a pull request's change.
+type TaskPullRequestSize struct {
+	// additions are the lines it adds.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Additions int32 `json:"additions,omitempty"`
+
+	// deletions are the lines it removes.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Deletions int32 `json:"deletions,omitempty"`
+
+	// files are the files it changes.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Files int32 `json:"files,omitempty"`
+}
+
 // TaskAgentRun is what a Task keeps of one agent run once it ended.
 type TaskAgentRun struct {
 	// round is the implement round the run belonged to.
@@ -275,6 +293,26 @@ type TaskAgentRun struct {
 	// +kubebuilder:validation:MaxLength=63
 	// +optional
 	Sandbox string `json:"sandbox,omitempty"`
+
+	// agent names the Agent the run ran as, copied when its sandbox was made
+	// or last resumed, so a later change to the Agent doesn't rewrite it
+	// (docs/plans/measure-and-improve.md, decision 2); empty for runs from
+	// before it was recorded.
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	Agent string `json:"agent,omitempty"`
+
+	// harness is the Agent's harness the run ran on, copied as agent is.
+	// +kubebuilder:validation:MaxLength=32
+	// +optional
+	Harness string `json:"harness,omitempty"`
+
+	// model is the Agent's model the run ran on, copied as agent is; empty
+	// when the Agent named none (the harness's default) or it wasn't
+	// recorded.
+	// +kubebuilder:validation:MaxLength=100
+	// +optional
+	Model string `json:"model,omitempty"`
 
 	// endedAt is when the Task saw the run end.
 	// +required
@@ -547,6 +585,20 @@ type TaskStatus struct {
 	// pull request stays open for a later try.
 	// +optional
 	PullRequestEnded string `json:"pullRequestEnded,omitempty"`
+
+	// pullRequestSize is the size of the merged pull request's change, read
+	// once when it merged (docs/plans/measure-and-improve.md, decision 4);
+	// unset before then, or when the Git host couldn't be read.
+	// +optional
+	PullRequestSize *TaskPullRequestSize `json:"pullRequestSize,omitempty"`
+
+	// personCommits counts the merged pull request's commits a person wrote:
+	// any not by an agent and not a merge (decision 3), read with
+	// pullRequestSize. Zero means the factory alone wrote the change; unset,
+	// that it wasn't read.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	PersonCommits *int32 `json:"personCommits,omitempty"`
 
 	// continues names the earlier try, a Failed Task on the same issue, whose
 	// open pull request this Task took over: its branch, pull request and

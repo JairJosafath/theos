@@ -164,6 +164,17 @@ type PullRequest struct {
 	Behind bool
 	// MergeCommit is the commit the merge made on the base; empty until merged.
 	MergeCommit string
+	// Additions, Deletions and ChangedFiles are the size of its change: lines
+	// added and removed, and files changed.
+	Additions, Deletions, ChangedFiles int
+}
+
+// PullCommit is one commit of a pull request: its SHA, its author's email and
+// how many parents it has (a merge has two or more).
+type PullCommit struct {
+	SHA         string
+	AuthorEmail string
+	Parents     int
 }
 
 // Review events of ReviewPullRequest, with the wire values of the first host
@@ -336,6 +347,9 @@ type GitHost interface {
 	// file's old path too, or an error when it can't read them all:
 	// ErrTooManyFiles when there are too many.
 	PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error)
+	// PullRequestCommits returns a pull request's commits, oldest first, also
+	// once it is merged and its branch deleted.
+	PullRequestCommits(ctx context.Context, repo Repository, number int) ([]PullCommit, error)
 	// ClosePullRequest closes a pull request without merging it.
 	ClosePullRequest(ctx context.Context, repo Repository, number int) error
 	// ReviewPullRequest posts a review of commit: ReviewApprove,

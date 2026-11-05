@@ -166,6 +166,32 @@ needs 3; 7 needs 3 and 6.
 | 6. `Benchmark` | 4 | `kubebuilder create api`; CEL: `base` a 40-hex commit, 1..5 repetitions, at least two variants, `budgetUSD` required; Task `spec.benchmark` (immutable) and phase `Approved`; `internal/model`: the Task matrix, the Wilson interval and the "no clear difference" rule (decision 9) in table tests; envtest on the faked Git host: a Benchmark of two variants makes its Tasks from `base`, they open draft pull requests, end `Approved` without a merge, touch no issue and leave no branch, take no Crew slot, and the status compares the variants; `OverBudget` at the cap |
 | 7. Self-improvement and the Benchmark page | 3, 6 | `Scorer.spec.improve`; `internal/model`: when to file (decision 10) and the issue's text, table tests; envtest: three failures of one criterion in one configuration file one issue in the Container's repository, a fourth files none while it is open, a criterion about the agent guide files in the Standard's repository; the UI's Benchmark page compares its variants with their intervals; `make ui-test` |
 
+### Step 2, as built
+
+- A run's configuration is three annotations on its Sandbox,
+  `theos.factory.io/run-agent`, `run-harness` and `run-model`, written when
+  the operator makes it and again when it resumes on the current Agent, and
+  read into `status.runs[]` when the run ends; a run that resumed on a
+  changed Agent records the Agent it ended on. A Sandbox from before has
+  none, and its run records none.
+- `status.pullRequestSize` and `status.personCommits` are read together, once,
+  right after the merge; a read that fails leaves both unset, and the merged
+  Task reads them again on its next pass, as it does a merge commit it
+  couldn't read. That also fills them for Tasks merged before this step,
+  once, at the operator's next start.
+- `model.AgentEmail` names the agents' commit email everywhere it was
+  written out (theos-agent's git config, the bot account, the squash
+  message's `Co-authored-by`).
+- Tests: `internal/model` `TestRunRecord`, `TestPersonCommits`,
+  `TestChangeSize`; `internal/controller` `TestSandboxRecordsItsRunsConfiguration`
+  (made, resumed on a changed Agent, from before) and two envtest specs (a run
+  records its Agent's harness and model and keeps them after the Agent
+  changes; a merged Task keeps its size and one person commit, and reads them
+  again when they're missing); `internal/adapters/gitea`
+  `TestPullRequestSizeAndCommits` on a fake Gitea, and a case in
+  `TestGiteaPullRequestUpdateIntegration` for `make test-gitea`, not run
+  here: the agents' sandbox runs as root, which Gitea refuses.
+
 ## Done when
 
 - `make check` passes after each step.

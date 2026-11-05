@@ -330,6 +330,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	sandbox.SetNamespace(task.Namespace)
 	sandbox.SetName(run.name)
 	sandbox.SetLabels(labels)
+	sandbox.SetAnnotations(runConfigAnnotations(agent))
 	shutdown := metav1.NewTime(now.Add(timeout + sandboxGrace)).UTC().Format(time.RFC3339)
 	sandbox.Object["spec"] = map[string]any{
 		"podTemplate": map[string]any{
@@ -443,6 +444,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 		return state, err
 	}
 	state.Started = true
+	state.Config = runConfigOf(sandbox)
 	expired, missed := sandboxExpiry(sandbox)
 	state.Checkpoint = resumable(sandbox, expired)
 	if sandboxSuspended(sandbox) {

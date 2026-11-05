@@ -567,6 +567,10 @@ export interface TaskAgentRun {
   /** implement, review, verify or plan; omitted when neither theos-agent nor the sandbox's name said. */
   role?: string
   sandbox?: string
+  /** The Agent, harness and model the run ran on, as they were then; omitted for runs from before they were recorded. */
+  agent?: string
+  harness?: string
+  model?: string
   /** When the Task saw the run end. */
   endedAt: string
   /** What the run cost, in thousandths of a US dollar; omitted when the agent didn't say. */
@@ -652,6 +656,10 @@ export interface Task extends K8sObject {
     commit?: string
     pullRequest?: number
     pullRequestURL?: string
+    /** The merged pull request's size, read once it merged; omitted before, or when it couldn't be read. */
+    pullRequestSize?: { additions?: number; deletions?: number; files?: number }
+    /** How many of the merged pull request's commits a person wrote; 0 means the factory alone. Omitted when not read. */
+    personCommits?: number
     checks?: CheckStatus
     review?: {
       verdict?: string

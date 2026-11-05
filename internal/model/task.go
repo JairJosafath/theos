@@ -202,6 +202,19 @@ type RunState struct {
 	// was unavailable: it resumes in place once the agent is back
 	// (TaskFacts.AgentBackIn), with no resume counted.
 	AgentWait bool
+	// Config is the Agent configuration the run ran on, as its sandbox
+	// records it; zero for a sandbox made before it was recorded.
+	Config RunConfig
+}
+
+// RunConfig is the Agent configuration an agent run ran on: the Agent's name,
+// harness and model, copied when its sandbox is made or resumed, so a later
+// change to the Agent doesn't rewrite the run's record
+// (docs/plans/measure-and-improve.md, decision 2).
+type RunConfig struct {
+	Agent   string
+	Harness string
+	Model   string
 }
 
 // Cost is what a run adds to its Task's cost: what its agent reported, or one

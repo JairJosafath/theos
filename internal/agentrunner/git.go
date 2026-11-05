@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // repo is a clone the runner works in, driven through the git CLI.
@@ -42,7 +44,7 @@ func clone(ctx context.Context, job Job, dir string) (*repo, error) {
 	}
 	for _, kv := range [][2]string{
 		{"user.name", job.Username},
-		{"user.email", job.Username + "@agents.theos.factory.io"},
+		{"user.email", model.AgentEmail(job.Username)},
 	} {
 		if _, err := r.git(ctx, dir, "config", kv[0], kv[1]); err != nil {
 			return nil, err

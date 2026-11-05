@@ -671,13 +671,18 @@ The operator moves bytes with credentials it holds; it builds nothing.
 ## Measuring the factory
 
 Planned in [plans/measure-and-improve.md](plans/measure-and-improve.md);
-nothing of it is built yet. A change to how the factory works (an Agent's
+only the record (its step 2) is built yet. A change to how the factory works (an Agent's
 model, a route, a Standard's agent guide, `docs/project-notes.md`) should
 be judged by numbers the factory keeps itself.
 
 - **The record is on the Task.** Each run records the Agent, harness and
-  model that ran it; a Task records how many of its pull request's commits
-  a person wrote (`personCommits`) and its merged size. The UI computes the
+  model that ran it (`status.runs[].agent`, `harness`, `model`, copied onto
+  its Sandbox as `theos.factory.io/run-*` annotations when it is made or
+  resumes); a merged Task records how many of its pull request's commits a
+  person wrote (`status.personCommits`: any not by an agent's
+  `@agents.theos.factory.io` email and not a merge) and its size
+  (`status.pullRequestSize`), read from the Git host when it merges, and
+  later for a Task merged before. The UI computes the
   metrics from Tasks: merged, autonomy (merged with no person's commit;
   approving a spec or a deploy is a decision, not code), cycle time per
   stage, and cost per merged Task by size, per period and per

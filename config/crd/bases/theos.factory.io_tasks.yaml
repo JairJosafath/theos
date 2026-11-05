@@ -1211,6 +1211,15 @@ spec:
                   reflects.
                 format: int64
                 type: integer
+              personCommits:
+                description: |-
+                  personCommits counts the merged pull request's commits a person wrote:
+                  any not by an agent and not a merge (decision 3), read with
+                  pullRequestSize. Zero means the factory alone wrote the change; unset,
+                  that it wasn't read.
+                format: int32
+                minimum: 0
+                type: integer
               phase:
                 description: |-
                   phase is Pending, then Implementing, Checking and Reviewing each round,
@@ -1244,6 +1253,28 @@ spec:
                   Git host, or continued by a newer try at the issue. Empty while the
                   pull request stays open for a later try.
                 type: string
+              pullRequestSize:
+                description: |-
+                  pullRequestSize is the size of the merged pull request's change, read
+                  once when it merged (docs/plans/measure-and-improve.md, decision 4);
+                  unset before then, or when the Git host couldn't be read.
+                properties:
+                  additions:
+                    description: additions are the lines it adds.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  deletions:
+                    description: deletions are the lines it removes.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  files:
+                    description: files are the files it changes.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                type: object
               pullRequestURL:
                 type: string
               reruns:
@@ -1360,6 +1391,14 @@ spec:
                   description: TaskAgentRun is what a Task keeps of one agent run
                     once it ended.
                   properties:
+                    agent:
+                      description: |-
+                        agent names the Agent the run ran as, copied when its sandbox was made
+                        or last resumed, so a later change to the Agent doesn't rewrite it
+                        (docs/plans/measure-and-improve.md, decision 2); empty for runs from
+                        before it was recorded.
+                      maxLength: 253
+                      type: string
                     costMilliUSD:
                       description: |-
                         costMilliUSD is what the run cost, in thousandths of a US dollar, as its
@@ -1369,6 +1408,18 @@ spec:
                     endedAt:
                       description: endedAt is when the Task saw the run end.
                       format: date-time
+                      type: string
+                    harness:
+                      description: harness is the Agent's harness the run ran on,
+                        copied as agent is.
+                      maxLength: 32
+                      type: string
+                    model:
+                      description: |-
+                        model is the Agent's model the run ran on, copied as agent is; empty
+                        when the Agent named none (the harness's default) or it wasn't
+                        recorded.
+                      maxLength: 100
                       type: string
                     role:
                       description: |-

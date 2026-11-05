@@ -643,6 +643,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 		status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
 		r.carryChecks(ctx, provider, repo, status, skip)
 	}
+	r.recordPull(ctx, provider, repo, status)
 	if isSpec(task) {
 		if err := r.specMerged(ctx, provider, repo, task, status); err != nil {
 			return ctrl.Result{}, err
@@ -710,6 +711,39 @@ func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost
 		return ""
 	}
 	return pr.MergeCommit
+}
+
+// recordPull keeps the merged pull request's size and how many of its
+// commits a person wrote (docs/plans/measure-and-improve.md, decisions 3 and
+// 4), once. A read that fails leaves them unset, for the merged Task to read
+// again.
+func (r *TaskReconciler) recordPull(ctx context.Context, provider ports.GitHost, repo ports.Repository,
+	status *c4v1beta1.TaskStatus) {
+	if status.PullRequest == 0 || status.PullRequestSize != nil {
+		return
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read the merged pull request's size; trying again later",
+			"url", status.PullRequestURL, "error", err.Error())
+		return
+	}
+	commits, err := provider.PullRequestCommits(gitCtx, repo, int(status.PullRequest))
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read the merged pull request's commits; trying again later",
+			"url", status.PullRequestURL, "error", err.Error())
+		return
+	}
+	read := make([]model.PullCommit, 0, len(commits))
+	for _, c := range commits {
+		read = append(read, model.PullCommit{AuthorEmail: c.AuthorEmail, Parents: c.Parents})
+	}
+	person := int32(model.PersonCommits(read))
+	status.PersonCommits = &person
+	status.PullRequestSize = &c4v1beta1.TaskPullRequestSize{Additions: int32(pr.Additions),
+		Deletions: int32(pr.Deletions), Files: int32(pr.ChangedFiles)}
 }
 
 // mergeReviewed squashes the reviewed commit into main, posting the reviewer's
@@ -907,6 +941,7 @@ func (r *TaskReconciler) dropRun(ctx context.Context, task *c4v1beta1.Task, ende
 // runRecord is rec as Task status keeps it.
 func runRecord(rec model.RunRecord) c4v1beta1.TaskAgentRun {
 	out := c4v1beta1.TaskAgentRun{Round: int32(rec.Round), Role: rec.Role, Sandbox: rec.Sandbox,
+		Agent: rec.Config.Agent, Harness: rec.Config.Harness, Model: rec.Config.Model,
 		EndedAt: metav1.NewTime(rec.EndedAt), SessionHandoffs: rec.SessionHandoffs,
 		Tokens: addTokens(nil, rec.Tokens)}
 	if rec.CostReported {
@@ -1162,8 +1197,8 @@ func firstLine(s string) string {
 // authored by the operator's Git user, who only merged.
 func mergeMessage(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, container *c4v1beta1.Container) string {
 	bot := model.AgentUsername(container.Namespace, container.Name)
-	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s@agents.theos.factory.io>",
-		task.Name, status.Round, bot, bot)
+	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s>",
+		task.Name, status.Round, bot, model.AgentEmail(bot))
 }
 
 // agentGitRepo is the Container's repository as its agent bot sees it. The
