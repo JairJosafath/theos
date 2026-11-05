@@ -845,6 +845,10 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
   sidebar; a UI and an operator of different versions get a warning.
 - **The factory's health** comes from the UI server (`GET /factory/health`,
   sampled every 15 seconds, an hour kept). No Prometheus or Grafana.
+- **The project's Chat** (*Chat*, below) on About and in Settings, read
+  only: its homeserver, each room by name with a `https://matrix.to/#/` link
+  to its alias (else its ID), and `Ready` with its message; nothing when the
+  namespace has no Chat.
 
 ### UI actions
 
@@ -874,8 +878,8 @@ the model ([plans/done/ui-actions.md](plans/done/ui-actions.md)).
 ## Chat: the factory in Matrix
 
 People follow and steer a project from a chat app as well as the UI
-([plans/chat-matrix.md](plans/chat-matrix.md)). A `Chat`, one per project
-namespace, names a Matrix homeserver (unset: the operator's
+([plans/done/chat-matrix.md](plans/done/chat-matrix.md)). A `Chat`, one per
+project namespace, names a Matrix homeserver (unset: the operator's
 `--chat-homeserver`, the chart's own), a Secret with its bot's access token
 under `accessToken`, the Space's and rooms' names, the updates digest and its
 `people`: each Matrix user ID with the Kubernetes user and groups it acts as
@@ -924,6 +928,16 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
   client-server API over `net/http`, with no SDK, and tests run on a fake
   homeserver (`internal/adapters/matrix/matrixtest`). No end-to-end
   encryption until it is built.
+- **The chart** installs `theos-chat` with `chat.enabled` (off by default)
+  and gives the operator `--chat-homeserver`: `chat.homeserverURL` (your own
+  homeserver, or matrix.org), else, with `chat.homeserver.enabled`, an
+  in-cluster [Tuwunel](https://github.com/matrix-construct/tuwunel), pinned
+  by digest, with federation and registration off. Its accounts are made
+  through its shared-secret registration by a Job after every install and
+  upgrade: the bot, whose token it puts in Secret `matrix-bot` in each of
+  `gitea.projects`, and the people listed, each with a first password in a
+  Secret for the admin to hand over. The secret and the passwords are made in
+  the cluster, never rendered.
 
 ## Factory components: ports and adapters
 
@@ -1156,6 +1170,8 @@ its images on GHCR. The release installs:
 | Gitea and its CI runners `base` and `go` | `gitea.namespace` | `gitea.enabled`, on by default; secrets generated in the cluster, never rendered by Helm |
 | Seed job | Gitea's namespace | after every install and upgrade: templates, a GitProvider and Project per `gitea.projects` entry, the catalog and Agents applied in place |
 | Project namespaces | each of `gitea.projects` | made when missing, labeled `theos.factory.io/shared-secrets: "true"`, kept on uninstall |
+| theos-chat | release namespace | `chat.enabled`, off by default; the operator image, its own ServiceAccount, and the operator's `--chat-homeserver` |
+| Matrix homeserver | release namespace | `chat.homeserver.enabled`, off by default: Tuwunel pinned by digest, federation and registration off, its volume kept on uninstall; a Job makes its accounts and the bot's token Secrets |
 | Shared Secrets | copied from the release namespace | the pull Secrets; a project's own Secret of that name wins. The Agents' token is read by the model proxy there and never copied |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release doesn't run |
 

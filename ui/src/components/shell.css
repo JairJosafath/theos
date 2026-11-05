@@ -859,3 +859,26 @@
 [data-density='compact'] .drawer-body {
   padding: 14px 16px 24px;
 }
+
+/* The project's Chat on About and in Settings (ChatPanel). */
+
+.chat-panel {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-facts {
+  margin-top: 8px;
+}
+
+.chat-ready-not-ready {
+  color: var(--error);
+}
+
+.chat-rooms {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.8;
+}

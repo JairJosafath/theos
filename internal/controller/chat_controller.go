@@ -34,7 +34,7 @@ import (
 
 // ChatReconciler makes each Chat's Space and its six rooms on the Matrix
 // homeserver, invites the Chat's people, and reports the rooms' IDs and
-// Ready (docs/plans/chat-matrix.md). It finds what it made before by the
+// Ready (docs/plans/done/chat-matrix.md). It finds what it made before by the
 // IDs in status, then by alias, so a restart makes nothing twice. It never
 // posts or reads the rooms; theos-chat does.
 type ChatReconciler struct {

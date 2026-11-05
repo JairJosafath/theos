@@ -6,7 +6,7 @@ import (
 )
 
 // ChatPurpose names one of a Chat's rooms by the work it holds, as
-// Chat.status.rooms[].purpose does (docs/plans/chat-matrix.md, "The rooms").
+// Chat.status.rooms[].purpose does (docs/plans/done/chat-matrix.md, "The rooms").
 type ChatPurpose string
 
 // The rooms of a Chat.

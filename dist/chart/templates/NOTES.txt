@@ -37,3 +37,18 @@ with the tagged templates. Its admin password, and Gitea on http://localhost:300
 Project {{ . }}: organization {{ . }} in Gitea, GitProvider gitea in namespace {{ . }}.
 {{- end }}
 {{- end }}
+{{- if .Values.chat.enabled }}
+
+theos-chat posts in each Chat's Matrix rooms. Each person adds themselves to
+their project's Chat.spec.people (the chart's README.md, Chat).
+{{- if include "theos.matrixEnabled" . }}
+{{- $name := include "theos.matrixName" . }}
+The in-cluster homeserver {{ .Values.chat.homeserver.serverName }}, on http://localhost:8008, and the
+first passwords of chat.homeserver.accounts:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ $name }} 8008
+{{- range include "theos.matrixAccounts" . | fromJsonArray }}
+  kubectl -n {{ $.Release.Namespace }} get secret {{ $name }}-account-{{ . }} -o jsonpath='{.data.password}' | base64 -d; echo
+{{- end }}
+{{- end }}
+{{- end }}

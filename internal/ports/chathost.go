@@ -73,7 +73,7 @@ type ChatSync struct {
 	Events []ChatEvent
 }
 
-// ChatHost is the chat port (docs/plans/chat-matrix.md, "Matrix through a
+// ChatHost is the chat port (docs/plans/done/chat-matrix.md, "Matrix through a
 // port"): the operator makes a Chat's Space and rooms with it, and
 // theos-chat posts, threads, edits, reacts and reads the rooms. One value
 // speaks as one bot on one homeserver.

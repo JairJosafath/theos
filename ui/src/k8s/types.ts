@@ -480,6 +480,31 @@ export interface GitProvider extends K8sObject {
   }
 }
 
+/** What a Chat's room holds (docs/design.md, Chat), in the order the operator makes them. */
+export const CHAT_PURPOSES = ['updates', 'general', 'triage', 'specs', 'reviews', 'alerts'] as const
+export type ChatPurpose = (typeof CHAT_PURPOSES)[number]
+
+/** A project's Space on a Matrix homeserver, where people follow and steer the factory: one per namespace. */
+export interface Chat extends K8sObject {
+  spec: {
+    homeserver?: string
+    credentialsSecretRef: LocalRef
+    space?: string
+    aliasPrefix?: string
+    rooms?: Partial<Record<ChatPurpose, string>>
+    digestMinutes?: number
+    people?: { matrixID: string; user: string; groups?: string[] }[]
+  }
+  status?: {
+    homeserver?: string
+    bot?: string
+    space?: { id: string; alias?: string }
+    rooms?: { purpose: ChatPurpose; id: string; alias?: string }[]
+    invited?: string[]
+    conditions?: Condition[]
+  }
+}
+
 /** Plural resource names, as used in API paths. */
 export const RESOURCES = {
   projects: 'projects',
@@ -502,6 +527,7 @@ export const RESOURCES = {
   agents: 'agents',
   crews: 'crews',
   briefs: 'briefs',
+  chats: 'chats',
 } as const
 
 /** API path of a theos.factory.io resource, in one namespace or across all of them. */

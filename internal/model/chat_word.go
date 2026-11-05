@@ -7,7 +7,7 @@ import (
 )
 
 // A person's word from chat reaches the operator as Task annotations
-// (docs/plans/chat-matrix.md, "Specs approved from chat"): the head commit a
+// (docs/plans/done/chat-matrix.md, "Specs approved from chat"): the head commit a
 // person approves (ChatAnnotationApproveSpec), the changes they ask of it
 // (ChatAnnotationSpecChanges) and their answer to a parked issue's question
 // (ChatAnnotationAnswer), each with its companion naming who wrote it

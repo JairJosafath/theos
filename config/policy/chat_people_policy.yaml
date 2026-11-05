@@ -1,5 +1,5 @@
 # theos-chat runs each person's commands as the Kubernetes user and groups
-# their Chat.spec.people entry names (docs/plans/chat-matrix.md), so an
+# their Chat.spec.people entry names (docs/plans/done/chat-matrix.md), so an
 # entry is a grant of that identity to a Matrix account. Each person adds
 # only themselves: an entry may name a user only if it is the writer's own,
 # request.userInfo.username, and groups only from the writer's

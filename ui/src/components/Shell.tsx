@@ -7,7 +7,7 @@
 import { useId, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type { FactoryHealth } from '../k8s/health'
 import { problemsOf, readOf, type Connection, type FactoryData, type Problem } from '../k8s/sources'
-import { RESOURCES } from '../k8s/types'
+import { RESOURCES, type Chat } from '../k8s/types'
 import { hrefFor, useActs, useNow, type SetUrl, type UrlState } from '../lib/hooks'
 import {
   nextTheme,
@@ -26,6 +26,7 @@ import { absoluteTime, formatDuration } from '../model/format'
 import type { PaletteItem } from '../model/search'
 import { aboutLinks, type Versions } from '../model/versions'
 import { Account } from './Account'
+import { ChatPanel } from './ChatPanel'
 import { HealthDashboard } from './factory/Health'
 import { SlotsPanel } from './factory/Slots'
 import {
@@ -84,6 +85,10 @@ export interface ShellProps {
   primaryAction?: ReactNode
   /** What Search or jump finds. */
   paletteItems: PaletteItem[]
+  /** The project's Chat, on About and in Settings; unset when its namespace has none. */
+  chat?: Chat
+  /** The failed read of the Chats, if it failed. */
+  chatProblems?: Problem[]
 }
 
 /** Leaves an object page and the area's tab: the area alone. */
@@ -130,6 +135,8 @@ export function Shell({
   objectPage,
   primaryAction,
   paletteItems,
+  chat,
+  chatProblems,
 }: ShellProps) {
   const prefs = usePrefs()
   const phone = useMediaQuery(PHONE)
@@ -159,7 +166,7 @@ export function Shell({
   const body = fullPage ? (
     (objectPage ?? <ObjectPlaceholder {...object!} />)
   ) : area === 'about' ? (
-    <AboutArea versions={versions} />
+    <AboutArea versions={versions} chat={chat} chatProblems={chatProblems} />
   ) : (
     areas[area]
   )
@@ -319,7 +326,12 @@ export function Shell({
           {objectPage ?? <ObjectPlaceholder {...object} />}
         </Drawer>
       ) : null}
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        chat={chat}
+        chatProblems={chatProblems}
+      />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -632,8 +644,18 @@ function Segmented<T extends string>({
   )
 }
 
-/** Settings: the theme, the density and how the sidebar opens, kept in this browser. */
-export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** Settings: the theme, the density and how the sidebar opens, kept in this browser; and the project's Chat, read only. */
+export function SettingsModal({
+  open,
+  onClose,
+  chat,
+  chatProblems,
+}: {
+  open: boolean
+  onClose: () => void
+  chat?: Chat
+  chatProblems?: Problem[]
+}) {
   const prefs = usePrefs()
   return (
     <Modal open={open} onClose={onClose} title="Settings" description="Kept in this browser only." size="narrow">
@@ -672,12 +694,13 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
         ]}
         onChange={(v) => setPref('sidebar', v)}
       />
+      <ChatPanel chat={chat} problems={chatProblems} />
     </Modal>
   )
 }
 
-/** The versions running, what the page can change, and where to read about them. */
-function AboutArea({ versions }: { versions: Versions }) {
+/** The versions running, what the page can change, where to read about them, and the project's Chat. */
+function AboutArea({ versions, chat, chatProblems }: { versions: Versions; chat?: Chat; chatProblems?: Problem[] }) {
   const acts = useActs()
   const links = aboutLinks(versions)
   return (
@@ -712,6 +735,7 @@ function AboutArea({ versions }: { versions: Versions }) {
             <ExternalLink href={links.repo}>The repository</ExternalLink>
           </li>
         </ul>
+        <ChatPanel chat={chat} problems={chatProblems} />
       </section>
     </div>
   )

@@ -30,7 +30,7 @@ const (
 )
 
 // ChatRequest is the one write a chat command becomes, made by theos-chat
-// as the person who gave it, in the Chat's namespace (docs/plans/chat-matrix.md,
+// as the person who gave it, in the Chat's namespace (docs/plans/done/chat-matrix.md,
 // "The CRDs stay the truth"). CheckChatRequest holds it to the allowlist.
 type ChatRequest struct {
 	// Method is POST or PATCH.
@@ -54,7 +54,7 @@ const (
 
 // The annotations a chat command writes. Retry is the UI's; the other three
 // a person writes from chat alone, and the operator reads them as the
-// person's word on the item (docs/plans/chat-matrix.md, "Specs approved
+// person's word on the item (docs/plans/done/chat-matrix.md, "Specs approved
 // from chat").
 const (
 	// ChatAnnotationRetry on a Container scaffolds it again.

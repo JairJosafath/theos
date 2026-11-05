@@ -14,7 +14,7 @@ import (
 )
 
 // ChatPurpose names one of a Chat's rooms by the work it holds
-// (docs/plans/chat-matrix.md, "The rooms").
+// (docs/plans/done/chat-matrix.md, "The rooms").
 // +kubebuilder:validation:Enum=updates;general;triage;specs;reviews;alerts
 type ChatPurpose string
 
@@ -30,7 +30,7 @@ const (
 
 // ChatSpec is a project's conversation with the factory on a Matrix
 // homeserver: one Space, named after the Project, with a room per kind of
-// work, and the people who may speak to it (docs/plans/chat-matrix.md).
+// work, and the people who may speak to it (docs/plans/done/chat-matrix.md).
 // +kubebuilder:validation:XValidation:rule="has(self.aliasPrefix) == has(oldSelf.aliasPrefix)",message="aliasPrefix can't be set or unset once the Chat exists: the rooms carry its aliases"
 type ChatSpec struct {
 	// homeserver is the Matrix homeserver's address, http(s)://host[:port],

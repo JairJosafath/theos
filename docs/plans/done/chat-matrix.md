@@ -202,6 +202,57 @@ bot edits as the item moves, so a room reads as a list of live items.
      Deployment and the chart's copy of the role are step 3.
 3. The chart (`theos-chat`, its RBAC, the in-cluster homeserver), the UI's
    Chat panel, `docs/design.md` and the README.
+   Built, with these choices where the plan was silent:
+   - **`chat.enabled`** (off) installs Deployment `<release>-chat`, the
+     operator image running `/theos-chat`, one replica with `Recreate` (it
+     elects no leader, so never two answer one command), non-root on a
+     read-only root filesystem, and its ServiceAccount and ClusterRole,
+     whose rules `test/chart/chat_test.go` holds equal to
+     `config/chat/rbac.yaml`'s. The operator gets `--chat-homeserver`:
+     `chat.homeserverURL` when set (a homeserver of your own, or
+     matrix.org), else the in-cluster one; with neither, none, and each
+     Chat names its own.
+   - **`chat.homeserver.enabled`** (off; it needs `chat.enabled`) installs
+     [Tuwunel](https://github.com/matrix-construct/tuwunel) v1.9.4, pinned
+     by its multi-arch index digest (resolved through GHCR's anonymous
+     token flow), as StatefulSet and Service `<release>-matrix` on 8008,
+     one replica on a volume (`persistence.storageClassName`, `size`) kept
+     on uninstall. Federation and registration are off; its server name is
+     `serverName` (default `theos.internal`, set before the first install);
+     `config` adds `TUWUNEL_*` settings over the chart's. The image is a
+     value; an empty digest pulls by tag.
+   - **Accounts by the homeserver's shared-secret registration,** not
+     `kubectl exec`: Tuwunel's image has no shell to run its admin console
+     in, and a second server can't open the live database, but v1.9.4
+     serves Synapse's `/_synapse/admin/v1/register`, which makes an
+     account with an HMAC-SHA1 under a shared secret even with
+     registration off. The pod's credentials container makes that secret,
+     Secret `<release>-matrix-registration`, in the cluster (the `secrets`
+     skill); Job `<release>-matrix-accounts`, a hook after every install
+     and upgrade on the seed image, runs `dist/chart/files/matrix-accounts.sh`:
+     it makes the bot (`bot.localpart`, default `theos`), keeps its
+     password in Secret `<release>-matrix-bot`, and puts a token from a
+     login under `accessToken` in Secret `bot.secretName` (`matrix-bot`, the
+     sample's) in each of `gitea.projects` and `bot.namespaces` that lacks
+     one, so a Chat there needs no Secret by hand; and each of `accounts`,
+     a person's account, with a random first password in Secret
+     `<release>-matrix-account-<name>` for the admin to hand over. It never
+     overwrites and passes every password and token on stdin.
+     `hack/matrix-accounts_test.sh` runs it on fake kubectl and homeserver,
+     the HMAC on Tuwunel's own test vector.
+   - **The UI reads Chats in the factory source,** which every area
+     watches, as an optional kind (a cluster without it shows the rest), so
+     About and the Settings modal, outside the story's areas, show the
+     current project's Chat (`ui/src/model/chat.ts`,
+     `ui/src/components/ChatPanel.tsx`): the homeserver, the Space and each
+     room linked as `https://matrix.to/#/<alias, else ID>`, percent-encoded
+     as the Matrix spec asks, and `Ready` with its reason and message. The
+     UI's reader role, the chart's and `config/ui`'s, gains `chats`. With
+     `chat.enabled` the UI's health view lists theos-chat and the
+     homeserver.
+   - **Left for later:** links from `theos-chat`'s posts to the UI's object
+     pages, which need the UI's address as a setting; and narrowing
+     `theos-chat`'s `impersonate` to the Chats' people.
 
 ## Done when
 

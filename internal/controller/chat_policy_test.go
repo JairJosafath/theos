@@ -119,7 +119,7 @@ func patchAs(c client.Client, obj client.Object, mutate func()) error {
 }
 
 // The admission policies that keep a person's word from chat the person's
-// own (config/policy, docs/plans/chat-matrix.md).
+// own (config/policy, docs/plans/done/chat-matrix.md).
 var _ = Describe("Chat admission policies", func() {
 	It("lets each person map only themselves into a Chat's people", func() {
 		ns := newProjectNamespace()

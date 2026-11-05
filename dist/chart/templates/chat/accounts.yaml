@@ -1,0 +1,175 @@
+{{- if include "theos.matrixEnabled" . }}
+{{- $hs := .Values.chat.homeserver }}
+{{- $name := include "theos.matrixName" . }}
+{{- $bot := printf "%s-bot" $name }}
+{{- $accountPrefix := printf "%s-account-" $name }}
+{{- $namespaces := include "theos.chatBotNamespaces" . | fromJsonArray }}
+{{- $accounts := include "theos.matrixAccounts" . | fromJsonArray }}
+{{- if not (regexMatch "^[a-z0-9._=/-]+$" (toString $hs.bot.localpart)) }}
+{{- fail (printf "chat.homeserver.bot.localpart %q must be a Matrix localpart: lowercase letters, digits and ._=/-" $hs.bot.localpart) }}
+{{- end }}
+# The homeserver's accounts (files/matrix-accounts.sh): the bot, whose
+# password is kept in Secret {{ $bot }} here and whose access token goes into
+# Secret {{ $hs.bot.secretName }} in each of the bot's namespaces, and each of
+# chat.homeserver.accounts, whose first password is kept in Secret
+# {{ $accountPrefix }}<name> here. Made in the cluster, never rendered; the
+# Job may create Secrets (which resourceNames cannot narrow) and read only the
+# ones it makes.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}-accounts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.matrixLabels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-accounts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.matrixLabels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames:
+      - {{ $bot }}
+      {{- range $accounts }}
+      - {{ printf "%s%s" $accountPrefix . }}
+      {{- end }}
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-accounts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.matrixLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-accounts
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}-accounts
+    namespace: {{ .Release.Namespace }}
+{{- range $namespaces }}
+---
+# The bot's token Secret in namespace {{ . }}, which must exist at install.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-accounts
+  namespace: {{ . }}
+  labels:
+    {{- include "theos.matrixLabels" $ | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ $hs.bot.secretName }}]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-accounts
+  namespace: {{ . }}
+  labels:
+    {{- include "theos.matrixLabels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-accounts
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}-accounts
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+---
+# A hook after every install and upgrade: it waits for the homeserver, makes
+# what is missing and changes nothing that exists. A failed Job stays for its
+# log until the next upgrade replaces it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-accounts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.matrixLabels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: {{ add $hs.waitSeconds 300 }}
+  template:
+    metadata:
+      labels:
+        {{- include "theos.matrixLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}-accounts
+      restartPolicy: Never
+      {{- include "theos.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: accounts
+          image: {{ include "theos.chatToolsImage" . | quote }}
+          imagePullPolicy: {{ .Values.gitea.seed.image.pullPolicy }}
+          command: [bash, -c]
+          args:
+            - |
+              {{- .Files.Get "files/matrix-accounts.sh" | nindent 14 }}
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HOMESERVER
+              value: {{ include "theos.matrixURL" . | quote }}
+            - name: SERVER_NAME
+              value: {{ $hs.serverName | quote }}
+            - name: WAIT
+              value: {{ $hs.waitSeconds | quote }}
+            - name: BOT
+              value: {{ $hs.bot.localpart | quote }}
+            - name: BOT_SECRET
+              value: {{ $bot | quote }}
+            - name: TOKEN_SECRET
+              value: {{ $hs.bot.secretName | quote }}
+            - name: NAMESPACES
+              value: {{ join " " $namespaces | quote }}
+            - name: ACCOUNTS
+              value: {{ join " " $accounts | quote }}
+            - name: ACCOUNT_PREFIX
+              value: {{ $accountPrefix | quote }}
+            - name: SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-registration
+                  key: sharedSecret
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

@@ -8,7 +8,7 @@ permission. See the LICENSE file.
 
 // Command theos-chat posts what the factory does in each Ready Chat's Matrix
 // rooms and runs the commands its people say there, as them
-// (docs/plans/chat-matrix.md). It runs beside the operator with its own
+// (docs/plans/done/chat-matrix.md). It runs beside the operator with its own
 // ServiceAccount (config/chat/rbac.yaml): it reads theos's objects, writes
 // only its ConfigMaps, and impersonates the people the Chats name; the
 // admission policies (config/policy) make sure each Chat's people named

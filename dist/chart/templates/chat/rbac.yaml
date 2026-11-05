@@ -1,0 +1,62 @@
+{{- if .Values.chat.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "theos.chatName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.chatLabels" . | nindent 4 }}
+---
+# The same access as config/chat/rbac.yaml (test/chart/chat_test.go compares
+# them): theos-chat reads what it posts about in every namespace a Chat may be
+# in and changes none of it as itself; every write a command makes is sent as
+# the person, by impersonation, so the person's own RBAC decides.
+# - Chats, Tasks, Containers and Briefs: read, the news and the commands'
+#   context.
+# - Secrets: get only, the bot's access token a Chat's credentialsSecretRef
+#   names.
+# - ConfigMaps: its own, theos-chat, in each Chat's namespace: create (which
+#   can't be held to a name), and get and update only that name.
+# - impersonate users and groups: to send a person's command as them. The
+#   admission policies (templates/extras) make each Chat's people entry name
+#   only whoever wrote it, and refuse the chat annotations from any system:
+#   identity, theos-chat's own included.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "theos.chatName" . }}
+  labels:
+    {{- include "theos.chatLabels" . | nindent 4 }}
+rules:
+- apiGroups: [theos.factory.io]
+  resources: [chats, tasks, containers, briefs]
+  verbs: [get, list, watch]
+- apiGroups: [""]
+  resources: [secrets]
+  verbs: [get]
+- apiGroups: [""]
+  resources: [configmaps]
+  verbs: [create]
+- apiGroups: [""]
+  resources: [configmaps]
+  resourceNames: [theos-chat]
+  verbs: [get, update]
+- apiGroups: [""]
+  resources: [users, groups]
+  verbs: [impersonate]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "theos.chatName" . }}
+  labels:
+    {{- include "theos.chatLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "theos.chatName" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "theos.chatName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -6,7 +6,7 @@ to use, copy, modify or distribute it without the copyright holder's written
 permission. See the LICENSE file.
 */
 
-// Package chatbot is theos-chat's logic (docs/plans/chat-matrix.md): for each
+// Package chatbot is theos-chat's logic (docs/plans/done/chat-matrix.md): for each
 // Ready Chat it posts what the factory does in the Chat's rooms, as
 // internal/model routes it, and runs the commands its people say there, each
 // one request sent as the person, by impersonation, so the cluster's RBAC

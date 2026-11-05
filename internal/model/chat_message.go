@@ -13,7 +13,7 @@ type ChatLink struct {
 	URL  string
 }
 
-// ChatPost is a message theos-chat posts (docs/plans/chat-matrix.md,
+// ChatPost is a message theos-chat posts (docs/plans/done/chat-matrix.md,
 // "Formatting"): a bold title, a status line, the words of whoever wrote
 // them (an issue's question, a review's verdict), links, and lines to copy
 // such as kubectl commands. Text and HTML render it for Matrix's body and

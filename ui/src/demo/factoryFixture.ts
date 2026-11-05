@@ -5,7 +5,7 @@
 
 import type { FactoryHealth, PodHealth } from '../k8s/health'
 import type { FactoryData } from '../k8s/sources'
-import type { Task, TaskPhase, TaskTransition } from '../k8s/types'
+import type { Chat, Task, TaskPhase, TaskTransition } from '../k8s/types'
 import { demoStory } from './fixture'
 
 const MIN = 60_000
@@ -111,6 +111,41 @@ export function demoFactory(now: number): FactoryData {
     sessions: story.sessions,
     crews: story.crews,
     briefs: story.briefs,
+    chats: [demoChat(at(240))],
+  }
+}
+
+/** The webshop's Chat on the in-cluster homeserver, its six rooms made. */
+function demoChat(created: string): Chat {
+  const server = 'theos.internal'
+  const purposes = ['updates', 'general', 'triage', 'specs', 'reviews', 'alerts'] as const
+  return {
+    metadata: { name: 'webshop', namespace: 'webshop', uid: 'demo-chat-webshop', creationTimestamp: created },
+    spec: {
+      credentialsSecretRef: { name: 'matrix-bot' },
+      rooms: { general: 'lobby' },
+      people: [{ matrixID: `@ada:${server}`, user: 'ada@example.com' }],
+    },
+    status: {
+      homeserver: 'http://theos-matrix.theos-system.svc:8008',
+      bot: `@theos:${server}`,
+      space: { id: `!webshop-space:${server}`, alias: `#theos-webshop:${server}` },
+      rooms: purposes.map((purpose) => ({
+        purpose,
+        id: `!webshop-${purpose}:${server}`,
+        alias: `#theos-webshop-${purpose}:${server}`,
+      })),
+      invited: [`@ada:${server}`],
+      conditions: [
+        {
+          type: 'Ready',
+          status: 'True',
+          reason: 'Ready',
+          message: 'The Space and its 6 rooms are there, 1 person invited',
+          lastTransitionTime: created,
+        },
+      ],
+    },
   }
 }
 

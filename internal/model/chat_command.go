@@ -10,7 +10,7 @@ import (
 )
 
 // ChatCommandKind is what a person asks of the factory in a Chat's room
-// (docs/plans/chat-matrix.md, "The rooms").
+// (docs/plans/done/chat-matrix.md, "The rooms").
 type ChatCommandKind string
 
 // The commands, by the room that takes them.

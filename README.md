@@ -89,6 +89,29 @@ that wait for you marked
 ([screenshot](docs/screenshots/sdlc-loop-ui.png)).
 [docs/plans/done/sdlc-loop.md](docs/plans/done/sdlc-loop.md) has the design.
 
+## Chat
+
+A project can be followed and steered from [Matrix](https://matrix.org) too:
+a `Chat` in its namespace gets a Space named after the Project with a room
+per kind of work, where each item that needs a decision is a thread the bot
+edits as it moves:
+
+| Room | Posts | You can |
+| --- | --- | --- |
+| `updates` | merges, releases, deploys and Brief rounds, batched per `digestMinutes` | read |
+| `general` | answers | `status`, `brief <idea>`, `prompt <brief>: <text>`, `pause <brief>`, `resume <brief>`, `help` |
+| `triage` | each triage decision; a parked issue's question as a thread | answer in the thread |
+| `specs` | a thread per spec waiting for approval | `approve`, or `changes: <text>` |
+| `reviews` | a thread per deploy waiting for you, and each review's verdict | `approve <version>` |
+| `alerts` | failed deploys and Tasks, a red base, an unhealthy factory part | `retry` on a failed Container |
+
+Chat enforces nothing: each command is one request the UI could make, sent as
+you, so the cluster's RBAC decides. The chart turns it on with
+`chat.enabled`, with an in-cluster homeserver or your own
+([dist/chart/README.md](dist/chart/README.md#chat)); you add yourself to the
+Chat's `people`. [docs/plans/done/chat-matrix.md](docs/plans/done/chat-matrix.md)
+has the design.
+
 ## Status
 
 The factory runs end to end in a local Kind cluster: the story model, the

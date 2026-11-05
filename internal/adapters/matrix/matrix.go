@@ -1,4 +1,4 @@
-// Package matrix is the ChatHost adapter for Matrix (docs/plans/chat-matrix.md):
+// Package matrix is the ChatHost adapter for Matrix (docs/plans/done/chat-matrix.md):
 // the client-server API over net/http, with no SDK and no cgo. It speaks as
 // one bot, by its access token, to one homeserver.
 package matrix

@@ -1,0 +1,208 @@
+{{- if include "theos.matrixEnabled" . }}
+{{- $hs := .Values.chat.homeserver }}
+{{- $name := include "theos.matrixName" . }}
+{{- $registration := printf "%s-registration" $name }}
+{{- /* The chart's settings, then chat.homeserver.config over them. */}}
+{{- $env := dict
+  "TUWUNEL_SERVER_NAME" (required "chat.homeserver.serverName is required" $hs.serverName)
+  "TUWUNEL_DATABASE_PATH" "/var/lib/tuwunel"
+  "TUWUNEL_ADDRESS" "0.0.0.0"
+  "TUWUNEL_PORT" "8008"
+  "TUWUNEL_ALLOW_FEDERATION" "false"
+  "TUWUNEL_ALLOW_REGISTRATION" "false"
+  "TUWUNEL_TRUSTED_SERVERS" "[]"
+  "TUWUNEL_NEW_USER_DISPLAYNAME_SUFFIX" ""
+}}
+{{- range $k, $v := $hs.config }}
+{{- $_ := set $env $k (toString $v) }}
+{{- end }}
+# The in-cluster Matrix homeserver (chat.homeserver): Tuwunel, one replica on
+# its own volume. Federation is off, so its rooms never leave the cluster, and
+# registration is off: accounts are made only through its shared-secret
+# registration, by Job {{ $name }}-accounts (accounts.yaml). The credentials
+# container makes that shared secret, Secret {{ $registration }}, when it is
+# missing, so no generated value is rendered; rotate it by deleting the Secret
+# and restarting the pod.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.matrixLabels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-credentials
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.matrixLabels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ $registration }}]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-credentials
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.matrixLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-credentials
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.matrixLabels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "theos.matrixSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 8008
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.matrixLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ $name }}
+  selector:
+    matchLabels:
+      {{- include "theos.matrixSelectorLabels" . | nindent 6 }}
+  # The volume outlives the release (the default Retain): an uninstall keeps
+  # the accounts and rooms; delete the PersistentVolumeClaim to drop them.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "theos.matrixSelectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $hs.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $hs.persistence.size }}
+  template:
+    metadata:
+      labels:
+        {{- include "theos.matrixLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      # The homeserver gets no API access; only the credentials container
+      # mounts a token.
+      automountServiceAccountToken: false
+      {{- include "theos.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # First, and never overwrites.
+        - name: credentials
+          image: {{ include "theos.chatToolsImage" . | quote }}
+          imagePullPolicy: {{ .Values.gitea.seed.image.pullPolicy }}
+          command: [sh, -ec]
+          args:
+            - |
+              kubectl get secret {{ $registration }} >/dev/null 2>&1 ||
+                openssl rand -hex 32 | tr -d '\n' |
+                kubectl create secret generic {{ $registration }} --from-file=sharedSecret=/dev/stdin
+          env:
+            - name: HOME
+              value: /tmp
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: api
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: homeserver
+          image: {{ include "theos.matrixImage" . | quote }}
+          imagePullPolicy: {{ $hs.image.pullPolicy }}
+          env:
+            {{- range $k := keys $env | sortAlpha }}
+            - name: {{ $k }}
+              value: {{ get $env $k | quote }}
+            {{- end }}
+            # The shared secret its registration endpoint checks each new
+            # account's HMAC with.
+            - name: TUWUNEL_REGISTRATION_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $registration }}
+                  key: sharedSecret
+          ports:
+            - name: http
+              containerPort: 8008
+              protocol: TCP
+          readinessProbe:
+            httpGet: {path: /_matrix/client/versions, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: {path: /_matrix/client/versions, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml $hs.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/tuwunel
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: api
+          projected:
+            sources:
+              - serviceAccountToken: {path: token}
+              - configMap: {name: kube-root-ca.crt, items: [{key: ca.crt, path: ca.crt}]}
+              - downwardAPI: {items: [{path: namespace, fieldRef: {fieldPath: metadata.namespace}}]}
+        - name: tmp
+          emptyDir: {}
+{{- end }}

@@ -966,3 +966,77 @@ agents:
     resources:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {cpu: "1", memory: 2Gi}
+
+## Chat (docs/design.md, Chat): people follow and steer each project from
+## Matrix rooms. With enabled, Deployment <release>-chat, the operator image
+## running /theos-chat with its own ServiceAccount: it reads theos's objects,
+## posts in each Chat's rooms and runs its people's commands as them, by
+## impersonation. A project then makes a Chat naming the bot's token Secret
+## (config/samples/webshop/chat.yaml), and each person adds themselves to
+## its people (README.md, Chat).
+##
+chat:
+  enabled: false
+  ## The homeserver of a Chat that names none (the operator's
+  ## --chat-homeserver), http(s)://host[:port]: your own, or matrix.org. Empty
+  ## with homeserver.enabled: the in-cluster one,
+  ## http://<release>-matrix.<release namespace>.svc:8008; empty without it,
+  ## each Chat names its homeserver.
+  homeserverURL: ""
+  ## How often theos-chat reads each Chat's rooms and posts its news, besides
+  ## whenever a Task, Container or Brief in its namespace changes.
+  interval: 5s
+  resources:
+    requests: {cpu: 10m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  ## An in-cluster Matrix homeserver, Tuwunel, with chat.enabled: StatefulSet
+  ## and Service <release>-matrix on 8008, one replica on a volume kept on
+  ## uninstall. Federation and registration are off: Job
+  ## <release>-matrix-accounts makes the accounts after every install and
+  ## upgrade through its shared-secret registration (Secret
+  ## <release>-matrix-registration, made in the cluster). People reach it
+  ## with a Matrix client through a port-forward
+  ##   kubectl -n <namespace> port-forward svc/<release>-matrix 8008
+  ## (homeserver http://localhost:8008), or an Ingress of your own.
+  ##
+  homeserver:
+    enabled: false
+    image:
+      repository: ghcr.io/matrix-construct/tuwunel
+      tag: v1.9.4
+      ## The tag's multi-arch index (amd64 and arm64), so a moved tag can't
+      ## change what runs. Empty pulls by the tag alone.
+      digest: sha256:0e86c6164d6c9f5b60291938eb61ad8395021c37fe58d47a963ea7edddbedaec
+      pullPolicy: IfNotPresent
+    ## The server name in every user and room ID (@theos:<serverName>). Set it
+    ## before the first install: it can't change without wiping the volume.
+    ##
+    serverName: theos.internal
+    persistence:
+      ## Empty: the cluster's default StorageClass.
+      storageClassName: ""
+      size: 1Gi
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {memory: 1Gi}
+    ## More settings as TUWUNEL_<KEY>: value, over the chart's (see Tuwunel's
+    ## tuwunel-example.toml).
+    ##
+    config: {}
+    ## The bot: account @<localpart>:<serverName>, whose access token the Job
+    ## puts under accessToken in Secret <secretName> in each of gitea.projects
+    ## and of namespaces (each must exist at install), where it is missing:
+    ## what a Chat's credentialsSecretRef names there.
+    ##
+    bot:
+      localpart: theos
+      secretName: matrix-bot
+      namespaces: []
+    ## People's accounts, by localpart: for each, the Job makes
+    ## @<name>:<serverName> with a random password, kept in Secret
+    ## <release>-matrix-account-<name> in the release namespace for you to
+    ## hand over; they change it in their client.
+    ##
+    accounts: []
+    ## How long the Job waits for the homeserver to answer.
+    waitSeconds: 300

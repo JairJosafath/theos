@@ -265,6 +265,35 @@ if grep -qF -- '--ui-service-account' <<<"$(doc "$OUT/chart-gitea-bare.yaml" Dep
 fi
 echo "The chart lets the UI read pods only in its components' namespaces and, through the operator, the projects'"
 
+# Chat (docs/plans/done/chat-matrix.md): off by default, chart-gitea.yaml has
+# no theos-chat, homeserver or --chat-homeserver; chart-chat.yaml, with
+# chat.enabled and chat.homeserver.enabled, has theos-chat, the homeserver on
+# an image pinned by digest with federation and registration off, its
+# accounts Job, and the operator naming it (a flag make chart drops from the
+# manager template). test/chart/chat_test.go checks the rest.
+for object in Deployment/theos-chat StatefulSet/theos-matrix Job/theos-matrix-accounts; do
+	if [ -n "$(doc "$OUT/chart-gitea.yaml" "${object%/*}" "${object#*/}")" ]; then
+		echo "The chart renders $object with chat off (the default)" >&2
+		exit 1
+	fi
+	want "chat on renders no $object" "$(doc "$OUT/chart-chat.yaml" "${object%/*}" "${object#*/}")" '^kind: '
+done
+if grep -qF -- '--chat-homeserver' <<<"$(doc "$OUT/chart-gitea.yaml" Deployment theos-controller-manager)"; then
+	echo "The chart: the operator names a chat homeserver with chat off" >&2
+	exit 1
+fi
+want "the operator isn't told the in-cluster homeserver" "$(doc "$OUT/chart-chat.yaml" Deployment theos-controller-manager)" \
+	'^        - --chat-homeserver=http://theos-matrix\.theos-system\.svc:8008$'
+homeserver=$(doc "$OUT/chart-chat.yaml" StatefulSet theos-matrix)
+want "the homeserver's image isn't pinned by digest" "$homeserver" '^ *image: "[^"@]+:[^"@]+@sha256:[0-9a-f]{64}"$'
+off=$(grep -A1 -e '- name: TUWUNEL_ALLOW_FEDERATION$' -e '- name: TUWUNEL_ALLOW_REGISTRATION$' <<<"$homeserver" |
+	grep -c 'value: "false"' || true)
+if [ "$off" != 2 ]; then
+	echo "The chart: the homeserver's federation or registration isn't off" >&2
+	exit 1
+fi
+echo "The chart installs Chat only with chat.enabled: theos-chat, the pinned homeserver and the operator's --chat-homeserver"
+
 # The test environment shares the Claude token (make claude-secret): the
 # manager names it and its own namespace, and the namespaces make seed and the
 # samples make opt in.

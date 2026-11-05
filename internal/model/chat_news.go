@@ -10,7 +10,7 @@ import (
 )
 
 // theos-chat tells a Chat's people what the factory does
-// (docs/plans/chat-matrix.md, "The rooms"): it reads theos's objects, makes
+// (docs/plans/done/chat-matrix.md, "The rooms"): it reads theos's objects, makes
 // each thing worth saying a ChatNews with a key of its own, and posts it as
 // ChatRouteFor says: in a digest, as a plain post, or as a thread whose
 // root it edits as the item moves and marks ✅ once it is done. What it

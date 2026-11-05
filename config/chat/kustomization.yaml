@@ -1,7 +1,8 @@
-# theos-chat's ServiceAccount and RBAC (docs/plans/chat-matrix.md): it reads
+# theos-chat's ServiceAccount and RBAC (docs/plans/done/chat-matrix.md): it reads
 # theos's objects, keeps its own ConfigMap in each Chat's namespace and
-# impersonates each Chat's people to run their commands as them. The
-# Deployment and the chart's copy come with the chart (the plan's step 3).
+# impersonates each Chat's people to run their commands as them. The chart
+# runs it (dist/chart/templates/chat, chat.enabled) with a copy of this RBAC,
+# which test/chart/chat_test.go holds equal.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 labels:

@@ -21,7 +21,8 @@ helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 {{/*
 ui.components as JSON: an empty namespace is the release's, and the ui entry's
 empty selector is the UI's own selector labels. With gitea.enabled, Gitea and the
-CI runners follow; the UI sums the runners' CPU as CI's (key runner).
+CI runners follow; the UI sums the runners' CPU as CI's (key runner). With
+chat.enabled, theos-chat and the in-cluster homeserver.
 */}}
 {{- define "theos.uiComponents" -}}
 {{- $out := list }}
@@ -40,6 +41,13 @@ CI runners follow; the UI sums the runners' CPU as CI's (key runner).
 {{- $sel := printf "app.kubernetes.io/instance=%s" .Release.Name }}
 {{- $out = append $out (dict "key" "gitea" "name" "Gitea" "role" "Holds the templates and the Container repositories" "namespace" $ns "selector" (printf "app.kubernetes.io/name=gitea,%s" $sel)) }}
 {{- $out = append $out (dict "key" "runner" "name" "CI runners" "role" "Run Container CI jobs" "namespace" $ns "selector" (printf "app.kubernetes.io/component=ci-runner,%s" $sel)) }}
+{{- end }}
+{{- if .Values.chat.enabled }}
+{{- $sel := printf "app.kubernetes.io/instance=%s" .Release.Name }}
+{{- $out = append $out (dict "key" "chat" "name" "theos-chat" "role" "Posts in the Chats' Matrix rooms and runs their commands" "namespace" .Release.Namespace "selector" (printf "app.kubernetes.io/name=%s-chat,%s" (include "theos.name" .) $sel)) }}
+{{- if include "theos.matrixEnabled" . }}
+{{- $out = append $out (dict "key" "matrix" "name" "Matrix homeserver" "role" "Holds the Chats' rooms" "namespace" .Release.Namespace "selector" (printf "app.kubernetes.io/name=%s-matrix,%s" (include "theos.name" .) $sel)) }}
+{{- end }}
 {{- end }}
 {{- toJson $out }}
 {{- end }}

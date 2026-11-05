@@ -1,5 +1,5 @@
 # A person's word from chat reaches the operator as three Task annotations
-# (docs/plans/chat-matrix.md): theos.factory.io/approve-spec, spec-changes and
+# (docs/plans/done/chat-matrix.md): theos.factory.io/approve-spec, spec-changes and
 # answer. Each comes with its companion, <annotation>-by, naming who wrote it,
 # and the operator counts the word as that person's. So that nobody can
 # write a word in someone else's name:

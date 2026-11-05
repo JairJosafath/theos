@@ -1,0 +1,72 @@
+{{- if .Values.chat.enabled }}
+# theos-chat (cmd/theos-chat): the operator image's third binary, so a release
+# builds no image of its own for it. One replica: it elects no leader, and
+# its ConfigMaps keep what it posted, so a restart posts nothing twice.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "theos.chatName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "theos.chatLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # Never two at once: both would answer the same command.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "theos.chatSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "theos.chatLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "theos.chatName" . }}
+      {{- with .Values.manager.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: chat
+        image: {{ include "theos.modelProxyImage" . | quote }}
+        {{- with .Values.manager.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        command:
+        - /theos-chat
+        args:
+        - --health-probe-bind-address=:8081
+        - --interval={{ .Values.chat.interval }}
+        ports:
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+        resources:
+          {{- toYaml .Values.chat.resources | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+{{- end }}

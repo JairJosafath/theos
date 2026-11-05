@@ -8,6 +8,7 @@ import {
   type Agent,
   type Brief,
   type Bundle,
+  type Chat,
   type Domain,
   type CatalogEntry,
   type Connector,
@@ -400,13 +401,15 @@ export interface FactoryData {
   crews: Crew[]
   /** To name the Brief that watches an item on the Needs a look list. */
   briefs: Brief[]
+  /** Each project's Chat, for About and Settings. Optional: may stay empty. */
+  chats: Chat[]
 }
 
 export function emptyFactory(): FactoryData {
-  return { projects: [], tasks: [], agents: [], containers: [], sessions: [], crews: [], briefs: [] }
+  return { projects: [], tasks: [], agents: [], containers: [], sessions: [], crews: [], briefs: [], chats: [] }
 }
 
-/** Watches the work of the factory in every namespace: Tasks, Agents, Containers, Sessions, Crews and Briefs. */
+/** Watches the work of the factory in every namespace: Tasks, Agents, Containers, Sessions, Crews, Briefs and Chats. */
 export class LiveFactorySource extends WatchingSource<FactoryData> {
   constructor(api: Api) {
     super(
@@ -419,6 +422,8 @@ export class LiveFactorySource extends WatchingSource<FactoryData> {
         // Optional, so a cluster without the Crew kind still shows its Tasks.
         { what: 'crews', watcher: watcher(api, RESOURCES.crews), optional: true, resource: RESOURCES.crews },
         { what: 'briefs', watcher: watcher(api, RESOURCES.briefs), optional: true, resource: RESOURCES.briefs },
+        // Optional, so a cluster without the Chat kind, or a UI not let read it, shows the rest.
+        { what: 'chats', watcher: watcher(api, RESOURCES.chats), optional: true, resource: RESOURCES.chats },
       ],
       emptyFactory(),
     )
@@ -433,6 +438,7 @@ export class LiveFactorySource extends WatchingSource<FactoryData> {
       sessions: this.items<Session>(4),
       crews: this.items<Crew>(5),
       briefs: this.items<Brief>(6),
+      chats: this.items<Chat>(7),
     }
   }
 }

@@ -40,7 +40,7 @@ type crdStorage struct {
 // bornAtV1beta1 are the kinds added after v1alpha1 was deprecated: served
 // at v1beta1 alone, since no client ever stored one at v1alpha1, so their
 // CRDs, at strategy None, have nothing to convert or migrate and stay out of
-// WebhookCRDs (docs/plans/chat-matrix.md).
+// WebhookCRDs (docs/plans/done/chat-matrix.md).
 var bornAtV1beta1 = map[string]bool{"Chat": true}
 
 // bornAtV1beta1Plurals are bornAtV1beta1's resources.

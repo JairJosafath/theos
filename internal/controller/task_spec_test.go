@@ -300,7 +300,7 @@ var _ = Describe("Crew spec", func() {
 		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
 	})
 
-	// theos-chat (docs/plans/chat-matrix.md, step 2) on chatFake, as its own
+	// theos-chat (docs/plans/done/chat-matrix.md, step 2) on chatFake, as its own
 	// ServiceAccount, beside the operator.
 	It("puts a waiting spec up in chat, once, and merges it when a person approves it there, as them", func() {
 		n, name := specOne("")

@@ -9,6 +9,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { emptyFactory, type Connection } from '../k8s/sources'
+import type { Chat } from '../k8s/types'
 import type { UrlState } from '../lib/hooks'
 import { PREF_KEYS, resetPrefsForTest } from '../lib/prefs'
 import { paletteItems } from '../model/search'
@@ -34,6 +35,15 @@ afterEach(async () => {
 })
 
 const live: Connection = { phase: 'live', loaded: true, problems: [] }
+const chat: Chat = {
+  metadata: { name: 'webshop', namespace: 'webshop' },
+  spec: { credentialsSecretRef: { name: 'matrix-bot' } },
+  status: {
+    homeserver: 'http://theos-matrix.theos-system.svc:8008',
+    rooms: [{ purpose: 'general', id: '!g:theos.internal', alias: '#theos-webshop-general:theos.internal' }],
+    conditions: [{ type: 'Ready', status: 'True', reason: 'Ready', message: 'The Space and its 6 rooms are there' }],
+  },
+}
 const project = { metadata: { name: 'webshop', namespace: 'webshop' }, spec: { displayName: 'Webshop' } }
 
 function props(url: Partial<UrlState>, more: Partial<ShellProps> = {}): ShellProps {
@@ -271,5 +281,27 @@ describe('About', () => {
       'It can change only three things: create a Brief from an app idea, add a prompt to a Brief, and pause or resume a Brief.',
     )
     expect(html.querySelector('footer.footer')).toBeNull()
+  })
+
+  it("shows the project's Chat, read only, when it has one, and nothing of it when not", async () => {
+    let html = await render(props({ area: 'about' }))
+    expect(html.querySelector('.chat-panel')).toBeNull()
+    await act(async () => root!.unmount())
+    html = await render(props({ area: 'about' }, { chat }))
+    const panel = html.querySelector('.about .chat-panel')!
+    expect(panel.textContent).toContain('http://theos-matrix.theos-system.svc:8008')
+    expect(
+      panel.querySelector('a[href="https://matrix.to/#/%23theos-webshop-general%3Atheos.internal"]'),
+    ).not.toBeNull()
+    expect(panel.querySelectorAll('button, input')).toHaveLength(0)
+  })
+})
+
+describe('Settings', () => {
+  it("shows the project's Chat below the preferences", async () => {
+    await render(props({}, { chat }))
+    await act(async () => button('Settings')!.click())
+    const panel = document.querySelector('[role="dialog"] .chat-panel')!
+    expect(panel.textContent).toContain('Yes: The Space and its 6 rooms are there')
   })
 })

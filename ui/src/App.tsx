@@ -55,6 +55,7 @@ import { factoryVersions } from './model/versions'
 import { hasPage } from './model/lifecycle'
 import { activeCrewTasks } from './model/crews'
 import { needs } from './model/needs'
+import { chatOf } from './model/chat'
 import {
   buildContainerDiagram,
   buildContextDiagram,
@@ -457,6 +458,8 @@ export default function App() {
       banners={banners}
       primaryAction={primaryAction}
       paletteItems={searchItems}
+      chat={chatOf(factory.data.chats, namespace)}
+      chatProblems={problemsOf(factory.connection, RESOURCES.chats)}
       areas={{
         needs: (
           <NeedsArea

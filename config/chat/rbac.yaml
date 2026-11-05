@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: theos-chat
 ---
-# theos-chat (cmd/theos-chat, docs/plans/chat-matrix.md) reads what it posts
+# theos-chat (cmd/theos-chat, docs/plans/done/chat-matrix.md) reads what it posts
 # about, in every namespace a Chat may be in, and changes none of it as
 # itself: every write a command makes is sent as the person, by
 # impersonation, so the person's own RBAC decides.

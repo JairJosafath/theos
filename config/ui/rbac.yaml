@@ -7,7 +7,7 @@ metadata:
 ---
 # Read-only access to the story, the Sessions, the catalog and the factory's
 # work (Agents, Tasks, Crews), in every namespace (one Project per namespace, so
-# the project picker needs them all), the Briefs included.
+# the project picker needs them all), the Briefs and the Chats included.
 # No status subresources, no Secrets, no verbs that write: the Brief writes
 # are their own ClusterRole below.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -38,6 +38,7 @@ rules:
   - tasks
   - crews
   - briefs
+  - chats
   verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
