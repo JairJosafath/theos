@@ -1,11 +1,58 @@
-/* The shell's Loop area (Loop.tsx). */
+/* The shell's Loop area (Loop.tsx): the ring and the selected stage side by
+   side; on a phone the ring, a chip per stage, then the stage. */
+
+.loop-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 11fr) minmax(0, 10fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.loop-ring-panel {
+  padding: 8px;
+}
 
 .loop-ring {
   display: block;
   width: 100%;
   max-width: 640px;
   height: auto;
-  margin: 4px auto 18px;
+  margin: 0 auto;
+}
+
+/* The chips only on a phone, where the ring's labels are small. */
+.loop-chips.chips {
+  display: none;
+}
+
+.loop-chip-person {
+  border-style: dashed;
+  border-color: var(--waiting);
+}
+
+@media (max-width: 960px) {
+  .loop-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .loop-ring {
+    max-width: 520px;
+  }
+
+  .loop-chips.chips {
+    display: flex;
+  }
+}
+
+.loop-halo {
+  fill: none;
+  stroke: var(--select);
+  stroke-width: 2.5;
+}
+
+.loop-node[aria-current='true'] .loop-label {
+  fill: var(--text);
+  font-weight: 700;
 }
 
 .loop-edge {
@@ -85,23 +132,8 @@
   fill: var(--text-3);
 }
 
-.loop-stages {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.loop-stage {
-  padding: 14px 0;
-  border-top: 1px solid var(--border);
-  scroll-margin-top: 12px;
-}
-
 .loop-stage-person {
-  margin-top: 6px;
-  padding: 12px 14px;
   border: 1px dashed var(--waiting);
-  border-radius: 12px;
 }
 
 .loop-stage-head {

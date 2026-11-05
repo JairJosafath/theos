@@ -49,17 +49,23 @@ export function BriefPage({ brief, agents, writer }: { brief: Brief; agents: Age
             <PauseButton namespace={ns} view={view} writer={writer} onError={setPauseError} />
           </>
         }
+        sections={{
+          overview: (
+            <>
+              <section
+                className={`panel brief brief-${view.phase.tone}`}
+                aria-label={`Brief ${view.name}, its idea and rounds`}
+              >
+                <h2 className="panel-title small-title">The idea</h2>
+                <p className="brief-idea">{view.idea}</p>
+                {pauseError ? <FormError error={pauseError} /> : null}
+                <BriefBody view={view} namespace={ns} writer={writer} answering />
+              </section>
+              <BriefSettings brief={brief} writer={writer} />
+            </>
+          ),
+        }}
       />
-      <section
-        className={`panel brief brief-${view.phase.tone}`}
-        aria-label={`Brief ${view.name}, its idea and rounds`}
-      >
-        <h2 className="panel-title small-title">The idea</h2>
-        <p className="brief-idea">{view.idea}</p>
-        {pauseError ? <FormError error={pauseError} /> : null}
-        <BriefBody view={view} namespace={ns} writer={writer} answering />
-      </section>
-      <BriefSettings brief={brief} writer={writer} />
     </div>
   )
 }

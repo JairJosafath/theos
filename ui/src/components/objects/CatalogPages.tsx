@@ -74,38 +74,43 @@ export function CatalogPage({
         childrenTitle="Containers that name it"
         children={usedBy(kind, name, containers)}
         links={[]}
-      />
-
-      {actions}
-
-      <section className="panel" aria-labelledby="catalog-template">
-        <h2 className="panel-title small-title" id="catalog-template">
-          Its template
-        </h2>
-        {entry.spec.description ? <p className="panel-text">{entry.spec.description}</p> : null}
-        <dl className="facts">
-          <dt>Template</dt>
-          <dd className="mono">{entry.spec.template.url}</dd>
-          <dt>Pinned at</dt>
-          <dd className="mono">{entry.spec.template.ref}</dd>
-          <dt>Container types</dt>
-          <dd>{entry.spec.supportedTypes.map(describeContainerType).join(', ')}</dd>
-          {standard ? (
+        sections={{
+          overview: (
             <>
-              <dt>Frameworks it checks</dt>
-              <dd className="mono">{standard.spec.supportedFrameworks.join(', ')}</dd>
-              <dt>Files agents must not change</dt>
-              <dd className="mono">
-                {standard.spec.protectedPaths?.length ? (
-                  standard.spec.protectedPaths.join(', ')
-                ) : (
-                  <span className="muted">None besides the platform’s own.</span>
-                )}
-              </dd>
+              {actions}
+
+              <section className="panel" aria-labelledby="catalog-template">
+                <h2 className="panel-title small-title" id="catalog-template">
+                  Its template
+                </h2>
+                {entry.spec.description ? <p className="panel-text">{entry.spec.description}</p> : null}
+                <dl className="facts">
+                  <dt>Template</dt>
+                  <dd className="mono">{entry.spec.template.url}</dd>
+                  <dt>Pinned at</dt>
+                  <dd className="mono">{entry.spec.template.ref}</dd>
+                  <dt>Container types</dt>
+                  <dd>{entry.spec.supportedTypes.map(describeContainerType).join(', ')}</dd>
+                  {standard ? (
+                    <>
+                      <dt>Frameworks it checks</dt>
+                      <dd className="mono">{standard.spec.supportedFrameworks.join(', ')}</dd>
+                      <dt>Files agents must not change</dt>
+                      <dd className="mono">
+                        {standard.spec.protectedPaths?.length ? (
+                          standard.spec.protectedPaths.join(', ')
+                        ) : (
+                          <span className="muted">None besides the platform’s own.</span>
+                        )}
+                      </dd>
+                    </>
+                  ) : null}
+                </dl>
+              </section>
             </>
-          ) : null}
-        </dl>
-      </section>
+          ),
+        }}
+      />
     </div>
   )
 }
@@ -153,47 +158,52 @@ export function BundlePage({
         childrenTitle="Containers that name it"
         children={usedBy('Bundle', name, containers)}
         links={[]}
+        sections={{
+          overview: (
+            <>
+              <section className="panel" aria-labelledby="bundle-entries">
+                <h2 className="panel-title small-title" id="bundle-entries">
+                  Its entries
+                </h2>
+                {bundle.spec.description ? <p className="panel-text">{bundle.spec.description}</p> : null}
+                {unread.map((p) => (
+                  <ReadProblem key={p.what} problem={p} />
+                ))}
+                <dl className="facts">
+                  {entries.map(({ side, name: entryName, entry }) => {
+                    const href = pageHref(ns, SIDE_TITLE[side], entryName)
+                    return (
+                      <div key={side} className="facts-row">
+                        <dt>{SIDE_TITLE[side]}</dt>
+                        <dd className="mono">
+                          {href ? <a href={href}>{entryName}</a> : entryName}
+                          {entry ? (
+                            <span className="muted"> @ {entry.spec.template.ref}</span>
+                          ) : (
+                            <span className="muted small"> · not in the catalog</span>
+                          )}
+                        </dd>
+                      </div>
+                    )
+                  })}
+                  <div className="facts-row">
+                    <dt>Container types</dt>
+                    <dd>
+                      {types.length ? (
+                        types.map(describeContainerType).join(', ')
+                      ) : entries.some((e) => !e.entry) ? (
+                        <span className="muted">None: an entry is not in the catalog.</span>
+                      ) : (
+                        <span className="muted">None: its entries share no Container type.</span>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            </>
+          ),
+        }}
       />
-
-      <section className="panel" aria-labelledby="bundle-entries">
-        <h2 className="panel-title small-title" id="bundle-entries">
-          Its entries
-        </h2>
-        {bundle.spec.description ? <p className="panel-text">{bundle.spec.description}</p> : null}
-        {unread.map((p) => (
-          <ReadProblem key={p.what} problem={p} />
-        ))}
-        <dl className="facts">
-          {entries.map(({ side, name: entryName, entry }) => {
-            const href = pageHref(ns, SIDE_TITLE[side], entryName)
-            return (
-              <div key={side} className="facts-row">
-                <dt>{SIDE_TITLE[side]}</dt>
-                <dd className="mono">
-                  {href ? <a href={href}>{entryName}</a> : entryName}
-                  {entry ? (
-                    <span className="muted"> @ {entry.spec.template.ref}</span>
-                  ) : (
-                    <span className="muted small"> · not in the catalog</span>
-                  )}
-                </dd>
-              </div>
-            )
-          })}
-          <div className="facts-row">
-            <dt>Container types</dt>
-            <dd>
-              {types.length ? (
-                types.map(describeContainerType).join(', ')
-              ) : entries.some((e) => !e.entry) ? (
-                <span className="muted">None: an entry is not in the catalog.</span>
-              ) : (
-                <span className="muted">None: its entries share no Container type.</span>
-              )}
-            </dd>
-          </div>
-        </dl>
-      </section>
     </div>
   )
 }
@@ -243,25 +253,30 @@ export function DomainPage({
         childrenTitle="Systems that name it"
         children={namedBy(name, systems, containers)}
         links={[]}
+        sections={{
+          overview: (
+            <>
+              <section className="panel" aria-labelledby="domain-template">
+                <h2 className="panel-title small-title" id="domain-template">
+                  Its template
+                </h2>
+                {domain.spec.description ? <p className="panel-text">{domain.spec.description}</p> : null}
+                <dl className="facts">
+                  <dt>Template</dt>
+                  <dd className="mono">{domain.spec.template.url}</dd>
+                  <dt>Pinned at</dt>
+                  <dd className="mono">{domain.spec.template.ref}</dd>
+                  <dt>Lands under</dt>
+                  <dd>
+                    <span className="mono">docs/agents/domain/{name}/</span>
+                    <span className="muted small"> · in each of its systems’ Containers, once, at their scaffold</span>
+                  </dd>
+                </dl>
+              </section>
+            </>
+          ),
+        }}
       />
-
-      <section className="panel" aria-labelledby="domain-template">
-        <h2 className="panel-title small-title" id="domain-template">
-          Its template
-        </h2>
-        {domain.spec.description ? <p className="panel-text">{domain.spec.description}</p> : null}
-        <dl className="facts">
-          <dt>Template</dt>
-          <dd className="mono">{domain.spec.template.url}</dd>
-          <dt>Pinned at</dt>
-          <dd className="mono">{domain.spec.template.ref}</dd>
-          <dt>Lands under</dt>
-          <dd>
-            <span className="mono">docs/agents/domain/{name}/</span>
-            <span className="muted small"> · in each of its systems’ Containers, once, at their scaffold</span>
-          </dd>
-        </dl>
-      </section>
     </div>
   )
 }
@@ -283,26 +298,31 @@ export function GitProviderPage({ provider, containers }: { provider: GitProvide
         childrenTitle="Containers whose repositories it holds"
         children={usedBy('GitProvider', name, containers)}
         links={[]}
+        sections={{
+          overview: (
+            <>
+              <section className="panel" aria-labelledby="gitprovider-where">
+                <h2 className="panel-title small-title" id="gitprovider-where">
+                  Where repositories go
+                </h2>
+                <dl className="facts">
+                  <dt>Provider</dt>
+                  <dd>{provider.spec.provider ?? <span className="muted">not set</span>}</dd>
+                  <dt>Address</dt>
+                  <dd className="mono">{provider.spec.url}</dd>
+                  <dt>Owner</dt>
+                  <dd className="mono">{provider.spec.owner}</dd>
+                  <dt>Credentials</dt>
+                  <dd>
+                    Secret <span className="mono">{provider.spec.credentialsSecretRef.name}</span>
+                    <span className="muted small"> · its name only: the UI never reads Secrets</span>
+                  </dd>
+                </dl>
+              </section>
+            </>
+          ),
+        }}
       />
-
-      <section className="panel" aria-labelledby="gitprovider-where">
-        <h2 className="panel-title small-title" id="gitprovider-where">
-          Where repositories go
-        </h2>
-        <dl className="facts">
-          <dt>Provider</dt>
-          <dd>{provider.spec.provider ?? <span className="muted">not set</span>}</dd>
-          <dt>Address</dt>
-          <dd className="mono">{provider.spec.url}</dd>
-          <dt>Owner</dt>
-          <dd className="mono">{provider.spec.owner}</dd>
-          <dt>Credentials</dt>
-          <dd>
-            Secret <span className="mono">{provider.spec.credentialsSecretRef.name}</span>
-            <span className="muted small"> · its name only: the UI never reads Secrets</span>
-          </dd>
-        </dl>
-      </section>
     </div>
   )
 }

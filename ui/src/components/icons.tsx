@@ -205,6 +205,16 @@ export function InfoIcon(props: IconProps) {
   )
 }
 
+/** A panel on the right of the page. */
+export function PanelRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M15 4v16" />
+    </Icon>
+  )
+}
+
 /** The sidebar: shown or folded to its icons. */
 export function SidebarIcon(props: IconProps) {
   return (

@@ -64,7 +64,6 @@ describe('the shell with refused reads', () => {
   it('says each refused kind in the Work panel that shows it, and no banner', async () => {
     await page.goto(`${base}/?area=work`)
     await panel('Tasks').getByRole('alert').getByText('Could not read tasks.').waitFor({ timeout: 10000 })
-    await panel('Crews').getByRole('alert').getByText('Could not read crews.').waitFor({ timeout: 10000 })
     assert.match(await refusal('tasks').first().textContent(), /The UI is not allowed to read these/)
     // Neither "loading" forever nor "no Tasks yet".
     assert.equal(
@@ -73,21 +72,25 @@ describe('the shell with refused reads', () => {
         .count(),
       0,
     )
+    // Sessions only feed Needs a look, which says the failure that may hide its items.
+    const look = page.getByRole('region', { name: 'Needs a look' })
+    await look.getByRole('alert').getByText('Could not read sessions.').waitFor({ timeout: 5000 })
+    // The Crews are Work's second tab (docs/plans/ui-shell.md, step 2).
+    await page.getByRole('tab', { name: /^Crews/ }).click()
+    await panel('Crews').getByRole('alert').getByText('Could not read crews.').waitFor({ timeout: 10000 })
     assert.equal(
       await panel('Crews')
         .getByText(/No Crews yet/)
         .count(),
       0,
     )
-    // Sessions only feed Needs a look, which says the failure that may hide its items.
-    await panel('Needs a look').getByRole('alert').getByText('Could not read sessions.').waitFor({ timeout: 5000 })
     assert.equal(await page.locator('.banner-problem').count(), 0)
     await shot('ui-states-work-refused.png')
   })
 
   it('says it in Needs you, which a refused kind may hide items from', async () => {
     await page.goto(`${base}/?area=needs`)
-    const needs = panel('Needs you')
+    const needs = page.getByRole('region', { name: 'Needs you' })
     await needs.getByRole('alert').waitFor({ timeout: 10000 })
     const said = await needs.getByRole('alert').textContent()
     for (const what of ['tasks', 'sessions', 'crews']) assert.match(said, new RegExp(`Could not read ${what}\\.`))

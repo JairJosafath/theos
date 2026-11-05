@@ -178,6 +178,20 @@ export function loopStages(input: LoopInput): LoopStage[] {
   return stages
 }
 
+/**
+ * The stage the Loop opens on (docs/plans/ui-shell.md, step 2): the first
+ * review point of a person that has items, since those wait on the reader,
+ * else the first stage with items, else the first stage.
+ */
+export function defaultStage(stages: LoopStage[]): StageKey | undefined {
+  return (stages.find((s) => s.person && s.count > 0) ?? stages.find((s) => s.count > 0) ?? stages[0])?.key
+}
+
+/** The stage the address names, if the loop has it; else the one it opens on. */
+export function selectedStage(stages: LoopStage[], wanted: string | undefined): StageKey | undefined {
+  return stages.find((s) => s.key === wanted)?.key ?? defaultStage(stages)
+}
+
 /** The stage of a Task, from its kind and phase; none for a Plan Task or one that is finished. */
 export function taskStage(task: Task): StageKey | undefined {
   const phase = task.status?.phase ?? 'Pending'

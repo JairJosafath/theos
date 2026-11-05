@@ -326,8 +326,19 @@
   border-color: transparent;
 }
 
-.tabs .picker {
+/* The Story's tools beside its views: the system picker and the panel's toggle. */
+.tabs-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   margin-bottom: 8px;
+}
+
+.panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .workspace {
@@ -396,6 +407,34 @@
   display: grid;
   gap: 16px;
   min-width: 0;
+}
+
+/* The Story's side panel folded: the diagram takes the width. */
+.story-workspace.panel-folded {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.side[hidden] {
+  display: none;
+}
+
+/* The Story's project header, kept short so the diagram fills the screen. */
+.hero-compact {
+  padding-top: 18px;
+  padding-bottom: 14px;
+}
+
+.hero-compact .hero-title {
+  margin: 2px 0 4px;
+  font-size: 24px;
+}
+
+.hero-compact .hero-desc {
+  font-size: 14px;
+}
+
+.hero-compact .hero-summary {
+  margin-top: 6px;
 }
 
 .versions p {

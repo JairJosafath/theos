@@ -211,70 +211,75 @@ export function DeployTargetPage({ target, containers }: { target: DeployTarget;
           }
         })}
         links={[]}
+        sections={{
+          overview: (
+            <>
+              <section className="panel" aria-labelledby="deploytarget-where">
+                <h2 className="panel-title small-title" id="deploytarget-where">
+                  Where it ships
+                </h2>
+                <dl className="facts">
+                  <dt>Tool</dt>
+                  <dd>
+                    {member.label} <span className="mono muted">({member.member})</span>
+                  </dd>
+                  <dt>Where</dt>
+                  <dd>
+                    <Where target={target} />
+                  </dd>
+                  {target.spec.github ? <GitHubFacts target={target} /> : null}
+                  {target.spec.gitlab ? <GitLabFacts target={target} /> : null}
+                  <dt>Tier</dt>
+                  <dd>
+                    {tierOf(target)}
+                    {target.spec.tier ? null : <span className="muted"> (not set)</span>}
+                  </dd>
+                  <dt>Approval</dt>
+                  <dd>{describeApproval(target)}</dd>
+                  <dt>Ready</dt>
+                  <dd>
+                    <Badge tone={ready.tone} label={ready.label} />
+                    {ready.condition?.message ? <span className="panel-text"> {ready.condition.message}</span> : null}
+                    {target.status?.checkedTime ? (
+                      <span className="muted small">
+                        {' '}
+                        · checked <When at={target.status.checkedTime} />
+                      </span>
+                    ) : null}
+                  </dd>
+                  <dt>Credentials</dt>
+                  <dd>
+                    {target.spec.credentialsSecretRef ? (
+                      <>
+                        Secret <span className="mono">{target.spec.credentialsSecretRef.name}</span>
+                        <span className="muted small"> · its name only: the UI never reads Secrets</span>
+                        {target.spec.github ? <GitHubKeys /> : null}
+                        {target.spec.gitlab ? <GitLabKeys /> : null}
+                      </>
+                    ) : (
+                      <span className="muted">none: the operator’s own ServiceAccount, in its cluster</span>
+                    )}
+                  </dd>
+                  <dt>Parameters</dt>
+                  <dd>
+                    {parameters.length ? (
+                      <ul className="object-list">
+                        {parameters.map(([k, v]) => (
+                          <li key={k} className="mono">
+                            {k}: {v}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="muted">None.</span>
+                    )}
+                  </dd>
+                </dl>
+              </section>
+            </>
+          ),
+        }}
       />
-
-      <section className="panel" aria-labelledby="deploytarget-where">
-        <h2 className="panel-title small-title" id="deploytarget-where">
-          Where it ships
-        </h2>
-        <dl className="facts">
-          <dt>Tool</dt>
-          <dd>
-            {member.label} <span className="mono muted">({member.member})</span>
-          </dd>
-          <dt>Where</dt>
-          <dd>
-            <Where target={target} />
-          </dd>
-          {target.spec.github ? <GitHubFacts target={target} /> : null}
-          {target.spec.gitlab ? <GitLabFacts target={target} /> : null}
-          <dt>Tier</dt>
-          <dd>
-            {tierOf(target)}
-            {target.spec.tier ? null : <span className="muted"> (not set)</span>}
-          </dd>
-          <dt>Approval</dt>
-          <dd>{describeApproval(target)}</dd>
-          <dt>Ready</dt>
-          <dd>
-            <Badge tone={ready.tone} label={ready.label} />
-            {ready.condition?.message ? <span className="panel-text"> {ready.condition.message}</span> : null}
-            {target.status?.checkedTime ? (
-              <span className="muted small">
-                {' '}
-                · checked <When at={target.status.checkedTime} />
-              </span>
-            ) : null}
-          </dd>
-          <dt>Credentials</dt>
-          <dd>
-            {target.spec.credentialsSecretRef ? (
-              <>
-                Secret <span className="mono">{target.spec.credentialsSecretRef.name}</span>
-                <span className="muted small"> · its name only: the UI never reads Secrets</span>
-                {target.spec.github ? <GitHubKeys /> : null}
-                {target.spec.gitlab ? <GitLabKeys /> : null}
-              </>
-            ) : (
-              <span className="muted">none: the operator’s own ServiceAccount, in its cluster</span>
-            )}
-          </dd>
-          <dt>Parameters</dt>
-          <dd>
-            {parameters.length ? (
-              <ul className="object-list">
-                {parameters.map(([k, v]) => (
-                  <li key={k} className="mono">
-                    {k}: {v}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <span className="muted">None.</span>
-            )}
-          </dd>
-        </dl>
-      </section>
     </div>
   )
 }

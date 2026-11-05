@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-// Pause runs and Resume on a Brief's card and a Crew's page (#1995): each
+// Pause runs and Resume on a Brief's page and a Crew's page (#1995): each
 // button patches spec.pauseRuns, pausing with spec.paused as the CRD needs, and
 // shows its state from spec.pauseRuns. A Resume of a Brief or Crew whose runs
 // are paused unsets pauseRuns too, so the API takes it.
@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LiveBriefWriter } from '../k8s/briefs'
 import { LiveCrewWriter } from '../k8s/crews'
 import type { Brief, Crew } from '../k8s/types'
-import { Briefs } from './Briefs'
+import { BriefPage } from './objects/BriefPage'
 import { CrewPauseButton, CrewPauseRunsButton } from './objects/CrewActions'
 
 declare global {
@@ -50,13 +50,12 @@ const brief = (spec: Partial<Brief['spec']> = {}): Brief => ({
   spec: { idea: 'A CEL lens', ...spec },
 })
 
+// The buttons were on the Brief's card; the card now opens the page that has them (docs/plans/ui-shell.md).
 function briefCard(b: Brief, fetchImpl: ReturnType<typeof vi.fn>) {
-  return createElement(Briefs, {
-    briefs: [b],
-    namespace: 'webshop',
-    canCreate: false,
+  return createElement(BriefPage, {
+    brief: b,
+    agents: [],
     writer: new LiveBriefWriter('k8s', fetchImpl as unknown as typeof fetch),
-    pageHref: (name: string) => `?kind=Brief&name=${name}`,
   })
 }
 

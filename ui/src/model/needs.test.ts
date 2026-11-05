@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Brief, Condition, Container, Crew, Project, StandardFile, Task } from '../k8s/types'
-import { byProject, needs, type NeedsInput } from './needs'
+import { byProject, kindCounts, needs, type Need, type NeedsInput } from './needs'
 
 const T = '2026-06-01T10:00:00Z'
 const cond = (type: string, status: Condition['status'], reason: string, message: string): Condition => ({
@@ -614,5 +614,15 @@ describe('needs', () => {
       ['shop', 'The shop', 1],
       ['zoo', 'zoo', 1],
     ])
+  })
+
+  it('counts the items of each kind that has any, for the filter chips, in a fixed order', () => {
+    const item = (kind: Need['kind'], name: string) => ({ kind, name }) as Need
+    expect(kindCounts([item('Task', 'a'), item('Brief', 'b'), item('Task', 'c'), item('Crew', 'd')])).toEqual([
+      { kind: 'Brief', count: 1 },
+      { kind: 'Task', count: 2 },
+      { kind: 'Crew', count: 1 },
+    ])
+    expect(kindCounts([])).toEqual([])
   })
 })

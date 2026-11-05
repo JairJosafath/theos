@@ -2,18 +2,23 @@
 // waits on a person across projects, each with why, in status's own words, and
 // where it is done. An item that offers answers, a Standard's files left out,
 // has a button for each with UI actions on, and their commands without.
+//
+// The groups per project fold, remembered in this browser; chips filter the
+// items by kind, with a count each; on a wide screen the items sit in two
+// columns (docs/plans/ui-shell.md, step 2).
 
-import { useContext, useState, type MouseEvent } from 'react'
+import { useContext, useId, useState, type MouseEvent } from 'react'
 import type { ContainerWriter, StandardAnswer } from '../k8s/containers'
 import type { Problem } from '../k8s/sources'
 import type { Project } from '../k8s/types'
 import { hrefFor, SessionContext, type UrlState } from '../lib/hooks'
-import { byProject, type Need, type Place } from '../model/needs'
+import { STORED_KEYS, useStoredSet } from '../lib/prefs'
+import { byProject, kindCounts, type Need, type NeedKind, type Place } from '../model/needs'
 import { SignInLink } from './Account'
 import { LeftOutFiles } from './bits'
 import { writeError, type WriteError } from './briefs/errors'
 import { FormError } from './briefs/PromptForm'
-import { ExternalLinkIcon } from './icons'
+import { ChevronDownIcon, ExternalLinkIcon } from './icons'
 import { PanelState } from './PanelState'
 import './needs.css'
 
@@ -37,37 +42,109 @@ export function NeedsArea({
   /** Sends the answers items offer, with actions on. */
   writer: ContainerWriter
 }) {
-  const groups = byProject(items, projects)
+  const [kind, setKind] = useState<NeedKind>()
+  const [folded, fold] = useStoredSet(STORED_KEYS.needsFolded)
+  const counts = kindCounts(items)
+  // A kind whose items are gone shows them all again.
+  const filter = counts.some((c) => c.kind === kind) ? kind : undefined
+  const groups = byProject(filter ? items.filter((i) => i.kind === filter) : items, projects)
   return (
-    <div className="shell-page">
-      <section className="panel needs">
-        <h1 className="panel-title">Needs you</h1>
-        <p className="panel-caption">
-          What waits on a person, across projects: why, as the factory says it, and where it is done.
-        </p>
-        <PanelState
-          loaded={loaded}
-          problems={problems}
-          empty={groups.length === 0}
-          loading="Loading what waits on a person…"
-          emptyText="Nothing waits on you. Briefs, Containers, Tasks and Crews will show up here when one does."
-        >
+    <section className="shell-page needs" aria-labelledby="needs-title">
+      <header className="area-head">
+        <div>
+          <h1 className="area-title" id="needs-title">
+            Needs you
+          </h1>
+          <p className="area-caption">
+            What waits on a person, across projects: why, as the factory says it, and where it is done.
+          </p>
+        </div>
+        {items.length ? (
+          <div className="chips" role="group" aria-label="Show the items of a kind">
+            <Chip label="All" count={items.length} on={!filter} onClick={() => setKind(undefined)} />
+            {counts.map((c) => (
+              <Chip
+                key={c.kind}
+                label={c.kind}
+                count={c.count}
+                on={filter === c.kind}
+                onClick={() => setKind(filter === c.kind ? undefined : c.kind)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </header>
+      <PanelState
+        loaded={loaded}
+        problems={problems}
+        empty={items.length === 0}
+        loading="Loading what waits on a person…"
+        emptyText="Nothing waits on you. Briefs, Containers, Tasks and Crews will show up here when one does."
+      >
+        <div className="needs-groups">
           {groups.map((g) => (
-            <section key={g.namespace} className="needs-project" aria-label={`Project ${g.title}`}>
-              <h2 className="needs-project-title">
-                {g.title}
-                {g.title !== g.namespace ? <code>{g.namespace}</code> : null}
-              </h2>
-              <ul className="needs-list">
-                {g.items.map((item) => (
-                  <NeedItem key={item.key} item={item} setUrl={setUrl} writer={writer} />
-                ))}
-              </ul>
-            </section>
+            <NeedsGroup
+              key={g.namespace}
+              group={g}
+              folded={folded.has(g.namespace)}
+              onFold={(on) => fold(g.namespace, on)}
+              setUrl={setUrl}
+              writer={writer}
+            />
           ))}
-        </PanelState>
-      </section>
-    </div>
+        </div>
+      </PanelState>
+    </section>
+  )
+}
+
+/** A filter chip: its kind and how many items it has, pressed while it filters. */
+function Chip({ label, count, on, onClick }: { label: string; count: number; on: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className="chip" aria-pressed={on} onClick={onClick}>
+      {label}
+      <span className="chip-count">{count}</span>
+    </button>
+  )
+}
+
+/** A project's items under a heading that folds them, with their count. */
+function NeedsGroup({
+  group,
+  folded,
+  onFold,
+  setUrl,
+  writer,
+}: {
+  group: ReturnType<typeof byProject>[number]
+  folded: boolean
+  onFold: (folded: boolean) => void
+  setUrl: (next: Partial<UrlState>) => void
+  writer: ContainerWriter
+}) {
+  const id = useId()
+  return (
+    <section className="panel needs-project" aria-label={`Project ${group.title}`}>
+      <h2 className="needs-project-title">
+        <button
+          type="button"
+          className="fold-button"
+          aria-expanded={!folded}
+          aria-controls={id}
+          onClick={() => onFold(!folded)}
+        >
+          <ChevronDownIcon size={16} className="fold-chevron" />
+          {group.title}
+          {group.title !== group.namespace ? <code>{group.namespace}</code> : null}
+          <span className="chip-count">{group.items.length}</span>
+        </button>
+      </h2>
+      <ul className="needs-list" id={id} hidden={folded}>
+        {group.items.map((item) => (
+          <NeedItem key={item.key} item={item} setUrl={setUrl} writer={writer} />
+        ))}
+      </ul>
+    </section>
   )
 }
 

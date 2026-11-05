@@ -54,59 +54,66 @@ export function ProjectPage({
           note: s.status?.summary,
         }))}
         links={[]}
+        sections={{
+          overview: (
+            <>
+              <section className="panel" aria-labelledby="project-counts">
+                <h2 className="panel-title small-title" id="project-counts">
+                  What it holds
+                </h2>
+                {project.spec?.description ? <p className="panel-text">{project.spec.description}</p> : null}
+                <dl className="facts">
+                  <dt>Software systems</dt>
+                  <dd>{count(status?.softwareSystems)}</dd>
+                  <dt>Containers</dt>
+                  <dd>
+                    {status?.containers === undefined
+                      ? 'not reported yet'
+                      : `${status.containers}, ${status.readyContainers ?? 0} Ready`}
+                  </dd>
+                  <dt>Active sessions</dt>
+                  <dd>{count(status?.activeSessions)}</dd>
+                  {project.spec?.license ? (
+                    <>
+                      <dt>License</dt>
+                      <dd className="mono">{project.spec.license}</dd>
+                    </>
+                  ) : null}
+                  {status?.summary ? (
+                    <>
+                      <dt>Summary</dt>
+                      <dd>{status.summary}</dd>
+                    </>
+                  ) : null}
+                </dl>
+                <p className="panel-text">
+                  <a href={storyHref(ns)}>See its story</a>
+                </p>
+              </section>
+
+              <section className="panel" aria-labelledby="project-versions">
+                <h2 className="panel-title small-title" id="project-versions">
+                  The factory that reconciles it
+                </h2>
+                <dl className="facts">
+                  <dt>Operator</dt>
+                  <dd className="mono">{status?.factory?.operatorVersion ?? 'not reported yet'}</dd>
+                  <dt>Chart</dt>
+                  <dd className="mono">{status?.factory?.chartVersion ?? 'not reported yet'}</dd>
+                  <dt>API</dt>
+                  <dd className="mono">{project.apiVersion ?? `${GROUP}/${VERSION}`}</dd>
+                </dl>
+              </section>
+            </>
+          ),
+          related: (
+            <>
+              <CatalogList ns={ns} data={data} connection={connection} />
+              <DeployTargetList ns={ns} data={data} connection={connection} />
+            </>
+          ),
+        }}
       />
-
-      <section className="panel" aria-labelledby="project-counts">
-        <h2 className="panel-title small-title" id="project-counts">
-          What it holds
-        </h2>
-        {project.spec?.description ? <p className="panel-text">{project.spec.description}</p> : null}
-        <dl className="facts">
-          <dt>Software systems</dt>
-          <dd>{count(status?.softwareSystems)}</dd>
-          <dt>Containers</dt>
-          <dd>
-            {status?.containers === undefined
-              ? 'not reported yet'
-              : `${status.containers}, ${status.readyContainers ?? 0} Ready`}
-          </dd>
-          <dt>Active sessions</dt>
-          <dd>{count(status?.activeSessions)}</dd>
-          {project.spec?.license ? (
-            <>
-              <dt>License</dt>
-              <dd className="mono">{project.spec.license}</dd>
-            </>
-          ) : null}
-          {status?.summary ? (
-            <>
-              <dt>Summary</dt>
-              <dd>{status.summary}</dd>
-            </>
-          ) : null}
-        </dl>
-        <p className="panel-text">
-          <a href={storyHref(ns)}>See its story</a>
-        </p>
-      </section>
-
-      <section className="panel" aria-labelledby="project-versions">
-        <h2 className="panel-title small-title" id="project-versions">
-          The factory that reconciles it
-        </h2>
-        <dl className="facts">
-          <dt>Operator</dt>
-          <dd className="mono">{status?.factory?.operatorVersion ?? 'not reported yet'}</dd>
-          <dt>Chart</dt>
-          <dd className="mono">{status?.factory?.chartVersion ?? 'not reported yet'}</dd>
-          <dt>API</dt>
-          <dd className="mono">{project.apiVersion ?? `${GROUP}/${VERSION}`}</dd>
-        </dl>
-      </section>
-
-      <CatalogList ns={ns} data={data} connection={connection} />
-
-      <DeployTargetList ns={ns} data={data} connection={connection} />
     </div>
   )
 }
@@ -140,57 +147,62 @@ export function SystemPage({ system, data }: { system: SoftwareSystem; data: Sto
         childrenTitle="Containers and data stores"
         children={children}
         links={[]}
+        sections={{
+          overview: (
+            <>
+              <section className="panel" aria-labelledby="system-purpose">
+                <h2 className="panel-title small-title" id="system-purpose">
+                  What it is for
+                </h2>
+                {system.spec?.description ? <p className="panel-text">{system.spec.description}</p> : null}
+                <dl className="facts">
+                  <dt>Needs</dt>
+                  <dd>{list(system.spec?.needs, 'None written down.')}</dd>
+                  <dt>KPIs</dt>
+                  <dd>{list(system.spec?.kpis, 'None written down.')}</dd>
+                  <dt>Domains</dt>
+                  <dd>
+                    {/* Each linked to its page, with the catalog's pinned ref; a Domain is rendered into its Containers at their scaffold. */}
+                    {system.spec?.domainRefs?.length ? (
+                      <ul className="object-list">
+                        {system.spec.domainRefs.map((d) => {
+                          const entry = data.domains.find((e) => e.metadata.name === d)
+                          const href = pageHref(ns, 'Domain', d)
+                          return (
+                            <li key={d} className="mono">
+                              {href ? <a href={href}>{d}</a> : d}
+                              {entry ? (
+                                <span className="muted"> @ {entry.spec.template.ref}</span>
+                              ) : (
+                                <span className="muted small"> · not in the catalog</span>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    ) : (
+                      <span className="muted">None.</span>
+                    )}
+                  </dd>
+                  <dt>Containers</dt>
+                  <dd>
+                    {status?.containers === undefined
+                      ? 'not reported yet'
+                      : `${status.containers}, ${status.readyContainers ?? 0} Ready`}
+                  </dd>
+                  <dt>Data stores</dt>
+                  <dd>{count(status?.dataStores)}</dd>
+                  <dt>Active sessions</dt>
+                  <dd>{count(status?.activeSessions)}</dd>
+                </dl>
+                <p className="panel-text">
+                  <a href={storyHref(ns, name)}>See its containers in the story</a>
+                </p>
+              </section>
+            </>
+          ),
+        }}
       />
-
-      <section className="panel" aria-labelledby="system-purpose">
-        <h2 className="panel-title small-title" id="system-purpose">
-          What it is for
-        </h2>
-        {system.spec?.description ? <p className="panel-text">{system.spec.description}</p> : null}
-        <dl className="facts">
-          <dt>Needs</dt>
-          <dd>{list(system.spec?.needs, 'None written down.')}</dd>
-          <dt>KPIs</dt>
-          <dd>{list(system.spec?.kpis, 'None written down.')}</dd>
-          <dt>Domains</dt>
-          <dd>
-            {/* Each linked to its page, with the catalog's pinned ref; a Domain is rendered into its Containers at their scaffold. */}
-            {system.spec?.domainRefs?.length ? (
-              <ul className="object-list">
-                {system.spec.domainRefs.map((d) => {
-                  const entry = data.domains.find((e) => e.metadata.name === d)
-                  const href = pageHref(ns, 'Domain', d)
-                  return (
-                    <li key={d} className="mono">
-                      {href ? <a href={href}>{d}</a> : d}
-                      {entry ? (
-                        <span className="muted"> @ {entry.spec.template.ref}</span>
-                      ) : (
-                        <span className="muted small"> · not in the catalog</span>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            ) : (
-              <span className="muted">None.</span>
-            )}
-          </dd>
-          <dt>Containers</dt>
-          <dd>
-            {status?.containers === undefined
-              ? 'not reported yet'
-              : `${status.containers}, ${status.readyContainers ?? 0} Ready`}
-          </dd>
-          <dt>Data stores</dt>
-          <dd>{count(status?.dataStores)}</dd>
-          <dt>Active sessions</dt>
-          <dd>{count(status?.activeSessions)}</dd>
-        </dl>
-        <p className="panel-text">
-          <a href={storyHref(ns, name)}>See its containers in the story</a>
-        </p>
-      </section>
     </div>
   )
 }
@@ -274,29 +286,34 @@ export function SessionPage({ session, data }: { session: Session; data: StoryDa
         childrenTitle="Where it works"
         children={[{ kind: 'Container', name: containerName, href: pageHref(ns, 'Container', containerName) }]}
         links={links}
-      />
-
-      <section className="panel" aria-labelledby="session-who">
-        <h2 className="panel-title small-title" id="session-who">
-          Who and when
-        </h2>
-        <dl className="facts">
-          <dt>Who</dt>
-          <dd>{session.spec.actor === 'agent' ? 'An agent' : 'A person'}</dd>
-          <dt>What</dt>
-          <dd>{session.spec.summary || <span className="muted">No summary given.</span>}</dd>
-          <dt>Last heartbeat</dt>
-          <dd>{heartbeat ? <When at={heartbeat} full /> : <span className="muted">None yet.</span>}</dd>
-          {session.metadata.creationTimestamp ? (
+        sections={{
+          overview: (
             <>
-              <dt>Started</dt>
-              <dd>
-                <When at={session.metadata.creationTimestamp} full />
-              </dd>
+              <section className="panel" aria-labelledby="session-who">
+                <h2 className="panel-title small-title" id="session-who">
+                  Who and when
+                </h2>
+                <dl className="facts">
+                  <dt>Who</dt>
+                  <dd>{session.spec.actor === 'agent' ? 'An agent' : 'A person'}</dd>
+                  <dt>What</dt>
+                  <dd>{session.spec.summary || <span className="muted">No summary given.</span>}</dd>
+                  <dt>Last heartbeat</dt>
+                  <dd>{heartbeat ? <When at={heartbeat} full /> : <span className="muted">None yet.</span>}</dd>
+                  {session.metadata.creationTimestamp ? (
+                    <>
+                      <dt>Started</dt>
+                      <dd>
+                        <When at={session.metadata.creationTimestamp} full />
+                      </dd>
+                    </>
+                  ) : null}
+                </dl>
+              </section>
             </>
-          ) : null}
-        </dl>
-      </section>
+          ),
+        }}
+      />
     </div>
   )
 }

@@ -7,6 +7,46 @@
   padding-bottom: 24px;
 }
 
+/* The page's sections as tabs under its header (docs/plans/ui-shell.md, step 2). */
+.object-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.object-tabs {
+  min-width: 0;
+}
+
+.object-tabs > .tabs-ui-list {
+  /* The tabs stay in reach under the top bar, or at the top of the drawer's body. */
+  position: sticky;
+  top: var(--topbar-h, 0px);
+  z-index: 2;
+  background: var(--bg);
+}
+
+.drawer .object-tabs > .tabs-ui-list {
+  top: 0;
+}
+
+.object-tabs > .tabs-ui-panel {
+  padding-top: 14px;
+}
+
+.object-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+/* A section's first heading in a tab: the tab names it, so no gap above. */
+.object-tab > .panel > .object-section:first-child {
+  margin-top: 0;
+}
+
 .crumbs ol {
   display: flex;
   flex-wrap: wrap;

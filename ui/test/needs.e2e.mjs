@@ -198,8 +198,9 @@ describe('Needs you', () => {
     await page.goto(`${flagged.base}/`)
     await page.locator('.need').first().waitFor({ timeout: 10000 })
     assert.equal(new URL(page.url()).searchParams.get('area'), 'needs')
+    // Each project's title, namespace and count of items, on the button that folds its group.
     const projects = await page.locator('.needs-project-title').allTextContents()
-    assert.deepEqual(projects, ['The shopshop', 'The zoozoo'])
+    assert.deepEqual(projects, ['The shopshop5', 'The zoozoo3'])
 
     const want = [
       ['Brief', 'checkout', 'PlannerNeedsInput', 'Which payment provider should it use?'],

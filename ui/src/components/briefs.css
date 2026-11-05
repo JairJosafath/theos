@@ -1,26 +1,120 @@
 /* The Briefs view: Briefs.tsx and components/briefs/. */
 
-.briefs {
-  padding: 24px var(--gutter) 8px;
-}
-
-.briefs .view-caption {
-  margin-bottom: 12px;
-}
-
 .briefs-grid {
-  /* Columns rather than a grid, so a tall card doesn't leave holes beside it. */
-  columns: 330px;
-  column-gap: 14px;
-}
-
-.briefs-grid > * {
-  break-inside: avoid;
-  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .briefs-grid .panel {
   padding: 14px 16px 16px;
+}
+
+/* A Brief's card: a few lines, the whole card a link to its page. */
+.brief-card {
+  display: grid;
+  min-width: 0;
+}
+
+.brief-card-link {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+  text-decoration: none;
+  border-top: 3px solid var(--tone, var(--border));
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.brief-card-link:hover {
+  border-color: var(--border-strong);
+  border-top-color: var(--tone, var(--border-strong));
+  box-shadow: var(--shadow-sm);
+}
+
+.brief-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brief-card-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--link);
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brief-card-link:hover .brief-card-name {
+  text-decoration: underline;
+}
+
+.brief-card-head .badge {
+  flex: none;
+}
+
+/* The idea and the latest round in two lines at most, the waits in one. */
+.brief-card-idea,
+.brief-card-round {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.brief-card-round {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.brief-card-round strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.brief-card-waits {
+  overflow: hidden;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brief-card-waits-waiting {
+  color: var(--waiting);
+  background: var(--waiting-bg);
+}
+
+.brief-card-waits-error {
+  color: var(--error);
+  background: var(--error-bg);
+}
+
+.brief-card-meta {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brief-card-link {
+    transition: none;
+  }
 }
 
 .brief-new {
@@ -158,35 +252,12 @@ textarea.input {
   color: var(--error);
 }
 
-.brief-title {
-  min-width: 0;
-}
-
-.brief-head-actions {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-}
-
 .button-small {
   padding: 3px 10px;
   font-size: 12px;
 }
 
-.brief-title .panel-title {
-  font-size: 14.5px;
-  overflow-wrap: anywhere;
-}
-
-.brief-meta {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--text-3);
-}
-
-.brief-meta .sep {
+.brief-card-meta .sep {
   margin: 0 5px;
 }
 

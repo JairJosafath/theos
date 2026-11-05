@@ -191,6 +191,10 @@
   padding-top: 16px;
 }
 
+.tabs-ui-panel[hidden] {
+  display: none;
+}
+
 /* Menu and popovers */
 
 .menu {

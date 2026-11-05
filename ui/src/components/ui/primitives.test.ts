@@ -257,6 +257,36 @@ describe('Tabs', () => {
     )
     expect(panel().textContent).toBe('The board')
   })
+
+  it("keeps an object page's tab as otab=, beside the area's tab=", async () => {
+    const setUrl = vi.fn()
+    const url: UrlState = { demo: false, view: 'context', area: 'work', tab: 'crews', otab: 'time' }
+    await render(
+      createElement(
+        UrlContext.Provider,
+        { value: [url, setUrl] },
+        createElement(Tabs, { tabs: TABS, label: 'Task', syncUrl: true, urlKey: 'otab' }),
+      ),
+    )
+    expect(panel().textContent).toBe('The time')
+    await act(async () => tab('Board').click())
+    expect(setUrl).toHaveBeenCalledWith({ otab: 'board' }, true)
+  })
+
+  it('keeps every panel on the page with keepMounted, the others hidden', async () => {
+    await render(createElement(Tabs, { tabs: TABS, label: 'Task', keepMounted: true }))
+    const panels = [...document.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
+    // The disabled tab's panel is not on the page.
+    expect(panels.map((p) => [p.textContent, p.hidden])).toEqual([
+      ['The board', false],
+      ['The crews', true],
+      ['The time', true],
+    ])
+    expect(tab('Crews').getAttribute('aria-controls')).toBe(panels[1].id)
+    await act(async () => tab('Crews').click())
+    expect(panels[0].hidden).toBe(true)
+    expect(panels[1].hidden).toBe(false)
+  })
 })
 
 describe('Menu', () => {

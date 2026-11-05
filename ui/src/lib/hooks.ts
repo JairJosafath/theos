@@ -93,6 +93,8 @@ export interface UrlState {
   full?: boolean
   /** The area's tab on screen, for the areas with tabs (components/ui/Tabs.tsx). */
   tab?: string
+  /** The object page's tab (Overview, Status, Activity, Related): otab=, only beside an object. */
+  otab?: string
   project?: string
   view: View
   system?: string
@@ -119,6 +121,7 @@ export function parseUrl(search: string): UrlState {
     name: get('name'),
     full: params.get('full') === '1' || undefined,
     tab: get('tab'),
+    otab: get('otab'),
     project: get('project'),
     // A system alone was always shown with its containers.
     view: VIEWS.includes(viewParam as View) ? (viewParam as View) : system ? 'containers' : 'context',
@@ -138,9 +141,21 @@ function readUrl(): UrlState {
   return parseUrl(window.location.search)
 }
 
+/**
+ * What the address says after `next`: merged into `now`, except that another
+ * object opens on its first tab unless `next` names one.
+ */
+export function mergeUrl(now: UrlState, next: Partial<UrlState>): UrlState {
+  const merged = { ...now, ...next }
+  const otherObject = merged.ns !== now.ns || merged.kind !== now.kind || merged.name !== now.name
+  if (otherObject && !('otab' in next)) merged.otab = undefined
+  if (!(merged.kind && merged.name)) merged.otab = undefined
+  return merged
+}
+
 /** The link to the page with `next` merged into what the URL says now. */
 export function hrefFor(next: Partial<UrlState>): string {
-  const merged = { ...readUrl(), ...next }
+  const merged = mergeUrl(readUrl(), next)
   const params = new URLSearchParams()
   if (merged.demo) params.set('demo', '1')
   if (merged.area) params.set('area', merged.area)
@@ -150,6 +165,7 @@ export function hrefFor(next: Partial<UrlState>): string {
     params.set('kind', merged.kind)
     params.set('name', merged.name)
     if (merged.full) params.set('full', '1')
+    if (merged.otab) params.set('otab', merged.otab)
   }
   if (merged.project) params.set('project', merged.project)
   if (merged.view === 'containers') {
@@ -221,7 +237,7 @@ export function useUrlState(): [UrlState, SetUrl] {
   }, [])
   const update = useCallback((next: Partial<UrlState>, replace = false) => {
     // The URL is the source of truth, so merge into what it says now.
-    const merged = { ...readUrl(), ...next }
+    const merged = mergeUrl(readUrl(), next)
     const url = hrefFor(next)
     if (url !== currentHref()) {
       window.history[replace ? 'replaceState' : 'pushState'](null, '', url)

@@ -23,7 +23,7 @@ export function StoryLine({ data }: { data: StoryData }) {
       <ol>
         {steps.map((step) => (
           <li key={step.key} className={`storyline-step tone-${step.tone}`}>
-            <a href={hrefOf(step.to, data.namespace)}>
+            <a href={hrefOf(step.to, data.namespace)} title={[step.value, step.detail].filter(Boolean).join(': ')}>
               <span className="storyline-label">{step.label}</span>
               <span className="storyline-value">{step.value}</span>
               {step.detail ? <span className="storyline-detail">{step.detail}</span> : null}

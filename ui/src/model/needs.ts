@@ -85,6 +85,16 @@ export function needs(input: NeedsInput): Need[] {
   )
 }
 
+/** The kinds an item can be of, in the order Needs you's filter chips show them. */
+export const NEED_KINDS: NeedKind[] = ['Brief', 'Container', 'Task', 'Crew']
+
+/** How many items there are of each kind that has any, in NEED_KINDS order: Needs you's filter chips. */
+export function kindCounts(items: Need[]): { kind: NeedKind; count: number }[] {
+  return NEED_KINDS.map((kind) => ({ kind, count: items.filter((i) => i.kind === kind).length })).filter(
+    (k) => k.count > 0,
+  )
+}
+
 /** The items by project, in the order needs() gives them, each with the Project's display name. */
 export function byProject(items: Need[], projects: Project[]): { namespace: string; title: string; items: Need[] }[] {
   const groups: { namespace: string; title: string; items: Need[] }[] = []

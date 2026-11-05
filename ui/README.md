@@ -26,9 +26,19 @@ before the first paint. _Settings_ (a modal) also sets the density
 menus and the palette are one set of primitives in
 [src/components/ui/](src/components/ui/).
 
+Each area fits its summary on a wide screen, in a grid of two or three
+columns that falls to one on a phone; what is more sits in a tab, a fold or
+the drawer. An area's tab, and the stage the Loop shows, are the address's
+`tab=`, changed without a history entry so Back still closes the drawer; an
+object page's tab is `otab=`. What folds (a Needs you group, the Story's side
+panel) is remembered in this browser.
+
 The page opens on _Needs you_ when it has items, else on _Story_:
 
-- **Needs you**, across all projects, grouped by project: what waits on a
+- **Needs you**, across all projects, in a group per project that folds
+  (remembered in this browser), with a chip per kind (Brief, Container, Task,
+  Crew) and its count to show only those, the items two abreast on a wide
+  screen: what waits on a
   person, read only from status ([src/model/needs.ts](src/model/needs.ts)): a
   Brief needing input or a decision, a Container that failed to scaffold or
   whose Standard update pull request waits, or one whose deploy waits for a
@@ -40,8 +50,11 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   `kubectl` line to copy.
 - **Loop** of one project: its software-development cycle drawn from the
   resources alone ([src/model/loop.ts](src/model/loop.ts)), read only. A ring
-  of ten stages with a count each, then the items of each, linked to their
-  object pages or out to the Git host: _Idea or bug_ (Briefs Pending or
+  of ten stages with a count each and, beside it, the items of the stage a
+  node selects (`tab=`; it opens on the first review that waits on a person
+  and has items, else the first stage with any), linked to their object
+  pages or out to the Git host; on a phone, the ring, a chip per stage, then
+  the stage: _Idea or bug_ (Briefs Pending or
   Planning), _Triage_, _Spec_ (Tasks by `spec.kind` and phase), _Reviewing the
   spec_ (a Spec Task `AwaitingApproval`; person), _Implement_, _Reviewing the
   code_, _Verify_ (Implement Tasks by phase), _Reviewing the product_ (deploys
@@ -50,9 +63,12 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   (degraded or failed deploys with the bug the monitor filed, and how many are
   healthy). The two stages that wait on a person are drawn with a person's
   icon and a dashed border.
-- **Briefs** of one project: a _Describe an app_ card whose _New brief_ opens the form that creates a Brief (an
+- **Briefs** of one project, a grid of cards: a _Describe an app_ card whose _New brief_ opens the form that creates a Brief (an
   idea and a name, suggested from the idea, and optionally its autopilot mode
-  and how many issues each of its crews works on at once), and a card per Brief with its
+  and how many issues each of its crews works on at once), and a card per
+  Brief with its name, phase, idea, what it waits for, its round and cost and
+  its latest round in a line, which opens the Brief's page in the drawer.
+  The page has its
   phase, what it waits for when it needs input, the planner's latest choices,
   the objects and issues it made, each app's releases (on or off, the
   latest tag linking to its Gitea release, and where it was published, linking to
@@ -62,8 +78,9 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   condition: which Tasks still run, or that nothing does. The forms check none
   of the CRD's rules: submit is enabled for any non-empty input, and the API
   server's message shows as is when it refuses. Only shown in a namespace with a Project.
-- **Story** of one project: its story in one line (Briefs, plan, model,
-  repositories, Tasks and releases, each a link), then two diagrams.
+- **Story** of one project: its story in one compact row (Briefs, plan, model,
+  repositories, Tasks and releases, each a link), then two diagrams, which
+  take the width when the side panel is folded (remembered in this browser).
   **System context** (C4 level 1): the People and SoftwareSystems, the
   Relationships between them, each system's needs, KPIs and roll-up summary.
   **Containers** (C4 level 2) of one system: its Containers and DataStores inside
@@ -74,15 +91,17 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   the details of any other box, **who's working right now** (the Sessions per
   Container, agent or human, Active or Stale, with the age of the last
   heartbeat) and a legend.
-- **Work**, across all projects: a list of what needs a look, such as a Task
-  waiting for an unavailable agent or a Crew that can't pick up issues; the
-  Tasks on a board by stage, each with its timeline; the Crews, each with its
-  Agents and their models, the Task it works on and its ready and waiting
-  issues; their releases; where the time goes across Tasks; and beside them
-  the factory's health and the agent slots. Each Task and Crew opens its page.
-- **Factory**: whether each part of the factory is healthy, with restarts, CPU
-  and memory; the node's usage and the last hour (API server response, CPU,
-  memory); the agent slots and who waits for one.
+- **Work**, across all projects: the headline numbers, then one line of what
+  needs a look, such as a Task waiting for an unavailable agent or a Crew
+  that can't pick up issues, which opens to the whole list; then tabs: _Board_
+  (the Tasks by stage, each with its timeline), _Crews_ (each with its Agents
+  and their models, the Task it works on and its ready and waiting issues),
+  _Releases_, and _Time & tokens_ (where the time goes across Tasks, and what
+  they used). Each Task and Crew opens its page.
+- **Factory**, a dashboard: a card for each part of the factory, healthy or
+  not, with restarts, CPU and memory; the node's usage; the last hour (API
+  server response, CPU, memory) side by side; the agent slots and who waits
+  for one.
 - **About**: the versions running, and links to the running release's design
   and release notes, and to the repository.
 
@@ -95,8 +114,11 @@ Back closes it; _Open full page_ adds `full=1` for the page at full width), with
 name and a breadcrumb to what it belongs to; the kind's lifecycle as a stepper
 ([src/model/lifecycle.ts](src/model/lifecycle.ts)), side exits such as Failed
 or Blocked off the path; what a person does now, as an action the UI takes or
-the exact next step (a link, or a `kubectl` line with a copy button); then its
-conditions, timeline, children and links out. The Task page adds its rounds,
+the exact next step (a link, or a `kubectl` line with a copy button). Its
+sections follow as tabs, as the kind has them (`otab=`; another object opens
+on its first): _Overview_ (the kind's own sections), _Status_ (conditions),
+_Activity_ (timeline, rounds and runs) and _Related_ (children and links out).
+The Task page adds its rounds,
 checks, review and agent runs; the Crew page its slots, Tasks, routes by label and last release;
 the Container page, for a Container with a Standard, when CI runs its full
 check (`spec.checks`), what its repository runs now and `ChecksApplied` when
