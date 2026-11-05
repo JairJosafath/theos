@@ -62,6 +62,8 @@ var templateCombos = []struct {
 		{model.SideCompute, "small"},
 		{model.SideDeployment, "k8s-manifests"},
 		{model.SideConnector, "postgres"},
+		// The ProRivals ladder-worker's layers (config/samples/prorivals).
+		{model.SideDomain, "esports-domain"},
 	}},
 	{"python job on kubernetes", "job", []side{
 		{model.SideFramework, "python-cli"},

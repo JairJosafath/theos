@@ -24,6 +24,8 @@ done
 "$KUSTOMIZE" build config/samples/webshop-github >"$OUT/kustomize-webshop-github.yaml"
 # The webshop with orders-api also published on GitLab (#1804).
 "$KUSTOMIZE" build config/samples/webshop-gitlab >"$OUT/kustomize-webshop-gitlab.yaml"
+# ProRivals, the esports community on the chart's catalog (docs/plans/prorivals.md).
+"$KUSTOMIZE" build config/samples/prorivals >"$OUT/kustomize-prorivals.yaml"
 
 # The webshop sample's orders-api repository, as the operator scaffolds it.
 rm -rf "$OUT/orders-api"
@@ -303,7 +305,7 @@ for want in '--shared-secret=claude-credentials' 'name: POD_NAMESPACE' 'fieldPat
 		exit 1
 	fi
 done
-for f in config/samples/webshop/namespace.yaml test/e2e/testdata/apps/namespace.yaml; do
+for f in config/samples/webshop/namespace.yaml config/samples/prorivals/namespace.yaml test/e2e/testdata/apps/namespace.yaml; do
 	if ! grep -qF 'theos.factory.io/shared-secrets: "true"' "$f"; then
 		echo "$f lacks label theos.factory.io/shared-secrets: \"true\": the operator wouldn't share the pull secret into it, and its agents wouldn't reach the model proxy" >&2
 		exit 1

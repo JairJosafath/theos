@@ -1,0 +1,43 @@
+# ProRivals' Brief: the app a player uses, in their words, next to the model
+# in story.yaml, which says what it is built from. The planner Agent plans
+# against that model: it keeps the three Containers and the DataStore, makes
+# a Crew per Container and files their first issues, the challenge loop
+# first. Needs the model applied (kubectl apply -k config/samples/prorivals)
+# and Secret claude-credentials, which you create yourself
+# (docs/getting-started.md). Not in kustomization.yaml: apply it after the
+# model with
+# kubectl apply -n prorivals -f config/samples/prorivals/brief.yaml
+# Each later step is a prompt. The first, once the Brief is Planned (later
+# ones append with a JSON patch, or the UI's prompt field):
+# kubectl -n prorivals patch brief prorivals --type=merge \
+#   -p '{"spec":{"prompts":["Leagues of clubs, with seasons, generated fixtures and standings."]}}'
+apiVersion: theos.factory.io/v1beta1
+kind: Brief
+metadata:
+  name: prorivals
+spec:
+  idea: >-
+    ProRivals is an esports community where players and clubs challenge
+    their rivals and climb the ladder. A player signs in, picks a gamer tag,
+    a region and the games they play, and challenges a rival to a match:
+    the game, best of one, three or five, and up to three times that suit
+    them, shown in each player's own time zone. The rival accepts one of the
+    times or declines; a challenge nobody answers expires after two days.
+    After the match both sides report the score. Two reports that agree
+    confirm the result; a report the other side leaves unanswered for a day
+    is confirmed as reported; two that differ go to a moderator, who sees
+    both reports and their screenshots and decides. Only confirmed results
+    count: each one moves both players' Glicko-2 ratings, and the ladder,
+    per game and per region, shows who is on top, with players who have
+    played too few matches marked provisional. Every profile shows the
+    player's rating and its history, their record against each rival and
+    their club. Players form clubs with an owner, managers and captains; a
+    club invites a player, the player accepts, and a player is on at most
+    one club per game. Clubs challenge clubs the same way players challenge
+    players, and have their own rating. Anyone can report a challenge, a
+    result, a name or a picture they find abusive, and a moderator acts on
+    it. Build the players' challenge loop first, from sign-in to the ladder,
+    and clubs once it works end to end. Later prompts add leagues with
+    seasons, fixtures and standings, tournaments with brackets, transfers
+    between clubs, and news posts from clubs and leagues. ProRivals runs on
+    the Kubernetes cluster it is built on.

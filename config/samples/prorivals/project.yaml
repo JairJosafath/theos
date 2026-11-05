@@ -1,0 +1,11 @@
+# One Project per namespace, named after it.
+apiVersion: theos.factory.io/v1beta1
+kind: Project
+metadata:
+  name: prorivals
+spec:
+  displayName: ProRivals
+  description: An esports community where players and clubs challenge their rivals and climb ladders, leagues and tournaments.
+  # No spec.license: the Containers are scaffolded without a LICENSE. Set one
+  # (an SPDX id such as MIT) before the first Container to have it written;
+  # the factory never picks one.

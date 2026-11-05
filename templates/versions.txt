@@ -31,3 +31,4 @@ hello-standard v1.1.0
 hello-html v1.1.0
 hello-html-standard v1.0.0
 webshop-domain v1.0.0
+esports-domain v1.0.0

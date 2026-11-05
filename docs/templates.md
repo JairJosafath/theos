@@ -48,6 +48,7 @@ ships*, the others `priority/4`. One gap shared by many rows is one issue.
 | k8s-manifests | Deployment | W | yes | yes | yes | yes | yes, #1072 | n/a | n/a |
 | gitea-release | Deployment | W | yes | yes | yes | yes | yes | n/a | n/a |
 | webshop-domain | Domain | W | yes | yes | n/a | yes | n/a | n/a | n/a |
+| esports-domain | Domain | | yes | yes | n/a | yes | n/a | n/a | n/a |
 | go-cli | Framework | | yes | yes | yes | yes | yes | yes | n/a |
 | go-kubebuilder | Framework | | yes | yes | yes | yes | yes | yes | yes |
 | vscode-extension | Framework | | yes | yes | yes | yes | yes | yes | n/a |
@@ -395,6 +396,27 @@ Domain is Markdown the agents read, so most promises don't apply.
 - Tests: `TestDomainTemplatesHaveTheShape` checks the shape of every
   `*-domain` folder (Markdown only, the README names every topic file, the
   four headings) and builds it as a Container's Domain.
+- README: the template's own `README.md`, the file an agent reads first.
+- Lint, Deploy, Logging, Auth: n/a: prose, with no code, service or user.
+
+### esports-domain (v1.0.0)
+
+The esports Domain (catalog entry `esports`; [plans/prorivals.md](plans/prorivals.md)):
+what an esports community app is about, for the agents that build and
+review one, in plain prose and with no stack. A `README.md` with a glossary
+and a line per topic, and a topic file each for players, clubs and rosters;
+challenges and matches; results and disputes; ratings and leaderboards;
+leagues and tournaments; and community and safety, each with the four
+headings *Practices*, *Common mistakes*, *Controversies* and *Sources*. The
+ProRivals sample's `prorivals-core` names it (`config/samples/prorivals`),
+so every file lands under `docs/agents/domain/esports/` of its Containers.
+
+- CI: rendered in the "python worker on kubernetes" combination of
+  `templateCombos` (`TestEveryTemplateRenders`); the shell combo "python
+  worker on kubernetes with postgres" in `hack/test-templates.sh`, the
+  sample's `ladder-worker`, renders it with `Domain=esports-domain` and runs
+  that repository's `make check` to green.
+- Tests: `TestDomainTemplatesHaveTheShape`, as for every `*-domain` folder.
 - README: the template's own `README.md`, the file an agent reads first.
 - Lint, Deploy, Logging, Auth: n/a: prose, with no code, service or user.
 

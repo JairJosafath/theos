@@ -1,0 +1,17 @@
+# ProRivals (docs/plans/prorivals.md): an esports community where players and
+# clubs challenge their rivals, report and confirm results, and climb ladders,
+# leagues and tournaments. The owner's eprosportsv2 and rival-me-2, blended
+# into one app the factory builds. Needs the chart installed with prorivals in
+# gitea.projects, which makes GitProvider gitea, Secret gitea-credentials, the
+# catalog (react-vite, python-fastapi, python-cli, ts-standard,
+# python-standard, small, k8s-manifests, postgres, the Domain esports) and the
+# Agents. brief.yaml, the app in a player's words, is applied on its own after
+# the model: it needs Secret claude-credentials, which you create yourself.
+# Apply with: kubectl apply -k config/samples/prorivals
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prorivals
+resources:
+- namespace.yaml
+- project.yaml
+- story.yaml

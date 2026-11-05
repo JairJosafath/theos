@@ -30,6 +30,7 @@ combos=(
 	"fastapi service with postgres|service|orders|Orders|Framework=python-fastapi Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres Domain=webshop-domain"
 	"python cli|cli|shop-admin|Shop Admin|Framework=python-cli Standard=python-standard Deployment=gitea-release"
 	"python job on kubernetes|job|nightly-report|Nightly Report|Framework=python-cli Standard=python-standard Compute=small Deployment=k8s-manifests"
+	"python worker on kubernetes with postgres|worker|ladder-worker|Ladder Worker|Framework=python-cli Standard=python-standard Compute=small Deployment=k8s-manifests Connector=postgres Domain=esports-domain"
 	"react web app on kubernetes|static-site|storefront|Storefront|Framework=react-vite Standard=ts-standard Compute=small Deployment=k8s-manifests"
 	"node cli|cli|shop-tool|Shop Tool|Framework=node-cli Standard=ts-standard Deployment=gitea-release"
 	"go cli|cli|shop-ctl|Shop Ctl|Framework=go-cli Standard=go-standard Deployment=gitea-release"

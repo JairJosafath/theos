@@ -1,0 +1,270 @@
+# Who uses what, and what it is made of (docs/plans/prorivals.md, decision 2).
+# A player and a club manager use arena-web, a web app that does everything
+# through rivals-api; a moderator decides disputes and reports there too.
+# rivals-api keeps players, clubs, challenges, matches and results in
+# rivals-db and enforces who may do what. ladder-worker goes through
+# rivals-api for everything the API owns (it lists the confirmed results,
+# confirms results left unanswered and expires stale challenges, under the
+# API's rules) and keeps ratings and leaderboards in rivals-db's ladder
+# schema, which rivals-api only reads.
+# Players sign in at an identity provider the story only names. The esports
+# Domain on prorivals-core gives every Container the subject's practices,
+# common mistakes and choices under docs/agents/domain/esports/.
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
+  name: player
+spec:
+  displayName: Player
+  description: Someone who challenges rivals, plays the matches and climbs the ladder.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
+  name: club-manager
+spec:
+  displayName: Club manager
+  description: Someone who runs a club, its roster and the challenges it takes on.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
+  name: moderator
+spec:
+  displayName: Moderator
+  description: Someone the community trusts to decide disputed results and act on reports.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: SoftwareSystem
+metadata:
+  name: prorivals-core
+spec:
+  displayName: ProRivals Core
+  description: Players, clubs, challenges, results, ratings and ladders
+  domainRefs: [esports]
+  needs:
+  - A player challenges a rival in under a minute
+  - Only results both sides agreed on, or a moderator decided, move a rating
+  - Every rating change says which match moved it
+  kpis:
+  - Challenges accepted per week
+  - Results confirmed within a day of the match
+  - Disputes decided within two days
+---
+apiVersion: theos.factory.io/v1beta1
+kind: SoftwareSystem
+metadata:
+  name: identity-provider
+spec:
+  displayName: Identity provider
+  description: Signs players in (OpenID Connect) and issues the tokens rivals-api verifies; which one is the operator's setting.
+  location: External
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: arena-web
+spec:
+  softwareSystemRef:
+    name: prorivals-core
+  displayName: Arena web
+  description: ProRivals in the browser, to challenge, report results, follow the ladder and run a club.
+  type: static-site
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: react-vite
+  standardRef:
+    name: ts-standard
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
+  # No deploy list: each release ships nowhere until a DeployTarget is named
+  # here, as the webshop's deploytarget-argocd.yaml shows (decision 6).
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: rivals-api
+spec:
+  softwareSystemRef:
+    name: prorivals-core
+  displayName: Rivals API
+  description: Keeps players, clubs and their memberships, challenges, matches, result reports and disputes, and decides who may do each.
+  type: service
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: python-fastapi
+  standardRef:
+    name: python-standard
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
+---
+# A worker on Kubernetes: python-cli's worker, a loop that stops cleanly on
+# SIGTERM, in the image k8s-manifests builds, with no Service.
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: ladder-worker
+spec:
+  softwareSystemRef:
+    name: prorivals-core
+  displayName: Ladder worker
+  description: Turns confirmed results into Glicko-2 ratings and leaderboards, confirms results left unanswered and expires stale challenges.
+  type: worker
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: python-cli
+  standardRef:
+    name: python-standard
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
+---
+apiVersion: theos.factory.io/v1beta1
+kind: DataStore
+metadata:
+  name: rivals-db
+spec:
+  softwareSystemRef:
+    name: prorivals-core
+  displayName: Rivals DB
+  description: Players, clubs, challenges, matches and results in the API's schema; ratings and leaderboards in the ladder's.
+  connectorRef:
+    name: postgres
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: player-uses-prorivals-core
+spec:
+  source:
+    kind: Person
+    name: player
+  target:
+    kind: SoftwareSystem
+    name: prorivals-core
+  description: Challenges rivals, reports results and climbs the ladder
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: player-uses-arena-web
+spec:
+  source:
+    kind: Person
+    name: player
+  target:
+    kind: Container
+    name: arena-web
+  description: Challenges, accepts, reports results and follows the ladder, in the browser
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: club-manager-uses-arena-web
+spec:
+  source:
+    kind: Person
+    name: club-manager
+  target:
+    kind: Container
+    name: arena-web
+  description: Invites players, manages the roster and challenges other clubs
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: moderator-uses-arena-web
+spec:
+  source:
+    kind: Person
+    name: moderator
+  target:
+    kind: Container
+    name: arena-web
+  description: Decides disputed results and acts on reports
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: arena-web-to-rivals-api
+spec:
+  source:
+    kind: Container
+    name: arena-web
+  target:
+    kind: Container
+    name: rivals-api
+  description: Everything the app shows and does (JSON over HTTP, with the player's token)
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: arena-web-to-identity-provider
+spec:
+  source:
+    kind: Container
+    name: arena-web
+  target:
+    kind: SoftwareSystem
+    name: identity-provider
+  description: Sends the player to sign in and gets their token
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: rivals-api-to-identity-provider
+spec:
+  source:
+    kind: Container
+    name: rivals-api
+  target:
+    kind: SoftwareSystem
+    name: identity-provider
+  description: Verifies each request's token against the provider's keys
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: rivals-api-to-rivals-db
+spec:
+  source:
+    kind: Container
+    name: rivals-api
+  target:
+    kind: DataStore
+    name: rivals-db
+  description: Reads and writes its schema (players, clubs, challenges, matches, results); reads the ladder schema to serve ratings and leaderboards
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: ladder-worker-to-rivals-db
+spec:
+  source:
+    kind: Container
+    name: ladder-worker
+  target:
+    kind: DataStore
+    name: rivals-db
+  description: Reads and writes the ladder schema (ratings, rating changes, leaderboards)
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: ladder-worker-to-rivals-api
+spec:
+  source:
+    kind: Container
+    name: ladder-worker
+  target:
+    kind: Container
+    name: rivals-api
+  description: Lists results confirmed since its last run; confirms results whose window passed and expires stale challenges (JSON over HTTP)

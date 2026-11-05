@@ -869,6 +869,13 @@ catalog:
       spec:
         displayName: Webshop
         description: "What a webshop is about, for the agents that build and review one: catalog and search, cart, checkout and orders, stock, payments, pricing and money, accounts and personal data, each with its practices, common mistakes, the controversies and the choice made in each, and sources."
+    - kind: Domain
+      name: esports
+      template: esports-domain
+      ref: v1.0.0
+      spec:
+        displayName: Esports
+        description: "What an esports community app is about, for the agents that build and review one: players, clubs and rosters, challenges and matches, results and disputes, ratings and leaderboards, leagues and tournaments, community and safety, each with its practices, common mistakes, the controversies and the choice made in each, and sources."
   ## Bundles: a Framework, Standard, Compute and Deployment picked together, which
   ## a Container names with bundleRef instead of its four sides
   ## (docs/plans/done/catalog-bundles.md). No template and no ref: each names entries

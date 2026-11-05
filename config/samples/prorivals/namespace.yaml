@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prorivals
+  labels:
+    # The operator copies its shared Secrets, such as claude-credentials, here.
+    theos.factory.io/shared-secrets: "true"
