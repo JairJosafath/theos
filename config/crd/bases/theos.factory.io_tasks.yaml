@@ -1485,10 +1485,17 @@ spec:
                     type: string
                   approvedBy:
                     description: |-
-                      approvedBy is the Git host user who approved the pull request, once a
-                      person did; empty when the reviewer's approval was enough.
+                      approvedBy is who approved the spec, once a person did: the Git host
+                      user who approved the pull request, or the Kubernetes user who approved
+                      it from chat (the theos.factory.io/approve-spec annotation; then
+                      approvedInChat); empty when the reviewer's approval was enough.
                     maxLength: 256
                     type: string
+                  approvedInChat:
+                    description: |-
+                      approvedInChat says approvedBy approved the spec from chat, not on the
+                      Git host.
+                    type: boolean
                   criteria:
                     description: |-
                       criteria are the spec's acceptance criteria, copied into the issue's
@@ -1597,6 +1604,18 @@ spec:
                   triage is a Triage Task's decision, once its triager reported one, and
                   what the operator did with it.
                 properties:
+                  answered:
+                    description: answered says what the operator did with that answer.
+                    maxLength: 1024
+                    type: string
+                  answeredBy:
+                    description: |-
+                      answeredBy is the Kubernetes user whose answer to a park decision's
+                      question, from chat (the theos.factory.io/answer annotation), the
+                      operator took to the issue; the issue then goes back to
+                      status/proposed and is triaged again.
+                    maxLength: 256
+                    type: string
                   applied:
                     description: |-
                       applied says what the operator did to the issue, or why it did nothing:

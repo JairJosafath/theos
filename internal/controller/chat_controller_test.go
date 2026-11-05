@@ -68,10 +68,14 @@ var _ = Describe("Chat", func() {
 		ns := newProjectNamespace()
 		bot := chatBot(ns)
 		ada, _ := chatFake.NewUser("ada-" + ns)
-		chat := newChat(ns, "chat", "matrix-bot", c4v1beta1.ChatPerson{MatrixID: ada, User: "ada@example.com",
+		// Each person adds themselves (config/policy/chat_people_policy.yaml).
+		adaUser, bobUser := "ada-"+ns+"@example.com", "bob-"+ns+"@example.com"
+		grant(adaUser, roleChatPeople)
+		grant(bobUser, roleChatPeople)
+		chat := newChat(ns, "chat", "matrix-bot", c4v1beta1.ChatPerson{MatrixID: ada, User: adaUser,
 			Groups: []string{"shop-team"}})
 		chat.Spec.Rooms.General = "lobby"
-		mustCreate(chat)
+		Expect(asUser(adaUser, "shop-team").Create(ctx, chat)).To(Succeed())
 		Expect(chat.Spec.Rooms.Updates).To(Equal("updates"), "the CRD names each room after its purpose")
 		Expect(chat.Spec.DigestMinutes).To(Equal(int32(10)))
 
@@ -118,8 +122,8 @@ var _ = Describe("Chat", func() {
 		rooms, made := chatFake.Rooms(), chatFake.Calls("createRoom")
 		ids := chatRoomIDs(chat)
 		bob, _ := chatFake.NewUser("bob-" + ns)
-		Expect(patch(chat, func() {
-			chat.Spec.People = append(chat.Spec.People, c4v1beta1.ChatPerson{MatrixID: bob, User: "bob@example.com"})
+		Expect(patchAs(asUser(bobUser), chat, func() {
+			chat.Spec.People = append(chat.Spec.People, c4v1beta1.ChatPerson{MatrixID: bob, User: bobUser})
 		})).To(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, "chat"), chat)).To(Succeed())

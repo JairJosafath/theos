@@ -12,7 +12,7 @@ set -euo pipefail
 # The kustomize overlays that build offline. config/agent-sandbox,
 # config/argocd and config/metrics-server fetch remote URLs, so they are left
 # out.
-OVERLAYS=(default gitea ui)
+OVERLAYS=(default gitea ui chat)
 echo "Skipped, they fetch remote URLs: config/agent-sandbox, config/argocd, config/metrics-server"
 
 mkdir -p "$OUT"

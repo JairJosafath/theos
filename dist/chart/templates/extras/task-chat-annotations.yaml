@@ -1,0 +1,40 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "theos.resourceName" (dict "suffix" "task-chat-annotations" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - theos.factory.io
+      apiVersions:
+      - '*'
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - tasks
+  validations:
+  - expression: size(variables.changed) == 0 || !request.userInfo.username.startsWith('system:')
+    messageExpression: 'request.userInfo.username + '' may not write '' + variables.changed.join('', '')
+      + '': a person writes them, from chat or as themselves'''
+    reason: Forbidden
+  - expression: variables.changed.all(k, !(k in variables.new) || (k + '-by' in variables.new
+      && variables.new[k + '-by'] == request.userInfo.username))
+    messageExpression: '''each of '' + variables.changed.join('', '') + '' needs its -by
+      annotation naming who writes it, '' + request.userInfo.username'
+    reason: Forbidden
+  variables:
+  - expression: '[''theos.factory.io/approve-spec'', ''theos.factory.io/spec-changes'',
+      ''theos.factory.io/answer'']'
+    name: keys
+  - expression: 'has(object.metadata.annotations) ? object.metadata.annotations : {}'
+    name: new
+  - expression: 'oldObject != null && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations
+      : {}'
+    name: old
+  - expression: variables.keys.filter(k, [k, k + '-by'].exists(a, (a in variables.new)
+      != (a in variables.old) || (a in variables.new && variables.new[a] != variables.old[a])))
+    name: changed

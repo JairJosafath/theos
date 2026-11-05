@@ -16,15 +16,17 @@ import (
 // The methods and JSON patch operations of the requests, and the JSON types
 // their checks name.
 const (
-	methodPOST  = "POST"
-	methodPATCH = "PATCH"
-	opTest      = "test"
-	opAdd       = "add"
-	opReplace   = "replace"
-	pathPrompts = "/spec/prompts"
-	fieldTarget = "target"
-	jsonBoolean = "boolean"
-	jsonString  = "string"
+	methodPOST       = "POST"
+	methodPATCH      = "PATCH"
+	opTest           = "test"
+	opAdd            = "add"
+	opReplace        = "replace"
+	pathPrompts      = "/spec/prompts"
+	fieldTarget      = "target"
+	fieldMetadata    = "metadata"
+	fieldAnnotations = "annotations"
+	jsonBoolean      = "boolean"
+	jsonString       = "string"
 )
 
 // ChatRequest is the one write a chat command becomes, made by theos-chat
@@ -68,6 +70,22 @@ const (
 	ChatAnnotationAnswer = "theos.factory.io/answer"
 )
 
+// ChatAnnotationBySuffix makes each of the three chat annotations' companion,
+// <annotation>-by: who wrote it, as their Kubernetes user name. The
+// admission policy (config/policy/task_chat_annotations_policy.yaml) refuses
+// a write that sets or changes an annotation unless its companion names the
+// writer, request.userInfo.username, and any write of them by a service
+// account, so the companion can't be forged; the operator counts no
+// annotation without one.
+const ChatAnnotationBySuffix = "-by"
+
+// ChatAnnotationBy is annotation's companion naming who wrote it.
+func ChatAnnotationBy(annotation string) string { return annotation + ChatAnnotationBySuffix }
+
+// ChatAnnotations are the three annotations a person writes from chat
+// alone, which the admission policy guards.
+var ChatAnnotations = []string{ChatAnnotationApproveSpec, ChatAnnotationSpecChanges, ChatAnnotationAnswer}
+
 // The resources a command writes.
 const (
 	chatBriefs     = "briefs"
@@ -107,16 +125,19 @@ type ChatDeployView struct {
 // posted the root: its event, the object's name, and for a spec the head
 // commit shown, for a deploy the DeployTarget.
 type ChatItem struct {
-	Event  ChatEventKind
-	Name   string
-	Commit string
-	Target string
+	Event  ChatEventKind `json:"event,omitempty"`
+	Name   string        `json:"name,omitempty"`
+	Commit string        `json:"commit,omitempty"`
+	Target string        `json:"target,omitempty"`
 }
 
 // ChatContext is what a command's write is made from: the thread's item,
-// and the object as just read.
+// the object as just read, and who gives it.
 type ChatContext struct {
-	Item   ChatItem
+	Item ChatItem
+	// By is the Kubernetes user the person acts as: the chat annotations name
+	// them in their companion (ChatAnnotationBy).
+	By     string
 	Brief  ChatBriefView
 	Deploy []ChatDeployView
 	// Now stamps a retry.
@@ -143,20 +164,20 @@ func ChatCommandRequest(cmd ChatCommand, c ChatContext) (ChatRequest, bool, erro
 	case ChatCommandResume:
 		req = ChatPauseBrief(cmd.Brief, false, c.Brief.PauseRuns)
 	case ChatCommandAnswer:
-		err = chatItemIs(c.Item, ChatEventTriageQuestion, cmd.Kind)
-		req = ChatAnswer(c.Item.Name, cmd.Text)
+		err = chatItemIs(c, ChatEventTriageQuestion, cmd.Kind)
+		req = ChatAnswer(c.Item.Name, cmd.Text, c.By)
 	case ChatCommandApproveSpec:
-		err = chatItemIs(c.Item, ChatEventSpecWaiting, cmd.Kind)
-		req = ChatApproveSpec(c.Item.Name, c.Item.Commit)
+		err = chatItemIs(c, ChatEventSpecWaiting, cmd.Kind)
+		req = ChatApproveSpec(c.Item.Name, c.Item.Commit, c.By)
 	case ChatCommandChanges:
-		err = chatItemIs(c.Item, ChatEventSpecWaiting, cmd.Kind)
-		req = ChatSpecChanges(c.Item.Name, c.Item.Commit, cmd.Text)
+		err = chatItemIs(c, ChatEventSpecWaiting, cmd.Kind)
+		req = ChatSpecChanges(c.Item.Name, c.Item.Commit, cmd.Text, c.By)
 	case ChatCommandApproveDeploy:
-		if err = chatItemIs(c.Item, ChatEventDeployWaiting, cmd.Kind); err == nil {
+		if err = chatItemIs(c, ChatEventDeployWaiting, cmd.Kind); err == nil {
 			req, err = ChatApproveDeploy(c.Item.Name, c.Deploy, c.Item.Target, cmd.Version)
 		}
 	case ChatCommandRetry:
-		err = chatItemIs(c.Item, ChatEventContainerFailed, cmd.Kind)
+		err = chatItemIs(c, ChatEventContainerFailed, cmd.Kind)
 		req = ChatRetryContainer(c.Item.Name, c.Now)
 	default:
 		return ChatRequest{}, false, fmt.Errorf("%w: no write for command %q", ErrChatInvalidCommand, cmd.Kind)
@@ -170,13 +191,18 @@ func ChatCommandRequest(cmd ChatCommand, c ChatContext) (ChatRequest, bool, erro
 	return req, true, nil
 }
 
-// chatItemIs refuses a thread command on a thread about something else.
-func chatItemIs(item ChatItem, want ChatEventKind, cmd ChatCommandKind) error {
+// chatItemIs refuses a thread command on a thread about something else, and
+// one of the chat annotations from nobody.
+func chatItemIs(c ChatContext, want ChatEventKind, cmd ChatCommandKind) error {
+	item := c.Item
 	if item.Event != want || item.Name == "" {
 		return fmt.Errorf("%w: %s answers a thread the factory started about it", ErrChatInvalidCommand, cmd)
 	}
 	if want == ChatEventSpecWaiting && item.Commit == "" {
-		return fmt.Errorf("%w: the thread names no commit to approve", ErrChatInvalidCommand)
+		return fmt.Errorf("%w: nothing in this thread waits for approval now", ErrChatInvalidCommand)
+	}
+	if (want == ChatEventSpecWaiting || want == ChatEventTriageQuestion) && c.By == "" {
+		return fmt.Errorf("%w: %s needs the person's Kubernetes user", ErrChatInvalidCommand, cmd)
 	}
 	return nil
 }
@@ -200,8 +226,8 @@ func mustJSON(v any) []byte {
 func ChatCreateBrief(idea string) ChatRequest {
 	return ChatRequest{Method: methodPOST, Resource: chatBriefs, ContentType: ChatJSON, Body: mustJSON(map[string]any{
 		"apiVersion": ChatAPIVersion, "kind": "Brief",
-		"metadata": map[string]any{"generateName": "brief-"},
-		"spec":     map[string]any{"idea": idea},
+		fieldMetadata: map[string]any{"generateName": "brief-"},
+		"spec":        map[string]any{"idea": idea},
 	})}
 }
 
@@ -249,7 +275,7 @@ func ChatPauseBrief(name string, paused, runsPaused bool) ChatRequest {
 // chatAnnotate is a merge patch setting one annotation.
 func chatAnnotate(resource, name, key, value string) ChatRequest {
 	return ChatRequest{Method: methodPATCH, Resource: resource, Name: name, ContentType: ChatMergePatch,
-		Body: mustJSON(map[string]any{"metadata": map[string]any{"annotations": map[string]string{key: value}}})}
+		Body: mustJSON(map[string]any{fieldMetadata: map[string]any{fieldAnnotations: map[string]string{key: value}}})}
 }
 
 // ChatRetryContainer scaffolds Container name again, as the UI's retry
@@ -258,14 +284,24 @@ func ChatRetryContainer(name string, now time.Time) ChatRequest {
 	return chatAnnotate(chatContainers, name, ChatAnnotationRetry, strconv.FormatInt(now.Unix(), 10))
 }
 
-// ChatApproveSpec approves the spec of Spec Task name at commit.
-func ChatApproveSpec(name, commit string) ChatRequest {
-	return chatAnnotate(chatTasks, name, ChatAnnotationApproveSpec, commit)
+// chatAnnotateBy is a merge patch on Task name setting one of the chat
+// annotations and its companion naming by, the Kubernetes user who writes
+// it.
+func chatAnnotateBy(name, key, value, by string) ChatRequest {
+	return ChatRequest{Method: methodPATCH, Resource: chatTasks, Name: name, ContentType: ChatMergePatch,
+		Body: mustJSON(map[string]any{fieldMetadata: map[string]any{fieldAnnotations: map[string]string{
+			key: value, ChatAnnotationBy(key): by}}})}
 }
 
-// ChatSpecChanges asks for changes to the spec of Spec Task name at commit.
-func ChatSpecChanges(name, commit, text string) ChatRequest {
-	return chatAnnotate(chatTasks, name, ChatAnnotationSpecChanges, commit+" "+text)
+// ChatApproveSpec approves the spec of Spec Task name at commit, as by.
+func ChatApproveSpec(name, commit, by string) ChatRequest {
+	return chatAnnotateBy(name, ChatAnnotationApproveSpec, commit, by)
+}
+
+// ChatSpecChanges asks for changes to the spec of Spec Task name at commit,
+// as by.
+func ChatSpecChanges(name, commit, text, by string) ChatRequest {
+	return chatAnnotateBy(name, ChatAnnotationSpecChanges, commit+" "+text, by)
 }
 
 // ParseChatSpecChanges reads the spec-changes annotation's value: the
@@ -275,9 +311,9 @@ func ParseChatSpecChanges(value string) (commit, text string, ok bool) {
 	return commit, text, ok && commit != "" && text != ""
 }
 
-// ChatAnswer answers the question of Triage Task name's parked issue.
-func ChatAnswer(name, text string) ChatRequest {
-	return chatAnnotate(chatTasks, name, ChatAnnotationAnswer, text)
+// ChatAnswer answers the question of Triage Task name's parked issue, as by.
+func ChatAnswer(name, text, by string) ChatRequest {
+	return chatAnnotateBy(name, ChatAnnotationAnswer, text, by)
 }
 
 // ChatApproveDeploy lets version into Container name's deploy entry for
@@ -335,9 +371,11 @@ var chatAllowlist = []chatAllowed{
 	// The UI's "approve a version at one of a Container's spec.deploy entries".
 	{"approve a deploy", methodPATCH, chatContainers, ChatJSONPatch, approvesDeploy},
 	// The plan's spec approval, and its changes and triage answer.
-	{"approve a spec", methodPATCH, chatTasks, ChatMergePatch, setsAnnotation(ChatAnnotationApproveSpec)},
-	{"ask for changes to a spec", methodPATCH, chatTasks, ChatMergePatch, setsAnnotation(ChatAnnotationSpecChanges)},
-	{"answer a parked issue", methodPATCH, chatTasks, ChatMergePatch, setsAnnotation(ChatAnnotationAnswer)},
+	// Each with its companion naming the writer, which the admission policy
+	// holds to the request's user.
+	{"approve a spec", methodPATCH, chatTasks, ChatMergePatch, setsAnnotationBy(ChatAnnotationApproveSpec)},
+	{"ask for changes to a spec", methodPATCH, chatTasks, ChatMergePatch, setsAnnotationBy(ChatAnnotationSpecChanges)},
+	{"answer a parked issue", methodPATCH, chatTasks, ChatMergePatch, setsAnnotationBy(ChatAnnotationAnswer)},
 }
 
 // CheckChatRequest refuses, wrapping ErrChatRefused, any request but the
@@ -494,33 +532,50 @@ func addsFields(fields map[string]string) func(any) bool {
 	}
 }
 
+// mergedAnnotations reads a merge patch that sets annotations and nothing
+// else: exactly keys.
+func mergedAnnotations(body any, keys ...string) (map[string]any, bool) {
+	obj, ok := keysAre(body, fieldMetadata)
+	if !ok {
+		return nil, false
+	}
+	meta, ok := keysAre(obj[fieldMetadata], fieldAnnotations)
+	if !ok {
+		return nil, false
+	}
+	return keysAre(meta[fieldAnnotations], keys...)
+}
+
 // setsAnnotation is the UI's setsAnnotation: a merge patch setting exactly
 // annotation key to a string.
 func setsAnnotation(key string) func(any) bool {
 	return func(body any) bool {
-		obj, ok := keysAre(body, "metadata")
-		if !ok {
-			return false
-		}
-		meta, ok := keysAre(obj["metadata"], "annotations")
-		if !ok {
-			return false
-		}
-		annotations, ok := keysAre(meta["annotations"], key)
+		annotations, ok := mergedAnnotations(body, key)
 		return ok && hasType(annotations[key], jsonString)
+	}
+}
+
+// setsAnnotationBy is a merge patch setting exactly annotation key and its
+// companion naming the writer, both strings, the companion not empty.
+func setsAnnotationBy(key string) func(any) bool {
+	by := ChatAnnotationBy(key)
+	return func(body any) bool {
+		annotations, ok := mergedAnnotations(body, key, by)
+		who, _ := annotations[by].(string)
+		return ok && hasType(annotations[key], jsonString) && who != ""
 	}
 }
 
 // createsBrief is a new Brief with a generated name or a name, and an idea
 // only.
 func createsBrief(body any) bool {
-	obj, ok := keysAre(body, "apiVersion", "kind", "metadata", "spec")
+	obj, ok := keysAre(body, "apiVersion", "kind", fieldMetadata, "spec")
 	if !ok || obj["apiVersion"] != ChatAPIVersion || obj["kind"] != "Brief" {
 		return false
 	}
-	meta, okName := keysAre(obj["metadata"], "name")
+	meta, okName := keysAre(obj[fieldMetadata], "name")
 	if !okName {
-		meta, ok = keysAre(obj["metadata"], "generateName")
+		meta, ok = keysAre(obj[fieldMetadata], "generateName")
 		if !ok || !hasType(meta["generateName"], jsonString) {
 			return false
 		}

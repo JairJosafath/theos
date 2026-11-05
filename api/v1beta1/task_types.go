@@ -342,6 +342,19 @@ type TriageDecision struct {
 	// +kubebuilder:validation:MaxLength=1024
 	// +optional
 	Applied string `json:"applied,omitempty"`
+
+	// answeredBy is the Kubernetes user whose answer to a park decision's
+	// question, from chat (the theos.factory.io/answer annotation), the
+	// operator took to the issue; the issue then goes back to
+	// status/proposed and is triaged again.
+	// +kubebuilder:validation:MaxLength=256
+	// +optional
+	AnsweredBy string `json:"answeredBy,omitempty"`
+
+	// answered says what the operator did with that answer.
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Answered string `json:"answered,omitempty"`
 }
 
 // Who approves a spec's pull request before it merges.
@@ -370,11 +383,18 @@ type TaskSpecResult struct {
 	// +optional
 	Approval SpecApproval `json:"approval,omitempty"`
 
-	// approvedBy is the Git host user who approved the pull request, once a
-	// person did; empty when the reviewer's approval was enough.
+	// approvedBy is who approved the spec, once a person did: the Git host
+	// user who approved the pull request, or the Kubernetes user who approved
+	// it from chat (the theos.factory.io/approve-spec annotation; then
+	// approvedInChat); empty when the reviewer's approval was enough.
 	// +kubebuilder:validation:MaxLength=256
 	// +optional
 	ApprovedBy string `json:"approvedBy,omitempty"`
+
+	// approvedInChat says approvedBy approved the spec from chat, not on the
+	// Git host.
+	// +optional
+	ApprovedInChat bool `json:"approvedInChat,omitempty"`
 
 	// criteria are the spec's acceptance criteria, copied into the issue's
 	// description once the spec merged.

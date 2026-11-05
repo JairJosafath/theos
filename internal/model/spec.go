@@ -134,11 +134,14 @@ type PullReview struct {
 }
 
 // PersonVerdict is what people said of a pull request's commit: who approved
-// it, or who asked for changes and what.
+// it, or who asked for changes and what; ApprovedInChat and ChangesInChat say
+// they said it from chat (ChatSpecVerdict), not on the Git host.
 type PersonVerdict struct {
-	ApprovedBy string
-	ChangesBy  string
-	Changes    string
+	ApprovedBy     string
+	ChangesBy      string
+	Changes        string
+	ApprovedInChat bool
+	ChangesInChat  bool
 }
 
 // PersonReviews is the verdict of the people, not factory accounts

@@ -24,7 +24,9 @@ spec:
   # The updates room posts its news every 10 minutes (the default).
   digestMinutes: 10
   # Each person's commands are made as their Kubernetes user and groups, so
-  # the cluster's RBAC decides what they may do.
+  # the cluster's RBAC decides what they may do. Each person adds their own
+  # entry: the admission policy takes one only with the writer's own user and
+  # groups (config/policy/chat_people_policy.yaml), so ada applies this.
   people:
     - matrixID: "@ada:matrix.example.com"
       user: ada@example.com

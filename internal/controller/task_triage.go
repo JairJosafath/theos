@@ -59,6 +59,9 @@ func (r *TaskReconciler) reconcileTriage(ctx context.Context, task *c4v1beta1.Ta
 		status.Phase = c4v1beta1.TaskPending
 	}
 	if isFinal(status.Phase) {
+		if err := r.answerTriage(ctx, task, status, &container); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, r.writeStatus(ctx, task, status)
 	}
 	var agent c4v1beta1.Agent
@@ -336,6 +339,65 @@ func (r *TaskReconciler) failedTriages(ctx context.Context, task *c4v1beta1.Task
 	return failed, nil
 }
 
+// answerTriage takes a person's answer from chat to the question of the
+// Task's parked issue, its theos.factory.io/answer annotation, to the issue
+// (model.PlanChatAnswer): a comment naming who answered, the person the
+// annotation's -by companion names, which the admission policy holds to
+// whoever wrote it, and the issue back to status/proposed, which the Crew
+// then triages again, as the Task recorded the answer in status. An answer
+// to no question, or from nobody, is left as it is; one answer is taken.
+func (r *TaskReconciler) answerTriage(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container) error {
+	if status.Triage == nil {
+		return nil
+	}
+	answer := model.ChatWordOf(task.Annotations, model.ChatAnnotationAnswer)
+	// Planned for an issue unread first: only an answer to take reads it.
+	plan := model.PlanChatAnswer(status.Triage.Decision, status.Triage.AnsweredBy, answer, model.TriageIssue{})
+	if plan.Ignore != "" {
+		logf.FromContext(ctx).Info("Left an answer from chat as it is", "reason", plan.Ignore)
+		return nil
+	}
+	if plan.Answered == "" {
+		return nil
+	}
+	provider, repo, err := r.gitRepo(ctx, container)
+	if err != nil {
+		return err
+	}
+	n := int(task.Spec.Issue)
+	var issue ports.Issue
+	if err := r.gitCall(ctx, func(ctx context.Context) (err error) {
+		issue, err = provider.GetIssue(ctx, repo, n)
+		return err
+	}); err != nil {
+		return err
+	}
+	plan = model.PlanChatAnswer(status.Triage.Decision, status.Triage.AnsweredBy, answer,
+		model.TriageIssue{Number: n, Body: issue.Body, Labels: issue.Labels, Closed: issue.State == stateClosed})
+	var calls []func(context.Context) error
+	if plan.Comment != "" {
+		calls = append(calls, func(ctx context.Context) error { return provider.CommentIssue(ctx, repo, n, plan.Comment) })
+	}
+	if plan.Relabel {
+		calls = append(calls,
+			func(ctx context.Context) error { return provider.EnsureLabels(ctx, repo, issueLabels()) },
+			func(ctx context.Context) error { return provider.AddIssueLabel(ctx, repo, n, model.LabelProposed) },
+			// The exclusive scope drops it too, but not where the labels came
+			// over non-exclusive from a migration (#2039).
+			func(ctx context.Context) error { return provider.RemoveIssueLabel(ctx, repo, n, model.LabelNeedsHuman) })
+	}
+	for _, call := range calls {
+		if err := r.gitCall(ctx, call); err != nil {
+			return err
+		}
+	}
+	status.Triage.AnsweredBy, status.Triage.Answered = answer.By, plan.Answered
+	logf.FromContext(ctx).Info("Took an answer from chat to the issue", "issue", n, "by", answer.By,
+		"answered", plan.Answered)
+	return nil
+}
+
 // isTriage reports whether t is a Triage Task.
 func isTriage(t *c4v1beta1.Task) bool { return t.Spec.Kind == c4v1beta1.TaskTriage }
 
@@ -349,7 +411,8 @@ func triageTasks(tasks []c4v1beta1.Task) (triage []model.TriageTask, rest []c4v1
 			continue
 		}
 		triage = append(triage, model.TriageTask{Name: t.Name, Issue: int(t.Spec.Issue),
-			Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1beta1.TaskFailed})
+			Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1beta1.TaskFailed,
+			Answered: t.Status.Triage != nil && t.Status.Triage.AnsweredBy != ""})
 	}
 	slices.SortFunc(triage, func(a, b model.TriageTask) int { return a.Issue - b.Issue })
 	return triage, rest

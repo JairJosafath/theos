@@ -70,7 +70,7 @@ func (r *TaskReconciler) specFacts(ctx context.Context, task *c4v1beta1.Task, st
 		facts.SpecRefusal = refusal
 		return err
 	case status.Phase == c4v1beta1.TaskAwaitingApproval:
-		return r.specPull(ctx, status, container, facts)
+		return r.specPull(ctx, task, status, container, facts)
 	}
 	return nil
 }
@@ -113,8 +113,11 @@ func (r *TaskReconciler) specRefusal(ctx context.Context, status *c4v1beta1.Task
 // specPull reads a waiting spec's pull request: merged or closed on the Git
 // host, moved past the reviewed commit, behind main or in conflict with it,
 // and what people other than the factory's own accounts said of the reviewed
-// commit. A person's approval is recorded in status.
-func (r *TaskReconciler) specPull(ctx context.Context, status *c4v1beta1.TaskStatus,
+// commit, there and from chat: the Task's approve-spec and spec-changes
+// annotations, each counted as the person its -by companion names, which
+// the admission policy holds to whoever wrote it (model.ChatSpecVerdict). A
+// person's approval is recorded in status.
+func (r *TaskReconciler) specPull(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, facts *model.TaskFacts) error {
 	git, err := gitAccessFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace, container.Spec.GitProviderRef.Name)
 	if err != nil {
@@ -148,9 +151,12 @@ func (r *TaskReconciler) specPull(ctx context.Context, status *c4v1beta1.TaskSta
 			Stale: rv.Stale, Dismissed: rv.Dismissed})
 	}
 	factory := func(user string) bool { return model.FactoryAccount(user, git.creds.Username, container.Namespace) }
-	pull.People = model.PersonReviews(seen, factory, status.Commit)
+	chat, ignored := model.ChatSpecVerdict(model.ChatWordOf(task.Annotations, model.ChatAnnotationApproveSpec),
+		model.ChatWordOf(task.Annotations, model.ChatAnnotationSpecChanges), status.Commit)
+	pull.People = model.CombineVerdicts(model.PersonReviews(seen, factory, status.Commit), chat)
+	pull.Ignored = ignored
 	if pull.People.ApprovedBy != "" && facts.SpecApproval == string(c4v1beta1.SpecApprovalPerson) {
-		status.Spec.ApprovedBy = pull.People.ApprovedBy
+		status.Spec.ApprovedBy, status.Spec.ApprovedInChat = pull.People.ApprovedBy, pull.People.ApprovedInChat
 	}
 	return nil
 }
@@ -176,7 +182,7 @@ func (r *TaskReconciler) awaitApproval(ctx context.Context, task *c4v1beta1.Task
 	}
 	setProgress(status, model.AwaitApproval(progressOf(status)))
 	if status.Spec != nil {
-		status.Spec.ApprovedBy = ""
+		status.Spec.ApprovedBy, status.Spec.ApprovedInChat = "", false
 	}
 	r.progress(task, status, metav1.ConditionTrue, model.ReasonAwaitingApproval,
 		model.SpecWaitMessage(int(task.Spec.Issue), status.PullRequestURL))

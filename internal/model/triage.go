@@ -214,12 +214,15 @@ type ProposedIssue struct {
 }
 
 // TriageTask is a Triage Task on a Crew's Container: its issue, and whether
-// it ended and failed.
+// it ended and failed, and whether a person answered its parked issue's
+// question from chat (PlanChatAnswer), which sends the issue back to be
+// triaged again.
 type TriageTask struct {
-	Name   string
-	Issue  int
-	Final  bool
-	Failed bool
+	Name     string
+	Issue    int
+	Final    bool
+	Failed   bool
+	Answered bool
 }
 
 // TriageFacts is everything a Crew's triage depends on.
@@ -253,9 +256,10 @@ type TriageStart struct {
 
 // NextTriage decides a Crew's triage: with a triager, not paused and its
 // Container Ready, and no Triage Task at work, it starts one for the lowest
-// proposed issue outside the Later milestone that no Triage Task decided, and
-// whose triage has not failed MaxIssueAttempts times. One triage runs at a
-// time, and none takes a place from the Crew's parallel.
+// proposed issue outside the Later milestone that no Triage Task decided (a
+// park a person answered from chat decided nothing), and whose triage has
+// not failed MaxIssueAttempts times. One triage runs at a time, and none
+// takes a place from the Crew's parallel.
 func NextTriage(container string, f TriageFacts) TriageStep {
 	var step TriageStep
 	tries, decided := map[int]int{}, map[int]bool{}
@@ -269,6 +273,7 @@ func NextTriage(container string, f TriageFacts) TriageStep {
 			}
 		case t.Failed:
 			failed[t.Issue]++
+		case t.Answered:
 		default:
 			decided[t.Issue] = true
 		}

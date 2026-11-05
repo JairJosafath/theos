@@ -313,8 +313,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	By("installing the admission policy")
-	Expect(applyManifests(ctx, filepath.Join("..", "..", "config", "policy", "project_name_policy.yaml"))).To(Succeed())
+	By("installing the admission policies")
+	for _, file := range []string{"project_name_policy.yaml", "task_chat_annotations_policy.yaml",
+		"chat_people_policy.yaml"} {
+		Expect(applyManifests(ctx, filepath.Join("..", "..", "config", "policy", file))).To(Succeed())
+	}
 
 	By("binding the generated role to the operator's ServiceAccount")
 	for _, file := range []string{"role.yaml", "role_binding.yaml"} {
@@ -325,6 +328,9 @@ var _ = BeforeSuite(func() {
 
 	By("making the operator's namespace, the source of shared Secrets")
 	Expect(k8sClient.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: operatorNamespace}})).To(Succeed())
+
+	By("binding theos-chat's role to its ServiceAccount, there")
+	Expect(applyManifests(ctx, filepath.Join("..", "..", "config", "chat", "rbac.yaml"))).To(Succeed())
 
 	By("starting the manager with every reconciler, as that ServiceAccount")
 	webhookOptions := &testEnv.WebhookInstallOptions

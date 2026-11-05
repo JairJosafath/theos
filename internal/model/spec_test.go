@@ -260,6 +260,16 @@ func TestSpecSteps(t *testing.T) {
 		{"a person's changes start the next round", awaiting("", SpecPullFacts{
 			People: PersonVerdict{ChangesBy: "ada", Changes: "Say how errors look."}}), ActionRetry,
 			"Round 1 was not accepted", ""},
+		{"an approval from chat merges it, said so", awaiting("", SpecPullFacts{
+			People: PersonVerdict{ApprovedBy: "ada@example.com", ApprovedInChat: true}}),
+			ActionMerge, "ada@example.com approved the spec in chat; merging", ""},
+		{"changes from chat start the next round with them", awaiting("", SpecPullFacts{
+			People: PersonVerdict{ChangesBy: "ada@example.com", Changes: "Name the tokens.", ChangesInChat: true}}),
+			ActionRetry, "", ""},
+		{"a word from chat that didn't count is said in the wait", awaiting("", SpecPullFacts{
+			Ignored: []string{"ada's approval from chat is of commit abc1234, not the head def5678, so it doesn't count"}}),
+			ActionWait, "waits for a person to approve its pull request; ada's approval from chat is of commit abc1234",
+			ReasonAwaitingApproval},
 		{"a person's changes in the last round fail it", spec(TaskFacts{Phase: TaskAwaitingApproval, Round: 3,
 			MaxRounds: 3, SpecPull: SpecPullFacts{People: PersonVerdict{ChangesBy: "ada", Changes: "No."}}}),
 			ActionFail, "", ""},
@@ -283,6 +293,11 @@ func TestSpecSteps(t *testing.T) {
 	changes := NextTaskStep(awaiting("", SpecPullFacts{People: PersonVerdict{ChangesBy: "ada", Changes: "Say how."}}))
 	if !strings.Contains(changes.Feedback, "ada asked for changes to the spec on its pull request:\nSay how.") {
 		t.Errorf("feedback = %q, want the person's review", changes.Feedback)
+	}
+	chat := NextTaskStep(awaiting("", SpecPullFacts{People: PersonVerdict{ChangesBy: "ada@example.com",
+		Changes: "Name the tokens.", ChangesInChat: true}}))
+	if !strings.Contains(chat.Feedback, "ada@example.com asked for changes to the spec in chat:\nName the tokens.") {
+		t.Errorf("feedback = %q, want the person's changes from chat", chat.Feedback)
 	}
 	if p := AwaitApproval(TaskProgress{Phase: TaskReviewing, Round: 2}); p.Phase != TaskAwaitingApproval || p.Round != 2 {
 		t.Errorf("AwaitApproval() = %+v", p)

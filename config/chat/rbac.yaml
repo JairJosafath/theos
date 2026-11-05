@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: theos-chat
+  namespace: theos-system
+  labels:
+    app.kubernetes.io/name: theos-chat
+---
+# theos-chat (cmd/theos-chat, docs/plans/chat-matrix.md) reads what it posts
+# about, in every namespace a Chat may be in, and changes none of it as
+# itself: every write a command makes is sent as the person, by
+# impersonation, so the person's own RBAC decides.
+# - Chats, Tasks, Containers and Briefs: read, the news and the commands'
+#   context.
+# - Secrets: get only, the bot's access token a Chat's credentialsSecretRef
+#   names (no list or watch: it reads the one it is told of).
+# - ConfigMaps: its own, theos-chat, in each Chat's namespace: what it posted
+#   and where it read the rooms up to. It may create one (create can't be
+#   held to a name) and get and update only that name.
+# - impersonate users and groups: to send a person's command as them.
+#   This would let a compromised theos-chat act as anyone, so the
+#   admission policy config/policy/chat_people_policy.yaml makes each Chat's
+#   people entries name only whoever wrote them (their own user and groups),
+#   Chat's CEL refuses system: users and groups, theos-chat impersonates only
+#   a Chat's people for their own Matrix account, and
+#   config/policy/task_chat_annotations_policy.yaml refuses the chat
+#   annotations from any system: identity, theos-chat's own included.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: theos-chat
+  labels:
+    app.kubernetes.io/name: theos-chat
+rules:
+- apiGroups: [theos.factory.io]
+  resources: [chats, tasks, containers, briefs]
+  verbs: [get, list, watch]
+- apiGroups: [""]
+  resources: [secrets]
+  verbs: [get]
+- apiGroups: [""]
+  resources: [configmaps]
+  verbs: [create]
+- apiGroups: [""]
+  resources: [configmaps]
+  resourceNames: [theos-chat]
+  verbs: [get, update]
+- apiGroups: [""]
+  resources: [users, groups]
+  verbs: [impersonate]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: theos-chat
+  labels:
+    app.kubernetes.io/name: theos-chat
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: theos-chat
+subjects:
+- kind: ServiceAccount
+  name: theos-chat
+  namespace: theos-system

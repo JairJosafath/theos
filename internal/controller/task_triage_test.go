@@ -237,6 +237,33 @@ var _ = Describe("Crew triage", func() {
 		}).Should(Succeed())
 	})
 
+	It("takes a person's answer from chat to the parked issue, which is triaged again", func() {
+		n, name := triageOne("Make it faster.")
+		finishSandbox(ns, name+"-r1-triage", name, triageResult(model.Triage{Decision: model.TriagePark,
+			Reason: "No target.", Question: "How fast, measured how?"}), "")
+		Eventually(func(g Gomega) { triaged(g, name, model.TriagePark) }).Should(Succeed())
+		ada := "ada-" + ns + "@example.com"
+		grant(ada, roleTaskWord)
+		task := &c4v1beta1.Task{}
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(patchAs(asUser(ada), task, chatWord(task, model.ChatAnnotationAnswer, "Under 200 ms at p95.", ada))).
+			To(Succeed())
+		Eventually(func(g Gomega) {
+			task := triaged(g, name, model.TriagePark)
+			g.Expect(task.Status.Triage.AnsweredBy).To(Equal(ada))
+			g.Expect(task.Status.Triage.Answered).To(ContainSubstring("labelled it status/proposed"))
+			issue := gitFake.Issue(ns, "orders-api", n)
+			g.Expect(issue.Comments).To(ContainElement(ada + " answered in chat:\n\nUnder 200 ms at p95."))
+			g.Expect(issue.Labels).To(Equal([]string{model.LabelProposed}))
+		}).Should(Succeed())
+		By("triaging it again, with the answer on the issue")
+		Eventually(func(g Gomega) { sandboxExists(g, ns, name+"-2-r1-triage") }).Should(Succeed())
+		comments := len(gitFake.Issue(ns, "orders-api", n).Comments)
+		Consistently(func(g Gomega) {
+			g.Expect(gitFake.Issue(ns, "orders-api", n).Comments).To(HaveLen(comments), "the answer is taken once")
+		}, "2s").Should(Succeed())
+	})
+
 	It("closes a duplicate, naming its original", func() {
 		original := gitFake.AddIssue(ns, "orders-api", "Validate orders", clearIssue, nil)
 		n, name := triageOne("Check orders.")

@@ -243,6 +243,152 @@ var _ = Describe("Crew spec", func() {
 		}).Should(Succeed())
 	})
 
+	It("merges a spec a person approved from chat, and counts no approval of another commit", func() {
+		n, name := specOne("")
+		head := pushSpec(name, 1, scaffold.Tree{"docs/specs/1.md": {Data: []byte(testSpec)}})
+		reviewed(name, head)
+		awaiting(name)
+		ada := "ada-" + ns + "@example.com"
+		grant(ada, roleTaskWord)
+		task := &c4v1beta1.Task{}
+		approve := model.ChatAnnotationApproveSpec
+
+		By("leaving an approval of an older commit out, said in the Task's condition")
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(patchAs(asUser(ada), task, chatWord(task, approve, "an-older-commit", ada))).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(condition(getTask(g, ns, name).Status.Conditions, ConditionProgressing)).To(HaveField("Message",
+				ContainSubstring(ada+"'s approval from chat is of commit an-olde, not the head "+head[:7]+
+					", so it doesn't count")))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(getTask(g, ns, name).Status.Phase).To(Equal(c4v1beta1.TaskAwaitingApproval))
+			g.Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+		}, "2s").Should(Succeed())
+
+		By("merging once the person approved the head from chat, recording who")
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(patchAs(asUser(ada), task, chatWord(task, approve, head, ada))).To(Succeed())
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, name)
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			g.Expect(task.Status.Spec).To(And(HaveField("ApprovedBy", ada), HaveField("ApprovedInChat", true)))
+			g.Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
+			readyFromSpec(g, n)
+		}).Should(Succeed())
+	})
+
+	It("starts the next round with the changes a person asked from chat", func() {
+		_, name := specOne("")
+		head := pushSpec(name, 1, scaffold.Tree{"docs/specs/1.md": {Data: []byte(testSpec)}})
+		reviewed(name, head)
+		awaiting(name)
+		ada := "ada-" + ns + "@example.com"
+		grant(ada, roleTaskWord)
+		task := &c4v1beta1.Task{}
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(patchAs(asUser(ada), task, chatWord(task, model.ChatAnnotationSpecChanges, head+" Name the tokens.",
+			ada))).To(Succeed())
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, name)
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
+			g.Expect(task.Status.Feedback).To(ContainSubstring(ada + " asked for changes to the spec in chat:\n" +
+				"Name the tokens."))
+			sandboxExists(g, ns, name+"-r2-implement")
+		}).Should(Succeed())
+		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
+	})
+
+	// theos-chat (docs/plans/chat-matrix.md, step 2) on chatFake, as its own
+	// ServiceAccount, beside the operator.
+	It("puts a waiting spec up in chat, once, and merges it when a person approves it there, as them", func() {
+		n, name := specOne("")
+		head := pushSpec(name, 1, scaffold.Tree{"docs/specs/1.md": {Data: []byte(testSpec)}})
+		reviewed(name, head)
+		awaiting(name)
+
+		By("making the project's Chat, each of its people adding themselves")
+		bot := chatBot(ns)
+		adaID, _ := chatFake.NewUser("ada-" + ns)
+		carolID, _ := chatFake.NewUser("carol-" + ns)
+		malloryID, _ := chatFake.NewUser("mallory-" + ns)
+		// Only ada may write Tasks: the -by the policy checks, and this RBAC,
+		// say the write was hers.
+		ada, carol := "ada-"+ns+"@example.com", "carol-"+ns+"@example.com"
+		grant(ada, roleChatPeople, roleTaskWord)
+		grant(carol, roleChatPeople)
+		chat := newChat(ns, "chat", "matrix-bot", c4v1beta1.ChatPerson{MatrixID: adaID, User: ada})
+		Expect(asUser(ada).Create(ctx, chat)).To(Succeed())
+		Expect(patchAs(asUser(carol), chat, func() {
+			chat.Spec.People = append(chat.Spec.People, c4v1beta1.ChatPerson{MatrixID: carolID, User: carol})
+		})).To(Succeed())
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		specs := chatRoom(chat, model.ChatSpecs)
+
+		By("posting one thread in specs for the spec waiting for a person")
+		chatPass(newTheosChat(), chat)
+		posts := botPosts(specs, bot)
+		Expect(posts).To(HaveLen(1))
+		var root string
+		for id, body := range posts {
+			root = id
+			Expect(body).To(And(ContainSubstring("Spec of issue #1"),
+				ContainSubstring("Waits for your approval of commit "+head[:7]),
+				ContainSubstring("say approve in this thread")))
+		}
+
+		By("posting nothing more on the next pass, nor after a restart")
+		theosChat := newTheosChat()
+		chatPass(theosChat, chat)
+		chatPass(newTheosChat(), chat)
+		Expect(botPosts(specs, bot)).To(HaveLen(1))
+		Expect(related(specs, bot, "m.replace", root)).To(BeEmpty())
+
+		By("refusing a stranger's approve, which changes nothing")
+		chatFake.Post(specs, malloryID, "approve", root)
+		chatPass(newTheosChat(), chat)
+		Expect(related(specs, bot, "m.thread", root)).To(ConsistOf(ContainSubstring(
+			malloryID + " is not one of Chat chat's people, so nothing was done")))
+		task := &c4v1beta1.Task{}
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(task.Annotations).NotTo(HaveKey(model.ChatAnnotationApproveSpec))
+
+		By("posting the API server's refusal of a person whose RBAC forbids it")
+		chatFake.Post(specs, carolID, "approve", root)
+		chatPass(theosChat, chat)
+		Expect(related(specs, bot, "m.thread", root)).To(ContainElement(And(
+			ContainSubstring("The cluster refused it for "+carol+" (403)"),
+			ContainSubstring(`User "`+carol+`" cannot patch resource "tasks"`))))
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(task.Annotations).NotTo(HaveKey(model.ChatAnnotationApproveSpec))
+
+		By("writing a listed person's approve as that person, and the operator merging the spec")
+		chatFake.Post(specs, adaID, "approve", root)
+		chatPass(theosChat, chat)
+		Expect(related(specs, bot, "m.thread", root)).To(ContainElement(
+			"Done as " + ada + ": approved the spec at " + head[:7] + "; the operator merges it."))
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(task.Annotations).To(And(HaveKeyWithValue(model.ChatAnnotationApproveSpec, head),
+			HaveKeyWithValue(model.ChatAnnotationBy(model.ChatAnnotationApproveSpec), ada)))
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, name)
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			g.Expect(task.Status.Spec).To(And(HaveField("ApprovedBy", ada), HaveField("ApprovedInChat", true)))
+			readyFromSpec(g, n)
+		}).Should(Succeed())
+
+		By("editing the thread's root as the spec merged, and marking it done")
+		chatPass(theosChat, chat)
+		Expect(related(specs, bot, "m.replace", root)).To(ConsistOf(ContainSubstring(
+			"Merged: " + ada + " approved it in chat.")))
+		Expect(related(specs, bot, "m.annotation", root)).To(Equal([]string{model.ChatDoneReaction}))
+		chatPass(newTheosChat(), chat)
+		Expect(related(specs, bot, "m.replace", root)).To(HaveLen(1))
+		Expect(related(specs, bot, "m.annotation", root)).To(HaveLen(1))
+		Expect(botPosts(specs, bot)).To(HaveLen(1))
+	})
+
 	It("merges on the reviewer's approval alone with specApproval Reviewer", func() {
 		n, name := specOne(c4v1beta1.SpecApprovalReviewer)
 		head := pushSpec(name, 1, scaffold.Tree{"docs/specs/1.md": {Data: []byte(testSpec)}})

@@ -1,0 +1,33 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "theos.resourceName" (dict "suffix" "chat-people-are-themselves" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - theos.factory.io
+      apiVersions:
+      - '*'
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - chats
+  validations:
+  - expression: size(variables.foreign) == 0
+    messageExpression: '''spec.people may name only the writer, '' + request.userInfo.username
+      + '', and groups the writer is in; each person adds themselves: '' + variables.foreign.map(p,
+      p.matrixID + '' as '' + p.user).join('', '')'
+    reason: Forbidden
+  variables:
+  - expression: 'oldObject != null && has(oldObject.spec.people) ? oldObject.spec.people
+      : []'
+    name: old
+  - expression: '(has(object.spec.people) ? object.spec.people : []).filter(p, !variables.old.exists(o,
+      o.matrixID == p.matrixID && o.user == p.user && (has(o.groups) ? o.groups : [])
+      == (has(p.groups) ? p.groups : [])) && !(p.user == request.userInfo.username &&
+      (!has(p.groups) || p.groups.all(g, g in request.userInfo.groups))))'
+    name: foreign

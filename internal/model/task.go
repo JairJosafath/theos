@@ -471,12 +471,15 @@ type TaskFacts struct {
 
 // SpecPullFacts is a spec's pull request while it waits for its approval:
 // merged or closed on the Git host, moved past the reviewed commit, and what
-// people other than the factory's accounts said of that commit.
+// people other than the factory's accounts said of that commit, there and
+// from chat (CombineVerdicts). Ignored says why a word from chat counted for
+// nothing (ChatSpecVerdict), for the wait's message.
 type SpecPullFacts struct {
 	Merged    bool
 	Closed    bool
 	HeadMoved bool
 	People    PersonVerdict
+	Ignored   []string
 }
 
 // ChangeFacts is a Standard change a Task filed.
@@ -1664,13 +1667,22 @@ func awaitingApprovalStep(f TaskFacts) TaskStep {
 	case f.SpecApproval == SpecApprovalReviewer:
 		return approvedStep(f, "The reviewer's approval is enough for the spec; merging")
 	case pull.People.ChangesBy != "":
-		return roundFailed(f, fmt.Sprintf("%s asked for changes to the spec on its pull request:\n%s",
-			pull.People.ChangesBy, orUnknown(pull.People.Changes)))
+		where := "on its pull request"
+		if pull.People.ChangesInChat {
+			where = "in chat"
+		}
+		return roundFailed(f, fmt.Sprintf("%s asked for changes to the spec %s:\n%s",
+			pull.People.ChangesBy, where, orUnknown(pull.People.Changes)))
+	case pull.People.ApprovedBy != "" && pull.People.ApprovedInChat:
+		return approvedStep(f, pull.People.ApprovedBy+" approved the spec in chat; merging")
 	case pull.People.ApprovedBy != "":
 		return approvedStep(f, pull.People.ApprovedBy+" approved the spec; merging")
 	}
-	return TaskStep{Action: ActionWait, Recheck: true, Reason: ReasonAwaitingApproval,
-		Message: "The spec waits for a person to approve its pull request"}
+	message := "The spec waits for a person to approve its pull request"
+	if len(pull.Ignored) > 0 {
+		message += "; " + strings.Join(pull.Ignored, "; ")
+	}
+	return TaskStep{Action: ActionWait, Recheck: true, Reason: ReasonAwaitingApproval, Message: message}
 }
 
 // ConflictStep sends an approved change that conflicts with main back to its

@@ -106,6 +106,7 @@ linters:
           files:
             - "**/internal/controller/**"
             - "**/internal/sessionclient/**"
+            - "**/internal/chatbot/**"
             - "!$test"
           deny:
             - pkg: github.com/JairJosafath/theos/internal/adapters

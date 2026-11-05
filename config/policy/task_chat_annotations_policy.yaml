@@ -1,0 +1,59 @@
+# A person's word from chat reaches the operator as three Task annotations
+# (docs/plans/chat-matrix.md): theos.factory.io/approve-spec, spec-changes and
+# answer. Each comes with its companion, <annotation>-by, naming who wrote it,
+# and the operator counts the word as that person's. So that nobody can
+# write a word in someone else's name:
+# - a write that sets, changes or removes one of them, or a companion, must
+#   come from a person: no system: identity, so neither the operator's own
+#   ServiceAccount nor theos-chat's acting as itself, nor any agent's
+#   (theos-chat writes them impersonating the person, whose user is never a
+#   system: one, Chat's CEL rules say);
+# - an annotation set or changed must come with its companion naming the
+#   writer, request.userInfo.username, which only the API server says.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: task-chat-annotations
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["theos.factory.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["tasks"]
+  variables:
+    - name: keys
+      expression: "['theos.factory.io/approve-spec', 'theos.factory.io/spec-changes', 'theos.factory.io/answer']"
+    - name: new
+      expression: "has(object.metadata.annotations) ? object.metadata.annotations : {}"
+    - name: old
+      expression: "oldObject != null && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}"
+    # The annotations whose value or companion this write sets, changes or
+    # removes.
+    - name: changed
+      expression: >-
+        variables.keys.filter(k, [k, k + '-by'].exists(a,
+        (a in variables.new) != (a in variables.old) ||
+        (a in variables.new && variables.new[a] != variables.old[a])))
+  validations:
+    - expression: "size(variables.changed) == 0 || !request.userInfo.username.startsWith('system:')"
+      messageExpression: >-
+        request.userInfo.username + ' may not write ' + variables.changed.join(', ') +
+        ': a person writes them, from chat or as themselves'
+      reason: Forbidden
+    - expression: >-
+        variables.changed.all(k, !(k in variables.new) ||
+        (k + '-by' in variables.new && variables.new[k + '-by'] == request.userInfo.username))
+      messageExpression: >-
+        'each of ' + variables.changed.join(', ') + ' needs its -by annotation naming who writes it, ' +
+        request.userInfo.username
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: task-chat-annotations-binding
+spec:
+  policyName: task-chat-annotations
+  validationActions: [Deny]

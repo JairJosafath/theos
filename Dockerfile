@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Build the manager and model-proxy binaries
+# Build the manager, model-proxy and theos-chat binaries
 # Override BASE_IMAGE to build from another registry, e.g. docker.io/library/golang:1.26.10@sha256:...
 ARG BASE_IMAGE=golang:1.26.10@sha256:3745f1aa11822297b79113f5e84ce2bffeb039734571c39855809cfe9e5d7be6
 FROM ${BASE_IMAGE} AS builder
@@ -37,15 +37,19 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     -o manager cmd/main.go \
     && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
     -ldflags=-X=github.com/JairJosafath/theos/internal/buildinfo.Version=${VERSION} \
-    -o model-proxy ./cmd/model-proxy
+    -o model-proxy ./cmd/model-proxy \
+    && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
+    -ldflags=-X=github.com/JairJosafath/theos/internal/buildinfo.Version=${VERSION} \
+    -o theos-chat ./cmd/theos-chat
 
 # Use distroless as minimal base image to package the manager binary and the
-# model proxy's (cmd/model-proxy), so a release builds no image of its own for it
+# model proxy's (cmd/model-proxy) and theos-chat (cmd/theos-chat), so a release builds no image of its own for them
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 WORKDIR /
 COPY --from=builder /workspace/manager .
 COPY --from=builder /workspace/model-proxy .
+COPY --from=builder /workspace/theos-chat .
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]

@@ -512,7 +512,14 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   `status/needs-human` and asks the question; `duplicate` closes the issue.
   An issue a person closed or relabelled meanwhile keeps that. The Task ends
   `Merged`, as a Plan Task does, with the decision, its reason and what was
-  done in `status.triage`. A failed run fails the Task with a comment and
+  done in `status.triage`. A person can answer a parked issue's question
+  from chat (*Chat*), as the Task's `theos.factory.io/answer` annotation:
+  the operator comments it on the issue ("<person> answered in chat: …"),
+  labels the issue `status/proposed` again unless a person moved it
+  meanwhile, and records who in `status.triage.answeredBy`; a parked Task so
+  answered decided nothing, so the Crew triages the issue again, with the
+  answer on it. One answer is taken; an answer to no question, or naming
+  nobody, is left as it is. A failed run fails the Task with a comment and
   leaves the issue `status/proposed`; the Crew tries again, three Triage
   Tasks per issue in all. A triage costs the issue no try and takes no place
   from `parallel`; deleting a Triage Task has its issue triaged again.
@@ -534,13 +541,20 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   `NeedsYou` condition and the reviewer's approval on the pull request; it
   takes no place from `parallel` meanwhile. `spec.specApproval: Person` (the
   default) merges it once a person, not the operator's user or an agent bot,
-  approves the reviewed commit on the Git host; a person's request for
-  changes starts the next round with their review; `Reviewer` merges on the
-  reviewer's approval alone, with no wait. A push to the branch is checked
+  approves the reviewed commit on the Git host, or from chat (*Chat*): the
+  Task's `theos.factory.io/approve-spec` annotation naming that commit; a
+  person's request for changes, a review on the Git host or the
+  `theos.factory.io/spec-changes` annotation (`<commit> <text>`), starts the
+  next round with their words, and outweighs any approval. A word from chat
+  counts as the person its `-by` annotation names, which the admission policy
+  holds to whoever wrote it; one about another commit, or naming nobody,
+  counts for nothing and the Task's condition says so. `Reviewer` merges on
+  the reviewer's approval alone, with no wait. A push to the branch is checked
   and reviewed again. After the merge the operator writes the spec's
   criteria into the issue's description, in place of any it had, with a link
   to the spec, and labels it `status/ready`, so the Crew builds it; the issue
-  stays open, and `status.spec` records who approved and what was done. A
+  stays open, and `status.spec` records who approved (`approvedInChat` when
+  from chat) and what was done. A
   person who closes the pull request unmerged declines the spec: the Task
   fails (`SpecDeclined`) and the issue goes back `status/needs-human`.
   Without `spec.specWriter`, people write specs.
@@ -880,9 +894,32 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
   for what the UI can do (a Brief, its prompts, pause and resume, a
   Container's retry and a deploy's approval) and three annotations a person
   writes only from chat: `theos.factory.io/approve-spec` (the head commit),
-  `theos.factory.io/spec-changes` and `theos.factory.io/answer` on a Task.
-  `theos-chat` sends it as the person, by impersonation, and posts the API
-  server's refusal back.
+  `theos.factory.io/spec-changes` and `theos.factory.io/answer` on a Task,
+  each with its companion `<annotation>-by` naming the writer's Kubernetes
+  user. `theos-chat` sends it as the person, by impersonation, and posts the
+  API server's refusal, or what was done, back in the thread. The operator
+  acts on the three as *Spec* and *Triage* say.
+- **`theos-chat` posts and listens.** A separate binary
+  (`cmd/theos-chat`, `internal/chatbot`) with its own ServiceAccount
+  (`config/chat`), for each Ready Chat: a thread per item that needs a
+  decision (a spec waiting for a person, a parked issue's question, a deploy
+  waiting for approval, a failed scaffold), its root edited as the item moves
+  and marked ✅ once done; plain posts for the rest; merges, releases,
+  deploys and Brief rounds batched into one `updates` message per
+  `digestMinutes`. Its first pass tells no history: only live threads. What
+  it posted (item key to event ID) and where it read the rooms up to (the
+  `/sync` token) are in its ConfigMap `theos-chat` in the namespace, so a
+  restart says nothing twice and runs no command twice; a homeserver or room
+  error is retried with backoff and keeps the other rooms going. Only a
+  Chat's `people` are obeyed; anyone else gets a one-line refusal.
+- **Nobody acts in someone else's name.** `theos-chat` may impersonate users
+  and groups, so two admission policies (`config/policy`) bound it: a Chat's
+  `people` entry names only its writer's own user and groups
+  (`request.userInfo`), unless that exact entry was there before, so each
+  person adds themselves; and the three chat annotations and their `-by`
+  are written only by a person, never a `system:` identity (the operator's
+  ServiceAccount, `theos-chat`'s acting as itself, an agent's), and each
+  `-by` names the writer. The operator counts a word only with its `-by`.
 - **Matrix is behind the ChatHost port;** the adapter speaks the
   client-server API over `net/http`, with no SDK, and tests run on a fake
   homeserver (`internal/adapters/matrix/matrixtest`). No end-to-end

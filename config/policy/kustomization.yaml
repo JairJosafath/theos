@@ -1,2 +1,4 @@
 resources:
 - project_name_policy.yaml
+- task_chat_annotations_policy.yaml
+- chat_people_policy.yaml
