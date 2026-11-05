@@ -6,7 +6,7 @@ import type { Agent, Task, TaskPhase, TaskTransition } from '../k8s/types'
 import { findCondition } from '../k8s/types'
 
 /** Where a Task's time goes. Each timeline step falls in one stage. */
-export type Stage = 'queued' | 'slot' | 'implement' | 'checks' | 'review' | 'blocked'
+export type Stage = 'queued' | 'slot' | 'implement' | 'checks' | 'review' | 'approval' | 'blocked'
 
 export const STAGES: { key: Stage; label: string; doing: string; explanation: string }[] = [
   {
@@ -29,6 +29,12 @@ export const STAGES: { key: Stage; label: string; doing: string; explanation: st
   },
   { key: 'checks', label: 'CI checks', doing: 'waiting for CI', explanation: 'CI runs make check on the pull request' },
   { key: 'review', label: 'Reviewing', doing: 'in review', explanation: 'An agent reviews the pull request' },
+  {
+    key: 'approval',
+    label: 'Awaiting approval',
+    doing: 'waiting for a person to approve its spec',
+    explanation: 'A spec waits for a person to approve its pull request',
+  },
   {
     key: 'blocked',
     label: 'Blocked',
@@ -57,6 +63,8 @@ export function stageOf(step: Pick<TaskTransition, 'phase' | 'reason'>): Stage |
       return 'checks'
     case 'Reviewing':
       return 'review'
+    case 'AwaitingApproval':
+      return 'approval'
     case 'Blocked':
       return 'blocked'
     default:
@@ -112,7 +120,15 @@ export function taskSegments(task: Task, now: number): Segment[] {
 
 /** Time per stage, summed over segments. */
 export function timeByStage(segments: Segment[]): Record<Stage, number> {
-  const totals: Record<Stage, number> = { queued: 0, slot: 0, implement: 0, checks: 0, review: 0, blocked: 0 }
+  const totals: Record<Stage, number> = {
+    queued: 0,
+    slot: 0,
+    implement: 0,
+    checks: 0,
+    review: 0,
+    approval: 0,
+    blocked: 0,
+  }
   for (const s of segments) totals[s.stage] += s.end - s.start
   return totals
 }
@@ -218,6 +234,7 @@ export const COLUMNS: { key: Column; label: string }[] = [
   { key: 'implement', label: 'Implementing' },
   { key: 'checks', label: 'CI checks' },
   { key: 'review', label: 'Reviewing' },
+  { key: 'approval', label: 'Awaiting approval' },
   { key: 'blocked', label: 'Blocked' },
   { key: 'done', label: 'Done' },
 ]
@@ -233,6 +250,7 @@ export function boardColumns(tasks: Task[], doneLimit = 8): Record<Column, Task[
     implement: [],
     checks: [],
     review: [],
+    approval: [],
     blocked: [],
     done: [],
   }
@@ -298,7 +316,15 @@ export function factoryStats(tasks: Task[], now: number): FactoryStats {
       return start !== undefined && end !== undefined ? end - start : undefined
     })
     .filter((v): v is number => v !== undefined)
-  const totals: Record<Stage, number> = { queued: 0, slot: 0, implement: 0, checks: 0, review: 0, blocked: 0 }
+  const totals: Record<Stage, number> = {
+    queued: 0,
+    slot: 0,
+    implement: 0,
+    checks: 0,
+    review: 0,
+    approval: 0,
+    blocked: 0,
+  }
   let withTimeline = 0
   for (const task of tasks) {
     const segments = taskSegments(task, now)

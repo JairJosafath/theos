@@ -220,6 +220,28 @@ describe('needs', () => {
       },
     },
     {
+      name: 'a spec waiting for a person',
+      input: input({
+        tasks: [
+          task('api-4-spec', {
+            phase: 'AwaitingApproval',
+            pullRequest: 5,
+            pullRequestURL: 'https://git.example/shop/api/pulls/5',
+            conditions: [
+              cond('NeedsYou', 'True', 'WaitingForApproval', 'The spec of issue #4 passed CI and the reviewer'),
+            ],
+          }),
+        ],
+      }),
+      want: {
+        kind: 'Task',
+        reason: 'WaitingForApproval',
+        message: 'The spec of issue #4 passed CI and the reviewer',
+        links: ['https://git.example/shop/api/pulls/5'],
+        place: 'Task',
+      },
+    },
+    {
       name: 'a Failed Task',
       input: input({
         tasks: [

@@ -371,12 +371,16 @@ func (m *usageMeter) totalTokens() *model.TokenUsage {
 // a line to STAND-IN.md; reviewing, it approves, or first asks for changes, and
 // may file a follow-up; planning, it plans from the catalog alone
 // (model.StandInPlan); triaging, it decides from the issue's text
-// (model.StandInTriage).
+// (model.StandInTriage); writing a spec, it writes model.StandInSpec.
 type FakeAgent struct {
 	Role  string
 	Round int
 	// Goal is the job's goal: for a triage, the issue's title and body.
 	Goal string
+	// Issue and Spec are a Spec Task's issue and spec file: implementing, the
+	// agent writes the spec there.
+	Issue int
+	Spec  string
 	// ChangesFirst makes the review ask for changes in round 1.
 	ChangesFirst bool
 	// NoChange makes implementing change nothing.
@@ -415,6 +419,9 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	if a.NoChange {
 		return "Nothing to do.", nil
 	}
+	if a.Spec != "" {
+		return a.writeSpec(dir)
+	}
 	f, err := os.OpenFile(filepath.Join(dir, "STAND-IN.md"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644) //nolint:gosec // in the checkout
 	if err != nil {
 		return "", err
@@ -424,6 +431,18 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("Added round %d to STAND-IN.md.", a.Round), nil
+}
+
+// writeSpec writes the stand-in spec of the issue in its spec file.
+func (a FakeAgent) writeSpec(dir string) (string, error) {
+	file := filepath.Join(dir, filepath.FromSlash(a.Spec))
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil { //nolint:gosec // in the checkout
+		return "", err
+	}
+	if err := os.WriteFile(file, []byte(model.StandInSpec(a.Issue, a.Goal)), 0o644); err != nil { //nolint:gosec // in the checkout
+		return "", err
+	}
+	return fmt.Sprintf("Wrote the stand-in spec in %s.", a.Spec), nil
 }
 
 func tail(s string, n int) string {

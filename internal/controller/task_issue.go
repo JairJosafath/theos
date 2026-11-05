@@ -50,11 +50,21 @@ func (r *TaskReconciler) announce(ctx context.Context, provider ports.Issues, re
 		provider.EnsureLabels(ctx, repo, issueLabels()),
 		provider.AddIssueLabel(ctx, repo, n, model.LabelInProgress),
 		provider.AssignIssue(ctx, repo, n, []string{model.AgentUsername(container.Namespace, container.Name)}),
-		provider.CommentIssue(ctx, repo, n, fmt.Sprintf(
-			"Task `%s` picked this up: %s implements, %s reviews, in up to %d rounds.",
-			task.Name, agentName(agents.implementer), agentName(agents.reviewer), agents.implementer.Spec.MaxRounds)),
+		provider.CommentIssue(ctx, repo, n, announcement(task, agents)),
 	}
 	logNotes(ctx, task, notes)
+}
+
+// announcement is the comment that marks an issue as taken by task.
+func announcement(task *c4v1beta1.Task, agents taskAgents) string {
+	if isSpec(task) {
+		return fmt.Sprintf("Task `%s` picked this up to write its spec, `%s`: %s writes it, %s reviews it, in up to "+
+			"%d rounds. The spec's pull request then waits for its approval before it merges and its acceptance "+
+			"criteria come into this description.", task.Name, model.SpecPath(int(task.Spec.Issue)),
+			agentName(agents.implementer), agentName(agents.reviewer), agents.implementer.Spec.MaxRounds)
+	}
+	return fmt.Sprintf("Task `%s` picked this up: %s implements, %s reviews, in up to %d rounds.",
+		task.Name, agentName(agents.implementer), agentName(agents.reviewer), agents.implementer.Spec.MaxRounds)
 }
 
 // continueEarlierTry takes over the pull request of the issue's earlier try
@@ -74,8 +84,10 @@ func (r *TaskReconciler) continueEarlierTry(ctx context.Context, provider ports.
 	byName := make(map[string]*c4v1beta1.Task, len(list.Items))
 	for i := range list.Items {
 		t := &list.Items[i]
-		if t.Spec.Kind == c4v1beta1.TaskTriage {
-			continue // a triage is no try at the issue: it has no pull request
+		if t.Spec.Kind == c4v1beta1.TaskTriage || !sameKind(t, task) {
+			// A triage is no try at the issue: it has no pull request; a
+			// spec's try continues only a spec's, a build's only a build's.
+			continue
 		}
 		byName[t.Name] = t
 		tries = append(tries, model.Try{Name: t.Name, Issue: int(t.Spec.Issue), Created: t.CreationTimestamp.Unix(),
@@ -305,7 +317,11 @@ func (r *TaskReconciler) handBack(ctx context.Context, task *c4v1beta1.Task, con
 		return
 	}
 	n := int(task.Spec.Issue)
-	again := fmt.Sprintf("clarify or split the issue and label it %s", model.LabelReady)
+	label := model.LabelReady
+	if isSpec(task) {
+		label = model.LabelNeedsSpec
+	}
+	again := fmt.Sprintf("clarify or split the issue and label it %s", label)
 	if brief := container.Labels[c4v1beta1.LabelBrief]; brief != "" {
 		again += fmt.Sprintf(", or say in a prompt on Brief `%s`", brief)
 	}

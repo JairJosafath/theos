@@ -86,9 +86,17 @@ export function describeTaskPhase(phase: TaskPhase | undefined): PhaseInfo {
     case 'Reviewing':
       return { label: 'Reviewing', tone: 'progress', explanation: 'An agent reviews the pull request.' }
     case 'Verifying':
-      return { label: 'Verifying', tone: 'progress', explanation: 'The merged change is verified before it ships.' }
+      return {
+        label: 'Verifying',
+        tone: 'progress',
+        explanation: 'A verifier runs the change and checks each acceptance criterion before it merges.',
+      }
     case 'AwaitingApproval':
-      return { label: 'Awaiting approval', tone: 'waiting', explanation: 'A person reviews the pull request.' }
+      return {
+        label: 'Awaiting approval',
+        tone: 'waiting',
+        explanation: 'Its spec passed CI and the reviewer; a person approves its pull request.',
+      }
     case 'Merged':
       return { label: 'Merged', tone: 'ok', explanation: 'The pull request is merged.' }
     case 'Blocked':

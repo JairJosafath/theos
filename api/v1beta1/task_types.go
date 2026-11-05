@@ -14,8 +14,8 @@ import (
 )
 
 // TaskKind is what a Task does: implement a goal in a Container's repository,
-// plan a round of a Brief, or triage an issue.
-// +kubebuilder:validation:Enum=Implement;Plan;Triage
+// plan a round of a Brief, triage an issue, or write an issue's spec.
+// +kubebuilder:validation:Enum=Implement;Plan;Triage;Spec
 type TaskKind string
 
 // Task kinds.
@@ -25,6 +25,11 @@ const (
 	// TaskTriage decides what a proposed issue needs next; the operator then
 	// labels, comments on or closes the issue (docs/design.md, "Triage").
 	TaskTriage TaskKind = "Triage"
+	// TaskKindSpec writes an issue's spec, docs/specs/<issue>.md, in a pull
+	// request that waits for its review point before it merges; the operator
+	// then copies its acceptance criteria into the issue (docs/design.md,
+	// "Spec").
+	TaskKindSpec TaskKind = "Spec"
 )
 
 // TaskSpec is a goal for one Container, done by an Agent: written here, or in an
@@ -37,6 +42,7 @@ const (
 // +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Plan' || !has(self.reviewerRef)",message="a Plan Task has no reviewerRef"
 // +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Triage' || has(self.issue)",message="a Triage Task needs an issue"
 // +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Triage' || (!has(self.reviewerRef) && !has(self.allowedProtectedPaths))",message="a Triage Task has no reviewerRef and no allowedProtectedPaths"
+// +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Spec' || (has(self.issue) && !has(self.allowedProtectedPaths))",message="a Spec Task needs an issue and has no allowedProtectedPaths"
 // +kubebuilder:validation:XValidation:rule="has(self.containerRef) == has(oldSelf.containerRef) && has(self.briefRef) == has(oldSelf.briefRef)",message="containerRef and briefRef are immutable; create a new Task"
 // +kubebuilder:validation:XValidation:rule="(has(self.kind) ? self.kind : 'Implement') == (has(oldSelf.kind) ? oldSelf.kind : 'Implement')",message="kind is immutable; create a new Task"
 // +kubebuilder:validation:XValidation:rule="has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)",message="goal and issue are immutable; create a new Task"
@@ -45,9 +51,11 @@ const (
 // +kubebuilder:validation:XValidation:rule="has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)",message="allowedProtectedPaths is immutable"
 type TaskSpec struct {
 	// kind is Implement (the default): implement the goal in the Container's
-	// repository; Plan: plan a round of the Brief named by briefRef; or Triage:
+	// repository; Plan: plan a round of the Brief named by briefRef; Triage:
 	// decide what the issue needs next, which the operator then applies to the
-	// issue. It can't change.
+	// issue; or Spec: write the issue's spec, docs/specs/<issue>.md, which
+	// merges after its review point and gives the issue its acceptance
+	// criteria. It can't change.
 	// +kubebuilder:default=Implement
 	// +optional
 	Kind TaskKind `json:"kind,omitempty"`
@@ -105,7 +113,7 @@ type TaskSpec struct {
 }
 
 // TaskPhase is where a Task is in its rounds.
-// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;Blocked;Merged;Failed
+// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;AwaitingApproval;Blocked;Merged;Failed
 type TaskPhase string
 
 // Task phases.
@@ -114,9 +122,12 @@ const (
 	TaskImplementing TaskPhase = "Implementing"
 	TaskChecking     TaskPhase = "Checking"
 	TaskReviewing    TaskPhase = "Reviewing"
-	TaskBlocked      TaskPhase = "Blocked"
-	TaskMerged       TaskPhase = "Merged"
-	TaskFailed       TaskPhase = "Failed"
+	// TaskAwaitingApproval is a Spec Task whose spec passed CI and the
+	// reviewer: it waits for a person to approve its pull request.
+	TaskAwaitingApproval TaskPhase = "AwaitingApproval"
+	TaskBlocked          TaskPhase = "Blocked"
+	TaskMerged           TaskPhase = "Merged"
+	TaskFailed           TaskPhase = "Failed"
 )
 
 // TaskReview is the reviewer's verdict on a round.
@@ -242,6 +253,52 @@ type TriageDecision struct {
 	Applied string `json:"applied,omitempty"`
 }
 
+// Who approves a spec's pull request before it merges.
+const (
+	// SpecApprovalPerson waits for a person, someone other than the factory's
+	// own accounts, to approve the pull request on the Git host.
+	SpecApprovalPerson SpecApproval = "Person"
+	// SpecApprovalReviewer takes the reviewer Agent's approval as enough, for
+	// a factory no person watches.
+	SpecApprovalReviewer SpecApproval = "Reviewer"
+)
+
+// SpecApproval is who approves a spec's pull request before it merges.
+// +kubebuilder:validation:Enum=Person;Reviewer
+type SpecApproval string
+
+// TaskSpecResult is what a Spec Task's spec came to: its file, who approved
+// it, and the acceptance criteria copied into its issue once it merged.
+type TaskSpecResult struct {
+	// path is the spec's file, docs/specs/<issue>.md.
+	// +kubebuilder:validation:MaxLength=256
+	// +required
+	Path string `json:"path"`
+
+	// approval is who the spec waits for: Person or Reviewer.
+	// +optional
+	Approval SpecApproval `json:"approval,omitempty"`
+
+	// approvedBy is the Git host user who approved the pull request, once a
+	// person did; empty when the reviewer's approval was enough.
+	// +kubebuilder:validation:MaxLength=256
+	// +optional
+	ApprovedBy string `json:"approvedBy,omitempty"`
+
+	// criteria are the spec's acceptance criteria, copied into the issue's
+	// description once the spec merged.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=512
+	// +optional
+	Criteria []string `json:"criteria,omitempty"`
+
+	// applied says what the operator did to the issue once the spec merged.
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Applied string `json:"applied,omitempty"`
+}
+
 // TaskStandardChange is the Standard change a Task proposed: the protected files
 // it wants changed, and where that change is being reviewed.
 type TaskStandardChange struct {
@@ -275,7 +332,8 @@ type TaskStandardChange struct {
 // TaskStatus defines the observed state of Task.
 type TaskStatus struct {
 	// phase is Pending, then Implementing, Checking and Reviewing each round, then
-	// Merged or Failed. Blocked means the Task waits for a Standard change.
+	// Merged or Failed. Blocked means the Task waits for a Standard change, and
+	// AwaitingApproval a Spec Task's spec for a person's approval.
 	// +optional
 	Phase TaskPhase `json:"phase,omitempty"`
 
@@ -411,6 +469,11 @@ type TaskStatus struct {
 	// +optional
 	Triage *TriageDecision `json:"triage,omitempty"`
 
+	// spec is a Spec Task's spec: its file, who approved it, and what the
+	// operator did to the issue once it merged.
+	// +optional
+	Spec *TaskSpecResult `json:"spec,omitempty"`
+
 	// standardChange is the Standard change the Task filed last: the one it
 	// waits for while Blocked. It stays after the Task resumes: it counts the
 	// changes filed, a later filing doesn't reuse its issue, and a resumed round
@@ -488,7 +551,8 @@ type TaskStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// conditions: Progressing and Succeeded.
+	// conditions: Progressing and Succeeded, and NeedsYou while a Spec Task's
+	// spec waits for a person's approval.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -516,7 +580,8 @@ type TaskStatus struct {
 // implement it on a branch, opens a pull request, waits for CI, runs the Agent
 // again as reviewer, and merges when both pass. It is owned by its Container. A
 // Plan Task is a planning round of a Brief, owned by the Brief. A Triage Task
-// runs a triager on one proposed issue and applies what it decided.
+// runs a triager on one proposed issue and applies what it decided. A Spec
+// Task writes an issue's spec in a pull request that a person approves.
 type Task struct {
 	metav1.TypeMeta `json:",inline"`
 

@@ -390,6 +390,64 @@ func TestGiteaPullRequestUpdateIntegration(t *testing.T) {
 	}
 }
 
+// TestGiteaPullRequestReviewsIntegration reads back the reviews of a pull
+// request an agent bot opened, with who submitted each: a spec merges only on
+// a person's approval, never the operator's own (docs/plans/sdlc-loop.md,
+// step 3).
+func TestGiteaPullRequestReviewsIntegration(t *testing.T) {
+	base := os.Getenv("THEOS_GITEA_URL")
+	if base == "" {
+		t.Skip("THEOS_GITEA_URL not set")
+	}
+	creds := ports.Credentials{Username: os.Getenv("THEOS_GITEA_USERNAME"), Token: os.Getenv("THEOS_GITEA_TOKEN")}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	p, err := Client{}.Provider(ports.Config{URL: base, Owner: "webshop", Credentials: creds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("it-reviews-%d", time.Now().UnixNano())
+	t.Cleanup(func() { deleteRepo(t, base, "webshop", name, creds.Token) })
+	repo, err := p.EnsureRepository(ctx, name, "integration test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.PushInitialCommit(ctx, repo, scaffold.Tree{"README.md": {Data: []byte("hi")}}, "Scaffold\n",
+		testAuthor); err != nil {
+		t.Fatal(err)
+	}
+	botCreds, err := p.EnsureAgentAccess(ctx, repo, name+"-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.RemoveAgentAccess(context.Background(), repo, botCreds.Username) })
+	bot, err := Client{}.Provider(ports.Config{URL: base, Owner: "webshop", Credentials: botCreds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	giteaJSON(t, base, creds.Token, http.MethodPost, "/api/v1/repos/webshop/"+name+"/contents/docs/specs/1.md",
+		map[string]string{"content": base64.StdEncoding.EncodeToString([]byte("# Spec\n")), "message": "Spec",
+			"branch": "main", "new_branch": "task/spec"}, nil)
+	pr, err := bot.OpenPullRequest(ctx, repo, "task/spec", "main", "Spec: one", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := p.PullRequestReviews(ctx, repo, pr.Number); err != nil || len(got) != 0 {
+		t.Fatalf("PullRequestReviews() of a new pull request = %+v, %v; want none", got, err)
+	}
+	if err := p.ReviewPullRequest(ctx, repo, pr.Number, pr.HeadSHA, ports.ReviewApprove, "Fine."); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.PullRequestReviews(ctx, repo, pr.Number)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("PullRequestReviews() = %+v, %v; want the operator's one", got, err)
+	}
+	if r := got[0]; r.User != creds.Username || r.State != ports.ReviewApprove || r.Commit != pr.HeadSHA ||
+		r.Stale || r.Dismissed {
+		t.Errorf("PullRequestReviews()[0] = %+v, want %s's approval of %s", r, creds.Username, pr.HeadSHA)
+	}
+}
+
 // TestGiteaIssuesIntegration runs the issue flow against the seeded Gitea, like
 // TestGiteaIntegration.
 func TestGiteaIssuesIntegration(t *testing.T) {

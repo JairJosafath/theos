@@ -130,6 +130,8 @@ func watchedTask(t *c4v1beta1.Task) model.WatchedTask {
 		w.Stage = model.StageReview
 	case t.Status.Phase == c4v1beta1.TaskBlocked:
 		w.Stage = model.StageBlocked
+	case t.Status.Phase == c4v1beta1.TaskAwaitingApproval:
+		w.Stage = model.StageApproval
 	default:
 		w.Stage = model.StageQueued
 	}

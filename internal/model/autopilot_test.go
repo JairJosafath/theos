@@ -52,6 +52,12 @@ func TestBriefAttentionHealWindows(t *testing.T) {
 				Message: "The Task's runs cost $1.20, at its Crew's cap of $1; raise the Crew's taskBudgetUSD to go on"}}},
 			hours(0.1), want{needs: []string{"Task `cli-1` reached its Crew's cost cap: The Task's runs cost $1.20",
 				"Raise the Crew's taskBudgetUSD"}}},
+		{"a spec waiting for a person's approval, at once (sdlc-loop step 3)",
+			AttentionFacts{Tasks: []WatchedTask{{Name: "cli-4-spec", Stage: StageApproval, Since: t0,
+				Reason: "WaitingForApproval", Message: "The spec of issue #4 passed CI and the reviewer; approve " +
+					"pull request http://gitea/x/cli/pulls/5 on the Git host to merge it"}}},
+			hours(0.1), want{needs: []string{"Task `cli-4-spec` waits for you to approve its spec: The spec of issue #4",
+				"Approve the spec's pull request on the Git host"}}},
 		{"paused by a person, however long (step 12 of the self-hosting plan)",
 			AttentionFacts{Tasks: []WatchedTask{{Name: "cli-1", Stage: StageImplement, Since: t0, Reason: "Paused",
 				Message: "Paused by the factory (Brief cel-lens paused its runs); no agent runs until the pause ends"}}},

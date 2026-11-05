@@ -239,9 +239,10 @@ A Task is a goal for a Container, usually an issue of its repository
 squash-merges on approval. Failed checks, requested changes or a failed run
 start the next round with that feedback, up to the Agent's `maxRounds`.
 Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, `Blocked` (waiting
-on a Standard change), then `Merged` or `Failed`. A Triage Task
-(`kind: Triage`) runs one triager on an issue instead and applies its
-decision; see *Triage* under Crews and releases.
+on a Standard change), `AwaitingApproval` (a spec waiting for a person), then
+`Merged` or `Failed`. A Triage Task (`kind: Triage`) runs one triager on an
+issue instead and applies its decision, and a Spec Task (`kind: Spec`) writes
+an issue's spec; see *Triage* and *Spec* under Crews and releases.
 
 - **A merge that passed skips main's push run.** When a Task's head has all
   its required checks green (the CI system's `CheckContexts`, else the
@@ -515,6 +516,33 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   Tasks per issue in all. A triage costs the issue no try and takes no place
   from `parallel`; deleting a Triage Task has its issue triaged again.
   Without `spec.triager`, people triage.
+- **Spec** (`spec.specWriter`). With a spec writer, the Crew starts a Spec
+  Task (`kind: Spec`, `<container>-<issue>-spec`) for an open
+  `status/needs-spec` issue as it starts an Implement Task for a ready one:
+  in the same order and within `parallel`, with three tries of its own; the
+  issue needs no acceptance criteria yet. It runs the implement flow with
+  the spec writer's prompt (and a Standard's `docs/agents/spec-writer.md`):
+  the agent writes `docs/specs/<issue>.md`, the problem, the approach and an
+  *Acceptance criteria* checklist, and nothing else. theos-agent refuses a
+  round that changes another file, and so does the operator, once the
+  round's checks pass, for a pull request with another file or a spec
+  without criteria, as a scope refusal: two in a row stop the Task. The pull
+  request is titled `Spec: <issue title>`, doesn't close the issue, and the
+  issue is labelled `status/spec-review`. Once CI and the reviewer pass it,
+  the Task waits at its review point, phase `AwaitingApproval`, with a
+  `NeedsYou` condition and the reviewer's approval on the pull request; it
+  takes no place from `parallel` meanwhile. `spec.specApproval: Person` (the
+  default) merges it once a person, not the operator's user or an agent bot,
+  approves the reviewed commit on the Git host; a person's request for
+  changes starts the next round with their review; `Reviewer` merges on the
+  reviewer's approval alone, with no wait. A push to the branch is checked
+  and reviewed again. After the merge the operator writes the spec's
+  criteria into the issue's description, in place of any it had, with a link
+  to the spec, and labels it `status/ready`, so the Crew builds it; the issue
+  stays open, and `status.spec` records who approved and what was done. A
+  person who closes the pull request unmerged declines the spec: the Task
+  fails (`SpecDeclined`) and the issue goes back `status/needs-human`.
+  Without `spec.specWriter`, people write specs.
 
 A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
 

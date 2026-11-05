@@ -32,9 +32,11 @@ type Issue struct {
 	FiledLabels []string
 }
 
-// Review is a review posted on a pull request.
+// Review is a review posted on a pull request, and the user who posted it.
 type Review struct {
 	Event, Body, Commit string
+	User                string
+	Stale, Dismissed    bool
 }
 
 type issueStore struct {
@@ -200,8 +202,34 @@ func (g *Git) ReviewPullRequest(_ context.Context, repo ports.Repository, number
 		return fmt.Errorf("review %s: approve your own pull is not allowed", key)
 	}
 	s := g.s.issueState()
-	s.reviews[key] = append(s.reviews[key], Review{Event: event, Body: body, Commit: commit})
+	s.reviews[key] = append(s.reviews[key], Review{Event: event, Body: body, Commit: commit,
+		User: g.cfg.Credentials.Username})
 	return nil
+}
+
+// AddReview submits a review on a pull request as user, as a person on the
+// host would.
+func (g *Git) AddReview(owner, name string, number int, review Review) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	key := fmt.Sprintf("%s/%s#%d", owner, name, number)
+	s := g.s.issueState()
+	s.reviews[key] = append(s.reviews[key], review)
+}
+
+// PullRequestReviews lists the reviews submitted on a pull request, oldest first.
+func (g *Git) PullRequestReviews(_ context.Context, repo ports.Repository, number int) ([]ports.PullReview, error) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	if _, err := g.pull(repo, number); err != nil {
+		return nil, err
+	}
+	var out []ports.PullReview
+	for _, r := range g.s.issueState().reviews[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)] {
+		out = append(out, ports.PullReview{User: r.User, State: r.Event, Commit: r.Commit, Body: r.Body,
+			Stale: r.Stale, Dismissed: r.Dismissed})
+	}
+	return out, nil
 }
 
 // EnsureLabels creates the missing labels and makes the existing ones' exclusive

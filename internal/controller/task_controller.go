@@ -248,6 +248,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	r.setPaused(&task, status, step, facts.Pause)
 	r.queueForSlot(status, step, &result)
+	syncNeedsYou(&task, status)
 	return result, r.writeStatus(ctx, &task, status)
 }
 
@@ -368,6 +369,9 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		return facts, err
 	}
 	r.approvalFacts(ctx, task, status, &facts)
+	if err := r.specFacts(ctx, task, status, container, &facts); err != nil {
+		return facts, err
+	}
 	return facts, nil
 }
 
@@ -389,6 +393,7 @@ func (r *TaskReconciler) crewFacts(ctx context.Context, task *c4v1beta1.Task, st
 		facts.BudgetMilliUSD = int64(crew.Spec.TaskBudgetUSD) * 1000
 		facts.CostMilliUSD = status.CostMilliUSD
 		facts.Pause = crewPause(&crew)
+		facts.SpecApproval = string(crew.Spec.SpecApproval)
 	}
 	return nil
 }

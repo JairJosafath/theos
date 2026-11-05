@@ -141,6 +141,9 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		log.Info("Checking and reviewing an approved Standard change again", "round", status.Round)
 		return ctrl.Result{}, nil // the status write triggers the next step
 
+	case model.ActionAwaitApproval, model.ActionSpecDeclined:
+		return r.applySpec(ctx, task, status, container, agents, step)
+
 	case model.ActionFail:
 		if review := r.reviewFrom(ctx, task, status); review != nil {
 			status.Review = review
@@ -233,6 +236,9 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, statu
 	// request open already, and no note posted yet (#906).
 	if err := r.writeStatus(ctx, task, status); err != nil {
 		return ctrl.Result{}, err
+	}
+	if isSpec(task) {
+		r.labelSpecReview(ctx, task, container)
 	}
 	if reopened && len(run.Result.Extra) > 0 {
 		// A later round's pull request is the first one, whose description stays.
@@ -570,6 +576,10 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 	var skip *pushSkip
 	switch action {
 	case model.MergeFailClosed:
+		if isSpec(task) {
+			// A person closed the spec's pull request: the spec is declined.
+			return ctrl.Result{}, r.failWith(ctx, task, status, container, model.SpecDeclined(status.PullRequestURL))
+		}
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -606,7 +616,11 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 		status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
 		r.carryChecks(ctx, provider, repo, status, skip)
 	}
-	if task.Spec.Issue > 0 {
+	if isSpec(task) {
+		if err := r.specMerged(ctx, provider, repo, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else if task.Spec.Issue > 0 {
 		var followUps []model.FollowUp
 		var open []model.OpenCriterion
 		if reviewRun != nil {
@@ -686,7 +700,10 @@ func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider ports.GitHo
 		refusal, err = r.gatedMerge(ctx, provider, repo, task, status, container, reviewer)
 		return refusal, nil, err
 	}
-	r.approve(ctx, task, status, container, reviewer)
+	if !isSpec(task) || status.Phase != c4v1beta1.TaskAwaitingApproval {
+		// A waiting spec's approval went on its pull request as it began to wait.
+		r.approve(ctx, task, status, container, reviewer)
+	}
 	skip = r.planSkip(ctx, provider, repo, status, container, behind)
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
@@ -1064,6 +1081,9 @@ func (r *TaskReconciler) comment(ctx context.Context, task *c4v1beta1.Task, stat
 }
 
 func pullTitle(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) string {
+	if isSpec(task) {
+		return firstLine(model.SpecTitle(status.IssueTitle))
+	}
 	if task.Spec.Issue > 0 && status.IssueTitle != "" {
 		return firstLine(status.IssueTitle)
 	}
@@ -1074,7 +1094,12 @@ func pullTitle(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) string {
 // Standard change changes besides its allowed ones, named for the reviewer.
 func pullBody(task *c4v1beta1.Task, agents taskAgents, round int32, summary string, extra []string) string {
 	var b strings.Builder
-	if task.Spec.Issue > 0 {
+	switch {
+	case isSpec(task):
+		// The spec's merge leaves the issue open: no closing keyword.
+		fmt.Fprintf(&b, "The spec of issue #%d, in `%s`. Once it merges, its acceptance criteria go into the "+
+			"issue, which stays open to be built.\n\n", task.Spec.Issue, model.SpecPath(int(task.Spec.Issue)))
+	case task.Spec.Issue > 0:
 		// Gitea links the issue, and closes it on merge.
 		fmt.Fprintf(&b, "Closes #%d.\n\n", task.Spec.Issue)
 	}

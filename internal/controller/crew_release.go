@@ -335,7 +335,8 @@ func releaseFacts(ctx context.Context, provider interface {
 		case t.Spec.Issue == 0:
 		case !isFinal(t.Status.Phase):
 			facts.Active = append(facts.Active, int(t.Spec.Issue))
-		case t.Status.Phase == c4v1beta1.TaskMerged:
+		case t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(&t):
+			// A spec's merge leaves its issue open; the build's merge is the issue's.
 			merged := model.MergedTask{Name: t.Name, Issue: int(t.Spec.Issue), Commit: t.Status.MergeCommit}
 			if t.Status.CompletedAt != nil {
 				merged.At = t.Status.CompletedAt.Time

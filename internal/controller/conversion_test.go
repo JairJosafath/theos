@@ -164,4 +164,41 @@ var _ = Describe("API versions", func() {
 			g.Expect(kind).To(Equal("Triage"))
 		}).Should(Succeed())
 	})
+
+	// A Crew's spec writer and a Spec Task's spec ride through v1alpha1 in its
+	// fields annotation (docs/plans/sdlc-loop.md, step 3).
+	It("carries a Crew's spec writer and a Spec Task's spec through v1alpha1", func() {
+		ns := newProjectNamespace()
+		fields := fmt.Sprintf(c4v1alpha1.FieldsAnnotation, "v1beta1")
+		crew := newCrew(ns)
+		crew.Spec.SpecWriter = &c4v1beta1.LocalRef{Name: "writer"}
+		crew.Spec.SpecApproval = c4v1beta1.SpecApprovalReviewer
+		mustCreate(crew)
+		Eventually(func(g Gomega) {
+			old := readAt(g, alpha, "Crew", ns, "orders-api")
+			g.Expect(old.GetAnnotations()).To(HaveKeyWithValue(fields, And(
+				ContainSubstring(`"specWriter":{"name":"writer"}`), ContainSubstring(`"specApproval":"Reviewer"`))))
+			g.Expect(unstructured.SetNestedField(old.Object, "Builds the orders API", "spec", "description")).To(Succeed())
+			g.Expect(k8sClient.Update(ctx, old)).To(Succeed())
+		}).Should(Succeed())
+		got := &c4v1beta1.Crew{}
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), got)).To(Succeed())
+		Expect(got.Spec.SpecWriter).To(Equal(&c4v1beta1.LocalRef{Name: "writer"}))
+		Expect(got.Spec.SpecApproval).To(Equal(c4v1beta1.SpecApprovalReviewer))
+		Expect(got.Spec.Description).To(Equal("Builds the orders API"))
+
+		task := newSpecTask(ns, "orders-api-4-spec")
+		mustCreate(task)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, task.Name), task)).To(Succeed())
+			task.Status.Spec = &c4v1beta1.TaskSpecResult{Path: "docs/specs/4.md", ApprovedBy: "ada"}
+			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			old := readAt(g, alpha, "Task", ns, task.Name)
+			g.Expect(old.GetAnnotations()).To(HaveKeyWithValue(fields, ContainSubstring(`"approvedBy":"ada"`)))
+			kind, _, _ := unstructured.NestedString(old.Object, "spec", "kind")
+			g.Expect(kind).To(Equal("Spec"))
+		}).Should(Succeed())
+	})
 })

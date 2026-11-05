@@ -1028,6 +1028,35 @@ spec:
                 x-kubernetes-list-map-keys:
                 - label
                 x-kubernetes-list-type: map
+              specApproval:
+                description: |-
+                  specApproval is who approves a spec's pull request before it merges:
+                  Person, a person other than the factory's own accounts on the Git host;
+                  or Reviewer, the reviewer Agent's approval alone, for a factory no person
+                  watches. Unset means Person. It needs specWriter.
+                enum:
+                - Person
+                - Reviewer
+                type: string
+              specWriter:
+                description: |-
+                  specWriter names the Agent that writes the specs of the Container's
+                  issues labelled status/needs-spec: the Crew starts a Spec Task for each
+                  as it starts an Implement Task for a ready issue, within parallel and
+                  with the same tries. The agent writes docs/specs/<issue>.md in a pull
+                  request; once CI and the reviewer pass it and specApproval is met, the
+                  operator merges it, copies its acceptance criteria into the issue and
+                  labels the issue status/ready (docs/design.md, "Spec"). Unset, people
+                  write specs.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
               tagReleases:
                 description: |-
                   tagReleases lets the Crew tag a release once it is done: a milestone with a
@@ -1075,6 +1104,8 @@ spec:
                 while it picks up no new issue'
               rule: '!has(self.pauseRuns) || !self.pauseRuns || (has(self.paused)
                 && self.paused)'
+            - message: specApproval needs specWriter
+              rule: '!has(self.specApproval) || has(self.specWriter)'
           status:
             description: status defines the observed state of Crew
             properties:

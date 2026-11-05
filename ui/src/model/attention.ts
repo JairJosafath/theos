@@ -16,6 +16,8 @@ export const STUCK_AFTER_MS: Record<Stage, number> = {
   // The operator fails a Task after 30 minutes without a CI result.
   checks: 30 * 60_000,
   review: 60 * 60_000,
+  // It waits for a person to approve the spec.
+  approval: 24 * 60 * 60_000,
   // It waits for a person or agent to merge the Standard change.
   blocked: 24 * 60 * 60_000,
 }

@@ -424,7 +424,7 @@ func releaseIssues(ctx context.Context, provider ports.Issues, repo ports.Reposi
 func mergedIssues(tasks []c4v1beta1.Task) []int {
 	var out []int
 	for _, t := range tasks {
-		if t.Spec.Issue != 0 && t.Status.Phase == c4v1beta1.TaskMerged {
+		if t.Spec.Issue != 0 && t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(&t) {
 			out = append(out, int(t.Spec.Issue))
 		}
 	}
