@@ -498,7 +498,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 				Commit: result.Commit, Summary: result.Summary, Verdict: result.Verdict, Error: result.Error,
 				CheckFailsOnBase: result.CheckFailsOnBase,
 				Proposal:         result.Proposal, Extra: result.Extra, Empty: result.Empty, Blocked: result.Blocked,
-				FollowUps: result.FollowUps, Open: result.Open, Unavailable: result.Unavailable,
+				FollowUps: result.FollowUps, Open: result.Open, Unavailable: result.Unavailable, Triage: result.Triage,
 			}
 			// A result theos-agent wrote before an outage stands.
 			state.Interrupted = (podDisrupted(&pod) || result.Interrupted) && !ownLimit

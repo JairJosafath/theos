@@ -16,6 +16,11 @@ const (
 	LabelReady      = "status/ready"
 	LabelInProgress = "status/in-progress"
 	LabelNeedsHuman = "status/needs-human"
+	// LabelNeedsSpec is an issue a triager found too big or unclear to build
+	// as it stands: a spec comes first. LabelSpecReview is one whose spec
+	// waits for its review (docs/plans/sdlc-loop.md).
+	LabelNeedsSpec  = "status/needs-spec"
+	LabelSpecReview = "status/spec-review"
 )
 
 // IssueLabel is a label the factory keeps in a repository.
@@ -34,6 +39,8 @@ func StatusLabels() []IssueLabel {
 		{LabelReady, "#0e8a16", "Clear and ready: the Crew picks it up when its dependencies are closed", true},
 		{LabelInProgress, "#fbca04", "A Task is working on it", true},
 		{LabelNeedsHuman, "#d93f0b", "Agents can't go on; a comment says why", true},
+		{LabelNeedsSpec, "#5319e7", "Triaged: needs a spec before it is built", true},
+		{LabelSpecReview, "#d4c5f9", "Its spec waits for review", true},
 	}
 }
 

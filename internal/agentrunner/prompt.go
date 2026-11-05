@@ -27,6 +27,7 @@ const (
 var roleGuides = map[string]string{
 	RoleImplement: "docs/agents/implementer.md",
 	RoleReview:    "docs/agents/reviewer.md",
+	RoleTriage:    "docs/agents/triager.md",
 }
 
 // issueIntro introduces the issue's block: what people wrote is the goal, never
@@ -316,6 +317,60 @@ End your reply with one line of JSON and nothing after it:
 {"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "...", "criteria": ["..."]}], "open": [{"criterion": "...", "why": "..."}]}
 `)
 	return b.String()
+}
+
+// TriagePrompt is what the triager is asked to do: decide what the issue needs
+// next, from the issue and the repository, and change nothing.
+func TriagePrompt(job Job, ws Workspace) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "You triage the issues of %q, one application (a C4 Container) of project %q: you decide "+
+		"what a newly filed issue needs next, and the factory acts on your decision.\n", job.Container, job.Project)
+	writeContext(&b, job)
+	fmt.Fprintf(&b, "\nThis is issue #%d of this repository. %s\n%s\n", job.Issue, issueIntro, issueBlock(job.Goal))
+	writeGuide(&b, ws, RoleTriage)
+	writeRelated(&b, ws)
+	fmt.Fprintf(&b, `
+The repository is checked out at %[1]s. Read AGENTS.md, the code and the docs as
+much as you need to judge the issue. `+projectNotes+`
+Change nothing and push nothing: you only decide.
+
+Decide exactly one of:
+- "ready": the issue says clearly what to build, and one change of a few files
+  can do it. Give its acceptance criteria in "criteria": one to %[2]d short
+  checks a reviewer can verify in the pull request, each one sentence of at
+  most %[3]d characters. When the issue has an "Acceptance criteria" checklist
+  already, give the ones you would check; the issue keeps its own.
+- "spec": what to build is clear enough, but it is too big or too open for one
+  change: a spec that settles the approach comes first.
+- "park": it can't be built without a person's answer. Ask that one question
+  in "question", so that its answer settles the issue.
+- "duplicate": another open or closed issue of this repository asks for the
+  same. Name its number in "duplicate".
+In "reason", say in two or three sentences why, so a person can check you.
+
+End your reply with one line of JSON and nothing after it:
+{"decision": "ready", "spec", "park" or "duplicate", "reason": "...", "criteria": ["..."], "question": "...", "duplicate": <issue number>}
+`, job.Base, model.MaxTriageCriteria, maxCriterionChars)
+	return b.String()
+}
+
+// ParseTriage reads the triager's decision from the last JSON object in its
+// output that has one, as the operator keeps it (model.NormalTriage).
+func ParseTriage(output string) (model.Triage, error) {
+	for end := strings.LastIndex(output, "}"); end >= 0; end = strings.LastIndex(output[:end], "}") {
+		for start := strings.LastIndex(output[:end], "{"); start >= 0; start = strings.LastIndex(output[:start], "{") {
+			var d model.Triage
+			if json.Unmarshal([]byte(output[start:end+1]), &d) != nil || strings.TrimSpace(d.Decision) == "" {
+				continue
+			}
+			d = model.NormalTriage(d)
+			if !slices.Contains(model.TriageDecisions, d.Decision) {
+				return model.Triage{}, fmt.Errorf("unknown decision %q", d.Decision)
+			}
+			return d, nil
+		}
+	}
+	return model.Triage{}, errors.New("the triager gave no JSON decision")
 }
 
 // PlanPrompt is what the planner is asked to do: guide is PLANNER.md and brief

@@ -153,8 +153,11 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if !task.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
-	if task.Spec.Kind == c4v1beta1.TaskPlan {
+	switch task.Spec.Kind {
+	case c4v1beta1.TaskPlan:
 		return r.reconcilePlan(ctx, &task)
+	case c4v1beta1.TaskTriage:
+		return r.reconcileTriage(ctx, &task)
 	}
 	status := task.Status.DeepCopy()
 	if status.Phase == "" {
@@ -312,19 +315,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		facts.MaxRounds = 3
 	}
 
-	// A Crew's Task stops at the Crew's cost cap (#1893); a Crew that is gone
-	// caps nothing.
-	if crewName := task.Labels[LabelCrew]; crewName != "" {
-		var crew c4v1beta1.Crew
-		switch err := r.Get(ctx, types.NamespacedName{Namespace: task.Namespace, Name: crewName}, &crew); {
-		case apierrors.IsNotFound(err):
-		case err != nil:
-			return facts, err
-		default:
-			facts.BudgetMilliUSD = int64(crew.Spec.TaskBudgetUSD) * 1000
-			facts.CostMilliUSD = status.CostMilliUSD
-			facts.Pause = crewPause(&crew)
-		}
+	if err := r.crewFacts(ctx, task, status, &facts); err != nil {
+		return facts, err
 	}
 
 	// A Crew's Tasks leave their concurrency to the Crew; others take turns.
@@ -336,6 +328,9 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		}
 		refs := make([]model.TaskRef, 0, len(tasks.Items))
 		for _, t := range tasks.Items {
+			if t.Spec.Kind == c4v1beta1.TaskTriage {
+				continue // a triage pushes nothing, so it holds no other Task up
+			}
 			refs = append(refs, model.TaskRef{Name: t.Name, Created: t.CreationTimestamp.Unix(),
 				Active: !isFinal(t.Status.Phase) && t.DeletionTimestamp.IsZero()})
 		}
@@ -374,6 +369,28 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 	}
 	r.approvalFacts(ctx, task, status, &facts)
 	return facts, nil
+}
+
+// crewFacts adds the cost cap and the pause of the Crew that started the Task:
+// a Crew's Task stops at the Crew's cost cap (#1893), and its runs pause with
+// the Crew's. A Crew that is gone caps and pauses nothing.
+func (r *TaskReconciler) crewFacts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	facts *model.TaskFacts) error {
+	crewName := task.Labels[LabelCrew]
+	if crewName == "" {
+		return nil
+	}
+	var crew c4v1beta1.Crew
+	switch err := r.Get(ctx, types.NamespacedName{Namespace: task.Namespace, Name: crewName}, &crew); {
+	case apierrors.IsNotFound(err):
+	case err != nil:
+		return err
+	default:
+		facts.BudgetMilliUSD = int64(crew.Spec.TaskBudgetUSD) * 1000
+		facts.CostMilliUSD = status.CostMilliUSD
+		facts.Pause = crewPause(&crew)
+	}
+	return nil
 }
 
 // baseFacts reads the CI state of main's head for the checks main requires,

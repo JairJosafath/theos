@@ -544,8 +544,11 @@ export const LABEL_ISSUE = 'theos.factory.io/issue'
 
 export interface Task extends K8sObject {
   spec: {
-    /** Implement (the default), or Plan: a planning round of a Brief. */
-    kind?: 'Implement' | 'Plan'
+    /**
+     * Implement (the default), Plan: a planning round of a Brief, or Triage:
+     * a triager's decision on a proposed issue.
+     */
+    kind?: 'Implement' | 'Plan' | 'Triage'
     /** Every Task but a Plan Task names its Container. */
     containerRef?: LocalRef
     /** A Plan Task names its Brief in place of a Container. */
@@ -568,6 +571,15 @@ export interface Task extends K8sObject {
     issueURL?: string
     /** The issues filed from the reviewer's suggestions on merge, as URLs. */
     followUps?: string[]
+    /** A Triage Task's decision, its reason, and what the operator did with it. */
+    triage?: {
+      decision: 'ready' | 'spec' | 'park' | 'duplicate'
+      reason?: string
+      criteria?: string[]
+      question?: string
+      duplicate?: number
+      applied?: string
+    }
     /** The Standard change the Task waits for while Blocked. */
     standardChange?: {
       issue: number
@@ -656,6 +668,8 @@ export interface Crew extends K8sObject {
      * none, the Crew's own Agent takes it.
      */
     routes?: CrewRoute[]
+    /** The Agent that triages the proposed issues, one at a time; unset, people triage. */
+    triager?: LocalRef
   }
   status?: {
     phase?: CrewPhase

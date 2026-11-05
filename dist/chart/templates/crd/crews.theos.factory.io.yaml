@@ -7,10 +7,22 @@ metadata:
     "helm.sh/resource-policy": keep
     {{- end }}
     controller-gen.kubebuilder.io/version: v0.22.0
+    theos.factory.io/conversion: webhook
   name: crews.theos.factory.io
 spec:
+  {{- if not .Values.webhook.enabled }}
+  {{- fail "crews.theos.factory.io: its versions differ in shape and convert by the operator (webhook.enabled)" }}
+  {{- end }}
   conversion:
-    strategy: None
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          name: {{ include "theos.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+          namespace: {{ .Release.Namespace }}
+          path: /convert
+      conversionReviewVersions:
+      - v1
   group: theos.factory.io
   names:
     categories:
@@ -1033,6 +1045,23 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              triager:
+                description: |-
+                  triager names the Agent that triages the Container's proposed issues:
+                  one at a time, the Crew runs it on an open issue labelled
+                  status/proposed, outside the Later milestone, that no Triage Task has
+                  decided yet, and labels, comments on or closes the issue as it decides
+                  (docs/design.md, "Triage"). A triage costs no round and takes no place
+                  from parallel. Unset, people triage.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
             required:
             - containerRef
             - implementer

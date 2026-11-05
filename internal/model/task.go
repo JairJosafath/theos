@@ -29,6 +29,9 @@ const (
 	RoleReviewer    = "review"
 	// RolePlanner is a Plan Task's run: the planner writes a Brief round's plan.
 	RolePlanner = "plan"
+	// RoleTriager is a Triage Task's run: the triager decides what an issue
+	// needs next, and pushes nothing.
+	RoleTriager = "triage"
 )
 
 // Review verdicts.
@@ -73,6 +76,8 @@ type RunResult struct {
 	// Open are the criteria an approved review accepted as left open: they need
 	// what no agent's sandbox has, so a person does them.
 	Open []OpenCriterion
+	// Triage is a triager's decision; nil when it gave none.
+	Triage *Triage
 	// Unavailable means the agent's service couldn't work: a usage limit, an
 	// overload, a temporary server error or bad credentials. It is not the agent's fault and costs no round.
 	Unavailable bool
@@ -432,6 +437,10 @@ type TaskFacts struct {
 	// PlanRefusals are its reasons when it refused the plan.
 	PlanChecked  bool
 	PlanRefusals string
+	// Triage means a Triage Task: one triager run on an issue, whose decision
+	// the operator applies. It has no protection, queue, CI or review, and no
+	// second round: a failed run fails the Task, and its Crew tries again.
+	Triage bool
 }
 
 // ChangeFacts is a Standard change a Task filed.
@@ -1106,7 +1115,10 @@ const (
 	ActionAwaitPlanCheck TaskAction = "AwaitPlanCheck"
 	// ActionPlanAccepted ends a Plan Task whose plan the Brief accepted.
 	ActionPlanAccepted TaskAction = "PlanAccepted"
-	ActionFail         TaskAction = "Fail"
+	// ActionTriaged applies a triager's decision to its issue and ends the
+	// Triage Task.
+	ActionTriaged TaskAction = "Triaged"
+	ActionFail    TaskAction = "Fail"
 )
 
 // TaskStep is the next action, with the feedback for the next round when the
@@ -1209,6 +1221,9 @@ func releasesSlot(run RunState) bool {
 func nextTaskStep(f TaskFacts) TaskStep {
 	if f.Plan {
 		return planStep(f)
+	}
+	if f.Triage {
+		return triageStep(f)
 	}
 	switch f.Phase {
 	case "", TaskPending:
@@ -1439,6 +1454,44 @@ func planStep(f TaskFacts) TaskStep {
 	return TaskStep{Action: ActionNone}
 }
 
+// triageStep decides what happens next to a Triage Task: one triager run,
+// whose decision the operator applies. A run the infrastructure interrupted,
+// or whose agent was unavailable, goes on as any run does; one that failed
+// fails the Task at once, with no second round: its Crew starts another
+// Triage Task for the issue (NextTriage).
+func triageStep(f TaskFacts) TaskStep {
+	switch f.Phase {
+	case "", TaskPending:
+		return TaskStep{Action: ActionStartImplement, Message: "Starting the triage"}
+	case TaskImplementing:
+		step := implementingStep(f)
+		if step.Action == ActionRetry || step.Action == ActionFail {
+			return TaskStep{Action: ActionFail, Feedback: step.Feedback,
+				Message: "The triage failed: " + gist(step.Feedback)}
+		}
+		if step.Action == ActionStartImplement {
+			step.Message = "Starting the triage"
+		}
+		return step
+	}
+	return TaskStep{Action: ActionNone}
+}
+
+// triagedStep decides what follows a finished triager run that reported
+// neither an error nor an outage: its decision is applied, or the Task fails
+// when it gave none the operator can apply.
+func triagedStep(f TaskFacts) TaskStep {
+	if f.Run.Result.Triage == nil {
+		return TaskStep{Action: ActionFail, Feedback: "the triager reported no decision",
+			Message: "The triage failed: the triager reported no decision"}
+	}
+	d := NormalTriage(*f.Run.Result.Triage)
+	if problem := TriageProblem(0, d); problem != "" {
+		return TaskStep{Action: ActionFail, Feedback: problem, Message: "The triage failed: " + problem}
+	}
+	return TaskStep{Action: ActionTriaged, Message: "The triager decided " + d.Decision}
+}
+
 // planPushedStep decides what follows a finished planner run that reported
 // neither an error nor an outage.
 func planPushedStep(f TaskFacts) TaskStep {
@@ -1466,7 +1519,7 @@ func implementingStep(f TaskFacts) TaskStep {
 		return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
 	case f.Run.Result.Unavailable:
 		return agentUnavailable(f)
-	case f.Run.Result.Blocked != "" && !f.Plan:
+	case f.Run.Result.Blocked != "" && !f.Plan && !f.Triage:
 		// The agent says the issue can't start yet: more rounds won't change that.
 		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Message: BlockedMessage(f.Run.Result.Blocked)}
 	case IsScopeRefusal(f.Run.Result.Error) && IsScopeRefusal(f.Feedback):
@@ -1477,6 +1530,8 @@ func implementingStep(f TaskFacts) TaskStep {
 		return roundFailed(f, f.Run.Result.Error)
 	case f.Plan:
 		return planPushedStep(f)
+	case f.Triage:
+		return triagedStep(f)
 	}
 	return implementedStep(f)
 }

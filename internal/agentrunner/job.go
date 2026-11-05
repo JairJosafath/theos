@@ -11,6 +11,7 @@ package agentrunner
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -18,12 +19,18 @@ import (
 )
 
 // Roles a sandbox can play in a Task round. Plan is a Plan Task's round: it
-// plans a Brief in the Brief's repository.
+// plans a Brief in the Brief's repository. Triage is a Triage Task's run: it
+// reads the issue and the repository, and pushes nothing.
 const (
 	RoleImplement = "implement"
 	RoleReview    = "review"
 	RolePlan      = "plan"
+	RoleTriage    = "triage"
 )
+
+// triageBranch is the local branch a triage run reads the base on; it is
+// never pushed.
+const triageBranch = "triage"
 
 // Environment variables the operator sets on the sandbox.
 const (
@@ -272,6 +279,10 @@ func (job *Job) check() error {
 				model.PlanBranch(job.Round))
 		}
 	}
+	if job.Role == RoleTriage {
+		// A triage reads the base, and pushes no branch.
+		job.Branch = triageBranch
+	}
 
 	required := map[string]string{
 		EnvRole: job.Role, EnvRepoURL: job.RepoURL, EnvBranch: job.Branch, EnvGoal: job.Goal,
@@ -292,8 +303,9 @@ func (job *Job) check() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing %s", strings.Join(sortedCopy(missing), ", "))
 	}
-	if job.Role != RoleImplement && job.Role != RoleReview && job.Role != RolePlan {
-		return fmt.Errorf("%s=%q: want %s, %s or %s", EnvRole, job.Role, RoleImplement, RoleReview, RolePlan)
+	if !slices.Contains([]string{RoleImplement, RoleReview, RolePlan, RoleTriage}, job.Role) {
+		return fmt.Errorf("%s=%q: want %s, %s, %s or %s", EnvRole, job.Role, RoleImplement, RoleReview, RolePlan,
+			RoleTriage)
 	}
 	if job.Branch == job.Base {
 		return errors.New("the work branch must not be the base branch")

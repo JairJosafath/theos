@@ -87,7 +87,7 @@ func failedRelease(ctx context.Context, provider interface {
 func issueTasks(tasks []c4v1beta1.Task) map[string][]model.IssueTask {
 	out := map[string][]model.IssueTask{}
 	for _, t := range tasks {
-		if t.Spec.Issue == 0 || t.Spec.ContainerRef.Name == "" {
+		if t.Spec.Issue == 0 || t.Spec.ContainerRef.Name == "" || t.Spec.Kind == c4v1beta1.TaskTriage {
 			continue
 		}
 		it := model.IssueTask{Name: t.Name, Issue: int(t.Spec.Issue), Merged: t.Status.Phase == c4v1beta1.TaskMerged,

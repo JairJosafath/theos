@@ -14,14 +14,17 @@ import (
 )
 
 // TaskKind is what a Task does: implement a goal in a Container's repository,
-// or plan a round of a Brief.
-// +kubebuilder:validation:Enum=Implement;Plan
+// plan a round of a Brief, or triage an issue.
+// +kubebuilder:validation:Enum=Implement;Plan;Triage
 type TaskKind string
 
 // Task kinds.
 const (
 	TaskImplement TaskKind = "Implement"
 	TaskPlan      TaskKind = "Plan"
+	// TaskTriage decides what a proposed issue needs next; the operator then
+	// labels, comments on or closes the issue (docs/design.md, "Triage").
+	TaskTriage TaskKind = "Triage"
 )
 
 // TaskSpec is a goal for one Container, done by an Agent: written here, or in an
@@ -32,6 +35,8 @@ const (
 // +kubebuilder:validation:XValidation:rule="!has(self.briefRef) || (has(self.kind) && self.kind == 'Plan')",message="briefRef needs kind Plan"
 // +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Plan' || has(self.briefRef)",message="a Plan Task needs a briefRef"
 // +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Plan' || !has(self.reviewerRef)",message="a Plan Task has no reviewerRef"
+// +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Triage' || has(self.issue)",message="a Triage Task needs an issue"
+// +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Triage' || (!has(self.reviewerRef) && !has(self.allowedProtectedPaths))",message="a Triage Task has no reviewerRef and no allowedProtectedPaths"
 // +kubebuilder:validation:XValidation:rule="has(self.containerRef) == has(oldSelf.containerRef) && has(self.briefRef) == has(oldSelf.briefRef)",message="containerRef and briefRef are immutable; create a new Task"
 // +kubebuilder:validation:XValidation:rule="(has(self.kind) ? self.kind : 'Implement') == (has(oldSelf.kind) ? oldSelf.kind : 'Implement')",message="kind is immutable; create a new Task"
 // +kubebuilder:validation:XValidation:rule="has(self.goal) == has(oldSelf.goal) && has(self.issue) == has(oldSelf.issue)",message="goal and issue are immutable; create a new Task"
@@ -40,8 +45,9 @@ const (
 // +kubebuilder:validation:XValidation:rule="has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)",message="allowedProtectedPaths is immutable"
 type TaskSpec struct {
 	// kind is Implement (the default): implement the goal in the Container's
-	// repository; or Plan: plan a round of the Brief named by briefRef. It can't
-	// change.
+	// repository; Plan: plan a round of the Brief named by briefRef; or Triage:
+	// decide what the issue needs next, which the operator then applies to the
+	// issue. It can't change.
 	// +kubebuilder:default=Implement
 	// +optional
 	Kind TaskKind `json:"kind,omitempty"`
@@ -157,7 +163,7 @@ type TaskAgentRun struct {
 	// +required
 	Round int32 `json:"round"`
 
-	// role is implement, review or plan; empty when neither theos-agent nor the
+	// role is implement, review, plan or triage; empty when neither theos-agent nor the
 	// sandbox's name said.
 	// +kubebuilder:validation:MaxLength=32
 	// +optional
@@ -188,6 +194,52 @@ type TaskAgentRun struct {
 	// +kubebuilder:validation:MaxItems=8
 	// +optional
 	SessionHandoffs []int64 `json:"sessionHandoffs,omitempty"`
+}
+
+// Triage decisions a triager reports.
+const (
+	TriageReady     = "ready"
+	TriageSpec      = "spec"
+	TriagePark      = "park"
+	TriageDuplicate = "duplicate"
+)
+
+// TriageDecision is what a Triage Task's triager decided about its issue, and
+// what the operator did with it.
+type TriageDecision struct {
+	// decision is ready (clear, with acceptance criteria), spec (needs a spec
+	// first), park (needs a person's answer) or duplicate (of another issue).
+	// +kubebuilder:validation:Enum=ready;spec;park;duplicate
+	// +required
+	Decision string `json:"decision"`
+
+	// reason is why, in the triager's words.
+	// +kubebuilder:validation:MaxLength=2000
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// criteria are the acceptance criteria a ready decision gave, which the
+	// operator writes into an issue body that has none.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=8
+	// +kubebuilder:validation:items:MaxLength=512
+	// +optional
+	Criteria []string `json:"criteria,omitempty"`
+
+	// question is what a park decision asks a person.
+	// +kubebuilder:validation:MaxLength=2000
+	// +optional
+	Question string `json:"question,omitempty"`
+
+	// duplicate is the issue a duplicate decision names.
+	// +optional
+	Duplicate int32 `json:"duplicate,omitempty"`
+
+	// applied says what the operator did to the issue, or why it did nothing:
+	// a person closed or triaged the issue meanwhile.
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Applied string `json:"applied,omitempty"`
 }
 
 // TaskStandardChange is the Standard change a Task proposed: the protected files
@@ -354,6 +406,11 @@ type TaskStatus struct {
 	// +optional
 	Feedback string `json:"feedback,omitempty"`
 
+	// triage is a Triage Task's decision, once its triager reported one, and
+	// what the operator did with it.
+	// +optional
+	Triage *TriageDecision `json:"triage,omitempty"`
+
 	// standardChange is the Standard change the Task filed last: the one it
 	// waits for while Blocked. It stays after the Task resumes: it counts the
 	// changes filed, a later filing doesn't reuse its issue, and a resumed round
@@ -451,12 +508,15 @@ type TaskStatus struct {
 // +kubebuilder:printcolumn:name="PR",type=string,JSONPath=".status.pullRequestURL",priority=1
 // +kubebuilder:printcolumn:name="Kind",type=string,JSONPath=".spec.kind",priority=1
 // +kubebuilder:printcolumn:name="Brief",type=string,JSONPath=".spec.briefRef.name",priority=1
+// +kubebuilder:printcolumn:name="Decision",type=string,JSONPath=".status.triage.decision",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"
 
 // Task is a goal for a Container. The operator runs an Agent in a sandbox to
 // implement it on a branch, opens a pull request, waits for CI, runs the Agent
 // again as reviewer, and merges when both pass. It is owned by its Container. A
-// Plan Task is a planning round of a Brief, owned by the Brief.
+// Plan Task is a planning round of a Brief, owned by the Brief. A Triage Task
+// runs a triager on one proposed issue and applies what it decided.
 type Task struct {
 	metav1.TypeMeta `json:",inline"`
 

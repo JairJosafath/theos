@@ -44,6 +44,15 @@ type CrewSpec struct {
 	// +required
 	Reviewer LocalRef `json:"reviewer"`
 
+	// triager names the Agent that triages the Container's proposed issues:
+	// one at a time, the Crew runs it on an open issue labelled
+	// status/proposed, outside the Later milestone, that no Triage Task has
+	// decided yet, and labels, comments on or closes the issue as it decides
+	// (docs/design.md, "Triage"). A triage costs no round and takes no place
+	// from parallel. Unset, people triage.
+	// +optional
+	Triager *LocalRef `json:"triager,omitempty"`
+
 	// paused stops the Crew from picking up new issues. A Task already started
 	// runs to its end.
 	// +optional
@@ -525,6 +534,7 @@ type CrewStatus struct {
 // +kubebuilder:printcolumn:name="Parallel",type=integer,JSONPath=".spec.parallel"
 // +kubebuilder:printcolumn:name="Tasks",type=string,JSONPath=".status.activeTasks"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"
 
 // Crew is the team of Agents that works on a Container's issues: it picks up
 // issues labelled ready, in order and once their dependencies are closed, and

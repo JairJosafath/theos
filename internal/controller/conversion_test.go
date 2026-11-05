@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -122,5 +124,44 @@ var _ = Describe("API versions", func() {
 		Expect(k8sClient.Get(ctx, key(ns, "ada"), got)).To(Succeed())
 		Expect(got.Spec).To(Equal(c4v1alpha1.PersonSpec{DisplayName: "Ada", Description: "Counts the beans"}))
 		Expect(got.Annotations).To(BeEmpty())
+	})
+
+	// The first fields v1beta1 alone has (docs/plans/sdlc-loop.md, step 2) ride
+	// through v1alpha1 in its fields annotation, and a write there keeps them.
+	It("carries a Crew's triager and a Triage Task's decision through v1alpha1", func() {
+		ns := newProjectNamespace()
+		fields := fmt.Sprintf(c4v1alpha1.FieldsAnnotation, "v1beta1")
+		crew := newCrew(ns)
+		crew.Spec.Triager = &c4v1beta1.LocalRef{Name: "triager"}
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			old := readAt(g, alpha, "Crew", ns, "orders-api")
+			_, has, _ := unstructured.NestedFieldNoCopy(old.Object, "spec", "triager")
+			g.Expect(has).To(BeFalse())
+			g.Expect(old.GetAnnotations()).To(HaveKeyWithValue(fields, ContainSubstring(`"triager":{"name":"triager"}`)))
+			g.Expect(unstructured.SetNestedField(old.Object, "Builds the orders API", "spec", "description")).To(Succeed())
+			g.Expect(k8sClient.Update(ctx, old)).To(Succeed())
+		}).Should(Succeed())
+		got := &c4v1beta1.Crew{}
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), got)).To(Succeed())
+		Expect(got.Spec.Triager).To(Equal(&c4v1beta1.LocalRef{Name: "triager"}))
+		Expect(got.Spec.Description).To(Equal("Builds the orders API"))
+		Expect(got.Annotations).NotTo(HaveKey(fields))
+
+		task := newTriageTask(ns, "orders-api-4-triage")
+		mustCreate(task)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, task.Name), task)).To(Succeed())
+			task.Status.Triage = &c4v1beta1.TriageDecision{Decision: c4v1beta1.TriagePark, Reason: "Unclear.",
+				Question: "Which?"}
+			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			old := readAt(g, alpha, "Task", ns, task.Name)
+			g.Expect(old.GetAnnotations()).To(HaveKeyWithValue(fields, ContainSubstring(`"question":"Which?"`)))
+			kind, _, _ := unstructured.NestedString(old.Object, "spec", "kind")
+			g.Expect(kind).To(Equal("Triage"))
+		}).Should(Succeed())
 	})
 })

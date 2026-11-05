@@ -370,10 +370,13 @@ func (m *usageMeter) totalTokens() *model.TokenUsage {
 // FakeAgent stands in for a real agent in tests and demos. Implementing, it adds
 // a line to STAND-IN.md; reviewing, it approves, or first asks for changes, and
 // may file a follow-up; planning, it plans from the catalog alone
-// (model.StandInPlan).
+// (model.StandInPlan); triaging, it decides from the issue's text
+// (model.StandInTriage).
 type FakeAgent struct {
 	Role  string
 	Round int
+	// Goal is the job's goal: for a triage, the issue's title and body.
+	Goal string
 	// ChangesFirst makes the review ask for changes in round 1.
 	ChangesFirst bool
 	// NoChange makes implementing change nothing.
@@ -388,6 +391,10 @@ type FakeAgent struct {
 func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	if a.Role == RolePlan {
 		return a.plan(dir)
+	}
+	if a.Role == RoleTriage {
+		decision, err := json.Marshal(model.StandInTriage(a.Goal))
+		return "Read the issue.\n" + string(decision), err
 	}
 	if a.Role == RoleReview {
 		if a.ChangesFirst && a.Round == 1 {

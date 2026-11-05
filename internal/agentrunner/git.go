@@ -48,11 +48,17 @@ func clone(ctx context.Context, job Job, dir string) (*repo, error) {
 			return nil, err
 		}
 	}
-	if job.Role == RolePlan {
+	if job.Role == RolePlan || job.Role == RoleTriage {
 		// Each run plans afresh from the brief on the base branch; a rerun of the
-		// round replaces the branch.
+		// round replaces the branch. A triage reads the base.
 		if _, err := r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Base); err != nil {
 			return nil, err
+		}
+		if job.Role == RoleTriage {
+			// The triage pushes nothing: a push from the clone fails.
+			if _, err := r.git(ctx, dir, "remote", "set-url", "--push", "origin", "theos-triage-pushes-nothing"); err != nil {
+				return nil, err
+			}
 		}
 		r.start, err = r.head(ctx)
 		return r, err
