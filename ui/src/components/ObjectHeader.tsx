@@ -5,7 +5,7 @@
 // its children and its links out. Everything comes from the object's status
 // and the kind's table in model/lifecycle.ts.
 //
-// Below the header the page's sections are tabs (docs/plans/ui-shell.md, step
+// Below the header the page's sections are tabs (docs/plans/done/ui-shell.md, step
 // 2), kept in the address as otab=: Overview (the kind's own sections),
 // Status (its conditions), Activity (its timeline, rounds and runs) and
 // Related (its children and links out), each only when the kind has it. Every

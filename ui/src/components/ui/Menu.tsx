@@ -1,4 +1,4 @@
-// A button that opens a list of choices (docs/plans/ui-shell.md), and the
+// A button that opens a list of choices (docs/plans/done/ui-shell.md), and the
 // popover under it: the arrow keys, Home and End move through the items,
 // Enter or Space picks one, Esc closes it and gives the focus back to the
 // button, and a click elsewhere or Tab closes it.

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-// The primitives' keyboard (docs/plans/ui-shell.md): Modal and Drawer are
+// The primitives' keyboard (docs/plans/done/ui-shell.md): Modal and Drawer are
 // labelled dialogs that keep Tab inside, close on Esc, the close button or the
 // backdrop, and give the focus back to what opened them; Tabs move with the
 // arrow keys, Home and End over a roving tabindex, and can keep the tab in the

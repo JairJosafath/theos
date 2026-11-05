@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-// The theme, density and sidebar choices (docs/plans/ui-shell.md): kept in
+// The theme, density and sidebar choices (docs/plans/done/ui-shell.md): kept in
 // localStorage, applied on <html> as data-theme and data-density, System
 // following the device's colour scheme, and a browser that refuses storage
 // still gets the page and the choice for the visit.

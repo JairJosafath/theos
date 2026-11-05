@@ -3,7 +3,7 @@
 // It reads the resources and writes nothing; the two stages that wait on a
 // person are drawn apart, with a person's icon and a dashed border.
 //
-// The ring and the selected stage sit side by side (docs/plans/ui-shell.md,
+// The ring and the selected stage sit side by side (docs/plans/done/ui-shell.md,
 // step 2): a node selects its stage, kept in the address as tab=; the Loop
 // opens on the first review point with items. On a phone, the ring, then a
 // chip per stage, then the selected stage's items.

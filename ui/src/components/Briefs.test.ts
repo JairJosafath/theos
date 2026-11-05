@@ -22,7 +22,7 @@ const pageHref = (name: string) => `?kind=Brief&name=${name}`
 /**
  * The pages of `briefs` as HTML, with the clock stopped at `now`: what each
  * Brief's card showed in full, before the card became a few lines that open
- * the page in the drawer (docs/plans/ui-shell.md, step 2).
+ * the page in the drawer (docs/plans/done/ui-shell.md, step 2).
  */
 function render(briefs: Brief[], now: number): string {
   // A page's links read the URL it is on.
@@ -220,7 +220,7 @@ describe('the Brief card paused or not', () => {
   })
 })
 
-// The Briefs area is a grid of compact cards, each a link to its Brief's page in the drawer (docs/plans/ui-shell.md, step 2).
+// The Briefs area is a grid of compact cards, each a link to its Brief's page in the drawer (docs/plans/done/ui-shell.md, step 2).
 describe('the Briefs area', () => {
   const now = Date.parse('2026-10-07T12:00:00Z')
   const briefs = demoStory(now).briefs
@@ -266,7 +266,7 @@ describe('the Briefs area', () => {
 })
 
 describe('the Describe an app form', () => {
-  // The form is in the New brief modal (docs/plans/ui-shell.md); the Briefs area opens it.
+  // The form is in the New brief modal (docs/plans/done/ui-shell.md); the Briefs area opens it.
   const html = renderToStaticMarkup(
     createElement(NewBrief, { namespace: DEMO_NAMESPACE, taken: [], writer, bare: true }),
   )

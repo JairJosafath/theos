@@ -5,7 +5,7 @@
 //
 // The groups per project fold, remembered in this browser; chips filter the
 // items by kind, with a count each; on a wide screen the items sit in two
-// columns (docs/plans/ui-shell.md, step 2).
+// columns (docs/plans/done/ui-shell.md, step 2).
 
 import { useContext, useId, useState, type MouseEvent } from 'react'
 import type { ContainerWriter, StandardAnswer } from '../k8s/containers'

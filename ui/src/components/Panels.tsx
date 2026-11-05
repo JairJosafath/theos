@@ -1,7 +1,7 @@
 // The side panels: details of the selected box, who is working right now, and
 // the legend; in the Story area they share one right panel that folds,
 // remembered in this browser, so the diagram takes the width
-// (docs/plans/ui-shell.md, step 2).
+// (docs/plans/done/ui-shell.md, step 2).
 
 import type { ReactNode } from 'react'
 import type { Problem, StoryData } from '../k8s/sources'

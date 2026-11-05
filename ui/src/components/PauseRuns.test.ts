@@ -50,7 +50,7 @@ const brief = (spec: Partial<Brief['spec']> = {}): Brief => ({
   spec: { idea: 'A CEL lens', ...spec },
 })
 
-// The buttons were on the Brief's card; the card now opens the page that has them (docs/plans/ui-shell.md).
+// The buttons were on the Brief's card; the card now opens the page that has them (docs/plans/done/ui-shell.md).
 function briefCard(b: Brief, fetchImpl: ReturnType<typeof vi.fn>) {
   return createElement(BriefPage, {
     brief: b,

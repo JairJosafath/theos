@@ -183,7 +183,7 @@ describe('the shell', () => {
 
   it('opens a Brief page from its card, and a Container page from what the Brief made', async () => {
     await page.goto(`${base}/?area=briefs`)
-    // A Brief's card is a link to its page (docs/plans/ui-shell.md, step 2).
+    // A Brief's card is a link to its page (docs/plans/done/ui-shell.md, step 2).
     await page.getByRole('link', { name: /^Brief webshop: / }).click()
     const header = page.getByRole('region', { name: 'Brief webshop', exact: true })
     await header.waitFor({ timeout: 10000 })
@@ -307,7 +307,7 @@ describe('the shell', () => {
 
   it('opens a Task page from a board card in Work, and lists the releases', async () => {
     await page.goto(`${base}/?area=work`)
-    // Work's releases are its Releases tab, the board its first (docs/plans/ui-shell.md, step 2).
+    // Work's releases are its Releases tab, the board its first (docs/plans/done/ui-shell.md, step 2).
     await page.getByRole('tab', { name: 'Releases' }).click()
     const releases = page.getByRole('region', { name: 'Releases', exact: true })
     await releases.getByText('v0.2.0', { exact: true }).waitFor({ timeout: 10000 })

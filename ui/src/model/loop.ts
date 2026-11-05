@@ -179,7 +179,7 @@ export function loopStages(input: LoopInput): LoopStage[] {
 }
 
 /**
- * The stage the Loop opens on (docs/plans/ui-shell.md, step 2): the first
+ * The stage the Loop opens on (docs/plans/done/ui-shell.md, step 2): the first
  * review point of a person that has items, since those wait on the reader,
  * else the first stage with items, else the first stage.
  */

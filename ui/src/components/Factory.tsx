@@ -1,6 +1,6 @@
 // The Work area: is the factory healthy, what is it doing, where does the time
 // go, and what needs a look. Across all projects; read-only. The headline
-// numbers, then a one-line Needs a look strip, then tabs (docs/plans/ui-shell.md,
+// numbers, then a one-line Needs a look strip, then tabs (docs/plans/done/ui-shell.md,
 // step 2): Board, Crews, Releases, Time & tokens; the health and the agent
 // slots are the Factory area's.
 

@@ -794,7 +794,7 @@ The UI draws the story and the factory from the resources, live through
 watches, and enforces nothing: its writes are checked by the API server, whose
 refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 
-- **The shell** ([plans/ui-shell.md](plans/ui-shell.md)): a sidebar with
+- **The shell** ([plans/done/ui-shell.md](plans/done/ui-shell.md)): a sidebar with
   the project switcher and the areas (*Needs you* with its count; *Build*;
   *Operate*; About and Settings at the bottom), folding to icons; a top bar
   with where you are, a *Demo data* chip in demo mode, freshness, *Search or

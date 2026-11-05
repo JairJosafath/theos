@@ -1,4 +1,4 @@
-// A panel from the right over the page (docs/plans/ui-shell.md), for an
+// A panel from the right over the page (docs/plans/done/ui-shell.md), for an
 // object's page over the area it was opened from: a dialog like Modal, with
 // room for a page.
 

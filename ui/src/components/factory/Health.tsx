@@ -1,6 +1,6 @@
 // The factory's health: its components, the node's usage, and the history
 // charts of the last hours, as the Factory area's dashboard grid
-// (docs/plans/ui-shell.md, step 2): a card per part of the factory, the node's
+// (docs/plans/done/ui-shell.md, step 2): a card per part of the factory, the node's
 // usage, the last hour's charts side by side, and the agent slots beside them.
 
 import type { ReactNode } from 'react'

@@ -135,7 +135,7 @@ describe('the Container page’s actions', () => {
 
     it('sets when CI runs the full check, sending only spec.checks', async () => {
       env.api.writes.length = 0
-      // The checks are on the page's Status tab (docs/plans/ui-shell.md, step 2).
+      // The checks are on the page's Status tab (docs/plans/done/ui-shell.md, step 2).
       await page.getByRole('tab', { name: 'Status' }).click()
       const checks = page.getByRole('region', { name: 'When CI runs the full check' })
       await checks.getByLabel('Run the full check').selectOption('BeforeRelease')

@@ -9,7 +9,7 @@ and pauses or resumes one ([docs/plans/done/upgrade-in-place.md](../docs/plans/d
 With actions on it takes a few more (_Actions_ below). design.md's _The UI:
 areas and object pages_ says what it shows and why.
 
-**The shell** ([docs/plans/ui-shell.md](../docs/plans/ui-shell.md)). A
+**The shell** ([docs/plans/done/ui-shell.md](../docs/plans/done/ui-shell.md)). A
 sidebar holds the project switcher and the areas in groups: _Needs you_, with
 a count of what waits; _Build_: Loop, Briefs, Story, Work; _Operate_: Factory;
 and at the bottom About, Settings and the versions running. Its button folds it

@@ -1,4 +1,4 @@
-// Search or jump (docs/plans/ui-shell.md): ⌘K or Ctrl+K anywhere, or / when
+// Search or jump (docs/plans/done/ui-shell.md): ⌘K or Ctrl+K anywhere, or / when
 // not typing, opens a box that finds an area, a project or any object the page
 // watches (model/search.ts). The arrow keys move through what it found, Enter
 // goes there and Esc closes it.

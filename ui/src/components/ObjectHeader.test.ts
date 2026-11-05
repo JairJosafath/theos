@@ -112,7 +112,7 @@ describe('ObjectHeader for a Ready Container', () => {
   })
 })
 
-// The page's sections as tabs under its header (docs/plans/ui-shell.md, step 2).
+// The page's sections as tabs under its header (docs/plans/done/ui-shell.md, step 2).
 describe("an object page's tabs", () => {
   /** The tabs' names, the selected one in brackets. */
   function tabs(html: string) {

@@ -1,4 +1,4 @@
-// A dialog over the page (docs/plans/ui-shell.md): labelled by its title, the
+// A dialog over the page (docs/plans/done/ui-shell.md): labelled by its title, the
 // keyboard kept inside, Esc, the close button or a click on the backdrop closes
 // it, and the focus goes back to what opened it.
 

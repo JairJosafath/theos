@@ -1,4 +1,4 @@
-// The Work area's "needs a look" strip (docs/plans/ui-shell.md, step 2): one
+// The Work area's "needs a look" strip (docs/plans/done/ui-shell.md, step 2): one
 // line with how many items there are and the first of them, errors first,
 // that opens to the whole list; each item links to its Task.
 

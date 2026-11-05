@@ -36,7 +36,7 @@ describe('parseUrl', () => {
     ['the shell switch with an area', '?shell=next&area=work', { ...base, area: 'work' }],
     ['an area beside an old view', '?area=briefs&view=factory', { ...base, area: 'briefs' }],
     ['an area beside the containers', '?area=work&view=containers', { ...base, area: 'work', view: 'containers' }],
-    // The shell's drawer and tabs (docs/plans/ui-shell.md).
+    // The shell's drawer and tabs (docs/plans/done/ui-shell.md).
     [
       "an object's full page",
       '?area=work&ns=shop&kind=Task&name=api-7&full=1',
@@ -81,7 +81,7 @@ describe('hrefFor', () => {
     expect(hrefFor({ full: true })).toBe('/?area=work&tab=crews')
   })
 
-  // The object page's tabs (docs/plans/ui-shell.md, step 2) have their own parameter beside the area's tab=.
+  // The object page's tabs (docs/plans/done/ui-shell.md, step 2) have their own parameter beside the area's tab=.
   it("keeps the object page's tab as otab=, only beside its object", () => {
     at('?area=work&tab=crews&ns=shop&kind=Task&name=api-7')
     expect(hrefFor({ otab: 'activity' })).toBe('/?area=work&tab=crews&ns=shop&kind=Task&name=api-7&otab=activity')

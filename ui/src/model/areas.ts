@@ -1,6 +1,6 @@
 // The shell's areas (docs/plans/done/ui-lifecycle.md, decisions 1 and 2): their
 // order in the navigation, their names, what each one is about, and the
-// sidebar's group they sit in (docs/plans/ui-shell.md).
+// sidebar's group they sit in (docs/plans/done/ui-shell.md).
 
 export type Area = 'needs' | 'loop' | 'briefs' | 'story' | 'work' | 'factory' | 'about'
 

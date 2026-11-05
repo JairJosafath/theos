@@ -1,4 +1,4 @@
-// Tabs (docs/plans/ui-shell.md): a tablist with roving focus, so Tab enters the
+// Tabs (docs/plans/done/ui-shell.md): a tablist with roving focus, so Tab enters the
 // list once and the arrow keys, Home and End move between tabs and select the
 // one they land on. With `syncUrl`, the selected tab is the address's `tab=`
 // (an object page's is `otab=`, beside the area's), so a link opens it and the

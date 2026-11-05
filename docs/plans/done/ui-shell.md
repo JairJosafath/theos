@@ -88,3 +88,15 @@ list you came from, forms in modals, and a theme the person picks.
 - Every area's first screen at 1440×900 shows its summary without
   scrolling, and no page scrolls sideways at 390px.
 - `docs/screenshots/ui-shell-*.png` show each area in light and dark.
+
+## As built
+
+Both steps landed on 2026-11-05. The shell (sidebar, top bar, theme and
+Settings, Modal, Drawer, Tabs, Menu, the command palette, *New brief* in a
+modal, object pages in the Drawer) is `f153543d`; the area layouts and the
+object pages' tabs (`otab=`) are `5e3366ab`. Screenshots of every area and a
+Task and a Container drawer in light and dark at 1440×900, and Needs you,
+Loop and Work at 390×844, are `docs/screenshots/ui-shell-*.png` (demo data).
+Left: the Story diagram's system context still runs below the fold at 900px
+tall; three e2e specs against the fake API (a Brief's releases, two Crew
+release settings) fail on the base too, from demo data that drifted.

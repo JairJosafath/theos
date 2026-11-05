@@ -250,7 +250,7 @@ describe('loopStages', () => {
   })
 })
 
-// The Loop opens on one stage beside the ring (docs/plans/ui-shell.md, step 2).
+// The Loop opens on one stage beside the ring (docs/plans/done/ui-shell.md, step 2).
 describe('defaultStage', () => {
   it('opens on the first review point of a person that has items', () => {
     const stages = loopStages({

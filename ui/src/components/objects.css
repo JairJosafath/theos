@@ -7,7 +7,7 @@
   padding-bottom: 24px;
 }
 
-/* The page's sections as tabs under its header (docs/plans/ui-shell.md, step 2). */
+/* The page's sections as tabs under its header (docs/plans/done/ui-shell.md, step 2). */
 .object-main {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

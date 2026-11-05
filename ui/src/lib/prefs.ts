@@ -1,4 +1,4 @@
-// The person's own choices for this browser (docs/plans/ui-shell.md): the theme,
+// The person's own choices for this browser (docs/plans/done/ui-shell.md): the theme,
 // the density and whether the sidebar opens expanded. They live in localStorage,
 // every read and write wrapped so a browser that refuses storage (a private
 // window, blocked site data) still gets the page and the choice for this visit.

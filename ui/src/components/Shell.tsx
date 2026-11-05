@@ -1,4 +1,4 @@
-// The page's shell (docs/plans/ui-shell.md, step 1): a sidebar with the areas,
+// The page's shell (docs/plans/done/ui-shell.md, step 1): a sidebar with the areas,
 // the project switcher, About, Settings and the versions running; a top bar
 // with where you are, the demo chip, how fresh the page is, search, the area's
 // primary action and the theme; the area on screen; and an object's page in a

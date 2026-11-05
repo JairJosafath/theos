@@ -1,5 +1,5 @@
 // The command palette's entries and how a query finds them
-// (docs/plans/ui-shell.md): the areas, the projects and every object the page
+// (docs/plans/done/ui-shell.md): the areas, the projects and every object the page
 // watches, matched by kind, name and namespace, case-insensitive, by a
 // substring or the query's letters in order.
 

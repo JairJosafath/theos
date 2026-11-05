@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-// The areas' layouts (docs/plans/ui-shell.md, step 2): Work's Needs a look
+// The areas' layouts (docs/plans/done/ui-shell.md, step 2): Work's Needs a look
 // strip and its tabs, the Loop's ring that selects a stage, Needs you's filter
 // chips and folding groups, the Story's side panel that folds, and the Factory
 // area's dashboard. Each remembers what it should, where it should: the tab or

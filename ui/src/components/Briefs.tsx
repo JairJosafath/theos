@@ -1,4 +1,4 @@
-// The Briefs of a project (docs/plans/ui-shell.md, step 2): a card that opens
+// The Briefs of a project (docs/plans/done/ui-shell.md, step 2): a card that opens
 // the New brief modal to describe a new app, and a compact card per Brief (its
 // name, phase, what it waits for, cost and latest round) that opens its page
 // in the drawer. The page shows what the planner made of it, a field to steer

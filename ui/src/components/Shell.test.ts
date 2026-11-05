@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-// The shell (docs/plans/ui-shell.md, step 1): the sidebar's areas with the
+// The shell (docs/plans/done/ui-shell.md, step 1): the sidebar's areas with the
 // Needs you count, folded to icons and remembered per browser; the demo chip;
 // Search or jump from ⌘K / Ctrl+K or /; the area's primary action; an object's
 // page in the drawer over the area; and About with what the footer said.

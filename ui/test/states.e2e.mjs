@@ -75,7 +75,7 @@ describe('the shell with refused reads', () => {
     // Sessions only feed Needs a look, which says the failure that may hide its items.
     const look = page.getByRole('region', { name: 'Needs a look' })
     await look.getByRole('alert').getByText('Could not read sessions.').waitFor({ timeout: 5000 })
-    // The Crews are Work's second tab (docs/plans/ui-shell.md, step 2).
+    // The Crews are Work's second tab (docs/plans/done/ui-shell.md, step 2).
     await page.getByRole('tab', { name: /^Crews/ }).click()
     await panel('Crews').getByRole('alert').getByText('Could not read crews.').waitFor({ timeout: 10000 })
     assert.equal(
