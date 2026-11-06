@@ -133,7 +133,7 @@ var _ = Describe("TestEnvironment", func() {
 		}, "spec.limits.maxLeases"),
 		Entry("two members", func(env *c4v1beta1.TestEnvironment) {
 			env.Spec.AWS = newGPUEnvironment(env.Namespace).Spec.AWS
-		}, "set exactly one provider member: local or aws"),
+		}, "set exactly one provider member: local, aws or deviceFarm"),
 		Entry("an aws member without a budget (step 7)", func(env *c4v1beta1.TestEnvironment) {
 			env.Spec.Local, env.Spec.AWS = nil, newGPUEnvironment(env.Namespace).Spec.AWS
 		}, "an aws environment needs limits.budgetUSDPerDay"),

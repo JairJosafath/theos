@@ -121,6 +121,9 @@ const (
 type TestEnvironment struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	// TestRuns means the environment runs test packages on devices, with
+	// `theos-env test`, rather than commands (T12).
+	TestRuns bool `json:"testRuns,omitempty"`
 }
 
 // CheckpointDir is where the operator mounts a sandbox's checkpoint volume.

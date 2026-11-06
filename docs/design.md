@@ -486,8 +486,8 @@ libraries, a phone emulator, a GPU, macOS) gets it from a
 ([plans/test-environments.md](plans/test-environments.md)). A
 TestEnvironment is a named set of tools in a project's namespace, such as
 `browser`, `android` or `godot` (`v1beta1`, as every kind): a one-line
-`description` for people and agents, exactly one provider member (`local`
-or `aws`; CEL), and `limits`. Its status lists the live leases (holder,
+`description` for people and agents, exactly one provider member (`local`,
+`aws` or `deviceFarm`; CEL), and `limits`. Its status lists the live leases (holder,
 since, state, cost so far), what they cost today, and `Ready`: a local
 member's image is pinned and the project's fence for its pods exists; a
 remote member's `CredentialsValid` is True.
@@ -565,6 +565,22 @@ remote member's `CredentialsValid` is True.
   a host past its kept time once no machine is on it; the lease whose
   machine is the first on a host counts the host's price for its kept hours
   at once, and a lease on a host kept costs nothing until they are over.
+- **Test packages on real devices.** A `deviceFarm` environment runs an
+  app's test packages on AWS Device Farm's phones, not commands. The run
+  can't reach the operator, which holds the credential, and the credential
+  never reaches the run, so the run asks over its Git host: `theos-env test
+  <name> --type <type> --app <file> --tests <file>` pushes a request commit,
+  the request signed with the lease's token, the app and the test package,
+  its parent the run's commit, to the lease's branch `theos-env/<lease>`,
+  which is the lease's endpoint (`git:theos-env/<lease>`). The operator
+  reads it on its poll, as it reads CI's checks, starts the run on the
+  environment's device pool when the token signed it and the day's budget
+  allows, pushes the report (each device's result, the tests that didn't
+  pass) and the screenshots and logs to the same branch, where theos-env
+  writes them into the run's working tree to commit, and comments the
+  outcome on the Task's pull request, where the reviewer and people see it.
+  A lease holds no device: it is a tag on the Device Farm project, and costs
+  its runs' metered device minutes; returning it stops its runs.
 - **Limits.** `limits.maxLeases` (default 2, at most 16) bounds the live
   leases; a run past it waits, `WaitingForEnvironment`, `AllLeased`.
   `limits.maxLeaseMinutes` (default 180, the agent run's own deadline) ends a
@@ -1201,7 +1217,7 @@ controllers call, not by one product's API;
 | AgentRuntime | start a run, read its state and result, stop it | Agent Sandbox |
 | Deployer | ship a release to a target, read its state back | the GitHub release copy |
 | ChatHost | a Space and its rooms, invites, messages, thread replies, edits, reactions, sync | Matrix |
-| TestEnvironments | lease a place to run commands with tools the sandbox lacks, read it back, return it, list the leases held | a pod per lease on the cluster (`local`); an EC2 machine per lease in the user's AWS account (`aws`) |
+| TestEnvironments | lease a place to run commands with tools the sandbox lacks, read it back, return it, list the leases held; run a test package where the environment runs those (`TestRuns`) | a pod per lease on the cluster (`local`); an EC2 machine per lease in the user's AWS account, a Mac's on a kept host (`aws`); AWS Device Farm's phones (`deviceFarm`) |
 
 - **A port is a narrow Go interface** with one fake and one contract suite,
   plain Go with no Kubernetes in `internal/ports`; each adapter is its own

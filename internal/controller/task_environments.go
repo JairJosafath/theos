@@ -340,7 +340,8 @@ func environmentEnv(envs []runEnvironment) []corev1.EnvVar {
 	out := make([]corev1.EnvVar, 0, 3*len(envs)+1)
 	listed := make([]agentrunner.TestEnvironment, 0, len(envs))
 	for _, e := range envs {
-		listed = append(listed, agentrunner.TestEnvironment{Name: e.name, Description: e.description})
+		_, testRuns := model.TestRunBranchOf(e.lease.Endpoint)
+		listed = append(listed, agentrunner.TestEnvironment{Name: e.name, Description: e.description, TestRuns: testRuns})
 		if e.lease.ID == "" {
 			continue // listed for the triager, not leased
 		}

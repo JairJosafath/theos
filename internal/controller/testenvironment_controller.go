@@ -40,8 +40,10 @@ import (
 // leased, lists its live leases, and returns the leases whose holder holds
 // them no more (docs/plans/test-environments.md, step 1). A remote member's
 // credential is checked on each poll (CredentialsValid), and its leases are
-// returned before the environment goes (step 7). The Task reconciler takes
-// and returns the leases of its runs.
+// returned before the environment goes (step 7). A test-run environment's
+// leases take their runs' requests on the Git host (step 10,
+// testenvironment_testruns.go). The Task reconciler takes and returns the
+// leases of its runs.
 type TestEnvironmentReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -58,6 +60,9 @@ type TestEnvironmentReconciler struct {
 	// OrphanGrace is how old a lease its holder doesn't list must be before
 	// it is returned; 0 means a minute.
 	OrphanGrace time.Duration
+	// Git reaches the Git hosts where a test-run environment's leases take
+	// their requests (step 10); nil leaves them unanswered.
+	Git GitClient
 	// Now is the clock; time.Now when nil.
 	Now func() time.Time
 }
@@ -163,7 +168,11 @@ func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	status.SpentToday = spentToday(status.SpentToday, status.Leases, live, r.now())
 	status.Leases = leaseStatus(live)
-	return ctrl.Result{RequeueAfter: r.pollInterval()}, r.writeStatus(ctx, &env, status)
+	result := ctrl.Result{RequeueAfter: r.pollInterval()}
+	if runner, ok := provider.(ports.TestRuns); ok && r.tendTestRuns(ctx, &env, status, environment, runner, live) {
+		result.RequeueAfter = min(result.RequeueAfter, testRunRecheck)
+	}
+	return result, r.writeStatus(ctx, &env, status)
 }
 
 // checkCredentials sets a remote env's CredentialsValid: its Secret is there
@@ -350,6 +359,8 @@ func testEnvMember(env *c4v1beta1.TestEnvironment) string {
 		return model.TestEnvMemberLocal
 	case env.Spec.AWS != nil:
 		return model.TestEnvMemberAWS
+	case env.Spec.DeviceFarm != nil:
+		return model.TestEnvMemberDeviceFarm
 	}
 	return ""
 }
@@ -359,6 +370,9 @@ func testEnvMember(env *c4v1beta1.TestEnvironment) string {
 func testEnvSecretName(env *c4v1beta1.TestEnvironment) string {
 	if a := env.Spec.AWS; a != nil {
 		return a.CredentialsSecretRef.Name
+	}
+	if d := env.Spec.DeviceFarm; d != nil {
+		return d.CredentialsSecretRef.Name
 	}
 	return ""
 }
@@ -400,6 +414,10 @@ func testEnvironment(env *c4v1beta1.TestEnvironment, pullSecrets []string) ports
 		if a.Mac != nil {
 			out.AWS.KeepHostHours = int(a.Mac.KeepHostHours)
 		}
+	}
+	if d := env.Spec.DeviceFarm; d != nil {
+		out.DeviceFarm = &ports.DeviceFarmEnvironment{ProjectARN: d.ProjectARN, DevicePoolARN: d.DevicePoolARN,
+			Account: d.Account}
 	}
 	local := env.Spec.Local
 	if local == nil {

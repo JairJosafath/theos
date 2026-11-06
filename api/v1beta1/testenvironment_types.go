@@ -20,8 +20,9 @@ import (
 // and the provider that supplies it: exactly one member, keyed by field
 // name, as a DeployTarget's (docs/plans/test-environments.md, T1). Each
 // member is added with the adapter that leases it.
-// +kubebuilder:validation:XValidation:rule="[has(self.local), has(self.aws)].exists_one(x, x)",message="set exactly one provider member: local or aws"
+// +kubebuilder:validation:XValidation:rule="[has(self.local), has(self.aws), has(self.deviceFarm)].exists_one(x, x)",message="set exactly one provider member: local, aws or deviceFarm"
 // +kubebuilder:validation:XValidation:rule="!has(self.aws) || (has(self.limits) && has(self.limits.budgetUSDPerDay))",message="an aws environment needs limits.budgetUSDPerDay: a remote lease costs money for every minute it is held"
+// +kubebuilder:validation:XValidation:rule="!has(self.deviceFarm) || (has(self.limits) && has(self.limits.budgetUSDPerDay))",message="a deviceFarm environment needs limits.budgetUSDPerDay: its test runs cost money for every device minute"
 type TestEnvironmentSpec struct {
 	// description says in one line what the environment has, for people and
 	// for the agents and planner that choose it.
@@ -40,6 +41,15 @@ type TestEnvironmentSpec struct {
 	// charges, so it needs limits.budgetUSDPerDay.
 	// +optional
 	AWS *TestEnvironmentAWS `json:"aws,omitempty"`
+
+	// deviceFarm runs test packages, rather than commands, on real phones
+	// in AWS Device Farm, in the user's AWS account: a run asks with
+	// `theos-env test <name>`, over its Git host, and the operator, which
+	// alone holds the credential, starts the run and gives the report back
+	// (T12). Its runs cost what Device Farm charges per device minute, so it
+	// needs limits.budgetUSDPerDay.
+	// +optional
+	DeviceFarm *TestEnvironmentDeviceFarm `json:"deviceFarm,omitempty"`
 
 	// limits cap how many leases run at once, for how long and, for a
 	// remote member, at what cost a day.
@@ -205,6 +215,46 @@ type TestEnvironmentMac struct {
 	KeepHostHours int32 `json:"keepHostHours,omitempty"`
 }
 
+// TestEnvironmentDeviceFarm is AWS Device Farm's real phones, which run an
+// app's test packages (docs/plans/test-environments.md, T12, step 10). A
+// lease runs nothing itself: the run that holds it pushes a request, the
+// app and its test package, to the lease's branch on its Git host with
+// `theos-env test`; the operator checks it against the lease's token, runs
+// it on devicePoolArn's devices, pushes the report, screenshots and logs to
+// the same branch, where theos-env writes them into the run's working
+// tree, and comments the outcome on the Task's pull request. The
+// credential never leaves the operator.
+type TestEnvironmentDeviceFarm struct {
+	// projectArn is the Device Farm project the runs go in, in us-west-2,
+	// Device Farm's one region.
+	// +kubebuilder:validation:MaxLength=200
+	// +kubebuilder:validation:XValidation:rule="self.matches('^arn:aws:devicefarm:us-west-2:[0-9]{12}:project:[0-9a-f-]{36}$')",message="projectArn must be a Device Farm project's ARN, in us-west-2"
+	// +required
+	ProjectARN string `json:"projectArn"`
+
+	// devicePoolArn is the devices each run runs on: a device pool of the
+	// project, or one of Device Farm's own, such as its top devices.
+	// +kubebuilder:validation:MaxLength=200
+	// +kubebuilder:validation:XValidation:rule="self.matches('^arn:aws:devicefarm:us-west-2:[0-9]{0,12}:devicepool:[0-9a-f-]{36}(/[0-9a-f-]{36})?$')",message="devicePoolArn must be a Device Farm device pool's ARN, in us-west-2"
+	// +required
+	DevicePoolARN string `json:"devicePoolArn"`
+
+	// account is the twelve-digit AWS account id the credential must be in,
+	// as an aws member's: set, a credential of another account is refused.
+	// +kubebuilder:validation:MaxLength=12
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{12}$')",message="account must be a twelve-digit AWS account id"
+	// +optional
+	Account string `json:"account,omitempty"`
+
+	// credentialsSecretRef names a Secret in the TestEnvironment's namespace
+	// with the keys accessKeyId, secretAccessKey and an optional
+	// sessionToken, as an aws member's. Only the operator reads it: it never
+	// reaches a sandbox or a CI job. The key needs the Device Farm calls
+	// docs/getting-started.md lists.
+	// +required
+	CredentialsSecretRef LocalRef `json:"credentialsSecretRef"`
+}
+
 // TestEnvironmentLimits cap the environment's leases (T10).
 type TestEnvironmentLimits struct {
 	// maxLeases is how many leases may be live at once; a run that would
@@ -242,8 +292,8 @@ const (
 	// Ready, ImageNotPinned, FenceMissing and CredentialsInvalid.
 	ConditionTestEnvironmentReady = "Ready"
 	// ConditionTestEnvironmentCredentialsValid says whether a remote
-	// member's provider takes the credential its Secret holds, in the account
-	// the member names. Its reasons are Valid, SecretMissing,
+	// member's (aws, deviceFarm) provider takes the credential its Secret
+	// holds, in the account the member names. Its reasons are Valid, SecretMissing,
 	// SecretIncomplete, CredentialRefused and Unreachable. A local
 	// environment, which needs none, has no such condition.
 	ConditionTestEnvironmentCredentialsValid = "CredentialsValid"
@@ -273,6 +323,62 @@ type TestEnvironmentLease struct {
 	CostMilliUSD int64 `json:"costMilliUSD,omitempty"`
 }
 
+// TestEnvironmentTestRun is a test run a lease's run asked for, of a
+// deviceFarm environment (T12).
+type TestEnvironmentTestRun struct {
+	// id is the run's ID on the provider: its lease and its request.
+	// +required
+	ID string `json:"id"`
+	// lease is the lease whose branch the request is on, and holder the
+	// Task whose run holds it.
+	// +required
+	Lease string `json:"lease"`
+	// +optional
+	Holder string `json:"holder,omitempty"`
+	// container is the Container on whose repository the lease's branch
+	// is.
+	// +optional
+	Container string `json:"container,omitempty"`
+	// request is the request commit on the lease's branch, and commit the
+	// run's commit the app and tests were built from.
+	// +required
+	Request string `json:"request"`
+	// +optional
+	Commit string `json:"commit,omitempty"`
+	// type is the test package's type, such as instrumentation.
+	// +optional
+	Type string `json:"type,omitempty"`
+	// state is Pending or Running on the provider, Reported once its
+	// result is on the lease's branch, or Rejected when the operator ran
+	// nothing.
+	// +optional
+	State string `json:"state,omitempty"`
+	// result is Passed, Warned, Failed, Skipped, Errored, Stopped or
+	// Rejected, once there is one, and outcome its one line.
+	// +optional
+	Result string `json:"result,omitempty"`
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Outcome string `json:"outcome,omitempty"`
+	// url is the run on the provider's console.
+	// +optional
+	URL string `json:"url,omitempty"`
+	// costMilliUSD is what the run cost, by the provider's count.
+	// +optional
+	CostMilliUSD int64 `json:"costMilliUSD,omitempty"`
+	// since is when the operator started it.
+	// +optional
+	Since *metav1.Time `json:"since,omitempty"`
+	// answer is the operator's result commit on the lease's branch.
+	// +optional
+	Answer string `json:"answer,omitempty"`
+	// comment is the pull request comment still to post once the holder
+	// has a pull request; empty once posted.
+	// +kubebuilder:validation:MaxLength=8192
+	// +optional
+	Comment string `json:"comment,omitempty"`
+}
+
 // TestEnvironmentSpend is what the environment's leases cost on one day.
 type TestEnvironmentSpend struct {
 	// day is the UTC date, such as 2026-11-06.
@@ -297,6 +403,14 @@ type TestEnvironmentStatus struct {
 	// +optional
 	SpentToday *TestEnvironmentSpend `json:"spentToday,omitempty"`
 
+	// testRuns are a deviceFarm environment's test runs, the last ones of
+	// each lease, kept until their outcome is on the holder's pull request.
+	// +listType=map
+	// +listMapKey=id
+	// +kubebuilder:validation:MaxItems=32
+	// +optional
+	TestRuns []TestEnvironmentTestRun `json:"testRuns,omitempty"`
+
 	// conditions: Ready, and CredentialsValid for a remote member.
 	// +listType=map
 	// +listMapKey=type
@@ -310,6 +424,7 @@ type TestEnvironmentStatus struct {
 // +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z]([-a-z0-9]{0,30}[a-z0-9])?$')",message="a TestEnvironment's name is a DNS label of at most 32 characters that starts with a letter: jobs ask for it as env/<name>"
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=".spec.local.image",priority=1
 // +kubebuilder:printcolumn:name="Instance",type=string,JSONPath=".spec.aws.instanceType",priority=1
+// +kubebuilder:printcolumn:name="Devices",type=string,JSONPath=".spec.deviceFarm.devicePoolArn",priority=1
 // +kubebuilder:printcolumn:name="Max",type=integer,JSONPath=".spec.limits.maxLeases"
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type==\"Ready\")].status"
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=".status.conditions[?(@.type==\"Ready\")].reason"

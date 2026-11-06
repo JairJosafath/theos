@@ -27,8 +27,11 @@ import (
 const TestEnvMemberAWS = "aws"
 
 // TestEnvRemote reports whether member leases outside the cluster: a remote
-// member needs a credential and a budget (T9, T10).
-func TestEnvRemote(member string) bool { return member == TestEnvMemberAWS }
+// member needs a credential and a budget (T9, T10). Both remote members are
+// AWS's, with its keys.
+func TestEnvRemote(member string) bool {
+	return member == TestEnvMemberAWS || member == TestEnvMemberDeviceFarm
+}
 
 // TestEnvRemotePort is the port theos-env serve listens on in a remote
 // environment: HTTPS's own, the one port the sandbox fence lets out to a
@@ -41,7 +44,7 @@ var AWSCredentialKeys = []string{"accessKeyId", "secretAccessKey"}
 
 // TestEnvMissingKeys are the keys of member's credential that data lacks.
 func TestEnvMissingKeys(member string, data map[string][]byte) []string {
-	if member != TestEnvMemberAWS {
+	if !TestEnvRemote(member) {
 		return nil
 	}
 	return missingKeys(AWSCredentialKeys, data)

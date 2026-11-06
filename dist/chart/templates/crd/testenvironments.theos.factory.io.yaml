@@ -30,6 +30,10 @@ spec:
       name: Instance
       priority: 1
       type: string
+    - jsonPath: .spec.deviceFarm.devicePoolArn
+      name: Devices
+      priority: 1
+      type: string
     - jsonPath: .spec.limits.maxLeases
       name: Max
       type: integer
@@ -208,6 +212,65 @@ spec:
                   for the agents and planner that choose it.
                 maxLength: 200
                 type: string
+              deviceFarm:
+                description: |-
+                  deviceFarm runs test packages, rather than commands, on real phones
+                  in AWS Device Farm, in the user's AWS account: a run asks with
+                  `theos-env test <name>`, over its Git host, and the operator, which
+                  alone holds the credential, starts the run and gives the report back
+                  (T12). Its runs cost what Device Farm charges per device minute, so it
+                  needs limits.budgetUSDPerDay.
+                properties:
+                  account:
+                    description: |-
+                      account is the twelve-digit AWS account id the credential must be in,
+                      as an aws member's: set, a credential of another account is refused.
+                    maxLength: 12
+                    type: string
+                    x-kubernetes-validations:
+                    - message: account must be a twelve-digit AWS account id
+                      rule: self.matches('^[0-9]{12}$')
+                  credentialsSecretRef:
+                    description: |-
+                      credentialsSecretRef names a Secret in the TestEnvironment's namespace
+                      with the keys accessKeyId, secretAccessKey and an optional
+                      sessionToken, as an aws member's. Only the operator reads it: it never
+                      reaches a sandbox or a CI job. The key needs the Device Farm calls
+                      docs/getting-started.md lists.
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  devicePoolArn:
+                    description: |-
+                      devicePoolArn is the devices each run runs on: a device pool of the
+                      project, or one of Device Farm's own, such as its top devices.
+                    maxLength: 200
+                    type: string
+                    x-kubernetes-validations:
+                    - message: devicePoolArn must be a Device Farm device pool's ARN,
+                        in us-west-2
+                      rule: self.matches('^arn:aws:devicefarm:us-west-2:[0-9]{0,12}:devicepool:[0-9a-f-]{36}(/[0-9a-f-]{36})?$')
+                  projectArn:
+                    description: |-
+                      projectArn is the Device Farm project the runs go in, in us-west-2,
+                      Device Farm's one region.
+                    maxLength: 200
+                    type: string
+                    x-kubernetes-validations:
+                    - message: projectArn must be a Device Farm project's ARN, in
+                        us-west-2
+                      rule: self.matches('^arn:aws:devicefarm:us-west-2:[0-9]{12}:project:[0-9a-f-]{36}$')
+                required:
+                - credentialsSecretRef
+                - devicePoolArn
+                - projectArn
+                type: object
               limits:
                 default: {}
                 description: |-
@@ -400,11 +463,15 @@ spec:
                 type: object
             type: object
             x-kubernetes-validations:
-            - message: 'set exactly one provider member: local or aws'
-              rule: '[has(self.local), has(self.aws)].exists_one(x, x)'
+            - message: 'set exactly one provider member: local, aws or deviceFarm'
+              rule: '[has(self.local), has(self.aws), has(self.deviceFarm)].exists_one(x,
+                x)'
             - message: 'an aws environment needs limits.budgetUSDPerDay: a remote
                 lease costs money for every minute it is held'
               rule: '!has(self.aws) || (has(self.limits) && has(self.limits.budgetUSDPerDay))'
+            - message: 'a deviceFarm environment needs limits.budgetUSDPerDay: its
+                test runs cost money for every device minute'
+              rule: '!has(self.deviceFarm) || (has(self.limits) && has(self.limits.budgetUSDPerDay))'
           status:
             description: status is the live leases and the environment's readiness.
             properties:
@@ -522,6 +589,87 @@ spec:
                 required:
                 - day
                 type: object
+              testRuns:
+                description: |-
+                  testRuns are a deviceFarm environment's test runs, the last ones of
+                  each lease, kept until their outcome is on the holder's pull request.
+                items:
+                  description: |-
+                    TestEnvironmentTestRun is a test run a lease's run asked for, of a
+                    deviceFarm environment (T12).
+                  properties:
+                    answer:
+                      description: answer is the operator's result commit on the lease's
+                        branch.
+                      type: string
+                    comment:
+                      description: |-
+                        comment is the pull request comment still to post once the holder
+                        has a pull request; empty once posted.
+                      maxLength: 8192
+                      type: string
+                    commit:
+                      type: string
+                    container:
+                      description: |-
+                        container is the Container on whose repository the lease's branch
+                        is.
+                      type: string
+                    costMilliUSD:
+                      description: costMilliUSD is what the run cost, by the provider's
+                        count.
+                      format: int64
+                      type: integer
+                    holder:
+                      type: string
+                    id:
+                      description: 'id is the run''s ID on the provider: its lease
+                        and its request.'
+                      type: string
+                    lease:
+                      description: |-
+                        lease is the lease whose branch the request is on, and holder the
+                        Task whose run holds it.
+                      type: string
+                    outcome:
+                      maxLength: 1024
+                      type: string
+                    request:
+                      description: |-
+                        request is the request commit on the lease's branch, and commit the
+                        run's commit the app and tests were built from.
+                      type: string
+                    result:
+                      description: |-
+                        result is Passed, Warned, Failed, Skipped, Errored, Stopped or
+                        Rejected, once there is one, and outcome its one line.
+                      type: string
+                    since:
+                      description: since is when the operator started it.
+                      format: date-time
+                      type: string
+                    state:
+                      description: |-
+                        state is Pending or Running on the provider, Reported once its
+                        result is on the lease's branch, or Rejected when the operator ran
+                        nothing.
+                      type: string
+                    type:
+                      description: type is the test package's type, such as instrumentation.
+                      type: string
+                    url:
+                      description: url is the run on the provider's console.
+                      type: string
+                  required:
+                  - id
+                  - lease
+                  - request
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
             type: object
         required:
         - spec

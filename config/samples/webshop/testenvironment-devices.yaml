@@ -1,0 +1,38 @@
+# Real phones on AWS Device Farm, which run an app's test packages
+# (docs/plans/test-environments.md, step 10): Espresso or UI Automator
+# instrumentation tests of an Android app, or XCTest and XCUITest tests of
+# an iOS app, on the devices of a device pool. A run gets it when its issue
+# is labelled env/devices, and runs
+#
+#   theos-env test devices --type instrumentation \
+#     --app app-debug.apk --tests app-debug-androidTest.apk
+#
+# which pushes the request to the lease's branch on the Git host; the
+# operator, which alone holds the credential, runs it, pushes the report,
+# screenshots and logs back there, where theos-env writes them into
+# test-runs/devices/, and comments the outcome on the pull request. Each run
+# costs its metered device minutes against budgetUSDPerDay.
+#
+# Not in kustomization.yaml: it needs a real account, a Device Farm project
+# and device pool in us-west-2, and Secret devices-aws, whose key may use
+# them (docs/getting-started.md, "Run an app's tests on real phones"):
+#
+#   kubectl -n webshop create secret generic devices-aws \
+#     --from-literal=accessKeyId=... --from-literal=secretAccessKey=...
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: devices
+spec:
+  description: A Pixel 8 and a Galaxy S24 on AWS Device Farm; run instrumentation tests with theos-env test.
+  deviceFarm:
+    projectArn: arn:aws:devicefarm:us-west-2:123456789012:project:0b6f3c1e-1d2a-4c5b-9e8f-7a6b5c4d3e2f
+    devicePoolArn: arn:aws:devicefarm:us-west-2:123456789012:devicepool:0b6f3c1e-1d2a-4c5b-9e8f-7a6b5c4d3e2f/5e1f0a9d-8c7b-4a6e-9d5c-4b3a2f1e0d9c
+    account: "123456789012"
+    credentialsSecretRef:
+      name: devices-aws
+  limits:
+    maxLeases: 2
+    maxLeaseMinutes: 120
+    # Required: no test run starts past it on a UTC day.
+    budgetUSDPerDay: 20

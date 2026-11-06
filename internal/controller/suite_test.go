@@ -118,6 +118,9 @@ var (
 	// envAWSFake is the provider of every TestEnvironment's aws member: it
 	// takes the access keys a spec adds, in their account (AddAccount).
 	envAWSFake *fake.TestEnvironments
+	// envDeviceFarmFake stands in for the deviceFarm member's provider, whose
+	// adapter is tested on a fake Device Farm in internal/adapters/awsenv.
+	envDeviceFarmFake *fake.TestRuns
 	// goProxyFake is the Go proxy every Crew asks about its released modules.
 	goProxyFake *fakeGoProxy
 	ctx         context.Context
@@ -395,6 +398,7 @@ var _ = BeforeSuite(func() {
 	deployFake = &fake.Deployer{}
 	envFake = &fake.TestEnvironments{}
 	envAWSFake = &fake.TestEnvironments{}
+	envDeviceFarmFake = &fake.TestRuns{}
 	goProxyFake = newFakeGoProxy()
 	DeferCleanup(goProxyFake.server.Close)
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
@@ -463,7 +467,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace, ModelProxyURL: testModelProxyURL,
 			Now: taskNow, GitEvents: gitEvents,
 			TestEnvironments: ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake,
-				model.TestEnvMemberAWS: envAWSFake},
+				model.TestEnvMemberAWS: envAWSFake, model.TestEnvMemberDeviceFarm: envDeviceFarmFake},
 			EnvironmentRecheck: time.Second},
 		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
@@ -490,8 +494,9 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		// internal/adapters/localenv; the suite stands envFake in.
 		&TestEnvironmentReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
 			Providers: ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake,
-				model.TestEnvMemberAWS: envAWSFake},
-			SharedPullSecrets: []string{sharedPullSecret}, PollInterval: time.Second, OrphanGrace: time.Second},
+				model.TestEnvMemberAWS: envAWSFake, model.TestEnvMemberDeviceFarm: envDeviceFarmFake},
+			SharedPullSecrets: []string{sharedPullSecret}, PollInterval: time.Second, OrphanGrace: time.Second,
+			Git: fakeGitClient{gitFake}},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

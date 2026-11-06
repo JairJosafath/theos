@@ -1,0 +1,13 @@
+# expect: a deviceFarm environment needs limits.budgetUSDPerDay
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: devices
+  namespace: webshop
+spec:
+  description: Phones on AWS Device Farm with no cap on what their runs cost.
+  deviceFarm:
+    projectArn: arn:aws:devicefarm:us-west-2:123456789012:project:0b6f3c1e-1d2a-4c5b-9e8f-7a6b5c4d3e2f
+    devicePoolArn: arn:aws:devicefarm:us-west-2:123456789012:devicepool:0b6f3c1e-1d2a-4c5b-9e8f-7a6b5c4d3e2f/5e1f0a9d-8c7b-4a6e-9d5c-4b3a2f1e0d9c
+    credentialsSecretRef:
+      name: devices-aws

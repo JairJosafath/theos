@@ -433,8 +433,9 @@ func main() {
 		model.DeployMemberCloudFormation: cloudformation.New(nil)}
 	// Each TestEnvironment member's provider, by the member's name.
 	testEnvProviders := ports.TestEnvironmentProviders{
-		model.TestEnvMemberLocal: localenv.New(mgr.GetClient(), testEnvToolsImage),
-		model.TestEnvMemberAWS:   awsenv.New(nil, testEnvToolsURL)}
+		model.TestEnvMemberLocal:      localenv.New(mgr.GetClient(), testEnvToolsImage),
+		model.TestEnvMemberAWS:        awsenv.New(nil, testEnvToolsURL),
+		model.TestEnvMemberDeviceFarm: awsenv.NewDeviceFarm(nil)}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
@@ -573,6 +574,7 @@ func main() {
 		APIReader:         mgr.GetAPIReader(),
 		Providers:         testEnvProviders,
 		SharedPullSecrets: sharedPullSecrets,
+		Git:               gitClient{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "testenvironment")
 		os.Exit(1)

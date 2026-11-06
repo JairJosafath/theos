@@ -55,6 +55,9 @@ type Environment struct {
 	Local *LocalEnvironment
 	// AWS is the aws member's settings; nil for another member.
 	AWS *AWSEnvironment
+	// DeviceFarm is the deviceFarm member's settings; nil for another
+	// member.
+	DeviceFarm *DeviceFarmEnvironment
 	// Secret is the data of a remote member's credentials Secret, read by
 	// the operator only; never sent to the environment.
 	Secret map[string][]byte

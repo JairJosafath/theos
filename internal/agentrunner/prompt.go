@@ -1,6 +1,7 @@
 package agentrunner
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -530,20 +531,40 @@ func writeEnvironments(b *strings.Builder, job Job) {
 		return
 	}
 	b.WriteString("\nTest environments this run leased, with tools this sandbox lacks:\n")
+	var command, devices string
 	for _, env := range job.Environments {
 		fmt.Fprintf(b, "- `%s`", env.Name)
 		if env.Description != "" {
 			fmt.Fprintf(b, ": %s", strings.TrimSpace(env.Description))
 		}
+		if env.TestRuns {
+			b.WriteString(" (runs test packages on its devices, with theos-env test)")
+			devices = cmp.Or(devices, env.Name)
+		} else {
+			command = cmp.Or(command, env.Name)
+		}
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(b, `Run a command in one with `+"`theos-env run %s -- <command>`"+`, from the folder it
+	if command != "" {
+		fmt.Fprintf(b, `Run a command in one with `+"`theos-env run %s -- <command>`"+`, from the folder it
 should run in. It sends this working tree's tracked and untracked files (not the
 ignored ones), runs the command in the same folder there on a fresh copy, shows
 its output and exits with its exit code, and writes the files the command
 changed or added back here, ready to commit; what the tree ignores stays there.
 A test, a check or a picture script that needs those tools runs there.
-`, job.Environments[0].Name)
+`, command)
+	}
+	if devices != "" {
+		fmt.Fprintf(b, `Run an app's test package on the devices of one with
+`+"`theos-env test %s --type <%s> --app <file> --tests <file>`"+`,
+once you have built both and committed what they were built from. The operator
+runs it there, gives back the report, each device's result, the tests that
+didn't pass and their screenshots and logs in test-runs/%[1]s/ (--out), ready to
+commit, and comments the outcome on the pull request; it exits 0 when every test
+passed. A run takes minutes and costs money: run the package when the change is
+ready to check, not after each edit.
+`, devices, strings.Join(model.TestRunTypeNames(), "|"))
+	}
 }
 
 func writeRelated(b *strings.Builder, ws Workspace) {
