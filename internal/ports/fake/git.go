@@ -487,6 +487,7 @@ type agentStore struct {
 	texts     map[string][2]string            // owner/name#number -> its title and body
 	log       string                          // served for every CI job
 	files     map[string][]string             // owner/name#number -> paths the pull request changes
+	commits   map[string][]ports.PullCommit   // owner/name#number -> the pull request's commits
 	forced    map[string][]int                // owner/name -> pull requests force-merged
 	conflicts map[string]bool                 // owner/name#N -> conflicts with its base
 	gone      map[string]bool                 // owner/name#number -> pull request deleted
@@ -515,7 +516,7 @@ func (s *state) agentState() *agentStore {
 			agents: map[string]string{}, pulls: map[string][]*ports.PullRequest{},
 			comments: map[string][]string{}, branches: map[string]string{}, authors: map[string]string{},
 			texts: map[string][2]string{},
-			files: map[string][]string{}, forced: map[string][]int{}, gone: map[string]bool{}, conflicts: map[string]bool{},
+			files: map[string][]string{}, commits: map[string][]ports.PullCommit{}, forced: map[string][]int{}, gone: map[string]bool{}, conflicts: map[string]bool{},
 			readErrs: map[string]int{}, unnamed: map[string]bool{},
 			edits: map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
 			trees: map[string]string{}, written: map[string][]ports.CommitStatus{},

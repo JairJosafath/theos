@@ -41,10 +41,10 @@ type crdStorage struct {
 // at v1beta1 alone, since no client ever stored one at v1alpha1, so their
 // CRDs, at strategy None, have nothing to convert or migrate and stay out of
 // WebhookCRDs (docs/plans/done/chat-matrix.md).
-var bornAtV1beta1 = map[string]bool{"Chat": true}
+var bornAtV1beta1 = map[string]bool{"Chat": true, "Scorer": true, "Benchmark": true}
 
 // bornAtV1beta1Plurals are bornAtV1beta1's resources.
-var bornAtV1beta1Plurals = map[string]bool{"chats": true}
+var bornAtV1beta1Plurals = map[string]bool{"chats": true, "scorers": true, "benchmarks": true}
 
 // TestEveryCRDStoresTheHub holds every generated CRD of our group to
 // docs/plans/done/api-versions.md: the version with storage: true is the v1beta1

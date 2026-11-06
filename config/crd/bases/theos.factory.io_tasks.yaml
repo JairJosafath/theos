@@ -842,6 +842,50 @@ spec:
                     'docs/agents' && !p.startsWith('docs/agents/'))
                 - message: allowedProtectedPaths is immutable
                   rule: self == oldSelf
+              benchmark:
+                description: |-
+                  benchmark makes the Task one of a Benchmark's runs: it branches from
+                  the Benchmark's base commit, never takes in main, and ends Approved
+                  instead of merging. It can't change.
+                properties:
+                  base:
+                    description: base is the commit the Task branches from.
+                    pattern: ^[0-9a-f]{40}$
+                    type: string
+                  benchmarkRef:
+                    description: benchmarkRef names the Benchmark.
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  goal:
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  repetition:
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  variant:
+                    description: |-
+                      variant, goal and repetition say which run: the variant's name, the
+                      goal's place (from 0) and the repetition (from 1).
+                    maxLength: 16
+                    type: string
+                required:
+                - base
+                - benchmarkRef
+                - repetition
+                - variant
+                type: object
+                x-kubernetes-validations:
+                - message: benchmark is immutable
+                  rule: self == oldSelf
               briefRef:
                 description: |-
                   briefRef names the Brief a Plan Task plans a round of, in place of
@@ -900,14 +944,16 @@ spec:
                   kind is Implement (the default): implement the goal in the Container's
                   repository; Plan: plan a round of the Brief named by briefRef; Triage:
                   decide what the issue needs next, which the operator then applies to the
-                  issue; or Spec: write the issue's spec, docs/specs/<issue>.md, which
+                  issue; Spec: write the issue's spec, docs/specs/<issue>.md, which
                   merges after its review point and gives the issue its acceptance
-                  criteria. It can't change.
+                  criteria; or Score: judge another Task's finished change for the
+                  Scorer named in score. It can't change.
                 enum:
                 - Implement
                 - Plan
                 - Triage
                 - Spec
+                - Score
                 type: string
               reviewerRef:
                 description: |-
@@ -924,6 +970,73 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: reviewerRef is immutable
+                  rule: self == oldSelf
+              score:
+                description: |-
+                  score is what a Score Task judges: the Scorer that made it, the Task it
+                  judges and the criteria, copied from the Scorer when it was made. It
+                  can't change.
+                properties:
+                  config:
+                    description: |-
+                      config is the Agent configuration the judged Task's implementer ran on,
+                      copied from its runs, so Scores compare configurations.
+                    properties:
+                      agent:
+                        maxLength: 253
+                        type: string
+                      harness:
+                        maxLength: 32
+                        type: string
+                      model:
+                        maxLength: 100
+                        type: string
+                    type: object
+                  criteria:
+                    description: criteria are the Scorer's criteria, as they were.
+                    items:
+                      maxLength: 500
+                      type: string
+                    maxItems: 20
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  scorerGeneration:
+                    description: scorerGeneration is the Scorer's generation the criteria
+                      are of.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  scorerRef:
+                    description: scorerRef names the Scorer that made the Task.
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  taskRef:
+                    description: taskRef names the finished Task it judges.
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - criteria
+                - scorerGeneration
+                - scorerRef
+                - taskRef
+                type: object
+                x-kubernetes-validations:
+                - message: score is immutable
                   rule: self == oldSelf
               verifierRef:
                 description: |-
@@ -989,6 +1102,21 @@ spec:
               rule: '!has(self.allowedProtectedPaths) || has(self.issue)'
             - message: allowedProtectedPaths is immutable
               rule: has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)
+            - message: a Score Task needs score, and only a Score Task has one
+              rule: (has(self.kind) && self.kind == 'Score') == has(self.score)
+            - message: a Score Task has a goal and a containerRef, and no reviewerRef,
+                verifierRef or allowedProtectedPaths
+              rule: '!has(self.kind) || self.kind != ''Score'' || (has(self.goal)
+                && has(self.containerRef) && !has(self.reviewerRef) && !has(self.verifierRef)
+                && !has(self.allowedProtectedPaths))'
+            - message: score is immutable
+              rule: has(self.score) == has(oldSelf.score)
+            - message: a Benchmark's Task is an Implement Task with a goal and no
+                allowedProtectedPaths
+              rule: '!has(self.benchmark) || ((!has(self.kind) || self.kind == ''Implement'')
+                && has(self.goal) && !has(self.allowedProtectedPaths))'
+            - message: benchmark is immutable
+              rule: has(self.benchmark) == has(oldSelf.benchmark)
           status:
             description: status defines the observed state of Task
             properties:
@@ -1169,6 +1297,7 @@ spec:
                       - Blocked
                       - Merged
                       - Failed
+                      - Approved
                       type: string
                     reason:
                       description: |-
@@ -1211,6 +1340,15 @@ spec:
                   reflects.
                 format: int64
                 type: integer
+              personCommits:
+                description: |-
+                  personCommits counts the merged pull request's commits a person wrote:
+                  any not by an agent and not a merge (decision 3), read with
+                  pullRequestSize. Zero means the factory alone wrote the change; unset,
+                  that it wasn't read.
+                format: int32
+                minimum: 0
+                type: integer
               phase:
                 description: |-
                   phase is Pending, then Implementing, Checking and Reviewing each round,
@@ -1227,6 +1365,7 @@ spec:
                 - Blocked
                 - Merged
                 - Failed
+                - Approved
                 type: string
               phaseChangedAt:
                 description: phaseChangedAt is when the Task entered its current phase.
@@ -1244,6 +1383,30 @@ spec:
                   Git host, or continued by a newer try at the issue. Empty while the
                   pull request stays open for a later try.
                 type: string
+              pullRequestSize:
+                description: |-
+                  pullRequestSize is the size of the merged pull request's change, read
+                  once when it merged with personCommits (docs/plans/done/measure-and-improve.md,
+                  decision 4); unset before then, or when the Git host couldn't be read.
+                  A value, not a pointer: the older version carries a field it lacks in an
+                  annotation, which keeps no empty object.
+                properties:
+                  additions:
+                    description: additions are the lines it adds.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  deletions:
+                    description: deletions are the lines it removes.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  files:
+                    description: files are the files it changes.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                type: object
               pullRequestURL:
                 type: string
               reruns:
@@ -1360,6 +1523,14 @@ spec:
                   description: TaskAgentRun is what a Task keeps of one agent run
                     once it ended.
                   properties:
+                    agent:
+                      description: |-
+                        agent names the Agent the run ran as, copied when its sandbox was made
+                        or last resumed, so a later change to the Agent doesn't rewrite it
+                        (docs/plans/done/measure-and-improve.md, decision 2); empty for runs from
+                        before it was recorded.
+                      maxLength: 253
+                      type: string
                     costMilliUSD:
                       description: |-
                         costMilliUSD is what the run cost, in thousandths of a US dollar, as its
@@ -1369,6 +1540,18 @@ spec:
                     endedAt:
                       description: endedAt is when the Task saw the run end.
                       format: date-time
+                      type: string
+                    harness:
+                      description: harness is the Agent's harness the run ran on,
+                        copied as agent is.
+                      maxLength: 32
+                      type: string
+                    model:
+                      description: |-
+                        model is the Agent's model the run ran on, copied as agent is; empty
+                        when the Agent named none (the harness's default) or it wasn't
+                        recorded.
+                      maxLength: 100
                       type: string
                     role:
                       description: |-
@@ -1461,6 +1644,44 @@ spec:
                   forced delete, a lost node); another pod, or none, under the same sandbox
                   means the run was interrupted.
                 type: string
+              score:
+                description: |-
+                  score is a Score Task's verdicts, once its judge ran; a run that failed
+                  leaves each criterion Unclear with why. A value, as pullRequestSize is.
+                properties:
+                  criteria:
+                    description: criteria are the verdicts, one per criterion of spec.score,
+                      in its order.
+                    items:
+                      description: TaskScoreCriterion is the judge's verdict on one
+                        criterion, and why.
+                      properties:
+                        criterion:
+                          description: criterion is the criterion's text.
+                          maxLength: 500
+                          type: string
+                        reason:
+                          description: reason is the judge's why, in a sentence or
+                            two.
+                          maxLength: 1000
+                          type: string
+                        verdict:
+                          description: |-
+                            verdict is Pass, Fail, or Unclear when the judge couldn't tell or said
+                            nothing of it.
+                          enum:
+                          - Pass
+                          - Fail
+                          - Unclear
+                          type: string
+                      required:
+                      - criterion
+                      - verdict
+                      type: object
+                    maxItems: 20
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
               slotWaitSince:
                 description: |-
                   slotWaitSince is when the Task started waiting for a free agent slot; the

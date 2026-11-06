@@ -1,0 +1,412 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: benchmarks.theos.factory.io
+spec:
+  group: theos.factory.io
+  names:
+    categories:
+    - theos
+    kind: Benchmark
+    listKind: BenchmarkList
+    plural: benchmarks
+    singular: benchmark
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.containerRef.name
+      name: Container
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Done")].status
+      name: Done
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Done")].reason
+      name: Reason
+      type: string
+    - jsonPath: .status.comparison
+      name: Comparison
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Benchmark compares Agent configurations on the same goals
+          (docs/plans/done/measure-and-improve.md).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec is the goals, the base and the variants.
+            properties:
+              base:
+                description: |-
+                  base is the commit every Task branches from: a full commit, never a
+                  branch, so each variant starts where the others did.
+                pattern: ^[0-9a-f]{40}$
+                type: string
+              budgetUSD:
+                description: |-
+                  budgetUSD caps what its Tasks' agent runs may cost, in US dollars; at the
+                  cap it starts no further Task, reason OverBudget.
+                format: int32
+                minimum: 1
+                type: integer
+              containerRef:
+                description: containerRef names the Container whose repository the
+                  goals are built in.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              goals:
+                description: goals are what each variant implements.
+                items:
+                  description: |-
+                    BenchmarkGoal is one goal a Benchmark has each variant implement: a goal in
+                    plain words, or an issue of the Container's repository, read once when the
+                    Benchmark starts.
+                  properties:
+                    goal:
+                      maxLength: 20000
+                      minLength: 1
+                      type: string
+                    issue:
+                      format: int32
+                      minimum: 1
+                      type: integer
+                  type: object
+                  x-kubernetes-validations:
+                  - message: set exactly one of goal and issue
+                    rule: has(self.goal) != has(self.issue)
+                maxItems: 10
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
+              parallel:
+                default: 1
+                description: parallel is how many of its Tasks run at once.
+                format: int32
+                maximum: 5
+                minimum: 1
+                type: integer
+              repetitions:
+                default: 3
+                description: repetitions is how many times each variant implements
+                  each goal.
+                format: int32
+                maximum: 5
+                minimum: 1
+                type: integer
+              scorerRefs:
+                description: |-
+                  scorerRefs name the Scorers that judge every one of its finished Tasks,
+                  whatever their sample and selection.
+                items:
+                  description: |-
+                    LocalRef names an object of a known kind in the same namespace.
+                    There are no references across namespaces: reuse is by copying.
+                  properties:
+                    name:
+                      description: name of the referenced object.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 5
+                type: array
+                x-kubernetes-list-type: atomic
+              variants:
+                description: variants are the configurations compared, each named
+                  once.
+                items:
+                  description: |-
+                    BenchmarkVariant is one configuration a Benchmark compares: the Agents that
+                    implement, review and verify its Tasks.
+                  properties:
+                    implementerRef:
+                      description: implementerRef names the Agent that implements.
+                      properties:
+                        name:
+                          description: name of the referenced object.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    name:
+                      description: name names the variant in its Tasks' names and
+                        the status.
+                      pattern: ^[a-z0-9]([a-z0-9-]{0,14}[a-z0-9])?$
+                      type: string
+                    reviewerRef:
+                      description: reviewerRef names the Agent that reviews; unset,
+                        the implementer.
+                      properties:
+                        name:
+                          description: name of the referenced object.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    verifierRef:
+                      description: |-
+                        verifierRef names the Agent that verifies an approved change; unset,
+                        none.
+                      properties:
+                        name:
+                          description: name of the referenced object.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                  required:
+                  - implementerRef
+                  - name
+                  type: object
+                maxItems: 4
+                minItems: 2
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            required:
+            - base
+            - budgetUSD
+            - containerRef
+            - goals
+            - variants
+            type: object
+            x-kubernetes-validations:
+            - message: a Benchmark can't change; make a new one
+              rule: self == oldSelf
+          status:
+            description: status is how it goes and what it found.
+            properties:
+              cleaned:
+                description: |-
+                  cleaned names its finished Tasks whose pull request it closed and whose
+                  branch it deleted.
+                items:
+                  type: string
+                maxItems: 200
+                type: array
+                x-kubernetes-list-type: atomic
+              comparison:
+                description: |-
+                  comparison says in a sentence what the results show: a variant ahead
+                  only when the intervals don't overlap, else no clear difference.
+                maxLength: 1000
+                type: string
+              conditions:
+                description: |-
+                  conditions: Done, False while Tasks run (reason Running) or when it stops
+                  starting them (OverBudget, ContainerNotFound, IssueUnreadable), True
+                  once every Task finished.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              costMilliUSD:
+                description: costMilliUSD is what its Tasks cost so far, in thousandths
+                  of a US dollar.
+                format: int64
+                type: integer
+              goals:
+                description: goals are the goals as the Tasks got them, an issue's
+                  read once.
+                items:
+                  type: string
+                maxItems: 10
+                type: array
+                x-kubernetes-list-type: atomic
+              variants:
+                description: variants are each variant's results.
+                items:
+                  description: BenchmarkVariantStatus is what one variant's Tasks
+                    came to.
+                  properties:
+                    approval:
+                      description: approval is approved out of finished.
+                      properties:
+                        high:
+                          format: int32
+                          type: integer
+                        low:
+                          format: int32
+                          type: integer
+                        of:
+                          description: of is how many it is a share of.
+                          format: int32
+                          type: integer
+                        percent:
+                          description: percent, low and high are the share and its
+                            interval, in whole percent.
+                          format: int32
+                          type: integer
+                      type: object
+                    criteria:
+                      description: criteria are its Scorers' pass rates.
+                      items:
+                        description: BenchmarkCriterionRate is a Scorer criterion's
+                          pass rate in a variant.
+                        properties:
+                          criterion:
+                            maxLength: 500
+                            type: string
+                          rate:
+                            description: rate is pass out of pass and fail; unclear
+                              counts the rest.
+                            properties:
+                              high:
+                                format: int32
+                                type: integer
+                              low:
+                                format: int32
+                                type: integer
+                              of:
+                                description: of is how many it is a share of.
+                                format: int32
+                                type: integer
+                              percent:
+                                description: percent, low and high are the share and
+                                  its interval, in whole percent.
+                                format: int32
+                                type: integer
+                            type: object
+                          scorer:
+                            description: scorer and criterion name it.
+                            maxLength: 253
+                            type: string
+                          unclear:
+                            format: int32
+                            type: integer
+                        required:
+                        - criterion
+                        - scorer
+                        type: object
+                      maxItems: 100
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    finished:
+                      format: int32
+                      type: integer
+                    meanRounds:
+                      description: |-
+                        meanRounds, medianMinutes and medianCostMilliUSD are over its finished
+                        Tasks.
+                      maxLength: 16
+                      type: string
+                    medianCostMilliUSD:
+                      format: int64
+                      type: integer
+                    medianMinutes:
+                      format: int32
+                      type: integer
+                    name:
+                      type: string
+                    tasks:
+                      description: tasks, finished and approved count its Tasks.
+                      format: int32
+                      type: integer
+                  required:
+                  - name
+                  type: object
+                maxItems: 4
+                type: array
+                x-kubernetes-list-type: atomic
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

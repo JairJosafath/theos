@@ -308,6 +308,13 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, sta
 	if status.Branch == "" {
 		status.Branch = model.TaskBranch(task.Name)
 	}
+	if b := task.Spec.Benchmark; b != nil && role == model.RoleImplementer {
+		// A Benchmark's Task branches from its pinned base: the implementer
+		// works on the branch it finds.
+		if err := ensureBranchAt(gitCtx, in.provider, in.repo, status.Branch, b.Base); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	name := sandboxName(task, status, role)
 	sandbox, err := r.runSandbox(ctx, task, status, container, agents, role, name, in)
 	if err != nil {
@@ -580,6 +587,18 @@ func (r *TaskReconciler) revokeOldAgentTokensOnce(ctx context.Context, namespace
 // merge squashes the approved pull request into main.
 func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
+	if task.Spec.Benchmark != nil {
+		// A Benchmark's Task never merges: approved, it ends Approved, and its
+		// Benchmark closes its pull request once its Scorers judged it.
+		status.Review = r.reviewFrom(ctx, task, status)
+		if err := r.endRun(ctx, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.finish(task, status, c4v1beta1.TaskApproved, metav1.ConditionTrue, model.TaskApproved,
+			"Approved with green checks; a Benchmark's Task never merges")
+		logf.FromContext(ctx).Info("Approved Benchmark Task", "url", status.PullRequestURL, "round", status.Round)
+		return ctrl.Result{}, nil
+	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -643,6 +662,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 		status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
 		r.carryChecks(ctx, provider, repo, status, skip)
 	}
+	r.recordPull(ctx, provider, repo, status)
 	if isSpec(task) {
 		if err := r.specMerged(ctx, provider, repo, task, status); err != nil {
 			return ctrl.Result{}, err
@@ -710,6 +730,39 @@ func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost
 		return ""
 	}
 	return pr.MergeCommit
+}
+
+// recordPull keeps the merged pull request's size and how many of its
+// commits a person wrote (docs/plans/done/measure-and-improve.md, decisions 3 and
+// 4), once. A read that fails leaves them unset, for the merged Task to read
+// again.
+func (r *TaskReconciler) recordPull(ctx context.Context, provider ports.GitHost, repo ports.Repository,
+	status *c4v1beta1.TaskStatus) {
+	if status.PullRequest == 0 || status.PersonCommits != nil {
+		return
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read the merged pull request's size; trying again later",
+			"url", status.PullRequestURL, "error", err.Error())
+		return
+	}
+	commits, err := provider.PullRequestCommits(gitCtx, repo, int(status.PullRequest))
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read the merged pull request's commits; trying again later",
+			"url", status.PullRequestURL, "error", err.Error())
+		return
+	}
+	read := make([]model.PullCommit, 0, len(commits))
+	for _, c := range commits {
+		read = append(read, model.PullCommit{AuthorEmail: c.AuthorEmail, Parents: c.Parents})
+	}
+	person := int32(model.PersonCommits(read))
+	status.PersonCommits = &person
+	status.PullRequestSize = c4v1beta1.TaskPullRequestSize{Additions: int32(pr.Additions),
+		Deletions: int32(pr.Deletions), Files: int32(pr.ChangedFiles)}
 }
 
 // mergeReviewed squashes the reviewed commit into main, posting the reviewer's
@@ -907,6 +960,7 @@ func (r *TaskReconciler) dropRun(ctx context.Context, task *c4v1beta1.Task, ende
 // runRecord is rec as Task status keeps it.
 func runRecord(rec model.RunRecord) c4v1beta1.TaskAgentRun {
 	out := c4v1beta1.TaskAgentRun{Round: int32(rec.Round), Role: rec.Role, Sandbox: rec.Sandbox,
+		Agent: rec.Config.Agent, Harness: rec.Config.Harness, Model: rec.Config.Model,
 		EndedAt: metav1.NewTime(rec.EndedAt), SessionHandoffs: rec.SessionHandoffs,
 		Tokens: addTokens(nil, rec.Tokens)}
 	if rec.CostReported {
@@ -1110,6 +1164,10 @@ func (r *TaskReconciler) comment(ctx context.Context, task *c4v1beta1.Task, stat
 }
 
 func pullTitle(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) string {
+	if b := task.Spec.Benchmark; b != nil {
+		return model.BenchmarkPullTitle(b.BenchmarkRef.Name, b.Variant, int(b.Goal), int(b.Repetition),
+			firstLine(task.Spec.Goal))
+	}
 	if isSpec(task) {
 		return firstLine(model.SpecTitle(status.IssueTitle))
 	}
@@ -1117,6 +1175,15 @@ func pullTitle(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) string {
 		return firstLine(status.IssueTitle)
 	}
 	return firstLine(task.Spec.Goal)
+}
+
+// ensureBranchAt makes branch at commit, unless the Git host has it already.
+func ensureBranchAt(ctx context.Context, provider ports.GitHost, repo ports.Repository, branch, commit string) error {
+	has, err := provider.HasBranch(ctx, repo, branch)
+	if err != nil || has {
+		return err
+	}
+	return provider.CreateBranch(ctx, repo, branch, commit)
 }
 
 // pullBody is a pull request's description; extra are the unprotected files a
@@ -1162,8 +1229,8 @@ func firstLine(s string) string {
 // authored by the operator's Git user, who only merged.
 func mergeMessage(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, container *c4v1beta1.Container) string {
 	bot := model.AgentUsername(container.Namespace, container.Name)
-	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s@agents.theos.factory.io>",
-		task.Name, status.Round, bot, bot)
+	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s>",
+		task.Name, status.Round, bot, model.AgentEmail(bot))
 }
 
 // agentGitRepo is the Container's repository as its agent bot sees it. The

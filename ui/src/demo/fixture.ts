@@ -10,6 +10,7 @@
 import type { StoryData } from '../k8s/sources'
 import type {
   Agent,
+  Benchmark,
   Brief,
   Bundle,
   CatalogEntry,
@@ -615,11 +616,16 @@ export function demoStory(now: number): StoryData {
       costMilliUSD: 1_380,
       tokens: { input: 8_400, output: 41_000, cacheRead: 1_910_000, cacheWrite: 176_000, largestSession: 88_000 },
       ...pr('orders-api', 3),
+      pullRequestSize: { additions: 182, deletions: 21, files: 6 },
+      personCommits: 0,
       runs: [
         {
           round: 1,
           role: 'implement',
           sandbox: 'orders-api-10-r1-implement',
+          agent: 'claude-implementer',
+          harness: 'claude-code',
+          model: 'claude-sonnet-5-5',
           endedAt: at(126),
           costMilliUSD: 1_090,
           tokens: { input: 6_100, output: 33_000, cacheRead: 1_520_000, cacheWrite: 141_000, largestSession: 88_000 },
@@ -649,11 +655,17 @@ export function demoStory(now: number): StoryData {
       tokens: { input: 15_200, output: 83_000, cacheRead: 4_120_000, cacheWrite: 352_000, largestSession: 117_000 },
       followUps: [issueURL('orders-api', 16), issueURL('orders-api', 17)],
       ...pr('orders-api', 4),
+      pullRequestSize: { additions: 64, deletions: 12, files: 3 },
+      // A person pushed a fix of the prices to its branch between the rounds.
+      personCommits: 1,
       runs: [
         {
           round: 1,
           role: 'implement',
           sandbox: 'orders-api-11-r1-implement',
+          agent: 'claude-implementer',
+          harness: 'claude-code',
+          model: 'claude-sonnet-5-5',
           endedAt: at(104),
           costMilliUSD: 1_020,
           tokens: { input: 5_000, output: 31_000, cacheRead: 1_500_000, cacheWrite: 130_000, largestSession: 96_000 },
@@ -670,6 +682,9 @@ export function demoStory(now: number): StoryData {
           round: 2,
           role: 'implement',
           sandbox: 'orders-api-11-r2-implement',
+          agent: 'claude-implementer',
+          harness: 'claude-code',
+          model: 'claude-sonnet-5-5',
           endedAt: at(91),
           costMilliUSD: 1_240,
           tokens: { input: 6_000, output: 34_000, cacheRead: 1_750_000, cacheWrite: 150_000, largestSession: 117_000 },
@@ -780,6 +795,9 @@ export function demoStory(now: number): StoryData {
         summary: 'Refunds send an idempotency key, so a retry never pays out twice.',
         followUps: [issueURL('orders-api', 18)],
         ...pr('orders-api', 6),
+        costMilliUSD: 2_210,
+        pullRequestSize: { additions: 431, deletions: 88, files: 9 },
+        personCommits: 0,
         history: [
           step(45, 'Implementing', 1, 'Running', 'Starting round 1'),
           step(36, 'Checking', 1, 'Checking', 'The agent pushed 0c9d3be; waiting for checks'),
@@ -876,6 +894,58 @@ export function demoStory(now: number): StoryData {
       ],
     }),
   ]
+
+  // Scorer tests-and-why (config/samples/webshop/scorer.yaml) judged two of the
+  // merged Tasks: a Score Task each, its verdicts in status.score
+  // (docs/plans/done/measure-and-improve.md, steps 4 and 5).
+  const scoreCriteria = [
+    'The change has a test that fails without it.',
+    'The pull request’s description says why the change is made, not only what it does.',
+  ]
+  const scoreTask = (
+    judged: string,
+    endedMinutesAgo: number,
+    verdicts: { verdict: 'Pass' | 'Fail' | 'Unclear'; reason: string }[],
+  ): Task => ({
+    apiVersion: API_VERSION,
+    kind: 'Task',
+    metadata: {
+      ...meta(`tests-and-why-${judged}`, at(endedMinutesAgo + 4)),
+      labels: { 'theos.factory.io/scorer': 'tests-and-why', 'theos.factory.io/container': 'orders-api' },
+    },
+    spec: {
+      kind: 'Score',
+      containerRef: { name: 'orders-api' },
+      agentRef: { name: 'claude-reviewer' },
+      goal: `Task ${judged} (Implement) on Container orders-api ended Merged.`,
+      score: {
+        scorerRef: { name: 'tests-and-why' },
+        scorerGeneration: 1,
+        taskRef: { name: judged },
+        criteria: scoreCriteria,
+        config: { agent: 'claude-implementer', harness: 'claude-code', model: 'claude-sonnet-5-5' },
+      },
+    },
+    status: {
+      phase: 'Merged',
+      round: 1,
+      completedAt: at(endedMinutesAgo),
+      summary: `Judged ${judged}`,
+      costMilliUSD: 210,
+      score: { criteria: verdicts.map((v, i) => ({ criterion: scoreCriteria[i], ...v })) },
+      conditions: [cond('Succeeded', 'True', 'Scored', `Judged ${judged}`, at(endedMinutesAgo))],
+    },
+  })
+  tasks.push(
+    scoreTask('orders-api-10', 112, [
+      { verdict: 'Pass', reason: 'orders_test.go’s empty-history case fails without the new query.' },
+      { verdict: 'Pass', reason: 'It says customers asked to see their orders without calling support.' },
+    ]),
+    scoreTask('orders-api-11', 80, [
+      { verdict: 'Pass', reason: 'reorder_test.go covers a sold-out line.' },
+      { verdict: 'Fail', reason: 'The description lists the endpoint and its fields, but not why.' },
+    ]),
+  )
 
   const crew = (
     name: string,
@@ -1371,6 +1441,81 @@ export function demoStory(now: number): StoryData {
     },
   ]
 
+  // A finished Benchmark of orders-api's implementer models
+  // (config/samples/webshop/benchmark.yaml, docs/plans/done/measure-and-improve.md).
+  const benchmarks: Benchmark[] = [
+    {
+      apiVersion: API_VERSION,
+      kind: 'Benchmark',
+      metadata: meta('implementer-models', at(600)),
+      spec: {
+        containerRef: { name: 'orders-api' },
+        base: '3e1f0a2c9d7b4e6f8a1b2c3d4e5f6a7b8c9d0e1f',
+        goals: [{ goal: 'Add GET /orders/{id}/receipt, with a test for an order that does not exist.' }, { issue: 12 }],
+        variants: [
+          {
+            name: 'implementer',
+            implementerRef: { name: 'claude-implementer' },
+            reviewerRef: { name: 'claude-reviewer' },
+          },
+          {
+            name: 'reviewer-model',
+            implementerRef: { name: 'claude-reviewer' },
+            reviewerRef: { name: 'claude-reviewer' },
+          },
+        ],
+        repetitions: 3,
+        scorerRefs: [{ name: 'tests-and-why' }],
+        parallel: 2,
+        budgetUSD: 30,
+      },
+      status: {
+        goals: [
+          'Add GET /orders/{id}/receipt, with a test for an order that does not exist.',
+          'Issue #12: Show the delivery estimate on an order',
+        ],
+        costMilliUSD: 21_480,
+        variants: [
+          {
+            name: 'implementer',
+            tasks: 6,
+            finished: 6,
+            approval: { of: 6, percent: 67, low: 30, high: 90 },
+            meanRounds: '1.8',
+            medianMinutes: 31,
+            medianCostMilliUSD: 1_420,
+            criteria: [
+              {
+                scorer: 'tests-and-why',
+                criterion: 'The change has a test that fails without it.',
+                rate: { of: 6, percent: 83, low: 44, high: 97 },
+              },
+            ],
+          },
+          {
+            name: 'reviewer-model',
+            tasks: 6,
+            finished: 6,
+            approval: { of: 6, percent: 83, low: 44, high: 97 },
+            meanRounds: '1.3',
+            medianMinutes: 26,
+            medianCostMilliUSD: 2_310,
+            criteria: [
+              {
+                scorer: 'tests-and-why',
+                criterion: 'The change has a test that fails without it.',
+                rate: { of: 5, percent: 100, low: 57, high: 100 },
+                unclear: 1,
+              },
+            ],
+          },
+        ],
+        comparison: 'No clear difference at 12 finished runs: the approval rates’ 95% intervals overlap.',
+        conditions: [cond('Done', 'True', 'Finished', 'No clear difference at 12 finished runs', at(300))],
+      },
+    },
+  ]
+
   return {
     namespace: DEMO_NAMESPACE,
     project,
@@ -1393,5 +1538,6 @@ export function demoStory(now: number): StoryData {
     agents,
     tasks,
     briefs,
+    benchmarks,
   }
 }

@@ -243,6 +243,35 @@ func (g *Git) PullRequestFiles(_ context.Context, repo ports.Repository, number 
 	return slices.Sorted(maps.Keys(s.edits[repo.Owner+"/"+repo.Name+"@"+pr.Head])), nil
 }
 
+// SetPullCommits sets a pull request's commits, as PullRequestCommits
+// returns them.
+func (g *Git) SetPullCommits(owner, name string, number int, commits ...ports.PullCommit) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	g.s.agentState().commits[fmt.Sprintf("%s/%s#%d", owner, name, number)] = commits
+}
+
+// SetPullSize sets the size of a pull request's change.
+func (g *Git) SetPullSize(owner, name string, number, additions, deletions, files int) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	for _, pr := range g.s.agentState().pulls[owner+"/"+name] {
+		if pr.Number == number {
+			pr.Additions, pr.Deletions, pr.ChangedFiles = additions, deletions, files
+		}
+	}
+}
+
+// PullRequestCommits returns what SetPullCommits set; none by default.
+func (g *Git) PullRequestCommits(_ context.Context, repo ports.Repository, number int) ([]ports.PullCommit, error) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	if _, err := g.pull(repo, number); err != nil {
+		return nil, err
+	}
+	return slices.Clone(g.s.agentState().commits[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)]), nil
+}
+
 func (g *Git) ClosePullRequest(_ context.Context, repo ports.Repository, number int) error {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()

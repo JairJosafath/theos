@@ -198,6 +198,36 @@ rules:
 - apiGroups:
   - theos.factory.io
   resources:
+  - benchmarks
+  - chats
+  - scorers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - theos.factory.io
+  resources:
+  - benchmarks/status
+  - briefs/status
+  - chats/status
+  - containers/status
+  - crews/status
+  - datastores/status
+  - deploytargets/status
+  - projects/status
+  - relationships/status
+  - scorers/status
+  - sessions/status
+  - softwaresystems/status
+  - tasks/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - theos.factory.io
+  resources:
   - briefs
   - containers
   - crews
@@ -231,32 +261,6 @@ rules:
   - tasks/finalizers
   verbs:
   - update
-- apiGroups:
-  - theos.factory.io
-  resources:
-  - briefs/status
-  - chats/status
-  - containers/status
-  - crews/status
-  - datastores/status
-  - deploytargets/status
-  - projects/status
-  - relationships/status
-  - sessions/status
-  - softwaresystems/status
-  - tasks/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - theos.factory.io
-  resources:
-  - chats
-  verbs:
-  - get
-  - list
-  - watch
 - apiGroups:
   - theos.factory.io
   resources:

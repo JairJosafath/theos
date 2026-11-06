@@ -5,8 +5,7 @@ name: Vulnerabilities
 # docs/openssf.md). It runs on pushes to main and pull requests to main that
 # change them, so a bump that brings one back answers before
 # hack/lib/github.sh land, and every Monday, so a new advisory shows up without
-# a change: two failed runs on main in a row file a "main is red" issue
-# (hack/relay-watch.sh).
+# a change.
 on:
   push:
     branches: [main]

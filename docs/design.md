@@ -65,6 +65,8 @@ follows the tree. `metadata.name` is the stable id; `displayName` and
 | Bundle | Project | none | A catalog entry with no template: a Framework and, optionally, a Standard, Compute and Deployment a team picked together; it supports the types all its entries support |
 | Agent | Project | none | Who does Tasks: a harness, a model, a toolchain image, credentials and limits |
 | DeployTarget | Project | none | A place releases ship to, with its credential |
+| Scorer | Project | none | Plain-words criteria a judge Agent checks finished Tasks against; each judge run is a Task of kind `Score` it owns |
+| Benchmark | Container | `spec.containerRef` | The same goals from one pinned commit under two or more Agent variants, repeated; its Tasks end `Approved` and never merge |
 
 ```yaml
 kind: Container                    # the other kinds are in config/samples/
@@ -668,6 +670,69 @@ The operator moves bytes with credentials it holds; it builds nothing.
   `Published` with `LicenseMissing`, `ReadmeMissing` or `SecretFound`. It
   moves over with the copy, as the target's `source`.
 
+## Measuring the factory
+
+Built as [plans/done/measure-and-improve.md](plans/done/measure-and-improve.md). A change to how the factory works (an Agent's
+model, a route, a Standard's agent guide, `docs/project-notes.md`) should
+be judged by numbers the factory keeps itself.
+
+- **The record is on the Task.** Each run records the Agent, harness and
+  model that ran it (`status.runs[].agent`, `harness`, `model`, copied onto
+  its Sandbox as `theos.factory.io/run-*` annotations when it is made or
+  resumes); a merged Task records how many of its pull request's commits a
+  person wrote (`status.personCommits`: any not by an agent's
+  `@agents.theos.factory.io` email and not a merge) and its size
+  (`status.pullRequestSize`), read from the Git host when it merges, and
+  later for a Task merged before. The UI computes the
+  metrics from Tasks: merged, autonomy (merged with no person's commit;
+  approving a spec or a deploy is a decision, not code), cycle time per
+  stage, and cost per merged Task by size, per period and per
+  configuration: *How well it works*, in the Work area. No metrics store.
+- **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent
+  (`judgeRef`), what it selects (kinds, Containers, outcomes; by default
+  merged Implement Tasks), a sample picked by a hash of the Scorer and the
+  Task (`samplePercent`), and a daily cap (`maxPerDay`) and budget
+  (`budgetUSD`); it judges only Tasks that finish after it was made. For each,
+  the operator makes a Task of kind `Score`, owned by the Scorer and named
+  after the pair, so none is judged twice: one `score` run of the judge on a
+  clone that pushes nothing, told the criteria (`THEOS_CRITERIA`) apart from
+  the evidence in its goal (the outcome, the issue's title, the summary, the
+  review, the merge commit to `git show`), which it reads as data. Its
+  verdicts, `Pass`, `Fail` or `Unclear` per criterion with the judge's why,
+  are its `status.score`; a failed run leaves each `Unclear`. The Scorer's
+  status counts the verdicts of its current generation. Score Tasks take an
+  agent slot but hold no other Task on their Container up, and no Container
+  adopts them. Scores advise; the reviewer, the checks and the fence still
+  decide what merges. A Task's page shows its Scores, and the Work area each
+  Scorer's pass rates by configuration (*What the Scorers found*).
+- **A Benchmark compares configurations on the same work.** The same goals
+  (text, or an issue read once), from one pinned commit (`base`, 40 hex),
+  under two to four variants (an implementer, reviewer and verifier Agent
+  each), repeated (`repetitions`), `parallel` at a time, within a required
+  `budgetUSD`; it can't change once made. Its Tasks are Implement Tasks with
+  `spec.benchmark`, owned by the Benchmark and adopted by no Container,
+  made repetition by repetition so an early stop compared the same goals.
+  Each branches from `base` (the operator makes `task/<name>` there), opens
+  a pull request titled as one that never merges, never takes in main, and
+  ends in the phase `Approved` where it would have merged; it touches no
+  issue, takes no Crew slot and holds no other Task up. The Scorers it
+  names (`scorerRefs`) judge every finished run, whatever their sample and
+  selection, on `git diff <base> <head>`; once they have, the Benchmark
+  closes the run's pull request and deletes its branch. Its status gives
+  each variant's approval rate, mean rounds, median minutes and cost, and
+  each Scorer criterion's pass rate, each rate with its 95% Wilson
+  interval, and says "no clear difference" rather than pick a winner while
+  the intervals overlap, which its page in the UI shows. Neither its runs
+  nor the judge runs alarm anyone: the Chat and the Needs-you list leave
+  them out.
+- **Self-improvement files an issue, never a change.** With
+  `spec.improve`, a criterion that failed `failures` times among a
+  configuration's newest `window` Scores files one `status/proposed`,
+  `kind/improvement` issue in the newest failing Task's Container's
+  repository: what fails, the judge's whys and the proposal (a line in
+  `docs/project-notes.md`, or the Standard's agent guides). It files no other
+  while that one is open, and the normal loop decides.
+
 ## Standards and the catalog
 
 **A Standard** is the rules as a layer: lint and format config, `AGENTS.md`
@@ -916,6 +981,10 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
   restart says nothing twice and runs no command twice; a homeserver or room
   error is retried with backoff and keeps the other rooms going. Only a
   Chat's `people` are obeyed; anyone else gets a one-line refusal.
+  Each post about a Task or a Container links to its page in the UI under
+  `theos-chat`'s `--ui-url` (the chart's `chat.uiURL`, by default the UI's
+  own address), next to the Git host's links; without it, it links to the
+  Git host alone.
 - **Nobody acts in someone else's name.** `theos-chat` may impersonate users
   and groups, so two admission policies (`config/policy`) bound it: a Chat's
   `people` entry names only its writer's own user and groups

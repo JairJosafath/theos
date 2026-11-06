@@ -1,4 +1,4 @@
-# Sourced by hack/relay.sh and hack/relay-watch.sh (#645).
+# Sourced by hack/lib/github.sh; written for the retired relay (#645).
 #
 # drop_session_env: unset the variables a Claude Code or VS Code session gives
 # the processes it starts, so a relay started from one runs as one started from

@@ -149,3 +149,16 @@
 .tokens-table tbody th {
   font-weight: 600;
 }
+
+/* What the Scorers found: a criterion is a sentence, so it wraps. */
+.tokens-table caption {
+  caption-side: top;
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 6px;
+}
+
+.tokens-table .score-criterion {
+  white-space: normal;
+  min-width: 240px;
+}

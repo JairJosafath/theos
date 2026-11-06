@@ -214,3 +214,36 @@ func TestChatNotReadyWaits(t *testing.T) {
 		t.Fatal("state kept for a Chat without rooms")
 	}
 }
+
+// With the UI's address, a post links to its object's page in the UI, in the
+// Chat's namespace; the formatted body carries it as a link.
+func TestPostsLinkToTheUI(t *testing.T) {
+	failed := &c4v1beta1.Task{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "api-6"},
+		Spec:   c4v1beta1.TaskSpec{Kind: c4v1beta1.TaskImplement, Issue: 6},
+		Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskFailed}}
+	w := newWorld(t)
+	bot := w.theosChat()
+	bot.UIURL = "https://theos.example.com"
+	if err := w.pass(bot); err != nil {
+		t.Fatal(err)
+	}
+	w.create(failed)
+	if err := w.pass(bot); err != nil {
+		t.Fatal(err)
+	}
+	page := "https://theos.example.com/?kind=Task&name=api-6&ns=" + ns
+	got := w.posts(model.ChatAlerts)
+	if len(got) != 1 || !strings.HasSuffix(got[0], "Task in theos: "+page) {
+		t.Fatalf("the alert links to the Task's page: %q", got)
+	}
+	room, _ := w.hs.Room(w.rooms[model.ChatAlerts])
+	for _, e := range room.Events {
+		if e.Type != "m.room.message" || e.Sender != w.bot {
+			continue
+		}
+		if html, _ := e.Content["formatted_body"].(string); !strings.Contains(html,
+			`<a href="https://theos.example.com/?kind=Task&amp;name=api-6&amp;ns=shop">Task in theos</a>`) {
+			t.Errorf("the alert's formatted body has no link to the page: %s", html)
+		}
+	}
+}

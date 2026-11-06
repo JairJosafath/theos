@@ -389,3 +389,13 @@
 .deploy-target {
   padding: 4px 0;
 }
+
+/* A judge's verdicts (Scores.tsx): one line each, the verdict first. */
+.score-verdicts {
+  list-style: none;
+  margin: 6px 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}

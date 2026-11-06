@@ -94,6 +94,13 @@ func TestRunRecord(t *testing.T) {
 	if got.Role != "" {
 		t.Errorf("an unknown role on a sandbox without one: recorded %q, want none", got.Role)
 	}
+	// The configuration the sandbox recorded is the run's, so a later change to
+	// the Agent doesn't rewrite it (measure-and-improve, decision 2).
+	config := RunConfig{Agent: "implementer", Harness: "claude-code", Model: "claude-opus-5-5"}
+	got, _ = RunState{Started: true, Done: true, Config: config}.Record(1, "add-crop-r1-implement", at)
+	if got.Config != config {
+		t.Errorf("a run's configuration: recorded %+v, want %+v", got.Config, config)
+	}
 }
 
 func TestSandboxRole(t *testing.T) {

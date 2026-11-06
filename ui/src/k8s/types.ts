@@ -528,6 +528,7 @@ export const RESOURCES = {
   crews: 'crews',
   briefs: 'briefs',
   chats: 'chats',
+  benchmarks: 'benchmarks',
 } as const
 
 /** API path of a theos.factory.io resource, in one namespace or across all of them. */
@@ -551,6 +552,8 @@ export type TaskPhase =
   | 'Blocked'
   | 'Merged'
   | 'Failed'
+  /** A Benchmark's run whose change passed its checks and review: it would have merged, and never does. */
+  | 'Approved'
 
 /** One step in a Task's timeline: from `at` on, the Task was in phase and round, for reason. */
 export interface TaskTransition {
@@ -567,6 +570,10 @@ export interface TaskAgentRun {
   /** implement, review, verify or plan; omitted when neither theos-agent nor the sandbox's name said. */
   role?: string
   sandbox?: string
+  /** The Agent, harness and model the run ran on, as they were then; omitted for runs from before they were recorded. */
+  agent?: string
+  harness?: string
+  model?: string
   /** When the Task saw the run end. */
   endedAt: string
   /** What the run cost, in thousandths of a US dollar; omitted when the agent didn't say. */
@@ -590,14 +597,80 @@ export const LABEL_ISSUE = 'theos.factory.io/issue'
 /** Who approves a spec's pull request: a person on the Git host, or the reviewer Agent alone. */
 export type SpecApproval = 'Person' | 'Reviewer'
 
+/** A share with its 95% Wilson interval, in whole percent. */
+export interface BenchmarkRate {
+  of?: number
+  percent?: number
+  low?: number
+  high?: number
+}
+
+/** The same goals from one pinned commit under two or more Agent variants (docs/plans/done/measure-and-improve.md). */
+export interface Benchmark extends K8sObject {
+  spec: {
+    containerRef: LocalRef
+    base: string
+    goals: { goal?: string; issue?: number }[]
+    variants: { name: string; implementerRef: LocalRef; reviewerRef?: LocalRef; verifierRef?: LocalRef }[]
+    repetitions?: number
+    scorerRefs?: LocalRef[]
+    parallel?: number
+    budgetUSD: number
+  }
+  status?: {
+    goals?: string[]
+    costMilliUSD?: number
+    variants?: {
+      name: string
+      tasks?: number
+      finished?: number
+      approval?: BenchmarkRate
+      meanRounds?: string
+      medianMinutes?: number
+      medianCostMilliUSD?: number
+      criteria?: { scorer: string; criterion: string; rate?: BenchmarkRate; unclear?: number }[]
+    }[]
+    comparison?: string
+    cleaned?: string[]
+    conditions?: Condition[]
+  }
+}
+
+/** The Agent configuration an agent run ran on. */
+export interface RunConfig {
+  agent?: string
+  harness?: string
+  model?: string
+}
+
+/** What a Score Task judges (docs/plans/done/measure-and-improve.md). */
+export interface TaskScoreSpec {
+  scorerRef: LocalRef
+  scorerGeneration: number
+  taskRef: LocalRef
+  criteria: string[]
+  /** The judged Task's implementer's configuration. */
+  config?: RunConfig
+}
+
+export type ScoreVerdict = 'Pass' | 'Fail' | 'Unclear'
+
+/** A judge's verdict on one criterion, and why. */
+export interface ScoreCriterion {
+  criterion: string
+  verdict: ScoreVerdict
+  reason?: string
+}
+
 export interface Task extends K8sObject {
   spec: {
     /**
      * Implement (the default), Plan: a planning round of a Brief, Triage: a
-     * triager's decision on a proposed issue, or Spec: an issue's spec, written
-     * in a pull request a person approves.
+     * triager's decision on a proposed issue, Spec: an issue's spec, written
+     * in a pull request a person approves, or Score: a Scorer's judge run on
+     * another Task's finished change.
      */
-    kind?: 'Implement' | 'Plan' | 'Triage' | 'Spec'
+    kind?: 'Implement' | 'Plan' | 'Triage' | 'Spec' | 'Score'
     /** Every Task but a Plan Task names its Container. */
     containerRef?: LocalRef
     /** A Plan Task names its Brief in place of a Container. */
@@ -612,6 +685,10 @@ export interface Task extends K8sObject {
     issue?: number
     /** The protected paths a gated Task may change. */
     allowedProtectedPaths?: string[]
+    /** A Score Task's Scorer, the Task it judges and the criteria, as they were. */
+    score?: TaskScoreSpec
+    /** A Benchmark's run: which Benchmark, variant, goal (from 0) and repetition, and the base it branches from. */
+    benchmark?: { benchmarkRef: LocalRef; variant: string; goal?: number; repetition: number; base: string }
   }
   status?: {
     phase?: TaskPhase
@@ -623,6 +700,8 @@ export interface Task extends K8sObject {
     /** The issues filed from the reviewer's suggestions on merge, as URLs. */
     followUps?: string[]
     /** A Triage Task's decision, its reason, and what the operator did with it. */
+    /** A Score Task's verdicts, one per criterion; a failed run leaves each Unclear. */
+    score?: { criteria?: ScoreCriterion[] }
     triage?: {
       decision: 'ready' | 'spec' | 'park' | 'duplicate'
       reason?: string
@@ -652,6 +731,10 @@ export interface Task extends K8sObject {
     commit?: string
     pullRequest?: number
     pullRequestURL?: string
+    /** The merged pull request's size, read once it merged; omitted before, or when it couldn't be read. */
+    pullRequestSize?: { additions?: number; deletions?: number; files?: number }
+    /** How many of the merged pull request's commits a person wrote; 0 means the factory alone. Omitted when not read. */
+    personCommits?: number
     checks?: CheckStatus
     review?: {
       verdict?: string

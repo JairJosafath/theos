@@ -215,7 +215,8 @@ export function attention(input: {
   for (const task of tasks) {
     const key = taskKey(task)
     const brief = briefOn(briefs, 'Task', task.metadata.namespace, task.metadata.name, now)
-    if (task.status?.phase === 'Failed') {
+    // A Scorer's judge run or a Benchmark's run that failed measures the factory: no alarm.
+    if (task.status?.phase === 'Failed' && task.spec.kind !== 'Score' && !task.spec.benchmark) {
       const done = time(task.status.completedAt)
       if (done !== undefined && now - done < RECENT_FAILURE_MS && !failureAnswered(task, done, tasks, briefs)) {
         items.push({

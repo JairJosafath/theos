@@ -11,7 +11,7 @@ cmd/model-proxy/                   Model proxy: keeps the Claude token out of sa
 cmd/theos-chat/                    theos-chat: posts in each Chat's Matrix rooms and runs its people's commands as them, a third binary in the operator image
 api/v1beta1/*_types.go             CRD schemas for all twenty-one kinds (+kubebuilder markers); the hub and storage version the operator imports
 api/v1beta1/shared_types.go        Refs, Container types, condition names and labels
-api/v1alpha1/                      The deprecated older version, still served: the same shapes, converting to the hub (conversion.go); Chat, born after, is v1beta1 only
+api/v1alpha1/                      The deprecated older version, still served: the same shapes, converting to the hub (conversion.go); Chat, Scorer and Benchmark, born after, are v1beta1 only
 api/*/zz_generated.*               Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status
 internal/model/                    Pure business rules: choices, bundles, relationships, roll-up, staleness

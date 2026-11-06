@@ -43,6 +43,7 @@ export type LifecycleKind =
   | 'Deployment'
   | 'GitProvider'
   | 'DeployTarget'
+  | 'Benchmark'
 
 interface StepDef {
   phase: string
@@ -194,6 +195,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
         phase: 'Failed',
         person: 'Read why it failed. To try again, give the work a new Task, or do it by hand.',
       },
+      {
+        phase: 'Approved',
+        person: 'Nothing: a Benchmark’s run ends here instead of merging; its Benchmark compares it with the others.',
+      },
     ],
     moves: 'The agent, CI and the reviewer, round by round, up to its implementer’s maxRounds.',
     describe: (phase) => describeTaskPhase(phase as TaskPhase | undefined),
@@ -240,6 +245,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
       tone: SESSION_TONES[phase as SessionPhase] ?? 'unknown',
     }),
   },
+  Benchmark: phaseless(
+    'It makes its runs in turn, has its Scorers judge each, cleans up after them and compares its variants; Done says when every run finished.',
+    'Nothing: read what it found. It can’t change: to compare again, make a new one.',
+  ),
   Standard: phaseless(
     'A catalog entry. A new template ref opens an update pull request on each Ready Container that names it; the factory merges it once its checks pass.',
     'Nothing: its Containers’ update pull requests carry a new ref; open a Container to see its own.',

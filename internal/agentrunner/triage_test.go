@@ -29,7 +29,7 @@ func TestJobFromEnvTriage(t *testing.T) {
 		t.Errorf("job = role %q, branch %q, issue %d", job.Role, job.Branch, job.Issue)
 	}
 	if _, err := JobFromEnv(env(map[string]string{EnvRole: "judge"})); err == nil ||
-		!strings.Contains(err.Error(), "want implement, review, verify, plan or triage") {
+		!strings.Contains(err.Error(), "want implement, review, verify, plan, triage or score") {
 		t.Errorf("JobFromEnv(role judge) error = %v", err)
 	}
 }

@@ -189,6 +189,10 @@ type ChatTaskView struct {
 	ReviewSummary string
 	// Message says why the Task waits, or why it failed.
 	Message string
+	// Benchmark means a Benchmark's run, which never merges.
+	Benchmark bool
+	// PageURL is the Task's page in the UI (ChatPageURL), "" for none.
+	PageURL string
 }
 
 // ChatTriageView is a Triage Task's decision and what came of it.
@@ -205,8 +209,8 @@ func TriageAsked(applied string) bool {
 	return strings.HasPrefix(applied, "Labelled "+LabelNeedsHuman)
 }
 
-// chatLinks are the links of a Task's posts: its pull request and its
-// issue, where it has them.
+// chatLinks are the links of a Task's posts: its pull request, its issue
+// and its page in the UI, where it has them.
 func (t ChatTaskView) chatLinks() []ChatLink {
 	var links []ChatLink
 	if t.PullURL != "" {
@@ -215,7 +219,7 @@ func (t ChatTaskView) chatLinks() []ChatLink {
 	if t.IssueURL != "" {
 		links = append(links, ChatLink{Text: fmt.Sprintf("Issue #%d", t.Issue), URL: t.IssueURL})
 	}
-	return links
+	return append(links, chatPageLink("Task", t.PageURL)...)
 }
 
 // issue is "issue #N: title", or the Task's name without an issue.
@@ -235,6 +239,12 @@ func (t ChatTaskView) issue() string {
 // decision, a review's verdict and a failure are plain posts; a merge is in
 // the updates digest.
 func ChatTaskNews(t ChatTaskView) []ChatNews {
+	if t.Kind == "Score" || t.Benchmark {
+		// A judge run for a Scorer, or a Benchmark's run, is the factory
+		// measuring itself: what it found is theirs to show, and a failure no
+		// alert.
+		return nil
+	}
 	var news []ChatNews
 	final := t.Phase == chatPhaseMerged || t.Phase == chatPhaseFailed
 	if t.Kind == chatKindSpec && t.SpecApproval != "Reviewer" {
@@ -330,6 +340,8 @@ type ChatContainerView struct {
 	RepositoryURL string
 	NewestRelease string
 	Deploys       []ChatDeployState
+	// PageURL is the Container's page in the UI (ChatPageURL), "" for none.
+	PageURL string
 }
 
 // ChatDeployState is one of a Container's status.deploys.
@@ -341,12 +353,14 @@ type ChatDeployState struct {
 // scaffold opens a thread in alerts, where retry scaffolds it again, done
 // once it is Ready; a deploy waiting for a person opens one in reviews,
 // done once the version runs; a failed deploy is a post in alerts; a
-// release and a deploy are in the updates digest.
+// release and a deploy are in the updates digest. Each links to the
+// Container's page in the UI, when it has one.
 func ChatContainerNews(c ChatContainerView) []ChatNews {
 	var links []ChatLink
 	if c.RepositoryURL != "" {
 		links = append(links, ChatLink{Text: "Repository", URL: c.RepositoryURL})
 	}
+	links = append(links, chatPageLink("Container", c.PageURL)...)
 	failed := ChatNews{Key: ChatItemKey(ChatEventContainerFailed, c.Name), Event: ChatEventContainerFailed,
 		Open: c.Phase == chatPhaseFailed, Done: c.Phase == "Ready",
 		Item: ChatItem{Event: ChatEventContainerFailed, Name: c.Name}}
@@ -369,17 +383,19 @@ func ChatContainerNews(c ChatContainerView) []ChatNews {
 			Event: ChatEventReleased, Line: line, Post: ChatPost{Title: line, Links: links}})
 	}
 	for _, d := range c.Deploys {
-		news = append(news, chatDeployNews(c.Name, d)...)
+		news = append(news, chatDeployNews(c.Name, c.PageURL, d)...)
 	}
 	return news
 }
 
-// chatDeployNews is what theos-chat says of one of Container name's deploys.
-func chatDeployNews(name string, d ChatDeployState) []ChatNews {
+// chatDeployNews is what theos-chat says of one of Container name's deploys,
+// with links to the deploy's address and the Container's page in the UI.
+func chatDeployNews(name, pageURL string, d ChatDeployState) []ChatNews {
 	var links []ChatLink
 	if d.URL != "" {
 		links = append(links, ChatLink{Text: d.Target, URL: d.URL})
 	}
+	links = append(links, chatPageLink("Container", pageURL)...)
 	var news []ChatNews
 	if d.WantedVersion != "" {
 		n := ChatNews{Key: ChatItemKey(ChatEventDeployWaiting, name, d.Target, d.WantedVersion),

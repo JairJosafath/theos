@@ -330,6 +330,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	sandbox.SetNamespace(task.Namespace)
 	sandbox.SetName(run.name)
 	sandbox.SetLabels(labels)
+	sandbox.SetAnnotations(runConfigAnnotations(agent))
 	shutdown := metav1.NewTime(now.Add(timeout + sandboxGrace)).UTC().Format(time.RFC3339)
 	sandbox.Object["spec"] = map[string]any{
 		"podTemplate": map[string]any{
@@ -383,7 +384,7 @@ func runEnv(run sandboxRun) []corev1.EnvVar {
 			secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
 		)
 	}
-	return []corev1.EnvVar{
+	env := []corev1.EnvVar{
 		{Name: agentrunner.EnvRole, Value: run.role},
 		{Name: agentrunner.EnvRepoURL, Value: run.repoURL},
 		{Name: agentrunner.EnvBranch, Value: run.status.Branch},
@@ -400,6 +401,12 @@ func runEnv(run sandboxRun) []corev1.EnvVar {
 		secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
 		secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
 	}
+	if score := task.Spec.Score; score != nil {
+		// A judge's criteria go apart from the evidence in its goal.
+		criteria, _ := json.Marshal(score.Criteria)
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvCriteria, Value: string(criteria)})
+	}
+	return env
 }
 
 func secretEnv(name, secret, key string) corev1.EnvVar {
@@ -443,6 +450,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 		return state, err
 	}
 	state.Started = true
+	state.Config = runConfigOf(sandbox)
 	expired, missed := sandboxExpiry(sandbox)
 	state.Checkpoint = resumable(sandbox, expired)
 	if sandboxSuspended(sandbox) {
@@ -504,6 +512,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 				CheckFailsOnBase: result.CheckFailsOnBase,
 				Proposal:         result.Proposal, Extra: result.Extra, Empty: result.Empty, Blocked: result.Blocked,
 				FollowUps: result.FollowUps, Open: result.Open, Unavailable: result.Unavailable, Triage: result.Triage,
+				Score: result.Score,
 			}
 			// A result theos-agent wrote before an outage stands.
 			state.Interrupted = (podDisrupted(&pod) || result.Interrupted) && !ownLimit
