@@ -55,6 +55,7 @@ describe('accessibility of the UI', () => {
       obj('Task', story.tasks[0].metadata.name),
       obj('Project', ns),
       obj('Standard', 'python-standard'),
+      obj('TestEnvironment', 'browser'),
     ]
     ui = createServer({
       distDir: dist,

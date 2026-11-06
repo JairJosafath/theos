@@ -85,7 +85,7 @@ export interface AgentRun {
 }
 
 /** History reasons on an Implementing or Reviewing step that mean no agent runs yet. */
-const NOT_RUNNING = new Set(['WaitingForSlot', 'AgentUnavailable', 'OverBudget'])
+const NOT_RUNNING = new Set(['WaitingForSlot', 'AgentUnavailable', 'OverBudget', 'WaitingForEnvironment'])
 
 /**
  * The Task's agent runs, oldest first. A Task records each run as it ends

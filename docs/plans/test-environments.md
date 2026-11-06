@@ -263,6 +263,36 @@ step 2.
    leases. UI tests on a demo fixture.
    *Done when:* the UI tests pass and a screenshot is in
    `docs/screenshots/`.
+
+   *As built:* the UI has no Project area: the Project is an object page,
+   whose Related tab lists its DeployTargets, so it lists its
+   TestEnvironments there too (*Where its runs test*): each with `Ready`
+   (its reason in words when False), its live leases against
+   `limits.maxLeases` ("1 of 2 leased", and "all taken" at the limit, when a
+   run waits `AllLeased`), today's spend from `status.spentToday` ("nothing"
+   for a local member, whose leases cost nothing, and for a day that isn't
+   today, UTC), how long a lease lasts, and under it each lease with its
+   state, holder Task, since when and the provider's message (a lease waiting
+   for a node with the device says so). The day's budget shows once step 7
+   adds `limits.budgetUSDPerDay`. A TestEnvironment has a page of its own,
+   as a DeployTarget has: what it has (member, image, devices, runtime
+   class, placement, resources, `Ready`), its leases and limits, its CI pool
+   (`env-<name>`'s pods) and how a run uses it (`env/<name>`, `theos-env
+   run <name> -- <command>`), and the Tasks whose runs hold it. The Task
+   page's Overview shows the leases its run holds (`status.environments`:
+   environment, lease, run, since), the environments its runs leased
+   (`status.leasedEnvironments`), and why its run waits, from `Progressing`
+   `WaitingForEnvironment`'s message. A history step that waits for an
+   environment starts no agent run on the page, as a wait for a slot
+   doesn't. The UI's reader role reads `testenvironments` (`config/ui`, the
+   chart). The demo has `browser`, leased by orders-api-24's run, and
+   `android` on KVM. Tests: `ui/src/model/testenvs.test.ts`,
+   `ui/src/components/objects/TestEnvironmentPages.test.ts`, `rows.test.ts`
+   ("starts no run while it waits for a test environment") and the
+   TestEnvironment page in `ui/test/a11y.e2e.mjs`. Evidence:
+   `docs/screenshots/ui-test-environments.png` (and `-dark`),
+   `ui-test-environment-browser.png` and `ui-task-environments.png`, from the
+   demo.
 7. **AWS EC2, Linux and GPU** (T9 to T11, `internal/adapters/awsenv`, the
    `aws` member, `make manifests generate`).
    `contract.TestEnvironments` on a fake EC2 API, as the `cloudformation`

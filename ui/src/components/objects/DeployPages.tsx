@@ -42,7 +42,8 @@ import { CommandLine, ObjectHeader } from '../ObjectHeader'
 import { pageHref, projectCrumb } from './links'
 import { ReadProblem } from './ReadProblem'
 
-function Badge({ tone, label, title }: { tone: Tone; label: string; title?: string }) {
+/** A small badge of a tone, such as a Ready condition's or a lease's state. */
+export function Badge({ tone, label, title }: { tone: Tone; label: string; title?: string }) {
   return (
     <span className={`badge badge-${tone} badge-sm`} title={title}>
       <span className="badge-dot" aria-hidden="true" />
