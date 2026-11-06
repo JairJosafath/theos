@@ -206,6 +206,28 @@ func TestPlannerGuideAsksForNoTestThatStartsADesktopApp(t *testing.T) {
 	}
 }
 
+// TestPlannerGuideSaysWhatIsBigger: the guide says what ships at once under
+// a cadence, how to mark it, and that a tending round marks nothing
+// (docs/plans/done/release-cadence.md, C8, C9).
+func TestPlannerGuideSaysWhatIsBigger(t *testing.T) {
+	guide := strings.Join(strings.Fields(plannerGuideText), " ")
+	for _, rule := range []string{
+		"`release: now` (rule 9)",
+		"**Mark only what is bigger `release: now`**",
+		"a fix of something broken in the latest release that users hit",
+		"or a feature a prompt asks to ship now",
+		"A fix of work not yet released, a test, docs or a refactor is never bigger.",
+		"now: true # take only: bigger, it ships at once (rule 9)",
+		"and never on a skip",
+		"mark no issue `release: now`",
+		"the factory gives a day of fixes the next patch version",
+	} {
+		if !strings.Contains(guide, rule) {
+			t.Errorf("PLANNER.md doesn't say %q", rule)
+		}
+	}
+}
+
 func TestPlannerGuideLeavesReleasingToTheFactory(t *testing.T) {
 	guide := strings.Join(strings.Fields(plannerGuideText), " ")
 	for _, rule := range []string{

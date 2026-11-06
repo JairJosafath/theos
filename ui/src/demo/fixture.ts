@@ -71,6 +71,13 @@ function catalog(
 /** The demo story, with times relative to `now` so ages read naturally. */
 export function demoStory(now: number): StoryData {
   const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString()
+  // The first cut at hour:00 UTC after now, as a daily release cadence has it.
+  const nextCut = (hour: number) => {
+    const cut = new Date(now)
+    cut.setUTCHours(hour, 0, 0, 0)
+    if (cut.getTime() <= now) cut.setUTCDate(cut.getUTCDate() + 1)
+    return cut.toISOString()
+  }
   const created = ago(3 * 3600)
 
   const project: Project = {
@@ -1274,6 +1281,8 @@ export function demoStory(now: number): StoryData {
               moduleMessage:
                 'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for theos.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
             },
+            // The next release waits for the day's cut, 18:00 UTC.
+            nextRelease: { tag: 'v0.3.0', time: nextCut(18), timeZone: 'UTC', merged: 4 },
             message:
               'Release v0.2.0 could not be published to webshop-co/orders-api; the Crew says why and tries again.',
           },

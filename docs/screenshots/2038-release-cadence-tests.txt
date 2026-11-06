@@ -1,0 +1,52 @@
+Release cadence (docs/plans/done/release-cadence.md, theos#11): the tests of
+its six steps, run on this branch on 2026-11-06. No make check here: the
+coordinator runs it on the merged branch. No Kind run: the plan asks none.
+
+Step 2, the model (go test ./internal/model/):
+  ok  github.com/JairJosafath/theos/internal/model
+  TestNextCut, TestCutTime, TestNextReleaseCadence (32 cases), TestNextCutOf,
+  TestCadenceSlot, TestCutMarker, TestCarryMarker, TestIsReleaseNow,
+  TestReleaseTakingWorkSkipsACutRelease, TestParsePlanReleaseNow,
+  TestNextCrewStep's cadence cases, TestRenderCadence,
+  TestPlannerGuideSaysWhatIsBigger; TestNextRelease and
+  TestNextReleasePrepares unchanged, each case also run with every: Release.
+
+Step 3, retitling a milestone:
+  go test ./internal/ports/... ./internal/adapters/gitea/   ok (fake contract,
+    TestEditMilestoneTitle against the stand-in host, TestHostNeutral)
+  Against a local Gitea 1.27.3 run as a non-root user:
+  --- PASS: TestGiteaMilestonesIntegration
+  --- PASS: TestIssuesContractIntegration
+      --- PASS: .../retitles_a_dated_milestone,_keeping_its_due_date_and_issues
+
+Steps 4 and 5, envtest (go test ./internal/controller -run TestControllers
+-ginkgo.focus=...):
+  "release cadence"  Ran 11 of 688 Specs   SUCCESS! 11 Passed | 0 Failed
+    Crew release cadence: holds a done release until its cut, then carries
+    its open issue into a new release and tags it; finishes a cut a restart
+    broke off, and makes no second release to carry into; cuts at once for
+    a merged release/now issue; tags a day of fixes as the next patch after
+    the last release; holds a Task ready to merge while the cut release is
+    prepared, then merges it; stops at a time zone the operator can't load,
+    and tags nothing; tags each release once it is done with every: Release.
+    Brief release cadence: files a day's rounds, a fix and a feature too, in
+    one release, and a round after its cut in the next; labels the work a
+    plan marks release: now, and a suggestion it takes now and as a fix;
+    writes its cadence onto the Crews it made, follows a change, and leaves
+    a Crew it didn't make alone; reads every: Day at 18:00 UTC for a Brief
+    stored without a cadence.
+  "Crew"             Ran 155 of 690 Specs  SUCCESS! 155 Passed | 0 Failed
+  "merge"            Ran 48 of 690 Specs   SUCCESS! 48 Passed | 0 Failed
+  "Brief"            Ran 142 of 688 Specs  SUCCESS! 142 Passed | 0 Failed
+  make validate-yaml: All valid; All 18 invalid files rejected (the two new
+    test/invalid/crew-cadence-*.yaml among them)
+  golangci-lint run ./internal/... ./api/... ./cmd/...: 0 issues.
+
+Step 6, the UI (make ui-test):
+  Test Files  67 passed (67)
+       Tests  944 passed (944)
+  # pass 267
+  # fail 0
+  eslint: 0 errors (2 warnings, in files this change doesn't touch)
+  Screenshot of the demo Brief's apps: 2038-brief-next-release.png
+  ("next release v0.3.0 at 18:00 UTC, 4 merged").

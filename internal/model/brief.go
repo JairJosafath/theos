@@ -134,6 +134,9 @@ type PlanIssue struct {
 	// Uses are the Containers whose released Go module this one builds on:
 	// it is readied once each has published one (docs/plans/done/app-modules.md).
 	Uses []string
+	// ReleaseNow says the front matter's release: now marks it bigger: once
+	// merged, its release goes out at once (docs/plans/done/release-cadence.md, C9).
+	ReleaseNow bool
 }
 
 // Plan is what a planner pushed for one round.
@@ -573,10 +576,11 @@ func parsePlanIssue(path, s string) (PlanIssue, error) {
 		}
 	}
 	var meta struct {
-		Title  string   `yaml:"title"`
-		Labels []string `yaml:"labels"`
-		After  []string `yaml:"after"`
-		Uses   []string `yaml:"uses"`
+		Title   string   `yaml:"title"`
+		Labels  []string `yaml:"labels"`
+		After   []string `yaml:"after"`
+		Uses    []string `yaml:"uses"`
+		Release string   `yaml:"release"`
 	}
 	dec := yaml.NewDecoder(strings.NewReader(front))
 	dec.KnownFields(true)
@@ -595,6 +599,14 @@ func parsePlanIssue(path, s string) (PlanIssue, error) {
 	}
 	for _, u := range meta.Uses {
 		issue.Uses = append(issue.Uses, strings.TrimSpace(u))
+	}
+	switch strings.TrimSpace(meta.Release) {
+	case "":
+	case ReleaseNowValue:
+		issue.ReleaseNow = true
+	default:
+		return PlanIssue{}, fmt.Errorf("release: has %q; the only value is %s, for work that ships at once",
+			meta.Release, ReleaseNowValue)
 	}
 	if issue.Title == "" {
 		return PlanIssue{}, errors.New("the front matter has no title")

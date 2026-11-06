@@ -936,6 +936,16 @@ export interface BriefApp {
     /** Why the module isn't published, from the Crew. */
     moduleMessage?: string
   }
+  /** The release the Crew's next cut ships, under a cadence of Day or Week; unset while none holds work. */
+  nextRelease?: {
+    tag: string
+    /** When the cut is. */
+    time: string
+    /** The cadence's time zone, an IANA name, to say the time as the person set it. */
+    timeZone?: string
+    /** How many of its issues a Task merged so far. */
+    merged?: number
+  }
   /** One plain sentence on how the app's releases go. */
   message?: string
 }

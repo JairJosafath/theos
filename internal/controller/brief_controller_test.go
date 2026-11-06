@@ -32,7 +32,11 @@ func newBrief(ns, name string, prompts ...string) *c4v1beta1.Brief {
 	return &c4v1beta1.Brief{
 		ObjectMeta: objectMeta(ns, name),
 		Spec: c4v1beta1.BriefSpec{Idea: "A linter for CEL rules in CRDs.", Prompts: prompts,
-			Autopilot: model.AutopilotOff},
+			Autopilot: model.AutopilotOff,
+			// A release per round, as before cadences: the specs written
+			// then hold to it unchanged; the cadence's specs set their own
+			// (docs/plans/done/release-cadence.md, step 5).
+			ReleaseCadence: &c4v1beta1.ReleaseCadence{Every: model.CadenceRelease}},
 	}
 }
 

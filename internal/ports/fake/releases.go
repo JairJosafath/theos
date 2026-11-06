@@ -206,6 +206,37 @@ func (g *Git) DescribeMilestone(_ context.Context, repo ports.Repository, id int
 	return nil
 }
 
+// EditMilestoneTitle retitles milestone id. The fake keeps a milestone's
+// issues and state by its title, so they follow it to the new one.
+func (g *Git) EditMilestoneTitle(_ context.Context, repo ports.Repository, id int64, title string) error {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	key := repo.Owner + "/" + repo.Name
+	old, err := g.s.milestoneTitle(key, id)
+	if err != nil || old == title {
+		return err
+	}
+	is, rs := g.s.issueState(), g.s.releaseState()
+	is.milestones[key][id-1] = title
+	for _, issue := range is.issues[key] {
+		if issue.InMilestone == old {
+			issue.InMilestone = title
+			if issue.MilestoneTitle == old {
+				issue.MilestoneTitle = title
+			}
+		}
+	}
+	if i := slices.Index(rs.closed[key], old); i >= 0 {
+		rs.closed[key][i] = title
+	}
+	made := fmt.Sprintf("%s#%d", key, id)
+	if m, ok := rs.created[made]; ok {
+		m.Title = title
+		rs.created[made] = m
+	}
+	return nil
+}
+
 func (g *Git) CloseMilestone(_ context.Context, repo ports.Repository, id int64) error {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()

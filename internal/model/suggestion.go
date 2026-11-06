@@ -79,6 +79,10 @@ type SuggestionAnswer struct {
 	// goes into the patch release after the release in progress (F5 of
 	// plans/done/fixes-patch-next.md).
 	Fix bool `yaml:"fix,omitempty"`
+	// Now says a taken suggestion is bigger: once merged, its release goes
+	// out at once, without waiting for the cut (docs/plans/done/release-cadence.md,
+	// C9).
+	Now bool `yaml:"now,omitempty"`
 }
 
 // MaxAnswerWhy is how long an answer's why may be.
@@ -90,7 +94,7 @@ func parseAnswers(s string) ([]SuggestionAnswer, error) {
 	dec := yaml.NewDecoder(strings.NewReader(s))
 	dec.KnownFields(true)
 	if err := dec.Decode(&answers); err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("want a list of {container, issue, answer, why, fix}: %w", err)
+		return nil, fmt.Errorf("want a list of {container, issue, answer, why, fix, now}: %w", err)
 	}
 	if err := checkCutText(s); err != nil {
 		return nil, err
@@ -129,6 +133,9 @@ func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 			if a.Fix {
 				refuse("answers %s %s as a fix; only a suggestion taken is a fix", subject, AnswerMissing)
 			}
+			if a.Now {
+				refuse("answers %s %s as now; only a suggestion taken ships now", subject, AnswerMissing)
+			}
 			refuseWhy(refuse, subject, a.Why)
 			continue
 		case i < 0:
@@ -146,6 +153,9 @@ func CheckAnswers(answers []SuggestionAnswer, waiting []Suggestion) []Refusal {
 		case AnswerSkip:
 			if a.Fix {
 				refuse("skips %s as a fix; only a suggestion taken is a fix", subject)
+			}
+			if a.Now {
+				refuse("skips %s as now; only a suggestion taken ships now", subject)
 			}
 		default:
 			refuse("answers %s %q; an answer is %s, %s or %s", subject, a.Answer, AnswerTake, AnswerSkip,

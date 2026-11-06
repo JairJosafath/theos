@@ -224,12 +224,16 @@ func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1bet
 // no issue, titled the next minor version (joinEmptyRelease, #2025), or else a
 // new one titled the next minor version, due after every open release (R6). A fix goes into the patch slot right after the release in
 // progress (patchMilestone), and into the round's release milestone while the
-// repository has no release yet.
+// repository has no release yet. Under a cadence that cuts, every issue goes
+// into the release in progress instead (cadenceMilestone).
 func releaseMilestone(ctx context.Context, provider ports.Issues, repo ports.Repository, brief string,
-	round int, fix bool) (int64, error) {
+	round int, fix bool, cadence model.ReleaseCadence) (int64, error) {
 	milestones, err := provider.ListAllMilestones(ctx, repo)
 	if err != nil {
 		return 0, err
+	}
+	if cadence.Cuts() {
+		return cadenceMilestone(ctx, provider, repo, brief, round, cadence, milestones)
 	}
 	var minor *ports.Milestone
 	var others []ports.Milestone

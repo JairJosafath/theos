@@ -184,6 +184,27 @@ func TestDescribeMilestone(t *testing.T) {
 	}
 }
 
+func TestEditMilestoneTitle(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	due := time.Date(2026, 11, 6, 18, 0, 0, 0, time.UTC)
+	h.milestones = []hostMilestone{{ID: 1, Title: "v0.15.0", Description: "Round 3's", State: "open", DueOn: &due}}
+	for range 2 {
+		if err := p.EditMilestoneTitle(ctx, repo, 1, "v0.14.1"); err != nil {
+			t.Fatalf("EditMilestoneTitle() error = %v", err)
+		}
+	}
+	m := h.milestones[0]
+	if m.Title != "v0.14.1" || m.Description != "Round 3's" || m.State != "open" || m.DueOn == nil ||
+		!m.DueOn.Equal(due) {
+		t.Errorf("milestone after EditMilestoneTitle = %+v, want v0.14.1, its description, open, due %v kept", m, due)
+	}
+	if err := p.EditMilestoneTitle(ctx, repo, 7, "x"); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("EditMilestoneTitle() of a missing milestone error = %v, want HTTP 404", err)
+	}
+}
+
 func TestTags(t *testing.T) {
 	h, p := newIssueHost(t)
 	ctx := context.Background()

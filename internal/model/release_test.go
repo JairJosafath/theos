@@ -8,6 +8,20 @@ import (
 	"time"
 )
 
+// wantEveryRelease checks that facts give want with the cadence every:
+// Release too, whatever its other fields and the release/now labels say: set
+// or unset, it tags each release once it is done, as before cadences
+// (docs/plans/done/release-cadence.md, C3, C8).
+func wantEveryRelease(t *testing.T, facts ReleaseFacts, want ReleaseStep) {
+	t.Helper()
+	facts.Cadence = ReleaseCadence{Every: CadenceRelease, At: "09:00", TimeZone: "Europe/Amsterdam"}
+	facts.Now, facts.LastCut = time.Now(), time.Now().Add(-48*time.Hour)
+	facts.ReleaseNow = []int{1, 2, 3, 44, 120}
+	if got := NextRelease(facts); !reflect.DeepEqual(got, want) {
+		t.Errorf("NextRelease() with every: Release = %+v, want %+v", got, want)
+	}
+}
+
 func TestIsReleaseTitle(t *testing.T) {
 	for title, want := range map[string]bool{
 		"v0.2.0": true, "v10.0.12": true,
@@ -259,6 +273,7 @@ func TestNextRelease(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			wantEveryRelease(t, tt.facts, tt.want)
 			if got := NextRelease(tt.facts); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NextRelease() = %+v, want %+v", got, tt.want)
 			}
@@ -384,6 +399,7 @@ func TestNextReleasePrepares(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			wantEveryRelease(t, tt.facts, tt.want)
 			if got := NextRelease(tt.facts); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NextRelease() = %+v, want %+v", got, tt.want)
 			}
