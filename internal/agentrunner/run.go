@@ -386,12 +386,14 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	check := strings.Join(job.CheckCommand, " ")
 	base := baseCheck{job: job, r: r}
 	var summary string
+	// Every session of the round starts fresh, so each carries the round's
+	// prompt, the issue included (#2037, #25).
+	prompt := implementPrompt(job, ws)
 	if prog.resumesAt(StepCheck) {
 		// The agent's session had ended: the run goes on at its check.
 		summary = prog.from.Summary
 	} else {
 		var err error
-		prompt := implementPrompt(job, ws)
 		if summary, err = prog.session(ctx, agent, r.dir, prompt); err != nil {
 			result.Summary = summary
 			return agentFailed(result, err)
@@ -413,7 +415,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	prog.step, prog.summary = StepCheck, summary
 
 	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, prog.checksContext(ctx), job, agent, r.dir, &base,
-		prog.checkNote())
+		prompt, prog.checkNote())
 	if err != nil {
 		return agentFailed(result, err)
 	}
@@ -551,13 +553,27 @@ const maxSendBackAnswer = 4000
 // sendBackPrompt is the prompt of an agent sent back after a blocked note:
 // the round's prompt, the agent's first answer, and the base's failure.
 func sendBackPrompt(job Job, prompt, summary, baseOutput string) string {
-	return fmt.Sprintf("%s\n\n---\n\nAn earlier session in this workspace worked on the task above and "+
+	return laterSessionPrompt(prompt, fmt.Sprintf("An earlier session in this workspace worked on the task above and "+
 		"stopped with a %q line. Its answer:\n%s\n\n%q fails on %s in this workspace too, before any change:\n%s\n"+
 		"It was green in CI when this Task started, so that is not a reason to block the issue: CI runs the "+
 		"check and decides it. Do the issue above now, going on from what the working tree holds, "+
 		"and end your summary with a %q line again only if something else blocks it.",
-		strings.TrimRight(prompt, "\n"), model.BlockedPrefix, tail(summary, maxSendBackAnswer),
-		strings.Join(job.CheckCommand, " "), job.Base, tail(baseOutput, 3000), model.BlockedPrefix)
+		model.BlockedPrefix, tail(summary, maxSendBackAnswer),
+		strings.Join(job.CheckCommand, " "), job.Base, tail(baseOutput, 3000), model.BlockedPrefix))
+}
+
+// laterSessionPrompt is the prompt of a fresh session that goes on from an
+// earlier one in the round: the round's prompt, the issue and its rules
+// included, then what this session is for. A session told only that a check
+// fails never saw the issue (#2037, #25).
+func laterSessionPrompt(prompt, body string) string {
+	return strings.TrimRight(prompt, "\n") + "\n\n---\n\n" + body
+}
+
+// fixPrompt is the prompt of an agent sent back because the check fails on
+// its branch: the round's prompt, then the failure.
+func fixPrompt(prompt, failure string) string {
+	return laterSessionPrompt(prompt, "An earlier session in this workspace worked on the task above. "+failure)
 }
 
 // checkAndFix runs the check, and while it fails sends the agent back up to
@@ -566,10 +582,12 @@ func sendBackPrompt(job Job, prompt, summary, baseOutput string) string {
 // the check's error, and the agent's. The checks run in checks, which the
 // pause ends: a check it killed is errPaused, and runs again on resume.
 //
-// note, when set, starts the first fix prompt: it tells a run that went on
-// from a checkpoint at its check why the earlier one stopped.
+// Each fix prompt is a fresh session's, so it starts with roundPrompt, the
+// round's own prompt (#25). note, when set, starts the first fix prompt's
+// failure: it tells a run that went on from a checkpoint at its check why the
+// earlier one stopped.
 func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck,
-	note string) (string, string, error, error) {
+	roundPrompt, note string) (string, string, error, error) {
 	check := strings.Join(job.CheckCommand, " ")
 	paused := func() bool { return checks.Err() != nil && ctx.Err() == nil }
 	checkOutput, checkErr := runCheck(checks, job, dir)
@@ -595,7 +613,7 @@ func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, 
 		if note != "" {
 			prompt, note = note+"\n\n"+prompt, ""
 		}
-		if _, err := agent.Run(ctx, dir, prompt); err != nil {
+		if _, err := agent.Run(ctx, dir, fixPrompt(roundPrompt, prompt)); err != nil {
 			return checkOutput, baseOutput, checkErr, err
 		}
 		checkOutput, checkErr = runCheck(checks, job, dir)
