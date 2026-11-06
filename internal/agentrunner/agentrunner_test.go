@@ -1728,6 +1728,47 @@ func TestRunImplementSendBackCarriesTheIssue(t *testing.T) {
 	}
 }
 
+// #25 (theos): each fix attempt is a fresh session too; its prompt carries the
+// round's prompt, the issue and its rules, ahead of the failure, whether the
+// check fails on the branch alone or on the base too.
+func TestRunImplementFixPromptCarriesTheIssue(t *testing.T) {
+	branchOnly := []string{"sh", "-c", "if [ -e work.txt ]; then echo 'lint: unused variable'; exit 1; fi"}
+	for name, tc := range map[string]struct {
+		files   map[string]string
+		check   []string
+		failure string
+	}{
+		"fails on the branch": {map[string]string{"README.md": "hi\n"}, branchOnly, "lint: unused variable"},
+		"fails on the base too": {map[string]string{"README.md": "hi\n", "BROKEN": "x\n"}, brokenCheck,
+			"download: 404 Not Found"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			job := testJob(t, bareRepo(t, tc.files), RoleImplement, 1, tc.check...)
+			job.Issue = 106
+			job.Goal = "Locate CEL rules\n\n## Acceptance criteria\n- [ ] the lens finds every CEL rule"
+			agent := &scriptAgent{replies: []string{"Done."}}
+			Run(context.Background(), job, agent, t.TempDir())
+			if len(agent.prompts) != 1+checkFixAttempts {
+				t.Fatalf("agent ran %d times, want the work and %d fix attempts", len(agent.prompts), checkFixAttempts)
+			}
+			round := strings.TrimRight(agent.prompts[0], "\n")
+			for _, fix := range agent.prompts[1:] {
+				if !strings.HasPrefix(fix, round) {
+					t.Errorf("fix prompt doesn't start with the round's prompt:\n%s", fix)
+				}
+				for _, want := range []string{issueBlock(job.Goal), "issue #106", "Protected files:", "fails", tc.failure} {
+					if !strings.Contains(fix, want) {
+						t.Errorf("fix prompt lacks %q:\n%s", want, fix)
+					}
+				}
+				if after := strings.TrimPrefix(fix, round); !strings.Contains(after, tc.failure) {
+					t.Errorf("fix prompt doesn't name the failure after the round's prompt:\n%s", after)
+				}
+			}
+		})
+	}
+}
+
 func TestRunImplementProposesAStandardChangeWhenTheBaseFailsToo(t *testing.T) {
 	url := bareRepo(t, map[string]string{"Makefile": "check:\n", "README.md": "hi\n", "BROKEN": "x\n"})
 	agent := filesAgent{files: map[string]string{"Makefile": "check:\n\techo more\n", "src.txt": "x\n"}, summary: "Standard change: needed"}

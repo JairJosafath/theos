@@ -428,8 +428,11 @@ func TestUnavailableDuringTheCheckFixTellsTheResumedFix(t *testing.T) {
 	if resumed.Error != "" || resumed.Commit == "" || resumed.ResumedFrom != CheckpointClean {
 		t.Fatalf("Run() = %+v, want a pushed commit, resumed from the clean checkpoint", resumed)
 	}
-	if len(fixer.prompts) != 1 || !strings.HasPrefix(fixer.prompts[0], "The agent's service was unavailable (") ||
-		!strings.Contains(fixer.prompts[0], `"sh -c test -f fixed" fails.`) {
+	// The fix is a fresh session: the round's prompt comes first (#25 theos).
+	_, fix, _ := strings.Cut(strings.Join(fixer.prompts, ""), "\n\n---\n\n")
+	if len(fixer.prompts) != 1 || !strings.HasPrefix(fixer.prompts[0], "You are the implementer") ||
+		!strings.Contains(fix, "The agent's service was unavailable (") ||
+		!strings.Contains(fix, `"sh -c test -f fixed" fails.`) {
 		t.Errorf("the resumed run's prompts = %q, want one fix prompt told the service was unavailable", fixer.prompts)
 	}
 }
