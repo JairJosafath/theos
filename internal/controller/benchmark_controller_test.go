@@ -173,8 +173,13 @@ var _ = Describe("Benchmark", func() {
 		}
 		b := newBenchmark(ns, "fixed", base)
 		mustCreate(b)
+		// #26 (theos): the reconciler writes the Benchmark meanwhile, so an
+		// Update of the object read at create could fail on its stale
+		// resourceVersion instead; a merge patch carries none, so only the
+		// CEL rule can refuse it.
+		orig := b.DeepCopy()
 		b.Spec.Repetitions = 5
-		Expect(k8sClient.Update(ctx, b)).To(MatchError(ContainSubstring("a Benchmark can't change")))
+		Expect(k8sClient.Patch(ctx, b, client.MergeFrom(orig))).To(MatchError(ContainSubstring("a Benchmark can't change")))
 		issue := newTask(ns, "bench-issue", "x")
 		issue.Spec.Goal, issue.Spec.Issue = "", 4
 		issue.Spec.Benchmark = &c4v1beta1.TaskBenchmarkSpec{BenchmarkRef: c4v1beta1.LocalRef{Name: "fixed"},
