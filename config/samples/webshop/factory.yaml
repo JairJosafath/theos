@@ -25,6 +25,11 @@ spec:
           image: theos/gitea-runner-go:dev
           size: 1
           goCache: true
+        # gitea-release's release job: a Go cache of the pod's own (#1141).
+        - label: go-release
+          image: theos/gitea-runner-go:dev
+          size: 1
+          freshGoCache: true
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: Framework

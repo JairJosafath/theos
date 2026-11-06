@@ -142,6 +142,7 @@ type GiteaActionsSpec struct {
 }
 
 // CIRunnerSpec is one label's runners in a project's pool.
+// +kubebuilder:validation:XValidation:rule="!(has(self.goCache) && self.goCache && has(self.freshGoCache) && self.freshGoCache)",message="goCache and freshGoCache exclude each other: a label's pods mount the project's Go cache or start from a fresh one"
 type CIRunnerSpec struct {
 	// label is the job label the runners take, as the workflows' runs-on names it.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
@@ -171,6 +172,15 @@ type CIRunnerSpec struct {
 	// an image with the Go toolchain.
 	// +optional
 	GoCache bool `json:"goCache,omitempty"`
+
+	// freshGoCache gives each pod a Go build cache of its own: an emptyDir
+	// seeded from the image's warm cache, which nothing shares and the pod
+	// takes with it. For the label releases run on (go-release): a release
+	// builds signed artifacts, so it must not link a build result a pull
+	// request's job left in the project's cache. Excludes goCache. Only for
+	// an image with the Go toolchain.
+	// +optional
+	FreshGoCache bool `json:"freshGoCache,omitempty"`
 }
 
 // +kubebuilder:object:root=true

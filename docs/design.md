@@ -458,11 +458,16 @@ answers (#1699). The pods
 sit under the project's own CI NetworkPolicy (no ingress; DNS, the Git host's
 namespace and public HTTPS out), hold no ServiceAccount token, get the
 registration token only in an init container, and the `go` label's pods
-mount a Go build cache of the project's own on the node. The shared runners
+mount a Go build cache of the project's own on the node. Releases get no
+cache a job wrote: a release builds signed artifacts, so gitea-release's
+release job runs on `go-release`, whose pods (`freshGoCache`) start from the
+image's warm Go cache copied into an emptyDir of their own, mount nothing
+from the node and keep nothing (#1141). The shared runners
 Helm installs register to the templates organization and serve the
 templates' checks only; the GitProviders the chart renders carry a pool of a
-`base` and a `go` runner, the labels the templates' checks run on, so an
-install needs nothing added for a project's checks to run. Who cancelled a job is read from its pod: a pod that
+`base`, a `go` and a `go-release` runner, the labels the templates' checks
+and releases run on, so an install needs nothing added for a project's
+checks and releases to run. Who cancelled a job is read from its pod: a pod that
 ended its one job on its own after the cancel was a person's; one deleted,
 evicted or killed before its job ended was the runner's, and the Task reruns
 the checks at no cost to a round (`model.Canceller`). The isolation left is

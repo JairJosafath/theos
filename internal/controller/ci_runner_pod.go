@@ -95,7 +95,9 @@ func ciRunnerTokenSecret(provider string) string { return "c4-ci-runner-" + prov
 // alone holds the registration token; the runner container, where the job runs,
 // has no ServiceAccount token and never restarts: it exits when its job ends and
 // the pool replaces the pod. Checkouts and /tmp are in memory; the Go cache,
-// when the label has one, is the project's own directory on the node.
+// when the label has one, is the project's own directory on the node, or,
+// with freshGoCache, the pod's own emptyDir seeded from the image, so a
+// release links nothing an earlier job wrote (#1141).
 func buildRunnerPod(in runnerPodInput) *corev1.Pod {
 	goCache := in.runner.GoCache && in.goCacheRoot != ""
 	registerEnv := []corev1.EnvVar{
@@ -127,7 +129,8 @@ func buildRunnerPod(in runnerPodInput) *corev1.Pod {
 		{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{
 			Medium: corev1.StorageMediumMemory, SizeLimit: new(resource.MustParse("1Gi"))}}},
 	}
-	if goCache {
+	fresh := in.runner.FreshGoCache && !goCache
+	if goCache || fresh {
 		cache := corev1.VolumeMount{Name: goCacheVolume, MountPath: ciGoCacheMount}
 		inits = append(inits, corev1.Container{
 			Name: goCacheVolume, Image: in.runner.Image, Command: []string{"c4-go-cache", ciGoCacheMount},
@@ -135,10 +138,18 @@ func buildRunnerPod(in runnerPodInput) *corev1.Pod {
 		})
 		mounts = append(mounts, cache,
 			corev1.VolumeMount{Name: "job-env", MountPath: "/etc/gitea-runner/job.env", SubPath: "job.env"})
-		hostPathDir := corev1.HostPathDirectoryOrCreate
+		// The project's cache on the node, or, for a release label, an
+		// emptyDir on the node's disk that c4-go-cache seeds from the image's
+		// warm cache (about 3 GB) and the pod takes with it (#1141).
+		source := corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{
+			SizeLimit: new(resource.MustParse("16Gi"))}}
+		if goCache {
+			hostPathDir := corev1.HostPathDirectoryOrCreate
+			source = corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{
+				Path: path.Join(in.goCacheRoot, in.namespace), Type: &hostPathDir}}
+		}
 		volumes = append(volumes,
-			corev1.Volume{Name: goCacheVolume, VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{
-				Path: path.Join(in.goCacheRoot, in.namespace), Type: &hostPathDir}}},
+			corev1.Volume{Name: goCacheVolume, VolumeSource: source},
 			corev1.Volume{Name: "job-env", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{Name: CIJobEnvConfigMap}}}})
 	}

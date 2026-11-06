@@ -159,6 +159,8 @@ ci:
         size: {{ int $r.pool.size }}
 {{- if $r.goCache }}
         goCache: true
+{{- else if $r.freshGoCache }}
+        freshGoCache: true
 {{- end }}
 {{- with $r.resources }}
         resources:

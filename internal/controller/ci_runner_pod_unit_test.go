@@ -127,6 +127,48 @@ func TestBuildRunnerPodSharedPullSecrets(t *testing.T) {
 	}
 }
 
+// The go-release pod (#1141): a release builds signed artifacts, so its pod
+// mounts no node directory, the project's cache least of all; its Go cache is
+// an emptyDir of its own, seeded from the image's warm cache, which the jobs
+// reach through the same job.env as the go pods'.
+func TestBuildRunnerPodGoReleaseMountsNoNodeCache(t *testing.T) {
+	in := runnerPodInput{namespace: "shop", provider: "gitea", tokenSecret: ciRunnerTokenSecret("gitea"),
+		runner:      c4v1beta1.CIRunnerSpec{Label: "go-release", Image: "theos/gitea-runner-go:dev", FreshGoCache: true},
+		goCacheRoot: "/var/cache/theos/go/projects"}
+	pod := buildRunnerPod(in)
+	if pod.GenerateName != "ci-gitea-go-release-" || pod.Labels[LabelCILabel] != "go-release" {
+		t.Errorf("named %q, label %q: want ci-gitea-go-release- and go-release", pod.GenerateName, pod.Labels[LabelCILabel])
+	}
+	var cache *corev1.Volume
+	for i, v := range pod.Spec.Volumes {
+		if v.HostPath != nil {
+			t.Errorf("volume %s mounts %s from the node; a release pod shares nothing", v.Name, v.HostPath.Path)
+		}
+		if v.Name == goCacheVolume {
+			cache = &pod.Spec.Volumes[i]
+		}
+	}
+	if cache == nil || cache.EmptyDir == nil || cache.EmptyDir.Medium != corev1.StorageMediumDefault {
+		t.Fatalf("go-cache volume %+v, want an emptyDir on the node's disk", cache)
+	}
+	runner := pod.Spec.Containers[0]
+	if !hasMount(runner, ciGoCacheMount) || !hasMount(runner, "/etc/gitea-runner/job.env") {
+		t.Errorf("runner mounts %v, want the cache at %s and job.env", runner.VolumeMounts, ciGoCacheMount)
+	}
+	if len(pod.Spec.InitContainers) != 2 || pod.Spec.InitContainers[1].Name != goCacheVolume ||
+		!reflect.DeepEqual(pod.Spec.InitContainers[1].Command, []string{"c4-go-cache", ciGoCacheMount}) {
+		t.Errorf("init containers %v, want register and go-cache seeding %s from the image", pod.Spec.InitContainers,
+			ciGoCacheMount)
+	}
+
+	// Without --ci-go-cache the release pod still gets its fresh cache: it
+	// needs no node directory.
+	in.goCacheRoot = ""
+	if noRoot := buildRunnerPod(in); !hasMount(noRoot.Spec.Containers[0], ciGoCacheMount) {
+		t.Error("with no --ci-go-cache the release pod has no Go cache")
+	}
+}
+
 func hasMount(c corev1.Container, path string) bool {
 	for _, m := range c.VolumeMounts {
 		if m.MountPath == path {

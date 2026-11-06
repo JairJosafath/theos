@@ -206,6 +206,23 @@ Order of work: the API block and `make manifests`; `buildRunnerPod`,
 policy and envtest; `RunnerName`, `PodFate`, `Canceller` tables and the Task
 envtest; the chart and seed; `docs/design.md`.
 
+## Step 4 choices (#1141)
+
+- **`freshGoCache` on a runner of the `ci` block,** a bool that excludes
+  `goCache` (a CEL rule on `CIRunnerSpec`): `buildRunnerPod` gives the pod
+  the same `go-cache` init container (`c4-go-cache /cache/go`, which seeds an
+  empty cache from the image's) and job.env as a `goCache` pod, but the
+  volume is an emptyDir on the node's disk (16Gi limit; the warm cache is
+  about 3 GB, too much for memory), not a hostPath, and it needs no
+  `--ci-go-cache`. A field, not a rule on the label's name, so a user who
+  names the label otherwise still gets it.
+- **`go-release` is a pool label only:** `runners.go-release` in the chart's
+  values has `enabled: false` (no shared Deployment: the templates
+  organization releases nothing) and `pool.size: 1` on the `go` image, and
+  `theos.gitProviderCI` writes `freshGoCache: true` for it.
+- **gitea-release v1.9.0** moves the release job to `runs-on: go-release`;
+  a Container pinned to an earlier tag keeps running releases on `go`.
+
 ## Steps
 
 | Step | Issue | Depends on | How we know |

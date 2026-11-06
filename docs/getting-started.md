@@ -232,7 +232,10 @@ scaffolded devcontainer's build fetches it from there, by default
 `http://localhost:8080/downloads/theos-session-linux-${arch}` (the port-forward
 above) or `https://<ui.allowedHosts[0]>/downloads/...` behind an Ingress,
 with no GitHub login, and checks it against the `SHA256SUMS` served next to
-it. The build must reach that address: a port-forward's localhost is the
+it. The GitHub release's `SHA256SUMS` is also signed, keyless with cosign
+(`SHA256SUMS.sigstore.json`), which the feature verifies when `cosign` is on
+the devcontainer's `PATH`; the UI's `/downloads/` serves no signature, so
+from there the checksum alone decides (#1706). The build must reach that address: a port-forward's localhost is the
 laptop's, not a container's, so a laptop devcontainer needs the chart's
 `sessionBinaryURL` set to an address it reaches, or it starts without
 becoming a Session.

@@ -131,8 +131,11 @@ jobs:
             "$API/releases/$id/assets?name=$name" > /dev/null
           echo "Attached $name to release $TAG"
 {{- end }}
+  # The release runs on go-release, not go: its pod's Go cache is its own,
+  # seeded from the toolchain image's warm one, so the signed release files
+  # link nothing a pull request's job left in the project's cache (#1141).
   release:
-    runs-on: go
+    runs-on: go-release
 {{- if $image }}
     needs: image
 {{- end }}
@@ -146,8 +149,8 @@ jobs:
       DIGEST: {{`${{ needs.image.outputs.digest }}`}}
 {{- end }}
       # npm's cache goes to the runner's memory-backed /tmp: on its disk it
-      # stalls the node. Go's build cache stays where the toolchain image
-      # ships it, warm.
+      # stalls the node. Go's build cache is the pod's own, which the runner
+      # points GOCACHE at.
       npm_config_cache: /tmp/npm-cache
     steps:
       - name: Check out
