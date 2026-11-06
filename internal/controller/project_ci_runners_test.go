@@ -368,7 +368,7 @@ var _ = Describe("CI runner pool", func() {
 		Eventually(live, 1500*time.Millisecond).Should(HaveLen(2))
 	})
 
-	It("reports a provider whose token call fails, keeps its pods and retries (#1699)", func() {
+	It("reports a provider whose token call fails, keeps its pods and retries (#1699, #2022)", func() {
 		ns := newProjectNamespace()
 		provider := newCIProvider(ns)
 		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(2))
@@ -381,6 +381,14 @@ var _ = Describe("CI runner pool", func() {
 		By("saying the host gave no token, keeping the live pod and adding none")
 		gitFake.FailRunnerToken(ns, errors.New("403 Forbidden"))
 		DeferCleanup(func() { gitFake.FailRunnerToken(ns, nil) })
+		// A reconcile that took its token before the failure could still see
+		// the pod end and replace it (#2022): the pod ends only once a
+		// reconcile begun after the failure has said so, and reconciles of a
+		// Project run one at a time, so none of the older ones is left.
+		var project c4v1beta1.Project
+		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+		Expect(patch(&project, func() { metav1.SetMetaDataAnnotation(&project.ObjectMeta, "test/poke", "token") })).To(Succeed())
+		Eventually(ciRunners).Should(HaveField("Reason", "ProviderUnavailable"))
 		ended := livePoolPods(ns)[0]
 		setPodPhase(&ended, corev1.PodSucceeded)
 		Eventually(func(g Gomega) {
