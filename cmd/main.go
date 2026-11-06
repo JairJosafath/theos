@@ -198,8 +198,9 @@ func main() {
 		"The image holding theos-env at /usr/local/bin/theos-env, such as the release's theos-agent image: a "+
 			"local TestEnvironment's lease pods copy it in. None: no local environment can be leased.")
 	flag.StringVar(&testEnvToolsURL, "test-environment-tools-url", "",
-		"Where a remote TestEnvironment's machines download theos-env, an https:// address in which ${arch} "+
-			"becomes amd64 or arm64, with a SHA256SUMS next to it, such as the release's theos-env-linux-${arch}. "+
+		"Where a remote TestEnvironment's machines download theos-env, an https:// address in which ${os} "+
+			"becomes linux or darwin and ${arch} amd64 or arm64, with a SHA256SUMS next to it, such as the "+
+			"release's theos-env-${os}-${arch}. "+
 			"None: no remote environment can be leased.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()

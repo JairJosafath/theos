@@ -1020,18 +1020,19 @@ agents:
 ## release's agent image, which holds it (the operator's
 ## --test-environment-tools-image). A remote one's machines, such as an aws
 ## member's, download it from toolsURL (the operator's
-## --test-environment-tools-url), an https:// address in which ${arch}
-## becomes amd64 or arm64, with a SHA256SUMS next to it that the machine
-## checks it against: by default the binaries attached to this chart's
-## GitHub release. A machine that can't reach GitHub needs an address of
-## your own; empty leases no remote environment.
+## --test-environment-tools-url), an https:// address in which ${os}
+## becomes linux or darwin (an EC2 Mac's) and ${arch} amd64 or arm64, with a
+## SHA256SUMS next to it that the machine checks it against: by default the
+## binaries attached to this chart's GitHub release. A machine that can't
+## reach GitHub needs an address of your own; empty leases no remote
+## environment.
 ##
 testEnvironments:
   toolsImage:
     repository: ghcr.io/jairjosafath/theos/agent-base
     ## Defaults to Chart.appVersion
     tag: ""
-  toolsURL: 'https://github.com/JairJosafath/theos/releases/download/v{{ .Chart.AppVersion }}/theos-env-linux-${arch}'
+  toolsURL: 'https://github.com/JairJosafath/theos/releases/download/v{{ .Chart.AppVersion }}/theos-env-${os}-${arch}'
   ## The browser the seed makes in each of gitea.projects: a TestEnvironment
   ## named browser on the release's env-browser image (Playwright's browsers
   ## and xvfb-run), which a run of an issue labelled env/browser leases. A

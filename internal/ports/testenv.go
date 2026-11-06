@@ -68,6 +68,10 @@ type AWSEnvironment struct {
 	// InstanceType and ImageID are what the machines are, and SubnetID where
 	// they start.
 	InstanceType, ImageID, SubnetID string
+	// KeepHostHours is how long an EC2 Mac's dedicated host is kept from its
+	// allocation for the leases that follow; 0 is
+	// model.DefaultKeepHostHours. Unused for other instance types.
+	KeepHostHours int
 }
 
 // TestEnvironmentCredentials is the optional capability of a remote

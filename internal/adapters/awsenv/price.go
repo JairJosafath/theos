@@ -3,18 +3,19 @@ package awsenv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
-	pricingtypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 )
 
 // price is the on-demand hourly price of the environment's instance type in
-// its region, for Linux on shared tenancy, in millionths of a US dollar, as
-// the AWS Price List says: read once per type and region. Where it lists
+// its region, for Linux on shared tenancy, or of the dedicated host an EC2
+// Mac runs on, in millionths of a US dollar, as the AWS Price List says:
+// read once per type and region. Where it lists
 // more than one, the highest counts, so a budget never counts less than EC2
 // bills.
 func (p *Provider) price(ctx context.Context, s *session) (int64, error) {
@@ -25,15 +26,9 @@ func (p *Provider) price(ctx context.Context, s *session) (int64, error) {
 	if ok {
 		return price, nil
 	}
-	match := func(field, value string) pricingtypes.Filter {
-		return pricingtypes.Filter{Type: pricingtypes.FilterTypeTermMatch, Field: aws.String(field), Value: aws.String(value)}
-	}
+	filters, none := priceFilters(s.env.AWS)
 	in := &pricing.GetProductsInput{ServiceCode: aws.String("AmazonEC2"), FormatVersion: aws.String("aws_v1"),
-		Filters: []pricingtypes.Filter{
-			match("instanceType", s.env.AWS.InstanceType), match("regionCode", s.env.AWS.Region),
-			match("operatingSystem", "Linux"), match("tenancy", "Shared"), match("preInstalledSw", "NA"),
-			match("capacitystatus", "Used"), match("licenseModel", "No License required"),
-		}}
+		Filters: filters}
 	for {
 		out, err := s.clients.Pricing.GetProducts(ctx, in)
 		if err != nil {
@@ -53,8 +48,7 @@ func (p *Provider) price(ctx context.Context, s *session) (int64, error) {
 		in.NextToken = out.NextToken
 	}
 	if price == 0 {
-		return 0, fmt.Errorf("the AWS Price List has no on-demand Linux price for instance type %s in region %s",
-			s.env.AWS.InstanceType, s.env.AWS.Region)
+		return 0, errors.New("the AWS Price List has " + none)
 	}
 	p.mu.Lock()
 	if p.prices == nil {

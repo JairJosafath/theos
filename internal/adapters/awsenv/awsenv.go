@@ -1,6 +1,7 @@
 // Package awsenv is the aws member of a TestEnvironment: one EC2 machine per
-// lease in the user's AWS account, Linux or GPU, from the environment's AMI
-// (docs/plans/test-environments.md, T5, T9 to T11). The machine gets no
+// lease in the user's AWS account, Linux, GPU or Mac, from the environment's
+// AMI (docs/plans/test-environments.md, T5, T9 to T11); a Mac's on a
+// dedicated host the provider keeps across leases (mac.go). The machine gets no
 // instance role and no SSH key, starts in the environment's subnet with a
 // public address under a security group of the operator's own (theos-env's
 // port in; DNS and public HTTPS out), and has its metadata service turned
@@ -69,8 +70,9 @@ type Probe func(ctx context.Context, endpoint, keyPin string) error
 // Provider leases EC2 machines with each environment's own credential.
 type Provider struct {
 	clients NewClients
-	// toolsURL is where a machine downloads theos-env, ${arch} its
-	// architecture (amd64, arm64), with a SHA256SUMS next to it.
+	// toolsURL is where a machine downloads theos-env, ${os} its system
+	// (linux, darwin) and ${arch} its architecture (amd64, arm64), with a
+	// SHA256SUMS next to it.
 	toolsURL string
 	probe    Probe
 	now      func() time.Time
@@ -147,6 +149,9 @@ func (p *Provider) Lease(ctx context.Context, req ports.LeaseRequest) (ports.Lea
 			if portKind(err) {
 				return ports.Lease{}, err
 			}
+			if wait, ok := errors.AsType[*hostWait](err); ok {
+				return ports.Lease{ID: req.ID, Holder: req.Holder, State: model.LeasePending, Message: wait.message}, nil
+			}
 			return ports.Lease{ID: req.ID, Holder: req.Holder, State: model.LeaseFailed,
 				Message: "launching the machine: " + err.Error()}, nil
 		}
@@ -175,6 +180,9 @@ func (p *Provider) launch(ctx context.Context, s *session, req ports.LeaseReques
 	group, err := s.fence(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if model.TestEnvMac(s.env.AWS.InstanceType) {
+		return p.launchMac(ctx, s, req, group, price)
 	}
 	in, err := LaunchInput(req, group, price, p.toolsURL, p.now())
 	if err != nil {
@@ -250,7 +258,9 @@ func (p *Provider) Return(ctx context.Context, env ports.Environment, id string)
 }
 
 // Leases lists the environment's live machines by their tags, one lease per
-// ID, the oldest machine of an ID's.
+// ID, the oldest machine of an ID's. It releases the environment's Mac
+// hosts past their kept time that no machine is on, as the operator lists
+// the leases on each poll.
 func (p *Provider) Leases(ctx context.Context, env ports.Environment) ([]ports.Lease, error) {
 	s, err := p.session(env)
 	if err != nil {
@@ -261,6 +271,9 @@ func (p *Provider) Leases(ctx context.Context, env ports.Environment) ([]ports.L
 		return nil, err
 	}
 	now := p.now()
+	if _, err := s.releaseHosts(ctx, now, false); err != nil {
+		return nil, err
+	}
 	seen := map[string]bool{}
 	out := make([]ports.Lease, 0, len(insts))
 	for i := range insts {
@@ -275,12 +288,20 @@ func (p *Provider) Leases(ctx context.Context, env ports.Environment) ([]ports.L
 	return out, nil
 }
 
-// Release deletes the environment's security group, once no machine is in
-// it any more: AWS refuses while one shuts down, and Release is asked again.
+// Release releases the environment's Mac hosts and deletes its security
+// group, once no machine is on them any more: AWS refuses while one shuts
+// down, or a Mac host within its 24 hours, and Release is asked again.
 func (p *Provider) Release(ctx context.Context, env ports.Environment) error {
 	s, err := p.session(env)
 	if err != nil {
 		return err
+	}
+	refused, err := s.releaseHosts(ctx, p.now(), true)
+	if err != nil {
+		return err
+	}
+	if refused != "" {
+		return errors.New(refused)
 	}
 	groups, err := s.groups(ctx, "")
 	if err != nil {
@@ -388,7 +409,7 @@ func leaseOf(inst *types.Instance, now time.Time) ports.Lease {
 	}
 	if state != types.InstanceStateNameShuttingDown && state != types.InstanceStateNameTerminated {
 		price, _ := strconv.ParseInt(tag(inst.Tags, TagPrice), 10, 64)
-		l.CostMilliUSD = model.LeaseCostMilliUSD(price, now.Sub(l.Started), minimumBilled)
+		l.CostMilliUSD = leaseCost(inst.Tags, price, l.Started, now)
 	}
 	deadline, err := time.Parse(time.RFC3339, tag(inst.Tags, TagDeadline))
 	passed := err == nil && !now.Before(deadline)

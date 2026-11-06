@@ -33,9 +33,12 @@ type fakeAWS struct {
 	// instances, oldest first, and their account and region.
 	instances []*fakeInstance
 	groups    []*fakeGroup
-	subnets   map[string]string // account/region/subnet → VPC
-	// prices are the on-demand USD an hour by region/instance type.
-	prices map[string]string
+	// hosts are the dedicated hosts allocated, oldest first (fake_mac_test.go).
+	hosts   []*fakeHost
+	subnets map[string]string // account/region/subnet → VPC
+	// prices are the on-demand USD an hour by region/instance type, and
+	// hostPrices a dedicated host's by region/family.
+	prices, hostPrices map[string]string
 	// healthy are the machines whose theos-env answers, by public address.
 	healthy map[string]bool
 	// metadataPending keeps a turned-off metadata service pending until
@@ -61,7 +64,7 @@ type fakeGroup struct {
 
 func newFakeAWS(now func() time.Time) *fakeAWS {
 	return &fakeAWS{now: now, keys: map[string]string{}, subnets: map[string]string{}, prices: map[string]string{},
-		healthy: map[string]bool{}}
+		hostPrices: map[string]string{}, healthy: map[string]bool{}}
 }
 
 // account adds an account whose user's access key is key, with a subnet in
@@ -271,6 +274,10 @@ func (c *fakeEC2) RunInstances(_ context.Context, in *ec2.RunInstancesInput,
 		return nil, apiErr("InvalidSubnetID.NotFound", "The subnet ID does not exist")
 	}
 	userData, _ := base64.StdEncoding.DecodeString(aws.ToString(in.UserData))
+	host, err := f.place(account, c.cfg.Region, aws.ToString(ni.SubnetId), in)
+	if err != nil {
+		return nil, err
+	}
 	f.seq++
 	var tags []types.Tag
 	for _, spec := range in.TagSpecifications {
@@ -287,6 +294,9 @@ func (c *fakeEC2) RunInstances(_ context.Context, in *ec2.RunInstancesInput,
 			State: types.InstanceMetadataOptionsStateApplied}}
 	for _, g := range ni.Groups {
 		inst.SecurityGroups = append(inst.SecurityGroups, types.GroupIdentifier{GroupId: aws.String(g)})
+	}
+	if host != nil {
+		inst.Placement = &types.Placement{Tenancy: types.TenancyHost, HostId: host.host.HostId}
 	}
 	f.instances = append(f.instances, &fakeInstance{account: account, region: c.cfg.Region, userData: string(userData),
 		inst: inst})
@@ -328,6 +338,7 @@ func (c *fakeEC2) TerminateInstances(_ context.Context, in *ec2.TerminateInstanc
 			if i.account == account && aws.ToString(i.inst.InstanceId) == id &&
 				i.inst.State.Name != types.InstanceStateNameTerminated {
 				i.inst.State = &types.InstanceState{Name: types.InstanceStateNameShuttingDown}
+				c.f.scrub(i)
 			}
 		}
 	}
@@ -368,7 +379,8 @@ func (c *fakeEC2) DescribeSubnets(_ context.Context, in *ec2.DescribeSubnetsInpu
 		if vpc == "" {
 			return nil, apiErr("InvalidSubnetID.NotFound", "The subnet ID '"+id+"' does not exist")
 		}
-		out.Subnets = append(out.Subnets, types.Subnet{SubnetId: aws.String(id), VpcId: aws.String(vpc)})
+		out.Subnets = append(out.Subnets, types.Subnet{SubnetId: aws.String(id), VpcId: aws.String(vpc),
+			AvailabilityZone: aws.String(c.cfg.Region + "a")})
 	}
 	return out, nil
 }
@@ -547,6 +559,13 @@ func (c *fakePricing) GetProducts(_ context.Context, in *pricing.GetProductsInpu
 	fields := map[string]string{}
 	for _, flt := range in.Filters {
 		fields[aws.ToString(flt.Field)] = aws.ToString(flt.Value)
+	}
+	if fields["productFamily"] == "Dedicated Host" {
+		usd, ok := c.f.hostPrices[fields["regionCode"]+"/"+fields["instanceType"]]
+		if !ok || len(fields) != 3 {
+			return &pricing.GetProductsOutput{}, nil
+		}
+		return &pricing.GetProductsOutput{PriceList: []string{priceList(fields["instanceType"], usd)}}, nil
 	}
 	if fields["operatingSystem"] != "Linux" || fields["tenancy"] != "Shared" || fields["capacitystatus"] != "Used" {
 		return &pricing.GetProductsOutput{}, nil

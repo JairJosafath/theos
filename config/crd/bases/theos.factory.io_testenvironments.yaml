@@ -103,8 +103,9 @@ spec:
                     description: |-
                       imageId is the AMI the machines boot, with the environment's tools: a
                       Linux with curl, sha256sum and a cloud-init that runs user data, such
-                      as an AWS Deep Learning AMI for a GPU. An AMI id never changes what it
-                      names, so it is pinned.
+                      as an AWS Deep Learning AMI for a GPU, or for a Mac instanceType an
+                      EC2 macOS AMI with Xcode, whose ec2-macos-init runs user data. An AMI
+                      id never changes what it names, so it is pinned.
                     maxLength: 21
                     type: string
                     x-kubernetes-validations:
@@ -112,18 +113,38 @@ spec:
                       rule: self.matches('^ami-[0-9a-f]{8,17}$')
                   instanceType:
                     description: |-
-                      instanceType is the EC2 instance type, such as c7i.large, or g5.xlarge
-                      for a GPU. EC2 Mac types, which need a dedicated host, come later
-                      (docs/plans/test-environments.md, step 9).
+                      instanceType is the EC2 instance type, such as c7i.large, g5.xlarge
+                      for a GPU, or mac2.metal for macOS and Xcode. An EC2 Mac runs on a
+                      dedicated host, which the operator allocates and keeps across leases
+                      (mac; docs/plans/test-environments.md, step 9).
                     maxLength: 40
                     type: string
                     x-kubernetes-validations:
                     - message: instanceType must be an EC2 instance type, such as
                         g5.xlarge
                       rule: self.matches('^[a-z][a-z0-9-]*[.][a-z0-9]+$')
-                    - message: EC2 Mac instance types need a dedicated host, which
-                        the aws member doesn't lease yet
-                      rule: '!self.startsWith(''mac'')'
+                  mac:
+                    description: |-
+                      mac is how an EC2 Mac's dedicated hosts are kept: the operator
+                      allocates a host for a lease when every host it keeps is busy, places
+                      the lease's machine on it, and keeps it for the next leases. Only for
+                      a Mac instanceType; unset, the defaults.
+                    properties:
+                      keepHostHours:
+                        default: 24
+                        description: |-
+                          keepHostHours is how long the operator keeps a host it allocated,
+                          from its allocation, for the leases that follow; past it, the host is
+                          released once no lease is on it, and a lease that needs one allocates
+                          another. A lease that allocates a host counts the host's price for
+                          keepHostHours against budgetUSDPerDay at once; one placed on a host
+                          kept costs nothing until the host's keepHostHours are over. At least
+                          24, the host's minimum.
+                        format: int32
+                        maximum: 168
+                        minimum: 24
+                        type: integer
+                    type: object
                   region:
                     description: region is the AWS region the machines run in, such
                       as eu-west-1.
@@ -150,6 +171,9 @@ spec:
                 - region
                 - subnetId
                 type: object
+                x-kubernetes-validations:
+                - message: mac is for an EC2 Mac instanceType, such as mac2.metal
+                  rule: '!has(self.mac) || self.instanceType.startsWith(''mac'')'
               ci:
                 description: |-
                   ci runs the project's CI jobs labelled env-<name> on the environment's

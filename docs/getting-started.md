@@ -1100,7 +1100,32 @@ The machine downloads `theos-env` from the chart's
 and checks it against the `SHA256SUMS` next to it; a subnet that can't reach
 GitHub needs an address of your own there. The AMI needs a Linux with
 `curl`, `sha256sum` and cloud-init. Deleting the TestEnvironment terminates
-its machines and deletes its security group. EC2 Mac comes later.
+its machines and deletes its security group.
+
+### Lease a Mac on AWS
+
+macOS, for an iOS app's tests in the Simulator, comes from an EC2 Mac: the
+same `aws` member with a Mac instance type, such as `mac2.metal`, and an EC2
+macOS AMI with Xcode (`config/samples/webshop/testenvironment-ios.yaml`). A
+Mac runs on a dedicated host, which EC2 bills for 24 hours at least from its
+allocation and scrubs after each machine, so the operator keeps its hosts:
+it allocates one in the subnet's zone when every host it keeps is busy,
+places each lease's machine on a free one, and keeps each for
+`aws.mac.keepHostHours` from its allocation (24 by default, at least 24),
+then releases it once no machine is on it. A lease waits while the host it
+would take is scrubbed (about an hour) rather than allocating another for a
+day more.
+
+The lease whose machine is the first on a host counts the host's on-demand
+price for `keepHostHours` against `limits.budgetUSDPerDay` at once (a `mac2`
+host's 24 hours are about 16 US dollars), so the budget must cover them; a
+lease on a host kept costs nothing until the host's kept time is over. The
+key needs `ec2:AllocateHosts`, `ec2:DescribeHosts` and `ec2:ReleaseHosts`
+beside the calls above. The machine downloads `theos-env`'s darwin build,
+so `testEnvironments.toolsURL` must name `${os}`, as its default does.
+Deleting the TestEnvironment releases its hosts, which EC2 refuses within a
+host's 24 hours: the TestEnvironment stays, terminating, until they are
+released, a day at most.
 
 ## What an app promises: operations
 

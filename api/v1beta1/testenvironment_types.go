@@ -121,10 +121,12 @@ type TestEnvironmentLocal struct {
 // (T9, T11): launched from imageId in subnetId with a public address, with
 // no instance role, under a security group of the operator's own that lets
 // in theos-env's port alone and lets out only DNS and public HTTPS, and the
-// metadata service turned off before the run gets it (T5). User data
-// downloads theos-env (the operator's --test-environment-tools-url), serves
+// metadata service turned off before the run gets it (T5); an EC2 Mac on a
+// dedicated host the operator keeps (mac). User data downloads theos-env
+// (the operator's --test-environment-tools-url, Linux's or darwin's), serves
 // it over HTTPS with a certificate the run pins, and shuts the machine down,
 // which terminates it, at the lease's deadline. Return terminates it.
+// +kubebuilder:validation:XValidation:rule="!has(self.mac) || self.instanceType.startsWith('mac')",message="mac is for an EC2 Mac instanceType, such as mac2.metal"
 type TestEnvironmentAWS struct {
 	// region is the AWS region the machines run in, such as eu-west-1.
 	// +kubebuilder:validation:MaxLength=30
@@ -140,19 +142,27 @@ type TestEnvironmentAWS struct {
 	// +optional
 	Account string `json:"account,omitempty"`
 
-	// instanceType is the EC2 instance type, such as c7i.large, or g5.xlarge
-	// for a GPU. EC2 Mac types, which need a dedicated host, come later
-	// (docs/plans/test-environments.md, step 9).
+	// instanceType is the EC2 instance type, such as c7i.large, g5.xlarge
+	// for a GPU, or mac2.metal for macOS and Xcode. An EC2 Mac runs on a
+	// dedicated host, which the operator allocates and keeps across leases
+	// (mac; docs/plans/test-environments.md, step 9).
 	// +kubebuilder:validation:MaxLength=40
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]*[.][a-z0-9]+$')",message="instanceType must be an EC2 instance type, such as g5.xlarge"
-	// +kubebuilder:validation:XValidation:rule="!self.startsWith('mac')",message="EC2 Mac instance types need a dedicated host, which the aws member doesn't lease yet"
 	// +required
 	InstanceType string `json:"instanceType"`
 
+	// mac is how an EC2 Mac's dedicated hosts are kept: the operator
+	// allocates a host for a lease when every host it keeps is busy, places
+	// the lease's machine on it, and keeps it for the next leases. Only for
+	// a Mac instanceType; unset, the defaults.
+	// +optional
+	Mac *TestEnvironmentMac `json:"mac,omitempty"`
+
 	// imageId is the AMI the machines boot, with the environment's tools: a
 	// Linux with curl, sha256sum and a cloud-init that runs user data, such
-	// as an AWS Deep Learning AMI for a GPU. An AMI id never changes what it
-	// names, so it is pinned.
+	// as an AWS Deep Learning AMI for a GPU, or for a Mac instanceType an
+	// EC2 macOS AMI with Xcode, whose ec2-macos-init runs user data. An AMI
+	// id never changes what it names, so it is pinned.
 	// +kubebuilder:validation:MaxLength=21
 	// +kubebuilder:validation:XValidation:rule="self.matches('^ami-[0-9a-f]{8,17}$')",message="imageId must be an AMI id, such as ami-0123456789abcdef0"
 	// +required
@@ -175,6 +185,24 @@ type TestEnvironmentAWS struct {
 	// lists.
 	// +required
 	CredentialsSecretRef LocalRef `json:"credentialsSecretRef"`
+}
+
+// TestEnvironmentMac keeps an EC2 Mac's dedicated hosts (T11). EC2 bills a
+// Mac host for 24 hours at least from its allocation, so a host torn down
+// after every lease would cost a day each time.
+type TestEnvironmentMac struct {
+	// keepHostHours is how long the operator keeps a host it allocated,
+	// from its allocation, for the leases that follow; past it, the host is
+	// released once no lease is on it, and a lease that needs one allocates
+	// another. A lease that allocates a host counts the host's price for
+	// keepHostHours against budgetUSDPerDay at once; one placed on a host
+	// kept costs nothing until the host's keepHostHours are over. At least
+	// 24, the host's minimum.
+	// +kubebuilder:validation:Minimum=24
+	// +kubebuilder:validation:Maximum=168
+	// +kubebuilder:default=24
+	// +optional
+	KeepHostHours int32 `json:"keepHostHours,omitempty"`
 }
 
 // TestEnvironmentLimits cap the environment's leases (T10).

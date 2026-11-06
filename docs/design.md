@@ -481,7 +481,7 @@ the node's: the pods share it with everything else
 ### Test environments
 
 Work that needs a tool the agent sandbox lacks (a browser and its system
-libraries, a phone emulator, a GPU, later macOS) gets it from a
+libraries, a phone emulator, a GPU, macOS) gets it from a
 **TestEnvironment**, not from a person
 ([plans/test-environments.md](plans/test-environments.md)). A
 TestEnvironment is a named set of tools in a project's namespace, such as
@@ -557,7 +557,14 @@ remote member's `CredentialsValid` is True.
   down, which terminates it, at the lease's deadline; `Return` terminates
   it, and deleting the environment terminates its machines and deletes its
   security group. A lease costs the instance type's on-demand price, read
-  from the AWS Price List, for the time it is held.
+  from the AWS Price List, for the time it is held. An EC2 Mac runs on a
+  dedicated host, which EC2 bills for 24 hours at least: the provider
+  allocates one only when every host it keeps for the environment is busy,
+  keeps each for `aws.mac.keepHostHours` from its allocation (at least 24),
+  waits for one being scrubbed rather than allocating another, and releases
+  a host past its kept time once no machine is on it; the lease whose
+  machine is the first on a host counts the host's price for its kept hours
+  at once, and a lease on a host kept costs nothing until they are over.
 - **Limits.** `limits.maxLeases` (default 2, at most 16) bounds the live
   leases; a run past it waits, `WaitingForEnvironment`, `AllLeased`.
   `limits.maxLeaseMinutes` (default 180, the agent run's own deadline) ends a

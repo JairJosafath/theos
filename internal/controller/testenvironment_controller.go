@@ -80,6 +80,17 @@ const testEnvLeasesFinalizer = "theos.factory.io/test-environment-leases"
 // ends at its deadline, and the environment goes.
 const testEnvReleaseTimeout = 15 * time.Minute
 
+// testEnvReleaseWithin is how long a deleted env waits to be released:
+// testEnvReleaseTimeout, and for an EC2 Mac a host's 24 hours more, since
+// EC2 releases no Mac host within them and a host has no deadline of its
+// own to end at.
+func testEnvReleaseWithin(env *c4v1beta1.TestEnvironment) time.Duration {
+	if a := env.Spec.AWS; a != nil && model.TestEnvMac(a.InstanceType) {
+		return model.MacHostMinimum + testEnvReleaseTimeout
+	}
+	return testEnvReleaseTimeout
+}
+
 // Reconcile sets Ready, and CredentialsValid for a remote member, returns
 // the orphaned leases and records the live ones and what they cost today.
 func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -204,7 +215,7 @@ func (r *TestEnvironmentReconciler) checkCredentials(ctx context.Context, env *c
 // provider release what it keeps for it, then lets the environment go. With
 // no provider, no Secret or a credential refused nothing can be returned,
 // and a provider that keeps failing is given up on after
-// testEnvReleaseTimeout: the machines left end at their deadline.
+// testEnvReleaseWithin: the machines left end at their deadline.
 func (r *TestEnvironmentReconciler) release(ctx context.Context, env *c4v1beta1.TestEnvironment,
 	provider ports.TestEnvironments) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(env, testEnvLeasesFinalizer) {
@@ -244,7 +255,7 @@ func (r *TestEnvironmentReconciler) release(ctx context.Context, env *c4v1beta1.
 		return let("")
 	case errors.Is(err, ports.ErrCredentialRefused):
 		return let("its provider refuses the credential: " + err.Error())
-	case time.Since(env.DeletionTimestamp.Time) > testEnvReleaseTimeout:
+	case time.Since(env.DeletionTimestamp.Time) > testEnvReleaseWithin(env):
 		return let("its provider kept failing: " + err.Error())
 	}
 	log.Info("Could not release the deleted test environment yet; trying again", "error", err.Error())
@@ -386,6 +397,9 @@ func testEnvironment(env *c4v1beta1.TestEnvironment, pullSecrets []string) ports
 	if a := env.Spec.AWS; a != nil {
 		out.AWS = &ports.AWSEnvironment{Region: a.Region, Account: a.Account, InstanceType: a.InstanceType,
 			ImageID: a.ImageID, SubnetID: a.SubnetID}
+		if a.Mac != nil {
+			out.AWS.KeepHostHours = int(a.Mac.KeepHostHours)
+		}
 	}
 	local := env.Spec.Local
 	if local == nil {

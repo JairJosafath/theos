@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	toolsURL = "https://github.com/JairJosafath/theos/releases/download/v0.31.0/theos-env-linux-${arch}"
+	toolsURL = "https://github.com/JairJosafath/theos/releases/download/v0.31.0/theos-env-${os}-${arch}"
 	account  = "123456789012"
 	region   = "eu-west-1"
 	subnet   = "subnet-0123456789abcdef0"
@@ -223,25 +223,34 @@ func TestLaunchInputTagsTheLease(t *testing.T) {
 }
 
 // The user data shuts the machine down at the deadline, installs theos-env
-// for the machine's architecture after checking it against SHA256SUMS, and
-// serves it with TLS on HTTPS's port; it takes no address the shell could
-// read as more than one (T11).
+// for the machine's system and architecture after checking it against
+// SHA256SUMS, and serves it with TLS on HTTPS's port, on Linux and on macOS
+// (step 9: shasum, launchd and a work folder off the read-only root); it
+// takes no address the shell could read as more than one (T11).
 func TestUserData(t *testing.T) {
 	token := rand.Text()
 	script, err := UserData(toolsURL, token, 44*time.Minute+30*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
+	serve := "/usr/local/bin/theos-env serve --listen :443 --work \"$work\" --tls"
 	for _, want := range []string{
 		"#!/bin/sh\n", "set -eu\n", "shutdown -h +45 ",
-		"url='https://github.com/JairJosafath/theos/releases/download/v0.31.0/theos-env-linux-'\"$arch\"''\n",
-		`"${url%/*}/SHA256SUMS"`, "sha256sum -c -", "install -m 0755 \"$dir/$name\" /usr/local/bin/theos-env",
-		"--setenv=THEOS_ENV_TOKEN=" + token + " /usr/local/bin/theos-env serve --listen :443 --work /work --tls\n",
-		"THEOS_ENV_TOKEN=" + token + " nohup /usr/local/bin/theos-env serve --listen :443 --work /work --tls",
+		"Linux) os=linux ;;\n", "Darwin) os=darwin ;;\n",
+		"url='https://github.com/JairJosafath/theos/releases/download/v0.31.0/theos-env-'\"$os\"'-'\"$arch\"''\n",
+		`"${url%/*}/SHA256SUMS"`, "check='sha256sum -c -'", "check='shasum -a 256 -c -'",
+		"install -m 0755 \"$dir/$name\" /usr/local/bin/theos-env",
+		"work=/work\n", "work=/private/var/theos-env/work\n", "mkdir -p \"$work\"\n",
+		"--setenv=THEOS_ENV_TOKEN=" + token + " " + serve + "\n",
+		"launchctl submit -l theos-env -- /usr/bin/env THEOS_ENV_TOKEN=" + token + " " + serve + "\n",
+		"THEOS_ENV_TOKEN=" + token + " nohup " + serve,
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("user data lacks %q:\n%s", want, script)
 		}
+	}
+	if strings.Contains(script, "systemd-run") && strings.Index(script, "systemd-run") > strings.Index(script, "launchctl") {
+		t.Error("launchd is tried before systemd")
 	}
 	sh, err := exec.LookPath("sh")
 	if err != nil {
@@ -250,7 +259,8 @@ func TestUserData(t *testing.T) {
 	if out, err := exec.Command(sh, "-n", "-c", script).CombinedOutput(); err != nil { //nolint:gosec // the test's own script
 		t.Errorf("sh -n: %v: %s", err, out)
 	}
-	// What the machine downloads, and the line of SHA256SUMS it checks it by.
+	// What the machine downloads, and the line of SHA256SUMS it checks it by,
+	// on each system.
 	var lines []string
 	for line := range strings.Lines(script) {
 		if strings.HasPrefix(line, "url=") || strings.HasPrefix(line, "name=") ||
@@ -258,20 +268,29 @@ func TestUserData(t *testing.T) {
 			lines = append(lines, strings.TrimSpace(line))
 		}
 	}
-	probe := "arch=arm64\n" + lines[0] + "\n" + lines[1] + "\necho \"$url\"\necho \"${url%/*}/SHA256SUMS\"\n" +
-		strings.Replace(strings.Replace(lines[2], `(cd "$dir" && `, "", 1), " | sha256sum -c -)", "", 1) + "\n"
+	if len(lines) != 3 {
+		t.Fatalf("download lines %q, want the address, the name and the check", lines)
+	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "SHA256SUMS"), []byte("0a1b  theos-env-linux-amd64\n"+
-		"2c3d  theos-env-linux-arm64\n4e5f  theos-session-linux-arm64\n"), 0o600); err != nil {
+		"2c3d  theos-env-linux-arm64\n4e5f  theos-env-darwin-arm64\n6a7b  theos-session-linux-arm64\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(sh, "-c", probe) //nolint:gosec // the test's own script
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if want := "https://github.com/JairJosafath/theos/releases/download/v0.31.0/theos-env-linux-arm64\n" +
-		"https://github.com/JairJosafath/theos/releases/download/v0.31.0/SHA256SUMS\n" +
-		"2c3d  theos-env-linux-arm64\n"; err != nil || string(out) != want {
-		t.Errorf("the script's download lines give %q, %v; want %q", out, err, want)
+	for _, tt := range []struct{ os, arch, line string }{
+		{"linux", "arm64", "2c3d  theos-env-linux-arm64"},
+		{"darwin", "arm64", "4e5f  theos-env-darwin-arm64"},
+	} {
+		probe := "os=" + tt.os + "\narch=" + tt.arch + "\n" + lines[0] + "\n" + lines[1] +
+			"\necho \"$url\"\necho \"${url%/*}/SHA256SUMS\"\n" +
+			strings.Replace(strings.Replace(lines[2], `(cd "$dir" && `, "", 1), " | $check)", "", 1) + "\n"
+		cmd := exec.Command(sh, "-c", probe) //nolint:gosec // the test's own script
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if want := "https://github.com/JairJosafath/theos/releases/download/v0.31.0/theos-env-" + tt.os + "-" +
+			tt.arch + "\nhttps://github.com/JairJosafath/theos/releases/download/v0.31.0/SHA256SUMS\n" + tt.line +
+			"\n"; err != nil || string(out) != want {
+			t.Errorf("on %s the script's download lines give %q, %v; want %q", tt.os, out, err, want)
+		}
 	}
 	for _, bad := range []struct{ url, token string }{
 		{"http://downloads.example.com/theos-env-linux-${arch}", token},

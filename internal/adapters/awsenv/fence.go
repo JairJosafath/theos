@@ -254,11 +254,15 @@ func permissions(rules []rule) []types.IpPermission {
 	return out
 }
 
-// UserData is the script a machine runs at its first boot (T11): shut down,
-// which terminates it, at the lease's deadline; download theos-env for its
-// architecture from toolsURL (${arch} amd64 or arm64), checked against the
-// SHA256SUMS next to it; and serve the lease's runs on HTTPS's port with the
-// key its token makes, under systemd when it has systemd-run.
+// UserData is the script a machine runs at its first boot, Linux's
+// cloud-init or macOS's ec2-macos-init (T11): shut down, which terminates
+// it, at the lease's deadline; download theos-env for its system and
+// architecture from toolsURL (${os} linux or darwin, ${arch} amd64 or
+// arm64), checked against the SHA256SUMS next to it with sha256sum, or
+// shasum on macOS; and serve the lease's runs on HTTPS's port with the key
+// its token makes, under systemd when it has systemd-run, under launchd on
+// macOS, whose root volume is read-only, so its runs' folder is under
+// /private/var.
 func UserData(toolsURL, token string, deadline time.Duration) (string, error) {
 	if !strings.HasPrefix(toolsURL, "https://") || strings.ContainsAny(toolsURL, "'\n\r\\") {
 		return "", fmt.Errorf("the theos-env download address %q must be https:// with no quote, newline or backslash",
@@ -267,13 +271,12 @@ func UserData(toolsURL, token string, deadline time.Duration) (string, error) {
 	if !model.LeaseTokenSafe(token) {
 		return "", errors.New("a lease's token must be letters, digits, '-', '_' and '.'")
 	}
-	// Single-quoted, so the shell expands nothing of the address but $arch.
-	url := "'" + toolsURL + "'"
-	if before, after, ok := strings.Cut(toolsURL, "${arch}"); ok {
-		url = "'" + before + `'"$arch"'` + after + "'"
-	}
+	// Single-quoted, so the shell expands nothing of the address but $os
+	// and $arch.
+	url := strings.NewReplacer("${arch}", `'"$arch"'`, "${os}", `'"$os"'`).Replace("'" + toolsURL + "'")
 	minutes := int64(math.Ceil(deadline.Minutes()))
-	serve := "/usr/local/bin/theos-env serve --listen :" + strconv.Itoa(model.TestEnvRemotePort) + " --work /work --tls"
+	serve := "/usr/local/bin/theos-env serve --listen :" + strconv.Itoa(model.TestEnvRemotePort) +
+		` --work "$work" --tls`
 	r := strings.NewReplacer("@MINUTES@", strconv.FormatInt(minutes, 10), "@URL@", url, "@TOKEN@", token,
 		"@SERVE@", serve)
 	return r.Replace(userDataScript), nil
@@ -285,6 +288,14 @@ const userDataScript = `#!/bin/sh
 # terminates it, at the lease's deadline.
 set -eu
 shutdown -h +@MINUTES@ || true
+case "$(uname -s)" in
+Linux) os=linux ;;
+Darwin) os=darwin ;;
+*)
+	echo "theos-env: no build for $(uname -s)" >&2
+	exit 1
+	;;
+esac
 case "$(uname -m)" in
 x86_64 | amd64) arch=amd64 ;;
 aarch64 | arm64) arch=arm64 ;;
@@ -298,11 +309,23 @@ name=${url##*/}
 dir=$(mktemp -d)
 curl -fsSL --retry 5 -o "$dir/$name" "$url"
 curl -fsSL --retry 5 -o "$dir/SHA256SUMS" "${url%/*}/SHA256SUMS"
-(cd "$dir" && grep " \*\{0,1\}$name\$" SHA256SUMS | sha256sum -c -)
+if command -v sha256sum >/dev/null 2>&1; then
+	check='sha256sum -c -'
+else
+	check='shasum -a 256 -c -'
+fi
+(cd "$dir" && grep " \*\{0,1\}$name\$" SHA256SUMS | $check)
+mkdir -p /usr/local/bin
 install -m 0755 "$dir/$name" /usr/local/bin/theos-env
-mkdir -p /work
+work=/work
+if [ "$os" = darwin ]; then
+	work=/private/var/theos-env/work
+fi
+mkdir -p "$work"
 if command -v systemd-run >/dev/null 2>&1; then
 	systemd-run --unit=theos-env --property=Restart=on-failure --setenv=THEOS_ENV_TOKEN=@TOKEN@ @SERVE@
+elif [ "$os" = darwin ]; then
+	launchctl submit -l theos-env -- /usr/bin/env THEOS_ENV_TOKEN=@TOKEN@ @SERVE@
 else
 	THEOS_ENV_TOKEN=@TOKEN@ nohup @SERVE@ >/var/log/theos-env.log 2>&1 &
 fi

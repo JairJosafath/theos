@@ -137,10 +137,15 @@ var _ = Describe("TestEnvironment", func() {
 		Entry("an aws member without a budget (step 7)", func(env *c4v1beta1.TestEnvironment) {
 			env.Spec.Local, env.Spec.AWS = nil, newGPUEnvironment(env.Namespace).Spec.AWS
 		}, "an aws environment needs limits.budgetUSDPerDay"),
-		Entry("an EC2 Mac, which needs a dedicated host", func(env *c4v1beta1.TestEnvironment) {
+		Entry("a Mac's host settings on a type that is no Mac (step 9)", func(env *c4v1beta1.TestEnvironment) {
+			*env = *newGPUEnvironment(env.Namespace)
+			env.Spec.AWS.Mac = &c4v1beta1.TestEnvironmentMac{KeepHostHours: 24}
+		}, "mac is for an EC2 Mac instanceType"),
+		Entry("a Mac host kept less than the 24 hours EC2 bills it for (step 9)", func(env *c4v1beta1.TestEnvironment) {
 			*env = *newGPUEnvironment(env.Namespace)
 			env.Spec.AWS.InstanceType = "mac2.metal"
-		}, "EC2 Mac instance types need a dedicated host"),
+			env.Spec.AWS.Mac = &c4v1beta1.TestEnvironmentMac{KeepHostHours: 12}
+		}, "spec.aws.mac.keepHostHours"),
 		Entry("an image that is no AMI", func(env *c4v1beta1.TestEnvironment) {
 			*env = *newGPUEnvironment(env.Namespace)
 			env.Spec.AWS.ImageID = "ubuntu-24.04"

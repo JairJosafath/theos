@@ -328,6 +328,58 @@ step 2.
    allocated once and reused across leases, kept for `keepHostHours`,
    released after, and counted at the 24-hour minimum.
    *Done when:* those tests and `make check` pass.
+
+   *As built:* CEL takes a Mac `instanceType` now, and the `aws` member has
+   `mac.keepHostHours` (24 to 168, default 24, from each host's allocation;
+   CEL keeps `mac` to a Mac type). `internal/adapters/awsenv/mac.go`
+   allocates a host in the subnet's zone (auto-placement and host recovery
+   off, idempotent on a token of the environment's UID and the lease) only
+   when every host it keeps for the environment, tagged with its UID and
+   within its kept time, has a machine on it, and places the machine on a
+   free one (tenancy `host`, its host ID). EC2 scrubs a Mac host after each
+   machine, about an hour, during which it takes none: a lease waits
+   `Pending` for a host kept that is being scrubbed rather than allocating
+   another for a day more, which the plan didn't foresee. Each host is
+   tagged with the end of its kept time and its price, and `Leases`, which
+   the operator calls on each poll, releases a host past it once no machine
+   is on it; a lease after that allocates a new host. "Counted at the
+   24-hour minimum" is per host, not per lease: the lease whose machine is
+   the first on a host (tagged on the host, `host-claimed-by`) counts the
+   host's price for its kept hours at once, a lease on a host kept costs
+   nothing until they are over, and one held past them pays for its time
+   past them (`model.HostLeaseBilled`), so each hour of a host is counted
+   once, and a host whose first machine never started is counted by the next
+   machine on it, more, never less. The price is the Price List's Dedicated
+   Host product of the type's family (`productFamily` `Dedicated Host`,
+   `instanceType` the family, such as `mac2`). The budget must cover a
+   host's kept hours, which CEL can't check without the price; the sample
+   and the guide say so. Deleting a Mac environment releases its hosts, which
+   EC2 refuses within their 24 hours: `Release` says so and is asked again,
+   and the finalizer waits a host's 24 hours and 15 minutes for a Mac
+   (`testEnvReleaseWithin`) instead of 15 minutes, since a host has no
+   deadline to end at. The user data is portable to macOS: `uname -s` gives
+   `${os}` (`linux`, `darwin`), `shasum -a 256` checks where `sha256sum`
+   is missing, `launchctl submit` keeps `theos-env` up where there is no
+   `systemd-run`, and the runs' folder is `/private/var/theos-env/work`, as
+   macOS's root volume is read-only. The release attaches
+   `theos-env-darwin-amd64` and `-arm64`, in its `SHA256SUMS`, and the
+   chart's `testEnvironments.toolsURL` is `theos-env-${os}-${arch}`; a Mac
+   whose address names neither `${os}` nor `darwin` fails its lease. Tests:
+   `internal/adapters/awsenv` (`TestMacTestEnvironmentsContract`,
+   `TestMacLaunchInputIsPlacedOnTheHost`, `TestMacHostIsReusedAcrossLeases`,
+   `TestMacAllocatesAHostWhenEveryHostIsBusy`,
+   `TestMacHostIsKeptForKeepHostHoursThenReleased`,
+   `TestMacLeaseCostCountsTheHostsMinimum`, `TestMacNeedsTheDarwinBuild`,
+   `TestReleaseReleasesTheMacHosts`, `TestMacLeaseCostSurvivesARestart`,
+   `TestUserData` on both systems), `internal/model` (`TestTestEnvMac`,
+   `TestKeepHost`, `TestHostLeaseBilled`), `internal/controller`
+   (`TestTestEnvReleaseWithin`, envtest "TestEnvironment on an EC2 Mac", and
+   the CEL cases `mac` on a type that is no Mac and a host kept less than 24
+   hours), `make validate-yaml` with `config/samples/webshop/testenvironment-ios.yaml`
+   and `test/invalid/testenvironment-mac-host-on-linux.yaml`. What only a
+   real account shows (a Mac host allocating, ec2-macos-init running the
+   user data, `launchctl submit` keeping `theos-env` up, the Dedicated Host
+   price's filters matching, how long scrubbing takes) is a human's run.
 10. **Device Farm** (T12, `TestRuns`). Fake Device Farm API tests: an
     upload and a run, and the report and artifacts back through
     `theos-env test`.

@@ -1,0 +1,45 @@
+# An EC2 Mac the agents and their runs lease when a job needs macOS, such as
+# an iOS app's tests in the Simulator (docs/plans/test-environments.md, step
+# 9): one Mac machine per lease, from an EC2 macOS AMI with Xcode, fenced as
+# the gpu sample's Linux machine is. A Mac runs on a dedicated host, which
+# EC2 bills for 24 hours at least from its allocation and scrubs after each
+# machine: the operator allocates one when every host it keeps is busy,
+# places each lease's machine on a free one, and keeps each host for
+# mac.keepHostHours from its allocation; a lease waits while the host is
+# scrubbed rather than allocating another. A run gets it when its issue is
+# labelled env/ios, and runs `theos-env run ios -- <command>` there, such as
+# xcodebuild test.
+#
+# The lease whose machine is the first on a host counts the host's
+# keepHostHours against budgetUSDPerDay at once (a mac2 host's 24 hours are
+# about 16 US dollars), so the budget must cover them.
+#
+# Not in kustomization.yaml: it needs a real account, a subnet that routes to
+# the internet in a zone with Mac hosts, and Secret ios-aws, whose key may
+# also allocate and release hosts (docs/getting-started.md, "Lease a Mac on
+# AWS"):
+#
+#   kubectl -n webshop create secret generic ios-aws \
+#     --from-literal=accessKeyId=... --from-literal=secretAccessKey=...
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: ios
+spec:
+  description: macOS 15 on Apple silicon with Xcode 16 and the iOS Simulator; run xcodebuild test -destination 'platform=iOS Simulator,name=iPhone 16'.
+  aws:
+    region: us-east-1
+    account: "123456789012"
+    instanceType: mac2.metal
+    mac:
+      # From each host's allocation; at least its 24 hours.
+      keepHostHours: 24
+    # An EC2 macOS AMI with Xcode, whose ec2-macos-init runs user data.
+    imageId: ami-0123456789abcdef0
+    subnetId: subnet-0123456789abcdef0
+    credentialsSecretRef:
+      name: ios-aws
+  limits:
+    maxLeases: 1
+    maxLeaseMinutes: 120
+    budgetUSDPerDay: 25
