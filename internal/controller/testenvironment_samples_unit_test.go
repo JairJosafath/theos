@@ -65,8 +65,8 @@ func TestDeviceSamplesReachTheirPods(t *testing.T) {
 			// Its CI pool, which the sample leaves at no pod, as a workflow's
 			// runs-on: env-<name> asks for it.
 			env.Spec.CI = &c4v1beta1.TestEnvironmentCI{Size: 1}
-			provider := &c4v1beta1.GitProvider{ObjectMeta: objectMeta("webshop", "gitea"),
-				Spec: c4v1beta1.GitProviderSpec{URL: "http://gitea-http.gitea.svc.cluster.local:3000"}}
+			provider := &c4v1beta1.GitProvider{ObjectMeta: objectMeta("webshop", "git"),
+				Spec: c4v1beta1.GitProviderSpec{URL: "http://git.example:3000"}}
 			in, clash := envRunnerPool(provider, []c4v1beta1.CIRunnerSpec{{Label: "base", Image: "theos/ci-runner-base:dev"}},
 				&env, nil)
 			if clash != "" {
