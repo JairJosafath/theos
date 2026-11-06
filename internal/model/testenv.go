@@ -187,8 +187,8 @@ func normalEnvironments(names []string) []string {
 
 // ReasonWaitingForEnvironment is a Task's Progressing reason while its run
 // waits for a test environment; the message starts with why: one of
-// EnvNotInProject, EnvAllLeased, EnvOverBudget, EnvPending and EnvFailed. A
-// wait costs no try and no round (T2, T3, T10).
+// EnvNotInProject, EnvAllLeased, EnvOverBudget, EnvCredentialRefused,
+// EnvPending and EnvFailed. A wait costs no try and no round (T2, T3, T10).
 const ReasonWaitingForEnvironment = "WaitingForEnvironment"
 
 // Why a run waits for a test environment, and the Container condition's
@@ -288,6 +288,9 @@ func EnvironmentWaitMessage(why string, names []string, detail string) string {
 	case EnvOverBudget:
 		what = fmt.Sprintf("%s spent its budget for today; no lease starts until tomorrow, or a higher budget",
 			joinAnd(names))
+	case EnvCredentialRefused:
+		what = fmt.Sprintf("the provider of %s refuses its credential, or its Secret lacks one; "+
+			"it starts once the TestEnvironment's CredentialsValid is True", joinAnd(names))
 	case EnvPending:
 		what = fmt.Sprintf("waiting for the lease of %s to be ready", joinAnd(names))
 	case EnvFailed:

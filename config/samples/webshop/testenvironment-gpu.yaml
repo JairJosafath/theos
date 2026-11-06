@@ -1,0 +1,44 @@
+# A GPU machine on AWS the agents and their runs lease when a job needs a
+# graphics card, such as a Godot game's picture script
+# (docs/plans/test-environments.md, step 7): one EC2 machine per lease in
+# the account's subnet, from an AMI with the tools, with no instance role,
+# its metadata service turned off before a run gets it, and a security group
+# the operator makes that lets in theos-env's port alone and lets out only
+# DNS and public HTTPS. A run gets it when its issue is labelled env/gpu,
+# and runs `theos-env run gpu -- <command>` there, over HTTPS, the machine's
+# certificate pinned. Each lease costs the instance type's on-demand price
+# for the time it is held, against budgetUSDPerDay.
+#
+# Not in kustomization.yaml: it needs a real account, a subnet that routes to
+# the internet, and Secret gpu-aws, which its owner creates with a key that
+# may make EC2 machines and read EC2 prices (docs/getting-started.md, "Lease
+# a GPU machine on AWS"):
+#
+#   kubectl -n webshop create secret generic gpu-aws \
+#     --from-literal=accessKeyId=... --from-literal=secretAccessKey=...
+#
+# (and sessionToken for a temporary credential). CredentialsValid says whether
+# AWS takes the credential, in the account named.
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: gpu
+spec:
+  description: An NVIDIA A10G GPU with Godot 4 and its export templates; run the game headless with --rendering-driver vulkan.
+  aws:
+    region: eu-west-1
+    # The account the credential must be in: a key of another account is
+    # refused before a machine starts. Leave it out to take any.
+    account: "123456789012"
+    instanceType: g5.xlarge
+    # An AMI with the tools: a Linux with curl, sha256sum and cloud-init,
+    # such as an AWS Deep Learning AMI with Godot added.
+    imageId: ami-0123456789abcdef0
+    subnetId: subnet-0123456789abcdef0
+    credentialsSecretRef:
+      name: gpu-aws
+  limits:
+    maxLeases: 1
+    maxLeaseMinutes: 120
+    # Required for a remote member: no lease starts past it on a UTC day.
+    budgetUSDPerDay: 10

@@ -20,7 +20,8 @@ import (
 // and the provider that supplies it: exactly one member, keyed by field
 // name, as a DeployTarget's (docs/plans/test-environments.md, T1). Each
 // member is added with the adapter that leases it.
-// +kubebuilder:validation:XValidation:rule="[has(self.local)].exists_one(x, x)",message="set exactly one provider member: local"
+// +kubebuilder:validation:XValidation:rule="[has(self.local), has(self.aws)].exists_one(x, x)",message="set exactly one provider member: local or aws"
+// +kubebuilder:validation:XValidation:rule="!has(self.aws) || (has(self.limits) && has(self.limits.budgetUSDPerDay))",message="an aws environment needs limits.budgetUSDPerDay: a remote lease costs money for every minute it is held"
 type TestEnvironmentSpec struct {
 	// description says in one line what the environment has, for people and
 	// for the agents and planner that choose it.
@@ -33,7 +34,15 @@ type TestEnvironmentSpec struct {
 	// +optional
 	Local *TestEnvironmentLocal `json:"local,omitempty"`
 
-	// limits cap how many leases run at once and for how long.
+	// aws leases an EC2 machine per run that needs the environment, in the
+	// user's AWS account, from an AMI with the environment's tools, such as
+	// a GPU machine for a game engine (T9, T11). Its leases cost what EC2
+	// charges, so it needs limits.budgetUSDPerDay.
+	// +optional
+	AWS *TestEnvironmentAWS `json:"aws,omitempty"`
+
+	// limits cap how many leases run at once, for how long and, for a
+	// remote member, at what cost a day.
 	// +kubebuilder:default={}
 	// +optional
 	Limits TestEnvironmentLimits `json:"limits,omitzero"`
@@ -108,6 +117,66 @@ type TestEnvironmentLocal struct {
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
+// TestEnvironmentAWS is an EC2 machine per lease in the user's AWS account
+// (T9, T11): launched from imageId in subnetId with a public address, with
+// no instance role, under a security group of the operator's own that lets
+// in theos-env's port alone and lets out only DNS and public HTTPS, and the
+// metadata service turned off before the run gets it (T5). User data
+// downloads theos-env (the operator's --test-environment-tools-url), serves
+// it over HTTPS with a certificate the run pins, and shuts the machine down,
+// which terminates it, at the lease's deadline. Return terminates it.
+type TestEnvironmentAWS struct {
+	// region is the AWS region the machines run in, such as eu-west-1.
+	// +kubebuilder:validation:MaxLength=30
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]{2}(-[a-z]+)+-[0-9]+$')",message="region must be an AWS region, such as eu-west-1"
+	// +required
+	Region string `json:"region"`
+
+	// account is the twelve-digit AWS account id the credential must be in:
+	// set, a credential of another account is refused, so a key for the
+	// wrong account never launches a machine.
+	// +kubebuilder:validation:MaxLength=12
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{12}$')",message="account must be a twelve-digit AWS account id"
+	// +optional
+	Account string `json:"account,omitempty"`
+
+	// instanceType is the EC2 instance type, such as c7i.large, or g5.xlarge
+	// for a GPU. EC2 Mac types, which need a dedicated host, come later
+	// (docs/plans/test-environments.md, step 9).
+	// +kubebuilder:validation:MaxLength=40
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]*[.][a-z0-9]+$')",message="instanceType must be an EC2 instance type, such as g5.xlarge"
+	// +kubebuilder:validation:XValidation:rule="!self.startsWith('mac')",message="EC2 Mac instance types need a dedicated host, which the aws member doesn't lease yet"
+	// +required
+	InstanceType string `json:"instanceType"`
+
+	// imageId is the AMI the machines boot, with the environment's tools: a
+	// Linux with curl, sha256sum and a cloud-init that runs user data, such
+	// as an AWS Deep Learning AMI for a GPU. An AMI id never changes what it
+	// names, so it is pinned.
+	// +kubebuilder:validation:MaxLength=21
+	// +kubebuilder:validation:XValidation:rule="self.matches('^ami-[0-9a-f]{8,17}$')",message="imageId must be an AMI id, such as ami-0123456789abcdef0"
+	// +required
+	ImageID string `json:"imageId"`
+
+	// subnetId is the subnet the machines start in, which must route to the
+	// internet: each gets a public address there, where the run reaches it
+	// over HTTPS. The operator makes the machines' security group in its
+	// VPC.
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:XValidation:rule="self.matches('^subnet-[0-9a-f]{8,17}$')",message="subnetId must be a subnet id, such as subnet-0123456789abcdef0"
+	// +required
+	SubnetID string `json:"subnetId"`
+
+	// credentialsSecretRef names a Secret in the TestEnvironment's namespace
+	// that the user creates, with the keys accessKeyId, secretAccessKey and
+	// an optional sessionToken, as a cloudFormation DeployTarget's. Only the
+	// operator reads it: it never reaches a sandbox, an environment or a CI
+	// job. The key needs the EC2 and pricing calls docs/getting-started.md
+	// lists.
+	// +required
+	CredentialsSecretRef LocalRef `json:"credentialsSecretRef"`
+}
+
 // TestEnvironmentLimits cap the environment's leases (T10).
 type TestEnvironmentLimits struct {
 	// maxLeases is how many leases may be live at once; a run that would
@@ -125,6 +194,16 @@ type TestEnvironmentLimits struct {
 	// +kubebuilder:default=180
 	// +optional
 	MaxLeaseMinutes int32 `json:"maxLeaseMinutes,omitempty"`
+
+	// budgetUSDPerDay is what the environment's leases may cost a UTC day, in
+	// US dollars, by the provider's count (on-demand price times time). Past
+	// it no lease starts, reason WaitingForEnvironment, OverBudget, and the
+	// leases held finish their run. Required for a remote member; a local
+	// lease costs nothing.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100000
+	// +optional
+	BudgetUSDPerDay int32 `json:"budgetUSDPerDay,omitempty"`
 }
 
 // The conditions and reasons of a TestEnvironment.
@@ -132,14 +211,20 @@ const (
 	// ConditionTestEnvironmentReady says whether runs can lease the
 	// environment: its image is pinned and the project's NetworkPolicy
 	// theos-test-environment, which fences its pods, exists. Its reasons are
-	// Ready, ImageNotPinned and FenceMissing.
+	// Ready, ImageNotPinned, FenceMissing and CredentialsInvalid.
 	ConditionTestEnvironmentReady = "Ready"
+	// ConditionTestEnvironmentCredentialsValid says whether a remote
+	// member's provider takes the credential its Secret holds, in the account
+	// the member names. Its reasons are Valid, SecretMissing,
+	// SecretIncomplete, CredentialRefused and Unreachable. A local
+	// environment, which needs none, has no such condition.
+	ConditionTestEnvironmentCredentialsValid = "CredentialsValid"
 )
 
 // TestEnvironmentLease is one live lease of the environment.
 type TestEnvironmentLease struct {
 	// id is the lease's ID, which the provider names it by: for local, the
-	// pod's name.
+	// pod's name; for aws, the machine's lease tag.
 	// +required
 	ID string `json:"id"`
 	// holder is the Task whose run holds the lease.
@@ -184,7 +269,7 @@ type TestEnvironmentStatus struct {
 	// +optional
 	SpentToday *TestEnvironmentSpend `json:"spentToday,omitempty"`
 
-	// conditions: Ready.
+	// conditions: Ready, and CredentialsValid for a remote member.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -196,6 +281,7 @@ type TestEnvironmentStatus struct {
 // +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z]([-a-z0-9]{0,30}[a-z0-9])?$')",message="a TestEnvironment's name is a DNS label of at most 32 characters that starts with a letter: jobs ask for it as env/<name>"
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=".spec.local.image",priority=1
+// +kubebuilder:printcolumn:name="Instance",type=string,JSONPath=".spec.aws.instanceType",priority=1
 // +kubebuilder:printcolumn:name="Max",type=integer,JSONPath=".spec.limits.maxLeases"
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type==\"Ready\")].status"
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=".status.conditions[?(@.type==\"Ready\")].reason"

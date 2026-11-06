@@ -3,6 +3,8 @@ package fake
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -22,9 +24,63 @@ type TestEnvironments struct {
 	mu       sync.Mutex
 	leases   map[envKey]map[string]*fakeLease
 	returned []string
+	// accounts are the AWS accounts by access key that CheckCredentials
+	// knows; nil takes any credential.
+	accounts map[string]string
+	released []string
 }
 
-var _ ports.TestEnvironments = (*TestEnvironments)(nil)
+var (
+	_ ports.TestEnvironments           = (*TestEnvironments)(nil)
+	_ ports.TestEnvironmentCredentials = (*TestEnvironments)(nil)
+	_ ports.TestEnvironmentReleaser    = (*TestEnvironments)(nil)
+)
+
+// AddAccount makes CheckCredentials take accessKeyID as a key of AWS account
+// account; once one is added, it refuses every key it wasn't given.
+func (f *TestEnvironments) AddAccount(accessKeyID, account string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.accounts == nil {
+		f.accounts = map[string]string{}
+	}
+	f.accounts[accessKeyID] = account
+}
+
+// CheckCredentials refuses a key it doesn't know, and one of an account
+// other than the environment names, as AWS and the aws member would.
+func (f *TestEnvironments) CheckCredentials(_ context.Context, env ports.Environment) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.accounts == nil {
+		return nil
+	}
+	account, ok := f.accounts[string(env.Secret["accessKeyId"])]
+	if !ok {
+		return &ports.Error{Kind: ports.ErrCredentialRefused,
+			Cause: errors.New("InvalidClientTokenId: the security token included in the request is invalid")}
+	}
+	if env.AWS != nil && env.AWS.Account != "" && env.AWS.Account != account {
+		return &ports.Error{Kind: ports.ErrCredentialRefused, Cause: fmt.Errorf(
+			"the credential is of AWS account %s, the environment names account %s", account, env.AWS.Account)}
+	}
+	return nil
+}
+
+// Release records that env was released.
+func (f *TestEnvironments) Release(_ context.Context, env ports.Environment) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.released = append(f.released, env.Namespace+"/"+env.Name)
+	return nil
+}
+
+// Released lists the environments released, as namespace/name, in order.
+func (f *TestEnvironments) Released() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.released)
+}
 
 type envKey struct{ namespace, name string }
 

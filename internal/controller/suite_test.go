@@ -115,6 +115,9 @@ var (
 	// envFake is the provider of every TestEnvironment's local member: its
 	// leases are Ready at once unless it holds them.
 	envFake *fake.TestEnvironments
+	// envAWSFake is the provider of every TestEnvironment's aws member: it
+	// takes the access keys a spec adds, in their account (AddAccount).
+	envAWSFake *fake.TestEnvironments
 	// goProxyFake is the Go proxy every Crew asks about its released modules.
 	goProxyFake *fakeGoProxy
 	ctx         context.Context
@@ -391,6 +394,7 @@ var _ = BeforeSuite(func() {
 	DeferCleanup(gitlabRegistryFake.server.Close)
 	deployFake = &fake.Deployer{}
 	envFake = &fake.TestEnvironments{}
+	envAWSFake = &fake.TestEnvironments{}
 	goProxyFake = newFakeGoProxy()
 	DeferCleanup(goProxyFake.server.Close)
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
@@ -458,7 +462,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			StandardChangeRecheck: time.Second, PullRequestRecheck: time.Second, Recorder: mgr.GetEventRecorder("task"),
 			SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace, ModelProxyURL: testModelProxyURL,
 			Now: taskNow, GitEvents: gitEvents,
-			TestEnvironments:   ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake},
+			TestEnvironments: ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake,
+				model.TestEnvMemberAWS: envAWSFake},
 			EnvironmentRecheck: time.Second},
 		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
@@ -483,8 +488,9 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			GitEventsURL: testGitEventsURL, GitEvents: gitEvents},
 		// The local member's adapter is tested on envtest in
 		// internal/adapters/localenv; the suite stands envFake in.
-		&TestEnvironmentReconciler{Client: c, Scheme: s,
-			Providers:         ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake},
+		&TestEnvironmentReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
+			Providers: ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake,
+				model.TestEnvMemberAWS: envAWSFake},
 			SharedPullSecrets: []string{sharedPullSecret}, PollInterval: time.Second, OrphanGrace: time.Second},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {

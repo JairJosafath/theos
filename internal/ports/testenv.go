@@ -53,9 +53,37 @@ type Environment struct {
 	Member string
 	// Local is the local member's settings; nil for another member.
 	Local *LocalEnvironment
+	// AWS is the aws member's settings; nil for another member.
+	AWS *AWSEnvironment
 	// Secret is the data of a remote member's credentials Secret, read by
 	// the operator only; never sent to the environment.
 	Secret map[string][]byte
+}
+
+// AWSEnvironment is the aws member: an EC2 machine per lease (T11).
+type AWSEnvironment struct {
+	// Region is where the machines run; Account, when set, the AWS account
+	// the credential must be in.
+	Region, Account string
+	// InstanceType and ImageID are what the machines are, and SubnetID where
+	// they start.
+	InstanceType, ImageID, SubnetID string
+}
+
+// TestEnvironmentCredentials is the optional capability of a remote
+// provider to check a credential without leasing: whether it takes the
+// credential in env.Secret, in the account env names (T9). An error is an
+// *Error of ErrCredentialRefused or ErrUnreachable where it is one.
+type TestEnvironmentCredentials interface {
+	CheckCredentials(ctx context.Context, env Environment) error
+}
+
+// TestEnvironmentReleaser is the optional capability of a provider that
+// keeps something for an environment beside its leases, such as a remote
+// member's security group: Release frees it once the environment is
+// deleted and its leases are returned. Releasing what is gone is no error.
+type TestEnvironmentReleaser interface {
+	Release(ctx context.Context, env Environment) error
 }
 
 // LocalEnvironment is the local member: a pod per lease on the cluster.

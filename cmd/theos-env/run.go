@@ -188,7 +188,10 @@ func (c *caller) report(written []treeFile) {
 }
 
 // client is the HTTP client for the environment: one that trusts the
-// environment's certificate alone when it has one.
+// environment's certificate alone when it has one. The certificate is
+// pinned, not a host name: a remote machine's address comes after its
+// certificate is made (model.TestEnvCertificate), so the server must show
+// that certificate, or one it signed, whatever address it answers on.
 func (c *caller) client() (*http.Client, error) {
 	if c.ca == "" {
 		return &http.Client{}, nil
@@ -198,7 +201,24 @@ func (c *caller) client() (*http.Client, error) {
 		return nil, fmt.Errorf("%s holds no PEM certificate", model.TestEnvVar(c.name, model.TestEnvCA))
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12,
+		InsecureSkipVerify: true, //nolint:gosec // VerifyConnection checks the chain against the pinned certificate
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return fmt.Errorf("environment %s sent no certificate", c.name)
+			}
+			intermediates := x509.NewCertPool()
+			for _, cert := range cs.PeerCertificates[1:] {
+				intermediates.AddCert(cert)
+			}
+			_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: pool, Intermediates: intermediates,
+				KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+			if err != nil {
+				return fmt.Errorf("environment %s's certificate isn't the one %s pins: %w", c.name,
+					model.TestEnvVar(c.name, model.TestEnvCA), err)
+			}
+			return nil
+		}}
 	return &http.Client{Transport: transport}, nil
 }
 
