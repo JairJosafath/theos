@@ -69,6 +69,16 @@ type ReleaseFacts struct {
 	// with merged work and no prepare issue gets one before it is tagged, and
 	// work merged after its prepare issue holds it.
 	Prepare bool
+	// FullCheckRerun is the release and commit whose failed full check a
+	// person runs again (rerun-release, #2028); nil for none. Its issues of
+	// that check, open or at work, hold the release no more meanwhile.
+	FullCheckRerun *FullCheckAt
+}
+
+// FullCheckAt is release Tag's full check at Commit.
+type FullCheckAt struct {
+	Tag    string
+	Commit string
 }
 
 // ReleasedTag is a release that went out, and the commit its tag names.
@@ -143,8 +153,11 @@ type ReleaseStep struct {
 	// Skipped are the open releases before Tag with no issue at all, which
 	// close untagged with it (#2025).
 	Skipped []EmptiedRelease
-	Reason  string
-	Held    string
+	// Closes are the open issues of Tag's full check that a re-run a person
+	// asked for passed over (FullCheckRerun), closed once Tag is tagged.
+	Closes []int
+	Reason string
+	Held   string
 }
 
 // ReleaseMove is a later release's closed issue whose merge the tag carries, to
@@ -174,6 +187,7 @@ func held(title, reason, format string, args ...any) ReleaseStep {
 // neither done nor in the way, so it holds no later release, and one before the
 // release tagged closes untagged with it (#2025).
 func NextRelease(f ReleaseFacts) ReleaseStep {
+	rerunFixes := withoutRerunFixes(&f)
 	var releases, empty []ReleaseMilestone
 	for _, m := range f.Milestones {
 		switch {
@@ -193,8 +207,39 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 	step := nextRelease(f, releases)
 	if step.Commit != "" {
 		step.Skipped = skippedBefore(empty, releases[0].Release)
+		if f.FullCheckRerun != nil && step.Tag == f.FullCheckRerun.Tag {
+			step.Closes = rerunFixes
+		}
 	}
 	return step
+}
+
+// withoutRerunFixes drops from the facts' open and active issues those of the
+// full check a person runs again (FullCheckRerun), which hold its release no
+// more, and returns them. The facts' slices are left as they were.
+func withoutRerunFixes(f *ReleaseFacts) []int {
+	rerun := f.FullCheckRerun
+	if rerun == nil {
+		return nil
+	}
+	var dropped []int
+	f.Milestones = slices.Clone(f.Milestones)
+	for i, m := range f.Milestones {
+		if m.Title != rerun.Tag {
+			continue
+		}
+		var open []int
+		for _, n := range m.Open {
+			if slices.Contains(m.FullChecks, FullCheckFix{Issue: n, Commit: rerun.Commit}) {
+				dropped = append(dropped, n)
+				continue
+			}
+			open = append(open, n)
+		}
+		f.Milestones[i].Open = open
+	}
+	f.Active = slices.DeleteFunc(slices.Clone(f.Active), func(n int) bool { return slices.Contains(dropped, n) })
+	return dropped
 }
 
 // skippedBefore are the empty releases that go out before release, in order.
@@ -563,18 +608,25 @@ const (
 	RerunNone = ""
 	// RerunRuns: re-run the last release's failed runs.
 	RerunRuns = "Rerun"
+	// RerunFullCheck: re-run the failed full check that holds the next release.
+	RerunFullCheck = "RerunFullCheck"
 	// RerunNothingFailed: say there is no failed run to re-run.
 	RerunNothingFailed = "NothingFailed"
 )
 
 // ReleaseRerun says what a Crew does with value, its rerun-release
-// annotation, given the value it answered last and its last release's run
-// result, "" when it tagged none. Each value is answered once: a value set
-// while the run hasn't failed doesn't wait for it to fail.
-func ReleaseRerun(value, answered, run string) string {
+// annotation, given the value it answered last, its last release's run
+// result, "" when it tagged none, and the result of the full check that holds
+// its next release, "" when none runs. A failed full check goes first, as the
+// next tag waits on it (#2028); a new value then re-runs the last release's.
+// Each value is answered once: a value set while the run hasn't failed doesn't
+// wait for it to fail.
+func ReleaseRerun(value, answered, run, fullCheck string) string {
 	switch {
 	case value == "" || value == answered:
 		return RerunNone
+	case fullCheck == RunFailed:
+		return RerunFullCheck
 	case run == RunFailed:
 		return RerunRuns
 	default:

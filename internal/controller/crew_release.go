@@ -72,6 +72,9 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 	defer cancel()
 	facts, titles, err := releaseFacts(gitCtx, provider, repo, tasks)
 	facts.Prepare = crew.Spec.PrepareReleases
+	if check := status.FullCheck; check != nil && check.Rerun {
+		facts.FullCheckRerun = &model.FullCheckAt{Tag: check.Tag, Commit: check.Commit}
+	}
 	var step model.ReleaseStep
 	var filed ports.Issue
 	if err == nil {
@@ -176,6 +179,16 @@ func (r *CrewReconciler) takeReleaseStep(ctx context.Context, crew *c4v1beta1.Cr
 	}
 	if step.Commit == "" {
 		return step, nil
+	}
+	// The full check's issues a person's re-run passed over: the comment goes
+	// first, so a failed close is commented again.
+	for _, n := range step.Closes {
+		if err := provider.CommentIssue(ctx, repo, n, model.FullCheckRerunPassed(step.Tag, step.Commit)); err != nil {
+			return step, fmt.Errorf("commenting on #%d: %w", n, err)
+		}
+		if err := provider.CloseIssue(ctx, repo, n); err != nil {
+			return step, fmt.Errorf("closing #%d: %w", n, err)
+		}
 	}
 	if err := endFullCheck(ctx, status, provider, repo, step.Tag); err != nil {
 		return step, err
@@ -369,7 +382,8 @@ func (r *CrewReconciler) event(crew *c4v1beta1.Crew, eventType, reason, action, 
 }
 
 // rerunRelease answers the Crew's theos.factory.io/rerun-release annotation, once
-// per value: while its last release's run Failed, it re-runs the failed jobs of
+// per value: while a failed full check holds the next release, it re-runs
+// that (rerunHeldFullCheck); while its last release's run Failed, it re-runs the failed jobs of
 // that release's failed runs, and the watch follows their new attempts;
 // otherwise it says with a Normal Event that there is nothing to re-run. It
 // runs with spec.tagReleases, as the watch does. A
@@ -387,13 +401,21 @@ func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1beta1.Crew,
 	if said, _ := r.rerunSaid.Load(crew.UID); value != "" && said == value {
 		status.RerunRelease = value
 	}
-	step := model.ReleaseRerun(value, status.RerunRelease, run)
+	fullCheck := ""
+	if status.FullCheck != nil {
+		fullCheck = status.FullCheck.Run
+	}
+	step := model.ReleaseRerun(value, status.RerunRelease, run, fullCheck)
 	if step == model.RerunNone {
 		return
 	}
 	status.RerunRelease = value
 	r.rerunSaid.Store(crew.UID, value)
 	log := logf.FromContext(ctx)
+	if step == model.RerunFullCheck {
+		r.rerunHeldFullCheck(ctx, crew, status.FullCheck, provider, repo)
+		return
+	}
 	if step == model.RerunNothingFailed {
 		note := "No release run failed, so there is nothing to re-run"
 		if release != nil {
@@ -454,6 +476,43 @@ func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1beta1.Crew,
 	log.Info("Re-ran the release runs", "tag", release.Tag, "workflows", rerun)
 	r.event(crew, corev1.EventTypeNormal, reasonReleaseRerun, "RerunRelease",
 		fmt.Sprintf("Re-ran the failed runs of %s: %s", release.Tag, strings.Join(rerun, ", ")))
+}
+
+// rerunHeldFullCheck answers a rerun-release value while a failed full check
+// holds the next release (#2028): it re-runs the check's failed runs and marks
+// the check Rerun, so its issue holds the release no more until it fails
+// again, and is closed if it passes. A re-run the Git host refuses is a
+// Warning Event, and a new value tries again.
+func (r *CrewReconciler) rerunHeldFullCheck(ctx context.Context, crew *c4v1beta1.Crew,
+	check *c4v1beta1.CrewFullCheck, provider ports.CI, repo ports.Repository) {
+	log := logf.FromContext(ctx)
+	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	runs, err := fullCheckRuns(gitCtx, provider, repo, check.Tag, check.Commit)
+	var rerun []string
+	if err == nil {
+		rerun, err = rerunFullCheck(gitCtx, provider, repo, runs)
+	}
+	if len(rerun) > 0 {
+		check.Rerun, check.Run = true, model.RunRunning
+	}
+	if err != nil {
+		log.Error(err, "Failed to re-run the full check", "tag", check.Tag, "rerun", rerun)
+		r.event(crew, corev1.EventTypeWarning, reasonReleaseRerunFailed, "RerunRelease",
+			fmt.Sprintf("Could not re-run the failed full check of %s at %s: %v; set a new %s value to try again",
+				check.Tag, check.Commit, err, c4v1beta1.AnnotationRerunRelease))
+		return
+	}
+	if len(rerun) == 0 {
+		log.Info("Skipped the full check re-run", "tag", check.Tag)
+		r.event(crew, corev1.EventTypeNormal, reasonReleaseNothingRerun, "RerunRelease",
+			fmt.Sprintf("No run of the full check of %s failed any more, so there is nothing to re-run", check.Tag))
+		return
+	}
+	log.Info("Re-ran the full check", "tag", check.Tag, "commit", check.Commit, "workflows", rerun)
+	r.event(crew, corev1.EventTypeNormal, reasonReleaseRerun, "RerunRelease",
+		fmt.Sprintf("Re-ran the failed full check of %s at %s: %s; its issue holds the release no more unless "+
+			"it fails again", check.Tag, check.Commit, strings.Join(rerun, ", ")))
 }
 
 // watchReleaseRun reads how the CI workflow runs on the Crew's last release

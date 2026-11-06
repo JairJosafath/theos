@@ -475,21 +475,28 @@ func TestFailedReleaseRuns(t *testing.T) {
 
 func TestReleaseRerun(t *testing.T) {
 	tests := []struct {
-		name, value, answered, run string
-		want                       string
+		name, value, answered, run, fullCheck string
+		want                                  string
 	}{
-		{"no annotation", "", "", RunFailed, RerunNone},
-		{"a new value on a failed run", "1", "", RunFailed, RerunRuns},
-		{"a changed value on a failed run", "2", "1", RunFailed, RerunRuns},
-		{"the answered value again", "1", "1", RunFailed, RerunNone},
-		{"a new value on a run that succeeded", "1", "", RunSucceeded, RerunNothingFailed},
-		{"a new value on a running run", "1", "", RunRunning, RerunNothingFailed},
-		{"a new value with no release", "1", "", "", RerunNothingFailed},
+		{"no annotation", "", "", RunFailed, "", RerunNone},
+		{"a new value on a failed run", "1", "", RunFailed, "", RerunRuns},
+		{"a changed value on a failed run", "2", "1", RunFailed, "", RerunRuns},
+		{"the answered value again", "1", "1", RunFailed, "", RerunNone},
+		{"a new value on a run that succeeded", "1", "", RunSucceeded, "", RerunNothingFailed},
+		{"a new value on a running run", "1", "", RunRunning, "", RerunNothingFailed},
+		{"a new value with no release", "1", "", "", "", RerunNothingFailed},
+		{"#2028: a new value while a failed full check holds the next release", "1", "", RunSucceeded, RunFailed,
+			RerunFullCheck},
+		{"#2028: the failed full check goes before a failed release run", "1", "", RunFailed, RunFailed,
+			RerunFullCheck},
+		{"#2028: the answered value again leaves the full check", "1", "1", "", RunFailed, RerunNone},
+		{"#2028: a full check that runs is nothing to re-run", "1", "", "", RunRunning, RerunNothingFailed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ReleaseRerun(tt.value, tt.answered, tt.run); got != tt.want {
-				t.Errorf("ReleaseRerun(%q, %q, %q) = %q; want %q", tt.value, tt.answered, tt.run, got, tt.want)
+			if got := ReleaseRerun(tt.value, tt.answered, tt.run, tt.fullCheck); got != tt.want {
+				t.Errorf("ReleaseRerun(%q, %q, %q, %q) = %q; want %q", tt.value, tt.answered, tt.run,
+					tt.fullCheck, got, tt.want)
 			}
 		})
 	}

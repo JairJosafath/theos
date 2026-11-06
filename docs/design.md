@@ -610,13 +610,18 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   Standard's `make check-light` and the full check runs on
   `release-check/vX.Y.Z` before the tag (`FullCheckRunning`,
   `status.fullCheck`); a failure files `Full check fails for vX.Y.Z` and tags
-  nothing. It applies only where the Standard sets `checksBeforeRelease` and
-  the Makefile has `check-light`; `ChecksApplied` says why not.
+  nothing. A check cut off (cancelled at the runner's time limit, or its
+  runner lost) runs again once first (`status.fullCheck.reruns`), and an
+  issue filed after says it was cut off (#2028). It applies only where the
+  Standard sets `checksBeforeRelease` and the Makefile has `check-light`;
+  `ChecksApplied` says why not.
 - **The release run.** `status.lastRelease.run` sums the runs the tag started
   (`Waiting`, `Running`, `Failed`, `Succeeded`), with Events
   `ReleaseRunFailed` and, past an hour, `ReleaseRunOverdue`. Setting or
   changing `theos.factory.io/rerun-release` on a `Failed` run re-runs its failed
-  jobs, once per value.
+  jobs, once per value. While a failed full check holds the next release, the
+  value re-runs that check first: its issue holds the release no more, is
+  closed if the check passes, and holds it again if it fails (#2028).
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
