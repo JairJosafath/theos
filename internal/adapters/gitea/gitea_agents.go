@@ -427,16 +427,22 @@ func (g *gitea) merge(ctx context.Context, repo ports.Repository, number int, he
 	// to branchSettleTimeout. It answers the same for a conflicted pull
 	// request, which fails once the time is up, with Gitea's message.
 	deadline := time.Now().Add(branchSettleTimeout)
+	var failed error
 	for {
 		status, data, err := g.do(ctx, http.MethodPost,
 			"/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number)+"/merge", payload)
 		if err != nil {
+			// A context that ends during a retry keeps Gitea's last answer in
+			// the error, as one that ends during the pause does.
+			if failed != nil && ctx.Err() != nil {
+				return fmt.Errorf("%w (%w)", failed, err)
+			}
 			return err
 		}
 		if status == http.StatusOK {
 			return nil
 		}
-		failed := fmt.Errorf("gitea: merging pull request %d failed (HTTP %d): %s", number, status, apiMessage(data))
+		failed = fmt.Errorf("gitea: merging pull request %d failed (HTTP %d): %s", number, status, apiMessage(data))
 		if status != http.StatusMethodNotAllowed || apiMessage(data) != "Please try again later" ||
 			time.Now().After(deadline) {
 			return failed
