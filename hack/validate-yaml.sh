@@ -212,7 +212,7 @@ for f in chart-gitea chart-gitea-bare; do
 	want "$f: the seed's ClusterRole doesn't grant get and patch" "$role" '^    verbs: \[get, patch\]$'
 	want "$f: the seed's ClusterRole isn't bound" "$(doc "$OUT/$f.yaml" ClusterRoleBinding theos-seed-namespaces)" \
 		'^    name: seed$'
-	want "$f: the seed doesn't label the project namespaces" "$(doc "$OUT/$f.yaml" Job seed)" '^            - name: SHARE_SECRETS$'
+	want "$f: the seed doesn't label the project namespaces" "$(doc "$OUT/$f.yaml" Job seed-1)" '^            - name: SHARE_SECRETS$'
 	want "$f: the operator lacks POD_NAMESPACE" "$(doc "$OUT/$f.yaml" Deployment theos-controller-manager)" \
 		'^        - name: POD_NAMESPACE$'
 done

@@ -95,8 +95,11 @@ subjects:
 {{- end }}
 ---
 # A hook after every install and upgrade: it waits for the homeserver, makes
-# what is missing and changes nothing that exists. A failed Job stays for its
-# log until the next upgrade replaces it.
+# what is missing and changes nothing that exists. Unlike the seed
+# (gitea/seed.yaml) it may be one: no pod of the release reads the Secrets it
+# makes (the homeserver makes its own), so `helm install --wait` ends before
+# it runs (#2030). A failed Job stays for its log until the next upgrade
+# replaces it.
 apiVersion: batch/v1
 kind: Job
 metadata:

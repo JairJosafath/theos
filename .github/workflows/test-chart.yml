@@ -159,7 +159,7 @@ jobs:
         run: |
           kubectl -n theos-system logs deployment/theos-controller-manager --tail=100 || true
           kubectl -n gitea get events --sort-by=.lastTimestamp | tail -30 || true
-          kubectl -n gitea logs job/seed --tail=50 || true
+          kubectl -n gitea logs -l app.kubernetes.io/name=seed --tail=50 || true
           kubectl -n gitea logs deployment/gitea-runner-base --tail=30 || true
 
       - name: Delete kind cluster

@@ -87,7 +87,7 @@ you made there stays that project's own; delete it to take the shared one.
 The operator copies the release namespace's pull secrets into each labeled
 namespace; the token is read by the model proxy there and never copied. Gitea runs in namespace `gitea`, at
 `http://gitea.gitea.svc.cluster.local:3000` inside the cluster; the seed Job,
-a hook after every install and upgrade, pushed the tagged templates to
+run on every install and upgrade (`seed-<revision>`), pushed the tagged templates to
 organization `templates`, made organization `webshop`, stored its token in
 Secret `webshop/gitea-credentials` and made Project `webshop` (only when the
 namespace had none; it never changes one), and the chart made GitProvider
