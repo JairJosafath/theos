@@ -121,9 +121,12 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1beta1.
 	}
 
 	// Connectors come through Relationships from this Container to DataStores.
+	// They are read from the API server, not the cache: the Relationship
+	// informer may not yet hold one created just before the Container, and a
+	// scaffold missing it is never redone (#1992). A missing DataStore or
+	// Connector only delays the scaffold, so those stay cached.
 	var rels c4v1beta1.RelationshipList
-	if err := r.List(ctx, &rels, client.InNamespace(ns),
-		client.MatchingFields{indexSource: elementKey(c4v1beta1.ElementContainer, container.Name)}); err != nil {
+	if err := r.APIReader.List(ctx, &rels, client.InNamespace(ns)); err != nil {
 		return res, nil, err
 	}
 	var stores c4v1beta1.DataStoreList
@@ -136,7 +139,8 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1beta1.
 	}
 	modelRels := make([]model.Relationship, 0, len(rels.Items))
 	for _, rel := range rels.Items {
-		if rel.DeletionTimestamp.IsZero() {
+		source := rel.Spec.Source
+		if rel.DeletionTimestamp.IsZero() && source.Kind == c4v1beta1.ElementContainer && source.Name == container.Name {
 			modelRels = append(modelRels, toModel(rel))
 		}
 	}
