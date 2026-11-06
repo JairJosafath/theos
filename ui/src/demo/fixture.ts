@@ -3,8 +3,9 @@
 // Relationship added after scaffolding, and Crews working, paused and waiting
 // for their Container: the working one with a Sonnet implementer, an Opus
 // reviewer and Tasks made from issues; Briefs planned, needing input,
-// paused and planning; and a Container shipped to staging, waiting for a
-// person's approval of the same release for prod. Used by demo mode (?demo=1), so the whole
+// paused and planning; a Container shipped to staging, waiting for a
+// person's approval of the same release for prod; and a browser test
+// environment one Task's run leases, beside an Android emulator on KVM. Used by demo mode (?demo=1), so the whole
 // UI can be seen and screenshotted without writing to a cluster.
 
 import type { StoryData } from '../k8s/sources'
@@ -30,6 +31,7 @@ import type {
   Task,
   TaskPhase,
   TaskTransition,
+  TestEnvironment,
 } from '../k8s/types'
 
 export const DEMO_NAMESPACE = 'webshop'
@@ -886,6 +888,28 @@ export function demoStory(now: number): StoryData {
       ...pr('orders-api', 11),
       conditions: [cond('Progressing', 'True', 'Verifying', 'Merged; verifying the change before it ships', at(3))],
     }),
+    // An issue labelled env/browser: its implementer's run holds a lease of the
+    // browser test environment, to picture the email it renders.
+    issueTask('orders-api', 24, 'Show a picture of the shipping email in the pull request', 12, {
+      phase: 'Implementing',
+      round: 1,
+      sandbox: 'orders-api-24-r1-implement',
+      environments: [
+        {
+          name: 'browser',
+          lease: 'browser-5f0c3a9e21',
+          sandbox: 'orders-api-24-r1-implement',
+          since: at(11),
+        },
+      ],
+      leasedEnvironments: ['browser'],
+      conditions: [cond('Progressing', 'True', 'Waiting', 'The agent is working on round 1', at(10))],
+      history: [
+        step(12, 'Implementing', 1, 'WaitingForEnvironment', 'Pending: waiting for the lease of browser to be ready'),
+        step(10, 'Implementing', 1, 'Running', 'Starting round 1'),
+        step(10, 'Implementing', 1, 'Waiting', 'The agent is working on round 1'),
+      ],
+    }),
     issueTask('orders-api', 15, 'Email the customer when an order ships', 25, {
       phase: 'Checking',
       round: 1,
@@ -1177,6 +1201,48 @@ export function demoStory(now: number): StoryData {
           cond('Ready', 'True', 'Ready', 'GitHub accepts the token for webshop-co/orders-api', ago(3 * 3600)),
         ],
       },
+    },
+  ]
+
+  // The project's test environments (docs/plans/test-environments.md): the
+  // chart's browser, whose lease orders-api-24's run holds, with a CI pool of
+  // one pod; and an Android emulator on the cluster's KVM device, leased by none.
+  const testEnvironments: TestEnvironment[] = [
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('browser', created),
+      spec: {
+        description:
+          'Chromium, Firefox and WebKit with Playwright; run headed programs (VS Code, Electron) under xvfb-run -a.',
+        local: {
+          image: 'ghcr.io/jairjosafath/theos/env-browser:0.30.0',
+          resources: { requests: { cpu: '500m', memory: '1Gi' }, limits: { cpu: '2', memory: '4Gi' } },
+        },
+        limits: { maxLeases: 2, maxLeaseMinutes: 180 },
+        ci: { size: 1 },
+      },
+      status: {
+        leases: [{ id: 'browser-5f0c3a9e21', holder: 'orders-api-24', state: 'Ready', since: at(11) }],
+        spentToday: { day: new Date(now).toISOString().slice(0, 10) },
+        conditions: [cond('Ready', 'True', 'Ready', '', ago(3 * 3600))],
+      },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('android', created),
+      spec: {
+        description:
+          'An Android 16 emulator (API 36, Google APIs, x86_64) with the SDK and JDK 17; boot it with android-emulator start, then run Gradle or adb.',
+        local: {
+          image: 'ghcr.io/jairjosafath/theos/env-android:0.30.0',
+          resources: { requests: { cpu: '2', memory: '4Gi' }, limits: { cpu: '4', memory: '8Gi' } },
+          devices: { 'devices.kubevirt.io/kvm': '1' },
+        },
+        limits: { maxLeases: 1, maxLeaseMinutes: 180 },
+      },
+      status: { conditions: [cond('Ready', 'True', 'Ready', '', ago(3 * 3600))] },
     },
   ]
 
@@ -1548,5 +1614,6 @@ export function demoStory(now: number): StoryData {
     tasks,
     briefs,
     benchmarks,
+    testEnvironments,
   }
 }

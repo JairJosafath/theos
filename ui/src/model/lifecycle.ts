@@ -44,6 +44,7 @@ export type LifecycleKind =
   | 'GitProvider'
   | 'DeployTarget'
   | 'Benchmark'
+  | 'TestEnvironment'
 
 interface StepDef {
   phase: string
@@ -270,6 +271,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
   DeployTarget: phaseless(
     'A place Containers ship to. The factory checks the credential of the Secret it names, and ships each release of the Containers that name it, through the tool that owns the place.',
     'Nothing while it is Ready. Otherwise its Ready condition says what to fix: the Secret it names, in the cluster, or what the target refused.',
+  ),
+  TestEnvironment: phaseless(
+    'Tools the agents’ runs and CI lease. A run of an issue labelled env/<name>, or of a Container whose Standard or Framework names it, takes a lease before its sandbox and returns it when it ends or is suspended; the provider ends a lease past its time.',
+    'Nothing while it is Ready. Otherwise its Ready condition says what to fix: an image that isn’t pinned, or the project’s fence for its pods.',
   ),
 }
 

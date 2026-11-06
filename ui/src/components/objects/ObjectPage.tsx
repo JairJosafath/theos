@@ -19,6 +19,7 @@ import { ReadProblems } from '../Status'
 import { StandardActions } from './StandardActions'
 import { BenchmarkPage } from './BenchmarkPage'
 import { TaskPage } from './TaskPage'
+import { TestEnvironmentPage } from './TestEnvironmentPages'
 import '../objects.css'
 
 /** Where each kind's objects are in the story data, and the plural its read is reported under. */
@@ -39,6 +40,7 @@ const WHERE: Record<LifecycleKind, { list: (d: StoryData) => K8sObject[]; resour
   GitProvider: { list: (d) => d.gitProviders, resource: RESOURCES.gitProviders },
   DeployTarget: { list: (d) => d.deployTargets, resource: RESOURCES.deployTargets },
   Benchmark: { list: (d) => d.benchmarks, resource: RESOURCES.benchmarks },
+  TestEnvironment: { list: (d) => d.testEnvironments, resource: RESOURCES.testEnvironments },
 }
 
 export function ObjectPage({
@@ -200,6 +202,10 @@ function pageFor(
     case 'Benchmark': {
       const bench = named(data.benchmarks)
       return bench && <BenchmarkPage bench={bench} tasks={data.tasks} />
+    }
+    case 'TestEnvironment': {
+      const env = named(data.testEnvironments)
+      return env && <TestEnvironmentPage env={env} />
     }
   }
 }

@@ -48,6 +48,8 @@ hack/toolchain-base/               The minimal toolchain (Node, uv, bash, git, m
 hack/toolchain-go/                 The Go, Node and uv toolchain, with a warm Go build cache and the kubebuilder operator tools, for Go, TypeScript and Python Containers
 hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
 hack/env-browser/                  The browser test environment's image: Playwright's, with a virtual display
+hack/env-android/                  The android test environment's image: the Android SDK, an emulator and its AVD, JDK 17, and android-emulator, which boots it
+hack/env-godot/                    The godot test environment's image: the Godot engine, its renderers' libraries and a virtual display
 hack/gh-runner/                    Self-hosted GitHub Actions runners for this repository (make gh-runner RUNNERS=N)
 hack/render/                       Renders templates locally, the way the operator scaffolds
 test/chart/                        The chart against envtest: its upgrade-only hooks (make test)

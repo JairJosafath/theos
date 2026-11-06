@@ -107,7 +107,7 @@ The page opens on _Needs you_ when it has items, else on _Story_:
 
 **Object pages.** Brief, Container, Crew, Task, Project, SoftwareSystem,
 Relationship, Session, Standard, Compute, Deployment, Bundle, Domain,
-GitProvider and DeployTarget each have
+GitProvider, DeployTarget, Benchmark and TestEnvironment each have
 a page, which opens in a drawer over the area it was opened from (Esc, × or
 Back closes it; _Open full page_ adds `full=1` for the page at full width), with the same header
 ([src/components/ObjectHeader.tsx](src/components/ObjectHeader.tsx)): kind,
@@ -119,7 +119,8 @@ sections follow as tabs, as the kind has them (`otab=`; another object opens
 on its first): _Overview_ (the kind's own sections), _Status_ (conditions),
 _Activity_ (timeline, rounds and runs) and _Related_ (children and links out).
 The Task page adds its rounds,
-checks, review and agent runs; the Crew page its slots, Tasks, routes by label and last release;
+checks, review and agent runs, and the test environments its run holds a lease
+of, those its runs leased, and why its run waits for one; the Crew page its slots, Tasks, routes by label and last release;
 the Container page, for a Container with a Standard, when CI runs its full
 check (`spec.checks`), what its repository runs now and `ChecksApplied` when
 False, with a choice that sets it when actions are on; and where it ships:
@@ -128,7 +129,12 @@ health and URL, and for a version waiting for approval the `kubectl patch`
 line, or with actions on an Approve button. The DeployTarget page shows its
 tool and where (the `github` repository or the `gitlab` project), tier, approval, `Ready` and the
 Containers that ship to it, and of its credentials the Secret's name only; the
-Project page lists its DeployTargets.
+Project page lists its DeployTargets. The Project page also lists its
+TestEnvironments ([docs/plans/test-environments.md](../docs/plans/test-environments.md)),
+each with `Ready`, its live leases against `limits.maxLeases` and who holds
+each, today's spend and how long a lease lasts; a TestEnvironment's page adds
+what it has (image, devices, runtime class, placement, resources), its CI
+pool and how a run uses it (`env/<name>`, `theos-env run <name> -- ...`).
 
 **Versions.** The foot of the sidebar shows the UI's version (stamped by its
 build, `dev` otherwise), the operator's and the chart's (from Project status,
@@ -340,6 +346,7 @@ src/model/needs.ts      the Needs you items, from status
 src/model/lifecycle.ts  each kind's lifecycle and next step, for the object pages
 src/model/brief.ts      a Brief for display: phase, what it waits for, planned and waiting prompts
 src/model/deploys.ts    a DeployTarget's member, tier, approval and Ready; a Container's deploys and the approve patch
+src/model/testenvs.ts   a TestEnvironment's member, Ready, leases against its limits, spend and CI pool; a Task's leases
 src/demo/               the demo fixture; in demo mode the Brief writes stay in memory,
                         refused by the CRD's limits (limits.ts) as the API server would
 src/components/         the shell (Shell.tsx), the areas, the diagram and side panels;

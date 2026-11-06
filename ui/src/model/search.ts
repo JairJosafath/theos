@@ -48,6 +48,7 @@ const STORY_LISTS: [string, (d: StoryData) => K8sObject[]][] = [
   ['Domain', (d) => d.domains],
   ['GitProvider', (d) => d.gitProviders],
   ['DeployTarget', (d) => d.deployTargets],
+  ['TestEnvironment', (d) => d.testEnvironments],
 ]
 const FACTORY_LISTS: [string, (d: FactoryData) => K8sObject[]][] = [
   ['Brief', (d) => d.briefs],

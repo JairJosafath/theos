@@ -1,0 +1,34 @@
+# An Android emulator the agents and CI run an app's instrumented tests and
+# pictures on (docs/plans/test-environments.md, step 5): a pod per lease in
+# this namespace, on the release's env-android image (the Android SDK, JDK 17
+# and an Android 16 AVD), with /dev/kvm from the cluster's KVM device plugin.
+# devices names the device as the plugin does: KubeVirt's, and the
+# standalone KVM device plugin's, is devices.kubevirt.io/kvm. The scheduler
+# puts the pod on a node whose plugin offers it; where none does, a lease
+# stays Pending, "not scheduled", and its run waits. A run gets it when its
+# issue is labelled env/android, or its Standard or Framework lists it, and
+# boots the emulator once, which keeps running for the rest of the lease:
+#
+#   theos-env run android -- android-emulator start
+#   theos-env run android -- ./gradlew connectedDebugAndroidTest
+#
+# Not in kustomization.yaml: it needs an x86_64 node with KVM and the device
+# plugin. Whether the emulator boots there is a person's run on such a node.
+# In the Kind test environment, make env-image-android loads
+# theos/env-android:dev.
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: android
+spec:
+  description: An Android 16 emulator (API 36, Google APIs, x86_64) with the SDK and JDK 17; boot it with android-emulator start, then run Gradle or adb.
+  local:
+    image: ghcr.io/jairjosafath/theos/env-android:0.30.0
+    resources:
+      requests: {cpu: "2", memory: 4Gi}
+      limits: {cpu: "4", memory: 8Gi}
+    devices:
+      devices.kubevirt.io/kvm: "1"
+  limits:
+    maxLeases: 1
+    maxLeaseMinutes: 180

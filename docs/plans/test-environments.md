@@ -226,11 +226,73 @@ step 2.
    `make validate-yaml` checks both samples. Whether KVM and the GPU work
    is for a human's run on a node that has them.
    *Done when:* those tests and `make check` pass.
+
+   *As built:* the samples are `config/samples/webshop/testenvironment-android.yaml`
+   (`devices.kubevirt.io/kvm: 1`, the name KubeVirt's and the standalone
+   KVM device plugin give `/dev/kvm`; no runtime class) and
+   `testenvironment-godot.yaml` (`nvidia.com/gpu: 1`, `runtimeClassName:
+   nvidia`, the NVIDIA GPU operator's, and a toleration of the
+   `nvidia.com/gpu` taint), left out of the webshop's kustomization since
+   they need a node with the device. The pod specs already carried devices,
+   runtime class, node selector and tolerations (steps 1 and 3), so the table
+   test is of the samples: `TestDeviceSamplesReachTheirPods` reads each and
+   checks that its lease pod and its CI pool's pod request and limit the
+   device and run under the runtime class and tolerations as given. Both
+   images build on Ubuntu 24.04, pinned by digest, with bash and git for a
+   CI pool. `hack/env-android`: the SDK's command-line tools 23.0 (their
+   SHA-256 checked; the file matches the SHA-1 Google's repository lists),
+   platform and build tools 36.1.0, API 36's platform, the emulator and the
+   Google APIs x86_64 system image, an AVD `theos` (Pixel 7) and JDK 17;
+   platform-tools and the emulator are the repository's current ones at
+   build time, since sdkmanager names no version of them, and sdkmanager
+   runs under retry, which `hack/check-download-retries.sh` now checks.
+   `android-emulator start` (`hack/env-android/emulator.sh`, tested by
+   `emulator_test.sh` on a fake emulator and adb) boots the AVD headless
+   from `/`, in its own session, once per lease, and waits for
+   `sys.boot_completed`; with no `/dev/kvm` it says which device to ask
+   for. `hack/env-godot`: Godot 4.7.2 (the SHA-256 of the zip
+   godotengine.org's download page served; Godot's own sums are on GitHub
+   only), Xvfb, Vulkan's loader and OpenGL with Mesa's software renderers
+   for a node without a GPU, and `NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility`,
+   so the NVIDIA runtime mounts the driver's graphics libraries; no export
+   templates (a project installs them over public HTTPS). Release publishes
+   `env-android` and `env-godot`; `make env-image-android` and `make
+   env-image-godot` load them into Kind. Neither image was built here.
 6. **The UI** (`ui/`). The Project area lists its TestEnvironments with
    live leases, today's spend and limits, and the Task page shows a run's
    leases. UI tests on a demo fixture.
    *Done when:* the UI tests pass and a screenshot is in
    `docs/screenshots/`.
+
+   *As built:* the UI has no Project area: the Project is an object page,
+   whose Related tab lists its DeployTargets, so it lists its
+   TestEnvironments there too (*Where its runs test*): each with `Ready`
+   (its reason in words when False), its live leases against
+   `limits.maxLeases` ("1 of 2 leased", and "all taken" at the limit, when a
+   run waits `AllLeased`), today's spend from `status.spentToday` ("nothing"
+   for a local member, whose leases cost nothing, and for a day that isn't
+   today, UTC), how long a lease lasts, and under it each lease with its
+   state, holder Task, since when and the provider's message (a lease waiting
+   for a node with the device says so). The day's budget shows once step 7
+   adds `limits.budgetUSDPerDay`. A TestEnvironment has a page of its own,
+   as a DeployTarget has: what it has (member, image, devices, runtime
+   class, placement, resources, `Ready`), its leases and limits, its CI pool
+   (`env-<name>`'s pods) and how a run uses it (`env/<name>`, `theos-env
+   run <name> -- <command>`), and the Tasks whose runs hold it. The Task
+   page's Overview shows the leases its run holds (`status.environments`:
+   environment, lease, run, since), the environments its runs leased
+   (`status.leasedEnvironments`), and why its run waits, from `Progressing`
+   `WaitingForEnvironment`'s message. A history step that waits for an
+   environment starts no agent run on the page, as a wait for a slot
+   doesn't. The UI's reader role reads `testenvironments` (`config/ui`, the
+   chart). The demo has `browser`, leased by orders-api-24's run, and
+   `android` on KVM. Tests: `ui/src/model/testenvs.test.ts`,
+   `ui/src/components/objects/TestEnvironmentPages.test.ts`, `rows.test.ts`
+   ("starts no run while it waits for a test environment") and the
+   TestEnvironment page in `ui/test/a11y.e2e.mjs`. Evidence:
+   `docs/screenshots/ui-test-environments.png` (and `-dark`),
+   `ui-test-environment-browser.png` and `ui-task-environments.png`, from the
+   demo.
 7. **AWS EC2, Linux and GPU** (T9 to T11, `internal/adapters/awsenv`, the
    `aws` member, `make manifests generate`).
    `contract.TestEnvironments` on a fake EC2 API, as the `cloudformation`

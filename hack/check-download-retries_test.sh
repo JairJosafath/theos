@@ -2,8 +2,9 @@
 # Tests for hack/check-download-retries.sh: every network fetch in the
 # Dockerfiles Release builds retries (#1494: v0.28.1's release failed on one
 # TLS handshake timeout in go install). curl without --retry or piped to tar,
-# go install, go get, go mod download, setup-envtest use and apk add outside
-# retry, apt-get without Acquire::Retries and npm without --fetch-retries fail.
+# go install, go get, go mod download, setup-envtest use, apk add and
+# sdkmanager outside retry, apt-get without Acquire::Retries and npm without
+# --fetch-retries fail.
 # Run: hack/check-download-retries_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -47,6 +48,7 @@ RUN $R \\
  && retry /out/bin/setup-envtest use 1.37.0 --bin-dir /tmp/e \\
  && cp -a \"\$(/out/bin/setup-envtest use -i 1.37.0 --bin-dir /tmp/e -p path)/.\" /out/
 RUN $R && retry apk add --no-cache curl git
+RUN $R && yes | retry sdkmanager --licenses && retry sdkmanager --install \"platforms;android-36\" emulator
 RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y curl wget
 RUN npm install -g --fetch-retries=5 x && npm config set fund false
 RUN { npm ci --fetch-retries=5 && node check.mjs; } || { npm ci --fetch-retries=5 && node check.mjs; }
@@ -74,6 +76,7 @@ bad "go install alone" "RUN $R && go install example.com/tool@v1" "not run under
 bad "go get alone" "RUN $R && cd /w && go get example.com/m@v1" "not run under retry"
 bad "setup-envtest use alone" 'RUN cp -a "$(setup-envtest use 1.37.0 -p path)/." /out' "not run under retry"
 bad "apk add alone" 'RUN apk add --no-cache git' "not run under retry"
+bad "sdkmanager alone" "RUN $R && sdkmanager --install emulator" "not run under retry: *sdkmanager"
 bad "retry no RUN defines" 'RUN retry go mod download' "retry used but not defined"
 bad "apt-get update without retries" 'RUN apt-get update && apt-get -o Acquire::Retries=5 install -y git' "apt-get without"
 bad "apt-get install without retries" 'RUN apt-get -o Acquire::Retries=5 update && apt-get install -y git' "apt-get without"
