@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -304,6 +305,17 @@ var _ = BeforeSuite(func() {
 		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
 	}
 
+	// The webhook server's port is bound here and held until the suite ends,
+	// so envtest writes into the CRDs' conversion config a port no other
+	// process can take before the manager serves it (#2002).
+	webhookListener, err := net.Listen("tcp", "127.0.0.1:0")
+	Expect(err).NotTo(HaveOccurred())
+	// The webhook server closes it on shutdown; this closes it when the suite
+	// fails before the manager starts.
+	DeferCleanup(func() { _ = webhookListener.Close() })
+	testEnv.WebhookInstallOptions.LocalServingHost = "127.0.0.1"
+	testEnv.WebhookInstallOptions.LocalServingPort = webhookListener.Addr().(*net.TCPAddr).Port
+
 	// cfg is defined in this file globally.
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
@@ -333,12 +345,12 @@ var _ = BeforeSuite(func() {
 	Expect(applyManifests(ctx, filepath.Join("..", "..", "config", "chat", "rbac.yaml"))).To(Succeed())
 
 	By("starting the manager with every reconciler, as that ServiceAccount")
-	webhookOptions := &testEnv.WebhookInstallOptions
+	webhookServer := &heldWebhookServer{Server: webhook.NewServer(webhook.Options{}),
+		listener: webhookListener, certDir: testEnv.WebhookInstallOptions.LocalServingCertDir}
 	mgr, err := ctrl.NewManager(managerCfg, ctrl.Options{
-		Scheme:  scheme.Scheme,
-		Metrics: metricsserver.Options{BindAddress: "0"},
-		WebhookServer: webhook.NewServer(webhook.Options{Host: webhookOptions.LocalServingHost,
-			Port: webhookOptions.LocalServingPort, CertDir: webhookOptions.LocalServingCertDir}),
+		Scheme:        scheme.Scheme,
+		Metrics:       metricsserver.Options{BindAddress: "0"},
+		WebhookServer: webhookServer,
 	})
 	Expect(err).NotTo(HaveOccurred())
 	// As cmd/main.go does when the webhook server runs.
@@ -366,10 +378,23 @@ var _ = BeforeSuite(func() {
 	DeferCleanup(goProxyFake.server.Close)
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
 	Expect(setupReconcilers(mgr)).To(Succeed())
+	started := make(chan error, 1)
 	go func() {
 		defer GinkgoRecover()
-		Expect(mgr.Start(ctx)).To(Succeed())
+		err := mgr.Start(ctx)
+		started <- err
+		Expect(err).To(Succeed())
 	}()
+	// A manager that fails to start fails the suite here, with its error,
+	// not every spec after it through a timeout (#2002).
+	Eventually(func() error {
+		select {
+		case err := <-started:
+			return StopTrying("the manager did not start").Wrap(err)
+		default:
+			return webhookServer.StartedChecker()(nil)
+		}
+	}).WithTimeout(time.Minute).Should(Succeed())
 })
 
 // setupReconcilers registers every reconciler the way cmd/main.go does.
