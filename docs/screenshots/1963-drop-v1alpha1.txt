@@ -1,0 +1,81 @@
+theos#24 (c4factory#1963): theos.factory.io/v1alpha1 dropped; every kind served at v1beta1 alone.
+2026-11-06, docs/plans/done/drop-v1alpha1.md. Agents don't run make check here (shared CPUs);
+the coordinator runs it on the merged branch.
+
+== Before the change: config/crd/bases as committed, go test ./internal/controller -run TestEveryCRDServesV1beta1Alone
+--- FAIL: TestEveryCRDServesV1beta1Alone (0.05s)
+    storageversion_unit_test.go:104: theos.factory.io_frameworks.yaml: the Framework CRD marks v1alpha1 deprecated, with no version to move to
+    storageversion_unit_test.go:109: theos.factory.io_frameworks.yaml: the Framework CRD serves [v1alpha1 v1beta1] of 2 version(s), want v1beta1 alone; scaffold a kind with kubebuilder create api --group theos --version v1beta1 (#1963)
+    ... (the same for every kind served at both versions; the messages were reworded after)
+
+== Without dropped.txt's line: go test ./test/compat
+--- FAIL: TestCRDsKeepTheLastRelease (0.06s)
+    compat_test.go:296: the CRDs break the compatibility promise (docs/design.md, "Compatibility"): an object stored under the last release would stop validating, or a version it served is gone. Add the field beside the old one in every served version, or name a dropped version in test/compat/dropped.txt with the release notes' line:
+          agents.theos.factory.io/v1alpha1: no longer served
+          briefs.theos.factory.io/v1alpha1: no longer served
+          ... (every CRD the baseline served at v1alpha1)
+
+== After: go test ./internal/controller -skip TestControllers -run 'TestStorageMigrator|TestEveryCRD|TestConversionMark|TestWebhookCRDs|TestWebhookCert' -v
+--- PASS: TestStorageMigratorWaitsForTheWebhookOnlyWhereItConverts (0.10s)
+    --- PASS: TestStorageMigratorWaitsForTheWebhookOnlyWhereItConverts/Webhook (0.09s)
+    --- PASS: TestStorageMigratorWaitsForTheWebhookOnlyWhereItConverts/None (0.01s)
+--- PASS: TestEveryCRDStoresTheHub (0.02s)
+--- PASS: TestEveryCRDServesV1beta1Alone (0.02s)
+--- PASS: TestWebhookCertIssuesReusesAndReissues (0.01s)
+--- PASS: TestWebhookCertReissuesForAnotherHostAndTakesTheFirstReplicas (0.02s)
+--- PASS: TestWebhookCertPatchesTheCAIntoWebhookCRDs (0.01s)
+--- PASS: TestConversionMarkFollowsTheShapes (0.03s)
+--- PASS: TestWebhookCRDsAreEveryCRD (0.00s)
+ok  	github.com/JairJosafath/theos/internal/controller	0.240s
+
+== go test ./internal/controller -skip TestControllers (every unit test of the package)
+ok  	github.com/JairJosafath/theos/internal/controller	1.199s
+
+== go test ./test/compat -v
+--- PASS: TestCRDsKeepTheLastRelease (0.08s)
+--- PASS: TestCompareSchema (0.00s)
+--- PASS: TestCompareSchemaDefaults (0.00s)
+--- PASS: TestCompareCRDs (0.00s)
+--- PASS: TestDroppedNamesOnlyDroppedVersions (0.07s)
+--- PASS: TestStaleDropped (0.00s)
+ok  	github.com/JairJosafath/theos/test/compat	0.152s
+
+== go test ./internal/model -run TestCheckPlan -v
+    --- PASS: TestCheckPlan/a_story_kind_at_the_dropped_v1alpha1 (0.00s)
+ok  	github.com/JairJosafath/theos/internal/model	0.081s
+
+== envtest: go test ./internal/controller -run '^TestControllers$' -v -args -ginkgo.v
+   -ginkgo.focus='Storage migrator|Webhook certificate|Project|Relationship|SoftwareSystem|Session|Scorer|RBAC|Crew controller|Chat'
+Webhook certificate issues the Secret and patches the CA into the webhook CRDs under the generated role
+Storage migrator rewrites the objects stored at the older version and brings storedVersions down under the generated role, never waiting on the webhook for a CRD at strategy None
+Ran 71 of 677 Specs in 59.908 seconds
+SUCCESS! -- 71 Passed | 0 Failed | 0 Pending | 606 Skipped
+--- PASS: TestControllers (59.92s)
+ok  	github.com/JairJosafath/theos/internal/controller	59.958s
+
+== go test ./test/chart ./internal/scaffold/... ./internal/sessionclient/... ./internal/ports/... ./cmd/...
+ok  	github.com/JairJosafath/theos/test/chart	33.340s
+ok  	github.com/JairJosafath/theos/internal/scaffold	5.145s
+ok  	github.com/JairJosafath/theos/internal/sessionclient	0.025s
+ok  	github.com/JairJosafath/theos/internal/ports	0.091s
+ok  	github.com/JairJosafath/theos/cmd	1.183s
+
+== golangci-lint run ./cmd/... ./internal/controller/... ./internal/model/... ./internal/ports/... ./api/... ./test/compat/...
+0 issues.
+
+== make validate-yaml
+All valid
+All 16 invalid files rejected
+The chart's CRDs match config/crd/bases
+The chart's manager role matches config/rbac/role.yaml
+
+== hack/chart-crds_test.sh, hack/release_test.sh, hack/test-packages_test.sh: every case ok
+
+== make ui-test (two comments changed)
+✖ 2 problems (0 errors, 2 warnings)   (react-refresh warnings, there before)
+All matched files use Prettier code style!
+ Test Files  67 passed (67)
+      Tests  938 passed (938)
+# tests 267
+# pass 267
+# fail 0

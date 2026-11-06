@@ -288,8 +288,8 @@ The one command starts it. Every command is bare.
 ### Step 1: a Container adopts an existing repository (relay)
 
 **The field.** Add `spec.adopt` (a bool, false by default, immutable by CEL) to
-Container in `api/v1beta1`. `v1alpha1` must carry it through conversion both
-ways ([done/api-versions.md](done/api-versions.md) has how conversion works).
+Container in `api/v1beta1`, the one version served (#1963 dropped
+`v1alpha1`, so no conversion carries it).
 
 **The model.** `model.ScaffoldHistory` takes the field:
 - an adopted Container whose repository has commits gets `HistoryAdopt`;

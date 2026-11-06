@@ -19,23 +19,31 @@ import (
 
 // #1614: the operator, under the generated role, issues its webhook
 // certificate into a Secret in its namespace and patches the CA into every
-// theos.factory.io CRD that converts by webhook.
+// theos.factory.io CRD that converts by webhook, and leaves the rest alone.
 var _ = Describe("Webhook certificate", func() {
 	It("issues the Secret and patches the CA into the webhook CRDs under the generated role", func() {
-		// Every CRD converts by webhook, envtest's for the suite (#1615); the
-		// operator's CA replaces envtest's here, so each comes back after.
-		for _, name := range WebhookCRDs {
+		// Every kind serves v1beta1 alone (#1963), so envtest installs every
+		// CRD at strategy None. One is set to convert by the operator's
+		// webhook, as the chart renders a CRD whose kind's versions differ,
+		// and comes back after.
+		const webhookCRD, noneCRD = "people.theos.factory.io", "projects.theos.factory.io"
+		Expect(WebhookCRDs).To(ContainElements(webhookCRD, noneCRD))
+		var crd apiextensionsv1.CustomResourceDefinition
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: webhookCRD}, &crd)).To(Succeed())
+		before := crd.Spec.Conversion.DeepCopy()
+		DeferCleanup(func() {
 			var crd apiextensionsv1.CustomResourceDefinition
-			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, &crd)).To(Succeed())
-			Expect(crd.Spec.Conversion.Strategy).To(Equal(apiextensionsv1.WebhookConverter), name)
-			before := crd.Spec.Conversion.DeepCopy()
-			DeferCleanup(func() {
-				var crd apiextensionsv1.CustomResourceDefinition
-				Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, &crd)).To(Succeed())
-				crd.Spec.Conversion = before
-				Expect(k8sClient.Update(ctx, &crd)).To(Succeed())
-			})
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: webhookCRD}, &crd)).To(Succeed())
+			crd.Spec.Conversion = before
+			Expect(k8sClient.Update(ctx, &crd)).To(Succeed())
+		})
+		crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
+			Strategy: apiextensionsv1.WebhookConverter,
+			Webhook: &apiextensionsv1.WebhookConversion{ConversionReviewVersions: []string{"v1"},
+				ClientConfig: &apiextensionsv1.WebhookClientConfig{Service: &apiextensionsv1.ServiceReference{
+					Namespace: operatorNamespace, Name: "theos-webhook-service", Path: new("/convert")}}},
 		}
+		Expect(k8sClient.Update(ctx, &crd)).To(Succeed())
 
 		operator, err := client.New(managerCfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).NotTo(HaveOccurred())
@@ -52,10 +60,13 @@ var _ = Describe("Webhook certificate", func() {
 		ca := secret.Data[webhookCAKey]
 		Expect(ca).NotTo(BeEmpty())
 
-		for _, name := range WebhookCRDs {
-			var crd apiextensionsv1.CustomResourceDefinition
-			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, &crd)).To(Succeed())
-			Expect(crd.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(ca), name)
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: webhookCRD}, &crd)).To(Succeed())
+		Expect(crd.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(ca))
+		var none apiextensionsv1.CustomResourceDefinition
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: noneCRD}, &none)).To(Succeed())
+		if none.Spec.Conversion != nil {
+			Expect(none.Spec.Conversion.Strategy).To(Equal(apiextensionsv1.NoneConverter))
+			Expect(none.Spec.Conversion.Webhook).To(BeNil())
 		}
 
 		By("a second replica reads the Secret the first wrote")

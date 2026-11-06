@@ -721,7 +721,7 @@ type TaskStatus struct {
 	// pullRequestSize is the size of the merged pull request's change, read
 	// once when it merged with personCommits (docs/plans/done/measure-and-improve.md,
 	// decision 4); unset before then, or when the Git host couldn't be read.
-	// A value, not a pointer: the older version carries a field it lacks in an
+	// A value, not a pointer: a version that lacks the field carries it in an
 	// annotation, which keeps no empty object.
 	// +optional
 	PullRequestSize TaskPullRequestSize `json:"pullRequestSize,omitzero"`
@@ -885,7 +885,6 @@ type TaskStatus struct {
 // +kubebuilder:printcolumn:name="Brief",type=string,JSONPath=".spec.briefRef.name",priority=1
 // +kubebuilder:printcolumn:name="Decision",type=string,JSONPath=".status.triage.decision",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"
 
 // Task is a goal for a Container. The operator runs an Agent in a sandbox to
 // implement it on a branch, opens a pull request, waits for CI, runs the Agent

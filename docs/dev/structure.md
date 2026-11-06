@@ -9,9 +9,8 @@ cmd/theos-session/                     Session client CLI, run in devcontainers
 cmd/theos-agent/                       Task runner, run in agent sandboxes
 cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
 cmd/theos-chat/                    theos-chat: posts in each Chat's Matrix rooms and runs its people's commands as them, a third binary in the operator image
-api/v1beta1/*_types.go             CRD schemas for all twenty-one kinds (+kubebuilder markers); the hub and storage version the operator imports
+api/v1beta1/*_types.go             CRD schemas for every kind (+kubebuilder markers), the one version served and stored; the operator imports it
 api/v1beta1/shared_types.go        Refs, Container types, condition names and labels
-api/v1alpha1/                      The deprecated older version, still served: the same shapes, converting to the hub (conversion.go); Chat, Scorer and Benchmark, born after, are v1beta1 only
 api/*/zz_generated.*               Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status
 internal/model/                    Pure business rules: choices, bundles, relationships, roll-up, staleness
@@ -49,7 +48,7 @@ hack/runner/, hack/agent/          The CI runner and agent images, built on the 
 hack/gh-runner/                    Self-hosted GitHub Actions runners for this repository (make gh-runner RUNNERS=N)
 hack/render/                       Renders templates locally, the way the operator scaffolds
 test/chart/                        The chart against envtest: its upgrade-only hooks (make test)
-test/compat/                       The v1alpha1 compatibility guard and its baseline CRDs (make test)
+test/compat/                       The compatibility guard: each served version against the last release's CRDs in baseline/ (make test)
 test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox, Argo CD)
 test/e2e/                          End-to-end tests against the Kind cluster (make e2e)
 test/e2e/testdata/apps/            The e2e fixture project: one hello-world Container, Agents and Tasks
