@@ -65,7 +65,8 @@ const (
 
 // MaxIssueAttempts is how many Tasks a Crew starts for one issue before it asks a
 // person: an issue that failed three times needs splitting or clarifying. A
-// Task that failed because CI never reported (NoCI) costs no try.
+// Task that failed because CI never reported (NoCI) costs no try, nor does the
+// first whose agent couldn't see the issue (TryCounter).
 const MaxIssueAttempts = 3
 
 // Issue is an open issue labelled ready, as a Crew sees it.
@@ -110,6 +111,9 @@ type CrewTask struct {
 	// NoCI means it failed through its CI runner's fault (RunnerFault: CI
 	// never reported, or the runner ran out of room), so it costs the issue no try.
 	NoCI bool
+	// Unseen means it failed because its agent couldn't see the issue
+	// (ReasonIssueUnseen); the first such Task costs the issue no try.
+	Unseen bool
 	// Blocked means the Task waits on a Standard change; it keeps its issue but
 	// takes no place from Parallel.
 	Blocked bool
@@ -346,7 +350,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 // rejectIssue says why agents must not take issue, from the Crew's ended
 // Tasks on it, or returns nil: a ready issue has no acceptance criteria, a
 // Task merged it (or its spec) already, or MaxIssueAttempts Tasks failed at it,
-// not counting those CI never reported on. A spec's tries and merge count
+// not counting those TryCounter calls free. A spec's tries and merge count
 // apart from the build's.
 func rejectIssue(tasks []CrewTask, issue Issue) *IssueRejection {
 	if reason := MissingAcceptanceCriteria(issue.Body); reason != "" && !issue.Spec {
@@ -354,6 +358,7 @@ func rejectIssue(tasks []CrewTask, issue Issue) *IssueRejection {
 	}
 	var tried []string
 	merged := ""
+	var counter TryCounter
 	for _, t := range tasks {
 		if t.Issue != issue.Number || !t.Final || t.Spec != issue.Spec {
 			continue
@@ -361,7 +366,7 @@ func rejectIssue(tasks []CrewTask, issue Issue) *IssueRejection {
 		switch {
 		case !t.Failed:
 			merged = t.Name
-		case t.NoCI:
+		case !counter.Costs(t.NoCI, t.Unseen):
 			continue
 		}
 		tried = append(tried, t.Name)

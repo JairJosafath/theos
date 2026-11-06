@@ -287,6 +287,13 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
   yet, or not in the sandbox, changes nothing and ends with `Blocked: <why>`;
   the Task fails at once, reason `Blocked`, with those words on the issue. A round
   with no change and no such line fails with the end of the agent's summary.
+  When the check fails on the base too, the implementer is sent back once
+  first, in a fresh session whose prompt is the round's own, the issue
+  included, then its first answer and the base's failure (#2037). A note
+  that says the agent can't see the issue (`model.IssueUnseen`: the issue or
+  its text, not given, available or seen) fails reason `IssueUnseen`
+  instead: the factory gave it the issue, so the first such Task on an issue
+  costs no try, and any more do.
 - **The infrastructure's failures cost the issue no try:**
 
   | Reason | What happened | The Task |
@@ -297,6 +304,7 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
   | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
   | `RunnerOutOfMemory`, `RunnerLost` | a job killed for memory, or abandoned by its runner | reruns the jobs twice a round, then fails |
   | `ApprovalRanOut` | CI outlived a Standard change's approval four times | fails |
+  | `IssueUnseen` | the agent's blocked note says it can't see the issue | fails; free once per issue |
   | `OverBudget` | the runs' summed cost reached the Crew's `taskBudgetUSD` | waits for the cap to be raised; a needs-you item; no round |
 
   An agent killed for memory or past its deadline fails its own round. A job

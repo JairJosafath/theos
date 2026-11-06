@@ -51,6 +51,33 @@ var _ = Describe("Task whose agent can't start its issue", func() {
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key(ns, "orders-api-1-r2-implement"), newSandbox()))).To(BeTrue())
 	})
 
+	// #2037: the agent was given the issue, so a note that it can't see it is
+	// no blocker, and the try is free once.
+	It("fails IssueUnseen when the agent says it can't see the issue, and says the try is free", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		mustCreate(newAgent(ns, 3))
+		n := gitFake.AddIssue(ns, "orders-api", "Locate CEL", clearIssue, []string{model.LabelReady})
+		task := newTask(ns, "orders-api-1", "")
+		task.Spec.Issue = int32(n)
+		mustCreate(task)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, "orders-api-1-r1-implement") }).Should(Succeed())
+
+		note := "the issue text for orders-api-1 isn't available to me."
+		finishSandbox(ns, "orders-api-1-r1-implement", "orders-api-1", &agentrunner.Result{Role: "implement",
+			Summary: "Blocked: " + note, Blocked: note}, "")
+
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "orders-api-1")
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskFailed))
+			g.Expect(condition(task.Status.Conditions, ConditionSucceeded)).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"Reason": Equal(model.ReasonIssueUnseen), "Message": Equal(model.IssueUnseenMessage(note))})))
+			g.Expect(failedUnseen(&task.Status)).To(BeTrue())
+		}).Should(Succeed())
+		Expect(gitFake.Issue(ns, "orders-api", n).Comments).To(ContainElement(And(ContainSubstring(note),
+			ContainSubstring("doesn't count towards the limit"))))
+	})
+
 	It("says a round with no change and no note gave no reason", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)

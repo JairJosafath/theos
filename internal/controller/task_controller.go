@@ -780,6 +780,17 @@ func failedNoCI(status *c4v1beta1.TaskStatus) bool {
 	return cond != nil && model.RunnerFault(cond.Reason)
 }
 
+// failedUnseen reports whether a Task failed because its agent said it
+// can't see the issue (model.ReasonIssueUnseen), which model.TryCounter lets
+// cost its issue no try once.
+func failedUnseen(status *c4v1beta1.TaskStatus) bool {
+	if status.Phase != c4v1beta1.TaskFailed {
+		return false
+	}
+	cond := meta.FindStatusCondition(status.Conditions, ConditionSucceeded)
+	return cond != nil && cond.Reason == model.ReasonIssueUnseen
+}
+
 func (r *TaskReconciler) now() time.Time {
 	if r.Now != nil {
 		return r.Now()
