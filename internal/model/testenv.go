@@ -116,6 +116,14 @@ func OrphanLease(listed bool, started, now time.Time, grace time.Duration) bool 
 	return !listed && !started.IsZero() && now.Sub(started) >= grace
 }
 
+// EnvRunnerLabel is the CI job label a test environment's runner pool takes,
+// env-<name>, which a workflow names in runs-on (T8).
+func EnvRunnerLabel(name string) string { return "env-" + name }
+
+// ReasonLabelClash is the Project's CIRunners reason when a GitProvider's ci
+// block names a label a test environment's pool takes (T8).
+const ReasonLabelClash = "LabelClash"
+
 // LabelEnvPrefix starts the label an issue asks for a test environment
 // with, env/browser (T2).
 const LabelEnvPrefix = "env/"

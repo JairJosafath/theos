@@ -164,6 +164,24 @@ step 2.
    and the runner binary copied in by the init container. `make
    validate-yaml`: the chart's runner fence covers the env pool.
    *Done when:* those tests and `make check` pass.
+
+   *As built:* the register init container, which alone holds the token,
+   also copies the runner, its configuration, the runner image's entrypoint
+   and its /tmp sweep into a volume (`RUNNER_COPY_TO`,
+   `hack/runner/register.sh`), and the job container runs that entrypoint
+   on the environment's image (`RUNNER_BIN_DIR`, `entrypoint.sh`); the
+   entrypoint is a bash script, so an image a pool runs on needs bash, as
+   Playwright's has. The pods register with `ci.runnerImage`, else the
+   image of the GitProvider's first runner. A size of 0 keeps the pool, at
+   no pod, so a job a pod still runs ends before it goes. The pool's pods
+   carry the CI runner label, so the project's own CI fence, which the
+   operator makes (`ensureCINetwork`), selects them:
+   `TestBuildEnvRunnerPod` checks it. The chart renders no project pool,
+   only the shared runners and their fence, so `make validate-yaml` has
+   nothing of the env pool to check, against what the step first said.
+   Envtests: "CI runner pool of a test environment"; table tests:
+   `TestBuildEnvRunnerPod`, `TestBuildEnvRunnerPodContainers`, `TestEnvRunnerPool`;
+   `hack/runner/register_test.sh`.
 4. **By hand only for a person** (T13, T14). The planner's and triager's
    workspaces list the project's environments, and their guides use
    `env/<name>`; the implementer's and verifier's built-in guides; the

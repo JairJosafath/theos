@@ -546,6 +546,10 @@ image is pinned and the project's fence for its pods exists.
   for the label `env-<name>` to the project's Gitea Actions pool, built from
   the environment's image and devices under the CI fence, so a Standard's
   workflow runs on `env-browser` what the agent ran with `theos-env run`.
+  Each pod registers, and gets its runner copied in, from `ci.runnerImage`,
+  else the image of the GitProvider's first runner; the jobs run on the
+  environment's image. A `ci` block that names `env-<name>` itself makes
+  the Project's `CIRunners` False, reason `LabelClash`.
 - **By hand only for a person.** The implementer's and verifier's prompts
   list the run's environments, with each one's description and how to use
   it, and the guides say that a criterion a listed environment can check is

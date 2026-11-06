@@ -61,6 +61,29 @@ spec:
           spec:
             description: spec is the provider and the limits.
             properties:
+              ci:
+                description: |-
+                  ci runs the project's CI jobs labelled env-<name> on the environment's
+                  tools, so CI checks what the agents ran with theos-env
+                  (docs/plans/test-environments.md, T8).
+                properties:
+                  runnerImage:
+                    description: |-
+                      runnerImage is a CI runner image, such as the release's base runner
+                      image: each pod registers with it in an init container, which copies
+                      its runner into the pod, and the jobs run on the environment's image. Unset, it is the
+                      image of the first runner of the GitProvider's ci block.
+                    maxLength: 500
+                    type: string
+                  size:
+                    description: |-
+                      size is how many idle pods wait for a job; 0, the default, keeps
+                      none, so no pod runs until a workflow names the label.
+                    format: int32
+                    maximum: 8
+                    minimum: 0
+                    type: integer
+                type: object
               description:
                 description: |-
                   description says in one line what the environment has, for people and

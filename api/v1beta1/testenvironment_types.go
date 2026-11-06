@@ -37,6 +37,32 @@ type TestEnvironmentSpec struct {
 	// +kubebuilder:default={}
 	// +optional
 	Limits TestEnvironmentLimits `json:"limits,omitzero"`
+
+	// ci runs the project's CI jobs labelled env-<name> on the environment's
+	// tools, so CI checks what the agents ran with theos-env
+	// (docs/plans/test-environments.md, T8).
+	// +optional
+	CI *TestEnvironmentCI `json:"ci,omitempty"`
+}
+
+// TestEnvironmentCI is a local environment's pool of CI runner pods: one
+// per GitProvider whose ci block keeps runners, under the label
+// env-<name>, which a workflow names in runs-on.
+type TestEnvironmentCI struct {
+	// size is how many idle pods wait for a job; 0, the default, keeps
+	// none, so no pod runs until a workflow names the label.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=8
+	// +optional
+	Size int32 `json:"size,omitempty"`
+
+	// runnerImage is a CI runner image, such as the release's base runner
+	// image: each pod registers with it in an init container, which copies
+	// its runner into the pod, and the jobs run on the environment's image. Unset, it is the
+	// image of the first runner of the GitProvider's ci block.
+	// +kubebuilder:validation:MaxLength=500
+	// +optional
+	RunnerImage string `json:"runnerImage,omitempty"`
 }
 
 // TestEnvironmentLocal is a pod per lease on the cluster the operator runs
