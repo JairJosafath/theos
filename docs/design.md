@@ -627,8 +627,10 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   with a comment, to the next open release that can still take work, one
   the Crew makes when there is none (the next minor, due at the next cut,
   marked `<!-- theos-crew: <crew>/carry <title> -->`). Then it goes out
-  as above: prepare, full check, tag. A cut with no merged work closes the
-  release untagged. A merged issue labelled `release/now` (a fix of what
+  as above: prepare, full check, tag. With no merged work in any open
+  release a cut cuts nothing; a release with none of its own ahead of one
+  with some is carried on and closed untagged. A merged issue labelled
+  `release/now` (a fix of what
   users hit in the latest release, or a feature a person wants out now)
   cuts its release at once, and those before it, with the work merged so
   far. Under a cadence the prepare issue waits for no other Task and the

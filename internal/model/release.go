@@ -32,6 +32,9 @@ type ReleaseMilestone struct {
 	// FullChecks are the issues, open or closed, a Crew filed when the
 	// release's full check failed, and the commit each failed at.
 	FullChecks []FullCheckFix
+	// Cut says its description carries a cut mark: under a cadence it was
+	// cut, and takes no more work (docs/plans/release-cadence.md, C4).
+	Cut bool
 }
 
 // MergedTask is a Merged Task on the Crew's Container.
@@ -73,6 +76,19 @@ type ReleaseFacts struct {
 	// person runs again (rerun-release, #2028); nil for none. Its issues of
 	// that check, open or at work, hold the release no more meanwhile.
 	FullCheckRerun *FullCheckAt
+	// Cadence is the Crew's release cadence; one that doesn't cut (Release,
+	// or unset) tags each release once it is done
+	// (docs/plans/release-cadence.md).
+	Cadence ReleaseCadence
+	// Now is the time of the poll, and LastCut the Crew's last cut, zero
+	// when it has cut none (see the function LastCut).
+	Now, LastCut time.Time
+	// ReleaseNow are the issues labelled release/now, and Fixes those that
+	// are fixes (IsFix), of the open releases.
+	ReleaseNow, Fixes []int
+	// Titles are the titles of every milestone of the repository, open or
+	// closed, which a new release's title and a retitle must not take.
+	Titles []string
 }
 
 // FullCheckAt is release Tag's full check at Commit.
@@ -138,9 +154,11 @@ const (
 // tag will carry. With Commit set, it moves the issues Moved into
 // milestone Milestone, tags Commit as Tag when CreateTag says so, then closes
 // milestone Milestone, the milestones Emptied and the milestones Skipped. With
+// Cut set, it cuts release Tag, milestone Milestone, under a cadence. With
 // Held set, release Tag is
 // done but can't go out: Reason says why in a word, Held in a sentence. With
-// none, there is nothing to do.
+// none, there is nothing to do. CutAt, when set, is the Crew's last cut from
+// now on.
 type ReleaseStep struct {
 	Tag       string
 	Commit    string
@@ -158,6 +176,8 @@ type ReleaseStep struct {
 	Closes []int
 	Reason string
 	Held   string
+	Cut    *ReleaseCut
+	CutAt  time.Time
 }
 
 // ReleaseMove is a later release's closed issue whose merge the tag carries, to
@@ -186,10 +206,34 @@ func held(title, reason, format string, args ...any) ReleaseStep {
 // A release with no issue at all, open or closed, is no release yet: it is
 // neither done nor in the way, so it holds no later release, and one before the
 // release tagged closes untagged with it (#2025).
+//
+// Under a cadence that cuts (Day or Week), the first release waits for its cut
+// instead, and is cut first: docs/plans/release-cadence.md, cadenceStep.
 func NextRelease(f ReleaseFacts) ReleaseStep {
 	rerunFixes := withoutRerunFixes(&f)
-	var releases, empty []ReleaseMilestone
-	for _, m := range f.Milestones {
+	releases, empty := sortedReleases(f.Milestones)
+	var step ReleaseStep
+	switch {
+	case f.Cadence.Cuts():
+		step = cadenceStep(f, releases, empty)
+	case len(releases) == 0:
+		return ReleaseStep{}
+	default:
+		step = nextRelease(f, releases)
+	}
+	if step.Commit != "" {
+		step.Skipped = skippedBefore(empty, releases[0].Release)
+		if f.FullCheckRerun != nil && step.Tag == f.FullCheckRerun.Tag {
+			step.Closes = rerunFixes
+		}
+	}
+	return step
+}
+
+// sortedReleases are the milestones that are releases and have issues, in
+// order, and those with no issue at all.
+func sortedReleases(milestones []ReleaseMilestone) (releases, empty []ReleaseMilestone) {
+	for _, m := range milestones {
 		switch {
 		case !IsReleaseTitle(m.Title) || m.Due.IsZero():
 		case len(m.Open) == 0 && len(m.Closed) == 0:
@@ -198,20 +242,10 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 			releases = append(releases, m)
 		}
 	}
-	if len(releases) == 0 {
-		return ReleaseStep{}
-	}
 	slices.SortStableFunc(releases, func(a, b ReleaseMilestone) int {
 		return compareReleases(&a.Release, &b.Release)
 	})
-	step := nextRelease(f, releases)
-	if step.Commit != "" {
-		step.Skipped = skippedBefore(empty, releases[0].Release)
-		if f.FullCheckRerun != nil && step.Tag == f.FullCheckRerun.Tag {
-			step.Closes = rerunFixes
-		}
-	}
-	return step
+	return releases, empty
 }
 
 // withoutRerunFixes drops from the facts' open and active issues those of the
@@ -261,7 +295,11 @@ func nextRelease(f ReleaseFacts, releases []ReleaseMilestone) ReleaseStep {
 	f.Merged = doneByChanges(f.Merged)
 	first := releases[0]
 	if !releaseDone(first, f.Active) {
+		// Under a cadence a later release waits for its own cut anyway.
 		for _, later := range releases[1:] {
+			if f.Cadence.Cuts() {
+				break
+			}
 			if releaseDone(later, f.Active) {
 				return held(later.Title, ReleaseWaiting, "%s is done and waits for %s to be released",
 					later.Title, first.Title)
@@ -348,7 +386,9 @@ func prepareStep(f ReleaseFacts, releases []ReleaseMilestone) (ReleaseStep, bool
 	if len(work) == 0 {
 		return ReleaseStep{}, false
 	}
-	if len(f.Working) > 0 {
+	// Under a cadence the release was cut: no Task works on its issues, and
+	// the other Tasks' merges wait for its tag instead (C10).
+	if len(f.Working) > 0 && !f.Cadence.Cuts() {
 		return held(first.Title, ReleasePrepareWaits, "%s is done; its prepare issue waits for %s %s to "+
 			"end, so it is built on the main their work merges into", first.Title,
 			plural(len(f.Working), "Task", "Tasks"), joinAnd(f.Working)), true

@@ -53,13 +53,14 @@ func BundlersToBump(released time.Time, bundlers []Bundler, filed []string) []Bu
 
 // ReleaseTakingWork returns the ID of the release due first among milestones,
 // the dated vMAJOR.MINOR.PATCH ones, that can still take work: one with no
-// prepare issue, open or closed. Work put in a release whose prepare issue is
-// filed would merge after it and hold the release as MergedAfterPrepare (#834).
-// It returns 0 when there is none.
+// prepare issue, open or closed, and not cut under a cadence. Work put in a
+// release whose prepare issue is filed would merge after it and hold the
+// release as MergedAfterPrepare (#834); a cut release ships what it holds
+// (docs/plans/release-cadence.md, C4). It returns 0 when there is none.
 func ReleaseTakingWork(milestones []ReleaseMilestone) int64 {
 	var first *ReleaseMilestone
 	for i, m := range milestones {
-		if !IsReleaseTitle(m.Title) || m.Due.IsZero() || len(m.Prepared) > 0 {
+		if !IsReleaseTitle(m.Title) || m.Due.IsZero() || len(m.Prepared) > 0 || m.Cut {
 			continue
 		}
 		if first == nil || compareReleases(&m.Release, &first.Release) < 0 {
