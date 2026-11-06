@@ -103,6 +103,23 @@ func newCIProvider(ns string) *c4v1beta1.GitProvider {
 }
 
 var _ = Describe("CI runner pool", func() {
+	It("refuses a runner with both goCache and freshGoCache (#1141)", func() {
+		ns := newProjectNamespace()
+		both := &c4v1beta1.GitProvider{
+			ObjectMeta: objectMeta(ns, "gitea"),
+			Spec: c4v1beta1.GitProviderSpec{
+				URL: "http://gitea.gitea.svc.cluster.local:3000", Owner: ns,
+				CredentialsSecretRef: c4v1beta1.LocalRef{Name: "gitea-credentials"},
+				CI: &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: []c4v1beta1.CIRunnerSpec{
+					{Label: "go-release", Image: "theos/gitea-runner-go:dev", GoCache: true, FreshGoCache: true},
+				}}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, both)).To(MatchError(ContainSubstring("goCache and freshGoCache exclude each other")))
+		both.Spec.CI.GiteaActions.Runners[0].GoCache = false
+		Expect(k8sClient.Create(ctx, both, client.DryRunAll)).To(Succeed())
+	})
+
 	It("keeps a pool per GitProvider label, replaces ended pods and keeps their fate (#1140)", func() {
 		ns := newProjectNamespace()
 		var project c4v1beta1.Project

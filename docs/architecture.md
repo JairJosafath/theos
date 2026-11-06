@@ -361,6 +361,7 @@ each run compiles only what changed:
 | sandboxes | `/var/cache/theos/go/sandbox`, the operator's `--sandbox-go-cache` | every agent sandbox, at `/cache/go`, with `GOCACHE` and `GOLANGCI_LINT_CACHE` pointing into it | an init container in the agent's image |
 | CI, shared | `/var/cache/theos/go/ci` | only the shared `go` runner (`config/runner/go.yaml`), which serves the templates organization; jobs get the variables from the runner's `env_file` | an init container, and a sidecar hourly |
 | CI, per project | `/var/cache/theos/go/projects/<namespace>`, under the operator's `--ci-go-cache` | the project's `go` pool pods, at `/cache/go`; the variables come from ConfigMap `c4-ci-runner-env` in the namespace, the pod's `env_file` | an init container of each pod |
+| CI, releases | none: an emptyDir per pod | each `go-release` pool pod (`freshGoCache`), at `/cache/go`, with the same `env_file`; gitea-release's release job runs there, so the signed release files link nothing a pull request's job wrote (#1141) | an init container of each pod, copying the image's warm cache |
 
 - **CI's cache is its own.** Go doesn't check what it reads from a cache, so a
   sandbox that could write CI's cache could plant a compiled package that CI,
