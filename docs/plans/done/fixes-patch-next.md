@@ -47,6 +47,11 @@ as today. When such a patch release is already open, the fixes join it.
 | F7 | Restarts | A patch milestone a round makes carries its own marker, `<!-- c4-brief: NAME/ROUND fixes -->`, next to today's `<!-- c4-brief: NAME/ROUND -->` for the round's minor milestone, so a restart finds each and makes neither twice. A milestone the round joins gets no marker: the retry works out the same slot again, and the issues already filed are recorded and not filed again (#501). | The Git provider has no call to edit a milestone, and none is needed. If the release in progress is tagged between two tries, the retry puts the remaining fixes into the next patch, which is still right after the release in progress. |
 | F8 | Tending rounds | An autopilot tending round places its issues the same way. | The same rule for every issue the Brief files (P5). |
 
+Since [release-cadence.md](../release-cadence.md) (C5), F1 to F8 apply
+only to a Brief whose `releaseCadence` is `every: Release`, and F2's patch
+slot only there: under a cadence a round's fixes go into the release in
+progress with the rest of its work, and the cut decides its version (C7).
+
 #873 lets a Crew's free slots start ready issues of the next releases while
 the release in progress waits on its chain, and still tags releases in order.
 With F2 the patch is the next release in that order, so its fixes are the

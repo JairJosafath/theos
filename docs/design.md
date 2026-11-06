@@ -612,11 +612,36 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   A release with no issue at all is not done and holds no later one; one
   before the release tagged closes untagged with it (#2025).
   `status.lastRelease` records it; `Released` says why one waits on a person.
+- **Cadence** (`spec.releaseCadence`,
+  [plans/release-cadence.md](plans/release-cadence.md)). `every: Release`,
+  the default, tags each release once it is done, as above. `Day` or
+  `Week` releases on a schedule: `at` (`HH:MM`, default `18:00`) in
+  `timeZone` (an IANA name, default `UTC`), on `weekday` (only with
+  `Week`, default `Friday`). Until the cut the first open release waits
+  (`Released=False`, `WaitingForCut`: "v0.15.0 holds 4 merged issues and
+  goes out at 18:00 UTC"; `status.nextCut`). At the cut, the first `at`
+  after the last cut (daylight saving as the time zone has it), the Crew
+  cuts that release: it marks the milestone cut, so no more work goes in;
+  a release whose merged work is all fixes (`kind/bug`, `kind/test`) takes
+  the next patch title after the last release; its open issues move, each
+  with a comment, to the next open release that can still take work, one
+  the Crew makes when there is none (the next minor, due at the next cut,
+  marked `<!-- theos-crew: <crew>/carry <title> -->`). Then it goes out
+  as above: prepare, full check, tag. A cut with no merged work closes the
+  release untagged. A merged issue labelled `release/now` (a fix of what
+  users hit in the latest release, or a feature a person wants out now)
+  cuts its release at once, and those before it, with the work merged so
+  far. Under a cadence the prepare issue waits for no other Task and the
+  Crew keeps starting them; a Task ready to merge outside the cut release
+  waits (`WaitingForRelease`, no round spent, no place taken from
+  `parallel`) until it is tagged, so the changelog holds what the tag
+  carries. A time zone the operator can't load stops the Crew
+  (`Ready=False`, `InvalidTimeZone`) until it is fixed.
 - **Preparing** (`spec.prepareReleases`). A done release with work a Task
   merged gets `Prepare vX.Y.Z`, `kind/release`, listing what the tag carries;
   its agents set the version files (`make release-version`) and the
-  changelog. It starts once no other Task works and runs alone
-  (`PrepareWaitsForTasks`). Work merged after it leaves the release to a
+  changelog. With `every: Release` it starts once no other Task works and
+  runs alone (`PrepareWaitsForTasks`). Work merged after it leaves the release to a
   person (`MergedAfterPrepare`).
 - **The full check.** `Container.spec.checks` is `EveryChange` (the default:
   CI runs `make check` on every change) or `BeforeRelease`: changes run the
@@ -864,11 +889,21 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   in `NeedsInput`. The Crews' `parallel` (`spec.parallel`, else a prompt's
   number, else 3) and a Container's `checks` change only when the person asks.
 - **Releases when the plan says so** (`plan/releases.yaml`, or `spec.releases`
-  naming a Container with a GitHub repository and token Secret). Fixes go
-  into the next patch release, other work into the next minor: an empty one
-  an earlier round made is joined, not passed over (#2025). A Crew whose
-  target was edited away from the Brief's publishes nothing until they agree
-  (`ReleaseTarget=False`, `DiffersFromBrief`).
+  naming a Container with a GitHub repository and token Secret), on the
+  cadence `spec.releaseCadence` says (default `every: Day`, `at: 18:00`,
+  `timeZone: UTC`), which the Brief writes onto the Crews it made; a Crew
+  it didn't make keeps its own. Under a cadence every issue and taken
+  suggestion of a round, a tending round's too, goes into the release in
+  progress, the first open release that can still take work, made only
+  when none is open, so a day's work is one release. The planner marks
+  what is bigger, `release: now` on an issue or `now: true` on a taken
+  suggestion (refused on a skip), and the operator labels it
+  `release/now`; a tending round marks nothing. With `every: Release`,
+  fixes go into the next patch release, other work into the next minor:
+  an empty one an earlier round made is joined, not passed over (#2025). A
+  Crew whose target was edited away from the Brief's publishes nothing
+  until they agree (`ReleaseTarget=False`, `DiffersFromBrief`).
+  `status.apps[].nextRelease` copies the Crew's next cut.
 - **Requests from GitHub.** An entry that takes requests plans the allowed
   authors' GitHub issues like prompts, answers each, and closes it once
   shipped.
