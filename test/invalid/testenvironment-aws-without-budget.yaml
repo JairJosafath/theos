@@ -1,0 +1,15 @@
+# expect: an aws environment needs limits.budgetUSDPerDay
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: gpu
+  namespace: webshop
+spec:
+  description: A GPU machine on AWS with no cap on what its leases cost.
+  aws:
+    region: eu-west-1
+    instanceType: g5.xlarge
+    imageId: ami-0123456789abcdef0
+    subnetId: subnet-0123456789abcdef0
+    credentialsSecretRef:
+      name: gpu-aws

@@ -147,6 +147,58 @@ func TestRunRefusesAWrongToken(t *testing.T) {
 	}
 }
 
+// A remote environment serves HTTPS with the certificate its lease's token
+// makes, at an address the certificate doesn't name; a run that pins that
+// certificate (THEOS_ENV_<NAME>_CA) reaches it, and one that pins another,
+// or none, sends it nothing (T4, T5).
+func TestRunPinsARemoteEnvironmentsCertificate(t *testing.T) {
+	repo := gitRepo(t)
+	token, work := rand.Text(), t.TempDir()
+	config, err := serveTLS(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewUnstartedServer(&server{token: token, work: work, max: model.TestEnvMaxTree})
+	srv.TLS = config
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	pinned, _, err := model.TestEnvCertificate(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := model.TestEnvCertificate(rand.Text())
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(ca string) (int, string, string) {
+		t.Chdir(repo)
+		vars := map[string]string{"THEOS_ENV_GPU_URL": srv.URL, "THEOS_ENV_GPU_TOKEN": token, "THEOS_ENV_GPU_CA": ca}
+		var stdout, stderr bytes.Buffer
+		code := mainWith([]string{"run", "gpu", "--", "sh", "-c", "cat a.txt; echo made > made.txt"}, &stdout, &stderr,
+			func(k string) string { return vars[k] })
+		return code, stdout.String(), stderr.String()
+	}
+	if code, stdout, stderr := run(pinned); code != 0 || stdout != "first\n" {
+		t.Fatalf("a run pinning the lease's certificate: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	if got, err := os.ReadFile(filepath.Join(repo, "made.txt")); err != nil || string(got) != "made\n" {
+		t.Errorf("made.txt = %q, %v; want the file the command made", got, err)
+	}
+	if err := os.Remove(filepath.Join(repo, "made.txt")); err != nil {
+		t.Fatal(err)
+	}
+	for name, ca := range map[string]string{"another certificate": other, "none": ""} {
+		code, stdout, stderr := run(ca)
+		if code != exitFailed || stdout != "" || !strings.Contains(stderr, "certificate") {
+			t.Errorf("a run pinning %s: exit %d, stdout %q, stderr %q; want it refused for the certificate", name, code,
+				stdout, stderr)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(repo, "made.txt")); err == nil {
+		t.Error("a run that pinned the wrong certificate ran")
+	}
+}
+
 // A tree over the cap is refused before it is sent, and the environment
 // refuses one too (T4).
 func TestRunRefusesATreeOverTheCap(t *testing.T) {

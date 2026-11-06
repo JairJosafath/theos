@@ -10,7 +10,7 @@ permission. See the LICENSE file.
 // with tools the sandbox lacks (docs/plans/test-environments.md, T4):
 //
 //	theos-env run <name> [--] <command> [args...]
-//	theos-env serve [--listen :7070] [--work /work]
+//	theos-env serve [--listen :7070] [--work /work] [--tls]
 //	theos-env install <path>
 //
 // In the sandbox, run sends the working tree's tracked and untracked, not
@@ -20,7 +20,9 @@ permission. See the LICENSE file.
 // the same folder, streams its output, writes the files it changed or added
 // back into the tree, and exits with its exit code. In the environment,
 // serve takes those runs with the lease's token in THEOS_ENV_TOKEN, one at
-// a time, each on a fresh /work. install copies this binary to path: the
+// a time, each on a fresh /work; with --tls, on a remote machine, over HTTPS
+// with the certificate the token makes, which the run pins (its _CA), the
+// certificate itself, not a host name. install copies this binary to path: the
 // lease pod's init container puts it next to the environment's tools. A
 // static binary, so any image runs it.
 package main
@@ -45,7 +47,7 @@ func main() {
 
 const usage = `usage:
   theos-env run <name> [--] <command> [args...]
-  theos-env serve [--listen :7070] [--work /work]
+  theos-env serve [--listen :7070] [--work /work] [--tls]
   theos-env install <path>
 `
 

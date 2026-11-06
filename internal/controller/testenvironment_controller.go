@@ -10,6 +10,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -18,11 +19,13 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -35,11 +38,16 @@ import (
 
 // TestEnvironmentReconciler reports whether each TestEnvironment can be
 // leased, lists its live leases, and returns the leases whose holder holds
-// them no more (docs/plans/test-environments.md, step 1). The Task
-// reconciler takes and returns the leases of its runs.
+// them no more (docs/plans/test-environments.md, step 1). A remote member's
+// credential is checked on each poll (CredentialsValid), and its leases are
+// returned before the environment goes (step 7). The Task reconciler takes
+// and returns the leases of its runs.
 type TestEnvironmentReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// APIReader reads a remote member's Secret live: the operator caches no
+	// Secrets.
+	APIReader client.Reader
 	// Providers are the providers by member, as cmd/main.go builds them.
 	Providers ports.TestEnvironmentProviders
 	// SharedPullSecrets are the shared pull Secrets lease pods list, as
@@ -59,20 +67,54 @@ type TestEnvironmentReconciler struct {
 // +kubebuilder:rbac:groups=theos.factory.io,resources=testenvironments/finalizers,verbs=update
 // +kubebuilder:rbac:groups=theos.factory.io,resources=tasks,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=create;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch
 
-// Reconcile sets Ready, returns the orphaned leases and records the live
-// ones and what they cost today.
+// testEnvLeasesFinalizer keeps a remote TestEnvironment until its leases are
+// returned and its provider released what it keeps for it: its machines
+// would outlive it, costing money, until their deadline.
+const testEnvLeasesFinalizer = "theos.factory.io/test-environment-leases"
+
+// testEnvReleaseTimeout is how long a deleted remote environment waits for
+// its provider to return its leases and release it; after it, what is left
+// ends at its deadline, and the environment goes.
+const testEnvReleaseTimeout = 15 * time.Minute
+
+// Reconcile sets Ready, and CredentialsValid for a remote member, returns
+// the orphaned leases and records the live ones and what they cost today.
 func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var env c4v1beta1.TestEnvironment
 	if err := r.Get(ctx, req.NamespacedName, &env); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	member := testEnvMember(&env)
+	provider, providerErr := r.Providers.For(member)
+	if !env.DeletionTimestamp.IsZero() {
+		return r.release(ctx, &env, provider)
+	}
+	if model.TestEnvRemote(member) && !controllerutil.ContainsFinalizer(&env, testEnvLeasesFinalizer) {
+		held := env.DeepCopy()
+		controllerutil.AddFinalizer(held, testEnvLeasesFinalizer)
+		if err := r.Patch(ctx, held, client.MergeFrom(&env)); err != nil {
+			return ctrl.Result{}, err
+		}
+		env.Finalizers, env.ResourceVersion = held.Finalizers, held.ResourceVersion
+	}
 	status := env.Status.DeepCopy()
+	environment, err := providerEnvironment(ctx, r.reader(), &env, r.SharedPullSecrets)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	credentials := model.TestEnvCredentialsValid
+	if model.TestEnvRemote(member) {
+		credentials = r.checkCredentials(ctx, &env, status, environment, provider)
+	}
 	reason, message, err := r.readiness(ctx, &env)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if credentials != model.TestEnvCredentialsValid {
+		reason, message = model.TestEnvCredentialsInvalid, "its CredentialsValid condition is False: "+credentials
 	}
 	condition := metav1.ConditionFalse
 	if reason == model.TestEnvReady {
@@ -80,11 +122,14 @@ func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	setCondition(&status.Conditions, env.Generation, c4v1beta1.ConditionTestEnvironmentReady, condition, reason, message)
 
-	environment, member := testEnvironment(&env, r.SharedPullSecrets), testEnvMember(&env)
-	provider, err := r.Providers.For(member)
-	if err != nil {
-		logf.FromContext(ctx).Error(err, "Failed to find the test environment's provider", "member", member)
+	if providerErr != nil {
+		logf.FromContext(ctx).Error(providerErr, "Failed to find the test environment's provider", "member", member)
 		return ctrl.Result{}, r.writeStatus(ctx, &env, status)
+	}
+	if credentials != model.TestEnvCredentialsValid {
+		// The provider takes no call without a credential; the leases are
+		// listed once it is valid.
+		return ctrl.Result{RequeueAfter: r.pollInterval()}, r.writeStatus(ctx, &env, status)
 	}
 	leases, err := provider.Leases(ctx, environment)
 	if err != nil {
@@ -110,11 +155,111 @@ func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{RequeueAfter: r.pollInterval()}, r.writeStatus(ctx, &env, status)
 }
 
-// readiness says whether runs can lease env: its image is pinned and the
-// project's fence for its pods is there.
+// checkCredentials sets a remote env's CredentialsValid: its Secret is there
+// with the member's keys, and its provider takes them in the account the
+// member names. It returns the condition's reason. The Secret's values
+// never reach the condition or the log.
+func (r *TestEnvironmentReconciler) checkCredentials(ctx context.Context, env *c4v1beta1.TestEnvironment,
+	status *c4v1beta1.TestEnvironmentStatus, environment ports.Environment, provider ports.TestEnvironments) string {
+	secret := testEnvSecretName(env)
+	var missing []string
+	var detail string
+	reason := model.TestEnvCredentialsValid
+	switch {
+	case environment.Secret == nil:
+		reason = model.TestEnvSecretMissing
+	case len(model.TestEnvMissingKeys(environment.Member, environment.Secret)) > 0:
+		reason, missing = model.TestEnvSecretIncomplete, model.TestEnvMissingKeys(environment.Member, environment.Secret)
+	case provider == nil:
+		reason, detail = model.TestEnvUnreachable, "the operator has no provider for member "+environment.Member
+	default:
+		checker, ok := provider.(ports.TestEnvironmentCredentials)
+		if !ok {
+			break
+		}
+		err := checker.CheckCredentials(ctx, environment)
+		switch {
+		case err == nil:
+		case errors.Is(err, ports.ErrCredentialRefused):
+			reason, detail = model.TestEnvCredentialRefused, err.Error()
+		default:
+			reason, detail = model.TestEnvUnreachable, err.Error()
+		}
+	}
+	value := metav1.ConditionFalse
+	if reason == model.TestEnvCredentialsValid {
+		value = metav1.ConditionTrue
+	}
+	if cond := apimeta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionTestEnvironmentCredentialsValid); cond == nil ||
+		cond.Reason != reason {
+		logf.FromContext(ctx).Info("Checked the test environment's credential", "member", environment.Member,
+			"reason", reason)
+	}
+	setCondition(&status.Conditions, env.Generation, c4v1beta1.ConditionTestEnvironmentCredentialsValid, value, reason,
+		model.TestEnvCredentialsMessage(reason, secret, missing, detail))
+	return reason
+}
+
+// release returns a deleted remote environment's leases and has its
+// provider release what it keeps for it, then lets the environment go. With
+// no provider, no Secret or a credential refused nothing can be returned,
+// and a provider that keeps failing is given up on after
+// testEnvReleaseTimeout: the machines left end at their deadline.
+func (r *TestEnvironmentReconciler) release(ctx context.Context, env *c4v1beta1.TestEnvironment,
+	provider ports.TestEnvironments) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(env, testEnvLeasesFinalizer) {
+		return ctrl.Result{}, nil
+	}
+	log := logf.FromContext(ctx)
+	let := func(why string) (ctrl.Result, error) {
+		if why != "" {
+			log.Info("Left a deleted test environment's leases to end at their deadline", "why", why)
+		}
+		gone := env.DeepCopy()
+		controllerutil.RemoveFinalizer(gone, testEnvLeasesFinalizer)
+		return ctrl.Result{}, client.IgnoreNotFound(r.Patch(ctx, gone, client.MergeFrom(env)))
+	}
+	if provider == nil {
+		return let("the operator has no provider for its member")
+	}
+	environment, err := providerEnvironment(ctx, r.reader(), env, r.SharedPullSecrets)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if environment.Secret == nil {
+		return let("its credentials Secret is gone")
+	}
+	leases, err := provider.Leases(ctx, environment)
+	for i := 0; err == nil && i < len(leases); i++ {
+		if err = provider.Return(ctx, environment, leases[i].ID); err == nil {
+			log.Info("Returned a deleted test environment's lease", "lease", leases[i].ID, "holder", leases[i].Holder)
+		}
+	}
+	if releaser, ok := provider.(ports.TestEnvironmentReleaser); ok && err == nil {
+		err = releaser.Release(ctx, environment)
+	}
+	switch {
+	case err == nil:
+		log.Info("Released the deleted test environment", "member", environment.Member)
+		return let("")
+	case errors.Is(err, ports.ErrCredentialRefused):
+		return let("its provider refuses the credential: " + err.Error())
+	case time.Since(env.DeletionTimestamp.Time) > testEnvReleaseTimeout:
+		return let("its provider kept failing: " + err.Error())
+	}
+	log.Info("Could not release the deleted test environment yet; trying again", "error", err.Error())
+	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+}
+
+// readiness says whether runs can lease env: a local member's image is
+// pinned and the project's fence for its pods is there; a remote member
+// needs neither (its credential is CredentialsValid's).
 func (r *TestEnvironmentReconciler) readiness(ctx context.Context, env *c4v1beta1.TestEnvironment) (string, string, error) {
 	if local := env.Spec.Local; local != nil && !model.ImagePinned(local.Image) {
 		return model.TestEnvImageNotPinned, fmt.Sprintf("image %q names no tag or digest, or latest", local.Image), nil
+	}
+	if model.TestEnvRemote(testEnvMember(env)) {
+		return model.TestEnvReady, "", nil
 	}
 	var policy networkingv1.NetworkPolicy
 	err := r.Get(ctx, client.ObjectKey{Namespace: env.Namespace, Name: model.TestEnvNetworkPolicy}, &policy)
@@ -189,16 +334,59 @@ func leaseStatus(live []ports.Lease) []c4v1beta1.TestEnvironmentLease {
 
 // testEnvMember is the name of env's provider member.
 func testEnvMember(env *c4v1beta1.TestEnvironment) string {
-	if env.Spec.Local != nil {
+	switch {
+	case env.Spec.Local != nil:
 		return model.TestEnvMemberLocal
+	case env.Spec.AWS != nil:
+		return model.TestEnvMemberAWS
 	}
 	return ""
 }
 
+// testEnvSecretName is the Secret a remote member's credential is in, ""
+// for a member that needs none.
+func testEnvSecretName(env *c4v1beta1.TestEnvironment) string {
+	if a := env.Spec.AWS; a != nil {
+		return a.CredentialsSecretRef.Name
+	}
+	return ""
+}
+
+// providerEnvironment is env as its provider reads it, a remote member's
+// credential among it, read live from its Secret: the operator caches no
+// Secrets. Secret is nil when the Secret is missing, and never logged or
+// written to a status.
+func providerEnvironment(ctx context.Context, reader client.Reader, env *c4v1beta1.TestEnvironment,
+	pullSecrets []string) (ports.Environment, error) {
+	out := testEnvironment(env, pullSecrets)
+	name := testEnvSecretName(env)
+	if name == "" {
+		return out, nil
+	}
+	var secret corev1.Secret
+	err := reader.Get(ctx, client.ObjectKey{Namespace: env.Namespace, Name: name}, &secret)
+	switch {
+	case apierrors.IsNotFound(err):
+		return out, nil
+	case err != nil:
+		return out, err
+	}
+	out.Secret = secret.Data
+	if out.Secret == nil {
+		out.Secret = map[string][]byte{}
+	}
+	return out, nil
+}
+
 // testEnvironment is env as its provider reads it, the pull Secrets its
-// pods list among its settings.
+// pods list among its settings; a remote member's credential is
+// providerEnvironment's.
 func testEnvironment(env *c4v1beta1.TestEnvironment, pullSecrets []string) ports.Environment {
 	out := ports.Environment{Namespace: env.Namespace, Name: env.Name, UID: string(env.UID), Member: testEnvMember(env)}
+	if a := env.Spec.AWS; a != nil {
+		out.AWS = &ports.AWSEnvironment{Region: a.Region, Account: a.Account, InstanceType: a.InstanceType,
+			ImageID: a.ImageID, SubnetID: a.SubnetID}
+	}
 	local := env.Spec.Local
 	if local == nil {
 		return out
@@ -233,6 +421,14 @@ func (r *TestEnvironmentReconciler) writeStatus(ctx context.Context, env *c4v1be
 	orig := env.DeepCopy()
 	env.Status = *status.DeepCopy()
 	return r.Status().Patch(ctx, env, client.MergeFrom(orig))
+}
+
+// reader reads Secrets live: APIReader, else the client.
+func (r *TestEnvironmentReconciler) reader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 func (r *TestEnvironmentReconciler) now() time.Time {

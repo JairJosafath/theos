@@ -487,9 +487,10 @@ libraries, a phone emulator, a GPU, later macOS) gets it from a
 TestEnvironment is a named set of tools in a project's namespace, such as
 `browser`, `android` or `godot` (`v1beta1`, as every kind): a one-line
 `description` for people and agents, exactly one provider member (`local`
-today, `aws` later; CEL), and `limits`. Its status lists the live leases
-(holder, since, state, cost so far), what they cost today, and `Ready`: the
-image is pinned and the project's fence for its pods exists.
+or `aws`; CEL), and `limits`. Its status lists the live leases (holder,
+since, state, cost so far), what they cost today, and `Ready`: a local
+member's image is pinned and the project's fence for its pods exists; a
+remote member's `CredentialsValid` is True.
 
 - **Who asks.** A Standard or a Framework lists names in
   `spec.testEnvironments`, and its Containers' runs get each one the project
@@ -528,8 +529,13 @@ image is pinned and the project's fence for its pods exists.
   no model proxy, no private range. Each lease has a token of its own, which
   the operator makes and gives only to the run that holds the lease, so one
   Task can't use another's environment. A remote environment is reached over
-  public HTTPS with its certificate pinned, gets no cloud role and no metadata
-  service, and lets in only `theos-env`'s port.
+  public HTTPS on port 443, which the sandbox fence lets out already, with
+  its certificate pinned: the certificate itself, which the lease's token
+  makes on both sides, not a host name. An `aws` machine gets no instance
+  role and no SSH key, its metadata service is turned off before a run gets
+  it (on at boot only to hand the machine its user data, IMDSv2, one hop),
+  and its security group, the operator's own and its only one, lets in only
+  `theos-env`'s port and lets out only DNS and HTTPS to public addresses.
 - **The chart's browser.** The seed makes a local `browser` in each
   project it sets up (`testEnvironments.browser.enabled`, on by default),
   on the release's `env-browser` image, with no CI pool: a fresh install
@@ -539,7 +545,19 @@ image is pinned and the project's fence for its pods exists.
   returns and lists leases (*Factory components*); `cmd/main.go` maps each
   member to its provider. The local provider makes a pod per lease (never a
   Deployment: no lease sees the last one's leftovers) and costs nothing. A
-  remote provider's credential is a Secret only the operator reads.
+  remote provider's credential is a Secret only the operator reads
+  (`aws.credentialsSecretRef`, a `cloudFormation` DeployTarget's keys, and
+  `aws.account`, which a key of another account is refused against:
+  `CredentialsValid` False, and a run that needs it waits,
+  `CredentialRefused`). The aws provider launches an EC2 machine per lease
+  from the environment's AMI in its subnet, tagged with the lease, its
+  holder and the environment, so a restarted operator finds it; its user
+  data downloads `theos-env` (the chart's `testEnvironments.toolsURL`,
+  checked against `SHA256SUMS`), serves it with TLS, and shuts the machine
+  down, which terminates it, at the lease's deadline; `Return` terminates
+  it, and deleting the environment terminates its machines and deletes its
+  security group. A lease costs the instance type's on-demand price, read
+  from the AWS Price List, for the time it is held.
 - **Limits.** `limits.maxLeases` (default 2, at most 16) bounds the live
   leases; a run past it waits, `WaitingForEnvironment`, `AllLeased`.
   `limits.maxLeaseMinutes` (default 180, the agent run's own deadline) ends a
@@ -1181,7 +1199,7 @@ controllers call, not by one product's API;
 | AgentRuntime | start a run, read its state and result, stop it | Agent Sandbox |
 | Deployer | ship a release to a target, read its state back | the GitHub release copy |
 | ChatHost | a Space and its rooms, invites, messages, thread replies, edits, reactions, sync | Matrix |
-| TestEnvironments | lease a place to run commands with tools the sandbox lacks, read it back, return it, list the leases held | a pod per lease on the cluster (`local`) |
+| TestEnvironments | lease a place to run commands with tools the sandbox lacks, read it back, return it, list the leases held | a pod per lease on the cluster (`local`); an EC2 machine per lease in the user's AWS account (`aws`) |
 
 - **A port is a narrow Go interface** with one fake and one contract suite,
   plain Go with no Kubernetes in `internal/ports`; each adapter is its own

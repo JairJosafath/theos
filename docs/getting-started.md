@@ -1060,6 +1060,56 @@ an Android emulator on KVM (`devices.kubevirt.io/kvm`, in
 stays for what no environment has: an account, a purchase, a person's own
 device.
 
+### Lease a GPU machine on AWS
+
+A tool no cluster node has, such as a GPU for a game engine, comes from an
+EC2 machine in your AWS account: a TestEnvironment with the `aws` member
+(`config/samples/webshop/testenvironment-gpu.yaml`) leases one machine per
+run, from an AMI with the tools, in a subnet that routes to the internet.
+The machine gets no instance role and no SSH key, a security group the
+operator makes in the subnet's VPC (`theos-env-<namespace>-<name>-<uid>`:
+HTTPS in, where `theos-env` serves, and only DNS and public HTTPS out), and
+its metadata service turned off before a run gets it. The run reaches it
+over HTTPS with its certificate pinned, as it reaches a local one, and the
+operator terminates it when the run ends; it shuts itself down, which
+terminates it, at `limits.maxLeaseMinutes`.
+
+Its credential is a Secret only the operator reads, with the keys a
+`cloudFormation` DeployTarget's has:
+
+```bash
+kubectl -n webshop create secret generic gpu-aws \
+  --from-literal=accessKeyId=... --from-literal=secretAccessKey=...
+kubectl -n webshop apply -f config/samples/webshop/testenvironment-gpu.yaml
+kubectl -n webshop get testenvironment gpu \
+  -o jsonpath='{.status.conditions[?(@.type=="CredentialsValid")]}{"\n"}'
+```
+
+The key needs `ec2:RunInstances`, `ec2:CreateTags`, `ec2:DescribeInstances`,
+`ec2:TerminateInstances`, `ec2:ModifyInstanceMetadataOptions`,
+`ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`,
+`ec2:CreateSecurityGroup`, `ec2:DeleteSecurityGroup`,
+`ec2:AuthorizeSecurityGroupIngress`, `ec2:RevokeSecurityGroupIngress`,
+`ec2:AuthorizeSecurityGroupEgress`, `ec2:RevokeSecurityGroupEgress` and
+`pricing:GetProducts`, and no `iam:PassRole`: the machines get no role.
+`CredentialsValid` is False, and a run that needs the environment waits
+(`WaitingForEnvironment`, `CredentialRefused`), while the Secret is missing,
+lacks a key, or holds a key AWS refuses or of another account than
+`aws.account`.
+
+Each lease costs the instance type's on-demand Linux price, which the
+operator reads from the AWS Price List, for the time it is held (a minute
+at least); the TestEnvironment's status shows what today's leases cost.
+`limits.budgetUSDPerDay` is required: past it no lease starts that UTC day
+(`OverBudget`, a Needs-you item) and the leases held finish their run.
+
+The machine downloads `theos-env` from the chart's
+`testEnvironments.toolsURL`, the binaries attached to the release on GitHub,
+and checks it against the `SHA256SUMS` next to it; a subnet that can't reach
+GitHub needs an address of your own there. The AMI needs a Linux with
+`curl`, `sha256sum` and cloud-init. Deleting the TestEnvironment terminates
+its machines and deletes its security group. EC2 Mac comes later.
+
 ## What an app promises: operations
 
 A Container's optional `spec.operations` says what the app promises wherever
