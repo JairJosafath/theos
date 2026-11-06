@@ -83,6 +83,7 @@ func TestJobFromEnv(t *testing.T) {
 		{"branch is the base", map[string]string{EnvBranch: "main"}, "must not be the base"},
 		{"bad resumed", map[string]string{EnvResumed: "maybe"}, "THEOS_RESUMED"},
 		{"bad session limit", map[string]string{EnvSessionTokenLimit: "lots"}, "not a number of tokens"},
+		{"bad test environments", map[string]string{EnvEnvironments: "browser"}, "THEOS_ENVIRONMENTS"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -112,6 +113,37 @@ func TestJobFromEnvStandardChange(t *testing.T) {
 	got, err = JobFromEnv(env(nil))
 	if err != nil || got.AllowedPaths != nil || got.Resumed {
 		t.Errorf("defaults = %v, %v, %v", got.AllowedPaths, got.Resumed, err)
+	}
+}
+
+// The implementer's and verifier's prompts list the run's test environments,
+// each with its description and how to run a command there; the reviewer's,
+// and a run that leased none, list nothing (docs/plans/test-environments.md,
+// T13).
+func TestPromptsListTestEnvironments(t *testing.T) {
+	job, err := JobFromEnv(env(map[string]string{EnvEnvironments: `[{"name":"browser",` +
+		`"description":"Chromium with Playwright; run headed programs under xvfb-run -a."}]`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(job.Environments) != 1 || job.Environments[0].Name != "browser" {
+		t.Fatalf("Environments = %+v, want browser", job.Environments)
+	}
+	for name, prompt := range map[string]string{"implement": ImplementPrompt(job, Workspace{}),
+		"verify": VerifyPrompt(job, Workspace{})} {
+		for _, want := range []string{"Test environments this run leased", "- `browser`: Chromium with Playwright",
+			"`theos-env run browser -- <command>`", "writes the files the command\nchanged or added back here"} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("%s prompt lacks %q", name, want)
+			}
+		}
+	}
+	if strings.Contains(ReviewPrompt(job, Workspace{}), "theos-env") {
+		t.Error("the review prompt lists test environments")
+	}
+	none, _ := JobFromEnv(env(nil))
+	if strings.Contains(ImplementPrompt(none, Workspace{}), "theos-env") {
+		t.Error("a run that leased no environment is told of theos-env")
 	}
 }
 

@@ -128,7 +128,8 @@ func (r *TestEnvironmentReconciler) readiness(ctx context.Context, env *c4v1beta
 	return model.TestEnvReady, "", nil
 }
 
-// held reports whether lease l's holder, a Task, still holds it.
+// held reports whether lease l's holder, a Task, still holds it: the Task
+// is there, unfinished, and lists the lease in status.environments.
 func (r *TestEnvironmentReconciler) held(ctx context.Context, namespace string, l ports.Lease) (bool, error) {
 	if l.Holder == "" {
 		return false, nil
@@ -138,7 +139,11 @@ func (r *TestEnvironmentReconciler) held(ctx context.Context, namespace string, 
 	if apierrors.IsNotFound(err) {
 		return false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return false, err
+	}
+	return !isFinal(task.Status.Phase) && slices.ContainsFunc(task.Status.Environments,
+		func(held c4v1beta1.TaskEnvironmentLease) bool { return held.Lease == l.ID }), nil
 }
 
 // spentToday is what the environment's leases cost today: what the leases

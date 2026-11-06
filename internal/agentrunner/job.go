@@ -110,7 +110,18 @@ const (
 	// the Scorer asks, kept apart from the evidence in the goal, which the
 	// judge reads as data.
 	EnvCriteria = "THEOS_CRITERIA"
+	// EnvEnvironments are the test environments the run leased, a JSON
+	// array of {"name", "description"}: the prompt lists them, and
+	// theos-env run reaches each at THEOS_ENV_<NAME>_URL
+	// (docs/plans/test-environments.md, T4 and T13).
+	EnvEnvironments = "THEOS_ENVIRONMENTS"
 )
+
+// TestEnvironment is a test environment a run leased, as the prompt names it.
+type TestEnvironment struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
 
 // CheckpointDir is where the operator mounts a sandbox's checkpoint volume.
 const CheckpointDir = "/checkpoint"
@@ -187,6 +198,8 @@ type Job struct {
 	PodInfoDir string
 	// Criteria are a judge run's criteria; empty for any other role.
 	Criteria []string
+	// Environments are the test environments the run leased, by name.
+	Environments []TestEnvironment
 }
 
 // parseRelated reads the related repositories, name=url pairs,
@@ -292,6 +305,11 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		return Job{}, err
 	}
 	job.Criteria = criteria
+	if envs := getenv(EnvEnvironments); envs != "" {
+		if err := json.Unmarshal([]byte(envs), &job.Environments); err != nil {
+			return Job{}, fmt.Errorf("%s is not a JSON array of test environments: %w", EnvEnvironments, err)
+		}
+	}
 	job.CheckCommand = strings.Fields(getenv(EnvCheckCommand))
 	if len(job.CheckCommand) == 0 {
 		job.CheckCommand = strings.Fields(model.CheckCommand)

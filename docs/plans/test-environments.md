@@ -137,6 +137,26 @@ step 2.
    Table tests: the sandbox spec has the variables, and the fence has the
    one new rule and nothing more.
    *Done when:* those specs and `make check` pass.
+
+   *As built:* a run's leases are in the Task's `status.environments`
+   (name, lease, sandbox, since), written before its sandbox is made; each
+   lease's token is a key of Secret `<task>-test-environments`, which the
+   Task owns, and the sandbox reads its own key by `secretKeyRef`. The
+   Task waits before its run's progress moves on, so a waiting Task keeps
+   its phase and spends no round; it looks again every 15 seconds
+   (the Task reconciler's `EnvironmentRecheck`), with no watch on
+   TestEnvironments. A lease that failed is returned and taken afresh on
+   the next pass (`WaitingForEnvironment`, `Failed`), one starting waits
+   `Pending`; `AllLeased` counts the provider's live leases, not the
+   TestEnvironment's status. `OverBudget` is a rule of `model.LeaseMayStart`
+   that no local member reaches: budgets come with the `aws` member (step
+   7). A spec writer's run leases none, as T3 says, though its role is the
+   implementer's. A final Task returns any lease it still lists, and the
+   TestEnvironment controller returns a lease its holder no longer lists a
+   minute after it started. The Brief lists `NotInProject` and
+   `OverBudget` waits under Needs you at once, the others past the slot's
+   four hours, and a Container's `TestEnvironments=False` as its Needs-you
+   item. The prompt's list reaches theos-agent as `THEOS_ENVIRONMENTS`.
 3. **CI on the environment** (T8, `project_ci_runners.go`,
    `ci_runner_pod.go`). Envtests: `ci.size: 1` keeps one `env-browser`
    runner pod built from the env's image and devices; a size of 0 keeps

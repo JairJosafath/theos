@@ -67,13 +67,23 @@ var _ = Describe("TestEnvironment", func() {
 		Expect(k8sClient.Delete(ctx, env)).To(Succeed())
 	})
 
-	It("returns a lease whose holder is gone, and lists the ones held", func() {
+	It("returns a lease whose holder is gone or no longer lists it, and lists the ones held", func() {
 		ns := newProjectNamespace()
 		env := newBrowserEnvironment(ns)
 		mustCreate(env)
 		testEnvReady(env, metav1.ConditionTrue, model.TestEnvReady)
 		held := newTask(ns, "add-crop", "Crop the image")
 		mustCreate(held)
+		kept, dropped := model.LeaseID(env.Name, "add-crop-r1-implement"), model.LeaseID(env.Name, "add-crop-r1-verify")
+		// The Task reconciler writes the Task's status too: try again on a conflict.
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, key(ns, held.Name), held); err != nil {
+				return err
+			}
+			held.Status.Environments = []c4v1beta1.TaskEnvironmentLease{{Name: env.Name, Lease: kept,
+				Sandbox: "add-crop-r1-implement"}}
+			return k8sClient.Status().Update(ctx, held)
+		}).Should(Succeed())
 		environment := testEnvironment(env, nil)
 		lease := func(holder, run string) string {
 			l, err := envFake.Lease(ctx, ports.LeaseRequest{ID: model.LeaseID(env.Name, run), Env: environment,
@@ -81,9 +91,11 @@ var _ = Describe("TestEnvironment", func() {
 			Expect(err).NotTo(HaveOccurred())
 			return l.ID
 		}
-		kept, orphan := lease(held.Name, "add-crop-r1-implement"), lease("gone", "gone-r1-implement")
+		lease(held.Name, "add-crop-r1-implement")
+		lease(held.Name, "add-crop-r1-verify")
+		orphan := lease("gone", "gone-r1-implement")
 		Eventually(func(g Gomega) {
-			g.Expect(envFake.Returned()).To(ContainElement(ns + "/" + orphan))
+			g.Expect(envFake.Returned()).To(ContainElements(ns+"/"+orphan, ns+"/"+dropped))
 			g.Expect(k8sClient.Get(ctx, key(ns, env.Name), env)).To(Succeed())
 			g.Expect(env.Status.Leases).To(HaveLen(1))
 			g.Expect(env.Status.Leases[0].ID).To(Equal(kept))

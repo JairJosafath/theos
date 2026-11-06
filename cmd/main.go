@@ -425,6 +425,9 @@ func main() {
 		model.DeployMemberGitLab:         gitlab.New(nil),
 		model.DeployMemberArgoCD:         argocd.New(argoClient),
 		model.DeployMemberCloudFormation: cloudformation.New(nil)}
+	// Each TestEnvironment member's provider, by the member's name.
+	testEnvProviders := ports.TestEnvironmentProviders{
+		model.TestEnvMemberLocal: localenv.New(mgr.GetClient(), testEnvToolsImage)}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
@@ -475,6 +478,7 @@ func main() {
 		ModelProxyURL:     modelProxyURL,
 		Recorder:          mgr.GetEventRecorder("task"),
 		GitEvents:         gitEvents,
+		TestEnvironments:  testEnvProviders,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
 		os.Exit(1)
@@ -556,9 +560,6 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "gitprovider")
 		os.Exit(1)
 	}
-	// Each TestEnvironment member's provider, by the member's name.
-	testEnvProviders := ports.TestEnvironmentProviders{
-		model.TestEnvMemberLocal: localenv.New(mgr.GetClient(), testEnvToolsImage)}
 	if err := (&controller.TestEnvironmentReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),

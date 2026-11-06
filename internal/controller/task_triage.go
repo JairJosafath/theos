@@ -165,7 +165,7 @@ func (r *TaskReconciler) applyTriage(ctx context.Context, task *c4v1beta1.Task, 
 		if in == nil {
 			return result, err
 		}
-		fresh, err := r.runSandbox(ctx, task, status, container, agents, model.RoleTriager, status.Sandbox, in)
+		fresh, err := r.runSandbox(ctx, task, status, container, agents, model.RoleTriager, status.Sandbox, in, nil)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -190,7 +190,7 @@ func (r *TaskReconciler) startTriage(ctx context.Context, task *c4v1beta1.Task, 
 	}
 	setProgress(status, model.StartRun(progressOf(status), model.RoleTriager))
 	name := sandboxName(task, status, model.RoleTriager)
-	sandbox, err := r.runSandbox(ctx, task, status, container, agents, model.RoleTriager, name, in)
+	sandbox, err := r.runSandbox(ctx, task, status, container, agents, model.RoleTriager, name, in, nil)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

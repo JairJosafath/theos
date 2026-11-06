@@ -306,6 +306,19 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, sta
 		}
 	}
 
+	// The run's environments are leased before its sandbox, under the name
+	// the sandbox will have: a run waiting for one starts nothing.
+	next := status.DeepCopy()
+	setProgress(next, model.StartRun(progressOf(next), role))
+	envs, wait, err := r.leaseEnvironments(ctx, task, status, container, role, sandboxName(task, next, role), in.labels)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if wait != nil {
+		r.waitForEnvironment(task, status, wait)
+		return ctrl.Result{RequeueAfter: r.environmentRecheck()}, nil
+	}
+
 	setProgress(status, model.StartRun(progressOf(status), role))
 	if status.Branch == "" {
 		status.Branch = model.TaskBranch(task.Name)
@@ -318,7 +331,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, sta
 		}
 	}
 	name := sandboxName(task, status, role)
-	sandbox, err := r.runSandbox(ctx, task, status, container, agents, role, name, in)
+	sandbox, err := r.runSandbox(ctx, task, status, container, agents, role, name, in, envs)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -354,6 +367,8 @@ type runInput struct {
 	protected []string
 	gitSecret string
 	goal      string
+	// labels are the issue's, which may ask for test environments.
+	labels []string
 }
 
 // runInputs makes sure the Agent's credentials and the Container's agent Git
@@ -400,13 +415,15 @@ func (r *TaskReconciler) runInputs(ctx context.Context, task *c4v1beta1.Task, st
 		}
 		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
 		in.goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
+		in.labels = issue.Labels
 	}
 	return in, ctrl.Result{}, nil
 }
 
 // runSandbox builds the Sandbox named name for a run of role on the Container.
 func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	container *c4v1beta1.Container, agents taskAgents, role, name string, in *runInput) (*unstructured.Unstructured, error) {
+	container *c4v1beta1.Container, agents taskAgents, role, name string, in *runInput,
+	envs []runEnvironment) (*unstructured.Unstructured, error) {
 	agent := agents.forRole(role)
 	story := c4Context(ctx, r.Client, container)
 	npmSecret, pypiSecret, err := r.packagesSecrets(ctx, container)
@@ -424,6 +441,7 @@ func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, s
 		npmScope: repo.NpmScope, npmRegistry: repo.NpmRegistry, pypiIndex: repo.PyPIIndex,
 		npmSecret: npmSecret, pypiSecret: pypiSecret,
 		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),
+		environments: envs,
 	}, r.Scheme, r.now())
 }
 
@@ -941,6 +959,8 @@ type endedRun struct {
 	why     suspension
 	// resume, when set, resumes the suspended sandbox with it.
 	resume *sandboxResume
+	// leases are the test environments the run held, returned with it.
+	leases []c4v1beta1.TaskEnvironmentLease
 }
 
 // recordRun adds what the current run cost to the Task's, records the run,
@@ -960,7 +980,8 @@ func (r *TaskReconciler) recordRun(ctx context.Context, task *c4v1beta1.Task,
 	if !runCounted(status, run) {
 		r.countRun(status, run)
 	}
-	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result}
+	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result,
+		leases: takeLeases(status, status.Sandbox)}
 	status.Sandbox, status.SandboxPod, status.CountedPod = "", "", ""
 	return ended, nil
 }
@@ -980,6 +1001,7 @@ func (r *TaskReconciler) countRun(status *c4v1beta1.TaskStatus, run model.RunSta
 // dropRun deletes the sandbox of a run recordRun ended, or suspends or
 // resumes it, and posts when the ended pod's sessions handed off.
 func (r *TaskReconciler) dropRun(ctx context.Context, task *c4v1beta1.Task, ended endedRun) error {
+	r.returnLeases(ctx, task, ended.leases)
 	switch {
 	case ended.sandbox == "":
 		return nil

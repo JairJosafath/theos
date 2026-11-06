@@ -387,7 +387,8 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
 - **A Task keeps its record:** `status.history`, `status.runs` per agent run,
   the cost (`status.costMilliUSD`) and tokens (`status.tokens`, with
   `largestSession`) its agents reported. `WaitingForSlot` says it waits for
-  an agent slot, and `BaseRed` that it waits for `main`'s checks to pass. The Work area charts the runs against their Agent's
+  an agent slot, `WaitingForEnvironment` for a test environment (*Test
+  environments*), and `BaseRed` that it waits for `main`'s checks to pass. The Work area charts the runs against their Agent's
   `sessionTokenLimit` ([plan](plans/done/token-chart.md)): the line and the
   "Past the limit" counts use the Agent's current limit and the Task's current
   Agent, since a run records neither, so changing either rejudges past runs.

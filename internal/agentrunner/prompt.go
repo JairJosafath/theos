@@ -111,6 +111,7 @@ func ImplementPrompt(job Job, ws Workspace) string {
 	}
 	writeGuide(&b, ws, RoleImplement)
 	writeRelated(&b, ws)
+	writeEnvironments(&b, job)
 	fmt.Fprintf(&b, `
 How to work:
 - Read AGENTS.md first and follow it; the rules in docs/style/ apply.
@@ -483,6 +484,29 @@ it claims; a picture of the product must be what running the product shows:
 	if n := len(ws.Images) - maxListedImages; n > 0 {
 		fmt.Fprintf(b, "- and %d more in the diff; open those too\n", n)
 	}
+}
+
+// writeEnvironments lists the test environments the run leased, and how to
+// run a command in one (docs/plans/test-environments.md, T4 and T13).
+func writeEnvironments(b *strings.Builder, job Job) {
+	if len(job.Environments) == 0 {
+		return
+	}
+	b.WriteString("\nTest environments this run leased, with tools this sandbox lacks:\n")
+	for _, env := range job.Environments {
+		fmt.Fprintf(b, "- `%s`", env.Name)
+		if env.Description != "" {
+			fmt.Fprintf(b, ": %s", strings.TrimSpace(env.Description))
+		}
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(b, `Run a command in one with `+"`theos-env run %s -- <command>`"+`, from the folder it
+should run in. It sends this working tree's tracked and untracked files (not the
+ignored ones), runs the command in the same folder there on a fresh copy, shows
+its output and exits with its exit code, and writes the files the command
+changed or added back here, ready to commit; what the tree ignores stays there.
+A test, a check or a picture script that needs those tools runs there.
+`, job.Environments[0].Name)
 }
 
 func writeRelated(b *strings.Builder, ws Workspace) {

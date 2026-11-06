@@ -118,7 +118,7 @@ func TestAgentNetworkFence(t *testing.T) {
 	policy := fence(t, &ProjectReconciler{})
 
 	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
-	dns, https := intstr.FromInt32(53), intstr.FromInt32(443)
+	dns, https, envPort := intstr.FromInt32(53), intstr.FromInt32(443), intstr.FromInt32(7070)
 	namespace := func(ns string) *metav1.LabelSelector {
 		return &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": ns}}
 	}
@@ -142,6 +142,13 @@ func TestAgentNetworkFence(t *testing.T) {
 			},
 			{To: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: namespace("forge")}}},
 			{To: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: namespace("gitea")}}},
+			// The project's own test environment pods, on theos-env's port,
+			// and nothing else of the namespace (docs/plans/test-environments.md, T5).
+			{
+				To: []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app.kubernetes.io/component": "test-environment"}}}},
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envPort}},
+			},
 		},
 	}
 	if !reflect.DeepEqual(policy.Spec, want) {
@@ -224,9 +231,9 @@ func TestAgentNetworkFence(t *testing.T) {
 func TestTestEnvironmentFence(t *testing.T) {
 	scheme := fenceScheme(t)
 	project := &c4v1beta1.Project{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "apps", UID: "project-1"}}
-	gitea := &c4v1beta1.GitProvider{ObjectMeta: objectMeta("apps", "gitea"),
-		Spec: c4v1beta1.GitProviderSpec{URL: "http://gitea-http.gitea.svc.cluster.local:3000"}}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project, gitea).Build()
+	forge := &c4v1beta1.GitProvider{ObjectMeta: objectMeta("apps", "forge"),
+		Spec: c4v1beta1.GitProviderSpec{URL: "http://forgejo.forge.svc.cluster.local:3000"}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project, forge).Build()
 	r := &ProjectReconciler{Client: c, Scheme: scheme, SourceNamespace: "theos-system",
 		ModelProxyURL: "http://c4-model-proxy.theos-system.svc:8080"}
 	if err := r.ensureTestEnvironmentNetwork(context.Background(), project); err != nil {
@@ -280,5 +287,36 @@ func TestTestEnvironmentFence(t *testing.T) {
 	}
 	if !selector.Matches(labels.Set(pod.Labels)) {
 		t.Errorf("lease pod labels %v, not selected by the fence %v", pod.Labels, selector)
+	}
+
+	// And the agent fence lets a sandbox out to that pod, in its own
+	// namespace, on theos-env's port alone.
+	if err := r.ensureAgentNetwork(context.Background(), project); err != nil {
+		t.Fatal(err)
+	}
+	var sandboxes networkingv1.NetworkPolicy
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "apps", Name: AgentNetworkPolicyName}, &sandboxes); err != nil {
+		t.Fatal(err)
+	}
+	reached := false
+	for _, rule := range sandboxes.Spec.Egress {
+		for _, peer := range rule.To {
+			if peer.PodSelector == nil || peer.NamespaceSelector != nil {
+				continue
+			}
+			sel, err := metav1.LabelSelectorAsSelector(peer.PodSelector)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sel.Matches(labels.Set(pod.Labels)) {
+				reached = true
+				if !reflect.DeepEqual(rule.Ports, []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envPort}}) {
+					t.Errorf("the sandbox reaches a lease pod on %v, want theos-env's port alone", rule.Ports)
+				}
+			}
+		}
+	}
+	if !reached {
+		t.Error("the agent fence lets no sandbox reach a lease pod")
 	}
 }

@@ -235,6 +235,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		r.reportBundleCurrent(ctx, &container, status)
 		reportDomainsApplied(&container, status, &system)
+		r.reportTestEnvironments(ctx, &container, status)
 		failed := r.updateOperations(ctx, &container, status, live)
 		// A failed Crew list leaves status.image and status.deploys as they
 		// were: the pass would act on a newest release it couldn't read (#1570, #1576).
@@ -474,6 +475,8 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1beta1.Domain{}, waitingContainers, specChanged()).
 		Watches(&c4v1beta1.Bundle{}, bundleContainers, specChanged()).
 		Watches(&c4v1beta1.DataStore{}, waitingContainers, specChanged()).
+		Watches(&c4v1beta1.TestEnvironment{}, handler.EnqueueRequestsFromMapFunc(namespaceContainers(mgr.GetClient())),
+			createOrDelete()).
 		// A delivery of the Git host reconciles the Container whose repository a delivery names at once
 		// (docs/plans/done/git-events.md, decision 7).
 		WatchesRawSource(r.GitEvents.Source(gitEventContainerRequest(mgr.GetClient()))).

@@ -95,6 +95,7 @@ func VerifyPrompt(job Job, ws Workspace) string {
 	}
 	writeGuide(&b, ws, RoleVerify)
 	writeRelated(&b, ws)
+	writeEnvironments(&b, job)
 	start := fmt.Sprintf("Build and start it with `make %s`, which the repository's Makefile has for that.",
 		model.VerifyTarget)
 	if !ws.MakeVerify {

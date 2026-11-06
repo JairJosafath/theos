@@ -538,6 +538,36 @@ spec:
                   interrupted run's cost and resume are counted already: a suspend that
                   fails after the count is tried again without counting them twice.
                 type: string
+              environments:
+                description: |-
+                  environments are the test environments the current run holds, one
+                  lease each, taken before its sandbox and returned when it ends or is
+                  suspended (docs/plans/test-environments.md, T3).
+                items:
+                  description: TaskEnvironmentLease is a lease of a test environment
+                    a Task's run holds.
+                  properties:
+                    lease:
+                      description: lease is the lease's ID, which the environment's
+                        provider names it by.
+                      type: string
+                    name:
+                      description: name is the TestEnvironment's.
+                      type: string
+                    sandbox:
+                      description: sandbox is the run that holds it.
+                      type: string
+                    since:
+                      description: since is when it was leased.
+                      format: date-time
+                      type: string
+                  required:
+                  - lease
+                  - name
+                  - sandbox
+                  type: object
+                maxItems: 16
+                type: array
               feedback:
                 description: |-
                   feedback is what the next round must address: review findings, failed
