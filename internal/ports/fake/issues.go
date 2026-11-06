@@ -127,6 +127,7 @@ func (g *Git) AddIssue(owner, name, title, body string, labels []string, blocker
 	n := len(s.issues[key]) + 1
 	s.issues[key] = append(s.issues[key], &Issue{Issue: ports.Issue{Number: n, Title: title, Body: body,
 		State: stateOpen, Labels: labels, URL: fmt.Sprintf("http://gitea/%s/issues/%d", key, n)}, Blockers: blockers})
+	g.s.deliver(ports.Repository{Owner: owner, Name: name}, EventIssue, n)
 	return n
 }
 
@@ -204,6 +205,7 @@ func (g *Git) ReviewPullRequest(_ context.Context, repo ports.Repository, number
 	s := g.s.issueState()
 	s.reviews[key] = append(s.reviews[key], Review{Event: event, Body: body, Commit: commit,
 		User: g.cfg.Credentials.Username})
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
 }
 
@@ -215,6 +217,7 @@ func (g *Git) AddReview(owner, name string, number int, review Review) {
 	key := fmt.Sprintf("%s/%s#%d", owner, name, number)
 	s := g.s.issueState()
 	s.reviews[key] = append(s.reviews[key], review)
+	g.s.deliver(ports.Repository{Owner: owner, Name: name}, EventPullRequest, number)
 }
 
 // PullRequestReviews lists the reviews submitted on a pull request, oldest first.
@@ -322,6 +325,7 @@ func (g *Git) AddIssueDependency(_ context.Context, repo ports.Repository, numbe
 	if !slices.Contains(i.Blockers, ref) {
 		i.Blockers = append(i.Blockers, ref)
 	}
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -391,6 +395,7 @@ func (g *Git) AddIssueLabel(_ context.Context, repo ports.Repository, number int
 		return l == label || exclusive && strings.HasPrefix(l, scope+"/")
 	})
 	i.Labels = append(i.Labels, label)
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -405,6 +410,7 @@ func (g *Git) RemoveIssueLabel(ctx context.Context, repo ports.Repository, numbe
 		return err
 	}
 	i.Labels = slices.DeleteFunc(i.Labels, func(l string) bool { return l == label })
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -419,6 +425,7 @@ func (g *Git) CommentIssue(ctx context.Context, repo ports.Repository, number in
 		return err
 	}
 	i.Comments = append(i.Comments, body)
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -443,6 +450,7 @@ func (g *Git) CloseIssue(ctx context.Context, repo ports.Repository, number int)
 			blockers, ports.ErrOpenDependencies)
 	}
 	i.State = stateClosed
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -457,6 +465,7 @@ func (g *Git) EditIssueBody(ctx context.Context, repo ports.Repository, number i
 		return err
 	}
 	i.Body = body
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -484,6 +493,7 @@ func (g *Git) SetIssueMilestone(_ context.Context, repo ports.Repository, number
 	default:
 		return fmt.Errorf("no milestone %d", milestone)
 	}
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -495,6 +505,7 @@ func (g *Git) AssignIssue(_ context.Context, repo ports.Repository, number int, 
 		return err
 	}
 	i.Assignees = slices.Clone(users)
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 

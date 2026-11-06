@@ -73,6 +73,7 @@ type state struct {
 	releases    *releaseStore
 	runners     *runnerStore
 	actions     *actionsStore
+	events      *eventStore
 	// copyImage copies an image for CopyImage, nil to only record the copy.
 	copyImage ImageCopier
 }
@@ -552,6 +553,7 @@ func (g *Git) SetCheckContexts(owner, name, ref, state string, contexts map[stri
 	g.s.agentState().checks[owner+"/"+name+"@"+ref] = ports.CheckStatus{
 		Commit: ref, State: state, URL: "http://gitea/" + owner + "/" + name + "/actions/runs/1", Contexts: contexts,
 	}
+	g.s.deliver(ports.Repository{Owner: owner, Name: name}, EventStatus, 0)
 }
 
 // PushBranchHead records a branch head, as the sandbox's push would.

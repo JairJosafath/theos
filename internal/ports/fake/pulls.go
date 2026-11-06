@@ -21,6 +21,7 @@ func (g *Git) ClosePull(owner, name string, number int) {
 	for _, pr := range g.s.agentState().pulls[owner+"/"+name] {
 		if pr.Number == number {
 			pr.State = stateClosed
+			g.s.deliver(ports.Repository{Owner: owner, Name: name}, EventPullRequest, number)
 		}
 	}
 }
@@ -95,6 +96,7 @@ func (g *Git) OpenPullRequest(_ context.Context, repo ports.Repository, head, _,
 	s.pulls[key] = append(s.pulls[key], pr)
 	s.authors[fmt.Sprintf("%s#%d", key, pr.Number)] = g.cfg.Credentials.Username
 	s.texts[fmt.Sprintf("%s#%d", key, pr.Number)] = [2]string{title, body}
+	g.s.deliver(repo, EventPullRequest, pr.Number)
 	return *pr, nil
 }
 
@@ -136,6 +138,7 @@ func (g *Git) CommentPullRequest(_ context.Context, repo ports.Repository, numbe
 	key := fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)
 	s := g.s.agentState()
 	s.comments[key] = append(s.comments[key], body)
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
 }
 
@@ -187,6 +190,7 @@ func (g *Git) merge(repo ports.Repository, number int, headSHA, title, message s
 		pr.MergeCommit = g.s.newSHA()
 		s.trees[key+"@"+pr.MergeCommit] = treeID(g.s.repos[key].files)
 	}
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
 }
 
@@ -212,6 +216,7 @@ func (g *Git) UpdatePullRequest(_ context.Context, repo ports.Repository, number
 		}
 		g.s.commitTrees[key+"@"+pr.HeadSHA] = withEdits(r.files, s.edits[key+"@"+pr.Head])
 	}
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
 }
 
@@ -326,5 +331,6 @@ func (g *Git) ClosePullRequest(_ context.Context, repo ports.Repository, number 
 		return err
 	}
 	pr.State = stateClosed
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
 }
