@@ -7,7 +7,7 @@ How to add or change a kind, a reconciler or a log line. The rules in
 
 ### Create API (a new kind in this project)
 ```bash
-kubebuilder create api --group c4 --version v1beta1 --kind <Kind> --resource --controller
+kubebuilder create api --group theos --version v1beta1 --kind <Kind> --resource --controller
 ```
 
 Catalog kinds (Framework, Standard, Compute, Deployment, Connector, Domain, Agent) have
@@ -25,18 +25,38 @@ kubebuilder create api --group core --version v1 --kind Pod \
 v1 has no webhooks by design: CEL rules and a ValidatingAdmissionPolicy cover
 validation, and the operator checks compatibility after creation. If one is added
 later, create all types together with
-`kubebuilder create webhook --group c4 --version v1beta1 --kind <Kind> --defaulting --programmatic-validation`.
+`kubebuilder create webhook --group theos --version v1beta1 --kind <Kind> --defaulting --programmatic-validation`.
 
 ## API design
 
-Every kind has a type in `api/v1alpha1` and in `api/v1beta1`; `v1beta1` is
-the hub and the storage version (`+kubebuilder:storageversion` sits on its
-types alone; `TestEveryCRDStoresTheHub` in `internal/controller` holds every
-generated CRD to that), and each `v1alpha1` type converts to it
-([plans/done/api-versions.md](../plans/done/api-versions.md)). A field change goes to
-both versions, with the conversion, and `test/compat` holds each served
-version to the last release's schema. Moving the storage marker to a newer
-version needs nothing else: `StorageMigrator` (`internal/controller`) rewrites
+Every kind is served at `v1beta1` alone, its types in `api/v1beta1`, the
+storage version (`+kubebuilder:storageversion` sits on them;
+`TestEveryCRDStoresTheHub` and `TestEveryCRDServesV1beta1Alone` in
+`internal/controller` hold every generated CRD to that). `v1alpha1` was
+dropped before theos's first release, which no install stored
+([design.md](../design.md#compatibility), #1963). A new kind is created at
+`v1beta1` (`--version v1beta1`: kubebuilder's default is `v1alpha1`) and
+joins `WebhookCRDs` in `internal/controller/webhook_cert.go` and the RBAC
+markers there and in `storage_migrator.go`, which `TestWebhookCRDsAreEveryCRD`
+checks. A field change keeps the promise within `v1beta1`, and `test/compat`
+holds it to the last release's schema.
+
+**The next version** comes beside `v1beta1` by the rules of
+[Compatibility](../design.md#compatibility) and
+[plans/done/api-versions.md](../plans/done/api-versions.md): its package
+becomes the hub and the storage version; each `v1beta1` type becomes
+`Convertible` to it through one generic converter (an unstructured round
+trip, a per-kind hook for what differs, and the
+`theos.factory.io/<version>-fields` annotation for a field with no home: the
+`api/v1alpha1/conversion.go` that #1963 removed, in the history); a kind whose
+shape differs marks its hub type
+`+kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"`, so
+its CRD converts by the operator's webhook (`TestConversionMarkFollowsTheShapes`);
+and `v1beta1` is deprecated in that release. The webhook server, its
+certificate (`WebhookCert`), the `/convert` handler, the chart's
+`webhook.enabled` and the kustomize and chart wiring stay in place for it,
+unused until then. Moving the storage marker needs nothing else:
+`StorageMigrator` (`internal/controller`) rewrites
 the stored objects at the next start and logs `Rewriting the stored objects at
 the storage version` and `Rewrote the stored objects at the storage version`
 per CRD, with `storedVersions`, `storage` and `objects`; a failed pass logs

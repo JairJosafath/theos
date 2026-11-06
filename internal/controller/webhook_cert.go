@@ -54,23 +54,27 @@ const (
 	webhookCAPrivKey = "ca.key"
 )
 
-// WebhookCRDs are the CRDs the operator may serve conversion for: every kind
-// of theos.factory.io served at more than one version (a test keeps the list
-// equal to config/crd/bases, less the kinds born at v1beta1, such as Chat). The RBAC
-// marker below names the same CRDs. Only one whose versions differ in shape is
-// at strategy Webhook and gets the CA; the rest convert by the API server
-// (#1830, docs/plans/done/api-versions.md, decision 3).
+// WebhookCRDs are the CRDs the operator may serve conversion for and the
+// storage migrator rewrites: every CRD of theos.factory.io (a test keeps the
+// list equal to config/crd/bases; a new kind joins it, and the RBAC markers
+// here and in storage_migrator.go). Only one whose kind's versions differ in
+// shape is at strategy Webhook and gets the CA; the rest convert by the API
+// server (#1830, docs/plans/done/api-versions.md, decision 3). Every kind
+// serves v1beta1 alone (#1963), so none is today: the webhook, its
+// certificate and the migrator stay, so the next version brings none of them.
 var WebhookCRDs = []string{
-	"agents.theos.factory.io", "briefs.theos.factory.io", "bundles.theos.factory.io", "computes.theos.factory.io",
+	"agents.theos.factory.io", "benchmarks.theos.factory.io", "briefs.theos.factory.io",
+	"bundles.theos.factory.io", "chats.theos.factory.io", "computes.theos.factory.io",
 	"connectors.theos.factory.io", "containers.theos.factory.io", "crews.theos.factory.io",
-	"datastores.theos.factory.io", "deployments.theos.factory.io", "deploytargets.theos.factory.io", "domains.theos.factory.io",
-	"frameworks.theos.factory.io", "gitproviders.theos.factory.io", "people.theos.factory.io",
-	"projects.theos.factory.io", "relationships.theos.factory.io", "sessions.theos.factory.io",
-	"softwaresystems.theos.factory.io", "standards.theos.factory.io", "tasks.theos.factory.io",
+	"datastores.theos.factory.io", "deployments.theos.factory.io", "deploytargets.theos.factory.io",
+	"domains.theos.factory.io", "frameworks.theos.factory.io", "gitproviders.theos.factory.io",
+	"people.theos.factory.io", "projects.theos.factory.io", "relationships.theos.factory.io",
+	"scorers.theos.factory.io", "sessions.theos.factory.io", "softwaresystems.theos.factory.io",
+	"standards.theos.factory.io", "tasks.theos.factory.io",
 }
 
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;patch,resourceNames=agents.theos.factory.io;briefs.theos.factory.io;bundles.theos.factory.io;computes.theos.factory.io;connectors.theos.factory.io;containers.theos.factory.io;crews.theos.factory.io;datastores.theos.factory.io;deployments.theos.factory.io;deploytargets.theos.factory.io;domains.theos.factory.io;frameworks.theos.factory.io;gitproviders.theos.factory.io;people.theos.factory.io;projects.theos.factory.io;relationships.theos.factory.io;sessions.theos.factory.io;softwaresystems.theos.factory.io;standards.theos.factory.io;tasks.theos.factory.io
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;patch,resourceNames=agents.theos.factory.io;benchmarks.theos.factory.io;briefs.theos.factory.io;bundles.theos.factory.io;chats.theos.factory.io;computes.theos.factory.io;connectors.theos.factory.io;containers.theos.factory.io;crews.theos.factory.io;datastores.theos.factory.io;deployments.theos.factory.io;deploytargets.theos.factory.io;domains.theos.factory.io;frameworks.theos.factory.io;gitproviders.theos.factory.io;people.theos.factory.io;projects.theos.factory.io;relationships.theos.factory.io;scorers.theos.factory.io;sessions.theos.factory.io;softwaresystems.theos.factory.io;standards.theos.factory.io;tasks.theos.factory.io
 
 // WebhookCert keeps the webhook server's certificate: it reads the Secret
 // Namespace/Secret or issues a CA and a serving certificate for

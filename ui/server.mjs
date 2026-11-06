@@ -80,8 +80,8 @@ const FORWARDED_REQUEST_HEADERS = ['accept', 'user-agent']
 
 /**
  * Response headers passed back to the browser. `warning` carries the API
- * server's deprecation notice for a request at a deprecated version
- * (theos.factory.io/v1alpha1, #1618), which the project page shows.
+ * server's deprecation notice for a request at a deprecated version (#1618),
+ * which the project page shows.
  */
 const FORWARDED_RESPONSE_HEADERS = ['content-type', 'cache-control', 'date', 'audit-id', 'warning']
 

@@ -45,7 +45,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
-	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/features"
 	"github.com/JairJosafath/theos/internal/adapters/argocd"
@@ -291,10 +290,10 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
-	err = c4v1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	// With v1beta1 every kind is convertible, so envtest points every CRD's
-	// conversion at the manager's webhook server (#1615).
+	// Every kind serves v1beta1 alone (#1963), so envtest finds none
+	// convertible and installs every CRD at strategy None; a kind served at
+	// more than one version would have its conversion pointed at the
+	// manager's webhook server (#1615).
 	err = c4v1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	// The webhook certificate patches the CRDs (#1614).

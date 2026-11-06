@@ -33,7 +33,7 @@ every scaffolded repository.
 
 | Layer | Packages | May import | Must not import |
 | --- | --- | --- | --- |
-| API types | `api/v1beta1` (the hub the operator imports), `api/v1alpha1` (converts to it) | apimachinery | anything under `internal/` |
+| API types | `api/v1beta1`, the one version served and stored | apimachinery | anything under `internal/` |
 | Business rules | `internal/model`, `internal/scaffold` | the standard library, `text/template`, YAML; `scaffold` may use `model` | Kubernetes, controller-runtime, `net/http`, `api/`, other `internal/` layers |
 | Ports | `internal/ports` and its `fake`, `contract` (the Deployer from #1161; the Git host's from #1094) | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
 | Adapters | `internal/adapters/*`: `gitea`, `git`, `github`, `gitlab`, `argocd`, `cloudformation`, `matrix` | ports, business rules; host adapters `net/http` and go-git, the chat adapter `net/http`; runtime and deploy adapters client-go | `api/`, `internal/controller`; host and chat adapters also Kubernetes |
