@@ -41,3 +41,36 @@ spec:
     seasons, fixtures and standings, tournaments with brackets, transfers
     between clubs, and news posts from clubs and leagues. ProRivals runs on
     the Kubernetes cluster it is built on.
+  # Each Container's releases are published to the owner's GitHub repository
+  # (docs/plans/done/brief-releases.md), each in its own folder, tagged
+  # <folder>/vX.Y.Z: the layout jairjosafath/rivalme2027 already has.
+  # Needs Secret prorivals-github with the key token: a fine-grained token for
+  # that repository with Contents and Issues read and write, which you create
+  # yourself. Issues the owner opens there are requests that wait under
+  # status.needsYou until their number is in accepted
+  # (docs/plans/done/brief-requests.md).
+  releases:
+  - container: arena-web
+    github:
+      repository: jairjosafath/rivalme2027
+      tokenSecretRef:
+        name: prorivals-github
+    source:
+      path: arena-web
+    requests:
+      mode: Ask
+      authors: [JairJosafath]
+  - container: rivals-api
+    github:
+      repository: jairjosafath/rivalme2027
+      tokenSecretRef:
+        name: prorivals-github
+    source:
+      path: rivals-api
+  - container: ladder-worker
+    github:
+      repository: jairjosafath/rivalme2027
+      tokenSecretRef:
+        name: prorivals-github
+    source:
+      path: ladder-worker

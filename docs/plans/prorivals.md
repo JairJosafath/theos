@@ -108,3 +108,22 @@ Done when `make check` is green with:
 What follows is the factory's, not this plan's: once the owner applies the
 model and the Brief to a cluster, the planner files the first issues and the
 Crews build them.
+
+## Built and published (2026-11-06)
+
+The owner asked for the app itself, published to GitHub. Agents never run
+the factory on a cluster, so this session did by hand what the factory
+does, with its own tools:
+
+- **Scaffold:** `hack/render` (now with `-project` and `-system`) rendered
+  `arena-web`, `rivals-api` and `ladder-worker` from the pinned templates,
+  esports Domain included, one commit, as the operator scaffolds them.
+- **The first issues:** the players' challenge loop, built on that scaffold
+  to each Standard's `make check` (rivals-api 98 tests, ladder-worker 28,
+  arena-web 31), the Postgres stores run against Postgres 16, and the loop
+  driven end to end in Chromium.
+- **Published:** [jairjosafath/rivalme2027](https://github.com/JairJosafath/rivalme2027),
+  a folder per Container, with GitHub Actions running each `make check`.
+  The Brief's `releases` now point there, so once the owner runs the model on
+  a cluster, the Crews' releases land in the same folders, and the owner's
+  issues there become requests.
