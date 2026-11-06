@@ -4,6 +4,9 @@
 //	go run ./hack/render -out /tmp/app -type cli \
 //	  Framework=go-cli Standard=go-standard Deployment=gitea-release
 //
+// -project and -system name the Container's Project and SoftwareSystem
+// (webshop and shop when left out), as its model does.
+//
 // The Container's spec.operations is the factory's defaults unless the
 // -retention-days, -copy-to-region, -rpo, -rto or -alert-email flags set a
 // field, as an AWS Framework renders it into infra/operations.ts.
@@ -24,6 +27,8 @@ func main() {
 	out := flag.String("out", "", "folder to write the repository into (must not exist)")
 	root := flag.String("templates", "templates", "folder with the template repositories")
 	in := scaffold.Input{Project: "webshop", SoftwareSystem: "shop"}
+	flag.StringVar(&in.Project, "project", in.Project, "Project the Container belongs to")
+	flag.StringVar(&in.SoftwareSystem, "system", in.SoftwareSystem, "SoftwareSystem the Container belongs to")
 	flag.StringVar(&in.Container, "container", "sample-app", "Container name")
 	flag.StringVar(&in.DisplayName, "display-name", "Sample App", "Container display name")
 	flag.StringVar(&in.Type, "type", "cli", "Container type")
