@@ -1,0 +1,14 @@
+# make -k check on 75325ef (measure-and-improve step 7, the plan done): exit 0, every tier passed.
+# make test-gitea was not run: Gitea refuses to run as root, as the agents' sandbox does.
+All 16 invalid files rejected
+test-hack: all 43 shell tests passed
+      Tests  938 passed (938)
+ok  	github.com/JairJosafath/theos/api/v1alpha1	2.427s
+ok  	github.com/JairJosafath/theos/internal/agentrunner	49.320s
+ok  	github.com/JairJosafath/theos/internal/chatbot	0.514s
+ok  	github.com/JairJosafath/theos/internal/model	0.670s
+ok  	github.com/JairJosafath/theos/internal/modelproxy	(cached)
+ok  	github.com/JairJosafath/theos/test/chart	56.747s
+ok  	github.com/JairJosafath/theos/internal/controller	543.366s
+ok  	github.com/JairJosafath/theos/internal/controller	651.447s
+exit 0
