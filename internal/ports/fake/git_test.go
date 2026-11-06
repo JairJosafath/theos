@@ -48,3 +48,39 @@ func TestGitReadsAPlanBranch(t *testing.T) {
 		t.Error("ReadFiles() of a branch the fake doesn't have succeeded")
 	}
 }
+
+// A branch pushed from a seeded repository's commit updates with main as it
+// is, and a pull request on a branch of a repository the fake has none for
+// updates too, without a panic (#1170).
+func TestGitUpdatesPullRequestsOnSeededAndMissingRepositories(t *testing.T) {
+	g := fake.New()
+	p := g.For(ports.Config{URL: "http://gitea", Owner: "apps"})
+	ctx := context.Background()
+	g.SeedRepoFiles("apps", "adopted", "Import", scaffold.Tree{"AGENTS.md": {Data: []byte("# theirs\n")}})
+	repo := ports.Repository{Owner: "apps", Name: "adopted"}
+	base, err := p.BranchCommit(ctx, repo, ports.DefaultBranch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.PushBranch(ctx, repo, base, "standard/v2", scaffold.Tree{"AGENTS.md": {Data: []byte("# ours\n")}},
+		nil, "Bump the Standard", ports.Signature{}); err != nil {
+		t.Fatal(err)
+	}
+	pr, err := p.OpenPullRequest(ctx, repo, "standard/v2", ports.DefaultBranch, "Bump", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.UpdatePullRequest(ctx, repo, pr.Number); err != nil {
+		t.Errorf("UpdatePullRequest() of a branch on the seeded commit = %v, want no conflict", err)
+	}
+
+	missing := ports.Repository{Owner: "apps", Name: "missing"}
+	g.PushBranchHead("apps", "missing", "task/a", "abc123")
+	pr, err = p.OpenPullRequest(ctx, missing, "task/a", ports.DefaultBranch, "A", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.UpdatePullRequest(ctx, missing, pr.Number); err != nil {
+		t.Errorf("UpdatePullRequest() in a repository the fake has none for = %v", err)
+	}
+}

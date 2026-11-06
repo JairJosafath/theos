@@ -278,8 +278,8 @@ func PushInitialCommit(ctx context.Context, repoURL string, creds *ports.Credent
 // readFiles returns branch's copy of those of paths it has, and the commit it
 // read them at. A path that is no regular file there, missing or a directory,
 // is left out. A path ending in "/" reads every regular file below that
-// directory, at any depth. A branch the repository doesn't have is
-// ErrBranchNotFound.
+// directory, at any depth. A branch the repository doesn't have, an empty
+// repository's included, is ErrBranchNotFound.
 func ReadFiles(ctx context.Context, repoURL string, creds *ports.Credentials, branch string,
 	paths []string) (scaffold.Tree, string, error) {
 	repo, err := git.CloneContext(ctx, memory.NewStorage(), nil, &git.CloneOptions{
@@ -291,7 +291,7 @@ func ReadFiles(ctx context.Context, repoURL string, creds *ports.Credentials, br
 		NoCheckout:    true,
 		Tags:          git.NoTags,
 	})
-	if _, ok := errors.AsType[git.NoMatchingRefSpecError](err); ok {
+	if _, ok := errors.AsType[git.NoMatchingRefSpecError](err); ok || errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		return nil, "", fmt.Errorf("clone %s at %s: %w", repoURL, branch, ports.ErrBranchNotFound)
 	}
 	if err != nil {

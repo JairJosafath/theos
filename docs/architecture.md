@@ -116,9 +116,13 @@ it against this table. Where the code lives:
 - **The per-CI table** (`model.CI`: its name, which names the templates'
   `.theos/ci/<name>/` folder, check contexts, protected paths) is in
   `internal/model`, so `internal/scaffold` reads it without an adapter.
-- **The host-neutral guard** is a Go test beside the ports
-  (`internal/ports/hostneutral_test.go`, from #1094) with its allowlist of
-  today's `gitea` and `.gitea/` hits, file and count, which may only shrink.
+- **The host-neutral guard** is a Go test beside the ports,
+  [`internal/ports/hostneutral_test.go`](../internal/ports/hostneutral_test.go):
+  it walks the Go files outside `internal/adapters/gitea` and counts
+  case-insensitive `gitea` (which `.gitea/` matches) per file. Its allowlist
+  holds today's files and counts and may only shrink: a file not in it, or
+  with more hits than its entry, fails the test, and so does an entry above
+  its file's count, so a change that removes hits lowers the entry.
 
 `internal/ports` holds the Deployer (#1161) and the Git host's five ports
 (#1166): GitHost, Issues, CI, AgentAccess and Registry, one file each with
@@ -132,7 +136,7 @@ The column *Today* says where each port is now.
 
 | Port | Interface | Picked by | Implementations | Contract test | Credential path | Today |
 | --- | --- | --- | --- | --- | --- | --- |
-| GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: Events, a hook on the owner and signed deliveries (#1084, [plans/git-events.md](plans/git-events.md)) | `GitProvider.spec.provider` | Gitea | to write (#1094): fake in `make test`, Gitea in `make test-gitea` | GitProvider Secret, operator only; Events: the delivery Secret the operator makes | `ports.GitHost` (`internal/ports/githost.go`); Gitea in `internal/adapters/gitea` |
+| GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: Events, a hook on the owner and signed deliveries (#1084, [plans/git-events.md](plans/git-events.md)) | `GitProvider.spec.provider` | Gitea | `contract.GitHost(t, env)` (`internal/ports/contract/githost.go`, #1170): the fake (`internal/ports/fake`) in `make test`, Gitea (`TestGitHostContractIntegration`) in `make test-gitea` | GitProvider Secret, operator only; Events: the delivery Secret the operator makes | `ports.GitHost` (`internal/ports/githost.go`); Gitea in `internal/adapters/gitea` |
 | Issues | issues, comments, labels (exclusive by scope), assignment, milestones, dependencies; intake uses list, comment, find comment, close, membership | `GitProvider.spec.provider`; intake by the Brief's `releases[].requests` | Gitea; GitHub for intake only | to write (#1094) | GitProvider Secret; intake by the Brief's token Secret; operator only | `ports.Issues` (`internal/ports/issues.go`) and `IssueTracker` |
 | CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model`; optional: OwnerRunners, the owner organization's runner registration token, its runners and their state, deleting one (#1139, [plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)) | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions | to write (#1094); OwnerRunners: Gitea in `make test-gitea`, its fake beside the controllers' | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs, and an owner's runner registration token, with the GitProvider Secret | `ports.CI` (`internal/ports/ci.go`); `OwnerRunners` (`internal/ports/ci.go`); the per-CI table `model.CI` (`internal/model/ci.go`); the per-project runner pool `project_ci_runners.go` and its pod spec `ci_runner_pod.go` in `internal/controller` |
 | AgentAccess | mint a credential that writes to one repository, with its expiry; revoke old ones; remove | `GitProvider.spec.provider` | Gitea (a bot user per Container or Brief) | to write (#1094): writes its repository, not another, cannot merge to `main`, revoked means refused | minted from the GitProvider Secret into the Container's agent Git Secret, passed to its sandboxes | `ports.AgentAccess` (`internal/ports/agentaccess.go`) |
