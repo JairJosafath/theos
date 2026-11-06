@@ -76,7 +76,7 @@ on each step.
    type Event struct {
        Repository string // the repository's name under the owner
        Number     int    // the issue or pull request, 0 when none
-       Branch     string // the branch a push, status or run is on, "" when none
+       Branch     string // the branch a push or run is on, "" when none or unsaid
        Kind       string // the host's event name, for logs only
    }
    ```
@@ -86,11 +86,18 @@ on each step.
    gains no call and "scaffold once" is untouched. On Gitea it is
    `/orgs/{owner}/hooks`, type `gitea`, JSON, active, with the events the
    operator reads: `issues`, `issue_comment`, `issue_label`, `issue_assign`,
-   `pull_request` and its `_sync`, `_label`, `_comment`,
-   `_review_approved`, `_review_rejected`, `_review_comment` variants,
-   `push`, `create`, `release`, `status` and `workflow_run`. Step 1 confirms
-   each delivers on the Gitea the factory pins and drops from the list any
-   that doesn't; polling covers it. A token that may not manage the
+   `pull_request` and its `_sync`, `_label`, `_comment` variants,
+   `pull_request_review`, `push`, `create`, `release`, `status` and
+   `workflow_run`. Step 1 confirmed each delivers on Gitea 1.27.3, the one
+   the factory pins, signed with the hook's secret
+   (`TestGiteaEventsIntegration`), and found three things. The hook API
+   refuses `pull_request_review_approved`, `_rejected` and `_comment` as
+   names; it takes `pull_request_review`, which delivers as those three
+   event types. Gitea widens the groups (`issues` brings
+   `issue_milestone` too), which costs a reconcile at most. A `status`
+   names only its commit, never a branch, so its Event names only the
+   repository, and the reconcile reads every object of that repository
+   a status could move, as a poll would. A token that may not manage the
    organization's hooks gets `RegisterFailed`, and the factory polls as
    today.
 3. **The hook is found by its path, `/git-events/<namespace>/<gitprovider>`,**
@@ -107,7 +114,13 @@ on each step.
    uncached as the agent Git Secrets are. Nothing in the repository or in
    what Helm renders holds it. The reconciler sets it on the hook each time
    it ensures the hook (every 10 minutes), since the host never returns a
-   hook's secret to compare; rotation is deleting the Secret.
+   hook's secret to compare; rotation is deleting the Secret. Gitea 1.27.3's
+   hook edit ignores a new secret (step 1 found it), so Gitea's adapter
+   puts a fingerprint of the secret in the hook URL's query, `?secret=`
+   and the first 12 hex digits of its SHA-256, which tells nothing of a
+   128-bit secret. A hook whose URL, fingerprint included, is the one
+   wanted is edited; else a new one is made and the old removed, so a
+   rotated secret reaches the host. The receiver routes by the path alone.
 5. **The receiver is a plain HTTP listener in the operator**,
    `internal/controller/git_events.go`, a manager Runnable that runs on the
    leader, like the controllers it feeds. `--git-events-bind-address` (`0`,
