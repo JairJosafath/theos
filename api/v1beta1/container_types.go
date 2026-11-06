@@ -707,7 +707,6 @@ type ContainerStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=theos
 // +kubebuilder:storageversion
-// +kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Checks",type=string,JSONPath=".status.checks.state"

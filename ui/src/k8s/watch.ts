@@ -130,8 +130,8 @@ export interface WatchState<T> {
   loaded: boolean
   /**
    * What the API server warned about the last list, from the response's
-   * Warning header: a request at a deprecated version, such as
-   * theos.factory.io/v1alpha1 (#1618). Unset when it warned about nothing.
+   * Warning header: a request at a deprecated version (#1618), none while
+   * every kind is served at v1beta1 alone. Unset when it warned about nothing.
    */
   warning?: string
 }

@@ -629,7 +629,6 @@ type CrewStatus struct {
 // +kubebuilder:printcolumn:name="Parallel",type=integer,JSONPath=".spec.parallel"
 // +kubebuilder:printcolumn:name="Tasks",type=string,JSONPath=".status.activeTasks"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"
 
 // Crew is the team of Agents that works on a Container's issues: it picks up
 // issues labelled ready, in order and once their dependencies are closed, and

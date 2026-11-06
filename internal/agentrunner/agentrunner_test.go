@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -39,6 +40,12 @@ func TestMain(m *testing.M) {
 	}
 	// Failed runs wait this long for a stop that never comes.
 	stopGrace = 200 * time.Millisecond
+	// No git in the tests' throwaway repositories starts its automatic gc or
+	// maintenance: newer git runs them detached, and one still writing
+	// .git/objects/pack when a test ends fails its TempDir cleanup ("directory
+	// not empty", TestPauseGuardSavesAHardCheckpointEveryTenMinutes on CI's git
+	// 2.56). The variables reach every git the tests start, the stand-ins' too.
+	noAutoGit()
 	os.Exit(m.Run())
 }
 
@@ -1838,5 +1845,29 @@ func TestIssueBlock(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// noAutoGit turns off git's automatic gc and maintenance for every git this
+// test binary starts, keeping any GIT_CONFIG_COUNT entries already set.
+func noAutoGit() {
+	n, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))
+	for _, kv := range [][2]string{{"gc.auto", "0"}, {"maintenance.auto", "false"}} {
+		_ = os.Setenv(fmt.Sprintf("GIT_CONFIG_KEY_%d", n), kv[0])
+		_ = os.Setenv(fmt.Sprintf("GIT_CONFIG_VALUE_%d", n), kv[1])
+		n++
+	}
+	_ = os.Setenv("GIT_CONFIG_COUNT", strconv.Itoa(n))
+}
+
+// The tests' git starts no automatic gc or maintenance, which newer git runs
+// detached past a test's end (TestPauseGuardSavesAHardCheckpointEveryTenMinutes
+// failed its TempDir cleanup on CI).
+func TestTestsGitRunsNoAutoMaintenance(t *testing.T) {
+	for key, want := range map[string]string{"gc.auto": "0", "maintenance.auto": "false"} {
+		out, err := exec.Command("git", "config", "--get", key).Output()
+		if err != nil || strings.TrimSpace(string(out)) != want {
+			t.Errorf("git config --get %s = %q, %v; want %q", key, out, err, want)
+		}
 	}
 }

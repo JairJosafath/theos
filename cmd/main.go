@@ -41,7 +41,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
-	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/features"
 	"github.com/JairJosafath/theos/internal/adapters/argocd"
@@ -67,7 +66,6 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(c4v1alpha1.AddToScheme(scheme))
 	// The webhook certificate's CA is patched into the CRDs.
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	utilruntime.Must(c4v1beta1.AddToScheme(scheme))
@@ -557,9 +555,11 @@ func main() {
 
 	webhookOn := webhookCert != nil || webhookCertPath != ""
 	if webhookOn {
-		// Every theos.factory.io kind converts between its versions here: each
-		// v1alpha1 type is Convertible to its v1beta1 hub
-		// (docs/plans/done/api-versions.md, decision 3).
+		// A theos.factory.io kind served at more than one version converts
+		// here: each older version's type is Convertible to the storage
+		// version's, its hub (docs/plans/done/api-versions.md, decision 3).
+		// Every kind serves v1beta1 alone (#1963), so no CRD points here yet;
+		// the next version adds its types to the scheme above.
 		mgr.GetWebhookServer().Register("/convert",
 			conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
 	}

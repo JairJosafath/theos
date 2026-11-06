@@ -149,10 +149,8 @@ same values. `helm uninstall` keeps namespace `gitea` and Gitea's volume, so
 the repositories survive a reinstall, and the project namespaces with their
 models; delete a namespace to drop it.
 
-An upgrade keeps your `theos.factory.io` objects valid: write them at `v1beta1`;
-`v1alpha1` still works, deprecated (the API server warns on every request at
-it, and a release 90 or more days after v0.30.0 may drop it, #1963), and
-converts to `v1beta1`. Within a served version a release never removes, renames or retypes
+An upgrade keeps your `theos.factory.io` objects valid: write them at `v1beta1`,
+the one version served. Within a served version a release never removes, renames or retypes
 a field, never adds a required one and never tightens a rule so that an
 object applied before is refused after; a change that must break waits for a
 new version that converts them. See
@@ -326,8 +324,8 @@ as the run's artifact); a failing release gets an issue titled
 | `runners.base`, `runners.go`, `runners.image` | the CI runners: `enabled`, `image`, `replicas` (default 1), `resources`, `workSize`, `tmpSize`; `pool.size` (default 1 for `base` and `go`, none for `image`) is the per-project pool of that label every GitProvider the chart renders names in its `ci` block, the runners a project's checks run on, since the shared runners serve the templates' checks only (0 turns it off); `go.goCache` is the node directory of its Go build cache; `image.buildkit` runs its job container as rootless BuildKit needs, with its work and tmp directories on disk |
 | `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners, which the operator also copies into each project namespace for the agents' and the CI runner pool's pods; the operator's are `manager.imagePullSecrets` |
 | `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |
-| `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default). A CRD whose kind's versions differ in shape converts by the operator's webhook, so while the operator is down, or after `helm uninstall` kept the CRDs, `kubectl get` of that kind fails and deleting a Project namespace waits (none today; the CRDs convert by the API server, and [the plan](../../docs/plans/done/api-versions.md) says which) |
-| `webhook.enabled` | the operator's conversion webhook (default on); a kind whose versions differ in shape refuses to render without it |
+| `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default). A CRD whose kind's versions differ in shape converts by the operator's webhook, so while the operator is down, or after `helm uninstall` kept the CRDs, `kubectl get` of that kind fails and deleting a Project namespace waits (none today: every kind is served at `v1beta1` alone; [the plan](../../docs/plans/done/api-versions.md) says when one does) |
+| `webhook.enabled` | the operator's conversion webhook (default on), kept for the next version: nothing converts by it while every kind is served at `v1beta1` alone; a kind whose versions differ in shape refuses to render without it |
 | `gitEvents.enabled`, `gitEvents.port`, `gitEvents.url`, `gitEvents.from` | the receiver of Gitea's event deliveries (default on, port 8082): Service `<release>-git-events`, the manager's `--git-events-bind-address` and `--git-events-url`, a NetworkPolicy letting only `gitEvents.from` (default the pods of `gitea.namespace`) reach the port, and the chart's Gitea allowing webhooks to `gitEvents.url`'s host alone; `url` defaults to `http://<release>-git-events.<release namespace>.svc:<port>`. Off, the operator registers no hook and polls ([Git events](#git-events)) |
 | `chat.enabled` | install `theos-chat` (default off): Deployment `<release>-chat` on the operator image, with its own ServiceAccount and ClusterRole (read theos's objects, get Secrets, its own ConfigMaps, impersonate users and groups); `chat.interval` and `chat.resources` |
 | `chat.uiURL` | the UI's address `theos-chat`'s posts link each Task's and Container's page under (`--ui-url`), http(s) with no user, query or fragment; empty, the UI's own: `<ui.sessionBinaryScheme>://<ui.allowedHosts[0]>` behind an Ingress, else `http://localhost:<ui.service.port>`, which opens only where the port-forward runs; with `ui.enabled` false, no links. Set an address people's phones reach |

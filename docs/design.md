@@ -41,8 +41,8 @@ draws the story on top.
 
 ## The model
 
-Twenty namespaced kinds in `theos.factory.io/v1beta1`, the version users write
-(`v1alpha1` is deprecated; Compatibility). Every child names its parent in
+Every kind is namespaced and served at `theos.factory.io/v1beta1` alone, the
+version users write (Compatibility). Every child names its parent in
 `spec`; the operator turns that into the ownerReference, so deletion
 follows the tree. `metadata.name` is the stable id; `displayName` and
 `description` are on every story kind.
@@ -701,8 +701,8 @@ The operator moves bytes with credentials it holds; it builds nothing.
   it. The same copy is a `github` DeployTarget's (the Deploys section), and
   the Crew's field ships through the same code path, its `Published`
   condition and reasons kept. The field stays valid and working in
-  `v1alpha1` and in `v1beta1` (Compatibility); the version after `v1beta1`
-  drops it, once nothing writes it (#1082). To move
+  `v1beta1` (Compatibility); the version after `v1beta1` drops it, once
+  nothing writes it (#1082). To move
   over by hand: a DeployTarget with the same repository and the same Secret
   (key `token`, unchanged), a `spec.deploy` entry on the Container, then the
   field removed. Both may exist at once: each finds the release the other
@@ -1319,9 +1319,8 @@ reports issues through the form *Report from a device*.
 ## Compatibility
 
 **An object a client stored keeps validating across upgrades.** `theos.factory.io`
-serves `v1beta1`, the version users write and every kind stores, and
-`v1alpha1`, deprecated since v0.30.0 and converted (below; its drop is #1963).
-A release keeps every object of the one before valid and meaning what it
+serves every kind at `v1beta1` alone, the version users write and every kind
+stores. A release keeps every object of the one before valid and meaning what it
 meant. Within a served version a release never:
 
 - removes or renames a field, or changes its type;
@@ -1335,10 +1334,18 @@ is fine. A change these rules forbid is a new version, never a change to a
 served one. The status is held to them as the spec is; what the operator does
 with an object may change, as the release notes say.
 
-**Across versions** ([plans/done/api-versions.md](plans/done/api-versions.md), #1082):
+**Across versions** ([plans/done/api-versions.md](plans/done/api-versions.md), #1082).
+`v1alpha1` was dropped before theos's first release without the 90 days
+below ([plans/done/drop-v1alpha1.md](plans/done/drop-v1alpha1.md), #1963):
+`theos.factory.io` is a new group, installed fresh with no upgrade path from
+c4factory ([plans/done/theos-rename.md](plans/done/theos-rename.md)), and no
+release ever served `theos.factory.io/v1alpha1` (c4factory's v0.30.0
+deprecated `c4.factory.io/v1alpha1`, another group), so no install stores an
+object at it and the promise covered no theos user. The next version comes
+beside `v1beta1` under these rules:
 
 - **A served version keeps these rules** from the first release that serves
-  it, as `v1alpha1` did and `v1beta1` does.
+  it, as `v1beta1` does.
 - **Every served version converts to and from the storage version** without
   failing and without loss. A field with no home in the target version rides
   in the annotation `theos.factory.io/<version>-fields` as JSON, so a round trip
@@ -1354,9 +1361,10 @@ with an object may change, as the release notes say.
   in the notes, by its own issue, filed when the version is deprecated with
   the earliest date in its body.
 - **The operator rewrites what etcd holds at an older version.** `v1beta1`
-  is the storage version of every kind. At start, once the conversion
-  webhook serves, the leader lists each kind whose CRD's `storedVersions`
-  names another version, patches every object back at the storage version,
+  is the storage version of every kind until the next version takes over.
+  At start, the leader lists each kind whose CRD's `storedVersions` names
+  another version (one that converts by the webhook once the webhook
+  serves), patches every object back at the storage version,
   and brings that CRD's `storedVersions` down to it; a start after the pass
   does nothing, and a pass that fails is tried again until it succeeds,
   with the operator serving meanwhile.
@@ -1365,9 +1373,10 @@ with an object may change, as the release notes say.
 version of the CRDs with the last release's, in `test/compat/baseline/`
 (`hack/release.sh` copies them), a default's value included, and refuses a
 version the baseline served that is missing, unless `test/compat/dropped.txt`
-names it with the release notes' line. CEL rules, a default added to a field
-that had none, and what the operator reads into an unset field are left to
-review.
+names it with the release notes' line. Until theos's first release the
+baseline is c4factory's v0.30.0, renamed, so `dropped.txt` names `v1alpha1`.
+CEL rules, a default added to a field that had none, and what the operator
+reads into an unset field are left to review.
 
 ## Test tiers
 
