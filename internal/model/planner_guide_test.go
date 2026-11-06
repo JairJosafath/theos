@@ -208,7 +208,7 @@ func TestPlannerGuideAsksForNoTestThatStartsADesktopApp(t *testing.T) {
 
 // TestPlannerGuideSaysWhatIsBigger: the guide says what ships at once under
 // a cadence, how to mark it, and that a tending round marks nothing
-// (docs/plans/release-cadence.md, C8, C9).
+// (docs/plans/done/release-cadence.md, C8, C9).
 func TestPlannerGuideSaysWhatIsBigger(t *testing.T) {
 	guide := strings.Join(strings.Fields(plannerGuideText), " ")
 	for _, rule := range []string{

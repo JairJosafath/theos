@@ -19,7 +19,7 @@ import (
 	"time"
 
 	// The time zones of release cadences load whatever the image holds
-	// (docs/plans/release-cadence.md, C1).
+	// (docs/plans/done/release-cadence.md, C1).
 	_ "time/tzdata"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)

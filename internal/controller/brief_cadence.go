@@ -21,7 +21,7 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// A Brief's apps release on its cadence (docs/plans/release-cadence.md, C2,
+// A Brief's apps release on its cadence (docs/plans/done/release-cadence.md, C2,
 // C5, C9): the Brief writes it onto the Crews it made, and under Day or Week
 // its rounds file a released app's work into the release in progress.
 

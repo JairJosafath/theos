@@ -683,7 +683,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 
 // waitForRelease holds a Crew's Task at its merge while the Crew's cut
 // release waits for its tag, unless the Task's issue is in that release
-// (docs/plans/release-cadence.md, C10): merged now, its work would land under
+// (docs/plans/done/release-cadence.md, C10): merged now, its work would land under
 // the tag and miss the changelog the prepare issue writes. It costs no round,
 // and the Task merges on a later reconcile, once the tag is made. A Standard
 // change merges as usual: its gated merge needs a review run that still

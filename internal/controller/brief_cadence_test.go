@@ -47,7 +47,7 @@ func planRoundOf(ns string, round int32, prompt string, plan scaffold.Tree) {
 	}).Should(Succeed())
 }
 
-// Step 5 of docs/plans/release-cadence.md: under a cadence a Brief's rounds
+// Step 5 of docs/plans/done/release-cadence.md: under a cadence a Brief's rounds
 // file a released app's work into the release in progress.
 var _ = Describe("Brief release cadence", func() {
 	var ns string
@@ -104,7 +104,7 @@ var _ = Describe("Brief release cadence", func() {
 		Expect(patch(crew, func() { crew.Spec.Paused = true })).To(Succeed())
 		flaky := gitFake.AddIssue(ns, "linter", "Test the empty rule", model.FollowUpIssue(model.FollowUp{
 			Body: "No test covers it.", Criteria: []string{"A test lints the empty rule"}},
-			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
+			"Agent `reviewer`", "http://git.test/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
 		gitFake.PutInMilestone(ns, "linter", flaky, model.FollowUpMilestone)
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.SuggestionsWaiting).To(Equal(int32(1)))

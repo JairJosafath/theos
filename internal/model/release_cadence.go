@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// A Crew's releases go out on a cadence (docs/plans/release-cadence.md): each
+// A Crew's releases go out on a cadence (docs/plans/done/release-cadence.md): each
 // once it is done (Release), or at a cut once a day (Day) or a week (Week),
 // which ships what is merged and carries the rest into the next release.
 

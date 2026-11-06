@@ -11,7 +11,7 @@ import (
 // wantEveryRelease checks that facts give want with the cadence every:
 // Release too, whatever its other fields and the release/now labels say: set
 // or unset, it tags each release once it is done, as before cadences
-// (docs/plans/release-cadence.md, C3, C8).
+// (docs/plans/done/release-cadence.md, C3, C8).
 func wantEveryRelease(t *testing.T, facts ReleaseFacts, want ReleaseStep) {
 	t.Helper()
 	facts.Cadence = ReleaseCadence{Every: CadenceRelease, At: "09:00", TimeZone: "Europe/Amsterdam"}

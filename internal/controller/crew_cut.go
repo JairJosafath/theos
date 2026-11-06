@@ -23,7 +23,7 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// A Crew's releases go out on its cadence (docs/plans/release-cadence.md): at
+// A Crew's releases go out on its cadence (docs/plans/done/release-cadence.md): at
 // each cut the Crew marks the release in progress cut, carries its open
 // issues on into the next release and tags it as with every Release.
 

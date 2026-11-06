@@ -46,7 +46,7 @@ func (r *BriefReconciler) applyParallel(ctx context.Context, brief *c4v1beta1.Br
 
 // syncParallel sets the parallel and the release cadence of every Crew the
 // Brief made, earlier rounds' included, whatever its round is doing (decision
-// 1; docs/plans/release-cadence.md, C2): a change to the Brief reaches them
+// 1; docs/plans/done/release-cadence.md, C2): a change to the Brief reaches them
 // without waiting for a round, and a hand edit of one is set back. A Crew the
 // Brief didn't make is never touched.
 func (r *BriefReconciler) syncParallel(ctx context.Context, brief *c4v1beta1.Brief) error {

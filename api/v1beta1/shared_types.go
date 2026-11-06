@@ -69,7 +69,7 @@ const (
 )
 
 // ReleaseCadence is how often a Crew's releases go out
-// (docs/plans/release-cadence.md): each once it is done, or at a cut once a
+// (docs/plans/done/release-cadence.md): each once it is done, or at a cut once a
 // day or a week, which ships the work merged by then and carries the rest
 // into the next release.
 // +kubebuilder:validation:XValidation:rule="!has(self.weekday) || self.every == 'Week'",message="weekday needs every: Week"

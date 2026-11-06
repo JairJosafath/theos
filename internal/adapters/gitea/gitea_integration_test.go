@@ -729,7 +729,7 @@ func TestGiteaMilestonesIntegration(t *testing.T) {
 	if m := find(); m.Closed {
 		t.Errorf("milestone %+v closed before CloseMilestone", m)
 	}
-	// A cut retitles a release of fixes (docs/plans/release-cadence.md, C7);
+	// A cut retitles a release of fixes (docs/plans/done/release-cadence.md, C7);
 	// Gitea would clear its due date unless the edit sends it back.
 	title = "v0.0.1"
 	if err := p.EditMilestoneTitle(ctx, repo, made.ID, title); err != nil {

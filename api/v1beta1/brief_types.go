@@ -106,7 +106,7 @@ type BriefSpec struct {
 	PauseRuns bool `json:"pauseRuns,omitempty"`
 
 	// releaseCadence is how often the apps' releases go out
-	// (docs/plans/release-cadence.md): the Brief writes it onto every Crew it
+	// (docs/plans/done/release-cadence.md): the Brief writes it onto every Crew it
 	// made, every reconcile (a Crew it didn't make keeps its own), and under
 	// Day or Week its rounds file every issue and taken suggestion of a
 	// released app into the release in progress, so a day's work is one

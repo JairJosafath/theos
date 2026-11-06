@@ -135,7 +135,7 @@ type PlanIssue struct {
 	// it is readied once each has published one (docs/plans/done/app-modules.md).
 	Uses []string
 	// ReleaseNow says the front matter's release: now marks it bigger: once
-	// merged, its release goes out at once (docs/plans/release-cadence.md, C9).
+	// merged, its release goes out at once (docs/plans/done/release-cadence.md, C9).
 	ReleaseNow bool
 }
 

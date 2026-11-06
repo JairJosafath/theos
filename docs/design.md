@@ -613,7 +613,7 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   before the release tagged closes untagged with it (#2025).
   `status.lastRelease` records it; `Released` says why one waits on a person.
 - **Cadence** (`spec.releaseCadence`,
-  [plans/release-cadence.md](plans/release-cadence.md)). `every: Release`,
+  [plans/release-cadence.md](plans/done/release-cadence.md)). `every: Release`,
   the default, tags each release once it is done, as above. `Day` or
   `Week` releases on a schedule: `at` (`HH:MM`, default `18:00`) in
   `timeZone` (an IANA name, default `UTC`), on `weekday` (only with

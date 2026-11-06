@@ -80,7 +80,7 @@ type SuggestionAnswer struct {
 	// plans/done/fixes-patch-next.md).
 	Fix bool `yaml:"fix,omitempty"`
 	// Now says a taken suggestion is bigger: once merged, its release goes
-	// out at once, without waiting for the cut (docs/plans/release-cadence.md,
+	// out at once, without waiting for the cut (docs/plans/done/release-cadence.md,
 	// C9).
 	Now bool `yaml:"now,omitempty"`
 }

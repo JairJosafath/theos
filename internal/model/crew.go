@@ -445,7 +445,7 @@ func crewProgress(step CrewStep, started []string, activeIssues []int, held, onD
 // issue waiting or at work, and whether a Task is at work, a Blocked one
 // aside: a prepare issue starts only when none is. Under a cadence no release
 // is prepared alone: the other Tasks' merges wait for its tag instead
-// (docs/plans/release-cadence.md, C10).
+// (docs/plans/done/release-cadence.md, C10).
 func preparingRelease(f CrewFacts, candidates []int, prepare map[int]bool) (preparing, others bool) {
 	if f.Cadence {
 		return false, false

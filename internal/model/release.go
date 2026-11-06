@@ -33,7 +33,7 @@ type ReleaseMilestone struct {
 	// release's full check failed, and the commit each failed at.
 	FullChecks []FullCheckFix
 	// Cut says its description carries a cut mark: under a cadence it was
-	// cut, and takes no more work (docs/plans/release-cadence.md, C4).
+	// cut, and takes no more work (docs/plans/done/release-cadence.md, C4).
 	Cut bool
 }
 
@@ -78,7 +78,7 @@ type ReleaseFacts struct {
 	FullCheckRerun *FullCheckAt
 	// Cadence is the Crew's release cadence; one that doesn't cut (Release,
 	// or unset) tags each release once it is done
-	// (docs/plans/release-cadence.md).
+	// (docs/plans/done/release-cadence.md).
 	Cadence ReleaseCadence
 	// Now is the time of the poll, and LastCut the Crew's last cut, zero
 	// when it has cut none (see the function LastCut).
@@ -208,7 +208,7 @@ func held(title, reason, format string, args ...any) ReleaseStep {
 // release tagged closes untagged with it (#2025).
 //
 // Under a cadence that cuts (Day or Week), the first release waits for its cut
-// instead, and is cut first: docs/plans/release-cadence.md, cadenceStep.
+// instead, and is cut first: docs/plans/done/release-cadence.md, cadenceStep.
 func NextRelease(f ReleaseFacts) ReleaseStep {
 	rerunFixes := withoutRerunFixes(&f)
 	releases, empty := sortedReleases(f.Milestones)

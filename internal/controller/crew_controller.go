@@ -183,7 +183,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	// A cadence whose time zone the operator can't load stops the Crew, as
-	// a missing Agent does: CEL can't check it (docs/plans/release-cadence.md, C1).
+	// a missing Agent does: CEL can't check it (docs/plans/done/release-cadence.md, C1).
 	cadence := crewCadence(&crew)
 	if err := model.CheckCadence(cadence); err != nil {
 		r.wait(&crew, status, model.ReasonInvalidTimeZone, "spec.releaseCadence: "+err.Error())

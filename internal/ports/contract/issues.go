@@ -321,7 +321,7 @@ func (s issuesSuite) milestones(t *testing.T) {
 }
 
 // retitle retitles a dated release, as a cut does with a release of fixes
-// (docs/plans/release-cadence.md, C7): its due date, description, state and
+// (docs/plans/done/release-cadence.md, C7): its due date, description, state and
 // issues stay.
 func (s issuesSuite) retitle(t *testing.T) {
 	issues, repos := s.repos(t, contractRepo)

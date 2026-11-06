@@ -75,7 +75,7 @@ type BriefWorkspace struct {
 	Tending bool
 	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease
-	// Cadence is the Brief's spec.releaseCadence (plans/release-cadence.md).
+	// Cadence is the Brief's spec.releaseCadence (plans/done/release-cadence.md).
 	Cadence ReleaseCadence
 	// Requests are the requests from GitHub issues the round plans like new
 	// prompts (WorkspaceRequests; docs/plans/done/brief-requests.md, decision 7).
@@ -250,7 +250,7 @@ func renderBrief(ws BriefWorkspace) string {
 }
 
 // renderCadence says how often the released apps release, for the planner
-// (plans/release-cadence.md, C5, C9); nothing with every: Release, where a
+// (plans/done/release-cadence.md, C5, C9); nothing with every: Release, where a
 // round's fixes and features go to releases of their own.
 func renderCadence(ws BriefWorkspace) string {
 	c := ws.Cadence

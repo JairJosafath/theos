@@ -56,7 +56,7 @@ func BundlersToBump(released time.Time, bundlers []Bundler, filed []string) []Bu
 // prepare issue, open or closed, and not cut under a cadence. Work put in a
 // release whose prepare issue is filed would merge after it and hold the
 // release as MergedAfterPrepare (#834); a cut release ships what it holds
-// (docs/plans/release-cadence.md, C4). It returns 0 when there is none.
+// (docs/plans/done/release-cadence.md, C4). It returns 0 when there is none.
 func ReleaseTakingWork(milestones []ReleaseMilestone) int64 {
 	var first *ReleaseMilestone
 	for i, m := range milestones {

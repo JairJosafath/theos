@@ -2,9 +2,9 @@
 
 Issue #2038, [theos#11](https://github.com/JairJosafath/theos/issues/11)
 (reported on 0.30.0). Builds on
-[brief-releases.md](done/brief-releases.md),
-[brief-patch-releases.md](done/brief-patch-releases.md) and
-[fixes-patch-next.md](done/fixes-patch-next.md), and needs #2025
+[brief-releases.md](brief-releases.md),
+[brief-patch-releases.md](brief-patch-releases.md) and
+[fixes-patch-next.md](fixes-patch-next.md), and needs #2025
 ([theos#9](https://github.com/JairJosafath/theos/issues/9)) first: an
 empty open release must not hold the releases after it.
 
@@ -99,7 +99,11 @@ Where the table above first said less, or said what the code can't do:
   `release/now`, whatever its plan says; `brief.md` gets a *Release
   cadence* section under a cadence, so the planner knows which rule applies.
 - C12: `status.apps[].nextRelease` carries the cadence's time zone, so the
-  card says the time as the person set it.
+  card says the time as the person set it. The line is the app's line under
+  *Releases* on the Brief's page (`AppLine`), where the apps are listed; it
+  names the day too when the cut isn't today there ("at 18:00 UTC on
+  Saturday"), as the Crew's message does, and falls back to UTC for a zone
+  the browser doesn't know. Evidence: `docs/screenshots/2038-*`.
 - C12: `status.nextCut` counts the merged issues, which the card shows. A
   cut says so with `Released=True`, reason `ReleaseCut`, and a Normal
   Event, as filing a prepare issue does; the Crew polls again at the next

@@ -423,7 +423,7 @@ func TestRenderCadence(t *testing.T) {
 		{ReleaseCadence{Every: CadenceWeek, At: "09:30", TimeZone: "Europe/Amsterdam"},
 			"Released apps release every Friday at 09:30 Europe/Amsterdam: "},
 	} {
-		got := renderBrief(BriefWorkspace{Brief: "b", Idea: "Idea.", GitProvider: "gitea", Cadence: tc.cadence})
+		got := renderBrief(BriefWorkspace{Brief: "b", Idea: "Idea.", GitProvider: "host", Cadence: tc.cadence})
 		if tc.want == "" {
 			if strings.Contains(got, "## Release cadence") {
 				t.Errorf("brief.md for %+v says a cadence:\n%s", tc.cadence, got)

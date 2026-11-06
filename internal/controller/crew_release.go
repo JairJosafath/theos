@@ -319,7 +319,7 @@ const maxPreviousTags = 5
 // the releases' issues, and returns the repository's milestones, open and
 // closed. Under a cadence, a release marked cut is Cut, and an issue
 // labelled release/now or a fix is among ReleaseNow or Fixes
-// (docs/plans/release-cadence.md).
+// (docs/plans/done/release-cadence.md).
 func releaseFacts(ctx context.Context, provider interface {
 	ports.GitHost
 	ports.Issues

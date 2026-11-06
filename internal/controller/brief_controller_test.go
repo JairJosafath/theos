@@ -35,7 +35,7 @@ func newBrief(ns, name string, prompts ...string) *c4v1beta1.Brief {
 			Autopilot: model.AutopilotOff,
 			// A release per round, as before cadences: the specs written
 			// then hold to it unchanged; the cadence's specs set their own
-			// (docs/plans/release-cadence.md, step 5).
+			// (docs/plans/done/release-cadence.md, step 5).
 			ReleaseCadence: &c4v1beta1.ReleaseCadence{Every: model.CadenceRelease}},
 	}
 }

@@ -2,7 +2,8 @@
 // to a few of each.
 
 import type { ReactNode } from 'react'
-import type { BriefAppView, BriefView } from '../../model/brief'
+import { describeNextRelease, type BriefAppView, type BriefView } from '../../model/brief'
+import { useNow } from '../../lib/hooks'
 import type { RequestView } from '../../model/requests'
 import { plural } from '../../model/describe'
 import { UsageLine, When } from '../bits'
@@ -300,6 +301,7 @@ function RequestLine({ request: r }: { request: RequestView }) {
 
 /** An app of the Brief: releases on or off, its latest release and where it was published. */
 function AppLine({ app }: { app: BriefAppView }) {
+  const now = useNow()
   return (
     <li className="brief-app">
       <div className="brief-app-head">
@@ -323,6 +325,11 @@ function AppLine({ app }: { app: BriefAppView }) {
                 <When at={app.release.time} />
               </span>
             ) : null}
+          </span>
+        ) : null}
+        {app.nextRelease ? (
+          <span className="brief-app-next" title="What the next cut of the app's release cadence ships, and when">
+            {describeNextRelease(app.nextRelease, new Date(now))}
           </span>
         ) : null}
         {app.publishedURL ? (
