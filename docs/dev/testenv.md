@@ -1,5 +1,8 @@
 # Tests, the Kind cluster and deploying
 
+"The test environment" here is the Kind cluster a human tests the factory in, not a
+`TestEnvironment`, the tools agents lease ([plans/test-environments.md](../plans/test-environments.md)).
+
 How to test and run the factory. Go tests are the gate: `make check` for
 every change. A Kind cluster exists only when a human asks to run tests in it;
 agents never create, lease or deploy to one, and never run `make e2e`. The

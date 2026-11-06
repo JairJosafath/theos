@@ -126,6 +126,20 @@ linters:
               desc: the runner must not depend on controllers (docs/architecture.md)
             - pkg: github.com/JairJosafath/theos/internal/adapters
               desc: the runner uses git and its token only; the operator talks to the Git host API (docs/architecture.md)
+        test-environment-tool-stands-alone:
+          files:
+            - "**/cmd/theos-env/**"
+          deny:
+            - pkg: k8s.io
+              desc: theos-env runs in sandboxes and test environments, which have no Kubernetes credentials (docs/plans/test-environments.md)
+            - pkg: sigs.k8s.io
+              desc: theos-env needs no cluster access (docs/plans/test-environments.md)
+            - pkg: github.com/JairJosafath/theos/api
+              desc: theos-env takes plain values from its environment (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/controller
+              desc: theos-env must not depend on controllers (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/adapters
+              desc: theos-env talks to the environment it leased alone, never to the Git host or a provider (docs/architecture.md)
         model-proxy-stands-alone:
           files:
             - "**/internal/modelproxy/**"
