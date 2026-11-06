@@ -110,8 +110,7 @@ jobs:
               CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags=-s -o "theos-env-$os-$arch" ./cmd/theos-env
             done
           done
-          sha256sum theos-session-linux-amd64 theos-session-linux-arm64 theos-env-linux-amd64 theos-env-linux-arm64 \
-            theos-env-darwin-amd64 theos-env-darwin-arm64 >SHA256SUMS
+          sha256sum theos-session-linux-amd64 theos-session-linux-arm64 theos-env-linux-amd64 theos-env-linux-arm64 theos-env-darwin-amd64 theos-env-darwin-arm64 >SHA256SUMS
           ls -l theos-session-linux-* theos-env-*
           cat SHA256SUMS
 

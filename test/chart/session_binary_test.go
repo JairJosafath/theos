@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -78,7 +79,8 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	create := regexp.MustCompile(`(?m)^\s*gh release create .*$`).Find(workflow)
+	// The whole command, its continued lines included.
+	create := regexp.MustCompile(`(?m)^\s*gh release create (?:.*\\\n)*.*$`).Find(workflow)
 	for _, arch := range []string{"amd64", "arm64"} {
 		file := strings.ReplaceAll(filepath.Base(github), "${arch}", arch)
 		if !strings.Contains(string(create), " "+file) {
@@ -89,19 +91,30 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 	// both binaries next to them, which the theos-session feature checks the
 	// download against (#1175): the release's files and the UI image's
 	// /downloads/ (ui/Dockerfile; ui/server.mjs serves it, its test shows).
-	sums := "sha256sum theos-session-linux-amd64 theos-session-linux-arm64 >SHA256SUMS"
+	// A remote TestEnvironment's machine checks theos-env against the same
+	// SHA256SUMS (docs/plans/test-environments.md, step 7), an EC2 Mac its
+	// darwin build (step 9).
 	if !strings.Contains(string(create), " SHA256SUMS") {
 		t.Errorf("release.yml's gh release create doesn't attach SHA256SUMS: %s", create)
 	}
-	if !strings.Contains(string(workflow), sums) {
-		t.Errorf("release.yml doesn't write SHA256SUMS over both binaries (%s)", sums)
+	sums := regexp.MustCompile(`(?m)^\s*sha256sum (.*) >SHA256SUMS$`).FindSubmatch(workflow)
+	for _, bin := range []string{"theos-session-linux-amd64", "theos-session-linux-arm64",
+		"theos-env-linux-amd64", "theos-env-linux-arm64", "theos-env-darwin-amd64", "theos-env-darwin-arm64"} {
+		if sums == nil || !slices.Contains(strings.Fields(string(sums[1])), bin) {
+			t.Errorf("release.yml's SHA256SUMS doesn't cover %s (%q)", bin, sums)
+		}
+		if strings.HasPrefix(bin, "theos-env-") && !strings.Contains(string(create), " "+bin) {
+			t.Errorf("release.yml's gh release create doesn't attach %s: %s", bin, create)
+		}
 	}
 	dockerfile, err := os.ReadFile(filepath.Join("..", "..", "ui", "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(dockerfile), sums) {
-		t.Errorf("ui/Dockerfile doesn't write SHA256SUMS next to the binaries it serves (%s)", sums)
+	// The UI image serves the Session client alone.
+	uiSums := "sha256sum theos-session-linux-amd64 theos-session-linux-arm64 >SHA256SUMS"
+	if !strings.Contains(string(dockerfile), uiSums) {
+		t.Errorf("ui/Dockerfile doesn't write SHA256SUMS next to the binaries it serves (%s)", uiSums)
 	}
 
 	out, err := exec.Command(helm, "template", release, pkg, "--namespace", releaseNS,
