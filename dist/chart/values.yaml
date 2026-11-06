@@ -193,6 +193,33 @@ webhook:
   # Webhook server port
   port: 9443
 
+## The receiver of the Git host's event deliveries (docs/plans/git-events.md,
+## decision 10): the operator listens on port (--git-events-bind-address) and
+## registers a hook on each GitProvider's organization that delivers to url
+## (--git-events-url), so it reconciles when a repository changes instead of
+## waiting for its poll. Each delivery is signed with the GitProvider's own
+## Secret, which the operator makes in the cluster; none is rendered here.
+## Off: no hook, no receiver, and the operator polls the host.
+##
+gitEvents:
+  enabled: true
+  # The receiver's port, on the manager container and on Service
+  # <release>-git-events.
+  port: 8082
+  ## The address the Git host delivers to. Empty: the Service's cluster name,
+  ## http://<release>-git-events.<release namespace>.svc:<port>, which the
+  ## chart's Gitea reaches. The chart's Gitea allows webhooks to this URL's
+  ## host and no other (GITEA__webhook__ALLOWED_HOST_LIST; gitea.config
+  ## overrides it). A Gitea of your own needs an address it reaches, and that
+  ## host in its own [webhook] ALLOWED_HOST_LIST.
+  ##
+  url: ""
+  ## Who may reach the port, as NetworkPolicy peers. Empty: the pods of
+  ## gitea.namespace. A Gitea of your own elsewhere needs its peer here, such
+  ## as an ipBlock.
+  ##
+  from: []
+
 ## Prometheus ServiceMonitor for metrics scraping.
 ## Requires prometheus-operator to be installed in the cluster.
 ##

@@ -328,6 +328,7 @@ as the run's artifact); a failing release gets an issue titled
 | `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |
 | `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default). A CRD whose kind's versions differ in shape converts by the operator's webhook, so while the operator is down, or after `helm uninstall` kept the CRDs, `kubectl get` of that kind fails and deleting a Project namespace waits (none today; the CRDs convert by the API server, and [the plan](../../docs/plans/done/api-versions.md) says which) |
 | `webhook.enabled` | the operator's conversion webhook (default on); a kind whose versions differ in shape refuses to render without it |
+| `gitEvents.enabled`, `gitEvents.port`, `gitEvents.url`, `gitEvents.from` | the receiver of Gitea's event deliveries (default on, port 8082): Service `<release>-git-events`, the manager's `--git-events-bind-address` and `--git-events-url`, a NetworkPolicy letting only `gitEvents.from` (default the pods of `gitea.namespace`) reach the port, and the chart's Gitea allowing webhooks to `gitEvents.url`'s host alone; `url` defaults to `http://<release>-git-events.<release namespace>.svc:<port>`. Off, the operator registers no hook and polls ([Git events](#git-events)) |
 | `chat.enabled` | install `theos-chat` (default off): Deployment `<release>-chat` on the operator image, with its own ServiceAccount and ClusterRole (read theos's objects, get Secrets, its own ConfigMaps, impersonate users and groups); `chat.interval` and `chat.resources` |
 | `chat.uiURL` | the UI's address `theos-chat`'s posts link each Task's and Container's page under (`--ui-url`), http(s) with no user, query or fragment; empty, the UI's own: `<ui.sessionBinaryScheme>://<ui.allowedHosts[0]>` behind an Ingress, else `http://localhost:<ui.service.port>`, which opens only where the port-forward runs; with `ui.enabled` false, no links. Set an address people's phones reach |
 | `chat.homeserverURL` | the homeserver of a Chat that names none, the operator's `--chat-homeserver`; empty, the in-cluster one with `chat.homeserver.enabled`, else none |
@@ -404,3 +405,40 @@ doesn't set, so a Git step in flight never misses its GitProvider; the first
 upgrade from an older chart takes over the hooks it made. `helm uninstall`
 leaves them in place, as it does one the chart stops rendering. The
 GitProviders `gitea.projects` makes are applied the same way, by the seed.
+
+### Git events
+
+The operator registers a hook on each GitProvider's organization that
+delivers to `<gitEvents.url>/git-events/<namespace>/<name>`, so a push, an
+issue or a review reconciles what it concerns at once instead of at the next
+poll. Each delivery is signed with the GitProvider's own Secret, which the
+operator makes in the cluster; the chart renders none. GitProvider
+`status.conditions` type `Events` says how it goes: `Registered`, then
+`Receiving` after the first verified delivery.
+
+With the release's Gitea nothing needs setting. A Gitea of your own
+(`gitea.enabled=false`) needs three things:
+
+- `gitEvents.url`: an address that Gitea reaches the operator's Service on,
+  such as a LoadBalancer's or an Ingress's, when the Service's cluster name
+  doesn't resolve there.
+- That URL's host in its own Gitea's allowed host list, `[webhook]
+  ALLOWED_HOST_LIST` in `app.ini` (or `GITEA__webhook__ALLOWED_HOST_LIST`);
+  Gitea's default, `external`, refuses private addresses such as the
+  Service's.
+- `gitEvents.from`: the NetworkPolicy peers its deliveries come from, such
+  as `[{ipBlock: {cidr: 10.0.0.5/32}}]`, when they don't come from pods in
+  `gitea.namespace`.
+
+```yaml
+gitea:
+  enabled: false
+gitEvents:
+  url: http://theos-events.example.internal:8082
+  from:
+    - ipBlock:
+        cidr: 10.0.0.5/32
+```
+
+Without them the hook still registers but no delivery arrives, and the
+operator keeps polling the host.

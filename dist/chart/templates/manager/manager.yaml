@@ -121,6 +121,13 @@ spec:
         # the in-cluster one).
         - --chat-homeserver={{ . }}
         {{- end }}
+        {{- if .Values.gitEvents.enabled }}
+        # The receiver of the Git host's deliveries, and where each
+        # GitProvider's hook delivers: Service <release>-git-events, unless
+        # gitEvents.url says otherwise (docs/plans/git-events.md, decision 10).
+        - --git-events-bind-address=:{{ .Values.gitEvents.port }}
+        - --git-events-url={{ include "theos.gitEventsURL" . }}
+        {{- end }}
         command:
         - /manager
         # The namespace the shared Secrets are read from, into every project
@@ -155,6 +162,11 @@ spec:
         {{- if .Values.webhook.enabled }}
         - containerPort: {{ .Values.webhook.port }}
           name: webhook-server
+          protocol: TCP
+        {{- end }}
+        {{- if .Values.gitEvents.enabled }}
+        - containerPort: {{ .Values.gitEvents.port }}
+          name: git-events
           protocol: TCP
         {{- end }}
         readinessProbe:
