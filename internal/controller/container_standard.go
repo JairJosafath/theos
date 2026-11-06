@@ -164,7 +164,7 @@ func (u *standardUpdate) run(ctx, gitCtx context.Context, standard *c4v1beta1.St
 			u.merged(ctx)
 		case model.StandardDrop:
 			take := s.Update.Take
-			if !u.drop(ctx, gitCtx, step.Message) {
+			if !u.drop(ctx, gitCtx, step.Message, f.PR != nil && f.PR.Closed) {
 				return
 			}
 			// A take that conflicts with main is the person's answer still: take
@@ -256,6 +256,7 @@ func inFlight(update *c4v1beta1.StandardUpdateStatus) *model.StandardUpdateInFli
 		Ref: update.Ref, Mode: string(update.Checks), Stopped: update.Stopped, PullRequest: int(update.PullRequest),
 		PullRequestURL: update.PullRequestURL, Branch: update.Branch, Commit: update.Commit, Base: update.Base,
 		Paths: update.Paths, Take: update.Take, Held: update.Stopped == c4v1beta1.ReasonNoLightCheck,
+		Dropping: update.Dropping,
 	}
 }
 
@@ -960,18 +961,35 @@ func (u *standardUpdate) forceMerge(ctx, gitCtx context.Context, changed []strin
 	return true
 }
 
-// drop closes the update's pull request and deletes its branch, then forgets
-// the update. It reports false on a Git error.
-func (u *standardUpdate) drop(ctx, gitCtx context.Context, why string) bool {
+// drop closes the update's pull request unless closed, deletes its branch,
+// then forgets the update. It writes why into status.standard.update.dropping
+// before it closes the pull request: a pass cut short after the close, by a
+// restart or a Git error, then finishes the drop and plans the update again,
+// instead of reading the operator's own close as a person's (#2035). It
+// reports false when it could not record that, or on a Git error.
+func (u *standardUpdate) drop(ctx, gitCtx context.Context, why string, closed bool) bool {
 	update := u.status.Standard.Update
 	git, ok := u.access(ctx)
 	if !ok {
 		return false
 	}
+	if update.Dropping == "" {
+		update.Dropping = why
+		// A copy, so the pass's own status write still sees what it changes after.
+		if err := u.r.writeStatus(ctx, u.container, u.status.DeepCopy()); err != nil {
+			// Nothing is closed yet: the pass's status write, or the next pass,
+			// records the drop before anything closes the pull request.
+			logf.FromContext(ctx).Info("Could not record the drop of a Standard update",
+				"url", update.PullRequestURL, "error", err.Error())
+			return false
+		}
+	}
 	repo := git.provider.Repository(u.container.Name)
-	if err := git.provider.ClosePullRequest(gitCtx, repo, int(update.PullRequest)); err != nil {
-		u.gitError(ctx, err)
-		return false
+	if !closed {
+		if err := git.provider.ClosePullRequest(gitCtx, repo, int(update.PullRequest)); err != nil {
+			u.gitError(ctx, err)
+			return false
+		}
 	}
 	if err := git.provider.DeleteBranch(gitCtx, repo, update.Branch); err != nil {
 		u.gitError(ctx, err)

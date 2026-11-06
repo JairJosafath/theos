@@ -758,7 +758,11 @@ An update whose CI fails (`ChecksFailed`) is the Crew's to fix
 The fix lands on main in the Crew's own pull request; once main is no longer
 at the head the update was planned from (`status.standard.update.base`), the
 operator closes the update's pull request and plans it again from the new
-main (#1489). The operator files `Standard <name> <ref> fails this
+main (#1489). Before it closes a pull request it drops, here or when main
+conflicts with it, the operator records why in
+`status.standard.update.dropping`: a pass cut short after the close, by a
+restart or a Git error, finishes the drop and plans again, and never reads
+the operator's own close as a person's `UpdateClosed` (#2035). The operator files `Standard <name> <ref> fails this
 repository's check`, `kind/bug` and `status/ready`, in the repository's next
 unprepared release, once per target ref (`status.standard.failureIssue`),
 linking the pull request and the run (#1491). A check a Standard tightens
