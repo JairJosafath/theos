@@ -300,7 +300,10 @@ only when a human dispatches them, and *Verify Release* when a human does or
 publishes and tests nothing. `make check` is the gate before a merge; it runs
 `make ui-test` (the UI workflow's `npm run check`: typecheck, eslint, Prettier
 and its tests) too, so a UI change can't merge with what would turn *UI* red
-(#1006).
+(#1006). *UI* then runs `npm run test:e2e` as well, the built UI in Chromium
+against a fake API, which `make check` leaves out as a device may have no
+Chromium (theos#31): run `cd ui && npm run test:e2e` for a change to the UI's
+pages, its fixture or its server.
 
 ## Work on the factory: GitHub issues by hand
 
