@@ -86,6 +86,15 @@ spec:
                           description: CIRunnerSpec is one label's runners in a project's
                             pool.
                           properties:
+                            freshGoCache:
+                              description: |-
+                                freshGoCache gives each pod a Go build cache of its own: an emptyDir
+                                seeded from the image's warm cache, which nothing shares and the pod
+                                takes with it. For the label releases run on (go-release): a release
+                                builds signed artifacts, so it must not link a build result a pull
+                                request's job left in the project's cache. Excludes goCache. Only for
+                                an image with the Go toolchain.
+                              type: boolean
                             goCache:
                               description: |-
                                 goCache mounts the project's Go build cache from the node, under the
@@ -176,6 +185,12 @@ spec:
                           - image
                           - label
                           type: object
+                          x-kubernetes-validations:
+                          - message: 'goCache and freshGoCache exclude each other:
+                              a label''s pods mount the project''s Go cache or start
+                              from a fresh one'
+                            rule: '!(has(self.goCache) && self.goCache && has(self.freshGoCache)
+                              && self.freshGoCache)'
                         maxItems: 8
                         minItems: 1
                         type: array

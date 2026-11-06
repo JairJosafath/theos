@@ -300,7 +300,7 @@ var _ = Describe("Container images", func() {
 			Spec: newFrameworkSpec(templatesURL+model.FrameworkAWSFargate, "v1.3.0", c4v1beta1.ContainerTypeService)}
 		fargate.Spec.DeploysItself = true
 		giteaRelease := &c4v1beta1.Deployment{ObjectMeta: objectMeta(ns, model.DeploymentGiteaRelease),
-			Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.8.0", c4v1beta1.ContainerTypeService)}
+			Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.9.0", c4v1beta1.ContainerTypeService)}
 		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		container.Spec.FrameworkRef.Name = model.FrameworkAWSFargate
 		container.Spec.ComputeRef = nil
