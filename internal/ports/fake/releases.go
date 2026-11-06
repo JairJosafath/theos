@@ -149,7 +149,8 @@ func (s *state) milestones(key string, all bool) []ports.Milestone {
 		}
 		m, made := s.releaseState().created[fmt.Sprintf("%s#%d", key, i+1)]
 		if !made {
-			m = ports.Milestone{ID: int64(i + 1), Title: title}
+			m = ports.Milestone{ID: int64(i + 1), Title: title,
+				Description: is.descriptions[fmt.Sprintf("%s#%d", key, i+1)]}
 			for _, issue := range is.issues[key] {
 				if issue.InMilestone == title && !issue.MilestoneDue.IsZero() {
 					m.Due = issue.MilestoneDue

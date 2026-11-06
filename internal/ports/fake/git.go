@@ -515,6 +515,11 @@ type agentStore struct {
 	deleteErrs map[string]error
 	// revoked counts the RevokeOldAgentTokens calls, by bot user.
 	revoked map[string]int
+	// tokens is each bot user's current token, the one EnsureAgentAccess
+	// made last: making another replaces it, as the host rotates it.
+	tokens map[string]string
+	// noLogs are the check URLs of CI jobs that started and sent no log.
+	noLogs map[string]bool
 	// trees are the tree ids set for commits, and the ones main's commits
 	// got, by owner/name@sha.
 	trees map[string]string
@@ -533,6 +538,7 @@ func (s *state) agentState() *agentStore {
 			files: map[string][]string{}, commits: map[string][]ports.PullCommit{}, forced: map[string][]int{}, gone: map[string]bool{}, conflicts: map[string]bool{},
 			readErrs: map[string]int{}, unnamed: map[string]bool{},
 			edits: map[string]map[string]*scaffold.File{}, bases: map[string]string{}, removeErrs: map[string]error{}, deleteErrs: map[string]error{}, revoked: map[string]int{},
+			tokens: map[string]string{}, noLogs: map[string]bool{},
 			trees: map[string]string{}, written: map[string][]ports.CommitStatus{},
 		}
 	}
