@@ -180,6 +180,29 @@ func (g *Git) MilestoneIssues(_ context.Context, repo ports.Repository,
 	return out, nil
 }
 
+func (g *Git) DescribeMilestone(_ context.Context, repo ports.Repository, id int64, description string) error {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	key := repo.Owner + "/" + repo.Name
+	if _, err := g.s.milestoneTitle(key, id); err != nil {
+		return err
+	}
+	// A milestone made by hand takes its due date from its issues, as listed.
+	made := fmt.Sprintf("%s#%d", key, id)
+	m, ok := g.s.releaseState().created[made]
+	if !ok {
+		for _, listed := range g.s.milestones(key, true) {
+			if listed.ID == id {
+				m = listed
+			}
+		}
+		m.Closed = false
+	}
+	m.Description = description
+	g.s.releaseState().created[made] = m
+	return nil
+}
+
 func (g *Git) CloseMilestone(_ context.Context, repo ports.Repository, id int64) error {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()

@@ -114,4 +114,7 @@ type Issues interface {
 	// CloseMilestone closes milestone id, keeping the day it is due. It is safe
 	// to repeat.
 	CloseMilestone(ctx context.Context, repo Repository, id int64) error
+	// DescribeMilestone replaces milestone id's description, keeping its
+	// title, state and due date. It is safe to repeat.
+	DescribeMilestone(ctx context.Context, repo Repository, id int64, description string) error
 }

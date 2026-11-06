@@ -596,6 +596,8 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   at work is done: the Crew tags it at its newest merged issue's merge commit
   and closes the milestone. Tags go out in due-date order, never move, and
   never go behind the previous release (`BehindPreviousRelease`).
+  A release with no issue at all is not done and holds no later one; one
+  before the release tagged closes untagged with it (#2025).
   `status.lastRelease` records it; `Released` says why one waits on a person.
 - **Preparing** (`spec.prepareReleases`). A done release with work a Task
   merged gets `Prepare vX.Y.Z`, `kind/release`, listing what the tag carries;
@@ -841,7 +843,8 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   number, else 3) and a Container's `checks` change only when the person asks.
 - **Releases when the plan says so** (`plan/releases.yaml`, or `spec.releases`
   naming a Container with a GitHub repository and token Secret). Fixes go
-  into the next patch release, other work into the next minor. A Crew whose
+  into the next patch release, other work into the next minor: an empty one
+  an earlier round made is joined, not passed over (#2025). A Crew whose
   target was edited away from the Brief's publishes nothing until they agree
   (`ReleaseTarget=False`, `DiffersFromBrief`).
 - **Requests from GitHub.** An entry that takes requests plans the allowed

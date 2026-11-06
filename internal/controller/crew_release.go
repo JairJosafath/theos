@@ -199,7 +199,8 @@ func endFullCheck(ctx context.Context, status *c4v1beta1.CrewStatus, provider po
 
 // settleMilestones moves the later releases' issues the tag carries into its
 // milestone, each with a comment, closes each later milestone left empty right
-// after its last move, and last the tagged release's own. The tag is made
+// after its last move, then the earlier releases with no issue at all (#2025),
+// and last the tagged release's own. The tag is made
 // first, so a poll that fails half way finds it and moves the rest. A comment
 // goes before its move, so a failed one is made again; a failure between a
 // release's last move and closing it leaves that release empty, to a person.
@@ -222,6 +223,11 @@ func settleMilestones(ctx context.Context, provider ports.Issues, repo ports.Rep
 			if err := provider.CloseMilestone(ctx, repo, e.ID); err != nil {
 				return fmt.Errorf("closing %s: %w", e.Title, err)
 			}
+		}
+	}
+	for _, e := range step.Skipped {
+		if err := provider.CloseMilestone(ctx, repo, e.ID); err != nil {
+			return fmt.Errorf("closing %s: %w", e.Title, err)
 		}
 	}
 	return provider.CloseMilestone(ctx, repo, step.Milestone)

@@ -127,7 +127,8 @@ const (
 // its own in the order they merged, then the later releases' merged ones its
 // tag will carry. With Commit set, it moves the issues Moved into
 // milestone Milestone, tags Commit as Tag when CreateTag says so, then closes
-// milestone Milestone and the milestones Emptied. With Held set, release Tag is
+// milestone Milestone, the milestones Emptied and the milestones Skipped. With
+// Held set, release Tag is
 // done but can't go out: Reason says why in a word, Held in a sentence. With
 // none, there is nothing to do.
 type ReleaseStep struct {
@@ -139,8 +140,11 @@ type ReleaseStep struct {
 	Merged    []int
 	Moved     []ReleaseMove
 	Emptied   []EmptiedRelease
-	Reason    string
-	Held      string
+	// Skipped are the open releases before Tag with no issue at all, which
+	// close untagged with it (#2025).
+	Skipped []EmptiedRelease
+	Reason  string
+	Held    string
 }
 
 // ReleaseMove is a later release's closed issue whose merge the tag carries, to
@@ -166,10 +170,17 @@ func held(title, reason, format string, args ...any) ReleaseStep {
 // goes. A release is done when it has no open issue and no Task works on one of
 // its issues. Releases go out in order, so only the first can be tagged; its tag
 // goes at the merge commit of its most recently merged issue, and is never moved.
+// A release with no issue at all, open or closed, is no release yet: it is
+// neither done nor in the way, so it holds no later release, and one before the
+// release tagged closes untagged with it (#2025).
 func NextRelease(f ReleaseFacts) ReleaseStep {
-	var releases []ReleaseMilestone
+	var releases, empty []ReleaseMilestone
 	for _, m := range f.Milestones {
-		if IsReleaseTitle(m.Title) && !m.Due.IsZero() {
+		switch {
+		case !IsReleaseTitle(m.Title) || m.Due.IsZero():
+		case len(m.Open) == 0 && len(m.Closed) == 0:
+			empty = append(empty, m)
+		default:
 			releases = append(releases, m)
 		}
 	}
@@ -179,6 +190,29 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 	slices.SortStableFunc(releases, func(a, b ReleaseMilestone) int {
 		return compareReleases(&a.Release, &b.Release)
 	})
+	step := nextRelease(f, releases)
+	if step.Commit != "" {
+		step.Skipped = skippedBefore(empty, releases[0].Release)
+	}
+	return step
+}
+
+// skippedBefore are the empty releases that go out before release, in order.
+func skippedBefore(empty []ReleaseMilestone, release Release) []EmptiedRelease {
+	slices.SortStableFunc(empty, func(a, b ReleaseMilestone) int {
+		return compareReleases(&a.Release, &b.Release)
+	})
+	var out []EmptiedRelease
+	for _, m := range empty {
+		if ReleaseBefore(m.Release, release) {
+			out = append(out, EmptiedRelease{ID: m.ID, Title: m.Title})
+		}
+	}
+	return out
+}
+
+// nextRelease is NextRelease on the releases that have issues, in order.
+func nextRelease(f ReleaseFacts, releases []ReleaseMilestone) ReleaseStep {
 	f.Merged = doneByChanges(f.Merged)
 	first := releases[0]
 	if !releaseDone(first, f.Active) {
@@ -394,6 +428,13 @@ func ReleasedMessage(step ReleaseStep) string {
 			titles = append(titles, e.Title)
 		}
 		message += "; " + strings.Join(titles, ", ") + " had nothing left and closed untagged"
+	}
+	if len(step.Skipped) > 0 {
+		titles := make([]string, 0, len(step.Skipped))
+		for _, e := range step.Skipped {
+			titles = append(titles, e.Title)
+		}
+		message += "; " + strings.Join(titles, ", ") + " had no issues and closed untagged"
 	}
 	return message
 }
