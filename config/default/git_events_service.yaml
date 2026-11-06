@@ -1,7 +1,7 @@
 # The receiver of Gitea's deliveries: each GitProvider's organization hook
 # POSTs to http://theos-git-events.theos-system.svc:8082/git-events/<namespace>/<name>,
 # signed with that GitProvider's own Secret, which the operator makes
-# (docs/plans/git-events.md, decision 10). The chart's copy is
+# (docs/plans/done/git-events.md, decision 10). The chart's copy is
 # dist/chart/templates/git-events.
 apiVersion: v1
 kind: Service

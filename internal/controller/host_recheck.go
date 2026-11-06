@@ -19,7 +19,7 @@ import (
 	"github.com/JairJosafath/theos/internal/model"
 )
 
-// The longer fallback poll (docs/plans/git-events.md, decision 9, #1222):
+// The longer fallback poll (docs/plans/done/git-events.md, decision 9, #1222):
 // while a GitProvider's deliveries arrive, a delivery reconciles what it
 // concerns at once, so the polls that wait for its host stretch to
 // model.EventsFallbackPoll. A reconcile reads its GitProvider once, from the

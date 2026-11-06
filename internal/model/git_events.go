@@ -23,7 +23,7 @@ func HostRecheck(d time.Duration, events bool) time.Duration {
 	return d
 }
 
-// The Git host's event hook (docs/plans/git-events.md, decisions 3 and 4).
+// The Git host's event hook (docs/plans/done/git-events.md, decisions 3 and 4).
 
 // GitEventsPath is the path the receiver takes deliveries on, followed by
 // /<namespace>/<gitprovider>.

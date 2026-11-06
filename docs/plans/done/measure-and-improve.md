@@ -71,7 +71,7 @@ in *Done when* is in `docs/screenshots/`.
    counts them, read once when the pull request ends through a new GitHost
    read, `PullRequestCommits` (SHA, author, parents), in the fake and the
    Gitea adapter (`make test-gitea`; the contract suites of
-   [git-host-ports.md](../git-host-ports.md) take it when they land). The agents
+   [git-host-ports.md](git-host-ports.md) take it when they land). The agents
    commit as `<bot>@agents.theos.factory.io` (`internal/agentrunner`), the
    operator's merges of main are merge commits by the GitProvider's account;
    any other author is a person.

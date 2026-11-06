@@ -29,7 +29,7 @@ const (
 	// Container's, or a Plan Task's Brief's), and by their issue,
 	// Standard-change issue and pull request as <repository>#<number> and
 	// their branches as <repository>@<branch>, for the host's deliveries
-	// (docs/plans/git-events.md, decision 7).
+	// (docs/plans/done/git-events.md, decision 7).
 	indexTaskRepository = ".taskRepository"
 	// indexElement indexes Relationships by both ends, as "Kind/name".
 	indexElement = ".spec.elements"

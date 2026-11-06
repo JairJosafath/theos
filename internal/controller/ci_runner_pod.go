@@ -24,7 +24,7 @@ import (
 	"github.com/JairJosafath/theos/internal/model"
 )
 
-// The per-project CI runner pool (docs/plans/ci-runner-isolation.md, step 3).
+// The per-project CI runner pool (docs/plans/done/ci-runner-isolation.md, step 3).
 const (
 	// LabelCIRunner marks the pool's pods; the project's CI NetworkPolicy selects it.
 	LabelCIRunner = "theos.factory.io/ci-runner"

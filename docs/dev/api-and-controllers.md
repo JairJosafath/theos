@@ -13,7 +13,7 @@ kubebuilder create api --group c4 --version v1beta1 --kind <Kind> --resource --c
 Catalog kinds (Framework, Standard, Compute, Deployment, Connector, Domain, Agent) have
 no reconciler of their own; create them with `--controller=false`. GitProvider's
 reconciler only registers the operator's event hook and reports `Events`
-([plans/git-events.md](../plans/git-events.md)).
+([plans/done/git-events.md](../plans/done/git-events.md)).
 
 ### Controller for Core Kubernetes Types
 ```bash

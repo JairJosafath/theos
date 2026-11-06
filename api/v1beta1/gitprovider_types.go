@@ -184,7 +184,7 @@ type CIRunnerSpec struct {
 }
 
 // ConditionGitProviderEvents on a GitProvider says whether the Git host's
-// deliveries reach the operator (docs/plans/git-events.md, decision 8). Its
+// deliveries reach the operator (docs/plans/done/git-events.md, decision 8). Its
 // reasons are Disabled (the operator has no --git-events-url), Unsupported
 // (the host's adapter has no events), RegisterFailed (the hook could not be
 // registered; the message says why, in the host's words when it refused),

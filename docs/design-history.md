@@ -325,7 +325,7 @@ enforces.
   jobs, nor with a release; and reaches only DNS, the Git host (and the
   registries it serves) and public HTTPS. The rule is the CI port's: every CI
   adapter meets it or says which part it can't
-  ([plan](plans/ci-runner-isolation.md)). The Gitea Actions runners meet the
+  ([plan](plans/done/ci-runner-isolation.md)). The Gitea Actions runners meet the
   network and the registration token: a NetworkPolicy on their pods (label
   `app.kubernetes.io/component: ci-runner`) lets no traffic in and lets out
   only DNS, Gitea's pod on port 3000 and HTTPS to public addresses, and
@@ -1519,7 +1519,7 @@ meets other hosts:
 **Events: the host calls back, and polling stays the contract.** A host that
 offers webhooks only shortens the wait; every rule still holds on a host
 without them, or when a delivery is lost
-([plans/git-events.md](plans/git-events.md)).
+([plans/done/git-events.md](plans/done/git-events.md)).
 
 - **One hook per GitProvider, on its organization,** so every Container and
   Brief repository, those made later too, delivers to it, and scaffolding

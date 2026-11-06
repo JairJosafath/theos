@@ -193,7 +193,7 @@ webhook:
   # Webhook server port
   port: 9443
 
-## The receiver of the Git host's event deliveries (docs/plans/git-events.md,
+## The receiver of the Git host's event deliveries (docs/plans/done/git-events.md,
 ## decision 10): the operator listens on port (--git-events-bind-address) and
 ## registers a hook on each GitProvider's organization that delivers to url
 ## (--git-events-url), so it reconciles when a repository changes instead of

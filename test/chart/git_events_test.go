@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// The receiver of the Git host's deliveries (docs/plans/git-events.md,
+// The receiver of the Git host's deliveries (docs/plans/done/git-events.md,
 // decision 10, #1223): with gitEvents.enabled the chart renders its Service,
 // the manager's port and flags, a NetworkPolicy letting only Gitea's
 // namespace reach the port, and Gitea's webhook allow-list set to the

@@ -124,7 +124,7 @@ spec:
         {{- if .Values.gitEvents.enabled }}
         # The receiver of the Git host's deliveries, and where each
         # GitProvider's hook delivers: Service <release>-git-events, unless
-        # gitEvents.url says otherwise (docs/plans/git-events.md, decision 10).
+        # gitEvents.url says otherwise (docs/plans/done/git-events.md, decision 10).
         - --git-events-bind-address=:{{ .Values.gitEvents.port }}
         - --git-events-url={{ include "theos.gitEventsURL" . }}
         {{- end }}

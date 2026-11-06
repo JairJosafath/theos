@@ -9,7 +9,7 @@
 # never has it (entrypoint.sh; docs/design.md, "The CI fence").
 # RUNNER_EPHEMERAL set registers a single-job runner (--ephemeral): it takes one
 # job and Gitea removes it when that job ends, as the operator's per-project
-# pool pods are (docs/plans/ci-runner-isolation.md, step 3).
+# pool pods are (docs/plans/done/ci-runner-isolation.md, step 3).
 # RUNNER_CONFIG and RUNNER_FILE are for the tests.
 set -euo pipefail
 config=${RUNNER_CONFIG:-/etc/gitea-runner/config.yaml}

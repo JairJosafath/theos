@@ -1,5 +1,5 @@
 {{/*
-The receiver of the Git host's deliveries (docs/plans/git-events.md, decision 10).
+The receiver of the Git host's deliveries (docs/plans/done/git-events.md, decision 10).
 */}}
 
 {{/* The receiver's Service. */}}

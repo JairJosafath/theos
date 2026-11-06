@@ -475,7 +475,7 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1beta1.Bundle{}, bundleContainers, specChanged()).
 		Watches(&c4v1beta1.DataStore{}, waitingContainers, specChanged()).
 		// A delivery of the Git host reconciles the Container whose repository a delivery names at once
-		// (docs/plans/git-events.md, decision 7).
+		// (docs/plans/done/git-events.md, decision 7).
 		WatchesRawSource(r.GitEvents.Source(gitEventContainerRequest(mgr.GetClient()))).
 		Named("container").
 		Complete(r)

@@ -96,7 +96,7 @@ spec:
           - --webhook-cert-secret=theos-webhook-cert
           # The receiver of Gitea's deliveries, and where each GitProvider's
           # hook delivers: config/default's Service (namePrefix theos-), which
-          # config/gitea's Gitea is allowed to reach (docs/plans/git-events.md,
+          # config/gitea's Gitea is allowed to reach (docs/plans/done/git-events.md,
           # decision 10).
           - --git-events-bind-address=:8082
           - --git-events-url=http://theos-git-events.theos-system.svc:8082

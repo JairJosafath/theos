@@ -8,7 +8,7 @@ import (
 // Events is the optional capability of a GitHost that calls the operator back
 // when something changes in the owner's repositories. Polling stays the
 // contract every host meets; a delivery only shortens the wait. A provider
-// has it when it implements this interface (docs/plans/git-events.md).
+// has it when it implements this interface (docs/plans/done/git-events.md).
 type Events interface {
 	// EnsureEventHook makes the owner's hook deliver to hook.URL, signed
 	// with hook.Secret; it creates it, or edits the one whose URL has the

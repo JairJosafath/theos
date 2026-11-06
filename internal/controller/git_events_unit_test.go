@@ -16,7 +16,7 @@ import (
 )
 
 // A Task is found by its repository, its issue, Standard-change issue and
-// pull request, and its branches (docs/plans/git-events.md, decision 7).
+// pull request, and its branches (docs/plans/done/git-events.md, decision 7).
 func TestTaskRepositoryKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string

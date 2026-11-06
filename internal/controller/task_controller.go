@@ -943,7 +943,7 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return reqs
 			}), createOrDelete()).
 		// A delivery of the Git host reconciles the Tasks of the issue, pull request or branch a delivery names at once
-		// (docs/plans/git-events.md, decision 7).
+		// (docs/plans/done/git-events.md, decision 7).
 		WatchesRawSource(r.GitEvents.Source(gitEventTaskRequests(mgr.GetClient()))).
 		Named("task").
 		Complete(r)

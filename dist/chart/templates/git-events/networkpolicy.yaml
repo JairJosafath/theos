@@ -1,6 +1,6 @@
 {{- if .Values.gitEvents.enabled }}
 # Only the Git host reaches the receiver's port: the pods of Gitea's namespace,
-# or gitEvents.from (docs/plans/git-events.md, decision 10). Not behind
+# or gitEvents.from (docs/plans/done/git-events.md, decision 10). Not behind
 # networkPolicy.enabled: it is the fence on that port. A policy that selects
 # the manager isolates it, so without networkPolicy.enabled the manager's
 # other ports stay open to all, as they are without any policy.

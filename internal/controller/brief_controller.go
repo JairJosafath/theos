@@ -334,7 +334,7 @@ func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// one it didn't make is read again with the suggestions.
 		Watches(&c4v1beta1.Crew{}, fromBriefLabel, crewReleaseChanges()).
 		// A delivery of the Git host reconciles the Brief whose repository a delivery names at once
-		// (docs/plans/git-events.md, decision 7).
+		// (docs/plans/done/git-events.md, decision 7).
 		WatchesRawSource(r.GitEvents.Source(gitEventBriefRequest(mgr.GetClient()))).
 		Named("brief").
 		Complete(r)

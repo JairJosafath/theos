@@ -17,7 +17,7 @@ import (
 var _ ports.Events = (*gitea)(nil)
 
 // hookEvents are the events the operator's hook asks Gitea for: those the
-// reconcilers read (docs/plans/git-events.md, decision 2). Gitea 1.27 takes
+// reconcilers read (docs/plans/done/git-events.md, decision 2). Gitea 1.27 takes
 // the reviews as one, pull_request_review, which delivers as
 // pull_request_review_approved, _rejected and _comment.
 var hookEvents = []string{

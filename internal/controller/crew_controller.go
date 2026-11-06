@@ -696,7 +696,7 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// A Crew uploading a release file can take minutes; the others go on.
 		WithOptions(controller.Options{MaxConcurrentReconciles: crewWorkers}).
 		// A delivery of the Git host reconciles the Crews of the Container whose repository a delivery names at once
-		// (docs/plans/git-events.md, decision 7).
+		// (docs/plans/done/git-events.md, decision 7).
 		WatchesRawSource(r.GitEvents.Source(gitEventCrewRequests(mgr.GetClient()))).
 		Named("crew").
 		Complete(r)

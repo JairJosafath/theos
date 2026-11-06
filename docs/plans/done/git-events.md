@@ -7,7 +7,7 @@ GitHub issue #1084. Agent: heron-1084.
 The operator takes Gitea's webhooks for issues, pull requests, reviews,
 commit statuses and workflow runs, and reconciles the objects a delivery
 concerns at once, instead of at the next poll. Polling stays the contract
-every host meets ([design.md](../design.md#factory-components-ports-and-adapters),
+every host meets ([design.md](../../design.md#factory-components-ports-and-adapters),
 #1093): webhooks are Events, an optional capability of the GitHost port, and
 only shorten the wait. While a GitProvider's deliveries arrive, the polls
 that wait for the host stretch to 10 minutes; a missed delivery is still
@@ -45,7 +45,7 @@ on each step.
   Service would never be delivered.
 - **GitProvider has no status and no reconciler**
   (`api/v1alpha1/gitprovider_types.go`;
-  [api-and-controllers.md](../dev/api-and-controllers.md) lists it with the
+  [api-and-controllers.md](../../dev/api-and-controllers.md) lists it with the
   catalog kinds). `spec.owner` is an organization that holds every Container
   repository (named after the Container) and every Brief repository
   (`brief-<name>`, `model.BriefRepository`).

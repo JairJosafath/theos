@@ -36,7 +36,7 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// The receiver of the Git host's deliveries (docs/plans/git-events.md,
+// The receiver of the Git host's deliveries (docs/plans/done/git-events.md,
 // decisions 5 to 8): a plain HTTP listener on the leader that checks each
 // delivery against its GitProvider's Secret and hands what it concerns to the
 // controllers, which read the host as a poll would. It writes nothing.

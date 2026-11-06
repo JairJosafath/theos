@@ -421,7 +421,7 @@ in an environment made for it and thrown away; holds only its job token and its
 repository's secrets; shares nothing writable with another project's jobs or a
 release; and reaches only DNS, the Git host (and its registries) and public
 HTTPS. Every CI adapter meets this or says which part it can't
-([plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)).
+([plans/done/ci-runner-isolation.md](plans/done/ci-runner-isolation.md)).
 
 The Gitea runners meet the network and the token: a NetworkPolicy on their pods
 (`app.kubernetes.io/component: ci-runner`) lets nothing in and only cluster
@@ -1069,7 +1069,7 @@ controllers call, not by one product's API;
   polls that wait for the host (the Crew's issues, a Task's checks and
   Standard change, a Container's checks) stretch to 10 minutes; error
   retries and waits on the cluster keep their intervals. The chart's
-  install is still to come ([plans/git-events.md](plans/git-events.md)).
+  install is still to come ([plans/done/git-events.md](plans/done/git-events.md)).
 - **Helm decides what is installed, custom resources what is used:**
   `GitProvider.spec.provider` names the host (`gitea`), CI and registry
   default to the host's own (`spec.packages` names another npm registry or

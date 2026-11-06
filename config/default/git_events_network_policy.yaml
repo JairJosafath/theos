@@ -1,5 +1,5 @@
 # Only config/gitea's Gitea, in namespace gitea, reaches the receiver's port
-# (docs/plans/git-events.md, decision 10). A policy that selects the manager
+# (docs/plans/done/git-events.md, decision 10). A policy that selects the manager
 # isolates it, so its other ports (health, metrics, webhook) stay open to all,
 # as they are without one; ../network-policy narrows those when included.
 apiVersion: networking.k8s.io/v1

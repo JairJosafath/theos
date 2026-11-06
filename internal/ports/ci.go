@@ -77,7 +77,7 @@ type CI interface {
 
 // OwnerRunners is an optional capability of the CI port: the CI runners
 // registered to the provider's owner organization, which the operator keeps
-// as a pool of single-job runners per project (docs/plans/ci-runner-isolation.md).
+// as a pool of single-job runners per project (docs/plans/done/ci-runner-isolation.md).
 // A CI that has it implements it too; find it with a type assertion.
 type OwnerRunners interface {
 	// RunnerRegistrationToken returns the token that registers a runner to the

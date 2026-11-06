@@ -6,8 +6,8 @@ GitHub issue #1094. Agent: otter-1094.
 
 `gitprovider.Provider`, one 57-method interface with Gitea as its only
 implementation, becomes the Git host's ports as
-[design.md](../design.md#factory-components-ports-and-adapters) and
-[architecture.md](../architecture.md#ports) decided them (#1093): GitHost,
+[design.md](../../design.md#factory-components-ports-and-adapters) and
+[architecture.md](../../architecture.md#ports) decided them (#1093): GitHost,
 Issues, CI, AgentAccess and Registry, each a narrow interface in
 `internal/ports` with its shared types in its own file, one fake in
 `internal/ports/fake` and one contract suite in `internal/ports/contract`.

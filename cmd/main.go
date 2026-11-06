@@ -364,7 +364,7 @@ func main() {
 	}
 	// The receiver of the Git host's deliveries, nil when off; the Container,
 	// Crew, Task, Brief and GitProvider controllers each read its Events
-	// (docs/plans/git-events.md, decisions 5 to 8).
+	// (docs/plans/done/git-events.md, decisions 5 to 8).
 	var gitEvents *controller.GitEventsReceiver
 	if gitEventsAddr != "0" && gitEventsAddr != "" {
 		gitEvents = &controller.GitEventsReceiver{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(),

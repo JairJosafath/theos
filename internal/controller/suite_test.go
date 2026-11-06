@@ -143,7 +143,7 @@ const (
 	// Service in the release namespace (dist/chart/templates/model-proxy).
 	testModelProxyURL = "http://c4-model-proxy.theos-system.svc:8080"
 	// testGitEventsURL is the suite operator's --git-events-url, the chart's
-	// receiver Service (docs/plans/git-events.md, decision 10).
+	// receiver Service (docs/plans/done/git-events.md, decision 10).
 	testGitEventsURL = "http://theos-git-events.theos-system.svc:8082"
 	// noEventsOwnerPrefix starts the owner of a GitProvider whose adapter
 	// has no events in the suite (fakeGitClient).

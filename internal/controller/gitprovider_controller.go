@@ -36,7 +36,7 @@ import (
 // GitProviderReconciler registers the operator's event hook on each
 // GitProvider's owner, signed with a delivery Secret it makes, and reports in
 // the condition Events whether the host's deliveries reach the operator
-// (docs/plans/git-events.md, decisions 3, 4 and 8).
+// (docs/plans/done/git-events.md, decisions 3, 4 and 8).
 type GitProviderReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
