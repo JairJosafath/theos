@@ -150,7 +150,9 @@ on each step.
    | anything else | nothing |
 
    A new Task index, `indexTaskRepository`, holds `<repository>#<number>`
-   for the issue and the pull request and `<repository>@<branch>`.
+   for the issue and the pull request and `<repository>@<branch>`, and
+   `<repository>` alone, which finds every Task of the repository for an
+   Event with neither (#1221).
    Enqueuing generously is cheap; the saving is the idle poll.
 8. **`Events` on the GitProvider says whether deliveries arrive.**
    `GitProvider` gains a status subresource with conditions and an `Events`

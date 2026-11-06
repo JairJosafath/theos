@@ -59,6 +59,9 @@ const defaultCrewPoll = time.Minute
 type CrewReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads the Crew, Secrets and Tasks without the cache.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
@@ -686,6 +689,9 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}), createOrDelete()).
 		// A Crew uploading a release file can take minutes; the others go on.
 		WithOptions(controller.Options{MaxConcurrentReconciles: crewWorkers}).
+		// A delivery of the Git host reconciles the Crews of the Container whose repository a delivery names at once
+		// (docs/plans/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventCrewRequests(mgr.GetClient()))).
 		Named("crew").
 		Complete(r)
 }

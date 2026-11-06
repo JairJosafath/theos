@@ -187,9 +187,11 @@ type CIRunnerSpec struct {
 // deliveries reach the operator (docs/plans/git-events.md, decision 8). Its
 // reasons are Disabled (the operator has no --git-events-url), Unsupported
 // (the host's adapter has no events), RegisterFailed (the hook could not be
-// registered; the message says why, in the host's words when it refused) and
+// registered; the message says why, in the host's words when it refused),
 // Registered (the hook was made or its URL changed, and no verified delivery
-// came since).
+// came since), Receiving (True: a verified delivery came after it was
+// registered) and DeliveryRefused (a delivery failed its signature after the
+// last verified one).
 const ConditionGitProviderEvents = "Events"
 
 // The reasons of the Events condition.
@@ -198,6 +200,8 @@ const (
 	ReasonEventsUnsupported    = "Unsupported"
 	ReasonEventsRegisterFailed = "RegisterFailed"
 	ReasonEventsRegistered     = "Registered"
+	ReasonEventsReceiving      = "Receiving"
+	ReasonEventsRefused        = "DeliveryRefused"
 )
 
 // GitProviderStatus is what the operator last found of the Git host.
