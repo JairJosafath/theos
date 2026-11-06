@@ -141,6 +141,9 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.ensureAgentNetwork(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
+	if err := r.ensureTestEnvironmentNetwork(ctx, &project); err != nil {
+		return ctrl.Result{}, err
+	}
 	ci, err := r.ensureCIRunners(ctx, &project, status)
 	if err != nil {
 		return ctrl.Result{}, err

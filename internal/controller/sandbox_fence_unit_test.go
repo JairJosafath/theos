@@ -17,7 +17,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/adapters/localenv"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // These tests check what only a real node used to: that an agent's pod can't
@@ -212,5 +214,71 @@ func TestAgentNetworkFence(t *testing.T) {
 		if !selector.Matches(podLabels) {
 			t.Errorf("%s pod labels %v, not selected by the fence %v", run.role, podLabels, selector)
 		}
+	}
+}
+
+// The project's test environment fence (docs/plans/test-environments.md, T5)
+// selects every lease pod the local provider makes, lets in only the
+// project's agent sandboxes on theos-env's port, and lets out only cluster
+// DNS and public HTTPS: no Git host, no model proxy, no private range.
+func TestTestEnvironmentFence(t *testing.T) {
+	scheme := fenceScheme(t)
+	project := &c4v1beta1.Project{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "apps", UID: "project-1"}}
+	gitea := &c4v1beta1.GitProvider{ObjectMeta: objectMeta("apps", "gitea"),
+		Spec: c4v1beta1.GitProviderSpec{URL: "http://gitea-http.gitea.svc.cluster.local:3000"}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project, gitea).Build()
+	r := &ProjectReconciler{Client: c, Scheme: scheme, SourceNamespace: "theos-system",
+		ModelProxyURL: "http://c4-model-proxy.theos-system.svc:8080"}
+	if err := r.ensureTestEnvironmentNetwork(context.Background(), project); err != nil {
+		t.Fatal(err)
+	}
+	var policy networkingv1.NetworkPolicy
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "apps", Name: "theos-test-environment"}, &policy); err != nil {
+		t.Fatal(err)
+	}
+	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
+	dns, https, envPort := intstr.FromInt32(53), intstr.FromInt32(443), intstr.FromInt32(7070)
+	want := networkingv1.NetworkPolicySpec{
+		PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/component": "test-environment"}},
+		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
+		Ingress: []networkingv1.NetworkPolicyIngressRule{{
+			From: []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"theos.factory.io/agent-sandbox": "true"}}}},
+			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envPort}},
+		}},
+		Egress: []networkingv1.NetworkPolicyEgressRule{
+			{
+				To: []networkingv1.NetworkPolicyPeer{{
+					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "kube-system"}},
+					PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}},
+				}},
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &dns}, {Protocol: &tcp, Port: &dns}},
+			},
+			{
+				To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "0.0.0.0/0",
+					Except: []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}}}},
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &https}},
+			},
+		},
+	}
+	if !reflect.DeepEqual(policy.Spec, want) {
+		t.Errorf("test environment fence differs (-got +want):\n%s", diff.Diff(policy.Spec, want))
+	}
+	if len(policy.OwnerReferences) != 1 || policy.OwnerReferences[0].UID != project.UID {
+		t.Errorf("owners %v, want the Project", policy.OwnerReferences)
+	}
+
+	// Every lease pod the local provider makes is one the fence selects.
+	selector, err := metav1.LabelSelectorAsSelector(&policy.Spec.PodSelector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod, err := localenv.BuildPod(ports.LeaseRequest{ID: "browser-0123456789", Env: ports.Environment{
+		Namespace: "apps", Name: "browser", Local: &ports.LocalEnvironment{Image: "env-browser:1"}}}, "agent:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !selector.Matches(labels.Set(pod.Labels)) {
+		t.Errorf("lease pod labels %v, not selected by the fence %v", pod.Labels, selector)
 	}
 }

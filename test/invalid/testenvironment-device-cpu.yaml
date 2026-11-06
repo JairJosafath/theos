@@ -1,0 +1,11 @@
+# expect: devices are extended resources a device plugin names
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: android
+  namespace: webshop
+spec:
+  local:
+    image: ghcr.io/jairjosafath/theos/env-android:0.30.0
+    devices:
+      cpu: "2"

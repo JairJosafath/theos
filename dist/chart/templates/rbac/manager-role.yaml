@@ -98,6 +98,7 @@ rules:
   - softwaresystems.theos.factory.io
   - standards.theos.factory.io
   - tasks.theos.factory.io
+  - testenvironments.theos.factory.io
   resources:
   - customresourcedefinitions
   verbs:
@@ -129,6 +130,7 @@ rules:
   - softwaresystems.theos.factory.io
   - standards.theos.factory.io
   - tasks.theos.factory.io
+  - testenvironments.theos.factory.io
   resources:
   - customresourcedefinitions/status
   verbs:
@@ -235,6 +237,7 @@ rules:
   - sessions/status
   - softwaresystems/status
   - tasks/status
+  - testenvironments/status
   verbs:
   - get
   - patch
@@ -252,6 +255,7 @@ rules:
   - sessions
   - softwaresystems
   - tasks
+  - testenvironments
   verbs:
   - create
   - delete
@@ -274,6 +278,7 @@ rules:
   - sessions/finalizers
   - softwaresystems/finalizers
   - tasks/finalizers
+  - testenvironments/finalizers
   verbs:
   - update
 - apiGroups:

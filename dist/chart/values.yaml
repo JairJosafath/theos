@@ -1014,6 +1014,18 @@ agents:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {cpu: "1", memory: 2Gi}
 
+## Test environments (docs/plans/test-environments.md): the tools a run leases
+## when the agent sandbox lacks them, such as a browser. A local
+## TestEnvironment's lease pods copy theos-env in from toolsImage, the
+## release's agent image, which holds it (the operator's
+## --test-environment-tools-image).
+##
+testEnvironments:
+  toolsImage:
+    repository: ghcr.io/jairjosafath/theos/agent-base
+    ## Defaults to Chart.appVersion
+    tag: ""
+
 ## Chat (docs/design.md, Chat): people follow and steer each project from
 ## Matrix rooms. With enabled, Deployment <release>-chat, the operator image
 ## running /theos-chat with its own ServiceAccount: it reads theos's objects,

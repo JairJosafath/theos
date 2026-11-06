@@ -1,0 +1,8 @@
+# expect: set exactly one provider member: local
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: browser
+  namespace: webshop
+spec:
+  description: A browser with no provider to lease it from.
