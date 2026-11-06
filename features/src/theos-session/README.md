@@ -19,6 +19,18 @@ The operator writes this feature into every repository it scaffolds, as
 | `version` | `latest` | Module version for `go install`, used when `binaryUrl` is empty and Go is present. |
 | `actor` | `human` | `human` or `agent`. |
 | `summary` | empty | One line about the work. |
+| `signerIdentity` | this repository's Release workflow on a `vX.Y.Z` tag | Regular expression of the certificate identity that signs `SHA256SUMS`. A fork that releases its own sets it. |
+| `signerIssuer` | `https://token.actions.githubusercontent.com` | OIDC issuer of that certificate. |
+
+`SHA256SUMS` comes from the same origin as the binary, so the checksum guards
+the transport only. The GitHub release also carries `SHA256SUMS.sigstore.json`,
+a keyless cosign signature of `SHA256SUMS` with its certificate (#1706). When
+`cosign` is on the devcontainer's `PATH` and the origin serves that file, the
+feature verifies it as `signerIdentity`'s from `signerIssuer`, and refuses the
+download when it doesn't verify. Without `cosign`, or from an origin that
+serves no signature (the UI's `/downloads/`, whose files the UI image builds),
+the build log says the signature was not checked and the checksum alone
+decides.
 
 Installing never fails the devcontainer build: without a binary, or with one
 that doesn't match its `SHA256SUMS`, the container still works, it just doesn't

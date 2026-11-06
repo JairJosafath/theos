@@ -24,7 +24,7 @@ func TestTheosSession(t *testing.T) {
 	if meta.ID != "theos-session" || meta.PostStartCommand != "theos-session-start" {
 		t.Errorf("feature = %+v", meta)
 	}
-	for _, opt := range []string{"binaryUrl", "version", "actor", "summary"} {
+	for _, opt := range []string{"binaryUrl", "version", "actor", "summary", "signerIdentity", "signerIssuer"} {
 		if _, ok := meta.Options[opt]; !ok {
 			t.Errorf("option %s missing", opt)
 		}

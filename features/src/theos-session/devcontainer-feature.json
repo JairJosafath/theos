@@ -1,6 +1,6 @@
 {
   "id": "theos-session",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "name": "theos Session client",
   "description": "Installs theos-session and, while the devcontainer runs, registers it as a Session on its Container in theos.",
   "documentationURL": "https://github.com/JairJosafath/theos/tree/main/features/src/theos-session",
@@ -25,6 +25,16 @@
       "type": "string",
       "default": "",
       "description": "One line about the work, shown on the Session."
+    },
+    "signerIdentity": {
+      "type": "string",
+      "default": "^https://github\\.com/JairJosafath/theos/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Regular expression of the certificate identity that signs SHA256SUMS (SHA256SUMS.sigstore.json, checked when cosign is on PATH). Default: this repository's Release workflow on a version tag."
+    },
+    "signerIssuer": {
+      "type": "string",
+      "default": "https://token.actions.githubusercontent.com",
+      "description": "OIDC issuer of the certificate that signs SHA256SUMS."
     }
   },
   "postStartCommand": "theos-session-start",

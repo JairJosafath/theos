@@ -4,8 +4,9 @@ name: Release
 # building anything: the operator, UI, seed, toolchain, agent and runner images to
 # ghcr.io/<owner>/theos/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
 # to oci://ghcr.io/<owner>/theos/charts and to a GitHub release for the tag,
-# with the theos-session binaries and their SHA256SUMS for a chart whose UI is off
-# (#1079, #1175); with the UI on, a scaffolded devcontainer downloads its
+# with the theos-session binaries, their SHA256SUMS and its keyless cosign
+# signature, SHA256SUMS.sigstore.json, for a chart whose UI is off
+# (#1079, #1175, #1706); with the UI on, a scaffolded devcontainer downloads its
 # Session client from the UI image, which carries the same files under
 # /downloads/ (#1151).
 # One job builds the images in order with the local Docker daemon, so the agent
@@ -32,6 +33,8 @@ jobs:
     permissions:
       actions: write
       contents: write
+      # The OIDC token cosign signs SHA256SUMS with, keyless (#1706).
+      id-token: write
       packages: write
     name: Build and publish
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
@@ -103,6 +106,26 @@ jobs:
           ls -l theos-session-linux-*
           cat SHA256SUMS
 
+      # SHA256SUMS comes from the same origin as the binaries, so it guards the
+      # transport only. Signed here, keyless: cosign gets a short-lived
+      # certificate for this workflow's identity on this tag from Sigstore's
+      # Fulcio and logs the signature in Rekor, so no key is held anywhere.
+      # SHA256SUMS.sigstore.json holds the signature and its certificate; the
+      # theos-session feature verifies it when cosign is on PATH (#1706).
+      - name: Install cosign
+        if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      - name: Sign SHA256SUMS
+        if: env.PUBLISH == 'true'
+        env:
+          IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+          cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+
       - name: Install Helm
         run: |
           make install-helm
@@ -141,7 +164,7 @@ jobs:
           echo "The notes list what merged since ${prev:-the start of history}."
           REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" "$prev" >notes.md
           cat notes.md
-          gh release create "$GITHUB_REF_NAME" "theos-$VERSION.tgz" theos-session-linux-amd64 theos-session-linux-arm64 SHA256SUMS \
+          gh release create "$GITHUB_REF_NAME" "theos-$VERSION.tgz" theos-session-linux-amd64 theos-session-linux-arm64 SHA256SUMS SHA256SUMS.sigstore.json \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
 
       # A dispatch made with GITHUB_TOKEN starts a run, unlike its other events.
