@@ -92,7 +92,7 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 	// download against (#1175): the release's files and the UI image's
 	// /downloads/ (ui/Dockerfile; ui/server.mjs serves it, its test shows).
 	// A remote TestEnvironment's machine checks theos-env against the same
-	// SHA256SUMS (docs/plans/test-environments.md, step 7), an EC2 Mac its
+	// SHA256SUMS (docs/plans/done/test-environments.md, step 7), an EC2 Mac its
 	// darwin build (step 9).
 	if !strings.Contains(string(create), " SHA256SUMS") {
 		t.Errorf("release.yml's gh release create doesn't attach SHA256SUMS: %s", create)

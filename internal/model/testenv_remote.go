@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// A remote test environment (docs/plans/test-environments.md, T5, T9 to
+// A remote test environment (docs/plans/done/test-environments.md, T5, T9 to
 // T11): a machine a provider leases outside the cluster, such as an EC2
 // instance, reached over public HTTPS with its certificate pinned, its
 // credential a Secret only the operator reads, and its cost counted against

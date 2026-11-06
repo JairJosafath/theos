@@ -274,7 +274,7 @@ func (r *ProjectReconciler) ciEnvironments(ctx context.Context, ns string) ([]c4
 }
 
 // envRunnerPool is the pool test environment env keeps in provider p's CI
-// pool, label env-<name> (docs/plans/test-environments.md, T8): its pods
+// pool, label env-<name> (docs/plans/done/test-environments.md, T8): its pods
 // register with the environment's ci.runnerImage, else the image of the
 // first of runners, p's ci block's, and run the jobs on the environment's
 // image and devices. A label runners names already is a clash, said in the

@@ -491,7 +491,7 @@ it claims; a picture of the product must be what running the product shows:
 
 // environmentsCanCheck is the rule, for a run that leased test environments,
 // that what they can check is never left open for a person
-// (docs/plans/test-environments.md, T13); "" for a run that leased none.
+// (docs/plans/done/test-environments.md, T13); "" for a run that leased none.
 func environmentsCanCheck(job Job) string {
 	if len(job.Environments) == 0 {
 		return ""
@@ -525,7 +525,7 @@ the issue env/<name>, so its runs lease them.
 }
 
 // writeEnvironments lists the test environments the run leased, and how to
-// run a command in one (docs/plans/test-environments.md, T4 and T13).
+// run a command in one (docs/plans/done/test-environments.md, T4 and T13).
 func writeEnvironments(b *strings.Builder, job Job) {
 	if len(job.Environments) == 0 {
 		return

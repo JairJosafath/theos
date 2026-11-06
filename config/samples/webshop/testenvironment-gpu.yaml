@@ -1,6 +1,6 @@
 # A GPU machine on AWS the agents and their runs lease when a job needs a
 # graphics card, such as a Godot game's picture script
-# (docs/plans/test-environments.md, step 7): one EC2 machine per lease in
+# (docs/plans/done/test-environments.md, step 7): one EC2 machine per lease in
 # the account's subnet, from an AMI with the tools, with no instance role,
 # its metadata service turned off before a run gets it, and a security group
 # the operator makes that lets in theos-env's port alone and lets out only

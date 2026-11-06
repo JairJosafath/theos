@@ -6,7 +6,7 @@
 # RUNNER_BIN_DIR is where a test environment's pool pod has the runner and
 # the /tmp sweep, which its register init container copied from the runner
 # image (register.sh, RUNNER_COPY_TO): the pod runs on the environment's
-# image (docs/plans/test-environments.md, T8). Unset, they are on PATH.
+# image (docs/plans/done/test-environments.md, T8). Unset, they are on PATH.
 # RUNNER_CONFIG and RUNNER_FILE are for the tests.
 set -euo pipefail
 config=${RUNNER_CONFIG:-/etc/gitea-runner/config.yaml}

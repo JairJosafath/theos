@@ -1002,7 +1002,7 @@ An agent's sandbox has the repository's toolchain and nothing else: no
 browser's system libraries, no display, no emulator. A test or a picture
 script that needs one runs in a **test environment**, a place with those
 tools that the factory leases to the run that needs it
-([plans/test-environments.md](plans/test-environments.md)). The chart makes
+([plans/done/test-environments.md](plans/done/test-environments.md)). The chart makes
 one in each project, `browser`: Playwright's Chromium, Firefox and WebKit,
 and `xvfb-run` for headed programs such as VS Code or an Electron app.
 

@@ -28,7 +28,7 @@ import (
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
-// A test-run environment's runs (docs/plans/test-environments.md, T12, step
+// A test-run environment's runs (docs/plans/done/test-environments.md, T12, step
 // 10): the run that holds a lease can't reach the operator, and the
 // provider's credential never reaches the run, so the run asks over its
 // Git host. `theos-env test` pushes a request commit to the lease's

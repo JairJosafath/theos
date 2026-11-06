@@ -101,7 +101,7 @@ jobs:
       # to the binary and refuses a binary it doesn't match (#1175).
       # theos-env goes with them: a remote TestEnvironment's machine downloads
       # it, the chart's testEnvironments.toolsURL, and checks it against the
-      # same SHA256SUMS (docs/plans/test-environments.md, step 7); an EC2
+      # same SHA256SUMS (docs/plans/done/test-environments.md, step 7); an EC2
       # Mac's, darwin's (step 9). So does the Gitea runner one that runs a CI
       # job downloads, testEnvironments.runnerURL (step 8): the version
       # hack/runner/Dockerfile pins, checked against the sums pinned there

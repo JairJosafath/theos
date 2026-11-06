@@ -7,7 +7,7 @@ import (
 
 // A run that leased a test-run environment, such as Device Farm's phones,
 // is told to run its test packages there with theos-env test, not commands
-// with theos-env run (docs/plans/test-environments.md, T12, step 10).
+// with theos-env run (docs/plans/done/test-environments.md, T12, step 10).
 func TestPromptsListTestRunEnvironments(t *testing.T) {
 	job, err := JobFromEnv(env(map[string]string{EnvEnvironments: `[{"name":"devices",` +
 		`"description":"Pixel 8 and Galaxy S24 on AWS Device Farm","testRuns":true}]`}))

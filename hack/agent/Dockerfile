@@ -4,7 +4,7 @@
 # checks its work with exactly the tools CI uses. Tasks run it in an Agent Sandbox.
 # It holds theos-env too: the agent runs commands in a leased test environment
 # with it, and a local environment's lease pod copies it in from this image
-# (docs/plans/test-environments.md, T4).
+# (docs/plans/done/test-environments.md, T4).
 # Build from the repository root: docker build -f hack/agent/Dockerfile .
 ARG BASE=theos/base:dev
 FROM golang:1.26.10@sha256:3745f1aa11822297b79113f5e84ce2bffeb039734571c39855809cfe9e5d7be6 AS build

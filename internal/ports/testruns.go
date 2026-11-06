@@ -10,7 +10,7 @@ import (
 
 // TestRuns is the optional capability of a TestEnvironments provider whose
 // environment runs test packages rather than commands, such as AWS Device
-// Farm's phones (docs/plans/test-environments.md, T12, step 10). A lease of
+// Farm's phones (docs/plans/done/test-environments.md, T12, step 10). A lease of
 // it is Ready at model.TestRunEndpoint, its branch on the Git host: the run
 // that holds it can't reach the operator, which holds the provider's
 // credential, so it pushes its requests there, and the operator starts

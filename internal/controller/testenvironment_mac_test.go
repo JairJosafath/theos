@@ -30,7 +30,7 @@ func newMacEnvironment(ns string) *c4v1beta1.TestEnvironment {
 	return env
 }
 
-// docs/plans/test-environments.md, step 9: an EC2 Mac, whose dedicated
+// docs/plans/done/test-environments.md, step 9: an EC2 Mac, whose dedicated
 // hosts the aws provider keeps (tested on a fake EC2 in
 // internal/adapters/awsenv).
 var _ = Describe("TestEnvironment on an EC2 Mac", func() {

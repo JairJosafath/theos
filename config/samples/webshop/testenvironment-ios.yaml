@@ -1,5 +1,5 @@
 # An EC2 Mac the agents and their runs lease when a job needs macOS, such as
-# an iOS app's tests in the Simulator (docs/plans/test-environments.md, step
+# an iOS app's tests in the Simulator (docs/plans/done/test-environments.md, step
 # 9): one Mac machine per lease, from an EC2 macOS AMI with Xcode, fenced as
 # the gpu sample's Linux machine is. A Mac runs on a dedicated host, which
 # EC2 bills for 24 hours at least from its allocation and scrubs after each

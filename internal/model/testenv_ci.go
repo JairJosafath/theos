@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Remote test environments in CI (docs/plans/test-environments.md, step 8):
+// Remote test environments in CI (docs/plans/done/test-environments.md, step 8):
 // a remote TestEnvironment with a ci block runs its project's CI jobs
 // labelled env-<name>. For each such job that waits, within the
 // environment's limits, the operator registers a runner for one job to the

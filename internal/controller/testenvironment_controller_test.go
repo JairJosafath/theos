@@ -198,7 +198,7 @@ func credentialsValid(env *c4v1beta1.TestEnvironment, status metav1.ConditionSta
 	return cond
 }
 
-// docs/plans/test-environments.md, step 7: a remote member's credential and
+// docs/plans/done/test-environments.md, step 7: a remote member's credential and
 // budget, on the fake provider; the EC2 adapter itself is tested on a fake
 // EC2 in internal/adapters/awsenv.
 var _ = Describe("TestEnvironment on AWS", func() {

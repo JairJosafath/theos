@@ -118,7 +118,7 @@ func TestJobFromEnvStandardChange(t *testing.T) {
 
 // The implementer's and verifier's prompts list the run's test environments,
 // each with its description and how to run a command there; the reviewer's,
-// and a run that leased none, list nothing (docs/plans/test-environments.md,
+// and a run that leased none, list nothing (docs/plans/done/test-environments.md,
 // T13).
 func TestPromptsListTestEnvironments(t *testing.T) {
 	job, err := JobFromEnv(env(map[string]string{EnvEnvironments: `[{"name":"browser",` +
@@ -148,7 +148,7 @@ func TestPromptsListTestEnvironments(t *testing.T) {
 }
 
 // What a run's test environment can check is never left open for a person
-// (docs/plans/test-environments.md, T13): the implementer's and verifier's
+// (docs/plans/done/test-environments.md, T13): the implementer's and verifier's
 // prompts say so, and the triager names an issue's environments, so the
 // operator labels it env/<name> instead of a person getting it.
 func TestPromptsNeverLeaveAnEnvironmentsCriterionOpen(t *testing.T) {

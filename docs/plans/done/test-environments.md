@@ -226,11 +226,22 @@ step 2.
    `make validate-yaml` checks both samples. Whether KVM and the GPU work
    is for a human's run on a node that has them.
    *Done when:* those tests and `make check` pass.
+
+   *Not built:* carried, with step 6, to
+   [test-environment-devices-ui.md](../test-environment-devices-ui.md).
+   The pod spec's devices and `runtimeClassName` are step 1's
+   (`TestBuildPodPlacesAndRequestsDevices`); the images and samples aren't
+   made.
 6. **The UI** (`ui/`). The Project area lists its TestEnvironments with
    live leases, today's spend and limits, and the Task page shows a run's
    leases. UI tests on a demo fixture.
    *Done when:* the UI tests pass and a screenshot is in
    `docs/screenshots/`.
+
+   *Not built:* carried to
+   [test-environment-devices-ui.md](../test-environment-devices-ui.md),
+   with what steps 7 to 10 added to show (`CredentialsValid`, the `CI`
+   condition, `status.testRuns`).
 7. **AWS EC2, Linux and GPU** (T9 to T11, `internal/adapters/awsenv`, the
    `aws` member, `make manifests generate`).
    `contract.TestEnvironments` on a fake EC2 API, as the `cloudformation`
@@ -548,5 +559,11 @@ commits the pictures, CI runs the same script on `env-browser`, and no
 `kind/by-hand` issue is filed for it. The proof is the envtests of steps 2
 and 3 and `make check`. The steps after that each add a provider or
 device, with the tests named. What only a real node or a real AWS account
-shows (Chromium starting on the node, KVM, a GPU, a Mac host) is a human's
-run, and isn't tested before release.
+shows (Chromium starting on the node, KVM, a GPU, a Mac host, Device Farm's
+phones) is a human's run, and isn't tested before release.
+
+*Done:* steps 1 to 4 and 7 to 10 are merged, with their tests; steps 5 and
+6 add images and a view and change no rule, so they go on in
+[test-environment-devices-ui.md](../test-environment-devices-ui.md). The
+test output is in
+[2036-test-environments-check.txt](../../screenshots/2036-test-environments-check.txt).

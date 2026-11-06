@@ -87,7 +87,7 @@ type BriefWorkspace struct {
 	PromptParallel      int32
 	PromptParallelRound int32
 	// Environments are the namespace's TestEnvironments, which an issue asks
-	// for with env/<name> (docs/plans/test-environments.md, T13).
+	// for with env/<name> (docs/plans/done/test-environments.md, T13).
 	Environments []WorkspaceEnvironment
 }
 

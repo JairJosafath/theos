@@ -113,7 +113,7 @@ const (
 	// EnvEnvironments are the test environments the run leased, a JSON
 	// array of {"name", "description"}: the prompt lists them, and
 	// theos-env run reaches each at THEOS_ENV_<NAME>_URL
-	// (docs/plans/test-environments.md, T4 and T13).
+	// (docs/plans/done/test-environments.md, T4 and T13).
 	EnvEnvironments = "THEOS_ENVIRONMENTS"
 )
 

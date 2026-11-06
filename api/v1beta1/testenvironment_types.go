@@ -18,7 +18,7 @@ import (
 // TestEnvironmentSpec is a named set of tools a job runs its tests or
 // picture scripts on, such as a browser, a phone emulator or a game engine,
 // and the provider that supplies it: exactly one member, keyed by field
-// name, as a DeployTarget's (docs/plans/test-environments.md, T1). Each
+// name, as a DeployTarget's (docs/plans/done/test-environments.md, T1). Each
 // member is added with the adapter that leases it.
 // +kubebuilder:validation:XValidation:rule="[has(self.local), has(self.aws), has(self.deviceFarm)].exists_one(x, x)",message="set exactly one provider member: local, aws or deviceFarm"
 // +kubebuilder:validation:XValidation:rule="!has(self.aws) || (has(self.limits) && has(self.limits.budgetUSDPerDay))",message="an aws environment needs limits.budgetUSDPerDay: a remote lease costs money for every minute it is held"
@@ -62,7 +62,7 @@ type TestEnvironmentSpec struct {
 
 	// ci runs the project's CI jobs labelled env-<name> on the environment's
 	// tools, so CI checks what the agents ran with theos-env
-	// (docs/plans/test-environments.md, T8). A local environment keeps a
+	// (docs/plans/done/test-environments.md, T8). A local environment keeps a
 	// pool of runner pods; a remote one, set to {}, leases a machine for
 	// each job that waits, within its limits and budget, which it shares
 	// with the runs, once a GitProvider's ci block gives the Git host's
@@ -166,7 +166,7 @@ type TestEnvironmentAWS struct {
 	// instanceType is the EC2 instance type, such as c7i.large, g5.xlarge
 	// for a GPU, or mac2.metal for macOS and Xcode. An EC2 Mac runs on a
 	// dedicated host, which the operator allocates and keeps across leases
-	// (mac; docs/plans/test-environments.md, step 9).
+	// (mac; docs/plans/done/test-environments.md, step 9).
 	// +kubebuilder:validation:MaxLength=40
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]*[.][a-z0-9]+$')",message="instanceType must be an EC2 instance type, such as g5.xlarge"
 	// +required
@@ -227,7 +227,7 @@ type TestEnvironmentMac struct {
 }
 
 // TestEnvironmentDeviceFarm is AWS Device Farm's real phones, which run an
-// app's test packages (docs/plans/test-environments.md, T12, step 10). A
+// app's test packages (docs/plans/done/test-environments.md, T12, step 10). A
 // lease runs nothing itself: the run that holds it pushes a request, the
 // app and its test package, to the lease's branch on its Git host with
 // `theos-env test`; the operator checks it against the lease's token, runs
@@ -453,7 +453,7 @@ type TestEnvironmentStatus struct {
 
 // TestEnvironment is a named set of tools, such as browser, android or
 // godot, that the agents' runs and CI lease from a provider
-// (docs/plans/test-environments.md).
+// (docs/plans/done/test-environments.md).
 type TestEnvironment struct {
 	metav1.TypeMeta `json:",inline"`
 

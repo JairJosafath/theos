@@ -19,7 +19,7 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// A machine that runs one CI job (docs/plans/test-environments.md, step 8):
+// A machine that runs one CI job (docs/plans/done/test-environments.md, step 8):
 // leased, fenced, tagged and returned as any lease's machine, but its user
 // data starts the CI runner the CI registered for that job instead of
 // serving an agent's runs. It serves theos-env only until the operator,
@@ -161,7 +161,7 @@ func downloadAddress(url string) (string, error) {
 
 const runnerUserDataScript = `#!/bin/sh
 # A theos test environment's machine that runs one CI job
-# (docs/plans/test-environments.md, step 8): it serves theos-env until the
+# (docs/plans/done/test-environments.md, step 8): it serves theos-env until the
 # operator, finding the lease's own there, has turned the metadata service
 # off; then the CI runner registered for the job takes it, and the machine
 # shuts down, which terminates it, when the runner exits, or at the lease's

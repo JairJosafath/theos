@@ -41,7 +41,7 @@ func envRunner() runnerPodInput {
 	return in
 }
 
-// A test environment's pool pod (docs/plans/test-environments.md, T8) is
+// A test environment's pool pod (docs/plans/done/test-environments.md, T8) is
 // under the CI fence as every pool pod is: the register init container, on
 // the runner image, alone holds the registration token and copies the
 // runner in; the jobs run on the environment's image, with its devices, as

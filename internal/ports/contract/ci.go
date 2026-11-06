@@ -35,7 +35,7 @@ type CIEnv struct {
 // RunnersOnline answers, or says it doesn't know; and the log of a job that
 // sent none is ErrNoCILog. A CI with JobRunners lists the jobs that wait for
 // a label's runner and registers a runner for one job whose files hold no
-// registration token (docs/plans/test-environments.md, step 8).
+// registration token (docs/plans/done/test-environments.md, step 8).
 func CI(t *testing.T, env CIEnv) {
 	t.Helper()
 	ctx, cancel := suiteContext()

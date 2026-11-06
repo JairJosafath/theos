@@ -1,6 +1,6 @@
 // Package awsenv is the aws member of a TestEnvironment: one EC2 machine per
 // lease in the user's AWS account, Linux, GPU or Mac, from the environment's
-// AMI (docs/plans/test-environments.md, T5, T9 to T11); a Mac's on a
+// AMI (docs/plans/done/test-environments.md, T5, T9 to T11); a Mac's on a
 // dedicated host the provider keeps across leases (mac.go). The machine gets no
 // instance role and no SSH key, starts in the environment's subnet with a
 // public address under a security group of the operator's own (theos-env's

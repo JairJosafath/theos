@@ -7,7 +7,7 @@ import (
 )
 
 // The fake provider's leases that run a CI runner
-// (docs/plans/test-environments.md, step 8).
+// (docs/plans/done/test-environments.md, step 8).
 
 var _ ports.TestEnvironmentRunners = (*TestEnvironments)(nil)
 

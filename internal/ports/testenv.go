@@ -9,7 +9,7 @@ import (
 
 // TestEnvironments leases places to run commands with tools the agent
 // sandbox lacks: a browser, a phone emulator, a GPU
-// (docs/plans/test-environments.md, T6). One provider serves one member of
+// (docs/plans/done/test-environments.md, T6). One provider serves one member of
 // TestEnvironment.spec; cmd/main.go maps each member's name to its adapter,
 // as it does for DeployTargets. A lease runs `theos-env serve`, and the run
 // that holds it reaches it at Endpoint with the token it was leased with.

@@ -7,7 +7,7 @@ permission. See the LICENSE file.
 */
 
 // Command theos-env runs an agent's commands in a test environment, a place
-// with tools the sandbox lacks (docs/plans/test-environments.md, T4):
+// with tools the sandbox lacks (docs/plans/done/test-environments.md, T4):
 //
 //	theos-env run <name> [--] <command> [args...]
 //	theos-env test <name> --type <type> --app <file> --tests <file> [--out <dir>]

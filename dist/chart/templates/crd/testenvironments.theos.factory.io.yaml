@@ -52,7 +52,7 @@ spec:
         description: |-
           TestEnvironment is a named set of tools, such as browser, android or
           godot, that the agents' runs and CI lease from a provider
-          (docs/plans/test-environments.md).
+          (docs/plans/done/test-environments.md).
         properties:
           apiVersion:
             description: |-
@@ -125,7 +125,7 @@ spec:
                       instanceType is the EC2 instance type, such as c7i.large, g5.xlarge
                       for a GPU, or mac2.metal for macOS and Xcode. An EC2 Mac runs on a
                       dedicated host, which the operator allocates and keeps across leases
-                      (mac; docs/plans/test-environments.md, step 9).
+                      (mac; docs/plans/done/test-environments.md, step 9).
                     maxLength: 40
                     type: string
                     x-kubernetes-validations:
@@ -187,7 +187,7 @@ spec:
                 description: |-
                   ci runs the project's CI jobs labelled env-<name> on the environment's
                   tools, so CI checks what the agents ran with theos-env
-                  (docs/plans/test-environments.md, T8). A local environment keeps a
+                  (docs/plans/done/test-environments.md, T8). A local environment keeps a
                   pool of runner pods; a remote one, set to {}, leases a machine for
                   each job that waits, within its limits and budget, which it shares
                   with the runs, once a GitProvider's ci block gives the Git host's

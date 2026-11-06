@@ -38,7 +38,7 @@ import (
 
 // TestEnvironmentReconciler reports whether each TestEnvironment can be
 // leased, lists its live leases, and returns the leases whose holder holds
-// them no more (docs/plans/test-environments.md, step 1). A remote member's
+// them no more (docs/plans/done/test-environments.md, step 1). A remote member's
 // credential is checked on each poll (CredentialsValid), and its leases are
 // returned before the environment goes (step 7). A test-run environment's
 // leases take their runs' requests on the Git host (step 10,

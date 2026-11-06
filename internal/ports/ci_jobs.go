@@ -8,7 +8,7 @@ import (
 // JobRunners is an optional capability of the CI port: the owner
 // organization's jobs that wait for a runner, and a runner registered for
 // one of them that a machine outside the cluster runs, such as a remote
-// test environment's (docs/plans/test-environments.md, step 8). A CI that
+// test environment's (docs/plans/done/test-environments.md, step 8). A CI that
 // has it implements it too; find it with a type assertion.
 type JobRunners interface {
 	// WaitingJobs returns the owner organization's jobs that wait for a

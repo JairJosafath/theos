@@ -143,7 +143,7 @@ func TestAgentNetworkFence(t *testing.T) {
 			{To: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: namespace("forge")}}},
 			{To: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: namespace("gitea")}}},
 			// The project's own test environment pods, on theos-env's port,
-			// and nothing else of the namespace (docs/plans/test-environments.md, T5).
+			// and nothing else of the namespace (docs/plans/done/test-environments.md, T5).
 			{
 				To: []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{"app.kubernetes.io/component": "test-environment"}}}},
@@ -224,7 +224,7 @@ func TestAgentNetworkFence(t *testing.T) {
 	}
 }
 
-// The project's test environment fence (docs/plans/test-environments.md, T5)
+// The project's test environment fence (docs/plans/done/test-environments.md, T5)
 // selects every lease pod the local provider makes, lets in only the
 // project's agent sandboxes on theos-env's port, and lets out only cluster
 // DNS and public HTTPS: no Git host, no model proxy, no private range.

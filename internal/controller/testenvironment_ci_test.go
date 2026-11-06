@@ -83,7 +83,7 @@ func waitingJob(id int64) ports.WaitingJob {
 		Created: time.Now()}
 }
 
-// docs/plans/test-environments.md, step 8: remote environments in CI, on
+// docs/plans/done/test-environments.md, step 8: remote environments in CI, on
 // the fake provider and the fake Git host; the EC2 machine and its user data
 // are tested on a fake EC2 in internal/adapters/awsenv, and the runner's
 // registration on a real Git host in the CI contract's integration test.

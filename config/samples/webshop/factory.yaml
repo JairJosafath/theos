@@ -18,7 +18,7 @@ spec:
   ci:
     giteaActions:
       # Where a remote TestEnvironment's machines reach this host to run a
-      # job labelled env-<name> (docs/plans/test-environments.md, step 8):
+      # job labelled env-<name> (docs/plans/done/test-environments.md, step 8):
       # https:// on port 443 at a public host. The in-cluster url above is
       # none, so remote CI is off until it is set.
       # publicURL: https://git.example.com

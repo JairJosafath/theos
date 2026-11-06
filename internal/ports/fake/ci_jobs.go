@@ -13,7 +13,7 @@ import (
 
 // The fake host's jobs that wait for a runner, as a test sets them, and the
 // runners registered for one job, which a remote test environment's machine
-// runs (docs/plans/test-environments.md, step 8).
+// runs (docs/plans/done/test-environments.md, step 8).
 
 var _ ports.JobRunners = (*Git)(nil)
 

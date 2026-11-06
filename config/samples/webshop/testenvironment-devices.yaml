@@ -1,5 +1,5 @@
 # Real phones on AWS Device Farm, which run an app's test packages
-# (docs/plans/test-environments.md, step 10): Espresso or UI Automator
+# (docs/plans/done/test-environments.md, step 10): Espresso or UI Automator
 # instrumentation tests of an Android app, or XCTest and XCUITest tests of
 # an iOS app, on the devices of a device pool. A run gets it when its issue
 # is labelled env/devices, and runs

@@ -509,7 +509,7 @@ type TriageDecision struct {
 
 	// environments are the test environments a ready decision named, which
 	// the operator labelled the issue env/<name> for when the project has
-	// them (docs/plans/test-environments.md, T13).
+	// them (docs/plans/done/test-environments.md, T13).
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=8
 	// +kubebuilder:validation:items:MaxLength=32
@@ -845,7 +845,7 @@ type TaskStatus struct {
 
 	// environments are the test environments the current run holds, one
 	// lease each, taken before its sandbox and returned when it ends or is
-	// suspended (docs/plans/test-environments.md, T3).
+	// suspended (docs/plans/done/test-environments.md, T3).
 	// +kubebuilder:validation:MaxItems=16
 	// +optional
 	Environments []TaskEnvironmentLease `json:"environments,omitempty"`

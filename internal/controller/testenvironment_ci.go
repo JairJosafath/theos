@@ -28,7 +28,7 @@ import (
 )
 
 // A remote TestEnvironment with a ci block runs the project's CI jobs
-// labelled env-<name> (docs/plans/test-environments.md, step 8): for each
+// labelled env-<name> (docs/plans/done/test-environments.md, step 8): for each
 // such job that waits, within the environment's limits and budget, which it
 // shares with the runs, the operator registers a runner for one job to the
 // GitProvider's owner organization, its registration token never leaving

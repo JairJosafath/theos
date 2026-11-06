@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-// Test runs (docs/plans/test-environments.md, T12, step 10): an environment
+// Test runs (docs/plans/done/test-environments.md, T12, step 10): an environment
 // whose provider runs test packages rather than commands, such as AWS Device
 // Farm's real phones. A run that leased one can't reach the operator, which
 // holds the provider's credential, nor may the credential reach the run: the

@@ -66,7 +66,7 @@ func TestByHandReason(t *testing.T) {
 
 // A by-hand issue of a Task whose runs had test environments names them,
 // and a criterion left open with no why is filed with one that says so,
-// never bare (docs/plans/test-environments.md, T13).
+// never bare (docs/plans/done/test-environments.md, T13).
 func TestByHandIssueNamesTheTestEnvironments(t *testing.T) {
 	_, body := ByHandIssue("Pictures", 4, "pr-9", "ext-4", "Agent `reviewer`", []OpenCriterion{
 		{Criterion: "The README has a picture of the editor"},

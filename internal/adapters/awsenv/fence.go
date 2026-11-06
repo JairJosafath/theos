@@ -280,7 +280,7 @@ func UserData(toolsURL, token string, deadline time.Duration) (string, error) {
 }
 
 const userDataScript = `#!/bin/sh
-# A theos test environment's machine (docs/plans/test-environments.md, T11):
+# A theos test environment's machine (docs/plans/done/test-environments.md, T11):
 # it serves one lease's runs with theos-env over HTTPS and shuts down, which
 # terminates it, at the lease's deadline.
 set -eu

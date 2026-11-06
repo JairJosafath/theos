@@ -85,7 +85,7 @@ func TestSeedAppliesTheCatalogInPlace(t *testing.T) {
 	if len(uids) < 5 {
 		t.Fatalf("ConfigMap %s holds %d objects, want the GitProvider, catalog and Agents", catalogConfigMap, len(uids))
 	}
-	// The seed's browser (docs/plans/test-environments.md, T14), which its
+	// The seed's browser (docs/plans/done/test-environments.md, T14), which its
 	// Role lets it apply.
 	if _, ok := uids["TestEnvironment/browser"]; !ok {
 		t.Errorf("ConfigMap %s makes no TestEnvironment browser", catalogConfigMap)

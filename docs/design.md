@@ -483,7 +483,7 @@ the node's: the pods share it with everything else
 Work that needs a tool the agent sandbox lacks (a browser and its system
 libraries, a phone emulator, a GPU, macOS) gets it from a
 **TestEnvironment**, not from a person
-([plans/test-environments.md](plans/test-environments.md)). A
+([plans/done/test-environments.md](plans/done/test-environments.md)). A
 TestEnvironment is a named set of tools in a project's namespace, such as
 `browser`, `android` or `godot` (`v1beta1`, as every kind): a one-line
 `description` for people and agents, exactly one provider member (`local`,

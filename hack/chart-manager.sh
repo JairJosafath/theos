@@ -9,7 +9,7 @@
 # --test-environment-tools-image local test environments copy theos-env from,
 # and the --test-environment-tools-url and --test-environment-runner-url
 # remote ones download theos-env and the CI runner from
-# (docs/plans/test-environments.md), and the THEOS_CHART_VERSION
+# (docs/plans/done/test-environments.md), and the THEOS_CHART_VERSION
 # the Project status reports, the chart's version. kubebuilder's helm
 # plugin regenerates that template without them; make chart keeps the file,
 # and this check catches a hand edit that loses them (#543).

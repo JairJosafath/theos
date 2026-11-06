@@ -30,7 +30,7 @@ import (
 var testRunPoll = 10 * time.Second
 
 // testMain runs a test package on the devices of the environment the run
-// leased as name (docs/plans/test-environments.md, T12, step 10). The run
+// leased as name (docs/plans/done/test-environments.md, T12, step 10). The run
 // can't reach the operator, which holds the provider's credential, so it
 // asks over the Git host it pushes to: it pushes a request commit, the app,
 // the test package and the request signed with the lease's token, to the

@@ -96,7 +96,7 @@ func testRunOf(env *c4v1beta1.TestEnvironment, id, state string) c4v1beta1.TestE
 	return run
 }
 
-// docs/plans/test-environments.md, step 10: a deviceFarm environment's runs
+// docs/plans/done/test-environments.md, step 10: a deviceFarm environment's runs
 // ask for test runs over the Git host, which the operator starts on the
 // provider (here the fake; the Device Farm adapter is tested on a fake
 // Device Farm in internal/adapters/awsenv) and answers on the same branch.

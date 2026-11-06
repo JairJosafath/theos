@@ -22,7 +22,7 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// The deviceFarm member of a TestEnvironment (docs/plans/test-environments.md,
+// The deviceFarm member of a TestEnvironment (docs/plans/done/test-environments.md,
 // T12, step 10): AWS Device Farm's real phones in the user's account, which
 // run an app's test packages rather than commands. A lease holds no device:
 // it is the run's right to ask for test runs, within the environment's

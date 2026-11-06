@@ -151,7 +151,7 @@ var _ = Describe("Agent network fence", func() {
 		Expect(policy.Spec.Egress[2].To[0].NamespaceSelector.MatchLabels).
 			To(HaveKeyWithValue("kubernetes.io/metadata.name", "gitea"))
 		// The project's own test environment pods, on theos-env's port
-		// (docs/plans/test-environments.md, T5).
+		// (docs/plans/done/test-environments.md, T5).
 		envs := policy.Spec.Egress[3]
 		Expect(envs.To).To(HaveLen(1))
 		Expect(envs.To[0].NamespaceSelector).To(BeNil())

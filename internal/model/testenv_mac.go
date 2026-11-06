@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// An EC2 Mac test environment (docs/plans/test-environments.md, T11, step
+// An EC2 Mac test environment (docs/plans/done/test-environments.md, T11, step
 // 9): a Mac instance runs on a dedicated host, which EC2 bills for 24 hours
 // at least from its allocation, so the aws provider keeps a host across
 // leases for keepHostHours and counts the host, not the instance, against

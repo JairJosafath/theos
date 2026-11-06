@@ -142,7 +142,7 @@ type GiteaActionsSpec struct {
 
 	// publicURL is the Git host's address from outside the cluster, such as
 	// https://git.example.com: a remote TestEnvironment's machines, which run
-	// the jobs labelled env-<name> (docs/plans/test-environments.md, step 8),
+	// the jobs labelled env-<name> (docs/plans/done/test-environments.md, step 8),
 	// register their runners there, so it is https:// on port 443, the one
 	// port their fence lets out, at a public host. The jobs clone from the
 	// address the host gives them, its root URL, which must reach it from

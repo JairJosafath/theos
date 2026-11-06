@@ -27,7 +27,7 @@ var testEnvDownloadFlag = regexp.MustCompile(`(?m)^\s*- --test-environment-(tool
 // Release does and renders it: by default a remote TestEnvironment's
 // machines download theos-env, and one that runs a CI job the CI runner too,
 // from the release's files, each checked against the SHA256SUMS next to it
-// (docs/plans/test-environments.md, steps 7 to 9). Release attaches each
+// (docs/plans/done/test-environments.md, steps 7 to 9). Release attaches each
 // build of each, theos-env's for Linux and macOS, and lists them in
 // SHA256SUMS.
 func TestReleaseAttachesWhatRemoteMachinesDownload(t *testing.T) {

@@ -4,7 +4,7 @@ import "context"
 
 // TestEnvironmentRunners is the optional capability of a remote provider to
 // lease a machine that runs one CI job instead of serving an agent's runs
-// (docs/plans/test-environments.md, step 8): its machine starts runner, a
+// (docs/plans/done/test-environments.md, step 8): its machine starts runner, a
 // runner the CI registered for one job (JobRunners), fenced as any lease's
 // machine is, and ends when that job does. The lease is an ordinary one:
 // Get, Return and Leases take it, and its Holder names the runner

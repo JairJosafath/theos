@@ -19,7 +19,7 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// An EC2 Mac environment (docs/plans/test-environments.md, T11, step 9): a
+// An EC2 Mac environment (docs/plans/done/test-environments.md, T11, step 9): a
 // Mac machine runs on a dedicated host, which EC2 bills for 24 hours at
 // least from its allocation and scrubs after each machine. The provider
 // allocates a host for a lease only when every host it keeps for the

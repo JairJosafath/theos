@@ -1,0 +1,23 @@
+# Test environments (docs/plans/done/test-environments.md, theos#12, c4factory #2036): steps 7 to 10 merged on 1856ba5 with the plan's move; the touched packages' lint, unit tests and envtests, not make check, which the coordinator runs on the merged branch.
+# golangci-lint on internal, cmd, api and test/chart; make validate-yaml; hack/chart-manager_test.sh; go test of the touched packages and the controller's unit tests; test/chart; envtest focus 'TestEnvironment|test environment|CI runner pool|Crew triage'; TestCIContractIntegration against a local Gitea started as a non-root user. Steps 5 and 6 aren't built: docs/plans/test-environment-devices-ui.md.
+0 issues.
+All valid
+All 29 invalid files rejected
+ok   a render without the manager: fails
+ok  	github.com/JairJosafath/theos/internal/model	0.413s
+ok  	github.com/JairJosafath/theos/internal/ports	0.083s
+ok  	github.com/JairJosafath/theos/internal/ports/fake	0.019s
+ok  	github.com/JairJosafath/theos/internal/adapters/awsenv	0.306s
+ok  	github.com/JairJosafath/theos/internal/adapters/localenv	0.031s
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	1.560s
+ok  	github.com/JairJosafath/theos/internal/agentrunner	36.699s
+ok  	github.com/JairJosafath/theos/cmd	1.479s
+ok  	github.com/JairJosafath/theos/cmd/model-proxy	2.009s
+ok  	github.com/JairJosafath/theos/cmd/theos-env	1.313s
+ok  	github.com/JairJosafath/theos/internal/controller	1.382s
+ok  	github.com/JairJosafath/theos/test/chart	29.315s
+Ran 57 of 729 Specs in 74.688 seconds
+SUCCESS! -- 57 Passed | 0 Failed | 0 Pending | 672 Skipped
+--- PASS: TestCIContractIntegration (4.88s)
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	4.885s
+exit 0

@@ -33,7 +33,7 @@ import (
 
 // A Task's runs lease the test environments they need before their sandbox
 // is made and return them when they end or are suspended
-// (docs/plans/test-environments.md, T2 and T3).
+// (docs/plans/done/test-environments.md, T2 and T3).
 
 // runEnvironment is a Ready lease a run's sandbox gets: its endpoint, and
 // its token by the Task's token Secret's key.

@@ -88,7 +88,7 @@ spec:
           - --model-proxy-url=http://theos-model-proxy.theos-system.svc:8080
           # A local TestEnvironment's lease pods copy theos-env in from the
           # agent image make agent-image-base loads into Kind
-          # (docs/plans/test-environments.md).
+          # (docs/plans/done/test-environments.md).
           - --test-environment-tools-image=theos/agent-base:dev
           # The UI of config/ui reads the agent sandboxes' pods in each project
           # namespace; nowhere else but the factory's own (#1080).
