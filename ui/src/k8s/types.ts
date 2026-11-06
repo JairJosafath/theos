@@ -398,7 +398,7 @@ export interface TestEnvironmentLease {
 
 /**
  * A named set of tools the agents' runs and CI lease, such as a browser, an
- * Android emulator or a game engine on a GPU (docs/plans/test-environments.md):
+ * Android emulator or a game engine on a GPU (docs/plans/done/test-environments.md):
  * exactly one provider member, its limits and its CI pool.
  */
 export interface TestEnvironment extends K8sObject {

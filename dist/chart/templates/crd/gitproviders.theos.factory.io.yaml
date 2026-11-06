@@ -77,6 +77,23 @@ spec:
                       operator keeps in the project's namespace, registered to the GitProvider's
                       owner organization.
                     properties:
+                      publicURL:
+                        description: |-
+                          publicURL is the Git host's address from outside the cluster, such as
+                          https://git.example.com: a remote TestEnvironment's machines, which run
+                          the jobs labelled env-<name> (docs/plans/done/test-environments.md, step 8),
+                          register their runners there, so it is https:// on port 443, the one
+                          port their fence lets out, at a public host. The jobs clone from the
+                          address the host gives them, its root URL, which must reach it from
+                          there too. Unset, it is url when url is such an address; the chart's
+                          in-cluster host is none, so no remote environment runs a job until it
+                          is set.
+                        maxLength: 2048
+                        type: string
+                        x-kubernetes-validations:
+                        - message: publicURL must be https:// on port 443, the one
+                            port a remote test environment's machine reaches
+                          rule: self.matches('^https://[^/:?#@]+(:443)?([/?#].*)?$')
                       runners:
                         description: |-
                           runners has one entry per job label. Each keeps size idle pods waiting

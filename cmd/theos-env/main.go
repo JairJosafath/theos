@@ -7,9 +7,10 @@ permission. See the LICENSE file.
 */
 
 // Command theos-env runs an agent's commands in a test environment, a place
-// with tools the sandbox lacks (docs/plans/test-environments.md, T4):
+// with tools the sandbox lacks (docs/plans/done/test-environments.md, T4):
 //
 //	theos-env run <name> [--] <command> [args...]
+//	theos-env test <name> --type <type> --app <file> --tests <file> [--out <dir>]
 //	theos-env serve [--listen :7070] [--work /work] [--tls]
 //	theos-env install <path>
 //
@@ -22,9 +23,14 @@ permission. See the LICENSE file.
 // serve takes those runs with the lease's token in THEOS_ENV_TOKEN, one at
 // a time, each on a fresh /work; with --tls, on a remote machine, over HTTPS
 // with the certificate the token makes, which the run pins (its _CA), the
-// certificate itself, not a host name. install copies this binary to path: the
-// lease pod's init container puts it next to the environment's tools. A
-// static binary, so any image runs it.
+// certificate itself, not a host name. test runs an app's test package on
+// the devices of an environment that runs test packages, such as AWS Device
+// Farm's (step 10): it asks the operator over the Git host, by a request
+// commit on the lease's branch, THEOS_ENV_<NAME>_URL git:theos-env/<lease>,
+// and writes the report and artifacts the operator answers with into --out
+// (test.go). install copies this binary to path: the lease pod's init
+// container puts it next to the environment's tools. A static binary, so
+// any image runs it.
 package main
 
 import (
@@ -47,6 +53,7 @@ func main() {
 
 const usage = `usage:
   theos-env run <name> [--] <command> [args...]
+  theos-env test <name> --type instrumentation|xctest|xctest-ui --app <file> --tests <file> [--out <dir>] [--timeout 3h]
   theos-env serve [--listen :7070] [--work /work] [--tls]
   theos-env install <path>
 `
@@ -59,6 +66,8 @@ func mainWith(args []string, stdout, stderr io.Writer, getenv func(string) strin
 	switch args[0] {
 	case "run":
 		return runMain(args[1:], stdout, stderr, getenv)
+	case "test":
+		return testMain(args[1:], stdout, stderr, getenv)
 	case "serve":
 		return serveMain(args[1:], stderr, getenv)
 	case "install":

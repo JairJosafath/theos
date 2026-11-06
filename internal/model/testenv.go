@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Test environments (docs/plans/test-environments.md): a named set of tools,
+// Test environments (docs/plans/done/test-environments.md): a named set of tools,
 // such as browser, a run leases from a provider while it works, and runs
 // commands in through theos-env. These are the rules the operator, the
 // providers and theos-env share.

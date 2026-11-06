@@ -2,7 +2,7 @@
 // lease in the environment's namespace, built from the environment's image
 // and fenced like an agent sandbox, with theos-env copied in from the tools
 // image by an init container and serving on model.TestEnvPort
-// (docs/plans/test-environments.md, T4, T5 and T7). A pod, not a
+// (docs/plans/done/test-environments.md, T4, T5 and T7). A pod, not a
 // Deployment: each lease is used once and thrown away, as a CI job's pod is,
 // so no lease sees another's leftovers. A local lease costs nothing.
 package localenv

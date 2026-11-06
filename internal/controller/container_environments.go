@@ -24,7 +24,7 @@ import (
 // reportTestEnvironments sets TestEnvironments on a Ready Container whose
 // Standard or Framework asks for test environments: True when the project
 // has each, False, NotInProject, naming the ones it lacks, whose runs go on
-// without them (docs/plans/test-environments.md, T2). A Container asking
+// without them (docs/plans/done/test-environments.md, T2). A Container asking
 // for none has no such condition.
 func (r *ContainerReconciler) reportTestEnvironments(ctx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus) {
@@ -56,7 +56,7 @@ func (r *ContainerReconciler) reportTestEnvironments(ctx context.Context, contai
 }
 
 // projectEnvironments are the TestEnvironments of namespace ns, as the
-// planner and the triager read them (docs/plans/test-environments.md, T13).
+// planner and the triager read them (docs/plans/done/test-environments.md, T13).
 func projectEnvironments(ctx context.Context, c client.Client, ns string) ([]model.WorkspaceEnvironment, error) {
 	var list c4v1beta1.TestEnvironmentList
 	if err := c.List(ctx, &list, client.InNamespace(ns)); err != nil {

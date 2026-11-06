@@ -38,10 +38,12 @@ import (
 
 // TestEnvironmentReconciler reports whether each TestEnvironment can be
 // leased, lists its live leases, and returns the leases whose holder holds
-// them no more (docs/plans/test-environments.md, step 1). A remote member's
+// them no more (docs/plans/done/test-environments.md, step 1). A remote member's
 // credential is checked on each poll (CredentialsValid), and its leases are
-// returned before the environment goes (step 7). The Task reconciler takes
-// and returns the leases of its runs.
+// returned before the environment goes (step 7). A test-run environment's
+// leases take their runs' requests on the Git host (step 10,
+// testenvironment_testruns.go). The Task reconciler takes and returns the
+// leases of its runs.
 type TestEnvironmentReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -50,6 +52,11 @@ type TestEnvironmentReconciler struct {
 	APIReader client.Reader
 	// Providers are the providers by member, as cmd/main.go builds them.
 	Providers ports.TestEnvironmentProviders
+	// Git makes the Provider of each GitProvider, whose CI jobs a remote
+	// environment with a ci block runs (testenvironment_ci.go), and where a
+	// test-run environment's leases take their requests (step 10,
+	// testenvironment_testruns.go); nil leaves both undone.
+	Git GitClient
 	// SharedPullSecrets are the shared pull Secrets lease pods list, as
 	// agent sandboxes do.
 	SharedPullSecrets []string
@@ -66,6 +73,7 @@ type TestEnvironmentReconciler struct {
 // +kubebuilder:rbac:groups=theos.factory.io,resources=testenvironments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=theos.factory.io,resources=testenvironments/finalizers,verbs=update
 // +kubebuilder:rbac:groups=theos.factory.io,resources=tasks,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=gitproviders,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch
@@ -79,6 +87,17 @@ const testEnvLeasesFinalizer = "theos.factory.io/test-environment-leases"
 // its provider to return its leases and release it; after it, what is left
 // ends at its deadline, and the environment goes.
 const testEnvReleaseTimeout = 15 * time.Minute
+
+// testEnvReleaseWithin is how long a deleted env waits to be released:
+// testEnvReleaseTimeout, and for an EC2 Mac a host's 24 hours more, since
+// EC2 releases no Mac host within them and a host has no deadline of its
+// own to end at.
+func testEnvReleaseWithin(env *c4v1beta1.TestEnvironment) time.Duration {
+	if a := env.Spec.AWS; a != nil && model.TestEnvMac(a.InstanceType) {
+		return model.MacHostMinimum + testEnvReleaseTimeout
+	}
+	return testEnvReleaseTimeout
+}
 
 // Reconcile sets Ready, and CredentialsValid for a remote member, returns
 // the orphaned leases and records the live ones and what they cost today.
@@ -135,14 +154,18 @@ func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	work, err := r.ciWorkFor(ctx, &env, leases)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	live := make([]ports.Lease, 0, len(leases))
 	for _, l := range leases {
-		held, err := r.held(ctx, env.Namespace, l)
+		held, err := r.held(ctx, env.Namespace, l, work)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		if model.OrphanLease(held, l.Started, r.now(), r.orphanGrace()) {
-			if err := provider.Return(ctx, environment, l.ID); err != nil {
+			if err := r.returnLease(ctx, provider, environment, l, work); err != nil {
 				return ctrl.Result{}, err
 			}
 			logf.FromContext(ctx).Info("Returned a lease its holder holds no more", "lease", l.ID, "holder", l.Holder)
@@ -150,9 +173,20 @@ func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		live = append(live, l)
 	}
+	soon := false
+	if work != nil {
+		if live, soon, err = r.serveCI(ctx, &env, status, environment, provider, work, live); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		apimeta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionTestEnvironmentCI)
+	}
 	status.SpentToday = spentToday(status.SpentToday, status.Leases, live, r.now())
 	status.Leases = leaseStatus(live)
-	return ctrl.Result{RequeueAfter: r.pollInterval()}, r.writeStatus(ctx, &env, status)
+	if runner, ok := provider.(ports.TestRuns); ok && r.tendTestRuns(ctx, &env, status, environment, runner, live) {
+		soon = true
+	}
+	return ctrl.Result{RequeueAfter: r.recheck(soon)}, r.writeStatus(ctx, &env, status)
 }
 
 // checkCredentials sets a remote env's CredentialsValid: its Secret is there
@@ -204,7 +238,7 @@ func (r *TestEnvironmentReconciler) checkCredentials(ctx context.Context, env *c
 // provider release what it keeps for it, then lets the environment go. With
 // no provider, no Secret or a credential refused nothing can be returned,
 // and a provider that keeps failing is given up on after
-// testEnvReleaseTimeout: the machines left end at their deadline.
+// testEnvReleaseWithin: the machines left end at their deadline.
 func (r *TestEnvironmentReconciler) release(ctx context.Context, env *c4v1beta1.TestEnvironment,
 	provider ports.TestEnvironments) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(env, testEnvLeasesFinalizer) {
@@ -230,8 +264,13 @@ func (r *TestEnvironmentReconciler) release(ctx context.Context, env *c4v1beta1.
 		return let("its credentials Secret is gone")
 	}
 	leases, err := provider.Leases(ctx, environment)
+	var work *ciWork
+	if err == nil {
+		// A CI lease's runner goes with it, as far as its host answers.
+		work, err = r.ciWorkFor(ctx, env, leases)
+	}
 	for i := 0; err == nil && i < len(leases); i++ {
-		if err = provider.Return(ctx, environment, leases[i].ID); err == nil {
+		if err = r.returnLease(ctx, provider, environment, leases[i], work); err == nil {
 			log.Info("Returned a deleted test environment's lease", "lease", leases[i].ID, "holder", leases[i].Holder)
 		}
 	}
@@ -244,7 +283,7 @@ func (r *TestEnvironmentReconciler) release(ctx context.Context, env *c4v1beta1.
 		return let("")
 	case errors.Is(err, ports.ErrCredentialRefused):
 		return let("its provider refuses the credential: " + err.Error())
-	case time.Since(env.DeletionTimestamp.Time) > testEnvReleaseTimeout:
+	case time.Since(env.DeletionTimestamp.Time) > testEnvReleaseWithin(env):
 		return let("its provider kept failing: " + err.Error())
 	}
 	log.Info("Could not release the deleted test environment yet; trying again", "error", err.Error())
@@ -273,11 +312,16 @@ func (r *TestEnvironmentReconciler) readiness(ctx context.Context, env *c4v1beta
 	return model.TestEnvReady, "", nil
 }
 
-// held reports whether lease l's holder, a Task, still holds it: the Task
-// is there, unfinished, and lists the lease in status.environments.
-func (r *TestEnvironmentReconciler) held(ctx context.Context, namespace string, l ports.Lease) (bool, error) {
+// held reports whether lease l's holder still holds it: a Task that is
+// there, unfinished, and lists the lease in status.environments, or a CI
+// job's runner while work says it needs the lease (step 8).
+func (r *TestEnvironmentReconciler) held(ctx context.Context, namespace string, l ports.Lease,
+	work *ciWork) (bool, error) {
 	if l.Holder == "" {
 		return false, nil
+	}
+	if _, _, ok := model.ParseCIHolder(l.Holder); ok {
+		return work.held(l, r.now()), nil
 	}
 	var task c4v1beta1.Task
 	err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: l.Holder}, &task)
@@ -339,6 +383,8 @@ func testEnvMember(env *c4v1beta1.TestEnvironment) string {
 		return model.TestEnvMemberLocal
 	case env.Spec.AWS != nil:
 		return model.TestEnvMemberAWS
+	case env.Spec.DeviceFarm != nil:
+		return model.TestEnvMemberDeviceFarm
 	}
 	return ""
 }
@@ -348,6 +394,9 @@ func testEnvMember(env *c4v1beta1.TestEnvironment) string {
 func testEnvSecretName(env *c4v1beta1.TestEnvironment) string {
 	if a := env.Spec.AWS; a != nil {
 		return a.CredentialsSecretRef.Name
+	}
+	if d := env.Spec.DeviceFarm; d != nil {
+		return d.CredentialsSecretRef.Name
 	}
 	return ""
 }
@@ -386,6 +435,13 @@ func testEnvironment(env *c4v1beta1.TestEnvironment, pullSecrets []string) ports
 	if a := env.Spec.AWS; a != nil {
 		out.AWS = &ports.AWSEnvironment{Region: a.Region, Account: a.Account, InstanceType: a.InstanceType,
 			ImageID: a.ImageID, SubnetID: a.SubnetID}
+		if a.Mac != nil {
+			out.AWS.KeepHostHours = int(a.Mac.KeepHostHours)
+		}
+	}
+	if d := env.Spec.DeviceFarm; d != nil {
+		out.DeviceFarm = &ports.DeviceFarmEnvironment{ProjectARN: d.ProjectARN, DevicePoolARN: d.DevicePoolARN,
+			Account: d.Account}
 	}
 	local := env.Spec.Local
 	if local == nil {

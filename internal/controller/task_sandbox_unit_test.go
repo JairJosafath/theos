@@ -926,7 +926,7 @@ func TestBuildSandboxModelProxy(t *testing.T) {
 // A run's leases reach its sandbox as THEOS_ENV_<NAME>_URL, the token by a
 // key of the Task's token Secret, the pinned certificate when the lease has
 // one, and their names and descriptions for the prompt
-// (docs/plans/test-environments.md, T4 and T13); a run with none gets none.
+// (docs/plans/done/test-environments.md, T4 and T13); a run with none gets none.
 func TestBuildSandboxTestEnvironments(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := c4v1beta1.AddToScheme(scheme); err != nil {

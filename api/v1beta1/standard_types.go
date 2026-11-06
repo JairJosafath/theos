@@ -43,7 +43,7 @@ type StandardSpec struct {
 
 	// testEnvironments names the TestEnvironments, such as browser, that
 	// the runs of its Containers' Tasks get when the project has them
-	// (docs/plans/test-environments.md, T2). One the project lacks gives the
+	// (docs/plans/done/test-environments.md, T2). One the project lacks gives the
 	// Container TestEnvironments=False, NotInProject, and the runs go on
 	// without it; an issue labelled env/<name> asks for one it can't do
 	// without.

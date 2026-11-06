@@ -194,7 +194,7 @@ func (r *TaskReconciler) startTriage(ctx context.Context, task *c4v1beta1.Task, 
 		return result, err
 	}
 	// The triager reads the project's test environments, which it may
-	// name for the issue (docs/plans/test-environments.md, T13).
+	// name for the issue (docs/plans/done/test-environments.md, T13).
 	listed, err := listedEnvironments(ctx, r.Client, task.Namespace)
 	if err != nil {
 		return ctrl.Result{}, err

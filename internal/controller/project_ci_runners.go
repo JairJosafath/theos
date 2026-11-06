@@ -99,6 +99,15 @@ type ciRunners struct {
 // poolKey identifies a pool by its GitProvider and label.
 type poolKey struct{ provider, label string }
 
+// runnerPool is the runners p's ci block keeps, its one member's; nil when
+// it keeps none.
+func runnerPool(p *c4v1beta1.GitProvider) *c4v1beta1.GiteaActionsSpec {
+	if p.Spec.CI == nil {
+		return nil
+	}
+	return p.Spec.CI.GiteaActions
+}
+
 // gitNamespacesOf are the in-cluster namespaces of the providers' Git hosts,
 // sorted, each once: what a fenced pod may reach besides DNS and public HTTPS.
 func gitNamespacesOf(providers []c4v1beta1.GitProvider) []string {
@@ -167,7 +176,8 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1be
 	var retry error
 	failedReason := "ProviderUnavailable"
 	for _, p := range providers.Items {
-		if p.Spec.CI == nil || p.Spec.CI.GiteaActions == nil {
+		pool := runnerPool(&p)
+		if pool == nil {
 			if err := r.deleteRunnerTokenSecret(ctx, project.Namespace, p.Name); err != nil {
 				return ciRunners{}, err
 			}
@@ -191,7 +201,7 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1be
 		} else if err := r.ensureRunnerTokenSecret(ctx, project, p.Name, token); err != nil {
 			return ciRunners{}, err
 		}
-		runners := p.Spec.CI.GiteaActions.Runners
+		runners := pool.Runners
 		for _, runner := range runners {
 			in := runnerPodInput{
 				namespace: project.Namespace, provider: p.Name, gitURL: p.Spec.URL,
@@ -205,6 +215,9 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1be
 			if clash != "" {
 				clashes = append(clashes, clash)
 				continue
+			}
+			if env.Spec.Local == nil {
+				continue // a remote environment's runners are the machines it leases per job (step 8)
 			}
 			pools[poolKey{p.Name, in.runner.Label}] = &ciPool{in: in, spec: runnerSpecHash(in), held: tokenErr != nil,
 				blind: tokenErr != nil}
@@ -247,20 +260,21 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1be
 	return ciRunners{recheck: next, providers: providers.Items, retry: retry}, nil
 }
 
-// ciEnvironments are the namespace's local TestEnvironments with a ci block,
-// a size of 0 included, so the pool trims its idle pods to none.
+// ciEnvironments are the namespace's TestEnvironments with a ci block, a
+// local one's size of 0 included, so the pool trims its idle pods to none;
+// a remote one's label clashes as a local one's does, and it keeps no pod.
 func (r *ProjectReconciler) ciEnvironments(ctx context.Context, ns string) ([]c4v1beta1.TestEnvironment, error) {
 	var list c4v1beta1.TestEnvironmentList
 	if err := r.List(ctx, &list, client.InNamespace(ns)); err != nil {
 		return nil, err
 	}
 	return slices.DeleteFunc(list.Items, func(e c4v1beta1.TestEnvironment) bool {
-		return e.Spec.Local == nil || e.Spec.CI == nil
+		return e.Spec.CI == nil
 	}), nil
 }
 
 // envRunnerPool is the pool test environment env keeps in provider p's CI
-// pool, label env-<name> (docs/plans/test-environments.md, T8): its pods
+// pool, label env-<name> (docs/plans/done/test-environments.md, T8): its pods
 // register with the environment's ci.runnerImage, else the image of the
 // first of runners, p's ci block's, and run the jobs on the environment's
 // image and devices. A label runners names already is a clash, said in the
@@ -271,6 +285,9 @@ func envRunnerPool(p *c4v1beta1.GitProvider, runners []c4v1beta1.CIRunnerSpec, e
 	if slices.ContainsFunc(runners, func(r c4v1beta1.CIRunnerSpec) bool { return r.Label == label }) {
 		return runnerPodInput{}, fmt.Sprintf("%s: label %s is test environment %s's, and its ci block names it too",
 			p.Name, label, env.Name)
+	}
+	if env.Spec.Local == nil {
+		return runnerPodInput{}, ""
 	}
 	image := env.Spec.CI.RunnerImage
 	if image == "" && len(runners) > 0 {

@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// A test environment's CI pool (docs/plans/test-environments.md, T8): a
+// A test environment's CI pool (docs/plans/done/test-environments.md, T8): a
 // local TestEnvironment with ci.size keeps single-job runner pods for the
 // label env-<name> in each GitProvider's pool, built from the environment's
 // image and devices, so a Standard's workflow runs on the same tools the

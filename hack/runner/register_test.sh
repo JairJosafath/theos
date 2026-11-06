@@ -44,7 +44,7 @@ check "  passes --ephemeral" "$(calls)" \
 	"register --no-interactive --config $T/config.yaml --instance http://gitea:3000 --token reg-token --name runner-1 --labels go:host --ephemeral"
 rm "$T/calls"
 
-# A test environment's pool pod (docs/plans/test-environments.md, T8): the
+# A test environment's pool pod (docs/plans/done/test-environments.md, T8): the
 # register init container copies the runner, its config, the entrypoint and
 # the sweep for the job container, which runs them from there on the
 # environment's image.

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The browser test environment (docs/plans/test-environments.md, T7 and T14):
+# The browser test environment (docs/plans/done/test-environments.md, T7 and T14):
 # Playwright's image, with Chromium, Firefox and WebKit and their system
 # libraries, and a virtual display, so a test or picture script that drives a
 # browser, VS Code or another Electron app runs: headless as it is, headed

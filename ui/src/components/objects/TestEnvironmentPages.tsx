@@ -1,4 +1,4 @@
-// Test environments (docs/plans/test-environments.md, step 6): the Project
+// Test environments (docs/plans/done/test-environments.md, step 6): the Project
 // page's list of its TestEnvironments, each with its live leases, today's
 // spend and its limits; a TestEnvironment's page (what it has, its leases,
 // its CI pool and how a run uses it); and the Task page's section on its

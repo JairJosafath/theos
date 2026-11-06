@@ -9,7 +9,7 @@ import (
 
 // TestEnvironments leases places to run commands with tools the agent
 // sandbox lacks: a browser, a phone emulator, a GPU
-// (docs/plans/test-environments.md, T6). One provider serves one member of
+// (docs/plans/done/test-environments.md, T6). One provider serves one member of
 // TestEnvironment.spec; cmd/main.go maps each member's name to its adapter,
 // as it does for DeployTargets. A lease runs `theos-env serve`, and the run
 // that holds it reaches it at Endpoint with the token it was leased with.
@@ -55,6 +55,9 @@ type Environment struct {
 	Local *LocalEnvironment
 	// AWS is the aws member's settings; nil for another member.
 	AWS *AWSEnvironment
+	// DeviceFarm is the deviceFarm member's settings; nil for another
+	// member.
+	DeviceFarm *DeviceFarmEnvironment
 	// Secret is the data of a remote member's credentials Secret, read by
 	// the operator only; never sent to the environment.
 	Secret map[string][]byte
@@ -68,6 +71,10 @@ type AWSEnvironment struct {
 	// InstanceType and ImageID are what the machines are, and SubnetID where
 	// they start.
 	InstanceType, ImageID, SubnetID string
+	// KeepHostHours is how long an EC2 Mac's dedicated host is kept from its
+	// allocation for the leases that follow; 0 is
+	// model.DefaultKeepHostHours. Unused for other instance types.
+	KeepHostHours int
 }
 
 // TestEnvironmentCredentials is the optional capability of a remote

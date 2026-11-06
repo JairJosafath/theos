@@ -1204,7 +1204,7 @@ export function demoStory(now: number): StoryData {
     },
   ]
 
-  // The project's test environments (docs/plans/test-environments.md): the
+  // The project's test environments (docs/plans/done/test-environments.md): the
   // chart's browser, whose lease orders-api-24's run holds, with a CI pool of
   // one pod; and an Android emulator on the cluster's KVM device, leased by none.
   const testEnvironments: TestEnvironment[] = [

@@ -1,0 +1,19 @@
+# expect: an aws environment's ci leases a machine for each waiting job
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: gpu
+  namespace: webshop
+spec:
+  description: A GPU machine on AWS that would keep an idle CI runner, costing money while no job waits.
+  aws:
+    region: eu-west-1
+    instanceType: g5.xlarge
+    imageId: ami-0123456789abcdef0
+    subnetId: subnet-0123456789abcdef0
+    credentialsSecretRef:
+      name: gpu-aws
+  limits:
+    budgetUSDPerDay: 25
+  ci:
+    size: 1

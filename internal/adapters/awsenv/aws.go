@@ -25,8 +25,8 @@ const (
 	sessionTokenKey    = "sessionToken"
 )
 
-// EC2API is what the member calls of EC2: the machines, and the security
-// group that fences them.
+// EC2API is what the member calls of EC2: the machines, the security group
+// that fences them, and a Mac's dedicated hosts.
 type EC2API interface {
 	RunInstances(ctx context.Context, in *ec2.RunInstancesInput, opts ...func(*ec2.Options)) (*ec2.RunInstancesOutput,
 		error)
@@ -52,6 +52,14 @@ type EC2API interface {
 		opts ...func(*ec2.Options)) (*ec2.AuthorizeSecurityGroupEgressOutput, error)
 	RevokeSecurityGroupEgress(ctx context.Context, in *ec2.RevokeSecurityGroupEgressInput,
 		opts ...func(*ec2.Options)) (*ec2.RevokeSecurityGroupEgressOutput, error)
+	// An EC2 Mac's dedicated hosts (mac.go).
+	AllocateHosts(ctx context.Context, in *ec2.AllocateHostsInput, opts ...func(*ec2.Options)) (*ec2.AllocateHostsOutput,
+		error)
+	DescribeHosts(ctx context.Context, in *ec2.DescribeHostsInput, opts ...func(*ec2.Options)) (*ec2.DescribeHostsOutput,
+		error)
+	ReleaseHosts(ctx context.Context, in *ec2.ReleaseHostsInput, opts ...func(*ec2.Options)) (*ec2.ReleaseHostsOutput,
+		error)
+	CreateTags(ctx context.Context, in *ec2.CreateTagsInput, opts ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
 }
 
 // STSAPI is what the member calls of STS: who the credential is.

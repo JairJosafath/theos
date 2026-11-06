@@ -176,7 +176,7 @@ func TestPlannerGuideGivesAgentsOnlyCriteriaTheyCanMeet(t *testing.T) {
 		"each criterion is one an agent can meet there and a reviewer can check there",
 		"A screenshot of a desktop app no listed environment has, a recording, a run on a phone or other device",
 		"labelled `kind/by-hand`",
-		// docs/plans/test-environments.md, T13: what an environment has is an agent's.
+		// docs/plans/done/test-environments.md, T13: what an environment has is an agent's.
 		"What needs a tool one of `model/test-environments.yaml`'s environments has",
 		"label its issue with that environment's `label`, such as `env/browser`",
 		"Where a text sample serves, ask the agent for that instead",

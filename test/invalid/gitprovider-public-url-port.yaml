@@ -1,0 +1,18 @@
+# expect: publicURL must be https:// on port 443
+apiVersion: theos.factory.io/v1beta1
+kind: GitProvider
+metadata:
+  name: gitea
+  namespace: webshop
+spec:
+  url: http://gitea.gitea.svc.cluster.local:3000
+  owner: webshop
+  credentialsSecretRef:
+    name: gitea-credentials
+  ci:
+    giteaActions:
+      # A remote test environment's machine reaches port 443 alone.
+      publicURL: https://git.example.com:3000
+      runners:
+        - label: base
+          image: theos/gitea-runner-base:dev

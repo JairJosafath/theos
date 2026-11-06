@@ -7,7 +7,7 @@
 #   theos-env run android -- ./gradlew connectedDebugAndroidTest
 #
 # theos-env keeps what a run started in the background running for the rest
-# of the lease, and replaces /work on each run (docs/plans/test-environments.md,
+# of the lease, and replaces /work on each run (docs/plans/done/test-environments.md,
 # T4), so the emulator starts from /, its output in a log.
 #
 #   android-emulator [start]   boot the emulator unless it runs, then wait for Android

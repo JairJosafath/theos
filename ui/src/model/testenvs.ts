@@ -1,4 +1,4 @@
-// Test environments for display (docs/plans/test-environments.md, step 6): a
+// Test environments for display (docs/plans/done/test-environments.md, step 6): a
 // TestEnvironment's provider member, Ready, live leases against its limits,
 // today's spend and its CI pool; and a Task's run's leases and why it waits
 // for one. Pure, and read only from spec and status: the operator leases and

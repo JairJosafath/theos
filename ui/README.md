@@ -130,7 +130,7 @@ line, or with actions on an Approve button. The DeployTarget page shows its
 tool and where (the `github` repository or the `gitlab` project), tier, approval, `Ready` and the
 Containers that ship to it, and of its credentials the Secret's name only; the
 Project page lists its DeployTargets. The Project page also lists its
-TestEnvironments ([docs/plans/test-environments.md](../docs/plans/test-environments.md)),
+TestEnvironments ([docs/plans/done/test-environments.md](../docs/plans/done/test-environments.md)),
 each with `Ready`, its live leases against `limits.maxLeases` and who holds
 each, today's spend and how long a lease lasts; a TestEnvironment's page adds
 what it has (image, devices, runtime class, placement, resources), its CI

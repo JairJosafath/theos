@@ -43,7 +43,7 @@ type Triage struct {
 	Duplicate int      `json:"duplicate,omitempty"`
 	// Environments are the test environments a ready issue needs, by name:
 	// the operator labels it env/<name> for each the project has
-	// (docs/plans/test-environments.md, T13).
+	// (docs/plans/done/test-environments.md, T13).
 	Environments []string `json:"environments,omitempty"`
 }
 

@@ -25,7 +25,7 @@ func TestNormalTriage(t *testing.T) {
 			len(got.Criteria), len(got.Criteria[0]), len(got.Reason))
 	}
 	// A decision's environments are TestEnvironment names, each once, an
-	// env/ label taken for its name (docs/plans/test-environments.md, T13).
+	// env/ label taken for its name (docs/plans/done/test-environments.md, T13).
 	got = NormalTriage(Triage{Decision: TriageReady, Environments: []string{" browser", "env/godot", "browser",
 		"Not A Name", "../x", ""}})
 	if !reflect.DeepEqual(got.Environments, []string{"browser", "godot"}) {
@@ -78,7 +78,7 @@ func TestPlanTriage(t *testing.T) {
 		{"ready, the body with criteria keeps its own", open(criteria), ready, TriageActions{
 			Label: LabelReady, Comment: "Triaged by Task api-7-triage: ready to build. Clear enough.",
 			Applied: "Labelled status/ready"}},
-		// docs/plans/test-environments.md, T13: the triager labels env/<name>
+		// docs/plans/done/test-environments.md, T13: the triager labels env/<name>
 		// where it would have sent the issue to a person for missing tools.
 		{"ready, needing a test environment the project has, gets its label",
 			TriageIssue{Number: 7, Body: criteria, Labels: proposed, Environments: []string{"browser"}},

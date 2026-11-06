@@ -76,7 +76,7 @@ spec:
 {{- $b := .Values.testEnvironments.browser }}
 {{- range $project := include "theos.projectNames" . | fromJsonArray }}
 ---
-# Project {{ $project }}'s browser (docs/plans/test-environments.md, T14): a
+# Project {{ $project }}'s browser (docs/plans/done/test-environments.md, T14): a
 # pod per lease, which a run of an issue labelled env/browser takes.
 apiVersion: theos.factory.io/v1beta1
 kind: TestEnvironment

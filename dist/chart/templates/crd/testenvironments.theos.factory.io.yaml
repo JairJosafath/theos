@@ -30,6 +30,10 @@ spec:
       name: Instance
       priority: 1
       type: string
+    - jsonPath: .spec.deviceFarm.devicePoolArn
+      name: Devices
+      priority: 1
+      type: string
     - jsonPath: .spec.limits.maxLeases
       name: Max
       type: integer
@@ -48,7 +52,7 @@ spec:
         description: |-
           TestEnvironment is a named set of tools, such as browser, android or
           godot, that the agents' runs and CI lease from a provider
-          (docs/plans/test-environments.md).
+          (docs/plans/done/test-environments.md).
         properties:
           apiVersion:
             description: |-
@@ -108,8 +112,9 @@ spec:
                     description: |-
                       imageId is the AMI the machines boot, with the environment's tools: a
                       Linux with curl, sha256sum and a cloud-init that runs user data, such
-                      as an AWS Deep Learning AMI for a GPU. An AMI id never changes what it
-                      names, so it is pinned.
+                      as an AWS Deep Learning AMI for a GPU, or for a Mac instanceType an
+                      EC2 macOS AMI with Xcode, whose ec2-macos-init runs user data. An AMI
+                      id never changes what it names, so it is pinned.
                     maxLength: 21
                     type: string
                     x-kubernetes-validations:
@@ -117,18 +122,38 @@ spec:
                       rule: self.matches('^ami-[0-9a-f]{8,17}$')
                   instanceType:
                     description: |-
-                      instanceType is the EC2 instance type, such as c7i.large, or g5.xlarge
-                      for a GPU. EC2 Mac types, which need a dedicated host, come later
-                      (docs/plans/test-environments.md, step 9).
+                      instanceType is the EC2 instance type, such as c7i.large, g5.xlarge
+                      for a GPU, or mac2.metal for macOS and Xcode. An EC2 Mac runs on a
+                      dedicated host, which the operator allocates and keeps across leases
+                      (mac; docs/plans/done/test-environments.md, step 9).
                     maxLength: 40
                     type: string
                     x-kubernetes-validations:
                     - message: instanceType must be an EC2 instance type, such as
                         g5.xlarge
                       rule: self.matches('^[a-z][a-z0-9-]*[.][a-z0-9]+$')
-                    - message: EC2 Mac instance types need a dedicated host, which
-                        the aws member doesn't lease yet
-                      rule: '!self.startsWith(''mac'')'
+                  mac:
+                    description: |-
+                      mac is how an EC2 Mac's dedicated hosts are kept: the operator
+                      allocates a host for a lease when every host it keeps is busy, places
+                      the lease's machine on it, and keeps it for the next leases. Only for
+                      a Mac instanceType; unset, the defaults.
+                    properties:
+                      keepHostHours:
+                        default: 24
+                        description: |-
+                          keepHostHours is how long the operator keeps a host it allocated,
+                          from its allocation, for the leases that follow; past it, the host is
+                          released once no lease is on it, and a lease that needs one allocates
+                          another. A lease that allocates a host counts the host's price for
+                          keepHostHours against budgetUSDPerDay at once; one placed on a host
+                          kept costs nothing until the host's keepHostHours are over. At least
+                          24, the host's minimum.
+                        format: int32
+                        maximum: 168
+                        minimum: 24
+                        type: integer
+                    type: object
                   region:
                     description: region is the AWS region the machines run in, such
                       as eu-west-1.
@@ -155,24 +180,33 @@ spec:
                 - region
                 - subnetId
                 type: object
+                x-kubernetes-validations:
+                - message: mac is for an EC2 Mac instanceType, such as mac2.metal
+                  rule: '!has(self.mac) || self.instanceType.startsWith(''mac'')'
               ci:
                 description: |-
                   ci runs the project's CI jobs labelled env-<name> on the environment's
                   tools, so CI checks what the agents ran with theos-env
-                  (docs/plans/test-environments.md, T8).
+                  (docs/plans/done/test-environments.md, T8). A local environment keeps a
+                  pool of runner pods; a remote one, set to {}, leases a machine for
+                  each job that waits, within its limits and budget, which it shares
+                  with the runs, once a GitProvider's ci block gives the Git host's
+                  publicURL (step 8).
                 properties:
                   runnerImage:
                     description: |-
                       runnerImage is a CI runner image, such as the release's base runner
                       image: each pod registers with it in an init container, which copies
                       its runner into the pod, and the jobs run on the environment's image. Unset, it is the
-                      image of the first runner of the GitProvider's ci block.
+                      image of the first runner of the GitProvider's ci block. Local only: a
+                      remote machine downloads its runner (the operator's
+                      --test-environment-runner-url).
                     maxLength: 500
                     type: string
                   size:
                     description: |-
                       size is how many idle pods wait for a job; 0, the default, keeps
-                      none, so no pod runs until a workflow names the label.
+                      none, so no pod runs until a workflow names the label. Local only.
                     format: int32
                     maximum: 8
                     minimum: 0
@@ -184,6 +218,65 @@ spec:
                   for the agents and planner that choose it.
                 maxLength: 200
                 type: string
+              deviceFarm:
+                description: |-
+                  deviceFarm runs test packages, rather than commands, on real phones
+                  in AWS Device Farm, in the user's AWS account: a run asks with
+                  `theos-env test <name>`, over its Git host, and the operator, which
+                  alone holds the credential, starts the run and gives the report back
+                  (T12). Its runs cost what Device Farm charges per device minute, so it
+                  needs limits.budgetUSDPerDay.
+                properties:
+                  account:
+                    description: |-
+                      account is the twelve-digit AWS account id the credential must be in,
+                      as an aws member's: set, a credential of another account is refused.
+                    maxLength: 12
+                    type: string
+                    x-kubernetes-validations:
+                    - message: account must be a twelve-digit AWS account id
+                      rule: self.matches('^[0-9]{12}$')
+                  credentialsSecretRef:
+                    description: |-
+                      credentialsSecretRef names a Secret in the TestEnvironment's namespace
+                      with the keys accessKeyId, secretAccessKey and an optional
+                      sessionToken, as an aws member's. Only the operator reads it: it never
+                      reaches a sandbox or a CI job. The key needs the Device Farm calls
+                      docs/getting-started.md lists.
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  devicePoolArn:
+                    description: |-
+                      devicePoolArn is the devices each run runs on: a device pool of the
+                      project, or one of Device Farm's own, such as its top devices.
+                    maxLength: 200
+                    type: string
+                    x-kubernetes-validations:
+                    - message: devicePoolArn must be a Device Farm device pool's ARN,
+                        in us-west-2
+                      rule: self.matches('^arn:aws:devicefarm:us-west-2:[0-9]{0,12}:devicepool:[0-9a-f-]{36}(/[0-9a-f-]{36})?$')
+                  projectArn:
+                    description: |-
+                      projectArn is the Device Farm project the runs go in, in us-west-2,
+                      Device Farm's one region.
+                    maxLength: 200
+                    type: string
+                    x-kubernetes-validations:
+                    - message: projectArn must be a Device Farm project's ARN, in
+                        us-west-2
+                      rule: self.matches('^arn:aws:devicefarm:us-west-2:[0-9]{12}:project:[0-9a-f-]{36}$')
+                required:
+                - credentialsSecretRef
+                - devicePoolArn
+                - projectArn
+                type: object
               limits:
                 default: {}
                 description: |-
@@ -376,11 +469,25 @@ spec:
                 type: object
             type: object
             x-kubernetes-validations:
-            - message: 'set exactly one provider member: local or aws'
-              rule: '[has(self.local), has(self.aws)].exists_one(x, x)'
+            - message: 'set exactly one provider member: local, aws or deviceFarm'
+              rule: '[has(self.local), has(self.aws), has(self.deviceFarm)].exists_one(x,
+                x)'
             - message: 'an aws environment needs limits.budgetUSDPerDay: a remote
                 lease costs money for every minute it is held'
               rule: '!has(self.aws) || (has(self.limits) && has(self.limits.budgetUSDPerDay))'
+            - message: 'a deviceFarm environment needs limits.budgetUSDPerDay: its
+                test runs cost money for every device minute'
+              rule: '!has(self.deviceFarm) || (has(self.limits) && has(self.limits.budgetUSDPerDay))'
+            - message: 'an aws environment''s ci leases a machine for each waiting
+                job, which runs the job on a runner of its own: it keeps no idle runners
+                (ci.size) and takes no ci.runnerImage'
+              rule: '!has(self.aws) || !has(self.ci) || (!has(self.ci.size) && !has(self.ci.runnerImage))'
+            - message: 'a deviceFarm environment runs test packages, not CI jobs:
+                it has no machine to run a job''s runner on'
+              rule: '!has(self.deviceFarm) || !has(self.ci)'
+            - message: 'an EC2 Mac runs no CI jobs: the CI runner a machine downloads
+                is Linux''s, and a Mac host per job would be billed 24 hours each'
+              rule: '!has(self.aws) || !has(self.ci) || !self.aws.instanceType.startsWith(''mac'')'
           status:
             description: status is the live leases and the environment's readiness.
             properties:
@@ -458,7 +565,10 @@ spec:
                       format: int64
                       type: integer
                     holder:
-                      description: holder is the Task whose run holds the lease.
+                      description: |-
+                        holder is the Task whose run holds the lease, or, for a remote
+                        machine that runs a CI job, ci/<GitProvider>/<runner id>: the runner
+                        registered for that job.
                       type: string
                     id:
                       description: |-
@@ -498,6 +608,87 @@ spec:
                 required:
                 - day
                 type: object
+              testRuns:
+                description: |-
+                  testRuns are a deviceFarm environment's test runs, the last ones of
+                  each lease, kept until their outcome is on the holder's pull request.
+                items:
+                  description: |-
+                    TestEnvironmentTestRun is a test run a lease's run asked for, of a
+                    deviceFarm environment (T12).
+                  properties:
+                    answer:
+                      description: answer is the operator's result commit on the lease's
+                        branch.
+                      type: string
+                    comment:
+                      description: |-
+                        comment is the pull request comment still to post once the holder
+                        has a pull request; empty once posted.
+                      maxLength: 8192
+                      type: string
+                    commit:
+                      type: string
+                    container:
+                      description: |-
+                        container is the Container on whose repository the lease's branch
+                        is.
+                      type: string
+                    costMilliUSD:
+                      description: costMilliUSD is what the run cost, by the provider's
+                        count.
+                      format: int64
+                      type: integer
+                    holder:
+                      type: string
+                    id:
+                      description: 'id is the run''s ID on the provider: its lease
+                        and its request.'
+                      type: string
+                    lease:
+                      description: |-
+                        lease is the lease whose branch the request is on, and holder the
+                        Task whose run holds it.
+                      type: string
+                    outcome:
+                      maxLength: 1024
+                      type: string
+                    request:
+                      description: |-
+                        request is the request commit on the lease's branch, and commit the
+                        run's commit the app and tests were built from.
+                      type: string
+                    result:
+                      description: |-
+                        result is Passed, Warned, Failed, Skipped, Errored, Stopped or
+                        Rejected, once there is one, and outcome its one line.
+                      type: string
+                    since:
+                      description: since is when the operator started it.
+                      format: date-time
+                      type: string
+                    state:
+                      description: |-
+                        state is Pending or Running on the provider, Reported once its
+                        result is on the lease's branch, or Rejected when the operator ran
+                        nothing.
+                      type: string
+                    type:
+                      description: type is the test package's type, such as instrumentation.
+                      type: string
+                    url:
+                      description: url is the run on the provider's console.
+                      type: string
+                  required:
+                  - id
+                  - lease
+                  - request
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
             type: object
         required:
         - spec

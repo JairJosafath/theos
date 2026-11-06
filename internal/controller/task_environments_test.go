@@ -58,7 +58,7 @@ func waitingFor(ns, name, why string) {
 	}, "20s").Should(Succeed())
 }
 
-// docs/plans/test-environments.md, step 2: a run leases the test
+// docs/plans/done/test-environments.md, step 2: a run leases the test
 // environments it needs before its sandbox, and returns them.
 var _ = Describe("Task with a test environment", func() {
 	It("leases the environment its issue's env/ label asks for, gives the sandbox its variables, "+

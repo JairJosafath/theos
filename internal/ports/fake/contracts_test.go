@@ -41,6 +41,10 @@ func TestCIContract(t *testing.T) {
 			g.SetNoCheckLog(checkURL)
 			return checkURL
 		},
+		Queue: func(_ *testing.T, _ ports.GitHost, repo ports.Repository, label string) {
+			g.SetWaitingJobs(repo.Owner, ports.WaitingJob{ID: 1, RunID: 1, Name: "check", Labels: []string{label},
+				URL: repo.WebURL + "/actions/runs/1/jobs/1"})
+		},
 	})
 }
 

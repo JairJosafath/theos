@@ -139,6 +139,20 @@ type GiteaActionsSpec struct {
 	// +kubebuilder:validation:MaxItems=8
 	// +required
 	Runners []CIRunnerSpec `json:"runners"`
+
+	// publicURL is the Git host's address from outside the cluster, such as
+	// https://git.example.com: a remote TestEnvironment's machines, which run
+	// the jobs labelled env-<name> (docs/plans/done/test-environments.md, step 8),
+	// register their runners there, so it is https:// on port 443, the one
+	// port their fence lets out, at a public host. The jobs clone from the
+	// address the host gives them, its root URL, which must reach it from
+	// there too. Unset, it is url when url is such an address; the chart's
+	// in-cluster host is none, so no remote environment runs a job until it
+	// is set.
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[^/:?#@]+(:443)?([/?#].*)?$')",message="publicURL must be https:// on port 443, the one port a remote test environment's machine reaches"
+	// +optional
+	PublicURL string `json:"publicURL,omitempty"`
 }
 
 // CIRunnerSpec is one label's runners in a project's pool.
