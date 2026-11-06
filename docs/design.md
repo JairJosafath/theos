@@ -1063,8 +1063,10 @@ controllers call, not by one product's API;
 - **What a CI system writes is a business rule:** one row per CI system in
   `model.CI` (workflow paths, required checks, protected paths); a
   Container's is its host's own (`model.HostCI`).
-- **Polling is the contract.** Webhooks (#1084, decided, not built) would
-  only shorten waits ([plans/git-events.md](plans/git-events.md)).
+- **Polling is the contract.** Webhooks (#1084) only shorten waits: the
+  operator registers a hook and reconciles what a signed delivery concerns
+  at once; the longer fallback poll and the chart's install are still to
+  come ([plans/git-events.md](plans/git-events.md)).
 - **Helm decides what is installed, custom resources what is used:**
   `GitProvider.spec.provider` names the host (`gitea`), CI and registry
   default to the host's own (`spec.packages` names another npm registry or

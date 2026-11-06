@@ -129,6 +129,9 @@ var (
 	// managerAPIReader is the manager's uncached reader, under the generated
 	// role too.
 	managerAPIReader client.Reader
+	// gitEvents is the suite operator's receiver of the Git host's
+	// deliveries; a spec serves its Handler with httptest.
+	gitEvents *GitEventsReceiver
 )
 
 // The operator's namespace in the suite, and the Secrets it shares from there.
@@ -411,6 +414,7 @@ var _ = BeforeSuite(func() {
 // setupReconcilers registers every reconciler the way cmd/main.go does.
 func setupReconcilers(mgr ctrl.Manager) error {
 	c, s := mgr.GetClient(), mgr.GetScheme()
+	gitEvents = &GitEventsReceiver{Client: c, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}}
 	sessionFeature, err := features.ScaffoldOptions(features.SessionFeatureLocal, "")
 	if err != nil {
 		return err
@@ -443,23 +447,24 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
 			Deployers: deployers, DeployMembers: testDeployMember,
-			DeployPoll: time.Second},
+			DeployPoll: time.Second, GitEvents: gitEvents},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
 		&TaskReconciler{Client: taskStatusFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			StandardChangeRecheck: time.Second, PullRequestRecheck: time.Second, Recorder: mgr.GetEventRecorder("task"),
 			SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace, ModelProxyURL: testModelProxyURL,
-			Now: taskNow},
+			Now: taskNow, GitEvents: gitEvents},
 		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
 			ModelProxyURL: testModelProxyURL,
-			Issues:        githubFake, Now: briefNow},
+			Issues:        githubFake, Now: briefNow, GitEvents: gitEvents},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: fakeGitClient{gitFake}, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow,
 			GoProxy:   goProxyFake.server.URL,
-			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)}},
+			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)},
+			GitEvents: gitEvents},
 		&DeployTargetReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second,
 			Deployers: deployers},
 		// Every Chat names chatFake; the suite's operator has no homeserver of
@@ -470,7 +475,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&BenchmarkReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			PollInterval: time.Second},
 		&GitProviderReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
-			GitEventsURL: testGitEventsURL},
+			GitEventsURL: testGitEventsURL, GitEvents: gitEvents},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

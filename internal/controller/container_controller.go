@@ -43,6 +43,9 @@ import (
 type ContainerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads Secrets without caching them.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
@@ -466,6 +469,9 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1beta1.Domain{}, waitingContainers, specChanged()).
 		Watches(&c4v1beta1.Bundle{}, bundleContainers, specChanged()).
 		Watches(&c4v1beta1.DataStore{}, waitingContainers, specChanged()).
+		// A delivery of the Git host reconciles the Container whose repository a delivery names at once
+		// (docs/plans/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventContainerRequest(mgr.GetClient()))).
 		Named("container").
 		Complete(r)
 }

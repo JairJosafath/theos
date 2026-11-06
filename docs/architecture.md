@@ -169,6 +169,35 @@ step per reconcile (`internal/controller/container_standard.go`); the minute
 recheck polls the pull request, and a Standard's spec change enqueues its
 Containers at once.
 
+## Flow of a Git host's delivery
+
+Polling stays the contract; a delivery only shortens the wait
+([plans/git-events.md](plans/git-events.md), #1084).
+
+1. The GitProvider reconciler (`internal/controller/gitprovider_controller.go`)
+   makes the delivery Secret `<gitprovider>-git-events` and registers the
+   owner's hook to `<--git-events-url>/git-events/<namespace>/<gitprovider>`
+   through `ports.Events`.
+2. The host posts a delivery there. The receiver
+   (`internal/controller/git_events.go`, a Runnable on the leader, listening on
+   `--git-events-bind-address`, off by default) reads at most 5 MiB (413 past
+   it), finds the GitProvider in the cache (404 when there is none or its
+   adapter has no Events), reads its Secret live, and has the adapter's
+   `ParseEvent` check the signature (401 when it fails) and say what the
+   delivery concerns: a repository, an issue or pull request, a branch.
+3. It sends the Event, without blocking, to one buffered `source.Channel` per
+   controller and answers 202; it writes nothing. The Container controller
+   enqueues the Container named after the repository, the Crew controller its
+   Crews, the Task controller its Tasks whose issue, Standard-change issue,
+   pull request or branch the delivery names (the `indexTaskRepository`
+   index), or every unfinished one when it names neither, and the Brief
+   controller the Brief whose repository is `brief-<name>`, whose Plan Tasks
+   the Task controller enqueues the same way. Only objects on that
+   GitProvider are enqueued; each reconcile reads the host as a poll would.
+4. The receiver remembers each GitProvider's last verified and last refused
+   delivery, and enqueues the GitProvider when the later of the two changes;
+   its reconciler writes `Events` `Receiving` (True) or `DeliveryRefused`.
+
 1. `internal/controller` takes the ref the Container's Standard files are at from
    `status.standard`, or before the first update from `scaffoldedFrom`
    (`model.ScaffoldedRef`). It compares it with the Standard's ref.
@@ -383,8 +412,9 @@ each run compiles only what changed:
 
 ## Flow of one Crew
 
-1. Every minute, and when a Task on its Container changes phase or the Container
-   turns Ready, `internal/controller` reads the Crew, adopts it under its
+1. Every minute, when a Task on its Container changes phase or the Container
+   turns Ready, and when a delivery of the Git host names the Container's
+   repository, `internal/controller` reads the Crew, adopts it under its
    Container, checks its Agents exist, and lists the Container's Tasks live.
 2. Through the Issues port it makes sure the status labels exist, lists the open
    issues labelled `status/ready`, and reads each one's open dependencies.

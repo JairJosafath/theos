@@ -73,6 +73,9 @@ func mergeCommitRetryAfter(completed *metav1.Time, now time.Time) time.Duration 
 type TaskReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads Secrets without caching them.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
@@ -937,6 +940,9 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 				return reqs
 			}), createOrDelete()).
+		// A delivery of the Git host reconciles the Tasks of the issue, pull request or branch a delivery names at once
+		// (docs/plans/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventTaskRequests(mgr.GetClient()))).
 		Named("task").
 		Complete(r)
 }
