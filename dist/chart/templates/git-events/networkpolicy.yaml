@@ -1,0 +1,47 @@
+{{- if .Values.gitEvents.enabled }}
+# Only the Git host reaches the receiver's port: the pods of Gitea's namespace,
+# or gitEvents.from (docs/plans/git-events.md, decision 10). Not behind
+# networkPolicy.enabled: it is the fence on that port. A policy that selects
+# the manager isolates it, so without networkPolicy.enabled the manager's
+# other ports stay open to all, as they are without any policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "theos.name" . }}
+  name: {{ include "theos.gitEventsName" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+      app.kubernetes.io/name: {{ include "theos.name" . }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- with .Values.gitEvents.from }}
+        {{- toYaml . | nindent 8 }}
+        {{- else }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "theos.giteaNamespace" . }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.gitEvents.port }}
+          protocol: TCP
+    {{- if not .Values.networkPolicy.enabled }}
+    - ports:
+        - port: {{ .Values.manager.healthProbe.port }}
+          protocol: TCP
+        {{- if .Values.metrics.enabled }}
+        - port: {{ .Values.metrics.port }}
+          protocol: TCP
+        {{- end }}
+        {{- if .Values.webhook.enabled }}
+        - port: {{ .Values.webhook.port }}
+          protocol: TCP
+        {{- end }}
+    {{- end }}
+{{- end }}
