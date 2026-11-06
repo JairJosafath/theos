@@ -112,6 +112,9 @@ var (
 	// deployFake is the Deployer of every DeployTarget's member, but for a
 	// target whose repository the fake GitHub has (routedDeployer).
 	deployFake *fake.Deployer
+	// envFake is the provider of every TestEnvironment's local member: its
+	// leases are Ready at once unless it holds them.
+	envFake *fake.TestEnvironments
 	// goProxyFake is the Go proxy every Crew asks about its released modules.
 	goProxyFake *fakeGoProxy
 	ctx         context.Context
@@ -387,6 +390,7 @@ var _ = BeforeSuite(func() {
 	DeferCleanup(registryFake.server.Close)
 	DeferCleanup(gitlabRegistryFake.server.Close)
 	deployFake = &fake.Deployer{}
+	envFake = &fake.TestEnvironments{}
 	goProxyFake = newFakeGoProxy()
 	DeferCleanup(goProxyFake.server.Close)
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
@@ -453,7 +457,9 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&TaskReconciler{Client: taskStatusFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			StandardChangeRecheck: time.Second, PullRequestRecheck: time.Second, Recorder: mgr.GetEventRecorder("task"),
 			SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace, ModelProxyURL: testModelProxyURL,
-			Now: taskNow, GitEvents: gitEvents},
+			Now: taskNow, GitEvents: gitEvents,
+			TestEnvironments:   ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake},
+			EnvironmentRecheck: time.Second},
 		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
@@ -475,6 +481,11 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			PollInterval: time.Second},
 		&GitProviderReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			GitEventsURL: testGitEventsURL, GitEvents: gitEvents},
+		// The local member's adapter is tested on envtest in
+		// internal/adapters/localenv; the suite stands envFake in.
+		&TestEnvironmentReconciler{Client: c, Scheme: s,
+			Providers:         ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake},
+			SharedPullSecrets: []string{sharedPullSecret}, PollInterval: time.Second, OrphanGrace: time.Second},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

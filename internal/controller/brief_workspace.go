@@ -313,6 +313,9 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1beta1.
 	if ws.Bundles, err = installedBundles(ctx, r.Client, brief.Namespace); err != nil {
 		return ws, err
 	}
+	if ws.Environments, err = projectEnvironments(ctx, r.Client, brief.Namespace); err != nil {
+		return ws, err
+	}
 	ws.Containers, ws.Suggestions, ws.Failed, err = r.containerIssues(ctx, brief)
 	return ws, err
 }

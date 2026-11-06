@@ -85,6 +85,10 @@ type runnerPodInput struct {
 	runner                                   c4v1beta1.CIRunnerSpec
 	goCacheRoot                              string
 	pullSecrets                              []string
+	// env, when set, makes the pod one of a test environment's pool
+	// (buildEnvRunnerPod): runner.Image registers it, and the jobs run on
+	// the environment's image.
+	env *envRunnerInput
 }
 
 // ciRunnerTokenSecret names the Secret with a GitProvider's runner registration token.
@@ -99,6 +103,9 @@ func ciRunnerTokenSecret(provider string) string { return "c4-ci-runner-" + prov
 // with freshGoCache, the pod's own emptyDir seeded from the image, so a
 // release links nothing an earlier job wrote (#1141).
 func buildRunnerPod(in runnerPodInput) *corev1.Pod {
+	if in.env != nil {
+		return buildEnvRunnerPod(in)
+	}
 	goCache := in.runner.GoCache && in.goCacheRoot != ""
 	registerEnv := []corev1.EnvVar{
 		{Name: "GITEA_INSTANCE", Value: in.gitURL},

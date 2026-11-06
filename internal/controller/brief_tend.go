@@ -67,6 +67,10 @@ func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1beta1.B
 	for _, c := range containers.Items {
 		made[c.Name] = true
 		watched := model.WatchedContainer{Name: c.Name, Phase: string(c.Status.Phase), Since: c.CreationTimestamp.Time}
+		if cond := meta.FindStatusCondition(c.Status.Conditions, c4v1beta1.ConditionTestEnvironments); cond != nil &&
+			cond.Status == metav1.ConditionFalse {
+			watched.Environments, watched.EnvironmentsSince = cond.Message, cond.LastTransitionTime.Time
+		}
 		for _, cond := range c.Status.Conditions {
 			if cond.Status == metav1.ConditionFalse {
 				watched.Message, watched.Since = cond.Message, cond.LastTransitionTime.Time

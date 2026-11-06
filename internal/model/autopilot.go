@@ -135,6 +135,11 @@ type WatchedContainer struct {
 	Phase   string
 	Message string
 	Since   time.Time
+	// Environments is its TestEnvironments condition's message while the
+	// project lacks one its Standard or Framework asks for, and
+	// EnvironmentsSince since when.
+	Environments      string
+	EnvironmentsSince time.Time
 }
 
 // TendedIssue is a failed issue a round answered, as the Brief remembers it
@@ -247,13 +252,20 @@ func BriefAttention(f AttentionFacts, now time.Time) Attention {
 		a.add(h, entry)
 	}
 	for _, c := range f.Containers {
-		if c.Phase != containerFailed {
-			continue
+		switch {
+		case c.Phase == containerFailed:
+			a.NeedsYou = append(a.NeedsYou, NeedsYou{AttentionContainer, c.Name,
+				fmt.Sprintf("Container `%s` failed: %s", c.Name, sentence(c.Message, "see the Container")),
+				"Fix what it says, or delete it and plan it again in a prompt.",
+				"A failed Container doesn't heal by itself.", c.Since})
+		case c.Environments != "":
+			// docs/plans/test-environments.md, T2: only a person adds one.
+			a.NeedsYou = append(a.NeedsYou, NeedsYou{AttentionContainer, c.Name,
+				fmt.Sprintf("Container `%s` asks for test environments the project lacks: %s", c.Name,
+					sentence(c.Environments, "see the Container")),
+				"Add the TestEnvironments to the project, or take them off its Standard or Framework.",
+				"Its runs go on without them, so what needs them stays open.", c.EnvironmentsSince})
 		}
-		a.NeedsYou = append(a.NeedsYou, NeedsYou{AttentionContainer, c.Name,
-			fmt.Sprintf("Container `%s` failed: %s", c.Name, sentence(c.Message, "see the Container")),
-			"Fix what it says, or delete it and plan it again in a prompt.",
-			"A failed Container doesn't heal by itself.", c.Since})
 	}
 	slices.SortStableFunc(a.NeedsYou, func(x, y NeedsYou) int { return x.Since.Compare(y.Since) })
 	a.Waiting = len(a.NeedsYou)
@@ -352,6 +364,8 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 			fmt.Sprintf("Task `%s` reached its Crew's cost cap: %s.", t.Name, strings.TrimSuffix(t.Message, ".")),
 			"Raise the Crew's taskBudgetUSD, or delete the Task.",
 			"It starts no run until the cap is raised.", t.Since}
+	case t.Reason == ReasonWaitingForEnvironment:
+		return environmentAttention(t, now, waited)
 	case t.Stage == StageChecks:
 		return &Healing{AttentionTask, t.Name, ChecksBound(t.Message),
 			time.Time{}}, nil
@@ -373,6 +387,33 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 		fmt.Sprintf("Task `%s` has been %s for %s.", t.Name, t.Stage, waited),
 		"Look at its agent, or delete the Task so the Crew starts it again.",
 		sentence(t.Message, "it stayed in one stage twice as long as it should"))
+}
+
+// environmentAttention classifies a Task waiting for a test environment
+// (docs/plans/test-environments.md, T2, T10): one the project lacks, or
+// whose budget is spent, only a person mends; a lease taken or starting
+// frees inside the slot's window.
+func environmentAttention(t WatchedTask, now time.Time, waited string) (*Healing, *NeedsYou) {
+	switch {
+	case strings.HasPrefix(t.Message, EnvNotInProject):
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` has waited %s for a test environment the project lacks.", t.Name, waited),
+			"Add the TestEnvironment to the project (docs/getting-started.md, Give agents a browser), or take the env/ label off its issue.",
+			sentence(t.Message, "its issue asks for an environment the project has no TestEnvironment for"), t.Since}
+	case strings.HasPrefix(t.Message, EnvOverBudget):
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` waits: its test environment spent today's budget.", t.Name),
+			"Raise the TestEnvironment's limits.budgetUSDPerDay, or let it wait for tomorrow.",
+			"No lease starts past the day's budget.", t.Since}
+	}
+	if now.Before(t.Since.Add(SlotWindow)) {
+		return &Healing{AttentionTask, t.Name, "A lease of its test environment frees or starts.",
+			t.Since.Add(SlotWindow)}, nil
+	}
+	return nil, &NeedsYou{AttentionTask, t.Name,
+		fmt.Sprintf("Task `%s` has waited %s for a test environment.", t.Name, waited),
+		"Raise the TestEnvironment's limits.maxLeases, or see why its lease pods don't start.",
+		sentence(t.Message, "its environment's leases stayed taken or never started"), t.Since}
 }
 
 // crewAttention classifies a Crew that is not Ready: a missing object doesn't

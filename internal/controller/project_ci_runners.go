@@ -157,9 +157,13 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1be
 	if err := r.List(ctx, &providers, client.InNamespace(project.Namespace)); err != nil {
 		return ciRunners{}, err
 	}
+	envs, err := r.ciEnvironments(ctx, project.Namespace)
+	if err != nil {
+		return ciRunners{}, err
+	}
 	pools := map[poolKey]*ciPool{}
 	busy := map[string]bool{}
-	var failures []string
+	var failures, clashes []string
 	var retry error
 	failedReason := "ProviderUnavailable"
 	for _, p := range providers.Items {
@@ -187,13 +191,23 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1be
 		} else if err := r.ensureRunnerTokenSecret(ctx, project, p.Name, token); err != nil {
 			return ciRunners{}, err
 		}
-		for _, runner := range p.Spec.CI.GiteaActions.Runners {
+		runners := p.Spec.CI.GiteaActions.Runners
+		for _, runner := range runners {
 			in := runnerPodInput{
 				namespace: project.Namespace, provider: p.Name, gitURL: p.Spec.URL,
 				tokenSecret: ciRunnerTokenSecret(p.Name), runner: runner, goCacheRoot: r.CIGoCache,
 				pullSecrets: r.SharedPullSecrets,
 			}
 			pools[poolKey{p.Name, runner.Label}] = &ciPool{in: in, spec: runnerSpecHash(in), held: tokenErr != nil, blind: tokenErr != nil}
+		}
+		for _, env := range envs {
+			in, clash := envRunnerPool(&p, runners, &env, r.SharedPullSecrets)
+			if clash != "" {
+				clashes = append(clashes, clash)
+				continue
+			}
+			pools[poolKey{p.Name, in.runner.Label}] = &ciPool{in: in, spec: runnerSpecHash(in), held: tokenErr != nil,
+				blind: tokenErr != nil}
 		}
 	}
 
@@ -220,7 +234,10 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1be
 	switch {
 	case len(failures) > 0:
 		setCondition(&status.Conditions, project.Generation, ConditionCIRunners, metav1.ConditionFalse,
-			failedReason, strings.Join(failures, "; "))
+			failedReason, strings.Join(slices.Concat(failures, clashes), "; "))
+	case len(clashes) > 0:
+		setCondition(&status.Conditions, project.Generation, ConditionCIRunners, metav1.ConditionFalse,
+			model.ReasonLabelClash, strings.Join(clashes, "; "))
 	case len(pools) > 0:
 		setCondition(&status.Conditions, project.Generation, ConditionCIRunners, metav1.ConditionTrue,
 			"PoolKept", fmt.Sprintf("%d pools", len(pools)))
@@ -228,6 +245,46 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1be
 		meta.RemoveStatusCondition(&status.Conditions, ConditionCIRunners)
 	}
 	return ciRunners{recheck: next, providers: providers.Items, retry: retry}, nil
+}
+
+// ciEnvironments are the namespace's local TestEnvironments with a ci block,
+// a size of 0 included, so the pool trims its idle pods to none.
+func (r *ProjectReconciler) ciEnvironments(ctx context.Context, ns string) ([]c4v1beta1.TestEnvironment, error) {
+	var list c4v1beta1.TestEnvironmentList
+	if err := r.List(ctx, &list, client.InNamespace(ns)); err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(list.Items, func(e c4v1beta1.TestEnvironment) bool {
+		return e.Spec.Local == nil || e.Spec.CI == nil
+	}), nil
+}
+
+// envRunnerPool is the pool test environment env keeps in provider p's CI
+// pool, label env-<name> (docs/plans/test-environments.md, T8): its pods
+// register with the environment's ci.runnerImage, else the image of the
+// first of runners, p's ci block's, and run the jobs on the environment's
+// image and devices. A label runners names already is a clash, said in the
+// second value.
+func envRunnerPool(p *c4v1beta1.GitProvider, runners []c4v1beta1.CIRunnerSpec, env *c4v1beta1.TestEnvironment,
+	pullSecrets []string) (runnerPodInput, string) {
+	label := model.EnvRunnerLabel(env.Name)
+	if slices.ContainsFunc(runners, func(r c4v1beta1.CIRunnerSpec) bool { return r.Label == label }) {
+		return runnerPodInput{}, fmt.Sprintf("%s: label %s is test environment %s's, and its ci block names it too",
+			p.Name, label, env.Name)
+	}
+	image := env.Spec.CI.RunnerImage
+	if image == "" && len(runners) > 0 {
+		image = runners[0].Image
+	}
+	local := env.Spec.Local
+	return runnerPodInput{
+		namespace: env.Namespace, provider: p.Name, gitURL: p.Spec.URL, tokenSecret: ciRunnerTokenSecret(p.Name),
+		runner: c4v1beta1.CIRunnerSpec{Label: label, Image: image, Size: env.Spec.CI.Size,
+			Resources: withDevices(local.Resources, local.Devices)},
+		pullSecrets: pullSecrets,
+		env: &envRunnerInput{image: local.Image, runtimeClassName: local.RuntimeClassName,
+			nodeSelector: local.NodeSelector, tolerations: local.Tolerations},
+	}, ""
 }
 
 // holdBackingOff holds every pool still backing off from its pods' failures

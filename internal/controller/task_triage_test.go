@@ -199,6 +199,31 @@ var _ = Describe("Crew triage", func() {
 		}).Should(Succeed())
 	})
 
+	// docs/plans/test-environments.md, T13: the triager reads the project's
+	// test environments and names the ones an issue needs; the operator
+	// labels it env/<name>, and the issue's run leases it.
+	It("labels a ready issue env/<name> for the test environment the triager names, and its run leases it", func() {
+		mustCreate(newBrowserEnvironment(ns))
+		n, name := triageOne(clearIssue)
+		pod := sandboxPodSpec(Default, sandboxExists(Default, ns, name+"-r1-triage"))
+		Expect(envVar(pod, agentrunner.EnvEnvironments)).To(HaveField("Value", ContainSubstring(`"name":"browser"`)))
+		Expect(envVar(pod, "THEOS_ENV_BROWSER_URL")).To(BeNil(), "the triager leases nothing")
+		finishSandbox(ns, name+"-r1-triage", name, triageResult(model.Triage{Decision: model.TriageReady,
+			Reason: "Its pictures need a browser.", Environments: []string{"browser", "android"}}), "")
+		Eventually(func(g Gomega) {
+			task := triaged(g, name, model.TriageReady)
+			g.Expect(task.Status.Triage.Environments).To(Equal([]string{"android", "browser"}))
+			g.Expect(task.Status.Triage.Applied).To(Equal("Labelled status/ready and env/browser"))
+			g.Expect(gitFake.Issue(ns, "orders-api", n).Labels).To(ContainElement("env/browser"))
+		}).Should(Succeed())
+
+		By("leasing the browser for the issue's run")
+		Eventually(func(g Gomega) {
+			pod := sandboxPodSpec(g, sandboxExists(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", n)))
+			g.Expect(envVar(pod, "THEOS_ENV_BROWSER_URL")).NotTo(BeNil())
+		}, "20s").Should(Succeed())
+	})
+
 	It("keeps a ready issue's own criteria", func() {
 		n, name := triageOne(clearIssue)
 		finishSandbox(ns, name+"-r1-triage", name, triageResult(model.Triage{Decision: model.TriageReady,

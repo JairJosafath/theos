@@ -48,20 +48,33 @@ const byHandWhy = "Needs a person: "
 // ByHandIssue renders the issue for a person filed when Task task merged pull
 // request pr for issue number issue, titled issueTitle, with the criteria the
 // review, by reviewer by, accepted as open: each with its why, as an
-// "Acceptance criteria" checklist.
-func ByHandIssue(issueTitle string, issue int, pr, task, by string, open []OpenCriterion) (title, body string) {
+// "Acceptance criteria" checklist. envs are the test environments the
+// Task's runs leased: the issue names them, and a criterion left open with
+// no why gets one that says so, so a person sees what they had
+// (docs/plans/test-environments.md, T13).
+func ByHandIssue(issueTitle string, issue int, pr, task, by string, open []OpenCriterion,
+	envs []string) (title, body string) {
 	if issueTitle = strings.Join(strings.Fields(issueTitle), " "); issueTitle == "" {
 		issueTitle = fmt.Sprintf("#%d", issue)
 	}
 	title = clipTitle("By hand: " + issueTitle)
 	var b strings.Builder
+	has := "no agent's sandbox has"
+	if len(envs) > 0 {
+		has = "neither an agent's sandbox nor the test environments its runs had (" + envLabels(envs) + ") have"
+	}
 	fmt.Fprintf(&b, "Task `%s` merged %s for #%d. %s approved it with the criteria below left open: they need "+
-		"what no agent's sandbox has (a person's desktop or device, an account, a purchase), so a person does them.\n",
-		task, pr, issue, by)
+		"what %s (a person's desktop or device, an account, a purchase), so a person does them.\n",
+		task, pr, issue, by, has)
 	b.WriteString("\n## Acceptance criteria\n")
 	for _, o := range open {
 		fmt.Fprintf(&b, "\n- [ ] %s", strings.Join(strings.Fields(o.Criterion), " "))
-		if why := strings.Join(strings.Fields(o.Why), " "); why != "" {
+		why := strings.Join(strings.Fields(o.Why), " ")
+		if why == "" && len(envs) > 0 {
+			why = fmt.Sprintf("the review gave no reason, though the runs had %s: see whether it can be met there "+
+				"before doing it by hand.", joinAnd(envs))
+		}
+		if why != "" {
 			fmt.Fprintf(&b, "\n  %s%s", byHandWhy, why)
 		}
 	}

@@ -13,4 +13,5 @@ resources:
 - factory.yaml
 - bundle.yaml
 - deploytarget-argocd.yaml
+- testenvironment.yaml
 - story.yaml

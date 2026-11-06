@@ -5,7 +5,9 @@
 # (internal/gitprovider), the POD_NAMESPACE the shared Secrets are read from,
 # the --shared-secret, --shared-pull-secret and --model-proxy-url flags, the --ui-service-account
 # the UI reads project namespaces' pods as (#1080), the webhook's flags and
-# port (#1614), the Git events receiver's flags and port (#1223), and the THEOS_CHART_VERSION
+# port (#1614), the Git events receiver's flags and port (#1223), the
+# --test-environment-tools-image local test environments copy theos-env from
+# (docs/plans/test-environments.md), and the THEOS_CHART_VERSION
 # the Project status reports, the chart's version. kubebuilder's helm
 # plugin regenerates that template without them; make chart keeps the file,
 # and this check catches a hand edit that loses them (#543).
@@ -44,6 +46,7 @@ need "the webhook-server container port" -Pzo '\n *- containerPort: [0-9]+\n *na
 need "the --git-events-bind-address flag" -E '^ *- --git-events-bind-address=:[0-9]+$'
 need "the --git-events-url flag" -E '^ *- --git-events-url=http://[^ ]+-git-events\.[^ ]+\.svc:[0-9]+$'
 need "the git-events container port" -Pzo '\n *- containerPort: [0-9]+\n *name: git-events\n'
+need "the --test-environment-tools-image flag" -E '^ *- --test-environment-tools-image=[^ ]+/agent-base:[^ ]+$'
 need "the POD_NAMESPACE env from metadata.namespace" -Pzo \
 	'\n *- name: POD_NAMESPACE\n *valueFrom:\n *fieldRef:\n *fieldPath: metadata\.namespace\n'
 need "THEOS_CHART_VERSION set to the chart's version, $version" -Pzo \
@@ -54,4 +57,4 @@ if [ "$fail" -ne 0 ]; then
 	echo "kubebuilder's helm plugin drops these; restore them in dist/chart/$SOURCE." >&2
 	exit 1
 fi
-echo "The chart's manager Deployment keeps /tmp, POD_NAMESPACE, THEOS_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount, the webhook and the Git events receiver"
+echo "The chart's manager Deployment keeps /tmp, POD_NAMESPACE, THEOS_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount, the webhook, the Git events receiver and the test environments' tools image"

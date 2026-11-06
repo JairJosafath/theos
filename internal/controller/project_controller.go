@@ -141,6 +141,9 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.ensureAgentNetwork(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
+	if err := r.ensureTestEnvironmentNetwork(ctx, &project); err != nil {
+		return ctrl.Result{}, err
+	}
 	ci, err := r.ensureCIRunners(ctx, &project, status)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -303,6 +306,8 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1beta1.Bundle{}, toProject, createOrDelete()).
 		Watches(&c4v1beta1.Standard{}, toProject, createOrDelete()).
 		Watches(&c4v1beta1.Agent{}, toProject, createOrDelete()).
+		// A local TestEnvironment's ci block keeps a CI runner pool.
+		Watches(&c4v1beta1.TestEnvironment{}, toProject, specChanged()).
 		Watches(&c4v1beta1.Container{}, toProject, containerPhaseChanges()).
 		Watches(&c4v1beta1.Session{}, toProject, sessionPhaseChanges()).
 		WatchesMetadata(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(

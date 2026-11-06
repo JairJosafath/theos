@@ -42,7 +42,7 @@ jobs:
     env:
       PUBLISH: ${{ github.event_name == 'push' }}
       # What the build tags, pushed and then removed in that order.
-      IMAGES: operator ui seed base go agent-base agent-go gitea-runner-base gitea-runner-go gitea-runner-image
+      IMAGES: operator ui seed base go agent-base agent-go gitea-runner-base gitea-runner-go gitea-runner-image env-browser
     steps:
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -86,6 +86,7 @@ jobs:
             docker build -t "$REGISTRY/gitea-runner-$tc:$VERSION" --build-arg BASE="$REGISTRY/$tc:$VERSION" -f hack/runner/Dockerfile .
           done
           docker build -t "$REGISTRY/gitea-runner-image:$VERSION" -f hack/runner/Dockerfile.image .
+          docker build -t "$REGISTRY/env-browser:$VERSION" hack/env-browser
           docker images "$REGISTRY/*"
 
       - name: Set up Go

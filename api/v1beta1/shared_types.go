@@ -189,6 +189,11 @@ const (
 	// image when its newest release's image is pushed to the owner's
 	// registry; False with status.image's state as the reason.
 	ConditionImagePublished = "ImagePublished"
+	// ConditionTestEnvironments is True when the project has every
+	// TestEnvironment a Container's Standard and Framework ask for; False
+	// with reason NotInProject naming the ones it lacks, whose runs go on
+	// without them. Absent when neither asks for one.
+	ConditionTestEnvironments = "TestEnvironments"
 )
 
 // Condition reasons.

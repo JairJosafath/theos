@@ -7,6 +7,7 @@ dependencies may point.
 cmd/main.go                        Manager entry (registers controllers, Session feature flags)
 cmd/theos-session/                     Session client CLI, run in devcontainers
 cmd/theos-agent/                       Task runner, run in agent sandboxes
+cmd/theos-env/                     theos-env: runs an agent's commands in a leased test environment (run), and serves them there (serve); in the agent image
 cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
 cmd/theos-chat/                    theos-chat: posts in each Chat's Matrix rooms and runs its people's commands as them, a third binary in the operator image
 api/v1beta1/*_types.go             CRD schemas for every kind (+kubebuilder markers), the one version served and stored; the operator imports it
@@ -17,6 +18,7 @@ internal/model/                    Pure business rules: choices, bundles, relati
 internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
 internal/adapters/gitea/           The Gitea adapter: the Git host ports over REST (+ go-git through adapters/git)
 internal/adapters/matrix/          The Matrix adapter: the ChatHost port over the client-server API; matrixtest/ is its fake homeserver
+internal/adapters/localenv/        The local TestEnvironment provider: a fenced pod per lease, with client-go
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
 internal/chatbot/                  theos-chat's logic: news to threads, posts and the updates digest; commands sent impersonating the person; its state ConfigMap
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
@@ -45,6 +47,7 @@ hack/session/                      The Session client image and the test Session
 hack/toolchain-base/               The minimal toolchain (Node, uv, bash, git, make) for the e2e hello-world Container and Python
 hack/toolchain-go/                 The Go, Node and uv toolchain, with a warm Go build cache and the kubebuilder operator tools, for Go, TypeScript and Python Containers
 hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
+hack/env-browser/                  The browser test environment's image: Playwright's, with a virtual display
 hack/gh-runner/                    Self-hosted GitHub Actions runners for this repository (make gh-runner RUNNERS=N)
 hack/render/                       Renders templates locally, the way the operator scaffolds
 test/chart/                        The chart against envtest: its upgrade-only hooks (make test)

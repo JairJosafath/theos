@@ -1014,6 +1014,38 @@ agents:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {cpu: "1", memory: 2Gi}
 
+## Test environments (docs/plans/test-environments.md): the tools a run leases
+## when the agent sandbox lacks them, such as a browser. A local
+## TestEnvironment's lease pods copy theos-env in from toolsImage, the
+## release's agent image, which holds it (the operator's
+## --test-environment-tools-image).
+##
+testEnvironments:
+  toolsImage:
+    repository: ghcr.io/jairjosafath/theos/agent-base
+    ## Defaults to Chart.appVersion
+    tag: ""
+  ## The browser the seed makes in each of gitea.projects: a TestEnvironment
+  ## named browser on the release's env-browser image (Playwright's browsers
+  ## and xvfb-run), which a run of an issue labelled env/browser leases. A
+  ## local lease costs nothing until a run asks for one; ci.size 0 keeps no
+  ## CI pod until a project's workflow wants runs-on: env-browser.
+  browser:
+    enabled: true
+    image:
+      repository: ghcr.io/jairjosafath/theos/env-browser
+      ## Defaults to Chart.appVersion
+      tag: ""
+    description: "Chromium, Firefox and WebKit with Playwright; run headed programs (VS Code, Electron) under xvfb-run -a."
+    resources:
+      requests: {cpu: 500m, memory: 1Gi}
+      limits: {cpu: "2", memory: 4Gi}
+    limits:
+      maxLeases: 2
+      maxLeaseMinutes: 180
+    ci:
+      size: 0
+
 ## Chat (docs/design.md, Chat): people follow and steer each project from
 ## Matrix rooms. With enabled, Deployment <release>-chat, the operator image
 ## running /theos-chat with its own ServiceAccount: it reads theos's objects,

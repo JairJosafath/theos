@@ -1,0 +1,9 @@
+# expect: image must be pinned: a tag other than latest, or a digest
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: browser
+  namespace: webshop
+spec:
+  local:
+    image: mcr.microsoft.com/playwright:latest

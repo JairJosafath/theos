@@ -33,6 +33,25 @@ func TestBriefWorkspaceFilesPaths(t *testing.T) {
 	}
 }
 
+// model/test-environments.yaml lists the project's test environments, by
+// name, each with the label an issue asks for it with and the one a
+// workflow runs on it with (docs/plans/test-environments.md, T13).
+func TestBriefWorkspaceEnvironments(t *testing.T) {
+	files := workspaceFiles(t, BriefWorkspace{Brief: "ext", Environments: []WorkspaceEnvironment{
+		{Name: "godot", Description: "Godot 4 on a GPU"},
+		{Name: "browser", Description: "Chromium with Playwright;\nrun headed programs under xvfb-run -a."},
+	}})
+	want := "- name: browser\n  description: Chromium with Playwright; run headed programs under xvfb-run -a.\n" +
+		"  label: env/browser\n  runsOn: env-browser\n- name: godot\n  description: Godot 4 on a GPU\n" +
+		"  label: env/godot\n  runsOn: env-godot\n"
+	if got := files[WorkspaceEnvironmentsFile]; got != want {
+		t.Errorf("%s =\n%s\nwant\n%s", WorkspaceEnvironmentsFile, got, want)
+	}
+	if got := workspaceFiles(t, BriefWorkspace{Brief: "ext"})[WorkspaceEnvironmentsFile]; got != "[]\n" {
+		t.Errorf("%s without environments = %q, want an empty list", WorkspaceEnvironmentsFile, got)
+	}
+}
+
 func TestBriefWorkspaceBrief(t *testing.T) {
 	for _, tc := range []struct {
 		name string

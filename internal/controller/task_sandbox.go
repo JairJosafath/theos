@@ -113,6 +113,9 @@ type sandboxRun struct {
 	// (onSharedToken): the pod gets no credentials Secret, and reaches Claude
 	// through the model proxy at this URL.
 	modelProxyURL string
+	// environments are the Ready leases of the test environments the run
+	// needs (docs/plans/test-environments.md, T4).
+	environments []runEnvironment
 }
 
 // What a sandbox on the shared token gets instead of the token: Claude Code
@@ -228,6 +231,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			env = append(env, readTokenEnv(agentrunner.EnvPyPIToken, run.pypiSecret))
 		}
 	}
+	env = append(env, environmentEnv(run.environments)...)
 	env = append(env, agent.Spec.Env...)
 	var envFrom []corev1.EnvFromSource
 	switch ref := agent.Spec.CredentialsSecretRef; {

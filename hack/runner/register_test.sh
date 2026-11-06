@@ -44,6 +44,22 @@ check "  passes --ephemeral" "$(calls)" \
 	"register --no-interactive --config $T/config.yaml --instance http://gitea:3000 --token reg-token --name runner-1 --labels go:host --ephemeral"
 rm "$T/calls"
 
+# A test environment's pool pod (docs/plans/test-environments.md, T8): the
+# register init container copies the runner, its config, the entrypoint and
+# the sweep for the job container, which runs them from there on the
+# environment's image.
+printf '#!/usr/bin/env bash\necho entrypoint\n' >"$T/bin/entrypoint"
+printf '#!/usr/bin/env bash\necho "sweep $*" >>"$CALLS"\n' >"$T/bin/c4-tmp-sweep"
+chmod +x "$T/bin/entrypoint" "$T/bin/c4-tmp-sweep"
+echo 'runner: {file: /data/.runner}' >"$T/config.yaml"
+register RUNNER_TOKEN=reg-token RUNNER_EPHEMERAL=1 RUNNER_COPY_TO="$T/copy"; check "register for a test environment's pool" $? 0
+check "  copies the runner, entrypoint, sweep and config" "$(cd "$T/copy" && ls | tr '\n' ' ')" \
+	"c4-tmp-sweep config.yaml entrypoint gitea-runner "
+check "  copies the config" "$(cat "$T/copy/config.yaml")" 'runner: {file: /data/.runner}'
+check "  and registers" "$(calls)" \
+	"register --no-interactive --config $T/config.yaml --instance http://gitea:3000 --token reg-token --name runner-1 --labels go:host --ephemeral"
+rm "$T/calls"
+
 # The runner writes the file its config names; both scripts look for it there.
 file=$(sed -n 's/^  file: //p' "$DIR/config.yaml")
 for s in register.sh entrypoint.sh; do
@@ -59,4 +75,17 @@ rm "$T/data/.runner"
 run; check "the runner container unregistered fails" $? 1
 grep -q 'register in an init container first' "$T/out"; check "  and says how to fix it" $? 0
 check "  and runs nothing" "$(calls)" ""
+
+# On a test environment's image the runner comes from RUNNER_BIN_DIR, not
+# PATH, where the environment has none. entrypoint.sh's mkdir of /data/work
+# needs /data: the test runs it under a PATH-less copy whose /data is $T.
+echo '{"token":"runner-own"}' >"$T/data/.runner"
+mkdir -p "$T/only"
+cp "$T/bin/gitea-runner" "$T/only/gitea-runner"
+sed "s|/data/work|$T/data/work|" "$DIR/entrypoint.sh" >"$T/entrypoint.sh"
+env -u RUNNER_TOKEN PATH="/usr/bin:/bin" RUNNER_BIN_DIR="$T/only" bash "$T/entrypoint.sh" >"$T/out" 2>&1
+check "the runner container of a test environment's pool runs" $? 0
+# The /tmp sweep's loop outlives the fake runner: stop it.
+pkill -f "$T/entrypoint.sh" || true
+check "  the runner from RUNNER_BIN_DIR" "$(calls)" "daemon --config $T/config.yaml"
 exit $fail

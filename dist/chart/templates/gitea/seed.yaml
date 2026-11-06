@@ -183,7 +183,7 @@ rules:
     resources: [projects]
     verbs: [get, create]
   - apiGroups: [theos.factory.io]
-    resources: [gitproviders, agents, frameworks, standards, computes, deployments, connectors, bundles, domains]
+    resources: [gitproviders, agents, frameworks, standards, computes, deployments, connectors, bundles, domains, testenvironments]
     verbs: [get, list, create, patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

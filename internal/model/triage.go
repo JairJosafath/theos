@@ -41,6 +41,10 @@ type Triage struct {
 	Criteria  []string `json:"criteria,omitempty"`
 	Question  string   `json:"question,omitempty"`
 	Duplicate int      `json:"duplicate,omitempty"`
+	// Environments are the test environments a ready issue needs, by name:
+	// the operator labels it env/<name> for each the project has
+	// (docs/plans/test-environments.md, T13).
+	Environments []string `json:"environments,omitempty"`
 }
 
 // checkbox is a checklist item's or a list item's marker, which a criterion
@@ -53,7 +57,7 @@ var checkbox = regexp.MustCompile(`^(?:[-*]\s+)?(?:\[[ xX]\]\s*)?`)
 func NormalTriage(d Triage) Triage {
 	out := Triage{Decision: strings.ToLower(strings.TrimSpace(d.Decision)),
 		Reason: clip(strings.TrimSpace(d.Reason), maxTriageText), Question: clip(strings.TrimSpace(d.Question), maxTriageText),
-		Duplicate: d.Duplicate}
+		Duplicate: d.Duplicate, Environments: normalEnvironments(d.Environments)}
 	for _, c := range d.Criteria {
 		c = strings.Join(strings.Fields(c), " ")
 		c = strings.TrimSpace(checkbox.ReplaceAllString(c, ""))
@@ -91,6 +95,8 @@ type TriageIssue struct {
 	Body   string
 	Labels []string
 	Closed bool
+	// Environments are the project's test environments, by name.
+	Environments []string
 }
 
 // TriageActions are what the operator does to an issue for a triage decision.
@@ -107,6 +113,9 @@ type TriageActions struct {
 	// Label is the status label the issue gets in place of status/proposed;
 	// empty for none.
 	Label string
+	// EnvLabels are the env/<name> labels a ready issue gets, one per test
+	// environment the decision names that the project has.
+	EnvLabels []string
 	// Comment says on the issue what was decided and why.
 	Comment string
 	// Close closes the issue after the comment.
@@ -141,6 +150,18 @@ func PlanTriage(task string, issue TriageIssue, d Triage) TriageActions {
 	case TriageReady:
 		out := TriageActions{Label: LabelReady, Applied: "Labelled " + LabelReady,
 			Comment: fmt.Sprintf("%s: ready to build. %s", by, d.Reason)}
+		var names []string
+		for _, name := range d.Environments {
+			if slices.Contains(issue.Environments, name) {
+				names = append(names, name)
+				out.EnvLabels = append(out.EnvLabels, LabelEnvPrefix+name)
+			}
+		}
+		if len(names) > 0 {
+			out.Comment += fmt.Sprintf("\n\nIts runs lease the test environment %s, which the project has.",
+				joinAnd(names))
+			out.Applied += " and " + joinAnd(out.EnvLabels)
+		}
 		if missingCriteria(issue.Body) != "" {
 			if len(d.Criteria) == 0 {
 				return TriageActions{Problem: "the triager called the issue ready, but gave no acceptance criteria " +
