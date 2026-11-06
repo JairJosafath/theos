@@ -1,0 +1,17 @@
+# expect: should match '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: orders-cli
+  namespace: webshop
+spec:
+  containerRef:
+    name: orders-cli
+  implementer:
+    name: claude-implementer
+  reviewer:
+    name: claude-reviewer
+  tagReleases: true
+  releaseCadence:
+    every: Day
+    at: "6pm"

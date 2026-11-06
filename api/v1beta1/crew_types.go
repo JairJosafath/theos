@@ -129,6 +129,16 @@ type CrewSpec struct {
 	// +optional
 	PrepareReleases bool `json:"prepareReleases,omitempty"`
 
+	// releaseCadence is how often the Crew's releases go out, with
+	// tagReleases (docs/design.md, "Cadence"). Unset, or every: Release, tags
+	// each release as soon as it is done. Day or Week holds the release in
+	// progress until its cut: the Crew then marks it cut, moves its open
+	// issues to the next release, gives a release of fixes alone the next
+	// patch title, and tags it as with every Release; meanwhile it keeps
+	// starting Tasks. A Brief writes its own value onto the Crews it made.
+	// +optional
+	ReleaseCadence *ReleaseCadence `json:"releaseCadence,omitempty"`
+
 	// publishReleases copies each release the Crew tags to another repository
 	// once its release runs succeed: the same tag, notes and files. It only adds
 	// releases there, never a commit. It needs tagReleases. Removing it stops
@@ -287,6 +297,23 @@ type CrewFullCheck struct {
 	// is closed if the check passes; a failure holds it again.
 	// +optional
 	Rerun bool `json:"rerun,omitempty"`
+}
+
+// CrewNextCut is a Crew's next cut under its release cadence.
+type CrewNextCut struct {
+	// time is when the cut is.
+	// +required
+	Time metav1.Time `json:"time"`
+
+	// release is the release it cuts, the first open one that isn't cut;
+	// empty while none holds work.
+	// +optional
+	Release string `json:"release,omitempty"`
+
+	// merged is how many of the release's issues a Task merged so far.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Merged int32 `json:"merged,omitempty"`
 }
 
 // CrewRelease is a release a Crew tagged.
@@ -539,6 +566,24 @@ type CrewStatus struct {
 	// until the release is tagged.
 	// +optional
 	FullCheck *CrewFullCheck `json:"fullCheck,omitempty"`
+
+	// nextCut is the next cut of spec.releaseCadence, while it is Day or
+	// Week and the Crew tags releases: when, and the release it cuts with
+	// how many merged issues it holds so far.
+	// +optional
+	NextCut *CrewNextCut `json:"nextCut,omitempty"`
+
+	// lastCut is when the Crew last cut a release, or went on its cadence;
+	// the next cut is the first after it.
+	// +optional
+	LastCut *metav1.Time `json:"lastCut,omitempty"`
+
+	// cutRelease is the release the Crew cut that waits for its tag, when it
+	// prepares releases: until it is tagged, a Task of an issue outside it
+	// waits at its merge (WaitingForRelease), so the changelog holds all the
+	// tag carries.
+	// +optional
+	CutRelease string `json:"cutRelease,omitempty"`
 
 	// publishTarget is the GitHub repository the Crew published its releases
 	// to, by GitHub's id: set at the first publish that succeeds, or when

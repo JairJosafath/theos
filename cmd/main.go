@@ -18,6 +18,10 @@ import (
 	"strings"
 	"time"
 
+	// The time zones of release cadences load whatever the image holds
+	// (docs/plans/release-cadence.md, C1).
+	_ "time/tzdata"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"

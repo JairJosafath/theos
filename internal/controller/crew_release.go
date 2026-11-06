@@ -70,23 +70,21 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 	log := logf.FromContext(ctx)
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	facts, titles, err := releaseFacts(gitCtx, provider, repo, tasks)
+	facts, titles, milestones, err := releaseFacts(gitCtx, provider, repo, tasks)
 	facts.Prepare = crew.Spec.PrepareReleases
 	if check := status.FullCheck; check != nil && check.Rerun {
 		facts.FullCheckRerun = &model.FullCheckAt{Tag: check.Tag, Commit: check.Commit}
 	}
+	cutFacts(&facts, crewCadence(crew), status, milestones, r.now())
 	var step model.ReleaseStep
 	var filed ports.Issue
+	var carriedInto string
 	if err == nil {
 		step = model.NextRelease(facts)
-		switch {
-		case step.File:
-			filed, err = filePrepareIssue(gitCtx, provider, repo, step, titles)
-		case crew.Spec.TagReleases:
-			step, err = r.takeReleaseStep(gitCtx, crew, container, status, provider, repo, step,
-				milestoneOf(facts, step.Milestone))
-		}
+		step, filed, carriedInto, err = r.takeStep(gitCtx, crew, container, status, provider, repo, step, facts,
+			titles, milestones)
 	}
+	cadenceStatus(status, facts, step, err == nil)
 	if step.File && err == nil {
 		message := fmt.Sprintf("Filed #%d to prepare %s", filed.Number, step.Tag)
 		log.Info("Filed release preparation", "tag", step.Tag, "issue", filed.Number)
@@ -112,6 +110,13 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 		log.Error(err, "Failed to tag a release", "container", crew.Spec.ContainerRef.Name, "tag", step.Tag)
 		r.setReleased(crew, status, metav1.ConditionFalse, reasonReleaseGitFailure,
 			"Could not tag the next release: "+err.Error())
+	case step.Cut != nil:
+		message := model.CutMessage(step, carriedInto)
+		log.Info("Cut the release", "tag", step.Tag, "retitle", step.Cut.Retitle, "carried", len(step.Cut.Carry),
+			"into", carriedInto, "untagged", step.Cut.Untagged)
+		r.event(crew, corev1.EventTypeNormal, reasonReleaseCut, "CutRelease", message)
+		r.releaseSaid.Store(crew.UID, reasonReleaseCut+"\n"+message)
+		r.setReleased(crew, status, metav1.ConditionTrue, reasonReleaseCut, message)
 	case step.Commit != "":
 		message := model.ReleasedMessage(step)
 		for _, m := range step.Moved {
@@ -133,7 +138,8 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 		last, _ := r.releaseSaid.Load(crew.UID)
 		// A full check that runs is no warning: its start had a Normal Event.
 		if (prev == nil || prev.Reason != step.Reason || prev.Message != step.Held) && last != said &&
-			step.Reason != model.FullCheckRunning && step.Reason != model.ReleasePrepareWaits {
+			step.Reason != model.FullCheckRunning && step.Reason != model.ReleasePrepareWaits &&
+			step.Reason != model.ReleaseWaitingForCut {
 			log.Info("Left a release to a person", "tag", step.Tag, "reason", step.Reason)
 			r.event(crew, corev1.EventTypeWarning, step.Reason, "TagRelease", step.Held)
 		}
@@ -153,6 +159,32 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 		}
 	}
 	return nil, preparing
+}
+
+// takeStep does what step says: it files the prepare issue, cuts the release
+// (cutRelease), or, with tagReleases, tags it (takeReleaseStep). It returns
+// the step as it went, the prepare issue filed and the release a cut
+// carried open issues into.
+func (r *CrewReconciler) takeStep(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
+	status *c4v1beta1.CrewStatus, provider interface {
+		ports.GitHost
+		ports.Issues
+		ports.CI
+	}, repo ports.Repository, step model.ReleaseStep, facts model.ReleaseFacts, titles map[int]string,
+	milestones []ports.Milestone) (model.ReleaseStep, ports.Issue, string, error) {
+	switch {
+	case step.File:
+		filed, err := filePrepareIssue(ctx, provider, repo, step, titles)
+		return step, filed, "", err
+	case step.Cut != nil:
+		into, err := cutRelease(ctx, crew, provider, repo, step, milestones)
+		return step, ports.Issue{}, into, err
+	case crew.Spec.TagReleases:
+		step, err := r.takeReleaseStep(ctx, crew, container, status, provider, repo, step,
+			milestoneOf(facts, step.Milestone))
+		return step, ports.Issue{}, "", err
+	}
+	return step, ports.Issue{}, "", nil
 }
 
 // takeReleaseStep tags release step's commit when step says so, after its full
@@ -284,20 +316,24 @@ const maxPreviousTags = 5
 
 // releaseFacts reads the open releases, their issues and tags, the newest
 // tagged closed release before them, and the Tasks' merges, and the titles of
-// the releases' issues.
+// the releases' issues, and returns the repository's milestones, open and
+// closed. Under a cadence, a release marked cut is Cut, and an issue
+// labelled release/now or a fix is among ReleaseNow or Fixes
+// (docs/plans/release-cadence.md).
 func releaseFacts(ctx context.Context, provider interface {
 	ports.GitHost
 	ports.Issues
 }, repo ports.Repository,
-	tasks []c4v1beta1.Task) (model.ReleaseFacts, map[int]string, error) {
+	tasks []c4v1beta1.Task) (model.ReleaseFacts, map[int]string, []ports.Milestone, error) {
 	var facts model.ReleaseFacts
 	titles := map[int]string{}
 	milestones, err := provider.ListAllMilestones(ctx, repo)
 	if err != nil {
-		return facts, nil, fmt.Errorf("milestones: %w", err)
+		return facts, nil, nil, fmt.Errorf("milestones: %w", err)
 	}
 	var closed []model.Release
 	for _, m := range milestones {
+		facts.Titles = append(facts.Titles, m.Title)
 		if !model.IsReleaseTitle(m.Title) || m.Due.IsZero() {
 			continue
 		}
@@ -307,10 +343,17 @@ func releaseFacts(ctx context.Context, provider interface {
 		}
 		issues, err := provider.MilestoneIssues(ctx, repo, m.ID)
 		if err != nil {
-			return facts, nil, fmt.Errorf("issues of milestone %s: %w", m.Title, err)
+			return facts, nil, nil, fmt.Errorf("issues of milestone %s: %w", m.Title, err)
 		}
-		release := model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID}
+		_, cut := model.CutMarkTime(m.Description)
+		release := model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID, Cut: cut}
 		for _, i := range issues {
+			if model.IsReleaseNow(i.Labels) {
+				facts.ReleaseNow = append(facts.ReleaseNow, i.Number)
+			}
+			if model.IsFix(i.Labels) {
+				facts.Fixes = append(facts.Fixes, i.Number)
+			}
 			if i.State == stateClosed {
 				release.Closed = append(release.Closed, i.Number)
 			} else {
@@ -327,7 +370,7 @@ func releaseFacts(ctx context.Context, provider interface {
 		facts.Milestones = append(facts.Milestones, release)
 		commit, err := provider.GetTag(ctx, repo, m.Title)
 		if err != nil {
-			return facts, nil, fmt.Errorf("tag %s: %w", m.Title, err)
+			return facts, nil, nil, fmt.Errorf("tag %s: %w", m.Title, err)
 		}
 		if commit != "" {
 			if facts.Tags == nil {
@@ -339,7 +382,7 @@ func releaseFacts(ctx context.Context, provider interface {
 	for _, r := range model.PreviousReleases(closed, facts.Milestones, maxPreviousTags) {
 		commit, err := provider.GetTag(ctx, repo, r.Title)
 		if err != nil {
-			return facts, nil, fmt.Errorf("tag %s: %w", r.Title, err)
+			return facts, nil, nil, fmt.Errorf("tag %s: %w", r.Title, err)
 		}
 		if commit != "" {
 			facts.Previous = &model.ReleasedTag{Release: r, Commit: commit}
@@ -367,7 +410,7 @@ func releaseFacts(ctx context.Context, provider interface {
 			facts.Merged = append(facts.Merged, merged)
 		}
 	}
-	return facts, titles, nil
+	return facts, titles, milestones, nil
 }
 
 func (r *CrewReconciler) setReleased(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,

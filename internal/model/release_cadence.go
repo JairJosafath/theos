@@ -497,3 +497,73 @@ func CadenceSlot(milestones []ReleaseMilestone, c ReleaseCadence, now time.Time)
 	}
 	return Slot{Title: ReleaseMilestoneTitle(titles, false), Due: CadenceDue(open, next)}, nil
 }
+
+// CutReleaseOf is the release a Crew that prepares releases cut and hasn't
+// tagged: the first open one with issues, once it is marked cut; "" for
+// none, and with no prepare issue to wait for. Until it is tagged, a Task of
+// an issue outside it waits at its merge (C10).
+func CutReleaseOf(f ReleaseFacts) string {
+	if !f.Cadence.Cuts() || !f.Prepare {
+		return ""
+	}
+	releases, _ := sortedReleases(f.Milestones)
+	if len(releases) == 0 || !releases[0].Cut {
+		return ""
+	}
+	return releases[0].Title
+}
+
+// ReasonWaitingForRelease is a Task's, ready to merge while its Crew's cut
+// release waits for its tag (C10). Such a Task runs no agent, so it takes
+// no place from the Crew's parallel.
+const ReasonWaitingForRelease = "WaitingForRelease"
+
+// MergeWaitsForRelease reports whether a Task whose issue is in release
+// issueRelease ("" for none) waits at its merge while its Crew's release
+// cutRelease waits for its tag: unless it is of that release, a prepare
+// issue or a fix of its full check, its merge would land under the tag and
+// miss the changelog.
+func MergeWaitsForRelease(cutRelease, issueRelease string) bool {
+	return cutRelease != "" && issueRelease != cutRelease
+}
+
+// WaitingForReleaseMessage says why a Task ready to merge waits.
+func WaitingForReleaseMessage(cutRelease string) string {
+	return fmt.Sprintf("Approved; merging once %s, cut and being prepared, is tagged, so its changelog holds all "+
+		"the tag carries", cutRelease)
+}
+
+// CutMessage says what the cut of step.Tag did, its open issues carried
+// into release into.
+func CutMessage(step ReleaseStep, into string) string {
+	cut := step.Cut
+	var b strings.Builder
+	switch {
+	case cut.Untagged:
+		fmt.Fprintf(&b, "%s had no merged work: carried %s into %s and closed it untagged", step.Tag,
+			issueList(cut.Carry), into)
+		return b.String()
+	case cut.Marked:
+		fmt.Fprintf(&b, "Went on with the cut of %s", step.Tag)
+	case cut.ReleaseNow:
+		fmt.Fprintf(&b, "Cut %s at once for its merged %s work", step.Tag, LabelReleaseNow)
+	default:
+		fmt.Fprintf(&b, "Cut %s", step.Tag)
+	}
+	if cut.Retitle != "" {
+		fmt.Fprintf(&b, ", retitled %s as its merged work is all fixes", cut.Retitle)
+	}
+	if len(cut.Carry) > 0 {
+		fmt.Fprintf(&b, "; carried %s into %s", issueList(cut.Carry), into)
+	}
+	return b.String()
+}
+
+// issueList is "#3, #5".
+func issueList(numbers []int) string {
+	out := make([]string, 0, len(numbers))
+	for _, n := range numbers {
+		out = append(out, fmt.Sprintf("#%d", n))
+	}
+	return strings.Join(out, ", ")
+}

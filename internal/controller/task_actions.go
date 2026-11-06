@@ -18,8 +18,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -603,6 +605,9 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	if wait, err := r.waitForRelease(ctx, task, status, provider, repo); err != nil || wait {
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, err
+	}
 	reviewRun := r.reviewRun(ctx, task, status)
 	if len(task.Spec.AllowedProtectedPaths) > 0 && status.MergeWhenChecksPass && reviewRun == nil {
 		// The model reviews such a change again (ApprovalEnded); never merge it
@@ -674,6 +679,52 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 	r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, "Merged", step.Message)
 	logf.FromContext(ctx).Info("Merged Task", "url", status.PullRequestURL, "round", status.Round)
 	return ctrl.Result{}, nil
+}
+
+// waitForRelease holds a Crew's Task at its merge while the Crew's cut
+// release waits for its tag, unless the Task's issue is in that release
+// (docs/plans/release-cadence.md, C10): merged now, its work would land under
+// the tag and miss the changelog the prepare issue writes. It costs no round,
+// and the Task merges on a later reconcile, once the tag is made. A Standard
+// change merges as usual: its gated merge needs a review run that still
+// lasts. It reports whether the Task waits.
+func (r *TaskReconciler) waitForRelease(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	provider ports.Issues, repo ports.Repository) (bool, error) {
+	name := task.Labels[LabelCrew]
+	if name == "" || task.Spec.Issue == 0 || len(task.Spec.AllowedProtectedPaths) > 0 {
+		return false, nil
+	}
+	var crew c4v1beta1.Crew
+	if err := r.Get(ctx, types.NamespacedName{Namespace: task.Namespace, Name: name}, &crew); err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	cut := crew.Status.CutRelease
+	if cut == "" {
+		return false, nil
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	issue, err := provider.GetIssue(gitCtx, repo, int(task.Spec.Issue))
+	if err != nil && !errors.Is(err, ports.ErrIssueNotFound) {
+		return false, err
+	}
+	if !model.MergeWaitsForRelease(cut, issue.MilestoneTitle) {
+		return false, nil
+	}
+	if cond := apimeta.FindStatusCondition(status.Conditions, ConditionProgressing); cond == nil ||
+		cond.Reason != model.ReasonWaitingForRelease {
+		logf.FromContext(ctx).Info("Holding a merge for the cut release's tag", "release", cut,
+			"url", status.PullRequestURL)
+	}
+	r.progress(task, status, metav1.ConditionTrue, model.ReasonWaitingForRelease, model.WaitingForReleaseMessage(cut))
+	return true, nil
+}
+
+// waitsForRelease reports whether a Task waits at its merge for its Crew's
+// cut release to be tagged (waitForRelease).
+func waitsForRelease(t *c4v1beta1.Task) bool {
+	cond := apimeta.FindStatusCondition(t.Status.Conditions, ConditionProgressing)
+	return !isFinal(t.Status.Phase) && cond != nil && cond.Reason == model.ReasonWaitingForRelease
 }
 
 // updateBranch merges main into an approved change's branch, as main moved since

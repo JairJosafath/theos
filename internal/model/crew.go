@@ -148,6 +148,9 @@ type CrewFacts struct {
 	// Preparing is the release whose prepare issue waits for the Tasks at work
 	// to end before it is filed (ReleasePrepareWaits); empty when none.
 	Preparing string
+	// Cadence says the Crew releases at cuts (Day or Week): it keeps starting
+	// issues while a release is prepared, the prepare issue among them.
+	Cadence bool
 	// Routes send issues with a label to other Agents, in the Crew's order.
 	Routes []AgentRoute
 }
@@ -440,8 +443,13 @@ func crewProgress(step CrewStep, started []string, activeIssues []int, held, onD
 
 // preparingRelease reports whether a release is being prepared, its prepare
 // issue waiting or at work, and whether a Task is at work, a Blocked one
-// aside: a prepare issue starts only when none is.
+// aside: a prepare issue starts only when none is. Under a cadence no release
+// is prepared alone: the other Tasks' merges wait for its tag instead
+// (docs/plans/release-cadence.md, C10).
 func preparingRelease(f CrewFacts, candidates []int, prepare map[int]bool) (preparing, others bool) {
+	if f.Cadence {
+		return false, false
+	}
 	preparing = f.Preparing != "" || slices.ContainsFunc(candidates, func(n int) bool { return prepare[n] })
 	for _, t := range f.Tasks {
 		if !t.Final {

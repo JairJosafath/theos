@@ -83,7 +83,14 @@ Where the table above first said less, or said what the code can't do:
   through a new milestone. Only a release with nothing of its own ahead of
   one with work is closed that way, so it holds that one no more. A cut
   carries no prepare or full check issue: those are the release's own.
-- C12: `status.nextCut` counts the merged issues, which the card shows.
+- C10: a Standard change merges as usual while a cut release waits for its
+  tag: its gated merge needs a review run that still lasts, and a wait
+  could outlive it. Its rare merge under the tag is moved into the release
+  as today.
+- C12: `status.nextCut` counts the merged issues, which the card shows. A
+  cut says so with `Released=True`, reason `ReleaseCut`, and a Normal
+  Event, as filing a prepare issue does; the Crew polls again at the next
+  cut, however long the host's events stretch its poll.
 
 ## Steps
 
