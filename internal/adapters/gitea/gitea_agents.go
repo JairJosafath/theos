@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
@@ -421,15 +422,29 @@ func (g *gitea) merge(ctx context.Context, repo ports.Repository, number int, he
 		body["force_merge"] = true
 	}
 	payload, _ := json.Marshal(body)
-	status, data, err := g.do(ctx, http.MethodPost,
-		"/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number)+"/merge", payload)
-	if err != nil {
-		return err
+	// While Gitea checks the pull request again, as it does after a refused
+	// merge, it answers HTTP 405 "Please try again later": try again, for up
+	// to branchSettleTimeout. It answers the same for a conflicted pull
+	// request, which fails once the time is up, with Gitea's message.
+	deadline := time.Now().Add(branchSettleTimeout)
+	for {
+		status, data, err := g.do(ctx, http.MethodPost,
+			"/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number)+"/merge", payload)
+		if err != nil {
+			return err
+		}
+		if status == http.StatusOK {
+			return nil
+		}
+		failed := fmt.Errorf("gitea: merging pull request %d failed (HTTP %d): %s", number, status, apiMessage(data))
+		if status != http.StatusMethodNotAllowed || apiMessage(data) != "Please try again later" ||
+			time.Now().After(deadline) {
+			return failed
+		}
+		if err := pause(ctx); err != nil {
+			return fmt.Errorf("%w (%w)", failed, err)
+		}
 	}
-	if status != http.StatusOK {
-		return fmt.Errorf("gitea: merging pull request %d failed (HTTP %d): %s", number, status, apiMessage(data))
-	}
-	return nil
 }
 
 // UpdatePullRequest merges the base into the pull request's branch, as Gitea's

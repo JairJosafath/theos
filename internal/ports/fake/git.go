@@ -65,12 +65,14 @@ type state struct {
 	pushes    int
 	shas      int            // commits made other than the initial ones
 	histories map[string]int // History calls per owner/name
-	hangs     map[string]chan struct{}
-	agent     *agentStore
-	issues    *issueStore
-	releases  *releaseStore
-	runners   *runnerStore
-	actions   *actionsStore
+	// commitTrees is the tree of each commit the fake made, by owner/name@sha.
+	commitTrees map[string]scaffold.Tree
+	hangs       map[string]chan struct{}
+	agent       *agentStore
+	issues      *issueStore
+	releases    *releaseStore
+	runners     *runnerStore
+	actions     *actionsStore
 	// copyImage copies an image for CopyImage, nil to only record the copy.
 	copyImage ImageCopier
 }
@@ -97,7 +99,7 @@ type Repo struct {
 // New returns an empty Git host with no templates, seen with the zero Config.
 func New() *Git {
 	return &Git{s: &state{templates: map[string]scaffold.Tree{}, repos: map[string]*repository{},
-		histories: map[string]int{}, hangs: map[string]chan struct{}{}}}
+		histories: map[string]int{}, hangs: map[string]chan struct{}{}, commitTrees: map[string]scaffold.Tree{}}}
 }
 
 // NewGit returns an empty Git host serving the templates of templatesDir at
@@ -188,6 +190,7 @@ func (g *Git) SeedRepoFiles(owner, name, message string, files scaffold.Tree) {
 	defer g.s.mu.Unlock()
 	g.s.repos[owner+"/"+name] = &repository{commits: []ports.Commit{{Hash: seedHash, Message: message}},
 		files: maps.Clone(files)}
+	g.s.commitTrees[owner+"/"+name+"@"+seedHash] = maps.Clone(files)
 }
 
 // SeedRepoBranch creates a repository with one commit on branch, not main,
@@ -197,6 +200,7 @@ func (g *Git) SeedRepoBranch(owner, name, branch, message string, files scaffold
 	defer g.s.mu.Unlock()
 	g.s.repos[owner+"/"+name] = &repository{commits: []ports.Commit{{Hash: seedHash, Message: message}},
 		files: maps.Clone(files), branch: branch}
+	g.s.commitTrees[owner+"/"+name+"@"+seedHash] = maps.Clone(files)
 }
 
 // ClearRepo removes a repository's commits, as someone fixing it by hand would.
@@ -302,6 +306,7 @@ func (g *Git) PushInitialCommit(_ context.Context, repo ports.Repository, files 
 	hash := fmt.Sprintf("%040d", g.s.pushes)
 	r.commits = append(r.commits, ports.Commit{Hash: hash, Message: message})
 	r.files = files
+	g.s.commitTrees[repo.Owner+"/"+repo.Name+"@"+hash] = files
 	return hash, nil
 }
 
@@ -398,6 +403,8 @@ func (g *Git) PushBranch(_ context.Context, repo ports.Repository, base, branch 
 	s := g.s.agentState()
 	s.branches[key+"@"+branch] = sha
 	s.edits[key+"@"+branch] = edits
+	s.bases[key+"@"+branch] = base
+	g.s.commitTrees[key+"@"+sha] = withEdits(r.files, edits)
 	return sha, nil
 }
 
@@ -464,6 +471,7 @@ func (s *state) applyToMain(key string, edits map[string]*scaffold.File, message
 	hash := s.newSHA()
 	r.commits = append(r.commits, ports.Commit{Hash: hash, Message: message})
 	s.agentState().trees[key+"@"+hash] = treeID(r.files)
+	s.commitTrees[key+"@"+hash] = r.files
 }
 
 // treeID names a tree by what it holds.
@@ -496,6 +504,9 @@ type agentStore struct {
 	// edits are what the commit PushBranch made on a branch changes on main,
 	// by owner/name@branch: a path's new file, or nil when it removes it.
 	edits map[string]map[string]*scaffold.File
+	// bases are the commit of main a branch PushBranch made last took main
+	// from, by owner/name@branch: what UpdatePullRequest finds conflicts since.
+	bases map[string]string
 	// removeErrs are what RemoveAgentAccess returns for a bot user, as a host
 	// that refuses or doesn't answer would.
 	removeErrs map[string]error
@@ -518,7 +529,7 @@ func (s *state) agentState() *agentStore {
 			texts: map[string][2]string{},
 			files: map[string][]string{}, commits: map[string][]ports.PullCommit{}, forced: map[string][]int{}, gone: map[string]bool{}, conflicts: map[string]bool{},
 			readErrs: map[string]int{}, unnamed: map[string]bool{},
-			edits: map[string]map[string]*scaffold.File{}, removeErrs: map[string]error{}, revoked: map[string]int{},
+			edits: map[string]map[string]*scaffold.File{}, bases: map[string]string{}, removeErrs: map[string]error{}, revoked: map[string]int{},
 			trees: map[string]string{}, written: map[string][]ports.CommitStatus{},
 		}
 	}
@@ -671,8 +682,14 @@ func (g *Git) DeleteBranch(_ context.Context, repo ports.Repository, branch stri
 	return nil
 }
 
+// HasBranch reports main, or the only branch of a repository seeded on another,
+// once the repository has a commit, as Gitea does, and any branch the fake has.
 func (g *Git) HasBranch(_ context.Context, repo ports.Repository, branch string) (bool, error) {
-	return g.BranchExists(repo.Owner, repo.Name, branch), nil
+	g.s.mu.Lock()
+	r := g.s.repos[repo.Owner+"/"+repo.Name]
+	onRepo := r != nil && len(r.commits) > 0 && (branch == ports.DefaultBranch && r.branch == "" || branch == r.branch)
+	g.s.mu.Unlock()
+	return onRepo || g.BranchExists(repo.Owner, repo.Name, branch), nil
 }
 
 func (g *Git) BranchCommit(_ context.Context, repo ports.Repository, branch string) (string, error) {
