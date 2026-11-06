@@ -145,6 +145,45 @@ func ReleaseMilestoneTitle(titles []string, fixes bool) string {
 	}
 }
 
+// EmptyReleaseToJoin is the open, dated release milestone with no issue at all
+// that a Brief's round takes for its release milestone instead of making one,
+// or nil (#2025). An earlier round of the Brief made it (its ID is among
+// made) and nothing went in, so it is the next minor release the planner
+// names: the one ReleaseMilestoneTitle gives with those empty milestones left
+// out. A milestone a person made is theirs, empty or not. Open and Closed say
+// which issues each milestone holds.
+func EmptyReleaseToJoin(milestones []ReleaseMilestone, made []int64) *ReleaseMilestone {
+	empty := func(m ReleaseMilestone) bool {
+		return !m.MilestoneClosed && !m.Due.IsZero() && len(m.Open) == 0 && len(m.Closed) == 0 &&
+			slices.Contains(made, m.ID)
+	}
+	var titles []string
+	for _, m := range milestones {
+		if !empty(m) {
+			titles = append(titles, m.Title)
+		}
+	}
+	next := ReleaseMilestoneTitle(titles, false)
+	for i, m := range milestones {
+		if m.Title == next && empty(m) {
+			return &milestones[i]
+		}
+	}
+	return nil
+}
+
+// AddMarker is a milestone's description with marker on a line of its own
+// at its end, once.
+func AddMarker(description, marker string) string {
+	if hasMarkerLine(description, marker) {
+		return description
+	}
+	if description = strings.TrimRight(description, "\n"); description != "" {
+		description += "\n\n"
+	}
+	return description + marker + "\n"
+}
+
 // newestVersion is the newest version among titles, nil when none is one.
 func newestVersion(titles []string) []int {
 	var newest []int
@@ -208,6 +247,25 @@ func ReleaseMilestoneMarker(brief string, round int) string {
 func ReleaseMilestoneDescription(brief string, round int) string {
 	return fmt.Sprintf("The work Brief %s's round %d filed; released once it is done.\n\n%s\n",
 		brief, round, ReleaseMilestoneMarker(brief, round))
+}
+
+// HasAnyReleaseMilestoneMarker reports whether a milestone's description
+// carries the release marker of any round of the Brief on a line of its own.
+func HasAnyReleaseMilestoneMarker(description, brief string) bool {
+	prefix, suffix := "<!-- c4-brief: "+brief+"/", " -->"
+	for line := range strings.SplitSeq(description, "\n") {
+		line = strings.TrimSpace(line)
+		round, ok := strings.CutPrefix(line, prefix)
+		if !ok {
+			continue
+		}
+		if round, ok = strings.CutSuffix(round, suffix); ok {
+			if _, err := strconv.Atoi(round); err == nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // HasReleaseMilestoneMarker reports whether a milestone's description carries

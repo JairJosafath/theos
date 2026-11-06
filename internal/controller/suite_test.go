@@ -15,10 +15,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,6 +126,12 @@ var (
 	// managerClient is the manager's cached client, the reconcilers' view: a
 	// spec waits on it when a reconcile must not see an object it deleted (#1300).
 	managerClient client.Client
+	// managerAPIReader is the manager's uncached reader, under the generated
+	// role too.
+	managerAPIReader client.Reader
+	// gitEvents is the suite operator's receiver of the Git host's
+	// deliveries; a spec serves its Handler with httptest.
+	gitEvents *GitEventsReceiver
 )
 
 // The operator's namespace in the suite, and the Secrets it shares from there.
@@ -134,6 +142,12 @@ const (
 	// testModelProxyURL is the chart's real configuration: the model proxy's
 	// Service in the release namespace (dist/chart/templates/model-proxy).
 	testModelProxyURL = "http://c4-model-proxy.theos-system.svc:8080"
+	// testGitEventsURL is the suite operator's --git-events-url, the chart's
+	// receiver Service (docs/plans/done/git-events.md, decision 10).
+	testGitEventsURL = "http://theos-git-events.theos-system.svc:8082"
+	// noEventsOwnerPrefix starts the owner of a GitProvider whose adapter
+	// has no events in the suite (fakeGitClient).
+	noEventsOwnerPrefix = "no-events-"
 )
 
 // managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
@@ -304,6 +318,17 @@ var _ = BeforeSuite(func() {
 		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
 	}
 
+	// The webhook server's port is bound here and held until the suite ends,
+	// so envtest writes into the CRDs' conversion config a port no other
+	// process can take before the manager serves it (#2002).
+	webhookListener, err := net.Listen("tcp", "127.0.0.1:0")
+	Expect(err).NotTo(HaveOccurred())
+	// The webhook server closes it on shutdown; this closes it when the suite
+	// fails before the manager starts.
+	DeferCleanup(func() { _ = webhookListener.Close() })
+	testEnv.WebhookInstallOptions.LocalServingHost = "127.0.0.1"
+	testEnv.WebhookInstallOptions.LocalServingPort = webhookListener.Addr().(*net.TCPAddr).Port
+
 	// cfg is defined in this file globally.
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
@@ -333,18 +358,19 @@ var _ = BeforeSuite(func() {
 	Expect(applyManifests(ctx, filepath.Join("..", "..", "config", "chat", "rbac.yaml"))).To(Succeed())
 
 	By("starting the manager with every reconciler, as that ServiceAccount")
-	webhookOptions := &testEnv.WebhookInstallOptions
+	webhookServer := &heldWebhookServer{Server: webhook.NewServer(webhook.Options{}),
+		listener: webhookListener, certDir: testEnv.WebhookInstallOptions.LocalServingCertDir}
 	mgr, err := ctrl.NewManager(managerCfg, ctrl.Options{
-		Scheme:  scheme.Scheme,
-		Metrics: metricsserver.Options{BindAddress: "0"},
-		WebhookServer: webhook.NewServer(webhook.Options{Host: webhookOptions.LocalServingHost,
-			Port: webhookOptions.LocalServingPort, CertDir: webhookOptions.LocalServingCertDir}),
+		Scheme:        scheme.Scheme,
+		Metrics:       metricsserver.Options{BindAddress: "0"},
+		WebhookServer: webhookServer,
 	})
 	Expect(err).NotTo(HaveOccurred())
 	// As cmd/main.go does when the webhook server runs.
 	mgr.GetWebhookServer().Register("/convert",
 		conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
 	managerClient = mgr.GetClient()
+	managerAPIReader = mgr.GetAPIReader()
 	gitFake, err = fake.NewGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
 	gitFake.SetImageCopier(copySuiteImage)
@@ -366,15 +392,29 @@ var _ = BeforeSuite(func() {
 	DeferCleanup(goProxyFake.server.Close)
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
 	Expect(setupReconcilers(mgr)).To(Succeed())
+	started := make(chan error, 1)
 	go func() {
 		defer GinkgoRecover()
-		Expect(mgr.Start(ctx)).To(Succeed())
+		err := mgr.Start(ctx)
+		started <- err
+		Expect(err).To(Succeed())
 	}()
+	// A manager that fails to start fails the suite here, with its error,
+	// not every spec after it through a timeout (#2002).
+	Eventually(func() error {
+		select {
+		case err := <-started:
+			return StopTrying("the manager did not start").Wrap(err)
+		default:
+			return webhookServer.StartedChecker()(nil)
+		}
+	}).WithTimeout(time.Minute).Should(Succeed())
 })
 
 // setupReconcilers registers every reconciler the way cmd/main.go does.
 func setupReconcilers(mgr ctrl.Manager) error {
 	c, s := mgr.GetClient(), mgr.GetScheme()
+	gitEvents = &GitEventsReceiver{Client: c, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}}
 	sessionFeature, err := features.ScaffoldOptions(features.SessionFeatureLocal, "")
 	if err != nil {
 		return err
@@ -407,23 +447,24 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
 			Deployers: deployers, DeployMembers: testDeployMember,
-			DeployPoll: time.Second},
+			DeployPoll: time.Second, GitEvents: gitEvents},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
 		&TaskReconciler{Client: taskStatusFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			StandardChangeRecheck: time.Second, PullRequestRecheck: time.Second, Recorder: mgr.GetEventRecorder("task"),
 			SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace, ModelProxyURL: testModelProxyURL,
-			Now: taskNow},
+			Now: taskNow, GitEvents: gitEvents},
 		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
 			ModelProxyURL: testModelProxyURL,
-			Issues:        githubFake, Now: briefNow},
+			Issues:        githubFake, Now: briefNow, GitEvents: gitEvents},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: fakeGitClient{gitFake}, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow,
 			GoProxy:   goProxyFake.server.URL,
-			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)}},
+			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)},
+			GitEvents: gitEvents},
 		&DeployTargetReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second,
 			Deployers: deployers},
 		// Every Chat names chatFake; the suite's operator has no homeserver of
@@ -433,6 +474,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&ScorerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}},
 		&BenchmarkReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			PollInterval: time.Second},
+		&GitProviderReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
+			GitEventsURL: testGitEventsURL, GitEvents: gitEvents},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err
@@ -534,8 +577,15 @@ func (r routedDeployer) State(ctx context.Context, t ports.Target, app, version 
 type fakeGitClient struct{ *fake.Git }
 
 func (c fakeGitClient) Provider(cfg ports.Config) (ports.Provider, error) {
+	if strings.HasPrefix(cfg.Owner, noEventsOwnerPrefix) {
+		return withoutEvents{c.For(cfg)}, nil
+	}
 	return c.For(cfg), nil
 }
+
+// withoutEvents is a Provider whose adapter lacks ports.Events, as a host
+// with no event hooks.
+type withoutEvents struct{ ports.Provider }
 
 // copySuiteImage copies an image for the fake Git host's CopyImage, from
 // owner/name in registryFake. Only the suite's registries take a real copy:

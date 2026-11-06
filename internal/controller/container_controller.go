@@ -43,6 +43,9 @@ import (
 type ContainerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads Secrets without caching them.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
@@ -179,6 +182,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 	r.remember(req.NamespacedName, container.UID)
+	// The waits for the host's checks stretch while its deliveries arrive (#1222).
+	ctx = withHostEvents(ctx, r.Client, container.Namespace, container.Spec.GitProviderRef.Name)
 
 	active, err := r.countSessions(ctx, &container)
 	if err != nil {
@@ -242,8 +247,11 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// A Git error is retried, and a pull request in flight read again, at
 		// each recheck, with or without a Standard: the status write doesn't
 		// reconcile the Container again.
-		if (failed || operationsInFlight(status)) && result.RequeueAfter == 0 {
+		if failed && result.RequeueAfter == 0 {
 			result.RequeueAfter = r.checksRecheck()
+		}
+		if operationsInFlight(status) && result.RequeueAfter == 0 {
+			result.RequeueAfter = hostRecheck(ctx, r.checksRecheck())
 		}
 		// After the updates' steps, so it reads what the repository runs now.
 		r.reportChecksApplied(ctx, &container, status)
@@ -466,6 +474,9 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1beta1.Domain{}, waitingContainers, specChanged()).
 		Watches(&c4v1beta1.Bundle{}, bundleContainers, specChanged()).
 		Watches(&c4v1beta1.DataStore{}, waitingContainers, specChanged()).
+		// A delivery of the Git host reconciles the Container whose repository a delivery names at once
+		// (docs/plans/done/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventContainerRequest(mgr.GetClient()))).
 		Named("container").
 		Complete(r)
 }

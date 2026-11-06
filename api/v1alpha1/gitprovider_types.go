@@ -142,6 +142,7 @@ type GiteaActionsSpec struct {
 }
 
 // CIRunnerSpec is one label's runners in a project's pool.
+// +kubebuilder:validation:XValidation:rule="!(has(self.goCache) && self.goCache && has(self.freshGoCache) && self.freshGoCache)",message="goCache and freshGoCache exclude each other: a label's pods mount the project's Go cache or start from a fresh one"
 type CIRunnerSpec struct {
 	// label is the job label the runners take, as the workflows' runs-on names it.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
@@ -171,14 +172,34 @@ type CIRunnerSpec struct {
 	// an image with the Go toolchain.
 	// +optional
 	GoCache bool `json:"goCache,omitempty"`
+
+	// freshGoCache gives each pod a Go build cache of its own: an emptyDir
+	// seeded from the image's warm cache, which nothing shares and the pod
+	// takes with it. For the label releases run on (go-release): a release
+	// builds signed artifacts, so it must not link a build result a pull
+	// request's job left in the project's cache. Excludes goCache. Only for
+	// an image with the Go toolchain.
+	// +optional
+	FreshGoCache bool `json:"freshGoCache,omitempty"`
+}
+
+// GitProviderStatus is what the operator last found of the Git host.
+type GitProviderStatus struct {
+	// conditions: Events, whether the host's deliveries reach the operator.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:deprecatedversion:warning="theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=theos
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=".spec.provider"
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=".spec.url"
 // +kubebuilder:printcolumn:name="Owner",type=string,JSONPath=".spec.owner"
+// +kubebuilder:printcolumn:name="Events",type=string,JSONPath=".status.conditions[?(@.type==\"Events\")].reason"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // GitProvider is where repositories are created, with credentials. Owned by the Project.
@@ -192,6 +213,10 @@ type GitProvider struct {
 	// spec defines the desired state of GitProvider
 	// +required
 	Spec GitProviderSpec `json:"spec"`
+
+	// status defines the observed state of GitProvider
+	// +optional
+	Status GitProviderStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true

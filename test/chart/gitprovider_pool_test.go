@@ -134,6 +134,28 @@ func TestGitProvidersCarryRunnerPool(t *testing.T) {
 				t.Errorf("GitProvider %s/%s's go runner has no goCache", gp.GetNamespace(), gp.GetName())
 			}
 		}
+		checkReleaseRunner(t, gp, pool["go-release"], images["go"])
+	}
+	if _, ok := images["go-release"]; ok {
+		t.Error("the chart renders a shared gitea-runner-go-release; go-release is a pool label only")
+	}
+}
+
+// checkReleaseRunner (#1141): gitea-release's release job runs on go-release,
+// a pool label with no shared runner, on the go image, with a fresh Go cache
+// and never the project's.
+func checkReleaseRunner(t *testing.T, gp *unstructured.Unstructured, r map[string]any, goImage string) {
+	t.Helper()
+	if r == nil {
+		t.Errorf("GitProvider %s/%s has no go-release runner; gitea-release's release job runs on it",
+			gp.GetNamespace(), gp.GetName())
+		return
+	}
+	goCache, _ := r["goCache"].(bool)
+	fresh, _ := r["freshGoCache"].(bool)
+	if image, _ := r["image"].(string); image != goImage || goCache || !fresh {
+		t.Errorf("GitProvider %s/%s's go-release runner = %v, want the go image %q, freshGoCache and no goCache",
+			gp.GetNamespace(), gp.GetName(), r, goImage)
 	}
 }
 

@@ -49,6 +49,7 @@ func (r *TaskReconciler) reconcileScore(ctx context.Context, task *c4v1beta1.Tas
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	ctx = withHostEvents(ctx, r.Client, task.Namespace, container.Spec.GitProviderRef.Name)
 	var agent c4v1beta1.Agent
 	err = r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: task.Spec.AgentRef.Name}, &agent)
 	if apierrors.IsNotFound(err) {
@@ -125,7 +126,7 @@ func (r *TaskReconciler) applyScore(ctx context.Context, task *c4v1beta1.Task, s
 	agents := taskAgents{implementer: agent, reviewer: agent}
 	switch step.Action {
 	case model.ActionWait:
-		return r.wait(task, status, step), nil
+		return r.wait(ctx, task, status, step), nil
 
 	case model.ActionStartImplement:
 		return r.startScore(ctx, task, status, container, agents, step.Message)

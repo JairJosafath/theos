@@ -528,6 +528,13 @@ type StandardUpdateStatus struct {
 	// checks to change, except NoLightCheck, which is planned again every pass.
 	// +optional
 	Stopped string `json:"stopped,omitempty"`
+	// dropping is why the operator closes the update's pull request to plan it
+	// again, such as main moving after its CI failed. It is recorded before the
+	// pull request is closed, so a pass cut short after the close finishes the
+	// drop and plans the update again, instead of reading the operator's own
+	// close as a person's.
+	// +optional
+	Dropping string `json:"dropping,omitempty"`
 }
 
 // OperationsUpdateStatus is one operations update: a pull request the operator

@@ -103,6 +103,23 @@ func newCIProvider(ns string) *c4v1beta1.GitProvider {
 }
 
 var _ = Describe("CI runner pool", func() {
+	It("refuses a runner with both goCache and freshGoCache (#1141)", func() {
+		ns := newProjectNamespace()
+		both := &c4v1beta1.GitProvider{
+			ObjectMeta: objectMeta(ns, "gitea"),
+			Spec: c4v1beta1.GitProviderSpec{
+				URL: "http://gitea.gitea.svc.cluster.local:3000", Owner: ns,
+				CredentialsSecretRef: c4v1beta1.LocalRef{Name: "gitea-credentials"},
+				CI: &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: []c4v1beta1.CIRunnerSpec{
+					{Label: "go-release", Image: "theos/gitea-runner-go:dev", GoCache: true, FreshGoCache: true},
+				}}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, both)).To(MatchError(ContainSubstring("goCache and freshGoCache exclude each other")))
+		both.Spec.CI.GiteaActions.Runners[0].GoCache = false
+		Expect(k8sClient.Create(ctx, both, client.DryRunAll)).To(Succeed())
+	})
+
 	It("keeps a pool per GitProvider label, replaces ended pods and keeps their fate (#1140)", func() {
 		ns := newProjectNamespace()
 		var project c4v1beta1.Project
@@ -118,6 +135,8 @@ var _ = Describe("CI runner pool", func() {
 			Expect(pod.Labels).To(HaveKeyWithValue(LabelCILabel, "go"))
 			Expect(pod.Spec.RestartPolicy).To(Equal(corev1.RestartPolicyNever))
 			Expect(pod.Spec.AutomountServiceAccountToken).To(HaveValue(BeFalse()))
+			// The suite's operator shares sharedPullSecret; the pod pulls with it (#2032).
+			Expect(pod.Spec.ImagePullSecrets).To(Equal([]corev1.LocalObjectReference{{Name: sharedPullSecret}}))
 			Expect(pod.Spec.InitContainers[0].Env).To(ContainElement(corev1.EnvVar{
 				Name: "RUNNER_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: "c4-ci-runner-gitea"}, Key: "token"}}}))
@@ -366,7 +385,7 @@ var _ = Describe("CI runner pool", func() {
 		Eventually(live, 1500*time.Millisecond).Should(HaveLen(2))
 	})
 
-	It("reports a provider whose token call fails, keeps its pods and retries (#1699)", func() {
+	It("reports a provider whose token call fails, keeps its pods and retries (#1699, #2022)", func() {
 		ns := newProjectNamespace()
 		provider := newCIProvider(ns)
 		Eventually(func() []corev1.Pod { return livePoolPods(ns) }).Should(HaveLen(2))
@@ -379,6 +398,14 @@ var _ = Describe("CI runner pool", func() {
 		By("saying the host gave no token, keeping the live pod and adding none")
 		gitFake.FailRunnerToken(ns, errors.New("403 Forbidden"))
 		DeferCleanup(func() { gitFake.FailRunnerToken(ns, nil) })
+		// A reconcile that took its token before the failure could still see
+		// the pod end and replace it (#2022): the pod ends only once a
+		// reconcile begun after the failure has said so, and reconciles of a
+		// Project run one at a time, so none of the older ones is left.
+		var project c4v1beta1.Project
+		Expect(k8sClient.Get(ctx, key(ns, ns), &project)).To(Succeed())
+		Expect(patch(&project, func() { metav1.SetMetaDataAnnotation(&project.ObjectMeta, "test/poke", "token") })).To(Succeed())
+		Eventually(ciRunners).Should(HaveField("Reason", "ProviderUnavailable"))
 		ended := livePoolPods(ns)[0]
 		setPodPhase(&ended, corev1.PodSucceeded)
 		Eventually(func(g Gomega) {

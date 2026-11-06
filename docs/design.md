@@ -287,6 +287,13 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
   yet, or not in the sandbox, changes nothing and ends with `Blocked: <why>`;
   the Task fails at once, reason `Blocked`, with those words on the issue. A round
   with no change and no such line fails with the end of the agent's summary.
+  When the check fails on the base too, the implementer is sent back once
+  first, in a fresh session whose prompt is the round's own, the issue
+  included, then its first answer and the base's failure (#2037). A note
+  that says the agent can't see the issue (`model.IssueUnseen`: the issue or
+  its text, not given, available or seen) fails reason `IssueUnseen`
+  instead: the factory gave it the issue, so the first such Task on an issue
+  costs no try, and any more do.
 - **The infrastructure's failures cost the issue no try:**
 
   | Reason | What happened | The Task |
@@ -297,6 +304,7 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
   | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
   | `RunnerOutOfMemory`, `RunnerLost` | a job killed for memory, or abandoned by its runner | reruns the jobs twice a round, then fails |
   | `ApprovalRanOut` | CI outlived a Standard change's approval four times | fails |
+  | `IssueUnseen` | the agent's blocked note says it can't see the issue | fails; free once per issue |
   | `OverBudget` | the runs' summed cost reached the Crew's `taskBudgetUSD` | waits for the cap to be raised; a needs-you item; no round |
 
   An agent killed for memory or past its deadline fails its own round. A job
@@ -413,7 +421,7 @@ in an environment made for it and thrown away; holds only its job token and its
 repository's secrets; shares nothing writable with another project's jobs or a
 release; and reaches only DNS, the Git host (and its registries) and public
 HTTPS. Every CI adapter meets this or says which part it can't
-([plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)).
+([plans/done/ci-runner-isolation.md](plans/done/ci-runner-isolation.md)).
 
 The Gitea runners meet the network and the token: a NetworkPolicy on their pods
 (`app.kubernetes.io/component: ci-runner`) lets nothing in and only cluster
@@ -450,11 +458,16 @@ answers (#1699). The pods
 sit under the project's own CI NetworkPolicy (no ingress; DNS, the Git host's
 namespace and public HTTPS out), hold no ServiceAccount token, get the
 registration token only in an init container, and the `go` label's pods
-mount a Go build cache of the project's own on the node. The shared runners
+mount a Go build cache of the project's own on the node. Releases get no
+cache a job wrote: a release builds signed artifacts, so gitea-release's
+release job runs on `go-release`, whose pods (`freshGoCache`) start from the
+image's warm Go cache copied into an emptyDir of their own, mount nothing
+from the node and keep nothing (#1141). The shared runners
 Helm installs register to the templates organization and serve the
 templates' checks only; the GitProviders the chart renders carry a pool of a
-`base` and a `go` runner, the labels the templates' checks run on, so an
-install needs nothing added for a project's checks to run. Who cancelled a job is read from its pod: a pod that
+`base`, a `go` and a `go-release` runner, the labels the templates' checks
+and releases run on, so an install needs nothing added for a project's
+checks and releases to run. Who cancelled a job is read from its pod: a pod that
 ended its one job on its own after the cancel was a person's; one deleted,
 evicted or killed before its job ended was the runner's, and the Task reruns
 the checks at no cost to a round (`model.Canceller`). The isolation left is
@@ -596,6 +609,8 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   at work is done: the Crew tags it at its newest merged issue's merge commit
   and closes the milestone. Tags go out in due-date order, never move, and
   never go behind the previous release (`BehindPreviousRelease`).
+  A release with no issue at all is not done and holds no later one; one
+  before the release tagged closes untagged with it (#2025).
   `status.lastRelease` records it; `Released` says why one waits on a person.
 - **Preparing** (`spec.prepareReleases`). A done release with work a Task
   merged gets `Prepare vX.Y.Z`, `kind/release`, listing what the tag carries;
@@ -608,13 +623,18 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   Standard's `make check-light` and the full check runs on
   `release-check/vX.Y.Z` before the tag (`FullCheckRunning`,
   `status.fullCheck`); a failure files `Full check fails for vX.Y.Z` and tags
-  nothing. It applies only where the Standard sets `checksBeforeRelease` and
-  the Makefile has `check-light`; `ChecksApplied` says why not.
+  nothing. A check cut off (cancelled at the runner's time limit, or its
+  runner lost) runs again once first (`status.fullCheck.reruns`), and an
+  issue filed after says it was cut off (#2028). It applies only where the
+  Standard sets `checksBeforeRelease` and the Makefile has `check-light`;
+  `ChecksApplied` says why not.
 - **The release run.** `status.lastRelease.run` sums the runs the tag started
   (`Waiting`, `Running`, `Failed`, `Succeeded`), with Events
   `ReleaseRunFailed` and, past an hour, `ReleaseRunOverdue`. Setting or
   changing `theos.factory.io/rerun-release` on a `Failed` run re-runs its failed
-  jobs, once per value.
+  jobs, once per value. While a failed full check holds the next release, the
+  value re-runs that check first: its issue holds the release no more, is
+  closed if the check passes, and holds it again if it fails (#2028).
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
@@ -758,7 +778,11 @@ An update whose CI fails (`ChecksFailed`) is the Crew's to fix
 The fix lands on main in the Crew's own pull request; once main is no longer
 at the head the update was planned from (`status.standard.update.base`), the
 operator closes the update's pull request and plans it again from the new
-main (#1489). The operator files `Standard <name> <ref> fails this
+main (#1489). Before it closes a pull request it drops, here or when main
+conflicts with it, the operator records why in
+`status.standard.update.dropping`: a pass cut short after the close, by a
+restart or a Git error, finishes the drop and plans again, and never reads
+the operator's own close as a person's `UpdateClosed` (#2035). The operator files `Standard <name> <ref> fails this
 repository's check`, `kind/bug` and `status/ready`, in the repository's next
 unprepared release, once per target ref (`status.standard.failureIssue`),
 linking the pull request and the run (#1491). A check a Standard tightens
@@ -841,7 +865,8 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   number, else 3) and a Container's `checks` change only when the person asks.
 - **Releases when the plan says so** (`plan/releases.yaml`, or `spec.releases`
   naming a Container with a GitHub repository and token Secret). Fixes go
-  into the next patch release, other work into the next minor. A Crew whose
+  into the next patch release, other work into the next minor: an empty one
+  an earlier round made is joined, not passed over (#2025). A Crew whose
   target was edited away from the Brief's publishes nothing until they agree
   (`ReleaseTarget=False`, `DiffersFromBrief`).
 - **Requests from GitHub.** An entry that takes requests plans the allowed
@@ -1038,8 +1063,13 @@ controllers call, not by one product's API;
 - **What a CI system writes is a business rule:** one row per CI system in
   `model.CI` (workflow paths, required checks, protected paths); a
   Container's is its host's own (`model.HostCI`).
-- **Polling is the contract.** Webhooks (#1084, decided, not built) would
-  only shorten waits ([plans/git-events.md](plans/git-events.md)).
+- **Polling is the contract.** Webhooks (#1084) only shorten waits: the
+  operator registers a hook and reconciles what a signed delivery concerns
+  at once. While the GitProvider's `Events` is True (`Receiving`), the
+  polls that wait for the host (the Crew's issues, a Task's checks and
+  Standard change, a Container's checks) stretch to 10 minutes; error
+  retries and waits on the cluster keep their intervals. The chart's
+  install is still to come ([plans/done/git-events.md](plans/done/git-events.md)).
 - **Helm decides what is installed, custom resources what is used:**
   `GitProvider.spec.provider` names the host (`gitea`), CI and registry
   default to the host's own (`spec.packages` names another npm registry or

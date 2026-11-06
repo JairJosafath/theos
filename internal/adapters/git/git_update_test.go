@@ -167,6 +167,16 @@ func TestReadFiles(t *testing.T) {
 	}
 }
 
+// An empty repository has no branch to read: ErrBranchNotFound, as on a
+// branch that isn't there (#1170).
+func TestReadFilesEmptyRepository(t *testing.T) {
+	_, _, err := localGit{}.ReadFiles(context.Background(), ports.Repository{CloneURL: bareRepo(t)},
+		ports.DefaultBranch, []string{"AGENTS.md"})
+	if !errors.Is(err, ports.ErrBranchNotFound) {
+		t.Errorf("ReadFiles() of an empty repository error = %v, want ErrBranchNotFound", err)
+	}
+}
+
 func TestReadFilesDirectory(t *testing.T) {
 	ctx := context.Background()
 	dir, _ := scaffolded(t, scaffold.Tree{

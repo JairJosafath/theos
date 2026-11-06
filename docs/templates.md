@@ -318,7 +318,7 @@ a job, a Job instead of the Deployment).
   to ship them yourself.
 - Logging, Auth: n/a: it packages the app's.
 
-### gitea-release (v1.8.0)
+### gitea-release (v1.9.0)
 
 A Deployment for cli, extension and operator Containers, and for the AWS
 Frameworks' function, service, static-site, worker and job ones:
@@ -349,6 +349,10 @@ factory pushed into the bootstrap's ECR repository and passes it as the
 stack's `ImageUri` parameter (#1610). Since v1.8.0 it supports `worker`
 and `job` too, for `aws-queue-ts`, `aws-event-ts` and `aws-schedule-ts`,
 whose `make dist` writes the same assembly (#1773).
+Since v1.9.0 the release job runs on `go-release`, not `go`: a pool
+label whose pods start from the toolchain image's warm Go cache on an
+emptyDir of their own and share it with no other job, so the signed release
+files link nothing a pull request's job left in the project's cache (#1141).
 
 - CI: `make test-templates` runs `make dist` in the combos "python cli",
   "node cli", "go cli", "vscode extension" and the AWS combos and checks

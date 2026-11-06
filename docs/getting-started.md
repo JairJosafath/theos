@@ -232,7 +232,10 @@ scaffolded devcontainer's build fetches it from there, by default
 `http://localhost:8080/downloads/theos-session-linux-${arch}` (the port-forward
 above) or `https://<ui.allowedHosts[0]>/downloads/...` behind an Ingress,
 with no GitHub login, and checks it against the `SHA256SUMS` served next to
-it. The build must reach that address: a port-forward's localhost is the
+it. The GitHub release's `SHA256SUMS` is also signed, keyless with cosign
+(`SHA256SUMS.sigstore.json`), which the feature verifies when `cosign` is on
+the devcontainer's `PATH`; the UI's `/downloads/` serves no signature, so
+from there the checksum alone decides (#1706). The build must reach that address: a port-forward's localhost is the
 laptop's, not a container's, so a laptop devcontainer needs the chart's
 `sessionBinaryURL` set to an address it reaches, or it starts without
 becoming a Session.
@@ -434,7 +437,8 @@ issue `status/needs-human` with the reason in a comment; label it
 | --- | --- |
 | A pod in `ImagePullBackOff` in `theos-system` or `gitea` | The images are private and that namespace has no `ghcr` Secret, or the install lacks the `imagePullSecrets` settings. |
 | A sandbox pod in `ImagePullBackOff` in `webshop` | Secret `theos-system/ghcr` is missing, the install lacks `global.imagePullSecrets`, or namespace `webshop` lacks the label `theos.factory.io/shared-secrets=true`; `kubectl -n webshop get project webshop -o jsonpath='{.status.conditions[?(@.type=="SecretsShared")].message}'` says which. Fix it, then delete the pod. |
-| `helm install` times out | Gitea's image is still pulling; `kubectl -n gitea get pods`, then `helm upgrade` with the same settings. |
+| `helm install` times out | Gitea's image is still pulling, or the seed failed and the runners wait for its Secret `gitea-runner`; `kubectl -n gitea get pods` and `kubectl -n gitea logs -l app.kubernetes.io/name=seed` say which. Then `helm upgrade` with the same settings. |
+| GitProvider `gitea`'s `Events` condition stays `Registered`, not `Receiving`, after a Task's first push | Gitea's deliveries don't reach the operator, which keeps polling, so the factory works, only slower to react. With the release's Gitea, `kubectl -n gitea get configmap gitea-env -o jsonpath='{.data.GITEA__webhook__ALLOWED_HOST_LIST}'` must print the host of the manager's `--git-events-url`. A Gitea of your own needs `gitEvents.url`, its own allowed host list and `gitEvents.from` ([the chart's README](../dist/chart/README.md#git-events)). |
 | Container `orders-cli` not `Ready` | `kubectl -n webshop describe container orders-cli`: the condition's message says which template or GitProvider is missing. |
 | The issue is labelled `status/needs-human` before any Task | The Crew rejected it and said why in a comment, such as a missing checklist; fix the body and label it `status/ready` again. |
 | The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |

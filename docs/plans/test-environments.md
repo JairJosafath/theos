@@ -1,0 +1,187 @@
+# Plan: test environments, the tools a job needs, on the host or leased
+
+Issue #2036, [theos#12](https://github.com/JairJosafath/theos/issues/12)
+(reported on 0.30.0).
+
+## Goal
+
+Work that needs a tool the agent sandbox lacks (a browser and its system
+libraries, a phone emulator, macOS, a game engine on a GPU) gets that tool
+from the factory, not from a person. A **TestEnvironment** is a named set of
+tools and resources, such as `browser`, `android`, `ios` or `godot`. A
+Standard, a Framework or an issue can ask for one. The agent runs its tests
+or picture script there while it works and commits what they produce, and
+CI runs the same checks there, so the reviewer and CI see the same results.
+A provider supplies each environment, configured per project: a pod on the
+cluster first, and later a machine leased from AWS (EC2, including Mac and
+GPU instances, and Device Farm for phones), behind a port like the Git
+host's. A provider's credentials are Secrets only the operator reads, and
+limits cap how many leases run, for how long and at what cost.
+`kind/by-hand` is left for work that really needs a person.
+
+## What happens today
+
+- The reporter's VS Code extension makes its pictures with a script that
+  drives VS Code in Playwright's Chromium. The sandbox image lacks
+  Chromium's system libraries, so the implementer leaves the criterion
+  open (*Evidence is never made up*) and the operator files a
+  `kind/by-hand` issue. That happened three times in two days, and a
+  person's commit can't land anyway, since `main` takes only the
+  operator's pull requests.
+- An Android app needs an emulator with `/dev/kvm`, an iOS app needs
+  macOS, and a Godot game needs the engine and often a GPU. The same wall
+  stands before each.
+- CI has per-label runner pools (`GitProvider.spec.ci.giteaActions.runners`),
+  but they serve CI only, and only what a pod on the host can do. The
+  agent sandbox has one image per Agent and nothing else.
+
+## Decisions
+
+| # | Topic | Decision | Why |
+| --- | --- | --- | --- |
+| T1 | The kind | A new kind, `TestEnvironment`, group `theos.factory.io`, version `v1beta1` only, namespaced in a project's namespace and scaffolded with `kubebuilder create api --group theos --version v1beta1 --kind TestEnvironment --resource --controller`. Its name is what jobs ask for (`browser`). Its spec has a `description` (one line for people and the planner); one provider member, `local` first and `aws` later, with CEL allowing exactly one, as a DeployTarget's members do; `limits`; and `ci` (T8). Its status has `leases` (one entry per live lease: who holds it, since when, the provider's ID, the cost so far), `spentToday`, and the conditions `Ready` and `CredentialsValid`. | What a project can run, and how, is a setting that differs per place (AGENTS.md, *What can be configured is configured*), and a DeployTarget already follows this shape: a named object per project, one member per provider, a credential Secret. A kind of its own lets the planner list a project's environments, lets a person add one with kubectl or GitOps, and keeps lease state where the operator can find it after a restart. `v1alpha1` is deprecated (#1963), so a new kind is served at `v1beta1` alone. |
+| T2 | Who asks | A Standard or a Framework lists names in `spec.testEnvironments`, and the Task's run gets each one the project has. A name the project lacks gives the Container `TestEnvironments=False`, reason `NotInProject`, and a needs-you item, and the runs go on without it. An issue asks with a label `env/<name>`, which the triager or planner sets. That one is required: a Task whose issue needs an environment the project lacks waits, reason `WaitingForEnvironment`, message `NotInProject`, costing no try, until a person adds it. | A Standard asks for every Container of its kind, and most of that work never needs the tool, so blocking every Task on it would stop a project. An issue that asks needs the tool for that work: running without it would only spend tokens on a criterion left open. |
+| T3 | When a lease is held | One lease per agent run that needs it: the implementer's and the verifier's runs. The reviewer, triager, spec writer and planner get none. The operator leases before it makes the run's sandbox and returns the lease when the run ends, fails or is suspended (paused, agent unavailable, interrupted). A resumed run leases again. Waiting for a lease costs no round, as `WaitingForSlot` doesn't. | A Task spends most of its time in CI and review, and a remote lease costs money for every minute it is held. Environments carry no state between runs (T4), so letting one go and taking another loses nothing. |
+| T4 | How the sandbox uses it | Commands run in the environment, on a copy of the sandbox's working tree. The environment runs `theos-env serve`, a small static binary (`cmd/theos-env`) that an init container copies in from the theos-agent image, so any image works. The sandbox gets `THEOS_ENV_<NAME>_URL`, `_TOKEN` and `_CA` for each lease, and runs `theos-env run <name> -- <command>`. That sends the tracked and untracked, not ignored, files as a tar (capped at 512 MiB), runs the command in `/work`, streams its output and exit code back, and writes the files the command changed or added back into the sandbox's tree, where the agent commits them. Within a lease the environment's own processes keep running (an emulator booted once), and `/work` is replaced on each run. | It works the same for every provider (a pod, an EC2 machine over HTTPS, a Mac) and every tool (Playwright, Electron, an emulator, Godot). The sandbox image stays the Agent's, and the workspace and its checkpoint stay in the sandbox. A sidecar in the sandbox pod was rejected: it ties the sandbox's pod spec to each environment, puts devices into the agent's pod, and can't be remote. A remote browser (Playwright's `run-server`) was rejected: VS Code and Electron must launch next to the script. |
+| T5 | The fence | An environment runs the agents' code, so it is fenced like a sandbox. Local: no ServiceAccount token, no user Secret, not privileged, devices only through the cluster's device plugins (T7). The project's NetworkPolicy `theos-test-environment` selects pods with `app.kubernetes.io/component: test-environment`: ingress only from the project's agent sandboxes and its CI runner pods on the `theos-env` port, egress only to cluster DNS and public HTTPS (no Git host, no model proxy, no private ranges, `model.PrivateRanges`). The sandbox fence gets one egress rule more, to those pods on that port in its own namespace. Each lease has a token of its own, generated by the operator and given only to the run that holds the lease, so one Task can't use another's environment. Remote: reached over public HTTPS, which the fence already allows, with the environment's certificate pinned by `_CA`. The machine gets no instance role and has the metadata service off (`HttpEndpoint=disabled`), and its security group lets in only `theos-env`'s port and lets out only DNS and HTTPS. | The fence's rule is that agents' code reaches only DNS, the Git host and public HTTPS (*The fence*). An environment needs neither the Git host nor the model, since it gets the tree from the sandbox. A token per lease, rather than a NetworkPolicy per lease, keeps the policies fixed per project. An AWS machine with a role or the metadata service would hand the agents' code the user's cloud. |
+| T6 | The port | `internal/ports/testenv.go`, `TestEnvironments`, plain Go: `Lease(ctx, LeaseRequest) (Lease, error)` (idempotent on the request's ID, the Task, run and environment), `Get(ctx, id) (Lease, error)`, `Return(ctx, id) error` (idempotent), and `Leases(ctx, owner) ([]Lease, error)`, which lists the provider's leases tagged with the factory's owner so the operator returns ones it lost track of. `Lease` has `ID`, `State` (`Pending`, `Ready`, `Failed`, `Ended`), `Endpoint`, `CA`, `Message`, `Started` and `CostMilliUSD`. The rules live in `internal/model/testenv.go`: which environments a run gets (T2), whether a lease may start (T10), its deadline, the variable names (T4), and the env pod's fence. The fake is in `internal/ports/fake` and the contract suite is `contract.TestEnvironments(t, env)`. `cmd/main.go` maps each member to its adapter, as it does for DeployTargets. Device Farm, which runs test packages rather than commands, is an optional capability, `TestRuns` (T12). | It is cut by what the controller asks (a ready place to run commands, and giving it back), not by one provider's API, the rule for every port (*Factory components*). `architecture.md` gets a row for it in step 1. |
+| T7 | The local provider | `internal/adapters/localenv` (client-go, as runtime adapters may use): one Pod per lease in the project's namespace, built from `local.image` (a tag or digest, never `latest`, as `hack/check-pinned-images.sh` already checks), with `local.resources`, `local.devices` (extended resource requests whose names are the cluster's device plugins', such as `devices.kubevirt.io/kvm: 1` or `nvidia.com/gpu: 1`, a setting since plugins differ), `local.runtimeClassName`, `nodeSelector` and `tolerations`. `activeDeadlineSeconds` is the lease's deadline, as a backstop, and the Pod's ownerReference is the TestEnvironment. A Pod rather than a Deployment, because each lease is used once and thrown away, as a CI job's pod is. Cost 0. | It needs nothing outside the cluster, works on the chart's in-cluster default, and covers `browser` (no device) and later `android` (KVM) and `godot` (GPU) on a host that has them. A Deployment would restart a pod and let one lease see the last one's leftovers. |
+| T8 | CI | A local TestEnvironment with `ci.size` set (0 by default, at most 8) adds a runner pool for the label `env-<name>` to the project's Gitea Actions pool. Its pods are built from the environment's image and devices, with the runner binary copied in by the init container that already registers (T4's way), and run under the CI fence and the env's devices. A Standard's workflow names `runs-on: env-browser`. The label `env-<name>` may not also appear in `GitProvider.spec.ci.giteaActions.runners`, and a clash makes the Project `CIRunners=False`, reason `LabelClash`. Remote environments in CI come later (step 8): a leased machine registers as an ephemeral runner when a job for its label waits. | CI must check what the agent produced on the same tools, or the reviewer judges results CI can't reproduce. Reusing the per-label pools keeps one runner mechanism, with its one-job pods, fence and backoff. The env's image needs nothing added for CI. |
+| T9 | Credentials | `aws.credentialsSecretRef`, keys `accessKeyId`, `secretAccessKey` and optional `sessionToken`, as the `cloudFormation` DeployTarget uses, plus an optional `aws.account` that a credential of another account is refused against. Only the operator reads them, and they never reach a sandbox, an environment or a CI job. A local environment needs none. | The rule *A user's credential never reaches code the agents wrote*. The same keys as the existing AWS member, so a user who has one has the other. |
+| T10 | Limits | `limits.maxLeases` (live leases at once, default 2, at most 16), `limits.maxLeaseMinutes` (default 180, the agent run's deadline, and a lease ends when it passes), and `limits.budgetUSDPerDay` (required by CEL on a remote member, unused for local). The cost so far comes from the provider (`CostMilliUSD`: on-demand price times time, with a Mac host's 24-hour minimum, T11). At `maxLeases` a run waits (`WaitingForEnvironment`, `AllLeased`). Past the day's budget no lease starts (`OverBudget`, a needs-you item), and leases held finish their run. | Limits are the user's, since they pay. A remote member without a budget could spend without bound, so CEL requires one. The run deadline already bounds an agent run, so the default lease lasts no longer. |
+| T11 | AWS | The `aws` member, `internal/adapters/awsenv` on the AWS SDK the `cloudformation` adapter already uses: `region`, `instanceType`, `imageId` (an AMI with the env's tools; `theos-env serve` started from user data), `subnetId` and `securityGroupIds`, all the user's settings. Instances are tagged with the lease and owner, terminated on `Return`, and listed by tag for `Leases`. EC2 Linux, including GPU types, comes first. A Mac (`mac2.metal` and the like) needs a dedicated host with a 24-hour minimum, so the adapter keeps a host allocated across leases while the day's budget allows (`aws.mac.keepHostHours`, default 24) and counts the host, not the instance, against the budget. | EC2 covers GPU and macOS, which no ordinary cluster node has. Tags make leases findable after a restart without the operator's memory. A Mac host torn down after every lease would cost a full day each time. |
+| T12 | Device Farm | Later (step 10), as the optional `TestRuns` capability: `theos-env test <name> --app <file> --tests <file>` uploads an app and a test package and returns the run's report and artifacts, through the operator, which holds the credential. Android is served first by a local `android` environment with KVM (T7), which is cheaper. | Device Farm runs test packages, not commands, so it can't fit T4. A capability of its own keeps the port narrow. |
+| T13 | By hand only for a person | The implementer's and verifier's prompts list the run's environments, with each one's description and how to use it. The guides say that a criterion a listed environment can check is never "no sandbox can". The planner's and triager's workspaces list the project's TestEnvironments, and their guides say to label `env/<name>` where they would have filed `kind/by-hand` for missing tools. `kind/by-hand` stays for accounts, settings, hardware no environment has, and other people's work. | This is the issue's last point. The operator's by-hand filing is unchanged: a criterion still left open with its reason still goes to a person. |
+| T14 | The chart's default | The seed makes a local `browser` TestEnvironment in each `gitea.projects` namespace (`testEnvironments.browser.enabled`, true by default), on the release's `env-browser` image, with `ci.size: 0`. | A fresh install handles the reporter's case with nothing added, and a local lease costs nothing until a run asks for it. CI pods stay off until a project's workflow names the label. |
+
+The design's *Test tiers* table has a "Kind" row, and `docs/dev/testenv.md`
+is "the test environment". Those mean the Kind cluster, not this kind. Step 1
+says so in `docs/dev/testenv.md`'s first line.
+
+## Steps
+
+Each step is one pull request and leaves main working. Nothing leases before
+step 2.
+
+1. **The local provider with a `browser` environment.** The design:
+   `docs/design.md` gets a section *Test environments* after *The CI
+   fence* (T1 to T10, T13), a row in *Factory components*'s port table,
+   and a sentence in *The fence* for the env pods. `docs/architecture.md`
+   gets the port's row, and `docs/dev/testenv.md`'s first line says it
+   means the Kind cluster. Then the code:
+   - the kind, scaffolded with `kubebuilder create api`, with the `local`
+     member and `limits`, then `make manifests generate`;
+   - the port, its fake and contract suite (T6);
+   - `internal/model/testenv.go` with the pod and NetworkPolicy specs;
+   - `internal/adapters/localenv` (T7);
+   - `cmd/theos-env`, serve and run (T4), shipped in the theos-agent
+     image;
+   - `hack/env-browser/Dockerfile`: Playwright's image pinned by digest,
+     with Xvfb, published as `theos/env-browser` with the release;
+   - the TestEnvironment controller: `Ready` when the image is pinned
+     and the project's env NetworkPolicy exists; leases are returned when
+     their holder is gone;
+   - the project's `theos-test-environment` policy (T5);
+   - `config/samples/` with a `browser` sample.
+   Tests:
+   - `internal/model` table tests: the pod spec has no token, isn't
+     privileged, requests the devices, and has the deadline; the policy's
+     ingress and egress match T5.
+   - `cmd/theos-env` unit tests: a run sends the tree and brings back a
+     changed file and a new file, passes the exit code, refuses a wrong
+     token, and refuses a tree over the cap.
+   - `contract.TestEnvironments` on the fake, and on `localenv` against
+     envtest: a lease's pod is made, a second `Lease` with the same ID
+     makes no second pod, `Return` deletes it, and `Leases` finds an
+     orphan.
+   - `make validate-yaml` on the sample, with the CEL failing cases (no
+     member, two members, `latest`) in `test/invalid`.
+   *Done when:* those tests and `make check` pass. Running Chromium in
+   the image on a real node is for a human's run.
+2. **Tasks lease their environments** (`internal/controller/task_*`,
+   `api/v1beta1` for `testEnvironments` on Standard and Framework, the
+   prompts). T2 and T3: a run's environments from its Standard, Framework
+   and `env/<name>` labels; lease before the sandbox; the variables in
+   its pod template; return at end or suspend; `WaitingForEnvironment`
+   with `NotInProject`, `AllLeased` and `OverBudget`; the sandbox fence's
+   extra egress rule; the Container's `TestEnvironments` condition; the
+   prompts' list (T13). Envtests with the fake provider:
+   - an issue labelled `env/browser` gets a lease and the variables in
+     its sandbox;
+   - the lease is returned when the run ends and when it is suspended,
+     and a resumed run leases again;
+   - an issue needing an environment the project lacks waits without
+     spending a try, and starts once one is added;
+   - a Standard's ask the project lacks sets the Container's condition
+     and the run goes on;
+   - at `maxLeases` a third run waits;
+   - the reviewer's run gets no lease.
+   Table tests: the sandbox spec has the variables, and the fence has the
+   one new rule and nothing more.
+   *Done when:* those specs and `make check` pass.
+3. **CI on the environment** (T8, `project_ci_runners.go`,
+   `ci_runner_pod.go`). Envtests: `ci.size: 1` keeps one `env-browser`
+   runner pod built from the env's image and devices; a size of 0 keeps
+   none; a label clash gives `LabelClash`. Table tests: the pod's CI fence
+   and the runner binary copied in by the init container. `make
+   validate-yaml`: the chart's runner fence covers the env pool.
+   *Done when:* those tests and `make check` pass.
+4. **By hand only for a person** (T13, T14). The planner's and triager's
+   workspaces list the project's environments, and their guides use
+   `env/<name>`; the implementer's and verifier's built-in guides; the
+   seed's `browser` default and its chart value; `docs/getting-started.md`
+   gets *Give agents a browser*. Table tests:
+   - the workspace files list the environments;
+   - `model` byhand cases: a criterion left open on a listed
+     environment's tool isn't filed `kind/by-hand` without its reason.
+   `make seed-local` makes the `browser` TestEnvironment, and `make
+   validate-yaml` renders the chart with it on and off.
+   *Done when:* those tests and `make check` pass.
+5. **Devices on the host: `android` and `godot`** (samples and
+   `hack/env-android`, `hack/env-godot`, pinned). Table tests: the pod
+   spec carries the extended resources and `runtimeClassName` as given.
+   `make validate-yaml` checks both samples. Whether KVM and the GPU work
+   is for a human's run on a node that has them.
+   *Done when:* those tests and `make check` pass.
+6. **The UI** (`ui/`). The Project area lists its TestEnvironments with
+   live leases, today's spend and limits, and the Task page shows a run's
+   leases. UI tests on a demo fixture.
+   *Done when:* the UI tests pass and a screenshot is in
+   `docs/screenshots/`.
+7. **AWS EC2, Linux and GPU** (T9 to T11, `internal/adapters/awsenv`, the
+   `aws` member, `make manifests generate`).
+   `contract.TestEnvironments` on a fake EC2 API, as the `cloudformation`
+   adapter's tests fake AWS. Instances get no instance profile, metadata
+   off and the lease's tags; `Return` terminates; `Leases` finds an
+   orphan by tag; cost accrues by time. Envtests: a wrong account and
+   missing keys give `CredentialsValid=False`, and past the budget a run
+   waits `OverBudget`. CEL failing cases: `aws` without
+   `budgetUSDPerDay`.
+   *Done when:* those tests and `make check` pass.
+8. **Remote environments in CI.** An optional capability of the CI port,
+   `WaitingJobs(labels)`, on Gitea, in `make test-gitea`. The operator
+   leases an `aws` environment for a waiting `env-<name>` job, within its
+   limits, and the machine registers as an ephemeral runner from user
+   data. Envtest with the fakes: a waiting job leases one machine, and
+   the lease returns when the job ends.
+   *Done when:* those tests and `make check` pass.
+9. **EC2 Mac for `ios`** (T11's host reuse). Fake EC2 tests: a host is
+   allocated once and reused across leases, kept for `keepHostHours`,
+   released after, and counted at the 24-hour minimum.
+   *Done when:* those tests and `make check` pass.
+10. **Device Farm** (T12, `TestRuns`). Fake Device Farm API tests: an
+    upload and a run, and the report and artifacts back through
+    `theos-env test`.
+    *Done when:* those tests and `make check` pass.
+
+## Done when
+
+Steps 1 to 4 are merged, and #2036's case runs with nothing by hand: an
+issue for the VS Code extension's pictures is labelled `env/browser`, its
+implementer runs the picture script through `theos-env run browser`,
+commits the pictures, CI runs the same script on `env-browser`, and no
+`kind/by-hand` issue is filed for it. The proof is the envtests of steps 2
+and 3 and `make check`. The steps after that each add a provider or
+device, with the tests named. What only a real node or a real AWS account
+shows (Chromium starting on the node, KVM, a GPU, a Mac host) is a human's
+run, and isn't tested before release.

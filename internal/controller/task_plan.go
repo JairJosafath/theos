@@ -150,7 +150,7 @@ func (r *TaskReconciler) applyPlan(ctx context.Context, task *c4v1beta1.Task, st
 			r.progress(task, status, metav1.ConditionTrue, "WaitingForBrief", step.Message)
 			return ctrl.Result{}, nil
 		}
-		return r.wait(task, status, step), nil
+		return r.wait(ctx, task, status, step), nil
 
 	case model.ActionStartImplement:
 		return r.startPlan(ctx, task, status, brief, agent, round, step.Message)

@@ -87,7 +87,7 @@ you made there stays that project's own; delete it to take the shared one.
 The operator copies the release namespace's pull secrets into each labeled
 namespace; the token is read by the model proxy there and never copied. Gitea runs in namespace `gitea`, at
 `http://gitea.gitea.svc.cluster.local:3000` inside the cluster; the seed Job,
-a hook after every install and upgrade, pushed the tagged templates to
+run on every install and upgrade (`seed-<revision>`), pushed the tagged templates to
 organization `templates`, made organization `webshop`, stored its token in
 Secret `webshop/gitea-credentials` and made Project `webshop` (only when the
 namespace had none; it never changes one), and the chart made GitProvider
@@ -267,8 +267,9 @@ The images come in one of two ways:
   and the chart doesn't (`gitea.createNamespace=false`). The agent images
   (`agent-base`, `agent-go`) run in Sandboxes the operator makes in each
   project namespace: it copies each of `global.imagePullSecrets` there from
-  the release's namespace and names it in their pods, so a project namespace
-  needs no Secret or ServiceAccount patch of its own.
+  the release's namespace and names it in their pods, and in the pods of the
+  project's CI runner pool, so a project namespace needs no Secret or
+  ServiceAccount patch of its own.
 
 - **Kind: load them.** `docker login ghcr.io`, `docker pull` each image at the
   release's version and `kind load docker-image` it into the cluster; no pull
@@ -323,10 +324,11 @@ as the run's artifact); a failing release gets an issue titled
 | `agents.standIn` | for each of `gitea.projects`, Agent `stand-in` on the same image: no model and no Secret, it plans from the catalog and makes a scripted change, to show the loop without a token (default on; off with `agents.enabled=false` too) |
 | `agents.<role>` | each Agent's `description`, `model` (Opus, Sonnet for the implementer; a Fable model fails the install), `maxRounds`, `timeoutMinutes` and `resources` |
 | `runners.base`, `runners.go`, `runners.image` | the CI runners: `enabled`, `image`, `replicas` (default 1), `resources`, `workSize`, `tmpSize`; `pool.size` (default 1 for `base` and `go`, none for `image`) is the per-project pool of that label every GitProvider the chart renders names in its `ci` block, the runners a project's checks run on, since the shared runners serve the templates' checks only (0 turns it off); `go.goCache` is the node directory of its Go build cache; `image.buildkit` runs its job container as rootless BuildKit needs, with its work and tmp directories on disk |
-| `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners, which the operator also copies into each project namespace for the agents' pods; the operator's are `manager.imagePullSecrets` |
+| `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners, which the operator also copies into each project namespace for the agents' and the CI runner pool's pods; the operator's are `manager.imagePullSecrets` |
 | `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |
 | `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default). A CRD whose kind's versions differ in shape converts by the operator's webhook, so while the operator is down, or after `helm uninstall` kept the CRDs, `kubectl get` of that kind fails and deleting a Project namespace waits (none today; the CRDs convert by the API server, and [the plan](../../docs/plans/done/api-versions.md) says which) |
 | `webhook.enabled` | the operator's conversion webhook (default on); a kind whose versions differ in shape refuses to render without it |
+| `gitEvents.enabled`, `gitEvents.port`, `gitEvents.url`, `gitEvents.from` | the receiver of Gitea's event deliveries (default on, port 8082): Service `<release>-git-events`, the manager's `--git-events-bind-address` and `--git-events-url`, a NetworkPolicy letting only `gitEvents.from` (default the pods of `gitea.namespace`) reach the port, and the chart's Gitea allowing webhooks to `gitEvents.url`'s host alone; `url` defaults to `http://<release>-git-events.<release namespace>.svc:<port>`. Off, the operator registers no hook and polls ([Git events](#git-events)) |
 | `chat.enabled` | install `theos-chat` (default off): Deployment `<release>-chat` on the operator image, with its own ServiceAccount and ClusterRole (read theos's objects, get Secrets, its own ConfigMaps, impersonate users and groups); `chat.interval` and `chat.resources` |
 | `chat.uiURL` | the UI's address `theos-chat`'s posts link each Task's and Container's page under (`--ui-url`), http(s) with no user, query or fragment; empty, the UI's own: `<ui.sessionBinaryScheme>://<ui.allowedHosts[0]>` behind an Ingress, else `http://localhost:<ui.service.port>`, which opens only where the port-forward runs; with `ui.enabled` false, no links. Set an address people's phones reach |
 | `chat.homeserverURL` | the homeserver of a Chat that names none, the operator's `--chat-homeserver`; empty, the in-cluster one with `chat.homeserver.enabled`, else none |
@@ -403,3 +405,40 @@ doesn't set, so a Git step in flight never misses its GitProvider; the first
 upgrade from an older chart takes over the hooks it made. `helm uninstall`
 leaves them in place, as it does one the chart stops rendering. The
 GitProviders `gitea.projects` makes are applied the same way, by the seed.
+
+### Git events
+
+The operator registers a hook on each GitProvider's organization that
+delivers to `<gitEvents.url>/git-events/<namespace>/<name>`, so a push, an
+issue or a review reconciles what it concerns at once instead of at the next
+poll. Each delivery is signed with the GitProvider's own Secret, which the
+operator makes in the cluster; the chart renders none. GitProvider
+`status.conditions` type `Events` says how it goes: `Registered`, then
+`Receiving` after the first verified delivery.
+
+With the release's Gitea nothing needs setting. A Gitea of your own
+(`gitea.enabled=false`) needs three things:
+
+- `gitEvents.url`: an address that Gitea reaches the operator's Service on,
+  such as a LoadBalancer's or an Ingress's, when the Service's cluster name
+  doesn't resolve there.
+- That URL's host in its own Gitea's allowed host list, `[webhook]
+  ALLOWED_HOST_LIST` in `app.ini` (or `GITEA__webhook__ALLOWED_HOST_LIST`);
+  Gitea's default, `external`, refuses private addresses such as the
+  Service's.
+- `gitEvents.from`: the NetworkPolicy peers its deliveries come from, such
+  as `[{ipBlock: {cidr: 10.0.0.5/32}}]`, when they don't come from pods in
+  `gitea.namespace`.
+
+```yaml
+gitea:
+  enabled: false
+gitEvents:
+  url: http://theos-events.example.internal:8082
+  from:
+    - ipBlock:
+        cidr: 10.0.0.5/32
+```
+
+Without them the hook still registers but no delivery arrives, and the
+operator keeps polling the host.

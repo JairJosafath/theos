@@ -31,6 +31,9 @@ resources:
 # [METRICS] Expose the controller manager metrics service.
 - metrics_service.yaml
 - webhook_service.yaml
+# The receiver of Gitea's deliveries and the fence on its port.
+- git_events_service.yaml
+- git_events_network_policy.yaml
 # [NETWORK POLICY] Control ingress to metrics and webhook ports.
 # Allow metrics traffic from pods in namespaces labeled 'metrics: enabled'.
 # Allow webhook traffic from all sources.

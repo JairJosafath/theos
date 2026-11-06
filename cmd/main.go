@@ -95,6 +95,8 @@ func main() {
 	var uiServiceAccount string
 	var modelProxyURL string
 	var chatHomeserver string
+	var gitEventsURL string
+	var gitEventsAddr string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -180,6 +182,13 @@ func main() {
 	flag.StringVar(&chatHomeserver, "chat-homeserver", "",
 		"The Matrix homeserver of a Chat that names none, such as the chart's in-cluster one. None: each Chat "+
 			"names its homeserver.")
+	flag.StringVar(&gitEventsURL, "git-events-url", "",
+		"The base address the Git host delivers events to, such as http://theos-git-events.<namespace>.svc:8082: "+
+			"each GitProvider's hook delivers to <url>/git-events/<namespace>/<name>. None: no hook, and the "+
+			"operator polls the host.")
+	flag.StringVar(&gitEventsAddr, "git-events-bind-address", "0",
+		"The address the receiver of the Git host's deliveries binds to, such as :8082, on the leader. "+
+			"Leave as 0 to receive none: the operator polls the host.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -353,6 +362,18 @@ func main() {
 		setupLog.Error(err, "Failed to set up field indexes")
 		os.Exit(1)
 	}
+	// The receiver of the Git host's deliveries, nil when off; the Container,
+	// Crew, Task, Brief and GitProvider controllers each read its Events
+	// (docs/plans/done/git-events.md, decisions 5 to 8).
+	var gitEvents *controller.GitEventsReceiver
+	if gitEventsAddr != "0" && gitEventsAddr != "" {
+		gitEvents = &controller.GitEventsReceiver{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(),
+			Git: gitClient{}, BindAddress: gitEventsAddr}
+		if err := mgr.Add(gitEvents); err != nil {
+			setupLog.Error(err, "Failed to add the Git events receiver")
+			os.Exit(1)
+		}
+	}
 
 	if err := (&controller.ProjectReconciler{
 		Client:            mgr.GetClient(),
@@ -404,6 +425,7 @@ func main() {
 		Git:             gitClient{},
 		ScaffoldOptions: scaffoldOptions,
 		Recorder:        mgr.GetEventRecorder("container"),
+		GitEvents:       gitEvents,
 		Deployers:       deployers,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "container")
@@ -445,6 +467,7 @@ func main() {
 		SourceNamespace:   podNamespace,
 		ModelProxyURL:     modelProxyURL,
 		Recorder:          mgr.GetEventRecorder("task"),
+		GitEvents:         gitEvents,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
 		os.Exit(1)
@@ -457,6 +480,7 @@ func main() {
 		Git:       gitClient{},
 		Publish:   github.Client{},
 		Recorder:  mgr.GetEventRecorder("crew"),
+		GitEvents: gitEvents,
 		GoProxy:   goProxyURL(goProxy),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "crew")
@@ -469,6 +493,7 @@ func main() {
 		Git:             gitClient{},
 		Issues:          github.Client{},
 		Recorder:        mgr.GetEventRecorder("brief"),
+		GitEvents:       gitEvents,
 		SharedSecrets:   sharedSecrets,
 		SourceNamespace: podNamespace,
 		ModelProxyURL:   modelProxyURL,
@@ -511,6 +536,17 @@ func main() {
 		Git:       gitClient{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "benchmark")
+		os.Exit(1)
+	}
+	if err := (&controller.GitProviderReconciler{
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		APIReader:    mgr.GetAPIReader(),
+		Git:          gitClient{},
+		GitEventsURL: gitEventsURL,
+		GitEvents:    gitEvents,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "gitprovider")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

@@ -667,6 +667,48 @@ func TestGiteaReleaseBuildsAnOperatorsImage(t *testing.T) {
 	}
 }
 
+// TestGiteaReleaseRunsOnGoRelease checks, in every combo with gitea-release,
+// that the release job runs on go-release, the pool label whose pods start
+// from the image's warm Go cache and share it with no other job, never on go,
+// whose cache a pull request's job writes: the signed release files must not
+// link what a job planted there (#1141). The image job stays on image.
+func TestGiteaReleaseRunsOnGoRelease(t *testing.T) {
+	const workflow = ".gitea/workflows/release.yaml"
+	var n int
+	for _, c := range templateCombos {
+		if !slices.Contains(c.layers, side{model.SideDeployment, "gitea-release"}) {
+			continue
+		}
+		n++
+		t.Run(c.name, func(t *testing.T) {
+			_, result := renderCombo(t, c.typ, c.layers)
+			f, ok := result.Files[workflow]
+			if !ok {
+				t.Fatalf("%s not written; files: %v", workflow, result.Files.Paths())
+			}
+			var wf struct {
+				Jobs map[string]struct {
+					RunsOn string `yaml:"runs-on"`
+				} `yaml:"jobs"`
+			}
+			if err := yaml.Unmarshal(f.Data, &wf); err != nil {
+				t.Fatalf("%s: %v\n%s", workflow, err, f.Data)
+			}
+			if got := wf.Jobs["release"].RunsOn; got != "go-release" {
+				t.Errorf("%s's release job runs on %q, want go-release", workflow, got)
+			}
+			for name, job := range wf.Jobs {
+				if want := map[string]string{"release": "go-release", "image": "image"}[name]; job.RunsOn != want {
+					t.Errorf("%s's job %s runs on %q, want %q", workflow, name, job.RunsOn, want)
+				}
+			}
+		})
+	}
+	if n == 0 {
+		t.Fatal("no combo renders gitea-release")
+	}
+}
+
 // TestGiteaReleaseNamesTheImageAsTheOperatorPushesIt runs the make dist step
 // of an operator's release, extracted from the rendered workflow, against a
 // stub make that records the IMG it receives (#1581): a sub-path in the Git

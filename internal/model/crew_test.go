@@ -125,6 +125,24 @@ func TestNextCrewStep(t *testing.T) {
 				{Name: "cel-ls-3-3", Issue: 3, Final: true, Failed: true},
 			}},
 			want: CrewStep{Phase: CrewWorking, Start: start(3, "cel-ls-3-4", 4), Message: "Starting Task cel-ls-3-4 for issue #3"}},
+		{name: "#2037: a Task whose agent couldn't see the issue costs no try", facts: CrewFacts{ContainerReady: true,
+			Issues: []Issue{ready(3)}, Tasks: []CrewTask{
+				{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true, Unseen: true},
+				{Name: "cel-ls-3-2", Issue: 3, Final: true, Failed: true},
+				{Name: "cel-ls-3-3", Issue: 3, Final: true, Failed: true},
+			}},
+			want: CrewStep{Phase: CrewWorking, Start: start(3, "cel-ls-3-4", 4), Message: "Starting Task cel-ls-3-4 for issue #3"}},
+		{name: "#2037: only the first such Task is free", facts: CrewFacts{ContainerReady: true, Issues: []Issue{ready(3)},
+			Tasks: []CrewTask{
+				{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true, Unseen: true},
+				{Name: "cel-ls-3-2", Issue: 3, Final: true, Failed: true, Unseen: true},
+				{Name: "cel-ls-3-3", Issue: 3, Final: true, Failed: true, Unseen: true},
+				{Name: "cel-ls-3-4", Issue: 3, Final: true, Failed: true},
+			}},
+			want: CrewStep{Phase: CrewIdle, NotReady: []IssueRejection{{Issue: 3,
+				Reason: "Agents tried this issue 3 times (Tasks cel-ls-3-2, cel-ls-3-3, cel-ls-3-4) and failed each time; " +
+					"it needs a person: split it, clarify it, or do it by hand"}},
+				Message: "No ready issues"}},
 		{name: "gives up after three tries", facts: CrewFacts{ContainerReady: true, Issues: []Issue{ready(3)},
 			Tasks: []CrewTask{
 				{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true},

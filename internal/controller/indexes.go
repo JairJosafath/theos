@@ -25,6 +25,12 @@ const (
 	indexContainer = ".spec.containerRef.name"
 	// indexTaskContainer indexes Tasks by their Container.
 	indexTaskContainer = indexContainer
+	// indexTaskRepository indexes Tasks by the repository they work in (a
+	// Container's, or a Plan Task's Brief's), and by their issue,
+	// Standard-change issue and pull request as <repository>#<number> and
+	// their branches as <repository>@<branch>, for the host's deliveries
+	// (docs/plans/done/git-events.md, decision 7).
+	indexTaskRepository = ".taskRepository"
 	// indexElement indexes Relationships by both ends, as "Kind/name".
 	indexElement = ".spec.elements"
 	// indexSource indexes Relationships by their source, as "Kind/name".
@@ -71,6 +77,10 @@ func SetupIndexes(ctx context.Context, mgr manager.Manager) error {
 			}
 			return nil
 		}); err != nil {
+		return err
+	}
+	if err := indexer.IndexField(ctx, &c4v1beta1.Task{}, indexTaskRepository,
+		func(o client.Object) []string { return taskRepositoryKeys(o.(*c4v1beta1.Task)) }); err != nil {
 		return err
 	}
 	if err := indexer.IndexField(ctx, &c4v1beta1.Relationship{}, indexSource,

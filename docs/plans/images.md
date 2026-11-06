@@ -28,14 +28,14 @@ image is the one tier only Kind shows.
   `controller:<tag>` (`templates/go-kubebuilder/README.md.tmpl`).
 - **The runners can't build.** The `base` and `go` runners run jobs in host
   mode in an unprivileged pod with no Docker
-  ([ci-runner-isolation.md](ci-runner-isolation.md)).
+  ([ci-runner-isolation.md](done/ci-runner-isolation.md)).
 - **The release workflow is the precedent.** gitea-release's
   `release.yaml` runs `make dist` on the tag and attaches `dist/` to the
   Gitea release with the job's token. The Crew counts a release's runs, and
   the Container keeps `status.newestRelease`, the newest release whose runs
   succeeded.
 - **Publishing is the operator's.** The Go module (`PublishGoModule`) and,
-  per [app-packages.md](app-packages.md) (#1229, #1232), the npm and PyPI
+  per [app-packages.md](done/app-packages.md) (#1229, #1232), the npm and PyPI
   files go from the operator to Gitea's registries with the GitProvider's
   credential, never from CI: no package-write credential in a job, and no
   question of whether Gitea's Actions token may write packages.

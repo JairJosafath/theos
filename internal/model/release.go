@@ -69,6 +69,16 @@ type ReleaseFacts struct {
 	// with merged work and no prepare issue gets one before it is tagged, and
 	// work merged after its prepare issue holds it.
 	Prepare bool
+	// FullCheckRerun is the release and commit whose failed full check a
+	// person runs again (rerun-release, #2028); nil for none. Its issues of
+	// that check, open or at work, hold the release no more meanwhile.
+	FullCheckRerun *FullCheckAt
+}
+
+// FullCheckAt is release Tag's full check at Commit.
+type FullCheckAt struct {
+	Tag    string
+	Commit string
 }
 
 // ReleasedTag is a release that went out, and the commit its tag names.
@@ -127,7 +137,8 @@ const (
 // its own in the order they merged, then the later releases' merged ones its
 // tag will carry. With Commit set, it moves the issues Moved into
 // milestone Milestone, tags Commit as Tag when CreateTag says so, then closes
-// milestone Milestone and the milestones Emptied. With Held set, release Tag is
+// milestone Milestone, the milestones Emptied and the milestones Skipped. With
+// Held set, release Tag is
 // done but can't go out: Reason says why in a word, Held in a sentence. With
 // none, there is nothing to do.
 type ReleaseStep struct {
@@ -139,8 +150,14 @@ type ReleaseStep struct {
 	Merged    []int
 	Moved     []ReleaseMove
 	Emptied   []EmptiedRelease
-	Reason    string
-	Held      string
+	// Skipped are the open releases before Tag with no issue at all, which
+	// close untagged with it (#2025).
+	Skipped []EmptiedRelease
+	// Closes are the open issues of Tag's full check that a re-run a person
+	// asked for passed over (FullCheckRerun), closed once Tag is tagged.
+	Closes []int
+	Reason string
+	Held   string
 }
 
 // ReleaseMove is a later release's closed issue whose merge the tag carries, to
@@ -166,10 +183,18 @@ func held(title, reason, format string, args ...any) ReleaseStep {
 // goes. A release is done when it has no open issue and no Task works on one of
 // its issues. Releases go out in order, so only the first can be tagged; its tag
 // goes at the merge commit of its most recently merged issue, and is never moved.
+// A release with no issue at all, open or closed, is no release yet: it is
+// neither done nor in the way, so it holds no later release, and one before the
+// release tagged closes untagged with it (#2025).
 func NextRelease(f ReleaseFacts) ReleaseStep {
-	var releases []ReleaseMilestone
+	rerunFixes := withoutRerunFixes(&f)
+	var releases, empty []ReleaseMilestone
 	for _, m := range f.Milestones {
-		if IsReleaseTitle(m.Title) && !m.Due.IsZero() {
+		switch {
+		case !IsReleaseTitle(m.Title) || m.Due.IsZero():
+		case len(m.Open) == 0 && len(m.Closed) == 0:
+			empty = append(empty, m)
+		default:
 			releases = append(releases, m)
 		}
 	}
@@ -179,6 +204,60 @@ func NextRelease(f ReleaseFacts) ReleaseStep {
 	slices.SortStableFunc(releases, func(a, b ReleaseMilestone) int {
 		return compareReleases(&a.Release, &b.Release)
 	})
+	step := nextRelease(f, releases)
+	if step.Commit != "" {
+		step.Skipped = skippedBefore(empty, releases[0].Release)
+		if f.FullCheckRerun != nil && step.Tag == f.FullCheckRerun.Tag {
+			step.Closes = rerunFixes
+		}
+	}
+	return step
+}
+
+// withoutRerunFixes drops from the facts' open and active issues those of the
+// full check a person runs again (FullCheckRerun), which hold its release no
+// more, and returns them. The facts' slices are left as they were.
+func withoutRerunFixes(f *ReleaseFacts) []int {
+	rerun := f.FullCheckRerun
+	if rerun == nil {
+		return nil
+	}
+	var dropped []int
+	f.Milestones = slices.Clone(f.Milestones)
+	for i, m := range f.Milestones {
+		if m.Title != rerun.Tag {
+			continue
+		}
+		var open []int
+		for _, n := range m.Open {
+			if slices.Contains(m.FullChecks, FullCheckFix{Issue: n, Commit: rerun.Commit}) {
+				dropped = append(dropped, n)
+				continue
+			}
+			open = append(open, n)
+		}
+		f.Milestones[i].Open = open
+	}
+	f.Active = slices.DeleteFunc(slices.Clone(f.Active), func(n int) bool { return slices.Contains(dropped, n) })
+	return dropped
+}
+
+// skippedBefore are the empty releases that go out before release, in order.
+func skippedBefore(empty []ReleaseMilestone, release Release) []EmptiedRelease {
+	slices.SortStableFunc(empty, func(a, b ReleaseMilestone) int {
+		return compareReleases(&a.Release, &b.Release)
+	})
+	var out []EmptiedRelease
+	for _, m := range empty {
+		if ReleaseBefore(m.Release, release) {
+			out = append(out, EmptiedRelease{ID: m.ID, Title: m.Title})
+		}
+	}
+	return out
+}
+
+// nextRelease is NextRelease on the releases that have issues, in order.
+func nextRelease(f ReleaseFacts, releases []ReleaseMilestone) ReleaseStep {
 	f.Merged = doneByChanges(f.Merged)
 	first := releases[0]
 	if !releaseDone(first, f.Active) {
@@ -395,6 +474,13 @@ func ReleasedMessage(step ReleaseStep) string {
 		}
 		message += "; " + strings.Join(titles, ", ") + " had nothing left and closed untagged"
 	}
+	if len(step.Skipped) > 0 {
+		titles := make([]string, 0, len(step.Skipped))
+		for _, e := range step.Skipped {
+			titles = append(titles, e.Title)
+		}
+		message += "; " + strings.Join(titles, ", ") + " had no issues and closed untagged"
+	}
 	return message
 }
 
@@ -522,18 +608,25 @@ const (
 	RerunNone = ""
 	// RerunRuns: re-run the last release's failed runs.
 	RerunRuns = "Rerun"
+	// RerunFullCheck: re-run the failed full check that holds the next release.
+	RerunFullCheck = "RerunFullCheck"
 	// RerunNothingFailed: say there is no failed run to re-run.
 	RerunNothingFailed = "NothingFailed"
 )
 
 // ReleaseRerun says what a Crew does with value, its rerun-release
-// annotation, given the value it answered last and its last release's run
-// result, "" when it tagged none. Each value is answered once: a value set
-// while the run hasn't failed doesn't wait for it to fail.
-func ReleaseRerun(value, answered, run string) string {
+// annotation, given the value it answered last, its last release's run
+// result, "" when it tagged none, and the result of the full check that holds
+// its next release, "" when none runs. A failed full check goes first, as the
+// next tag waits on it (#2028); a new value then re-runs the last release's.
+// Each value is answered once: a value set while the run hasn't failed doesn't
+// wait for it to fail.
+func ReleaseRerun(value, answered, run, fullCheck string) string {
 	switch {
 	case value == "" || value == answered:
 		return RerunNone
+	case fullCheck == RunFailed:
+		return RerunFullCheck
 	case run == RunFailed:
 		return RerunRuns
 	default:

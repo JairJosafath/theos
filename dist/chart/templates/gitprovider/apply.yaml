@@ -5,8 +5,10 @@
 # every install and upgrade: an upgrade changes them in place, keeping their
 # UIDs and the fields the chart doesn't set, and the first one takes over the
 # hook objects an older chart made. An object the chart stops rendering stays.
-# Needs no Gitea, so it runs with gitea.enabled=false too. A failed Job stays
-# for its log until the next upgrade replaces it.
+# Needs no Gitea, so it runs with gitea.enabled=false too. A hook, unlike the
+# seed (seed.yaml): nothing `helm install --wait` waits for reads what it
+# makes, so the wait ends before it runs (#2030). A failed Job stays for its
+# log until the next upgrade replaces it.
 apiVersion: batch/v1
 kind: Job
 metadata:

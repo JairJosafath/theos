@@ -56,6 +56,10 @@ type StandardUpdateInFlight struct {
 	// the repository may fix itself, such as a missing light check: each pass
 	// plans it again.
 	Held bool
+	// Dropping is why the operator closes the update's pull request to plan it
+	// again, recorded before it closes it: a closed pull request of an update
+	// Dropping names is the operator's own close, never a person's (#2035).
+	Dropping string
 }
 
 // UpdatePullRequest is what the Git host says about an update's pull request.
@@ -103,7 +107,9 @@ const (
 	// update's ref and checks.
 	StandardRecordMerge StandardAction = "RecordMerge"
 	// StandardDrop closes the pull request, deletes its branch and forgets the
-	// update, so the Standard is planned again.
+	// update, so the Standard is planned again. The operator records the drop in
+	// status before it closes the pull request, so a pass that stops after the
+	// close finishes the drop instead of reading the close as a person's.
 	StandardDrop StandardAction = "Drop"
 	// StandardStopClosed stops an update a person closed without merging and
 	// deletes its branch.
@@ -189,6 +195,10 @@ func followStep(f StandardUpdateFacts) StandardStep {
 		return StandardStep{Action: StandardReadPR}
 	case pr.Merged:
 		return StandardStep{Action: StandardRecordMerge}
+	case u.Dropping != "":
+		// The operator chose to drop it, and may have closed it already: finish
+		// the drop, so the update is planned again (#2035).
+		return StandardStep{Action: StandardDrop, Message: u.Dropping}
 	case pr.Closed && u.Take:
 		return StandardStep{Action: StandardTakeClosed}
 	case pr.Closed:

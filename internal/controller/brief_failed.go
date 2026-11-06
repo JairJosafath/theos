@@ -93,7 +93,8 @@ func issueTasks(tasks []c4v1beta1.Task) map[string][]model.IssueTask {
 			continue
 		}
 		it := model.IssueTask{Name: t.Name, Issue: int(t.Spec.Issue), Merged: t.Status.Phase == c4v1beta1.TaskMerged,
-			Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status), Created: t.CreationTimestamp.Time}
+			Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
+			Unseen: failedUnseen(&t.Status), Created: t.CreationTimestamp.Time}
 		if t.Status.CompletedAt != nil {
 			it.Completed = t.Status.CompletedAt.Time
 		}

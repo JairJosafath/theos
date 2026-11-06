@@ -336,7 +336,8 @@ const (
 
 // AnnotationRerunRelease, set or changed on a Crew whose last release's run
 // Failed, makes the operator re-run that release's failed workflow runs, once
-// per value.
+// per value; on a Crew whose next release its failed full check holds, it
+// re-runs that check's failed runs first (#2028).
 const AnnotationRerunRelease = "theos.factory.io/rerun-release"
 
 // AnnotationAcceptRepository, set on a Crew to the GitHub id of its publish

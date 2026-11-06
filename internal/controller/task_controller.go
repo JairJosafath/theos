@@ -73,6 +73,9 @@ func mergeCommitRetryAfter(completed *metav1.Time, now time.Time) time.Duration 
 type TaskReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads Secrets without caching them.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
@@ -176,6 +179,8 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	// The waits for the host's checks stretch while its deliveries arrive (#1222).
+	ctx = withHostEvents(ctx, r.Client, task.Namespace, container.Spec.GitProviderRef.Name)
 	labels := projectLabels(task.Namespace)
 	labels[c4v1beta1.LabelContainer] = container.Name
 	if err := adoptTask(ctx, r.Client, r.Scheme, &container, &task, labels); err != nil {
@@ -780,6 +785,17 @@ func failedNoCI(status *c4v1beta1.TaskStatus) bool {
 	return cond != nil && model.RunnerFault(cond.Reason)
 }
 
+// failedUnseen reports whether a Task failed because its agent said it
+// can't see the issue (model.ReasonIssueUnseen), which model.TryCounter lets
+// cost its issue no try once.
+func failedUnseen(status *c4v1beta1.TaskStatus) bool {
+	if status.Phase != c4v1beta1.TaskFailed {
+		return false
+	}
+	cond := meta.FindStatusCondition(status.Conditions, ConditionSucceeded)
+	return cond != nil && cond.Reason == model.ReasonIssueUnseen
+}
+
 func (r *TaskReconciler) now() time.Time {
 	if r.Now != nil {
 		return r.Now()
@@ -926,6 +942,9 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 				return reqs
 			}), createOrDelete()).
+		// A delivery of the Git host reconciles the Tasks of the issue, pull request or branch a delivery names at once
+		// (docs/plans/done/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventTaskRequests(mgr.GetClient()))).
 		Named("task").
 		Complete(r)
 }

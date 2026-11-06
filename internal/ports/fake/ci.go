@@ -153,8 +153,20 @@ func (g *Git) SetCheckLog(log string) {
 	g.s.agentState().log = log
 }
 
-func (g *Git) CheckLog(_ context.Context, _ ports.Repository, _ string) (string, error) {
+// SetNoCheckLog makes the CI job checkURL links to one that started and sent
+// no log, as one whose runner went away before its first line: CheckLog of it
+// is ErrNoCILog.
+func (g *Git) SetNoCheckLog(checkURL string) {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()
+	g.s.agentState().noLogs[checkURL] = true
+}
+
+func (g *Git) CheckLog(_ context.Context, _ ports.Repository, checkURL string) (string, error) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	if g.s.agentState().noLogs[checkURL] {
+		return "", fmt.Errorf("job of %s: %w", checkURL, ports.ErrNoCILog)
+	}
 	return g.s.agentState().log, nil
 }

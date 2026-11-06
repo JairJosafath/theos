@@ -270,7 +270,7 @@ var ErrPullRequestNotFound = errors.New("no such pull request")
 
 // ErrUnpinnedRef means a template ref is a branch or doesn't exist. Templates
 // must be pinned to a tag or a full commit SHA. Fetching templates is plain
-// Git and no port (docs/plans/git-host-ports.md, decision 6); the error is
+// Git and no port (docs/plans/done/git-host-ports.md, decision 6); the error is
 // here so the fetcher and the controllers' fake share it.
 var ErrUnpinnedRef = errors.New("template ref is not a tag or commit")
 

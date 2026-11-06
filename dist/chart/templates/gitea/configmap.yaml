@@ -29,6 +29,10 @@ data:
     "GITEA__indexer__ISSUE_INDEXER_TYPE" "db"
     "GITEA__log__LEVEL" "Warn"
     "GITEA__actions__ENABLED" "true" }}
+  {{- if .Values.gitEvents.enabled }}
+  {{- /* Webhooks reach the operator's receiver and no other host (docs/plans/done/git-events.md, decision 10). */}}
+  {{- $_ := set $env "GITEA__webhook__ALLOWED_HOST_LIST" (include "theos.gitEventsHost" .) }}
+  {{- end }}
   {{- range $k, $v := mergeOverwrite $env (.Values.gitea.config | default dict) }}
   {{ $k }}: {{ $v | toString | quote }}
   {{- end }}

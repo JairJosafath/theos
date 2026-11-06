@@ -80,9 +80,29 @@ func TestNextRelease(t *testing.T) {
 		{"a done release with no merged issue is left to a person",
 			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(2, "v0.2.0", 12, nil, []int{46})}},
 			ReleaseStep{Tag: "v0.2.0", Reason: ReleaseNoMergedIssue, Held: "v0.2.0 is done but none of its issues was merged by a Task; a person tags it"}},
-		{"an empty release is left to a person",
+		{"#2025: an empty release alone is no release yet, so nothing is done or held",
 			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(2, "v0.2.0", 12, nil, nil)}},
-			ReleaseStep{Tag: "v0.2.0", Reason: ReleaseNoMergedIssue, Held: "v0.2.0 is done but none of its issues was merged by a Task; a person tags it"}},
+			ReleaseStep{}},
+		{"#2025: an empty release before one with merged work closes untagged as the later one ships",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(22, "v0.22.0", 12, nil, nil),
+				milestone(23, "v0.23.0", 19, nil, []int{120})},
+				Merged: []MergedTask{merged("t-120", 120, "c120", 8)}},
+			ReleaseStep{Tag: "v0.23.0", Commit: "c120", Milestone: 23, CreateTag: true,
+				Skipped: []EmptiedRelease{{ID: 22, Title: "v0.22.0"}}}},
+		{"#2025: an empty release doesn't hold a later one in work, nor say a done one waits for it",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(22, "v0.22.0", 12, nil, nil),
+				milestone(23, "v0.23.0", 19, []int{121}, []int{120}), milestone(24, "v0.24.0", 26, nil, nil)},
+				Merged: []MergedTask{merged("t-120", 120, "c120", 8)}},
+			ReleaseStep{}},
+		{"#2025: an empty release after the one tagged stays open, for the work still to come",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(23, "v0.23.0", 19, nil, []int{120}),
+				milestone(24, "v0.24.0", 26, nil, nil)},
+				Merged: []MergedTask{merged("t-120", 120, "c120", 8)}},
+			ReleaseStep{Tag: "v0.23.0", Commit: "c120", Milestone: 23, CreateTag: true}},
+		{"#2025: an empty release before one held keeps open, and the hold names the later one",
+			ReleaseFacts{Milestones: []ReleaseMilestone{milestone(22, "v0.22.0", 12, nil, nil),
+				milestone(23, "v0.23.0", 19, nil, []int{46})}},
+			ReleaseStep{Tag: "v0.23.0", Reason: ReleaseNoMergedIssue, Held: "v0.23.0 is done but none of its issues was merged by a Task; a person tags it"}},
 		{"a merge without its commit holds the release",
 			ReleaseFacts{Milestones: []ReleaseMilestone{v020},
 				Merged: append(serverMerges[1:], merged("server-44", 44, "", 3))},
@@ -455,21 +475,28 @@ func TestFailedReleaseRuns(t *testing.T) {
 
 func TestReleaseRerun(t *testing.T) {
 	tests := []struct {
-		name, value, answered, run string
-		want                       string
+		name, value, answered, run, fullCheck string
+		want                                  string
 	}{
-		{"no annotation", "", "", RunFailed, RerunNone},
-		{"a new value on a failed run", "1", "", RunFailed, RerunRuns},
-		{"a changed value on a failed run", "2", "1", RunFailed, RerunRuns},
-		{"the answered value again", "1", "1", RunFailed, RerunNone},
-		{"a new value on a run that succeeded", "1", "", RunSucceeded, RerunNothingFailed},
-		{"a new value on a running run", "1", "", RunRunning, RerunNothingFailed},
-		{"a new value with no release", "1", "", "", RerunNothingFailed},
+		{"no annotation", "", "", RunFailed, "", RerunNone},
+		{"a new value on a failed run", "1", "", RunFailed, "", RerunRuns},
+		{"a changed value on a failed run", "2", "1", RunFailed, "", RerunRuns},
+		{"the answered value again", "1", "1", RunFailed, "", RerunNone},
+		{"a new value on a run that succeeded", "1", "", RunSucceeded, "", RerunNothingFailed},
+		{"a new value on a running run", "1", "", RunRunning, "", RerunNothingFailed},
+		{"a new value with no release", "1", "", "", "", RerunNothingFailed},
+		{"#2028: a new value while a failed full check holds the next release", "1", "", RunSucceeded, RunFailed,
+			RerunFullCheck},
+		{"#2028: the failed full check goes before a failed release run", "1", "", RunFailed, RunFailed,
+			RerunFullCheck},
+		{"#2028: the answered value again leaves the full check", "1", "1", "", RunFailed, RerunNone},
+		{"#2028: a full check that runs is nothing to re-run", "1", "", "", RunRunning, RerunNothingFailed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ReleaseRerun(tt.value, tt.answered, tt.run); got != tt.want {
-				t.Errorf("ReleaseRerun(%q, %q, %q) = %q; want %q", tt.value, tt.answered, tt.run, got, tt.want)
+			if got := ReleaseRerun(tt.value, tt.answered, tt.run, tt.fullCheck); got != tt.want {
+				t.Errorf("ReleaseRerun(%q, %q, %q, %q) = %q; want %q", tt.value, tt.answered, tt.run,
+					tt.fullCheck, got, tt.want)
 			}
 		})
 	}
@@ -560,6 +587,10 @@ func TestReleasedMessage(t *testing.T) {
 	want := "Released v0.1.3 at c135, carrying #40 of v0.2.0, #41 of v0.2.0; v0.2.0 had nothing left and closed untagged"
 	if got := ReleasedMessage(step); got != want {
 		t.Errorf("ReleasedMessage() = %q, want %q", got, want)
+	}
+	step.Skipped = []EmptiedRelease{{ID: 1, Title: "v0.1.2"}}
+	if got, want := ReleasedMessage(step), want+"; v0.1.2 had no issues and closed untagged"; got != want {
+		t.Errorf("ReleasedMessage() with a skipped release (#2025) = %q, want %q", got, want)
 	}
 	if got := MovedComment(step, step.Moved[0]); !strings.Contains(got, "Moved from v0.2.0 to v0.1.3") ||
 		!strings.Contains(got, "c135") {

@@ -59,6 +59,9 @@ const defaultCrewPoll = time.Minute
 type CrewReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads the Crew, Secrets and Tasks without the cache.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
@@ -270,7 +273,13 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionModulePublished)
 	}
-	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
+	poll := r.poll()
+	if facts.ContainerReady {
+		// The poll of the ready issues waits for the host (#1222); a Crew
+		// waiting for its Container is woken by the Container's watch.
+		poll = hostRecheck(withHostEvents(ctx, r.Client, crew.Namespace, container.Spec.GitProviderRef.Name), poll)
+	}
+	return ctrl.Result{RequeueAfter: poll}, r.writeStatus(ctx, &crew, status)
 }
 
 // handBackIssues gives the issues agents must not take back to a person,
@@ -426,6 +435,7 @@ func crewRoutes(spec *c4v1beta1.CrewSpec) []model.AgentRoute {
 func crewTask(t *c4v1beta1.Task) model.CrewTask {
 	out := model.CrewTask{Name: t.Name, Issue: int(t.Spec.Issue), Final: isFinal(t.Status.Phase),
 		Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
+		Unseen: failedUnseen(&t.Status),
 		// A spec waiting for a person runs no agent: like a Task waiting on a
 		// Standard change, it takes no place from parallel.
 		Blocked: t.Status.Phase == c4v1beta1.TaskBlocked || t.Status.Phase == c4v1beta1.TaskAwaitingApproval,
@@ -685,6 +695,9 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}), createOrDelete()).
 		// A Crew uploading a release file can take minutes; the others go on.
 		WithOptions(controller.Options{MaxConcurrentReconciles: crewWorkers}).
+		// A delivery of the Git host reconciles the Crews of the Container whose repository a delivery names at once
+		// (docs/plans/done/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventCrewRequests(mgr.GetClient()))).
 		Named("crew").
 		Complete(r)
 }

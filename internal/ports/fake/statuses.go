@@ -48,6 +48,7 @@ func (g *Git) SetCommitStatus(_ context.Context, repo ports.Repository, sha stri
 		}
 	}
 	s.checks[key] = checks
+	g.s.deliver(repo, EventStatus, 0)
 	return nil
 }
 

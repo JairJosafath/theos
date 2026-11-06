@@ -193,6 +193,33 @@ webhook:
   # Webhook server port
   port: 9443
 
+## The receiver of the Git host's event deliveries (docs/plans/done/git-events.md,
+## decision 10): the operator listens on port (--git-events-bind-address) and
+## registers a hook on each GitProvider's organization that delivers to url
+## (--git-events-url), so it reconciles when a repository changes instead of
+## waiting for its poll. Each delivery is signed with the GitProvider's own
+## Secret, which the operator makes in the cluster; none is rendered here.
+## Off: no hook, no receiver, and the operator polls the host.
+##
+gitEvents:
+  enabled: true
+  # The receiver's port, on the manager container and on Service
+  # <release>-git-events.
+  port: 8082
+  ## The address the Git host delivers to. Empty: the Service's cluster name,
+  ## http://<release>-git-events.<release namespace>.svc:<port>, which the
+  ## chart's Gitea reaches. The chart's Gitea allows webhooks to this URL's
+  ## host and no other (GITEA__webhook__ALLOWED_HOST_LIST; gitea.config
+  ## overrides it). A Gitea of your own needs an address it reaches, and that
+  ## host in its own [webhook] ALLOWED_HOST_LIST.
+  ##
+  url: ""
+  ## Who may reach the port, as NetworkPolicy peers. Empty: the pods of
+  ## gitea.namespace. A Gitea of your own elsewhere needs its peer here, such
+  ## as an ipBlock.
+  ##
+  from: []
+
 ## Prometheus ServiceMonitor for metrics scraping.
 ## Requires prometheus-operator to be installed in the cluster.
 ##
@@ -528,7 +555,9 @@ gitea:
 ## and gitProviders') a pool per label whose pool.size is above 0, on that
 ## label's image and resources, so a project's checks have a runner on a
 ## fresh install (#1698). The `check` workflows of the Standards run on `go`
-## and `base`; `image` serves releases, which have no pool yet.
+## and `base`, gitea-release's release job on `go-release`, a pool label
+## only (enabled: false: no shared runner); `image` builds release images,
+## which have no pool yet.
 runners:
   ## The minimal toolchain (Node, bash, git, make).
   base:
@@ -559,6 +588,24 @@ runners:
     workSize: 2Gi
     tmpSize: 1Gi
     goCache: /var/cache/theos/go/ci
+    pool:
+      size: 1
+  ## The gitea-release Deployment's release job (runs-on: go-release), on the
+  ## go image, in the projects' pools only: no shared runner. A release
+  ## builds signed artifacts, so it must not link a build result a pull
+  ## request's job left in the project's Go cache: freshGoCache gives each
+  ## pod a cache of its own, an emptyDir seeded from the image's warm cache,
+  ## shared with nothing (#1141).
+  go-release:
+    enabled: false
+    image:
+      repository: ghcr.io/jairjosafath/theos/gitea-runner-go
+      tag: ""
+      pullPolicy: IfNotPresent
+    resources:
+      requests: {cpu: 500m, memory: 1Gi}
+      limits: {cpu: "4", memory: 6Gi}
+    freshGoCache: true
     pool:
       size: 1
   ## Rootless BuildKit, for release runs that build a Container's image:
@@ -824,7 +871,7 @@ catalog:
         supportedTypes: [service, worker, job, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.8.0
+      ref: v1.9.0
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml, an AWS Framework's cloud assembly) on a Gitea release for each version tag.

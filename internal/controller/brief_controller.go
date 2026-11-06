@@ -37,6 +37,9 @@ import (
 type BriefReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads Secrets without caching them.
 	APIReader client.Reader
 	Git       GitClient
@@ -330,6 +333,9 @@ func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// edit of its parallel) or its latest release changes the Brief's apps;
 		// one it didn't make is read again with the suggestions.
 		Watches(&c4v1beta1.Crew{}, fromBriefLabel, crewReleaseChanges()).
+		// A delivery of the Git host reconciles the Brief whose repository a delivery names at once
+		// (docs/plans/done/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventBriefRequest(mgr.GetClient()))).
 		Named("brief").
 		Complete(r)
 }

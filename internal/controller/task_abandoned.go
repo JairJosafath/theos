@@ -116,6 +116,7 @@ func (r *TaskReconciler) abandonedPullFacts(ctx context.Context, task *c4v1beta1
 		}
 		facts.Tries = append(facts.Tries, model.IssueTry{Name: t.Name, Created: t.CreationTimestamp.Unix(),
 			Final: isFinal(t.Status.Phase), Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
+			Unseen:      failedUnseen(&t.Status),
 			PullRequest: int(t.Status.PullRequest), PullRequestURL: t.Status.PullRequestURL})
 	}
 	return facts, nil

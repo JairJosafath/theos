@@ -18,29 +18,40 @@ import (
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
-// paymentsPlan is linterPlan with a payment provider the story only names,
-// at location and with description.
+// paymentsPlan plans cel-lens and a payment provider the story only names,
+// at location and with description. It plans no Container: the spec waits
+// for the round to be Planned, and a Container's scaffold and Crew, which it
+// doesn't test, took that wait past its budget on a loaded host (#1992).
 func paymentsPlan(ns, location, description string) scaffold.Tree {
-	files := linterPlan(ns, 1)
-	files[model.PlanModelFile] = scaffold.File{Data: append(files[model.PlanModelFile].Data, []byte(`---
+	return scaffold.Tree{
+		model.PlanModelFile: {Data: []byte(projectDoc(ns) + `---
+apiVersion: theos.factory.io/v1beta1
+kind: SoftwareSystem
+metadata:
+  name: cel-lens
+spec:
+  displayName: CEL lens
+---
 apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem
 metadata:
   name: payments
 spec:
-  description: `+description+`
-  location: `+location+`
+  description: ` + description + `
+  location: ` + location + `
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
-  name: linter-bills
+  name: cel-lens-bills
 spec:
-  source: {kind: Container, name: linter}
+  source: {kind: SoftwareSystem, name: cel-lens}
   target: {kind: SoftwareSystem, name: payments}
   description: Bills a rule author
-`)...)}
-	return files
+`)},
+		model.PlanChoicesFile: {Data: []byte("- A payment provider takes the money\n")},
+		model.PlanSummaryFile: {Data: []byte("Planned cel-lens and the payment provider it bills through.\n")},
+	}
 }
 
 func paymentsSystem(g Gomega, ns string) *c4v1beta1.SoftwareSystem {
@@ -71,14 +82,10 @@ var _ = Describe("Brief location", func() {
 		By("building nothing for it")
 		var containers c4v1beta1.ContainerList
 		Expect(k8sClient.List(ctx, &containers, client.InNamespace(ns))).To(Succeed())
-		for _, c := range containers.Items {
-			Expect(c.Spec.SoftwareSystemRef.Name).NotTo(Equal("payments"), "Container %s", c.Name)
-		}
+		Expect(containers.Items).To(BeEmpty())
 		var stores c4v1beta1.DataStoreList
 		Expect(k8sClient.List(ctx, &stores, client.InNamespace(ns))).To(Succeed())
-		for _, d := range stores.Items {
-			Expect(d.Spec.SoftwareSystemRef.Name).NotTo(Equal("payments"), "DataStore %s", d.Name)
-		}
+		Expect(stores.Items).To(BeEmpty())
 
 		By("showing the planner its location")
 		Eventually(func(g Gomega) {

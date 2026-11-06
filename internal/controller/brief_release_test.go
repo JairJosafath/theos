@@ -222,6 +222,60 @@ var _ = Describe("Brief releases", func() {
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
 	})
 
+	// #2025: an earlier round's v0.2.0 that nothing went into is the next
+	// minor release, so the round's issue and the suggestion it takes go into
+	// it, not into a v0.3.0 after it.
+	It("files a round's issue and a suggestion it takes in an empty release milestone an earlier round made (#2025)", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+		}).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0"}))
+		gitFake.AddMilestone(ns, "linter", "v0.2.0", model.ReleaseMilestoneDescription("cel-lens", 0),
+			time.Now().Add(2*model.ReleaseMilestoneDue))
+
+		crew := linterCrew(Default, ns)
+		Expect(patch(crew, func() { crew.Spec.Paused = true })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1beta1.CrewPaused))
+		}).Should(Succeed())
+		safety := gitFake.AddIssue(ns, "linter", "Reject control characters", model.FollowUpIssue(model.FollowUp{
+			Body: "A rule's text takes them.", Criteria: []string{"A rule with a control character is refused"}},
+			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
+		gitFake.PutInMilestone(ns, "linter", safety, model.FollowUpMilestone)
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.SuggestionsWaiting).To(Equal(int32(1)))
+		}).Should(Succeed())
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() {
+			brief.Spec.Prompts = []string{"Lint VAP files too, and take the input-safety suggestion."}
+		})).To(Succeed())
+		plan := linterPlan(ns, 1)
+		plan[model.PlanSuggestionsFile] = scaffold.File{Data: []byte(fmt.Sprintf(
+			"- {container: linter, issue: %d, answer: take, why: The prompt takes it.}\n", safety))}
+		planRound(ns, 2, 1, plan)
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Round).To(Equal(int32(2)))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+		}).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
+		Expect(gitFake.Issue(ns, "linter", safety).InMilestone).To(Equal("v0.2.0"))
+		milestones := gitFake.AllMilestones(ns, "linter")
+		titles := make([]string, 0, len(milestones))
+		for _, m := range milestones {
+			titles = append(titles, m.Title)
+			if m.Title == "v0.2.0" {
+				Expect(model.HasReleaseMilestoneMarker(m.Description, "cel-lens", 2)).To(BeTrue())
+			}
+		}
+		Expect(titles).To(ConsistOf("v0.1.0", model.FollowUpMilestone, "v0.2.0"), "no v0.3.0")
+	})
+
 	// #601: after the first release, a round of fixes is a patch release, and
 	// a suggestion a prompt takes lands in the round's release; #884: one
 	// with fix: true lands in the patch release, which later fixes join.

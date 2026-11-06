@@ -44,9 +44,12 @@ page, or, for AWS, let a `cloudFormation` deploy target ship them.
   no image: its stack takes the image as the `ImageUri` deploy parameter, and
   the deployer copies the digest the factory pushed to the cloud. Every other
   Container has no image job (`model.BuildsImage`).
-- **Needs:** a runner labelled `go` (the Go and Node toolchain image, with uv
-  for Python projects), which the checks use too, and for a release that
-  builds an image one labelled `image` (BuildKit). The workflow token creates the release and
+- **Needs:** a runner labelled `go-release` (the Go and Node toolchain image,
+  with uv for Python projects; since v1.9.0, #1141, before it `go`), whose
+  Go build cache is the pod's own, seeded from the image and shared with no
+  other job, so a release links nothing a pull request's job left in the
+  project's cache; and for a release that builds an image one labelled
+  `image` (BuildKit). The workflow token creates the release and
   uploads the files; no secrets.
 - **Release:** `git tag v0.1.0 && git push origin v0.1.0`, or create the tag in
   Gitea. Only the operator's Git user may push `v*` tags to a protected
@@ -56,4 +59,4 @@ The workflow is a template only to pick the `image` job: its `${{ }}`
 expressions are Gitea's, not the factory's, written as `{{`${{ … }}`}}`. It puts
 npm's cache in the runner's memory-backed `/tmp`, uv's cache
 and Python in `.uv/` in the memory-backed checkout, and leaves Go's build cache
-where the toolchain image ships it, warm.
+where the runner points `GOCACHE`: the `go-release` pod's own.

@@ -188,7 +188,7 @@ func (r *TaskReconciler) awaitApproval(ctx context.Context, task *c4v1beta1.Task
 		model.SpecWaitMessage(int(task.Spec.Issue), status.PullRequestURL))
 	logf.FromContext(ctx).Info("Put the spec up for a person's approval", "url", status.PullRequestURL,
 		"round", status.Round, "message", step.Message)
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 }
 
 // syncNeedsYou sets the Task's NeedsYou condition while its spec waits for a

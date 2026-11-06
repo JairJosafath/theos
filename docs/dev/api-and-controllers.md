@@ -10,8 +10,10 @@ How to add or change a kind, a reconciler or a log line. The rules in
 kubebuilder create api --group c4 --version v1beta1 --kind <Kind> --resource --controller
 ```
 
-Catalog kinds (Framework, Standard, Compute, Deployment, Connector, Domain, Agent) and
-GitProvider have no reconciler of their own; create them with `--controller=false`.
+Catalog kinds (Framework, Standard, Compute, Deployment, Connector, Domain, Agent) have
+no reconciler of their own; create them with `--controller=false`. GitProvider's
+reconciler only registers the operator's event hook and reports `Events`
+([plans/done/git-events.md](../plans/done/git-events.md)).
 
 ### Controller for Core Kubernetes Types
 ```bash

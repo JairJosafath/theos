@@ -18,8 +18,10 @@ type IssueTry struct {
 	// Created orders the tries; Name breaks a tie.
 	Created int64
 	// Final is a try that ended; Failed one that failed; NoCI one that failed
-	// through its CI runner's fault (RunnerFault), which costs no try.
-	Final, Failed, NoCI bool
+	// through its CI runner's fault (RunnerFault), which costs no try; Unseen
+	// one whose agent couldn't see the issue (ReasonIssueUnseen), the first
+	// of which costs no try (TryCounter).
+	Final, Failed, NoCI, Unseen bool
 	// PullRequest is the number of the try's pull request, 0 before it has one.
 	PullRequest    int
 	PullRequestURL string
@@ -76,8 +78,9 @@ func AbandonedPull(f AbandonedPullFacts) PullEnd {
 		}
 	}
 	failed := 0
+	var counter TryCounter
 	for _, t := range f.Tries {
-		if t.Failed && !t.NoCI {
+		if t.Failed && counter.Costs(t.NoCI, t.Unseen) {
 			failed++
 		}
 	}

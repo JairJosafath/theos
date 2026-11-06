@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // The fake host's pull requests: opening, reading, commenting, merging and
@@ -20,6 +21,7 @@ func (g *Git) ClosePull(owner, name string, number int) {
 	for _, pr := range g.s.agentState().pulls[owner+"/"+name] {
 		if pr.Number == number {
 			pr.State = stateClosed
+			g.s.deliver(ports.Repository{Owner: owner, Name: name}, EventPullRequest, number)
 		}
 	}
 }
@@ -94,6 +96,7 @@ func (g *Git) OpenPullRequest(_ context.Context, repo ports.Repository, head, _,
 	s.pulls[key] = append(s.pulls[key], pr)
 	s.authors[fmt.Sprintf("%s#%d", key, pr.Number)] = g.cfg.Credentials.Username
 	s.texts[fmt.Sprintf("%s#%d", key, pr.Number)] = [2]string{title, body}
+	g.s.deliver(repo, EventPullRequest, pr.Number)
 	return *pr, nil
 }
 
@@ -135,6 +138,7 @@ func (g *Git) CommentPullRequest(_ context.Context, repo ports.Repository, numbe
 	key := fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)
 	s := g.s.agentState()
 	s.comments[key] = append(s.comments[key], body)
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
 }
 
@@ -172,7 +176,7 @@ func (g *Git) merge(repo ports.Repository, number int, headSHA, title, message s
 	key := repo.Owner + "/" + repo.Name
 	if force {
 		s.forced[key] = append(s.forced[key], number)
-	} else if touchesProtected(s.files[fmt.Sprintf("%s#%d", key, number)], s.rules[key].ProtectedPaths) {
+	} else if touchesProtected(s.pullFiles(key, number, pr.Head), s.rules[key].ProtectedPaths) {
 		return fmt.Errorf("pull request %d changes protected files", number)
 	}
 	pr.Merged, pr.State = true, stateClosed
@@ -186,6 +190,7 @@ func (g *Git) merge(repo ports.Repository, number int, headSHA, title, message s
 		pr.MergeCommit = g.s.newSHA()
 		s.trees[key+"@"+pr.MergeCommit] = treeID(g.s.repos[key].files)
 	}
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
 }
 
@@ -198,12 +203,54 @@ func (g *Git) UpdatePullRequest(_ context.Context, repo ports.Repository, number
 	if err != nil {
 		return err
 	}
-	if g.s.agentState().conflicts[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)] {
+	s := g.s.agentState()
+	key := repo.Owner + "/" + repo.Name
+	if s.conflicts[fmt.Sprintf("%s#%d", key, number)] || g.s.conflicts(key, pr.Head) {
 		return fmt.Errorf("pull request %d: %w", number, ports.ErrConflict)
 	}
 	pr.HeadSHA, pr.Behind = g.s.newSHA(), false
-	g.s.agentState().branches[repo.Owner+"/"+repo.Name+"@"+pr.Head] = pr.HeadSHA
+	s.branches[key+"@"+pr.Head] = pr.HeadSHA
+	if r := g.s.repos[key]; r != nil && len(r.commits) > 0 {
+		if _, ok := s.bases[key+"@"+pr.Head]; ok {
+			s.bases[key+"@"+pr.Head] = r.commits[len(r.commits)-1].Hash
+		}
+		g.s.commitTrees[key+"@"+pr.HeadSHA] = withEdits(r.files, s.edits[key+"@"+pr.Head])
+	}
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
+}
+
+// conflicts reports whether a branch PushBranch made edits a path main
+// changed otherwise since the branch's base, as merging main into it would.
+func (s *state) conflicts(key, branch string) bool {
+	agent := s.agentState()
+	base, ok := agent.bases[key+"@"+branch]
+	r := s.repos[key]
+	if !ok || r == nil {
+		return false
+	}
+	// A base whose tree the fake never recorded, a seeded commit, is taken
+	// for main as it is now.
+	was, ok := s.commitTrees[key+"@"+base]
+	if !ok {
+		return false
+	}
+	for filePath, edit := range agent.edits[key+"@"+branch] {
+		then, hadThen := was[filePath]
+		now, hasNow := r.files[filePath]
+		if hadThen == hasNow && sameFile(then, now) {
+			continue
+		}
+		if edit == nil && !hasNow || edit != nil && hasNow && sameFile(*edit, now) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func sameFile(a, b scaffold.File) bool {
+	return a.Executable == b.Executable && string(a.Data) == string(b.Data)
 }
 
 func touchesProtected(files, protected []string) bool {
@@ -235,12 +282,16 @@ func (g *Git) PullRequestFiles(_ context.Context, repo ports.Repository, number 
 	if err != nil {
 		return nil, err
 	}
-	s := g.s.agentState()
-	if files, ok := s.files[fmt.Sprintf("%s/%s#%d", repo.Owner, repo.Name, number)]; ok {
-		return slices.Clone(files), nil
+	return g.s.agentState().pullFiles(repo.Owner+"/"+repo.Name, number, pr.Head), nil
+}
+
+// pullFiles are the paths pull request number of owner/name changes: those
+// SetPullFiles set, else those the commit PushBranch made on its head does.
+func (s *agentStore) pullFiles(key string, number int, head string) []string {
+	if files, ok := s.files[fmt.Sprintf("%s#%d", key, number)]; ok {
+		return slices.Clone(files)
 	}
-	// A pull request from a branch PushBranch made changes what its commit does.
-	return slices.Sorted(maps.Keys(s.edits[repo.Owner+"/"+repo.Name+"@"+pr.Head])), nil
+	return slices.Sorted(maps.Keys(s.edits[key+"@"+head]))
 }
 
 // SetPullCommits sets a pull request's commits, as PullRequestCommits
@@ -280,5 +331,6 @@ func (g *Git) ClosePullRequest(_ context.Context, repo ports.Repository, number 
 		return err
 	}
 	pr.State = stateClosed
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
 }
