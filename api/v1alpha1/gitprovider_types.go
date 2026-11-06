@@ -173,12 +173,23 @@ type CIRunnerSpec struct {
 	GoCache bool `json:"goCache,omitempty"`
 }
 
+// GitProviderStatus is what the operator last found of the Git host.
+type GitProviderStatus struct {
+	// conditions: Events, whether the host's deliveries reach the operator.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
 // +kubebuilder:deprecatedversion:warning="theos.factory.io/v1alpha1 is deprecated since v0.30.0; use theos.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it (#1963)."
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=theos
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=".spec.provider"
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=".spec.url"
 // +kubebuilder:printcolumn:name="Owner",type=string,JSONPath=".spec.owner"
+// +kubebuilder:printcolumn:name="Events",type=string,JSONPath=".status.conditions[?(@.type==\"Events\")].reason"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // GitProvider is where repositories are created, with credentials. Owned by the Project.
@@ -192,6 +203,10 @@ type GitProvider struct {
 	// spec defines the desired state of GitProvider
 	// +required
 	Spec GitProviderSpec `json:"spec"`
+
+	// status defines the observed state of GitProvider
+	// +optional
+	Status GitProviderStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true

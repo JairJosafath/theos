@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,6 +126,9 @@ var (
 	// managerClient is the manager's cached client, the reconcilers' view: a
 	// spec waits on it when a reconcile must not see an object it deleted (#1300).
 	managerClient client.Client
+	// managerAPIReader is the manager's uncached reader, under the generated
+	// role too.
+	managerAPIReader client.Reader
 )
 
 // The operator's namespace in the suite, and the Secrets it shares from there.
@@ -135,6 +139,12 @@ const (
 	// testModelProxyURL is the chart's real configuration: the model proxy's
 	// Service in the release namespace (dist/chart/templates/model-proxy).
 	testModelProxyURL = "http://c4-model-proxy.theos-system.svc:8080"
+	// testGitEventsURL is the suite operator's --git-events-url, the chart's
+	// receiver Service (docs/plans/git-events.md, decision 10).
+	testGitEventsURL = "http://theos-git-events.theos-system.svc:8082"
+	// noEventsOwnerPrefix starts the owner of a GitProvider whose adapter
+	// has no events in the suite (fakeGitClient).
+	noEventsOwnerPrefix = "no-events-"
 )
 
 // managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
@@ -357,6 +367,7 @@ var _ = BeforeSuite(func() {
 	mgr.GetWebhookServer().Register("/convert",
 		conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
 	managerClient = mgr.GetClient()
+	managerAPIReader = mgr.GetAPIReader()
 	gitFake, err = fake.NewGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
 	gitFake.SetImageCopier(copySuiteImage)
@@ -458,6 +469,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&ScorerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}},
 		&BenchmarkReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			PollInterval: time.Second},
+		&GitProviderReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
+			GitEventsURL: testGitEventsURL},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err
@@ -559,8 +572,15 @@ func (r routedDeployer) State(ctx context.Context, t ports.Target, app, version 
 type fakeGitClient struct{ *fake.Git }
 
 func (c fakeGitClient) Provider(cfg ports.Config) (ports.Provider, error) {
+	if strings.HasPrefix(cfg.Owner, noEventsOwnerPrefix) {
+		return withoutEvents{c.For(cfg)}, nil
+	}
 	return c.For(cfg), nil
 }
+
+// withoutEvents is a Provider whose adapter lacks ports.Events, as a host
+// with no event hooks.
+type withoutEvents struct{ ports.Provider }
 
 // copySuiteImage copies an image for the fake Git host's CopyImage, from
 // owner/name in registryFake. Only the suite's registries take a real copy:

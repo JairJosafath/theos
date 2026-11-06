@@ -215,6 +215,7 @@ rules:
   - crews/status
   - datastores/status
   - deploytargets/status
+  - gitproviders/status
   - projects/status
   - relationships/status
   - scorers/status
@@ -254,6 +255,7 @@ rules:
   - crews/finalizers
   - datastores/finalizers
   - deploytargets/finalizers
+  - gitproviders/finalizers
   - projects/finalizers
   - relationships/finalizers
   - sessions/finalizers
