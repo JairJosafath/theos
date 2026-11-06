@@ -429,8 +429,11 @@ var _ = Describe("Task", func() {
 		By("changing the Agent's model while the checks run: the next runs are on it, the ended one keeps its own")
 		var agent c4v1beta1.Agent
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "claude"}, &agent)).To(Succeed())
+		// A merge patch, not an Update of the read: the operator writes the
+		// Agent too, and a stale resourceVersion would conflict (theos#27).
+		before := agent.DeepCopy()
 		agent.Spec.Model = "claude-sonnet-5-5"
-		Expect(k8sClient.Update(ctx, &agent)).To(Succeed())
+		Expect(k8sClient.Patch(ctx, &agent, client.MergeFrom(before))).To(Succeed())
 
 		By("counting a review whose agent didn't report its cost")
 		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
