@@ -193,6 +193,33 @@ step 2.
    `make seed-local` makes the `browser` TestEnvironment, and `make
    validate-yaml` renders the chart with it on and off.
    *Done when:* those tests and `make check` pass.
+
+   *As built:* the planner reads `model/test-environments.yaml` (each
+   environment's name, description, `label` and `runsOn`); the triager's
+   prompt lists the project's environments (`THEOS_ENVIRONMENTS`, listed,
+   not leased) and its decision may name them in `environments`, which the
+   operator keeps in `status.triage.environments` and labels a ready issue
+   `env/<name>` for, each the project has, making the label on the Git
+   host when it isn't there. The implementer's and verifier's prompts say
+   a criterion a leased environment can check is never left open for a
+   person. "Not filed without its reason" became: a Task keeps the names
+   of the environments its runs leased (`status.leasedEnvironments`), and
+   the by-hand issue its merge files names them, and gives a criterion left
+   open with no why one that says the runs had them. `make seed-local`
+   seeds a local Gitea with no kubectl, so it can't make a TestEnvironment,
+   against what the step first said: the seed applies the chart's catalog
+   ConfigMap (`hack/seed/catalog.sh`), where the browser now is, and its
+   Role may apply `testenvironments`; `test/chart`'s
+   `TestSeedAppliesTheCatalogInPlace` applies it on envtest under that
+   Role, and `make validate-yaml` renders the chart with the browser on
+   (in project `apps`, on the `env-browser` image) and off. Tests:
+   `TestBriefWorkspaceEnvironments`, `TestPlannerGuideGivesAgentsOnlyCriteriaTheyCanMeet`
+   and `TestPlannerGuideAsksForNoTestThatStartsADesktopApp` (the env
+   wording), `TestNormalTriage`, `TestPlanTriage`,
+   `TestByHandIssueNamesTheTestEnvironments`,
+   `TestPromptsNeverLeaveAnEnvironmentsCriterionOpen`; envtest "Crew
+   triage" (a ready issue labelled env/browser for the environment the
+   triager names, and its run leases it).
 5. **Devices on the host: `android` and `godot`** (samples and
    `hack/env-android`, `hack/env-godot`, pinned). Table tests: the pod
    spec carries the extended resources and `runtimeClassName` as given.

@@ -128,6 +128,63 @@ const ReasonLabelClash = "LabelClash"
 // with, env/browser (T2).
 const LabelEnvPrefix = "env/"
 
+// EnvLabel is the label an issue asks for test environment name with.
+func EnvLabel(name string) IssueLabel {
+	return IssueLabel{LabelEnvPrefix + name, "#c5def5",
+		"Needs test environment " + name + ": its runs lease it, and run its checks there", false}
+}
+
+// WorkspaceEnvironmentsFile is where the planner reads the project's test
+// environments (T13).
+const WorkspaceEnvironmentsFile = "model/test-environments.yaml"
+
+// WorkspaceEnvironment is one of the project's TestEnvironments, as the
+// planner and the triager read it.
+type WorkspaceEnvironment struct {
+	Name, Description string
+}
+
+// environmentOut is a test environment in model/test-environments.yaml: the
+// label an issue asks for it with, and the label a workflow runs on it with.
+type environmentOut struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description,omitempty"`
+	Label       string `yaml:"label"`
+	RunsOn      string `yaml:"runsOn"`
+}
+
+// workspaceEnvironments lists the project's test environments by name.
+func workspaceEnvironments(envs []WorkspaceEnvironment) []environmentOut {
+	sorted := slices.Clone(envs)
+	slices.SortFunc(sorted, func(a, b WorkspaceEnvironment) int { return strings.Compare(a.Name, b.Name) })
+	out := make([]environmentOut, 0, len(sorted))
+	for _, e := range sorted {
+		out = append(out, environmentOut{Name: e.Name, Description: oneParagraph(e.Description),
+			Label: LabelEnvPrefix + e.Name, RunsOn: EnvRunnerLabel(e.Name)})
+	}
+	return out
+}
+
+// envName is a TestEnvironment's name as the CRD lets it be.
+var envName = regexp.MustCompile(`^[a-z]([-a-z0-9]{0,30}[a-z0-9])?$`)
+
+// maxTriageEnvironments bounds the environments a triage decision names.
+const maxTriageEnvironments = 8
+
+// normalEnvironments are names, each a TestEnvironment's name, sorted, each
+// once, at most maxTriageEnvironments: what the operator keeps of a triage
+// decision's environments.
+func normalEnvironments(names []string) []string {
+	var out []string
+	for _, n := range names {
+		if n = strings.TrimPrefix(strings.TrimSpace(n), LabelEnvPrefix); envName.MatchString(n) {
+			out = append(out, n)
+		}
+	}
+	out = sortedUnique(out)
+	return out[:min(len(out), maxTriageEnvironments)]
+}
+
 // ReasonWaitingForEnvironment is a Task's Progressing reason while its run
 // waits for a test environment; the message starts with why: one of
 // EnvNotInProject, EnvAllLeased, EnvOverBudget, EnvPending and EnvFailed. A

@@ -55,6 +55,20 @@ func (r *ContainerReconciler) reportTestEnvironments(ctx context.Context, contai
 		metav1.ConditionTrue, model.EnvPresent, "")
 }
 
+// projectEnvironments are the TestEnvironments of namespace ns, as the
+// planner and the triager read them (docs/plans/test-environments.md, T13).
+func projectEnvironments(ctx context.Context, c client.Client, ns string) ([]model.WorkspaceEnvironment, error) {
+	var list c4v1beta1.TestEnvironmentList
+	if err := c.List(ctx, &list, client.InNamespace(ns)); err != nil {
+		return nil, err
+	}
+	out := make([]model.WorkspaceEnvironment, 0, len(list.Items))
+	for _, e := range list.Items {
+		out = append(out, model.WorkspaceEnvironment{Name: e.Name, Description: e.Spec.Description})
+	}
+	return out, nil
+}
+
 // namespaceContainers are the requests of every Container in obj's
 // namespace: a TestEnvironment made or deleted there changes what their
 // Standards' asks find.

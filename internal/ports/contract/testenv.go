@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"crypto/rand"
 	"errors"
 	"slices"
 	"testing"
@@ -39,7 +40,7 @@ func TestEnvironments(t *testing.T, env TestEnvironmentsEnv) {
 	p := env.Provider
 	request := func(e ports.Environment, run string) ports.LeaseRequest {
 		return ports.LeaseRequest{ID: model.LeaseID(e.Name, run), Env: e, Holder: "add-crop",
-			Token: "contract-" + run, Deadline: 10 * time.Minute}
+			Token: rand.Text(), Deadline: 10 * time.Minute}
 	}
 	lease := func(t *testing.T, req ports.LeaseRequest) ports.Lease {
 		t.Helper()

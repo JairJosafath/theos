@@ -147,6 +147,39 @@ func TestPromptsListTestEnvironments(t *testing.T) {
 	}
 }
 
+// What a run's test environment can check is never left open for a person
+// (docs/plans/test-environments.md, T13): the implementer's and verifier's
+// prompts say so, and the triager names an issue's environments, so the
+// operator labels it env/<name> instead of a person getting it.
+func TestPromptsNeverLeaveAnEnvironmentsCriterionOpen(t *testing.T) {
+	job, err := JobFromEnv(env(map[string]string{EnvIssue: "4", EnvEnvironments: `[{"name":"browser"}]`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := "never leave it open for a person"
+	for name, prompt := range map[string]string{"implement": ImplementPrompt(job, Workspace{}),
+		"verify": VerifyPrompt(job, Workspace{})} {
+		if !strings.Contains(strings.Join(strings.Fields(prompt), " "), rule) {
+			t.Errorf("%s prompt doesn't say %q", name, rule)
+		}
+	}
+	none, _ := JobFromEnv(env(map[string]string{EnvIssue: "4"}))
+	if strings.Contains(strings.Join(strings.Fields(ImplementPrompt(none, Workspace{})), " "), rule) {
+		t.Error("a run with no environment is told of one")
+	}
+	triage := TriagePrompt(job, Workspace{})
+	for _, want := range []string{"Test environments the project has", "- `browser`", `name them in "environments"`,
+		`"environments": ["..."]`} {
+		if !strings.Contains(triage, want) {
+			t.Errorf("triage prompt lacks %q", want)
+		}
+	}
+	d, err := ParseTriage(`{"decision": "ready", "reason": "Clear.", "environments": ["browser"]}`)
+	if err != nil || len(d.Environments) != 1 || d.Environments[0] != "browser" {
+		t.Errorf("ParseTriage = %+v, %v; want the environments", d, err)
+	}
+}
+
 // TestPromptsProjectNotes pins that both prompts send the agent to the
 // project's notes right after AGENTS.md, and that AGENTS.md and the role
 // guide win where they disagree.

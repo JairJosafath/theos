@@ -127,7 +127,7 @@ evidence: the command you ran and the lines it printed that show it.
   the sandbox can't reach. Never fake one: no output, log or picture you did
   not see is evidence. When you approve, list each in "open", with why it
   needs a person: at most `+strconv.Itoa(model.MaxFollowUpCriteria)+`.
-A failure %[2]s has as well is not the change's: say so, and judge the
+`+environmentsCanCheck(job)+`A failure %[2]s has as well is not the change's: say so, and judge the
 criteria the change is for.
 
 End your reply with one line of JSON and nothing after it:

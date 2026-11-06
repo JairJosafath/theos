@@ -641,6 +641,15 @@ spec:
                 type: string
               issueURL:
                 type: string
+              leasedEnvironments:
+                description: |-
+                  leasedEnvironments are the test environments any run of the Task
+                  leased, by name: a by-hand issue its merge files names them.
+                items:
+                  type: string
+                maxItems: 16
+                type: array
+                x-kubernetes-list-type: set
               mergeCommit:
                 description: |-
                   mergeCommit is the commit the pull request's squash merge made on the
@@ -1185,6 +1194,17 @@ spec:
                     description: duplicate is the issue a duplicate decision names.
                     format: int32
                     type: integer
+                  environments:
+                    description: |-
+                      environments are the test environments a ready decision named, which
+                      the operator labelled the issue env/<name> for when the project has
+                      them (docs/plans/test-environments.md, T13).
+                    items:
+                      maxLength: 32
+                      type: string
+                    maxItems: 8
+                    type: array
+                    x-kubernetes-list-type: atomic
                   question:
                     description: question is what a park decision asks a person.
                     maxLength: 2000

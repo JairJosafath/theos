@@ -530,6 +530,11 @@ image is pinned and the project's fence for its pods exists.
   Task can't use another's environment. A remote environment is reached over
   public HTTPS with its certificate pinned, gets no cloud role and no metadata
   service, and lets in only `theos-env`'s port.
+- **The chart's browser.** The seed makes a local `browser` in each
+  project it sets up (`testEnvironments.browser.enabled`, on by default),
+  on the release's `env-browser` image, with no CI pool: a fresh install
+  handles a picture script with nothing added, and a lease costs nothing
+  until a run asks for one.
 - **The port and its providers.** `ports.TestEnvironments` leases, reads,
   returns and lists leases (*Factory components*); `cmd/main.go` maps each
   member to its provider. The local provider makes a pod per lease (never a

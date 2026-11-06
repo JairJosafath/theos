@@ -4350,6 +4350,11 @@ func (in *TaskStatus) DeepCopyInto(out *TaskStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.LeasedEnvironments != nil {
+		in, out := &in.LeasedEnvironments, &out.LeasedEnvironments
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.PhaseChangedAt != nil {
 		in, out := &in.PhaseChangedAt, &out.PhaseChangedAt
 		*out = (*in).DeepCopy()
@@ -4682,6 +4687,11 @@ func (in *TriageDecision) DeepCopyInto(out *TriageDecision) {
 	*out = *in
 	if in.Criteria != nil {
 		in, out := &in.Criteria, &out.Criteria
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.Environments != nil {
+		in, out := &in.Environments, &out.Environments
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}

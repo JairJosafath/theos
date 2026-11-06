@@ -157,7 +157,7 @@ var _ = Describe("Brief failed issues", func() {
 		}).Should(Succeed())
 
 		title, body := model.ByHandIssue("Lint rule 1", 1, "http://gitea/pulls/2", "linter-1", "Agent `reviewer`",
-			[]model.OpenCriterion{{Criterion: "The README has a screenshot of the editor", Why: "No desktop editor."}})
+			[]model.OpenCriterion{{Criterion: "The README has a screenshot of the editor", Why: "No desktop editor."}}, nil)
 		n := gitFake.AddIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman})
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
@@ -212,7 +212,7 @@ var _ = Describe("Brief failed issues", func() {
 		}
 		byHand := func(rule int, blocker int) int {
 			title, body := model.ByHandIssue(fmt.Sprintf("Lint rule %d", rule), rule, "http://gitea/pulls/2",
-				"linter-1", "Agent `reviewer`", []model.OpenCriterion{{Criterion: "A screenshot", Why: "No editor."}})
+				"linter-1", "Agent `reviewer`", []model.OpenCriterion{{Criterion: "A screenshot", Why: "No editor."}}, nil)
 			return gitFake.AddIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman},
 				fmt.Sprintf("#%d", blocker))
 		}

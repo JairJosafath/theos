@@ -154,6 +154,10 @@ func (r *TaskReconciler) leaseEnvironment(ctx context.Context, task *c4v1beta1.T
 		now := metav1.NewTime(r.now())
 		status.Environments = append(status.Environments, c4v1beta1.TaskEnvironmentLease{Name: env.Name,
 			Lease: id, Sandbox: sandbox, Since: &now})
+		if !slices.Contains(status.LeasedEnvironments, env.Name) {
+			status.LeasedEnvironments = append(status.LeasedEnvironments, env.Name)
+			slices.Sort(status.LeasedEnvironments)
+		}
 		logf.FromContext(ctx).Info("Leased a test environment", "environment", env.Name, "lease", id, "sandbox", sandbox)
 	}
 	switch lease.State {
@@ -243,6 +247,20 @@ func (r *TaskReconciler) returnLeases(ctx context.Context, task *c4v1beta1.Task,
 	}
 }
 
+// listedEnvironments are the project's test environments as a triage run
+// gets them: named and described, not leased.
+func listedEnvironments(ctx context.Context, c client.Client, ns string) ([]runEnvironment, error) {
+	envs, err := projectEnvironments(ctx, c, ns)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]runEnvironment, 0, len(envs))
+	for _, e := range envs {
+		out = append(out, runEnvironment{name: e.Name, description: e.Description})
+	}
+	return out, nil
+}
+
 // returnFinalLeases returns what a Task that ended still lists: a lease
 // taken for a run that never started, or one a failed return left. A final
 // Task holds no test environment.
@@ -288,13 +306,16 @@ func environmentEnv(envs []runEnvironment) []corev1.EnvVar {
 	out := make([]corev1.EnvVar, 0, 3*len(envs)+1)
 	listed := make([]agentrunner.TestEnvironment, 0, len(envs))
 	for _, e := range envs {
+		listed = append(listed, agentrunner.TestEnvironment{Name: e.name, Description: e.description})
+		if e.lease.ID == "" {
+			continue // listed for the triager, not leased
+		}
 		out = append(out,
 			corev1.EnvVar{Name: model.TestEnvVar(e.name, model.TestEnvURL), Value: e.lease.Endpoint},
 			secretEnv(model.TestEnvVar(e.name, model.TestEnvToken), e.tokenSecret, e.lease.ID))
 		if e.lease.CA != "" {
 			out = append(out, corev1.EnvVar{Name: model.TestEnvVar(e.name, model.TestEnvCA), Value: e.lease.CA})
 		}
-		listed = append(listed, agentrunner.TestEnvironment{Name: e.name, Description: e.description})
 	}
 	data, _ := json.Marshal(listed)
 	return append(out, corev1.EnvVar{Name: agentrunner.EnvEnvironments, Value: string(data)})

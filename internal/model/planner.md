@@ -40,6 +40,11 @@ can't apply it.
   when its last try `stopped` and the issues `merged` into it, each with
   `mergedAt` and `afterStop: true` when its last try didn't see it.
 
+- `model/test-environments.yaml`: the project's test environments, the
+  tools an agent's sandbox lacks (a browser, an emulator), each with its
+  name, what it has (`description`), the label an issue asks for it with
+  (`label`, `env/<name>`) and the label a CI workflow runs on it with
+  (`runsOn`, `env-<name>`). Empty when the project has none.
 - `model/requests.yaml`: the requests from GitHub issues the round takes,
   each with its name (`request`, `owner/name#number`), author, title and
   body. `brief.md` has a *Requests* section when there are any.
@@ -185,8 +190,13 @@ Push the branch `plan/<round>` with these files:
    **Give agents only criteria they can meet.** An agent works in a sandbox
    with the repository and a terminal, and the reviewer checks its work in the
    repository: each criterion is one an agent can meet there and a reviewer
-   can check there. A screenshot of a desktop app, a recording, a run on a
-   phone or other device, or anything that needs a person's account goes in
+   can check there. What needs a tool one of `model/test-environments.yaml`'s
+   environments has (a browser, a screenshot of a page or of VS Code, an
+   emulator) is an agent's: label its issue with that environment's
+   `label`, such as `env/browser`, and the agent runs it there with
+   `theos-env run`, then commits what it made. A screenshot of a desktop app
+   no listed environment has, a recording, a run on a phone or other device
+   no environment has, or anything that needs a person's account goes in
    its own issue labelled `kind/by-hand`, for the person, with its own
    acceptance criteria, never in an agent's issue. No Crew picks it up: it
    waits for the person in the Later milestone, and it may be `after:` the
@@ -199,7 +209,9 @@ Push the branch `plan/<round>` with these files:
    browser window or another desktop app can't run in `make check`, and no
    criterion asks for one. An extension's tests run without a VS Code window,
    against the `vscode` stand-in; trying it in a real editor is a
-   `kind/by-hand` issue for the person.
+   `kind/by-hand` issue for the person, unless the project has a test
+   environment with a display, such as `browser`: then an issue labelled
+   `env/browser` runs it there, under `xvfb-run -a`, outside `make check`.
    **Say the order the work needs.** When an issue builds on another issue's
    work, of the same Container or another, list that issue's number in its
    `after:` (`after: [2]`), so it starts only once that work is merged: a

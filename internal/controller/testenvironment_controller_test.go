@@ -9,6 +9,7 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"crypto/rand"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -87,7 +88,7 @@ var _ = Describe("TestEnvironment", func() {
 		environment := testEnvironment(env, nil)
 		lease := func(holder, run string) string {
 			l, err := envFake.Lease(ctx, ports.LeaseRequest{ID: model.LeaseID(env.Name, run), Env: environment,
-				Holder: holder, Token: "t", Deadline: time.Hour})
+				Holder: holder, Token: rand.Text(), Deadline: time.Hour})
 			Expect(err).NotTo(HaveOccurred())
 			return l.ID
 		}

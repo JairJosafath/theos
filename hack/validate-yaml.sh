@@ -179,6 +179,19 @@ if grep -A1 '^apiVersion: theos.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml
 	exit 1
 fi
 echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog, bundles or Agents"
+# The seed's browser in each project (docs/plans/test-environments.md, T14):
+# on by default, on the release's env-browser image; off, none.
+browser=$(awk '/^kind: TestEnvironment$/ { te = 1 } te && /^  namespace: / { print $2; te = 0 }' \
+	"$OUT/chart-gitea-catalog.yaml")
+if [ "$browser" != apps ] || ! grep -qE '^    image: "ghcr\.io/jairjosafath/theos/env-browser:[^"]+"$' "$OUT/chart-gitea-catalog.yaml"; then
+	echo "The chart renders no browser TestEnvironment on the env-browser image in project apps (got: ${browser:-none})" >&2
+	exit 1
+fi
+if grep -q '^kind: TestEnvironment$' "$OUT/chart-gitea-bare-catalog.yaml"; then
+	echo "The chart renders a TestEnvironment with testEnvironments.browser.enabled=false" >&2
+	exit 1
+fi
+echo "The chart's seed makes a browser TestEnvironment per project; off, none"
 
 # Shared credentials (docs/plans/done/shared-project-credentials.md): the chart makes
 # each project's Namespace, labeled to receive the shared Secrets and kept on

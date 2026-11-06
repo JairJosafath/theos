@@ -996,6 +996,62 @@ Container's `StandardUpdated` and `ChecksApplied` are False, reason
 `ChecksLeftOut`, naming the file, and CI keeps its mode until the Container's
 checks or the Standard's `ref` change again.
 
+## Give agents a browser
+
+An agent's sandbox has the repository's toolchain and nothing else: no
+browser's system libraries, no display, no emulator. A test or a picture
+script that needs one runs in a **test environment**, a place with those
+tools that the factory leases to the run that needs it
+([plans/test-environments.md](plans/test-environments.md)). The chart makes
+one in each project, `browser`: Playwright's Chromium, Firefox and WebKit,
+and `xvfb-run` for headed programs such as VS Code or an Electron app.
+
+```bash
+kubectl -n webshop get testenvironments
+# NAME      MAX   READY   REASON   AGE
+# browser   2     True    Ready    3m
+```
+
+An issue asks for it with the label `env/browser`. The planner and the
+triager set it where an issue's criteria need a browser, instead of handing
+the work to a person as `kind/by-hand`; you can set it yourself on the Git
+host. Each implementer's and verifier's run of that issue leases a pod of
+its own, fenced like the sandbox, and runs commands there:
+
+```bash
+theos-env run browser -- npx playwright test
+theos-env run browser -- xvfb-run -a node scripts/pictures.mjs
+```
+
+`theos-env` sends the working tree, runs the command in the same folder
+there, shows its output and exits with its code, and writes the files the
+command made, such as the pictures, back into the sandbox, where the agent
+commits them. An issue that needs an environment the project lacks waits,
+`WaitingForEnvironment`, at no cost, until you add one. A Standard or a
+Framework can list environments in `spec.testEnvironments` for all its
+Containers' runs; one the project lacks shows on the Container as
+`TestEnvironments` False.
+
+CI can run the same checks on it. Give the TestEnvironment a pool and have
+the workflow name its label:
+
+```bash
+kubectl -n webshop patch testenvironment browser --type merge -p '{"spec":{"ci":{"size":1}}}'
+```
+
+```yaml
+jobs:
+  pictures:
+    runs-on: env-browser
+```
+
+`limits.maxLeases` (2) caps the leases at once, and `limits.maxLeaseMinutes`
+(180) how long one lasts. Turn the chart's off with
+`testEnvironments.browser.enabled=false`; another environment is a
+TestEnvironment of your own, on an image with its tools
+(`config/samples/webshop/testenvironment.yaml`). `kind/by-hand` stays for
+what no environment has: an account, a purchase, a person's own device.
+
 ## What an app promises: operations
 
 A Container's optional `spec.operations` says what the app promises wherever

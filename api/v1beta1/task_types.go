@@ -507,6 +507,15 @@ type TriageDecision struct {
 	// +optional
 	Duplicate int32 `json:"duplicate,omitempty"`
 
+	// environments are the test environments a ready decision named, which
+	// the operator labelled the issue env/<name> for when the project has
+	// them (docs/plans/test-environments.md, T13).
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=8
+	// +kubebuilder:validation:items:MaxLength=32
+	// +optional
+	Environments []string `json:"environments,omitempty"`
+
 	// applied says what the operator did to the issue, or why it did nothing:
 	// a person closed or triaged the issue meanwhile.
 	// +kubebuilder:validation:MaxLength=1024
@@ -840,6 +849,13 @@ type TaskStatus struct {
 	// +kubebuilder:validation:MaxItems=16
 	// +optional
 	Environments []TaskEnvironmentLease `json:"environments,omitempty"`
+
+	// leasedEnvironments are the test environments any run of the Task
+	// leased, by name: a by-hand issue its merge files names them.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=16
+	// +optional
+	LeasedEnvironments []string `json:"leasedEnvironments,omitempty"`
 
 	// phaseChangedAt is when the Task entered its current phase.
 	// +optional

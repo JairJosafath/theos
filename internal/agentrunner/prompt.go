@@ -156,6 +156,7 @@ How to work:
   device, an account, a purchase) is left open, never faked: meet what you can of
   it, and say so in your summary on a line "Open: <criterion>: <why>".
 `)
+		b.WriteString(environmentsCanCheck(job))
 	}
 	switch {
 	case gated:
@@ -335,6 +336,7 @@ func TriagePrompt(job Job, ws Workspace) string {
 	fmt.Fprintf(&b, "\nThis is issue #%d of this repository. %s\n%s\n", job.Issue, issueIntro, issueBlock(job.Goal))
 	writeGuide(&b, ws, RoleTriage)
 	writeRelated(&b, ws)
+	writeProjectEnvironments(&b, job)
 	fmt.Fprintf(&b, `
 The repository is checked out at %[1]s. Read AGENTS.md, the code and the docs as
 much as you need to judge the issue. `+projectNotes+`
@@ -355,7 +357,7 @@ Decide exactly one of:
 In "reason", say in two or three sentences why, so a person can check you.
 
 End your reply with one line of JSON and nothing after it:
-{"decision": "ready", "spec", "park" or "duplicate", "reason": "...", "criteria": ["..."], "question": "...", "duplicate": <issue number>}
+{"decision": "ready", "spec", "park" or "duplicate", "reason": "...", "criteria": ["..."], "question": "...", "duplicate": <issue number>, "environments": ["..."]}
 `, job.Base, model.MaxTriageCriteria, maxCriterionChars)
 	return b.String()
 }
@@ -484,6 +486,41 @@ it claims; a picture of the product must be what running the product shows:
 	if n := len(ws.Images) - maxListedImages; n > 0 {
 		fmt.Fprintf(b, "- and %d more in the diff; open those too\n", n)
 	}
+}
+
+// environmentsCanCheck is the rule, for a run that leased test environments,
+// that what they can check is never left open for a person
+// (docs/plans/test-environments.md, T13); "" for a run that leased none.
+func environmentsCanCheck(job Job) string {
+	if len(job.Environments) == 0 {
+		return ""
+	}
+	return `  A criterion one of the test environments above can check (a test or a
+  picture that needs a browser, a display or an emulator) is not one of those:
+  meet it there, with theos-env run, never leave it open for a person.
+`
+}
+
+// writeProjectEnvironments lists, for the triager, the project's test
+// environments and the label an issue asks for one with: what one of them
+// has is an agent's work there, not a person's (T13).
+func writeProjectEnvironments(b *strings.Builder, job Job) {
+	if len(job.Environments) == 0 {
+		return
+	}
+	b.WriteString("\nTest environments the project has, with tools a sandbox lacks:\n")
+	for _, env := range job.Environments {
+		fmt.Fprintf(b, "- `%s`", env.Name)
+		if env.Description != "" {
+			fmt.Fprintf(b, ": %s", strings.TrimSpace(env.Description))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString(`An issue whose criteria need one of them (a test or a picture that needs a
+browser, a display or an emulator) is an agent's work there, not a person's:
+when you decide "ready", name them in "environments", and the factory labels
+the issue env/<name>, so its runs lease them.
+`)
 }
 
 // writeEnvironments lists the test environments the run leased, and how to

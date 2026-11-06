@@ -1025,6 +1025,26 @@ testEnvironments:
     repository: ghcr.io/jairjosafath/theos/agent-base
     ## Defaults to Chart.appVersion
     tag: ""
+  ## The browser the seed makes in each of gitea.projects: a TestEnvironment
+  ## named browser on the release's env-browser image (Playwright's browsers
+  ## and xvfb-run), which a run of an issue labelled env/browser leases. A
+  ## local lease costs nothing until a run asks for one; ci.size 0 keeps no
+  ## CI pod until a project's workflow wants runs-on: env-browser.
+  browser:
+    enabled: true
+    image:
+      repository: ghcr.io/jairjosafath/theos/env-browser
+      ## Defaults to Chart.appVersion
+      tag: ""
+    description: "Chromium, Firefox and WebKit with Playwright; run headed programs (VS Code, Electron) under xvfb-run -a."
+    resources:
+      requests: {cpu: 500m, memory: 1Gi}
+      limits: {cpu: "2", memory: 4Gi}
+    limits:
+      maxLeases: 2
+      maxLeaseMinutes: 180
+    ci:
+      size: 0
 
 ## Chat (docs/design.md, Chat): people follow and steer each project from
 ## Matrix rooms. With enabled, Deployment <release>-chat, the operator image

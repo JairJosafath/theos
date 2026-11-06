@@ -11,8 +11,8 @@
 FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
 
 # xvfb-run, and the xauth it needs, for headed runs.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends xauth xvfb \
+RUN apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends xauth xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Playwright finds the image's browsers here; a project on another

@@ -174,8 +174,11 @@ func TestPlannerGuideGivesAgentsOnlyCriteriaTheyCanMeet(t *testing.T) {
 	for _, rule := range []string{
 		"**Give agents only criteria they can meet.**",
 		"each criterion is one an agent can meet there and a reviewer can check there",
-		"A screenshot of a desktop app, a recording, a run on a phone or other device",
+		"A screenshot of a desktop app no listed environment has, a recording, a run on a phone or other device",
 		"labelled `kind/by-hand`",
+		// docs/plans/test-environments.md, T13: what an environment has is an agent's.
+		"What needs a tool one of `model/test-environments.yaml`'s environments has",
+		"label its issue with that environment's `label`, such as `env/browser`",
 		"Where a text sample serves, ask the agent for that instead",
 	} {
 		if !strings.Contains(guide, rule) {
@@ -199,6 +202,7 @@ func TestPlannerGuideAsksForNoTestThatStartsADesktopApp(t *testing.T) {
 		"can't run in `make check`, and no criterion asks for one",
 		"An extension's tests run without a VS Code window",
 		"trying it in a real editor is a `kind/by-hand` issue",
+		"unless the project has a test environment with a display",
 	} {
 		if !strings.Contains(guide, rule) {
 			t.Errorf("PLANNER.md doesn't say %q", rule)
