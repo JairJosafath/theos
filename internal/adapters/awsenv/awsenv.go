@@ -74,8 +74,11 @@ type Provider struct {
 	// (linux, darwin) and ${arch} its architecture (amd64, arm64), with a
 	// SHA256SUMS next to it.
 	toolsURL string
-	probe    Probe
-	now      func() time.Time
+	// runnerURL is where a machine that runs a CI job downloads the CI
+	// runner, as toolsURL (ci.go).
+	runnerURL string
+	probe     Probe
+	now       func() time.Time
 
 	mu sync.Mutex
 	// prices are the on-demand prices read, by region and instance type.
@@ -129,6 +132,12 @@ func (p *Provider) CheckCredentials(ctx context.Context, env ports.Environment) 
 // no such AMI or subnet) is a Failed lease with AWS's message; a refused
 // credential or an AWS that can't be reached is the error.
 func (p *Provider) Lease(ctx context.Context, req ports.LeaseRequest) (ports.Lease, error) {
+	return p.lease(ctx, req, nil)
+}
+
+// lease is Lease of a machine that serves theos-env, or, with runner, one
+// that runs that CI runner (LeaseRunner).
+func (p *Provider) lease(ctx context.Context, req ports.LeaseRequest, runner *ports.JobRunner) (ports.Lease, error) {
 	if !model.LeaseTokenSafe(req.Token) {
 		return ports.Lease{}, errors.New("a lease's token must be letters, digits, '-', '_' and '.'")
 	}
@@ -145,7 +154,7 @@ func (p *Provider) Lease(ctx context.Context, req ports.LeaseRequest) (ports.Lea
 		return ports.Lease{}, err
 	}
 	if inst == nil {
-		if inst, err = p.launch(ctx, s, req); err != nil {
+		if inst, err = p.launch(ctx, s, req, runner); err != nil {
 			if portKind(err) {
 				return ports.Lease{}, err
 			}
@@ -164,9 +173,10 @@ func (p *Provider) Lease(ctx context.Context, req ports.LeaseRequest) (ports.Lea
 	return l, nil
 }
 
-// launch starts req's machine: the account checked, its price read and its
-// security group made to the fence.
-func (p *Provider) launch(ctx context.Context, s *session, req ports.LeaseRequest) (*types.Instance, error) {
+// launch starts req's machine, one that runs runner when it is set: the
+// account checked, its price read and its security group made to the fence.
+func (p *Provider) launch(ctx context.Context, s *session, req ports.LeaseRequest,
+	runner *ports.JobRunner) (*types.Instance, error) {
 	if p.toolsURL == "" {
 		return nil, errors.New("no address to download theos-env from: set the operator's --test-environment-tools-url")
 	}
@@ -182,9 +192,13 @@ func (p *Provider) launch(ctx context.Context, s *session, req ports.LeaseReques
 		return nil, err
 	}
 	if model.TestEnvMac(s.env.AWS.InstanceType) {
+		if runner != nil {
+			// CEL refuses ci on a Mac (step 9's As built).
+			return nil, errors.New("an EC2 Mac runs no CI jobs: the CI runner a machine downloads is Linux's")
+		}
 		return p.launchMac(ctx, s, req, group, price)
 	}
-	in, err := LaunchInput(req, group, price, p.toolsURL, p.now())
+	in, err := p.launchInput(req, runner, group, price)
 	if err != nil {
 		return nil, err
 	}

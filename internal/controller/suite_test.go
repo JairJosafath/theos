@@ -495,8 +495,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&TestEnvironmentReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
 			Providers: ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake,
 				model.TestEnvMemberAWS: envAWSFake, model.TestEnvMemberDeviceFarm: envDeviceFarmFake},
-			SharedPullSecrets: []string{sharedPullSecret}, PollInterval: time.Second, OrphanGrace: time.Second,
-			Git: fakeGitClient{gitFake}},
+			Git:               fakeGitClient{gitFake},
+			SharedPullSecrets: []string{sharedPullSecret}, PollInterval: time.Second, OrphanGrace: time.Second},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

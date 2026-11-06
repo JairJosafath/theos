@@ -42,3 +42,12 @@ spec:
     maxLeaseMinutes: 120
     # Required for a remote member: no lease starts past it on a UTC day.
     budgetUSDPerDay: 10
+  # CI runs the project's jobs labelled env-gpu (runs-on: env-gpu) here too:
+  # a machine leased per job that waits, within the limits and budget above,
+  # registers a runner for that one job and ends with it (step 8). The
+  # machines reach the Git host at its GitProvider's
+  # ci.giteaActions.publicURL, an https:// address on port 443; without one,
+  # as the in-cluster Gitea has none, the CI condition says NoPublicAddress
+  # and no machine starts for a job. The AMI needs what the jobs' steps run:
+  # git and node for actions/checkout, which run on the machine itself.
+  ci: {}

@@ -1,0 +1,18 @@
+# expect: an EC2 Mac runs no CI jobs
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: ios
+  namespace: webshop
+spec:
+  description: An EC2 Mac that would run CI jobs.
+  aws:
+    region: us-east-1
+    instanceType: mac2.metal
+    imageId: ami-0123456789abcdef0
+    subnetId: subnet-0123456789abcdef0
+    credentialsSecretRef:
+      name: ios-aws
+  ci: {}
+  limits:
+    budgetUSDPerDay: 25

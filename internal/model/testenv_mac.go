@@ -19,6 +19,15 @@ const MacHostMinimum = 24 * time.Hour
 // when the environment doesn't say: its minimum.
 const DefaultKeepHostHours = 24
 
+// TestEnvRemoteCI reports whether a remote environment of member, on
+// instanceType, runs CI jobs (step 8): an aws machine per job, never an
+// EC2 Mac, whose host is billed 24 hours a job and for which the CI runner
+// has no build, nor a deviceFarm environment, which has no machine for a
+// runner. CEL refuses ci on both.
+func TestEnvRemoteCI(member, instanceType string) bool {
+	return member == TestEnvMemberAWS && !TestEnvMac(instanceType)
+}
+
 // TestEnvMac reports whether instanceType is an EC2 Mac, such as mac2.metal
 // or mac2-m2pro.metal, which runs on a dedicated host.
 func TestEnvMac(instanceType string) bool { return strings.HasPrefix(instanceType, "mac") }

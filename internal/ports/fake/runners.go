@@ -20,6 +20,8 @@ type runnerStore struct {
 	lastID  int64
 	// tokenErr is what each owner's registration token call fails with.
 	tokenErr map[string]error
+	// waiting is each owner's jobs that wait for a runner (ci_jobs.go).
+	waiting map[string][]ports.WaitingJob
 }
 
 func (s *state) runnerState() *runnerStore {

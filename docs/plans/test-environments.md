@@ -324,6 +324,87 @@ step 2.
    data. Envtest with the fakes: a waiting job leases one machine, and
    the lease returns when the job ends.
    *Done when:* those tests and `make check` pass.
+
+   *As built:* the capability is `ports.JobRunners` (`internal/ports/ci_jobs.go`):
+   `WaitingJobs(labels)`, the owner organization's jobs a runner with those
+   labels could take (Gitea lists them `status=queued`; `waiting` is a job
+   blocked on `needs`), and `RegisterJobRunner`, since the machine doesn't
+   register itself, against what T8 and this step first said: the operator
+   registers an ephemeral runner over Gitea's runner protocol with the
+   organization's registration token, and the machine gets the runner's
+   `.runner` file (its own token, good for its one job: Gitea removes an
+   ephemeral runner, and its token, when that job ends) and a `config.yaml`.
+   Neither "delete the token after registering" nor "make it short-lived"
+   works: Gitea's registration token is one per organization, the same on
+   every call until reset, which would break the pool pods' registrations,
+   and a machine's user data stays readable from EC2's API and in
+   cloud-init's copies on its disk. So the registration token never reaches
+   a machine, and the operator deletes the runner when it returns its lease.
+   The provider side is the capability `ports.TestEnvironmentRunners`
+   (`RunnerMissing`, `LeaseRunner`; `internal/adapters/awsenv/ci.go`): the
+   machine is launched, fenced and tagged as a run's is (`RunnerLaunchInput`
+   is `LaunchInput` but for its user data), and its user data
+   (`RunnerUserData`) downloads `theos-env` and the CI runner
+   (`--test-environment-runner-url`, the chart's `testEnvironments.runnerURL`,
+   by default the Gitea runner of the runner image's version, which Release
+   now attaches beside `theos-env` in `SHA256SUMS` after checking it against
+   the sums `hack/runner/Dockerfile` pins), writes the runner's files for root
+   alone in `/var/lib/theos-runner` (`model.RemoteRunnerDir`), serves
+   `theos-env` until the metadata service stops answering, so step 7's probe,
+   metadata off and Ready apply unchanged and the job never reads the user
+   data (T5), then runs the runner, and shuts down when it exits. The Git
+   host's public address is `GitProvider.spec.ci.giteaActions.publicURL`
+   (CEL: `https://` on port 443, the one port the machine's fence lets out),
+   else `url` when that is such an address at a public host
+   (`model.RemoteRunnerAddress`); the chart's in-cluster Gitea has neither,
+   so remote CI is off until a person sets it. A remote environment turns CI
+   on with `ci: {}` (CEL refuses `ci.size` and `ci.runnerImage` on `aws`),
+   and its condition `CI` says `Serving`, `NoGitProvider`, `NoPublicAddress`,
+   `LabelClash`, `Unsupported` (no runner address, or a host without
+   `JobRunners`), `Unreachable` (the Git host didn't answer) or
+   `OverBudget`. The TestEnvironment controller, not the
+   Project's pool, does it (`internal/controller/testenvironment_ci.go`):
+   each poll, every 15 seconds while a job waits or a CI lease starts, it
+   reads Pending CI leases back with `Get`, which moves them on, returns
+   Failed ones, and for each GitProvider leases a machine for each waiting
+   job beyond the CI leases whose runner isn't busy yet, oldest first, while
+   `model.LeaseMayStart` allows, against `maxLeases` and the budget it shares
+   with the runs. A CI lease's ID is `model.CILeaseID` (the environment, its
+   UID, the GitProvider, the job and a count), the runner is named by it, and
+   its holder is `ci/<GitProvider>/<runner id>` (`model.CIHolder`; a Task's
+   name has no slash). The orphan rule learned CI holders
+   (`model.CILeaseHeld`): held while the runner runs its job; not once Gitea
+   removed it, its job ended, or once no job of its label waits; while it is
+   online, yes; before it first calls Gitea, for 20 minutes
+   (`model.CIStartGrace`). A GitProvider whose host doesn't answer keeps its
+   leases. A job a runner takes in the moment its idle lease is returned
+   fails as one whose runner went away. A remote environment's `env-<name>`
+   clashes with a `ci` block's label as a local one's does (`LabelClash` on
+   the Project). `test/chart`'s `TestReleaseAttachesWhatRemoteMachinesDownload`
+   checks that both builds of what the chart's defaults have a remote
+   machine download from the release, `theos-env` and the CI runner, are
+   attached and in `SHA256SUMS`, and `hack/chart-manager.sh` keeps
+   `--test-environment-tools-url` and `--test-environment-runner-url`.
+   Tests: `internal/model`
+   (`TestCIHolder`, `TestCILeaseID`, `TestCILeaseHeld`,
+   `TestRemoteRunnerAddress`), `internal/adapters/gitea` (`TestWaitingJobs`,
+   `TestRegisterJobRunner`, and `TestCIContractIntegration`'s two new
+   subtests in `make test-gitea`), `contract.CI`'s subtests on the fake,
+   `internal/adapters/awsenv` (`TestRunnerUserData`,
+   `TestRunnerLaunchInputIsFenced`, `TestLeaseRunner` on the fake EC2),
+   envtest "TestEnvironment on AWS in CI" (a waiting job leases one machine
+   whose runner file holds its own token and the public address, kept while
+   its runner runs the job, returned once Gitea removed it; a machine whose
+   job another runner took is returned and its runner deleted; `maxLeases`
+   and the budget hold jobs back; no public address, no lease; a publicURL
+   on another port refused) and the CEL cases (`ci.size` and
+   `ci.runnerImage` on `aws`), with
+   `test/invalid/testenvironment-aws-ci-size.yaml` and
+   `gitprovider-public-url-port.yaml`, `TestReleaseAttachesWhatRemoteMachinesDownload`
+   and `hack/chart-manager_test.sh`.
+   What only a real account and host show (the runner reading the files the
+   operator wrote and taking its job, the metadata service's answer once it
+   is off, a job's checkout from Gitea's `ROOT_URL`) is a human's run.
 9. **EC2 Mac for `ios`** (T11's host reuse). Fake EC2 tests: a host is
    allocated once and reused across leases, kept for `keepHostHours`,
    released after, and counted at the 24-hour minimum.
@@ -364,8 +445,11 @@ step 2.
    macOS's root volume is read-only. The release attaches
    `theos-env-darwin-amd64` and `-arm64`, in its `SHA256SUMS`, and the
    chart's `testEnvironments.toolsURL` is `theos-env-${os}-${arch}`; a Mac
-   whose address names neither `${os}` nor `darwin` fails its lease. Tests:
-   `internal/adapters/awsenv` (`TestMacTestEnvironmentsContract`,
+   whose address names neither `${os}` nor `darwin` fails its lease. An EC2
+   Mac runs no CI jobs (step 8): CEL refuses its `ci`, since the CI runner a
+   machine downloads is Linux's alone and a host per job would be billed 24
+   hours each (`model.TestEnvRemoteCI`, which the CI leases also go by).
+   Tests: `internal/adapters/awsenv` (`TestMacTestEnvironmentsContract`,
    `TestMacLaunchInputIsPlacedOnTheHost`, `TestMacHostIsReusedAcrossLeases`,
    `TestMacAllocatesAHostWhenEveryHostIsBusy`,
    `TestMacHostIsKeptForKeepHostHoursThenReleased`,
@@ -390,7 +474,9 @@ step 2.
     member's keys; CEL requires `limits.budgetUSDPerDay`), not a block of
     `aws`, whose machine settings it has none of. It is remote
     (`model.TestEnvRemote`): `CredentialsValid` (STS identity, `account`,
-    the device pool), the finalizer and the budget work as for `aws`. The
+    the device pool), the finalizer and the budget work as for `aws`; it has
+    no machine to run a CI job's runner on, so CEL refuses its `ci` and step
+    8's CI leases skip it (`model.TestEnvRemoteCI`). The
     decision on how a run reaches the provider is T12's: over the Git host,
     never the operator. A lease holds no device: it is a tag on the project
     (`theos.factory.io/lease:<uid>:<lease>`, its holder, start and deadline),

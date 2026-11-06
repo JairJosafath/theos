@@ -28,6 +28,8 @@ type TestEnvironments struct {
 	// knows; nil takes any credential.
 	accounts map[string]string
 	released []string
+	// runnerMissing is what RunnerMissing says (testenv_ci.go).
+	runnerMissing string
 }
 
 var (
@@ -87,6 +89,8 @@ type envKey struct{ namespace, name string }
 type fakeLease struct {
 	lease ports.Lease
 	req   ports.LeaseRequest
+	// runner is the CI runner a LeaseRunner lease runs (testenv_ci.go).
+	runner *ports.JobRunner
 }
 
 func keyOf(env ports.Environment) envKey { return envKey{env.Namespace, env.Name} }

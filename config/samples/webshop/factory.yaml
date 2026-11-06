@@ -17,6 +17,11 @@ spec:
   # organization only (#1698).
   ci:
     giteaActions:
+      # Where a remote TestEnvironment's machines reach this host to run a
+      # job labelled env-<name> (docs/plans/test-environments.md, step 8):
+      # https:// on port 443 at a public host. The in-cluster url above is
+      # none, so remote CI is off until it is set.
+      # publicURL: https://git.example.com
       runners:
         - label: base
           image: theos/gitea-runner-base:dev

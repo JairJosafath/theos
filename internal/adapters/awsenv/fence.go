@@ -264,16 +264,13 @@ func permissions(rules []rule) []types.IpPermission {
 // macOS, whose root volume is read-only, so its runs' folder is under
 // /private/var.
 func UserData(toolsURL, token string, deadline time.Duration) (string, error) {
-	if !strings.HasPrefix(toolsURL, "https://") || strings.ContainsAny(toolsURL, "'\n\r\\") {
-		return "", fmt.Errorf("the theos-env download address %q must be https:// with no quote, newline or backslash",
-			toolsURL)
+	url, err := downloadAddress(toolsURL)
+	if err != nil {
+		return "", err
 	}
 	if !model.LeaseTokenSafe(token) {
 		return "", errors.New("a lease's token must be letters, digits, '-', '_' and '.'")
 	}
-	// Single-quoted, so the shell expands nothing of the address but $os
-	// and $arch.
-	url := strings.NewReplacer("${arch}", `'"$arch"'`, "${os}", `'"$os"'`).Replace("'" + toolsURL + "'")
 	minutes := int64(math.Ceil(deadline.Minutes()))
 	serve := "/usr/local/bin/theos-env serve --listen :" + strconv.Itoa(model.TestEnvRemotePort) +
 		` --work "$work" --tls`

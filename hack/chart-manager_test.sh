@@ -59,6 +59,10 @@ edited '/name: git-events$/d'; run; check "no git-events port: fails" $? 1
 grep -q 'lacks the git-events container port' "$T/out"; check "names the port" $? 0
 edited '/--test-environment-tools-image=/d'; run; check "no --test-environment-tools-image: fails" $? 1
 grep -q 'lacks the --test-environment-tools-image flag' "$T/out"; check "names the tools image flag" $? 0
+edited '/--test-environment-tools-url=/d'; run; check "no --test-environment-tools-url: fails" $? 1
+grep -q 'lacks the --test-environment-tools-url flag' "$T/out"; check "names the tools URL flag" $? 0
+edited '/--test-environment-runner-url=/d'; run; check "no --test-environment-runner-url: fails" $? 1
+grep -q 'lacks the --test-environment-runner-url flag' "$T/out"; check "names the runner URL flag" $? 0
 
 printf 'kind: ConfigMap\n' >"$T/rendered.yaml"
 run; check "a render without the manager: fails" $? 1

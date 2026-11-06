@@ -238,5 +238,8 @@ var _ = Describe("TestEnvironment that runs test packages", func() {
 		Entry("a second member", func(env *c4v1beta1.TestEnvironment) {
 			env.Spec.Local = newBrowserEnvironment(env.Namespace).Spec.Local
 		}, "set exactly one provider member: local, aws or deviceFarm"),
+		Entry("CI, which needs a machine for its runner (step 8)", func(env *c4v1beta1.TestEnvironment) {
+			env.Spec.CI = &c4v1beta1.TestEnvironmentCI{}
+		}, "a deviceFarm environment runs test packages, not CI jobs"),
 	)
 })

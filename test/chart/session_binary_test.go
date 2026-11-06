@@ -103,7 +103,7 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 		if sums == nil || !slices.Contains(strings.Fields(string(sums[1])), bin) {
 			t.Errorf("release.yml's SHA256SUMS doesn't cover %s (%q)", bin, sums)
 		}
-		if strings.HasPrefix(bin, "theos-env-") && !strings.Contains(string(create), " "+bin) {
+		if !strings.HasPrefix(bin, "theos-session-") && !strings.Contains(string(create), " "+bin) {
 			t.Errorf("release.yml's gh release create doesn't attach %s: %s", bin, create)
 		}
 	}

@@ -19,6 +19,22 @@ func TestTestEnvMac(t *testing.T) {
 	}
 }
 
+// CI runs on an aws machine per job, never on an EC2 Mac nor Device Farm
+// (steps 8 to 10).
+func TestTestEnvRemoteCI(t *testing.T) {
+	for _, tt := range []struct {
+		member, instanceType string
+		want                 bool
+	}{
+		{TestEnvMemberAWS, "g5.xlarge", true}, {TestEnvMemberAWS, "mac2.metal", false},
+		{TestEnvMemberDeviceFarm, "", false}, {TestEnvMemberLocal, "", false},
+	} {
+		if got := TestEnvRemoteCI(tt.member, tt.instanceType); got != tt.want {
+			t.Errorf("TestEnvRemoteCI(%q, %q) = %v, want %v", tt.member, tt.instanceType, got, tt.want)
+		}
+	}
+}
+
 func TestKeepHost(t *testing.T) {
 	for hours, want := range map[int]time.Duration{0: 24 * time.Hour, 24: 24 * time.Hour, 48: 48 * time.Hour,
 		12: 24 * time.Hour, -1: 24 * time.Hour} {

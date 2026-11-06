@@ -46,6 +46,14 @@ var _ = Describe("TestEnvironment on an EC2 Mac", func() {
 			Account: "123456789012", InstanceType: "mac2.metal", ImageID: "ami-0123456789abcdef0",
 			SubnetID: "subnet-0123456789abcdef0", KeepHostHours: 72}))
 	})
+
+	// The CI runner a machine downloads is Linux's, and a host per job
+	// would be billed 24 hours each: CEL refuses a Mac's ci (steps 8, 9).
+	It("refuses ci on an EC2 Mac", func() {
+		env := newMacEnvironment(newProjectNamespace())
+		env.Spec.CI = &c4v1beta1.TestEnvironmentCI{}
+		Expect(k8sClient.Create(ctx, env)).To(MatchError(ContainSubstring("an EC2 Mac runs no CI jobs")))
+	})
 })
 
 // A deleted Mac environment waits a host's 24 hours to be released, since EC2

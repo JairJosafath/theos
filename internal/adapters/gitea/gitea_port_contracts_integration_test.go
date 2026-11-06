@@ -145,6 +145,21 @@ func TestCIContractIntegration(t *testing.T) {
 			}
 			return jobs.Jobs[0].HTMLURL
 		},
+		// A workflow pushed for a label no runner takes queues its job,
+		// once Gitea schedules the run after the push.
+		Queue: func(t *testing.T, host ports.GitHost, repo ports.Repository, label string) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			head, err := host.BranchCommit(ctx, repo, ports.DefaultBranch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			workflow := "on: [push]\njobs:\n  check:\n    runs-on: " + label + "\n    steps:\n      - run: echo check\n"
+			if _, err := host.PushDefaultBranch(ctx, repo, head, scaffold.Tree{
+				".gitea/workflows/wait.yaml": {Data: []byte(workflow)}}, nil, "Add a workflow", testAuthor); err != nil {
+				t.Fatal(err)
+			}
+		},
 	})
 }
 

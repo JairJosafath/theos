@@ -19,7 +19,7 @@ internal/scaffold/                 Pure rendering: layers, conflicts, devcontain
 internal/adapters/gitea/           The Gitea adapter: the Git host ports over REST (+ go-git through adapters/git)
 internal/adapters/matrix/          The Matrix adapter: the ChatHost port over the client-server API; matrixtest/ is its fake homeserver
 internal/adapters/localenv/        The local TestEnvironment provider: a fenced pod per lease, with client-go
-internal/adapters/awsenv/          The aws TestEnvironment provider: a fenced EC2 machine per lease (a Mac's on a kept host), and the deviceFarm one's test runs, with the AWS SDK
+internal/adapters/awsenv/          The aws TestEnvironment provider: a fenced EC2 machine per lease (a Mac's on a kept host; one that runs a CI job in ci.go), and the deviceFarm one's test runs, with the AWS SDK
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
 internal/chatbot/                  theos-chat's logic: news to threads, posts and the updates digest; commands sent impersonating the person; its state ConfigMap
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report

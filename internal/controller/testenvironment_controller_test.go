@@ -150,6 +150,14 @@ var _ = Describe("TestEnvironment", func() {
 			*env = *newGPUEnvironment(env.Namespace)
 			env.Spec.AWS.ImageID = "ubuntu-24.04"
 		}, "imageId must be an AMI id"),
+		Entry("an aws environment keeping idle CI runners (step 8)", func(env *c4v1beta1.TestEnvironment) {
+			*env = *newGPUEnvironment(env.Namespace)
+			env.Spec.CI = &c4v1beta1.TestEnvironmentCI{Size: 1}
+		}, "an aws environment's ci leases a machine for each waiting job"),
+		Entry("an aws environment with a CI runner image (step 8)", func(env *c4v1beta1.TestEnvironment) {
+			*env = *newGPUEnvironment(env.Namespace)
+			env.Spec.CI = &c4v1beta1.TestEnvironmentCI{RunnerImage: "theos/ci-runner-base:dev"}
+		}, "takes no ci.runnerImage"),
 	)
 })
 
@@ -166,14 +174,13 @@ func newGPUEnvironment(ns string) *c4v1beta1.TestEnvironment {
 }
 
 // gpuCredential makes Secret gpu-aws in ns with a new key of account, which
-// envAWSFake takes, and returns the key's ID.
-func gpuCredential(ns, account string) string {
+// envAWSFake takes.
+func gpuCredential(ns, account string) {
 	GinkgoHelper()
 	key := rand.Text()
 	envAWSFake.AddAccount(key, account)
 	mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "gpu-aws"),
 		Data: map[string][]byte{"accessKeyId": []byte(key), "secretAccessKey": []byte(rand.Text())}})
-	return key
 }
 
 // credentialsValid waits for env's CredentialsValid to have status and

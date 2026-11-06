@@ -3,7 +3,10 @@ package contract
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/ports"
 )
@@ -18,6 +21,10 @@ type CIEnv struct {
 	// commit, that started and sent no log line, as one whose runner went
 	// away before its first does. It may push to repo through host.
 	NoLog func(t *testing.T, host ports.GitHost, repo ports.Repository) string
+	// Queue starts a job of repo, whose main holds a commit, that runs on
+	// label alone, which no runner takes. It may push to repo through host.
+	// Only a CI with JobRunners needs it.
+	Queue func(t *testing.T, host ports.GitHost, repo ports.Repository, label string)
 	// Cannot names the subtests the host can't run, with why; they are
 	// skipped.
 	Cannot map[string]string
@@ -26,7 +33,9 @@ type CIEnv struct {
 // CI states what the controllers rely on of every CI that needs no runner to
 // see: a repository with no workflow has no runs of a commit or a tag;
 // RunnersOnline answers, or says it doesn't know; and the log of a job that
-// sent none is ErrNoCILog.
+// sent none is ErrNoCILog. A CI with JobRunners lists the jobs that wait for
+// a label's runner and registers a runner for one job whose files hold no
+// registration token (docs/plans/test-environments.md, step 8).
 func CI(t *testing.T, env CIEnv) {
 	t.Helper()
 	ctx, cancel := suiteContext()
@@ -35,6 +44,8 @@ func CI(t *testing.T, env CIEnv) {
 		{"has no runs of a repository with no workflow", ciSuite.noRuns},
 		{"says how many runners are online, or that it doesn't know", ciSuite.runnersOnline},
 		{"has no log of a job that sent none", ciSuite.noLog},
+		{"lists the jobs that wait for a runner of their labels", ciSuite.waitingJobs},
+		{"registers a runner for one job, whose files hold its own credential alone", ciSuite.jobRunner},
 	})
 }
 
@@ -80,5 +91,82 @@ func (s ciSuite) noLog(t *testing.T) {
 	checkURL := s.env.NoLog(t, h, repo)
 	if log, err := ci.CheckLog(s.ctx, repo, checkURL); !errors.Is(err, ports.ErrNoCILog) {
 		t.Errorf("CheckLog() of a job that sent no log = %q, %v; want ErrNoCILog", log, err)
+	}
+}
+
+// jobRunners is ci's JobRunners, skipping t when it has none.
+func jobRunners(t *testing.T, ci ports.CI) ports.JobRunners {
+	t.Helper()
+	runners, ok := ci.(ports.JobRunners)
+	if !ok {
+		t.Skip("the CI has no JobRunners")
+	}
+	return runners
+}
+
+func (s ciSuite) waitingJobs(t *testing.T) {
+	h, ci, repo, _ := s.seeded(t)
+	runners := jobRunners(t, ci)
+	const label, other = "env-contract", "env-other"
+	s.env.Queue(t, h, repo, label)
+	// The host may schedule the job after Queue returns.
+	deadline := time.Now().Add(time.Minute)
+	var jobs []ports.WaitingJob
+	for {
+		jobs = must(runners.WaitingJobs(s.ctx, []string{label, "base"}))(t)
+		if len(jobs) > 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if len(jobs) != 1 || jobs[0].ID == 0 || !slices.Equal(jobs[0].Labels, []string{label}) {
+		t.Fatalf("WaitingJobs(%s) = %+v, want the one job queued on it", label, jobs)
+	}
+	if jobs := must(runners.WaitingJobs(s.ctx, []string{other}))(t); len(jobs) != 0 {
+		t.Errorf("WaitingJobs(%s) = %+v, want none: the job runs on %s", other, jobs, label)
+	}
+}
+
+func (s ciSuite) jobRunner(t *testing.T) {
+	_, ci := s.env.New(t)
+	runners := jobRunners(t, ci)
+	owner, ok := ci.(ports.OwnerRunners)
+	if !ok {
+		t.Skip("the CI has no OwnerRunners")
+	}
+	const address = "https://ci.example.com"
+	runner := must(runners.RegisterJobRunner(s.ctx, ports.RunnerRegistration{Name: "contract-job-runner",
+		Labels: []string{"env-contract:host"}, Address: address, Timeout: time.Hour}))(t)
+	t.Cleanup(func() { _ = owner.DeleteRunner(context.Background(), runner.ID) })
+	if runner.ID == 0 || runner.Name != "contract-job-runner" || len(runner.Files) == 0 || len(runner.Args) == 0 {
+		t.Fatalf("RegisterJobRunner() = %+v, want the runner, its files and its arguments", runner)
+	}
+	registration := must(owner.RunnerRegistrationToken(s.ctx))(t)
+	var withAddress bool
+	for name, data := range runner.Files {
+		if strings.Contains(string(data), registration) {
+			t.Errorf("file %s holds the registration token, which would register runners at will", name)
+		}
+		withAddress = withAddress || strings.Contains(string(data), address)
+	}
+	if !withAddress {
+		t.Errorf("no file names the address the runner reaches the host at, %s", address)
+	}
+	listed := must(owner.Runners(s.ctx))(t)
+	i := slices.IndexFunc(listed, func(r ports.Runner) bool { return r.ID == runner.ID })
+	if i < 0 {
+		t.Fatalf("Runners() = %+v, want runner %d", listed, runner.ID)
+	}
+	if got := listed[i]; got.Name != runner.Name || !got.Ephemeral || got.Online || got.Busy ||
+		!slices.Equal(got.Labels, []string{"env-contract"}) {
+		t.Errorf("Runners() lists %+v, want it ephemeral, offline until its machine calls, on env-contract", got)
+	}
+	if err := owner.DeleteRunner(s.ctx, runner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if listed := must(owner.Runners(s.ctx))(t); slices.ContainsFunc(listed, func(r ports.Runner) bool {
+		return r.ID == runner.ID
+	}) {
+		t.Errorf("runner %d is still listed after DeleteRunner", runner.ID)
 	}
 }

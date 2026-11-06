@@ -580,7 +580,8 @@ remote member's `CredentialsValid` is True.
   writes them into the run's working tree to commit, and comments the
   outcome on the Task's pull request, where the reviewer and people see it.
   A lease holds no device: it is a tag on the Device Farm project, and costs
-  its runs' metered device minutes; returning it stops its runs.
+  its runs' metered device minutes; returning it stops its runs. It runs no
+  CI jobs, nor does an EC2 Mac: CEL refuses their `ci`.
 - **Limits.** `limits.maxLeases` (default 2, at most 16) bounds the live
   leases; a run past it waits, `WaitingForEnvironment`, `AllLeased`.
   `limits.maxLeaseMinutes` (default 180, the agent run's own deadline) ends a
@@ -595,7 +596,26 @@ remote member's `CredentialsValid` is True.
   Each pod registers, and gets its runner copied in, from `ci.runnerImage`,
   else the image of the GitProvider's first runner; the jobs run on the
   environment's image. A `ci` block that names `env-<name>` itself makes
-  the Project's `CIRunners` False, reason `LabelClash`.
+  the Project's `CIRunners` False, reason `LabelClash`. A remote
+  environment's `ci: {}` keeps no idle runner: for each `env-<name>` job of
+  the GitProvider's owner organization that waits, within the environment's
+  limits and the budget it shares with the runs, the operator registers an
+  ephemeral runner for one job and leases a machine that runs it. The
+  registration token never leaves the operator; the machine gets the
+  runner's own credential, which takes that one job and goes with the
+  runner when the job ends, and the operator deletes the runner when it
+  returns the lease. The machine serves `theos-env` only until its metadata
+  service is off, then starts the runner, and shuts down, which terminates
+  it, when the runner exits. The lease's holder is the runner
+  (`ci/<GitProvider>/<id>`), held while it runs its job, or waits to take
+  one while one waits, or starts (20 minutes); the operator returns it once
+  its job ended or none is left for it. The machines reach the Git host at
+  the GitProvider's `ci.giteaActions.publicURL`, else its `url`, when that
+  is `https://` on port 443 at a public host, the one port their fence lets
+  out; the chart's in-cluster Gitea has neither, so remote CI is off until
+  a person gives it. The environment's `CI` condition says whether it runs
+  jobs (`Serving`) and why not (`NoGitProvider`, `NoPublicAddress`,
+  `LabelClash`, `Unsupported`, `Unreachable`, `OverBudget`).
 - **By hand only for a person.** The implementer's and verifier's prompts
   list the run's environments, with each one's description and how to use
   it, and the guides say that a criterion a listed environment can check is
@@ -1211,13 +1231,13 @@ controllers call, not by one product's API;
 | --- | --- | --- |
 | GitHost | repositories, files, branches, tags, branch rules, pull requests, merges, commit statuses | Gitea |
 | Issues | issues, comments, labels, milestones, dependencies | Gitea; request intake on GitHub |
-| CI | runs of a commit or tag, reruns, job logs, runners | Gitea Actions |
+| CI | runs of a commit or tag, reruns, job logs, runners; the jobs that wait for a label's runner, and a runner registered for one job | Gitea Actions |
 | AgentAccess | a credential for one repository, and revoking it | Gitea bot users |
 | Registry | Go modules and the proxy; npm, PyPI and images to come | Gitea packages |
 | AgentRuntime | start a run, read its state and result, stop it | Agent Sandbox |
 | Deployer | ship a release to a target, read its state back | the GitHub release copy |
 | ChatHost | a Space and its rooms, invites, messages, thread replies, edits, reactions, sync | Matrix |
-| TestEnvironments | lease a place to run commands with tools the sandbox lacks, read it back, return it, list the leases held; run a test package where the environment runs those (`TestRuns`) | a pod per lease on the cluster (`local`); an EC2 machine per lease in the user's AWS account, a Mac's on a kept host (`aws`); AWS Device Farm's phones (`deviceFarm`) |
+| TestEnvironments | lease a place to run commands with tools the sandbox lacks, read it back, return it, list the leases held; a remote one may lease a machine that runs one CI job; run a test package where the environment runs those (`TestRuns`) | a pod per lease on the cluster (`local`); an EC2 machine per lease in the user's AWS account, a Mac's on a kept host (`aws`); AWS Device Farm's phones (`deviceFarm`) |
 
 - **A port is a narrow Go interface** with one fake and one contract suite,
   plain Go with no Kubernetes in `internal/ports`; each adapter is its own

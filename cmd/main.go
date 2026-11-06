@@ -101,7 +101,7 @@ func main() {
 	var chatHomeserver string
 	var gitEventsURL string
 	var gitEventsAddr string
-	var testEnvToolsImage, testEnvToolsURL string
+	var testEnvToolsImage, testEnvToolsURL, testEnvRunnerURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -202,6 +202,10 @@ func main() {
 			"becomes linux or darwin and ${arch} amd64 or arm64, with a SHA256SUMS next to it, such as the "+
 			"release's theos-env-${os}-${arch}. "+
 			"None: no remote environment can be leased.")
+	flag.StringVar(&testEnvRunnerURL, "test-environment-runner-url", "",
+		"Where a remote TestEnvironment's machine that runs a CI job downloads the CI runner, an https:// address "+
+			"in which ${arch} becomes amd64 or arm64, with a SHA256SUMS next to it, such as the CI runner the "+
+			"release attaches beside theos-env. None: no remote environment runs CI jobs.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -434,7 +438,7 @@ func main() {
 	// Each TestEnvironment member's provider, by the member's name.
 	testEnvProviders := ports.TestEnvironmentProviders{
 		model.TestEnvMemberLocal:      localenv.New(mgr.GetClient(), testEnvToolsImage),
-		model.TestEnvMemberAWS:        awsenv.New(nil, testEnvToolsURL),
+		model.TestEnvMemberAWS:        awsenv.New(nil, testEnvToolsURL).WithRunnerURL(testEnvRunnerURL),
 		model.TestEnvMemberDeviceFarm: awsenv.NewDeviceFarm(nil)}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
@@ -573,8 +577,8 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		APIReader:         mgr.GetAPIReader(),
 		Providers:         testEnvProviders,
-		SharedPullSecrets: sharedPullSecrets,
 		Git:               gitClient{},
+		SharedPullSecrets: sharedPullSecrets,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "testenvironment")
 		os.Exit(1)
