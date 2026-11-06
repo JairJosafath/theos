@@ -9,6 +9,7 @@ permission. See the LICENSE file.
 package controller
 
 import (
+	"errors"
 	"maps"
 	"slices"
 	"time"
@@ -24,6 +25,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/ports/fake"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
@@ -645,6 +647,48 @@ var _ = Describe("Container Standard update", func() {
 		eventuallyAt(ns, "v1.1.0")
 		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{int(second.PullRequest)}))
 		Expect(mainFile(ns, "src/app.py")).To(Equal("fixed = True\n"))
+	})
+
+	It("opens the update again from the new main when a pass stops right after its own close (#2035)", func() {
+		ns := newProjectNamespace()
+		updatableContainer(ns)
+		bumpStandard(ns, "v1.1.0")
+		first := openedUpdate(ns, "v1.1.0")
+		gitFake.SetChecks(ns, "orders-api", first.Commit, "failure")
+		Eventually(func(g Gomega) {
+			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).To(Equal(c4v1beta1.ReasonChecksFailed))
+		}).Should(Succeed())
+
+		// The pass that drops the update stops right after it closes the pull
+		// request: the branch can't be deleted, so the update isn't forgotten.
+		gitFake.FailBranchDeletes(ns, "orders-api", errors.New("gitea: no answer"))
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{"src/app.py": {Data: []byte("fixed = True\n")}})
+		closedFirst := MatchFields(IgnoreExtras, Fields{
+			"Number": BeEquivalentTo(first.PullRequest), "State": Equal("closed"), "Merged": BeFalse()})
+		Eventually(func() []ports.PullRequest { return gitFake.PullRequests(ns, "orders-api") }).
+			Should(ContainElement(closedFirst))
+		Eventually(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Update).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"PullRequest": Equal(first.PullRequest),
+				"Dropping":    Equal("Closed a Standard update whose CI failed, to plan it again from main's new head"),
+			})), "the status names the closed pull request and records the operator's own close")
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Update).To(PointTo(HaveField("Stopped", BeEmpty())))
+			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).NotTo(Equal(c4v1beta1.ReasonUpdateClosed))
+		}).WithTimeout(2*time.Second).Should(Succeed(), "the operator's own close is never read as a person's")
+
+		// The next pass that reaches the host opens the update again from the new main.
+		gitFake.FailBranchDeletes(ns, "orders-api", nil)
+		fixed := gitFake.MainHead(ns, "orders-api").Hash
+		Eventually(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Update).
+				To(PointTo(HaveField("PullRequest", Not(Equal(first.PullRequest)))))
+		}).Should(Succeed())
+		second := openedUpdate(ns, "v1.1.0")
+		Expect(second.Base).To(Equal(fixed))
+		Expect(second.Dropping).To(BeEmpty())
+		Expect(second.Commit).NotTo(Equal(first.Commit))
 	})
 
 	It("files one issue for the Crew per target ref whose update's CI failed (#1491)", func() {

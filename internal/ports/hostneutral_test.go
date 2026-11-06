@@ -76,7 +76,7 @@ var giteaAllowlist = map[string]int{
 	"internal/controller/container_scaffold.go":                   1,
 	"internal/controller/container_scaffold_test.go":              6,
 	"internal/controller/container_standard_checks_test.go":       1,
-	"internal/controller/container_standard_test.go":              1,
+	"internal/controller/container_standard_test.go":              2,
 	"internal/controller/container_standard_unit_test.go":         7,
 	"internal/controller/conversion_test.go":                      1,
 	"internal/controller/crew_bump_test.go":                       1,

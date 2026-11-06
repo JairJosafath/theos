@@ -510,6 +510,8 @@ type agentStore struct {
 	// removeErrs are what RemoveAgentAccess returns for a bot user, as a host
 	// that refuses or doesn't answer would.
 	removeErrs map[string]error
+	// deleteErrs are what DeleteBranch returns for a repository, by owner/name.
+	deleteErrs map[string]error
 	// revoked counts the RevokeOldAgentTokens calls, by bot user.
 	revoked map[string]int
 	// trees are the tree ids set for commits, and the ones main's commits
@@ -529,7 +531,7 @@ func (s *state) agentState() *agentStore {
 			texts: map[string][2]string{},
 			files: map[string][]string{}, commits: map[string][]ports.PullCommit{}, forced: map[string][]int{}, gone: map[string]bool{}, conflicts: map[string]bool{},
 			readErrs: map[string]int{}, unnamed: map[string]bool{},
-			edits: map[string]map[string]*scaffold.File{}, bases: map[string]string{}, removeErrs: map[string]error{}, revoked: map[string]int{},
+			edits: map[string]map[string]*scaffold.File{}, bases: map[string]string{}, removeErrs: map[string]error{}, deleteErrs: map[string]error{}, revoked: map[string]int{},
 			trees: map[string]string{}, written: map[string][]ports.CommitStatus{},
 		}
 	}
@@ -674,9 +676,20 @@ func (g *Git) CombinedStatus(_ context.Context, repo ports.Repository, ref strin
 	return ports.CheckStatus{Commit: ref}, nil
 }
 
+// FailBranchDeletes makes deleting a branch of owner/name fail with err from
+// now on, as a host that doesn't answer would; a nil err deletes them again.
+func (g *Git) FailBranchDeletes(owner, name string, err error) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	g.s.agentState().deleteErrs[owner+"/"+name] = err
+}
+
 func (g *Git) DeleteBranch(_ context.Context, repo ports.Repository, branch string) error {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()
+	if err := g.s.agentState().deleteErrs[repo.Owner+"/"+repo.Name]; err != nil {
+		return err
+	}
 	delete(g.s.agentState().branches, repo.Owner+"/"+repo.Name+"@"+branch)
 	delete(g.s.agentState().edits, repo.Owner+"/"+repo.Name+"@"+branch)
 	return nil
