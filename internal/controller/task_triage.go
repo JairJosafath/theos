@@ -48,6 +48,7 @@ func (r *TaskReconciler) reconcileTriage(ctx context.Context, task *c4v1beta1.Ta
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	ctx = withHostEvents(ctx, r.Client, task.Namespace, container.Spec.GitProviderRef.Name)
 	labels := projectLabels(task.Namespace)
 	labels[c4v1beta1.LabelContainer] = container.Name
 	if err := adopt(ctx, r.Client, r.Scheme, &container, task, labels); err != nil {
@@ -149,7 +150,7 @@ func (r *TaskReconciler) applyTriage(ctx context.Context, task *c4v1beta1.Task, 
 	agents := taskAgents{implementer: agent, reviewer: agent}
 	switch step.Action {
 	case model.ActionWait:
-		return r.wait(task, status, step), nil
+		return r.wait(ctx, task, status, step), nil
 
 	case model.ActionStartImplement:
 		return r.startTriage(ctx, task, status, container, agents, step.Message)

@@ -1,6 +1,32 @@
 package model
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+// #1222: while deliveries arrive the polls that wait for the host stretch to
+// EventsFallbackPoll, and never shorten.
+func TestHostRecheck(t *testing.T) {
+	tests := []struct {
+		name   string
+		d      time.Duration
+		events bool
+		want   time.Duration
+	}{
+		{"events off", 15 * time.Second, false, 15 * time.Second},
+		{"events off, a longer poll", time.Hour, false, time.Hour},
+		{"events on, a shorter poll", 15 * time.Second, true, EventsFallbackPoll},
+		{"events on, a longer poll", time.Hour, true, time.Hour},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HostRecheck(tt.d, tt.events); got != tt.want {
+				t.Errorf("HostRecheck(%s, %t) = %s, want %s", tt.d, tt.events, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestGitEventsURL(t *testing.T) {
 	tests := []struct {

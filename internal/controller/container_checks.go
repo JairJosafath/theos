@@ -55,7 +55,7 @@ func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1
 	if err != nil {
 		logf.FromContext(ctx).Info("Could not read checks", "error", err.Error())
 	}
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}
 }
 
 // providerFor returns the Provider for a GitProvider in namespace ns, with its

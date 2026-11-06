@@ -182,6 +182,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 	r.remember(req.NamespacedName, container.UID)
+	// The waits for the host's checks stretch while its deliveries arrive (#1222).
+	ctx = withHostEvents(ctx, r.Client, container.Namespace, container.Spec.GitProviderRef.Name)
 
 	active, err := r.countSessions(ctx, &container)
 	if err != nil {
@@ -245,8 +247,11 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// A Git error is retried, and a pull request in flight read again, at
 		// each recheck, with or without a Standard: the status write doesn't
 		// reconcile the Container again.
-		if (failed || operationsInFlight(status)) && result.RequeueAfter == 0 {
+		if failed && result.RequeueAfter == 0 {
 			result.RequeueAfter = r.checksRecheck()
+		}
+		if operationsInFlight(status) && result.RequeueAfter == 0 {
+			result.RequeueAfter = hostRecheck(ctx, r.checksRecheck())
 		}
 		// After the updates' steps, so it reads what the repository runs now.
 		r.reportChecksApplied(ctx, &container, status)

@@ -179,6 +179,8 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	// The waits for the host's checks stretch while its deliveries arrive (#1222).
+	ctx = withHostEvents(ctx, r.Client, task.Namespace, container.Spec.GitProviderRef.Name)
 	labels := projectLabels(task.Namespace)
 	labels[c4v1beta1.LabelContainer] = container.Name
 	if err := adoptTask(ctx, r.Client, r.Scheme, &container, &task, labels); err != nil {

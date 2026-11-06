@@ -1065,8 +1065,11 @@ controllers call, not by one product's API;
   Container's is its host's own (`model.HostCI`).
 - **Polling is the contract.** Webhooks (#1084) only shorten waits: the
   operator registers a hook and reconciles what a signed delivery concerns
-  at once; the longer fallback poll and the chart's install are still to
-  come ([plans/git-events.md](plans/git-events.md)).
+  at once. While the GitProvider's `Events` is True (`Receiving`), the
+  polls that wait for the host (the Crew's issues, a Task's checks and
+  Standard change, a Container's checks) stretch to 10 minutes; error
+  retries and waits on the cluster keep their intervals. The chart's
+  install is still to come ([plans/git-events.md](plans/git-events.md)).
 - **Helm decides what is installed, custom resources what is used:**
   `GitProvider.spec.provider` names the host (`gitea`), CI and registry
   default to the host's own (`spec.packages` names another npm registry or

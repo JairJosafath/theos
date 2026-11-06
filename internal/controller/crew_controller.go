@@ -273,7 +273,13 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionModulePublished)
 	}
-	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
+	poll := r.poll()
+	if facts.ContainerReady {
+		// The poll of the ready issues waits for the host (#1222); a Crew
+		// waiting for its Container is woken by the Container's watch.
+		poll = hostRecheck(withHostEvents(ctx, r.Client, crew.Namespace, container.Spec.GitProviderRef.Name), poll)
+	}
+	return ctrl.Result{RequeueAfter: poll}, r.writeStatus(ctx, &crew, status)
 }
 
 // handBackIssues gives the issues agents must not take back to a person,
