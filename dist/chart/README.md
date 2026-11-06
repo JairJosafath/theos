@@ -267,8 +267,9 @@ The images come in one of two ways:
   and the chart doesn't (`gitea.createNamespace=false`). The agent images
   (`agent-base`, `agent-go`) run in Sandboxes the operator makes in each
   project namespace: it copies each of `global.imagePullSecrets` there from
-  the release's namespace and names it in their pods, so a project namespace
-  needs no Secret or ServiceAccount patch of its own.
+  the release's namespace and names it in their pods, and in the pods of the
+  project's CI runner pool, so a project namespace needs no Secret or
+  ServiceAccount patch of its own.
 
 - **Kind: load them.** `docker login ghcr.io`, `docker pull` each image at the
   release's version and `kind load docker-image` it into the cluster; no pull
@@ -323,7 +324,7 @@ as the run's artifact); a failing release gets an issue titled
 | `agents.standIn` | for each of `gitea.projects`, Agent `stand-in` on the same image: no model and no Secret, it plans from the catalog and makes a scripted change, to show the loop without a token (default on; off with `agents.enabled=false` too) |
 | `agents.<role>` | each Agent's `description`, `model` (Opus, Sonnet for the implementer; a Fable model fails the install), `maxRounds`, `timeoutMinutes` and `resources` |
 | `runners.base`, `runners.go`, `runners.image` | the CI runners: `enabled`, `image`, `replicas` (default 1), `resources`, `workSize`, `tmpSize`; `pool.size` (default 1 for `base` and `go`, none for `image`) is the per-project pool of that label every GitProvider the chart renders names in its `ci` block, the runners a project's checks run on, since the shared runners serve the templates' checks only (0 turns it off); `go.goCache` is the node directory of its Go build cache; `image.buildkit` runs its job container as rootless BuildKit needs, with its work and tmp directories on disk |
-| `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners, which the operator also copies into each project namespace for the agents' pods; the operator's are `manager.imagePullSecrets` |
+| `global.imagePullSecrets` | pull secrets for the UI, Gitea, the seed and the runners, which the operator also copies into each project namespace for the agents' and the CI runner pool's pods; the operator's are `manager.imagePullSecrets` |
 | `gitProviders` | more GitProviders to create, each reading a Secret you make (`existingSecret`), below |
 | `crd.enabled`, `crd.keep` | install the CRDs with the chart; keep them on uninstall (default). A CRD whose kind's versions differ in shape converts by the operator's webhook, so while the operator is down, or after `helm uninstall` kept the CRDs, `kubectl get` of that kind fails and deleting a Project namespace waits (none today; the CRDs convert by the API server, and [the plan](../../docs/plans/done/api-versions.md) says which) |
 | `webhook.enabled` | the operator's conversion webhook (default on); a kind whose versions differ in shape refuses to render without it |

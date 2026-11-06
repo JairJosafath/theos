@@ -118,6 +118,8 @@ var _ = Describe("CI runner pool", func() {
 			Expect(pod.Labels).To(HaveKeyWithValue(LabelCILabel, "go"))
 			Expect(pod.Spec.RestartPolicy).To(Equal(corev1.RestartPolicyNever))
 			Expect(pod.Spec.AutomountServiceAccountToken).To(HaveValue(BeFalse()))
+			// The suite's operator shares sharedPullSecret; the pod pulls with it (#2032).
+			Expect(pod.Spec.ImagePullSecrets).To(Equal([]corev1.LocalObjectReference{{Name: sharedPullSecret}}))
 			Expect(pod.Spec.InitContainers[0].Env).To(ContainElement(corev1.EnvVar{
 				Name: "RUNNER_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: "c4-ci-runner-gitea"}, Key: "token"}}}))

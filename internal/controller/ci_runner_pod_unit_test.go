@@ -103,6 +103,30 @@ func TestBuildRunnerPodGoCache(t *testing.T) {
 	}
 }
 
+// The pool pod lists the shared pull Secrets as the sandbox pods do, and none
+// without --shared-pull-secret: it runs as the namespace's default
+// ServiceAccount, which names none, so private images never pulled (#2032).
+func TestBuildRunnerPodSharedPullSecrets(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		secrets []string
+		want    []corev1.LocalObjectReference
+	}{
+		{name: "none without --shared-pull-secret"},
+		{name: "lists them (#2032)", secrets: []string{"ghcr", "quay"},
+			want: []corev1.LocalObjectReference{{Name: "ghcr"}, {Name: "quay"}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			in := runnerPodInput{namespace: "cel-lens", provider: "gitea", tokenSecret: ciRunnerTokenSecret("gitea"),
+				runner:      c4v1beta1.CIRunnerSpec{Label: "go", Image: "ghcr.io/jairjosafath/theos/gitea-runner-go:0.30.0"},
+				pullSecrets: tt.secrets}
+			if got := buildRunnerPod(in).Spec.ImagePullSecrets; len(got)+len(tt.want) > 0 && !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("imagePullSecrets %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func hasMount(c corev1.Container, path string) bool {
 	for _, m := range c.VolumeMounts {
 		if m.MountPath == path {

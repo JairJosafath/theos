@@ -191,6 +191,7 @@ func (r *ProjectReconciler) ensureCIRunners(ctx context.Context, project *c4v1be
 			in := runnerPodInput{
 				namespace: project.Namespace, provider: p.Name, gitURL: p.Spec.URL,
 				tokenSecret: ciRunnerTokenSecret(p.Name), runner: runner, goCacheRoot: r.CIGoCache,
+				pullSecrets: r.SharedPullSecrets,
 			}
 			pools[poolKey{p.Name, runner.Label}] = &ciPool{in: in, spec: runnerSpecHash(in), held: tokenErr != nil, blind: tokenErr != nil}
 		}

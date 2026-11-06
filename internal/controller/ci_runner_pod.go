@@ -77,11 +77,14 @@ const CIJobEnv = "GOCACHE=" + ciGoCacheMount + "/build\nGOLANGCI_LINT_CACHE=" + 
 // runnerPodInput is what buildRunnerPod needs: the project's namespace, the
 // GitProvider's name and URL, the Secret holding its runner registration token,
 // the label's spec and the node directory under which projects' Go caches
-// live (the operator's --ci-go-cache), empty for none.
+// live (the operator's --ci-go-cache), empty for none, and the shared pull
+// Secrets the Project reconciler copies into the namespace
+// (--shared-pull-secret), listed as the sandbox pods list them (#2032).
 type runnerPodInput struct {
 	namespace, provider, gitURL, tokenSecret string
 	runner                                   c4v1beta1.CIRunnerSpec
 	goCacheRoot                              string
+	pullSecrets                              []string
 }
 
 // ciRunnerTokenSecret names the Secret with a GitProvider's runner registration token.
@@ -139,6 +142,13 @@ func buildRunnerPod(in runnerPodInput) *corev1.Pod {
 			corev1.Volume{Name: "job-env", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{Name: CIJobEnvConfigMap}}}})
 	}
+	// The pod runs as the namespace's default ServiceAccount, which names no
+	// pull Secret, and a kubelet won't hand a pod without credentials an
+	// image pulled with them, so the pod lists the shared ones (#2032).
+	pullSecrets := make([]corev1.LocalObjectReference, 0, len(in.pullSecrets))
+	for _, name := range in.pullSecrets {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
+	}
 	labels := projectLabels(in.namespace)
 	labels[LabelCIRunner] = ciRunnerValue
 	labels[LabelCIGitProvider] = in.provider
@@ -153,6 +163,7 @@ func buildRunnerPod(in runnerPodInput) *corev1.Pod {
 		Spec: corev1.PodSpec{
 			RestartPolicy:                corev1.RestartPolicyNever,
 			AutomountServiceAccountToken: new(false),
+			ImagePullSecrets:             pullSecrets,
 			InitContainers:               inits,
 			Containers: []corev1.Container{{
 				Name: ciRunnerContainer, Image: in.runner.Image, Resources: in.runner.Resources, VolumeMounts: mounts,
