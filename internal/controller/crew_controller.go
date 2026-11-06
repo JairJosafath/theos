@@ -182,8 +182,17 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 	}
 
+	// A cadence whose time zone the operator can't load stops the Crew, as
+	// a missing Agent does: CEL can't check it (docs/plans/done/release-cadence.md, C1).
+	cadence := crewCadence(&crew)
+	if err := model.CheckCadence(cadence); err != nil {
+		r.wait(&crew, status, model.ReasonInvalidTimeZone, "spec.releaseCadence: "+err.Error())
+		return ctrl.Result{}, r.writeStatus(ctx, &crew, status)
+	}
+
 	facts := model.CrewFacts{Paused: crew.Spec.Paused, Parallel: int(crew.Spec.Parallel),
-		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady, Routes: crewRoutes(&crew.Spec)}
+		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady, Routes: crewRoutes(&crew.Spec),
+		Cadence: cadence.Cuts()}
 	// Read live: a Task created a moment ago must count, or the Crew starts two.
 	var tasks c4v1beta1.TaskList
 	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(crew.Namespace)); err != nil {
@@ -220,7 +229,8 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		repo = provider.Repository(container.Name)
 		gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-		err = readIssues(gitCtx, provider, repo, crew.Spec.SpecWriter != nil, &facts, &triage)
+		err = readIssues(gitCtx, provider, repo, crewIssueLabels(cadence), crew.Spec.SpecWriter != nil, &facts,
+			&triage)
 		cancel()
 		if err != nil {
 			log.Error(err, "Failed to read the ready issues", "container", container.Name)
@@ -279,7 +289,24 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		// waiting for its Container is woken by the Container's watch.
 		poll = hostRecheck(withHostEvents(ctx, r.Client, crew.Namespace, container.Spec.GitProviderRef.Name), poll)
 	}
-	return ctrl.Result{RequeueAfter: poll}, r.writeStatus(ctx, &crew, status)
+	return ctrl.Result{RequeueAfter: r.cutPoll(cadence, status, poll)}, r.writeStatus(ctx, &crew, status)
+}
+
+// cutPoll is poll, or less when the Crew's next cut comes sooner, so a cut is
+// on time whatever the host's events stretch the poll to. Off a cadence, it
+// clears what the status says of cuts.
+func (r *CrewReconciler) cutPoll(cadence model.ReleaseCadence, status *c4v1beta1.CrewStatus,
+	poll time.Duration) time.Duration {
+	if !cadence.Cuts() {
+		status.NextCut, status.LastCut, status.CutRelease = nil, nil, ""
+		return poll
+	}
+	if next := status.NextCut; next != nil {
+		if wait := next.Time.Sub(r.now()) + time.Second; wait > 0 && wait < poll {
+			return wait
+		}
+	}
+	return poll
 }
 
 // handBackIssues gives the issues agents must not take back to a person,
@@ -437,9 +464,11 @@ func crewTask(t *c4v1beta1.Task) model.CrewTask {
 		Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
 		Unseen: failedUnseen(&t.Status),
 		// A spec waiting for a person runs no agent: like a Task waiting on a
-		// Standard change, it takes no place from parallel.
-		Blocked: t.Status.Phase == c4v1beta1.TaskBlocked || t.Status.Phase == c4v1beta1.TaskAwaitingApproval,
-		Spec:    isSpec(t)}
+		// Standard change, it takes no place from parallel; nor does a Task
+		// ready to merge that waits for its Crew's cut release to be tagged.
+		Blocked: t.Status.Phase == c4v1beta1.TaskBlocked || t.Status.Phase == c4v1beta1.TaskAwaitingApproval ||
+			waitsForRelease(t),
+		Spec: isSpec(t)}
 	if change := t.Status.StandardChange; change != nil {
 		out.StandardChange = &model.IssueChange{Issue: int(change.Issue), Paths: slices.Clone(change.Paths)}
 	}
@@ -447,9 +476,10 @@ func crewTask(t *c4v1beta1.Task) model.CrewTask {
 }
 
 // readyIssues reads the open issues labelled ready, what blocks each, and which
-// are Standard changes.
-func readyIssues(ctx context.Context, provider ports.Issues, repo ports.Repository) ([]model.Issue, error) {
-	if err := provider.EnsureLabels(ctx, repo, issueLabels()); err != nil {
+// are Standard changes, once the repository has the labels the Crew keeps.
+func readyIssues(ctx context.Context, provider ports.Issues, repo ports.Repository,
+	labels []ports.Label) ([]model.Issue, error) {
+	if err := provider.EnsureLabels(ctx, repo, labels); err != nil {
 		return nil, err
 	}
 	return labelledIssues(ctx, provider, repo, model.LabelReady)
@@ -489,10 +519,10 @@ func labelledIssues(ctx context.Context, provider ports.Issues, repo ports.Repos
 // readIssues reads what a Crew picks from: the ready issues, with a spec
 // writer those that need a spec, the releases of its Tasks' issues, and, with
 // a triager, the proposed issues.
-func readIssues(ctx context.Context, provider ports.Issues, repo ports.Repository, specs bool,
+func readIssues(ctx context.Context, provider ports.Issues, repo ports.Repository, labels []ports.Label, specs bool,
 	facts *model.CrewFacts, triage *model.TriageFacts) error {
 	var err error
-	if facts.Issues, err = readyIssues(ctx, provider, repo); err != nil {
+	if facts.Issues, err = readyIssues(ctx, provider, repo, labels); err != nil {
 		return err
 	}
 	if specs {

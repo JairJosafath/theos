@@ -292,6 +292,7 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1beta1.
 		Tended:              modelTended(status.Tended),
 		Tending:             roundRuns && tending(status),
 		SpecParallel:        brief.Spec.Parallel,
+		Cadence:             briefModelCadence(brief),
 		PromptParallel:      status.Parallel,
 		PromptParallelRound: status.ParallelRound,
 	}

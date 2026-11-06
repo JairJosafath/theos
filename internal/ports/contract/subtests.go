@@ -12,6 +12,8 @@ import (
 const (
 	// firstTag is the tag of a repository's first release.
 	firstTag = "v0.1.0"
+	// patchTag is a patch title a cut gives a release of fixes.
+	patchTag = "v0.0.1"
 	// checkGlob matches the check contexts a branch rule asks for.
 	checkGlob = "check*"
 	// The labels the Issues suite files issues with.

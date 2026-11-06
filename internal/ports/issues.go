@@ -117,4 +117,7 @@ type Issues interface {
 	// DescribeMilestone replaces milestone id's description, keeping its
 	// title, state and due date. It is safe to repeat.
 	DescribeMilestone(ctx context.Context, repo Repository, id int64, description string) error
+	// EditMilestoneTitle retitles milestone id, keeping its description,
+	// state, due date and issues. It is safe to repeat.
+	EditMilestoneTitle(ctx context.Context, repo Repository, id int64, title string) error
 }

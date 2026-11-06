@@ -53,8 +53,9 @@ Push the branch `plan/<round>` with these files:
 - `plan/issues/<nn>-<container>.md`: one file per issue, `nn` its number in the
   round (`01`, `02`, ...), `container` the Container it is for. It starts with
   front matter: a `---` line, `title:`, `labels:` and, when it needs another
-  issue's work merged first, `after:`, and when it builds on another
-  Container's released code, `uses:`, then another `---` line. Then the body.
+  issue's work merged first, `after:`, when it builds on another
+  Container's released code, `uses:`, and when it ships at once,
+  `release: now` (rule 9), then another `---` line. Then the body.
 - `plan/choices.md`: one line per choice you made, in plain words.
 - `plan/summary.md`: what this round does for the person's app, in one or two
   plain sentences, such as "Planned Sprout, a garden-themed todo CLI: one
@@ -244,12 +245,23 @@ Push the branch `plan/<round>` with these files:
    say ships a release (a CLI people download, a library, an app with
    versions), each one `brief.md`'s *Releases* section names, and each one a
    prompt asks to release. Each name is a Container of `plan/model.yaml`. Its
-   Crew then tags and prepares releases, and each of the round's issues for
-   it goes into a release of its own kind: a fix into the patch release right
-   after the release in progress (`v0.13.1` after `v0.13.0`, ahead of a
-   planned `v0.14.0`), any other work into the next minor release. So label
-   each issue that fixes a bug `kind/bug`, and each that adds or fixes a test
-   `kind/test`. Releases only turn on: a Container `released`
+   Crew then tags and prepares releases. When `brief.md` has a *Release
+   cadence* section, the apps release on it, once a day by default: each of
+   the round's issues for a released Container goes into the release in
+   progress with the rest of the day's work, and the factory gives a day of
+   fixes the next patch version. Without one, each issue goes into a release
+   of its own kind: a fix into the patch release right after the release in
+   progress (`v0.13.1` after `v0.13.0`, ahead of a planned `v0.14.0`), any
+   other work into the next minor release. Either way, label each issue that
+   fixes a bug `kind/bug`, and each that adds or fixes a test `kind/test`.
+
+   **Mark only what is bigger `release: now`** in an issue's front matter: a
+   fix of something broken in the latest release that users hit (a
+   regression, a crash, wrong output, a security hole), or a feature a prompt
+   asks to ship now ("ship the login fix today"). Once merged, its release
+   goes out at once, with the day's work merged so far, instead of at the
+   day's cut. A fix of work not yet released, a test, docs or a refactor is
+   never bigger. Releases only turn on: a Container `released`
    already stays released, so you needn't list it again, and leaving it out
    doesn't stop them. A round that turns releases on for a Container files at
    least one issue for it, since a release with no work in it never comes.
@@ -276,13 +288,15 @@ Push the branch `plan/<round>` with these files:
       issue: 5
       answer: take        # or skip, or missing
       fix: true           # take only: it fixes a bug or adds or fixes a test
+      now: true           # take only: bigger, it ships at once (rule 9)
       why: The prompt asks to take the input-safety suggestions.
     ```
 
     `why` says in plain words which prompt asked for it. Mark a suggestion you
     take `fix: true` when it fixes a bug or adds or fixes a test, so it ships
     in the patch release right after the release in progress; leave `fix` out
-    for any other work and on a skip, which refuses it. Only a suggestion with
+    for any other work and on a skip, which refuses it. Mark one `now: true`
+    only as rule 9 says an issue is `release: now`, and never on a skip. Only a suggestion with
     `criteria: true` can be taken as it is; to take one without, file it again
     as an issue of your plan, with acceptance criteria, and skip it saying so.
     Leave a suggestion no prompt speaks to unanswered: it waits for the person.
@@ -340,6 +354,7 @@ Push the branch `plan/<round>` with these files:
     `plan/summary.md` and, to split an issue you close, new issues in
     `plan/issues/`; a tending round has no say on the story, so any other
     file, `plan/model.yaml` and `plan/needs-input.md` too, refuses the plan.
+    With no person's word, nothing is bigger: mark no issue `release: now`.
     Answer each issue with what you learned from its `reason`, its body and
     the other issues, as above, or with one of two more answers:
 

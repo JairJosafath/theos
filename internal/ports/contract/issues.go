@@ -45,6 +45,7 @@ func Issues(t *testing.T, env IssuesEnv) {
 		{"keeps an issue open while an issue it depends on is, in its repository or another",
 			issuesSuite.dependencies},
 		{"makes, lists and closes milestones, with their issues", issuesSuite.milestones},
+		{"retitles a dated milestone, keeping its due date and issues", issuesSuite.retitle},
 	})
 }
 
@@ -316,6 +317,39 @@ func (s issuesSuite) milestones(t *testing.T) {
 	wantMilestones([]string{milestoneLater}, all)
 	if id := must(issues.EnsureMilestone(s.ctx, repo, firstTag, ""))(t); id != made.ID {
 		t.Errorf("EnsureMilestone() of a closed milestone = %d, want %d", id, made.ID)
+	}
+}
+
+// retitle retitles a dated release, as a cut does with a release of fixes
+// (docs/plans/done/release-cadence.md, C7): its due date, description, state and
+// issues stay.
+func (s issuesSuite) retitle(t *testing.T) {
+	issues, repos := s.repos(t, contractRepo)
+	repo := repos[0]
+	// Noon, so the day is the same in the host's time zone.
+	y, m, d := time.Now().UTC().AddDate(0, 0, 1).Date()
+	due := time.Date(y, m, d, 12, 0, 0, 0, time.UTC)
+	const description = "The day's release."
+	made := must(issues.CreateMilestone(s.ctx, repo, firstTag, description, due))(t)
+	in := must(issues.CreateIssue(s.ctx, repo, "In", "", nil, made.ID))(t)
+	for range 2 {
+		if err := issues.EditMilestoneTitle(s.ctx, repo, made.ID, patchTag); err != nil {
+			t.Fatalf("EditMilestoneTitle() = %v", err)
+		}
+	}
+	listed := must(issues.ListAllMilestones(s.ctx, repo))(t)
+	if len(listed) != 1 || listed[0].ID != made.ID || listed[0].Title != patchTag ||
+		listed[0].Description != description || listed[0].Closed || !sameDay(listed[0].Due, due) {
+		t.Errorf("ListAllMilestones() after EditMilestoneTitle = %+v, want %s, open, due %v", listed, patchTag, due)
+	}
+	if got := must(issues.GetIssue(s.ctx, repo, in.Number))(t); got.Milestone != made.ID ||
+		got.MilestoneTitle != patchTag {
+		t.Errorf("GetIssue() of an issue of the retitled milestone = %+v, want milestone %d, %s", got, made.ID,
+			patchTag)
+	}
+	if numbers := numbersOf(must(issues.MilestoneIssues(s.ctx, repo, made.ID))(t)); !slices.Equal(numbers,
+		[]int{in.Number}) {
+		t.Errorf("MilestoneIssues() of the retitled milestone = %v, want its issue kept", numbers)
 	}
 }
 

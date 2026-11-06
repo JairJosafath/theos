@@ -337,13 +337,17 @@ func (h *issueHost) handleReleases(mux *http.ServeMux, repo string, reply func(h
 			return
 		}
 		// As in Gitea, an edit that gives no due date clears it; one that gives
-		// no state or description keeps it.
+		// no title, state or description keeps it.
 		var body struct {
+			Title       *string    `json:"title"`
 			State       *string    `json:"state"`
 			Description *string    `json:"description"`
 			DueOn       *time.Time `json:"due_on"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Title != nil {
+			h.milestones[idx].Title = *body.Title
+		}
 		if body.State != nil {
 			h.milestones[idx].State = *body.State
 		}

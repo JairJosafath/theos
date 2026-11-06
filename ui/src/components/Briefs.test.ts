@@ -68,6 +68,14 @@ describe('the Brief card', () => {
     expect(html).toContain('has no tag v0.2.0 yet: Published is Unauthorized')
   })
 
+  it('shows the release an app waits to cut, when, and how much it holds (release cadence, C12)', () => {
+    expect(html).toContain(
+      '<span class="brief-app-next" title="What the next cut of the app&#x27;s release cadence ships, and when">' +
+        'next release v0.3.0 at 18:00 UTC, 4 merged</span>',
+    )
+    expect(html.match(/brief-app-next/g)).toHaveLength(1)
+  })
+
   it("shows how many issues each app's crew works on at once", () => {
     expect(html).toContain(
       '<span class="brief-app-parallel" title="How many issues its crew works on at once">3 at a time</span>',

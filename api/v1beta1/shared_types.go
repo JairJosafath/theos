@@ -68,6 +68,45 @@ const (
 	ContainerTypeFunction   ContainerType = "function"
 )
 
+// ReleaseCadence is how often a Crew's releases go out
+// (docs/plans/done/release-cadence.md): each once it is done, or at a cut once a
+// day or a week, which ships the work merged by then and carries the rest
+// into the next release.
+// +kubebuilder:validation:XValidation:rule="!has(self.weekday) || self.every == 'Week'",message="weekday needs every: Week"
+type ReleaseCadence struct {
+	// every is Release, to tag each release as soon as it is done; Day, to
+	// cut the release in progress once a day at at; or Week, once a week on
+	// weekday at at. A cut ships the work merged so far and moves the rest
+	// to the next release. A merged issue labelled release/now cuts its
+	// release at once.
+	// +kubebuilder:validation:Enum=Release;Day;Week
+	// +required
+	Every string `json:"every"`
+
+	// at is the time of day of the cut, HH:MM on a 24-hour clock, in
+	// timeZone. Unset is 18:00.
+	// +kubebuilder:validation:Pattern=`^([01][0-9]|2[0-3]):[0-5][0-9]$`
+	// +kubebuilder:default="18:00"
+	// +optional
+	At string `json:"at,omitempty"`
+
+	// timeZone is the IANA time zone at is in, such as Europe/Amsterdam;
+	// daylight saving follows it. Unset is UTC. A name the operator can't
+	// load leaves the Crew Ready=False, reason InvalidTimeZone, until it is
+	// fixed.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:default=UTC
+	// +optional
+	TimeZone string `json:"timeZone,omitempty"`
+
+	// weekday is the day of a weekly cut, only with every: Week. Unset is
+	// Friday.
+	// +kubebuilder:validation:Enum=Monday;Tuesday;Wednesday;Thursday;Friday;Saturday;Sunday
+	// +optional
+	Weekday string `json:"weekday,omitempty"`
+}
+
 // TemplateSource points to a platform-managed template repository at a pinned ref.
 type TemplateSource struct {
 	// url of the template's Git repository.

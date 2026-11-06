@@ -758,13 +758,14 @@ is public, so the pull and the clone need no credential.
 A Brief's app is released when its plan says so: the planner names the
 Containers that ship releases in `plan/releases.yaml`, and the Crew the Brief
 made for each then tags and prepares releases (`tagReleases` and
-`prepareReleases`). Each round files that Container's issues in a release
+`prepareReleases`), once a day by default (*How often a Brief's apps release*,
+below). With `every: Release`, each round files that Container's issues in a release
 milestone of its own, the next minor version (`v0.1.0`, then `v0.2.0`, ...),
 due a week later, so once the round's issues are merged the Crew prepares the
 release (version files and a changelog), tags it and its release run makes the
 Gitea release. Nothing on the Crew needs editing by hand.
 
-The prepare step waits for the Tasks at work to end, so the changelog lists
+With `every: Release`, the prepare step waits for the Tasks at work to end, so the changelog lists
 what the tag carries. Until they do, the Crew's `Released` condition is
 `False`, reason `PrepareWaitsForTasks`, and the Crew's message adds "N ready
 issues wait for a release to be prepared": it starts no new ready issue but an
@@ -821,6 +822,38 @@ kubectl -n cel-lens get brief cel-lens -o jsonpath='{range .status.apps[*]}{.con
 
 Why a release run or a publish failed is as in *Publish releases to GitHub*,
 on the Crew named after the Container.
+
+### How often a Brief's apps release
+
+A Brief's apps release once a day by default, at 18:00 UTC: every round,
+fixes and features alike, files a released app's issues in the release in
+progress, and at the cut the Crew ships what is merged by then and moves the
+rest to the next release. A day of fixes alone goes out as the next patch
+(`v0.14.1` after `v0.14.0`). Agents keep starting and merging Tasks all day;
+only while the cut release's prepare issue runs does a Task ready to merge
+wait (`WaitingForRelease`), so the changelog holds all the tag carries.
+Choose your own in `spec.releaseCadence`, which the Brief writes onto the
+Crews it made:
+
+```yaml
+spec:
+  releaseCadence:
+    every: Day                 # Day, Week, or Release: each release as soon as it is done
+    at: "09:00"                # HH:MM, 24-hour; default 18:00
+    timeZone: Europe/Amsterdam # an IANA name; default UTC
+    # weekday: Monday          # only with every: Week; default Friday
+```
+
+`every: Release` keeps a release per round, as before this setting: fixes in
+the patch release right after the release in progress, other work in the
+next minor. A Brief made before it reads `every: Day`, so set `Release` to
+keep that. Something that can't wait, such as a fix of a crash users hit in
+the latest release, ships at once: ask for it in a prompt ("ship the login
+fix today") and the planner marks it, or add the `release/now` label to the
+issue in Gitea yourself; once merged, its release goes out with the day's
+work so far. The Brief's app line and `status.apps[].nextRelease` say what
+the next release holds and when it goes out; a time zone the operator can't
+load stops the Crews (`Ready=False`, `InvalidTimeZone`).
 
 ### Take requests from its GitHub issues
 

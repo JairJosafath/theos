@@ -5,6 +5,7 @@ import {
   describeAutopilot,
   describeBrief,
   describeBriefApp,
+  describeNextRelease,
   describeBriefPhase,
   describeCost,
   describeFailedIssue,
@@ -458,6 +459,43 @@ describe('describeUsage', () => {
       120_000,
     )
     expect(view.rounds[0].usage).toMatchObject({ pastLimit: true, largestRun: 'largest run 150k, past the 120k limit' })
+  })
+})
+
+describe('describeNextRelease', () => {
+  const next = { tag: 'v0.15.0', time: '2026-11-06T18:00:00Z', timeZone: 'UTC', merged: 4 }
+
+  it('says what the next cut ships and when, as the operator does', () => {
+    expect(describeNextRelease(next, new Date('2026-11-06T10:00:00Z'))).toBe(
+      'next release v0.15.0 at 18:00 UTC, 4 merged',
+    )
+  })
+
+  it('names the day of a cut that is not today in its time zone', () => {
+    expect(describeNextRelease({ ...next, merged: 0 }, new Date('2026-11-05T19:00:00Z'))).toBe(
+      'next release v0.15.0 at 18:00 UTC on Friday, none merged yet',
+    )
+  })
+
+  it('says the time in the cadence’s time zone, whatever the browser’s', () => {
+    // 17:00 UTC is 18:00 in Amsterdam in November.
+    expect(
+      describeNextRelease(
+        { ...next, time: '2026-11-06T17:00:00Z', timeZone: 'Europe/Amsterdam' },
+        new Date('2026-11-06T10:00:00Z'),
+      ),
+    ).toBe('next release v0.15.0 at 18:00 Europe/Amsterdam, 4 merged')
+  })
+
+  it('falls back to UTC for a time zone the browser doesn’t know', () => {
+    expect(describeNextRelease({ ...next, timeZone: 'Mars/Olympus' }, new Date('2026-11-06T10:00:00Z'))).toBe(
+      'next release v0.15.0 at 18:00 UTC, 4 merged',
+    )
+  })
+
+  it('keeps the next release on the app view', () => {
+    expect(describeBriefApp({ container: 'api', releases: 'On', nextRelease: next }).nextRelease).toEqual(next)
+    expect(describeBriefApp({ container: 'api', releases: 'On' }).nextRelease).toBeUndefined()
   })
 })
 

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -434,6 +435,38 @@ func TestPullRequests(t *testing.T) {
 	defer cancel()
 	if err := p.MergePullRequest(short, repo, 2, "def456", "x", "y"); err == nil || !strings.Contains(err.Error(), "HTTP 405") {
 		t.Errorf("MergePullRequest() of an unmergeable PR error = %v", err)
+	}
+}
+
+// A context that ends while a merge's retry waits on Gitea keeps Gitea's last
+// answer in the error, as one that ends in the pause does: under load,
+// TestPullRequests' one-second context ran out mid-request and the error said
+// only "context deadline exceeded" (theos#29).
+func TestMergeKeepsGiteasAnswerWhenTheContextEndsInARetry(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body) // so the server sees the client hang up
+		if calls.Add(1) > 1 {
+			<-r.Context().Done() // the retry hangs until the client gives up
+			return
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = io.WriteString(w, `{"message":"Please try again later"}`)
+	}))
+	defer srv.Close()
+	p, err := Client{}.Provider(ports.Config{URL: srv.URL, Owner: "apps",
+		Credentials: ports.Credentials{Username: "c4admin", Token: rand.Text()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err = p.MergePullRequest(ctx, p.Repository("photo-editor"), 2, "def456", "x", "y")
+	if err == nil || !strings.Contains(err.Error(), "HTTP 405") || !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("MergePullRequest() error = %v, want Gitea's HTTP 405 and the deadline", err)
+	}
+	if calls.Load() < 2 {
+		t.Errorf("Gitea was called %d times, want the retry", calls.Load())
 	}
 }
 
