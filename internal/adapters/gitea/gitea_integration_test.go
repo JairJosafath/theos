@@ -707,6 +707,7 @@ func TestGiteaMilestonesIntegration(t *testing.T) {
 		t.Fatalf("CreateMilestone() = %+v, want v0.1.0, open, due %v", made, due)
 	}
 
+	title := "v0.1.0"
 	find := func() ports.Milestone {
 		t.Helper()
 		all, err := p.ListAllMilestones(ctx, repo)
@@ -719,14 +720,23 @@ func TestGiteaMilestonesIntegration(t *testing.T) {
 				found = append(found, m)
 			}
 		}
-		if len(all) != 2 || len(found) != 1 || found[0].ID != made.ID || found[0].Title != "v0.1.0" ||
+		if len(all) != 2 || len(found) != 1 || found[0].ID != made.ID || found[0].Title != title ||
 			!sameDay(found[0].Due, due) {
-			t.Fatalf("ListAllMilestones() = %+v, want Later and v0.1.0 found by its description", all)
+			t.Fatalf("ListAllMilestones() = %+v, want Later and %s found by its description", all, title)
 		}
 		return found[0]
 	}
 	if m := find(); m.Closed {
 		t.Errorf("milestone %+v closed before CloseMilestone", m)
+	}
+	// A cut retitles a release of fixes (docs/plans/release-cadence.md, C7);
+	// Gitea would clear its due date unless the edit sends it back.
+	title = "v0.0.1"
+	if err := p.EditMilestoneTitle(ctx, repo, made.ID, title); err != nil {
+		t.Fatal(err)
+	}
+	if m := find(); m.Closed {
+		t.Errorf("milestone %+v closed by EditMilestoneTitle", m)
 	}
 	if err := p.CloseMilestone(ctx, repo, made.ID); err != nil {
 		t.Fatal(err)

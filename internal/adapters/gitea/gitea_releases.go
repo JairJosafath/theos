@@ -175,6 +175,32 @@ func (g *gitea) DescribeMilestone(ctx context.Context, repo ports.Repository, id
 	return nil
 }
 
+// EditMilestoneTitle retitles milestone id, keeping its due date, which Gitea
+// would clear otherwise (CloseMilestone), and its description and state.
+func (g *gitea) EditMilestoneTitle(ctx context.Context, repo ports.Repository, id int64, title string) error {
+	status, data, err := g.do(ctx, http.MethodGet, milestonePath(repo, id), nil)
+	if err != nil {
+		return err
+	}
+	var current giteaMilestone
+	if status != http.StatusOK || json.Unmarshal(data, &current) != nil {
+		return fmt.Errorf("gitea: reading milestone %d of %s failed (HTTP %d): %s", id, repoPath(repo), status, apiMessage(data))
+	}
+	payload, _ := json.Marshal(struct {
+		Title string     `json:"title"`
+		DueOn *time.Time `json:"due_on,omitempty"`
+	}{title, current.DueOn})
+	status, data, err = g.do(ctx, http.MethodPatch, milestonePath(repo, id), payload)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("gitea: retitling milestone %d of %s as %s failed (HTTP %d): %s", id, repoPath(repo), title,
+			status, apiMessage(data))
+	}
+	return nil
+}
+
 // GetTag returns the commit tag points at, or "" when repo has no such tag. An
 // annotated tag gives the commit it tags, not the tag object.
 func (g *gitea) GetTag(ctx context.Context, repo ports.Repository, tag string) (string, error) {
