@@ -1,9 +1,50 @@
 package model
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
+
+// #2037: a blocked note that says the agent can't see its issue is the
+// runner's fault, not a blocker; a note on what the issue waits on is not one.
+func TestIssueUnseen(t *testing.T) {
+	tests := []struct {
+		note string
+		want bool
+	}{
+		{"the issue text for cel-lens-core-106 isn't available to me, so I can't tell what to build.", true},
+		{"The issue text for cel-lens-core-106 isn’t available to me.", true},
+		{"I can't see the issue: the prompt names cel-lens-core-106 but not what it asks.", true},
+		{"I don't have access to the issue's description.", true},
+		{"The task description was not provided in this session.", true},
+		{"Issue #106 isn't available to me in this sandbox.", true},
+		{"No issue text was provided, only that I stopped with a Blocked: line.", true},
+		{"I cannot read the issue itself; only the send-back message reached me.", true},
+		{"cel-lens#10 must be merged and released first.", false},
+		{"the issue needs the engine's release, which isn't available yet.", false},
+		{"The engine's 2.0 release isn't available to me: it is not published.", false},
+		{"I can't find the issue it depends on, cel-lens#10, in the tracker.", false},
+		{"I can't access the issue tracker of the engine to check its release.", false},
+		{"needs network access to npm, which isn't provided in the sandbox.", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := IssueUnseen(tt.note); got != tt.want {
+			t.Errorf("IssueUnseen(%q) = %v, want %v", tt.note, got, tt.want)
+		}
+	}
+}
+
+// #2037: the first Task on an issue whose agent couldn't see it costs no try;
+// any more do, so a runner that never shows the issue can't loop.
+func TestTryCounter(t *testing.T) {
+	var c TryCounter
+	got := []bool{c.Costs(true, false), c.Costs(false, true), c.Costs(false, true), c.Costs(false, false)}
+	if want := []bool{false, false, true, true}; !slices.Equal(got, want) {
+		t.Errorf("Costs = %v, want %v", got, want)
+	}
+}
 
 func TestBlockedNote(t *testing.T) {
 	long := strings.Repeat("waiting on engine ", 100)

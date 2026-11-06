@@ -192,6 +192,18 @@ func TestNextTaskStep(t *testing.T) {
 	}
 }
 
+// #2037: an agent whose blocked note says it can't see the issue fails its
+// Task reason ReasonIssueUnseen, which costs the issue no try once, not
+// ReasonBlocked, which waits on a blocker.
+func TestNextTaskStepIssueUnseen(t *testing.T) {
+	note := "the issue text for cel-lens-core-106 isn't available to me."
+	got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Container: "photo-editor", Round: 1, MaxRounds: 3,
+		Run: RunState{Started: true, Done: true, Result: &RunResult{Blocked: note}}})
+	if got.Action != ActionFail || got.Reason != ReasonIssueUnseen || !strings.Contains(got.Message, note) {
+		t.Errorf("NextTaskStep() = %+v, want it failed %s with the note", got, ReasonIssueUnseen)
+	}
+}
+
 // A Crew's cost cap (#1893): at the summed cost of its runs reaching the cap
 // the Task starts no further run, under it or with no cap it goes on, and a
 // raised cap resumes it. The cap is read before the slot and agent gates, so a

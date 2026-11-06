@@ -1695,6 +1695,39 @@ func TestRunImplementBlockedWithAFailingBase(t *testing.T) {
 	})
 }
 
+// #2037: sent back after a blocked note, the agent runs a fresh session; its
+// prompt carries the issue, the round's rules and what it answered the first
+// time, not only that it stopped.
+func TestRunImplementSendBackCarriesTheIssue(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n", "BROKEN": "x\n"})
+	job := testJob(t, url, RoleImplement, 1, brokenCheck...)
+	job.Issue = 106
+	job.Goal = "Locate CEL rules\n\n## Acceptance criteria\n- [ ] the lens finds every CEL rule"
+	first := "Looked at the tests.\n" + model.BlockedPrefix + " make check fails before any change."
+	agent := &scriptAgent{replies: []string{first, "Done."}}
+	got := Run(context.Background(), job, agent, t.TempDir())
+	if got.Blocked != "" || got.Commit == "" {
+		t.Fatalf("result = %+v, want the round to go on", got)
+	}
+	if len(agent.prompts) < 2 {
+		t.Fatalf("agent ran %d times, want it sent back", len(agent.prompts))
+	}
+	sentBack := agent.prompts[1]
+	for _, want := range []string{
+		issueBlock(job.Goal), "issue #106", "Acceptance criteria", // the issue itself
+		"Protected files:",                                 // the round's rules
+		"make check fails before any change.",              // its first answer
+		"not a reason to block", "download: 404 Not Found", // why it is sent back
+	} {
+		if !strings.Contains(sentBack, want) {
+			t.Errorf("send-back prompt lacks %q:\n%s", want, sentBack)
+		}
+	}
+	if !strings.HasPrefix(sentBack, strings.TrimRight(agent.prompts[0], "\n")) {
+		t.Error("send-back prompt doesn't start with the round's prompt")
+	}
+}
+
 func TestRunImplementProposesAStandardChangeWhenTheBaseFailsToo(t *testing.T) {
 	url := bareRepo(t, map[string]string{"Makefile": "check:\n", "README.md": "hi\n", "BROKEN": "x\n"})
 	agent := filesAgent{files: map[string]string{"Makefile": "check:\n\techo more\n", "src.txt": "x\n"}, summary: "Standard change: needed"}

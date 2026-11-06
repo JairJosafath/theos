@@ -391,12 +391,14 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		summary = prog.from.Summary
 	} else {
 		var err error
-		if summary, err = prog.session(ctx, agent, r.dir, implementPrompt(job, ws)); err != nil {
+		prompt := implementPrompt(job, ws)
+		if summary, err = prog.session(ctx, agent, r.dir, prompt); err != nil {
 			result.Summary = summary
 			return agentFailed(result, err)
 		}
 		if model.BlockedNote(summary) != "" {
-			if summary, err = sendBackBlocked(ctx, prog.checksContext(ctx), job, agent, r.dir, &base, summary); err != nil {
+			if summary, err = sendBackBlocked(ctx, prog.checksContext(ctx), job, agent, r.dir, &base, prompt,
+				summary); err != nil {
 				result.Summary = summary
 				return agentFailed(result, err)
 			}
@@ -524,8 +526,13 @@ func roundChange(ctx context.Context, job Job, r *repo) (changed []string, empty
 // sendBackBlocked sends an agent that wrote a blocked note back once when the
 // check fails on the base: that is the workspace's, not a reason to block. It
 // returns the agent's newest summary.
+//
+// The send-back is a fresh session, so its prompt is the round's own prompt,
+// the issue included, then what the agent answered the first time and why it
+// is sent back: a session told only that it stopped never saw the issue
+// (#2037).
 func sendBackBlocked(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck,
-	summary string) (string, error) {
+	prompt, summary string) (string, error) {
 	baseOutput := base.fails(checks)
 	if checks.Err() != nil && ctx.Err() == nil {
 		// The pause killed the base's check (#1995): it runs again on resume.
@@ -534,11 +541,23 @@ func sendBackBlocked(ctx, checks context.Context, job Job, agent Agent, dir stri
 	if baseOutput == "" {
 		return summary, nil
 	}
-	prompt := fmt.Sprintf("You stopped with a %q line. %q fails on %s in this workspace too, before any change:\n%s\n"+
-		"It was green in CI when this Task started, so that is not a reason to block the issue: CI runs the check and decides it. Do the issue now, "+
+	return agent.Run(ctx, dir, sendBackPrompt(job, prompt, summary, baseOutput))
+}
+
+// maxSendBackAnswer is how much of the agent's first answer a send-back
+// prompt quotes.
+const maxSendBackAnswer = 4000
+
+// sendBackPrompt is the prompt of an agent sent back after a blocked note:
+// the round's prompt, the agent's first answer, and the base's failure.
+func sendBackPrompt(job Job, prompt, summary, baseOutput string) string {
+	return fmt.Sprintf("%s\n\n---\n\nAn earlier session in this workspace worked on the task above and "+
+		"stopped with a %q line. Its answer:\n%s\n\n%q fails on %s in this workspace too, before any change:\n%s\n"+
+		"It was green in CI when this Task started, so that is not a reason to block the issue: CI runs the "+
+		"check and decides it. Do the issue above now, going on from what the working tree holds, "+
 		"and end your summary with a %q line again only if something else blocks it.",
-		model.BlockedPrefix, strings.Join(job.CheckCommand, " "), job.Base, tail(baseOutput, 3000), model.BlockedPrefix)
-	return agent.Run(ctx, dir, prompt)
+		strings.TrimRight(prompt, "\n"), model.BlockedPrefix, tail(summary, maxSendBackAnswer),
+		strings.Join(job.CheckCommand, " "), job.Base, tail(baseOutput, 3000), model.BlockedPrefix)
 }
 
 // checkAndFix runs the check, and while it fails sends the agent back up to

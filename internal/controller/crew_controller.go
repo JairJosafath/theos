@@ -426,6 +426,7 @@ func crewRoutes(spec *c4v1beta1.CrewSpec) []model.AgentRoute {
 func crewTask(t *c4v1beta1.Task) model.CrewTask {
 	out := model.CrewTask{Name: t.Name, Issue: int(t.Spec.Issue), Final: isFinal(t.Status.Phase),
 		Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
+		Unseen: failedUnseen(&t.Status),
 		// A spec waiting for a person runs no agent: like a Task waiting on a
 		// Standard change, it takes no place from parallel.
 		Blocked: t.Status.Phase == c4v1beta1.TaskBlocked || t.Status.Phase == c4v1beta1.TaskAwaitingApproval,

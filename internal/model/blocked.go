@@ -1,6 +1,7 @@
 package model
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -140,4 +141,88 @@ func ClipWordsFromEnd(s string, n int) string {
 // BlockedMessage is a blocked Task's message: the agent's own words.
 func BlockedMessage(note string) string {
 	return "The agent can't start the issue: " + note
+}
+
+// An agent that says, in its blocked note, that it can't see its issue was
+// not given what the factory owes it: the issue's text is in its prompt and
+// in THEOS_GOAL (#2037). That is the runner's fault, not the issue's, so
+// the Task fails reason ReasonIssueUnseen, not ReasonBlocked, and the first
+// MaxFreeUnseen such Tasks on an issue cost it no try (TryCounter).
+
+// ReasonIssueUnseen is the reason of a Task whose agent's blocked note says
+// it can't see the issue.
+const ReasonIssueUnseen = "IssueUnseen"
+
+// MaxFreeUnseen is how many Tasks on one issue whose agent couldn't see the
+// issue cost it no try. More is no passing fault, so they count: a runner
+// that never shows the issue can't start Tasks on it without end.
+const MaxFreeUnseen = 1
+
+// issueUnseenSigns are what a blocked note says when the agent can't see its
+// issue, in lower case with straight apostrophes. They are narrow on purpose:
+// the subject is the issue (or task, ticket, goal) itself or its text, and the
+// words say the agent can't see, read or have it, or that it isn't given or
+// available to the agent. A note on something the issue waits on ("the issue
+// needs the engine's release, which isn't available yet") is no such sign.
+var issueUnseenSigns = func() []*regexp.Regexp {
+	const (
+		thing = `(?:issue|task|ticket|goal)`
+		text  = `(?:text|body|description|contents?|details|statement)`
+		subj  = `(?:the |this |its |your |my )?` + thing + `(?:'s)?(?: ` + text + `)?`
+		// what may follow the subject: the end of a clause, or what it is of
+		after   = `(?:\s+(?:for|of|itself|here)\b|\s+in (?:the|this|my) (?:prompt|sandbox|environment|context|workspace)|\s*[#.,;:)!]|$)`
+		cannot  = `(?:can't|cannot|can not|couldn't|could not|don't|do not|didn't|did not|am unable to|was unable to|wasn't able to|have no way to)`
+		see     = `(?:see|access|read|view|have|get|receive|find)`
+		isnt    = `(?:is|was|are|were)(?:n't| not)`
+		given   = `(?:available|provided|included|given|visible|shown|present|accessible|passed|attached)`
+		between = `[^.;]{0,80}?`
+	)
+	return []*regexp.Regexp{
+		// "I can't see the issue", "I don't have access to the issue's text"
+		regexp.MustCompile(`\b` + cannot + ` ` + see + `(?: access to| any)? ` + subj + after),
+		// "the issue text for cel-lens-core-106 isn't available"
+		regexp.MustCompile(`\b` + thing + `(?:'s)? ` + text + `\b` + between + `\b` + isnt + ` ` + given + `\b`),
+		// "issue #106 isn't available to me"
+		regexp.MustCompile(`\b` + thing + `\b` + between + `\b` + isnt + ` ` + given + ` to (?:me|the agent|this session)\b`),
+		// "no issue text was provided"
+		regexp.MustCompile(`\bno ` + thing + `(?: ` + text + `)? (?:was |is |has been )?` + given + `\b`),
+	}
+}()
+
+// IssueUnseen reports whether a blocked note says the agent can't see its
+// issue (issueUnseenSigns).
+func IssueUnseen(note string) bool {
+	s := strings.Join(strings.Fields(strings.ToLower(strings.ReplaceAll(note, "’", "'"))), " ")
+	for _, sign := range issueUnseenSigns {
+		if sign.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// IssueUnseenMessage is the message of a Task whose agent couldn't see the
+// issue: the agent's own words.
+func IssueUnseenMessage(note string) string {
+	return "The agent says it can't see the issue, which the factory gave it: " + note
+}
+
+// TryCounter decides which of an issue's failed Tasks, oldest first, cost the
+// issue a try: not one that failed through its CI runner's fault
+// (RunnerFault), nor the first MaxFreeUnseen whose agent couldn't see the
+// issue (ReasonIssueUnseen). Its zero value is ready for one issue.
+type TryCounter struct{ unseen int }
+
+// Costs reports whether a failed Task costs the issue a try: noCI when it
+// failed through its CI runner's fault, unseen when its agent couldn't see
+// the issue.
+func (c *TryCounter) Costs(noCI, unseen bool) bool {
+	switch {
+	case noCI:
+		return false
+	case unseen && c.unseen < MaxFreeUnseen:
+		c.unseen++
+		return false
+	}
+	return true
 }

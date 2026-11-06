@@ -1609,6 +1609,11 @@ func implementingStep(f TaskFacts) TaskStep {
 		return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
 	case f.Run.Result.Unavailable:
 		return agentUnavailable(f)
+	case f.Run.Result.Blocked != "" && !f.Plan && !f.Triage && !f.Score && IssueUnseen(f.Run.Result.Blocked):
+		// The agent wasn't given the issue (#2037): the runner's fault, not a
+		// blocker, so the try is free once (TryCounter).
+		return TaskStep{Action: ActionFail, Reason: ReasonIssueUnseen,
+			Message: IssueUnseenMessage(f.Run.Result.Blocked)}
 	case f.Run.Result.Blocked != "" && !f.Plan && !f.Triage && !f.Score:
 		// The agent says the issue can't start yet: more rounds won't change that.
 		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Message: BlockedMessage(f.Run.Result.Blocked)}

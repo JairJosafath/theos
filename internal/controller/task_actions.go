@@ -1133,6 +1133,9 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1beta1.Task, status 
 	case model.ReasonApprovalRanOut:
 		why += "\n\nCI kept taking longer than a review run lasts, so this try doesn't count towards the limit; " +
 			"free or speed up the runner first."
+	case model.ReasonIssueUnseen:
+		why += fmt.Sprintf("\n\nThe factory gives the agent the issue's text, so the first such try on an issue "+
+			"doesn't count towards the limit; after %d, each one counts.", model.MaxFreeUnseen)
 	}
 	r.handBack(ctx, task, container, why)
 	logf.FromContext(ctx).Info("Failed Task", "reason", reason, "message", message)
