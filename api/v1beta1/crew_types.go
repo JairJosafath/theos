@@ -274,6 +274,19 @@ type CrewFullCheck struct {
 	// issue is the issue the Crew filed when the check failed at commit.
 	// +optional
 	Issue int32 `json:"issue,omitempty"`
+
+	// reruns counts the times the Crew ran the check's failed runs again at
+	// commit because they were cut off (cancelled, or their runner lost),
+	// before it files an issue (#2028).
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Reruns int32 `json:"reruns,omitempty"`
+
+	// rerun says a person asked with theos.factory.io/rerun-release to run
+	// the check's failed runs again: its issue holds the release no more, and
+	// is closed if the check passes; a failure holds it again.
+	// +optional
+	Rerun bool `json:"rerun,omitempty"`
 }
 
 // CrewRelease is a release a Crew tagged.

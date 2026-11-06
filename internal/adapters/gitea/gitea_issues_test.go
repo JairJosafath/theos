@@ -336,13 +336,21 @@ func (h *issueHost) handleReleases(mux *http.ServeMux, repo string, reply func(h
 			reply(w, http.StatusNotFound, map[string]string{"message": "no milestone"})
 			return
 		}
-		// As in Gitea, an edit that gives no due date clears it.
+		// As in Gitea, an edit that gives no due date clears it; one that gives
+		// no state or description keeps it.
 		var body struct {
-			State string     `json:"state"`
-			DueOn *time.Time `json:"due_on"`
+			State       *string    `json:"state"`
+			Description *string    `json:"description"`
+			DueOn       *time.Time `json:"due_on"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		h.milestones[idx].State, h.milestones[idx].DueOn = body.State, body.DueOn
+		if body.State != nil {
+			h.milestones[idx].State = *body.State
+		}
+		if body.Description != nil {
+			h.milestones[idx].Description = *body.Description
+		}
+		h.milestones[idx].DueOn = body.DueOn
 		reply(w, http.StatusOK, h.milestones[idx])
 	})
 	mux.HandleFunc("GET "+repo+"/milestones/{id}", func(w http.ResponseWriter, r *http.Request) {

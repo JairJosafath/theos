@@ -1217,6 +1217,20 @@ spec:
                       failed at commit.
                     format: int32
                     type: integer
+                  rerun:
+                    description: |-
+                      rerun says a person asked with theos.factory.io/rerun-release to run
+                      the check's failed runs again: its issue holds the release no more, and
+                      is closed if the check passes; a failure holds it again.
+                    type: boolean
+                  reruns:
+                    description: |-
+                      reruns counts the times the Crew ran the check's failed runs again at
+                      commit because they were cut off (cancelled, or their runner lost),
+                      before it files an issue (#2028).
+                    format: int32
+                    minimum: 0
+                    type: integer
                   run:
                     description: run is how the runs the branch's push started went,
                       as for a release.
