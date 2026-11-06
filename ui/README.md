@@ -132,9 +132,18 @@ Containers that ship to it, and of its credentials the Secret's name only; the
 Project page lists its DeployTargets. The Project page also lists its
 TestEnvironments ([docs/plans/done/test-environments.md](../docs/plans/done/test-environments.md)),
 each with `Ready`, its live leases against `limits.maxLeases` and who holds
-each, today's spend and how long a lease lasts; a TestEnvironment's page adds
-what it has (image, devices, runtime class, placement, resources), its CI
-pool and how a run uses it (`env/<name>`, `theos-env run <name> -- ...`).
+each (a Task, or the CI runner a remote machine runs one job for), today's
+spend against `limits.budgetUSDPerDay`, how long a lease lasts, a remote
+member's `CredentialsValid` and `CI` in words when they are False, and a
+`deviceFarm` member's test runs (`status.testRuns`: result or state, Task,
+outcome); a TestEnvironment's page adds what it has (a `local` member's
+image, devices, runtime class, placement and resources; an `aws` member's
+region, account, instance type, AMI, subnet and an EC2 Mac's
+`mac.keepHostHours`; a `deviceFarm` member's project and device pool), of a
+remote member's credentials the Secret's name only, its test runs, its CI
+(a local pool, an `aws` member's machine per job and its `CI` condition) and
+how a run uses it (`env/<name>`, `theos-env run <name> -- ...`, or
+`theos-env test <name> ...` for Device Farm).
 
 **Versions.** The foot of the sidebar shows the UI's version (stamped by its
 build, `dev` otherwise), the operator's and the chart's (from Project status,
@@ -346,7 +355,7 @@ src/model/needs.ts      the Needs you items, from status
 src/model/lifecycle.ts  each kind's lifecycle and next step, for the object pages
 src/model/brief.ts      a Brief for display: phase, what it waits for, planned and waiting prompts
 src/model/deploys.ts    a DeployTarget's member, tier, approval and Ready; a Container's deploys and the approve patch
-src/model/testenvs.ts   a TestEnvironment's member, Ready, leases against its limits, spend and CI pool; a Task's leases
+src/model/testenvs.ts   a TestEnvironment's member, Ready, CredentialsValid, CI, leases against its limits, spend against its budget, test runs; a Task's leases
 src/demo/               the demo fixture; in demo mode the Brief writes stay in memory,
                         refused by the CRD's limits (limits.ts) as the API server would
 src/components/         the shell (Shell.tsx), the areas, the diagram and side panels;

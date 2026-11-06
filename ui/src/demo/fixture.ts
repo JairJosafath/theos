@@ -4,9 +4,12 @@
 // for their Container: the working one with a Sonnet implementer, an Opus
 // reviewer and Tasks made from issues; Briefs planned, needing input,
 // paused and planning; a Container shipped to staging, waiting for a
-// person's approval of the same release for prod; and a browser test
-// environment one Task's run leases, beside an Android emulator on KVM. Used by demo mode (?demo=1), so the whole
-// UI can be seen and screenshotted without writing to a cluster.
+// person's approval of the same release for prod; and test environments: a
+// browser and Device Farm's phones, which one Task's run leases (its first
+// test run failed, its second runs), an Android emulator on KVM, an EC2 GPU
+// running a CI job within its day's budget, and an EC2 Mac whose credential
+// AWS refuses. Used by demo mode (?demo=1), so the whole UI can be seen and
+// screenshotted without writing to a cluster.
 
 import type { StoryData } from '../k8s/sources'
 import type {
@@ -888,8 +891,9 @@ export function demoStory(now: number): StoryData {
       ...pr('orders-api', 11),
       conditions: [cond('Progressing', 'True', 'Verifying', 'Merged; verifying the change before it ships', at(3))],
     }),
-    // An issue labelled env/browser: its implementer's run holds a lease of the
-    // browser test environment, to picture the email it renders.
+    // An issue labelled env/browser and env/devices: its implementer's run
+    // holds a lease of the browser test environment, to picture the email it
+    // renders, and of Device Farm's phones, to test it in their mail apps.
     issueTask('orders-api', 24, 'Show a picture of the shipping email in the pull request', 12, {
       phase: 'Implementing',
       round: 1,
@@ -901,8 +905,14 @@ export function demoStory(now: number): StoryData {
           sandbox: 'orders-api-24-r1-implement',
           since: at(11),
         },
+        {
+          name: 'devices',
+          lease: 'devices-3b9f0e2a71',
+          sandbox: 'orders-api-24-r1-implement',
+          since: at(11),
+        },
       ],
-      leasedEnvironments: ['browser'],
+      leasedEnvironments: ['browser', 'devices'],
       conditions: [cond('Progressing', 'True', 'Waiting', 'The agent is working on round 1', at(10))],
       history: [
         step(12, 'Implementing', 1, 'WaitingForEnvironment', 'Pending: waiting for the lease of browser to be ready'),
@@ -1206,7 +1216,14 @@ export function demoStory(now: number): StoryData {
 
   // The project's test environments (docs/plans/done/test-environments.md): the
   // chart's browser, whose lease orders-api-24's run holds, with a CI pool of
-  // one pod; and an Android emulator on the cluster's KVM device, leased by none.
+  // one pod; an Android emulator on the cluster's KVM device, leased by none;
+  // an EC2 GPU whose one lease runs a CI job, within the day's budget;
+  // Device Farm's phones, whose lease orders-api-24's run holds too, with a
+  // test run that failed and waits for the pull request to be commented on,
+  // and the one asked for since, running; and an EC2 Mac whose credential
+  // is of another account than it names.
+  const today = new Date(now).toISOString().slice(0, 10)
+  const devicesProject = '0b6f3c1e-1d2a-4c5b-9e8f-7a6b5c4d3e2f'
   const testEnvironments: TestEnvironment[] = [
     {
       apiVersion: API_VERSION,
@@ -1224,7 +1241,7 @@ export function demoStory(now: number): StoryData {
       },
       status: {
         leases: [{ id: 'browser-5f0c3a9e21', holder: 'orders-api-24', state: 'Ready', since: at(11) }],
-        spentToday: { day: new Date(now).toISOString().slice(0, 10) },
+        spentToday: { day: today },
         conditions: [cond('Ready', 'True', 'Ready', '', ago(3 * 3600))],
       },
     },
@@ -1243,6 +1260,147 @@ export function demoStory(now: number): StoryData {
         limits: { maxLeases: 1, maxLeaseMinutes: 180 },
       },
       status: { conditions: [cond('Ready', 'True', 'Ready', '', ago(3 * 3600))] },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('gpu', created),
+      spec: {
+        description:
+          'An NVIDIA A10G GPU on an AWS Deep Learning AMI with CUDA 12 and PyTorch; run the image search model’s tests there.',
+        aws: {
+          region: 'eu-west-1',
+          account: '123456789012',
+          instanceType: 'g5.xlarge',
+          imageId: 'ami-0123456789abcdef0',
+          subnetId: 'subnet-0123456789abcdef0',
+          credentialsSecretRef: { name: 'gpu-aws' },
+        },
+        limits: { maxLeases: 1, maxLeaseMinutes: 120, budgetUSDPerDay: 10 },
+        ci: {},
+      },
+      status: {
+        leases: [{ id: 'gpu-ci-7c2e91d4a0', holder: 'ci/gitea/118', state: 'Ready', since: at(6), costMilliUSD: 112 }],
+        spentToday: { day: today, milliUSD: 3_420 },
+        conditions: [
+          cond('Ready', 'True', 'Ready', '', ago(3 * 3600)),
+          cond(
+            'CredentialsValid',
+            'True',
+            'Valid',
+            'the provider takes the credential in Secret gpu-aws',
+            ago(3 * 3600),
+          ),
+          cond(
+            'CI',
+            'True',
+            'Serving',
+            'a machine is leased for each job labelled env-gpu of GitProvider gitea that waits',
+            ago(2 * 3600),
+          ),
+        ],
+      },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('devices', created),
+      spec: {
+        description: 'A Pixel 8 and a Galaxy S24 on AWS Device Farm; run instrumentation tests with theos-env test.',
+        deviceFarm: {
+          projectArn: `arn:aws:devicefarm:us-west-2:123456789012:project:${devicesProject}`,
+          devicePoolArn: `arn:aws:devicefarm:us-west-2:123456789012:devicepool:${devicesProject}/5e1f0a9d-8c7b-4a6e-9d5c-4b3a2f1e0d9c`,
+          account: '123456789012',
+          credentialsSecretRef: { name: 'devices-aws' },
+        },
+        limits: { maxLeases: 2, maxLeaseMinutes: 120, budgetUSDPerDay: 20 },
+      },
+      status: {
+        leases: [
+          { id: 'devices-3b9f0e2a71', holder: 'orders-api-24', state: 'Ready', since: at(11), costMilliUSD: 680 },
+        ],
+        spentToday: { day: today, milliUSD: 4_080 },
+        testRuns: [
+          {
+            id: 'devices-3b9f0e2a71-4c1d2e9a7b3f',
+            lease: 'devices-3b9f0e2a71',
+            holder: 'orders-api-24',
+            container: 'orders-api',
+            request: '4c1d2e9a7b3f0a8e6d5c4b3a29180f7e6d5c4b3a',
+            commit: 'a81f3c09d2e47b6a5f4e3d2c1b0a998877665544',
+            type: 'instrumentation',
+            state: 'Reported',
+            result: 'Failed',
+            outcome: 'failed: 11 passed, 1 failed of 12 tests on 2 devices',
+            url: `https://us-west-2.console.aws.amazon.com/devicefarm/home?region=us-west-2#/mobile/projects/${devicesProject}/runs/9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a`,
+            costMilliUSD: 680,
+            since: at(9),
+            answer: '1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6e5',
+            comment:
+              'The operator ran a test package of this change on test environment `devices`, which a run of it asked for:\n\nTest run instrumentation of a81f3c09d2e4 on devices: failed: 11 passed, 1 failed of 12 tests on 2 devices.\n',
+          },
+          {
+            id: 'devices-3b9f0e2a71-e7a2c4b19d03',
+            lease: 'devices-3b9f0e2a71',
+            holder: 'orders-api-24',
+            container: 'orders-api',
+            request: 'e7a2c4b19d03f5e6a7b8c9d0e1f2a3b4c5d6e7f8',
+            commit: '5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c',
+            type: 'instrumentation',
+            state: 'Running',
+            url: `https://us-west-2.console.aws.amazon.com/devicefarm/home?region=us-west-2#/mobile/projects/${devicesProject}/runs/2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d`,
+            since: at(3),
+          },
+        ],
+        conditions: [
+          cond('Ready', 'True', 'Ready', '', ago(3 * 3600)),
+          cond(
+            'CredentialsValid',
+            'True',
+            'Valid',
+            'the provider takes the credential in Secret devices-aws',
+            ago(3 * 3600),
+          ),
+        ],
+      },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('ios', created),
+      spec: {
+        description:
+          "macOS 15 on Apple silicon with Xcode 16 and the iOS Simulator; run xcodebuild test -destination 'platform=iOS Simulator,name=iPhone 16'.",
+        aws: {
+          region: 'us-east-1',
+          account: '123456789012',
+          instanceType: 'mac2.metal',
+          mac: { keepHostHours: 48 },
+          imageId: 'ami-0fedcba9876543210',
+          subnetId: 'subnet-0fedcba9876543210',
+          credentialsSecretRef: { name: 'ios-aws' },
+        },
+        limits: { maxLeases: 1, maxLeaseMinutes: 120, budgetUSDPerDay: 25 },
+      },
+      status: {
+        spentToday: { day: today },
+        conditions: [
+          cond(
+            'Ready',
+            'False',
+            'CredentialsInvalid',
+            'its CredentialsValid condition is False: CredentialRefused',
+            ago(40 * 60),
+          ),
+          cond(
+            'CredentialsValid',
+            'False',
+            'CredentialRefused',
+            'the provider refuses the credential in Secret ios-aws: the credential of test environment webshop/ios is of AWS account 210987654321, the environment names account 123456789012',
+            ago(40 * 60),
+          ),
+        ],
+      },
     },
   ]
 

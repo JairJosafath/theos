@@ -1,51 +1,84 @@
-// Test environments (docs/plans/done/test-environments.md, step 6): the Project
-// page's list of its TestEnvironments, each with its live leases, today's
-// spend and its limits; a TestEnvironment's page (what it has, its leases,
-// its CI pool and how a run uses it); and the Task page's section on its
+// Test environments (docs/plans/done/test-environments.md, steps 6 to 10): the
+// Project page's list of its TestEnvironments, each with its live leases,
+// today's spend against its budget, its limits, a remote member's credential
+// and CI when they fail, and a deviceFarm environment's test runs; a
+// TestEnvironment's page (what it has, its credential, its leases, its test
+// runs, its CI and how a run uses it); and the Task page's section on its
 // run's leases and why it waits for one. Read only: the operator leases and
 // returns, and a page shows the fields it names one by one, never the object
-// whole.
+// whole, and of a credential only the Secret's name.
 
 import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
-import { RESOURCES, type Task, type TestEnvironment, type TestEnvironmentLease } from '../../k8s/types'
+import {
+  RESOURCES,
+  type Task,
+  type TestEnvironment,
+  type TestEnvironmentLease,
+  type TestEnvironmentTestRun,
+} from '../../k8s/types'
 import { useNow } from '../../lib/hooks'
 import { formatCost } from '../../model/brief'
+import type { Tone } from '../../model/describe'
 import {
+  AWS_SECRET_KEYS,
   describeCIPool,
   describeDevices,
   describeLeaseCount,
   describeLimits,
+  describeMacHosts,
   describeSpend,
   environmentWait,
+  leaseHolder,
   leaseHolders,
   leaseTone,
   taskLeases,
+  testEnvCI,
+  testEnvCredentials,
   testEnvLeases,
   testEnvMember,
   testEnvReadiness,
+  testEnvRemote,
+  testEnvSecret,
+  testEnvSpend,
+  testEnvTestRuns,
+  testRunBadge,
 } from '../../model/testenvs'
 import { When } from '../bits'
+import { ExternalLinkIcon } from '../icons'
 import { CommandLine, ObjectHeader } from '../ObjectHeader'
 import { Badge } from './DeployPages'
 import { pageHref, projectCrumb } from './links'
 import { ReadProblem } from './ReadProblem'
 
-/** One live lease: its state, the Task whose run holds it, since when and why it waits or failed. */
+/** Who holds a lease: the Task whose run holds it, linked, or the CI runner a remote machine runs one job for. */
+function Holder({ ns, holder }: { ns: string; holder: string | undefined }) {
+  const h = leaseHolder(holder)
+  if (!h) return <span className="muted">held by no Task it names</span>
+  if (h.kind === 'CI')
+    return (
+      <>
+        held by CI runner <span className="mono">{h.runner}</span> of{' '}
+        <a className="mono" href={pageHref(ns, 'GitProvider', h.gitProvider)}>
+          {h.gitProvider}
+        </a>
+        <span className="muted">, for one job</span>
+      </>
+    )
+  return (
+    <>
+      held by{' '}
+      <a className="mono" href={pageHref(ns, 'Task', h.name)}>
+        {h.name}
+      </a>
+    </>
+  )
+}
+
+/** One live lease: its state, who holds it, since when, its cost and why it waits or failed. */
 function LeaseLine({ ns, lease, cost }: { ns: string; lease: TestEnvironmentLease; cost: boolean }) {
-  const holder = lease.holder
   return (
     <li className="test-env-lease">
-      <Badge tone={leaseTone(lease.state)} label={lease.state ?? 'Unknown'} />{' '}
-      {holder ? (
-        <>
-          held by{' '}
-          <a className="mono" href={pageHref(ns, 'Task', holder)}>
-            {holder}
-          </a>
-        </>
-      ) : (
-        <span className="muted">held by no Task it names</span>
-      )}
+      <Badge tone={leaseTone(lease.state)} label={lease.state ?? 'Unknown'} /> <Holder ns={ns} holder={lease.holder} />
       {lease.since ? (
         <span className="muted small">
           {' '}
@@ -59,7 +92,88 @@ function LeaseLine({ ns, lease, cost }: { ns: string; lease: TestEnvironmentLeas
   )
 }
 
-/** The Project page's test environments, each with Ready, its leases against its limits and today's spend. */
+/**
+ * One test run a lease's run asked for: its result, or its state while there
+ * is none; the test package's type and commit; the Task and Container; since
+ * when, its cost and the run on the provider's console; its outcome, and
+ * whether it still waits to be commented on the Task's pull request.
+ */
+function TestRunLine({ ns, run }: { ns: string; run: TestEnvironmentTestRun }) {
+  const badge = testRunBadge(run)
+  return (
+    <li className="test-env-lease">
+      <Badge tone={badge.tone} label={badge.label} /> <span className="mono">{run.type ?? 'test'}</span> run
+      {run.commit ? (
+        <>
+          {' '}
+          of <span className="mono">{run.commit.slice(0, 12)}</span>
+        </>
+      ) : null}
+      {run.holder ? (
+        <>
+          , asked for by{' '}
+          <a className="mono" href={pageHref(ns, 'Task', run.holder)}>
+            {run.holder}
+          </a>
+        </>
+      ) : null}
+      {run.container ? (
+        <>
+          {' '}
+          on{' '}
+          <a className="mono" href={pageHref(ns, 'Container', run.container)}>
+            {run.container}
+          </a>
+        </>
+      ) : null}
+      {run.since ? (
+        <span className="muted small">
+          {' '}
+          · since <When at={run.since} />
+        </span>
+      ) : null}
+      {run.costMilliUSD ? <span className="muted small"> · {formatCost(run.costMilliUSD)}</span> : null}
+      {run.url ? (
+        // A link keeps its own colour in muted text.
+        <span className="muted small">
+          {' '}
+          ·{' '}
+          <a href={run.url} target="_blank" rel="noreferrer">
+            the run on Device Farm <ExternalLinkIcon size={12} />
+          </a>
+        </span>
+      ) : null}
+      {run.outcome ? <div className="panel-text small">{run.outcome}</div> : null}
+      {run.comment && run.holder ? (
+        <div className="muted small">
+          Its outcome goes on {run.holder}’s pull request once there is one; the report is on the lease’s branch.
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
+/** A condition that isn't True, as one line under an environment in the Project page's list. */
+function ProblemLine({
+  what,
+  badge,
+}: {
+  what: string
+  badge: { label: string; tone: Tone; condition?: { message?: string } }
+}) {
+  return (
+    <div className="panel-text small">
+      {what} <Badge tone={badge.tone} label={badge.label} />
+      {badge.condition?.message ? ` ${badge.condition.message}` : null}
+    </div>
+  )
+}
+
+/**
+ * The Project page's test environments, each with Ready, where a remote one
+ * runs, its leases against its limits, today's spend against its budget, its
+ * credential and CI when they fail, and its test runs.
+ */
 export function TestEnvironmentList({ ns, data, connection }: { ns: string; data: StoryData; connection: Connection }) {
   const now = useNow()
   const unread = unreadOf(connection, RESOURCES.testEnvironments)
@@ -76,8 +190,12 @@ export function TestEnvironmentList({ ns, data, connection }: { ns: string; data
           {envs.map((env) => {
             const name = env.metadata.name
             const ready = testEnvReadiness(env)
+            const credentials = testEnvCredentials(env)
+            const ci = testEnvCI(env)
             const leases = testEnvLeases(env)
+            const runs = testEnvTestRuns(env)
             const count = describeLeaseCount(env)
+            const remote = testEnvRemote(env)
             return (
               <li key={name} className="test-env">
                 <a className="mono" href={pageHref(ns, 'TestEnvironment', name)}>
@@ -86,14 +204,26 @@ export function TestEnvironmentList({ ns, data, connection }: { ns: string; data
                 <Badge tone={ready.tone} label={ready.label} title={ready.condition?.message} />
                 <span className="muted small">
                   {' '}
-                  · {count.text}
+                  · {remote ? `${testEnvMember(env).where} · ` : ''}
+                  {count.text}
                   {count.full ? ', all taken' : ''} · {describeSpend(env, now)} · {describeLimits(env)}
                 </span>
+                {credentials && credentials.tone !== 'ok' && credentials.condition ? (
+                  <ProblemLine what="Credentials" badge={credentials} />
+                ) : null}
+                {ci && ci.tone !== 'ok' && ci.condition ? <ProblemLine what="CI" badge={ci} /> : null}
                 {env.spec.description ? <div className="panel-text small">{env.spec.description}</div> : null}
                 {leases.length ? (
                   <ul className="object-list test-env-leases">
                     {leases.map((l) => (
-                      <LeaseLine key={l.id} ns={ns} lease={l} cost={!env.spec.local} />
+                      <LeaseLine key={l.id} ns={ns} lease={l} cost={remote} />
+                    ))}
+                  </ul>
+                ) : null}
+                {runs.length ? (
+                  <ul className="object-list test-env-leases" aria-label={`Test runs on ${name}`}>
+                    {runs.map((r) => (
+                      <TestRunLine key={r.id} ns={ns} run={r} />
                     ))}
                   </ul>
                 ) : null}
@@ -108,15 +238,103 @@ export function TestEnvironmentList({ ns, data, connection }: { ns: string; data
   )
 }
 
-/** A TestEnvironment's page: what it has, its leases against its limits, its CI pool and how a run uses it. */
+/** A remote member's facts: where its machines run, or its Device Farm project and devices. */
+function RemoteFacts({ env }: { env: TestEnvironment }) {
+  const { aws, deviceFarm } = env.spec
+  const account = (aws ?? deviceFarm)?.account
+  const mac = describeMacHosts(env)
+  return (
+    <>
+      {aws ? (
+        <>
+          <dt>Region</dt>
+          <dd className="mono">{aws.region}</dd>
+        </>
+      ) : null}
+      {deviceFarm ? (
+        <>
+          <dt>Project</dt>
+          <dd className="mono">{deviceFarm.projectArn}</dd>
+          <dt>Device pool</dt>
+          <dd className="mono">{deviceFarm.devicePoolArn}</dd>
+        </>
+      ) : null}
+      <dt>Account</dt>
+      <dd>
+        {account ? (
+          <span className="mono">{account}</span>
+        ) : (
+          <span className="muted">Not set: whichever account the credential is in.</span>
+        )}
+      </dd>
+      {aws ? (
+        <>
+          <dt>Instance type</dt>
+          <dd className="mono">{aws.instanceType}</dd>
+          {mac ? (
+            <>
+              <dt>Mac hosts</dt>
+              <dd>
+                {mac}
+                {aws.mac?.keepHostHours === undefined ? (
+                  <span className="muted"> (keepHostHours not set: EC2’s minimum)</span>
+                ) : null}
+              </dd>
+            </>
+          ) : null}
+          <dt>Machine image</dt>
+          <dd className="mono">{aws.imageId}</dd>
+          <dt>Subnet</dt>
+          <dd className="mono">{aws.subnetId}</dd>
+        </>
+      ) : null}
+    </>
+  )
+}
+
+/** A remote member's credential: the Secret's name only, the keys the operator reads from it, and CredentialsValid. */
+function CredentialFacts({ env }: { env: TestEnvironment }) {
+  const secret = testEnvSecret(env)
+  const credentials = testEnvCredentials(env)
+  if (!credentials) return null
+  const [id, key, session] = AWS_SECRET_KEYS
+  return (
+    <>
+      <dt>Credentials</dt>
+      <dd>
+        Secret <span className="mono">{secret}</span>
+        <span className="muted small"> · its name only: the UI never reads Secrets</span>
+        <p className="muted small">
+          The operator alone reads its keys <span className="mono">{id}</span>, <span className="mono">{key}</span> and,
+          when there, <span className="mono">{session}</span>: they never reach a run, an environment or a CI job.
+        </p>
+      </dd>
+      <dt>Credentials valid</dt>
+      <dd>
+        <Badge tone={credentials.tone} label={credentials.label} />
+        {credentials.condition?.message ? <span className="panel-text"> {credentials.condition.message}</span> : null}
+      </dd>
+    </>
+  )
+}
+
+/**
+ * A TestEnvironment's page: what it has, its credential, its leases against
+ * its limits and budget, its test runs, its CI and how a run uses it.
+ */
 export function TestEnvironmentPage({ env }: { env: TestEnvironment }) {
   const now = useNow()
   const ns = env.metadata.namespace ?? ''
   const name = env.metadata.name
   const member = testEnvMember(env)
   const ready = testEnvReadiness(env)
+  const ci = testEnvCI(env)
+  const spend = testEnvSpend(env, now)
   const local = env.spec.local
+  const deviceFarm = env.spec.deviceFarm
+  const remote = testEnvRemote(env)
   const leases = testEnvLeases(env)
+  const runs = testEnvTestRuns(env)
   const count = describeLeaseCount(env)
   const devices = describeDevices(env)
   const placement = [
@@ -188,6 +406,12 @@ export function TestEnvironmentPage({ env }: { env: TestEnvironment }) {
                       <dd>{resources.length ? resources.join('; ') : <span className="muted">Not set.</span>}</dd>
                     </>
                   ) : null}
+                  {remote ? (
+                    <>
+                      <RemoteFacts env={env} />
+                      <CredentialFacts env={env} />
+                    </>
+                  ) : null}
                   <dt>Ready</dt>
                   <dd>
                     <Badge tone={ready.tone} label={ready.label} />
@@ -209,12 +433,22 @@ export function TestEnvironmentPage({ env }: { env: TestEnvironment }) {
                   <dt>Limits</dt>
                   <dd>{describeLimits(env)}</dd>
                   <dt>Spent</dt>
-                  <dd>{describeSpend(env, now)}</dd>
+                  <dd>
+                    {describeSpend(env, now)}
+                    {spend.over ? (
+                      <span className="muted">
+                        : no lease starts until tomorrow (UTC), or a higher limits.budgetUSDPerDay, OverBudget; the
+                        leases held finish their run
+                      </span>
+                    ) : remote && spend.budget ? (
+                      <span className="muted small"> · by the provider’s count, the ended leases’ included</span>
+                    ) : null}
+                  </dd>
                 </dl>
                 {leases.length ? (
                   <ul className="object-list test-env-leases">
                     {leases.map((l) => (
-                      <LeaseLine key={l.id} ns={ns} lease={l} cost={!local} />
+                      <LeaseLine key={l.id} ns={ns} lease={l} cost={remote} />
                     ))}
                   </ul>
                 ) : (
@@ -222,15 +456,51 @@ export function TestEnvironmentPage({ env }: { env: TestEnvironment }) {
                 )}
               </section>
 
+              {deviceFarm ? (
+                <section className="panel" aria-labelledby="testenv-test-runs">
+                  <h2 className="panel-title small-title" id="testenv-test-runs">
+                    Its test runs
+                  </h2>
+                  {runs.length ? (
+                    <ul className="object-list test-env-leases">
+                      {runs.map((r) => (
+                        <TestRunLine key={r.id} ns={ns} run={r} />
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="panel-text muted">None yet: no run that holds a lease asked for one.</p>
+                  )}
+                </section>
+              ) : null}
+
               <section className="panel" aria-labelledby="testenv-use">
                 <h2 className="panel-title small-title" id="testenv-use">
                   How a run uses it
                 </h2>
-                <p className="panel-text">
-                  An issue labelled <span className="mono">env/{name}</span>, or a Container whose Standard or Framework
-                  names it, gets a lease for each implementer’s and verifier’s run, which runs commands there:
-                </p>
-                <CommandLine command={`theos-env run ${name} -- <command>`} />
+                {deviceFarm ? (
+                  <>
+                    <p className="panel-text">
+                      An issue labelled <span className="mono">env/{name}</span>, or a Container whose Standard or
+                      Framework names it, gets a lease for each implementer’s and verifier’s run, which asks for a test
+                      run of an app and its test package over its Git host:
+                    </p>
+                    <CommandLine command={`theos-env test ${name} --type <type> --app <file> --tests <file>`} />
+                    <p className="panel-note">
+                      The operator, which alone holds the credential, runs it on the device pool, gives the report,
+                      screenshots and logs back to the run’s working tree, and comments the outcome on the Task’s pull
+                      request.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="panel-text">
+                      An issue labelled <span className="mono">env/{name}</span>, or a Container whose Standard or
+                      Framework names it, gets a lease for each implementer’s and verifier’s run, which runs commands
+                      there:
+                    </p>
+                    <CommandLine command={`theos-env run ${name} -- <command>`} />
+                  </>
+                )}
                 <dl className="facts">
                   <dt>CI</dt>
                   <dd>
@@ -240,6 +510,12 @@ export function TestEnvironmentPage({ env }: { env: TestEnvironment }) {
                         {' '}
                         · registers with <span className="mono">{env.spec.ci.runnerImage}</span>
                       </span>
+                    ) : null}
+                    {ci ? (
+                      <div>
+                        <Badge tone={ci.tone} label={ci.label} />
+                        {ci.condition?.message ? <span className="panel-text"> {ci.condition.message}</span> : null}
+                      </div>
                     ) : null}
                   </dd>
                 </dl>
@@ -296,7 +572,8 @@ export function TaskEnvironments({ task }: { task: Task }) {
             ))}
           </ul>
           <p className="panel-note">
-            The run reaches each with <span className="mono">theos-env run &lt;name&gt; -- &lt;command&gt;</span>; the
+            The run reaches each with <span className="mono">theos-env run &lt;name&gt; -- &lt;command&gt;</span>, or
+            asks a Device Farm one for a test run with <span className="mono">theos-env test &lt;name&gt;</span>; the
             lease is returned when the run ends or is suspended.
           </p>
         </>

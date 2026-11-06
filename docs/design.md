@@ -624,8 +624,11 @@ remote member's `CredentialsValid` is True.
   would have filed `kind/by-hand` for missing tools. `kind/by-hand` stays for
   accounts, settings, hardware no environment has, and other people's work.
 - **In the UI.** The Project page lists the project's TestEnvironments, each
-  with `Ready`, its live leases against its limits and who holds each, and
-  today's spend; each has a page of its own, read only. A Task's page shows
+  with `Ready`, its live leases against its limits and who holds each,
+  today's spend against its budget, a remote one's `CredentialsValid` and
+  `CI` in words when False, and a `deviceFarm` one's test runs; each has a
+  page of its own, read only, which names a remote one's credential by its
+  Secret only. A Task's page shows
   the leases its run holds, the environments its runs leased, and why its
   run waits for one.
 

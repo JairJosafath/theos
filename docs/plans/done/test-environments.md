@@ -292,7 +292,17 @@ step 2.
    TestEnvironment page in `ui/test/a11y.e2e.mjs`. Evidence:
    `docs/screenshots/ui-test-environments.png` (and `-dark`),
    `ui-test-environment-browser.png` and `ui-task-environments.png`, from the
-   demo.
+   demo. Once steps 7 to 10 were in, the views show their fields too: an
+   `aws` member's region, account, instance type, AMI, subnet and an EC2
+   Mac's `mac.keepHostHours`, a `deviceFarm` member's project and device
+   pool, today's spend against `limits.budgetUSDPerDay`, `CredentialsValid`
+   (its reason in words when False, of the credential the Secret's name
+   only), the `CI` condition of an `aws` member's `ci: {}`, a CI job's runner
+   as a lease's holder, and `status.testRuns` (result or state, Task,
+   Container, outcome, the run on Device Farm's console); the demo adds an
+   EC2 GPU running a CI job within its budget, Device Farm's phones with a
+   failed and a running test run, and an EC2 Mac whose credential AWS refuses
+   (`ui-test-environment-gpu.png`, `ui-test-environment-devices.png`).
 7. **AWS EC2, Linux and GPU** (T9 to T11, `internal/adapters/awsenv`, the
    `aws` member, `make manifests generate`).
    `contract.TestEnvironments` on a fake EC2 API, as the `cloudformation`
