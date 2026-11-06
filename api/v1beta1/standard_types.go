@@ -40,6 +40,18 @@ type StandardSpec struct {
 	// Without it, its Containers run the full check on every change.
 	// +optional
 	ChecksBeforeRelease bool `json:"checksBeforeRelease,omitempty"`
+
+	// testEnvironments names the TestEnvironments, such as browser, that
+	// the runs of its Containers' Tasks get when the project has them
+	// (docs/plans/test-environments.md, T2). One the project lacks gives the
+	// Container TestEnvironments=False, NotInProject, and the runs go on
+	// without it; an issue labelled env/<name> asks for one it can't do
+	// without.
+	// +kubebuilder:validation:MaxItems=8
+	// +kubebuilder:validation:items:Pattern=`^[a-z]([-a-z0-9]{0,30}[a-z0-9])?$`
+	// +listType=set
+	// +optional
+	TestEnvironments []string `json:"testEnvironments,omitempty"`
 }
 
 // +kubebuilder:object:root=true

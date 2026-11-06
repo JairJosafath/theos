@@ -80,8 +80,9 @@ func failRegistration(pod *corev1.Pod) {
 }
 
 // newCIProvider is a Gitea GitProvider for ns, with credentials, whose ci block
-// asks for a pool of two go runners with the Go cache.
-func newCIProvider(ns string) *c4v1beta1.GitProvider {
+// asks for a pool of two go runners with the Go cache, and the more runners
+// given.
+func newCIProvider(ns string, more ...c4v1beta1.CIRunnerSpec) *c4v1beta1.GitProvider {
 	GinkgoHelper()
 	mustCreate(&corev1.Secret{
 		ObjectMeta: objectMeta(ns, "gitea-credentials"),
@@ -93,9 +94,9 @@ func newCIProvider(ns string) *c4v1beta1.GitProvider {
 			URL:                  "http://gitea.gitea.svc.cluster.local:3000",
 			Owner:                ns,
 			CredentialsSecretRef: c4v1beta1.LocalRef{Name: "gitea-credentials"},
-			CI: &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: []c4v1beta1.CIRunnerSpec{
+			CI: &c4v1beta1.CISpec{GiteaActions: &c4v1beta1.GiteaActionsSpec{Runners: append([]c4v1beta1.CIRunnerSpec{
 				{Label: "go", Image: "theos/gitea-runner-go:dev", Size: 2, GoCache: true},
-			}}},
+			}, more...)}},
 		},
 	}
 	mustCreate(provider)

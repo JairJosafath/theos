@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // AgentNetworkPolicyName is the NetworkPolicy that fences agent sandboxes.
@@ -41,13 +42,23 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 	}
 	gitNamespaces := gitNamespacesOf(providers.Items)
 	egress := fenceEgress(r.ClusterDNS, gitNamespaces)
+	// The project's own test environment pods, on theos-env's port: a run
+	// reaches the one it leased with its lease's token
+	// (docs/plans/test-environments.md, T5). The CI runners' policy has no
+	// such rule: CI runs on an environment's image itself.
+	tcp := corev1.ProtocolTCP
+	envPort := intstr.FromInt32(model.TestEnvPort)
+	egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+		To: []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{labelComponent: model.TestEnvComponent}}}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envPort}},
+	})
 	if r.ModelProxyURL != "" {
 		// A sandbox on the shared token holds no token: the proxy's pods in the
 		// release namespace are its only way to Claude with one (decision 6 of
 		// docs/plans/done/model-proxy.md). The proxy's own policy admits only
 		// sandboxes of namespaces opted in to the shared Secrets. The CI runners'
 		// policy has no such rule: a job never talks to Claude.
-		tcp := corev1.ProtocolTCP
 		proxy := intstr.FromInt32(ModelProxyPort)
 		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
 			To: []networkingv1.NetworkPolicyPeer{{

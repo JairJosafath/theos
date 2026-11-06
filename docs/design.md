@@ -387,7 +387,8 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
 - **A Task keeps its record:** `status.history`, `status.runs` per agent run,
   the cost (`status.costMilliUSD`) and tokens (`status.tokens`, with
   `largestSession`) its agents reported. `WaitingForSlot` says it waits for
-  an agent slot, and `BaseRed` that it waits for `main`'s checks to pass. The Work area charts the runs against their Agent's
+  an agent slot, `WaitingForEnvironment` for a test environment (*Test
+  environments*), and `BaseRed` that it waits for `main`'s checks to pass. The Work area charts the runs against their Agent's
   `sessionTokenLimit` ([plan](plans/done/token-chart.md)): the line and the
   "Past the limit" counts use the Agent's current limit and the Task's current
   Agent, since a run records neither, so changing either rejudges past runs.
@@ -412,7 +413,10 @@ lets it reach the proxy alone
 place is that Secret in the release namespace; the operator never copies it
 into a project namespace, and deletes the copies an earlier release made. An
 Agent naming a Secret of its own gets that Secret's keys as the sandbox's
-environment, readable inside it.
+environment, readable inside it. A test environment a run leases runs the
+agents' code too and is fenced the same way (*Test environments*); the
+sandbox fence lets out one more port, `theos-env`'s, to the project's own
+environment pods.
 
 ### The CI fence
 
@@ -473,6 +477,91 @@ evicted or killed before its job ended was the runner's, and the Task reruns
 the checks at no cost to a round (`model.Canceller`). The isolation left is
 the node's: the pods share it with everything else
 ([getting-started](getting-started.md#what-the-factory-trusts)).
+
+### Test environments
+
+Work that needs a tool the agent sandbox lacks (a browser and its system
+libraries, a phone emulator, a GPU, later macOS) gets it from a
+**TestEnvironment**, not from a person
+([plans/test-environments.md](plans/test-environments.md)). A
+TestEnvironment is a named set of tools in a project's namespace, such as
+`browser`, `android` or `godot` (`v1beta1`, as every kind): a one-line
+`description` for people and agents, exactly one provider member (`local`
+today, `aws` later; CEL), and `limits`. Its status lists the live leases
+(holder, since, state, cost so far), what they cost today, and `Ready`: the
+image is pinned and the project's fence for its pods exists.
+
+- **Who asks.** A Standard or a Framework lists names in
+  `spec.testEnvironments`, and its Containers' runs get each one the project
+  has; one the project lacks gives the Container `TestEnvironments=False`,
+  reason `NotInProject`, a Needs-you item, and the runs go on without it. An
+  issue asks with a label `env/<name>`, which the triager or planner sets;
+  that ask is required: a Task whose issue needs an environment the project
+  lacks waits, reason `WaitingForEnvironment`, message `NotInProject`,
+  costing no try, until a person adds it.
+- **When a lease is held.** One lease per agent run that needs it: the
+  implementer's and the verifier's runs; the reviewer, triager, spec writer
+  and planner get none. The operator leases before it makes the run's
+  sandbox and returns the lease when the run ends, fails or is suspended
+  (paused, agent unavailable, interrupted); a resumed run leases again.
+  Waiting for a lease costs no round. An environment keeps no state between
+  leases, so letting one go loses nothing.
+- **How the sandbox uses it.** The sandbox gets `THEOS_ENV_<NAME>_URL` and
+  `_TOKEN` (and `_CA`, the certificate an environment over public HTTPS is
+  pinned to) per lease, and runs `theos-env run <name> -- <command>`. That
+  sends the working tree's tracked and untracked, not ignored, files (512 MiB
+  at most), runs the command in the same folder of a fresh `/work`, streams
+  its output and exit code back, and writes the files it changed or added,
+  the ignored ones left out, into the sandbox's tree, where the agent commits
+  them. The environment runs `theos-env serve`, a static binary an init
+  container copies in from the theos-agent image, so any image with the tools
+  works; within a lease its own background processes (an emulator booted
+  once) keep running.
+- **The fence.** An environment runs the agents' code, so it is fenced like
+  a sandbox. A local lease is one pod, from the environment's image, with no
+  ServiceAccount token, no user Secret, not privileged, its devices only
+  through the cluster's device plugins (`local.devices`, a setting), and the
+  lease's deadline as its own. The project's NetworkPolicy
+  `theos-test-environment` selects `app.kubernetes.io/component:
+  test-environment` and lets in only the project's agent sandboxes, on
+  `theos-env`'s port, and out only cluster DNS and public HTTPS: no Git host,
+  no model proxy, no private range. Each lease has a token of its own, which
+  the operator makes and gives only to the run that holds the lease, so one
+  Task can't use another's environment. A remote environment is reached over
+  public HTTPS with its certificate pinned, gets no cloud role and no metadata
+  service, and lets in only `theos-env`'s port.
+- **The chart's browser.** The seed makes a local `browser` in each
+  project it sets up (`testEnvironments.browser.enabled`, on by default),
+  on the release's `env-browser` image, with no CI pool: a fresh install
+  handles a picture script with nothing added, and a lease costs nothing
+  until a run asks for one.
+- **The port and its providers.** `ports.TestEnvironments` leases, reads,
+  returns and lists leases (*Factory components*); `cmd/main.go` maps each
+  member to its provider. The local provider makes a pod per lease (never a
+  Deployment: no lease sees the last one's leftovers) and costs nothing. A
+  remote provider's credential is a Secret only the operator reads.
+- **Limits.** `limits.maxLeases` (default 2, at most 16) bounds the live
+  leases; a run past it waits, `WaitingForEnvironment`, `AllLeased`.
+  `limits.maxLeaseMinutes` (default 180, the agent run's own deadline) ends a
+  lease that outlives it. A remote member needs `limits.budgetUSDPerDay`;
+  past the day's budget no lease starts (`OverBudget`, a Needs-you item) and
+  leases held finish their run. The operator returns any lease whose holder
+  no longer lists it.
+- **CI on the same tools.** An environment with `ci.size` adds a runner pool
+  for the label `env-<name>` to the project's Gitea Actions pool, built from
+  the environment's image and devices under the CI fence, so a Standard's
+  workflow runs on `env-browser` what the agent ran with `theos-env run`.
+  Each pod registers, and gets its runner copied in, from `ci.runnerImage`,
+  else the image of the GitProvider's first runner; the jobs run on the
+  environment's image. A `ci` block that names `env-<name>` itself makes
+  the Project's `CIRunners` False, reason `LabelClash`.
+- **By hand only for a person.** The implementer's and verifier's prompts
+  list the run's environments, with each one's description and how to use
+  it, and the guides say that a criterion a listed environment can check is
+  never one "no sandbox can" meet. The planner's and triager's workspaces list
+  the project's TestEnvironments, and they label `env/<name>` where they
+  would have filed `kind/by-hand` for missing tools. `kind/by-hand` stays for
+  accounts, settings, hardware no environment has, and other people's work.
 
 ## Crews and releases
 
@@ -1087,6 +1176,7 @@ controllers call, not by one product's API;
 | AgentRuntime | start a run, read its state and result, stop it | Agent Sandbox |
 | Deployer | ship a release to a target, read its state back | the GitHub release copy |
 | ChatHost | a Space and its rooms, invites, messages, thread replies, edits, reactions, sync | Matrix |
+| TestEnvironments | lease a place to run commands with tools the sandbox lacks, read it back, return it, list the leases held | a pod per lease on the cluster (`local`) |
 
 - **A port is a narrow Go interface** with one fake and one contract suite,
   plain Go with no Kubernetes in `internal/ports`; each adapter is its own

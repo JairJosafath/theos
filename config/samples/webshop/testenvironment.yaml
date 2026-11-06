@@ -1,0 +1,23 @@
+# A browser the agents and CI run tests and picture scripts on when the
+# agent sandbox lacks one (docs/plans/test-environments.md): a pod per lease
+# in this namespace, on the release's env-browser image (Playwright's
+# browsers and a virtual display), fenced like an agent sandbox by the
+# project's NetworkPolicy theos-test-environment. A run gets it when its
+# issue is labelled env/browser, or its Standard or Framework lists it, and
+# runs `theos-env run browser -- <command>` there. A local lease costs
+# nothing; limits cap how many run at once and for how long. In the Kind
+# test environment, make env-image-browser loads theos/env-browser:dev.
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: browser
+spec:
+  description: Chromium, Firefox and WebKit with Playwright; run headed programs (VS Code, Electron) under xvfb-run -a.
+  local:
+    image: ghcr.io/jairjosafath/theos/env-browser:0.30.0
+    resources:
+      requests: {cpu: 500m, memory: 1Gi}
+      limits: {cpu: "2", memory: 4Gi}
+  limits:
+    maxLeases: 2
+    maxLeaseMinutes: 180

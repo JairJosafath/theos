@@ -85,6 +85,11 @@ func TestSeedAppliesTheCatalogInPlace(t *testing.T) {
 	if len(uids) < 5 {
 		t.Fatalf("ConfigMap %s holds %d objects, want the GitProvider, catalog and Agents", catalogConfigMap, len(uids))
 	}
+	// The seed's browser (docs/plans/test-environments.md, T14), which its
+	// Role lets it apply.
+	if _, ok := uids["TestEnvironment/browser"]; !ok {
+		t.Errorf("ConfigMap %s makes no TestEnvironment browser", catalogConfigMap)
+	}
 
 	// A person adds env to the planner, which the chart doesn't set.
 	env0 := []byte(`{"spec":{"env":[{"name":"HAND","value":"edit"}]}}`)

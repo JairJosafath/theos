@@ -49,6 +49,7 @@ import (
 	"github.com/JairJosafath/theos/internal/adapters/gitea"
 	"github.com/JairJosafath/theos/internal/adapters/github"
 	"github.com/JairJosafath/theos/internal/adapters/gitlab"
+	"github.com/JairJosafath/theos/internal/adapters/localenv"
 	"github.com/JairJosafath/theos/internal/adapters/matrix"
 	"github.com/JairJosafath/theos/internal/buildinfo"
 	"github.com/JairJosafath/theos/internal/controller"
@@ -99,6 +100,7 @@ func main() {
 	var chatHomeserver string
 	var gitEventsURL string
 	var gitEventsAddr string
+	var testEnvToolsImage string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -191,6 +193,9 @@ func main() {
 	flag.StringVar(&gitEventsAddr, "git-events-bind-address", "0",
 		"The address the receiver of the Git host's deliveries binds to, such as :8082, on the leader. "+
 			"Leave as 0 to receive none: the operator polls the host.")
+	flag.StringVar(&testEnvToolsImage, "test-environment-tools-image", "",
+		"The image holding theos-env at /usr/local/bin/theos-env, such as the release's theos-agent image: a "+
+			"local TestEnvironment's lease pods copy it in. None: no local environment can be leased.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -420,6 +425,9 @@ func main() {
 		model.DeployMemberGitLab:         gitlab.New(nil),
 		model.DeployMemberArgoCD:         argocd.New(argoClient),
 		model.DeployMemberCloudFormation: cloudformation.New(nil)}
+	// Each TestEnvironment member's provider, by the member's name.
+	testEnvProviders := ports.TestEnvironmentProviders{
+		model.TestEnvMemberLocal: localenv.New(mgr.GetClient(), testEnvToolsImage)}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
@@ -470,6 +478,7 @@ func main() {
 		ModelProxyURL:     modelProxyURL,
 		Recorder:          mgr.GetEventRecorder("task"),
 		GitEvents:         gitEvents,
+		TestEnvironments:  testEnvProviders,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
 		os.Exit(1)
@@ -549,6 +558,15 @@ func main() {
 		GitEvents:    gitEvents,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gitprovider")
+		os.Exit(1)
+	}
+	if err := (&controller.TestEnvironmentReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Providers:         testEnvProviders,
+		SharedPullSecrets: sharedPullSecrets,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "testenvironment")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

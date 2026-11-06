@@ -141,7 +141,7 @@ func (r *TaskReconciler) applyScore(ctx context.Context, task *c4v1beta1.Task, s
 		if in == nil {
 			return result, err
 		}
-		fresh, err := r.runSandbox(ctx, task, status, container, agents, model.RoleScorer, status.Sandbox, in)
+		fresh, err := r.runSandbox(ctx, task, status, container, agents, model.RoleScorer, status.Sandbox, in, nil)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -166,7 +166,7 @@ func (r *TaskReconciler) startScore(ctx context.Context, task *c4v1beta1.Task, s
 	}
 	setProgress(status, model.StartRun(progressOf(status), model.RoleScorer))
 	name := sandboxName(task, status, model.RoleScorer)
-	sandbox, err := r.runSandbox(ctx, task, status, container, agents, model.RoleScorer, name, in)
+	sandbox, err := r.runSandbox(ctx, task, status, container, agents, model.RoleScorer, name, in, nil)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

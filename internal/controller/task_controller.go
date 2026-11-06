@@ -124,6 +124,13 @@ type TaskReconciler struct {
 	ModelProxyURL   string
 	// Recorder posts the Task's Events; nil posts none.
 	Recorder events.EventRecorder
+	// TestEnvironments are the test environments' providers by member, as
+	// cmd/main.go builds them: a run leases the environments it needs from
+	// them before its sandbox is made.
+	TestEnvironments ports.TestEnvironmentProviders
+	// EnvironmentRecheck is how often a Task whose run waits for a test
+	// environment looks again; zero means 15 seconds.
+	EnvironmentRecheck time.Duration
 }
 
 // eventSessionHandedOff is the Normal Event of a run whose agent sessions
@@ -193,6 +200,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		status.Phase = c4v1beta1.TaskPending
 	}
 	if isFinal(status.Phase) {
+		r.returnFinalLeases(ctx, &task, status)
 		if status.Phase == c4v1beta1.TaskFailed {
 			result := r.tendAbandonedPull(ctx, &task, status, &container)
 			return result, r.writeStatus(ctx, &task, status)

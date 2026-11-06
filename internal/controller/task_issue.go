@@ -278,7 +278,7 @@ func (r *TaskReconciler) fileByHand(ctx context.Context, provider ports.Issues, 
 		}
 	}
 	title, body := model.ByHandIssue(status.IssueTitle, int(task.Spec.Issue), status.PullRequestURL, task.Name,
-		by, open)
+		by, open, status.LeasedEnvironments)
 	var issue ports.Issue
 	err := r.gitCall(ctx, func(ctx context.Context) (err error) {
 		issue, err = provider.CreateIssue(ctx, repo, title, body, []string{model.LabelByHand, model.LabelNeedsHuman},

@@ -21,7 +21,7 @@ const (
 // WorkspaceFiles are every file BriefWorkspaceFiles writes, so the operator can
 // read them back to see whether main is already up to date.
 var WorkspaceFiles = []string{BriefFile, PlannerGuide, WorkspaceModelFile, WorkspaceCatalogFile, WorkspaceContainersFile,
-	WorkspaceSuggestionsFile, WorkspaceFailedFile, WorkspaceTendedFile, WorkspaceRequestsFile}
+	WorkspaceSuggestionsFile, WorkspaceFailedFile, WorkspaceTendedFile, WorkspaceRequestsFile, WorkspaceEnvironmentsFile}
 
 // MaxWorkspaceIssues is how many open issue titles model/containers.yaml lists
 // per Container; the rest are counted, not listed.
@@ -86,6 +86,9 @@ type BriefWorkspace struct {
 	SpecParallel        int32
 	PromptParallel      int32
 	PromptParallelRound int32
+	// Environments are the namespace's TestEnvironments, which an issue asks
+	// for with env/<name> (docs/plans/test-environments.md, T13).
+	Environments []WorkspaceEnvironment
 }
 
 // WorkspaceRelease is a spec.releases entry: the person asks for the
@@ -148,16 +151,21 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceRequestsFile, err)
 	}
+	environments, err := marshalDocument(workspaceEnvironments(ws.Environments))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceEnvironmentsFile, err)
+	}
 	return map[string]string{
-		BriefFile:                renderBrief(ws),
-		PlannerGuide:             plannerGuideText,
-		WorkspaceModelFile:       story,
-		WorkspaceCatalogFile:     catalog,
-		WorkspaceContainersFile:  containers,
-		WorkspaceSuggestionsFile: suggestions,
-		WorkspaceFailedFile:      failed,
-		WorkspaceTendedFile:      tended,
-		WorkspaceRequestsFile:    requests,
+		BriefFile:                 renderBrief(ws),
+		PlannerGuide:              plannerGuideText,
+		WorkspaceModelFile:        story,
+		WorkspaceCatalogFile:      catalog,
+		WorkspaceContainersFile:   containers,
+		WorkspaceSuggestionsFile:  suggestions,
+		WorkspaceFailedFile:       failed,
+		WorkspaceTendedFile:       tended,
+		WorkspaceRequestsFile:     requests,
+		WorkspaceEnvironmentsFile: environments,
 	}, nil
 }
 

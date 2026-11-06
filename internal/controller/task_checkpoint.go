@@ -280,7 +280,9 @@ func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, s
 		}
 		r.progress(task, status, metav1.ConditionTrue, reason, message)
 	}
-	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result, suspend: true}
+	// A suspended run holds no test environment: its resume leases again (T3).
+	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result, suspend: true,
+		leases: takeLeases(status, status.Sandbox)}
 	log := logf.FromContext(ctx)
 	switch kind {
 	case suspendPaused:
@@ -399,7 +401,15 @@ func (r *TaskReconciler) resumeRun(ctx context.Context, task *c4v1beta1.Task, st
 	if in == nil {
 		return result, err
 	}
-	fresh, err := r.runSandbox(ctx, task, status, container, agents, role, status.Sandbox, in)
+	envs, wait, err := r.leaseEnvironments(ctx, task, status, container, role, status.Sandbox, in.labels)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if wait != nil {
+		r.waitForEnvironment(task, status, wait)
+		return ctrl.Result{RequeueAfter: r.environmentRecheck()}, nil
+	}
+	fresh, err := r.runSandbox(ctx, task, status, container, agents, role, status.Sandbox, in, envs)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
