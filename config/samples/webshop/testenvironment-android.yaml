@@ -1,5 +1,5 @@
 # An Android emulator the agents and CI run an app's instrumented tests and
-# pictures on (docs/plans/test-environments.md, step 5): a pod per lease in
+# pictures on (docs/plans/done/test-environments.md, step 5): a pod per lease in
 # this namespace, on the release's env-android image (the Android SDK, JDK 17
 # and an Android 16 AVD), with /dev/kvm from the cluster's KVM device plugin.
 # devices names the device as the plugin does: KubeVirt's, and the

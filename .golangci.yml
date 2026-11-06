@@ -131,9 +131,9 @@ linters:
             - "**/cmd/theos-env/**"
           deny:
             - pkg: k8s.io
-              desc: theos-env runs in sandboxes and test environments, which have no Kubernetes credentials (docs/plans/test-environments.md)
+              desc: theos-env runs in sandboxes and test environments, which have no Kubernetes credentials (docs/plans/done/test-environments.md)
             - pkg: sigs.k8s.io
-              desc: theos-env needs no cluster access (docs/plans/test-environments.md)
+              desc: theos-env needs no cluster access (docs/plans/done/test-environments.md)
             - pkg: github.com/JairJosafath/theos/api
               desc: theos-env takes plain values from its environment (docs/architecture.md)
             - pkg: github.com/JairJosafath/theos/internal/controller

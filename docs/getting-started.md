@@ -1002,7 +1002,7 @@ An agent's sandbox has the repository's toolchain and nothing else: no
 browser's system libraries, no display, no emulator. A test or a picture
 script that needs one runs in a **test environment**, a place with those
 tools that the factory leases to the run that needs it
-([plans/test-environments.md](plans/test-environments.md)). The chart makes
+([plans/done/test-environments.md](plans/done/test-environments.md)). The chart makes
 one in each project, `browser`: Playwright's Chromium, Firefox and WebKit,
 and `xvfb-run` for headed programs such as VS Code or an Electron app.
 
@@ -1108,7 +1108,107 @@ The machine downloads `theos-env` from the chart's
 and checks it against the `SHA256SUMS` next to it; a subnet that can't reach
 GitHub needs an address of your own there. The AMI needs a Linux with
 `curl`, `sha256sum` and cloud-init. Deleting the TestEnvironment terminates
-its machines and deletes its security group. EC2 Mac comes later.
+its machines and deletes its security group.
+
+### Lease a Mac on AWS
+
+macOS, for an iOS app's tests in the Simulator, comes from an EC2 Mac: the
+same `aws` member with a Mac instance type, such as `mac2.metal`, and an EC2
+macOS AMI with Xcode (`config/samples/webshop/testenvironment-ios.yaml`). A
+Mac runs on a dedicated host, which EC2 bills for 24 hours at least from its
+allocation and scrubs after each machine, so the operator keeps its hosts:
+it allocates one in the subnet's zone when every host it keeps is busy,
+places each lease's machine on a free one, and keeps each for
+`aws.mac.keepHostHours` from its allocation (24 by default, at least 24),
+then releases it once no machine is on it. A lease waits while the host it
+would take is scrubbed (about an hour) rather than allocating another for a
+day more.
+
+The lease whose machine is the first on a host counts the host's on-demand
+price for `keepHostHours` against `limits.budgetUSDPerDay` at once (a `mac2`
+host's 24 hours are about 16 US dollars), so the budget must cover them; a
+lease on a host kept costs nothing until the host's kept time is over. The
+key needs `ec2:AllocateHosts`, `ec2:DescribeHosts` and `ec2:ReleaseHosts`
+beside the calls above. The machine downloads `theos-env`'s darwin build,
+so `testEnvironments.toolsURL` must name `${os}`, as its default does.
+Deleting the TestEnvironment releases its hosts, which EC2 refuses within a
+host's 24 hours: the TestEnvironment stays, terminating, until they are
+released, a day at most.
+
+### Run an app's tests on real phones
+
+An Android or iOS app's tests on real phones come from AWS Device Farm: a
+TestEnvironment with the `deviceFarm` member names a Device Farm project and
+a device pool in `us-west-2`, Device Farm's one region
+(`config/samples/webshop/testenvironment-devices.yaml`). It runs test
+packages rather than commands: Espresso or UI Automator instrumentation
+tests (`--type instrumentation`, an `.apk` and its test `.apk`), XCTest
+(`xctest`, an `.ipa` and a `.zip`) or XCUITest (`xctest-ui`, two `.ipa`s).
+A run whose issue is labelled `env/devices` builds the app and its tests,
+commits what they were built from, and runs:
+
+```bash
+theos-env test devices --type instrumentation \
+  --app app/build/outputs/apk/debug/app-debug.apk \
+  --tests app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+```
+
+The run never holds the credential and can't reach the operator, so the
+request goes over the Git host: `theos-env test` pushes it, signed with the
+lease's token, to the lease's branch `theos-env/<lease>`. The operator reads
+it on its poll, runs it on the pool's devices, pushes the report, each
+device's result, the tests that didn't pass and their screenshots and logs
+back to the branch, which `theos-env test` writes into `test-runs/devices/`
+for the run to commit, and comments the outcome on the Task's pull request.
+The TestEnvironment's status lists each run (`status.testRuns`). The branch
+is deleted once the lease is returned; no CI runs on it.
+
+A run costs its metered device minutes, at Device Farm's list price of 0.17
+US dollars a minute, against the required `limits.budgetUSDPerDay`; past it
+a request is answered with nothing run. The credential is a Secret with an
+`aws` member's keys, read by the operator alone; its key needs
+`devicefarm:GetDevicePool`, `devicefarm:ListTagsForResource`,
+`devicefarm:TagResource`, `devicefarm:UntagResource`,
+`devicefarm:CreateUpload`, `devicefarm:GetUpload`,
+`devicefarm:ListUploads`, `devicefarm:DeleteUpload`,
+`devicefarm:ScheduleRun`, `devicefarm:ListRuns`, `devicefarm:StopRun`,
+`devicefarm:ListJobs`, `devicefarm:ListUniqueProblems` and
+`devicefarm:ListArtifacts`. A lease is a tag on the project, so a project
+takes 50 leases at most, of every environment that names it.
+
+#### Run CI jobs on it
+
+With `ci: {}` (as the sample has it), the environment runs the project's CI
+jobs that name `runs-on: env-gpu` too: for each such job that waits, the
+operator registers a Gitea runner for that one job to the GitProvider's
+organization and leases a machine that runs it, within `limits.maxLeases`
+and the day's budget, which it shares with the agents' runs. The machine
+shuts down, which terminates it, when its job ends, and the operator deletes
+its runner. The organization's registration token never leaves the
+operator: the machine gets the runner's own credential, which takes that
+one job.
+
+The machines reach Gitea from the internet, so the GitProvider's
+`ci.giteaActions.publicURL` gives Gitea's public address, `https://` on port
+443, the one port their fence lets out; the chart's in-cluster Gitea has
+none, so remote CI is off until you set it:
+
+```bash
+kubectl -n webshop patch gitprovider gitea --type merge \
+  -p '{"spec":{"ci":{"giteaActions":{"publicURL":"https://git.example.com"}}}}'
+kubectl -n webshop get testenvironment gpu \
+  -o jsonpath='{.status.conditions[?(@.type=="CI")]}{"\n"}'
+```
+
+Gitea's own `ROOT_URL` must reach it from there too: the jobs clone from
+it. The machine downloads the runner from the chart's
+`testEnvironments.runnerURL`, the build of the runner image's version
+attached to the release, checked against the same `SHA256SUMS`; the AMI
+needs what the jobs' steps run on the machine, such as `git` and `node` for
+`actions/checkout`. The `CI` condition says `Serving` once jobs run there,
+and why not otherwise: `NoPublicAddress`, `LabelClash` (the GitProvider's
+`ci` block names `env-gpu` itself), `Unsupported` (no `runnerURL`), or
+`OverBudget`.
 
 ## What an app promises: operations
 

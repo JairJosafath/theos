@@ -1,5 +1,5 @@
 # Godot on a GPU, where the agents and CI run a game's tests and take its
-# pictures (docs/plans/test-environments.md, step 5): a pod per lease in this
+# pictures (docs/plans/done/test-environments.md, step 5): a pod per lease in this
 # namespace, on the release's env-godot image (the Godot engine, Vulkan and
 # OpenGL, and a virtual display), with an NVIDIA GPU from the cluster's device
 # plugin, nvidia.com/gpu, under the RuntimeClass the NVIDIA GPU operator

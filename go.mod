@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.82.1
+	github.com/aws/aws-sdk-go-v2/service/devicefarm v1.52.2
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.338.4
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.66.5
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.49.4

@@ -114,7 +114,7 @@ type sandboxRun struct {
 	// through the model proxy at this URL.
 	modelProxyURL string
 	// environments are the Ready leases of the test environments the run
-	// needs (docs/plans/test-environments.md, T4).
+	// needs (docs/plans/done/test-environments.md, T4).
 	environments []runEnvironment
 }
 

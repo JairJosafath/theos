@@ -92,15 +92,19 @@ func TestReleasedChartNamesItsSessionClient(t *testing.T) {
 	// download against (#1175): the release's files and the UI image's
 	// /downloads/ (ui/Dockerfile; ui/server.mjs serves it, its test shows).
 	// A remote TestEnvironment's machine checks theos-env against the same
-	// SHA256SUMS (docs/plans/test-environments.md, step 7).
+	// SHA256SUMS (docs/plans/done/test-environments.md, step 7), an EC2 Mac its
+	// darwin build (step 9).
 	if !strings.Contains(string(create), " SHA256SUMS") {
 		t.Errorf("release.yml's gh release create doesn't attach SHA256SUMS: %s", create)
 	}
 	sums := regexp.MustCompile(`(?m)^\s*sha256sum (.*) >SHA256SUMS$`).FindSubmatch(workflow)
 	for _, bin := range []string{"theos-session-linux-amd64", "theos-session-linux-arm64",
-		"theos-env-linux-amd64", "theos-env-linux-arm64"} {
+		"theos-env-linux-amd64", "theos-env-linux-arm64", "theos-env-darwin-amd64", "theos-env-darwin-arm64"} {
 		if sums == nil || !slices.Contains(strings.Fields(string(sums[1])), bin) {
 			t.Errorf("release.yml's SHA256SUMS doesn't cover %s (%q)", bin, sums)
+		}
+		if !strings.HasPrefix(bin, "theos-session-") && !strings.Contains(string(create), " "+bin) {
+			t.Errorf("release.yml's gh release create doesn't attach %s: %s", bin, create)
 		}
 	}
 	dockerfile, err := os.ReadFile(filepath.Join("..", "..", "ui", "Dockerfile"))

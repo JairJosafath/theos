@@ -259,7 +259,7 @@ func BriefAttention(f AttentionFacts, now time.Time) Attention {
 				"Fix what it says, or delete it and plan it again in a prompt.",
 				"A failed Container doesn't heal by itself.", c.Since})
 		case c.Environments != "":
-			// docs/plans/test-environments.md, T2: only a person adds one.
+			// docs/plans/done/test-environments.md, T2: only a person adds one.
 			a.NeedsYou = append(a.NeedsYou, NeedsYou{AttentionContainer, c.Name,
 				fmt.Sprintf("Container `%s` asks for test environments the project lacks: %s", c.Name,
 					sentence(c.Environments, "see the Container")),
@@ -390,7 +390,7 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 }
 
 // environmentAttention classifies a Task waiting for a test environment
-// (docs/plans/test-environments.md, T2, T9, T10): one the project lacks,
+// (docs/plans/done/test-environments.md, T2, T9, T10): one the project lacks,
 // whose budget is spent or whose credential is refused, only a person
 // mends; a lease taken or starting frees inside the slot's window.
 func environmentAttention(t WatchedTask, now time.Time, waited string) (*Healing, *NeedsYou) {

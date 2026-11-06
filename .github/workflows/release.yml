@@ -4,7 +4,8 @@ name: Release
 # building anything: the operator, UI, seed, toolchain, agent and runner images to
 # ghcr.io/<owner>/theos/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
 # to oci://ghcr.io/<owner>/theos/charts and to a GitHub release for the tag,
-# with the theos-session and theos-env binaries, their SHA256SUMS and its keyless cosign
+# with the theos-session binaries, theos-env's for Linux and macOS, the Gitea
+# runner a remote test environment's CI machine runs, their SHA256SUMS and its keyless cosign
 # signature, SHA256SUMS.sigstore.json, for a chart whose UI is off
 # (#1079, #1175, #1706); with the UI on, a scaffolded devcontainer downloads its
 # Session client from the UI image, which carries the same files under
@@ -102,15 +103,30 @@ jobs:
       # to the binary and refuses a binary it doesn't match (#1175).
       # theos-env goes with them: a remote TestEnvironment's machine downloads
       # it, the chart's testEnvironments.toolsURL, and checks it against the
-      # same SHA256SUMS (docs/plans/test-environments.md, step 7).
-      - name: Build the Session client and theos-env
+      # same SHA256SUMS (docs/plans/done/test-environments.md, step 7); an EC2
+      # Mac's, darwin's (step 9). So does the Gitea runner one that runs a CI
+      # job downloads, testEnvironments.runnerURL (step 8): the version
+      # hack/runner/Dockerfile pins, checked against the sums pinned there
+      # before it is attached.
+      - name: Build the Session client and theos-env, and fetch the Gitea runner
         run: |
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags=-s -o "theos-session-linux-$arch" ./cmd/theos-session
-            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags=-s -o "theos-env-linux-$arch" ./cmd/theos-env
+            for os in linux darwin; do
+              CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags=-s -o "theos-env-$os-$arch" ./cmd/theos-env
+            done
           done
-          sha256sum theos-session-linux-amd64 theos-session-linux-arm64 theos-env-linux-amd64 theos-env-linux-arm64 >SHA256SUMS
-          ls -l theos-session-linux-* theos-env-linux-*
+          runner=$(sed -n 's/^ARG RUNNER_VERSION=//p' hack/runner/Dockerfile)
+          for arch in amd64 arm64; do
+            curl -fsSL --retry 5 --retry-all-errors -o "gitea-runner-linux-$arch" \
+              "https://gitea.com/gitea/runner/releases/download/v$runner/gitea-runner-$runner-linux-$arch"
+          done
+          printf '%s  gitea-runner-linux-amd64\n%s  gitea-runner-linux-arm64\n' \
+            "$(sed -n 's/^ARG RUNNER_SHA256=//p' hack/runner/Dockerfile)" \
+            "$(sed -n 's/^ARG RUNNER_SHA256_ARM64=//p' hack/runner/Dockerfile)" | sha256sum -c -
+          chmod 0755 gitea-runner-linux-*
+          sha256sum theos-session-linux-amd64 theos-session-linux-arm64 theos-env-linux-amd64 theos-env-linux-arm64 theos-env-darwin-amd64 theos-env-darwin-arm64 gitea-runner-linux-amd64 gitea-runner-linux-arm64 >SHA256SUMS
+          ls -l theos-session-linux-* theos-env-* gitea-runner-linux-*
           cat SHA256SUMS
 
       # SHA256SUMS comes from the same origin as the binaries, so it guards the
@@ -172,7 +188,9 @@ jobs:
           REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" "$prev" >notes.md
           cat notes.md
           gh release create "$GITHUB_REF_NAME" "theos-$VERSION.tgz" theos-session-linux-amd64 theos-session-linux-arm64 \
-            theos-env-linux-amd64 theos-env-linux-arm64 SHA256SUMS SHA256SUMS.sigstore.json \
+            theos-env-linux-amd64 theos-env-linux-arm64 theos-env-darwin-amd64 theos-env-darwin-arm64 \
+            gitea-runner-linux-amd64 gitea-runner-linux-arm64 \
+            SHA256SUMS SHA256SUMS.sigstore.json \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
 
       # A dispatch made with GITHUB_TOKEN starts a run, unlike its other events.

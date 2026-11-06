@@ -35,7 +35,7 @@ func TestBriefWorkspaceFilesPaths(t *testing.T) {
 
 // model/test-environments.yaml lists the project's test environments, by
 // name, each with the label an issue asks for it with and the one a
-// workflow runs on it with (docs/plans/test-environments.md, T13).
+// workflow runs on it with (docs/plans/done/test-environments.md, T13).
 func TestBriefWorkspaceEnvironments(t *testing.T) {
 	files := workspaceFiles(t, BriefWorkspace{Brief: "ext", Environments: []WorkspaceEnvironment{
 		{Name: "godot", Description: "Godot 4 on a GPU"},

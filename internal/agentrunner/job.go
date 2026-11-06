@@ -113,7 +113,7 @@ const (
 	// EnvEnvironments are the test environments the run leased, a JSON
 	// array of {"name", "description"}: the prompt lists them, and
 	// theos-env run reaches each at THEOS_ENV_<NAME>_URL
-	// (docs/plans/test-environments.md, T4 and T13).
+	// (docs/plans/done/test-environments.md, T4 and T13).
 	EnvEnvironments = "THEOS_ENVIRONMENTS"
 )
 
@@ -121,6 +121,9 @@ const (
 type TestEnvironment struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	// TestRuns means the environment runs test packages on devices, with
+	// `theos-env test`, rather than commands (T12).
+	TestRuns bool `json:"testRuns,omitempty"`
 }
 
 // CheckpointDir is where the operator mounts a sandbox's checkpoint volume.

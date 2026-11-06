@@ -199,7 +199,7 @@ var _ = Describe("Crew triage", func() {
 		}).Should(Succeed())
 	})
 
-	// docs/plans/test-environments.md, T13: the triager reads the project's
+	// docs/plans/done/test-environments.md, T13: the triager reads the project's
 	// test environments and names the ones an issue needs; the operator
 	// labels it env/<name>, and the issue's run leases it.
 	It("labels a ready issue env/<name> for the test environment the triager names, and its run leases it", func() {

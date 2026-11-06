@@ -114,6 +114,20 @@ describe('agentRuns', () => {
       history: [step('Implementing', 1, 'WaitingForEnvironment', 'AllLeased: every lease of browser is taken')],
     })
     expect(agentRuns(waiting)).toEqual([])
+    // Nor while a remote environment's day's budget or credential holds it (steps 7 to 10).
+    for (const message of [
+      'OverBudget: gpu spent its budget for today; no lease starts until tomorrow, or a higher budget',
+      'CredentialRefused: the provider of ios refuses its credential, or its Secret lacks one',
+    ]) {
+      const held = task('api-7', {
+        phase: 'Implementing',
+        history: [
+          step('Implementing', 1, 'WaitingForEnvironment', 'AllLeased: every lease of gpu is taken'),
+          step('Implementing', 1, 'WaitingForEnvironment', message),
+        ],
+      })
+      expect(agentRuns(held)).toEqual([])
+    }
     // Leased, the run starts when its sandbox does, not when the wait did.
     const leased = task('api-7', {
       phase: 'Implementing',

@@ -12,7 +12,7 @@
 # pool pods are (docs/plans/done/ci-runner-isolation.md, step 3).
 # RUNNER_COPY_TO set copies the runner, its config, the entrypoint and the
 # /tmp sweep to that folder first: a test environment's pool pod runs its
-# jobs on the environment's image, from there (docs/plans/test-environments.md,
+# jobs on the environment's image, from there (docs/plans/done/test-environments.md,
 # T8; entrypoint.sh's RUNNER_BIN_DIR).
 # RUNNER_CONFIG and RUNNER_FILE are for the tests.
 set -euo pipefail

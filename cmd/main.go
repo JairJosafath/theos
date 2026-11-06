@@ -101,7 +101,7 @@ func main() {
 	var chatHomeserver string
 	var gitEventsURL string
 	var gitEventsAddr string
-	var testEnvToolsImage, testEnvToolsURL string
+	var testEnvToolsImage, testEnvToolsURL, testEnvRunnerURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -198,9 +198,14 @@ func main() {
 		"The image holding theos-env at /usr/local/bin/theos-env, such as the release's theos-agent image: a "+
 			"local TestEnvironment's lease pods copy it in. None: no local environment can be leased.")
 	flag.StringVar(&testEnvToolsURL, "test-environment-tools-url", "",
-		"Where a remote TestEnvironment's machines download theos-env, an https:// address in which ${arch} "+
-			"becomes amd64 or arm64, with a SHA256SUMS next to it, such as the release's theos-env-linux-${arch}. "+
+		"Where a remote TestEnvironment's machines download theos-env, an https:// address in which ${os} "+
+			"becomes linux or darwin and ${arch} amd64 or arm64, with a SHA256SUMS next to it, such as the "+
+			"release's theos-env-${os}-${arch}. "+
 			"None: no remote environment can be leased.")
+	flag.StringVar(&testEnvRunnerURL, "test-environment-runner-url", "",
+		"Where a remote TestEnvironment's machine that runs a CI job downloads the CI runner, an https:// address "+
+			"in which ${arch} becomes amd64 or arm64, with a SHA256SUMS next to it, such as the CI runner the "+
+			"release attaches beside theos-env. None: no remote environment runs CI jobs.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -432,8 +437,9 @@ func main() {
 		model.DeployMemberCloudFormation: cloudformation.New(nil)}
 	// Each TestEnvironment member's provider, by the member's name.
 	testEnvProviders := ports.TestEnvironmentProviders{
-		model.TestEnvMemberLocal: localenv.New(mgr.GetClient(), testEnvToolsImage),
-		model.TestEnvMemberAWS:   awsenv.New(nil, testEnvToolsURL)}
+		model.TestEnvMemberLocal:      localenv.New(mgr.GetClient(), testEnvToolsImage),
+		model.TestEnvMemberAWS:        awsenv.New(nil, testEnvToolsURL).WithRunnerURL(testEnvRunnerURL),
+		model.TestEnvMemberDeviceFarm: awsenv.NewDeviceFarm(nil)}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
@@ -571,6 +577,7 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		APIReader:         mgr.GetAPIReader(),
 		Providers:         testEnvProviders,
+		Git:               gitClient{},
 		SharedPullSecrets: sharedPullSecrets,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "testenvironment")

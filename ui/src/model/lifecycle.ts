@@ -274,7 +274,7 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
   ),
   TestEnvironment: phaseless(
     'Tools the agents’ runs and CI lease. A run of an issue labelled env/<name>, or of a Container whose Standard or Framework names it, takes a lease before its sandbox and returns it when it ends or is suspended; the provider ends a lease past its time.',
-    'Nothing while it is Ready. Otherwise its Ready condition says what to fix: an image that isn’t pinned, or the project’s fence for its pods.',
+    'Nothing while it is Ready. Otherwise its Ready condition says what to fix: an image that isn’t pinned, the project’s fence for its pods, or a remote one’s credential, whose CredentialsValid condition says what is wrong with the Secret it names; past the day’s budget, raise limits.budgetUSDPerDay or wait for tomorrow.',
   ),
 }
 

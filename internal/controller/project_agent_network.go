@@ -44,7 +44,7 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 	egress := fenceEgress(r.ClusterDNS, gitNamespaces)
 	// The project's own test environment pods, on theos-env's port: a run
 	// reaches the one it leased with its lease's token
-	// (docs/plans/test-environments.md, T5). The CI runners' policy has no
+	// (docs/plans/done/test-environments.md, T5). The CI runners' policy has no
 	// such rule: CI runs on an environment's image itself.
 	tcp := corev1.ProtocolTCP
 	envPort := intstr.FromInt32(model.TestEnvPort)

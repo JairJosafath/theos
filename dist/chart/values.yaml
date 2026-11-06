@@ -1014,24 +1014,33 @@ agents:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {cpu: "1", memory: 2Gi}
 
-## Test environments (docs/plans/test-environments.md): the tools a run leases
+## Test environments (docs/plans/done/test-environments.md): the tools a run leases
 ## when the agent sandbox lacks them, such as a browser. A local
 ## TestEnvironment's lease pods copy theos-env in from toolsImage, the
 ## release's agent image, which holds it (the operator's
 ## --test-environment-tools-image). A remote one's machines, such as an aws
 ## member's, download it from toolsURL (the operator's
-## --test-environment-tools-url), an https:// address in which ${arch}
-## becomes amd64 or arm64, with a SHA256SUMS next to it that the machine
-## checks it against: by default the binaries attached to this chart's
-## GitHub release. A machine that can't reach GitHub needs an address of
-## your own; empty leases no remote environment.
+## --test-environment-tools-url), an https:// address in which ${os}
+## becomes linux or darwin (an EC2 Mac's) and ${arch} amd64 or arm64, with a
+## SHA256SUMS next to it that the machine checks it against: by default the
+## binaries attached to this chart's GitHub release. A machine that can't
+## reach GitHub needs an address of your own; empty leases no remote
+## environment. A remote environment with a ci block leases a machine for
+## each CI job labelled env-<name> that waits, which downloads the CI runner
+## from runnerURL (the operator's --test-environment-runner-url) the same
+## way, by default the Gitea runner attached to the same release, checked
+## against the same SHA256SUMS; empty runs no CI job on a remote
+## environment. The machines reach the Git host at its GitProvider's
+## ci.giteaActions.publicURL, which the chart's in-cluster Gitea has none of,
+## so remote CI is off until you give one.
 ##
 testEnvironments:
   toolsImage:
     repository: ghcr.io/jairjosafath/theos/agent-base
     ## Defaults to Chart.appVersion
     tag: ""
-  toolsURL: 'https://github.com/JairJosafath/theos/releases/download/v{{ .Chart.AppVersion }}/theos-env-linux-${arch}'
+  toolsURL: 'https://github.com/JairJosafath/theos/releases/download/v{{ .Chart.AppVersion }}/theos-env-${os}-${arch}'
+  runnerURL: 'https://github.com/JairJosafath/theos/releases/download/v{{ .Chart.AppVersion }}/gitea-runner-linux-${arch}'
   ## The browser the seed makes in each of gitea.projects: a TestEnvironment
   ## named browser on the release's env-browser image (Playwright's browsers
   ## and xvfb-run), which a run of an issue labelled env/browser leases. A

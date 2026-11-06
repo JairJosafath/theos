@@ -51,7 +51,7 @@ const byHandWhy = "Needs a person: "
 // "Acceptance criteria" checklist. envs are the test environments the
 // Task's runs leased: the issue names them, and a criterion left open with
 // no why gets one that says so, so a person sees what they had
-// (docs/plans/test-environments.md, T13).
+// (docs/plans/done/test-environments.md, T13).
 func ByHandIssue(issueTitle string, issue int, pr, task, by string, open []OpenCriterion,
 	envs []string) (title, body string) {
 	if issueTitle = strings.Join(strings.Fields(issueTitle), " "); issueTitle == "" {

@@ -384,9 +384,9 @@ export interface Toleration {
 
 /** One live lease of a test environment, as its provider reports it. */
 export interface TestEnvironmentLease {
-  /** The provider's name for it: for local, the pod's. */
+  /** The provider's name for it: for local, the pod's; for aws, the machine's lease tag. */
   id: string
-  /** The Task whose run holds it. */
+  /** The Task whose run holds it, or, for a remote machine that runs a CI job, ci/<GitProvider>/<runner id>. */
   holder?: string
   state?: 'Pending' | 'Ready' | 'Failed' | 'Ended'
   since?: string
@@ -397,9 +397,44 @@ export interface TestEnvironmentLease {
 }
 
 /**
+ * A test package run a deviceFarm environment's lease asked for, over its Git
+ * host, with theos-env test (docs/plans/done/test-environments.md, step 10).
+ */
+export interface TestEnvironmentTestRun {
+  /** The run's ID on the provider: its lease and its request. */
+  id: string
+  /** The lease whose branch the request is on. */
+  lease: string
+  /** The Task whose run holds the lease. */
+  holder?: string
+  /** The Container on whose repository the lease's branch is. */
+  container?: string
+  /** The request commit on the lease's branch, and the run's commit the app and tests were built from. */
+  request: string
+  commit?: string
+  /** The test package's type, such as instrumentation or xctest. */
+  type?: string
+  /** Pending or Running on the provider, Reported once its result is on the branch, Rejected when nothing ran. */
+  state?: 'Pending' | 'Running' | 'Reported' | 'Rejected'
+  /** Once there is one: Passed, Warned, Failed, Skipped, Errored, Stopped or Rejected. */
+  result?: 'Passed' | 'Warned' | 'Failed' | 'Skipped' | 'Errored' | 'Stopped' | 'Rejected'
+  /** The result's one line, such as "passed: 12 passed of 12 tests on 2 devices". */
+  outcome?: string
+  /** The run on the provider's console. */
+  url?: string
+  /** What it cost, in thousandths of a US dollar. */
+  costMilliUSD?: number
+  since?: string
+  /** The operator's result commit on the lease's branch. */
+  answer?: string
+  /** The pull request comment still to post once the holder has a pull request; empty once posted. */
+  comment?: string
+}
+
+/**
  * A named set of tools the agents' runs and CI lease, such as a browser, an
- * Android emulator or a game engine on a GPU (docs/plans/test-environments.md):
- * exactly one provider member, its limits and its CI pool.
+ * Android emulator or a game engine on a GPU (docs/plans/done/test-environments.md):
+ * exactly one provider member, its limits and its CI.
  */
 export interface TestEnvironment extends K8sObject {
   spec: {
@@ -415,16 +450,52 @@ export interface TestEnvironment extends K8sObject {
       nodeSelector?: Record<string, string>
       tolerations?: Toleration[]
     }
-    /** maxLeases (default 2) at once, each lasting maxLeaseMinutes (default 180) at most. */
-    limits?: { maxLeases?: number; maxLeaseMinutes?: number }
-    /** A pool of size (default 0) CI runner pods for jobs that run on env-<name>. */
+    /**
+     * An EC2 machine per lease in the user's AWS account, from imageId in
+     * subnetId; an EC2 Mac (a mac* instanceType) on a dedicated host the
+     * operator keeps for mac.keepHostHours (default 24). Only the operator
+     * reads the Secret credentialsSecretRef names.
+     */
+    aws?: {
+      region: string
+      /** The twelve-digit account the credential must be in. */
+      account?: string
+      instanceType: string
+      mac?: { keepHostHours?: number }
+      imageId: string
+      subnetId: string
+      credentialsSecretRef: LocalRef
+    }
+    /** AWS Device Farm's real phones, which run the test packages a lease's run asks for. */
+    deviceFarm?: {
+      projectArn: string
+      devicePoolArn: string
+      account?: string
+      credentialsSecretRef: LocalRef
+    }
+    /**
+     * maxLeases (default 2) at once, each lasting maxLeaseMinutes (default
+     * 180) at most, costing budgetUSDPerDay a UTC day at most (required for a
+     * remote member).
+     */
+    limits?: { maxLeases?: number; maxLeaseMinutes?: number; budgetUSDPerDay?: number }
+    /**
+     * A local member's pool of size (default 0) CI runner pods for jobs that
+     * run on env-<name>; an aws member's {} leases a machine for each such job.
+     */
     ci?: { size?: number; runnerImage?: string }
   }
   status?: {
     leases?: TestEnvironmentLease[]
     /** What the leases cost on day (UTC, such as 2026-11-06), the ended ones' included. */
     spentToday?: { day: string; milliUSD?: number }
-    /** Ready: its image is pinned and the project's fence for its pods exists. */
+    /** A deviceFarm environment's test runs, the last ones of each lease. */
+    testRuns?: TestEnvironmentTestRun[]
+    /**
+     * Ready: a local member's image is pinned and the project's fence for its
+     * pods exists, a remote member's credential is valid; CredentialsValid,
+     * for a remote member; CI, for an aws member with a ci block.
+     */
     conditions?: Condition[]
   }
 }

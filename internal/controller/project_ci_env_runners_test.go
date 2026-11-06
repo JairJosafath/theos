@@ -31,7 +31,7 @@ func labelPods(ns, label string) []corev1.Pod {
 	return out
 }
 
-// docs/plans/test-environments.md, step 3: CI runs on the environment.
+// docs/plans/done/test-environments.md, step 3: CI runs on the environment.
 var _ = Describe("CI runner pool of a test environment", func() {
 	It("keeps ci.size pods for env-<name>, built from the environment's image and devices, and none at 0", func() {
 		ns := newProjectNamespace()

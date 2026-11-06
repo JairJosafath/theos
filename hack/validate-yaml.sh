@@ -179,7 +179,7 @@ if grep -A1 '^apiVersion: theos.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml
 	exit 1
 fi
 echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog, bundles or Agents"
-# The seed's browser in each project (docs/plans/test-environments.md, T14):
+# The seed's browser in each project (docs/plans/done/test-environments.md, T14):
 # on by default, on the release's env-browser image; off, none.
 browser=$(awk '/^kind: TestEnvironment$/ { te = 1 } te && /^  namespace: / { print $2; te = 0 }' \
 	"$OUT/chart-gitea-catalog.yaml")

@@ -25,7 +25,7 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// The device samples (docs/plans/test-environments.md, step 5): android's
+// The device samples (docs/plans/done/test-environments.md, step 5): android's
 // KVM and godot's GPU, runtime class and toleration reach the lease pod and
 // the pods of the environment's CI pool as the samples give them, each
 // device both requested and limited, as an extended resource must be.

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The android test environment (docs/plans/test-environments.md, step 5): the
+# The android test environment (docs/plans/done/test-environments.md, step 5): the
 # Android SDK's command-line, platform and build tools, the emulator with an
 # Android 16 (API 36) Google APIs system image for x86_64 and an AVD of it,
 # theos, and JDK 17, so a run builds an app with its Gradle wrapper and runs

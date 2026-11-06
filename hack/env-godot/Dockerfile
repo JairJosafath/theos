@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The godot test environment (docs/plans/test-environments.md, step 5): the
+# The godot test environment (docs/plans/done/test-environments.md, step 5): the
 # Godot 4.7 engine for Linux, with the libraries its renderers load and a
 # virtual display, so a run tests a game and takes its pictures. Tests run
 # headless, with no GPU (godot --headless --path . ...); a picture or a movie

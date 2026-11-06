@@ -1,5 +1,5 @@
 # A browser the agents and CI run tests and picture scripts on when the
-# agent sandbox lacks one (docs/plans/test-environments.md): a pod per lease
+# agent sandbox lacks one (docs/plans/done/test-environments.md): a pod per lease
 # in this namespace, on the release's env-browser image (Playwright's
 # browsers and a virtual display), fenced like an agent sandbox by the
 # project's NetworkPolicy theos-test-environment. A run gets it when its

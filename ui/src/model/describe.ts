@@ -253,9 +253,14 @@ export function describeCondition(condition: Condition): ConditionInfo {
   return { title: wording?.unknown ?? `${splitWords(condition.type)}: not known yet`, tone: 'unknown', detail }
 }
 
-/** "ReferencesResolved" becomes "References resolved". */
+/** "ReferencesResolved" becomes "References resolved"; an acronym keeps its capitals: "CIRunners" is "CI runners". */
 export function splitWords(identifier: string): string {
-  const words = identifier.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+  const words = identifier
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(' ')
+    .map((w) => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase()))
+    .join(' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 

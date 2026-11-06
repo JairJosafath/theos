@@ -26,7 +26,7 @@ import (
 const labelComponent = "app.kubernetes.io/component"
 
 // ensureTestEnvironmentNetwork fences the project's local test environment
-// pods, which run the agents' code (docs/plans/test-environments.md, T5).
+// pods, which run the agents' code (docs/plans/done/test-environments.md, T5).
 func (r *ProjectReconciler) ensureTestEnvironmentNetwork(ctx context.Context, project *c4v1beta1.Project) error {
 	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{
 		Name: model.TestEnvNetworkPolicy, Namespace: project.Namespace}}

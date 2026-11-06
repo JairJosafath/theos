@@ -133,18 +133,31 @@ var _ = Describe("TestEnvironment", func() {
 		}, "spec.limits.maxLeases"),
 		Entry("two members", func(env *c4v1beta1.TestEnvironment) {
 			env.Spec.AWS = newGPUEnvironment(env.Namespace).Spec.AWS
-		}, "set exactly one provider member: local or aws"),
+		}, "set exactly one provider member: local, aws or deviceFarm"),
 		Entry("an aws member without a budget (step 7)", func(env *c4v1beta1.TestEnvironment) {
 			env.Spec.Local, env.Spec.AWS = nil, newGPUEnvironment(env.Namespace).Spec.AWS
 		}, "an aws environment needs limits.budgetUSDPerDay"),
-		Entry("an EC2 Mac, which needs a dedicated host", func(env *c4v1beta1.TestEnvironment) {
+		Entry("a Mac's host settings on a type that is no Mac (step 9)", func(env *c4v1beta1.TestEnvironment) {
+			*env = *newGPUEnvironment(env.Namespace)
+			env.Spec.AWS.Mac = &c4v1beta1.TestEnvironmentMac{KeepHostHours: 24}
+		}, "mac is for an EC2 Mac instanceType"),
+		Entry("a Mac host kept less than the 24 hours EC2 bills it for (step 9)", func(env *c4v1beta1.TestEnvironment) {
 			*env = *newGPUEnvironment(env.Namespace)
 			env.Spec.AWS.InstanceType = "mac2.metal"
-		}, "EC2 Mac instance types need a dedicated host"),
+			env.Spec.AWS.Mac = &c4v1beta1.TestEnvironmentMac{KeepHostHours: 12}
+		}, "spec.aws.mac.keepHostHours"),
 		Entry("an image that is no AMI", func(env *c4v1beta1.TestEnvironment) {
 			*env = *newGPUEnvironment(env.Namespace)
 			env.Spec.AWS.ImageID = "ubuntu-24.04"
 		}, "imageId must be an AMI id"),
+		Entry("an aws environment keeping idle CI runners (step 8)", func(env *c4v1beta1.TestEnvironment) {
+			*env = *newGPUEnvironment(env.Namespace)
+			env.Spec.CI = &c4v1beta1.TestEnvironmentCI{Size: 1}
+		}, "an aws environment's ci leases a machine for each waiting job"),
+		Entry("an aws environment with a CI runner image (step 8)", func(env *c4v1beta1.TestEnvironment) {
+			*env = *newGPUEnvironment(env.Namespace)
+			env.Spec.CI = &c4v1beta1.TestEnvironmentCI{RunnerImage: "theos/ci-runner-base:dev"}
+		}, "takes no ci.runnerImage"),
 	)
 })
 
@@ -161,14 +174,13 @@ func newGPUEnvironment(ns string) *c4v1beta1.TestEnvironment {
 }
 
 // gpuCredential makes Secret gpu-aws in ns with a new key of account, which
-// envAWSFake takes, and returns the key's ID.
-func gpuCredential(ns, account string) string {
+// envAWSFake takes.
+func gpuCredential(ns, account string) {
 	GinkgoHelper()
 	key := rand.Text()
 	envAWSFake.AddAccount(key, account)
 	mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "gpu-aws"),
 		Data: map[string][]byte{"accessKeyId": []byte(key), "secretAccessKey": []byte(rand.Text())}})
-	return key
 }
 
 // credentialsValid waits for env's CredentialsValid to have status and
@@ -186,7 +198,7 @@ func credentialsValid(env *c4v1beta1.TestEnvironment, status metav1.ConditionSta
 	return cond
 }
 
-// docs/plans/test-environments.md, step 7: a remote member's credential and
+// docs/plans/done/test-environments.md, step 7: a remote member's credential and
 // budget, on the fake provider; the EC2 adapter itself is tested on a fake
 // EC2 in internal/adapters/awsenv.
 var _ = Describe("TestEnvironment on AWS", func() {
