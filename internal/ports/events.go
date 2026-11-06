@@ -37,7 +37,7 @@ type Event struct {
 	// Number is the issue or pull request, 0 when none.
 	Number int
 	// Branch is the branch a push or run is on, "" when none or when the
-	// host doesn't say (a Gitea status names only its commit).
+	// host doesn't say (a commit status may name only its commit).
 	Branch string
 	// Kind is the host's event name, for logs only.
 	Kind string
