@@ -144,8 +144,12 @@ export function releasePatch(crew: Crew, next: CrewReleaseSettings, from?: strin
     next.publish?.latest === now.publish?.latest &&
     next.publish?.source?.path === now.publish?.source?.path &&
     next.publish?.source?.tagPrefix === now.publish?.source?.tagPrefix
-  if (!same) ops.push(...publishPatch(crew, publishValue(next.publish), from))
-  return ops
+  if (same) return ops
+  // The test leads the whole patch, where server.mjs looks for it, also when a
+  // switch changed in the same save (theos#31).
+  const publish = publishPatch(crew, publishValue(next.publish), from)
+  const test = publish[0].op === 'test' ? publish.slice(0, 1) : []
+  return [...test, ...ops, ...publish.slice(test.length)]
 }
 
 /** The settings form's publish fields as a Crew's spec.publishReleases. */

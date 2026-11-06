@@ -66,6 +66,33 @@ describe('a Crew’s release settings as a patch', () => {
       { op: 'remove', path: '/spec/publishReleases' },
     ])
   })
+
+  it('starts with the test of the resourceVersion, also when a switch changed too (theos#31)', () => {
+    // server.mjs looks for the test first, and refused the save with the switch's op before it.
+    const read: Crew = { ...publishing, metadata: { ...publishing.metadata, resourceVersion: '41' } }
+    const test = { op: 'test', path: '/metadata/resourceVersion', value: '41' }
+    const off = { ...releaseSettings(read), tagReleases: false, publish: undefined }
+    expect(releasePatch(read, off)).toEqual([
+      test,
+      { op: 'add', path: '/spec/tagReleases', value: false },
+      { op: 'remove', path: '/spec/publishReleases' },
+    ])
+    const now = releaseSettings(read)
+    const token = { ...now, prepareReleases: true, publish: { ...now.publish!, tokenSecret: 'gh-2' } }
+    expect(releasePatch(read, token, '40')).toEqual([
+      { ...test, value: '40' },
+      { op: 'add', path: '/spec/prepareReleases', value: true },
+      {
+        op: 'add',
+        path: '/spec/publishReleases',
+        value: { github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'gh-2' } } },
+      },
+    ])
+    // A switch alone tests nothing.
+    expect(releasePatch(read, { ...now, prepareReleases: true })).toEqual([
+      { op: 'add', path: '/spec/prepareReleases', value: true },
+    ])
+  })
 })
 
 describe('a Crew’s published source as a patch', () => {

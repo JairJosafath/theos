@@ -42,7 +42,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
           # A self-hosted runner keeps its npm cache on a volume (make gh-runner).
@@ -57,5 +57,16 @@ jobs:
       - name: Check
         run: npm run check
 
-      - name: Build
-        run: npm run build
+      # The end-to-end tests drive the built UI in Chromium against a fake API
+      # (ui/README.md, Tests); make check leaves them out, as a device may
+      # have no Chromium (theos#31). They launch the headless shell alone.
+      # --with-deps installs its system libraries with sudo: the self-hosted
+      # runner's image has neither them nor apt's lists, which
+      # scripts/browser.mjs needs to fetch them without root. A self-hosted
+      # runner keeps the browser in ~/.cache/ms-playwright, on the caches'
+      # volume (make gh-runner), so only its first job downloads it.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium-headless-shell
+
+      - name: Build and run the end-to-end tests
+        run: npm run test:e2e

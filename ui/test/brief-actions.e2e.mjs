@@ -119,7 +119,14 @@ describe('the Brief page’s actions', () => {
       .waitFor({ timeout: 5000 })
   })
 
-  it('publishes an app’s releases, and stops', async () => {
+  it('publishes an app’s releases, and stops, keeping the other apps’ entries', async () => {
+    // The demo's Brief already publishes orders-api (it sets that Crew's
+    // target, #989): adding storefront and removing it again leaves that entry.
+    const others = api.get('briefs', 'webshop').spec.releases
+    assert.deepEqual(
+      others.map((r) => r.container),
+      ['orders-api'],
+    )
     const add = settings().getByRole('form', { name: "Publish an app's releases" })
     await add.getByLabel('App', { exact: true }).selectOption('storefront')
     await add.getByLabel(/^GitHub repository/).fill('webshop-co/storefront')
@@ -138,7 +145,7 @@ describe('the Brief page’s actions', () => {
       return ops.slice(1)
     }
     let ops = await patchOf(() => add.getByRole('button', { name: 'Publish its releases' }).click())
-    assert.deepEqual(tested(ops), [{ op: 'add', path: '/spec/releases', value: [entry] }])
+    assert.deepEqual(tested(ops), [{ op: 'add', path: '/spec/releases', value: [...others, entry] }])
     const remove = settings().getByRole('button', { name: 'Stop publishing storefront' })
     await remove.waitFor({ timeout: 5000 })
     if (process.env.THEOS_UI_SHOTS) {
@@ -146,7 +153,7 @@ describe('the Brief page’s actions', () => {
       await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-brief-settings.png'), fullPage: true })
     }
     ops = await patchOf(() => remove.click())
-    assert.deepEqual(tested(ops), [{ op: 'add', path: '/spec/releases', value: [] }])
+    assert.deepEqual(tested(ops), [{ op: 'add', path: '/spec/releases', value: others }])
     await remove.waitFor({ state: 'detached', timeout: 5000 })
   })
 

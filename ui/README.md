@@ -368,7 +368,9 @@ npm run check       # typecheck, lint, format check and npm test
 ```
 
 `test:e2e` needs Chromium (see below) but no cluster: the fake API pushes watch
-events and the test checks that the page follows.
+events and the test checks that the page follows. The UI workflow runs it after
+`npm run check`; `make check` (`make ui-test`) doesn't, so run it for a change to
+the pages, the demo fixture or `server.mjs`.
 
 ## Screenshots
 

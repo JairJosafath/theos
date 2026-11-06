@@ -1,6 +1,7 @@
 // End-to-end check of a Crew page's actions (design.md, UI actions) against a
 // fake Kubernetes API serving the demo fixture: pause and resume, parallel,
-// the release settings, the re-run of a failed release run, a write the API
+// the release settings (where it publishes saved on the Brief that sets it,
+// else on the Crew), the re-run of a failed release run, a write the API
 // refuses showing its message, and with OIDC a signed-out page saying to sign
 // in instead of offering the buttons.
 //
@@ -125,27 +126,97 @@ describe('a Crew page’s actions', () => {
     return ops.slice(1)
   }
 
-  it('changes the release settings, naming the token Secret only', async () => {
+  // The demo's Brief sets where orders-api publishes (#989), so the page saves the
+  // publish fields on the Brief's spec.releases entry; the operator then writes it
+  // onto the Crew with its mark, and with no entry the Crew's target is its own
+  // (internal/controller/brief_release.go, crew_publish.go). The fake API runs no
+  // operator: these do its part.
+  const MARK = 'theos.factory.io/brief-publish-releases'
+  const brief = () => api.get('briefs', 'webshop')
+  const crewPath = () => `/apis/theos.factory.io/v1beta1/namespaces/${namespace}/crews/${CREW}`
+  const briefPath = () => `/apis/theos.factory.io/v1beta1/namespaces/${namespace}/briefs/webshop`
+  /** The operator writes the Brief's entry onto the Crew, and marks it. */
+  function briefSets(publish) {
+    const c = structuredClone(crew())
+    c.spec.publishReleases = publish
+    c.metadata.annotations = { ...c.metadata.annotations, [MARK]: JSON.stringify(publish) }
+    api.modify('crews', c)
+  }
+  /** The person removes the Brief's entry; the operator drops the mark, and the condition goes. */
+  function briefLetsGo() {
+    const b = structuredClone(brief())
+    b.spec.releases = b.spec.releases.filter((r) => r.container !== CREW)
+    api.modify('briefs', b)
+    const c = structuredClone(crew())
+    delete c.metadata.annotations[MARK]
+    c.status.conditions = c.status.conditions.filter((x) => x.type !== 'ReleaseTarget')
+    api.modify('crews', c)
+  }
+  /** Resolves to the writes the fake API got after the first `count`, once there are `n`. */
+  async function writesAfter(count, n) {
+    for (let i = 0; i < 100 && api.writes.length < count + n; i++) await new Promise((r) => setTimeout(r, 50))
+    assert.equal(api.writes.length, count + n, `the fake API got ${n} writes`)
+    return api.writes.slice(count)
+  }
+
+  it('changes the release settings, naming the token Secret only, on the Brief that sets where it publishes', async () => {
     // The last release and its settings are on the page's Activity tab (docs/plans/done/ui-shell.md, step 2).
     await page.getByRole('tab', { name: 'Activity' }).click()
     const form = releaseForm()
+    await form.getByText(`Brief webshop sets where releases go: saving changes its spec.releases entry`).waitFor()
+    assert.equal(await form.getByLabel('Publish releases to GitHub').count(), 0, 'no switch: the Brief publishes it')
+    const count = api.writes.length
     await form.getByLabel('Prepare releases').check()
     await form.getByLabel('Token Secret').fill('orders-api-release-token')
     await form.getByRole('button', { name: 'Save release settings' }).click()
-    await until((c) => c.spec.prepareReleases === true, 'took prepareReleases')
-    assert.deepEqual(crew().spec.publishReleases, {
+    const [toCrew, toBrief] = await writesAfter(count, 2)
+    const publish = {
       github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'orders-api-release-token' } },
-    })
-    assert.deepEqual(tested(api.writes.at(-1).body), [
-      { op: 'add', path: '/spec/prepareReleases', value: true },
+    }
+    // Prepare is the Crew's own; where it publishes is the Brief's entry.
+    assert.equal(toCrew.path, crewPath())
+    assert.deepEqual(toCrew.body, [{ op: 'add', path: '/spec/prepareReleases', value: true }])
+    assert.equal(toBrief.path, briefPath())
+    assert.deepEqual(tested(toBrief.body), [
+      { op: 'add', path: '/spec/releases', value: [{ container: CREW, ...publish }] },
+    ])
+    assert.equal(crew().spec.prepareReleases, true)
+    assert.equal(crew().spec.publishReleases.github.tokenSecretRef.name, 'orders-api-github', 'the operator’s to write')
+
+    // Once the operator wrote it, the form follows the Crew again: nothing left to save.
+    briefSets(publish)
+    await form.getByRole('button', { name: 'Save release settings' }).and(page.locator(':disabled')).waitFor()
+    assert.equal(await form.getByLabel('Token Secret').inputValue(), 'orders-api-release-token')
+  })
+
+  it('changes a release target of the Crew’s own on the Crew, testing its resourceVersion first', async () => {
+    briefLetsGo()
+    const form = releaseForm()
+    const publishing = form.getByLabel('Publish releases to GitHub')
+    await publishing.waitFor()
+    assert.equal(await publishing.isChecked(), true, 'it keeps the target the Brief set')
+    const count = api.writes.length
+    // A switch and the target in one save: the test still leads the patch (theos#31).
+    await form.getByLabel('Prepare releases').uncheck()
+    await form.getByLabel('Token Secret').fill('orders-api-own-token')
+    await form.getByRole('button', { name: 'Save release settings' }).click()
+    const [write] = await writesAfter(count, 1)
+    assert.equal(write.path, crewPath())
+    assert.deepEqual(tested(write.body), [
+      { op: 'add', path: '/spec/prepareReleases', value: false },
       {
         op: 'add',
         path: '/spec/publishReleases',
-        value: {
-          github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'orders-api-release-token' } },
-        },
+        value: { github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'orders-api-own-token' } } },
       },
     ])
+    await until(
+      (c) =>
+        c.spec.prepareReleases === false &&
+        c.spec.publishReleases.github.tokenSecretRef.name === 'orders-api-own-token',
+      'took its own target',
+    )
+    await page.getByText('It publishes them to webshop-co/orders-api.').waitFor()
   })
 
   it('shows the API server’s message when the release settings break a rule', async () => {
