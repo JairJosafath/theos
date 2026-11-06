@@ -26,10 +26,12 @@ const (
 const PlanAPIVersion = "theos.factory.io/v1beta1"
 
 // planAPIVersions are the apiVersions a plan may carry: every served version,
-// since a plan a person wrote by hand, or one written before the upgrade, may
-// still say v1alpha1. Nothing is converted: the operator reads a plan's fields
-// the same at either version and applies them as v1beta1 objects.
-var planAPIVersions = []string{PlanAPIVersion, "theos.factory.io/v1alpha1"}
+// since a plan a person wrote by hand, or one written before an upgrade, may
+// still say an older one. Every kind serves v1beta1 alone (#1963); a version
+// served beside it joins the list while it shares v1beta1's plan fields, as
+// the operator reads a plan's fields the same at either and applies them as
+// objects at the storage version.
+var planAPIVersions = []string{PlanAPIVersion}
 
 // LabelDesign marks an issue that is a design idea for a Crew's designer.
 const LabelDesign = "status/design"

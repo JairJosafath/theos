@@ -390,9 +390,11 @@ guide names another version; `hack/release_test.sh` holds both to that, and
 
 A release that deprecates a version gives its drop issue the date: once the
 release is published, the maintainer writes the earliest drop date (the
-release's date plus 90 days) into that issue's body (#1963 for `v1alpha1`).
-The CRDs' warnings, the guide and the chart's README name the rule ("a
-release 90 or more days after v0.30.0"), never the date (#1983).
+release's date plus 90 days) into that issue's body. The CRDs' warnings,
+the guide and the chart's README name the rule ("a release 90 or more days
+after vX.Y.Z"), never the date (#1983). No version is deprecated today:
+every kind is served at `v1beta1` alone, `v1alpha1` dropped before theos's
+first release (#1963).
 
 No agent can pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has

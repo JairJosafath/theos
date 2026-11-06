@@ -18,12 +18,6 @@ const gitea = "gitea"
 // Gitea today, each with its count (#1172). It may only shrink: a change that
 // removes hits lowers its entry, and one that drops a file to none removes it.
 var giteaAllowlist = map[string]int{
-	"api/v1alpha1/brief_types.go":                                 1,
-	"api/v1alpha1/deploytarget_types.go":                          1,
-	"api/v1alpha1/framework_types.go":                             1,
-	"api/v1alpha1/gitprovider_types.go":                           17,
-	"api/v1alpha1/standard_types.go":                              1,
-	"api/v1alpha1/zz_generated.deepcopy.go":                       10,
 	"api/v1beta1/brief_types.go":                                  1,
 	"api/v1beta1/deploytarget_types.go":                           1,
 	"api/v1beta1/framework_types.go":                              1,
@@ -78,7 +72,6 @@ var giteaAllowlist = map[string]int{
 	"internal/controller/container_standard_checks_test.go":       1,
 	"internal/controller/container_standard_test.go":              2,
 	"internal/controller/container_standard_unit_test.go":         7,
-	"internal/controller/conversion_test.go":                      1,
 	"internal/controller/crew_bump_test.go":                       1,
 	"internal/controller/crew_controller.go":                      1,
 	"internal/controller/crew_full_check_test.go":                 4,

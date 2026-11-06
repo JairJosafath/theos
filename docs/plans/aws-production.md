@@ -113,8 +113,9 @@ alarms and runbooks) were written down and left to the reader.
    that renders no `infra/operations.ts` can't be carried, and the
    condition says `ChangedAfterScaffold`: a Task changes the file like any
    other code. A field a client sets today is
-   never removed or reinterpreted (the `v1alpha1` promise of
-   [plans/done/before-clients-return.md](done/before-clients-return.md)). `rpo` and
+   never removed or reinterpreted (the promise of
+   [plans/done/before-clients-return.md](done/before-clients-return.md), now
+   [Compatibility](../design.md#compatibility)). `rpo` and
    `rto` are stated objectives for the production tier: they are written
    into the runbook and the README, the planner derives them from the idea,
    and the Standard's test checks the two things it can see (point-in-time
@@ -254,7 +255,7 @@ check`, and leaves main working. A template step bumps the four places
 | Step | Issue | Waits on | How we know |
 | --- | --- | --- | --- |
 | 1. This plan and the design change | #1067 (`Refs`) | | landed in `docs/plans/` and `docs/design.md` |
-| 2. `Container.spec.operations` | #1107 | | the field (no tier), its CEL (patterns, ranges) and defaults; mutable, with the condition `OperationsApplied` saying `ChangedAfterScaffold` until step 12; `scaffold.Input.Operations`; `internal/model`'s defaults as a table-tested function; the UI's types and Container page; the planner guide's rule and `plan/model.yaml` check; samples; the `v1alpha1` guard sees only additions; envtest creates a Container with and without the block, and changes it |
+| 2. `Container.spec.operations` | #1107 | | the field (no tier), its CEL (patterns, ranges) and defaults; mutable, with the condition `OperationsApplied` saying `ChangedAfterScaffold` until step 12; `scaffold.Input.Operations`; `internal/model`'s defaults as a table-tested function; the UI's types and Container page; the planner guide's rule and `plan/model.yaml` check; samples; the compatibility guard (`test/compat`) sees only additions; envtest creates a Container with and without the block, and changes it |
 | 3. `aws-lambda-ts` v1.1.0 and `aws-standard` v1.6.0 | #1108 | #1107 | `infra/operations.ts` rendered from the block; the tier from the `tier` context, `development` when absent, synthesized for both tiers into `cdk.out/<tier>/` by `make check` and CI; backup plan and vault; alarms, topic, subscription, dashboard; outputs; termination protection; X-Ray by tier; Powertools; `docs/runbook.md`; the digest rewritten; the Standard's test enforces decision 5 for both tiers; `cfn-lint -I` on both; a scaffolded copy's `make check` passes, and fails when `operations.ts` and a stack disagree |
 | 4. `aws-lambda-py` and `aws-lambda-go` follow | #1109 | #1108 | the same, Powertools for Python, `slog` for Go; `aws-standard` bump |
 | 5. `aws-fargate-ts` follows | #1110 | #1108 | the same, plus NAT per zone in production, the ECS deployment alarm, ADOT tracing by tier; `aws-standard` bump |
@@ -793,7 +794,7 @@ copies step 10's two levels of retry and one dead-letter queue, and settled:
 
 ## Design
 
-- **The block in the API.** `OperationsSpec` in `api/v1alpha1/container_types.go`
+- **The block in the API.** `OperationsSpec` in `api/v1beta1/container_types.go`
   with `Backups{RetentionDays int32 (0..3650), CopyToRegion string (an AWS
   region pattern or empty)}`, `Recovery{RPO, RTO string (`^[0-9]+(m|h|d)$`)}`
   and `Alerts{Email string}`; no tier. Defaults are applied by
