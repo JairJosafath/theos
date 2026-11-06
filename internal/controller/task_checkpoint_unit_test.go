@@ -323,7 +323,7 @@ func TestWaitForTheAgentLooksAgain(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			status := &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing,
 				AgentBackAt: &metav1.Time{Time: now.Add(tt.back)}}
-			if got := r.wait(task, status, tt.step); got.RequeueAfter != tt.want {
+			if got := r.wait(t.Context(), task, status, tt.step); got.RequeueAfter != tt.want {
 				t.Errorf("wait() = %+v, want a requeue after %s", got, tt.want)
 			}
 		})

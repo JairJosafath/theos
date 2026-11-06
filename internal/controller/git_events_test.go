@@ -17,10 +17,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
@@ -218,5 +220,68 @@ var _ = Describe("Git events", func() {
 			Expect(gitEventTaskRequests(c)(ctx, e)).To(BeEmpty())
 			Expect(gitEventBriefRequest(c)(ctx, e)).To(BeEmpty())
 		}
+	})
+
+	It("stretches the polls that wait for the host to 10 minutes while deliveries arrive (#1222)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 2)
+		mustCreate(newCrew(ns))
+		var gp c4v1beta1.GitProvider
+		Expect(k8sClient.Get(ctx, key(ns, "gitea"), &gp)).To(Succeed())
+		secret := registeredSecret(&gp)
+		var container c4v1beta1.Container
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+
+		// Reconcilers with the default intervals, not the suite's second.
+		crewR := &CrewReconciler{Client: managerClient, Scheme: scheme.Scheme, APIReader: secretReader{k8sClient},
+			Git: fakeGitClient{gitFake}, Now: crewNow}
+		taskR := &TaskReconciler{Client: managerClient, Now: taskNow}
+		containerR := &ContainerReconciler{Client: managerClient, APIReader: k8sClient, Git: fakeGitClient{gitFake}}
+		task := newTask(ns, "orders-api-1", "")
+		wait := model.TaskStep{Action: model.ActionWait}
+		// The Crew's requeue, and a Task's waits for checks and for a
+		// Standard change and a Container's for its checks, in a reconcile
+		// that read the GitProvider as it is now.
+		polls := func(g Gomega) (crew, checks, standard, containerChecks time.Duration) {
+			result, err := crewR.Reconcile(ctx, reconcile.Request{NamespacedName: key(ns, "orders-api")})
+			g.Expect(err).NotTo(HaveOccurred())
+			hostCtx := withHostEvents(ctx, managerClient, ns, gp.Name)
+			checks = taskR.wait(hostCtx, task, &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskChecking}, wait).RequeueAfter
+			standard = taskR.wait(hostCtx, task, &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskBlocked}, wait).RequeueAfter
+			containerChecks = containerR.refreshChecks(hostCtx, &container, container.Status.DeepCopy()).RequeueAfter
+			return result.RequeueAfter, checks, standard, containerChecks
+		}
+
+		By("polling at the usual intervals while Events is Registered")
+		Eventually(func(g Gomega) {
+			crew, checks, standard, containerChecks := polls(g)
+			g.Expect(crew).To(Equal(time.Minute))
+			g.Expect(checks).To(Equal(15 * time.Second))
+			g.Expect(standard).To(Equal(time.Minute))
+			g.Expect(containerChecks).To(Equal(time.Minute))
+		}).Should(Succeed())
+
+		By("waiting 10 minutes once a verified delivery turns Events Receiving")
+		body, header := fakeDelivery(secret, "orders-api", 0)
+		Expect(postDelivery(gitEventsServer(), ns, gp.Name, body, header)).To(Equal(http.StatusAccepted))
+		eventsStatus(&gp, metav1.ConditionTrue, c4v1beta1.ReasonEventsReceiving)
+		Eventually(func(g Gomega) {
+			crew, checks, standard, containerChecks := polls(g)
+			g.Expect(crew).To(Equal(10 * time.Minute))
+			g.Expect(checks).To(Equal(10 * time.Minute))
+			g.Expect(standard).To(Equal(10 * time.Minute))
+			g.Expect(containerChecks).To(Equal(10 * time.Minute))
+		}).Should(Succeed())
+
+		By("polling as usual again once a forged delivery turns Events DeliveryRefused")
+		body, header = fakeDelivery("not-the-secret", "orders-api", 0)
+		Expect(postDelivery(gitEventsServer(), ns, gp.Name, body, header)).To(Equal(http.StatusUnauthorized))
+		eventsStatus(&gp, metav1.ConditionFalse, c4v1beta1.ReasonEventsRefused)
+		Eventually(func(g Gomega) {
+			crew, checks, _, _ := polls(g)
+			g.Expect(crew).To(Equal(time.Minute))
+			g.Expect(checks).To(Equal(15 * time.Second))
+		}).Should(Succeed())
 	})
 })

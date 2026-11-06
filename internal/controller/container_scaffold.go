@@ -62,7 +62,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if live.Status.Phase == c4v1beta1.ContainerReady {
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 	}
 
 	// Show progress before the slow part.
@@ -338,7 +338,7 @@ func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1beta1.Co
 		c4v1beta1.ReasonScaffolded, message)
 	// The scaffold's push starts CI; read its result like every later reconcile
 	// does. A status write alone doesn't reconcile the Container again.
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.writeStatus(ctx, container, status)
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.writeStatus(ctx, container, status)
 }
 
 // fail stops the Container with a reason a person has to act on.

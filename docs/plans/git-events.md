@@ -174,7 +174,16 @@ on each step.
    Error retries and waits on anything but the host (agent slots, Secrets,
    the merge retry, plan pushes) keep their intervals. With `Events` False
    for any reason, everything polls as today: the controllers' tests run
-   without events unless they test them.
+   without events unless they test them. A reconcile reads its
+   GitProvider from the cache once, into its context
+   (`withHostEvents`), and each wait for the host asks `hostRecheck`
+   (`internal/controller/host_recheck.go`). The Crew stretches only its
+   poll of a Ready Container's issues; one waiting for its Container is
+   woken by the Container's watch. The Brief keeps its needs-input
+   recheck (#1222): every wait on it is for something in the cluster (a
+   Secret, an Agent, a Container to be Ready), not the host, so it is a
+   wait on anything but the host; the Brief's one poll of the host, its
+   reviewers' suggestions, is 10 minutes already.
 10. **The chart installs the receiver when it installs Gitea.**
     `gitEvents.enabled` (default true) and `gitEvents.port` (8082) render a
     Service selecting the manager, its container port, both flags (the URL

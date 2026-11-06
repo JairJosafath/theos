@@ -3,7 +3,25 @@ package model
 import (
 	"net/url"
 	"strings"
+	"time"
 )
+
+// EventsFallbackPoll is how long a poll that waits for the Git host waits
+// while its GitProvider's deliveries arrive (Events True): a delivery
+// reconciles what it concerns at once, and the poll only catches a missed
+// one (decision 9, #1222).
+const EventsFallbackPoll = 10 * time.Minute
+
+// HostRecheck is when a poll that waits for the Git host looks again: d, or
+// EventsFallbackPoll when that is longer and events, its GitProvider's
+// deliveries, arrive. Error retries and waits on anything but the host keep
+// their intervals and don't use it.
+func HostRecheck(d time.Duration, events bool) time.Duration {
+	if events {
+		return max(d, EventsFallbackPoll)
+	}
+	return d
+}
 
 // The Git host's event hook (docs/plans/git-events.md, decisions 3 and 4).
 

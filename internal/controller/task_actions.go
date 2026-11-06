@@ -51,7 +51,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 	log := logf.FromContext(ctx)
 	switch step.Action {
 	case model.ActionWait:
-		return r.wait(task, status, step), nil
+		return r.wait(ctx, task, status, step), nil
 
 	case model.ActionStartImplement, model.ActionStartReview, model.ActionStartVerify:
 		return r.startRun(ctx, task, status, container, agents, startRole(step.Action), step.Message)
@@ -190,12 +190,12 @@ func (r *TaskReconciler) nextRound(ctx context.Context, task *c4v1beta1.Task, st
 const reasonAgentUnavailable = "AgentUnavailable"
 
 // wait records what the Task waits for, and when to look again.
-func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, step model.TaskStep) ctrl.Result {
+func (r *TaskReconciler) wait(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, step model.TaskStep) ctrl.Result {
 	if status.Phase == c4v1beta1.TaskBlocked {
 		// The Task also wakes when one on its Container changes phase, as the
 		// change's Task does when it ends.
 		r.progress(task, status, metav1.ConditionTrue, "WaitingForStandardChange", step.Message)
-		return ctrl.Result{RequeueAfter: r.standardChangeRecheck()}
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.standardChangeRecheck())}
 	}
 	reason := "Waiting"
 	if step.SlotWait {
@@ -211,7 +211,7 @@ func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus
 	}
 	r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
 	if status.Phase == c4v1beta1.TaskChecking || step.Recheck {
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}
 	}
 	if status.AgentBackAt != nil && step.Reason == "" && !step.SlotWait {
 		// Looked at again when the agent is back, also when that came while
@@ -280,7 +280,7 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, statu
 				model.CheckFailsOnBaseEvent(int(status.Round), failed))
 		}
 	}
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.dropRun(ctx, task, ended)
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.dropRun(ctx, task, ended)
 }
 
 // startRun creates the sandbox for this round's role, after making sure the
@@ -636,7 +636,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 		setProgress(status, model.Recheck(progressOf(status), pr.HeadSHA))
 		r.progress(task, status, metav1.ConditionTrue, "BranchMoved",
 			"The branch moved after the review; checking "+pr.HeadSHA)
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.endRun(ctx, task, status)
 	case model.MergeSquash:
 		var refusal string
 		refusal, skip, err = r.mergeReviewed(ctx, provider, repo, task, status, container, agents, pr.Behind)
@@ -649,7 +649,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 			// Waits while the review run lasts; if it ends first, the merge is refused.
 			r.progress(task, status, metav1.ConditionTrue, "WaitingForChecks",
 				"Approved; CI runs again on "+status.Commit+", merging once it passes")
-			return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+			return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 		case model.SquashRefused:
 			return ctrl.Result{}, r.failWith(ctx, task, status, container, model.GatedMergeRefused(refusal))
 		}
@@ -703,7 +703,7 @@ func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1beta1.Task,
 	if pr.HeadSHA == status.Commit {
 		// Nothing merged: the branch had main already, and the Git host had not
 		// yet seen it. Look again once it has.
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 	}
 	status.Review = r.reviewFrom(ctx, task, status)
 	r.comment(ctx, task, status, container, step.Message+".")
@@ -715,7 +715,7 @@ func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1beta1.Task,
 	r.progress(task, status, metav1.ConditionTrue, "UpdatingBranch", step.Message)
 	logf.FromContext(ctx).Info("Merged main into an approved Task's branch", "round", status.Round,
 		"commit", pr.HeadSHA)
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 }
 
 // mergeCommit reads the commit the pull request's merge made on the default
@@ -1070,7 +1070,7 @@ func (r *TaskReconciler) rerunChecks(ctx context.Context, task *c4v1beta1.Task, 
 	if !model.RunsEnded(runs) {
 		r.progress(task, status, metav1.ConditionTrue, "Waiting",
 			step.Message+"; waiting for the CI runs at the commit to end first")
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 	}
 	failed := model.FailedCommitRuns(runs)
 	if len(failed) == 0 && status.ChecksRerunDue {
