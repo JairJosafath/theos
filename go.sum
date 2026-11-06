@@ -29,6 +29,8 @@ github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.6 h1:Qmn60RWuk9+bd2ddvJJqwf3Cpac3
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.6/go.mod h1:h/YJhe4AVyQxEUMluph10iqV7mjajH7A9L+BHF5ppis=
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.82.1 h1:sVRr9yWco8Ylj+YkOwobROt1ra4GfKD1HDYJrrRP2/w=
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.82.1/go.mod h1:0zom4vEU9kCbiQGvMzLPw4j54I7Q6fUOUi1f8NLRFsc=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.338.4 h1:1PZfVMz36He601uRm1PiKyDcsEKBk76QYwyISwjOjjY=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.338.4/go.mod h1:RttUwBa++DWLLpzTAQdcQzqI9uBF9cfRI/ek8gXzLR4=
 github.com/aws/aws-sdk-go-v2/service/ecr v1.66.5 h1:163OpmhcdzTzgbXbLV+u2v1LY/QmGT148/eOwkczKCY=
 github.com/aws/aws-sdk-go-v2/service/ecr v1.66.5/go.mod h1:uDza1Eipo/Olii3CCgLglHmAni24PScSAhpfIKbUl0c=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.21 h1:e6YW5uME30TkrElR+4/xcY7NB6CCj2dcv7vtmGXhfhQ=
@@ -39,6 +41,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.6 h1:LHHdobjo5
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.6/go.mod h1:CBGB0evAiaMD3Lk4wPO7LQCcCZLuhzL5Qf/wfEUHQ5w=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.6 h1:mYViDr2azcgxOpRrObZOl631bvavqILoE/L+Kxgbwys=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.6/go.mod h1:OXVdAo9jNhggB+hJRGOyy7WolGTKB6Rg7IIulDeSzPM=
+github.com/aws/aws-sdk-go-v2/service/pricing v1.49.4 h1:n+3Se7zElT+nf4PnDfKPpouxBzVXILOgBp269L5OkzI=
+github.com/aws/aws-sdk-go-v2/service/pricing v1.49.4/go.mod h1:WM9py9Waai1ar/Lc7/8zF5qEDHRwCJUaZhDSgn3TJ3o=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.114.4 h1:MrkWRB58Qw5TEkb51QVooVLjlM3IevO2iVXEz74B8pg=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.114.4/go.mod h1:yfIxaKRHasvfy6tNEm3/LpqKsupMzQjMaWj9Y0jMVbo=
 github.com/aws/aws-sdk-go-v2/service/ssm v1.80.0 h1:SLexIoImWjXxRUUUEYQSiRmDzOXBpPTEleQz1zCjcdw=

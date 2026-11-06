@@ -117,6 +117,10 @@ spec:
         # A local TestEnvironment's lease pods copy theos-env in from it.
         - --test-environment-tools-image={{ .repository }}:{{ .tag | default $.Chart.AppVersion }}
         {{- end }}
+        {{- with .Values.testEnvironments.toolsURL }}
+        # A remote TestEnvironment's machines download theos-env from it.
+        - --test-environment-tools-url={{ tpl . $ }}
+        {{- end }}
         {{- if .Values.ui.enabled }}
         - --ui-service-account={{ .Release.Namespace }}/{{ include "theos.uiName" . }}
         {{- end }}

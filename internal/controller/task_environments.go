@@ -12,12 +12,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -65,7 +67,8 @@ func envTokenSecret(task *c4v1beta1.Task) string {
 // its issue's env/<name> labels ask for, which it waits for when the
 // project lacks one, and those its Container's Standard and Framework list,
 // which it goes on without. It returns the Ready leases, or why the run
-// waits: one isn't in the project, every lease of one is taken, or one is
+// waits: one isn't in the project, every lease of one is taken, one spent its
+// day's budget or its provider refuses its credential, or one is
 // starting or failed. The leases are recorded in status.environments as
 // they are taken, so a run never takes one twice and the Task returns each.
 func (r *TaskReconciler) leaseEnvironments(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
@@ -117,17 +120,34 @@ func (r *TaskReconciler) leaseEnvironments(ctx context.Context, task *c4v1beta1.
 // wait it returns says why the run can't go on yet.
 func (r *TaskReconciler) leaseEnvironment(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	env *c4v1beta1.TestEnvironment, sandbox string) (ports.Lease, string, error) {
-	provider, err := r.TestEnvironments.For(testEnvMember(env))
+	member := testEnvMember(env)
+	provider, err := r.TestEnvironments.For(member)
 	if err != nil {
 		return ports.Lease{}, "", err
 	}
-	environment := testEnvironment(env, r.SharedPullSecrets)
+	environment, err := providerEnvironment(ctx, r.APIReader, env, r.SharedPullSecrets)
+	if err != nil {
+		return ports.Lease{}, "", err
+	}
 	id := model.LeaseID(env.Name, sandbox)
 	held := slices.ContainsFunc(status.Environments, func(l c4v1beta1.TaskEnvironmentLease) bool {
 		return l.Lease == id
 	})
+	refused := func(detail string) (ports.Lease, string, error) {
+		return ports.Lease{}, model.EnvironmentWaitMessage(model.EnvCredentialRefused, []string{env.Name}, detail), nil
+	}
 	if !held {
+		// A remote member whose credential its provider refuses takes no
+		// call; its CredentialsValid says why (T9).
+		if cond := apimeta.FindStatusCondition(env.Status.Conditions,
+			c4v1beta1.ConditionTestEnvironmentCredentialsValid); model.TestEnvRemote(member) && cond != nil &&
+			cond.Status == metav1.ConditionFalse && cond.Reason != model.TestEnvUnreachable {
+			return refused(cond.Message)
+		}
 		leases, err := provider.Leases(ctx, environment)
+		if errors.Is(err, ports.ErrCredentialRefused) {
+			return refused(err.Error())
+		}
 		if err != nil {
 			return ports.Lease{}, "", err
 		}
@@ -137,7 +157,15 @@ func (r *TaskReconciler) leaseEnvironment(ctx context.Context, task *c4v1beta1.T
 				live++
 			}
 		}
-		if why := model.LeaseMayStart(live, int(env.Spec.Limits.MaxLeases), 0, 0); why != "" {
+		// What today's leases cost so far: the ended ones as the
+		// environment last counted them, the live ones as the provider
+		// counts them now (T10). A local member has no budget.
+		var spent, budget int64
+		if model.TestEnvRemote(member) {
+			spent = spentToday(env.Status.SpentToday, env.Status.Leases, leases, r.now()).MilliUSD
+			budget = model.BudgetMilliUSD(env.Spec.Limits.BudgetUSDPerDay)
+		}
+		if why := model.LeaseMayStart(live, int(env.Spec.Limits.MaxLeases), spent, budget); why != "" {
 			return ports.Lease{}, model.EnvironmentWaitMessage(why, []string{env.Name}, ""), nil
 		}
 	}
@@ -147,6 +175,9 @@ func (r *TaskReconciler) leaseEnvironment(ctx context.Context, task *c4v1beta1.T
 	}
 	lease, err := provider.Lease(ctx, ports.LeaseRequest{ID: id, Env: environment, Holder: task.Name, Token: token,
 		Deadline: model.LeaseDeadline(int(env.Spec.Limits.MaxLeaseMinutes))})
+	if errors.Is(err, ports.ErrCredentialRefused) {
+		return refused(err.Error())
+	}
 	if err != nil {
 		return ports.Lease{}, "", err
 	}
@@ -234,8 +265,11 @@ func (r *TaskReconciler) returnLeases(ctx context.Context, task *c4v1beta1.Task,
 		}
 		if err == nil {
 			var provider ports.TestEnvironments
+			var environment ports.Environment
 			if provider, err = r.TestEnvironments.For(testEnvMember(&env)); err == nil {
-				err = provider.Return(ctx, testEnvironment(&env, r.SharedPullSecrets), l.Lease)
+				if environment, err = providerEnvironment(ctx, r.APIReader, &env, r.SharedPullSecrets); err == nil {
+					err = provider.Return(ctx, environment, l.Lease)
+				}
 			}
 		}
 		if err != nil {

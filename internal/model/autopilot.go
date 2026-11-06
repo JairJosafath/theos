@@ -390,9 +390,9 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 }
 
 // environmentAttention classifies a Task waiting for a test environment
-// (docs/plans/test-environments.md, T2, T10): one the project lacks, or
-// whose budget is spent, only a person mends; a lease taken or starting
-// frees inside the slot's window.
+// (docs/plans/test-environments.md, T2, T9, T10): one the project lacks,
+// whose budget is spent or whose credential is refused, only a person
+// mends; a lease taken or starting frees inside the slot's window.
 func environmentAttention(t WatchedTask, now time.Time, waited string) (*Healing, *NeedsYou) {
 	switch {
 	case strings.HasPrefix(t.Message, EnvNotInProject):
@@ -405,6 +405,11 @@ func environmentAttention(t WatchedTask, now time.Time, waited string) (*Healing
 			fmt.Sprintf("Task `%s` waits: its test environment spent today's budget.", t.Name),
 			"Raise the TestEnvironment's limits.budgetUSDPerDay, or let it wait for tomorrow.",
 			"No lease starts past the day's budget.", t.Since}
+	case strings.HasPrefix(t.Message, EnvCredentialRefused):
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` waits: its test environment's provider refuses the credential.", t.Name),
+			"Fix the Secret the TestEnvironment's credentialsSecretRef names; its CredentialsValid condition says what is wrong.",
+			sentence(t.Message, "no lease starts without a credential the provider takes"), t.Since}
 	}
 	if now.Before(t.Since.Add(SlotWindow)) {
 		return &Healing{AttentionTask, t.Name, "A lease of its test environment frees or starts.",

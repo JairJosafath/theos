@@ -1,4 +1,4 @@
-# expect: set exactly one provider member: local
+# expect: set exactly one provider member: local or aws
 apiVersion: theos.factory.io/v1beta1
 kind: TestEnvironment
 metadata:

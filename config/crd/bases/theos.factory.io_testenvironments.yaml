@@ -21,6 +21,10 @@ spec:
       name: Image
       priority: 1
       type: string
+    - jsonPath: .spec.aws.instanceType
+      name: Instance
+      priority: 1
+      type: string
     - jsonPath: .spec.limits.maxLeases
       name: Max
       type: integer
@@ -61,6 +65,91 @@ spec:
           spec:
             description: spec is the provider and the limits.
             properties:
+              aws:
+                description: |-
+                  aws leases an EC2 machine per run that needs the environment, in the
+                  user's AWS account, from an AMI with the environment's tools, such as
+                  a GPU machine for a game engine (T9, T11). Its leases cost what EC2
+                  charges, so it needs limits.budgetUSDPerDay.
+                properties:
+                  account:
+                    description: |-
+                      account is the twelve-digit AWS account id the credential must be in:
+                      set, a credential of another account is refused, so a key for the
+                      wrong account never launches a machine.
+                    maxLength: 12
+                    type: string
+                    x-kubernetes-validations:
+                    - message: account must be a twelve-digit AWS account id
+                      rule: self.matches('^[0-9]{12}$')
+                  credentialsSecretRef:
+                    description: |-
+                      credentialsSecretRef names a Secret in the TestEnvironment's namespace
+                      that the user creates, with the keys accessKeyId, secretAccessKey and
+                      an optional sessionToken, as a cloudFormation DeployTarget's. Only the
+                      operator reads it: it never reaches a sandbox, an environment or a CI
+                      job. The key needs the EC2 and pricing calls docs/getting-started.md
+                      lists.
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  imageId:
+                    description: |-
+                      imageId is the AMI the machines boot, with the environment's tools: a
+                      Linux with curl, sha256sum and a cloud-init that runs user data, such
+                      as an AWS Deep Learning AMI for a GPU. An AMI id never changes what it
+                      names, so it is pinned.
+                    maxLength: 21
+                    type: string
+                    x-kubernetes-validations:
+                    - message: imageId must be an AMI id, such as ami-0123456789abcdef0
+                      rule: self.matches('^ami-[0-9a-f]{8,17}$')
+                  instanceType:
+                    description: |-
+                      instanceType is the EC2 instance type, such as c7i.large, or g5.xlarge
+                      for a GPU. EC2 Mac types, which need a dedicated host, come later
+                      (docs/plans/test-environments.md, step 9).
+                    maxLength: 40
+                    type: string
+                    x-kubernetes-validations:
+                    - message: instanceType must be an EC2 instance type, such as
+                        g5.xlarge
+                      rule: self.matches('^[a-z][a-z0-9-]*[.][a-z0-9]+$')
+                    - message: EC2 Mac instance types need a dedicated host, which
+                        the aws member doesn't lease yet
+                      rule: '!self.startsWith(''mac'')'
+                  region:
+                    description: region is the AWS region the machines run in, such
+                      as eu-west-1.
+                    maxLength: 30
+                    type: string
+                    x-kubernetes-validations:
+                    - message: region must be an AWS region, such as eu-west-1
+                      rule: self.matches('^[a-z]{2}(-[a-z]+)+-[0-9]+$')
+                  subnetId:
+                    description: |-
+                      subnetId is the subnet the machines start in, which must route to the
+                      internet: each gets a public address there, where the run reaches it
+                      over HTTPS. The operator makes the machines' security group in its
+                      VPC.
+                    maxLength: 32
+                    type: string
+                    x-kubernetes-validations:
+                    - message: subnetId must be a subnet id, such as subnet-0123456789abcdef0
+                      rule: self.matches('^subnet-[0-9a-f]{8,17}$')
+                required:
+                - credentialsSecretRef
+                - imageId
+                - instanceType
+                - region
+                - subnetId
+                type: object
               ci:
                 description: |-
                   ci runs the project's CI jobs labelled env-<name> on the environment's
@@ -92,8 +181,21 @@ spec:
                 type: string
               limits:
                 default: {}
-                description: limits cap how many leases run at once and for how long.
+                description: |-
+                  limits cap how many leases run at once, for how long and, for a
+                  remote member, at what cost a day.
                 properties:
+                  budgetUSDPerDay:
+                    description: |-
+                      budgetUSDPerDay is what the environment's leases may cost a UTC day, in
+                      US dollars, by the provider's count (on-demand price times time). Past
+                      it no lease starts, reason WaitingForEnvironment, OverBudget, and the
+                      leases held finish their run. Required for a remote member; a local
+                      lease costs nothing.
+                    format: int32
+                    maximum: 100000
+                    minimum: 1
+                    type: integer
                   maxLeaseMinutes:
                     default: 180
                     description: |-
@@ -269,13 +371,17 @@ spec:
                 type: object
             type: object
             x-kubernetes-validations:
-            - message: 'set exactly one provider member: local'
-              rule: '[has(self.local)].exists_one(x, x)'
+            - message: 'set exactly one provider member: local or aws'
+              rule: '[has(self.local), has(self.aws)].exists_one(x, x)'
+            - message: 'an aws environment needs limits.budgetUSDPerDay: a remote
+                lease costs money for every minute it is held'
+              rule: '!has(self.aws) || (has(self.limits) && has(self.limits.budgetUSDPerDay))'
           status:
             description: status is the live leases and the environment's readiness.
             properties:
               conditions:
-                description: 'conditions: Ready.'
+                description: 'conditions: Ready, and CredentialsValid for a remote
+                  member.'
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -352,7 +458,7 @@ spec:
                     id:
                       description: |-
                         id is the lease's ID, which the provider names it by: for local, the
-                        pod's name.
+                        pod's name; for aws, the machine's lease tag.
                       type: string
                     message:
                       description: message says why a lease is Pending or Failed.

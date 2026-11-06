@@ -11,7 +11,9 @@ package main
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -43,6 +45,8 @@ func serveMain(args []string, stderr io.Writer, getenv func(string) string) int 
 	flags.SetOutput(stderr)
 	listen := flags.String("listen", ":"+strconv.Itoa(model.TestEnvPort), "the address to listen on")
 	work := flags.String("work", "/work", "the folder each run's tree goes in")
+	useTLS := flags.Bool("tls", false, "serve HTTPS with the certificate the lease's token makes, which the run "+
+		"pins: a remote environment, reached over the internet")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -57,11 +61,37 @@ func serveMain(args []string, stderr io.Writer, getenv func(string) string) int 
 	}
 	srv := &http.Server{Addr: *listen, Handler: &server{token: token, work: *work, max: model.TestEnvMaxTree},
 		ReadHeaderTimeout: 30 * time.Second}
-	_, _ = fmt.Fprintf(stderr, "theos-env: serving runs on %s in %s\n", *listen, *work)
-	if err := srv.ListenAndServe(); err != nil {
+	serve, scheme := srv.ListenAndServe, "http"
+	if *useTLS {
+		config, err := serveTLS(token)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "theos-env: %v\n", err)
+			return exitFailed
+		}
+		srv.TLSConfig = config
+		serve, scheme = func() error { return srv.ListenAndServeTLS("", "") }, "https"
+	}
+	_, _ = fmt.Fprintf(stderr, "theos-env: serving runs over %s on %s in %s\n", scheme, *listen, *work)
+	if err := serve(); err != nil {
 		_, _ = fmt.Fprintf(stderr, "theos-env: %v\n", err)
 	}
 	return exitFailed
+}
+
+// serveTLS is the TLS a remote environment serves with: the certificate and
+// key token makes (model.TestEnvCertificate), the same the operator gave
+// the run to pin, so no key travels to the machine (T4, T5).
+func serveTLS(token string) (*tls.Config, error) {
+	certPEM, key, err := model.TestEnvCertificate(token)
+	if err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		return nil, errors.New("the lease's certificate is no PEM")
+	}
+	return &tls.Config{MinVersion: tls.VersionTLS12,
+		Certificates: []tls.Certificate{{Certificate: [][]byte{block.Bytes}, PrivateKey: key}}}, nil
 }
 
 // server takes runs: one at a time, each on a fresh copy of the caller's
