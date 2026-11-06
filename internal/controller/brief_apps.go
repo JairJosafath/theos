@@ -92,6 +92,7 @@ func (r *BriefReconciler) app(ctx context.Context, brief *c4v1beta1.Brief, conta
 	if crew.Spec.PublishReleases != nil {
 		app.PublishTo = crew.Spec.PublishReleases.GitHub.Repository
 	}
+	app.NextRelease = appNextRelease(&crew)
 	if release := crew.Status.LastRelease; release != nil {
 		app.LastRelease = &c4v1beta1.BriefAppRelease{Tag: release.Tag, Time: release.Time.DeepCopy(),
 			Run: release.Run}
@@ -158,7 +159,8 @@ func appMessage(app *c4v1beta1.BriefApp, briefsCrew bool) string {
 // crewReleaseChanges passes a Crew's creation, deletion, spec changes, the
 // release target its Brief marked on it (briefTarget), whether it is held
 // at another (its ReleaseTarget condition) and
-// changes to its latest release: all the Brief's app lines read from it.
+// changes to its latest release and its next cut: all the Brief's app lines
+// read from it.
 func crewReleaseChanges() builder.WatchesOption {
 	return builder.WithPredicates(predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
@@ -168,7 +170,8 @@ func crewReleaseChanges() builder.WatchesOption {
 				oldCrew.Annotations[c4v1beta1.AnnotationBriefPublishReleases] !=
 					newCrew.Annotations[c4v1beta1.AnnotationBriefPublishReleases] ||
 				releaseTargetHeld(oldCrew) != releaseTargetHeld(newCrew) ||
-				!equality.Semantic.DeepEqual(oldCrew.Status.LastRelease, newCrew.Status.LastRelease)
+				!equality.Semantic.DeepEqual(oldCrew.Status.LastRelease, newCrew.Status.LastRelease) ||
+				!equality.Semantic.DeepEqual(oldCrew.Status.NextCut, newCrew.Status.NextCut)
 		},
 	})
 }

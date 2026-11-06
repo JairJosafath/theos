@@ -1,6 +1,7 @@
 package model
 
 import (
+	"cmp"
 	_ "embed"
 	"fmt"
 	"slices"
@@ -74,6 +75,8 @@ type BriefWorkspace struct {
 	Tending bool
 	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease
+	// Cadence is the Brief's spec.releaseCadence (plans/release-cadence.md).
+	Cadence ReleaseCadence
 	// Requests are the requests from GitHub issues the round plans like new
 	// prompts (WorkspaceRequests; docs/plans/done/brief-requests.md, decision 7).
 	Requests []Request
@@ -226,6 +229,7 @@ func renderBrief(ws BriefWorkspace) string {
 	}
 	fmt.Fprintf(&b, "\n## Git provider\n\nEvery new Container names `gitProviderRef: {name: %s}`.\n", ws.GitProvider)
 	b.WriteString(renderParallel(ws))
+	b.WriteString(renderCadence(ws))
 	b.WriteString(renderNeverPaths())
 	if len(ws.Releases) > 0 {
 		b.WriteString("\n## Releases\n\nThe person asked for these Containers' releases. Name each in " +
@@ -243,6 +247,24 @@ func renderBrief(ws BriefWorkspace) string {
 		}
 	}
 	return b.String()
+}
+
+// renderCadence says how often the released apps release, for the planner
+// (plans/release-cadence.md, C5, C9); nothing with every: Release, where a
+// round's fixes and features go to releases of their own.
+func renderCadence(ws BriefWorkspace) string {
+	c := ws.Cadence
+	if !c.Cuts() {
+		return ""
+	}
+	at := cmp.Or(c.At, DefaultCutAt) + " " + c.Zone()
+	when := "every day at " + at
+	if c.Every == CadenceWeek {
+		when = "every " + cmp.Or(c.Weekday, DefaultCutWeekday) + " at " + at
+	}
+	return fmt.Sprintf("\n## Release cadence\n\nReleased apps release %s: each release holds the work merged by "+
+		"then, fixes and features alike, and the factory picks its version. Mark an issue `release: now` only "+
+		"when a prompt asks to ship it at once, or it fixes what users hit in the latest release.\n", when)
 }
 
 // renderParallel says how many issues the Brief's Crews build at once now,

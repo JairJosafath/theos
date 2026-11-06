@@ -221,6 +221,67 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              releaseCadence:
+                default:
+                  every: Day
+                description: |-
+                  releaseCadence is how often the apps' releases go out
+                  (docs/plans/release-cadence.md): the Brief writes it onto every Crew it
+                  made, every reconcile (a Crew it didn't make keeps its own), and under
+                  Day or Week its rounds file every issue and taken suggestion of a
+                  released app into the release in progress, so a day's work is one
+                  release. every: Release keeps a release per round: fixes in the patch
+                  release after the release in progress, other work in the next minor.
+                  Unset is every: Day at 18:00 UTC.
+                properties:
+                  at:
+                    default: "18:00"
+                    description: |-
+                      at is the time of day of the cut, HH:MM on a 24-hour clock, in
+                      timeZone. Unset is 18:00.
+                    pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+                    type: string
+                  every:
+                    description: |-
+                      every is Release, to tag each release as soon as it is done; Day, to
+                      cut the release in progress once a day at at; or Week, once a week on
+                      weekday at at. A cut ships the work merged so far and moves the rest
+                      to the next release. A merged issue labelled release/now cuts its
+                      release at once.
+                    enum:
+                    - Release
+                    - Day
+                    - Week
+                    type: string
+                  timeZone:
+                    default: UTC
+                    description: |-
+                      timeZone is the IANA time zone at is in, such as Europe/Amsterdam;
+                      daylight saving follows it. Unset is UTC. A name the operator can't
+                      load leaves the Crew Ready=False, reason InvalidTimeZone, until it is
+                      fixed.
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                  weekday:
+                    description: |-
+                      weekday is the day of a weekly cut, only with every: Week. Unset is
+                      Friday.
+                    enum:
+                    - Monday
+                    - Tuesday
+                    - Wednesday
+                    - Thursday
+                    - Friday
+                    - Saturday
+                    - Sunday
+                    type: string
+                required:
+                - every
+                type: object
+                x-kubernetes-validations:
+                - message: 'weekday needs every: Week'
+                  rule: '!has(self.weekday) || self.every == ''Week'''
               releases:
                 description: |-
                   releases name the Containers whose releases the person asks for, and the
@@ -519,6 +580,34 @@ spec:
                         releases go.
                       maxLength: 1000
                       type: string
+                    nextRelease:
+                      description: |-
+                        nextRelease is the release the Crew's next cut ships, under a cadence
+                        of Day or Week, from its status.nextCut; unset while no release holds
+                        work, or with every: Release.
+                      properties:
+                        merged:
+                          description: merged is how many of its issues a Task merged
+                            so far.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        tag:
+                          description: tag is the release the cut ships.
+                          type: string
+                        time:
+                          description: time is when the cut is.
+                          format: date-time
+                          type: string
+                        timeZone:
+                          description: |-
+                            timeZone is the cadence's time zone, to say the time as the person set
+                            it.
+                          type: string
+                      required:
+                      - tag
+                      - time
+                      type: object
                     parallel:
                       description: |-
                         parallel is how many issues the Crew works on at once; 0 while it has

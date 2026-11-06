@@ -87,6 +87,19 @@ Where the table above first said less, or said what the code can't do:
   tag: its gated merge needs a review run that still lasts, and a wait
   could outlive it. Its rare merge under the tag is moved into the release
   as today.
+- C2, C3: the Brief writes its cadence onto its Crews every reconcile, as it
+  does `parallel`, not once with a mark as R5 does `publishReleases`: a
+  cadence holds no credential and no repository, so a hand edit of a Crew
+  the Brief made is set back like its `parallel`. The CRD defaults
+  `releaseCadence` to `every: Day`, and the operator reads an absent one the
+  same. The Brief specs written before cadences make their Brief with
+  `every: Release` (the `newBrief` helper), so they hold to F1 to F8
+  unchanged.
+- C9: the operator never labels a tending round's issue or taken suggestion
+  `release/now`, whatever its plan says; `brief.md` gets a *Release
+  cadence* section under a cadence, so the planner knows which rule applies.
+- C12: `status.apps[].nextRelease` carries the cadence's time zone, so the
+  card says the time as the person set it.
 - C12: `status.nextCut` counts the merged issues, which the card shows. A
   cut says so with `Released=True`, reason `ReleaseCut`, and a Normal
   Event, as filing a prepare issue does; the Crew polls again at the next

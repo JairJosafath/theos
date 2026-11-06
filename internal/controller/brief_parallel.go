@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -43,29 +44,36 @@ func (r *BriefReconciler) applyParallel(ctx context.Context, brief *c4v1beta1.Br
 	return r.syncParallel(ctx, brief)
 }
 
-// syncParallel sets the parallel of every Crew the Brief made, earlier rounds'
-// included, whatever its round is doing (decision 1): a change to the Brief
-// reaches them without waiting for a round, and a hand edit of one is set
-// back. A Crew the Brief didn't make is never touched.
+// syncParallel sets the parallel and the release cadence of every Crew the
+// Brief made, earlier rounds' included, whatever its round is doing (decision
+// 1; docs/plans/release-cadence.md, C2): a change to the Brief reaches them
+// without waiting for a round, and a hand edit of one is set back. A Crew the
+// Brief didn't make is never touched.
 func (r *BriefReconciler) syncParallel(ctx context.Context, brief *c4v1beta1.Brief) error {
 	var crews c4v1beta1.CrewList
 	if err := r.List(ctx, &crews, client.InNamespace(brief.Namespace),
 		client.MatchingLabels{c4v1beta1.LabelBrief: brief.Name}); err != nil {
 		return err
 	}
-	parallel := briefParallel(brief)
+	parallel, cadence := briefParallel(brief), briefCadence(brief)
 	for i := range crews.Items {
 		crew := &crews.Items[i]
-		if crew.Spec.Parallel == parallel {
+		if crew.Spec.Parallel == parallel && equality.Semantic.DeepEqual(crew.Spec.ReleaseCadence, cadence) {
 			continue
 		}
 		orig := crew.DeepCopy()
-		crew.Spec.Parallel = parallel
+		crew.Spec.Parallel, crew.Spec.ReleaseCadence = parallel, cadence.DeepCopy()
 		if err := r.Patch(ctx, crew, client.MergeFrom(orig)); err != nil {
-			return fmt.Errorf("setting the parallel of Crew %s: %w", crew.Name, err)
+			return fmt.Errorf("setting the parallel and release cadence of Crew %s: %w", crew.Name, err)
 		}
-		logf.FromContext(ctx).Info("Set the Crew's parallel from the Brief", "crew", crew.Name,
-			"from", orig.Spec.Parallel, "parallel", parallel)
+		if orig.Spec.Parallel != parallel {
+			logf.FromContext(ctx).Info("Set the Crew's parallel from the Brief", "crew", crew.Name,
+				"from", orig.Spec.Parallel, "parallel", parallel)
+		}
+		if !equality.Semantic.DeepEqual(orig.Spec.ReleaseCadence, cadence) {
+			logf.FromContext(ctx).Info("Set the Crew's release cadence from the Brief", "crew", crew.Name,
+				"every", cadence.Every, "at", cadence.At, "timeZone", cadence.TimeZone)
+		}
 	}
 	return nil
 }

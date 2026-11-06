@@ -439,6 +439,8 @@ func (r *BriefReconciler) ensureCrew(ctx context.Context, run *roundApply, c *c4
 			Implementer:  brief.Spec.Agents.Implementer,
 			Reviewer:     brief.Spec.Agents.Reviewer,
 			Parallel:     briefParallel(brief),
+			// Written every reconcile too (syncParallel), as parallel is.
+			ReleaseCadence: briefCadence(brief),
 		},
 	}
 	if run.released[c.Name] {
@@ -554,7 +556,11 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 			return err
 		}
 		repo := provider.Repository(c.Name)
-		if err := provider.EnsureLabels(gitCtx, repo, briefIssueLabels(model.IssuesFor(issues, c.Name))); err != nil {
+		labels := briefIssueLabels(model.IssuesFor(issues, c.Name))
+		if run.released[c.Name] && briefModelCadence(run.brief).Cuts() {
+			labels = append(labels, cadenceIssueLabels()...)
+		}
+		if err := provider.EnsureLabels(gitCtx, repo, labels); err != nil {
 			return err
 		}
 		open, err := provider.ListIssues(gitCtx, repo, "")
@@ -587,35 +593,20 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 				return nil
 			}
 		}
-		// Made only once an issue is to be filed: a release with no work
-		// is never released (R7). A person's work waits in Later, so no
-		// release waits on it.
-		var err error
-		fix := model.IsFix(issue.Labels)
-		milestone := &ir.minor
-		if fix {
-			milestone = &ir.patch
-		}
-		switch {
-		case byHand:
-			milestone = &ir.later
-			if ir.later == 0 {
-				if ir.later, err = provider.EnsureMilestone(gitCtx, repo, model.FollowUpMilestone,
-					model.FollowUpMilestoneDescription); err != nil {
-					return err
-				}
-			}
-		case run.released[c.Name] && *milestone == 0:
-			if *milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, round, fix); err != nil {
-				return err
-			}
+		milestone, err := issueMilestone(gitCtx, run, ir, c.Name, issue)
+		if err != nil {
+			return err
 		}
 		labels := model.BriefIssueLabels(issue.Labels)
+		if run.released[c.Name] {
+			labels = append(labels, cadenceLabels(briefModelCadence(brief), tending(&brief.Status), issue.ReleaseNow,
+				false, labels)...)
+		}
 		if len(buildsOn) > 0 || len(issue.Uses) > 0 {
 			labels = slices.DeleteFunc(labels, func(l string) bool { return l == model.LabelReady })
 		}
 		body := model.BriefIssueBodyUsing(issue, brief.Name, round, buildsOn, uses.packages)
-		filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, body, labels, *milestone)
+		filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, body, labels, milestone)
 		if err != nil {
 			return err
 		}
@@ -647,6 +638,35 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 		}
 	}
 	return r.recordIssue(ctx, run, repo.Owner+"/"+repo.Name, issue.N, filed)
+}
+
+// issueMilestone is the ID of the milestone the round files issue of
+// Container container in, 0 for none, made only once an issue is to be
+// filed: a release with no work is never released (R7). A person's work
+// waits in Later, so no release waits on it; a released Container's goes
+// into the round's minor release or, a fix with every: Release, its patch
+// release (releaseMilestone).
+func issueMilestone(ctx context.Context, run *roundApply, ir *issueRepo, container string,
+	issue model.PlanIssue) (int64, error) {
+	var err error
+	brief, round := run.brief, int(run.brief.Status.Round)
+	fix := model.IsFix(issue.Labels)
+	cadence := briefModelCadence(brief)
+	milestone := &ir.minor
+	if fix && !cadence.Cuts() {
+		milestone = &ir.patch
+	}
+	switch {
+	case model.IsByHand(issue.Labels):
+		if ir.later == 0 {
+			ir.later, err = ir.provider.EnsureMilestone(ctx, ir.repo, model.FollowUpMilestone,
+				model.FollowUpMilestoneDescription)
+		}
+		return ir.later, err
+	case run.released[container] && *milestone == 0:
+		*milestone, err = releaseMilestone(ctx, ir.provider, ir.repo, brief.Name, round, fix, cadence)
+	}
+	return *milestone, err
 }
 
 // briefIssueLabels are the labels the issues need: the factory's, and any

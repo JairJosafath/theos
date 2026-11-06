@@ -411,3 +411,27 @@ func TestPlannerGuideWritesPlanAPIVersion(t *testing.T) {
 		t.Fatal("planner.md shows no apiVersion")
 	}
 }
+
+func TestRenderCadence(t *testing.T) {
+	for _, tc := range []struct {
+		cadence ReleaseCadence
+		want    string
+	}{
+		{ReleaseCadence{}, ""},
+		{ReleaseCadence{Every: CadenceRelease}, ""},
+		{ReleaseCadence{Every: CadenceDay}, "Released apps release every day at 18:00 UTC: "},
+		{ReleaseCadence{Every: CadenceWeek, At: "09:30", TimeZone: "Europe/Amsterdam"},
+			"Released apps release every Friday at 09:30 Europe/Amsterdam: "},
+	} {
+		got := renderBrief(BriefWorkspace{Brief: "b", Idea: "Idea.", GitProvider: "gitea", Cadence: tc.cadence})
+		if tc.want == "" {
+			if strings.Contains(got, "## Release cadence") {
+				t.Errorf("brief.md for %+v says a cadence:\n%s", tc.cadence, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, "## Release cadence\n\n"+tc.want) || !strings.Contains(got, "`release: now`") {
+			t.Errorf("brief.md for %+v lacks %q and release: now:\n%s", tc.cadence, tc.want, got)
+		}
+	}
+}
