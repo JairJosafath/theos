@@ -44,7 +44,10 @@ type issueStore struct {
 	labels     map[string][]string // owner/name
 	exclusive  map[string]bool     // owner/name label, for the labels that are exclusive
 	milestones map[string][]string // owner/name, titles by ID - 1
-	reviews    map[string][]Review // owner/name#number
+	// descriptions are the descriptions EnsureMilestone gave the milestones
+	// it made, by owner/name#ID.
+	descriptions map[string]string
+	reviews      map[string][]Review // owner/name#number
 	// late makes CreateIssue file the issue but answer only once the caller has
 	// given up, as a host under load does.
 	late bool
@@ -113,7 +116,7 @@ func (s *state) issueState() *issueStore {
 	if s.issues == nil {
 		s.issues = &issueStore{issues: map[string][]*Issue{}, labels: map[string][]string{},
 			exclusive:  map[string]bool{},
-			milestones: map[string][]string{}, reviews: map[string][]Review{}}
+			milestones: map[string][]string{}, descriptions: map[string]string{}, reviews: map[string][]Review{}}
 	}
 	return s.issues
 }
@@ -250,7 +253,7 @@ func (g *Git) EnsureLabels(_ context.Context, repo ports.Repository, labels []po
 	return nil
 }
 
-func (g *Git) EnsureMilestone(_ context.Context, repo ports.Repository, title, _ string) (int64, error) {
+func (g *Git) EnsureMilestone(_ context.Context, repo ports.Repository, title, description string) (int64, error) {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()
 	s := g.s.issueState()
@@ -259,7 +262,9 @@ func (g *Git) EnsureMilestone(_ context.Context, repo ports.Repository, title, _
 		return int64(i + 1), nil
 	}
 	s.milestones[key] = append(s.milestones[key], title)
-	return int64(len(s.milestones[key])), nil
+	id := int64(len(s.milestones[key]))
+	s.descriptions[fmt.Sprintf("%s#%d", key, id)] = description
+	return id, nil
 }
 
 func (g *Git) ListIssues(_ context.Context, repo ports.Repository, label string) ([]ports.Issue, error) {

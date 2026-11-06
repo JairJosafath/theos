@@ -289,8 +289,8 @@ func (s suite) createsTags(t *testing.T) {
 
 func (s suite) protects(t *testing.T) {
 	h, repo, _ := s.seeded(t)
-	for _, rule := range []ports.BranchRule{{StatusContexts: []string{"check*"}},
-		{StatusContexts: []string{"check*"}, ProtectedPaths: []string{docsDir, readme}, OperatorPushes: true}} {
+	for _, rule := range []ports.BranchRule{{StatusContexts: []string{checkGlob}},
+		{StatusContexts: []string{checkGlob}, ProtectedPaths: []string{docsDir, readme}, OperatorPushes: true}} {
 		if err := h.ProtectBranch(s.ctx, repo, ports.DefaultBranch, rule); err != nil {
 			t.Errorf("ProtectBranch(%+v) = %v", rule, err)
 		}
