@@ -226,6 +226,38 @@ step 2.
    `make validate-yaml` checks both samples. Whether KVM and the GPU work
    is for a human's run on a node that has them.
    *Done when:* those tests and `make check` pass.
+
+   *As built:* the samples are `config/samples/webshop/testenvironment-android.yaml`
+   (`devices.kubevirt.io/kvm: 1`, the name KubeVirt's and the standalone
+   KVM device plugin give `/dev/kvm`; no runtime class) and
+   `testenvironment-godot.yaml` (`nvidia.com/gpu: 1`, `runtimeClassName:
+   nvidia`, the NVIDIA GPU operator's, and a toleration of the
+   `nvidia.com/gpu` taint), left out of the webshop's kustomization since
+   they need a node with the device. The pod specs already carried devices,
+   runtime class, node selector and tolerations (steps 1 and 3), so the table
+   test is of the samples: `TestDeviceSamplesReachTheirPods` reads each and
+   checks that its lease pod and its CI pool's pod request and limit the
+   device and run under the runtime class and tolerations as given. Both
+   images build on Ubuntu 24.04, pinned by digest, with bash and git for a
+   CI pool. `hack/env-android`: the SDK's command-line tools 23.0 (their
+   SHA-256 checked; the file matches the SHA-1 Google's repository lists),
+   platform and build tools 36.1.0, API 36's platform, the emulator and the
+   Google APIs x86_64 system image, an AVD `theos` (Pixel 7) and JDK 17;
+   platform-tools and the emulator are the repository's current ones at
+   build time, since sdkmanager names no version of them, and sdkmanager
+   runs under retry, which `hack/check-download-retries.sh` now checks.
+   `android-emulator start` (`hack/env-android/emulator.sh`, tested by
+   `emulator_test.sh` on a fake emulator and adb) boots the AVD headless
+   from `/`, in its own session, once per lease, and waits for
+   `sys.boot_completed`; with no `/dev/kvm` it says which device to ask
+   for. `hack/env-godot`: Godot 4.7.2 (the SHA-256 of the zip
+   godotengine.org's download page served; Godot's own sums are on GitHub
+   only), Xvfb, Vulkan's loader and OpenGL with Mesa's software renderers
+   for a node without a GPU, and `NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility`,
+   so the NVIDIA runtime mounts the driver's graphics libraries; no export
+   templates (a project installs them over public HTTPS). Release publishes
+   `env-android` and `env-godot`; `make env-image-android` and `make
+   env-image-godot` load them into Kind. Neither image was built here.
 6. **The UI** (`ui/`). The Project area lists its TestEnvironments with
    live leases, today's spend and limits, and the Task page shows a run's
    leases. UI tests on a demo fixture.
