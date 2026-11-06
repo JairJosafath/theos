@@ -183,12 +183,40 @@ type CIRunnerSpec struct {
 	FreshGoCache bool `json:"freshGoCache,omitempty"`
 }
 
+// ConditionGitProviderEvents on a GitProvider says whether the Git host's
+// deliveries reach the operator (docs/plans/git-events.md, decision 8). Its
+// reasons are Disabled (the operator has no --git-events-url), Unsupported
+// (the host's adapter has no events), RegisterFailed (the hook could not be
+// registered; the message says why, in the host's words when it refused) and
+// Registered (the hook was made or its URL changed, and no verified delivery
+// came since).
+const ConditionGitProviderEvents = "Events"
+
+// The reasons of the Events condition.
+const (
+	ReasonEventsDisabled       = "Disabled"
+	ReasonEventsUnsupported    = "Unsupported"
+	ReasonEventsRegisterFailed = "RegisterFailed"
+	ReasonEventsRegistered     = "Registered"
+)
+
+// GitProviderStatus is what the operator last found of the Git host.
+type GitProviderStatus struct {
+	// conditions: Events, whether the host's deliveries reach the operator.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=theos
+// +kubebuilder:subresource:status
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=".spec.provider"
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=".spec.url"
 // +kubebuilder:printcolumn:name="Owner",type=string,JSONPath=".spec.owner"
+// +kubebuilder:printcolumn:name="Events",type=string,JSONPath=".status.conditions[?(@.type==\"Events\")].reason"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // GitProvider is where repositories are created, with credentials. Owned by the Project.
@@ -202,6 +230,10 @@ type GitProvider struct {
 	// spec defines the desired state of GitProvider
 	// +required
 	Spec GitProviderSpec `json:"spec"`
+
+	// status defines the observed state of GitProvider
+	// +optional
+	Status GitProviderStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true

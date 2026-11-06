@@ -95,6 +95,7 @@ func main() {
 	var uiServiceAccount string
 	var modelProxyURL string
 	var chatHomeserver string
+	var gitEventsURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -180,6 +181,10 @@ func main() {
 	flag.StringVar(&chatHomeserver, "chat-homeserver", "",
 		"The Matrix homeserver of a Chat that names none, such as the chart's in-cluster one. None: each Chat "+
 			"names its homeserver.")
+	flag.StringVar(&gitEventsURL, "git-events-url", "",
+		"The base address the Git host delivers events to, such as http://theos-git-events.<namespace>.svc:8082: "+
+			"each GitProvider's hook delivers to <url>/git-events/<namespace>/<name>. None: no hook, and the "+
+			"operator polls the host.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -511,6 +516,16 @@ func main() {
 		Git:       gitClient{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "benchmark")
+		os.Exit(1)
+	}
+	if err := (&controller.GitProviderReconciler{
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		APIReader:    mgr.GetAPIReader(),
+		Git:          gitClient{},
+		GitEventsURL: gitEventsURL,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "gitprovider")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

@@ -58,11 +58,13 @@ type deliveryBody struct {
 type eventStore struct {
 	hooks  map[string][]ports.EventHook // owner, oldest first
 	outbox map[string][]Delivery        // owner, oldest first
+	errs   map[string]error             // owner, what EnsureEventHook fails with
 }
 
 func (s *state) eventState() *eventStore {
 	if s.events == nil {
-		s.events = &eventStore{hooks: map[string][]ports.EventHook{}, outbox: map[string][]Delivery{}}
+		s.events = &eventStore{hooks: map[string][]ports.EventHook{}, outbox: map[string][]Delivery{},
+			errs: map[string]error{}}
 	}
 	return s.events
 }
@@ -83,6 +85,9 @@ func (g *Git) EnsureEventHook(_ context.Context, hook ports.EventHook) (bool, er
 	defer g.s.mu.Unlock()
 	s := g.s.eventState()
 	owner := g.cfg.Owner
+	if err := s.errs[owner]; err != nil {
+		return false, err
+	}
 	changed := true
 	kept := []ports.EventHook{}
 	for _, h := range s.hooks[owner] {
@@ -118,6 +123,14 @@ func (g *Git) ParseEvent(header func(string) string, body, secret []byte) (ports
 	}
 	event.Repository, event.Number, event.Branch = d.Repository, d.Number, d.Branch
 	return event, nil
+}
+
+// FailEventHook makes EnsureEventHook on owner fail with err from now on, as
+// a host that refuses the token; nil lets it succeed again.
+func (g *Git) FailEventHook(owner string, err error) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	g.s.eventState().errs[owner] = err
 }
 
 // EventHooks are owner's hooks, oldest first.
