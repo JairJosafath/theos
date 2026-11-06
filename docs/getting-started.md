@@ -1102,6 +1102,40 @@ GitHub needs an address of your own there. The AMI needs a Linux with
 `curl`, `sha256sum` and cloud-init. Deleting the TestEnvironment terminates
 its machines and deletes its security group. EC2 Mac comes later.
 
+#### Run CI jobs on it
+
+With `ci: {}` (as the sample has it), the environment runs the project's CI
+jobs that name `runs-on: env-gpu` too: for each such job that waits, the
+operator registers a Gitea runner for that one job to the GitProvider's
+organization and leases a machine that runs it, within `limits.maxLeases`
+and the day's budget, which it shares with the agents' runs. The machine
+shuts down, which terminates it, when its job ends, and the operator deletes
+its runner. The organization's registration token never leaves the
+operator: the machine gets the runner's own credential, which takes that
+one job.
+
+The machines reach Gitea from the internet, so the GitProvider's
+`ci.giteaActions.publicURL` gives Gitea's public address, `https://` on port
+443, the one port their fence lets out; the chart's in-cluster Gitea has
+none, so remote CI is off until you set it:
+
+```bash
+kubectl -n webshop patch gitprovider gitea --type merge \
+  -p '{"spec":{"ci":{"giteaActions":{"publicURL":"https://git.example.com"}}}}'
+kubectl -n webshop get testenvironment gpu \
+  -o jsonpath='{.status.conditions[?(@.type=="CI")]}{"\n"}'
+```
+
+Gitea's own `ROOT_URL` must reach it from there too: the jobs clone from
+it. The machine downloads the runner from the chart's
+`testEnvironments.runnerURL`, the build of the runner image's version
+attached to the release, checked against the same `SHA256SUMS`; the AMI
+needs what the jobs' steps run on the machine, such as `git` and `node` for
+`actions/checkout`. The `CI` condition says `Serving` once jobs run there,
+and why not otherwise: `NoPublicAddress`, `LabelClash` (the GitProvider's
+`ci` block names `env-gpu` itself), `Unsupported` (no `runnerURL`), or
+`OverBudget`.
+
 ## What an app promises: operations
 
 A Container's optional `spec.operations` says what the app promises wherever

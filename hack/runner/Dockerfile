@@ -7,6 +7,11 @@ ARG BASE=theos/base:dev
 FROM ${BASE}
 ARG RUNNER_VERSION=3.5.0
 ARG RUNNER_SHA256=16dc5c89ad5ac5496369642f01ed29c9bb130a2512e16a8cc3b400d9d0bfea73
+# The arm64 build's sum, which the image doesn't use: Release attaches both
+# builds of this version, checked against these sums, for a remote
+# TestEnvironment's machine that runs a CI job (docs/plans/test-environments.md,
+# step 8).
+ARG RUNNER_SHA256_ARM64=8f48540ac05bf13b6489c0d75f03d78868e556b1dc58415d1c507a264fff2add
 RUN curl -fsSL --retry 5 --retry-all-errors -o /usr/local/bin/gitea-runner \
       "https://gitea.com/gitea/runner/releases/download/v${RUNNER_VERSION}/gitea-runner-${RUNNER_VERSION}-linux-amd64" \
  && echo "${RUNNER_SHA256}  /usr/local/bin/gitea-runner" | sha256sum -c - \

@@ -154,20 +154,26 @@ spec:
                 description: |-
                   ci runs the project's CI jobs labelled env-<name> on the environment's
                   tools, so CI checks what the agents ran with theos-env
-                  (docs/plans/test-environments.md, T8).
+                  (docs/plans/test-environments.md, T8). A local environment keeps a
+                  pool of runner pods; a remote one, set to {}, leases a machine for
+                  each job that waits, within its limits and budget, which it shares
+                  with the runs, once a GitProvider's ci block gives the Git host's
+                  publicURL (step 8).
                 properties:
                   runnerImage:
                     description: |-
                       runnerImage is a CI runner image, such as the release's base runner
                       image: each pod registers with it in an init container, which copies
                       its runner into the pod, and the jobs run on the environment's image. Unset, it is the
-                      image of the first runner of the GitProvider's ci block.
+                      image of the first runner of the GitProvider's ci block. Local only: a
+                      remote machine downloads its runner (the operator's
+                      --test-environment-runner-url).
                     maxLength: 500
                     type: string
                   size:
                     description: |-
                       size is how many idle pods wait for a job; 0, the default, keeps
-                      none, so no pod runs until a workflow names the label.
+                      none, so no pod runs until a workflow names the label. Local only.
                     format: int32
                     maximum: 8
                     minimum: 0
@@ -376,6 +382,10 @@ spec:
             - message: 'an aws environment needs limits.budgetUSDPerDay: a remote
                 lease costs money for every minute it is held'
               rule: '!has(self.aws) || (has(self.limits) && has(self.limits.budgetUSDPerDay))'
+            - message: 'an aws environment''s ci leases a machine for each waiting
+                job, which runs the job on a runner of its own: it keeps no idle runners
+                (ci.size) and takes no ci.runnerImage'
+              rule: '!has(self.aws) || !has(self.ci) || (!has(self.ci.size) && !has(self.ci.runnerImage))'
           status:
             description: status is the live leases and the environment's readiness.
             properties:
@@ -453,7 +463,10 @@ spec:
                       format: int64
                       type: integer
                     holder:
-                      description: holder is the Task whose run holds the lease.
+                      description: |-
+                        holder is the Task whose run holds the lease, or, for a remote
+                        machine that runs a CI job, ci/<GitProvider>/<runner id>: the runner
+                        registered for that job.
                       type: string
                     id:
                       description: |-

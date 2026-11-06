@@ -121,6 +121,11 @@ spec:
         # A remote TestEnvironment's machines download theos-env from it.
         - --test-environment-tools-url={{ tpl . $ }}
         {{- end }}
+        {{- with .Values.testEnvironments.runnerURL }}
+        # A remote TestEnvironment's machine that runs a CI job downloads the
+        # CI runner from it.
+        - --test-environment-runner-url={{ tpl . $ }}
+        {{- end }}
         {{- if .Values.ui.enabled }}
         - --ui-service-account={{ .Release.Namespace }}/{{ include "theos.uiName" . }}
         {{- end }}

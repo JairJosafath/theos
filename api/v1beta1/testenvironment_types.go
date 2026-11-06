@@ -22,6 +22,7 @@ import (
 // member is added with the adapter that leases it.
 // +kubebuilder:validation:XValidation:rule="[has(self.local), has(self.aws)].exists_one(x, x)",message="set exactly one provider member: local or aws"
 // +kubebuilder:validation:XValidation:rule="!has(self.aws) || (has(self.limits) && has(self.limits.budgetUSDPerDay))",message="an aws environment needs limits.budgetUSDPerDay: a remote lease costs money for every minute it is held"
+// +kubebuilder:validation:XValidation:rule="!has(self.aws) || !has(self.ci) || (!has(self.ci.size) && !has(self.ci.runnerImage))",message="an aws environment's ci leases a machine for each waiting job, which runs the job on a runner of its own: it keeps no idle runners (ci.size) and takes no ci.runnerImage"
 type TestEnvironmentSpec struct {
 	// description says in one line what the environment has, for people and
 	// for the agents and planner that choose it.
@@ -49,17 +50,23 @@ type TestEnvironmentSpec struct {
 
 	// ci runs the project's CI jobs labelled env-<name> on the environment's
 	// tools, so CI checks what the agents ran with theos-env
-	// (docs/plans/test-environments.md, T8).
+	// (docs/plans/test-environments.md, T8). A local environment keeps a
+	// pool of runner pods; a remote one, set to {}, leases a machine for
+	// each job that waits, within its limits and budget, which it shares
+	// with the runs, once a GitProvider's ci block gives the Git host's
+	// publicURL (step 8).
 	// +optional
 	CI *TestEnvironmentCI `json:"ci,omitempty"`
 }
 
 // TestEnvironmentCI is a local environment's pool of CI runner pods: one
 // per GitProvider whose ci block keeps runners, under the label
-// env-<name>, which a workflow names in runs-on.
+// env-<name>, which a workflow names in runs-on. A remote environment's ci
+// is empty: each machine it leases for a job registers a runner of its own
+// for that job, and ends with it.
 type TestEnvironmentCI struct {
 	// size is how many idle pods wait for a job; 0, the default, keeps
-	// none, so no pod runs until a workflow names the label.
+	// none, so no pod runs until a workflow names the label. Local only.
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=8
 	// +optional
@@ -68,7 +75,9 @@ type TestEnvironmentCI struct {
 	// runnerImage is a CI runner image, such as the release's base runner
 	// image: each pod registers with it in an init container, which copies
 	// its runner into the pod, and the jobs run on the environment's image. Unset, it is the
-	// image of the first runner of the GitProvider's ci block.
+	// image of the first runner of the GitProvider's ci block. Local only: a
+	// remote machine downloads its runner (the operator's
+	// --test-environment-runner-url).
 	// +kubebuilder:validation:MaxLength=500
 	// +optional
 	RunnerImage string `json:"runnerImage,omitempty"`
@@ -219,6 +228,14 @@ const (
 	// SecretIncomplete, CredentialRefused and Unreachable. A local
 	// environment, which needs none, has no such condition.
 	ConditionTestEnvironmentCredentialsValid = "CredentialsValid"
+	// ConditionTestEnvironmentCI says whether a remote environment with a
+	// ci block runs the project's jobs labelled env-<name>: a GitProvider's
+	// ci block keeps runners, gives the Git host's public address and names
+	// no env-<name> runner of its own, and the provider and the Git host can
+	// start a runner for one job. Its reasons are Serving, NoGitProvider,
+	// NoPublicAddress, LabelClash, Unsupported, Unreachable and OverBudget.
+	// A local environment's pool is the Project's CIRunners condition's.
+	ConditionTestEnvironmentCI = "CI"
 )
 
 // TestEnvironmentLease is one live lease of the environment.
@@ -227,7 +244,9 @@ type TestEnvironmentLease struct {
 	// pod's name; for aws, the machine's lease tag.
 	// +required
 	ID string `json:"id"`
-	// holder is the Task whose run holds the lease.
+	// holder is the Task whose run holds the lease, or, for a remote
+	// machine that runs a CI job, ci/<GitProvider>/<runner id>: the runner
+	// registered for that job.
 	// +optional
 	Holder string `json:"holder,omitempty"`
 	// state is Pending, Ready, Failed or Ended.

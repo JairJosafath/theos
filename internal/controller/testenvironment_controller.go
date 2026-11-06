@@ -50,6 +50,9 @@ type TestEnvironmentReconciler struct {
 	APIReader client.Reader
 	// Providers are the providers by member, as cmd/main.go builds them.
 	Providers ports.TestEnvironmentProviders
+	// Git makes the Provider of each GitProvider, whose CI jobs a remote
+	// environment with a ci block runs (testenvironment_ci.go).
+	Git GitClient
 	// SharedPullSecrets are the shared pull Secrets lease pods list, as
 	// agent sandboxes do.
 	SharedPullSecrets []string
@@ -66,6 +69,7 @@ type TestEnvironmentReconciler struct {
 // +kubebuilder:rbac:groups=theos.factory.io,resources=testenvironments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=theos.factory.io,resources=testenvironments/finalizers,verbs=update
 // +kubebuilder:rbac:groups=theos.factory.io,resources=tasks,verbs=get;list;watch
+// +kubebuilder:rbac:groups=theos.factory.io,resources=gitproviders,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch
@@ -135,14 +139,18 @@ func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	work, err := r.ciWorkFor(ctx, &env, leases)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	live := make([]ports.Lease, 0, len(leases))
 	for _, l := range leases {
-		held, err := r.held(ctx, env.Namespace, l)
+		held, err := r.held(ctx, env.Namespace, l, work)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		if model.OrphanLease(held, l.Started, r.now(), r.orphanGrace()) {
-			if err := provider.Return(ctx, environment, l.ID); err != nil {
+			if err := r.returnLease(ctx, provider, environment, l, work); err != nil {
 				return ctrl.Result{}, err
 			}
 			logf.FromContext(ctx).Info("Returned a lease its holder holds no more", "lease", l.ID, "holder", l.Holder)
@@ -150,9 +158,17 @@ func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		live = append(live, l)
 	}
+	soon := false
+	if work != nil {
+		if live, soon, err = r.serveCI(ctx, &env, status, environment, provider, work, live); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		apimeta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionTestEnvironmentCI)
+	}
 	status.SpentToday = spentToday(status.SpentToday, status.Leases, live, r.now())
 	status.Leases = leaseStatus(live)
-	return ctrl.Result{RequeueAfter: r.pollInterval()}, r.writeStatus(ctx, &env, status)
+	return ctrl.Result{RequeueAfter: r.recheck(soon)}, r.writeStatus(ctx, &env, status)
 }
 
 // checkCredentials sets a remote env's CredentialsValid: its Secret is there
@@ -230,8 +246,13 @@ func (r *TestEnvironmentReconciler) release(ctx context.Context, env *c4v1beta1.
 		return let("its credentials Secret is gone")
 	}
 	leases, err := provider.Leases(ctx, environment)
+	var work *ciWork
+	if err == nil {
+		// A CI lease's runner goes with it, as far as its host answers.
+		work, err = r.ciWorkFor(ctx, env, leases)
+	}
 	for i := 0; err == nil && i < len(leases); i++ {
-		if err = provider.Return(ctx, environment, leases[i].ID); err == nil {
+		if err = r.returnLease(ctx, provider, environment, leases[i], work); err == nil {
 			log.Info("Returned a deleted test environment's lease", "lease", leases[i].ID, "holder", leases[i].Holder)
 		}
 	}
@@ -273,11 +294,16 @@ func (r *TestEnvironmentReconciler) readiness(ctx context.Context, env *c4v1beta
 	return model.TestEnvReady, "", nil
 }
 
-// held reports whether lease l's holder, a Task, still holds it: the Task
-// is there, unfinished, and lists the lease in status.environments.
-func (r *TestEnvironmentReconciler) held(ctx context.Context, namespace string, l ports.Lease) (bool, error) {
+// held reports whether lease l's holder still holds it: a Task that is
+// there, unfinished, and lists the lease in status.environments, or a CI
+// job's runner while work says it needs the lease (step 8).
+func (r *TestEnvironmentReconciler) held(ctx context.Context, namespace string, l ports.Lease,
+	work *ciWork) (bool, error) {
 	if l.Holder == "" {
 		return false, nil
+	}
+	if _, _, ok := model.ParseCIHolder(l.Holder); ok {
+		return work.held(l, r.now()), nil
 	}
 	var task c4v1beta1.Task
 	err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: l.Holder}, &task)
