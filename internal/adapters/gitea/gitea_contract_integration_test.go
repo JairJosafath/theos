@@ -53,7 +53,7 @@ func TestGitHostContractIntegration(t *testing.T) {
 // TestEventsContractIntegration runs the Events contract suite on the seeded
 // Gitea, each subtest in an organization of its own, whose hook delivers to a
 // listener of the subtest's own; the listener's second address is localhost
-// for 127.0.0.1, which hack/gitea-local.sh lets Gitea reach.
+// for 127.0.0.1, which the local Gitea's webhook settings let it reach.
 func TestEventsContractIntegration(t *testing.T) {
 	base := os.Getenv("THEOS_GITEA_URL")
 	if base == "" {
