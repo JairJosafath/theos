@@ -116,9 +116,13 @@ it against this table. Where the code lives:
 - **The per-CI table** (`model.CI`: its name, which names the templates'
   `.theos/ci/<name>/` folder, check contexts, protected paths) is in
   `internal/model`, so `internal/scaffold` reads it without an adapter.
-- **The host-neutral guard** is a Go test beside the ports
-  (`internal/ports/hostneutral_test.go`, from #1094) with its allowlist of
-  today's `gitea` and `.gitea/` hits, file and count, which may only shrink.
+- **The host-neutral guard** is a Go test beside the ports,
+  [`internal/ports/hostneutral_test.go`](../internal/ports/hostneutral_test.go):
+  it walks the Go files outside `internal/adapters/gitea` and counts
+  case-insensitive `gitea` (which `.gitea/` matches) per file. Its allowlist
+  holds today's files and counts and may only shrink: a file not in it, or
+  with more hits than its entry, fails the test, and so does an entry above
+  its file's count, so a change that removes hits lowers the entry.
 
 `internal/ports` holds the Deployer (#1161) and the Git host's five ports
 (#1166): GitHost, Issues, CI, AgentAccess and Registry, one file each with
