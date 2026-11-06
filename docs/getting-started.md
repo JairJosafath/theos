@@ -1049,8 +1049,16 @@ jobs:
 (180) how long one lasts. Turn the chart's off with
 `testEnvironments.browser.enabled=false`; another environment is a
 TestEnvironment of your own, on an image with its tools
-(`config/samples/webshop/testenvironment.yaml`). `kind/by-hand` stays for
-what no environment has: an account, a purchase, a person's own device.
+(`config/samples/webshop/testenvironment.yaml`). A device on a node comes
+through the cluster's device plugin: the release's `env-android` image runs
+an Android emulator on KVM (`devices.kubevirt.io/kvm`, in
+`testenvironment-android.yaml`; a run boots it with `theos-env run android
+-- android-emulator start`), and `env-godot` runs Godot on an NVIDIA GPU
+(`nvidia.com/gpu` under RuntimeClass `nvidia`, in
+`testenvironment-godot.yaml`). `local.devices`, `runtimeClassName`,
+`nodeSelector` and `tolerations` are the cluster's own names. `kind/by-hand`
+stays for what no environment has: an account, a purchase, a person's own
+device.
 
 ## What an app promises: operations
 

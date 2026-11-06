@@ -1,0 +1,40 @@
+# Godot on a GPU, where the agents and CI run a game's tests and take its
+# pictures (docs/plans/test-environments.md, step 5): a pod per lease in this
+# namespace, on the release's env-godot image (the Godot engine, Vulkan and
+# OpenGL, and a virtual display), with an NVIDIA GPU from the cluster's device
+# plugin, nvidia.com/gpu, under the RuntimeClass the NVIDIA GPU operator
+# installs, nvidia, which mounts the driver, and tolerating the taint GPU
+# nodes commonly carry. Each is a setting, as the cluster names them. A run
+# gets it when its issue is labelled env/godot, or its Standard or Framework
+# lists it:
+#
+#   theos-env run godot -- godot --headless --path . -s addons/gut/gut_cmdln.gd -gexit
+#   theos-env run godot -- xvfb-run -a godot --path . --write-movie shots/title.png --quit-after 60
+#
+# Tests need no GPU: without devices and runtimeClassName the same image runs
+# them anywhere, and renders pictures with Mesa's software renderers.
+# Not in kustomization.yaml: it needs a GPU node, its device plugin and the
+# RuntimeClass. Whether the GPU renders there is a person's run on such a
+# node. In the Kind test environment, make env-image-godot loads
+# theos/env-godot:dev.
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: godot
+spec:
+  description: Godot 4.7 on an NVIDIA GPU; run tests with godot --headless, and pictures or movies under xvfb-run -a godot.
+  local:
+    image: ghcr.io/jairjosafath/theos/env-godot:0.30.0
+    resources:
+      requests: {cpu: "1", memory: 2Gi}
+      limits: {cpu: "4", memory: 8Gi}
+    devices:
+      nvidia.com/gpu: "1"
+    runtimeClassName: nvidia
+    tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  limits:
+    maxLeases: 1
+    maxLeaseMinutes: 120

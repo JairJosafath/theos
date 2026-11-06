@@ -150,17 +150,23 @@ describe('live updates in the browser', () => {
     // in the project's namespace, and the work of every project that the
     // sidebar's Needs you count reads; each watch opens when its list returns,
     // so on a busy device they may come in a few batches, never one each.
+    // Chats are read in every namespace alone, for About and Settings
+    // (docs/plans/done/chat-matrix.md, step 3), not again in the project's.
+    const everywhere = [
+      RESOURCES.projects,
+      RESOURCES.tasks,
+      RESOURCES.agents,
+      RESOURCES.containers,
+      RESOURCES.sessions,
+      RESOURCES.crews,
+      RESOURCES.briefs,
+      RESOURCES.chats,
+    ]
     const want = new Set([
-      ...[
-        RESOURCES.projects,
-        RESOURCES.tasks,
-        RESOURCES.agents,
-        RESOURCES.containers,
-        RESOURCES.sessions,
-        RESOURCES.crews,
-        RESOURCES.briefs,
-      ].map((k) => resourcePath(k)),
-      ...Object.values(RESOURCES).map((k) => resourcePath(k, NS)),
+      ...everywhere.map((k) => resourcePath(k)),
+      ...Object.values(RESOURCES)
+        .filter((k) => k !== RESOURCES.chats)
+        .map((k) => resourcePath(k, NS)),
     ])
     const watches = requests.filter((r) => r.url.pathname === '/k8s-watch')
     const seen = new Set()

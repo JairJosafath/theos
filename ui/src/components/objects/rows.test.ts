@@ -108,6 +108,25 @@ describe('agentRuns', () => {
     ])
   })
 
+  it('starts no run while it waits for a test environment (test-environments, step 6)', () => {
+    const waiting = task('api-7', {
+      phase: 'Implementing',
+      history: [step('Implementing', 1, 'WaitingForEnvironment', 'AllLeased: every lease of browser is taken')],
+    })
+    expect(agentRuns(waiting)).toEqual([])
+    // Leased, the run starts when its sandbox does, not when the wait did.
+    const leased = task('api-7', {
+      phase: 'Implementing',
+      history: [
+        { ...step('Implementing', 1, 'WaitingForEnvironment'), at: '2026-06-01T10:01:00Z' },
+        { ...step('Implementing', 1, 'Running'), at: '2026-06-01T10:04:00Z' },
+      ],
+    })
+    expect(agentRuns(leased).map((r) => [r.n, r.round, r.at, r.current])).toEqual([
+      [1, 1, '2026-06-01T10:04:00Z', true],
+    ])
+  })
+
   it('marks the run of the newest step as running while the Task does', () => {
     const t = task('api-7', {
       phase: 'Implementing',

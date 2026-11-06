@@ -17,6 +17,7 @@ import { pageHref, storyHref } from './links'
 import { agentRuns, taskTimeline } from './rows'
 import { describeHandoffs } from '../../model/tokens'
 import { ScoreTaskVerdicts, TaskScores } from './Scores'
+import { TaskEnvironments } from './TestEnvironmentPages'
 
 export function TaskPage({ task, agents, tasks = [] }: { task: Task; agents: Agent[]; tasks?: Task[] }) {
   const ns = task.metadata.namespace ?? ''
@@ -55,6 +56,7 @@ export function TaskPage({ task, agents, tasks = [] }: { task: Task; agents: Age
     <>
       <ScoreTaskVerdicts task={task} />
       <TaskOverview task={task} implementer={implementer} roles={roles} usage={usage} limit={limit} all={all} />
+      <TaskEnvironments task={task} />
       <TaskScores task={task} tasks={tasks} />
     </>
   )

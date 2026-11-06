@@ -18,6 +18,7 @@ import { appliesConnector, relationshipPhase, type NextStep } from '../../model/
 import { ObjectHeader, type ChildRef, type OutLink } from '../ObjectHeader'
 import { CatalogList } from './CatalogPages'
 import { DeployTargetList } from './DeployPages'
+import { TestEnvironmentList } from './TestEnvironmentPages'
 import { pageHref, projectCrumb, storyHref } from './links'
 import { When } from '../bits'
 
@@ -110,6 +111,7 @@ export function ProjectPage({
             <>
               <CatalogList ns={ns} data={data} connection={connection} />
               <DeployTargetList ns={ns} data={data} connection={connection} />
+              <TestEnvironmentList ns={ns} data={data} connection={connection} />
             </>
           ),
         }}

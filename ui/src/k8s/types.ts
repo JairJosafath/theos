@@ -373,6 +373,62 @@ export interface DeployTarget extends K8sObject {
   }
 }
 
+/** A Kubernetes toleration, as a test environment's local member lists it. */
+export interface Toleration {
+  key?: string
+  operator?: 'Exists' | 'Equal'
+  value?: string
+  effect?: string
+  tolerationSeconds?: number
+}
+
+/** One live lease of a test environment, as its provider reports it. */
+export interface TestEnvironmentLease {
+  /** The provider's name for it: for local, the pod's. */
+  id: string
+  /** The Task whose run holds it. */
+  holder?: string
+  state?: 'Pending' | 'Ready' | 'Failed' | 'Ended'
+  since?: string
+  /** Why a lease is Pending or Failed. */
+  message?: string
+  /** What it cost so far, in thousandths of a US dollar; 0 for local. */
+  costMilliUSD?: number
+}
+
+/**
+ * A named set of tools the agents' runs and CI lease, such as a browser, an
+ * Android emulator or a game engine on a GPU (docs/plans/test-environments.md):
+ * exactly one provider member, its limits and its CI pool.
+ */
+export interface TestEnvironment extends K8sObject {
+  spec: {
+    /** One line for people and the agents that choose it. */
+    description?: string
+    /** A pod per lease on the cluster, from image, fenced like an agent sandbox. */
+    local?: {
+      image: string
+      resources?: { requests?: Record<string, string>; limits?: Record<string, string> }
+      /** Extended resources the cluster's device plugins name, such as devices.kubevirt.io/kvm. */
+      devices?: Record<string, string>
+      runtimeClassName?: string
+      nodeSelector?: Record<string, string>
+      tolerations?: Toleration[]
+    }
+    /** maxLeases (default 2) at once, each lasting maxLeaseMinutes (default 180) at most. */
+    limits?: { maxLeases?: number; maxLeaseMinutes?: number }
+    /** A pool of size (default 0) CI runner pods for jobs that run on env-<name>. */
+    ci?: { size?: number; runnerImage?: string }
+  }
+  status?: {
+    leases?: TestEnvironmentLease[]
+    /** What the leases cost on day (UTC, such as 2026-11-06), the ended ones' included. */
+    spentToday?: { day: string; milliUSD?: number }
+    /** Ready: its image is pinned and the project's fence for its pods exists. */
+    conditions?: Condition[]
+  }
+}
+
 export interface DataStore extends K8sObject {
   spec: {
     softwareSystemRef: LocalRef
@@ -529,6 +585,7 @@ export const RESOURCES = {
   briefs: 'briefs',
   chats: 'chats',
   benchmarks: 'benchmarks',
+  testEnvironments: 'testenvironments',
 } as const
 
 /** API path of a theos.factory.io resource, in one namespace or across all of them. */
@@ -634,6 +691,14 @@ export interface Benchmark extends K8sObject {
     cleaned?: string[]
     conditions?: Condition[]
   }
+}
+
+/** A lease of a test environment a Task's run holds: the TestEnvironment, the lease's ID, the run and since when. */
+export interface TaskEnvironmentLease {
+  name: string
+  lease: string
+  sandbox: string
+  since?: string
 }
 
 /** The Agent configuration an agent run ran on. */
@@ -758,6 +823,13 @@ export interface Task extends K8sObject {
     /** When an unavailable agent is tried again; Progressing's reason is then AgentUnavailable. */
     agentBackAt?: string
     slotWaitSince?: string
+    /**
+     * The test environments the current run holds, a lease each, taken before
+     * its sandbox and returned when it ends or is suspended.
+     */
+    environments?: TaskEnvironmentLease[]
+    /** The test environments any run of the Task leased, by name. */
+    leasedEnvironments?: string[]
     phaseChangedAt?: string
     completedAt?: string
     /** The Task's agent runs as each ended, oldest first; the newest 64. */

@@ -17,7 +17,7 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 pinned="Dockerfile ui/Dockerfile hack/seed/Dockerfile hack/session/Dockerfile
   hack/toolchain-base/Dockerfile hack/toolchain-go/Dockerfile
   hack/agent/Dockerfile hack/runner/Dockerfile hack/runner/Dockerfile.image
-  hack/env-browser/Dockerfile"
+  hack/env-browser/Dockerfile hack/env-android/Dockerfile hack/env-godot/Dockerfile"
 for f in $pinned; do
   "$CHECK" "$ROOT/$f"
   check "$f's base images are pinned" "$?" 0

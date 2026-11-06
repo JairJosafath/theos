@@ -26,6 +26,7 @@ import {
   type SoftwareSystem,
   type Standard,
   type Task,
+  type TestEnvironment,
 } from './types'
 import type { WatchMux } from './mux'
 import { ApiError, ResourceWatcher, type WatchState } from './watch'
@@ -62,6 +63,8 @@ export interface StoryData {
   briefs: Brief[]
   /** Comparisons of Agent variants on the same goals, for their pages. Optional: may stay empty. */
   benchmarks: Benchmark[]
+  /** The tools the agents' runs and CI lease, for the Project page and theirs. Optional: may stay empty. */
+  testEnvironments: TestEnvironment[]
 }
 
 export interface Problem {
@@ -151,6 +154,7 @@ export function emptyStory(namespace: string): StoryData {
     tasks: [],
     briefs: [],
     benchmarks: [],
+    testEnvironments: [],
   }
 }
 
@@ -290,6 +294,7 @@ const READ_NAMES = {
   gitProviders: 'Git providers',
   deployTargets: 'deploy targets',
   benchmarks: 'benchmarks',
+  testEnvironments: 'test environments',
 } as const
 
 /** Watches every story kind in one project namespace. */
@@ -352,6 +357,7 @@ export class LiveStorySource extends WatchingSource<StoryData> {
             'bundles',
             'domains',
             'benchmarks',
+            'testEnvironments',
           ] as const
         ).map((k) => ({
           what: READ_NAMES[k],
@@ -391,6 +397,7 @@ export class LiveStorySource extends WatchingSource<StoryData> {
       bundles: this.items<Bundle>(18),
       domains: this.items<Domain>(19),
       benchmarks: this.items<Benchmark>(20),
+      testEnvironments: this.items<TestEnvironment>(21),
     }
   }
 }

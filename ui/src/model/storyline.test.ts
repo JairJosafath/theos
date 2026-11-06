@@ -26,6 +26,7 @@ const empty = (): StoryData => ({
   tasks: [],
   briefs: [],
   benchmarks: [],
+  testEnvironments: [],
 })
 
 const brief = (name: string, status: Brief['status']): Brief => ({
