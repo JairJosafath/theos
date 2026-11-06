@@ -434,7 +434,7 @@ issue `status/needs-human` with the reason in a comment; label it
 | --- | --- |
 | A pod in `ImagePullBackOff` in `theos-system` or `gitea` | The images are private and that namespace has no `ghcr` Secret, or the install lacks the `imagePullSecrets` settings. |
 | A sandbox pod in `ImagePullBackOff` in `webshop` | Secret `theos-system/ghcr` is missing, the install lacks `global.imagePullSecrets`, or namespace `webshop` lacks the label `theos.factory.io/shared-secrets=true`; `kubectl -n webshop get project webshop -o jsonpath='{.status.conditions[?(@.type=="SecretsShared")].message}'` says which. Fix it, then delete the pod. |
-| `helm install` times out | Gitea's image is still pulling; `kubectl -n gitea get pods`, then `helm upgrade` with the same settings. |
+| `helm install` times out | Gitea's image is still pulling, or the seed failed and the runners wait for its Secret `gitea-runner`; `kubectl -n gitea get pods` and `kubectl -n gitea logs -l app.kubernetes.io/name=seed` say which. Then `helm upgrade` with the same settings. |
 | Container `orders-cli` not `Ready` | `kubectl -n webshop describe container orders-cli`: the condition's message says which template or GitProvider is missing. |
 | The issue is labelled `status/needs-human` before any Task | The Crew rejected it and said why in a comment, such as a missing checklist; fix the body and label it `status/ready` again. |
 | The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |
