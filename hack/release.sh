@@ -19,8 +19,12 @@
 #
 # The release command works in a worktree of its own from origin/main, so the
 # checkout it runs in is never touched. It refuses a version that isn't above
-# the chart's, or whose tag origin already has. GOVERNANCE.md lets the
-# maintainer run it: the bump and the baseline are the only change it commits.
+# the chart's, or whose tag origin already has. The first release, on an
+# origin with no vX.Y.Z tag, may also be the chart's own version: a repository
+# split from another inherits a chart naming the other's last release. When
+# such a release has nothing to bump (its bump was merged already), it tags
+# origin/main as it is. GOVERNANCE.md lets the maintainer run it: the bump and
+# the baseline are the only change it commits.
 #
 #   ROOT     the tree --bump and --check read (default the repository's root)
 #   REMOTE   the remote to fetch main from and push to (default origin)
@@ -119,7 +123,14 @@ git -C "$ROOT" worktree add --quiet --detach "$WT" "$REMOTE/main"
 from=$(chart_version "$WT")
 to=$(next "$from" "$1")
 tag=v$to
-if [ "$(printf '%s\n%s\n' "$from" "$to" | sort -V | tail -1)" != "$to" ] || [ "$from" = "$to" ]; then
+# The first release: REMOTE has no vX.Y.Z tag, so the chart's version was
+# never tagged there. A repository split from another inherits the other's
+# chart, which names the other's last release (theos's named c4factory's
+# v0.30.0), and its first release may be that version. A failed lookup fails.
+remote_tags=$(git -C "$ROOT" ls-remote --tags --refs "$REMOTE")
+first=
+grep -qE 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$remote_tags" || first=1
+if [ "$(printf '%s\n%s\n' "$from" "$to" | sort -V | tail -1)" != "$to" ] || { [ "$from" = "$to" ] && [ -z "$first" ]; }; then
   echo "$tag isn't above the chart's version, $from" >&2
   exit 1
 fi
@@ -130,29 +141,41 @@ fi
 
 branch=chore/release-$tag
 bump "$WT" "$to"
-git -C "$WT" add -A "$BASELINE"
-git -C "$WT" commit --quiet -m "chore: release $tag" -- "$CHART" "$GUIDE" "$BASELINE"
-git -C "$WT" push --quiet "$REMOTE" "HEAD:refs/heads/$branch"
-url=$(cd "$WT" && gh pr create --base main --head "$branch" --title "chore: release $tag" \
-  --body "Names $tag in \`$CHART\` and \`$GUIDE\`, so the guide at the tag installs that release (#370), and copies \`$CRDS\` to \`$BASELINE\`, the CRDs the next release keeps (#1097). Made by \`hack/release.sh\`.")
-echo "opened $url"
-(cd "$WT" && gh pr merge "$url" --merge)
-# GitHub deletes a merged branch itself where the repository says so, at any
-# moment, even between a look and the delete (#580). So delete it regardless,
-# and only when that fails ask whether it's still there; either way go on to
-# the tag, since a branch left over never makes the release wrong.
-if ! git -C "$WT" push --quiet "$REMOTE" --delete "$branch" 2>/dev/null &&
-  git -C "$ROOT" ls-remote --exit-code --heads "$REMOTE" "$branch" >/dev/null; then
-  echo "couldn't delete $branch on $REMOTE; delete it by hand" >&2
-fi
-sha=$(cd "$WT" && gh pr view "$url" --json mergeCommit -q .mergeCommit.oid)
-if [ -z "$sha" ]; then
-  echo "$url has no merge commit; nothing tagged" >&2
-  exit 1
+# dropped.txt goes with the baseline: an entry the new baseline never served
+# fails make check on main (TestDroppedNamesOnlyDroppedVersions).
+paths=("$CHART" "$GUIDE" "$BASELINE")
+[ ! -f "$WT/$DROPPED" ] || paths+=("$DROPPED")
+git -C "$WT" add -A -- "${paths[@]}"
+if git -C "$WT" diff --cached --quiet; then
+  # Nothing to bump, which only a first release meets: main names the
+  # version and its CRDs are the baseline already, as once its bump pull
+  # request was merged by hand. main is tagged as it is.
+  echo "$REMOTE/main names $tag and keeps its CRDs already; tagging it as it is"
+  sha=$(git -C "$WT" rev-parse HEAD)
+else
+  git -C "$WT" commit --quiet -m "chore: release $tag"
+  git -C "$WT" push --quiet "$REMOTE" "HEAD:refs/heads/$branch"
+  url=$(cd "$WT" && gh pr create --base main --head "$branch" --title "chore: release $tag" \
+    --body "Names $tag in \`$CHART\` and \`$GUIDE\`, so the guide at the tag installs that release (#370), and copies \`$CRDS\` to \`$BASELINE\`, the CRDs the next release keeps (#1097), emptying \`$DROPPED\`'s entries. Made by \`hack/release.sh\`.")
+  echo "opened $url"
+  (cd "$WT" && gh pr merge "$url" --merge)
+  # GitHub deletes a merged branch itself where the repository says so, at any
+  # moment, even between a look and the delete (#580). So delete it regardless,
+  # and only when that fails ask whether it's still there; either way go on to
+  # the tag, since a branch left over never makes the release wrong.
+  if ! git -C "$WT" push --quiet "$REMOTE" --delete "$branch" 2>/dev/null &&
+    git -C "$ROOT" ls-remote --exit-code --heads "$REMOTE" "$branch" >/dev/null; then
+    echo "couldn't delete $branch on $REMOTE; delete it by hand" >&2
+  fi
+  sha=$(cd "$WT" && gh pr view "$url" --json mergeCommit -q .mergeCommit.oid)
+  if [ -z "$sha" ]; then
+    echo "$url has no merge commit; nothing tagged" >&2
+    exit 1
+  fi
+  git -C "$WT" fetch --quiet "$REMOTE" main
+  git -C "$WT" checkout --quiet --detach "$sha"
 fi
 
-git -C "$WT" fetch --quiet "$REMOTE" main
-git -C "$WT" checkout --quiet --detach "$sha"
 ROOT=$WT "$HACK/release.sh" --check "$tag"
 git -C "$WT" push --quiet "$REMOTE" "$sha:refs/tags/$tag"
 echo "tagged $sha as $tag; Release builds it"

@@ -65,33 +65,46 @@ git -C "$T/src" -c user.name=t -c user.email=t@t commit --quiet -m init
 git -C "$T/src" push --quiet "$T/origin.git" main
 git clone --quiet "$T/origin.git" "$T/clone"
 cp "$RELEASE" "$T/clone/release.sh"
+# ORIGIN is the bare origin the release runs against; pr create's --head names
+# the branch pr merge merges.
 mkdir "$T/bin"
 cat >"$T/bin/gh" <<EOF
 #!/usr/bin/env bash
 echo "gh \$*" >>"$T/gh.log"
 case "\$1 \$2" in
-"pr create") echo https://github.com/o/theos/pull/7 ;;
+"pr create")
+  while [ \$# -gt 0 ]; do [ "\$1" != --head ] || echo "\$2" >"$T/head"; shift; done
+  echo https://github.com/o/theos/pull/7 ;;
 "pr merge")
   rm -rf "$T/merge"
-  git clone --quiet "$T/origin.git" "$T/merge"
-  git -C "$T/merge" -c user.name=t -c user.email=t@t merge --quiet --no-ff -m merged origin/chore/release-v1.2.1
+  git clone --quiet "\$ORIGIN" "$T/merge"
+  git -C "$T/merge" -c user.name=t -c user.email=t@t merge --quiet --no-ff -m merged "origin/\$(cat "$T/head")"
   git -C "$T/merge" push --quiet origin main
-  if [ -e "$T/autodelete" ]; then git -C "$T/origin.git" branch --quiet -D chore/release-v1.2.1; fi
+  if [ -e "$T/autodelete" ]; then git -C "\$ORIGIN" branch --quiet -D "\$(cat "$T/head")"; fi
   ;;
-"pr view") git -C "$T/origin.git" rev-parse main ;;
+"pr view") git -C "\$ORIGIN" rev-parse main ;;
 esac
 EOF
 chmod +x "$T/bin/gh"
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 
-run() { (cd "$T/clone" && PATH="$T/bin:$PATH" ROOT=$T/clone ./release.sh "$@") >"$T/out" 2>&1; }
+# run ARG...: release.sh in the clone CLONE of the bare ORIGIN.
+CLONE=$T/clone ORIGIN=$T/origin.git
+run() { (cd "$CLONE" && PATH="$T/bin:$PATH" ROOT=$CLONE ORIGIN=$ORIGIN ./release.sh "$@") >"$T/out" 2>&1; }
+# Origin has released before (v1.0.0), so the chart's 1.2.0 is a release of its own.
+git -C "$T/origin.git" tag v1.0.0 main
 run 1.2.0
 check "a version that isn't above the chart's is refused" $? 1
+check "  and says so" "$(grep -c "v1.2.0 isn't above the chart's version, 1.2.0" "$T/out")" 1
 run patch
 check "patch: bumps, merges and tags" $? 0
 check "  the tag is origin's main, the merge commit" "$(git -C "$T/origin.git" rev-parse v1.2.1^{commit})" "$(git -C "$T/origin.git" rev-parse main)"
 check "  main names the release" "$(git -C "$T/origin.git" show main:dist/chart/Chart.yaml | grep -c '^version: 1.2.1$')" 1
 check "  main's baseline is its CRDs" "$(git -C "$T/origin.git" ls-tree --name-only main test/compat/baseline/)" test/compat/baseline/things.yaml
+# The bump empties dropped.txt's entries with the baseline copy. Left out of
+# the commit, main kept an entry its new baseline never served, and
+# TestDroppedNamesOnlyDroppedVersions failed on main after the release.
+check "  main's dropped.txt keeps only its comments" "$(git -C "$T/origin.git" show main:test/compat/dropped.txt | grep -vc '^#')" 0
 check "  merged with a merge commit" "$(grep -c 'pr merge https://github.com/o/theos/pull/7 --merge' "$T/gh.log")" 1
 check "  the bump branch is gone" "$(git -C "$T/origin.git" branch --list 'chore/*' | wc -l)" 0
 check "  the clone's checkout is untouched" "$(sed -n 's/^version: //p' "$T/clone/dist/chart/Chart.yaml")" 1.2.0
@@ -130,5 +143,42 @@ git -C "$T/origin.git" tag v1.3.0 main
 run minor
 check "a tag origin already has is refused" $? 1
 check "  and says so" "$(grep -c 'origin already has v1.3.0' "$T/out")" 1
+
+# The first release: a repository split from another inherits its chart, which
+# names the other's last release (theos's names c4factory's v0.30.0), and has
+# no vX.Y.Z tag of its own. Its first release may be the chart's version.
+git init --quiet --bare -b main "$T/first.git"
+git init --quiet -b main "$T/firstsrc"
+tree "$T/firstsrc" 2.0.0
+git -C "$T/firstsrc" add -A
+git -C "$T/firstsrc" commit --quiet -m init
+git -C "$T/firstsrc" push --quiet "$T/first.git" main
+git -C "$T/first.git" tag not-a-release main
+git clone --quiet "$T/first.git" "$T/first"
+cp "$RELEASE" "$T/first/release.sh"
+CLONE=$T/first ORIGIN=$T/first.git
+: >"$T/gh.log"
+run 2.0.0
+check "first release: the chart's own version is bumped, merged and tagged" $? 0
+check "  the tag is origin's main, the merge commit" "$(git -C "$T/first.git" rev-parse v2.0.0^{commit})" "$(git -C "$T/first.git" rev-parse main)"
+check "  through a pull request" "$(grep -c 'pr merge https://github.com/o/theos/pull/7 --merge' "$T/gh.log")" 1
+check "  main still names the release" "$(git -C "$T/first.git" show main:dist/chart/Chart.yaml | grep -c '^version: 2.0.0$')" 1
+check "  main's baseline is its CRDs" "$(git -C "$T/first.git" ls-tree --name-only main test/compat/baseline/)" test/compat/baseline/things.yaml
+check "  main's dropped.txt keeps only its comments" "$(git -C "$T/first.git" show main:test/compat/dropped.txt | grep -vc '^#')" 0
+run 2.0.0
+check "  once tagged, the chart's version is refused" $? 1
+# A first release whose bump was merged by hand (a ruleset made gh pr merge
+# wait for checks) has nothing left to bump: main is tagged as it is.
+git -C "$T/first.git" tag -d v2.0.0 >/dev/null
+run 1.9.0
+check "first release: a version below the chart's is refused" $? 1
+main=$(git -C "$T/first.git" rev-parse main)
+: >"$T/gh.log"
+run 2.0.0
+check "first release, nothing to bump: tags main as it is" $? 0
+check "  the tag is main" "$(git -C "$T/first.git" rev-parse v2.0.0^{commit})" "$main"
+check "  main is unchanged" "$(git -C "$T/first.git" rev-parse main)" "$main"
+check "  no pull request" "$(grep -c 'pr create' "$T/gh.log")" 0
+check "  it says so" "$(grep -c 'origin/main names v2.0.0 and keeps its CRDs already' "$T/out")" 1
 
 exit $fail

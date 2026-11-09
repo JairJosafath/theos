@@ -132,4 +132,44 @@ has "  lists the whole history" "- before the range (#1)"
 has "  up to the tag" "- a new kind (#2)"
 hasnt "  not after it" "(#6)"
 
+# A repository split from another carries the other's history, its release
+# bumps included (hack/release.sh's chore/release-vX.Y.Z), but none of its
+# tags: theos's carries c4factory's up to its v0.30.0, and theos's first
+# release is v0.30.0 too. With no release before TO, the notes start after
+# the newest bump no tag here points at, not at the root.
+mkdir "$T/split"
+cd "$T/split" || exit 1
+git init -q -b main . && git config user.email t@t && git config user.name t
+commit README.md init
+merge 11 feat/11-up "feat(11): upstream, released there" api/a.go
+merge 12 chore/release-v0.9.0 "chore: release v0.9.0" dist/chart/Chart.yaml
+git branch -qD chore/release-v0.9.0
+merge 13 fix/13-up "fix(13): upstream, after its release" api/b.go
+merge 14 feat/14-here "feat(14): made here" api/c.go
+merge 15 chore/release-v0.9.0 "chore: release v0.9.0" test/compat/baseline/x.yaml
+git tag v0.9.0
+PATH="$T/bin:$PATH" "$NOTES" v0.9.0 "" >"$T/out" 2>&1
+check "split, the first release: drafts" $? 0
+has "  lists what merged after the inherited release" "- made here (#14)"
+has "  the upstream's too" "- upstream, after its release (#13)"
+hasnt "  not what that release shipped" "(#11)"
+PATH="$T/bin:$PATH" "$NOTES" v0.9.0 >"$T/out" 2>&1
+check "split, FROM left out (no tag before): the same start" "$(grep -c '(#1[134])' "$T/out")" 2
+# The first release's Release failed, so the next tag has no release before
+# it either: its notes carry what the failed one did.
+merge 16 fix/16-after "fix(16): after the failed release" api/d.go
+git tag v0.9.1
+PATH="$T/bin:$PATH" "$NOTES" v0.9.1 "" >"$T/out" 2>&1
+check "split, after a failed first release: drafts" $? 0
+has "  lists the fix" "- after the failed release (#16)"
+has "  and what the failed release carried" "- made here (#14)"
+hasnt "  still not what the inherited one shipped" "(#11)"
+
+# The image list names every image Release pushes.
+images=$(sed -n '/^Images:/,/^$/p' "$T/out")
+for name in $(sed -n 's/^ *IMAGES: //p' "$HACK/../.github/workflows/release.yml"); do
+  grep -qw -- "$name" <<<"$images"
+  check "the image list names $name, which Release pushes" $? 0
+done
+
 exit $fail

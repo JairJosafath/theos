@@ -184,7 +184,7 @@ jobs:
         run: |
           # A failed lookup fails the release, never notes from the start.
           prev=$(hack/previous-release.sh "$GITHUB_REF_NAME")
-          echo "The notes list what merged since ${prev:-the start of history}."
+          echo "The notes list what merged since ${prev:-the release the history inherited (or its start): this is the first release}."
           REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" "$prev" >notes.md
           cat notes.md
           gh release create "$GITHUB_REF_NAME" "theos-$VERSION.tgz" theos-session-linux-amd64 theos-session-linux-arm64 \

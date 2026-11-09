@@ -393,6 +393,23 @@ whose tag already exists. The tag starts *Release*, which first runs
 `hack/release.sh --check vX.Y.Z` and builds nothing when the chart or the
 guide names another version; `hack/release_test.sh` holds both to that, and
 `test/chart/guide_version_test.go` keeps main's guide on the chart's version.
+The bump commits `test/compat/dropped.txt` with the baseline, emptied of its
+entries: an entry the new baseline never served fails `make check` on main.
+
+The first release is the one tag origin has no `vX.Y.Z` before. theos split
+from c4factory after c4factory's v0.30.0, so its history, chart and guide name
+0.30.0 but it has no tag or release of its own. `hack/release.sh 0.30.0`
+then takes the chart's own version: the bump changes only the baseline and
+`dropped.txt`, and when even those are current (the bump was merged by hand)
+it tags origin/main as it is. Without a published release before it,
+`hack/previous-release.sh` names none, the notes start after the newest
+release bump no tag here points at (c4factory's v0.30.0, so they list what
+merged since, not c4factory's every pull request), and *Verify Release*
+skips the upgrade check and says so. Pull requests merged before the split
+carry c4factory's numbers, and work merged without a pull request isn't in
+the draft at all, so the maintainer edits the first release's notes on
+GitHub. The GHCR packages are new and private, as every package GitHub
+makes is.
 
 A release that deprecates a version gives its drop issue the date: once the
 release is published, the maintainer writes the earliest drop date (the

@@ -7,11 +7,17 @@
 #   hack/release-notes.sh [TO [FROM]]       the pull requests merged in FROM..TO
 #   hack/release-notes.sh --prs FILE [FROM] the pull requests in FILE instead
 #
-# TO defaults to HEAD. FROM given empty is the whole history; left out, it is
-# the newest vX.Y.Z tag before TO (the whole history when there is none). The
+# TO defaults to HEAD. FROM left out is the newest vX.Y.Z tag before TO. The
 # Release workflow passes hack/previous-release.sh's answer, the newest
 # published release before TO, so a tag whose release failed doesn't cut the
 # notes short: they list everything since the last release devices got.
+# FROM empty, or left out with no tag before TO, means there is no release
+# before TO: the notes start after the newest release the history inherited,
+# a merge of a release bump (chore/release-vX.Y.Z) that no vX.Y.Z tag here
+# points at, and run from the start of history when there is none. A
+# repository split from another carries the other's bumps but not its tags:
+# theos's first release lists what merged after c4factory's v0.30.0, not
+# c4factory's every pull request, whose numbers aren't theos's.
 #
 # A pull request is a first-parent merge commit "Merge pull request #N from
 # owner/branch": its title is the commit's body, its files what it changed, its
@@ -43,6 +49,23 @@
 #   REPO      owner/name, for the getting-started link (default JairJosafath/theos)
 set -euo pipefail
 
+# inherited: the newest merge of a release bump (hack/release.sh's branch
+# chore/release-vX.Y.Z) on TO's first-parent history before TO that no
+# vX.Y.Z tag here points at, or nothing. Such a bump is a release of the
+# history this repository split from: theos's carries c4factory's, up to its
+# v0.30.0, with none of c4factory's tags.
+inherited() {
+  local merges sha subject
+  merges=$(git log --first-parent --merges --format='%H %s' "$to^" 2>/dev/null) || return 0
+  while read -r sha subject; do
+    [[ $subject =~ ^Merge\ pull\ request\ \#[0-9]+\ from\ [^/]+/chore/release-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+    if [ -z "$(git tag --points-at "$sha" --list 'v[0-9]*.[0-9]*.[0-9]*')" ]; then
+      echo "$sha"
+      return 0
+    fi
+  done <<<"$merges"
+}
+
 prs=
 if [ "${1:-}" = --prs ]; then
   prs=${2:?--prs needs a FILE}
@@ -50,6 +73,7 @@ if [ "${1:-}" = --prs ]; then
 else
   to=${1:-HEAD}
   from=${2-$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$to^" 2>/dev/null || true)}
+  [ -n "$from" ] || from=$(inherited)
 fi
 REPO=${REPO:-JairJosafath/theos}
 REGISTRY=${REGISTRY:-ghcr.io/jairjosafath/theos}
@@ -119,8 +143,9 @@ fi
 cat <<EOF
 
 Images: \`$REGISTRY/<name>:$VERSION\` for operator, ui, seed, the toolchains
-base and go, agent-base, agent-go, gitea-runner-base, gitea-runner-go and
-gitea-runner-image.
+base and go, agent-base, agent-go, gitea-runner-base, gitea-runner-go,
+gitea-runner-image, and the test environments' env-browser, env-android and
+env-godot.
 
 Install, as the guide below does without a pull secret: [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
 first, its controller without leader election (the guide says why), then the
