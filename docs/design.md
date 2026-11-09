@@ -1017,7 +1017,10 @@ linking the pull request and the run (#1491). A check a Standard tightens
 says in its message what to write.
 
 **The templates** live in `templates/`; [templates.md](templates.md) scores
-each. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
+each. They are the catalog the chart seeds, not all there can be: any Git
+repository at a pinned ref is a template, and a project installs one with a
+catalog object; [template-authoring.md](template-authoring.md) says how to
+write, test and install one. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
 tools and envtest) run every check without a cluster.
 
 - **`operator`:** Framework `go-kubebuilder`, Standard
