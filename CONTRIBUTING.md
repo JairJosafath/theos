@@ -83,8 +83,12 @@ fence.
 
 ## License
 
-theos is proprietary today; all rights are reserved ([LICENSE](LICENSE)). The
-project is moving to an open-source licence (#47). By contributing, you agree
-that the owner may use, license and relicense your contribution under any
-terms, including that open-source licence. Every new Go file starts with the
-header in `hack/boilerplate.go.txt`.
+theos is licensed under the [Apache License 2.0](LICENSE). What you
+contribute is licensed the same way: inbound is outbound, as section 5 of
+the license says, and there is no contributor agreement to sign. Sign your
+commits off (`git commit -s`) to say you have the right to contribute them,
+the [Developer Certificate of Origin](https://developercertificate.org/).
+Every new Go file starts with the header in `hack/boilerplate.go.txt`, with
+the year for `YEAR`; `make check` fails on one without it. The files under
+`templates/` become other people's applications and carry the license their
+Project chooses.

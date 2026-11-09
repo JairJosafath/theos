@@ -24,7 +24,7 @@ The factory runs the whole loop, triage to monitor, on a Kind cluster, and
 develops itself. What was found for the launch is on #45, and against Warp
 on #46 and in [docs/comparison.md](../comparison.md). In short:
 
-- Proprietary `LICENSE`; contributor docs about the retired relay; one issue
+- A proprietary `LICENSE` (Apache-2.0 since #47); contributor docs about the retired relay; one issue
   form, for "devices"; self-hosted runners that a fork's pull request would
   use; links to the private `c4factory`; no tag or release in this
   repository; only `SHA256SUMS` signed; a first run that takes a cluster, a
@@ -36,12 +36,24 @@ on #46 and in [docs/comparison.md](../comparison.md). In short:
 
 ## Decisions, and why
 
-1. **The licence is the owner's choice; the plan recommends Apache-2.0**
-   (#47 has the reasons) and changes no licence text itself. Everything else
-   in the launch is written so it holds under any OSI licence.
-2. **The history is published if a full scan is clean** (#52), because the
-   plans and the design cite it; otherwise the public repository starts from
-   one commit. Rewriting or dropping history is the owner's act.
+1. **The licence is Apache-2.0** (#47 has the reasons: it is what
+   Kubernetes and the projects theos plugs into use, it carries a patent
+   grant, and companies run it without a legal review that AGPL would
+   need). The owner handed the choice to the session that wrote this plan
+   on 2026-11-09 ("no decisions for me, you do everything"). Contributions
+   come in under the same licence, with a DCO sign-off and no contributor
+   agreement.
+2. **The history is published, with the author's address rewritten.** The
+   scan of every ref found no credential (#52). 2,526 commits carry the
+   owner's personal email address as author, and the owner had already
+   moved to GitHub's noreply address for the later ones, so the public
+   history carries only that: one `git filter-repo --mailmap` pass over a
+   fresh clone, pushed to the repository in the same step that makes it
+   public. That rewrites every commit id, so the plans' short ids (rare,
+   and only in history) stop resolving; issue and pull request numbers,
+   which the docs cite everywhere, keep working. The private `c4factory`
+   stays the archive. The pass is a force-push to main, which no session
+   can do: it is the first of the owner's steps below.
 3. **Numbers from c4factory become plain text,** `c4factory #1094`, not
    links: the old repository stays private as the archive, so a link is a
    404 for every reader but the owner (#56).
@@ -77,7 +89,7 @@ owner's acts are listed under *For the owner*.
 | Contributor docs without the relay | #55 | | CONTRIBUTING takes a fork to a merge; ROADMAP is current |
 | Fork pull requests on hosted runners | #49 | | the `runs-on` rule, checked by `hack/check-workflows.sh` |
 | A release from this repository | #50 | | a tag, the images, the chart and the GitHub release |
-| The licence | #47 | the owner | the text, the headers, the manifests |
+| The licence | #47 | | Apache-2.0: the text, the headers, the manifests |
 | History and secrets scan | #52 | | the report, the list for the owner |
 | Signed images, SBOM, provenance, scanning | #51 | #50 | `cosign verify` in the guide; Scorecard, CodeQL, updates |
 | A first run in ten minutes | #53 | #50 | `hack/quickstart.sh`; README's first screen |
@@ -90,7 +102,7 @@ owner's acts are listed under *For the owner*.
 | docs/comparison.md | #65 | | the page, linked from README |
 | Prometheus metrics and a dashboard | #59 | | the series, the chart's dashboard |
 | GitHub as a Git host | #57 | | the adapter passes the host contracts |
-| Harnesses and models | #58 | the owner (protectedPaths) | the interface, Codex, Gemini CLI, OpenCode |
+| Harnesses and models | #58 | an owner's session (protectedPaths) | the interface, Codex, Gemini CLI, OpenCode |
 | Approval rules on a Crew | #62 | | `spec.approval`, a person's review merges |
 | Recurring Tasks | #63 | | `spec.schedules` files issues on time |
 | Bring your own repository | #60 | better with #57 | `adopt` proposes a model; no Standard needed |
@@ -100,22 +112,34 @@ owner's acts are listed under *For the owner*.
 
 ## For the owner
 
-Only the owner does these (GOVERNANCE.md, "Reserved to the owner"). The
-choice we would make is with each.
+Every decision in this plan is made. What is left for the owner is what no
+session can reach: a setting, an account, a force-push. Each is one step.
 
-1. **Name the licence** on #47. Apache-2.0.
-2. **Read the scan's report** on #52 and choose: publish the history, or a
-   fresh root commit.
-3. **Make the repository public, then the GHCR packages** (each package has
-   its own visibility).
-4. **Settings when public:** private vulnerability reporting on;
+1. **Publish.** From a fresh clone, rewrite the author address and push,
+   then make the repository public (*Settings → General → Change
+   visibility*):
+
+   ```bash
+   git clone https://github.com/JairJosafath/theos theos-public && cd theos-public
+   printf '%s\n' 'JairJosafath <58106977+JairJosafath@users.noreply.github.com> <OLD-ADDRESS>' >../mailmap
+   git filter-repo --mailmap ../mailmap --force
+   git remote add origin https://github.com/JairJosafath/theos
+   git push --force --all origin && git push --force --tags origin
+   ```
+
+   `OLD-ADDRESS` is the address `git log --format=%ae | sort -u` shows that
+   isn't a noreply one. Every open branch and pull request must be merged
+   or closed first: a rewrite orphans them.
+2. **Make the GHCR packages public** (each package has its own visibility:
+   the chart and the thirteen images under `ghcr.io/jairjosafath/theos`).
+3. **Settings when public:** private vulnerability reporting on;
    Discussions on, for questions; Actions' "Require approval for all outside
    collaborators"; the main ruleset's required checks as
    `.github/required-checks` lists them.
-5. **Register on bestpractices.dev** (docs/openssf.md, "For the owner").
-6. **`GOVERNANCE.md`:** the text proposed on #55.
-7. **Go-ahead for the protected paths** in #58 (`internal/agentrunner/`,
-   `internal/modelproxy/`).
+4. **Register on bestpractices.dev** (docs/openssf.md, "For the owner") and
+   answer its two questions about the owner's own knowledge.
+5. **Push a release tag when a session can't** (#50): the session that cut
+   v0.32.0 was refused the tag push, and the issue has the two commands.
 
 ## Done when
 
