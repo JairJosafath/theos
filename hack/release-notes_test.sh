@@ -39,6 +39,15 @@ hasnt "an Envtest: title on a chore/ branch: left out (#1270)" "(#16)"
 hasnt "a plan touching only docs/plans/ on a feat/ branch: left out (#1270)" "(#17)"
 hasnt "a plan touching the design, architecture, AGENTS.md and evidence too: left out (#1270)" "(#18)"
 has "the image list ends it" 'Images: `ghcr.io/o/theos/<name>:1.2.0` for operator, ui, seed, the toolchains'
+# The list names every image the Release workflow pushes (its IMAGES): it
+# named eleven of fourteen, without the test environments' three.
+images=$(sed -n 's/^ *IMAGES: //p' "$HACK/../.github/workflows/release.yml")
+check "the Release workflow's IMAGES is found" "$([ -n "$images" ] && echo yes)" yes
+listed=$(sed -n '/^Images:/,/^$/p' "$T/out" | tr ',.\n' '   ')
+for name in $images; do
+  case " $listed " in *" $name "*) ok=yes ;; *) ok=no ;; esac
+  check "  the image list names $name" $ok yes
+done
 has "the install command names the version" "helm install theos oci://ghcr.io/o/theos/charts/theos --version 1.2.0 \\"
 has "the guide link names the tag" "[docs/getting-started.md](https://github.com/o/theos/blob/v1.2.0/docs/getting-started.md)"
 
