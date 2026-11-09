@@ -20,8 +20,8 @@ to reproduce it.
   security advisory, and a CVE when one is warranted.
 
 Security reports are reserved to the owner ([GOVERNANCE.md](GOVERNANCE.md)).
-When the maintainer finds one in an issue, it takes the details out of the
-issue and sends the issue to the owner.
+Whoever finds one in an issue, a person or an agent, takes the details out of
+the issue and sends it to the owner.
 
 ## Supported versions
 

@@ -100,7 +100,7 @@ cluster, and `./dev setup` then links. In a linked worktree `./dev nuke` removes
 only the link.
 
 The Makefile finds the main checkout through git, so a worktree without the link
-(a relay worktree) uses the same `.dev/make/bin/`. Several worktrees can install
+(one git made by hand) uses the same `.dev/make/bin/`. Several worktrees can install
 into it at once: each tool installs under a lock and appears under its versioned
 name only when complete. Before this, every checkout had its own tools in `bin/`;
 `./dev clean` deletes them in the main checkout and every worktree, once no branch
@@ -137,11 +137,13 @@ What lives outside the folder belongs to the machine, not the project:
   They stop when it stops and come back when it starts, and GitHub has no other
   runner to fall back on: a queued run never fails, it waits. When Docker
   Desktop comes back without their containers, the keeper
-  (`hack/gh-runner/gh-runner.sh install`) makes them again within 2 minutes. The relay watch
-  says "Runners offline since T: N runs queued" in the Maintainer report once
-  a run on main has waited 30 minutes with no runner online ("N runs queued
-  since T with M runners online" when some are). Run `make gh-runner-status`.
+  (`hack/gh-runner/gh-runner.sh install`) makes them again within 2 minutes. Nothing reports
+  a run that waits for a runner since the relay watch was retired, so look
+  when a check stays queued. Run `make gh-runner-status`.
   It says whether Docker answers from this distro, whether each container is up, and
   whether GitHub sees each runner online, and what to do: start Docker
   Desktop, or run `make gh-runner RUNNERS=N` to start the containers that are
   down. Switching `RUNS_ON` back to GitHub's runners is the owner's call.
+  A pull request from a fork never uses these runners: its jobs run on
+  GitHub's hosted `ubuntu-latest` whatever `RUNS_ON` says, so a stranger's
+  code doesn't run on a device (#49; `hack/check-workflows.sh` keeps it so).
