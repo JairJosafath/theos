@@ -1,0 +1,34 @@
+name: Catalog template
+description: A new or changed Framework, Standard, Connector, Deployment, Compute or Domain
+labels: [kind/feature]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The catalog is under `templates/`; docs/template-authoring.md says how a template is built and tested.
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Layer
+      options: [Framework, Standard, Connector, Deployment, Compute, Domain, Not sure]
+    validations:
+      required: true
+  - type: input
+    id: name
+    attributes:
+      label: Template
+      description: The one to change, or a name for a new one
+      placeholder: python-fastapi
+    validations:
+      required: true
+  - type: textarea
+    id: want
+    attributes:
+      label: What a repository scaffolded from it should have
+      description: The stack, the checks its `make check` runs, what it deploys to
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What you would build with it

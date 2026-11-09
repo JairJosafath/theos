@@ -1,0 +1,50 @@
+name: Bug
+description: Something theos does wrong
+labels: [kind/bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A vulnerability doesn't go here: see SECURITY.md.
+        Say what happened and what you expected. How to fix it is ours to work out.
+  - type: input
+    id: version
+    attributes:
+      label: theos version
+      description: The chart's version (`helm list -A`), or the commit when built from source
+      placeholder: 0.31.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it runs
+      options:
+        - The published Helm chart
+        - make deploy from a clone
+        - Something else (say below)
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to see it again
+      description: The YAML you applied and the commands you ran, as small as you can make them
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and status
+      description: "The object's conditions (`kubectl get <kind> <name> -o yaml`) and the operator's log. Take out tokens and passwords first."
+      render: shell
