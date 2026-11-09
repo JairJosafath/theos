@@ -1,0 +1,71 @@
+# Dependency updates (#51): one grouped pull request a week per ecosystem,
+# so the runners aren't flooded; a security update comes alone, when its
+# advisory does. Nothing merges them: each is a proposal that the checks and
+# a reviewer judge like any other pull request. The manifests under
+# templates/ are Go templates, which Dependabot can't read; a template's
+# pins move with its own release.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+    groups:
+      go:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: weekly
+      day: tuesday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+    groups:
+      ui:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Base images are pinned by digest (hack/check-pinned-images.sh); an update
+  # moves the tag and the digest together.
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /ui
+      - /hack/agent
+      - /hack/env-android
+      - /hack/env-browser
+      - /hack/env-godot
+      - /hack/gh-runner
+      - /hack/runner
+      - /hack/seed
+      - /hack/session
+      - /hack/toolchain-base
+      - /hack/toolchain-go
+    schedule:
+      interval: weekly
+      day: tuesday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+    groups:
+      images:
+        patterns: ["*"]
