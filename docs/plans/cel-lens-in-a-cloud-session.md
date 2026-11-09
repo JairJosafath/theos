@@ -151,9 +151,11 @@ commands: needs a core release), #12 (README pictures), #19 (a fallback
 guess on a paste made visible).
 
 Merge order: core #5, #7, #9, #11, #18, #19, #20, #26, #28, #30, #31, #32,
-#33; vscode #4, #5, #6, #10, #13, #15, #17, #18. Each stacks on the one before, so
-merging in order leaves nothing to rebase. All of them are on the GitHub
-mirror branch too.
+#33, #35; vscode #4, #5, #6, #10, #13, #15, #17, #18, #22, #23. Each stacks
+on the one before, so merging in order leaves nothing to rebase. All of them
+are on the GitHub mirror branch too. The last three (core #35, vscode #22
+and #23) are the security work of
+[cel-lens-security-score.md](cel-lens-security-score.md).
 
 The reviews settled one design point: in a CustomResourceDefinition the API
 server types no CEL value kept open with `x-kubernetes-preserve-unknown-fields`

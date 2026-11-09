@@ -105,6 +105,43 @@ settings for the rest.
 Done when osv-scanner reports no vulnerability on the mirrored tree, the
 workflows parse and are pinned, and the three pull requests are approved.
 
+## Status (9 November, 22:40 UTC)
+
+Steps 1 to 4 are done; nothing is merged, so the score is still 4.4.
+
+| Step | Gitea issue | Gitea PR | Review |
+| --- | --- | --- | --- |
+| The engine's dependencies | cel-lens-core #34 | cel-lens-core#35, on #33 | approved, 1 round; CI green on Go 1.26.10 |
+| The extension's dependencies | cel-lens-vscode #20 | cel-lens-vscode#22, on #18 | approved, 1 round |
+| CodeQL, Dependabot, govulncheck on the front page | cel-lens-vscode #21 | cel-lens-vscode#23, on #22 | approved, 1 round |
+
+What came out differently from the plan:
+
+- **Go 1.26.10, not 1.26.9:** 1.26.9 still has one standard library
+  advisory.
+- **One npm advisory is left aside, not fixed.** minimatch 11 fixes
+  GHSA-g3hv-75wg-m249 and removes `makeRe()`, which the language client
+  bundled into the extension calls (its latest release too). The client
+  keeps minimatch 10.2.6, and every other package gets 11.0.5.
+  `vscode/osv-scanner.toml` holds the reason: the flaw needs an option the
+  client never sets and a pattern an attacker chooses, and the client only
+  matches the patterns of the extension's own engine. The ignore runs until
+  1 March 2027, and `npm audit` still shows the advisory.
+- **Kyverno stays at v1.19.1.** v1.19.2 has the same three advisories and
+  pulls cosign and sigstore into the build (844 to 2079 packages).
+- **OSV-Scanner could not be installed in the session.**
+  `cloud-session/osvcheck.py` asks the same database about the same pins,
+  and the standard library too, which Scorecard leaves out.
+
+Evidence: [../screenshots/cel-lens-security-score.md](../screenshots/cel-lens-security-score.md).
+Follow-ups proposed in Gitea: cel-lens-core #36 (a daily OSV check in the
+factory) and #37 (Kyverno without the signing stack, `x/crypto` on a tagged
+release), cel-lens-vscode #24 (retire the minimatch exceptions).
+
+**Order matters when publishing:** the engine with cel-lens-core#35 goes
+out before the front page is copied to GitHub, or the new govulncheck job
+starts red on `go 1.26.6`.
+
 ## What the owner does
 
 1. **Merge and publish,** then copy `public-repo/` to the GitHub root (or
