@@ -143,14 +143,15 @@ found what the tests could not; each is now its own approved pull request:
 | core #27 | every policy variable that does not compile shows why | cel-lens-core#32 | 1 |
 | vscode #14 | a pasted example lives in memory and closes without asking; read as a resource only when it is one | cel-lens-vscode#15 | 2 (save hooks ran on every keystroke) |
 | vscode #16 (part) | a pasted example parses only when needed; a `.cellens` location opens beside the rule | cel-lens-vscode#17 | 1 |
+| core #25 | the engine says which kinds a value takes (`valueKinds`) and what a pasted example is (`roots`) | cel-lens-core#33 | 2 (a resource in another version taken as the value itself) |
+| vscode #16 (rest) | the engine decides what a paste is: no YAML parse, no question, bundle 616 to 503 KB | cel-lens-vscode#18 | 1 |
 
-Proposed follow-ups in Gitea: core #21, #25 (the engine says which kinds a
-value takes, so the extension drops its YAML parse and its question), vscode
-#11 (pin an engine with these commands: needs a core release), #12 (README
-pictures).
+Proposed follow-ups in Gitea: core #21, vscode #11 (pin an engine with these
+commands: needs a core release), #12 (README pictures), #19 (a fallback
+guess on a paste made visible).
 
-Merge order: core #5, #7, #9, #11, #18, #19, #20, #26, #28, #30, #31, #32;
-vscode #4, #5, #6, #10, #13, #15, #17. Each stacks on the one before, so
+Merge order: core #5, #7, #9, #11, #18, #19, #20, #26, #28, #30, #31, #32,
+#33; vscode #4, #5, #6, #10, #13, #15, #17, #18. Each stacks on the one before, so
 merging in order leaves nothing to rebase. All of them are on the GitHub
 mirror branch too.
 
