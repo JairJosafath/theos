@@ -7,4 +7,3 @@
 #
 #   v1alpha1  Removed the v1alpha1 API versions; v1beta1 has served since 0.9.0.
 
-v1alpha1  Removed theos.factory.io/v1alpha1, which no theos release served (c4factory v0.30.0 deprecated c4.factory.io/v1alpha1, another group); every kind is served at v1beta1 alone.
