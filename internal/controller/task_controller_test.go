@@ -252,6 +252,17 @@ var _ = Describe("Task", func() {
 		Expect(merged.Status.PersonCommits).To(Equal(new(int32(1))),
 			"Ada's commit is a person's; the agent's and main's merge are not")
 
+		By("serving the merged Task on the manager's metrics, as one a person wrote code for (#59)")
+		Eventually(func(g Gomega) {
+			g.Expect(factoryMetricValue(g, managerClient, model.MetricTasksMerged, map[string]string{
+				"namespace": ns, "container": "orders-api", "kind": "Implement", "code": model.CodePerson})).To(Equal(1.0))
+			g.Expect(factoryMetricValue(g, managerClient, model.MetricTasks, map[string]string{
+				"namespace": ns, "container": "orders-api", "kind": "Implement", "phase": "Merged"})).To(Equal(1.0))
+			g.Expect(factoryMetricValue(g, managerClient, model.MetricAgentRuns, map[string]string{
+				"namespace": ns, "agent": "claude", "harness": "claude-code", "model": model.MetricNone, "role": "review"})).
+				To(Equal(2.0), "round 1's review and round 2's")
+		}).Should(Succeed())
+
 		By("reading them again for a Task merged before they were kept")
 		merged.Status.PullRequestSize, merged.Status.PersonCommits = c4v1beta1.TaskPullRequestSize{}, nil
 		Expect(k8sClient.Status().Update(ctx, merged)).To(Succeed())
@@ -442,6 +453,15 @@ var _ = Describe("Task", func() {
 		before := agent.DeepCopy()
 		agent.Spec.Model = "claude-sonnet-5-5"
 		Expect(k8sClient.Patch(ctx, &agent, client.MergeFrom(before))).To(Succeed())
+		// The review's sandbox records the Agent as the operator's cache has it
+		// when it makes the sandbox. Passing the checks before the cache saw
+		// the patch started the review on the Agent without a model, and the
+		// spec then failed on main (#70): wait for the operator to see it.
+		Eventually(func(g Gomega) {
+			var seen c4v1beta1.Agent
+			g.Expect(managerClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "claude"}, &seen)).To(Succeed())
+			g.Expect(seen.Spec.Model).To(Equal("claude-sonnet-5-5"))
+		}).Should(Succeed())
 
 		By("counting a review whose agent didn't report its cost")
 		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")

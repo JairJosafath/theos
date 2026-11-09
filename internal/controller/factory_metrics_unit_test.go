@@ -17,13 +17,16 @@ limitations under the License.
 package controller
 
 import (
+	"maps"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
@@ -122,4 +125,28 @@ theos_agent_runs_tokens{agent="implementer",harness="claude-code",model="claude-
 			t.Errorf("%s: got %d observations, want %d (all: %v)", key, histograms[key], want, histograms)
 		}
 	}
+}
+
+// factoryMetricValue scrapes a fresh registry with FactoryMetrics on reader and
+// returns the gauge name with exactly these labels; 0 when no such sample.
+func factoryMetricValue(g gomega.Gomega, reader client.Reader, name string, labels map[string]string) float64 {
+	reg := prometheus.NewPedanticRegistry()
+	g.Expect(reg.Register(FactoryMetrics{Reader: reader})).To(gomega.Succeed())
+	families, err := reg.Gather()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			got := map[string]string{}
+			for _, l := range m.GetLabel() {
+				got[l.GetName()] = l.GetValue()
+			}
+			if maps.Equal(got, labels) {
+				return m.GetGauge().GetValue()
+			}
+		}
+	}
+	return 0
 }
