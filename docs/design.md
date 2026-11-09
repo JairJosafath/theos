@@ -974,7 +974,9 @@ linking the pull request and the run (#1491). A check a Standard tightens
 says in its message what to write.
 
 **The templates** live in `templates/`; [templates.md](templates.md) scores
-each. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
+each. A template kept in a repository of its own is fetched from its URL
+with no seeding; [templates/authoring.md](templates/authoring.md) says how to
+write one of each kind, check it locally and install it in a project. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
 tools and envtest) run every check without a cluster.
 
 - **`operator`:** Framework `go-kubebuilder`, Standard
