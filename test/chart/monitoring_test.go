@@ -29,8 +29,10 @@ import (
 // renderOne renders one template of the chart with the values sets.
 func renderOne(t *testing.T, template string, sets ...string) (string, error) {
 	t.Helper()
-	args := []string{"template", release, chartDir, "--namespace", releaseNS, "-s", template,
-		"--set", strings.Join(append([]string{"gitea.enabled=false"}, sets...), ",")}
+	args := []string{"template", release, chartDir, "--namespace", releaseNS, "-s", template}
+	if len(sets) > 0 {
+		args = append(args, "--set", strings.Join(sets, ","))
+	}
 	out, err := exec.Command(helmBinary(t), args...).CombinedOutput()
 	return string(out), err
 }
@@ -117,7 +119,8 @@ func TestChartInstallsTheFactoryAlerts(t *testing.T) {
 	}
 
 	got := alerts("prometheus.rules.dailyBudgetUSD=120", "prometheus.rules.specWaits=4h")
-	for _, name := range []string{"TheosDailyCostOverBudget", "TheosTasksFailing", "TheosSpecWaitsForAPerson", "TheosRunsWithoutCost"} {
+	for _, name := range []string{"TheosDailyCostOverBudget", "TheosTasksFailing", "TheosSpecWaitsForAPerson",
+		"TheosRunsWithoutCost"} {
 		if got[name] == nil {
 			t.Errorf("no alert %s", name)
 		}
@@ -133,7 +136,8 @@ func TestChartInstallsTheFactoryAlerts(t *testing.T) {
 		t.Errorf("the summary %q lost Prometheus's own template", summary)
 	}
 
-	if without := alerts("prometheus.rules.dailyBudgetUSD=0"); without["TheosDailyCostOverBudget"] != nil || len(without) != 3 {
+	without := alerts("prometheus.rules.dailyBudgetUSD=0")
+	if without["TheosDailyCostOverBudget"] != nil || len(without) != 3 {
 		t.Errorf("a budget of 0 leaves the cost alert out and keeps the rest: got %d alerts", len(without))
 	}
 }
