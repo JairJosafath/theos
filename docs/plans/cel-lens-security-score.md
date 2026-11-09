@@ -142,6 +142,26 @@ release), cel-lens-vscode #24 (retire the minimatch exceptions).
 out before the front page is copied to GitHub, or the new govulncheck job
 starts red on `go 1.26.6`.
 
+## On GitHub (9 November, 23:50 UTC)
+
+The owner: "you have to do everything, I'm not doing anything manually."
+JairJosafath/cel-lens#7 brings the mirror branch to `main`: 23 commits, the
+front page at the root. Its first run showed what no test here could: the
+govulncheck job failed on the three Kyverno advisories, because the Go
+vulnerability database gives them no symbols, so every call into the module
+counts, and govulncheck has no ignore list. The job now has govulncheck
+write JSON, and `.github/scripts/govulncheck-left.mjs` fails on any advisory
+the engine calls that `engine/osv-scanner.toml` does not leave aside
+(cel-lens-vscode#23, a second commit, reviewed and approved). All eight
+checks are green on 4d96f0a: CodeQL for Go, TypeScript and the workflows,
+the engine's and the extension's tests, govulncheck ("3 advisories called, 3
+left aside"), and the secret scan.
+
+**Not merged.** The session's auto mode refuses a merge without a person,
+in Gitea and so on GitHub, whatever the owner wrote in chat. The owner
+switches the session to "Accept edits" and approves each merge when asked,
+or merges #7; the Scorecard workflow is run after that.
+
 ## What the owner does
 
 1. **Merge and publish,** then copy `public-repo/` to the GitHub root (or
