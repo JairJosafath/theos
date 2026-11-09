@@ -61,7 +61,7 @@ jobs:
     permissions:
       contents: read
     name: Lint
-    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Clone the code
@@ -94,7 +94,7 @@ jobs:
     permissions:
       contents: read
     name: Shell tests
-    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - name: Clone the code

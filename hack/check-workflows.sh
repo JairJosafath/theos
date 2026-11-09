@@ -3,7 +3,11 @@
 # runners (hack/gh-runner, docs/dev/devices.md): its runs-on uses vars.RUNS_ON,
 # and a job that makes a Kind cluster (kind create cluster, the e2e target)
 # asks for the label theos-kind, which only runner 1 of a device carries,
-# so a device runs one of them at a time. A workflow that runs on pushes to a
+# so a device runs one of them at a time. A job of a workflow that runs on
+# pull requests starts its runs-on with github.event.pull_request.head.repo.fork
+# && 'ubuntu-latest' ||, so a fork's pull request runs on GitHub's hosted
+# runner and never on a device (#49), and no workflow runs on
+# pull_request_target. A workflow that runs on pushes to a
 # branch carries the concurrency group ${{ github.workflow }}-${{ github.ref }}
 # (one pending run per branch; GitHub drops the superseded pending runs) or
 # ${{ github.workflow }}-${{ github.sha }} (one run per commit), without
@@ -71,6 +75,11 @@ trigger() {
   ' "$1"
 }
 
+# What the runs-on of a job that runs on pull requests starts with: a pull
+# request from a fork gets GitHub's hosted runner whatever vars.RUNS_ON says,
+# so nobody's fork runs code on the owner's devices (#49).
+FORK_HOSTED="github.event.pull_request.head.repo.fork && 'ubuntu-latest' ||"
+
 DIR=${1:-$(cd "$(dirname "$0")/.." && pwd)/.github/workflows}
 LIST=$(dirname "$DIR")/required-checks
 # The required checks, "FILE<TAB>NAME" per line, and the jobs of the workflows
@@ -81,6 +90,12 @@ fail=0
 for f in "$DIR"/*.yml "$DIR"/*.yaml; do
   [ -e "$f" ] || continue
   pr=$(trigger "$f" pull_request)
+  # pull_request_target runs the base's workflow with the repository's token
+  # and secrets on a stranger's pull request; no workflow here needs it (#49).
+  if [ "$(trigger "$f" pull_request_target)" != none ]; then
+    echo "$f: runs on pull_request_target, which gives a fork's pull request the repository's token (#49)" >&2
+    fail=1
+  fi
   # One line per job: its id, its runs-on (or -), kind when it makes a Kind
   # cluster, its name: (or -) and its timeout-minutes (or -). A job that
   # calls a reusable workflow (uses:) has no runs-on and no timeout.
@@ -100,6 +115,9 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       fail=1
     elif [ "$runs_on" != uses ] && [[ $runs_on != *vars.RUNS_ON* ]]; then
       echo "$f: job $job runs on $runs_on, not \${{ vars.RUNS_ON || ... }}" >&2
+      fail=1
+    elif [ "$pr" != none ] && [[ $runs_on != *"$FORK_HOSTED"* ]]; then
+      echo "$f: job $job runs on pull requests, so its runs-on must start \${{ $FORK_HOSTED ... }}: a fork's code never runs on a self-hosted runner (#49)" >&2
       fail=1
     elif [ "$kind" = kind ] && [[ $runs_on != *theos-kind* ]]; then
       echo "$f: job $job makes a Kind cluster but doesn't ask for the label theos-kind" >&2
