@@ -131,23 +131,28 @@ real editor beside the rule, with the engine's help. Filed in Gitea:
 | vscode #9 | Give it a type from an example in the workspace, or a pasted one | cel-lens-vscode#13, on #10 | approved after 2 rounds (a context key that outlived a restart, saving after one-shot writes) |
 
 Each was also tried in a real VS Code (openvscode-server on the session's
-host, the extension's `.vsix` and an engine built from cel-lens-core#20):
-the picker, a schema typed beside the rule with completion, a Go type, a
-workspace example, a pasted one, a CRD's `int`/`string`. That run found
-what the tests could not, filed in Gitea:
+host, the extension's `.vsix` and an engine built from the stack). That run
+found what the tests could not; each is now its own approved pull request:
 
-- core #22: a policy variable stays `dyn` when the value it reads is typed
-  by `.cellens` (Kubernetes types a variable with its expression's type);
-  being fixed on #20.
-- core #23: the schema snippet is a one-line flow mapping, written schemas
-  sort `properties` before `type`, completion needs Ctrl+Space after `go: `.
-- vscode #14: closing a pasted example asks to save; a pasted resource is
-  read as one only when its kind is the value's; being built on #13.
-- vscode #11 (pin an engine with these commands, e2e of them) and #12 (the
-  README's pictures), from the reviews.
+| Issue | What | Gitea PR | Review rounds |
+| --- | --- | --- | --- |
+| core #22 | a policy variable stays `dyn` when the value it reads is typed by `.cellens` | cel-lens-core#26 | 2 (a variable's typo hidden) |
+| core #23 | the schema snippet is a block, schemas keep the API server's key order, a space after `go:` completes | cel-lens-core#28 | 1 |
+| core #24 | the lines stay stale after a type from an example (VS Code drops a code lens refresh when focus moves) | cel-lens-core#30 | 3 (a refresh per keystroke, a fallback retry, a flaky test) |
+| core #29 | the space completes only in `.cellens` (dynamic registration) | cel-lens-core#31 | 2 (every item showed twice in `.cellens`) |
+| core #27 | every policy variable that does not compile shows why | cel-lens-core#32 | 1 |
+| vscode #14 | a pasted example lives in memory and closes without asking; read as a resource only when it is one | cel-lens-vscode#15 | 2 (save hooks ran on every keystroke) |
+| vscode #16 (part) | a pasted example parses only when needed; a `.cellens` location opens beside the rule | cel-lens-vscode#17 | 1 |
 
-Merge order grows to core #5, #7, #9, #11, #18, #19, #20; vscode #4, #5,
-#6, #10, #13. All of them are on the GitHub mirror branch too.
+Proposed follow-ups in Gitea: core #21, #25 (the engine says which kinds a
+value takes, so the extension drops its YAML parse and its question), vscode
+#11 (pin an engine with these commands: needs a core release), #12 (README
+pictures).
+
+Merge order: core #5, #7, #9, #11, #18, #19, #20, #26, #28, #30, #31, #32;
+vscode #4, #5, #6, #10, #13, #15, #17. Each stacks on the one before, so
+merging in order leaves nothing to rebase. All of them are on the GitHub
+mirror branch too.
 
 The reviews settled one design point: in a CustomResourceDefinition the API
 server types no CEL value kept open with `x-kubernetes-preserve-unknown-fields`
