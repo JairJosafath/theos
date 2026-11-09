@@ -114,6 +114,26 @@ extension pin an engine that draws the lines: `core-version.json` with a
 `baseUrl` of that Gitea release. Until then the bundled v0.25.1 engine draws
 none.
 
+## A better way to give a type (9 November, afternoon)
+
+The owner tried the picker in the screenshots: "the UX is underwhelming...
+such a small input field", and asked for a standardized way to give a type,
+"an OpenAPI schema or a Go struct", then for a type made from an example.
+The one-line input box goes; the type is written in `.cellens` itself, in a
+real editor beside the rule, with the engine's help. Filed in Gitea:
+
+| Issue | What | Gitea PR | State |
+| --- | --- | --- | --- |
+| core #15 | `schema:` (OpenAPI v3, as a CRD's) and `go:` (`./api/v1#QuotaSpec`, read with `go/parser` as controller-gen does) | cel-lens-core#18, on #11 | approved after 3 rounds (schema aliases, a Go schema budget) |
+| core #17 | `inferType`: a schema from example objects; `typeChoices` lists the workspace's examples | cel-lens-core#19, on #18 | approved after 4 rounds (one background job mechanism, bounded) |
+| core #16 | guided `.cellens`: completion, hover and live problems while typing; `setType` writes a snippet and answers where the cursor goes | not yet | first review requested changes (Go completion off the loop, CRD entries offer only what they take); being fixed on #19 |
+| vscode #8 | Give it a type opens `.cellens` beside the rule: schema, Go type or short type | not yet | being built on vscode#6 |
+| vscode #9 | Give it a type from an example in the workspace, or a pasted one | not yet | after vscode #8 |
+
+Merge order grows to core #5, #7, #9, #11, #18, #19, then #16's PR; vscode
+#4, #5, #6, then #8's and #9's. Core #15 and #17 are on the GitHub mirror
+branch too.
+
 The reviews settled one design point: in a CustomResourceDefinition the API
 server types no CEL value kept open with `x-kubernetes-preserve-unknown-fields`
 (it ignores the flag), so only `x-kubernetes-int-or-string` is `dyn` to a
