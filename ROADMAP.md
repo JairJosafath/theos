@@ -1,7 +1,11 @@
 # Roadmap
 
 This file holds how theos releases, the outcomes it works towards, and what
-1.0 means. The maintainer decided it on 2026-10-06 (#305). The live state of
+1.0 means. The relay's maintainer decided it on 2026-10-06 (#305); the relay
+and that role were retired on 2026-10-28, when the factory began to develop
+itself ([docs/plans/self-hosting.md](docs/plans/self-hosting.md)), so where
+this file says "the relay" or "the maintainer" below, read the factory's own
+Crew and the owner's sessions. The live state of
 each outcome, with its issues, is in the
 [milestones](https://github.com/JairJosafath/theos/milestones); this file
 doesn't copy their issue lists.
@@ -66,18 +70,20 @@ its user-visible steps join an existing milestone or none.
 
 | Milestone | Outcome | State |
 | --- | --- | --- |
-| [Briefs: an idea in plain words](https://github.com/JairJosafath/c4factory/milestone/1?closed=1) | a Brief becomes a merged plan and working Crews with the stand-in planner and no Claude token, on the published chart: the *Done when* of [docs/plans/done/brief.md](docs/plans/done/brief.md) | reached 2026-10-06, released in v0.5.0 |
-| [Upgrades and release hygiene](https://github.com/JairJosafath/c4factory/milestone/2?closed=1) | a device upgrades without losing work, and every release says what changed | reached 2026-10-06, released in v0.5.0 |
-| [Shared credentials](https://github.com/JairJosafath/c4factory/milestone/4?closed=1) | a second project gets the factory's Claude token and pull secret without anyone handing them over again (#427), on the published chart; tested by `make check` | reached 2026-10-07, released in v0.7.0 |
-| [App modules](https://github.com/JairJosafath/c4factory/milestone/5?closed=1) | one app's Go module is published to Gitea and fetched by another app's Crew and CI, and plans order the work with `uses:` (#430); tested by `make check` and `make test-gitea` | reached 2026-10-07, released in v0.7.0 |
-| [Briefs build in order](https://github.com/JairJosafath/c4factory/milestone/6?closed=1) | a Brief files its issues in the plan's order with Gitea dependencies, so no issue starts before what it builds on exists (#428); tested by `make check` and `make test-gitea` | reached 2026-10-07, released in v0.7.0 |
-| [Catalog: more kinds of app](https://github.com/JairJosafath/c4factory/milestone/7?closed=1) | the catalog offers react-vite, node-cli, python-standard, python-cli and a static-site deployment, each scaffolding a repo whose own checks pass (#399); tested by `make check` | reached 2026-10-07, released in v0.7.0 |
-| [Brief autopilot](https://github.com/JairJosafath/c4factory/milestone/8?closed=1) | a Brief tends its own failed issues within its heal window, asks by default, and shows what needs a person on its card (#486, #503-#506); tested by `make check` | reached 2026-10-07, released in v0.8.0 |
-| [Honest agents](https://github.com/JairJosafath/c4factory/milestone/9?closed=1) | agents never pass off invented evidence, open criteria become by-hand issues, and an agent that can't start says why (#467, #472-#475, #492); tested by `make check` | reached 2026-10-07, released in v0.7.0 |
-| [UI: one story, and what needs you](https://github.com/JairJosafath/c4factory/milestone/10?closed=1) | every level the UI shows, from a Brief's idea to Crews' Tasks and releases, tells its lifecycle in one order, and one *Needs you* list covers every item the CRDs flag for a person (#705): the *Done when* of [docs/plans/done/ui-lifecycle.md](docs/plans/done/ui-lifecycle.md); tested by `make check` | reached 2026-10-09, released in v0.18.0 |
-| [UI: act as the person signed in](https://github.com/JairJosafath/c4factory/milestone/11?closed=1) | a person steers the factory from the UI, as the ServiceAccount over port-forward and as themselves with OIDC behind an Ingress, and the cluster's RBAC decides (#706): the *Done when* of [docs/plans/done/ui-actions.md](docs/plans/done/ui-actions.md); tested by `make check` | reached 2026-10-09, released as a preview behind `ui.actions.enabled` in v0.16.0 and v0.17.0 |
-| [Reference app: the webshop ships](https://github.com/JairJosafath/c4factory/milestone/12) | the webshop Brief in `config/samples/webshop` builds four Containers, a DataStore and a Kubernetes deploy on a Kind cluster from the published release, every gap the owner found in that build is closed, and a release ships it as the getting-started example: the *Done when* of [docs/plans/fresh-start.md](docs/plans/fresh-start.md) (#1426) | open |
-| [1.0: a stable API](https://github.com/JairJosafath/c4factory/milestone/3) | the criteria below hold; it holds only those, and the work towards them comes in the milestones above | when they hold |
+| Briefs: an idea in plain words | a Brief becomes a merged plan and working Crews with the stand-in planner and no Claude token, on the published chart: the *Done when* of [docs/plans/done/brief.md](docs/plans/done/brief.md) | reached 2026-10-06, released in v0.5.0 |
+| Upgrades and release hygiene | a device upgrades without losing work, and every release says what changed | reached 2026-10-06, released in v0.5.0 |
+| Shared credentials | a second project gets the factory's Claude token and pull secret without anyone handing them over again (#427), on the published chart; tested by `make check` | reached 2026-10-07, released in v0.7.0 |
+| App modules | one app's Go module is published to Gitea and fetched by another app's Crew and CI, and plans order the work with `uses:` (#430); tested by `make check` and `make test-gitea` | reached 2026-10-07, released in v0.7.0 |
+| Briefs build in order | a Brief files its issues in the plan's order with Gitea dependencies, so no issue starts before what it builds on exists (#428); tested by `make check` and `make test-gitea` | reached 2026-10-07, released in v0.7.0 |
+| Catalog: more kinds of app | the catalog offers react-vite, node-cli, python-standard, python-cli and a static-site deployment, each scaffolding a repo whose own checks pass (#399); tested by `make check` | reached 2026-10-07, released in v0.7.0 |
+| Brief autopilot | a Brief tends its own failed issues within its heal window, asks by default, and shows what needs a person on its card (#486, #503-#506); tested by `make check` | reached 2026-10-07, released in v0.8.0 |
+| Honest agents | agents never pass off invented evidence, open criteria become by-hand issues, and an agent that can't start says why (#467, #472-#475, #492); tested by `make check` | reached 2026-10-07, released in v0.7.0 |
+| UI: one story, and what needs you | every level the UI shows, from a Brief's idea to Crews' Tasks and releases, tells its lifecycle in one order, and one *Needs you* list covers every item the CRDs flag for a person (#705): the *Done when* of [docs/plans/done/ui-lifecycle.md](docs/plans/done/ui-lifecycle.md); tested by `make check` | reached 2026-10-09, released in v0.18.0 |
+| UI: act as the person signed in | a person steers the factory from the UI, as the ServiceAccount over port-forward and as themselves with OIDC behind an Ingress, and the cluster's RBAC decides (#706): the *Done when* of [docs/plans/done/ui-actions.md](docs/plans/done/ui-actions.md); tested by `make check` | reached 2026-10-09, released as a preview behind `ui.actions.enabled` in v0.16.0 and v0.17.0 |
+| Reference app: the webshop ships | the webshop Brief in `config/samples/webshop` builds four Containers, a DataStore and a Kubernetes deploy on a Kind cluster from the published release, every gap the owner found in that build is closed, and a release ships it as the getting-started example: the *Done when* of [docs/plans/fresh-start.md](docs/plans/fresh-start.md) (#1426) | open |
+| Open source: the repository goes public | a person who has never seen theos gets from the public README to a running factory and to a merged pull request of their own: the *Done when* of [docs/plans/open-source-launch.md](docs/plans/open-source-launch.md) (#45) | open |
+| The open alternative to Warp's factory | [docs/comparison.md](docs/comparison.md) has no "not yet" in theos's column for something Warp ships (#46); the page is rechecked at each minor release | open |
+| 1.0: a stable API | the criteria below hold; it holds only those, and the work towards them comes in the milestones above | when they hold |
 
 ## What 1.0 means
 
@@ -95,15 +101,17 @@ all of these:
 - a device builds and releases an app from a Brief with only the published
   release and [docs/getting-started.md](docs/getting-started.md).
 
-Whether 1.0 is public (licence, repository visibility, public packages) is the
-owner's decision, and it isn't on the roadmap until they make it.
+The owner decided on 2026-11-09 to move towards open source. The licence,
+the repository's visibility and the public packages stay the owner's acts;
+[docs/plans/open-source-launch.md](docs/plans/open-source-launch.md) lists
+them with the work around them (#45).
 
 ## Later, not scheduled
 
 All four come from [docs/design.md](docs/design.md):
 
 - runtime health of the apps beyond what a deploy target's tool reports;
-- git providers other than Gitea;
+- git providers other than Gitea (GitHub is now planned: #57);
 - short-lived Session tokens;
 - a webhook that refuses an incompatible Container up front.
 
