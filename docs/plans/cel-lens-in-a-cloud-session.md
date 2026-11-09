@@ -126,13 +126,28 @@ real editor beside the rule, with the engine's help. Filed in Gitea:
 | --- | --- | --- | --- |
 | core #15 | `schema:` (OpenAPI v3, as a CRD's) and `go:` (`./api/v1#QuotaSpec`, read with `go/parser` as controller-gen does) | cel-lens-core#18, on #11 | approved after 3 rounds (schema aliases, a Go schema budget) |
 | core #17 | `inferType`: a schema from example objects; `typeChoices` lists the workspace's examples | cel-lens-core#19, on #18 | approved after 4 rounds (one background job mechanism, bounded) |
-| core #16 | guided `.cellens`: completion, hover and live problems while typing; `setType` writes a snippet and answers where the cursor goes | not yet | first review requested changes (Go completion off the loop, CRD entries offer only what they take); being fixed on #19 |
-| vscode #8 | Give it a type opens `.cellens` beside the rule: schema, Go type or short type | not yet | being built on vscode#6 |
-| vscode #9 | Give it a type from an example in the workspace, or a pasted one | not yet | after vscode #8 |
+| core #16 | guided `.cellens`: completion, hover and live problems while typing; `setType` writes a snippet and answers where the cursor goes | cel-lens-core#20, on #19 | approved after 2 rounds (Go completion from a background listing, 3 s to 1.5 ms; CRD entries offer only what they take) |
+| vscode #8 | Give it a type opens `.cellens` beside the rule: schema, Go type or short type; the input box is gone | cel-lens-vscode#10, on #6 | approved after 4 rounds (Go types of one workspace folder, write lines never wait for the Go walk, the old engine's refusal) |
+| vscode #9 | Give it a type from an example in the workspace, or a pasted one | cel-lens-vscode#13, on #10 | approved after 2 rounds (a context key that outlived a restart, saving after one-shot writes) |
 
-Merge order grows to core #5, #7, #9, #11, #18, #19, then #16's PR; vscode
-#4, #5, #6, then #8's and #9's. Core #15 and #17 are on the GitHub mirror
-branch too.
+Each was also tried in a real VS Code (openvscode-server on the session's
+host, the extension's `.vsix` and an engine built from cel-lens-core#20):
+the picker, a schema typed beside the rule with completion, a Go type, a
+workspace example, a pasted one, a CRD's `int`/`string`. That run found
+what the tests could not, filed in Gitea:
+
+- core #22: a policy variable stays `dyn` when the value it reads is typed
+  by `.cellens` (Kubernetes types a variable with its expression's type);
+  being fixed on #20.
+- core #23: the schema snippet is a one-line flow mapping, written schemas
+  sort `properties` before `type`, completion needs Ctrl+Space after `go: `.
+- vscode #14: closing a pasted example asks to save; a pasted resource is
+  read as one only when its kind is the value's; being built on #13.
+- vscode #11 (pin an engine with these commands, e2e of them) and #12 (the
+  README's pictures), from the reviews.
+
+Merge order grows to core #5, #7, #9, #11, #18, #19, #20; vscode #4, #5,
+#6, #10, #13. All of them are on the GitHub mirror branch too.
 
 The reviews settled one design point: in a CustomResourceDefinition the API
 server types no CEL value kept open with `x-kubernetes-preserve-unknown-fields`
