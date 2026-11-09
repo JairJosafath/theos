@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -630,6 +631,12 @@ func main() {
 			setupLog.Error(err, "Failed to set up the webhook ready check")
 			os.Exit(1)
 		}
+	}
+	// The factory's numbers on /metrics, computed from the cached Tasks at
+	// each scrape (#59).
+	if err := ctrlmetrics.Registry.Register(controller.FactoryMetrics{Reader: mgr.GetClient()}); err != nil {
+		setupLog.Error(err, "Failed to register the factory's metrics")
+		os.Exit(1)
 	}
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "Failed to set up health check")

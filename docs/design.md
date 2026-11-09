@@ -930,7 +930,13 @@ be judged by numbers the factory keeps itself.
   metrics from Tasks: merged, autonomy (merged with no person's commit;
   approving a spec or a deploy is a decision, not code), cycle time per
   stage, and cost per merged Task by size, per period and per
-  configuration: *How well it works*, in the Work area. No metrics store.
+  configuration: *How well it works*, in the Work area. No metrics store:
+  the manager serves the same numbers as Prometheus series on `/metrics`
+  (`theos_tasks`, `theos_tasks_merged`, `theos_task_seconds`,
+  `theos_agent_runs_cost_usd` and the rest, [monitoring.md](monitoring.md)),
+  computed from the Tasks that exist at each scrape by one rule in
+  `internal/model`, so they are gauges, a restart counts nothing twice, and
+  keeping history is the Prometheus's job (#59).
 - **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent
   (`judgeRef`), what it selects (kinds, Containers, outcomes; by default
   merged Implement Tasks), a sample picked by a hash of the Scorer and the

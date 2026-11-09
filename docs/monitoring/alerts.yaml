@@ -1,0 +1,48 @@
+# Example alerts on the factory's metrics (docs/monitoring.md), as a
+# prometheus-operator PrometheusRule. Copy it, set the numbers to your own,
+# and apply it where your Prometheus reads rules. Nothing installs it.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: theos-factory
+  labels:
+    app.kubernetes.io/name: theos
+spec:
+  groups:
+    - name: theos.factory
+      rules:
+        # The metrics sum over the Tasks that exist, so "today's cost" is the
+        # rise over a day; clamp_min drops the fall when Tasks are deleted.
+        - alert: TheosDailyCostOverBudget
+          expr: sum by (namespace) (clamp_min(delta(theos_tasks_cost_usd[1d]), 0)) > 50
+          labels:
+            severity: warning
+          annotations:
+            summary: "Project {{ $labels.namespace }}'s agents cost over $50 in a day"
+            description: "{{ $value | printf \"%.2f\" }} US dollars in the last 24 hours. A Scorer's or a Benchmark's budget doesn't cover Crews; pause the Crew or lower its parallelism."
+        - alert: TheosTasksFailing
+          expr: |
+            sum by (namespace) (clamp_min(delta(theos_tasks{kind="Implement",phase="Failed"}[1d]), 0))
+              > sum by (namespace) (clamp_min(delta(theos_tasks{kind="Implement",phase="Merged"}[1d]), 0))
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "More Tasks failed than merged in {{ $labels.namespace }} over a day"
+            description: "Look at the failed Tasks' reasons in the UI's Work area: a red main, a broken check and a missing credential each fail every Task."
+        - alert: TheosSpecWaitsForAPerson
+          expr: sum by (namespace) (theos_tasks{phase="AwaitingApproval"}) > 0
+          for: 1d
+          labels:
+            severity: info
+          annotations:
+            summary: "A spec in {{ $labels.namespace }} has waited a day for approval"
+            description: "Approve it or ask for changes on its pull request, in the UI's Needs you list or in the Chat's specs room."
+        - alert: TheosRunsWithoutCost
+          expr: sum by (namespace, agent) (theos_agent_runs_without_cost) / sum by (namespace, agent) (theos_agent_runs) > 0.5
+          for: 6h
+          labels:
+            severity: info
+          annotations:
+            summary: "Most runs of Agent {{ $labels.agent }} report no cost"
+            description: "theos_agent_runs_cost_usd leaves those runs out, so the cost shown is too low."
