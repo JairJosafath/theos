@@ -53,10 +53,16 @@ const (
 	CodeUnknown = "unknown"
 )
 
-// KindBenchmark is the "kind" label of a Benchmark's Tasks: they are
+// KindBenchmark is the metricLabelKind label of a Benchmark's Tasks: they are
 // Implement Tasks that never merge, and counting them as work would bend
 // every rate.
 const KindBenchmark = "Benchmark"
+
+// metricLabelKind is the label that carries a Task's kind.
+const metricLabelKind = "kind"
+
+// metricLabelNamespace is the label that carries a Task's project.
+const metricLabelNamespace = "namespace"
 
 // MetricNone stands for a label value the Task doesn't have: a run from
 // before its Agent was recorded, a Task of no Container.
@@ -229,8 +235,8 @@ func FactoryMetrics(tasks []TaskMetricFacts) []MetricFamily {
 		}
 	}
 
-	task := []string{"namespace", "container", "kind"}
-	run := []string{"namespace", "agent", "harness", "model", "role"}
+	task := []string{metricLabelNamespace, "container", metricLabelKind}
+	run := []string{metricLabelNamespace, "agent", "harness", "model", "role"}
 	families := []MetricFamily{
 		{Name: MetricTasks, Labels: append(slices.Clone(task), "phase"),
 			Help: "Tasks that exist, by project, Container, kind and phase."},
@@ -238,11 +244,11 @@ func FactoryMetrics(tasks []TaskMetricFacts) []MetricFamily {
 			Help: "Merged Tasks that exist, by who wrote the change's code: factory (no person's commit), person or unknown."},
 		{Name: MetricTasksCostUSD, Labels: task,
 			Help: "What the agent runs of the Tasks that exist cost, in US dollars, as the agents reported it."},
-		{Name: MetricTaskSeconds, Labels: []string{"namespace", "kind", "outcome"},
+		{Name: MetricTaskSeconds, Labels: []string{metricLabelNamespace, metricLabelKind, "outcome"},
 			Help: "How long each finished Task that exists took, from its first step to its last, in seconds."},
-		{Name: MetricTaskPhaseSeconds, Labels: []string{"namespace", "kind", "phase"},
+		{Name: MetricTaskPhaseSeconds, Labels: []string{metricLabelNamespace, metricLabelKind, "phase"},
 			Help: "How long the Tasks that exist stayed in a phase, per stay that ended, in seconds, from the newest 64 steps of each."},
-		{Name: MetricTaskRounds, Labels: []string{"namespace", "kind", "outcome"},
+		{Name: MetricTaskRounds, Labels: []string{metricLabelNamespace, metricLabelKind, "outcome"},
 			Help: "The implement rounds each finished Task that exists took."},
 		{Name: MetricAgentRuns, Labels: run,
 			Help: "Ended agent runs on the Tasks that exist (the newest 64 of each), by Agent, harness, model and role."},
