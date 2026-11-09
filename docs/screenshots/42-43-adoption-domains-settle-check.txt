@@ -1,0 +1,38 @@
+# #42 (adoption renders the Standard with the repository's Domains) and #43 (a new Container waits a settle window): make check on 01b675d, over #35.
+# The focused envtests: 'Container adoption' with '#42', 11 of 742 specs, SUCCESS; '#43', 1 of 742, SUCCESS.
+# Red before the fixes: with the adoption forced to render no Domains, the #42 specs fail StandardFilesDiffer 'in AGENTS.md, docs/agents/reviewer.md' (the issue's error); with the settle window at 0, the #43 spec never sees Settling and times out.
+0 issues.
+All valid
+All 29 invalid files rejected
+The chart's CRDs match config/crd/bases
+ Test Files  69 passed (69)
+      Tests  984 passed (984)
+# pass 267
+# fail 0
+ok  	github.com/JairJosafath/theos/cmd	1.573s
+ok  	github.com/JairJosafath/theos/cmd/theos-env	1.330s
+ok  	github.com/JairJosafath/theos/features	0.459s
+ok  	github.com/JairJosafath/theos/hack/runner-fence	0.118s
+ok  	github.com/JairJosafath/theos/internal/adapters/argocd	40.947s
+ok  	github.com/JairJosafath/theos/internal/adapters/awsenv	0.353s
+ok  	github.com/JairJosafath/theos/internal/adapters/cloudformation	0.274s
+ok  	github.com/JairJosafath/theos/internal/adapters/git	1.238s
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	2.575s
+ok  	github.com/JairJosafath/theos/internal/adapters/github	0.893s
+ok  	github.com/JairJosafath/theos/internal/adapters/gitlab	0.080s
+ok  	github.com/JairJosafath/theos/internal/adapters/localenv	9.509s
+ok  	github.com/JairJosafath/theos/internal/adapters/matrix	0.156s
+ok  	github.com/JairJosafath/theos/internal/agentrunner	39.695s
+ok  	github.com/JairJosafath/theos/internal/chatbot	0.231s
+ok  	github.com/JairJosafath/theos/internal/model	0.458s
+ok  	github.com/JairJosafath/theos/internal/ports	0.038s
+ok  	github.com/JairJosafath/theos/internal/ports/fake	0.007s
+ok  	github.com/JairJosafath/theos/internal/scaffold	7.080s
+ok  	github.com/JairJosafath/theos/internal/sessionclient	26.605s
+ok  	github.com/JairJosafath/theos/test/chart	53.086s
+ok  	github.com/JairJosafath/theos/test/compat	(cached)
+ok  	github.com/JairJosafath/theos/test/e2e/standin	(cached)
+ok  	github.com/JairJosafath/theos/internal/controller	561.585s
+ok  	github.com/JairJosafath/theos/internal/controller	703.114s
+make check: passed on tree 878cd96f1ebc25bb00db1c582c0a0b2fb4c7b669; recorded
+exit 0

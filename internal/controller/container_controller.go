@@ -11,6 +11,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -54,6 +55,10 @@ type ContainerReconciler struct {
 	ScaffoldOptions scaffold.Options
 	// ScaffoldTimeout bounds the Git calls of one scaffold attempt; zero means two minutes.
 	ScaffoldTimeout time.Duration
+	// ScaffoldSettle is how long a new Container waits after its creation
+	// before it is scaffolded, so a model applied in one go has its
+	// Relationships there (#43); nil or zero waits not at all.
+	ScaffoldSettle func() time.Duration
 	// ChecksRecheck is how often a Ready Container reads its checks; zero means a minute.
 	ChecksRecheck time.Duration
 	// SecretRecheck is how often a Container waiting for its credentials Secret
@@ -326,7 +331,25 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionChoicesValid,
 		metav1.ConditionTrue, c4v1beta1.ReasonValid, "")
 
+	// #43: the Relationships applied with the Container may come after it,
+	// and the scaffold reads its Connectors from them once. Resolving again
+	// after the window counts every one created by then.
+	if left := r.settleLeft(&container); left > 0 {
+		status.Phase = c4v1beta1.ContainerPending
+		r.condition(&container, status, c4v1beta1.ConditionScaffolded, metav1.ConditionFalse, c4v1beta1.ReasonSettling,
+			fmt.Sprintf("Waiting %s after the Container's creation for the Relationships applied with it",
+				left.Round(time.Second)))
+		return ctrl.Result{RequeueAfter: left}, r.writeStatus(ctx, &container, status)
+	}
 	return r.scaffold(ctx, &container, res, status)
+}
+
+// settleLeft is how much longer the Container waits before its scaffold.
+func (r *ContainerReconciler) settleLeft(container *c4v1beta1.Container) time.Duration {
+	if r.ScaffoldSettle == nil {
+		return 0
+	}
+	return model.SettleLeft(container.CreationTimestamp.Time, time.Now(), r.ScaffoldSettle())
 }
 
 func (r *ContainerReconciler) countSessions(ctx context.Context, container *c4v1beta1.Container) (int, error) {

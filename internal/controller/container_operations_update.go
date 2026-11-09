@@ -255,7 +255,12 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 	if ports.SameHost(git.gitProvider.Spec.URL, framework.Spec.Template.URL) {
 		creds = &git.creds
 	}
-	files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, creds)
+	files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, framework.Spec.Template.Path, creds)
+	if errors.Is(err, ports.ErrTemplatePathNotFound) {
+		// #35: no retry makes the directory appear at the scaffolded ref.
+		stopped(c4v1beta1.ReasonTemplatePathNotFound, fmt.Sprintf("Framework %s: %v", name, err))
+		return
+	}
 	if err != nil {
 		u.gitError(ctx, err)
 		return

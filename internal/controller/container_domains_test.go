@@ -205,6 +205,52 @@ var _ = Describe("Container domains", func() {
 		Expect(cond.Message).To(Equal("Domain bare renders no README.md"))
 	})
 
+	It("scaffolds a Domain from a subdirectory of a repository that holds other files (#35)", func() {
+		ns := newProjectNamespace()
+		domain := newDomain(ns, "ops")
+		domain.Spec.Template.Path = "domains/ops"
+		// The product's own repository: its model, a CLAUDE.md and the
+		// Domain beside them. Only the subtree is the Domain.
+		gitFake.AddTemplate(domain.Spec.Template.URL, domain.Spec.Template.Ref, scaffold.Tree{
+			"CLAUDE.md":              {Data: []byte("# church-ops\n")},
+			"model/system.yaml":      {Data: []byte("kind: SoftwareSystem\n")},
+			"domains/ops/README.md":  {Data: []byte("# Ops\n")},
+			"domains/ops/members.md": {Data: []byte("# Members\n")},
+		})
+		mustCreate(domain)
+		webshopOnDomains(ns, "ops")
+
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+		from := container.Status.ScaffoldedFrom
+		Expect(from[len(from)-1]).To(Equal("ops@v1.0.0"), "scaffoldedFrom still reads name@ref")
+		files := gitFake.MainFiles(ns, "orders-api")
+		Expect(files).To(HaveKeyWithValue("docs/agents/domain/ops/README.md",
+			HaveField("Data", BeEquivalentTo("# Ops\n"))))
+		Expect(files).To(HaveKey("docs/agents/domain/ops/members.md"))
+		for p := range files {
+			Expect(p).NotTo(HavePrefix("docs/agents/domain/ops/domains/"), "paths are relative to the subtree")
+			Expect(p).NotTo(Equal("docs/agents/domain/ops/CLAUDE.md"), "files outside the subtree stay out")
+		}
+	})
+
+	It("fails a Domain whose template.path the ref doesn't have, naming the path and the ref (#35)", func() {
+		ns := newProjectNamespace()
+		domain := newDomain(ns, "ops")
+		domain.Spec.Template.Path = "domains/billing"
+		gitFake.AddTemplate(domain.Spec.Template.URL, domain.Spec.Template.Ref, scaffold.Tree{
+			"domains/ops/README.md": {Data: []byte("# Ops\n")},
+		})
+		mustCreate(domain)
+		webshopOnDomains(ns, "ops")
+
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonTemplatePathNotFound))
+		Expect(cond.Message).To(And(ContainSubstring("domains/billing"), ContainSubstring("v1.0.0")))
+	})
+
 	It("stays Pending until every Domain the system names exists (#1757)", func() {
 		ns := newProjectNamespace()
 		webshopOnDomains(ns, "missing-one")

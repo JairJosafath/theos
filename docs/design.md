@@ -104,6 +104,22 @@ a Container not yet scaffolded `Pending`, reason `NotFound`; the checks
 below run on the expanded entries, and their message starts with
 `bundle <name>: `.
 
+**A catalog entry's template** is `template.url`, a Git repository,
+`template.ref`, a tag or a full commit SHA and never a branch (`UnpinnedRef`
+otherwise), and optionally `template.path`, a directory of that repository,
+relative to its root (#35). With a path the operator reads only that subtree,
+at the same pinned ref, with paths relative to it, so a template can live in a
+product's own repository beside its model and its `CLAUDE.md`; files outside
+it are no part of the template, and the checks on a template, a Domain's
+included, see only the subtree. Unset is the repository's root. CEL refuses
+an absolute path, a `.` or `..` segment, and a trailing or doubled `/`. A path
+the ref doesn't have fails what fetches it with reason `TemplatePathNotFound`,
+naming the path and the ref, as permanent as `UnpinnedRef`: the scaffold
+(`Scaffolded=False`), a Standard update (`StandardUpdated=False`) and an
+operations update (`OperationsApplied=False`). `scaffoldedFrom` and a
+Container's `status.standard` still read `name@ref`, and the UI's catalog
+pages show the path when it is set.
+
 A SoftwareSystem's `location` is `Internal` (the default: the factory builds
 it) or `External` (the story only names it, such as a payment provider). An
 External system holds no Containers or DataStores: one naming it stays
@@ -120,7 +136,8 @@ the factory builds nothing there). Every Container of the system is
 scaffolded with each Domain's Markdown under `docs/agents/domain/<name>/`,
 the last layer, after the Connectors, sorted by name; the Standard's agent
 guide tells the implementer and the reviewer to read it. A Domain's template
-renders Markdown only and a `README.md`: another file fails the scaffold
+(its `template.path` when it has one, so files beside it in the repository
+don't count) renders Markdown only and a `README.md`: another file fails the scaffold
 with `Scaffolded=False`, reason `DomainNotMarkdown`, naming the file; no
 `README.md` fails it with `DomainNoReadme`. Each Domain's `name@ref` ends
 `status.scaffoldedFrom` and its name joins `status.scaffoldedDomains`. A
@@ -128,8 +145,8 @@ Domain is written once, at the scaffold: a later
 bump of its `ref` does not reach a scaffolded Container, and a Ready
 Container reports `DomainsApplied=True` while its system still names the
 Domains it was scaffolded with, `False` with reason `AddedAfterScaffold`
-naming what was added or removed since (an adopted Container, scaffolded
-with none, names them all). The Standard's update renders with the Domains
+naming what was added or removed since (an adopted Container counts the
+Domains its Standard's files were found rendered with, below). The Standard's update renders with the Domains
 the scaffold used. The planner names the installed Domains an idea is about
 on each new Internal system. [plans/domains.md](plans/domains.md) (#1512)
 has the decisions; all its steps are built: the kind, `domainRefs`, the
@@ -194,12 +211,20 @@ tries again when something it depends on changes, or when its
 creation, immutable) takes over a repository that already has commits and
 is never scaffolded: the operator writes nothing. It checks main for two
 things. `.theos.yaml` carries the identity file's fields, naming this
-project and Container, with `scaffoldedFrom` empty since nothing was
-scaffolded; a missing file or another identity fails `IdentityMismatch`,
+project and Container (`scaffoldedFrom` is what another factory scaffolded
+it from, or empty); a missing file or another identity fails `IdentityMismatch`,
 saying what the file holds. Every file the Container's Standard renders for
 it at its ref is there with that content; else it fails
-`StandardFilesDiffer`, naming the paths. When both hold, it protects `main`
-and goes `Ready`, recording the Standard at its ref. An empty repository
+`StandardFilesDiffer`, naming the paths of the closest render. The Standard
+renders its agent guides with the system's Domains, so the check tries, in
+order, the Domains `.theos.yaml`'s `scaffoldedFrom` records (its entries
+that name a Domain of the project's catalog), the Domains the system names
+now, and none, and the first that renders main's files wins (#42): a
+repository theos scaffolded with Domains can be adopted by another factory
+with the same catalog. When both hold, it protects `main` and goes `Ready`,
+recording the Standard at its ref and those Domains in
+`status.scaffoldedDomains`, which `DomainsApplied` and later Standard
+updates read. An empty repository
 fails `NothingToAdopt`; one with commits but no `main` branch fails
 `NoDefaultBranch`, telling the user to rename its default branch to `main`
 first (#1908). A Container without a Standard adopts on the
@@ -220,6 +245,19 @@ ships a release of the target ([Crews](#crews-and-releases)). Every other link
 is story only. One added after the scaffold shows `Applied=False`,
 `AddedAfterScaffold`. A Relationship's ends and a DataStore's Connector can't
 change, so `Applied` keeps meaning what the scaffold holds.
+
+A model applied in one go creates a Container's Relationships after it as
+often as before: `kubectl apply -f dir/` goes file by file, kustomize doesn't
+order custom resources, and a Container deleted and applied again loses its
+Relationships with it. So a new Container waits out a settle window after its
+creation before it is scaffolded, `Pending` with `Scaffolded=False`, reason
+`Settling`, and resolves again once it closes; the scaffold reads the
+Relationships whose `spec.source` names the Container, from the API server,
+so one created inside the window counts though the operator hasn't set its
+ownerReference yet (#43). The window is the operator's `--scaffold-settle`,
+10 seconds by default; 0 scaffolds at once. The alternative, holding the
+scaffold while a Relationship naming the Container is unresolved, can't see
+a Relationship not created yet, which is this case.
 
 **Status.** A Container is `Pending`, `Scaffolding`, then `Ready` or `Failed`,
 with conditions `ReferencesResolved`, `ChoicesValid`, `RepositoryCreated`,
@@ -956,7 +994,12 @@ operator merges the Standard's version) or `theos.factory.io/standard-keep`
 naming the ref. No agent takes part. `scaffoldedFrom` keeps the scaffold's
 refs, `status.standard` the current. A Container that got its Standard from a
 Bundle keeps following the Standard itself; a changed Bundle is only reported
-(`BundleCurrent`, above), never applied.
+(`BundleCurrent`, above), never applied. The update reads every ref, the old
+one and those of files behind included, at the Standard's current
+`template.path` (#35): a path is part of where a template lives, not of a
+version, so a Standard whose template moved within its repository is a new
+Standard, not a bump, or its old ref stops the update with
+`TemplatePathNotFound`.
 
 An update whose CI fails (`ChecksFailed`) is the Crew's to fix
 ([plans/standard-update-fails.md](plans/standard-update-fails.md), #1447).

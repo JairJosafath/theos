@@ -12,6 +12,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,7 +32,22 @@ import (
 // from the Gitea and Git adapters; tests use a fake.
 type GitClient interface {
 	Provider(cfg ports.Config) (ports.Provider, error)
-	FetchTemplate(ctx context.Context, url, ref string, creds *ports.Credentials) (scaffold.Tree, error)
+	// FetchTemplate reads the template at url and ref; a non-empty dir reads
+	// only that directory of the repository (template.path, #35).
+	FetchTemplate(ctx context.Context, url, ref, dir string, creds *ports.Credentials) (scaffold.Tree, error)
+}
+
+// templateFailure is the permanent reason a template fetch failed with, an
+// unpinned ref or a path the ref doesn't have; false for an error a retry
+// may clear.
+func templateFailure(err error) (string, bool) {
+	switch {
+	case errors.Is(err, ports.ErrUnpinnedRef):
+		return c4v1beta1.ReasonUnpinnedRef, true
+	case errors.Is(err, ports.ErrTemplatePathNotFound):
+		return c4v1beta1.ReasonTemplatePathNotFound, true
+	}
+	return "", false
 }
 
 // defaultScaffoldTimeout bounds one attempt at creating and filling a repository.
@@ -139,8 +156,8 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	}
 
 	layers, err := r.fetchLayers(gitCtx, res)
-	if errors.Is(err, ports.ErrUnpinnedRef) {
-		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonUnpinnedRef, err.Error())
+	if reason, ok := templateFailure(err); ok {
+		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, reason, err.Error())
 	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
@@ -212,8 +229,8 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		}
 	}
 	layers, err := r.fetchLayers(gitCtx, standardOnly)
-	if errors.Is(err, ports.ErrUnpinnedRef) {
-		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonUnpinnedRef, err.Error())
+	if reason, ok := templateFailure(err); ok {
+		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, reason, err.Error())
 	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
@@ -259,35 +276,85 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		}
 		license.ID = id.License
 	}
-	in := scaffoldInput(view, ci, nil, nil,
-		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
-		specOperations(container), repo.NpmScope, license)
-	rendered := scaffold.Tree{}
-	var standardRef string
-	for _, layer := range layers {
-		tree, err := scaffold.RenderLayer(in, layer)
-		if err != nil {
-			return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonFailed, err.Error())
-		}
-		rendered, standardRef = tree, layer.Ref
-	}
-	onMain, _, err = provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, rendered.Paths())
+	// #42: the Standard renders its agent guides with the system's Domains,
+	// so the check tries the Domains the repository was scaffolded with,
+	// then the system's, then none, and the first that renders main's files
+	// is recorded as the ones it holds.
+	domainSets, err := r.adoptionDomains(ctx, container.Namespace, id.ScaffoldedFrom, res.domains)
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	if differ := scaffold.ChangedPaths(rendered, onMain); len(differ) > 0 {
+	checks := model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease)
+	renders := make([]scaffold.Tree, len(domainSets))
+	paths := map[string]bool{}
+	var standardRef string
+	for i, domains := range domainSets {
+		in := scaffoldInput(view, ci, nil, domains, checks, specOperations(container), repo.NpmScope, license)
+		renders[i] = scaffold.Tree{}
+		for _, layer := range layers {
+			tree, err := scaffold.RenderLayer(in, layer)
+			if err != nil {
+				return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonFailed, err.Error())
+			}
+			renders[i], standardRef = tree, layer.Ref
+		}
+		for _, p := range renders[i].Paths() {
+			paths[p] = true
+		}
+	}
+	onMain, _, err = provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, slices.Sorted(maps.Keys(paths)))
+	if err != nil {
+		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
+	}
+	// The closest render names the paths when none matches: the fewest
+	// paths that differ, the earlier set on a tie.
+	var differ []string
+	adopted := -1
+	for i, rendered := range renders {
+		changed := scaffold.ChangedPaths(rendered, onMain)
+		if len(changed) == 0 {
+			adopted = i
+			break
+		}
+		if differ == nil || len(changed) < len(differ) {
+			differ = changed
+		}
+	}
+	if adopted < 0 {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonStandardFilesDiffer,
 			fmt.Sprintf("Repository %s: %s differs from Standard %s at %s in %s; an adopted repository carries the "+
 				"Standard's files as it renders them", repo.WebURL, ports.DefaultBranch, res.choices.Standard,
 				standardRef, strings.Join(differ, ", ")))
 	}
+	domains := domainSets[adopted]
 
 	if err := protectRepository(gitCtx, r.Client, provider, repo, view); err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.choices.Standard, "ref", standardRef)
-	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, nil, nil, in.Checks,
+	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.choices.Standard, "ref", standardRef,
+		"domains", domains)
+	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, domains, nil, checks,
 		res.entries[0].ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
+}
+
+// adoptionDomains are the sets of Domains an adoption tries the Standard
+// with (model.AdoptionDomains): a name in the identity's scaffoldedFrom is a
+// Domain when the project's catalog has a Domain by that name.
+func (r *ContainerReconciler) adoptionDomains(ctx context.Context, ns string, scaffoldedFrom,
+	systemDomains []string) ([][]string, error) {
+	domains := map[string]bool{}
+	for _, pinned := range scaffoldedFrom {
+		name, _, _ := strings.Cut(pinned, "@")
+		if _, seen := domains[name]; seen {
+			continue
+		}
+		found, err := r.lookup(ctx, ns, name, &c4v1beta1.Domain{})
+		if err != nil {
+			return nil, err
+		}
+		domains[name] = found
+	}
+	return model.AdoptionDomains(scaffoldedFrom, func(name string) bool { return domains[name] }, systemDomains), nil
 }
 
 // fetchLayers fetches every catalog entry's template at its pinned ref, in layer
@@ -299,7 +366,7 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 		if ports.SameHost(res.provider.Spec.URL, entry.TemplateURL) {
 			creds = &res.creds
 		}
-		files, err := r.Git.FetchTemplate(ctx, entry.TemplateURL, entry.TemplateRef, creds)
+		files, err := r.Git.FetchTemplate(ctx, entry.TemplateURL, entry.TemplateRef, entry.TemplatePath, creds)
 		if err != nil {
 			return nil, fmt.Errorf("%s %s: %w", entry.Side, entry.Name, err)
 		}

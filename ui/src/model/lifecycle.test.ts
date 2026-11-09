@@ -167,6 +167,7 @@ describe('containerNextStep', () => {
     ['IdentityMismatch', 'Scaffolded', /name this project and container, then retry/],
     ['StandardFilesDiffer', 'Scaffolded', /what the Standard renders, then retry/],
     ['UnpinnedRef', 'Scaffolded', /Pin the template’s ref/],
+    ['TemplatePathNotFound', 'Scaffolded', /a directory its repository has at the pinned ref/], // #35
     ['UnsupportedCI', 'Scaffolded', /Pick a template that supports it, or one without CI files, then retry/],
     ['UnsupportedType', 'ChoicesValid', /support this Container’s type/],
     ['UnsupportedFramework', 'ChoicesValid', /support this Container’s type/],

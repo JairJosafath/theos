@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -85,6 +86,10 @@ const testUIAccount = "theos-ui"
 
 // testScaffoldTimeout bounds a scaffold attempt in tests; the fake Git host answers at once.
 const testScaffoldTimeout = 3 * time.Second
+
+// scaffoldSettle is the scaffold's settle window in tests (#43): none, so a
+// Container scaffolds at once, unless a spec sets one for its duration.
+var scaffoldSettle atomic.Int64
 
 // testBotDeleteTimeout is how long a deleted Brief tries to delete its bot in tests.
 const testBotDeleteTimeout = 5 * time.Second
@@ -457,7 +462,8 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
-			Deployers: deployers, DeployMembers: testDeployMember,
+			ScaffoldSettle: func() time.Duration { return time.Duration(scaffoldSettle.Load()) },
+			Deployers:      deployers, DeployMembers: testDeployMember,
 			DeployPoll: time.Second, GitEvents: gitEvents},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},

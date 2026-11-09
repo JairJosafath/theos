@@ -279,17 +279,17 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	if ports.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
 		creds = &git.creds
 	}
-	oldFiles, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, from.Ref, creds)
+	oldFiles, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, from.Ref, standard.Spec.Template.Path, creds)
 	var nextFiles scaffold.Tree
 	if err == nil {
-		nextFiles, err = u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, to.Ref, creds)
+		nextFiles, err = u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, to.Ref, standard.Spec.Template.Path, creds)
 	}
 	stopped := func(reason string) *c4v1beta1.StandardUpdateStatus {
 		return &c4v1beta1.StandardUpdateStatus{Ref: to.Ref, Checks: c4v1beta1.ChecksMode(to.Checks), Stopped: reason}
 	}
-	if errors.Is(err, ports.ErrUnpinnedRef) {
-		s.Update = stopped(c4v1beta1.ReasonUnpinnedRef)
-		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", name, err))
+	if reason, ok := templateFailure(err); ok {
+		s.Update = stopped(reason)
+		u.condition(metav1.ConditionFalse, reason, fmt.Sprintf("Standard %s: %v", name, err))
 		return
 	}
 	if err != nil {
@@ -349,7 +349,11 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	bases := map[string]scaffold.Tree{}
 	for _, b := range behind {
 		if _, ok := renders[b.Ref]; !ok {
-			files, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, b.Ref, creds)
+			files, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, b.Ref, standard.Spec.Template.Path, creds)
+			if reason, ok := templateFailure(err); ok {
+				u.condition(metav1.ConditionFalse, reason, fmt.Sprintf("Standard %s: %v", name, err))
+				return
+			}
 			if err != nil {
 				u.gitError(ctx, err)
 				return
@@ -534,7 +538,7 @@ func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 	in.FrameworkFiles = paths
 	return &standardRenders{
 		fetch: func(ctx context.Context, ref string) (scaffold.Tree, error) {
-			return u.r.Git.FetchTemplate(ctx, standard.Spec.Template.URL, ref, creds)
+			return u.r.Git.FetchTemplate(ctx, standard.Spec.Template.URL, ref, standard.Spec.Template.Path, creds)
 		},
 		in:       in,
 		standard: standard.Name,
@@ -584,7 +588,7 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 		if ports.SameHost(git.gitProvider.Spec.URL, framework.Spec.Template.URL) {
 			creds = &git.creds
 		}
-		files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, creds)
+		files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, framework.Spec.Template.Path, creds)
 		if err != nil {
 			return nil, err
 		}
@@ -659,6 +663,8 @@ func (u *standardUpdate) renderFailed(ctx context.Context, err error) {
 	switch {
 	case errors.Is(err, ports.ErrUnpinnedRef):
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", s.Name, err))
+	case errors.Is(err, ports.ErrTemplatePathNotFound):
+		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonTemplatePathNotFound, fmt.Sprintf("Standard %s: %v", s.Name, err))
 	case errors.As(err, new(*renderError)):
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonFailed,
 			fmt.Sprintf("Could not render the Standard %s %v", s.Name, err))

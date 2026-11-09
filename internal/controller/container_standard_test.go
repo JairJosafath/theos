@@ -449,7 +449,7 @@ var _ = Describe("Container Standard update", func() {
 
 		By("moving the Framework to a version with infra/operations.ts, which the Container doesn't have")
 		url := templatesURL + "python-fastapi"
-		newer, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", nil)
+		newer, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", "", nil)
 		Expect(err).NotTo(HaveOccurred())
 		newer = maps.Clone(newer)
 		newer["infra/operations.ts"] = scaffold.File{Data: []byte("export const operations = {};\n")}
@@ -513,7 +513,7 @@ var _ = Describe("Container Standard update", func() {
 		ns := newProjectNamespace()
 		url := templatesURL + "python-fastapi"
 		const ref = "v1.6.0-1443"
-		files, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", nil)
+		files, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", "", nil)
 		Expect(err).NotTo(HaveOccurred())
 		gitFake.AddTemplate(url, ref, files)
 		createFactoryAt(ns, ref)

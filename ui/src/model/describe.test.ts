@@ -58,6 +58,10 @@ describe('describeCondition', () => {
     expect(describeCondition({ type: 'Applied', status: 'False', reason: 'WaitingForScaffold' }).title).toMatch(
       /when the container is scaffolded/,
     )
+    // #43: a new Container waits out the settle window, which is no error.
+    const settling = describeCondition({ type: 'Scaffolded', status: 'False', reason: 'Settling' })
+    expect(settling.tone).toBe('waiting')
+    expect(settling.title).toMatch(/relationships applied with it/)
   })
 
   it('says plainly when a relationship was added after scaffolding', () => {

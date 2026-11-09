@@ -255,15 +255,20 @@ func (g *Git) PushCount() int {
 }
 
 // FetchTemplate returns the template registered at url and ref, or
-// ports.ErrUnpinnedRef.
-func (g *Git) FetchTemplate(_ context.Context, url, ref string, _ *ports.Credentials) (scaffold.Tree, error) {
+// ports.ErrUnpinnedRef; a non-empty dir returns that directory of it, or
+// ports.ErrTemplatePathNotFound, as the Git adapter does.
+func (g *Git) FetchTemplate(_ context.Context, url, ref, dir string, _ *ports.Credentials) (scaffold.Tree, error) {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()
 	tree, ok := g.s.templates[url+"@"+ref]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s not found in %s", ports.ErrUnpinnedRef, ref, url)
 	}
-	return tree, nil
+	sub, ok := tree.Sub(dir)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s has no directory %s at %s", ports.ErrTemplatePathNotFound, url, dir, ref)
+	}
+	return sub, nil
 }
 
 func (g *Git) EnsureRepository(_ context.Context, name, _ string) (ports.Repository, error) {

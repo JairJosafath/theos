@@ -46,6 +46,9 @@ type CatalogEntry struct {
 	SupportedTypes []string
 	TemplateURL    string
 	TemplateRef    string
+	// TemplatePath is the directory of the repository the template is in,
+	// empty for its root (#35).
+	TemplatePath string
 	// SupportedFrameworks lists the Frameworks a Standard fits; empty for other sides.
 	SupportedFrameworks []string
 	// WiredBy lists the Frameworks whose templates call a Connector's files;

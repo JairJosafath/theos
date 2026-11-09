@@ -538,7 +538,7 @@ export interface CatalogEntry extends K8sObject {
     displayName?: string
     description?: string
     supportedTypes: ContainerType[]
-    template: { url: string; ref: string }
+    template: { url: string; ref: string; path?: string }
     /** A Framework only: its template is its Container's deployment, so it takes no Compute or Deployment. */
     deploysItself?: boolean
     /** A Framework only: its template renders infra/operations.ts from a Container's spec.operations. */
@@ -590,7 +590,7 @@ export interface Domain extends K8sObject {
   spec: {
     displayName?: string
     description?: string
-    template: { url: string; ref: string }
+    template: { url: string; ref: string; path?: string }
   }
 }
 

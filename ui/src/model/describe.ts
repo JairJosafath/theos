@@ -205,6 +205,7 @@ const REASON_WORDING: Record<string, string> = {
   BundleChanged: 'Its Bundle changed or is gone since the scaffold; the repository keeps what it was scaffolded from',
   WaitingForScaffold: 'Will be built in when the container is scaffolded',
   Scaffolding: 'Being scaffolded right now',
+  Settling: 'Waiting a few seconds after its creation, so the relationships applied with it are counted',
   ForeignCommits: 'The repository already had commits the factory did not make, so it stopped',
   LayerConflict: 'Two templates wanted to write the same file',
   NothingToAdopt: 'The repository to adopt has no commits',
@@ -212,6 +213,7 @@ const REASON_WORDING: Record<string, string> = {
   StandardFilesDiffer: 'The adopted repository’s files differ from what its Standard renders',
   UnsupportedCI: 'A template has CI files, but none for the Git host’s CI system',
   UnpinnedRef: 'A template points to a branch instead of a fixed version',
+  TemplatePathNotFound: 'A template’s directory is not in its repository at the pinned version',
   GitError: 'Talking to Git failed',
 }
 
@@ -219,6 +221,7 @@ const REASON_WORDING: Record<string, string> = {
 const WAITING_REASONS = new Set([
   'WaitingForScaffold',
   'Scaffolding',
+  'Settling',
   'NotFound',
   // A Container's Deployed while a deploy is on its way or held (docs/plans/done/deploy.md, decision 6).
   'WaitingForApproval',

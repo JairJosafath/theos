@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +87,7 @@ func TestFetchTemplate(t *testing.T) {
 
 	for _, ref := range []string{"v1.0.0", first} {
 		t.Run("pinned to "+ref[:6], func(t *testing.T) {
-			tree, err := client.FetchTemplate(ctx, dir, ref, nil)
+			tree, err := client.FetchTemplate(ctx, dir, ref, "", nil)
 			if err != nil {
 				t.Fatalf("FetchTemplate() error = %v", err)
 			}
@@ -113,9 +114,60 @@ func TestFetchTemplate(t *testing.T) {
 		{strings.Repeat("a", 40), "not found"},
 	} {
 		t.Run("rejects "+tt.ref[:4], func(t *testing.T) {
-			_, err := client.FetchTemplate(ctx, dir, tt.ref, nil)
+			_, err := client.FetchTemplate(ctx, dir, tt.ref, "", nil)
 			if !errors.Is(err, ports.ErrUnpinnedRef) || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("FetchTemplate(%q) error = %v, want ErrUnpinnedRef containing %q", tt.ref, err, tt.want)
+			}
+		})
+	}
+}
+
+// #35: a template in a subdirectory of a repository that holds other files,
+// non-Markdown ones and a CLAUDE.md, is read alone, at the pinned ref, by
+// paths relative to it; a path the ref doesn't have fails permanently, naming
+// the path and the ref.
+func TestFetchTemplatePath(t *testing.T) {
+	ctx := context.Background()
+	dir := bareRepo(t)
+	first, err := PushInitialCommit(ctx, dir, nil, scaffold.Tree{
+		"CLAUDE.md":                       {Data: []byte("# church-ops\n")},
+		"model/system.yaml":               {Data: []byte("kind: SoftwareSystem\n")},
+		"domains/ops/README.md":           {Data: []byte("# Ops\n")},
+		"domains/ops/glossary/members.md": {Data: []byte("# Members\n")},
+	}, "church-ops v1", testAuthor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CreateTag("v1.0.0", plumbing.NewHash(first), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, ref := range []string{"v1.0.0", first} {
+		t.Run("pinned to "+ref[:6], func(t *testing.T) {
+			tree, err := Client{}.FetchTemplate(ctx, dir, ref, "domains/ops", nil)
+			if err != nil {
+				t.Fatalf("FetchTemplate() error = %v", err)
+			}
+			if got, want := tree.Paths(), []string{"README.md", "glossary/members.md"}; !slices.Equal(got, want) {
+				t.Errorf("FetchTemplate(domains/ops) paths = %v, want %v", got, want)
+			}
+			if got := string(tree["README.md"].Data); got != "# Ops\n" {
+				t.Errorf("README.md = %q, want the subdirectory's", got)
+			}
+		})
+	}
+
+	for _, path := range []string{"domains/billing", "CLAUDE.md", "domains/op"} {
+		t.Run("rejects "+path, func(t *testing.T) {
+			_, err := Client{}.FetchTemplate(ctx, dir, "v1.0.0", path, nil)
+			if !errors.Is(err, ports.ErrTemplatePathNotFound) || !strings.Contains(err.Error(), path) ||
+				!strings.Contains(err.Error(), "v1.0.0") {
+				t.Errorf("FetchTemplate(%q) error = %v, want ErrTemplatePathNotFound naming the path and the ref",
+					path, err)
 			}
 		})
 	}
@@ -154,7 +206,7 @@ func TestFetchTemplateTaggedCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tree, err := Client{}.FetchTemplate(ctx, dir, release.String(), nil)
+	tree, err := Client{}.FetchTemplate(ctx, dir, release.String(), "", nil)
 	if err != nil {
 		t.Fatalf("FetchTemplate() error = %v", err)
 	}
@@ -191,7 +243,7 @@ func TestHistoryAndInitialCommit(t *testing.T) {
 	}
 
 	// The pushed files, modes included, come back as they went in.
-	tree, err := Client{}.FetchTemplate(ctx, dir, hash, nil)
+	tree, err := Client{}.FetchTemplate(ctx, dir, hash, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

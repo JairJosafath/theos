@@ -274,6 +274,11 @@ var ErrPullRequestNotFound = errors.New("no such pull request")
 // here so the fetcher and the controllers' fake share it.
 var ErrUnpinnedRef = errors.New("template ref is not a tag or commit")
 
+// ErrTemplatePathNotFound means a template's path is no directory of its
+// repository at the pinned ref (#35). Like ErrUnpinnedRef it is permanent: no
+// retry makes the directory appear at a tag or commit.
+var ErrTemplatePathNotFound = errors.New("template path is not a directory at the ref")
+
 // GitHost is the Git host port (docs/architecture.md, "Ports"): repositories,
 // files, pushes, branches, tags, branch rules, pull requests, merges, commit
 // statuses, a release beside its tag, and the source at a tag. One GitHost
