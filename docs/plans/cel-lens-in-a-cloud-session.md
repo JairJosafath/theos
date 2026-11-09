@@ -55,7 +55,38 @@ Done:
 
    Task `cel-lens-core-1` took core #1 and waits for main's checks.
 
+## Work in Gitea (9 November, 06:00 to 06:50 UTC)
+
+The owner: "My PC is not running. Start from what you have on GitHub. Set up
+theos locally and work." The agents can't run without a token, so this
+session works the issues itself, through Gitea, as user `claude` (write on
+the `cel-lens` org); the Crews are paused so no Task races it.
+
+- **CI** runs on a Gitea Actions runner on the session's host
+  (`cloud-session/runner-config.yaml`, labels `go`, `go-release`, `base`, user
+  `ci`, Node 24.21.0, golangci-lint v2.14.0), which reaches the internet
+  through the session's proxy. `gitea.gitea.svc.cluster.local` resolves to a
+  port-forward, so the jobs' clone URLs work.
+- **The factory's own files came back.** The mirror leaves out `.gitea/`, and
+  the repositories' tests read it, so the check and release workflows were
+  rebuilt to what those tests ask (`cloud-session/workflows/`). The Standards
+  became `cel-lens-go-standard` v1.0.1 and `cel-lens-ts-standard` v1.0.2
+  (git bundles in `cloud-session/standards/`); core checks before release,
+  the extension checks every change.
+- **core #1 (`.cellens` reader): PR cel-lens-core#5.** `make check` passes; CI
+  green. An independent reviewer agent requested changes (duplicate keys
+  lost entries, unquoted struct types, wrong columns for multi-line types);
+  the fix commit addressed them and the re-review approved. Five
+  non-blocking findings are issue #6 (`status/proposed`). The source is also
+  on JairJosafath/cel-lens branch `claude/zen-cori-vxzrxq`, under `engine/`.
+- **core #2 (types used by checks, hover, completion)** is being built on top
+  of #5.
+
 ## What waits for the owner
+
+0. **Merging.** Auto mode refuses a merge to `main` without the owner, even
+   reviewed and green. Each pull request waits, reviewed and green, for the
+   owner to merge (Gitea, as the operator, which alone may merge), in order.
 
 1. **The agents' Claude token.** The model proxy reaches Anthropic through
    the session's proxy (Anthropic answers 401 to the placeholder token), but
@@ -69,8 +100,12 @@ Done:
    name) keeps all traffic going through that proxy and leaves the fence as
    it is. Auto mode refused it as weakening security; the owner allows it or
    says no.
-3. **Disk.** The agent and Go runner images are about 6 GB each, loaded into
+3. **GitHub release downloads** answer 504 through the session's proxy, so
+   the extension's `make check` stops at its e2e step, which fetches the
+   pinned engine from JairJosafath/cel-lens's releases. A rebuild of core
+   v0.25.1 here doesn't match the pinned checksum, so Gitea can't mirror it.
+4. **Disk.** The agent and Go runner images are about 6 GB each, loaded into
    Kind once more; the session has 13 GB free. They are built once 1 and 2
    are settled, slimmer if they must be.
-4. **The container is reclaimed when the session is idle,** and the cluster
+5. **The container is reclaimed when the session is idle,** and the cluster
    with it. This plan and `cloud-session/` rebuild it.
