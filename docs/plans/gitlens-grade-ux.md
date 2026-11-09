@@ -74,6 +74,10 @@ no more):
 4. Hovers as the details layer: what a rule means, its type, its cost
    against the API server's budget, and where to read more.
 5. CEL in kubebuilder markers in Go files, where operator authors write it.
+6. Inline info above every CEL rule, like GitLens's CodeLens, starting with
+   giving a `dyn` value its type right there, kept in a committed
+   `.cellens` file. The owner named this the core, after the first five
+   were filed; it goes first.
 
 ## Steps
 
@@ -87,6 +91,37 @@ no more):
 3. **The owner** merges step 1, upgrades the factory so the seed tags
    ts-standard v1.8.0, and lets the requests through if the Brief asks.
    The operator then opens the Standard update in cel-lens-vscode.
+
+## Status, 9 November 2026, 04:40 UTC
+
+The factory has done nothing on cel-lens since 4 November: the last
+published source is `core v0.27.0` (03:54 UTC that day), and none of the six
+requests has the operator's `planned` comment, which it posts on the round
+that takes one. So either the Brief's `cel-lens` entry doesn't take requests
+(`requests.mode` unset or `Off`), or the factory isn't running. This session
+can't see the cluster to tell which. theos's `main` has moved since (the
+rename to `theos.factory.io` on 4 November, v1alpha1 dropped on 6
+November), so a factory installed before then needs the upgrade before it
+does anything with this.
+
+What the owner runs, in order:
+
+```sh
+# 1. Is it running, and what is the Brief doing?
+kubectl -n cel-lens get brief cel-lens -o wide
+kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions}'
+
+# 2. Let the GitHub requests through: find the entry for JairJosafath/cel-lens ...
+kubectl -n cel-lens get brief cel-lens \
+  -o jsonpath='{range .spec.releases[*]}{.container} {.github.repository} {.requests.mode}{"\n"}{end}'
+# ... and turn requests on for it (N is its index, from 0). Only one entry
+# per repository may take requests.
+kubectl -n cel-lens patch brief cel-lens --type=json \
+  -p '[{"op":"add","path":"/spec/releases/N/requests","value":{"mode":"On","authors":["JairJosafath"]}}]'
+
+# Or, without requests, the core feature as a prompt:
+kubectl -n cel-lens patch brief cel-lens --type=json -p '[{"op":"add","path":"/spec/prompts/-","value":"First, before anything else: inline info above every CEL rule, like GitLens CodeLens. A short greyed line above each rule and CEL variable, always there, each part clickable. The first use: give a dyn value its type inline. Clicking Give it a type lets the person pick a built-in kind, a CRD in the workspace, or write a struct right there ({name: string, replicas: int}) with completion and errors; then checks, hover and completion in that rule use it at once. What they gave is kept in a .cellens file in the repository, plain text, committed, reviewable, keyed by file, rule and path. One command and a setting turn the lines off. Details are JairJosafath/cel-lens issue 6."}]'
+```
 
 ## Evidence
 
