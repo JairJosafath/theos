@@ -51,7 +51,7 @@ current. [README.md](../README.md#the-loop) draws the loop,
 | Requests come from | Gitea issues, GitHub issues for a Brief, a Matrix room. **Slack, Linear, Jira: not yet (#61)** | GitHub, Linear, Jira, Slack, Teams |
 | Chat | Matrix: a room per kind of work, a thread per decision | Slack and Teams |
 | Work on a timer | **not yet (#63)** | yes |
-| Numbers | the UI's *How well it works*: merged, share with no person's code, time per stage, cost per merged Task by size, Agent and model; the same as Prometheus series, with a Grafana dashboard and example alerts ([monitoring.md](monitoring.md)) | cost, throughput and code quality in the factory app |
+| Numbers | the UI's *How well it works*: merged, share with no person's code, time per stage, cost per merged Task by size, Agent and model; the same as Prometheus series, with a Grafana dashboard and alerts the chart installs ([monitoring.md](monitoring.md)) | cost, throughput and code quality in the factory app |
 | Comparing configurations | Benchmarks run the same goals under two to four Agent setups and report each rate with its 95% interval; Scorers judge finished work against criteria you write | evaluation and benchmarking tools in Warp Factories |
 | First run | a cluster, a Helm install and a long guide. **One command: not yet (#53)** | a workflow file and an API key |
 | Price | the software is free of charge; you pay your cluster and your model use | usage-based; early-access credits were reported |

@@ -591,7 +591,7 @@ chart: ## Regenerate the Helm chart in dist/chart from the kustomize output, kee
 		echo "make chart kept $(CHART_MANAGER); what the plugin would change is in $(CHART_OUT)/manager.plugin.diff, port what applies by hand"; fi
 
 ## Every option of the chart on, for the check that it renders no Secret.
-HELM_ALL_ON ?= gitea.projects={apps},chat.enabled=true,chat.homeserver.enabled=true,chat.homeserver.accounts={ada},gitea.admin.existingSecret=gitea-admin,global.imagePullSecrets[0].name=ghcr,manager.imagePullSecrets[0].name=ghcr,gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].existingSecret=git-credentials,rbac.helpers.enabled=true,certManager.enabled=true,webhook.enabled=true,prometheus.enabled=true,networkPolicy.enabled=true,ui.allowedHosts={factory.example.com}
+HELM_ALL_ON ?= gitea.projects={apps},chat.enabled=true,chat.homeserver.enabled=true,chat.homeserver.accounts={ada},gitea.admin.existingSecret=gitea-admin,global.imagePullSecrets[0].name=ghcr,manager.imagePullSecrets[0].name=ghcr,gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].existingSecret=git-credentials,rbac.helpers.enabled=true,certManager.enabled=true,webhook.enabled=true,prometheus.enabled=true,prometheus.dashboard.enabled=true,prometheus.rules.enabled=true,networkPolicy.enabled=true,ui.allowedHosts={factory.example.com}
 ## Secrets the chart may render: none; a pod makes each in the cluster.
 HELM_SECRETS_ALLOWED ?=
 

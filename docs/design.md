@@ -936,7 +936,8 @@ be judged by numbers the factory keeps itself.
   `theos_agent_runs_cost_usd` and the rest, [monitoring.md](monitoring.md)),
   computed from the Tasks that exist at each scrape by one rule in
   `internal/model`, so they are gauges, a restart counts nothing twice, and
-  keeping history is the Prometheus's job (#59).
+  keeping history is the Prometheus's job (#59). The chart installs a
+  Grafana dashboard and alert rules on them, each behind a value.
 - **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent
   (`judgeRef`), what it selects (kinds, Containers, outcomes; by default
   merged Implement Tasks), a sample picked by a hash of the Scorer and the

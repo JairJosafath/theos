@@ -28,7 +28,7 @@ and needs no state. The other side of that: they are gauges, not counters. A
 value falls when Tasks are deleted, and a Task's runs and steps beyond its
 newest 64 are not in the run and phase series (`theos_tasks_cost_usd` still
 has their cost). Use `delta()` with `clamp_min(…, 0)` for "how much in a
-day", as [the example alerts](monitoring/alerts.yaml) do, never `rate()`.
+day", as the chart's alerts do, never `rate()`.
 
 | Series | Labels | What it is |
 | --- | --- | --- |
@@ -59,14 +59,27 @@ sum(theos_tasks_merged{kind="Implement",code="factory"})
 
 ## A dashboard and alerts
 
-- [monitoring/theos-dashboard.json](monitoring/theos-dashboard.json): import
-  it in Grafana (*Dashboards → New → Import*) and pick the Prometheus data
-  source. It shows the share merged with no person's code, cost per merged
-  Task, what waits for a person, Tasks in flight, time per phase, cost by
-  Agent and model, tokens and rounds, for one Project or all.
-- [monitoring/alerts.yaml](monitoring/alerts.yaml): a PrometheusRule with
-  four examples: a day's cost over a budget, more Tasks failing than
-  merging, a spec that waits a day for a person, and an Agent whose runs
-  report no cost. Set the numbers to your own.
+The chart installs both, each behind a value:
 
-Neither is installed by the chart yet.
+```bash
+helm upgrade theos oci://ghcr.io/jairjosafath/theos/charts/theos --reuse-values \
+  --set prometheus.dashboard.enabled=true \
+  --set prometheus.rules.enabled=true --set prometheus.rules.dailyBudgetUSD=50
+```
+
+- **`prometheus.dashboard.enabled`** makes a ConfigMap with the Grafana
+  dashboard *theos: how well the factory works*, labelled
+  `grafana_dashboard: "1"` so Grafana's dashboard sidecar loads it
+  (`prometheus.dashboard.labels` and `.namespace` say otherwise). It shows
+  the share merged with no person's code, cost per merged Task, what waits
+  for a person, Tasks in flight, time per phase, cost by Agent and model,
+  tokens and rounds, for one Project or all. Without the sidecar, import
+  [the file](../dist/chart/files/theos-dashboard.json) in Grafana
+  (*Dashboards → New → Import*).
+- **`prometheus.rules.enabled`** makes a PrometheusRule (prometheus-operator)
+  with four alerts: a project's agents cost over
+  `prometheus.rules.dailyBudgetUSD` in a day (0 leaves it out), more Tasks
+  failed than merged in a day, a spec waits `prometheus.rules.specWaits`
+  for a person, and most runs of an Agent report no cost. Without the
+  operator, `helm template … -s templates/prometheus/factory-rules.yaml`
+  prints the rules to copy into your Prometheus's own.

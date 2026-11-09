@@ -1,0 +1,59 @@
+{{- if .Values.prometheus.rules.enabled }}
+# Alerts on the factory's own metrics (docs/monitoring.md, #59). The series
+# sum over the Tasks that exist, so "in a day" is the rise over a day:
+# clamp_min drops the fall when Tasks are deleted.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "theos.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- with .Values.prometheus.labels }}
+    {{- with omit . "app.kubernetes.io/managed-by" "app.kubernetes.io/name" "helm.sh/chart" "app.kubernetes.io/instance" }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- end }}
+  name: {{ include "theos.resourceName" (dict "suffix" "factory-rules" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  groups:
+    - name: theos.factory
+      rules:
+        {{- with .Values.prometheus.rules.dailyBudgetUSD }}
+        - alert: TheosDailyCostOverBudget
+          expr: sum by (namespace) (clamp_min(delta(theos_tasks_cost_usd[1d]), 0)) > {{ . }}
+          labels:
+            severity: warning
+          annotations:
+            summary: {{ `"Project {{ $labels.namespace }}'s agents cost more in a day than the budget"` }}
+            description: {{ `"{{ $value | printf \"%.2f\" }} US dollars in the last 24 hours. Pause the Crew or lower its parallelism; a Crew's taskBudgetUSD caps one Task, not a day."` }}
+        {{- end }}
+        - alert: TheosTasksFailing
+          expr: |
+            sum by (namespace) (clamp_min(delta(theos_tasks{kind="Implement",phase="Failed"}[1d]), 0))
+              > sum by (namespace) (clamp_min(delta(theos_tasks{kind="Implement",phase="Merged"}[1d]), 0))
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: {{ `"More Tasks failed than merged in {{ $labels.namespace }} over a day"` }}
+            description: "Look at the failed Tasks' reasons in the UI's Work area: a red main, a broken check and a missing credential each fail every Task."
+        - alert: TheosSpecWaitsForAPerson
+          expr: sum by (namespace) (theos_tasks{phase="AwaitingApproval"}) > 0
+          for: {{ .Values.prometheus.rules.specWaits }}
+          labels:
+            severity: info
+          annotations:
+            summary: {{ `"A spec in {{ $labels.namespace }} waits for a person's approval"` }}
+            description: "Approve it or ask for changes on its pull request, in the UI's Needs you list or in the Chat's specs room."
+        - alert: TheosRunsWithoutCost
+          expr: sum by (namespace, agent) (theos_agent_runs_without_cost) / sum by (namespace, agent) (theos_agent_runs) > 0.5
+          for: 6h
+          labels:
+            severity: info
+          annotations:
+            summary: {{ `"Most runs of Agent {{ $labels.agent }} report no cost"` }}
+            description: "theos_agent_runs_cost_usd leaves those runs out, so the cost shown is too low."
+{{- end }}
