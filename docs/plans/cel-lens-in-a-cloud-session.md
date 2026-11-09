@@ -82,6 +82,32 @@ the `cel-lens` org); the Crews are paused so no Task races it.
 - **core #2 (types used by checks, hover, completion)** is being built on top
   of #5.
 
+## Pull requests in Gitea (9 November, to 09:30 UTC)
+
+Each is built by an implementer agent, reviewed by a separate reviewer agent
+that sees only the code and the issue (never the implementer's reasoning),
+fixed until approved, and checked by CI on the host runner. None is merged:
+merging waits for the owner. They stack in this order.
+
+| Gitea PR | Issue | State |
+| --- | --- | --- |
+| cel-lens-core#5 | core #1 the `.cellens` reader | approved after one round; CI green |
+| cel-lens-core#7 | core #2 checks, hover and completion use `.cellens` types | approved after one round (a publish ordering bug, symlinks, CRD semantics); CI green |
+| cel-lens-core#9 | core #3 inline info, the line above each rule | approved after one round (policy lines up to 4 s, now under 110 ms); stacked on #7 |
+| cel-lens-core#11 | core #4 commands that set and remove `.cellens` types | changes requested (concurrent edits, comment placement); being fixed |
+| cel-lens-vscode#4 | vscode #2 Toggle Inline Info | in review |
+| cel-lens-vscode#5 | vscode #3 the line's summary and `+N more` | in review; stacked on #4 |
+
+Follow-ups filed: core #6, #8, #10 (from reviews). Still to build: vscode #1
+(the type picker; needs core #4 and an engine release). The engine work is
+also on JairJosafath/cel-lens branch `claude/zen-cori-vxzrxq`, under `engine/`.
+
+A design point the reviews settled: in a CustomResourceDefinition the API
+server types no CEL value kept open with `x-kubernetes-preserve-unknown-fields`
+(it ignores the flag), so only `x-kubernetes-int-or-string` is `dyn` to a
+rule, and takes only `int` or `string`; `.cellens` structs are for a policy's
+`params`, `object`, `oldObject` and variables.
+
 ## What waits for the owner
 
 0. **Merging.** Auto mode refuses a merge to `main` without the owner, even
