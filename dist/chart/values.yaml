@@ -826,7 +826,7 @@ catalog:
         protectedPaths: [internal/agentrunner/, internal/modelproxy/, internal/model/fence.go, internal/controller/task_sandbox.go, internal/controller/project_agent_network.go, internal/controller/ci_runner_pod.go, internal/controller/protection.go, internal/adapters/gitea/gitea_agents.go, dist/chart/, Makefile, .golangci.yml, .custom-gcl.yml, .claude/, CLAUDE.md, GOVERNANCE.md, hack/]
     - kind: Standard
       name: ts-standard
-      ref: v1.7.0
+      ref: v1.7.1
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
