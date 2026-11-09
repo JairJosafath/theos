@@ -30,7 +30,22 @@ import (
 // from the Gitea and Git adapters; tests use a fake.
 type GitClient interface {
 	Provider(cfg ports.Config) (ports.Provider, error)
-	FetchTemplate(ctx context.Context, url, ref string, creds *ports.Credentials) (scaffold.Tree, error)
+	// FetchTemplate reads the template at url and ref; a non-empty dir reads
+	// only that directory of the repository (template.path, #35).
+	FetchTemplate(ctx context.Context, url, ref, dir string, creds *ports.Credentials) (scaffold.Tree, error)
+}
+
+// templateFailure is the permanent reason a template fetch failed with, an
+// unpinned ref or a path the ref doesn't have; false for an error a retry
+// may clear.
+func templateFailure(err error) (string, bool) {
+	switch {
+	case errors.Is(err, ports.ErrUnpinnedRef):
+		return c4v1beta1.ReasonUnpinnedRef, true
+	case errors.Is(err, ports.ErrTemplatePathNotFound):
+		return c4v1beta1.ReasonTemplatePathNotFound, true
+	}
+	return "", false
 }
 
 // defaultScaffoldTimeout bounds one attempt at creating and filling a repository.
@@ -139,8 +154,8 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	}
 
 	layers, err := r.fetchLayers(gitCtx, res)
-	if errors.Is(err, ports.ErrUnpinnedRef) {
-		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonUnpinnedRef, err.Error())
+	if reason, ok := templateFailure(err); ok {
+		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, reason, err.Error())
 	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
@@ -212,8 +227,8 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		}
 	}
 	layers, err := r.fetchLayers(gitCtx, standardOnly)
-	if errors.Is(err, ports.ErrUnpinnedRef) {
-		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonUnpinnedRef, err.Error())
+	if reason, ok := templateFailure(err); ok {
+		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, reason, err.Error())
 	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
@@ -299,7 +314,7 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 		if ports.SameHost(res.provider.Spec.URL, entry.TemplateURL) {
 			creds = &res.creds
 		}
-		files, err := r.Git.FetchTemplate(ctx, entry.TemplateURL, entry.TemplateRef, creds)
+		files, err := r.Git.FetchTemplate(ctx, entry.TemplateURL, entry.TemplateRef, entry.TemplatePath, creds)
 		if err != nil {
 			return nil, fmt.Errorf("%s %s: %w", entry.Side, entry.Name, err)
 		}

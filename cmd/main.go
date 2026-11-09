@@ -651,9 +651,9 @@ type gitClient struct {
 
 func (c gitClient) Provider(cfg ports.Config) (ports.Provider, error) { return c.hosts.Provider(cfg) }
 
-func (c gitClient) FetchTemplate(ctx context.Context, url, ref string,
+func (c gitClient) FetchTemplate(ctx context.Context, url, ref, dir string,
 	creds *ports.Credentials) (scaffold.Tree, error) {
-	return c.templates.FetchTemplate(ctx, url, ref, creds)
+	return c.templates.FetchTemplate(ctx, url, ref, dir, creds)
 }
 
 // goProxyURL is the Go proxy the --go-proxy flag names, "" for off.

@@ -212,6 +212,7 @@ const REASON_WORDING: Record<string, string> = {
   StandardFilesDiffer: 'The adopted repository’s files differ from what its Standard renders',
   UnsupportedCI: 'A template has CI files, but none for the Git host’s CI system',
   UnpinnedRef: 'A template points to a branch instead of a fixed version',
+  TemplatePathNotFound: 'A template’s directory is not in its repository at the pinned version',
   GitError: 'Talking to Git failed',
 }
 

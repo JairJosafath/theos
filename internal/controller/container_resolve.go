@@ -255,6 +255,7 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 		SupportedTypes:      supported,
 		TemplateURL:         spec.Template.URL,
 		TemplateRef:         spec.Template.Ref,
+		TemplatePath:        spec.Template.Path,
 		SupportedFrameworks: frameworks,
 		WiredBy:             wiredBy,
 		ChecksBeforeRelease: checksBeforeRelease,

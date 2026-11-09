@@ -119,6 +119,18 @@ type TemplateSource struct {
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	Ref string `json:"ref"`
+
+	// path is a directory of the repository that holds the template, relative
+	// to its root, such as domains/billing. The operator reads only that
+	// subtree, at ref, with paths relative to it; files outside it are not
+	// part of the template. Unset is the repository's root (#35).
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:XValidation:rule="!self.startsWith('/')",message="path is relative to the repository's root, not absolute"
+	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/') && !self.contains('//')",message="path has no trailing or doubled /"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('(^|/)[.][.]?(/|$)')",message="path has no . or .. segments"
+	// +optional
+	Path string `json:"path,omitempty"`
 }
 
 // CatalogEntrySpec is shared by the four catalog kinds: Framework, Compute,
@@ -235,17 +247,21 @@ const (
 	ReasonDomainNotMarkdown = "DomainNotMarkdown"
 	// ReasonDomainNoReadme: a Domain's template renders no README.md, the
 	// index the Standards' guides point at.
-	ReasonDomainNoReadme     = "DomainNoReadme"
-	ReasonUnpinnedRef        = "UnpinnedRef"
-	ReasonWaiting            = "WaitingForScaffold"
-	ReasonAppliedAtScaffold  = "AppliedAtScaffold"
-	ReasonAddedAfterScaffold = "AddedAfterScaffold"
-	ReasonUpToDate           = "UpToDate"
-	ReasonUpdating           = "Updating"
-	ReasonChecksFailed       = "ChecksFailed"
-	ReasonUpdateClosed       = "UpdateClosed"
-	ReasonUpdateRefused      = "UpdateRefused"
-	ReasonFilesBehind        = "FilesBehind"
+	ReasonDomainNoReadme = "DomainNoReadme"
+	ReasonUnpinnedRef    = "UnpinnedRef"
+	// ReasonTemplatePathNotFound: a catalog entry's template.path is no
+	// directory of its repository at the pinned ref; the message names the
+	// path and the ref (#35).
+	ReasonTemplatePathNotFound = "TemplatePathNotFound"
+	ReasonWaiting              = "WaitingForScaffold"
+	ReasonAppliedAtScaffold    = "AppliedAtScaffold"
+	ReasonAddedAfterScaffold   = "AddedAfterScaffold"
+	ReasonUpToDate             = "UpToDate"
+	ReasonUpdating             = "Updating"
+	ReasonChecksFailed         = "ChecksFailed"
+	ReasonUpdateClosed         = "UpdateClosed"
+	ReasonUpdateRefused        = "UpdateRefused"
+	ReasonFilesBehind          = "FilesBehind"
 	// ReasonExternalSystem: the Container or DataStore names an External
 	// SoftwareSystem, which the factory never builds.
 	ReasonExternalSystem = "ExternalSystem"

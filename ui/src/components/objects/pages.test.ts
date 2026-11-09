@@ -137,6 +137,13 @@ describe('the read-only object pages', () => {
     expect(text(html)).toContain('ruff.toml, .c4/checks/')
   })
 
+  it('shows a catalog entry’s template directory, only when set (#35)', () => {
+    expect(text(page('Standard', 'python-standard'))).not.toContain('In directory')
+    const data = demoStory(NOW)
+    data.standards.find((s) => s.metadata.name === 'python-standard')!.spec.template.path = 'standards/python'
+    expect(text(page('Standard', 'python-standard', data))).toMatch(/In directory standards\/python\/ Pinned at/)
+  })
+
   it('shows the Standard’s change to each file left out on a Container’s page, with actions off', () => {
     const data = demoStory(NOW)
     const c = data.containers.find((x) => x.metadata.name === 'orders-api')!
@@ -211,6 +218,14 @@ describe('the Domain page', () => {
     expect(html).toContain('href="/?ns=webshop&amp;kind=SoftwareSystem&amp;name=webshop-core"')
     // orders-api was scaffolded with it; the system's four other Containers were not.
     expect(t).toMatch(/webshop-core · 1 of 5 Containers scaffolded with it/)
+  })
+
+  it('shows the directory of its repository its template is in, only when set (#35)', () => {
+    expect(text(page('Domain', 'webshop'))).not.toContain('In directory')
+    const data = demoStory(NOW)
+    data.domains[0].spec.template.path = 'domains/webshop'
+    const t = text(page('Domain', 'webshop', data))
+    expect(t).toMatch(/webshop-domain In directory domains\/webshop\/ Pinned at v1.0.0/)
   })
 
   it('lists no system when none names it', () => {

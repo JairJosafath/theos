@@ -40,7 +40,7 @@ func TestGiteaIntegration(t *testing.T) {
 	t.Run("fetches a seeded template at its tag", func(t *testing.T) {
 		// The tag comes from templates/versions.txt, the one the seed pushes: a
 		// pinned tag went stale on a bump and reddened main (#1651).
-		tree, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/python-fastapi", pinnedTemplateTag(t, "python-fastapi"), nil)
+		tree, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/python-fastapi", pinnedTemplateTag(t, "python-fastapi"), "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,7 +49,7 @@ func TestGiteaIntegration(t *testing.T) {
 				t.Errorf("template misses %s", p)
 			}
 		}
-		if _, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/python-fastapi", "main", nil); err == nil {
+		if _, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/python-fastapi", "main", "", nil); err == nil {
 			t.Error("a branch ref was accepted")
 		}
 	})
@@ -171,7 +171,7 @@ func TestGiteaTemplatesIntegration(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if tree, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/"+name, tag, nil); err != nil || len(tree) == 0 {
+		if tree, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/"+name, tag, "", nil); err != nil || len(tree) == 0 {
 			t.Errorf("templates/%s@%s: %d files, %v", name, tag, len(tree), err)
 		}
 	}

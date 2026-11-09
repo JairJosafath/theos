@@ -34,6 +34,23 @@ func (t Tree) Paths() []string {
 	return slices.Sorted(maps.Keys(t))
 }
 
+// Sub returns the files below directory dir, by their paths relative to it:
+// the template a catalog entry's template.path names in its repository (#35).
+// An empty dir is the whole tree. It reports false when no file is below dir,
+// as for a dir that is missing or a file: Git holds no empty directory.
+func (t Tree) Sub(dir string) (Tree, bool) {
+	if dir == "" {
+		return t, true
+	}
+	sub := Tree{}
+	for p, f := range t {
+		if rel, ok := strings.CutPrefix(p, dir+"/"); ok {
+			sub[rel] = f
+		}
+	}
+	return sub, len(sub) > 0
+}
+
 // ReadTree reads every file under fsys into a Tree, such as a template folder
 // through os.DirFS. A file with any execute bit set is executable.
 func ReadTree(fsys fs.FS) (Tree, error) {

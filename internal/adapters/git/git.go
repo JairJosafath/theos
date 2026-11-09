@@ -48,8 +48,12 @@ func auth(creds *ports.Credentials) transport.AuthMethod {
 }
 
 // FetchTemplate returns the files of a template repository at a pinned ref: a
-// tag, or a full commit SHA. A branch name fails with ErrUnpinnedRef.
-func (c Client) FetchTemplate(ctx context.Context, repoURL, ref string, creds *ports.Credentials) (scaffold.Tree, error) {
+// tag, or a full commit SHA. A branch name fails with ErrUnpinnedRef. A
+// non-empty dir reads only that directory of the repository, by paths
+// relative to it (#35); one the ref doesn't have fails with
+// ErrTemplatePathNotFound.
+func (c Client) FetchTemplate(ctx context.Context, repoURL, ref, dir string,
+	creds *ports.Credentials) (scaffold.Tree, error) {
 	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{Name: remoteName, URLs: []string{repoURL}})
 	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: auth(creds)})
 	if err != nil {
@@ -91,7 +95,15 @@ func (c Client) FetchTemplate(ctx context.Context, repoURL, ref string, creds *p
 			return nil, checkoutError(err, ref, repoURL)
 		}
 	}
-	return readTree(worktree)
+	tree, err := readTree(worktree)
+	if err != nil {
+		return nil, err
+	}
+	sub, ok := tree.Sub(dir)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s has no directory %s at %s", ports.ErrTemplatePathNotFound, repoURL, dir, ref)
+	}
+	return sub, nil
 }
 
 // checkoutError reports a missing commit as ErrUnpinnedRef, which is permanent,

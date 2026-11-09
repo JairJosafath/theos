@@ -420,6 +420,11 @@ export function containerNextStep(container: Container): NextStep | undefined {
         }
       case 'UnpinnedRef':
         return { text: 'Pin the template’s ref to a tag or commit, never a branch, then retry.', command }
+      case 'TemplatePathNotFound':
+        return {
+          text: 'Point the template’s path at a directory its repository has at the pinned ref, or pin a ref that has it, then retry.',
+          command,
+        }
       case 'UnsupportedCI':
         return {
           text: 'A template has CI files, but none for the Git host’s CI system. Pick a template that supports it, or one without CI files, then retry.',

@@ -67,6 +67,22 @@ spec:
                 description: template is the repository and pinned ref to scaffold
                   from.
                 properties:
+                  path:
+                    description: |-
+                      path is a directory of the repository that holds the template, relative
+                      to its root, such as domains/billing. The operator reads only that
+                      subtree, at ref, with paths relative to it; files outside it are not
+                      part of the template. Unset is the repository's root (#35).
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: path is relative to the repository's root, not absolute
+                      rule: '!self.startsWith(''/'')'
+                    - message: path has no trailing or doubled /
+                      rule: '!self.endsWith(''/'') && !self.contains(''//'')'
+                    - message: path has no . or .. segments
+                      rule: '!self.matches(''(^|/)[.][.]?(/|$)'')'
                   ref:
                     description: ref is a tag or a full commit SHA, never a branch.
                     maxLength: 255

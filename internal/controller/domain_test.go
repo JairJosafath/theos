@@ -40,6 +40,30 @@ var _ = Describe("Domain", func() {
 	})
 })
 
+var _ = Describe("TemplateSource path", func() {
+	// #35: a relative directory of the repository, written one way only.
+	DescribeTable("refuses a path that isn't a clean relative directory",
+		func(path, message string) {
+			domain := newDomain(newProjectNamespace(), "ops")
+			domain.Spec.Template.Path = path
+			Expect(k8sClient.Create(ctx, domain)).To(MatchError(ContainSubstring(message)))
+		},
+		Entry("absolute", "/domains/ops", "path is relative to the repository's root, not absolute"),
+		Entry("a trailing /", "domains/ops/", "path has no trailing or doubled /"),
+		Entry("a doubled /", "domains//ops", "path has no trailing or doubled /"),
+		Entry("a .. segment", "domains/../ops", "path has no . or .. segments"),
+		Entry("a leading ..", "../ops", "path has no . or .. segments"),
+		Entry("a . segment", "./domains/ops", "path has no . or .. segments"),
+	)
+
+	It("takes a relative directory, names with dots included", func() {
+		ns := newProjectNamespace()
+		domain := newDomain(ns, "ops")
+		domain.Spec.Template.Path = "domains/ops.v2/..hidden"
+		mustCreate(domain)
+	})
+})
+
 var _ = Describe("SoftwareSystem domainRefs", func() {
 	It("names the Domains an Internal system is about", func() {
 		ns := newProjectNamespace()
