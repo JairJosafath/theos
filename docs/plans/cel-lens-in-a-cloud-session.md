@@ -82,27 +82,39 @@ the `cel-lens` org); the Crews are paused so no Task races it.
 - **core #2 (types used by checks, hover, completion)** is being built on top
   of #5.
 
-## Pull requests in Gitea (9 November, to 09:30 UTC)
+## Pull requests in Gitea (9 November, to 12:30 UTC)
 
 Each is built by an implementer agent, reviewed by a separate reviewer agent
 that sees only the code and the issue (never the implementer's reasoning),
-fixed until approved, and checked by CI on the host runner. None is merged:
-merging waits for the owner. They stack in this order.
+fixed until approved, and checked by CI on the host runner. All are
+approved; none is merged: merging waits for the owner, in this order.
 
-| Gitea PR | Issue | State |
-| --- | --- | --- |
-| cel-lens-core#5 | core #1 the `.cellens` reader | approved after one round; CI green |
-| cel-lens-core#7 | core #2 checks, hover and completion use `.cellens` types | approved after one round (a publish ordering bug, symlinks, CRD semantics); CI green |
-| cel-lens-core#9 | core #3 inline info, the line above each rule | approved after one round (policy lines up to 4 s, now under 110 ms); stacked on #7 |
-| cel-lens-core#11 | core #4 commands that set and remove `.cellens` types | changes requested (concurrent edits, comment placement); being fixed |
-| cel-lens-vscode#4 | vscode #2 Toggle Inline Info | in review |
-| cel-lens-vscode#5 | vscode #3 the line's summary and `+N more` | in review; stacked on #4 |
+| Order | Gitea PR | Issue | Review rounds |
+| --- | --- | --- | --- |
+| 1 | cel-lens-core#5 | core #1 the `.cellens` reader | 2 (duplicate keys, quoting, columns) |
+| 2 | cel-lens-core#7 | core #2 checks, hover, completion use `.cellens` types | 2 (publish ordering, symlinks, CRD semantics) |
+| 3 | cel-lens-core#9 | core #3 inline info, the line above each rule | 2 (policy lines 4 s → under 110 ms; every part clickable) |
+| 4 | cel-lens-core#11 | core #4 commands that list, check, set, remove types | 3 (concurrent edits, comments, cancel) |
+| 5 | cel-lens-vscode#4 | vscode #2 Toggle Inline Info | 2 (changelog test) |
+| 6 | cel-lens-vscode#5 | vscode #3 summary opens problems, `+N more` | 2 |
+| 7 | cel-lens-vscode#6 | vscode #1 Give it a type picker | 2 (`.cellens` sync, Escape after Enter) |
 
-Follow-ups filed: core #6, #8, #10 (from reviews). Still to build: vscode #1
-(the type picker; needs core #4 and an engine release). The engine work is
-also on JairJosafath/cel-lens branch `claude/zen-cori-vxzrxq`, under `engine/`.
+Each core PR stacks on the one before it, and so does each VS Code PR;
+merging in order leaves nothing to rebase. CI ran green on the core PRs;
+the extension's CI stops at its e2e step (GitHub release downloads, below).
 
-A design point the reviews settled: in a CustomResourceDefinition the API
+Follow-ups filed from the reviews: core #6, #8, #10, #12 (the engine's
+commands under `cel-lens.engine.*`), vscode #7. The source of all seven is
+also on JairJosafath/cel-lens branch `claude/zen-cori-vxzrxq` under
+`engine/` and `vscode/`.
+
+After the merges, a core release (the Crew tags it; the release workflow on
+the host runner builds the binaries into the Gitea release) lets the
+extension pin an engine that draws the lines: `core-version.json` with a
+`baseUrl` of that Gitea release. Until then the bundled v0.25.1 engine draws
+none.
+
+The reviews settled one design point: in a CustomResourceDefinition the API
 server types no CEL value kept open with `x-kubernetes-preserve-unknown-fields`
 (it ignores the flag), so only `x-kubernetes-int-or-string` is `dyn` to a
 rule, and takes only `int` or `string`; `.cellens` structs are for a policy's
