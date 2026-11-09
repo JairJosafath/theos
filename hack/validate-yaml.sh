@@ -324,6 +324,21 @@ for f in config/samples/webshop/namespace.yaml test/e2e/testdata/apps/namespace.
 done
 echo "The manager shares claude-credentials into the labeled sample namespaces"
 
+# config/default's metrics patch adds --metrics-bind-address to the manager
+# alone: the model proxy it deploys too has no such flag and crash-loops on it.
+manager=$(doc "$OUT/kustomize-default.yaml" Deployment theos-controller-manager)
+proxy=$(doc "$OUT/kustomize-default.yaml" Deployment theos-model-proxy)
+want "config/default's manager has no --metrics-bind-address" "$manager" '^ *- --metrics-bind-address=:8443$'
+if [ -z "$proxy" ]; then
+	echo "config/default renders no Deployment theos-model-proxy" >&2
+	exit 1
+fi
+if grep -qF -- '--metrics-bind-address' <<<"$proxy"; then
+	echo "config/default: the model proxy gets --metrics-bind-address, which it doesn't define, and crash-loops" >&2
+	exit 1
+fi
+echo "config/default gives --metrics-bind-address to the manager and not to the model proxy"
+
 # The CI fence (docs/design.md): the chart's runners and config/runner's take
 # no traffic in, reach only DNS, Gitea and public HTTPS, and only the init
 # container that registers gets the registration token (#1138).
