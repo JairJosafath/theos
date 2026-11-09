@@ -50,7 +50,7 @@ current. [README.md](../README.md#the-loop) draws the loop,
 | The fence | no service account token and no model key in the sandbox, egress limited by NetworkPolicy, protected paths the agent's credential can't change, issue text handled as data | isolated cloud sandboxes |
 | Requests come from | Gitea issues, GitHub issues for a Brief, a Matrix room. **Slack, Linear, Jira: not yet (#61)** | GitHub, Linear, Jira, Slack, Teams |
 | Chat | Matrix: a room per kind of work, a thread per decision | Slack and Teams |
-| Work on a timer | **not yet (#63)** | yes |
+| Work on a timer | a Crew's `schedules`: a cron expression and a goal file an issue the loop works | yes |
 | Numbers | the UI's *How well it works*: merged, share with no person's code, time per stage, cost per merged Task by size, Agent and model; the same as Prometheus series, with a Grafana dashboard and alerts the chart installs ([monitoring.md](monitoring.md)) | cost, throughput and code quality in the factory app |
 | Comparing configurations | Benchmarks run the same goals under two to four Agent setups and report each rate with its 95% interval; Scorers judge finished work against criteria you write | evaluation and benchmarking tools in Warp Factories |
 | First run | a cluster, a Helm install and a long guide. **One command: not yet (#53)** | a workflow file and an API key |
@@ -66,8 +66,8 @@ Each has an issue under #46, and the order is in
 2. It runs one vendor's agent (#58).
 3. The first run is long (#53), and adopting a repository you already have
    is poorly guided (#60).
-4. Requests and chat reach it from fewer places (#61), nothing runs on a
-   timer (#63), and a person can't yet say which changes wait for them (#62).
+4. Requests and chat reach it from fewer places (#61), and a person can't
+   yet say which changes wait for them (#62).
 5. It publishes no numbers about itself (#66). Warp runs its open-source repository with its own factory in
    public and quotes the share of pull requests merged with no person.
 

@@ -371,6 +371,61 @@ spec:
                 x-kubernetes-list-map-keys:
                 - label
                 x-kubernetes-list-type: map
+              schedules:
+                description: |-
+                  schedules are the Crew's recurring goals: work that starts from the
+                  clock (docs/design.md, "Schedules"). When one comes due the Crew files
+                  an issue with its goal, labelled kind/schedule and status/ready, and
+                  works it as any other. While that issue is open the schedule files no
+                  other, and a paused Crew files none.
+                items:
+                  description: |-
+                    CrewSchedule is one recurring goal of a Crew: when its time comes, the Crew
+                    files an issue with the goal.
+                  properties:
+                    cron:
+                      description: |-
+                        cron is when the schedule is due, as five fields: minute, hour, day of
+                        month, month and day of week (0 or 7 is Sunday), each a number, a range
+                        a-b, a step */n or a-b/n, a comma-separated list of those, or *. An
+                        expression the operator can't use (minute 60, the 30th of February)
+                        leaves the Crew's Scheduled condition False, reason InvalidSchedule.
+                      maxLength: 100
+                      pattern: ^[0-9*/,-]+( [0-9*/,-]+){4}$
+                      type: string
+                    goal:
+                      description: |-
+                        goal is what the issue asks for, in plain words: what to do, and what
+                        to leave. It becomes the issue's Goal section.
+                      maxLength: 4000
+                      minLength: 1
+                      type: string
+                    name:
+                      description: name names the schedule in its issues' titles and
+                        in the status.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    timeZone:
+                      default: UTC
+                      description: |-
+                        timeZone is the IANA time zone cron is in, such as Europe/Amsterdam;
+                        daylight saving follows it. Unset is UTC. A name the operator can't
+                        load leaves the Scheduled condition False, reason InvalidSchedule.
+                      maxLength: 64
+                      minLength: 1
+                      type: string
+                  required:
+                  - cron
+                  - goal
+                  - name
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               specApproval:
                 description: |-
                   specApproval is who approves a spec's pull request before it merges:
@@ -487,6 +542,8 @@ spec:
                   set, says how publishing the last release went, and why it failed.
                   ModulePublished, when spec.tagReleases is set and a release was tagged,
                   says whether the last release's Go module is in the registry, and why not.
+                  Scheduled, when spec.schedules is set, says whether every schedule can
+                  be used and its last due issue was filed, and why not.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -912,6 +969,45 @@ spec:
                   rerunRelease is theos.factory.io/rerun-release value the operator last
                   answered, so each value re-runs the failed release runs once.
                 type: string
+              schedules:
+                description: schedules is where each of spec.schedules stands.
+                items:
+                  description: CrewScheduleStatus is where one of a Crew's schedules
+                    stands.
+                  properties:
+                    lastFiled:
+                      description: |-
+                        lastFiled is when it last filed an issue, and lastIssue that issue's
+                        number.
+                      format: date-time
+                      type: string
+                    lastIssue:
+                      format: int32
+                      type: integer
+                    name:
+                      description: name is the schedule's.
+                      type: string
+                    next:
+                      description: next is its next time, unset when the schedule
+                        can't be used.
+                      format: date-time
+                      type: string
+                    since:
+                      description: |-
+                        since is when the schedule last filed an issue, last passed a due time
+                        over because its issue was still open, or was first seen: it is due at
+                        its first time after since.
+                      format: date-time
+                      type: string
+                  required:
+                  - name
+                  - since
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               waiting:
                 description: waiting lists the ready issues that wait on open dependencies.
                 items:

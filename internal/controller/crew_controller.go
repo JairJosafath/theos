@@ -228,6 +228,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		ports.Registry
 	}
 	var repo ports.Repository
+	// untilSchedule is how long until the Crew's next schedule is due, 0 with
+	// none.
+	var untilSchedule time.Duration
 	if facts.ContainerReady {
 		provider, err = providerFor(ctx, r.Client, r.APIReader, r.Git, crew.Namespace, container.Spec.GitProviderRef.Name)
 		if err != nil {
@@ -253,6 +256,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			facts.Issues = append(facts.Issues, *filed)
 		}
 		facts.Preparing = preparing
+		// A schedule that came due files its issue (#63); the next poll reads
+		// it among the ready ones.
+		untilSchedule = r.schedule(ctx, &crew, status, provider, repo)
 	}
 
 	step := model.NextCrewStep(container.Name, facts)
@@ -297,7 +303,12 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		// waiting for its Container is woken by the Container's watch.
 		poll = hostRecheck(withHostEvents(ctx, r.Client, crew.Namespace, container.Spec.GitProviderRef.Name), poll)
 	}
-	return ctrl.Result{RequeueAfter: r.cutPoll(cadence, status, poll)}, r.writeStatus(ctx, &crew, status)
+	after := r.cutPoll(cadence, status, poll)
+	if untilSchedule > 0 && untilSchedule < after {
+		// A schedule is on time whatever the host's events stretch the poll to.
+		after = untilSchedule
+	}
+	return ctrl.Result{RequeueAfter: after}, r.writeStatus(ctx, &crew, status)
 }
 
 // cutPoll is poll, or less when the Crew's next cut comes sooner, so a cut is

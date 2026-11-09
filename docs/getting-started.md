@@ -932,6 +932,51 @@ kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type
 
 Releases still publish while requests can't be read.
 
+## Work on a timer
+
+A Crew can start work from the clock: update the dependencies every Monday,
+look for flaky tests every night, check each month that the README still
+matches the code. Give it `schedules`, each a name, a five-field cron
+expression, a time zone and the goal in plain words:
+
+```yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: orders-cli
+spec:
+  containerRef: {name: orders-cli}
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  schedules:
+    - name: dependencies
+      cron: "0 6 * * 1"            # Mondays at 06:00
+      timeZone: Europe/Amsterdam
+      goal: >-
+        Update the dependencies that have a new minor or patch version. One
+        pull request. Say what you updated, and what you left and why.
+```
+
+[config/samples/first-app/crew-schedule.yaml](../config/samples/first-app/crew-schedule.yaml)
+is that Crew. When a schedule comes due, the Crew files an issue in the
+repository, `dependencies, 2026-11-09`, labelled `kind/schedule` and
+`status/ready`, and works it like any other: a Task, CI, the reviewer, a
+merge.
+
+- **One at a time.** While the issue a schedule filed is open, its next time
+  is passed over. A schedule that is slower than its interval never piles up.
+- **Nothing is made up for.** A new schedule waits for its next time, and
+  after an outage one issue is filed, not one per time missed.
+- **Paused means paused.** A paused Crew files nothing.
+- **Where it stands:** `kubectl get crew orders-cli -o jsonpath='{.status.schedules}'`
+  shows each schedule's next time and the last issue it filed, and the
+  `Scheduled` condition says why a schedule can't be used: `InvalidSchedule`
+  for a cron expression or a time zone the operator can't read.
+
+The cron fields are minute, hour, day of month, month and day of week (0 or 7
+is Sunday): numbers, ranges (`1-5`), steps (`*/15`) and lists (`8,17`).
+Names such as `MON` and macros such as `@daily` are refused.
+
 ## When CI runs the full check
 
 Each Container chooses when its CI runs the app's full `make check`, in
