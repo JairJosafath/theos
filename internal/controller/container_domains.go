@@ -16,7 +16,8 @@ import (
 // the templates: status.scaffoldedDomains, sorted and unique. They are
 // recorded, never inferred from scaffoldedFrom: a changed choice or a Domain
 // sharing a name with a Connector would otherwise be misread (#1757). An
-// adopted Container (nothing recorded as scaffolded) has none.
+// adopted Container has the ones its Standard's files were found rendered
+// with (#42).
 func scaffoldedDomains(status *c4v1beta1.ContainerStatus) []string {
 	names := slices.Clone(status.ScaffoldedDomains)
 	slices.Sort(names)

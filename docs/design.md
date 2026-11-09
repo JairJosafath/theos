@@ -145,8 +145,8 @@ Domain is written once, at the scaffold: a later
 bump of its `ref` does not reach a scaffolded Container, and a Ready
 Container reports `DomainsApplied=True` while its system still names the
 Domains it was scaffolded with, `False` with reason `AddedAfterScaffold`
-naming what was added or removed since (an adopted Container, scaffolded
-with none, names them all). The Standard's update renders with the Domains
+naming what was added or removed since (an adopted Container counts the
+Domains its Standard's files were found rendered with, below). The Standard's update renders with the Domains
 the scaffold used. The planner names the installed Domains an idea is about
 on each new Internal system. [plans/domains.md](plans/domains.md) (#1512)
 has the decisions; all its steps are built: the kind, `domainRefs`, the
@@ -211,12 +211,20 @@ tries again when something it depends on changes, or when its
 creation, immutable) takes over a repository that already has commits and
 is never scaffolded: the operator writes nothing. It checks main for two
 things. `.theos.yaml` carries the identity file's fields, naming this
-project and Container, with `scaffoldedFrom` empty since nothing was
-scaffolded; a missing file or another identity fails `IdentityMismatch`,
+project and Container (`scaffoldedFrom` is what another factory scaffolded
+it from, or empty); a missing file or another identity fails `IdentityMismatch`,
 saying what the file holds. Every file the Container's Standard renders for
 it at its ref is there with that content; else it fails
-`StandardFilesDiffer`, naming the paths. When both hold, it protects `main`
-and goes `Ready`, recording the Standard at its ref. An empty repository
+`StandardFilesDiffer`, naming the paths of the closest render. The Standard
+renders its agent guides with the system's Domains, so the check tries, in
+order, the Domains `.theos.yaml`'s `scaffoldedFrom` records (its entries
+that name a Domain of the project's catalog), the Domains the system names
+now, and none, and the first that renders main's files wins (#42): a
+repository theos scaffolded with Domains can be adopted by another factory
+with the same catalog. When both hold, it protects `main` and goes `Ready`,
+recording the Standard at its ref and those Domains in
+`status.scaffoldedDomains`, which `DomainsApplied` and later Standard
+updates read. An empty repository
 fails `NothingToAdopt`; one with commits but no `main` branch fails
 `NoDefaultBranch`, telling the user to rename its default branch to `main`
 first (#1908). A Container without a Standard adopts on the
