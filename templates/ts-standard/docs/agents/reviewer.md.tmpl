@@ -84,8 +84,13 @@ says what to check.
 6. **Performance.** Activation stays lazy and fast; nothing heavy runs per
    keystroke in the extension host; budgets from the issue or the system's
    needs are measured by a bench, never by a test with a time bound.
-7. **Docs and DX.** README, setting and command descriptions and the CHANGELOG
-   match the behaviour; messages tell a user what happened and what to do.
+7. **Docs, DX and UX.** README, setting and command descriptions and the
+   CHANGELOG match the behaviour; messages tell a user what happened and what
+   to do. What a person sees meets _The UX bar_ in `docs/style/vscode.md`. A
+   change is blocking when it adds something a person sees and can't turn
+   off, a command missing from the Command Palette, a colour with no
+   high-contrast default, or a webview where a tree, an editor or a hover
+   would do; other gaps from the bar are non-blocking findings.
 8. **Security.** No shell commands built from user input or settings; workspace
    content never executed; no secrets or document contents in logs; new
    install scripts justified.
@@ -180,6 +185,10 @@ yourself; the full `make check` runs on the release's commit before its tag.
   reason; `as` casts or disable comments that hide a real type error;
   synchronous `fs` calls; `console` logging; settings without defaults or
   README entries.
+- Follow-ups lean on _The UX bar_: where the extension, not only this change,
+  still falls short of it (a feature reached only from the palette, results
+  shown away from the code, a missing toggle or picture), name the gap as a
+  follow-up before smaller polish.
 - Behaviour only a real editor can show (highlighting, the status bar) is
   "could not be verified" unless a person tried it: say so rather than
   approving on faith.

@@ -2,8 +2,9 @@
 # VS Code extension digest
 
 Distilled from VS Code's extension guidelines, UX guidelines, activation events,
-bundling and language server guides, and the Language Server Protocol 3.17 (see
-`SOURCES.md`). `[lint: x]` = enforced by `make check`; `[review]` = check it
+bundling, language server and language feature guides, the Language Server
+Protocol 3.17, and GitLens, the reference for how an editor extension feels
+(see `SOURCES.md`). `[lint: x]` = enforced by `make check`; `[review]` = check it
 yourself.
 
 ## Activation
@@ -95,6 +96,93 @@ yourself.
 - **Settings:** prefixed with the extension's name; each has a default and a
   short `description` or `markdownDescription` (linking related settings); the
   right `scope`; listed in the README. No custom settings pages. [review]
+
+## The UX bar: GitLens
+
+GitLens is the reference for how an extension that lives in the editor feels:
+what a person needs is at the code they are reading, quiet until they look,
+one step from the details, and one command from off. A change that adds or
+alters something a person sees meets these rules; the review checks them as
+it checks correctness.
+
+### Inline first
+
+- **Information sits at the code it is about,** in this order of preference:
+  a diagnostic on the exact range, a hover, a CodeLens above the block, an
+  inlay hint at the end of the expression. A view, a notification or the
+  output channel only for what has no place in the text. [review]
+- **Quiet by default.** Inline text is short (a few words, a count, a
+  result), uses the theme's muted colours (`editorCodeLens.foreground`,
+  `editorInlayHint.*`) or a contributed colour with light, dark and both
+  high-contrast defaults, and never more than one annotation per line from
+  the extension. [review]
+- **Every kind of annotation can be turned off:** a setting, a
+  **Toggle ...** command, and the same toggle in the status bar item's menu.
+  A toggle takes effect at once, without a reload. [review]
+- **A CodeLens does what it says when clicked;** one that only informs is
+  an inlay hint or a hover instead. At most two per block, resolved lazily
+  (`codeLens/resolve`) when they cost work. [review]
+- **Hovers are the details layer:** one fixed order of sections (what it is,
+  its type or result, why, a link to the docs), Markdown rendered like the
+  code, and command links only to the extension's own commands
+  (`MarkdownString.isTrusted = { enabledCommands: [...] }`, never `true`). [review]
+- **Every problem the engine can fix has a quick fix,** the likely one
+  marked `isPreferred`, so **Quick Fix** (`Ctrl+.`) and **Auto Fix** pick it. [review]
+
+### Reachable from where you are
+
+- **Every feature is in the Command Palette,** under the one category, and
+  also where it applies: the editor's context menu, the editor title (at
+  most one icon, the rest in the overflow), the status bar item's menu or a
+  view's toolbar. Each with a `when` clause, so it shows only where it
+  works; related actions grouped, a large group in a submenu. [review]
+- **Quick picks** have a title when they have no text input or are a step of
+  several, a placeholder that says what to type, product icons only as clear
+  metaphors, the current value in `description` and brief context in
+  `detail`. [review]
+- **Keybindings only for actions people repeat,** scoped by `when`, never
+  overriding one VS Code or a common extension already uses; listed in the
+  README. [review]
+- **One walkthrough** (`contributes.walkthroughs`) when the extension has
+  more than one thing to learn: few steps, each one action whose label starts
+  with a verb, images readable in every theme (SVG with theme colours where
+  possible). The extension opens nothing by itself on install or update. [review]
+
+### Views and webviews
+
+- **A view only for what a person browses** (every rule in the workspace,
+  results to step through), never for what could be a command. One view
+  container at most, three to five views in it, each with an icon and a
+  short name. [review]
+- **Tree items are things, not buttons:** descriptive labels, product icons
+  to tell kinds apart, at most three inline actions, shallow nesting; a
+  click opens or reveals the thing. An empty view shows a welcome view
+  (`viewsWelcome`): short, links over buttons, link text that names where it
+  goes, never "read more" or a promotion. [review]
+- **A webview only when no tree, editor or hover can show it.** Then every
+  colour comes from the theme's CSS variables (`--vscode-*`), every control
+  is reachable by keyboard and labelled for screen readers, contrast holds in
+  high-contrast themes, and it opens only in the active window, never on
+  install or update, never as a wizard. [review]
+
+### Feel
+
+- **It keeps up with typing.** Inline results follow an edit without a
+  visible lag; work that can't shows progress in place (the view's progress
+  bar, the status bar item) and never a modal. The budget is the issue's or
+  the system's, measured by a bench. [review]
+- **One word per idea** across commands, settings, hovers, views, the README
+  and the CHANGELOG. A person who learns it once reads it everywhere. [review]
+- **Colour is never the only signal:** an icon or a word says the same, for
+  colour-blind people and screen readers. Status bar items and tree items
+  whose label alone is unclear set `accessibilityInformation`. [review]
+- **Settings live in the Settings editor:** grouped in titled sections when
+  there are more than a handful, ordered by how often they change, and every
+  one applies live through `onDidChangeConfiguration`. [review]
+- **The README is the store page:** a short GIF or screenshot of each
+  headline feature at the top, in light and dark where it differs, then
+  install, the features, every command with its keybinding, and every
+  setting. A new visible feature brings its picture. [review]
 
 ## Bundling and packaging
 

@@ -14,8 +14,18 @@ and the `make check` contract CI runs.
   `vscode-extension`, `docs/style/react.md` only for `react-vite`,
   `docs/style/node.md` only for `node-cli`. What a `vscode-extension`
   Container gets is the same as in v1.1.3, but for the rule that no test
-  starts VS Code (v1.3.2), what a `react-vite` one gets the
-  same as in v1.2.0.
+  starts VS Code (v1.3.2) and the UX bar (v1.8.0), what a `react-vite` one
+  gets the same as in v1.2.0.
+- **The UX bar (v1.8.0):** for `vscode-extension`, `docs/style/vscode.md`
+  holds what a person sees to GitLens's standard: information at the code
+  first (diagnostics, hovers, CodeLens, inlay hints), quiet by default, every
+  annotation one command from off, every feature in the Command Palette and
+  where it applies, views and webviews only where they earn their place,
+  accessible colours, a README that shows each feature. `AGENTS.md`, the
+  implementer guide and the reviewer guide point at it; the reviewer blocks a
+  change that adds something a person can't turn off, a command missing from
+  the palette, a colour without a high-contrast default or a needless
+  webview, and names the extension's gaps from the bar as follow-ups first.
 - **Writes:** `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`,
   `.editorconfig`, `Makefile`, `AGENTS.md`, `docs/style/`,
   `docs/agents/implementer.md`, `docs/agents/reviewer.md`,

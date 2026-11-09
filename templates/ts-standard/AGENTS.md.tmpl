@@ -134,7 +134,9 @@ change here.
    README; commands in Title Case under one category.
 6. **Errors users see** say what happened and what to do, with a button to the
    fix; one notification at a time, never repeated; logs go to a
-   `LogOutputChannel`, never the console.
+   `LogOutputChannel`, never the console. What a person sees meets _The UX
+   bar_ in `docs/style/vscode.md`, with GitLens as the reference: at the code
+   first, quiet, one command from off, reachable from where it applies.
 {{- end }}
 7. **Types:** no `any` (narrow `unknown` at the boundary, checked at runtime when
    the input is untrusted); no non-null assertion without a disable comment
@@ -188,7 +190,7 @@ Offline digests (read the one for what you are touching):
 - `docs/style/node.md`: the command line, streams, exit codes, errors,
   files, signals, bundling, packaging and tests
 {{- else }}- `docs/style/vscode.md`: activation, disposal, the language client, LSP 3.17,
-  UX, bundling and tests
+  UX, the UX bar (GitLens), bundling and tests
 {{- end }}
 - `docs/style/principles.md`: cross-language principles, with sources
 - `docs/style/SOURCES.md`: every source URL, with the date it was read

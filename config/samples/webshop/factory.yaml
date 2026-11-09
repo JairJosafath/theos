@@ -86,7 +86,7 @@ spec:
   checksBeforeRelease: true
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/ts-standard
-    ref: v1.7.0
+    ref: v1.8.0
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: Standard

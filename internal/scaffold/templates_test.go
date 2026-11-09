@@ -1478,6 +1478,46 @@ func TestVSCodeExtensionGuidesAskForNoTestThatStartsVSCode(t *testing.T) {
 	}
 }
 
+// TestVSCodeExtensionGuidesHoldTheUXBar checks ts-standard's guides for a
+// vscode-extension hold what a person sees to GitLens's standard
+// (docs/plans/gitlens-grade-ux.md): the digest has the bar, AGENTS.md and the
+// role guides point at it, and the reviewer blocks its hard rules. The other
+// Frameworks get none of it.
+func TestVSCodeExtensionGuidesHoldTheUXBar(t *testing.T) {
+	_, result := renderCombo(t, "extension", []side{
+		{model.SideFramework, "vscode-extension"},
+		{model.SideStandard, "ts-standard"},
+	})
+	for name, want := range map[string][]string{
+		"docs/style/vscode.md": {"## The UX bar: GitLens", "### Inline first",
+			"Every kind of annotation can be turned off", "Every feature is in the Command Palette",
+			"A webview only when no tree, editor or hover can show it", "Colour is never the only signal"},
+		"docs/style/SOURCES.md":      {"## The UX bar", "https://code.visualstudio.com/api/ux-guidelines/views", "GitLens README"},
+		"AGENTS.md":                  {"_The UX bar_ in `docs/style/vscode.md`", "the UX bar (GitLens)"},
+		"docs/agents/implementer.md": {"how a person reaches it and how they turn it off"},
+		"docs/agents/reviewer.md": {"can't turn off, a command missing from the Command Palette",
+			"Follow-ups lean on _The UX bar_"},
+	} {
+		file, ok := result.Files[name]
+		if !ok {
+			t.Errorf("%s not written", name)
+			continue
+		}
+		assertContains(t, name, strings.Join(strings.Fields(string(file.Data)), " "), want)
+	}
+	for _, f := range tsStandardFrameworks {
+		if f.Name == "vscode-extension" {
+			continue
+		}
+		_, other := renderCombo(t, f.Side, []side{{model.SideFramework, f.Name}, {model.SideStandard, "ts-standard"}})
+		for name, file := range other.Files {
+			if strings.Contains(string(file.Data), "UX bar") {
+				t.Errorf("%s with %s mentions the UX bar, which is only for vscode-extension", name, f.Name)
+			}
+		}
+	}
+}
+
 // TestGiteaReleasePinHoldsItsReleaseJobFixes checks that templates/versions.txt
 // pins gitea-release at v1.4.1 or later: #1581's digest guard and #1583's
 // registry lookup changed the release job under v1.4.0, and a tag never

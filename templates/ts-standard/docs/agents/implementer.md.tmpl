@@ -142,6 +142,10 @@ Task that reviews and merges it. Then:
   which also packages the `.vsix`.
 - New settings and commands go in `package.json`'s `contributes` with defaults
   and descriptions, and in the README.
+- Anything a person sees meets _The UX bar_ in `docs/style/vscode.md`: at the
+  code first, quiet, one command from off, and reachable from the Command
+  Palette and where it applies. Your summary says where the feature shows, how
+  a person reaches it and how they turn it off.
 - Tests never measure time: no real timers or `setTimeout` waits, no bounds
   such as "responds within 500 ms" on `performance.now()` or `Date.now()`.
   They pass in your sandbox and fail on the shared CI runner.

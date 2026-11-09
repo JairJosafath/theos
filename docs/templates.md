@@ -207,7 +207,7 @@ each domain's common mistakes; without Domains both read as before (#1758).
 - README, Deploy, Auth: n/a: a Standard writes rules, not the app; its
   `AGENTS.md` and `docs/` are what it adds.
 
-### ts-standard (v1.7.0)
+### ts-standard (v1.8.0)
 
 The TypeScript rulebook for react-vite, node-cli and vscode-extension. Since
 v1.6.0 the check workflow writes `~/.npmrc` and `~/.netrc` from the owner's
@@ -221,6 +221,13 @@ Since v1.7.0 `AGENTS.md` tells the implementer which Domains the system is
 about and to read `docs/agents/domain/<name>/README.md` and its topic files
 before planning a change, and the reviewer guide to check the change against
 each domain's common mistakes; without Domains both read as before (#1758).
+Since v1.8.0 a `vscode-extension` gets _The UX bar_ in `docs/style/vscode.md`,
+GitLens as the reference: information at the code first, quiet by default,
+one command from off, reachable from where it applies; the implementer guide
+asks the summary to say how a feature is reached and turned off, and the
+reviewer blocks what breaks the bar's hard rules and names the extension's
+gaps from it as follow-ups first
+([plans/gitlens-grade-ux.md](plans/gitlens-grade-ux.md)).
 
 - CI: its `make check` in `make test-templates`' combos "react web app on
   kubernetes", "node cli" and "vscode extension".
