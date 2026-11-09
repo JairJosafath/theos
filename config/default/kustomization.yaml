@@ -43,9 +43,12 @@ resources:
 patches:
 # [METRICS] The following patch will enable the metrics endpoint using HTTPS and the port :8443.
 # More info: https://book.kubebuilder.io/reference/metrics
+# Only the manager: config/default also deploys the model proxy, whose binary
+# has no --metrics-bind-address and exits on it.
 - path: manager_metrics_patch.yaml
   target:
     kind: Deployment
+    labelSelector: control-plane=controller-manager
 
 # Uncomment the patches line if you enable Metrics and CertManager
 # [METRICS-WITH-CERTS] To enable metrics protected with certManager, uncomment the following line.
