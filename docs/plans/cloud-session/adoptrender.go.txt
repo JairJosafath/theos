@@ -1,0 +1,59 @@
+// adoptrender writes the files a Standard renders for a Container, as the
+// operator renders them to check an adopted repository
+// (internal/controller/container_scaffold.go): the Standard layer alone, no
+// license, the effective checks and the resolved operations.
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/scaffold"
+)
+
+func main() {
+	var in scaffold.Input
+	out := flag.String("out", "", "folder to write into")
+	templatesDir := flag.String("templates", "templates", "folder with the template repositories")
+	flag.StringVar(&in.Project, "project", "", "")
+	flag.StringVar(&in.SoftwareSystem, "system", "", "")
+	flag.StringVar(&in.Container, "container", "", "")
+	flag.StringVar(&in.DisplayName, "display-name", "", "")
+	flag.StringVar(&in.Description, "description", "", "")
+	flag.StringVar(&in.Type, "type", "", "")
+	flag.StringVar(&in.Framework, "framework", "", "")
+	flag.StringVar(&in.Standard, "standard", "", "")
+	flag.StringVar(&in.Deployment, "deployment", "", "")
+	checksBeforeRelease := flag.Bool("standard-checks-before-release", false, "")
+	flag.Parse()
+	ci, err := model.CIByName(model.CIGiteaActions)
+	if err != nil {
+		panic(err)
+	}
+	in.CI = ci
+	in.Checks = model.EffectiveChecks("", *checksBeforeRelease)
+	in.Operations = model.ResolveOperations(model.OperationsChoices{})
+	in.NpmScope = "@theos"
+	files, err := scaffold.ReadTree(os.DirFS(filepath.Join(*templatesDir, in.Standard)))
+	if err != nil {
+		panic(err)
+	}
+	tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideStandard, Name: in.Standard, Ref: "local", Files: files})
+	if err != nil {
+		panic(err)
+	}
+	for _, p := range tree.Paths() {
+		dst := filepath.Join(*out, p)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			panic(err)
+		}
+		f := tree[p]
+		if err := os.WriteFile(dst, f.Data, 0o644); err != nil {
+			panic(err)
+		}
+		fmt.Println(p)
+	}
+}

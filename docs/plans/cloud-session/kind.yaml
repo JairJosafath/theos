@@ -1,0 +1,60 @@
+# Kind cluster for the theos test environment: `make cluster`.
+# One node runs everything (Gitea, the operator, the sample and a test Session),
+# which keeps the footprint small on a laptop. Gitea is reached with
+# `make gitea-forward`, so no host ports are mapped here.
+# The node pulls a Container's image from the in-cluster Gitea through a
+# containerd hosts.toml that `hack/kind.sh registry-hosts` writes after the
+# create; it can't live here (extraMounts needs an absolute host path, and the
+# registry.mirrors patch is ignored once containerd reads certs.d).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+# make cluster passes --name, so every cluster of the pool (theos,
+# theos-2, ...) is made from this file.
+name: theos
+# The node's disk is shared with the rest of the machine (on WSL, one virtual
+# disk), and agents and CI write gigabytes to it. etcd syncing each write to it
+# took up to 7 s, so the API stalled and the scheduler and controller-manager
+# lost their 15 s leases and crash-looped, leaving sandbox pods Pending. A test
+# cluster can lose its newest writes in a hard crash: etcd skips the syncs, and
+# the leases outlast a stall. kubeadm v1beta4 takes extraArgs as a list, and a
+# patch replaces the list, so Kind's own controller-manager flag is repeated.
+kubeadmConfigPatches:
+  # This container's host is cgroup v1, which Kubernetes 1.35+ refuses by default.
+  - |
+    kind: KubeletConfiguration
+    failCgroupV1: false
+  - |
+    kind: ClusterConfiguration
+    etcd:
+      local:
+        extraArgs:
+          - name: unsafe-no-fsync
+            value: "true"
+    controllerManager:
+      extraArgs:
+        - name: enable-hostpath-provisioner
+          value: "true"
+        - name: leader-elect-lease-duration
+          value: 60s
+        - name: leader-elect-renew-deadline
+          value: 40s
+    scheduler:
+      extraArgs:
+        - name: leader-elect-lease-duration
+          value: 60s
+        - name: leader-elect-renew-deadline
+          value: 40s
+# This container lacks CAP_SYS_RESOURCE, so runc can't lower oom_score_adj
+# below containerd's own: clamp it, as for rootless.
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri"]
+      restrict_oom_score_adj = true
+nodes:
+  - role: control-plane
+    # This container reaches the internet only through the session's proxy,
+    # relayed onto the kind network's gateway; the node trusts its CA.
+    extraMounts:
+      - hostPath: /root/.ccr/ca-bundle.crt
+        containerPath: /etc/ssl/certs/ca-certificates.crt
+        readOnly: true

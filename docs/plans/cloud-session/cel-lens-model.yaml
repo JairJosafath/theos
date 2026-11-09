@@ -1,0 +1,82 @@
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
+  name: kubernetes-developer
+  namespace: cel-lens
+spec:
+  displayName: Kubernetes developer
+  description: Writes operators and admission policies, and the CEL rules in them.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: SoftwareSystem
+metadata:
+  name: cel-lens
+  namespace: cel-lens
+spec:
+  displayName: cel-lens
+  description: >-
+    Helps Kubernetes developers write, test and dry-run the CEL in their
+    CustomResourceDefinitions and admission policies, right in the editor, the
+    way GitLens does for git.
+  needs:
+  - What a CEL rule means, whether it compiles and what it says about example objects shows at the rule, without a cluster
+  - Every inline annotation is quiet, clickable for details, and one command from off, as in GitLens
+  - A dyn value can be given its type inline, kept in a committed .cellens file
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: cel-lens-core
+  namespace: cel-lens
+spec:
+  softwareSystemRef: {name: cel-lens}
+  displayName: cel-lens core
+  description: The CEL engine and language server, checks, hover, completion and quick fixes for CEL in Kubernetes YAML, and its command line.
+  type: cli
+  adopt: true
+  gitProviderRef: {name: gitea}
+  frameworkRef: {name: go-cli}
+  standardRef: {name: cel-lens-go-standard}
+  deploymentRef: {name: gitea-release}
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: cel-lens-vscode
+  namespace: cel-lens
+spec:
+  softwareSystemRef: {name: cel-lens}
+  displayName: cel-lens for VS Code
+  description: The VS Code extension that carries the cel-lens engine and shows its results in the editor.
+  type: extension
+  adopt: true
+  gitProviderRef: {name: gitea}
+  frameworkRef: {name: vscode-extension}
+  standardRef: {name: cel-lens-ts-standard}
+  deploymentRef: {name: gitea-release}
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: cel-lens-core
+  namespace: cel-lens
+spec:
+  containerRef: {name: cel-lens-core}
+  displayName: cel-lens core crew
+  description: Builds the engine issue by issue, and releases it.
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  tagReleases: true
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: cel-lens-vscode
+  namespace: cel-lens
+spec:
+  containerRef: {name: cel-lens-vscode}
+  displayName: cel-lens for VS Code crew
+  description: Builds the extension issue by issue, and releases it.
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  tagReleases: true
