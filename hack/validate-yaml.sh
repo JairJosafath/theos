@@ -324,7 +324,7 @@ for f in config/samples/webshop/namespace.yaml test/e2e/testdata/apps/namespace.
 done
 echo "The manager shares claude-credentials into the labeled sample namespaces"
 
-# config/default's metrics patch adds --metrics-bind-address to the manager
+# #41: config/default's metrics patch adds --metrics-bind-address to the manager
 # alone: the model proxy it deploys too has no such flag and crash-loops on it.
 manager=$(doc "$OUT/kustomize-default.yaml" Deployment theos-controller-manager)
 proxy=$(doc "$OUT/kustomize-default.yaml" Deployment theos-model-proxy)
@@ -334,7 +334,7 @@ if [ -z "$proxy" ]; then
 	exit 1
 fi
 if grep -qF -- '--metrics-bind-address' <<<"$proxy"; then
-	echo "config/default: the model proxy gets --metrics-bind-address, which it doesn't define, and crash-loops" >&2
+	echo "config/default: the model proxy gets --metrics-bind-address, which it doesn't define, and crash-loops (#41)" >&2
 	exit 1
 fi
 echo "config/default gives --metrics-bind-address to the manager and not to the model proxy"
