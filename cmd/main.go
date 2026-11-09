@@ -86,6 +86,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var sessionStaleAfter time.Duration
+	var scaffoldSettle time.Duration
 	var maxAgentSandboxes int
 	var leaseDuration time.Duration
 	var workspaceMemory string
@@ -163,6 +164,9 @@ func main() {
 		"How long the leader's lease lasts. It renews within two thirds of that, retrying every twelfth. "+
 			"The client default of 15s ends the manager whenever the API server stalls for 10s, which a "+
 			"busy single-node cluster does while agents and CI run.")
+	flag.DurationVar(&scaffoldSettle, "scaffold-settle", model.DefaultScaffoldSettle,
+		"How long a new Container waits after its creation before it is scaffolded, so the Relationships "+
+			"applied with it are there; 0 scaffolds at once (#43).")
 	flag.DurationVar(&sessionStaleAfter, "session-stale-after", model.DefaultStaleAfter,
 		"How long a Session may go without a heartbeat before it is marked Stale.")
 	flag.StringVar(&sessionFeature, "session-feature", features.SessionFeatureLocal,
@@ -446,6 +450,7 @@ func main() {
 		APIReader:       mgr.GetAPIReader(),
 		Git:             gitClient{},
 		ScaffoldOptions: scaffoldOptions,
+		ScaffoldSettle:  func() time.Duration { return scaffoldSettle },
 		Recorder:        mgr.GetEventRecorder("container"),
 		GitEvents:       gitEvents,
 		Deployers:       deployers,

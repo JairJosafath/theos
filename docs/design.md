@@ -246,6 +246,19 @@ is story only. One added after the scaffold shows `Applied=False`,
 `AddedAfterScaffold`. A Relationship's ends and a DataStore's Connector can't
 change, so `Applied` keeps meaning what the scaffold holds.
 
+A model applied in one go creates a Container's Relationships after it as
+often as before: `kubectl apply -f dir/` goes file by file, kustomize doesn't
+order custom resources, and a Container deleted and applied again loses its
+Relationships with it. So a new Container waits out a settle window after its
+creation before it is scaffolded, `Pending` with `Scaffolded=False`, reason
+`Settling`, and resolves again once it closes; the scaffold reads the
+Relationships whose `spec.source` names the Container, from the API server,
+so one created inside the window counts though the operator hasn't set its
+ownerReference yet (#43). The window is the operator's `--scaffold-settle`,
+10 seconds by default; 0 scaffolds at once. The alternative, holding the
+scaffold while a Relationship naming the Container is unresolved, can't see
+a Relationship not created yet, which is this case.
+
 **Status.** A Container is `Pending`, `Scaffolding`, then `Ready` or `Failed`,
 with conditions `ReferencesResolved`, `ChoicesValid`, `RepositoryCreated`,
 `Scaffolded` and those below. SoftwareSystem and Project roll counts up;

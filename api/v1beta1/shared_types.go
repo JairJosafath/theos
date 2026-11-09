@@ -220,6 +220,9 @@ const (
 	ReasonNotWired             = "NotWired"
 	ReasonCreated              = "Created"
 	ReasonScaffolding          = "Scaffolding"
+	// ReasonSettling: a new Container waits out the scaffold's settle window,
+	// so the Relationships applied with it are there when it scaffolds (#43).
+	ReasonSettling = "Settling"
 	ReasonScaffolded           = "Scaffolded"
 	ReasonFailed               = "Failed"
 	ReasonGitError             = "GitError"
