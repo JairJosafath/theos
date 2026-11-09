@@ -92,6 +92,8 @@ check "patch: bumps, merges and tags" $? 0
 check "  the tag is origin's main, the merge commit" "$(git -C "$T/origin.git" rev-parse v1.2.1^{commit})" "$(git -C "$T/origin.git" rev-parse main)"
 check "  main names the release" "$(git -C "$T/origin.git" show main:dist/chart/Chart.yaml | grep -c '^version: 1.2.1$')" 1
 check "  main's baseline is its CRDs" "$(git -C "$T/origin.git" ls-tree --name-only main test/compat/baseline/)" test/compat/baseline/things.yaml
+check "  main's dropped.txt has no entries" "$(git -C "$T/origin.git" show main:test/compat/dropped.txt | grep -vc '^#')" 0
+check "  and keeps its comments" "$(git -C "$T/origin.git" show main:test/compat/dropped.txt | grep -c '^#')" 3
 check "  merged with a merge commit" "$(grep -c 'pr merge https://github.com/o/theos/pull/7 --merge' "$T/gh.log")" 1
 check "  the bump branch is gone" "$(git -C "$T/origin.git" branch --list 'chore/*' | wc -l)" 0
 check "  the clone's checkout is untouched" "$(sed -n 's/^version: //p' "$T/clone/dist/chart/Chart.yaml")" 1.2.0

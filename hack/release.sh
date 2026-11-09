@@ -130,8 +130,12 @@ fi
 
 branch=chore/release-$tag
 bump "$WT" "$to"
-git -C "$WT" add -A "$BASELINE"
-git -C "$WT" commit --quiet -m "chore: release $tag" -- "$CHART" "$GUIDE" "$BASELINE"
+# dropped.txt goes in the same commit: bump emptied its entries, and a commit
+# naming only the chart, the guide and the baseline left that behind.
+paths=("$CHART" "$GUIDE" "$BASELINE")
+[ ! -f "$WT/$DROPPED" ] || paths+=("$DROPPED")
+git -C "$WT" add -A -- "${paths[@]}"
+git -C "$WT" commit --quiet -m "chore: release $tag" -- "${paths[@]}"
 git -C "$WT" push --quiet "$REMOTE" "HEAD:refs/heads/$branch"
 url=$(cd "$WT" && gh pr create --base main --head "$branch" --title "chore: release $tag" \
   --body "Names $tag in \`$CHART\` and \`$GUIDE\`, so the guide at the tag installs that release (#370), and copies \`$CRDS\` to \`$BASELINE\`, the CRDs the next release keeps (#1097). Made by \`hack/release.sh\`.")
