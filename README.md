@@ -223,3 +223,9 @@ gh issue create -R JairJosafath/theos --title "Crew stalls" --label source/user 
 [CONTRIBUTING.md](CONTRIBUTING.md) takes you from a fork to a merged pull
 request. [AGENTS.md](AGENTS.md) has the project layout and the rules for
 changing it; they apply to humans and AI agents alike.
+
+## License
+
+theos is licensed under the [Apache License 2.0](LICENSE). The applications
+it scaffolds are yours and carry the license their Project names
+(`spec.license`), or none.
