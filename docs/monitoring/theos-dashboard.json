@@ -1,0 +1,470 @@
+{
+  "title": "theos: how well the factory works",
+  "uid": "theos-factory",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": [
+    "theos"
+  ],
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Data source"
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "label": "Project",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(theos_tasks, namespace)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Merged with no person's code",
+      "description": "Of the merged Implement Tasks that exist and whose pull request was read, the share with no commit by a person. Approving a spec or a deploy is a decision, not code.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(theos_tasks_merged{namespace=~\"$namespace\",kind=\"Implement\",code=\"factory\"}) / sum(theos_tasks_merged{namespace=~\"$namespace\",kind=\"Implement\",code=~\"factory|person\"})"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Merged Tasks",
+      "description": "Merged Implement Tasks that exist.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(theos_tasks{namespace=~\"$namespace\",kind=\"Implement\",phase=\"Merged\"})"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Cost per merged Task",
+      "description": "What all Implement Tasks cost, failed ones included, over the merged ones.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(theos_tasks_cost_usd{namespace=~\"$namespace\",kind=\"Implement\"}) / sum(theos_tasks{namespace=~\"$namespace\",kind=\"Implement\",phase=\"Merged\"})"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Waiting for a person",
+      "description": "Tasks whose spec waits for a person's approval.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(theos_tasks{namespace=~\"$namespace\",phase=\"AwaitingApproval\"}) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Tasks in flight, by phase",
+      "description": "Tasks that are not finished, by where they are.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (phase) (theos_tasks{namespace=~\"$namespace\",phase!~\"Merged|Failed|Approved\"})",
+          "legendFormat": "{{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Finished Tasks, by outcome",
+      "description": "A falling line means finished Tasks were deleted.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "stacking": {
+              "mode": "none"
+            },
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (phase) (theos_tasks{namespace=~\"$namespace\",kind!=\"Benchmark\",phase=~\"Merged|Failed\"})",
+          "legendFormat": "{{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Time in each phase (median)",
+      "description": "Where an Implement Task's time goes: the median stay per phase.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "stacking": {
+              "mode": "none"
+            },
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le, phase) (theos_task_phase_seconds_bucket{namespace=~\"$namespace\",kind=\"Implement\"}))",
+          "legendFormat": "{{phase}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Time to finish (median and 90th percentile)",
+      "description": "From a merged Implement Task's first step to its merge.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "stacking": {
+              "mode": "none"
+            },
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (theos_task_seconds_bucket{namespace=~\"$namespace\",kind=\"Implement\",outcome=\"Merged\"}))",
+          "legendFormat": "median"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.9, sum by (le) (theos_task_seconds_bucket{namespace=~\"$namespace\",kind=\"Implement\",outcome=\"Merged\"}))",
+          "legendFormat": "90th"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Cost by Agent and model",
+      "description": "What the recorded runs cost. Runs whose agent reported no cost are in theos_agent_runs_without_cost.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent, model) (theos_agent_runs_cost_usd{namespace=~\"$namespace\"})",
+          "legendFormat": "{{agent}} ({{model}})"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Tokens by type",
+      "description": "Tokens the recorded runs used.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (type) (theos_agent_runs_tokens{namespace=~\"$namespace\"})",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Rounds per merged Task (mean)",
+      "description": "How many implement rounds a merged Task took: 1 means the first try passed CI and review.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "stacking": {
+              "mode": "none"
+            },
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(theos_task_rounds_sum{namespace=~\"$namespace\",kind=\"Implement\",outcome=\"Merged\"}) / sum(theos_task_rounds_count{namespace=~\"$namespace\",kind=\"Implement\",outcome=\"Merged\"})",
+          "legendFormat": "rounds"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Runs by role",
+      "description": "Recorded agent runs by role.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (role) (theos_agent_runs{namespace=~\"$namespace\"})",
+          "legendFormat": "{{role}}"
+        }
+      ]
+    }
+  ]
+}

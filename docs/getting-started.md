@@ -42,7 +42,7 @@ included, can have the factory run code: in an agent's sandbox, and in a CI
 job, on a runner pod of the project's own. The sandbox holds no Claude token:
 the model proxy in the release namespace adds it to the agent's requests, so
 the agent's code never sees it
-([#1075](https://github.com/JairJosafath/c4factory/issues/1075) closed that
+(c4factory #1075 closed that
 gap). What the runners still share:
 
 - **The Gitea CI runners share the node.** A project's checks run on its own
@@ -211,9 +211,9 @@ kubectl apply -n webshop -f config/samples/webshop/brief.yaml
 
 Two parts of the webshop wait on the factory: `payments-worker` fails with
 reason `UnsupportedType` until a Framework runs a worker on Kubernetes
-([#1468](https://github.com/JairJosafath/c4factory/issues/1468)), and no
+(c4factory #1468), and no
 DeployTarget ships to a cluster yet, so the manifests stay in the
-repositories ([#1072](https://github.com/JairJosafath/c4factory/issues/1072)).
+repositories (c4factory #1072).
 
 For an app of your own, write only the idea, and the planner writes the model
 too; on `0.28.1`, whose tag has no `brief.yaml`, take this way. For a project
@@ -243,7 +243,7 @@ becoming a Session.
 Open *Briefs* in the top bar, pick project `cel-lens`, write the idea in the
 box under *Describe an app*, and create the Brief. Or, the same without the UI,
 [config/samples/brief/cel-lens.yaml](../config/samples/brief/cel-lens.yaml)
-holds the idea from [#240](https://github.com/JairJosafath/c4factory/issues/240):
+holds the idea from c4factory #240:
 
 ```bash
 kubectl apply -f config/samples/brief/cel-lens.yaml

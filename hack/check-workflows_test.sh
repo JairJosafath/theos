@@ -11,7 +11,9 @@
 # requests missing from .github/required-checks, a line there naming no job,
 # or two checks with one name (#1380);
 # and so does a release.yml that doesn't dispatch Verify Release for minors
-# only (#1105).
+# only (#1105); and so does a job on pull requests whose runs-on would let a
+# fork's pull request run on a self-hosted runner, or a workflow on
+# pull_request_target (#49).
 # Run: hack/check-workflows_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -294,5 +296,23 @@ verwf "        if: failure()"
 out=$("$CHECK" "$T/wf" 2>&1)
 check "verify-release removing the images only on failure fails (#1636)" "$?" 1
 check "verify-release removing the images only on failure says so" "$(grep -c 'verify-release.yml: no step under if: always() removes the images it pulled' <<<"$out")" 1
+
+# #49: once the repository is public anyone's fork opens pull requests, and
+# with RUNS_ON=self-hosted its make targets and tests would run on the owner's
+# devices. A fork's pull request gets the hosted runner whatever RUNS_ON says.
+real ui "s/^    runs-on: .*/    runs-on: \${{ vars.RUNS_ON || 'ubuntu-latest' }}/"
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "a pull request job that a fork could run on a device fails (#49)" "$?" 1
+check "it names the job and the rule (#49)" \
+  "$(grep -c "ui.yml: job check runs on pull requests, so its runs-on must start \${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' ||" <<<"$out")" 1
+for w in lint ui test vulncheck; do
+  check "$w.yml sends a fork's pull request to the hosted runner (#49)" \
+    "$(grep -c "^    runs-on: \${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNS_ON || 'ubuntu-latest' }}$" "$REPO/.github/workflows/$w.yml")" \
+    "$(grep -c '^    runs-on:' "$REPO/.github/workflows/$w.yml")"
+done
+real ui 's/^  pull_request:/  pull_request_target:/'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "a workflow on pull_request_target fails (#49)" "$?" 1
+check "it says why (#49)" "$(grep -c "ui.yml: runs on pull_request_target, which gives a fork's pull request the repository's token" <<<"$out")" 1
 
 exit $fail

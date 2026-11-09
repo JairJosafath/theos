@@ -30,7 +30,7 @@ jobs:
     permissions:
       contents: read
     name: UI
-    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 20
     defaults:
       run:

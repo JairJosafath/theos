@@ -2,9 +2,10 @@
 
 **THE Open Software-factory. Tell the story first; the factory builds the workspace.**
 
-theos began as [C4 Factory](https://github.com/JairJosafath/c4factory) and
-keeps its history: issue and pull request numbers in the docs (`#1094`) are
-c4factory's, and its links point there.
+theos began as C4 Factory and keeps its history. Most issue and pull request
+numbers in the docs and plans (`#1094`) are from that project's repository,
+which stays private as the archive, so they are not links; numbers from
+2026-11 on are this repository's.
 
 theos turns an idea into working, scaffolded repositories. You describe your
 software as a small [C4](https://c4model.com)-style model: who uses it, which
@@ -18,6 +19,16 @@ Person ──uses──▶ SoftwareSystem ──contains──▶ Container ─�
                                                   ▼
                                a Git repository, scaffolded once from pinned templates
 ```
+
+## Why theos
+
+A software factory carries a change from an idea to production with agents,
+and asks a person only where a person should decide. theos is the one you
+run yourself: the agents, the Git host, CI and the model credentials stay on
+your cluster, every part is in this repository, and it builds new software
+from a model as well as maintaining what exists.
+[docs/comparison.md](docs/comparison.md) puts it next to Warp's factory, row
+by row, with what theos doesn't do yet.
 
 ## How it works
 
@@ -194,34 +205,14 @@ on every device.
 
 ## Report an issue
 
-Report a problem from a device that runs theos with the form:
-<https://github.com/JairJosafath/theos/issues/new?template=user-report.yml>.
-Fill in `Reported by` with the device's name (for example `laptop-2`); the issue
-gets the labels `source/user` and `user/laptop-2`.
+[Open an issue](https://github.com/JairJosafath/theos/issues/new/choose) and
+pick the form: a bug, a feature or improvement, or a catalog template. A
+vulnerability goes to [SECURITY.md](SECURITY.md) instead.
 
-From a terminal, copy this layout into `report.md` and send it with the GitHub CLI:
-
-```markdown
-### Reported by
-
-laptop-2
-
-### theos version
-
-v0.1.0
-
-### What happened
-
-...
-
-### What you expected
-
-...
-
-### Logs
-
-...
-```
+An install that reports under a name of its own (`laptop-2`) uses the
+*Report from a device* form, or the GitHub CLI: a body with a `### Reported by`
+heading and the name under it gets the labels `source/user` and
+`user/laptop-2`.
 
 ```
 gh issue create -R JairJosafath/theos --title "Crew stalls" --label source/user --body-file report.md
@@ -229,5 +220,6 @@ gh issue create -R JairJosafath/theos --title "Crew stalls" --label source/user 
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md) for the project layout and the rules for changing it.
-They apply to humans and AI agents alike.
+[CONTRIBUTING.md](CONTRIBUTING.md) takes you from a fork to a merged pull
+request. [AGENTS.md](AGENTS.md) has the project layout and the rules for
+changing it; they apply to humans and AI agents alike.

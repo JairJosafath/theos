@@ -25,7 +25,7 @@ namespace adds it to the agent's requests, and the token never enters a
 project namespace. The `base`, `go` and `image` runners run every project's checks and
 image builds one after another in host mode, a NetworkPolicy keeping them to
 DNS, Gitea and public HTTPS; the `image` runner's job container runs with
-seccomp and AppArmor `Unconfined`, which rootless BuildKit needs ([#1076](https://github.com/JairJosafath/c4factory/issues/1076) gives
+seccomp and AppArmor `Unconfined`, which rootless BuildKit needs (c4factory #1076 gives
 each job a pod of its own).
 [docs/getting-started.md](../../docs/getting-started.md#what-the-factory-trusts)
 says more.
