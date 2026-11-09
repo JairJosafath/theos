@@ -17,7 +17,9 @@
 # ${{ github.event_name == 'pull_request' }}, so a new push to a pull request
 # replaces its run and main's runs still finish. Lint (lint.yml), UI (ui.yml)
 # and Tests (test.yml) run on pull requests to main, and Lint has a test-hack
-# job running make test-hack. Tests is the one workflow that runs on pushes
+# job running make test-hack. Secrets (secrets.yml) runs make secrets-scan
+# from a full clone on every pull request and push to main, without paths
+# (#52). Tests is the one workflow that runs on pushes
 # to main with cancel-in-progress there: it groups by ref with
 # cancel-in-progress ${{ github.event_name == 'pull_request' || github.ref ==
 # 'refs/heads/main' }}, so only the newest head of main is tested (the
@@ -204,6 +206,18 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       fi
       if [ "$cancel" != "$ON_PR_OR_MAIN" ]; then
         echo "$f: cancel-in-progress: $cancel, not $ON_PR_OR_MAIN, so a superseded head of main keeps its runner (#1556)" >&2
+        fail=1
+      fi
+      ;;
+    secrets.yml)
+      # #52: every pull request and every push to main, whatever it changes,
+      # scanned from a full clone, so no commit reaches main unscanned.
+      if [ "$pr" != 'branches [main]' ] || [ "$(trigger "$f" push)" != 'branches [main]' ]; then
+        echo "$f: doesn't run on every pull request and push to main, without paths, so a commit can reach main unscanned (#52)" >&2
+        fail=1
+      fi
+      if ! grep -q '^          fetch-depth: 0$' "$f" || ! grep -q 'run: make secrets-scan$' "$f"; then
+        echo "$f: doesn't run make secrets-scan on a full clone (fetch-depth: 0), so it scans one commit, not the history (#52)" >&2
         fail=1
       fi
       ;;
