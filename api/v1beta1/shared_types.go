@@ -222,11 +222,11 @@ const (
 	ReasonScaffolding          = "Scaffolding"
 	// ReasonSettling: a new Container waits out the scaffold's settle window,
 	// so the Relationships applied with it are there when it scaffolds (#43).
-	ReasonSettling = "Settling"
-	ReasonScaffolded           = "Scaffolded"
-	ReasonFailed               = "Failed"
-	ReasonGitError             = "GitError"
-	ReasonForeignCommits       = "ForeignCommits"
+	ReasonSettling       = "Settling"
+	ReasonScaffolded     = "Scaffolded"
+	ReasonFailed         = "Failed"
+	ReasonGitError       = "GitError"
+	ReasonForeignCommits = "ForeignCommits"
 	// ReasonNothingToAdopt: the Container has spec.adopt set but its
 	// repository has no commits; there is nothing to take over.
 	ReasonNothingToAdopt = "NothingToAdopt"

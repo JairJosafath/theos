@@ -52,7 +52,7 @@ var _ = Describe("Container scaffold settle window", func() {
 		Expect(container.Status.ScaffoldedFrom).To(Equal(ordersAPIScaffoldedFrom),
 			"the Connector the Relationship names is scaffolded")
 		Expect(container.CreationTimestamp.Add(3*time.Second)).To(BeTemporally("<=",
-			condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded).LastTransitionTime.Time.Add(time.Second)),
+			condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded).LastTransitionTime.Add(time.Second)),
 			"not before the window closed")
 		Expect(container.Status.AppliedRelationships).To(ContainElement("orders-api-to-orders-db"))
 	})

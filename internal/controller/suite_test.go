@@ -463,7 +463,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
 			ScaffoldSettle: func() time.Duration { return time.Duration(scaffoldSettle.Load()) },
-			Deployers: deployers, DeployMembers: testDeployMember,
+			Deployers:      deployers, DeployMembers: testDeployMember,
 			DeployPoll: time.Second, GitEvents: gitEvents},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
