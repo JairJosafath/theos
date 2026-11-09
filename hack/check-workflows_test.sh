@@ -127,12 +127,12 @@ rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  issues:\n    types: [
 "$CHECK" "$T/wf" 2>/dev/null
 check "issues and tag pushes need no group" "$?" 0
 
-# real NAME SED: the repository's Lint, UI, Tests and Vulnerabilities
-# workflows and its required checks, alone in a directory, NAME.yml (or
+# real NAME SED: the repository's Lint, UI, Tests, Vulnerabilities and
+# Secrets workflows and its required checks, alone in a directory, NAME.yml (or
 # required-checks for NAME list) edited with the sed script SED.
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 real() {
-  rm -rf "$T/r" && mkdir -p "$T/r/wf" && cp "$REPO"/.github/workflows/{lint,ui,test,vulncheck}.yml "$T/r/wf/"
+  rm -rf "$T/r" && mkdir -p "$T/r/wf" && cp "$REPO"/.github/workflows/{lint,ui,test,vulncheck,secrets}.yml "$T/r/wf/"
   cp "$REPO"/.github/required-checks "$T/r/"
   local f="$T/r/wf/$1.yml"
   [ "$1" = list ] && f=$T/r/required-checks
@@ -141,7 +141,7 @@ real() {
 
 real lint ''
 "$CHECK" "$T/r/wf" 2>/dev/null
-check "Lint, UI, Tests and Vulnerabilities as they are pass" "$?" 0
+check "Lint, UI, Tests, Vulnerabilities and Secrets as they are pass" "$?" 0
 for c in 'test.yml Tests' 'lint.yml Lint' 'lint.yml Shell tests' 'ui.yml UI'; do
   check "the required checks list $c" "$(grep -cx "$c" "$REPO/.github/required-checks")" 1
 done
@@ -314,5 +314,18 @@ real ui 's/^  pull_request:/  pull_request_target:/'
 out=$("$CHECK" "$T/r/wf" 2>&1)
 check "a workflow on pull_request_target fails (#49)" "$?" 1
 check "it says why (#49)" "$(grep -c "ui.yml: runs on pull_request_target, which gives a fork's pull request the repository's token" <<<"$out")" 1
+
+# #52: Secrets scans every pull request and push to main, from a full clone.
+real secrets '/^  pull_request:/,/^  workflow_dispatch:/s/^    branches: \[main\]$/    branches: [main]\n    paths:\n      - "**\/*.go"/'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Secrets with paths on pull requests fails (#52)" "$?" 1
+check "it says a commit can reach main unscanned (#52)" "$(grep -c 'secrets.yml: .*reach main unscanned (#52)' <<<"$out")" 1
+real secrets '/fetch-depth: 0/d'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Secrets on a shallow clone fails (#52)" "$?" 1
+check "it says it scans one commit (#52)" "$(grep -c 'secrets.yml: .*scans one commit, not the history (#52)' <<<"$out")" 1
+real secrets 's/run: make secrets-scan/run: make help/'
+"$CHECK" "$T/r/wf" 2>/dev/null
+check "Secrets without make secrets-scan fails (#52)" "$?" 1
 
 exit $fail

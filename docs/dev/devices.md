@@ -506,14 +506,17 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   main held its concurrency group, so every later run on main waited behind
   it and nothing said whether main was green (#1655); the check fails a job
   without one.
-- **Lint, Tests, UI and Vulnerabilities run on pull requests; Tests tests
+- **Lint, Tests, UI, Vulnerabilities and Secrets run on pull requests; Tests tests
   the newest head of main.**
   *Lint* (with its `test-hack` job, `make test-hack`), *Tests* (the unit and
   envtest suites and `make test-gitea`), *UI* and *Vulnerabilities* run on
   pushes to main and on pull requests to main, with the same path filters, so
   a pull request's own runs answer before `hack/lib/github.sh land` (#1380).
+  *Secrets* (`make secrets-scan`, gitleaks over every ref's whole history
+  from a full clone) runs on every pull request and push to main, with no
+  path filter (#52).
   Each job a pull request runs has a distinct `name:` (*Tests*, *Lint*,
-  *Shell tests*, *UI*, *Vulnerabilities*), listed in `.github/required-checks`
+  *Shell tests*, *UI*, *Vulnerabilities*, *Secrets*), listed in `.github/required-checks`
   as `<workflow file> <job name>`: the checks `land` waits for and a main
   ruleset can require. A pull request whose changes miss a workflow's paths
   gets no run of it. On a pull request, the `concurrency` group is one per

@@ -269,6 +269,16 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 vulncheck: govulncheck ## Check the modules and the Go toolchain for known vulnerabilities the code reaches (needs the network, not in make check).
 	"$(GOVULNCHECK)" ./...
 
+# gitleaks over every commit of every ref the clone holds (#52), with the
+# false positives .gitleaks.toml allowlists. The Secrets workflow runs it on
+# each pull request and push to main from a full clone, so a credential in any
+# commit of a pull request fails it before the merge, and the public history
+# doesn't rest on a third party's app alone. Offline once installed; it reads
+# only the clone.
+.PHONY: secrets-scan
+secrets-scan: gitleaks ## Scan the whole Git history of every ref for secrets with gitleaks (#52).
+	"$(GITLEAKS)" git --log-opts="--all" --config .gitleaks.toml --redact --no-banner --exit-code 1 .
+
 # The YAML checks of make check run offline, without a cluster
 # (hack/validate-yaml.sh): samples, e2e fixtures, the kustomize builds, the chart
 # renders of helm-lint, the seed and session manifests and a rendered repository.
@@ -393,6 +403,7 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
 
 GOLANGCI_LINT_VERSION ?= v2.13.1
 GOVULNCHECK_VERSION ?= v1.9.0
+GITLEAKS_VERSION ?= v8.21.2
 # The kubebuilder that make template-go-kubebuilder runs.
 KUBEBUILDER_VERSION ?= v4.16.0
 
@@ -409,6 +420,7 @@ GOLANGCI_LINT_PLUGINS := $(shell [ -f .custom-gcl.yml ] && cksum < .custom-gcl.y
 KUBECTL_VALIDATE ?= $(LOCALBIN)/kubectl-validate-$(KUBECTL_VALIDATE_VERSION)
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder-$(KUBEBUILDER_VERSION)
 GOVULNCHECK ?= $(LOCALBIN)/govulncheck-$(GOVULNCHECK_VERSION)
+GITLEAKS ?= $(LOCALBIN)/gitleaks-$(GITLEAKS_VERSION)
 GOLANGCI_LINT = $(GOLANGCI_LINT_BASE)$(if $(GOLANGCI_LINT_PLUGINS),-custom-$(GOLANGCI_LINT_PLUGINS))
 
 # setup-envtest under a lock, so worktrees don't download the same Kubernetes
@@ -475,6 +487,11 @@ endif
 govulncheck: $(GOVULNCHECK) ## Download govulncheck locally if necessary.
 $(GOVULNCHECK):
 	$(call go-install-tool,$@,golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+
+.PHONY: gitleaks
+gitleaks: $(GITLEAKS) ## Download gitleaks locally if necessary.
+$(GITLEAKS):
+	$(call go-install-tool,$@,github.com/zricethezav/gitleaks/v8,$(GITLEAKS_VERSION))
 
 # install-tool makes the binary $(1) unless it exists: the shell commands $(2)
 # write it alone into the directory $$tmp, and it moves under its final name
