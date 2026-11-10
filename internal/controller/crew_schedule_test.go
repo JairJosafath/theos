@@ -245,3 +245,134 @@ var _ = Describe("Crew schedules (#63)", func() {
 		Expect(k8sClient.Create(ctx, crew)).To(MatchError(ContainSubstring("Duplicate value")), "two schedules of one name")
 	})
 })
+
+// askToRun asks the Crew of orders-api to run its schedule name now.
+func askToRun(ns, name string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		crew := getCrew(g, ns)
+		if crew.Annotations == nil {
+			crew.Annotations = map[string]string{}
+		}
+		crew.Annotations[c4v1beta1.AnnotationRunSchedule] = name
+		g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
+	}).Should(Succeed())
+}
+
+// A schedule runs now when a person asks (#72): the Crew's
+// theos.factory.io/run-schedule annotation names it. The operator files its
+// issue and takes the annotation off; an open issue of the schedule, or a
+// paused Crew, holds the run as it holds a due one, and the Scheduled
+// condition says why.
+var _ = Describe("Crew schedules, run now (#72)", func() {
+	// saturday is two days before the weekly schedule is next due.
+	saturday := scheduleMonday.Add(-48 * time.Hour)
+	// scheduled makes orders-api Ready and its Crew, with the weekly schedule,
+	// on a Saturday, and waits until the Crew knows the schedule.
+	scheduled := func(mutate func(*c4v1beta1.Crew)) string {
+		GinkgoHelper()
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		crewClockAt(saturday)
+		crew := newCrew(ns)
+		crew.Spec.Schedules = []c4v1beta1.CrewSchedule{weeklySchedule()}
+		if mutate != nil {
+			mutate(crew)
+		}
+		mustCreate(crew)
+		Eventually(func(g Gomega) { g.Expect(scheduleStatus(g, ns, "dependencies").Next).NotTo(BeNil()) }).Should(Succeed())
+		Expect(scheduledIssues(ns)).To(BeEmpty(), "nothing is due on a Saturday")
+		return ns
+	}
+	scheduledMessage := func(g Gomega, ns string) string {
+		cond := condition(getCrew(g, ns).Status.Conditions, ConditionScheduled)
+		g.Expect(cond).NotTo(BeNil())
+		return cond.Message
+	}
+
+	It("files the schedule's issue at once, takes the request off, and holds a second one while that issue is open", func() {
+		ns := scheduled(nil)
+
+		By("filing it now, dated today, with its next time as it was")
+		askToRun(ns, "dependencies")
+		var first fake.Issue
+		Eventually(func(g Gomega) {
+			issues := scheduledIssues(ns)
+			g.Expect(issues).To(HaveLen(1))
+			first = issues[0]
+			g.Expect(first.Title).To(Equal("dependencies, 2030-01-05"))
+			g.Expect(first.FiledLabels).To(ConsistOf(model.LabelSchedule, model.LabelReady))
+			g.Expect(getCrew(g, ns).Annotations).NotTo(HaveKey(c4v1beta1.AnnotationRunSchedule))
+			st := scheduleStatus(g, ns, "dependencies")
+			g.Expect(st.LastIssue).To(Equal(int32(first.Number)))
+			g.Expect(st.Next.Time).To(BeTemporally("==", scheduleMonday))
+			g.Expect(scheduledMessage(g, ns)).To(Equal("1 schedule, the next due at 2030-01-07T06:00:00Z"))
+		}).Should(Succeed())
+		Consistently(func() []fake.Issue { return scheduledIssues(ns) }, 2*time.Second).Should(HaveLen(1),
+			"one request, one issue")
+
+		By("holding a second request while that issue is open, and saying why")
+		askToRun(ns, "dependencies")
+		Eventually(func(g Gomega) {
+			g.Expect(scheduledMessage(g, ns)).To(HaveSuffix(
+				"; schedule dependencies is asked to run now, and waits for its open issue to close"))
+			g.Expect(condition(getCrew(g, ns).Status.Conditions, ConditionScheduled).Status).To(Equal(metav1.ConditionTrue))
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(scheduledIssues(ns)).To(HaveLen(1))
+			g.Expect(getCrew(g, ns).Annotations).To(HaveKeyWithValue(c4v1beta1.AnnotationRunSchedule, "dependencies"))
+		}, 2*time.Second).Should(Succeed())
+
+		By("running it once the issue closed")
+		Expect(gitFake.CloseIssueByHand(ns, "orders-api", first.Number)).To(Succeed())
+		crewClockAt(saturday.Add(time.Hour))
+		Eventually(func(g Gomega) {
+			issues := scheduledIssues(ns)
+			g.Expect(issues).To(HaveLen(2))
+			g.Expect(scheduleStatus(g, ns, "dependencies").LastIssue).To(Equal(int32(issues[1].Number)))
+			g.Expect(getCrew(g, ns).Annotations).NotTo(HaveKey(c4v1beta1.AnnotationRunSchedule))
+		}).Should(Succeed())
+	})
+
+	It("runs it when a paused Crew resumes", func() {
+		ns := scheduled(func(crew *c4v1beta1.Crew) { crew.Spec.Paused = true })
+		askToRun(ns, "dependencies")
+		Eventually(func(g Gomega) {
+			g.Expect(scheduledMessage(g, ns)).To(Equal("1 schedule, the next due at 2030-01-07T06:00:00Z; the Crew is " +
+				"paused and files none; schedule dependencies is asked to run now, and runs when the Crew resumes"))
+		}).Should(Succeed())
+		Consistently(func() []fake.Issue { return scheduledIssues(ns) }, 2*time.Second).Should(BeEmpty())
+
+		Eventually(func(g Gomega) {
+			crew := getCrew(g, ns)
+			crew.Spec.Paused = false
+			g.Expect(k8sClient.Update(ctx, crew)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(scheduledIssues(ns)).To(HaveLen(1))
+			g.Expect(getCrew(g, ns).Annotations).NotTo(HaveKey(c4v1beta1.AnnotationRunSchedule))
+		}).Should(Succeed())
+	})
+
+	It("says so when asked to run a schedule the Crew doesn't have, and files nothing", func() {
+		ns := scheduled(nil)
+		askToRun(ns, "dependecies")
+		Eventually(func(g Gomega) {
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionScheduled)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal(model.ReasonUnknownSchedule))
+			g.Expect(cond.Message).To(Equal(`asked to run schedule "dependecies" now, which is none of the Crew's: ` +
+				"the Crew's schedules are dependencies"))
+		}).Should(Succeed())
+		Consistently(func() []fake.Issue { return scheduledIssues(ns) }, 2*time.Second).Should(BeEmpty())
+
+		By("going back to Scheduled once the request names one it has")
+		askToRun(ns, "dependencies")
+		Eventually(func(g Gomega) {
+			g.Expect(scheduledIssues(ns)).To(HaveLen(1))
+			g.Expect(scheduledMessage(g, ns)).To(Equal("1 schedule, the next due at 2030-01-07T06:00:00Z"))
+		}).Should(Succeed())
+	})
+})

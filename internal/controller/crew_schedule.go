@@ -25,6 +25,7 @@ import (
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
@@ -41,10 +42,13 @@ const ConditionScheduled = "Scheduled"
 // Scheduled condition, and returns how long until the next one is due, 0
 // when the Crew has none. The Crew then picks the issue up as any ready one.
 // A schedule whose last issue is still open passes its due time over, and a
-// paused Crew files nothing and passes nothing over.
+// paused Crew files nothing and passes nothing over. A schedule the Crew's
+// theos.factory.io/run-schedule annotation names is due now (#72): filed
+// under the same two rules, with the annotation taken off once it is.
 func (r *CrewReconciler) schedule(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
 	provider ports.Issues, repo ports.Repository) time.Duration {
-	if len(crew.Spec.Schedules) == 0 {
+	run := runNow{asked: crew.Annotations[c4v1beta1.AnnotationRunSchedule]}
+	if len(crew.Spec.Schedules) == 0 && run.asked == "" {
 		status.Schedules = nil
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionScheduled)
 		return 0
@@ -87,14 +91,22 @@ func (r *CrewReconciler) schedule(ctx context.Context, crew *c4v1beta1.Crew, sta
 			kept = append(kept, st)
 			continue
 		}
-		if !step.Due.IsZero() && !crew.Spec.Paused {
-			filed, err := r.fileScheduled(gitCtx, &st, s, step.Due, now, provider, repo, openIssue)
+		// A schedule asked to run now is due now, whatever its cron says.
+		due := step.Due
+		asked := run.asks(spec.Name)
+		if asked && due.IsZero() {
+			due = now
+		}
+		if !due.IsZero() && !crew.Spec.Paused {
+			filed, err := r.fileScheduled(gitCtx, &st, s, due, now, provider, repo, openIssue)
 			switch {
 			case err != nil:
 				log.Error(err, "Failed to file a schedule's issue", "schedule", spec.Name)
 				failed = append(failed, fmt.Sprintf("schedule %s: %s", spec.Name, err))
 			case filed:
-				log.Info("Filed a schedule's issue", "schedule", spec.Name, "issue", st.LastIssue, "due", step.Due)
+				log.Info("Filed a schedule's issue", "schedule", spec.Name, "issue", st.LastIssue, "due", due,
+					"askedNow", asked)
+				run.filed = run.filed || asked
 			}
 		}
 		if !step.Next.IsZero() {
@@ -115,6 +127,13 @@ func (r *CrewReconciler) schedule(ctx context.Context, crew *c4v1beta1.Crew, sta
 	case len(failed) > 0:
 		setCondition(&status.Conditions, crew.Generation, ConditionScheduled, metav1.ConditionFalse,
 			model.ReasonScheduleNotFiled, strings.Join(failed, "; "))
+	case run.unknown():
+		names := make([]string, 0, len(kept))
+		for _, st := range kept {
+			names = append(names, st.Name)
+		}
+		setCondition(&status.Conditions, crew.Generation, ConditionScheduled, metav1.ConditionFalse,
+			model.ReasonUnknownSchedule, model.RunNowUnknown(run.asked, names))
 	default:
 		message := fmt.Sprintf("%d schedules", len(kept))
 		if len(kept) == 1 {
@@ -126,14 +145,64 @@ func (r *CrewReconciler) schedule(ctx context.Context, crew *c4v1beta1.Crew, sta
 		if crew.Spec.Paused {
 			message += "; the Crew is paused and files none"
 		}
+		if run.waits() {
+			message += "; " + model.RunNowWaits(run.asked, crew.Spec.Paused)
+		}
 		setCondition(&status.Conditions, crew.Generation, ConditionScheduled, metav1.ConditionTrue,
 			model.ReasonScheduled, message)
+	}
+	if run.filed {
+		r.dropRunSchedule(ctx, crew)
 	}
 	if next.IsZero() {
 		return 0
 	}
 	// A minute at least: a clock a second short of the time would spin.
 	return max(next.Sub(now), time.Minute)
+}
+
+// runNow is a person's request to run one of the Crew's schedules now (the
+// theos.factory.io/run-schedule annotation, #72), and what became of it.
+type runNow struct {
+	// asked is the schedule the annotation names; "" when nothing is asked.
+	asked string
+	// found says the Crew has that schedule, and filed that its issue was
+	// filed in this reconcile.
+	found, filed bool
+}
+
+// asks reports whether the request is for schedule name, and notes that the
+// Crew has it.
+func (n *runNow) asks(name string) bool {
+	if n.asked == "" || n.asked != name {
+		return false
+	}
+	n.found = true
+	return true
+}
+
+// unknown reports whether the request names a schedule the Crew doesn't have.
+func (n *runNow) unknown() bool { return n.asked != "" && !n.found }
+
+// waits reports whether the request stands and filed nothing yet: the Crew
+// is paused, or the schedule's last issue is still open.
+func (n *runNow) waits() bool { return n.found && !n.filed }
+
+// dropRunSchedule removes theos.factory.io/run-schedule once the schedule it
+// names filed its issue: the request is answered. A removal that fails is
+// tried again while the issue is open, when the request files nothing.
+func (r *CrewReconciler) dropRunSchedule(ctx context.Context, crew *c4v1beta1.Crew) {
+	asked, ok := crew.Annotations[c4v1beta1.AnnotationRunSchedule]
+	if !ok {
+		return
+	}
+	orig := crew.DeepCopy()
+	delete(crew.Annotations, c4v1beta1.AnnotationRunSchedule)
+	if err := r.Patch(ctx, crew, client.MergeFrom(orig)); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to remove the run-schedule annotation", "schedule", asked)
+		return
+	}
+	logf.FromContext(ctx).Info("Ran a schedule now, as asked", "schedule", asked)
 }
 
 // fileScheduled files the issue of schedule s, due at due, unless an issue of

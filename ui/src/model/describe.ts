@@ -98,7 +98,11 @@ export function describeTaskPhase(phase: TaskPhase | undefined): PhaseInfo {
         explanation: 'It passed CI and the factory’s review; a person approves its pull request.',
       }
     case 'Merged':
-      return { label: 'Merged', tone: 'ok', explanation: 'The pull request is merged.' }
+      return {
+        label: 'Merged',
+        tone: 'ok',
+        explanation: 'The pull request is merged; or the agent found the issue needs no change, and it is closed.',
+      }
     case 'Blocked':
       return { label: 'Blocked', tone: 'waiting', explanation: 'Waits for the Standard change it filed to merge.' }
     case 'Failed':

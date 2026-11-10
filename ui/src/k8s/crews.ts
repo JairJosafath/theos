@@ -1,5 +1,6 @@
 // A Crew's writes from its page (design.md, UI actions): pause or resume it or
-// its running Tasks, its parallel and release settings, and a re-run of its failed release runs.
+// its running Tasks, its parallel and release settings, a re-run of its failed release runs,
+// and a run of one of its schedules now.
 // server.mjs passes on only these requests; the CRD's rules decide whether they
 // are accepted, so this file copies none of them: a refused write shows the API
 // server's message.
@@ -18,6 +19,9 @@ import { errorFromResponse } from './watch'
 
 /** The annotation that asks the operator to re-run a failed release's runs, once per value. */
 export const RERUN_RELEASE = 'theos.factory.io/rerun-release'
+
+/** The annotation that asks the operator to run one of the Crew's schedules now; its value is the schedule's name. */
+export const RUN_SCHEDULE = 'theos.factory.io/run-schedule'
 
 /** The label naming the Brief that made a Crew. */
 export const LABEL_BRIEF = 'theos.factory.io/brief'
@@ -192,6 +196,8 @@ export interface CrewWriter {
   setReleases(namespace: string, name: string, ops: Op[]): Promise<void>
   /** Sets the re-run annotation to `value`, new on each click. */
   rerunRelease(namespace: string, name: string, value: string): Promise<void>
+  /** Asks the operator to run the Crew's schedule `schedule` now: sets the run-schedule annotation to its name. */
+  runSchedule(namespace: string, name: string, schedule: string): Promise<void>
 }
 
 /** Writes through the /k8s proxy, relative to the page like the watches. */
@@ -225,6 +231,12 @@ export class LiveCrewWriter implements CrewWriter {
   rerunRelease(namespace: string, name: string, value: string): Promise<void> {
     return this.patch(namespace, name, 'application/merge-patch+json', {
       metadata: { annotations: { [RERUN_RELEASE]: value } },
+    })
+  }
+
+  runSchedule(namespace: string, name: string, schedule: string): Promise<void> {
+    return this.patch(namespace, name, 'application/merge-patch+json', {
+      metadata: { annotations: { [RUN_SCHEDULE]: schedule } },
     })
   }
 

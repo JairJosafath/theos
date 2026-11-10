@@ -23,6 +23,7 @@ const writer: CrewWriter = {
   setParallel: async () => {},
   setReleases: async () => {},
   rerunRelease: async () => {},
+  runSchedule: async () => {},
 }
 
 function render(session: UiSession | undefined, c: Crew, agents: Agent[] = []): string {
@@ -289,5 +290,33 @@ describe('the Crew page’s schedules', () => {
     const c = scheduled()
     c.spec.paused = true
     expect(render(undefined, c)).toContain('a paused Crew files none')
+  })
+
+  // #72: a schedule runs now when a person asks, from a button per schedule.
+  it('offers to run each schedule now, only where the page can write', () => {
+    const html = render(ACTING, scheduled())
+    expect(html.match(/>Run now<\/button>/g)).toHaveLength(2)
+    expect(html).toContain('Run now files a schedule’s issue at once, under the same two rules.')
+    expect(render(undefined, scheduled())).not.toContain('>Run now</button>')
+    expect(render(SIGNED_OUT, scheduled())).not.toContain('>Run now</button>')
+  })
+
+  it('shows a request the operator has not answered yet, and why it waits', () => {
+    const c = scheduled()
+    c.metadata.annotations = { 'theos.factory.io/run-schedule': 'dependencies' }
+    c.status!.conditions = [
+      {
+        type: 'Scheduled',
+        status: 'True',
+        reason: 'Scheduled',
+        message:
+          '2 schedules, the next due at 2026-11-16T05:00:00Z; schedule dependencies is asked to run now, and waits for its open issue to close',
+      },
+    ]
+    const html = render(ACTING, c)
+    expect(html).toContain('disabled="">Asked to run now</button>')
+    expect(html.match(/>Run now<\/button>/g)).toHaveLength(1)
+    expect(html).toContain('role="status"')
+    expect(html).toContain('schedule dependencies is asked to run now, and waits for its open issue to close')
   })
 })

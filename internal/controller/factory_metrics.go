@@ -102,6 +102,7 @@ func taskMetricFacts(task *c4v1beta1.Task) model.TaskMetricFacts {
 	spec, approval := task.Status.Spec, task.Status.Approval
 	f.ApprovedByPerson = spec != nil && spec.ApprovedBy != "" || approval != nil && approval.ApprovedBy != ""
 	f.Unreviewed = approval != nil && approval.Require == c4v1beta1.ApprovalNone && task.Status.Review == nil
+	f.NoChange = endedWithNoChange(task)
 	for _, step := range task.Status.History {
 		f.History = append(f.History, model.TaskMetricStep{At: step.At.Time, Phase: string(step.Phase)})
 	}

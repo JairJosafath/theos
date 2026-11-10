@@ -530,6 +530,13 @@ const ACTIONS = [
     check: setsAnnotation('theos.factory.io/rerun-release'),
   },
   {
+    what: 'set annotation theos.factory.io/run-schedule on a Crew',
+    method: 'PATCH',
+    path: resourcePath('crews', true),
+    type: MERGE_PATCH,
+    check: setsAnnotation('theos.factory.io/run-schedule'),
+  },
+  {
     what: 'set annotation theos.factory.io/retry on a Container',
     method: 'PATCH',
     path: resourcePath('containers', true),

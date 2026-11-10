@@ -64,6 +64,9 @@ type Result struct {
 	// Blocked is the implementer's blocked note (model.BlockedNote): it can't
 	// start the issue, and says why.
 	Blocked string `json:"blocked,omitempty"`
+	// Nothing is why the implementer found the issue needs no change
+	// (model.NothingNote), with no change made: the Task ends done.
+	Nothing string `json:"nothing,omitempty"`
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []model.FollowUp `json:"followUps,omitempty"`
 	// Open are the acceptance criteria an approving reviewer accepted as left
@@ -107,6 +110,18 @@ type Result struct {
 	// hard or clean; empty when it saved none. An unavailable agent's run
 	// that saved one is suspended until the agent is back, and resumes.
 	Checkpoint string `json:"checkpoint,omitempty"`
+}
+
+// noChange is the result of an implement round that left the branch as it
+// was: the agent's "nothing to do" where the job's Task may end on it (#72),
+// else the round's failure, with the end of what the agent did say.
+func noChange(job Job, summary string, result Result) Result {
+	if note := model.NothingNote(summary); note != "" && takesNothing(job) {
+		result.Nothing = note
+		return result
+	}
+	result.Error = model.NoChangeError(summary)
+	return result
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -175,6 +190,8 @@ func (r Result) Encode() []byte {
 			r.CheckFailsOnBase = shortenHead(r.CheckFailsOnBase, len(r.CheckFailsOnBase)-(len(data)-MaxResultBytes)-16)
 		case len(r.Blocked) > 200:
 			r.Blocked = shortenWords(r.Blocked, len(r.Blocked)-(len(data)-MaxResultBytes)-16)
+		case len(r.Nothing) > 200:
+			r.Nothing = shortenWords(r.Nothing, len(r.Nothing)-(len(data)-MaxResultBytes)-16)
 		case r.Proposal != nil && len(r.Proposal.Reason) > 200:
 			r.Proposal.Reason = shorten(r.Proposal.Reason, len(r.Proposal.Reason)-(len(data)-MaxResultBytes)-16)
 		case len(r.FollowUps) > 0:
@@ -316,7 +333,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		}
 		result.Paused, result.PauseReason = true, reason
 		result.Error, result.Interrupted, result.Unavailable, result.RetryAt = "", false, false, nil
-		result.Commit, result.Blocked = "", ""
+		result.Commit, result.Blocked, result.Nothing = "", "", ""
 		return result
 	}
 	// A run theos-agent was told to stop (a SIGTERM, or the run's deadline) is
@@ -456,8 +473,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	if head == start && !job.Resumed && job.PullRequest == 0 {
 		// With a pull request, the round may have changed only it: the
 		// reviewer reviews the branch as it is.
-		result.Error = model.NoChangeError(summary)
-		return result
+		return noChange(job, summary, result)
 	}
 	changed, empty, err := roundChange(ctx, job, r)
 	if err != nil {

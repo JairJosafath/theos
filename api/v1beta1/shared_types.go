@@ -418,6 +418,13 @@ const (
 // re-runs that check's failed runs first (#2028).
 const AnnotationRerunRelease = "theos.factory.io/rerun-release"
 
+// AnnotationRunSchedule, set on a Crew to the name of one of its schedules,
+// has that schedule file its issue now instead of at its next time (#72).
+// The operator removes it once the issue is filed. While an issue of the
+// schedule is still open, or the Crew is paused, the run waits and the
+// annotation stays: the Crew's Scheduled condition says why.
+const AnnotationRunSchedule = "theos.factory.io/run-schedule"
+
 // AnnotationAcceptRepository, set on a Crew to the GitHub id of its publish
 // target, accepts that repository in place of the one the Crew published to
 // before (status.publishTarget), which was deleted or renamed and a new one

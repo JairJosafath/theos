@@ -88,6 +88,9 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 	case model.ActionDoneByStandardChange:
 		return ctrl.Result{}, r.doneByStandardChange(ctx, task, status, container, step)
 
+	case model.ActionNothingToDo:
+		return ctrl.Result{}, r.nothingToDo(ctx, task, status, container, step)
+
 	case model.ActionRetryReview:
 		r.progress(task, status, metav1.ConditionTrue, "ReviewerFailed", step.Message)
 		if err := r.endRun(ctx, task, status); err != nil {

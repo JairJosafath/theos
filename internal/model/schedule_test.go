@@ -233,3 +233,22 @@ func TestScheduleIssue(t *testing.T) {
 		t.Error("a marker inside a line passes for one on its own line")
 	}
 }
+
+// #72: what the Scheduled condition says of a request to run a schedule now.
+func TestRunNowMessages(t *testing.T) {
+	for _, tt := range []struct{ name, got, want string }{
+		{"held by its open issue", RunNowWaits("dependencies", false),
+			"schedule dependencies is asked to run now, and waits for its open issue to close"},
+		{"held by a paused Crew", RunNowWaits("dependencies", true),
+			"schedule dependencies is asked to run now, and runs when the Crew resumes"},
+		{"a schedule the Crew doesn't have", RunNowUnknown("dependecies", []string{"dependencies", "audit"}),
+			`asked to run schedule "dependecies" now, which is none of the Crew's: the Crew's schedules are ` +
+				"dependencies, audit"},
+		{"a Crew with no schedules", RunNowUnknown("dependencies", nil),
+			`asked to run schedule "dependencies" now, which is none of the Crew's: the Crew has no schedules`},
+	} {
+		if tt.got != tt.want {
+			t.Errorf("%s: %q, want %q", tt.name, tt.got, tt.want)
+		}
+	}
+}

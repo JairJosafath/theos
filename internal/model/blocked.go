@@ -17,6 +17,7 @@ limitations under the License.
 package model
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -49,20 +50,70 @@ const MaxBlockedNote = 1000
 // reason says nothing blocks the issue ("Blocked: none") is not a blocked
 // note: it is skipped as if it weren't there.
 func BlockedNote(summary string) string {
+	return noteAfter(summary, BlockedPrefix, saysNotBlocked)
+}
+
+// noteAfter takes from an agent's summary everything after its first line
+// starting with prefix (Markdown emphasis around the prefix allowed) whose
+// rest skip doesn't refuse, trimmed and at most MaxBlockedNote bytes.
+func noteAfter(summary, prefix string, skip func(rest string) bool) string {
 	lines := strings.Split(summary, "\n")
 	for i, l := range lines {
-		rest, ok := strings.CutPrefix(strings.TrimLeft(l, " \t*_>"), BlockedPrefix)
+		rest, ok := strings.CutPrefix(strings.TrimLeft(l, " \t*_>"), prefix)
 		if !ok {
 			continue
 		}
 		rest = strings.TrimLeft(rest, "*_")
-		if saysNotBlocked(rest) {
+		if skip(rest) {
 			continue
 		}
 		note := strings.TrimSpace(strings.Join(append([]string{rest}, lines[i+1:]...), "\n"))
 		return ClipSentences(note, MaxBlockedNote)
 	}
 	return ""
+}
+
+// An implementer that finds its issue needs no change (what it asks for is
+// already so, or a scheduled update found nothing to update) says so on
+// purpose: it changes nothing and ends its summary with a line starting
+// NothingPrefix that says why (#72). The Task then ends done, reason
+// ReasonNothingToDo, and its issue closes with the agent's words; no reviewer
+// is asked, since there is no change to review.
+
+// NothingPrefix starts the line of an agent's summary that says its issue
+// needs no change.
+const NothingPrefix = "Nothing to do:"
+
+// ReasonNothingToDo is the reason of a Task that ended done with no change:
+// its agent found the issue needs none.
+const ReasonNothingToDo = "NothingToDo"
+
+// NothingNote takes the reason from an agent's summary that says its issue
+// needs no change: everything after the first line starting "Nothing to do:"
+// that gives a reason, trimmed and at most MaxBlockedNote bytes. It is empty
+// when the summary has no such line: an agent that changed nothing and says
+// nothing of why has not done its issue.
+func NothingNote(summary string) string {
+	return noteAfter(summary, NothingPrefix, func(rest string) bool {
+		return strings.Trim(rest, " \t.,!?;:*_`'\"()-") == ""
+	})
+}
+
+// NothingMessage is the status of a Task whose agent found nothing to do.
+func NothingMessage(note string) string {
+	return "The agent found the issue needs no change, and it is closed: " + note
+}
+
+// NothingComment says on an issue that Task task closed it with no change,
+// in the agent's words.
+func NothingComment(task, note string) string {
+	return fmt.Sprintf("Task `%s` found nothing to do and changed nothing:\n\n%s\n\nIf that is wrong, reopen this "+
+		"issue, say what is missing, and label it %s.", task, quoteLines(note), LabelReady)
+}
+
+// quoteLines is text as a Markdown quote.
+func quoteLines(text string) string {
+	return "> " + strings.ReplaceAll(strings.TrimSpace(text), "\n", "\n> ")
 }
 
 // notBlocked are the first words, in lower case, of a reason that says
@@ -106,7 +157,8 @@ func saysNotBlocked(reason string) bool {
 const NoChangeNoReason = "the agent made no changes and gave no reason; " + blockedHint
 
 // blockedHint tells the next round how to stop on purpose.
-const blockedHint = "if the issue can't be done yet, say why in a line \"" + BlockedPrefix + " ...\""
+const blockedHint = "if the issue can't be done yet, say why in a line \"" + BlockedPrefix + " ...\"; if it needs " +
+	"no change, in a line \"" + NothingPrefix + " ...\""
 
 // MaxSummaryEnd is the longest end of an agent's summary, in bytes, a
 // no-change round's error carries.
@@ -121,7 +173,8 @@ func NoChangeError(summary string) string {
 	if end == "" {
 		return NoChangeNoReason
 	}
-	return "the agent made no changes and wrote no \"" + BlockedPrefix + "\" line; its summary ends: " +
+	return "the agent made no changes and wrote no \"" + BlockedPrefix + "\" or \"" + NothingPrefix +
+		"\" line; its summary ends: " +
 		strconv.Quote(end) + "; " + blockedHint
 }
 

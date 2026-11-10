@@ -1,0 +1,30 @@
+# #72, part 2: run a schedule now (2026-11-10)
+#
+# What the Scheduled condition says of a request.
+$ go test -v ./internal/model -run TestRunNowMessages
+--- PASS: TestRunNowMessages (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.005s
+
+# envtest: the annotation files the issue at once and is taken off; an open
+# issue or a paused Crew holds it; an unknown name is said.
+$ go test -v ./internal/controller -run "^TestControllers$" -ginkgo.focus "Crew schedules" -ginkgo.v
+Crew schedules (#63) files one issue when a schedule comes due, passes the next time over while it is open, and files again after
+Crew schedules (#63) files one issue, not one per time, for the times that passed while the Git host couldn't be read
+Crew schedules (#63) files nothing while the Crew is paused, and one issue once it resumes
+Crew schedules (#63) says which schedule it can't use, and goes on with the others and with its issues
+Crew schedules (#63) refuses a schedule the CRD can tell is wrong
+Crew schedules, run now (#72) files the schedule's issue at once, takes the request off, and holds a second one while that issue is open
+Crew schedules, run now (#72) runs it when a paused Crew resumes
+Crew schedules, run now (#72) says so when asked to run a schedule the Crew doesn't have, and files nothing
+Ran 8 of 782 Specs in 30.417 seconds
+SUCCESS! -- 8 Passed | 0 Failed | 0 Pending | 774 Skipped
+--- PASS: TestControllers (30.43s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/controller	30.462s
+
+# The UI: the write, the server that lets exactly it through, the button.
+$ make ui-test
+      Tests  998 passed (998)
+# pass 270
+# fail 0

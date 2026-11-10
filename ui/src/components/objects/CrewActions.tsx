@@ -498,6 +498,48 @@ export function RerunButton({ crew, writer }: { crew: Crew; writer: CrewWriter }
   )
 }
 
+/**
+ * Runs one of the Crew's schedules now: sets theos.factory.io/run-schedule to
+ * its name, which the operator takes off once the schedule's issue is filed.
+ * `asked` is true while the Crew carries the request for this schedule: an
+ * open issue of the schedule, or a paused Crew, holds it, and the Scheduled
+ * condition says why.
+ */
+export function RunScheduleButton({
+  crew,
+  schedule,
+  asked,
+  writer,
+}: {
+  crew: Crew
+  schedule: string
+  asked: boolean
+  writer: CrewWriter
+}) {
+  const { sending, error, done, run } = useWrite()
+  return (
+    <div className="crew-rerun">
+      <div className="form-row">
+        <button
+          type="button"
+          className="button button-secondary"
+          disabled={sending || asked || Boolean(done)}
+          onClick={() =>
+            run(
+              () => writer.runSchedule(crew.metadata.namespace ?? '', crew.metadata.name, schedule),
+              'Asked the operator to run it now',
+            )
+          }
+        >
+          {sending ? 'Asking…' : asked ? 'Asked to run now' : 'Run now'}
+        </button>
+        <Done text={done} />
+      </div>
+      {error ? <FormError error={error} /> : null}
+    </div>
+  )
+}
+
 function Done({ text }: { text: string | undefined }) {
   return text ? (
     <span className="form-done" role="status">

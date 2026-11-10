@@ -244,6 +244,8 @@ func TestFactoryMetricsApproved(t *testing.T) {
 		merged("Plan", nil),
 		merged("", nil),
 		{Namespace: "webshop", Container: "orders-api", Kind: "Implement", Phase: TaskFailed, ApprovedByPerson: true},
+		// #72: a Task that ended done with no change merged nothing.
+		merged("Implement", func(f *TaskMetricFacts) { f.NoChange = true }),
 	}), MetricTasksMerged)
 	if got := merges.Labels[len(merges.Labels)-1]; got != "approved" {
 		t.Fatalf("the last label is %q, want approved", got)

@@ -405,8 +405,7 @@ func releaseFacts(ctx context.Context, provider interface {
 		case t.Spec.Issue == 0:
 		case !isFinal(t.Status.Phase):
 			facts.Active = append(facts.Active, int(t.Spec.Issue))
-		case t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(&t):
-			// A spec's merge leaves its issue open; the build's merge is the issue's.
+		case mergedItsIssue(&t):
 			merged := model.MergedTask{Name: t.Name, Issue: int(t.Spec.Issue), Commit: t.Status.MergeCommit}
 			if t.Status.CompletedAt != nil {
 				merged.At = t.Status.CompletedAt.Time
@@ -419,6 +418,15 @@ func releaseFacts(ctx context.Context, provider interface {
 		}
 	}
 	return facts, titles, milestones, nil
+}
+
+// mergedItsIssue reports whether the Task's merge is its issue's, for a
+// release. A spec's merge leaves its issue open; the build's merge is the
+// issue's. A Task that found nothing to do merged nothing: its issue closed
+// with no change, and no release waits for a merge commit there never was
+// (#72).
+func mergedItsIssue(t *c4v1beta1.Task) bool {
+	return t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(t) && !endedWithNoChange(t)
 }
 
 func (r *CrewReconciler) setReleased(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
