@@ -157,10 +157,22 @@ checks are green on 4d96f0a: CodeQL for Go, TypeScript and the workflows,
 the engine's and the extension's tests, govulncheck ("3 advisories called, 3
 left aside"), and the secret scan.
 
-**Not merged.** The session's auto mode refuses a merge without a person,
-in Gitea and so on GitHub, whatever the owner wrote in chat. The owner
-switches the session to "Accept edits" and approves each merge when asked,
-or merges #7; the Scorecard workflow is run after that.
+**Merged, and 6.5.** On 10 November the owner wrote "it's all you so merge
+and let's see. No waiting on me", and the session merged #7 into `main`
+(2d881ac) and ran the Scorecard workflow: 4.4 became 6.5. Vulnerabilities,
+SAST and Dependency-Update-Tool went from 0 to 10, and CI-Tests, not scored
+before, is 10, since a merged pull request now has CI.
+
+**Gitea is behind GitHub.** The Gitea pull requests are still open: only
+the operator may merge there, user `claude` is refused, and the session may
+not read the operator's credential. GitHub `main` holds the same source.
+
+What is still 0: Branch-Protection (repository settings: no tool in the
+session), CII-Best-Practices (an account at bestpractices.dev),
+Code-Review (no pull request on GitHub is approved by a second person),
+Signed-Releases (next: sign the release files in a GitHub workflow with its
+own identity, no key to keep), Maintained (the repository is younger than
+90 days) and Contributors.
 
 ## What the owner does
 
