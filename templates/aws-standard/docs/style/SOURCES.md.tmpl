@@ -130,7 +130,7 @@ The cross-language sources were read on 2026-09-30 for another
 Standard, whose `principles.md` ts-standard adapts; they were not read again.
 {{- if eq .Framework "aws-lambda-py" }}
 The function's Python rules (`python.md`'s general sections, `ruff.toml`,
-`mypy.ini`) are python-standard v1.8.0's, and a test in theos keeps them
+`mypy.ini`) are python-standard v1.9.0's, and a test in theos keeps them
 equal; its Python sources were read on 2026-10-07 for python-standard and not
 read again. Lambda's Python pages and the boto3 guide are references the
 digests follow, not fetched again for them.
@@ -145,7 +145,7 @@ relying on a detail it alone gives.
 {{- if eq .Framework "aws-lambda-go" }}
 
 For the Go function, `go.md` and `.golangci.yml` are go-standard's, copied
-from go-standard v1.5.0, and a test in theos keeps them equal; its Go
+from go-standard v1.6.0, and a test in theos keeps them equal; its Go
 sources were read on 2026-10-02 for go-standard and are listed in its own
 `SOURCES.md`. The Go pages of the AWS docs below are the references the
 digests follow, not fetched for them: check one before relying on a detail

@@ -454,7 +454,7 @@ func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, s
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
 		protectedPaths: in.protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
 		workspaceMemory: r.WorkspaceMemory, checkpointClass: r.CheckpointClass,
-		goCache: r.SandboxGoCache, goProxy: repo.GoProxy, checkCommand: container.Spec.CheckCommand,
+		goCache: r.SandboxGoCache, goProxy: repo.GoProxy, goPrivate: repo.GoPrivate, checkCommand: container.Spec.CheckCommand,
 		npmScope: repo.NpmScope, npmRegistry: repo.NpmRegistry, pypiIndex: repo.PyPIIndex,
 		npmSecret: npmSecret, pypiSecret: pypiSecret,
 		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),

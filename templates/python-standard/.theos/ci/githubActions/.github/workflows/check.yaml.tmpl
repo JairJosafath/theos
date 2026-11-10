@@ -22,6 +22,63 @@
       - name: Check out
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 {{- end -}}
+{{- /* packages: the step that tells go, npm and uv where the owner's own
+  packages are; with true, only when the change touches code. */ -}}
+{{- define "packages" }}
+      - name: Where the owner's packages are
+{{- if . }}
+        if: steps.changes.outputs.code == 'true'
+{{- end }}
+        # make check installs what the repository depends on, and some of it
+        # is the owner's own. GitHub serves a Go module from its repository,
+        # so go fetches the owner's module paths directly (GOPRIVATE), with
+        # the job's token as Git's credential in ~/.netrc. npm sends the
+        # owner's scope to GitHub's npm registry through ~/.npmrc. GitHub has
+        # no Python index: uv has one only when the GitProvider's
+        # spec.packages names it, and logs in with its token as the password
+        # of the user __token__. The scope, the registry, the index and their
+        # tokens are Actions variables and secrets the operator sets from the
+        # GitProvider; empty ones mean GitHub's own. The job's token goes to
+        # GitHub alone, never to a registry that is not GitHub's. It reads
+        # this repository and the packages this repository may read: a
+        # module or a package of another private repository needs a token
+        # that reads it.
+        env:
+          NPM_SCOPE: {{`${{ vars.THEOS_NPM_SCOPE }}`}}
+          NPM_REGISTRY: {{`${{ vars.THEOS_NPM_REGISTRY }}`}}
+          NPM_TOKEN: {{`${{ secrets.THEOS_NPM_TOKEN }}`}}
+          PYPI_INDEX: {{`${{ vars.THEOS_PYPI_INDEX }}`}}
+          PYPI_TOKEN: {{`${{ secrets.THEOS_PYPI_TOKEN }}`}}
+          SERVER: {{`${{ github.server_url }}`}}
+          OWNER: {{`${{ github.repository_owner }}`}}
+          TOKEN: {{`${{ github.token }}`}}
+        run: |
+          host=${SERVER#*://}
+          host=${host%%/*}
+          name=${host%%:*}
+          scope=@$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
+          registry=https://npm.pkg.github.com/
+          if [ "$host" != github.com ]; then
+            registry=${SERVER%%://*}://npm.$host/
+          fi
+          token=${NPM_TOKEN:-$TOKEN}
+          if [ -n "$NPM_REGISTRY" ]; then
+            registry=${NPM_REGISTRY%/}/
+            token=$NPM_TOKEN
+          fi
+          umask 077
+          printf 'machine %s\nlogin x-access-token\npassword %s\n' "$name" "$TOKEN" > "$HOME/.netrc"
+          if [ -n "$PYPI_INDEX" ] && [ -n "$PYPI_TOKEN" ]; then
+            index=${PYPI_INDEX#*://}
+            index=${index%%/*}
+            printf 'machine %s\nlogin __token__\npassword %s\n' "${index%%:*}" "$PYPI_TOKEN" >> "$HOME/.netrc"
+          fi
+          printf '%s:registry=%s\n' "${NPM_SCOPE:-$scope}" "$registry" > "$HOME/.npmrc"
+          if [ -n "$token" ]; then
+            printf '//%s:_authToken=%s\n' "${registry#*://}" "$token" >> "$HOME/.npmrc"
+          fi
+          echo "GOPRIVATE=$name/$OWNER" >> "$GITHUB_ENV"
+{{- end -}}
 {{- if $beforeRelease -}}
 # Runs the light check, make check-light, on every pull request and on main,
 # and the full check, make check, on a push to a release-check/** branch: the
@@ -38,9 +95,10 @@ on:
     branches: [main{{ if $beforeRelease }}, "release-check/**"{{ end }}]
   pull_request:
 
-# The job reads the repository and nothing else of it.
+# The job reads the repository, and the packages the repository may read.
 permissions:
   contents: read
+  packages: read
 
 # A newer push to a pull request or a branch ends the run of the older one.
 concurrency:
@@ -76,6 +134,7 @@ jobs:
             ;;
           esac
           echo "code=$code" >>"$GITHUB_OUTPUT"
+{{- template "packages" true }}
 {{- if $beforeRelease }}
       - name: make check-light
         if: steps.changes.outputs.code == 'true'
@@ -86,6 +145,7 @@ jobs:
     name: check (full)
     if: startsWith(github.ref, 'refs/heads/release-check/')
 {{- template "job" }}
+{{- template "packages" false }}
       - name: make check
         run: make check
 {{- else }}

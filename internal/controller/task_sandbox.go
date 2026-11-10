@@ -107,7 +107,9 @@ type sandboxRun struct {
 	checkCommand string
 	// goProxy, when set, is the Git host's Go module proxy for the owner's
 	// released modules, the only one theos-agent asks for the factory's modules.
-	goProxy string
+	// goPrivate, on a host without one, is the prefix of the owner's module
+	// paths, which the host serves from their repositories.
+	goProxy, goPrivate string
 	// npmScope, npmRegistry and pypiIndex, when set, are the owner's npm
 	// scope, the registry that serves it and the simple index of the
 	// owner's Python packages. npmSecret and pypiSecret name the Secrets
@@ -228,6 +230,13 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			corev1.EnvVar{Name: agentrunner.EnvGoRegistry, Value: run.goProxy},
 			corev1.EnvVar{Name: "GOPROXY", Value: agentrunner.GoProxyURL},
 			corev1.EnvVar{Name: "GONOSUMDB", Value: agentrunner.FactoryModules})
+	} else if run.goPrivate != "" {
+		// A host with no module proxy serves the owner's modules from their
+		// repositories. The go command fetches those paths directly, with the
+		// Git credential theos-agent writes to ~/.netrc, and asks no proxy and
+		// no checksum database about them; every other path goes where Go
+		// sends it.
+		env = append(env, corev1.EnvVar{Name: "GOPRIVATE", Value: run.goPrivate})
 	}
 	// npm sends the scope, and uv each package, to its own registry, so no
 	// proxy: theos-agent writes ~/.npmrc and ~/.netrc from these. A Secret
