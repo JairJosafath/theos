@@ -106,7 +106,7 @@ Each step is its own issue, names #60 and lands with `make check`.
 | 2. The repository's own check, and the fence on it (done) | #95 | 1 | `checkCommand`, `checkContexts`, the `Protected` condition; envtest: a Task runs the named command on a protected adopted repository; a Crew waits on one that isn't |
 | 3. `theos-session adopt` (done) | #96 | 2 | the detector's table tests; the YAML it prints passes `make validate-yaml` |
 | 4. A Standard that differs arrives as a pull request | #97 | 1 | envtest: adopting with a Standard whose files differ opens the pull request and the Container is Ready |
-| 5. The Crew's first issue: AGENTS.md and what it found | #98 | 2 | envtest: one `kind/onboarding` issue per adopted Container, never a second |
+| 5. The Crew's first issue: AGENTS.md and what it found (done) | #98 | 2 | envtest: one `kind/onboarding` issue per adopted Container, never a second |
 | 6. The guide's second page (done) | #99 | 2, 3 | "Bring a repository you already have" follows the quickstart, and follows what the specs show |
 
 ## What step 1 found
@@ -175,6 +175,20 @@ Each step is its own issue, names #60 and lands with `make check`.
 - The proposals of eight repositories are files under
   `config/samples/adopt/proposed/`, which `make validate-yaml` holds to the
   CRDs; the table test fails when the detector's output leaves them.
+
+## What step 5 found
+
+- "Filed once" is the Crew's status plus the open issue's marker: the Git
+  host's port lists open issues only, so a Crew made anew after its
+  onboarding issue closed files another. That is the right answer to
+  "delete the Crew and start over", and the issue then asks to check and
+  complete the guide that is there.
+- The issue needs nothing of its own in the loop: it has an *Acceptance
+  criteria* checklist, so the Crew builds it, and "change no other file" is
+  a criterion the reviewer holds, not a rule the runner enforces as for a
+  spec.
+- It waits for what every agent waits for: main protected, the Crew not
+  paused.
 
 ## What step 6 found
 

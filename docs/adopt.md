@@ -177,7 +177,15 @@ the UI. Loosen it rule by rule as you gain trust, documentation first:
 [Start small](getting-started.md#start-small-let-the-factory-merge-only-what-you-are-sure-of)
 has the rules.
 
-Now [file an issue](getting-started.md#4-the-first-issue) in
+The Crew's first issue is its own. Once `main` is protected it files
+"Write AGENTS.md for this repository, and say what you found" and builds
+it: the pull request adds the guide every later agent reads first (how to
+build, test and run the repository, where things are), and its description
+lists what the agent found that you should know, such as a test that fails
+on `main`. It is the first thing that waits for your approval, and it
+changes none of your code.
+
+Then [file an issue](getting-started.md#4-the-first-issue) of your own in
 `webshop/invoices`, labelled `status/ready`, with an *Acceptance criteria*
 checklist, and [watch it build](getting-started.md#5-watch-it-build).
 
@@ -190,7 +198,8 @@ a stand-in Git host: the command and its proposals
 the retry, and the adoption on the identity alone
 (`internal/controller/container_adopt_test.go`); the protection by your
 checks, the waiting Crew and a Task that runs your check command to a merge
-(`internal/controller/container_adopt_checks_test.go`).
+(`internal/controller/container_adopt_checks_test.go`); the Crew's first
+issue, filed once (`internal/controller/crew_onboarding_test.go`).
 
 Not tested: an adoption on a real cluster against a real Gitea, and whether
 a given workflow of yours runs on the factory's runner images. If a step
@@ -201,5 +210,4 @@ here doesn't do what it says,
 
 [plans/adopt-existing.md](plans/adopt-existing.md) has the plan. Still to
 come: a Standard that arrives as a pull request instead of a condition to
-meet first, and a first issue the Crew files itself, to write `AGENTS.md`
-for the repository and say what it found.
+meet first.

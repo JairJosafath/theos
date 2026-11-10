@@ -278,6 +278,18 @@ that runs on a pull request) is a note in the proposal, never a guess. It
 also prints the `.theos.yaml` to commit to main, which stays the person's
 to commit: that file is how a repository's owner says the project may work
 there.
+
+**The Crew's first issue** (#98). A repository the factory scaffolded has
+its Standard's guides for agents; one it adopted with no Standard has what
+its people wrote. So the Crew's first issue there is its own: once main is
+protected and the Crew isn't paused, it files "Write AGENTS.md for this
+repository, and say what you found" (or "Check and complete AGENTS.md",
+when the repository has one), labelled `kind/onboarding` and
+`status/ready`, with criteria a reviewer checks, and builds it as any
+issue; the Crew's approval rules hold its pull request like any other. It
+is filed once: `status.onboarding` records it, and an open issue with its
+marker, which a lost status write leaves, is recorded instead of a second
+one filed.
 Adoption checks the Standard's files and nothing of the Framework's: the
 block `spec.operations` names at adoption is recorded as the one the
 repository holds, when the Framework reads it, and a later change is
