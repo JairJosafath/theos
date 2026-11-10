@@ -61,6 +61,21 @@ type StandardSpec struct {
 	// +listType=set
 	// +optional
 	TestEnvironments []string `json:"testEnvironments,omitempty"`
+
+	// schedules are the recurring goals the Standard proposes to the Crews of
+	// its Containers, such as its language's weekly dependency update
+	// (docs/design.md, "Schedules"), each in the shape of a Crew's schedule.
+	// A proposal turns nothing on: the operator never copies one into a
+	// Crew. A Crew takes one when a person adds it to the Crew's own
+	// spec.schedules, under the proposal's name, and may change it there; a
+	// Crew that leaves it does nothing. A cron or a time zone only the
+	// operator can tell is wrong is reported by the Crew that takes it, in
+	// its Scheduled condition.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=8
+	// +optional
+	Schedules []CrewSchedule `json:"schedules,omitempty"`
 }
 
 // +kubebuilder:object:root=true

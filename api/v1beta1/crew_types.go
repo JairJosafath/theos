@@ -624,7 +624,8 @@ type CrewPublishTarget struct {
 }
 
 // CrewSchedule is one recurring goal of a Crew: when its time comes, the Crew
-// files an issue with the goal.
+// files an issue with the goal. A Standard proposes schedules in this same
+// shape (StandardSpec.Schedules), so a Crew takes one as it is written.
 type CrewSchedule struct {
 	// name names the schedule in its issues' titles and in the status.
 	// +kubebuilder:validation:MinLength=1

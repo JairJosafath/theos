@@ -85,6 +85,66 @@ spec:
                 maxItems: 64
                 type: array
                 x-kubernetes-list-type: set
+              schedules:
+                description: |-
+                  schedules are the recurring goals the Standard proposes to the Crews of
+                  its Containers, such as its language's weekly dependency update
+                  (docs/design.md, "Schedules"), each in the shape of a Crew's schedule.
+                  A proposal turns nothing on: the operator never copies one into a
+                  Crew. A Crew takes one when a person adds it to the Crew's own
+                  spec.schedules, under the proposal's name, and may change it there; a
+                  Crew that leaves it does nothing. A cron or a time zone only the
+                  operator can tell is wrong is reported by the Crew that takes it, in
+                  its Scheduled condition.
+                items:
+                  description: |-
+                    CrewSchedule is one recurring goal of a Crew: when its time comes, the Crew
+                    files an issue with the goal. A Standard proposes schedules in this same
+                    shape (StandardSpec.Schedules), so a Crew takes one as it is written.
+                  properties:
+                    cron:
+                      description: |-
+                        cron is when the schedule is due, as five fields: minute, hour, day of
+                        month, month and day of week (0 or 7 is Sunday), each a number, a range
+                        a-b, a step */n or a-b/n, a comma-separated list of those, or *. An
+                        expression the operator can't use (minute 60, the 30th of February)
+                        leaves the Crew's Scheduled condition False, reason InvalidSchedule.
+                      maxLength: 100
+                      pattern: ^[0-9*/,-]+( [0-9*/,-]+){4}$
+                      type: string
+                    goal:
+                      description: |-
+                        goal is what the issue asks for, in plain words: what to do, and what
+                        to leave. It becomes the issue's Goal section.
+                      maxLength: 4000
+                      minLength: 1
+                      type: string
+                    name:
+                      description: name names the schedule in its issues' titles and
+                        in the status.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    timeZone:
+                      default: UTC
+                      description: |-
+                        timeZone is the IANA time zone cron is in, such as Europe/Amsterdam;
+                        daylight saving follows it. Unset is UTC. A name the operator can't
+                        load leaves the Scheduled condition False, reason InvalidSchedule.
+                      maxLength: 64
+                      minLength: 1
+                      type: string
+                  required:
+                  - cron
+                  - goal
+                  - name
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               supportedFrameworks:
                 description: supportedFrameworks lists the Frameworks, by name, whose
                   code this Standard can check.

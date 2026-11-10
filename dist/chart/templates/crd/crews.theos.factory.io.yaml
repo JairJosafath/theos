@@ -452,7 +452,8 @@ spec:
                 items:
                   description: |-
                     CrewSchedule is one recurring goal of a Crew: when its time comes, the Crew
-                    files an issue with the goal.
+                    files an issue with the goal. A Standard proposes schedules in this same
+                    shape (StandardSpec.Schedules), so a Crew takes one as it is written.
                   properties:
                     cron:
                       description: |-

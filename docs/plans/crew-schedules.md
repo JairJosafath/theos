@@ -49,7 +49,8 @@ runs on a schedule, through the same loop as everything else.
 | 2. "Nothing to do" is a result (done) | #72 | an implementer that finds nothing to change ends with `Nothing to do: <why>`; the Task closes the issue as done instead of failing. It touches `internal/agentrunner/`, a protected path |
 | 3. Run one now (done) | #72 | an annotation on the Crew, and a button in the UI, file a schedule's issue at once |
 | 4. The UI shows schedules (done) | #72 | the Crew's page lists each schedule, its next time and its last issue |
-| 5. Standards propose schedules | #72 | a Standard names schedules for its language; a Crew takes or leaves them |
+| 5. Standards propose schedules: the field (done) | #72 | `Standard.spec.schedules`, each in the shape of a Crew's schedule, held to the same patterns; nothing copies one into a Crew |
+| 6. The UI offers a Standard's proposals | #72 | a Crew's page shows the proposals of its Container's Standard the Crew has not taken, and a person takes one |
 
 ## Done when
 
@@ -109,3 +110,43 @@ Built 2026-11-10.
 - The UI's server allows one more write, the annotation alone on a Crew,
   as it allows the re-run of a release. The button shows only where the
   page can write, and reads "Asked to run now" while the request stands.
+
+## What step 5 found
+
+Built 2026-11-10. The field alone; the UI that offers the proposals is
+step 6.
+
+- **The proposal is a Crew's schedule, the same Go type** (`CrewSchedule`:
+  name, cron, time zone, goal), so the two CRDs can't drift: a pattern
+  changed for one is changed for the other, and a Crew takes a proposal by
+  copying it as it is written. `listType=map` on `name` and at most eight,
+  as on a Crew.
+- **Taken is "the Crew has a schedule of that name".** Nothing else links
+  the two: no reference from the Crew to the Standard, no status. A Crew
+  that took a proposal owns its copy and may change its time and words; a
+  Standard that later changes or drops the proposal changes no Crew, as a
+  Relationship added after the scaffold changes no repository. Step 6 reads
+  the proposals not taken as those whose name is none of
+  `Crew.spec.schedules[].name`.
+- **Nothing is on by default, and the operator has no part.** No reconciler
+  reads `Standard.spec.schedules`; a Standard stays a catalog entry with no
+  status. The envtest spec holds it: a Crew whose Container's Standard has a
+  proposal files nothing past the proposal's time and gets no schedule, and
+  files once it has the schedule itself.
+- **The time zone defaults to UTC in the proposal too,** since the type is
+  shared: a Standard can't know where its Crews are. Whoever takes one sets
+  the Crew's own.
+- **A proposal is checked as far as the CRD can** (the cron's shape, the
+  name, a goal, eight at most, no name twice). The 30th of February and a
+  time zone that can't be loaded are found by the Crew that takes it, in
+  `Scheduled`, as for a schedule a person wrote. A Standard has no status to
+  say it in, and a catalog kind with a reconciler for this alone is not
+  worth it.
+- **The sample is the webshop's `python-standard`**
+  (`config/samples/webshop/factory.yaml`). The chart's catalog passes an
+  entry's `spec` through whole, so `go-standard` can carry a proposal in
+  `dist/chart/values.yaml` with no template change; that file is a protected
+  path and was left for the owner's session.
+- **Tested:** the CRD's refusals in envtest
+  (`internal/controller/standard_schedules_test.go`) and as files in
+  `test/invalid/standard-schedule-*.yaml`; the sample in `make validate-yaml`.
