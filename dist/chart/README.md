@@ -5,7 +5,7 @@ policy (a Project is named after its namespace), the UI (it writes only Briefs
 unless `ui.actions.enabled` is set), and Gitea,
 seeded with the tagged templates, with its `base`, `go` and `image` CI runners. You
 install [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
-yourself, first. The Kind test environment installs with kustomize and `make`
+yourself, first. The Kind test rig installs with kustomize and `make`
 instead (`make gitea seed deploy`); this chart is how theos is installed on a
 cluster of your own, Kubernetes 1.30 or later.
 
@@ -22,14 +22,14 @@ agents, each in a sandbox of its own, building at once. An agent's run is a
 sandboxed pod, and so are a project's CI jobs and its local test
 environments; the scheduler places each on any node with room. How many
 agents work at once is a setting (`manager.args`), and the cluster's nodes
-are what bounds it. A Kind cluster on one machine is how theos is tested and
-the quickest way to try it; it is not what theos is for.
+are where that many find room. A Kind cluster on one machine is how theos is
+tested and the quickest way to try it; it is not what theos is for.
 
-One install is one cluster. The test environment has one node, so parts of
+One install is one cluster. The test rig has one node, so parts of
 the chart still assume one, and each is an issue: the Go build caches are
 directories on a node (#120), the Gitea the chart brings has no address
 outside the cluster (#121), `manager.args`' defaults are the test
-environment's (#123), and Gitea is one pod, so one node's loss stops the
+rig's (#123), and Gitea is one pod, so one node's loss stops the
 factory (#124). No release is checked on more than one node (#125).
 [docs/design.md](../../docs/design.md#why-kubernetes) says more.
 
@@ -47,7 +47,7 @@ NetworkPolicy that keeps a job to DNS, Gitea and public HTTPS; the shared
 `base`, `go` and `image` runners below register to the `templates`
 organization and serve the templates' checks only. The `image` runner's job
 container runs with seccomp and AppArmor `Unconfined`, which rootless
-BuildKit needs. What the runner pods still share is the node.
+BuildKit needs. What the runner pods still share is a node.
 [docs/getting-started.md](../../docs/getting-started.md#what-the-factory-trusts)
 says more.
 
@@ -256,7 +256,7 @@ helm upgrade ... --set chat.uiURL=https://theos.example.com
 ### Private images
 
 The chart and the images on GHCR are private until the owner makes them
-public. An install pulls them with a GitHub token that has `read:packages`
+public. Until then, pulling them takes a GitHub token that has `read:packages`
 (`gh auth refresh -s read:packages`, then `gh auth token`). Helm pulls the
 chart, so log it in first, whichever way the images come:
 
@@ -319,7 +319,7 @@ as the run's artifact); a failing release gets an issue titled
 | Value | What it sets |
 | --- | --- |
 | `manager.image`, `ui.image` | repository, tag (default `Chart.appVersion`), pullPolicy |
-| `manager.args` | the operator's flags (`go run ./cmd --help`); the defaults are the Kind test environment's, one node's (#123). The chart adds the ones its values decide: with `agents.enabled`, `--shared-secret=<agents.credentialsSecret>` and `--model-proxy-url=http://c4-model-proxy.<release namespace>.svc:8080`, the `agents.modelProxy` Service that a sandbox whose Agent names the shared Secret reaches Claude through, holding no token itself (the operator refuses `--shared-secret` without it) |
+| `manager.args` | the operator's flags (`go run ./cmd --help`); the defaults are the Kind test rig's, one node's (#123). The chart adds the ones its values decide: with `agents.enabled`, `--shared-secret=<agents.credentialsSecret>` and `--model-proxy-url=http://c4-model-proxy.<release namespace>.svc:8080`, the `agents.modelProxy` Service that a sandbox whose Agent names the shared Secret reaches Claude through, holding no token itself (the operator refuses `--shared-secret` without it) |
 | `sessionBinaryURL` | where scaffolded devcontainers download `theos-session`, the Session client (`--session-binary-url`, `${arch}` becomes `amd64` or `arm64`); default the UI, whose image carries the client under `/downloads/`: `http://localhost:<ui.service.port>/...` for the port-forward, `<ui.sessionBinaryScheme>://<ui.allowedHosts[0]>/...` behind an Ingress, so a private repository's release needs no GitHub login. The devcontainer's build must reach that address (a port-forward's localhost is the machine's that runs the port-forward, not a container's), so set one it reaches when it doesn't. With `ui.enabled` false, the binaries attached to this chart's GitHub release. Both serve a `SHA256SUMS` next to the binaries, which the feature checks the download against; a URL of your own needs one too. Empty sets none |
 | `checkpointStorageClass` | the StorageClass of each agent sandbox's 1Gi checkpoint volume, where an interrupted run is saved to resume in place (`--sandbox-checkpoint-storage-class`). Empty (the default) uses the cluster's default class; on a cluster without one the claim never binds and no sandbox pod schedules, so name a class there, or set `none`: sandboxes then get no checkpoint volume, and an interrupted run runs again from the start |
 | `clusterDNS` | where cluster DNS runs: the peers the agent and CI fences let port 53 out to (the operator's `--cluster-dns`, one per entry, and the CI runners' NetworkPolicy). Each entry is `namespace/key=value[,key=value]` (a namespace and pod labels) or an address block inside the private ranges (a bare address means `/32`). Default `kube-system/k8s-app=kube-dns`, which fits kube-dns or CoreDNS in `kube-system`. A cluster whose pods resolve through NodeLocal DNSCache needs its link-local address (`169.254.20.10/32`; keep the default too when some pods still use the Service), and one with DNS in another namespace its pods' labels (OpenShift: `openshift-dns/dns.operator.openshift.io/daemonset-dns=default`). Without the right entry, sandboxes and CI runners resolve nothing. The UI's `ui.components` dns entry is separate: set it too when DNS runs elsewhere |
@@ -331,7 +331,7 @@ as the run's artifact); a failing release gets an issue titled
 | `ui.components` | the UI health view's components; an empty namespace is the release's |
 | `gitea.enabled` | install Gitea, the seed and the runners (default true); off, `gitProviders` point at a Gitea of your own |
 | `gitea.namespace`, `gitea.createNamespace` | Gitea's namespace (default `gitea`) and whether the chart makes it |
-| `gitea.image`, `gitea.resources`, `gitea.persistence`, `gitea.config` | Gitea's image, its share of the node, its volume and extra `GITEA__section__KEY` settings |
+| `gitea.image`, `gitea.resources`, `gitea.persistence`, `gitea.config` | Gitea's image, its share of a node, its volume and extra `GITEA__section__KEY` settings |
 | `gitea.admin` | the admin's name and email; `existingSecret` for one of your own, else the password is generated |
 | `gitea.projects` | project names, or objects `{name, packages}` (`packages` as `gitProviders[].packages`): a namespace each (see `projectNamespaces.create`), labeled `theos.factory.io/shared-secrets=true` by the chart or the seed, with an organization, Secret `gitea-credentials`, GitProvider `gitea` and, when there is none, Project `<name>` |
 | `projectNamespaces.create` | make each of `gitea.projects`' namespaces, kept on uninstall, unless it exists and isn't the release's (default on); off, you make them and the seed labels them |

@@ -24,7 +24,7 @@ manager:
     pullPolicy: IfNotPresent
 
   ## Arguments (go run ./cmd --help lists them). These are the Kind test
-  ## environment's, one node's (#123): four agent sandboxes at once, each workspace
+  ## rig's, one node's (#123): four agent sandboxes at once, each workspace
   ## in memory up to 3Gi, and a Go build cache the sandboxes share on the node (#120).
   ##
   args:

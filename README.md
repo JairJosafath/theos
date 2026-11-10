@@ -6,7 +6,9 @@ theos turns an idea into working, scaffolded repositories. You describe your
 software as a small [C4](https://c4model.com)-style model: who uses it, which
 systems exist, and which applications and data stores they are made of. A Kubernetes
 operator reads that model and creates a ready-to-code repository for every
-application.
+application, and agents build the applications from issues. theos runs on
+Kubernetes to be a distributed solution for agentic work: many agents, each
+in a sandbox of its own, building at once ([Why Kubernetes](#why-kubernetes)).
 
 ```
 Person ──uses──▶ SoftwareSystem ──contains──▶ Container ──reads/writes──▶ DataStore
@@ -41,9 +43,12 @@ does what that needs.
   that enforces them, and pods that hold no ServiceAccount token keep an
   agent in, not the agent's good will.
 - **A run outlives its pod.** A run that a node shutdown or an eviction
-  interrupts resumes from its checkpoint.
-- **Capacity is the cluster's.** How many agents work at once is a setting,
-  and the cluster's nodes are what bounds it.
+  interrupts resumes from its checkpoint, where the checkpoint's volume can
+  attach: on node-local storage, a run whose node is gone can't resume on
+  another. Not yet tested on more than one node (#125).
+- **Capacity is a setting.** How many agents work at once is one setting of
+  the operator, and the cluster's nodes are where that many agents find
+  room. Adding nodes adds no agent until the setting is raised (#123).
 - **It installs from a chart,** on a Kubernetes 1.30 or later cluster.
 
 A Kind cluster on one machine is how theos is tested and the quickest way to
@@ -226,7 +231,7 @@ FastAPI, Kubernetes manifests and a devcontainer with Postgres, pushed as one co
 in, `make gitea-admin` prints the admin password, which `make gitea` generates for
 each cluster.
 
-To use theos on your own cluster instead, install a release: apply Agent
+To use theos on your own cluster, install a release: apply Agent
 Sandbox, make the project namespaces, then `helm install` the chart with
 `gitea.projects`, which brings the operator, the UI and a seeded Gitea with its
 CI runners. The chart and images are published to GHCR by a version tag.

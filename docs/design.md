@@ -12,7 +12,9 @@ and reasons, is [design-history.md](design-history.md); the plans in
 theos turns an idea into working repositories by first telling its story
 as a C4-inspired model. The model lives in Kubernetes custom resources, a
 kubebuilder operator acts on it, agents build the apps from issues, and a UI
-draws the story on top.
+draws the story on top. It runs on Kubernetes to be a distributed solution
+for agentic work: many agents, each in a sandbox of its own, building at
+once ([Why Kubernetes](#why-kubernetes)).
 
 - **The CRDs are the truth.** Anything can write them: kubectl, GitOps, a
   Brief's planner or the UI. The UI and the Session client enforce nothing;
@@ -56,10 +58,15 @@ does what that needs.
   that enforces them, and pods that hold no ServiceAccount token keep an
   agent in ([The fence](#the-fence)).
 - **A run outlives its pod.** A run that a node shutdown or an eviction
-  interrupts resumes from its checkpoint.
-- **Capacity is the cluster's.** How many agents work at once is a setting
-  (the operator's `--max-agent-sandboxes`), and the cluster's nodes are what
-  bounds it.
+  interrupts resumes in place from its checkpoint, where the checkpoint's
+  volume can attach: the volume is the sandbox's own, of the cluster's
+  default StorageClass unless set, so on node-local storage a run whose node
+  is gone can't resume on another ([Agents and Tasks](#agents-and-tasks), "A run
+  continues from a checkpoint"). Not yet tested on more than one node (#125).
+- **Capacity is a setting.** How many agents work at once is one setting
+  (the operator's `--max-agent-sandboxes`: 1 by default, 4 in the chart),
+  and the cluster's nodes are where that many agents find room. Adding nodes
+  adds no agent until the setting is raised (#123).
 - **It installs from a chart,** on a Kubernetes 1.30 or later cluster
   ([Distribution and issues](#distribution-and-issues)).
 
@@ -641,7 +648,7 @@ checks and releases to run. Who cancelled a job is read from its pod: a pod that
 ended its one job on its own after the cancel was a person's; one deleted,
 evicted or killed before its job ended was the runner's, and the Task reruns
 the checks at no cost to a round (`model.Canceller`). The isolation left is
-the node's: the pods share it with everything else
+a node's: the pods share it with everything else on it
 ([getting-started](getting-started.md#what-the-factory-trusts)).
 
 ### Test environments

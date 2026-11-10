@@ -60,7 +60,7 @@ the agent's code never sees it
 (c4factory #1075 closed that
 gap). What the runners still share:
 
-- **The Gitea CI runners share the node.** A project's checks run on its own
+- **The Gitea CI runners share a node.** A project's checks run on its own
   pool of single-job runner pods in its namespace, each registered to the
   project's organization for one job and replaced after it, under a
   NetworkPolicy that keeps a job to DNS, Gitea and public HTTPS (on a network
@@ -70,7 +70,7 @@ gap). What the runners still share:
   checks only. The chart's GitProviders carry that pool (a `base` and a
   `go` runner, the labels the templates' checks run on), so a fresh install
   needs nothing added for a project's checks to run. What the pods still
-  share is the node: its
+  share is a node: its
   kernel, and the cache directories on its disk, which only the kubelet's
   mounts keep apart.
 
@@ -761,10 +761,10 @@ message. Nothing is written to the repository at deploy; a rollback pins
 `version` in the entry.
 
 The cluster's nodes pull the image from the registry the Container's Git
-provider serves. In the Kind test environment that is the Gitea in the
+provider serves. In the Kind test rig that is the Gitea in the
 cluster, which the node can't resolve by its Service name, so `make cluster`
 maps it for containerd (`hack/kind.sh registry-hosts`) to the Service's fixed
-ClusterIP, over plain HTTP. That is the test environment's shortcut: a real
+ClusterIP, over plain HTTP. That is the test rig's shortcut: a real
 cluster pulls from a registry with a real name and TLS (#121), and the
 organization is public, so the pull and the clone need no credential.
 
