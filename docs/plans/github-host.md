@@ -132,6 +132,15 @@ first.** Host-neutral, and tested on the in-memory fake.
 - **The hook names the repositories.** The GitProvider's reconciler fills
   `ports.EventHook.Repositories` from its Containers and Briefs.
 
+*Where part 1 stands.* All four are built on the branch
+`claude/trusting-gauss-tiymcv`, one commit each, with their tests:
+`TestProviderConfigCarriesTheSecret`, the specs under "What a
+GitProvider's host can do (#81)" and `TestAgentCredentialOutlivesItsRun`.
+`make lint`, `make manifests generate`, `TestHostNeutral`, the unit tests
+and those specs pass. Not done: a whole `make check` on the branch, the
+evidence in `docs/screenshots/81-*.txt`, and the pull request ("Part of
+#81"). Parts 2 to 5 are not started.
+
 **Part 2, the Go module path follows the host.** `scaffold.Input` gets the
 module path, as it has the npm scope: `theos.local/<project>/<container>`
 on a host with a module proxy, the repository's own path on one that
