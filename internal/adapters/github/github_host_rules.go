@@ -18,10 +18,14 @@ package github
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/JairJosafath/theos/internal/ports"
 )
@@ -35,11 +39,15 @@ import (
 // pass, its checks and the paths it may not change, no ruleset of a branch
 // can hold in full: required checks are exact names where the port's are
 // patterns, and a path restriction is a push ruleset's, on some plans. And a
-// ruleset binds nobody it lets bypass it, the operator first. So the rule is
-// kept beside the ruleset, in an Actions variable of the repository, and
-// MergePullRequest checks it (github_host_pulls.go). The variable is the
-// repository administrators' to write, as the ruleset is: an agent's token
-// must hold neither the administration nor the variables permission.
+// ruleset binds nobody it lets bypass it, the operator first. So
+// MergePullRequest checks the rule itself (github_host_pulls.go), and
+// ProtectBranch keeps it for that in an Actions variable of the repository.
+//
+// A variable is no safe place alone: GitHub lets anyone with write access
+// to the repository set one through the API. A ruleset is an
+// administrator's, so the ruleset's name carries a digest of the rule, and a
+// rule in the variable that is not the one the ruleset names refuses every
+// merge it would have checked until ProtectBranch writes it again.
 
 // rulesVariable is the Actions variable that holds a repository's branch
 // rules, a JSON object by branch.
@@ -55,59 +63,140 @@ func (h *host) variablePath(repo ports.Repository) string {
 	return h.repoPath(repo) + "/actions/variables"
 }
 
-// branchRules reads the rules ProtectBranch kept, and whether the repository
-// has the variable at all. A value that is no such object is an error: a
-// rule that can't be read refuses the merge it would have checked.
-func (h *host) branchRules(ctx context.Context, repo ports.Repository) (map[string]storedRule, bool, error) {
+// rulesValue reads the variable's value, and whether the repository has the
+// variable at all.
+func (h *host) rulesValue(ctx context.Context, repo ports.Repository) (string, bool, error) {
 	status, data, err := h.do(ctx, http.MethodGet, h.variablePath(repo)+"/"+rulesVariable, nil)
 	if err != nil {
-		return nil, false, err
+		return "", false, err
 	}
 	what := "reading the branch rules of " + repo.Owner + "/" + repo.Name + " (variable " + rulesVariable + ")"
 	switch status {
 	case http.StatusOK:
 	case http.StatusNotFound:
-		return map[string]storedRule{}, false, nil
+		return "", false, nil
 	default:
-		return nil, false, failed(what, status, data)
+		return "", false, failed(what, status, data)
 	}
 	var variable struct {
 		Value string `json:"value"`
 	}
-	rules := map[string]storedRule{}
 	if err := json.Unmarshal(data, &variable); err != nil {
-		return nil, false, fmt.Errorf("github: %s: %w", what, err)
+		return "", false, fmt.Errorf("github: %s: %w", what, err)
 	}
-	if err := json.Unmarshal([]byte(variable.Value), &rules); err != nil {
-		return nil, false, fmt.Errorf("github: %s: its value is no JSON object of rules: %w", what, err)
-	}
-	return rules, true, nil
+	return variable.Value, true, nil
 }
 
-// branchRule is the rule ProtectBranch kept for branch; the zero rule when it
-// kept none.
+// parseRules reads the rules by branch out of the variable's value; a value
+// that is no such object holds none.
+func parseRules(value string) map[string]storedRule {
+	rules := map[string]storedRule{}
+	if json.Unmarshal([]byte(value), &rules) != nil || rules == nil {
+		return map[string]storedRule{}
+	}
+	return rules
+}
+
+// digest names a rule in its ruleset: the start of the SHA-256 of the rule
+// as the variable holds it.
+func (r storedRule) digest() string {
+	data, _ := json.Marshal(r)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])[:digestLength]
+}
+
+// digestLength is how many hex digits of a rule's digest its ruleset's name
+// carries: 48 bits, which nobody finds a second rule for by trying.
+const digestLength = 12
+
+// branchRulesetName is the name of the ruleset that fences branch for the
+// rule of digest.
+func branchRulesetName(branch, digest string) string {
+	return "theos: " + branch + " (rule " + digest + ")"
+}
+
+// ruleDigest returns the digest in name when name is the ruleset of branch.
+func ruleDigest(name, branch string) (string, bool) {
+	digest, found := strings.CutPrefix(name, "theos: "+branch+" (rule ")
+	digest, closed := strings.CutSuffix(digest, ")")
+	if !found || !closed || len(digest) != digestLength || strings.Trim(digest, "0123456789abcdef") != "" {
+		return "", false
+	}
+	return digest, true
+}
+
+// listedRuleset is a ruleset as the list of a repository's has it.
+type listedRuleset struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// rulesets lists the repository's own rulesets, its organization's left out.
+func (h *host) rulesets(ctx context.Context, repo ports.Repository) ([]listedRuleset, error) {
+	raw, err := h.list(ctx, h.repoPath(repo)+"/rulesets", url.Values{"includes_parents": {strconv.FormatBool(false)}})
+	if err != nil {
+		return nil, err
+	}
+	listed := make([]listedRuleset, 0, len(raw))
+	for _, r := range raw {
+		var rs listedRuleset
+		if err := json.Unmarshal(r, &rs); err != nil {
+			return nil, fmt.Errorf("github: reading the rulesets of %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+		listed = append(listed, rs)
+	}
+	return listed, nil
+}
+
+// branchRule is the rule ProtectBranch kept for branch; the zero rule for a
+// branch it never fenced. The ruleset says which rule that is: one in the
+// variable that is another, or none there, is an error, since anyone with
+// write access to the repository can set the variable and only its
+// administrators the ruleset.
 func (h *host) branchRule(ctx context.Context, repo ports.Repository, branch string) (ports.BranchRule, error) {
-	rules, _, err := h.branchRules(ctx, repo)
+	listed, err := h.rulesets(ctx, repo)
 	if err != nil {
 		return ports.BranchRule{}, err
 	}
-	kept := rules[branch]
+	var want string
+	fenced := false
+	for _, rs := range listed {
+		if digest, ok := ruleDigest(rs.Name, branch); ok {
+			want, fenced = digest, true
+			break
+		}
+	}
+	if !fenced {
+		return ports.BranchRule{}, nil
+	}
+	value, _, err := h.rulesValue(ctx, repo)
+	if err != nil {
+		return ports.BranchRule{}, err
+	}
+	kept, ok := parseRules(value)[branch]
+	if !ok || kept.digest() != want {
+		return ports.BranchRule{}, fmt.Errorf("github: the rule of %s in %s/%s (variable %s) is not the one its ruleset "+
+			"names, %s: it was changed since the branch was protected", branch, repo.Owner, repo.Name, rulesVariable,
+			want)
+	}
 	return ports.BranchRule{StatusContexts: kept.StatusContexts, ProtectedPaths: kept.ProtectedPaths}, nil
 }
 
 // keepBranchRule writes branch's rule into the variable, beside the other
-// branches' rules.
+// branches' rules. A value someone broke is written over: the branches it
+// loses are refused their merges until they are protected again.
 func (h *host) keepBranchRule(ctx context.Context, repo ports.Repository, branch string, rule ports.BranchRule) error {
-	rules, exists, err := h.branchRules(ctx, repo)
+	value, exists, err := h.rulesValue(ctx, repo)
 	if err != nil {
 		return err
 	}
+	rules := parseRules(value)
 	rules[branch] = storedRule{StatusContexts: rule.StatusContexts, ProtectedPaths: rule.ProtectedPaths}
-	value, err := json.Marshal(rules)
+	kept, err := json.Marshal(rules)
 	if err != nil {
 		return err
 	}
-	body := map[string]string{"name": rulesVariable, "value": string(value)}
+	body := map[string]string{"name": rulesVariable, "value": string(kept)}
 	method, path, want := http.MethodPost, h.variablePath(repo), http.StatusCreated
 	if exists {
 		method, path, want = http.MethodPatch, h.variablePath(repo)+"/"+rulesVariable, http.StatusNoContent
@@ -156,8 +245,12 @@ type rulesetRule struct {
 // ruleset's bypass actors.
 const adminRole = 5
 
-// The bypass modes of a ruleset: always, or only by merging a pull request.
+// What a ruleset fences, that it is enforced, and its bypass modes: always,
+// or only by merging a pull request.
 const (
+	targetBranch      = "branch"
+	targetTag         = "tag"
+	enforced          = "active"
 	bypassAlways      = "always"
 	bypassPullRequest = "pull_request"
 )
@@ -165,15 +258,16 @@ const (
 // branchRuleset is the ruleset that fences branch for rule: only the
 // repository's administrators update it, by a pull request's merge, and by a
 // push of their own when rule.OperatorPushes; nobody deletes or rewrites it.
-// The checks and the paths of rule are no part of it: MergePullRequest holds
-// a pull request to them.
+// The checks and the paths of rule are no part of it but by their digest, in
+// its name: MergePullRequest holds a pull request to them.
 func branchRuleset(branch string, rule ports.BranchRule) ruleset {
 	mode := bypassPullRequest
 	if rule.OperatorPushes {
 		mode = bypassAlways
 	}
 	return ruleset{
-		Name: "theos: " + branch, Target: "branch", Enforcement: "active",
+		Name:   branchRulesetName(branch, storedRule{rule.StatusContexts, rule.ProtectedPaths}.digest()),
+		Target: targetBranch, Enforcement: enforced,
 		Conditions:   rulesetConditions{RefName: refNames{Include: []string{"refs/heads/" + branch}, Exclude: []string{}}},
 		BypassActors: []bypassActor{{ActorID: adminRole, ActorType: "RepositoryRole", BypassMode: mode}},
 		Rules:        []rulesetRule{{Type: "update"}, {Type: "deletion"}, {Type: "non_fast_forward"}},
@@ -184,31 +278,24 @@ func branchRuleset(branch string, rule ports.BranchRule) ruleset {
 // make, move and delete the tags matching pattern.
 func tagRuleset(pattern string) ruleset {
 	return ruleset{
-		Name: "theos: tags " + pattern, Target: "tag", Enforcement: "active",
+		Name: "theos: tags " + pattern, Target: targetTag, Enforcement: enforced,
 		Conditions:   rulesetConditions{RefName: refNames{Include: []string{"refs/tags/" + pattern}, Exclude: []string{}}},
 		BypassActors: []bypassActor{{ActorID: adminRole, ActorType: "RepositoryRole", BypassMode: bypassAlways}},
 		Rules:        []rulesetRule{{Type: "creation"}, {Type: "update"}, {Type: "deletion"}},
 	}
 }
 
-// putRuleset makes the repository's ruleset of rs's name what rs says,
-// creating it when there is none.
-func (h *host) putRuleset(ctx context.Context, repo ports.Repository, rs ruleset) error {
-	raw, err := h.list(ctx, h.repoPath(repo)+"/rulesets", nil)
+// putRuleset makes the repository's ruleset that same finds by its name
+// what rs says, creating it when there is none.
+func (h *host) putRuleset(ctx context.Context, repo ports.Repository, rs ruleset, same func(name string) bool) error {
+	listed, err := h.rulesets(ctx, repo)
 	if err != nil {
 		return err
 	}
 	method, path, want := http.MethodPost, h.repoPath(repo)+"/rulesets", http.StatusCreated
-	for _, r := range raw {
-		var listed struct {
-			ID   int64  `json:"id"`
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal(r, &listed); err != nil {
-			return fmt.Errorf("github: reading the rulesets of %s/%s: %w", repo.Owner, repo.Name, err)
-		}
-		if listed.Name == rs.Name {
-			method, path, want = http.MethodPut, path+"/"+strconv.FormatInt(listed.ID, 10), http.StatusOK
+	for _, l := range listed {
+		if same(l.Name) {
+			method, path, want = http.MethodPut, path+"/"+strconv.FormatInt(l.ID, 10), http.StatusOK
 			break
 		}
 	}
@@ -223,17 +310,22 @@ func (h *host) putRuleset(ctx context.Context, repo ports.Repository, rs ruleset
 }
 
 // ProtectBranch keeps rule for MergePullRequest and fences branch with a
-// ruleset. The rule is kept first: a branch fenced with no rule kept would
-// merge unchecked.
+// ruleset that names it. The rule is kept first: until the ruleset names
+// the new rule, merges into a branch fenced before are refused, never
+// checked against less.
 func (h *host) ProtectBranch(ctx context.Context, repo ports.Repository, branch string, rule ports.BranchRule) error {
 	if err := h.keepBranchRule(ctx, repo, branch, rule); err != nil {
 		return err
 	}
-	return h.putRuleset(ctx, repo, branchRuleset(branch, rule))
+	return h.putRuleset(ctx, repo, branchRuleset(branch, rule), func(name string) bool {
+		_, ok := ruleDigest(name, branch)
+		return ok
+	})
 }
 
 // ProtectTags lets only the repository's administrators push tags matching
 // pattern.
 func (h *host) ProtectTags(ctx context.Context, repo ports.Repository, pattern string) error {
-	return h.putRuleset(ctx, repo, tagRuleset(pattern))
+	rs := tagRuleset(pattern)
+	return h.putRuleset(ctx, repo, rs, func(name string) bool { return name == rs.Name })
 }

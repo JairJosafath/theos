@@ -28,6 +28,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // The fake's side of step 2 of docs/plans/github-host.md (#75) that is no
@@ -38,7 +39,8 @@ import (
 //	                                               pending with no status at all, and failure with an error among them
 //	GET   /repos/{o}/{r}/commits/{ref}/statuses    every status of the commit, newest first
 //	POST  /repos/{o}/{r}/statuses/{sha}            report a status; 422 for a state it has none of, or a description past 140
-//	GET   /repos/{o}/{r}/commits/{ref}/check-runs  the check runs of the commit, as Actions reports its jobs
+//	GET   /repos/{o}/{r}/commits/{ref}/check-runs  the commit's check runs, as Actions reports its jobs: the latest of
+//	                                               each name unless filter=all
 //	GET   /repos/{o}/{r}/rulesets                  the rulesets, without their rules
 //	GET   /repos/{o}/{r}/rulesets/{id}             a ruleset whole
 //	POST  /repos/{o}/{r}/rulesets                  make one; 422 for a rule or an actor GitHub has none of
@@ -46,6 +48,7 @@ import (
 //	GET   /repos/{o}/{r}/actions/variables/{name}  a variable, 404 without it; its name is kept in upper case
 //	POST  /repos/{o}/{r}/actions/variables         make one; 409 when it exists
 //	PATCH /repos/{o}/{r}/actions/variables/{name}  set one's value
+//	DELETE /repos/{o}/{r}/actions/variables/{name} remove one
 //	GET   /repos/{o}/{r}/releases/tags/{tag}       the published release of a tag; a draft is not found there
 //	GET   /repos/{o}/{r}/releases                  every release, drafts too, newest first
 //	PATCH /repos/{o}/{r}/releases/{id}             set a release's body
@@ -55,11 +58,14 @@ import (
 // https://docs.github.com/en/rest/commits/statuses, /rest/checks/runs,
 // /rest/repos/rules, /rest/actions/variables, /rest/releases/releases,
 // /rest/releases/assets and /rest/repos/contents#download-a-repository-archive-zip.
-// A ruleset and a variable are written by a repository's administrator only:
-// another user's token gets 403, as GitHub answers a token without the
-// administration or the variables permission. The fake keeps the rulesets
-// and enforces none: New's user bypasses them all, and what another user's
-// push meets is step 4's.
+// A ruleset is written by a repository's administrator only: another user's
+// token gets 403, as GitHub answers a token without the administration
+// permission. A variable is not: "to create secrets or variables ... through
+// the REST API, you must have collaborator access"
+// (https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-variables),
+// so any of the fake's users writes one. The fake keeps the rulesets and
+// enforces none: New's user bypasses them all, and what another user's push
+// meets is step 4's.
 
 type commitStatus struct {
 	Context     string `json:"context"`
@@ -132,6 +138,14 @@ const (
 	releasesRest  = "/releases"
 )
 
+// The states of a commit status.
+const (
+	stateError   = "error"
+	stateFailure = "failure"
+	statePending = "pending"
+	stateSuccess = "success"
+)
+
 // AddCheckRun reports a check run on a commit, as an Actions job does: its
 // status is queued, in_progress or completed, and a completed one has a
 // conclusion such as success or failure.
@@ -150,8 +164,9 @@ func (s *Server) AddCheckRun(owner, name, sha, run, status, conclusion string) {
 func (s *Server) Rulesets(owner, name string) []Ruleset {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []Ruleset
-	for _, rs := range s.repos[owner+"/"+name].rulesets {
+	kept := s.repos[owner+"/"+name].rulesets
+	out := make([]Ruleset, 0, len(kept))
+	for _, rs := range kept {
 		out = append(out, *rs)
 	}
 	return out
@@ -192,7 +207,7 @@ func (s *Server) hostAPI(w http.ResponseWriter, r *http.Request, kept *repo, res
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost
 	switch {
 	case get && combinedPath.MatchString(rest):
-		s.combinedStatus(w, kept, combinedPath.FindStringSubmatch(rest)[1])
+		s.combinedStatus(w, r, kept, combinedPath.FindStringSubmatch(rest)[1])
 	case get && statusesPath.MatchString(rest):
 		s.listStatuses(w, r, kept, statusesPath.FindStringSubmatch(rest)[1])
 	case get && checkRunsPath.MatchString(rest):
@@ -212,11 +227,11 @@ func (s *Server) hostAPI(w http.ResponseWriter, r *http.Request, kept *repo, res
 		}
 		reply(w, http.StatusOK, s.releaseJSON(kept, kept.releases[i]))
 	case get && rest == releasesRest:
-		all := make([]map[string]any, 0, len(kept.releases))
-		for i := len(kept.releases) - 1; i >= 0; i-- {
-			all = append(all, s.releaseJSON(kept, kept.releases[i]))
+		newest := make([]releaseJSON, 0, len(kept.releases))
+		for _, rel := range slices.Backward(kept.releases) {
+			newest = append(newest, s.releaseJSON(kept, rel))
 		}
-		reply(w, http.StatusOK, page(r.URL.Query(), all))
+		reply(w, http.StatusOK, page(r.URL.Query(), newest))
 	case r.Method == http.MethodPatch && releasePath.MatchString(rest):
 		s.patchRelease(w, r, kept, releasePath.FindStringSubmatch(rest)[1])
 	case get && assetPath.MatchString(rest):
@@ -255,7 +270,7 @@ func latest(statuses []commitStatus) []commitStatus {
 	return out
 }
 
-func (s *Server) combinedStatus(w http.ResponseWriter, kept *repo, ref string) {
+func (s *Server) combinedStatus(w http.ResponseWriter, r *http.Request, kept *repo, ref string) {
 	sha, ok := s.resolve(kept, ref)
 	if !ok {
 		reply(w, http.StatusUnprocessableEntity, message("No commit found for SHA: "+ref))
@@ -264,25 +279,26 @@ func (s *Server) combinedStatus(w http.ResponseWriter, kept *repo, ref string) {
 	statuses := latest(kept.statuses[sha])
 	// GitHub: failure if any context is error or failure, pending if any is
 	// pending or there are none, success otherwise.
-	state := "success"
+	state := stateSuccess
 	if len(statuses) == 0 {
-		state = "pending"
+		state = statePending
 	}
 	for _, st := range statuses {
-		if st.State == "failure" || st.State == "error" {
-			state = "failure"
+		if st.State == stateFailure || st.State == stateError {
+			state = stateFailure
 			break
 		}
-		if st.State == "pending" {
-			state = "pending"
+		if st.State == statePending {
+			state = statePending
 		}
 	}
+	// The state is of every context; the statuses come a page at a time.
 	reply(w, http.StatusOK, struct {
 		State      string         `json:"state"`
 		SHA        string         `json:"sha"`
 		TotalCount int            `json:"total_count"`
 		Statuses   []commitStatus `json:"statuses"`
-	}{state, sha, len(statuses), append([]commitStatus{}, statuses...)})
+	}{state, sha, len(statuses), append([]commitStatus{}, page(r.URL.Query(), statuses)...)})
 }
 
 func (s *Server) listStatuses(w http.ResponseWriter, r *http.Request, kept *repo, ref string) {
@@ -302,7 +318,19 @@ func (s *Server) listCheckRuns(w http.ResponseWriter, r *http.Request, kept *rep
 		reply(w, http.StatusUnprocessableEntity, message("No commit found for SHA: "+ref))
 		return
 	}
+	// filter is latest unless it says all: the newest run of each name.
 	runs := kept.checkRuns[sha]
+	if r.URL.Query().Get("filter") != listAll {
+		var newest []checkRun
+		for _, run := range runs {
+			if i := slices.IndexFunc(newest, func(o checkRun) bool { return o.Name == run.Name }); i >= 0 {
+				newest[i] = run
+			} else {
+				newest = append(newest, run)
+			}
+		}
+		runs = newest
+	}
 	reply(w, http.StatusOK, struct {
 		TotalCount int        `json:"total_count"`
 		CheckRuns  []checkRun `json:"check_runs"`
@@ -312,11 +340,11 @@ func (s *Server) listCheckRuns(w http.ResponseWriter, r *http.Request, kept *rep
 func (s *Server) setStatus(w http.ResponseWriter, r *http.Request, kept *repo, sha string) {
 	var body commitStatus
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
-		!slices.Contains([]string{"error", "failure", "pending", "success"}, body.State) {
+		!slices.Contains([]string{stateError, stateFailure, statePending, stateSuccess}, body.State) {
 		reply(w, http.StatusUnprocessableEntity, message("Validation Failed"))
 		return
 	}
-	if len(body.Description) > 140 {
+	if utf8.RuneCountInString(body.Description) > 140 {
 		reply(w, http.StatusUnprocessableEntity,
 			message("Validation Failed: description is too long (maximum is 140 characters)"))
 		return
@@ -333,7 +361,7 @@ func (s *Server) setStatus(w http.ResponseWriter, r *http.Request, kept *repo, s
 }
 
 // administers answers 403 unless the call is New's user's, and says whether
-// it is: a ruleset and a variable are an administrator's to write.
+// it is: a ruleset is an administrator's to write.
 func (s *Server) administers(w http.ResponseWriter) bool {
 	if s.acting != s.admin {
 		reply(w, http.StatusForbidden, message("Resource not accessible by personal access token"))
@@ -451,9 +479,6 @@ func (s *Server) variablesAPI(w http.ResponseWriter, r *http.Request, kept *repo
 	}
 	switch {
 	case rest == variablesRest && r.Method == http.MethodPost:
-		if !s.administers(w) {
-			return
-		}
 		v, ok := read()
 		if !ok {
 			return
@@ -477,9 +502,6 @@ func (s *Server) variablesAPI(w http.ResponseWriter, r *http.Request, kept *repo
 		case r.Method == http.MethodGet:
 			reply(w, http.StatusNotFound, message("Not Found"))
 		case r.Method == http.MethodPatch:
-			if !s.administers(w) {
-				return
-			}
 			v, ok := read()
 			if !ok {
 				return
@@ -490,6 +512,11 @@ func (s *Server) variablesAPI(w http.ResponseWriter, r *http.Request, kept *repo
 			}
 			kept.variables[name] = v.Value
 			reply(w, http.StatusNoContent, nil)
+		case r.Method == http.MethodDelete && exists:
+			delete(kept.variables, name)
+			reply(w, http.StatusNoContent, nil)
+		case r.Method == http.MethodDelete:
+			reply(w, http.StatusNotFound, message("Not Found"))
 		default:
 			s.notServed(w, r)
 		}
@@ -498,13 +525,33 @@ func (s *Server) variablesAPI(w http.ResponseWriter, r *http.Request, kept *repo
 	}
 }
 
-func (s *Server) releaseJSON(kept *repo, rel *release) map[string]any {
-	assets := make([]map[string]any, 0, len(rel.assets))
+// releaseJSON and assetJSON are a release and its asset as GitHub answers
+// them.
+type releaseJSON struct {
+	ID      int64       `json:"id"`
+	TagName string      `json:"tag_name"`
+	Name    string      `json:"name"`
+	Body    string      `json:"body"`
+	Draft   bool        `json:"draft"`
+	HTMLURL string      `json:"html_url"`
+	Assets  []assetJSON `json:"assets"`
+}
+
+type assetJSON struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Size int    `json:"size"`
+}
+
+func (a *asset) json() assetJSON { return assetJSON{a.id, a.name, len(a.content)} }
+
+func (s *Server) releaseJSON(kept *repo, rel *release) releaseJSON {
+	assets := make([]assetJSON, 0, len(rel.assets))
 	for _, a := range rel.assets {
-		assets = append(assets, map[string]any{"id": a.id, "name": a.name, "size": len(a.content)})
+		assets = append(assets, a.json())
 	}
-	return map[string]any{"id": rel.id, "tag_name": rel.tag, "name": rel.name, "body": rel.body, "draft": rel.draft,
-		"html_url": s.srv.URL + "/" + kept.owner + "/" + kept.name + "/releases/tag/" + rel.tag, "assets": assets}
+	return releaseJSON{rel.id, rel.tag, rel.name, rel.body, rel.draft,
+		s.srv.URL + "/" + kept.owner + "/" + kept.name + "/releases/tag/" + rel.tag, assets}
 }
 
 func (s *Server) patchRelease(w http.ResponseWriter, r *http.Request, kept *repo, id string) {
@@ -537,7 +584,7 @@ func (s *Server) getAsset(w http.ResponseWriter, r *http.Request, kept *repo, id
 			// The content comes only when asked for as a binary; else the
 			// asset's description does.
 			if r.Header.Get("Accept") != "application/octet-stream" {
-				reply(w, http.StatusOK, map[string]any{"id": a.id, "name": a.name, "size": len(a.content)})
+				reply(w, http.StatusOK, a.json())
 				return
 			}
 			w.Header().Set("Content-Type", "application/octet-stream")

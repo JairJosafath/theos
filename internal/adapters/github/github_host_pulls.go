@@ -55,6 +55,11 @@ type ghPull struct {
 	Commits      int `json:"commits"`
 }
 
+// newBody is a call's body that is a text alone: a comment, a release's notes.
+type newBody struct {
+	Body string `json:"body"`
+}
+
 func (h *host) pullPath(repo ports.Repository, number int) string {
 	return h.repoPath(repo) + "/pulls/" + strconv.Itoa(number)
 }
@@ -123,8 +128,12 @@ func (h *host) pull(ctx context.Context, repo ports.Repository, p ghPull) (ports
 // open one of head: GitHub refuses a second with 422.
 func (h *host) OpenPullRequest(ctx context.Context, repo ports.Repository, head, base, title, body string) (
 	ports.PullRequest, error) {
-	status, data, err := h.do(ctx, http.MethodPost, h.repoPath(repo)+"/pulls",
-		map[string]string{"title": title, "head": head, "base": base, "body": body})
+	status, data, err := h.do(ctx, http.MethodPost, h.repoPath(repo)+"/pulls", struct {
+		Title string `json:"title"`
+		Head  string `json:"head"`
+		Base  string `json:"base"`
+		Body  string `json:"body"`
+	}{title, head, base, body})
 	if err != nil {
 		return ports.PullRequest{}, err
 	}
@@ -172,8 +181,7 @@ func (h *host) GetPullRequest(ctx context.Context, repo ports.Repository, number
 // CommentPullRequest adds a comment to a pull request, which on GitHub is a
 // comment on the issue of its number.
 func (h *host) CommentPullRequest(ctx context.Context, repo ports.Repository, number int, body string) error {
-	status, data, err := h.do(ctx, http.MethodPost, h.issuePath(repo, number)+"/comments",
-		map[string]string{"body": body})
+	status, data, err := h.do(ctx, http.MethodPost, h.issuePath(repo, number)+"/comments", newBody{body})
 	if err != nil {
 		return err
 	}
@@ -233,8 +241,12 @@ func (h *host) merge(ctx context.Context, repo ports.Repository, number int, hea
 		}
 	}
 	// sha makes GitHub refuse the merge (409) when the head moved meanwhile.
-	status, data, err := h.do(ctx, http.MethodPut, h.pullPath(repo, number)+"/merge", map[string]string{
-		"commit_title": title, "commit_message": message, "sha": headSHA, "merge_method": "squash"})
+	status, data, err := h.do(ctx, http.MethodPut, h.pullPath(repo, number)+"/merge", struct {
+		Title   string `json:"commit_title"`
+		Message string `json:"commit_message"`
+		SHA     string `json:"sha"`
+		Method  string `json:"merge_method"`
+	}{title, message, headSHA, "squash"})
 	if err != nil {
 		return err
 	}
@@ -421,8 +433,11 @@ func (h *host) ReviewPullRequest(ctx context.Context, repo ports.Repository, num
 	if !ok {
 		return fmt.Errorf("github: reviewing %s: no such review event %q", pullName(repo, number), event)
 	}
-	status, data, err := h.do(ctx, http.MethodPost, h.pullPath(repo, number)+"/reviews",
-		map[string]string{"commit_id": commit, "event": gh, "body": body})
+	status, data, err := h.do(ctx, http.MethodPost, h.pullPath(repo, number)+"/reviews", struct {
+		Commit string `json:"commit_id"`
+		Event  string `json:"event"`
+		Body   string `json:"body"`
+	}{commit, gh, body})
 	if err != nil {
 		return err
 	}

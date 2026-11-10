@@ -89,7 +89,7 @@ Each step is its own issue, names #57 and lands with `make check`.
 | Step | Issue | Depends on | Done when |
 | --- | --- | --- | --- |
 | 1. The fake GitHub, and repositories, files and refs (done) | #74 | | `githubtest` serves repositories, Git over HTTP, refs and tags; the adapter passes the GitHost contract's repository, file, branch and tag subtests, the rest listed in `Cannot` |
-| 2. Pull requests, reviews, merges and statuses | #75 | #74 | the GitHost contract passes whole; `Cannot` is empty or names what GitHub can't do, with why |
+| 2. Pull requests, reviews, merges and statuses (done) | #75 | #74 | the GitHost contract passes whole; `Cannot` is empty or names what GitHub can't do, with why |
 | 3. Issues (done) | #76 | #74 | the Issues contract passes, exclusive labels and refused closes emulated |
 | 4. AgentAccess from a GitHub App | #77 | #75 | the AgentAccess contract passes: a token for one repository, a push to main refused, revoked on removal; a provider with a token alone reports `NeedsGitHubApp` |
 | 5. CI on GitHub Actions | #78 | #75 | the CI contract passes with `JobRunners` in `Cannot`; `model.CI` has `githubActions`, and every Standard renders its workflow for both hosts |
@@ -116,6 +116,93 @@ Each step is its own issue, names #57 and lands with `make check`.
 - "pushes the default branch" is in the contract's `Cannot` until step 2,
   because the subtest ends by pushing past a branch rule; the adapter's own
   test covers the pushes before that point.
+
+## What step 2 found
+
+The GitHost contract passes whole against the fake, with nothing in
+`Cannot`. Getting there settled these:
+
+- **A branch rule is a ruleset and a check the adapter makes.** The ruleset
+  `theos: <branch> (rule <digest>)` fences the branch: the rules `update`,
+  `deletion` and `non_fast_forward`, bypassed by the repository's admin role
+  alone, `pull_request` mode (a merge, never a push) unless the rule says
+  `OperatorPushes`, then `always`. Tags get `theos: tags <pattern>` with
+  `creation`, `update` and `deletion`. So nobody but the operator merges
+  into the branch or pushes to it.
+- **The checks and the protected paths are checked by `MergePullRequest`,**
+  before it merges: no file of the pull request is under a protected path,
+  and every status pattern has a check that passed on the head
+  (`model.UnpassedChecks`, the same matching the controllers use).
+  `ForceMergePullRequest` skips the check. GitHub can't hold either: a
+  ruleset's required checks are exact names where ours are patterns
+  (`check / *`), a path restriction belongs to push rulesets, which refuse
+  the push of the branch itself and exist on some plans only, and the
+  operator bypasses its own ruleset anyway. A person who administers the
+  repository and merges in GitHub's own UI is held to neither; that is the
+  owner's own doing, as it is on any host.
+- **The rule is kept in the Actions variable `THEOS_BRANCH_RULES`, and the
+  ruleset says which rule.** The adapter has to read the rule back at merge
+  time, and a repository variable is the one free-form place GitHub's API
+  gives a repository. It is not an administrator's alone: GitHub lets
+  anyone with write access set a variable through the API. So the
+  ruleset's name, which only an administrator writes, carries the first 12
+  hex digits of the rule's SHA-256, and a variable whose rule is another,
+  or is gone, refuses every merge into that branch until `ProtectBranch`
+  runs again. Weakening the variable stops merges; it never loosens one.
+  `ProtectBranch` writes the variable first, so a call cut short leaves the
+  branch refusing merges, not unchecked.
+- **A check run is a status.** Actions reports each job as a check run under
+  the job's name, and a commit status is what anyone else reports, so
+  `CombinedStatus` and `CommitStatuses` read both as one list by context: a
+  run is pending until completed, then success for `success`, `neutral`
+  and `skipped`, failure for anything else. A commit with no check has no
+  state, where GitHub says `pending`.
+- **`Behind` is asked of the comparison,** `compare/{base}...{head}`'s
+  `behind_by`: `mergeable_state` says `behind` only on a branch whose
+  protection wants branches up to date. `update-branch` answers 202 and
+  moves the head a moment later; "no new commits on the base branch" (422)
+  is no error, a conflict (422) is `ErrConflict`.
+- **A draft release is found in the list.** `releases/tags/{tag}` finds
+  published releases only, so `GetRelease` reads the list for a draft of
+  the tag. `SetReleaseBody` of `""` makes no call: GitHub would empty the
+  notes.
+- **The source comes from the zipball,** which is `git archive`'s zip as
+  Gitea's is, so both adapters read it with `git.ReadArchive`, moved out
+  of the Gitea adapter. A merge deletes the head branch itself, and
+  repositories are made with `delete_branch_on_merge`, whichever comes
+  first.
+- **For step 4: the operator and the agents can't be one App.** A ruleset
+  tells actors apart, not tokens: an installation token minted for an
+  agent is the same App as the operator's, so it would bypass the ruleset
+  the operator bypasses. With a token of a person who administers the
+  repository as the operator, as in this step, the admin role is the
+  bypass actor and an App's tokens for the agents are outside it. When
+  the operator itself runs as an App, the bypass actor is that App
+  (`Integration`, by its id) and the agents need a second one. The agents'
+  tokens need `contents` and `pull_requests` and neither `administration`
+  nor `actions_variables`.
+- **The operator's token needs** `administration` (rulesets), `variables`
+  of Actions, `contents`, `pull_requests`, `statuses` and `checks: read`,
+  for step 9's list of the App's permissions.
+
+What the fake encodes of GitHub's documented behaviour, by the page it is
+taken from (docs.github.com/en/rest/...): `pulls/pulls` (422 for a second
+pull request of a head and for a head with no commits, `mergeable` and the
+size of the change on one pull request only, merge with `sha` answering 409
+on a moved head and 405 on a conflict, `update-branch` 202 and its two
+422s), `pulls/reviews` (422 when the author approves or asks for changes on
+their own pull request, `PENDING` and `DISMISSED` states),
+`commits/statuses` (the combined status pages its statuses, a description
+is at most 140 characters), `checks/runs` (`filter=latest` by default),
+`repos/rules` (the list carries no rules; 403 without administration),
+`actions/variables` (201, 204, 409 for a name taken; collaborator access is
+enough), `releases` (a draft is not found by its tag; an asset's bytes with
+`Accept: application/octet-stream`) and `repos/contents` (the zipball's one
+top directory). Not verified against github.com, which no agent holds a
+credential for: that the admin role's `pull_request` bypass lets a merge
+through the `update` rule, and that variables are served for a repository
+with Actions turned off. Step 9's run on a real organization is where
+those two show.
 
 ## What step 3 found
 

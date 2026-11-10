@@ -155,6 +155,9 @@ func (s *Server) Unserved() []string {
 	return append([]string(nil), s.unserved...)
 }
 
+// listAll is the value of a list's state or filter that leaves nothing out.
+const listAll = "all"
+
 var (
 	gitPath    = regexp.MustCompile(`^/([^/]+)/([^/]+)\.git/`)
 	repoPath   = regexp.MustCompile(`^/api/v3/repos/([^/]+)/([^/]+)(/.*)?$`)

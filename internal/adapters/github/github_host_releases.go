@@ -180,7 +180,7 @@ func (h *host) SetReleaseBody(ctx context.Context, repo ports.Repository, id int
 		return nil
 	}
 	status, data, err := h.do(ctx, http.MethodPatch, h.repoPath(repo)+"/releases/"+strconv.FormatInt(id, 10),
-		map[string]string{"body": body})
+		newBody{body})
 	if err != nil {
 		return err
 	}

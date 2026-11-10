@@ -247,7 +247,7 @@ func (s *Server) milestonesAPI(w http.ResponseWriter, r *http.Request, kept *rep
 		}
 		listed := []*milestone{}
 		for _, m := range kept.milestones {
-			if state == "all" || m.State == state {
+			if state == listAll || m.State == state {
 				listed = append(listed, m)
 			}
 		}
@@ -318,7 +318,7 @@ func (s *Server) issuesList(w http.ResponseWriter, r *http.Request, kept *repo) 
 		inMilestone, _ := strconv.ParseInt(q.Get("milestone"), 10, 64)
 		listed := []map[string]any{}
 		for _, i := range kept.issues {
-			if state != "all" && i.state != state || inMilestone != 0 && i.milestone != inMilestone {
+			if state != listAll && i.state != state || inMilestone != 0 && i.milestone != inMilestone {
 				continue
 			}
 			if slices.ContainsFunc(want, func(l string) bool { return !hasLabel(i, l) }) {

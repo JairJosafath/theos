@@ -85,6 +85,9 @@ var (
 
 const pullsRest = "/pulls"
 
+// approve is the review event that approves.
+const approve = "APPROVE"
+
 // DismissReview dismisses the review with id on a pull request, as a
 // maintainer does: its state becomes DISMISSED.
 func (s *Server) DismissReview(owner, name string, number int, id int64) {
@@ -312,7 +315,7 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, kept *repo) {
 	all := []map[string]any{}
 	for n := 1; n <= len(kept.issues); n++ {
 		p := kept.pulls[n]
-		if p == nil || (state != "all" && p.state != state) || (head != "" && p.head != head) ||
+		if p == nil || (state != listAll && p.state != state) || (head != "" && p.head != head) ||
 			(q.Get("base") != "" && p.base != q.Get("base")) {
 			continue
 		}
@@ -489,7 +492,7 @@ func (s *Server) reviewPull(w http.ResponseWriter, r *http.Request, p *pull) {
 		Event  string `json:"event"`
 		Body   string `json:"body"`
 	}
-	state := map[string]string{"APPROVE": "APPROVED", "REQUEST_CHANGES": "CHANGES_REQUESTED", "COMMENT": "COMMENTED"}
+	state := map[string]string{approve: "APPROVED", "REQUEST_CHANGES": "CHANGES_REQUESTED", "COMMENT": "COMMENTED"}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || state[body.Event] == "" {
 		reply(w, http.StatusUnprocessableEntity, message("Validation Failed"))
 		return
@@ -501,11 +504,11 @@ func (s *Server) reviewPull(w http.ResponseWriter, r *http.Request, p *pull) {
 		}{message("Unprocessable Entity"), []string{text}})
 	}
 	if body.Event != "COMMENT" && s.acting == p.author {
-		invalid(map[string]string{"APPROVE": "Can not approve your own pull request",
+		invalid(map[string]string{approve: "Can not approve your own pull request",
 			"REQUEST_CHANGES": "Can not request changes on your own pull request"}[body.Event])
 		return
 	}
-	if body.Event != "APPROVE" && body.Body == "" {
+	if body.Event != approve && body.Body == "" {
 		invalid("Body is required")
 		return
 	}
