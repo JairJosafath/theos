@@ -184,7 +184,8 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
                 <button
                   type="button"
                   className="button button-secondary button-small"
-                  aria-label={`Stop publishing ${r.container}`}
+                  // The name starts with what the button shows (WCAG 2.5.3, label in name).
+                  aria-label={sending === `remove-${r.container}` ? undefined : `Stop publishing ${r.container}`}
                   disabled={busy}
                   onClick={() =>
                     save(`remove-${r.container}`, {
@@ -193,7 +194,7 @@ function Releases({ brief, act, busy, save, sending }: SettingProps) {
                     })
                   }
                 >
-                  {sending === `remove-${r.container}` ? 'Removing…' : 'Remove'}
+                  {sending === `remove-${r.container}` ? 'Stopping…' : 'Stop publishing'}
                 </button>
               ) : null}
               {act ? (

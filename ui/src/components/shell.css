@@ -116,6 +116,10 @@
   font-weight: 650;
 }
 
+.project-avatar::before {
+  content: attr(data-initial);
+}
+
 .project-text {
   display: flex;
   flex: 1;

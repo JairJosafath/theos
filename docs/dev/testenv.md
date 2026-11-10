@@ -306,7 +306,9 @@ and its tests) too, so a UI change can't merge with what would turn *UI* red
 (#1006). *UI* then runs `npm run test:e2e` as well, the built UI in Chromium
 against a fake API, which `make check` leaves out as a device may have no
 Chromium (theos#31): run `cd ui && npm run test:e2e` for a change to the UI's
-pages, its fixture or its server.
+pages, its fixture or its server, and for an update of its packages: the
+accessibility rules the pages are held to come with axe-core, so a bump can
+turn *UI* red with no page changed (#109).
 
 ## Work on the factory: GitHub issues by hand
 
