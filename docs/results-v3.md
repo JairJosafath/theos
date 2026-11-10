@@ -5,6 +5,9 @@ found on the first day, and what changed because of it. The plan is
 [plans/factory-monitoring.md](plans/done/factory-monitoring.md); evidence is in
 `docs/screenshots/v3-*`.
 
+This is a record of runs on the test rig, a Kind cluster of one node. An
+install is a Kubernetes cluster of your own: [design.md](design.md#why-kubernetes).
+
 ![The factory view, live in Kind, with a stand-in Task's timeline](screenshots/v3-factory-live.png)
 
 ## What there is now
