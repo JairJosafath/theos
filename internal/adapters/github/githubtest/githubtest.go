@@ -32,6 +32,12 @@ limitations under the License.
 //	DELETE /repos/{owner}/{repo}/git/refs/{ref}  delete a ref; 422 when it doesn't exist
 //	POST   /repos/{owner}/{repo}/git/tags        make an annotated tag object
 //
+// in pulls.go, pull requests with their files, commits, reviews, merges and
+// update-branch, and the comparison of two refs; in host.go, commit statuses
+// and check runs, repository rulesets, Actions variables, releases with
+// their assets and the zip of a ref (#75), each file naming its calls and
+// what they answer;
+//
 // and, in issues.go, labels, issues with their comments, assignees and
 // labels, milestones and the dependencies of an issue (blocked_by), as
 // /rest/issues documents them: a list answers 100 a page at most, pull
@@ -40,8 +46,9 @@ limitations under the License.
 //
 // https://docs.github.com/en/rest/repos/repos, /rest/users/users, /rest/branches/branches,
 // /rest/commits/commits, /rest/git/refs and /rest/git/tags. Every call needs
-// the token New was given, as a Bearer token for the API and as the password
-// for Git. What it doesn't serve answers 404, and Unserved lists those calls,
+// the token New was given, or one AddUser made, as a Bearer token for the API
+// and as the password for Git. New's user administers every repository;
+// AddUser's may write to them and no more, as an agent's token does. What it doesn't serve answers 404, and Unserved lists those calls,
 // so a test sees an endpoint the adapter grew that the fake lacks.
 package githubtest
 
@@ -63,16 +70,19 @@ import (
 
 // Server is a fake GitHub instance.
 type Server struct {
-	srv   *httptest.Server
-	token string
+	srv *httptest.Server
+	// tokens are the tokens the instance takes, each with its user's login;
+	// admin is New's user, and acting the user of the call being served.
+	tokens map[string]string
+	admin  string
+	acting string
 	// root holds the bare repositories, as <owner>/<name>.git.
 	root string
 	git  http.Handler
 
 	mu sync.Mutex
-	// orgs are the organizations; user is the account the token is of.
+	// orgs are the organizations.
 	orgs map[string]bool
-	user string
 	// repos holds each repository by owner/name; nextID numbers the issues
 	// across them, as GitHub's ids do.
 	repos    map[string]*repo
@@ -87,6 +97,15 @@ type repo struct {
 	labels      []*label
 	issues      []*issue
 	milestones  []*milestone
+	// What host.go and pulls.go keep: the pull requests by their number, the
+	// statuses and check runs of each commit, oldest first, the rulesets, the
+	// Actions variables and the releases.
+	pulls     map[int]*pull
+	statuses  map[string][]commitStatus
+	checkRuns map[string][]checkRun
+	rulesets  []*Ruleset
+	variables map[string]string
+	releases  []*release
 }
 
 // New starts a fake GitHub that takes token, whose user is user. It skips the
@@ -101,7 +120,8 @@ func New(t *testing.T, user, token string) *Server {
 	if _, err := os.Stat(backend); err != nil {
 		t.Skipf("git has no git-http-backend: %v", err)
 	}
-	s := &Server{token: token, user: user, root: t.TempDir(), orgs: map[string]bool{}, repos: map[string]*repo{}}
+	s := &Server{tokens: map[string]string{token: user}, admin: user, root: t.TempDir(), orgs: map[string]bool{},
+		repos: map[string]*repo{}}
 	s.git = &cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + s.root, "GIT_HTTP_EXPORT_ALL=1"}}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.srv.Close)
@@ -110,6 +130,15 @@ func New(t *testing.T, user, token string) *Server {
 
 // URL is the instance's address: the adapter's spec.url.
 func (s *Server) URL() string { return s.srv.URL }
+
+// AddUser makes another account, with a token of its own: it may read and
+// write every repository, as a collaborator with write access or an agent's
+// token does, and administers none.
+func (s *Server) AddUser(login, token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tokens[token] = login
+}
 
 // AddOrg makes an organization the token's user may make repositories in.
 func (s *Server) AddOrg(name string) {
@@ -137,7 +166,11 @@ var (
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	if m := gitPath.FindStringSubmatch(r.URL.Path); m != nil {
-		if _, password, ok := r.BasicAuth(); !ok || password != s.token {
+		_, password, ok := r.BasicAuth()
+		s.mu.Lock()
+		_, known := s.tokens[password]
+		s.mu.Unlock()
+		if !ok || !known {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			http.Error(w, "Bad credentials", http.StatusUnauthorized)
 			return
@@ -145,19 +178,21 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.git.ServeHTTP(w, r)
 		return
 	}
-	if r.Header.Get("Authorization") != "Bearer "+s.token {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, known := s.tokens[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+	if !known || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 		reply(w, http.StatusUnauthorized, message("Bad credentials"))
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.acting = user
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v3/user":
 		reply(w, http.StatusOK, struct {
 			Login string `json:"login"`
-		}{s.user})
+		}{s.acting})
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v3/user/repos":
-		s.createRepo(w, r, s.user)
+		s.createRepo(w, r, s.acting)
 	case r.Method == http.MethodPost && orgRepos.MatchString(r.URL.Path):
 		org := orgRepos.FindStringSubmatch(r.URL.Path)[1]
 		if !s.orgs[org] {
@@ -234,6 +269,7 @@ func (s *Server) gitIn(owner, name string, args ...string) (string, error) {
 	//nolint:gosec // a test fake running git on its own temporary repositories
 	cmd := exec.Command("git", append([]string{"-C", s.dir(owner, name)}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_COMMITTER_NAME=github", "GIT_COMMITTER_EMAIL=noreply@github.test",
+		"GIT_AUTHOR_NAME=github", "GIT_AUTHOR_EMAIL=noreply@github.test",
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
@@ -275,7 +311,8 @@ func (s *Server) createRepo(w http.ResponseWriter, r *http.Request, owner string
 			return
 		}
 	}
-	s.repos[key] = &repo{owner: owner, name: body.Name, description: body.Description}
+	s.repos[key] = &repo{owner: owner, name: body.Name, description: body.Description, pulls: map[int]*pull{},
+		statuses: map[string][]commitStatus{}, checkRuns: map[string][]checkRun{}, variables: map[string]string{}}
 	reply(w, http.StatusCreated, s.repoJSON(owner, body.Name))
 }
 
@@ -301,7 +338,7 @@ func (s *Server) repo(w http.ResponseWriter, r *http.Request, owner, name, rest 
 		reply(w, http.StatusNotFound, message("Not Found"))
 		return
 	}
-	if s.issuesAPI(w, r, kept, rest) {
+	if s.hostAPI(w, r, kept, rest) || s.pullsAPI(w, r, kept, rest) || s.issuesAPI(w, r, kept, rest) {
 		return
 	}
 	switch {

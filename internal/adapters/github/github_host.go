@@ -33,10 +33,12 @@ import (
 )
 
 // The GitHub side of the GitHost port (docs/plans/github-host.md). Step 1
-// (#74) is here: repositories, files, branches and tags; the Issues port,
-// step 3 (#76), is in github_host_issues.go. Pull requests,
-// reviews, merges, statuses, branch rules and releases are step 2 (#75), and
-// until then answer ErrNotYet. No GitProvider reaches this before step 8.
+// (#74) is here: repositories, files, branches and tags. Step 2 (#75) is the
+// rest of the port: pull requests, reviews and merges in
+// github_host_pulls.go, branch and tag rules in github_host_rules.go,
+// statuses in github_host_status.go, releases and the source at a tag in
+// github_host_releases.go. The Issues port, step 3 (#76), is in
+// github_host_issues.go. No GitProvider reaches this before step 8.
 
 // GitHubWebURL is github.com, where a GitProvider's spec.url means the public
 // GitHub; any other URL is a GitHub Enterprise Server.
@@ -45,14 +47,6 @@ const GitHubWebURL = "https://github.com"
 // gitUsername is the user name GitHub takes with a token as the password
 // over Git: a personal token's and an installation token's alike.
 const gitUsername = "x-access-token"
-
-// ErrNotYet is the answer of a GitHost method the GitHub adapter doesn't have
-// yet; its message names the step of docs/plans/github-host.md that adds it.
-var ErrNotYet = errors.New("github: not built yet")
-
-func notYet(method string) error {
-	return fmt.Errorf("%w: %s comes with step 2 of docs/plans/github-host.md", ErrNotYet, method)
-}
 
 // host is the GitHost of one owner, an organization or the token's user, on
 // github.com or a GitHub Enterprise Server.
@@ -182,8 +176,10 @@ func (h *host) EnsureRepository(ctx context.Context, name, description string) (
 	default:
 		return ports.Repository{}, failed("reading repository "+h.owner+"/"+name, status, data)
 	}
-	// No auto_init: the operator's first push is the repository's first commit.
-	create := map[string]any{"name": name, "description": description, "private": true, "auto_init": false}
+	// No auto_init: the operator's first push is the repository's first
+	// commit. Merges are squashes, and a merged branch goes with its merge.
+	create := map[string]any{"name": name, "description": description, "private": true, "auto_init": false,
+		"allow_squash_merge": true, "delete_branch_on_merge": true}
 	status, data, err = h.do(ctx, http.MethodPost, "/orgs/"+url.PathEscape(h.owner)+"/repos", create)
 	if err == nil && status == http.StatusNotFound {
 		// The owner is no organization the token sees. It may be the token's
@@ -389,87 +385,4 @@ func (h *host) CreateTag(ctx context.Context, repo ports.Repository, tag, commit
 		return fmt.Errorf("github: creating the tag object %s: no sha in the answer", tag)
 	}
 	return h.createRef(ctx, repo, "refs/tags/"+tag, object.SHA)
-}
-
-// Step 2 (#75): until it lands, these answer ErrNotYet.
-
-func (*host) ProtectBranch(context.Context, ports.Repository, string, ports.BranchRule) error {
-	return notYet("ProtectBranch")
-}
-
-func (*host) ProtectTags(context.Context, ports.Repository, string) error {
-	return notYet("ProtectTags")
-}
-
-func (*host) CombinedStatus(context.Context, ports.Repository, string) (ports.CheckStatus, error) {
-	return ports.CheckStatus{}, notYet("CombinedStatus")
-}
-
-func (*host) CommitStatuses(context.Context, ports.Repository, string) ([]ports.CommitStatus, error) {
-	return nil, notYet("CommitStatuses")
-}
-
-func (*host) SetCommitStatus(context.Context, ports.Repository, string, ports.CommitStatus) error {
-	return notYet("SetCommitStatus")
-}
-
-func (*host) OpenPullRequest(context.Context, ports.Repository, string, string, string, string) (ports.PullRequest,
-	error) {
-	return ports.PullRequest{}, notYet("OpenPullRequest")
-}
-
-func (*host) GetPullRequest(context.Context, ports.Repository, int) (ports.PullRequest, error) {
-	return ports.PullRequest{}, notYet("GetPullRequest")
-}
-
-func (*host) CommentPullRequest(context.Context, ports.Repository, int, string) error {
-	return notYet("CommentPullRequest")
-}
-
-func (*host) MergePullRequest(context.Context, ports.Repository, int, string, string, string) error {
-	return notYet("MergePullRequest")
-}
-
-func (*host) ForceMergePullRequest(context.Context, ports.Repository, int, string, string, string) error {
-	return notYet("ForceMergePullRequest")
-}
-
-func (*host) UpdatePullRequest(context.Context, ports.Repository, int) error {
-	return notYet("UpdatePullRequest")
-}
-
-func (*host) PullRequestFiles(context.Context, ports.Repository, int) ([]string, error) {
-	return nil, notYet("PullRequestFiles")
-}
-
-func (*host) PullRequestCommits(context.Context, ports.Repository, int) ([]ports.PullCommit, error) {
-	return nil, notYet("PullRequestCommits")
-}
-
-func (*host) ClosePullRequest(context.Context, ports.Repository, int) error {
-	return notYet("ClosePullRequest")
-}
-
-func (*host) ReviewPullRequest(context.Context, ports.Repository, int, string, string, string) error {
-	return notYet("ReviewPullRequest")
-}
-
-func (*host) PullRequestReviews(context.Context, ports.Repository, int) ([]ports.PullReview, error) {
-	return nil, notYet("PullRequestReviews")
-}
-
-func (*host) GetRelease(context.Context, ports.Repository, string) (*ports.Release, error) {
-	return nil, notYet("GetRelease")
-}
-
-func (*host) OpenReleaseAsset(context.Context, ports.Repository, ports.ReleaseAsset) (io.ReadCloser, int64, error) {
-	return nil, 0, notYet("OpenReleaseAsset")
-}
-
-func (*host) SetReleaseBody(context.Context, ports.Repository, int64, string) error {
-	return notYet("SetReleaseBody")
-}
-
-func (*host) ReadSource(context.Context, ports.Repository, string, func(ports.SourceFile, io.Reader) error) error {
-	return notYet("ReadSource")
 }

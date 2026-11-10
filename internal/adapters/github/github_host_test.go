@@ -33,13 +33,10 @@ import (
 
 const hostToken = "ghs_contract"
 
-// step2 is why a GitHost subtest can't run yet: what it needs is step 2 of
-// docs/plans/github-host.md (#75).
-const step2 = "step 2 of docs/plans/github-host.md (#75)"
-
-// TestGitHostContract covers #74: the GitHub adapter passes the GitHost
-// contract's repository, file, branch and tag subtests against the fake
-// GitHub, each in an organization of its own; the rest wait for step 2.
+// TestGitHostContract covers #74 and #75: the GitHub adapter passes the whole
+// GitHost contract against the fake GitHub, each subtest in an organization
+// of its own. A check is reported as Actions reports a job, a check run, and
+// a release is made as a release run makes it.
 func TestGitHostContract(t *testing.T) {
 	gh := githubtest.New(t, "ada", hostToken)
 	orgs := 0
@@ -56,19 +53,22 @@ func TestGitHostContract(t *testing.T) {
 			}
 			return h
 		},
-		Cannot: map[string]string{
-			// Its pushes are the same Git calls as a branch's; it ends by
-			// pushing past a branch rule.
-			"pushes the default branch":                             step2 + ": it ends with a branch rule",
-			"protects branches and tags again":                      step2,
-			"opens and merges a pull request":                       step2,
-			"refuses a merge past the rule and forces it":           step2,
-			"updates a pull request, or reports a conflict":         step2,
-			"lists a pull request's files, a rename's old path too": step2,
-			"combines the statuses of a commit":                     step2,
-			"reads a release and its asset":                         step2,
-			"reads the source at a tag":                             step2,
+		SetStatus: func(t *testing.T, repo ports.Repository, commit, context, state string) {
+			t.Helper()
+			status, conclusion := "completed", state
+			if state == ports.CheckPending {
+				status, conclusion = "in_progress", ""
+			}
+			gh.AddCheckRun(repo.Owner, repo.Name, commit, context, status, conclusion)
 		},
+		Release: func(t *testing.T, repo ports.Repository, tag, commit, body, asset, content string) {
+			t.Helper()
+			if err := gh.AddRelease(repo.Owner, repo.Name, tag, commit, body, asset, content, false); err != nil {
+				t.Fatal(err)
+			}
+		},
+		// GitHub can do all of it: nothing is skipped.
+		Cannot: map[string]string{},
 	})
 	if calls := gh.Unserved(); len(calls) > 0 {
 		t.Errorf("the adapter made calls the fake GitHub doesn't serve: %q", calls)
@@ -157,7 +157,7 @@ func TestGitHostOnGitHub(t *testing.T) {
 }
 
 // TestGitHostRefsOnGitHub covers the default branch's pushes before any
-// rule, a commit's tree, annotated tags, and what isn't built yet (#74).
+// rule, a commit's tree and annotated tags (#74).
 func TestGitHostRefsOnGitHub(t *testing.T) {
 	ctx := context.Background()
 	gh := githubtest.New(t, "ada", hostToken)
@@ -219,13 +219,6 @@ func TestGitHostRefsOnGitHub(t *testing.T) {
 		}
 		if got, _ := h.GetTag(ctx, repo, "v1.0.0"); got != head {
 			t.Errorf("the tag moved to %s", got)
-		}
-	})
-
-	t.Run("what step 2 brings says so", func(t *testing.T) {
-		_, err := h.OpenPullRequest(ctx, repo, "task/a", ports.DefaultBranch, "t", "b")
-		if !errors.Is(err, ErrNotYet) || !strings.Contains(err.Error(), "OpenPullRequest comes with step 2") {
-			t.Errorf("OpenPullRequest() = %v, want ErrNotYet naming the step", err)
 		}
 	})
 
