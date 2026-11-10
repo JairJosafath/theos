@@ -17,6 +17,7 @@ limitations under the License.
 package github
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -37,10 +38,15 @@ import (
 )
 
 // fakeGitHubIssues is GitHub's issues API for fakeGitHubRepo and its teams'
-// memberships. It fails the test on any other request or a missing token.
+// memberships. A token it doesn't know is a 401, another repository a 404,
+// and it fails the test on any other request.
 type fakeGitHubIssues struct {
 	errorf func(format string, args ...any)
-	token  string
+	// url is where it listens, and token the token that may do all of it.
+	url, token string
+	// lacks holds the tokens that may not use the issues (lacksIssues) or
+	// read a team's members (lacksMembers).
+	lacks map[string]string
 
 	mu sync.Mutex
 	// issues holds issues and pull requests, oldest first, open and closed.
@@ -55,6 +61,12 @@ type fakeGitHubIssues struct {
 	fail func(w http.ResponseWriter, r *http.Request)
 }
 
+// What a token in fakeGitHubIssues.lacks may not do.
+const (
+	lacksIssues  = "issues"
+	lacksMembers = "members"
+)
+
 type githubIssueState struct {
 	githubIssue
 	State       string
@@ -63,10 +75,11 @@ type githubIssueState struct {
 
 func newFakeGitHubIssues(t *testing.T) (*fakeGitHubIssues, ports.IssueTracker) {
 	t.Helper()
-	f := &fakeGitHubIssues{errorf: t.Errorf, token: rand.Text(), comments: map[int][]githubComment{},
-		members: map[string]map[string]string{}, nextID: 1000}
+	f := &fakeGitHubIssues{errorf: t.Errorf, token: rand.Text(), lacks: map[string]string{},
+		comments: map[int][]githubComment{}, members: map[string]map[string]string{}, nextID: 1000}
 	srv := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(srv.Close)
+	f.url = srv.URL
 	tracker, err := Client{}.GitHubIssues(ports.GitHubConfig{Repository: fakeGitHubRepo, Token: f.token, APIURL: srv.URL})
 	if err != nil {
 		t.Fatalf("GitHubIssues() error = %v", err)
@@ -76,10 +89,15 @@ func newFakeGitHubIssues(t *testing.T) (*fakeGitHubIssues, ports.IssueTracker) {
 
 // open adds an open issue, or a pull request, by author.
 func (f *fakeGitHubIssues) open(title, author string, pull bool) int {
+	return f.file(title, "body of "+title, author, pull)
+}
+
+// file adds an open issue, or a pull request, by author with body.
+func (f *fakeGitHubIssues) file(title, body, author string, pull bool) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n := len(f.issues) + 1
-	i := githubIssue{Number: n, Title: title, Body: "body of " + title, User: githubUser{Login: author},
+	i := githubIssue{Number: n, Title: title, Body: body, User: githubUser{Login: author},
 		HTMLURL: fmt.Sprintf("https://github.com/%s/issues/%d", fakeGitHubRepo, n),
 		Created: time.Date(2026, 10, 9, 0, 0, n, 0, time.UTC)}
 	if pull {
@@ -108,8 +126,10 @@ func (f *fakeGitHubIssues) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, strings.TrimSpace(r.Method+" "+r.URL.RequestURI()+" "+r.Header.Get("If-None-Match")))
-	if got := r.Header.Get("Authorization"); got != "Bearer "+f.token {
-		f.errorf("request %s %s has Authorization %q", r.Method, r.URL.Path, got)
+	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if _, limited := f.lacks[token]; token != f.token && !limited {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "Bad credentials"})
+		return
 	}
 	if f.fail != nil {
 		f.fail(w, r)
@@ -118,28 +138,17 @@ func (f *fakeGitHubIssues) serve(w http.ResponseWriter, r *http.Request) {
 	issues := "/repos/" + fakeGitHubRepo + "/issues"
 	path := r.URL.Path
 	switch {
+	case f.lacks[token] == lacksIssues && strings.HasPrefix(path, "/repos/"),
+		f.lacks[token] == lacksMembers && strings.HasPrefix(path, "/orgs/"):
+		writeJSON(w, http.StatusForbidden,
+			map[string]string{"message": "Resource not accessible by personal access token"})
+	case strings.HasPrefix(path, "/repos/") && !strings.HasPrefix(path, "/repos/"+fakeGitHubRepo+"/"):
+		// Another repository: none the token can see.
+		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 	case path == "/user" && r.Method == http.MethodGet:
 		writeJSON(w, http.StatusOK, githubUser{Login: "Theos-Bot"})
 	case path == issues && r.Method == http.MethodGet:
-		q := r.URL.Query()
-		if q.Get("state") != "open" || q.Get("sort") != "created" || q.Get("direction") != "asc" {
-			f.errorf("listing issues with %s", r.URL.RawQuery)
-		}
-		var open []githubIssue
-		for _, i := range f.issues {
-			if i.State == "open" {
-				open = append(open, i.githubIssue)
-			}
-		}
-		items := page(r, open)
-		etag := etagOf(items)
-		if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
-			w.Header().Set("ETag", etag)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, items)
+		f.list(w, r)
 	case strings.HasPrefix(path, issues+"/"):
 		rest := strings.Split(strings.TrimPrefix(path, issues+"/"), "/")
 		n, _ := strconv.Atoi(rest[0])
@@ -150,9 +159,7 @@ func (f *fakeGitHubIssues) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		switch {
 		case len(rest) == 1 && r.Method == http.MethodPatch:
-			var in map[string]string
-			_ = json.NewDecoder(r.Body).Decode(&in)
-			issue.State, issue.StateReason = in["state"], in["state_reason"]
+			issue.patch(r)
 			writeJSON(w, http.StatusOK, issue.githubIssue)
 		case len(rest) == 2 && rest[1] == "comments" && r.Method == http.MethodGet:
 			writeJSON(w, http.StatusOK, page(r, f.comments[n]))
@@ -185,6 +192,52 @@ func (f *fakeGitHubIssues) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		f.errorf("unexpected request %s %s", r.Method, path)
 		http.NotFound(w, r)
+	}
+}
+
+// list answers a page of the issues as GitHub lists them: the open ones, the
+// newest first, unless the query says otherwise.
+func (f *fakeGitHubIssues) list(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if sort := q.Get("sort"); sort != "" && sort != "created" {
+		f.errorf("listing issues with %s", r.URL.RawQuery)
+	}
+	state := cmp.Or(q.Get("state"), "open")
+	var listed []githubIssue
+	for _, i := range f.issues {
+		if state == "all" || i.State == state {
+			listed = append(listed, i.githubIssue)
+		}
+	}
+	if q.Get("direction") != "asc" {
+		slices.Reverse(listed)
+	}
+	items := page(r, listed)
+	etag := etagOf(items)
+	w.Header().Set("ETag", etag)
+	if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// patch changes the fields r sends and no other, an issue's text among them.
+func (i *githubIssueState) patch(r *http.Request) {
+	var in struct {
+		State       *string `json:"state"`
+		StateReason string  `json:"state_reason"`
+		Title, Body *string
+	}
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	if in.State != nil {
+		i.State, i.StateReason = *in.State, in.StateReason
+	}
+	if in.Title != nil {
+		i.Title = *in.Title
+	}
+	if in.Body != nil {
+		i.Body = *in.Body
 	}
 }
 

@@ -107,7 +107,9 @@ const (
 )
 
 // IssueTracker is the issues of a repository on GitHub. It never reads a
-// pull request, and never edits an issue's text.
+// pull request, and never edits an issue's text. What a Brief relies on of
+// every adapter is the suite contract.IssueTracker
+// (internal/ports/contract/intake.go), which each adapter's tests run.
 type IssueTracker interface {
 	// ListOpenIssues returns the open issues. Given the ETag of the last list,
 	// it asks with If-None-Match, which an unchanged list answers with a 304
