@@ -1,0 +1,95 @@
+{{- /*
+  .Checks picks the workflow: EveryChange (or empty) runs make check on every
+  change; BeforeRelease runs make check-light on every change and make check,
+  in the job "check (full)", on a push to a release-check/** branch.
+  {{`${{ … }}`}} writes a GitHub Actions expression as is.
+*/ -}}
+{{- $beforeRelease := eq .Checks "BeforeRelease" -}}
+{{- define "job" }}
+    # GitHub's own runners take the job unless the organization names others,
+    # and they run it in the factory's toolchain image, the one the agents
+    # work in. Both are Actions variables of the organization, which the
+    # operator sets from the GitProvider.
+    runs-on: {{`${{ vars.THEOS_CI_RUNS_ON || 'ubuntu-latest' }}`}}
+    container: {{`${{ vars.THEOS_CI_IMAGE_BASE }}`}}
+    timeout-minutes: 60
+    steps:
+      - name: The toolchain image is named
+        if: {{`${{ vars.THEOS_CI_IMAGE_BASE == '' }}`}}
+        run: |
+          echo "::error::The Actions variable THEOS_CI_IMAGE_BASE names no image. make check runs in the factory's toolchain image, which the operator names for the organization."
+          exit 1
+      - name: Check out
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+{{- end -}}
+{{- if $beforeRelease -}}
+# Runs the light check, make check-light, on every pull request and on main,
+# and the full check, make check, on a push to a release-check/** branch: the
+# commit a release will be tagged at. The rule of main requires a passing
+# check whose name starts with "check" before a merge.
+{{- else -}}
+# Runs the quality contract on every pull request and on main. The rule of
+# main requires a passing check whose name starts with "check" before a merge.
+{{- end }}
+name: check
+
+on:
+  push:
+    branches: [main{{ if $beforeRelease }}, "release-check/**"{{ end }}]
+  pull_request:
+
+# The job reads the repository and nothing else of it.
+permissions:
+  contents: read
+
+# A newer push to a pull request or a branch ends the run of the older one.
+concurrency:
+  group: {{`${{ github.workflow }}-${{ github.ref }}`}}
+  cancel-in-progress: {{`${{ github.ref != 'refs/heads/main' }}`}}
+
+jobs:
+  check:
+    # The check a merge waits for is this job's name.
+    name: check
+{{- if $beforeRelease }}
+    if: {{`${{ !startsWith(github.ref, 'refs/heads/release-check/') }}`}}
+{{- end }}
+{{- template "job" }}
+      # A change to only the changelog, docs/ or images has nothing for the
+      # steps below to verify: the job passes without them, so the required
+      # check still reports and the change merges. Any other file, a first
+      # push, or a base git can't fetch or compare runs them as always.
+      - name: What the change touches
+        id: changes
+        env:
+          BASE: {{`${{ github.event.pull_request.base.sha || github.event.before }}`}}
+        run: |
+          code=true
+          case $BASE in
+          *[!0]*)
+            if git fetch -q --depth 1 origin "$BASE" &&
+              files=$(git diff --no-renames --name-only "$BASE" HEAD) && [ -n "$files" ] &&
+              ! printf '%s\n' "$files" | grep -qvE '^CHANGELOG\.md$|^docs/|\.(png|jpg|gif|svg)$'; then
+              code=false
+              echo "Only the changelog, docs/ or images changed; skipping the checks."
+            fi
+            ;;
+          esac
+          echo "code=$code" >>"$GITHUB_OUTPUT"
+{{- if $beforeRelease }}
+      - name: make check-light
+        if: steps.changes.outputs.code == 'true'
+        run: make check-light
+  # The full check, on the commit a release will be tagged at: always, whatever
+  # the commit changes since the branch's previous push.
+  full:
+    name: check (full)
+    if: startsWith(github.ref, 'refs/heads/release-check/')
+{{- template "job" }}
+      - name: make check
+        run: make check
+{{- else }}
+      - name: make check
+        if: steps.changes.outputs.code == 'true'
+        run: make check
+{{- end }}

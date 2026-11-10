@@ -1,0 +1,61 @@
+---
+name: Task
+about: One piece of work an agent can finish in one pull request, with acceptance criteria
+title: ""
+labels: ["status/proposed"]
+---
+
+<!--
+The factory picks up an issue only when it is labelled status/ready, its
+dependencies are closed, and its "Acceptance criteria" section holds at least
+one unchecked checklist item. Without one, it labels the issue
+status/needs-human and comments, before any agent runs.
+
+Size it for one pull request: a few files, one concern.
+-->
+
+## Context
+
+<!-- Why this matters: the need of the system it serves (from the C4 story) and what exists today. -->
+
+## Goal
+
+<!-- One paragraph: what is true when this is done. -->
+
+## Acceptance criteria
+
+<!--
+Observable, testable outcomes, one unchecked checklist item each. Each becomes
+a test, and the reviewer reports each one as met or not met. For example:
+{{ if eq .Framework "aws-queue-ts" -}}
+a message `{"id": "lamp-1", "delete": true}` deletes the item, a later message
+for `lamp-1` stores it again, and the function's role may delete items but
+still not scan the table.
+{{- else if eq .Framework "aws-schedule-ts" -}}
+a run at 03:00 UTC records its scheduled time and when it finished, a
+run delivered twice for the same scheduled time is recorded once, and the
+function's role may put runs but still not delete them.
+{{- else if eq .Framework "aws-event-ts" -}}
+an `ItemSubmitted` event whose item has a quantity of 0 deletes the item, a
+later event for the same item stores it again, and the function's role may
+delete items but still not scan the table.
+{{- else if eq .Framework "aws-static-site-ts" -}}
+a name of only spaces gets the plain greeting, and the page says so in its
+`aria-live` paragraph.
+{{- else -}}
+`DELETE /items/{id}` answers 204 and a later `GET` answers 404, and the
+{{ if eq .Framework "aws-ec2-ts" }}instances'{{ else if eq .Framework "aws-fargate-ts" }}task's{{ else }}function's{{ end }} role may delete items but still not scan the table.
+{{- end }}
+-->
+
+## Out of scope
+
+<!-- What this issue doesn't do, so it stays one pull request. -->
+
+## Notes
+
+<!-- Pointers: files, modules, routes, AWS services and CDK constructs, docs, libraries to use, known pitfalls. -->
+
+## Dependencies
+
+<!-- Issues that must be closed first. Add them under "Blocked by" in the sidebar too: the factory reads those, not this text. -->

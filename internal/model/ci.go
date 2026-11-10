@@ -112,6 +112,10 @@ func AdoptedChecks(required []string, contexts map[string]string) (ok bool, mess
 // CIGiteaActions names Gitea Actions, the CI system of a Gitea host.
 const CIGiteaActions = "giteaActions"
 
+// CIGitHubActions names GitHub Actions, the CI system of a GitHub host
+// (docs/plans/github-host.md, step 5).
+const CIGitHubActions = "githubActions"
+
 // ciSystems are the CI systems the factory knows, by name.
 var ciSystems = map[string]CI{
 	// Gitea Actions reports a context per workflow, job and event, such as
@@ -120,11 +124,33 @@ var ciSystems = map[string]CI{
 	// looks first.
 	CIGiteaActions: {Name: CIGiteaActions, CheckContexts: []string{"check*"}, ProtectedPaths: []string{".gitea/"},
 		FallbackPaths: []string{".github/workflows/"}},
+	// GitHub Actions reports each job as a check run under the job's name,
+	// such as "check", whatever the event, and reads .github/workflows/ and
+	// nowhere else. All of .github/ is the platform's there: the issue and
+	// pull request templates and the code owners beside the workflows.
+	CIGitHubActions: {Name: CIGitHubActions, CheckContexts: []string{"check*"}, ProtectedPaths: []string{".github/"}},
 }
 
 // hostCI is each Git host's own CI system, which a Container uses unless its
 // GitProvider names another.
-var hostCI = map[string]string{"gitea": CIGiteaActions}
+var hostCI = map[string]string{"gitea": CIGiteaActions, "github": CIGitHubActions}
+
+// Dir is the folder the CI system reads in a repository, such as .github/:
+// where its workflows and its issue and pull request templates are. A
+// template names it as {{ .CI.Dir }}; "" for a system that reads none.
+func (ci CI) Dir() string {
+	for _, p := range ci.ProtectedPaths {
+		if strings.HasSuffix(p, "/") {
+			return p
+		}
+	}
+	return ""
+}
+
+// CINames names the CI systems the factory knows, sorted.
+func CINames() []string {
+	return slices.Sorted(maps.Keys(ciSystems))
+}
 
 // CIByName returns the CI system name names.
 func CIByName(name string) (CI, error) {

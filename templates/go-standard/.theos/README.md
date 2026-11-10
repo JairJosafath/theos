@@ -57,6 +57,18 @@ issue and pull request templates, and the `make check` contract CI runs.
   `docs/style/` and `docs/agents/` in the catalog entry's `protectedPaths`;
   `.gitea/` is always protected.
 
+## CI systems
+
+`.theos/ci/` keeps the files of each CI system, and a Container gets its own
+host's: `giteaActions/` writes `.gitea/`, `githubActions/` writes `.github/`
+(the same `make check`, the same issue and pull request templates). On GitHub
+Actions the job is named `check` (and `check (full)` with checks before a
+release), which is the check main requires; it runs on the runner the
+organization's Actions variable `THEOS_CI_RUNS_ON` names (`ubuntu-latest`
+without one) and in the toolchain image `THEOS_CI_IMAGE_GO` names, which the operator
+sets: GitHub's own runners carry none of the factory's toolchain. `.github/`
+is always protected there, as `.gitea/` is on Gitea.
+
 ## How a template works
 
 Everything in this repository is copied into the new Container repository at the

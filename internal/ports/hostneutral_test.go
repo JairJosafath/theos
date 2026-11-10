@@ -187,7 +187,7 @@ var giteaAllowlist = map[string]int{
 	"internal/ports/githost_test.go":                              9,
 	"internal/scaffold/check_skip_test.go":                        2,
 	"internal/scaffold/checks_test.go":                            3,
-	"internal/scaffold/ci_test.go":                                30,
+	"internal/scaffold/ci_test.go":                                29,
 	"internal/scaffold/scaffold.go":                               1,
 	"internal/scaffold/templates_test.go":                         107,
 	"internal/scaffold/update_test.go":                            8,
