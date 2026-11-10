@@ -55,6 +55,20 @@ check "  the CRDs become the baseline" "$(ls "$T/bump/test/compat/baseline")" th
 check "  bump empties dropped.txt's entries" "$(grep -vc '^#' "$T/bump/test/compat/dropped.txt")" 0
 check "  and keeps its comments" "$(grep -c '^#' "$T/bump/test/compat/dropped.txt")" 3
 
+# #53: the quickstart installs the release it shipped with, so --check holds
+# it to the tag and --bump moves it; a tree without one is as before.
+tree "$T/quick" 1.2.0
+mkdir -p "$T/quick/hack"
+printf '#!/usr/bin/env bash\nVERSION=${THEOS_VERSION:-1.1.0}\nVERSION_OF_SOMETHING_ELSE=9\n' >"$T/quick/hack/quickstart.sh"
+ROOT=$T/quick "$RELEASE" --check v1.2.0 2>"$T/err"
+check "--check: a quickstart that installs another release is refused (#53)" $? 1
+check "  and named" "$(grep -c 'hack/quickstart.sh installs 1.1.0, not 1.2.0' "$T/err")" 1
+ROOT=$T/quick "$RELEASE" --bump 1.3.0
+check "--bump: moves the quickstart with the chart (#53)" "$(sed -n 2p "$T/quick/hack/quickstart.sh")" 'VERSION=${THEOS_VERSION:-1.3.0}'
+check "  and leaves its other lines" "$(sed -n 3p "$T/quick/hack/quickstart.sh")" 'VERSION_OF_SOMETHING_ELSE=9'
+ROOT=$T/quick "$RELEASE" --check v1.3.0
+check "  and --check agrees" $? 0
+
 # The release command: a bare origin with main at 1.2.0, a clone, and a fake gh
 # whose pr merge merges the branch into origin's main with a merge commit.
 git init --quiet --bare -b main "$T/origin.git"

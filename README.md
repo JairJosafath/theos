@@ -140,7 +140,31 @@ for developing the factory itself.
 [ROADMAP.md](ROADMAP.md) has the release train, the milestones and what 1.0
 means.
 
-## Try it
+## Quickstart
+
+With Docker running, on Linux, macOS or WSL, from a clone at a release's tag:
+
+```sh
+hack/quickstart.sh
+```
+
+It makes a Kind cluster of its own, installs Agent Sandbox and the release's
+chart (the operator, the UI, Gitea and its CI runners), and gives the
+stand-in Agent a Brief, so the whole loop runs with no model and no token:
+a plan, a scaffolded repository, an issue, a change, CI, a review, a merge.
+Then it opens the UI on <http://localhost:8080>. It needs about 4 CPUs and
+8 GiB free, uses a kubeconfig of its own and never yours, and downloads
+`kind`, `kubectl` and `helm` only when they aren't on your PATH, checked
+against pinned checksums. `hack/quickstart.sh --down` removes all of it.
+
+While the chart and the images on GHCR are private, give it a GitHub user
+and a token with `read:packages`: `GHCR_USER=you GHCR_TOKEN=... hack/quickstart.sh`.
+
+[docs/getting-started.md](docs/getting-started.md) goes on from there: real
+agents with a Claude token, a model and a Crew of your own, releases and
+deploys.
+
+## Develop the factory
 
 Clone the repository on Linux or WSL and open it in VS Code: `./dev setup` downloads
 Go, kubebuilder, Kind, kubectl, Helm, uv and Node into `.dev/`, and Kind runs on

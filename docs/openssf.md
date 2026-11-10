@@ -19,7 +19,7 @@ because the form asks for them.
 | Criterion | Level | State | Evidence |
 | --- | --- | --- | --- |
 | description_good | MUST | Met | [README.md](../README.md), its opening and *How it works* |
-| interact | MUST | Met | [README.md](../README.md) *Try it*, *Report an issue*, *Contributing* |
+| interact | MUST | Met | [README.md](../README.md) *Quickstart*, *Develop the factory*, *Report an issue*, *Contributing* |
 | contribution | MUST | Met | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | contribution_requirements | SHOULD | Met | [CONTRIBUTING.md](../CONTRIBUTING.md): the commit format, tests and lint required, `make check` |
 | floss_license | MUST | Met | [LICENSE](../LICENSE) is the Apache License 2.0 (#47); `hack/check-license-headers.sh` keeps every Go file's header |

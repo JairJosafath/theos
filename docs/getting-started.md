@@ -10,6 +10,11 @@ a Crew for each of its four Containers and files their first issues. Nothing
 is built from this repository;
 every image and the chart come from GHCR.
 
+In a hurry? [hack/quickstart.sh](../hack/quickstart.sh) does section 1 and
+[Without a token](#without-a-token) in one command, on a Kind cluster of its
+own, and `--down` removes it again. The rest of this guide says what it did
+and goes on from there.
+
 You need:
 
 - a Kubernetes 1.30 or later cluster (Kind v0.23 or later) with about 4 CPUs
