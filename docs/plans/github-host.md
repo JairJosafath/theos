@@ -217,6 +217,40 @@ with Actions turned off, and that a fine-grained personal access token
 reads the check runs of a private repository. Step 9's run on a real
 organization is where those three show.
 
+## What step 5 found
+
+In two pull requests: the port and the table's row first, the Standards'
+workflows after.
+
+- **The CI contract passes** against the fake with its two `JobRunners`
+  subtests in `Cannot`: GitHub's hosted runners take the jobs, so the
+  adapter is no `ports.JobRunners` and no `ports.OwnerRunners`, and
+  `RunnersOnline` says it doesn't know. Whoever needs a pool of
+  just-in-time runners adds both then.
+- **A run names a branch or a tag, never a ref.** GitHub's `head_branch` is
+  the tag's name for the push of a tag. `TagRuns` asks for the push runs
+  of that name at the commit and says `refs/tags/<tag>`; `CommitRuns` says
+  `refs/heads/<name>` for every push, a tag's too, and `refs/pull/<n>/head`
+  for a pull request's. The one reader of a run's ref compares it with a
+  branch (`crew_full_check.go`).
+- **A check's page is its job's:** `.../actions/runs/<run>/job/<job>`, and
+  the log is `actions/jobs/<job>/logs`, a redirect the client follows
+  without the token. GitHub gives no log of a job that still runs, where
+  Gitea gives what was sent so far: `ErrNoCILog` until the job ends.
+- **The row.** `githubActions`: the required contexts are `check*`, as on
+  Gitea, but what reports is the job's own name with no workflow or event
+  in it, so a Standard's jobs there are named `check` and `check (full)`.
+  All of `.github/` is protected, not the workflows alone: the pull
+  request template and the code owners are there too. It has no fallback
+  paths; GitHub reads workflows from one place.
+- An agent's token has no `actions` permission: it can't run a job again.
+
+The fake encodes `actions/workflow-runs` (the `head_sha`, `event` and
+`branch` filters; a re-run of failed jobs is a new attempt, refused while
+the run is not completed) and `actions/workflow-jobs` (`filter=latest`; a
+job's log by a redirect, 404 without one). Not verified against github.com:
+that `branch=<tag>` selects the push of a tag.
+
 ## What step 4 found
 
 The AgentAccess contract passes against the fake, with nothing in `Cannot`.

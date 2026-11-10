@@ -123,8 +123,8 @@ func (r *run) state() (status string, conclusion *string) {
 	done := len(jobs) > 0 && !slices.ContainsFunc(jobs, func(j *job) bool { return j.status != statusCompleted })
 	switch {
 	case done:
-		c := "success"
-		if slices.ContainsFunc(jobs, func(j *job) bool { return j.conclusion != "success" && j.conclusion != "skipped" }) {
+		c := stateSuccess
+		if slices.ContainsFunc(jobs, func(j *job) bool { return j.conclusion != stateSuccess && j.conclusion != "skipped" }) {
 			c = stateFailure
 		}
 		return statusCompleted, &c
@@ -164,11 +164,14 @@ func (s *Server) actionsAPI(w http.ResponseWriter, r *http.Request, kept *repo, 
 			if r.URL.Query().Get("filter") != listAll {
 				jobs = found.latest()
 			}
-			listed := make([]map[string]any, 0, len(jobs))
+			listed := make([]jobJSON, 0, len(jobs))
 			for _, j := range jobs {
 				listed = append(listed, s.jobJSON(kept, found, j))
 			}
-			reply(w, http.StatusOK, map[string]any{"total_count": len(listed), "jobs": page(r.URL.Query(), listed)})
+			reply(w, http.StatusOK, struct {
+				TotalCount int       `json:"total_count"`
+				Jobs       []jobJSON `json:"jobs"`
+			}{len(listed), page(r.URL.Query(), listed)})
 		}
 	case r.Method == http.MethodPost && rerunPath.MatchString(rest):
 		if found := find(rerunPath.FindStringSubmatch(rest)[1]); found != nil {
@@ -188,9 +191,41 @@ func (s *Server) actionsAPI(w http.ResponseWriter, r *http.Request, kept *repo, 
 	return true
 }
 
+// runJSON and jobJSON are a run and a job as GitHub lists them.
+type runJSON struct {
+	ID           int64     `json:"id"`
+	Path         string    `json:"path"`
+	Event        string    `json:"event"`
+	HeadBranch   string    `json:"head_branch"`
+	HeadSHA      string    `json:"head_sha"`
+	Status       string    `json:"status"`
+	Conclusion   *string   `json:"conclusion"`
+	RunAttempt   int       `json:"run_attempt"`
+	RunStartedAt string    `json:"run_started_at"`
+	PullRequests []pullRef `json:"pull_requests"`
+	HTMLURL      string    `json:"html_url"`
+}
+
+type pullRef struct {
+	Number int `json:"number"`
+}
+
+type jobJSON struct {
+	ID          int64   `json:"id"`
+	RunID       int64   `json:"run_id"`
+	RunAttempt  int     `json:"run_attempt"`
+	Name        string  `json:"name"`
+	Status      string  `json:"status"`
+	Conclusion  *string `json:"conclusion"`
+	RunnerID    *int64  `json:"runner_id"`
+	RunnerName  *string `json:"runner_name"`
+	CompletedAt *string `json:"completed_at"`
+	HTMLURL     string  `json:"html_url"`
+}
+
 func (s *Server) listRuns(w http.ResponseWriter, r *http.Request, kept *repo) {
 	q := r.URL.Query()
-	listed := make([]map[string]any, 0, len(kept.runs))
+	listed := make([]runJSON, 0, len(kept.runs))
 	for _, found := range slices.Backward(kept.runs) {
 		if sha := q.Get("head_sha"); sha != "" && sha != found.sha {
 			continue
@@ -202,33 +237,36 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request, kept *repo) {
 			continue
 		}
 		status, conclusion := found.state()
-		pulls := []map[string]int{}
+		pulls := []pullRef{}
 		if found.pull != 0 {
-			pulls = append(pulls, map[string]int{"number": found.pull})
+			pulls = append(pulls, pullRef{found.pull})
 		}
-		listed = append(listed, map[string]any{"id": found.id, "path": ".github/workflows/" + found.workflow,
-			"event": found.event, "head_branch": found.branch, "head_sha": found.sha, "status": status,
-			"conclusion": conclusion, "run_attempt": found.attempt, "run_started_at": found.created.Format(time.RFC3339),
-			"pull_requests": pulls,
-			"html_url":      s.srv.URL + "/" + kept.owner + "/" + kept.name + "/actions/runs/" + strconv.FormatInt(found.id, 10)})
+		listed = append(listed, runJSON{ID: found.id, Path: ".github/workflows/" + found.workflow, Event: found.event,
+			HeadBranch: found.branch, HeadSHA: found.sha, Status: status, Conclusion: conclusion,
+			RunAttempt: found.attempt, RunStartedAt: found.created.Format(time.RFC3339), PullRequests: pulls,
+			HTMLURL: s.srv.URL + "/" + kept.owner + "/" + kept.name + "/actions/runs/" + strconv.FormatInt(found.id, 10)})
 	}
-	reply(w, http.StatusOK, map[string]any{"total_count": len(listed), "workflow_runs": page(q, listed)})
+	reply(w, http.StatusOK, struct {
+		TotalCount   int       `json:"total_count"`
+		WorkflowRuns []runJSON `json:"workflow_runs"`
+	}{len(listed), page(q, listed)})
 }
 
-func (s *Server) jobJSON(kept *repo, r *run, j *job) map[string]any {
-	out := map[string]any{"id": j.id, "run_id": r.id, "run_attempt": j.attempt, "name": j.name, "status": j.status,
-		"conclusion": nil, "runner_id": nil, "runner_name": nil, "completed_at": nil,
-		"html_url": s.srv.URL + "/" + kept.owner + "/" + kept.name + "/actions/runs/" + strconv.FormatInt(r.id, 10) +
+func (s *Server) jobJSON(kept *repo, r *run, j *job) jobJSON {
+	out := jobJSON{ID: j.id, RunID: r.id, RunAttempt: j.attempt, Name: j.name, Status: j.status,
+		HTMLURL: s.srv.URL + "/" + kept.owner + "/" + kept.name + "/actions/runs/" + strconv.FormatInt(r.id, 10) +
 			"/job/" + strconv.FormatInt(j.id, 10)}
 	if j.conclusion != "" {
-		out["conclusion"] = j.conclusion
+		out.Conclusion = &j.conclusion
 	}
 	if j.status != statusQueued {
 		// One of GitHub's own runners took it.
-		out["runner_id"], out["runner_name"] = 1, "GitHub Actions 1"
+		id, name := int64(1), "GitHub Actions 1"
+		out.RunnerID, out.RunnerName = &id, &name
 	}
 	if !j.completed.IsZero() {
-		out["completed_at"] = j.completed.Format(time.RFC3339)
+		at := j.completed.Format(time.RFC3339)
+		out.CompletedAt = &at
 	}
 	return out
 }
@@ -239,7 +277,7 @@ func (s *Server) rerun(w http.ResponseWriter, r *run) {
 		reply(w, http.StatusForbidden, message("This workflow is already running"))
 		return
 	}
-	failed := slices.DeleteFunc(r.latest(), func(j *job) bool { return j.conclusion == "success" })
+	failed := slices.DeleteFunc(r.latest(), func(j *job) bool { return j.conclusion == stateSuccess })
 	r.attempt++
 	for _, j := range failed {
 		s.nextID++
