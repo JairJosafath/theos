@@ -12,9 +12,11 @@ name: Branch hygiene
 # with its commit, so it can be pushed back.
 #
 # The repository variable KEEP_BRANCHES holds glob patterns, split on spaces
-# and newlines, of branches it never deletes ("release/* dev"; a * also
+# and newlines, of branches it never deletes (release/* dev; a * also
 # matches a slash): a long-lived branch that isn't protected, or one pushed
-# back after a deletion. It is empty by default.
+# back after a deletion. It is typed without quotes, which would be part of
+# a pattern, and every run prints the patterns it read. It is empty by
+# default.
 #
 # It runs on the push a merge makes, not on the pull request's closed event,
 # and a workflow on pull requests would be one more check each of them waits
@@ -69,7 +71,8 @@ jobs:
           THEOS_KEEP_BRANCHES: ${{ vars.KEEP_BRANCHES }}
 
       # DRY_RUN is empty on the schedule, which deletes, and the dry_run box
-      # of a manual run, ticked unless someone unticks it.
+      # of a manual run, ticked unless someone unticks it. The script
+      # deletes only for an empty one or false: any other value is a dry run.
       - name: Delete every branch main contains
         if: github.event_name != 'push'
         run: hack/delete-merged-branches.sh sweep
