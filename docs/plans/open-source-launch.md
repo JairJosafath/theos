@@ -120,7 +120,7 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 | #65 docs/comparison.md | done (#67) |
 | #47 the licence | done (#71): Apache-2.0 |
 | #55 contributor and governance docs | done (#67, #71) |
-| #63 work on a timer | done (#71); the rest is #72, whose UI part is done |
+| #63 work on a timer | done (#71). Of the rest, #72: the UI lists the schedules, a run that finds nothing to do closes its issue instead of failing, and a person runs a schedule now ([crew-schedules.md](crew-schedules.md), steps 2 to 4); open: Standards that propose schedules |
 | #70 the flaky cost spec | done (#71) |
 | #59 Prometheus metrics, the dashboard and alerts | done (#67, #71) |
 | #53 a first run in ten minutes | `hack/quickstart.sh` and README's first screen are in; open: the guide cut into pages, the time measured, a run on a real machine |
@@ -164,6 +164,15 @@ session can reach: a setting, an account, a force-push. Each is one step.
    answer its two questions about the owner's own knowledge.
 5. **Push a release tag when a session can't** (#50): the session that cut
    v0.32.0 was refused the tag push, and the issue has the two commands.
+6. **Keep Actions able to start jobs.** On 2026-11-10 at 07:14 UTC every
+   run in the repository began to fail within three seconds, with no runner
+   and no log, on main and on every pull request, while githubstatus.com
+   reported Actions as operational. The jobs ask for `ubuntu-latest` and the
+   repository is private, so the likeliest cause is the account's Actions
+   minutes or spending limit (*Settings → Billing and plans*) after a day
+   of long *Tests* runs. Nothing merges while checks can't run. A public
+   repository's hosted minutes are free, which step 1 brings; until then
+   the limit, or `RUNS_ON=self-hosted` with the devices on, is the owner's.
 
 ## Done when
 
