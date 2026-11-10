@@ -168,7 +168,9 @@ var _ = Describe("GitProvider events", func() {
 		// The suite's operator has a --git-events-url; once it has reported
 		// this GitProvider, one without reconciles it.
 		eventsReason(gp, c4v1beta1.ReasonEventsUnsupported)
-		Expect(reconcileEvents(gp, "").RequeueAfter).To(BeZero())
+		// It looks again all the same (#81): what the host can do follows a
+		// Secret that gained what it lacked, and the Secret is not watched.
+		Expect(reconcileEvents(gp, "").RequeueAfter).To(Equal(defaultEventsEnsure))
 		cond := eventsReason(gp, c4v1beta1.ReasonEventsDisabled)
 		Expect(cond.Message).To(ContainSubstring("--git-events-url"))
 		noEventsSecret(gp)

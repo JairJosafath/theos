@@ -34,6 +34,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="Events")].reason
       name: Events
       type: string
+    - jsonPath: .status.conditions[?(@.type=="AgentAccess")].reason
+      name: Agents
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -327,8 +330,11 @@ spec:
             description: status defines the observed state of GitProvider
             properties:
               conditions:
-                description: 'conditions: Events, whether the host''s deliveries reach
-                  the operator.'
+                description: |-
+                  conditions: Events, whether the host's deliveries reach the operator;
+                  AgentAccess, whether agents get a credential of their own there;
+                  OwnRunners, whether the operator registers the project's own runners
+                  with it; PythonIndex, whether Python packages have an index to go to.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

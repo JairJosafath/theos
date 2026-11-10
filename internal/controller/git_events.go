@@ -317,6 +317,19 @@ func (g *GitEventsReceiver) forgetDeliveries(key types.NamespacedName) {
 // none.
 func providerEvents(ctx context.Context, apiReader client.Reader, git GitClient,
 	gp *c4v1beta1.GitProvider) (ports.Events, error) {
+	p, err := gitProviderHost(ctx, apiReader, git, gp)
+	if err != nil {
+		return nil, err
+	}
+	events, _ := p.(ports.Events)
+	return events, nil
+}
+
+// gitProviderHost is gp's adapter, built with the provider's Secret read
+// live and where its packages are; an error when the Secret is missing or
+// the adapter refuses the provider as it is configured.
+func gitProviderHost(ctx context.Context, apiReader client.Reader, git GitClient,
+	gp *c4v1beta1.GitProvider) (ports.Provider, error) {
 	creds, found, err := readCredentials(ctx, apiReader, gp)
 	if err != nil {
 		return nil, fmt.Errorf("could not read Secret %s: %w", gp.Spec.CredentialsSecretRef.Name, err)
@@ -324,12 +337,7 @@ func providerEvents(ctx context.Context, apiReader client.Reader, git GitClient,
 	if !found {
 		return nil, fmt.Errorf("secret %s of GitProvider %s not found", gp.Spec.CredentialsSecretRef.Name, gp.Name)
 	}
-	p, err := git.Provider(providerConfig(gp, creds, ports.Packages{}))
-	if err != nil {
-		return nil, err
-	}
-	events, _ := p.(ports.Events)
-	return events, nil
+	return git.Provider(providerConfig(gp, creds, packagesOf(gp)))
 }
 
 // The mapping of an Event to the objects it concerns (decision 7): the

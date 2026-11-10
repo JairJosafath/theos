@@ -80,7 +80,8 @@ const eventsHostTimeout = time.Minute
 // +kubebuilder:rbac:groups=theos.factory.io,resources=gitproviders/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create
 
-// Reconcile ensures the GitProvider's event hook: with no --git-events-url
+// Reconcile says what the GitProvider's host can do (setCapabilities) and
+// ensures its event hook: with no --git-events-url
 // Events is Disabled, with an adapter that has no events Unsupported;
 // otherwise the delivery Secret is made when missing, the hook is set to the
 // receiver's URL with its value, and Events is Registered, or RegisterFailed
@@ -93,22 +94,25 @@ func (r *GitProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	status := gp.Status.DeepCopy()
+	// The Secret is not watched, so every outcome looks again: what the
+	// provider can do follows a Secret that gained what it lacked.
+	ensure := ctrl.Result{RequeueAfter: r.ensureInterval()}
+	host, err := gitProviderHost(ctx, r.APIReader, r.Git, &gp)
+	r.setCapabilities(ctx, &gp, status, host, err)
 	if r.GitEventsURL == "" {
 		r.setEvents(ctx, &gp, status, metav1.ConditionFalse, c4v1beta1.ReasonEventsDisabled,
 			"The operator has no --git-events-url, so no hook is registered; the operator polls the host")
-		return ctrl.Result{}, r.writeStatus(ctx, &gp, status)
+		return ensure, r.writeStatus(ctx, &gp, status)
 	}
-	ensure := ctrl.Result{RequeueAfter: r.ensureInterval()}
-
-	events, err := providerEvents(ctx, r.APIReader, r.Git, &gp)
 	if err != nil {
 		r.setEvents(ctx, &gp, status, metav1.ConditionFalse, c4v1beta1.ReasonEventsRegisterFailed, err.Error())
 		return ensure, r.writeStatus(ctx, &gp, status)
 	}
+	events, _ := host.(ports.Events)
 	if events == nil {
 		r.setEvents(ctx, &gp, status, metav1.ConditionFalse, c4v1beta1.ReasonEventsUnsupported,
 			fmt.Sprintf("The %s adapter has no event hooks; the operator polls the host", gp.Spec.Provider))
-		return ctrl.Result{}, r.writeStatus(ctx, &gp, status)
+		return ensure, r.writeStatus(ctx, &gp, status)
 	}
 
 	secret, err := r.eventsSecret(ctx, &gp)
@@ -199,6 +203,50 @@ func (r *GitProviderReconciler) eventsSecret(ctx context.Context, gp *c4v1beta1.
 	}
 	logf.FromContext(ctx).Info("Created the delivery Secret", "secret", name)
 	return value, nil
+}
+
+// setCapabilities sets what the GitProvider's host can do, as the provider
+// is configured: AgentAccess, OwnRunners and PythonIndex. host is the
+// provider's adapter, or err why it could not be built: then nothing is
+// known of the host but that agents get no credential there.
+func (r *GitProviderReconciler) setCapabilities(ctx context.Context, gp *c4v1beta1.GitProvider,
+	status *c4v1beta1.GitProviderStatus, host ports.Provider, err error) {
+	set := func(condition string, ok bool, reason, message string) {
+		value := metav1.ConditionFalse
+		if ok {
+			value = metav1.ConditionTrue
+		}
+		if cur := apimeta.FindStatusCondition(status.Conditions, condition); cur == nil || cur.Reason != reason {
+			logf.FromContext(ctx).Info("Set a GitProvider's condition", "condition", condition, "reason", reason,
+				"message", message)
+		}
+		setCondition(&status.Conditions, gp.Generation, condition, value, reason, message)
+	}
+	if err != nil {
+		set(c4v1beta1.ConditionGitProviderAgentAccess, false, c4v1beta1.ReasonProviderUnavailable,
+			"Agents get no credential: "+err.Error())
+		apimeta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionGitProviderOwnRunners)
+		apimeta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionGitProviderPythonIndex)
+		return
+	}
+	available, reason, message := ports.AgentAccessState(host)
+	set(c4v1beta1.ConditionGitProviderAgentAccess, available, reason, message)
+
+	if _, registers := host.(ports.OwnerRunners); registers {
+		set(c4v1beta1.ConditionGitProviderOwnRunners, true, c4v1beta1.ReasonCapabilityAvailable,
+			"The operator registers the project's own runners with the host.")
+	} else {
+		set(c4v1beta1.ConditionGitProviderOwnRunners, false, c4v1beta1.ReasonCapabilityUnsupported,
+			fmt.Sprintf("The %s adapter registers no runners: the host's own take the jobs.", gp.Spec.Provider))
+	}
+	if host.Repository("").PyPIUpload != "" {
+		set(c4v1beta1.ConditionGitProviderPythonIndex, true, c4v1beta1.ReasonCapabilityAvailable,
+			"A release's Python packages have an index to go to.")
+	} else {
+		set(c4v1beta1.ConditionGitProviderPythonIndex, false, c4v1beta1.ReasonPythonNoIndex,
+			"The host has no Python package index and spec.packages.pypi names none: a release's Python packages "+
+				"are not published.")
+	}
 }
 
 // setEvents sets the Events condition, and logs when its reason changes.

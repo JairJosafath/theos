@@ -404,6 +404,14 @@ func (r *TaskReconciler) runInputs(ctx context.Context, task *c4v1beta1.Task, st
 	if err != nil {
 		return nil, ctrl.Result{}, err
 	}
+	// A host that gives agents no credential, as its provider is configured,
+	// starts no run: the Task waits with the provider's own reason, and looks
+	// again in case the provider's Secret gained what it lacked.
+	if ok, reason, why := ports.AgentAccessState(provider); !ok {
+		r.progress(task, status, metav1.ConditionFalse, reason, fmt.Sprintf("GitProvider %s gives agents no "+
+			"credential, so no run starts: %s", container.Spec.GitProviderRef.Name, why))
+		return nil, ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
+	}
 	// Bring the Git host's rules up to date before an agent gets access: older
 	// repositories were protected with fewer of them.
 	protectCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())

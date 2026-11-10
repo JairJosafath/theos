@@ -169,6 +169,13 @@ const (
 	// noEventsOwnerPrefix starts the owner of a GitProvider whose adapter
 	// has no events in the suite (fakeGitClient).
 	noEventsOwnerPrefix = "no-events-"
+	// agentsNeedKey is a key of a GitProvider's Secret that, in the suite,
+	// says what the Secret lacks for agents to get a credential: the fake
+	// host then gives them none, as a host whose provider is half
+	// configured, and its value is what the provider's message says.
+	agentsNeedKey = "agentsNeed"
+	// reasonNeedsAgentIdentity is the reason that fake host gives.
+	reasonNeedsAgentIdentity = "NeedsAgentIdentity"
 )
 
 // managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
@@ -615,7 +622,21 @@ func (c fakeGitClient) Provider(cfg ports.Config) (ports.Provider, error) {
 	if strings.HasPrefix(cfg.Owner, noEventsOwnerPrefix) {
 		return withoutEvents{c.For(cfg)}, nil
 	}
+	if need := string(cfg.Secret[agentsNeedKey]); need != "" {
+		return withoutAgents{Git: c.For(cfg), need: need}, nil
+	}
 	return c.For(cfg), nil
+}
+
+// withoutAgents is the fake host for a provider whose Secret lacks what
+// mints the agents' credentials: it says so, and is the host otherwise.
+type withoutAgents struct {
+	*fake.Git
+	need string
+}
+
+func (w withoutAgents) CheckAgentAccess() error {
+	return &ports.AgentAccessUnavailable{Reason: reasonNeedsAgentIdentity, Message: "The Secret lacks " + w.need + "."}
 }
 
 // withoutEvents is a Provider whose adapter lacks ports.Events, as a host

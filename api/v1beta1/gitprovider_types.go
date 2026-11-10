@@ -227,9 +227,42 @@ const (
 	ReasonEventsRefused        = "DeliveryRefused"
 )
 
+// ConditionGitProviderAgentAccess on a GitProvider says whether agents get a
+// credential of their own on its host, as the provider is configured. Where
+// they get none (False), the provider still scaffolds and reads issues, and
+// no Task and no Brief's planner starts on it: each waits with this
+// condition's reason. Its reasons are Available, the host's own for what its
+// Secret lacks (the message says what to add, and where), CheckFailed, and
+// ProviderUnavailable when the provider's adapter can't be built at all.
+const ConditionGitProviderAgentAccess = "AgentAccess"
+
+// ConditionGitProviderOwnRunners on a GitProvider says whether the operator
+// registers runners of the project's own with its host (spec.ci's pools,
+// the runners of a test environment). False, Unsupported, on a host whose
+// own runners take the jobs.
+const ConditionGitProviderOwnRunners = "OwnRunners"
+
+// ConditionGitProviderPythonIndex on a GitProvider says whether a release's
+// Python packages have an index to go to: the host's own, or the one
+// spec.packages.pypi names. False, NoIndex, on a host that has none when
+// the spec names none: such packages are not published, and a Crew says so.
+const ConditionGitProviderPythonIndex = "PythonIndex"
+
+// The reasons of AgentAccess, OwnRunners and PythonIndex that are no host's
+// own.
+const (
+	ReasonCapabilityAvailable   = "Available"
+	ReasonCapabilityUnsupported = "Unsupported"
+	ReasonProviderUnavailable   = "ProviderUnavailable"
+	ReasonPythonNoIndex         = "NoIndex"
+)
+
 // GitProviderStatus is what the operator last found of the Git host.
 type GitProviderStatus struct {
-	// conditions: Events, whether the host's deliveries reach the operator.
+	// conditions: Events, whether the host's deliveries reach the operator;
+	// AgentAccess, whether agents get a credential of their own there;
+	// OwnRunners, whether the operator registers the project's own runners
+	// with it; PythonIndex, whether Python packages have an index to go to.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -244,6 +277,7 @@ type GitProviderStatus struct {
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=".spec.url"
 // +kubebuilder:printcolumn:name="Owner",type=string,JSONPath=".spec.owner"
 // +kubebuilder:printcolumn:name="Events",type=string,JSONPath=".status.conditions[?(@.type==\"Events\")].reason"
+// +kubebuilder:printcolumn:name="Agents",type=string,JSONPath=".status.conditions[?(@.type==\"AgentAccess\")].reason"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // GitProvider is where repositories are created, with credentials. Owned by the Project.
