@@ -4,6 +4,10 @@
 # nothing, and go.mod, testdata, main, no merge base, TEST_ALL and FORCE test
 # every package (#1295); a package below test/e2e is tested, a non-Go file or
 # a //go:embed line also tests cmd (#1321); in a throwaway module and clone.
+# digitalocean/gta selects the packages (hack/gta, built here once): a test
+# file tests its package alone, a package whose tests alone import a changed
+# one is tested with its own dependents, and a gta that fails tests every
+# package (#127).
 # A path of the readers table (templates/, config/, api/, the hack/ files Go
 # tests read) tests the packages whose tests read it and not every package,
 # nor the readers' dependents (#1523). A hack/ script no Go test reads tests
@@ -26,15 +30,20 @@ export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GOWORK=off
 unset TEST_ALL FORCE TEST_BASE TEST_READERS
 
+# gta, built from this checkout: the throwaway module has no hack/gta.
+(cd "$REPO" && go build -o "$T/gta" ./hack/gta) || { echo "FAIL hack/gta does not build"; exit 1; }
+export THEOS_GTA=$T/gta
+
 # A module: leaf (no imports), mid imports leaf, top imports mid, other alone,
-# api imported by nothing, cmd alone (it guards embeds), hack/tool a package
-# under hack/, test/e2e, which make test never runs, and test/e2e/standin,
-# which it does.
+# api/v1 imported by the tests of hack/tool alone, a package under hack/, cmd
+# alone (it guards embeds), test/e2e, which make test never runs, and
+# test/e2e/standin, which it does.
 src=$T/src
 git init -q -b main "$src"
 cd "$src" || exit 1
-mkdir -p hack/tool leaf mid top other api/v1 cmd config docs leaf/testdata leaf/assets test/e2e/standin
+mkdir -p hack/tool hack/lib leaf mid top other api/v1 cmd config docs leaf/testdata leaf/assets test/e2e/standin
 cp "$HERE/test-packages.sh" hack/
+cp "$HERE/lib/change.sh" hack/lib/
 printf 'module example.com/m\n\ngo 1.22\n' >go.mod
 pkg() { # pkg DIR NAME [IMPORT]
   { echo "package $2"
@@ -50,6 +59,7 @@ pkg hack/tool tool
 pkg test/e2e e2e
 pkg test/e2e/standin standin
 pkg cmd main
+printf 'package tool\nimport (\n\t"testing"\n\t_ "example.com/m/api/v1"\n)\nfunc TestX(t *testing.T) {}\n' >hack/tool/tool_test.go
 printf 'package other\nimport _ "embed"\n//go:embed o.txt\nvar o string\n' >other/embed.go
 echo x >other/o.txt
 echo x >config/crd.yaml
@@ -79,7 +89,14 @@ change leaf/leaf.go
 check "imported package: its dependents too" "$(run)" "leaf mid top"
 
 change mid/mid_test.go
-check "a test file: its package and dependents" "$(run)" "mid top"
+check "#127 a test file: its package alone, no other links it" "$(run)" "mid"
+
+change mid/mid_test.go mid/mid.go
+check "#127 a test file and a Go file: the package and its dependents" "$(run)" "mid top"
+
+change leaf/leaf.go
+check "#127 gta fails: every package" "$(THEOS_GTA=false run)" "$every"
+check "#127 gta fails: says why" "$(grep -c 'every package (8): gta could not select the packages' "$T/err")" 1
 
 change leaf/assets/a.txt
 check "#1321 a non-Go file below a package: that package and cmd" "$(run)" "cmd leaf mid top"
@@ -160,7 +177,7 @@ change config/crd.yaml
 check "#1523 config/: its readers" "$(run)" "top"
 
 change api/v1/v1.go
-check "#1523 api/ has no readers: the package and its dependents, from the graph" "$(run)" "api/v1"
+check "#1523 api/ has no readers: the package and the one whose tests import it, from gta (#127)" "$(run)" "api/v1 hack/tool"
 
 change hack/seed/catalog.sh
 check "#1523 a hack/ file of the table: its readers" "$(run)" "other"

@@ -4,19 +4,23 @@
 # Says on stderr which it chose and why, so a skipped package shows in the
 # output (#1295).
 #
-# A package is affected when a file in it changed (its directory, or one below
-# it, for embedded files) or its test binary links one that did, so its
-# dependents are tested too. The change is everything since the merge base:
-# commits, staged, unstaged and untracked files. A changed non-Go file in a
-# package, or a changed //go:embed line, also tests cmd, whose
+# digitalocean/gta selects them (hack/gta, #127): a package is affected when a
+# file in it changed (its directory, or one below it down to the next
+# package, for the files it embeds or its tests read beside them) or it
+# depends on one that did, through its tests too. A package whose _test.go
+# files alone changed is tested alone: no other package links them. The
+# change is everything since the merge base: commits, staged, unstaged and
+# untracked files (hack/lib/change.sh). A changed non-Go file in a package, or
+# a changed //go:embed line, also tests cmd, whose
 # TestDockerContextHasEmbeddedFiles checks the embeds of every package a
 # Dockerfile builds without linking them (#1321).
 #
-# A file some tests read without importing it (templates/, config/, dist/,
-# test/crds, a few hack/ files) tests the packages whose tests read it, the
-# readers table below, and only those: a reader's dependents don't read the
-# file (#1523). hack/test-packages_test.sh checks the table against the
-# _test.go files: one that climbs to such a path ("../../templates",
+# gta knows the Go files and what they embed, nothing else. A file some tests
+# read without importing it (templates/, config/, dist/, test/crds, a few
+# hack/ files) tests the packages whose tests read it, the readers table
+# below, and only those: a reader's dependents don't read the file (#1523).
+# hack/test-packages_test.sh checks the table against the _test.go files: one
+# that climbs to such a path ("../../templates",
 # filepath.Join("..", "..", "config", ...), filepath.Join(root, "dist", ...))
 # or names a hack/ path lies in a package the table lists.
 #
@@ -29,32 +33,31 @@
 #   - a file changed that a Go test may read without importing it and the
 #     readers table doesn't map: go.mod, go.sum, the Makefile, testdata, the
 #     workflows, a Dockerfile, docs/getting-started.md, README.md, or any file
-#     outside the paths below.
+#     outside the paths below,
+#   - gta fails: when in doubt, more is tested.
 # A change only to paths no Go test reads (docs/, .claude/, .vscode/, ui/,
 # the other .github/ files, the top-level *.md but README.md, the rest of
 # hack/ outside its packages) tests nothing. The shell scripts in hack/ have
 # their own gate, make test-hack (#1318).
-#
-# The digitalocean/gta tool does the same selection, but loads every package
-# of every module in the build list (go list ...), which this module's go.mod
-# can't do without changes (go mod tidy wants more requirements) and which
-# takes a minute where go list -test ./... takes half a second.
 #
 #   TEST_BASE     the branch to diff against (default origin/main)
 #   TEST_ALL      non-empty: every package
 #   FORCE         non-empty: every package
 #   TEST_READERS  a file replacing the readers table, a line per path:
 #                 PATH PACKAGE-DIR... (for the tests of this script)
+#   THEOS_GTA     the command that runs gta (default: go run ./hack/gta; the
+#                 tests of this script build it once)
 #   --readers     print the readers table in that format and exit
 set -euo pipefail
 
-BASE=${TEST_BASE:-origin/main}
+# shellcheck source=hack/lib/change.sh
+. "$(dirname "$0")/lib/change.sh"
 say() { echo "make test: $*" >&2; }
 
 # readers: a path (a directory or file, relative to the module root) Go tests
 # read without importing it, and the directories of the packages whose tests
-# do. api/ holds the package api/v1beta1, whose importers the graph
-# finds; internal/scaffold's tests read its License enum as a file (#1788),
+# do. api/ holds the package api/v1beta1, whose dependents gta finds;
+# internal/scaffold's tests read its License enum as a file (#1788),
 # since the layering forbids the import. A listed directory that holds no
 # package of the module is ignored.
 declare -A readers=(
@@ -92,16 +95,11 @@ full() {
   exit 0
 }
 
-[ -z "${TEST_ALL:-}" ] || full "TEST_ALL is set"
-[ -z "${FORCE:-}" ] || full "FORCE is set"
-branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-[ "$branch" != main ] || full "the branch is main"
-base=$(git merge-base "$BASE" HEAD 2>/dev/null) || full "no merge base with $BASE"
-
-mapfile -t files < <({
-  git diff --name-only --no-renames "$base" --
-  git ls-files --others --exclude-standard
-} | sort -u)
+change_base
+[ -z "$CHANGE_ALL" ] || full "$CHANGE_ALL"
+BASE=$CHANGE_FROM
+base=$CHANGE_BASE
+mapfile -t files < <(change_files)
 
 # The module's directories that hold a package, relative to the top.
 module=$(go list -m)
@@ -122,7 +120,11 @@ embeds() {
   fi
 }
 
-declare -A changed=() read=() readpaths=()
+# owned: the changed files that lie in a package, for gta to say which
+# packages they affect. guard: one of them makes cmd check the embeds.
+declare -A read=() readpaths=()
+owned=()
+guard=
 for f in "${files[@]}"; do
   case "$f" in
     go.mod | go.sum | go.work | go.work.sum | Makefile | *.mk | testdata/* | */testdata/* | \
@@ -150,9 +152,9 @@ for f in "${files[@]}"; do
   d=$(dirname "$f")
   while [ -z "${dirs[$d]:-}" ] && [ "$d" != . ] && [ "$d" != test/e2e ]; do d=$(dirname "$d"); done
   if [ -n "${dirs[$d]:-}" ]; then
-    changed[${dirs[$d]}]=1
+    owned+=("$f")
     if [ -n "${dirs[cmd]:-}" ] && { [[ "$f" != *.go ]] || embeds "$f"; }; then
-      changed[${dirs[cmd]}]=1
+      guard=1
     fi
     continue
   fi
@@ -167,37 +169,39 @@ for f in "${files[@]}"; do
   full "$f changed, which a Go test may read without importing it"
 done
 
-if [ ${#changed[@]} -eq 0 ] && [ ${#read[@]} -eq 0 ]; then
+if [ ${#owned[@]} -eq 0 ] && [ ${#read[@]} -eq 0 ]; then
   say "testing no package: no Go package changed since $BASE (${base:0:12})"
   exit 0
 fi
 
-# The readers of the changed paths, and each test binary (P.test) linking a
-# changed package; the graph lists every package a binary links, test
-# variants ("P [P.test]") under their plain names.
-declare -A picked=()
+# The readers of the changed paths, and what gta selects for the files in
+# packages: the packages they lie in ("changed") and the packages that depend
+# on those ("dependent"). The e2e suite is not among the packages tested.
+declare -A known=() changed=() picked=()
+for p in "${all[@]}"; do known[$p]=1; done
 for p in "${!read[@]}"; do picked[$p]=1; done
-if [ ${#changed[@]} -gt 0 ]; then
-  graph=$(go list -test -f '{{.ImportPath}}{{range .Deps}} {{.}}{{end}}' "${all[@]}") ||
-    full "go list -test failed"
-  while read -r bin deps; do
-    p=${bin%.test}
-    hit=${changed[$p]:-}
-    if [ -z "$hit" ]; then
-      for dep in $deps; do
-        if [ -n "${changed[$dep]:-}" ]; then
-          hit=1
-          break
-        fi
-      done
-    fi
-    [ -z "$hit" ] || picked[$p]=1
-  done < <(grep '^[^ ]*\.test\( \|$\)' <<<"$graph" | sed -E 's/ \[[^]]*\]//g')
+if [ ${#owned[@]} -gt 0 ]; then
+  # shellcheck disable=SC2086 # THEOS_GTA is a command with its arguments.
+  selected=$(printf '%s\n' "${owned[@]}" | ${THEOS_GTA:-go run ./hack/gta}) ||
+    full "gta could not select the packages"
+  while read -r kind p; do
+    [ -n "$p" ] && [ -n "${known[$p]:-}" ] || continue
+    picked[$p]=1
+    [ "$kind" != changed ] || changed[$p]=1
+  done <<<"$selected"
+  if [ -n "$guard" ]; then
+    changed[${dirs[cmd]}]=1
+    picked[${dirs[cmd]}]=1
+  fi
 fi
 
 short() { printf '%s\n' "$@" | sort | sed "s|^$module/||" | paste -sd' '; }
 why=()
 [ ${#changed[@]} -eq 0 ] || why+=("changed: $(short "${!changed[@]}")")
 [ ${#read[@]} -eq 0 ] || why+=("read by their tests: $(short "${!readpaths[@]}")")
+if [ ${#picked[@]} -eq 0 ]; then
+  say "testing no package: the files changed since $BASE (${base:0:12}) are in no package that is left"
+  exit 0
+fi
 say "testing ${#picked[@]} of ${#all[@]} packages, those the change since $BASE (${base:0:12}) affects; $(printf '%s; ' "${why[@]}" | sed 's/; $//')"
-[ ${#picked[@]} -eq 0 ] || printf '%s\n' "${!picked[@]}" | sort
+printf '%s\n' "${!picked[@]}" | sort
