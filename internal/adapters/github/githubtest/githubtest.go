@@ -45,7 +45,10 @@ limitations under the License.
 // and an issue closes whatever it depends on;
 //
 // and, in hooks.go, the webhooks of an organization and of a repository,
-// and the deliveries they send when something the fake serves changes.
+// and the deliveries they send when something the fake serves changes;
+//
+// and, in registry.go, the container registry and the npm registry, at
+// subdomains of the instance's host, and a file at a ref.
 //
 // https://docs.github.com/en/rest/repos/repos, /rest/users/users, /rest/branches/branches,
 // /rest/commits/commits, /rest/git/refs and /rest/git/tags. Every call needs
@@ -104,6 +107,10 @@ type Server struct {
 	// the call being served queued (hooks.go).
 	orgHooks map[string][]*hook
 	outbox   []delivery
+	// images is the container registry and npm the npm registry's
+	// packages by name (registry.go).
+	images http.Handler
+	npm    map[string]*npmPackage
 }
 
 // repo is what the fake keeps of a repository beside its Git.
@@ -143,6 +150,7 @@ func New(t *testing.T, user, token string) *Server {
 	s := &Server{tokens: map[string]string{token: user}, admin: user, grants: map[string]*grant{}, root: t.TempDir(),
 		orgs: map[string]bool{}, repos: map[string]*repo{}, orgHooks: map[string][]*hook{}}
 	s.git = &cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + s.root, "GIT_HTTP_EXPORT_ALL=1"}}
+	s.newRegistries()
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.srv.Close)
 	return s
@@ -188,6 +196,9 @@ var (
 )
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
+	if s.serveRegistries(w, r) {
+		return
+	}
 	if m := gitPath.FindStringSubmatch(r.URL.Path); m != nil {
 		s.serveGit(w, r, m[1], m[2])
 		return
@@ -470,6 +481,8 @@ func (s *Server) repo(w http.ResponseWriter, r *http.Request, owner, name, rest 
 		s.getBranch(w, owner, name, branchPath.FindStringSubmatch(rest)[1])
 	case r.Method == http.MethodGet && commitPath.MatchString(rest):
 		s.getCommit(w, owner, name, commitPath.FindStringSubmatch(rest)[1])
+	case r.Method == http.MethodGet && contentsPath.MatchString(rest):
+		s.getContents(w, r, kept, contentsPath.FindStringSubmatch(rest)[1])
 	case r.Method == http.MethodPost && rest == "/git/refs":
 		s.createRef(w, r, owner, name)
 	case r.Method == http.MethodDelete && refPath.MatchString(rest):

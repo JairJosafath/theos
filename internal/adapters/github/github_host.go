@@ -40,9 +40,9 @@ import (
 // statuses in github_host_status.go, releases and the source at a tag in
 // github_host_releases.go. The Issues port, step 3 (#76), is in
 // github_host_issues.go, AgentAccess, step 4 (#77), in
-// github_host_agents.go, CI, step 5 (#78), in github_host_ci.go, and Events,
-// step 6 (#79), in github_host_events.go. No GitProvider reaches this
-// before step 8.
+// github_host_agents.go, CI, step 5 (#78), in github_host_ci.go, Events,
+// step 6 (#79), in github_host_events.go, and the Registry, step 7 (#80),
+// in github_host_registry.go. No GitProvider reaches this before step 8.
 
 // GitHubWebURL is github.com, where a GitProvider's spec.url means the public
 // GitHub; any other URL is a GitHub Enterprise Server.
@@ -66,6 +66,12 @@ type host struct {
 	agents   *agentApp
 	noAgents *ports.AgentAccessUnavailable
 	now      func() time.Time
+	// What github_host_registry.go keeps: where the owner's packages are,
+	// what the GitProvider set of them, and the user name the registries
+	// take with the token.
+	places   packagePlaces
+	packages ports.Packages
+	login    string
 }
 
 // Host is the part of ports.Provider the GitHub adapter has so far.
@@ -76,6 +82,7 @@ type Host interface {
 	ports.AgentAccessChecker
 	ports.CI
 	ports.Events
+	ports.Registry
 }
 
 // GitHost returns the GitHost of cfg's owner, as Host does.
@@ -111,15 +118,25 @@ func (c Client) Host(cfg ports.Config) (Host, error) {
 	if client == nil {
 		client = &http.Client{}
 	}
+	places, err := placesOf(web, cfg.Owner, cfg.Packages)
+	if err != nil {
+		return nil, err
+	}
 	agents, noAgents := agentsOf(cfg.Secret)
 	return &host{api: api, web: web, owner: cfg.Owner, http: client, agents: agents, noAgents: noAgents, now: c.now,
-		creds: ports.Credentials{Username: gitUsername, Token: cfg.Credentials.Token}}, nil
+		creds:  ports.Credentials{Username: gitUsername, Token: cfg.Credentials.Token},
+		places: places, packages: cfg.Packages, login: orDefault(cfg.Credentials.Username, gitUsername)}, nil
 }
 
-// Repository returns the repository's addresses without asking GitHub.
+// Repository returns the repository's addresses, and where the owner's
+// packages are, without asking GitHub. GitHub has no Go module proxy, and
+// no Python index but the one the GitProvider names.
 func (h *host) Repository(name string) ports.Repository {
 	at := h.web.JoinPath(h.owner, name).String()
-	return ports.Repository{Owner: h.owner, Name: name, CloneURL: at + ".git", WebURL: at}
+	return ports.Repository{Owner: h.owner, Name: name, CloneURL: at + ".git", WebURL: at,
+		ImageRegistry: h.places.images + "/" + strings.ToLower(h.owner),
+		NpmScope:      h.places.npmScope, NpmRegistry: h.places.npm,
+		PyPIIndex: h.packages.PyPIIndex, PyPIUpload: h.packages.PyPIUpload}
 }
 
 func (h *host) repoPath(repo ports.Repository) string {

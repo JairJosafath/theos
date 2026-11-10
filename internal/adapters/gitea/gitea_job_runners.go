@@ -89,6 +89,10 @@ func (g *gitea) WaitingJobs(ctx context.Context, labels []string) ([]ports.Waiti
 	return out, nil
 }
 
+// nameField is the field that names a runner, in its registration and in
+// its .runner file.
+const nameField = "name"
+
 // registeredVersion is the version a runner registered by the operator
 // reports until its daemon declares its own.
 const registeredVersion = "theos"
