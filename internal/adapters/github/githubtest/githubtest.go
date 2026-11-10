@@ -42,7 +42,10 @@ limitations under the License.
 // labels, milestones and the dependencies of an issue (blocked_by), as
 // /rest/issues documents them: a list answers 100 a page at most, pull
 // requests are none of its business, a label's name matches without case,
-// and an issue closes whatever it depends on.
+// and an issue closes whatever it depends on;
+//
+// and, in hooks.go, the webhooks of an organization and of a repository,
+// and the deliveries they send when something the fake serves changes.
 //
 // https://docs.github.com/en/rest/repos/repos, /rest/users/users, /rest/branches/branches,
 // /rest/commits/commits, /rest/git/refs and /rest/git/tags. Every call needs
@@ -97,6 +100,10 @@ type Server struct {
 	repos    map[string]*repo
 	nextID   int64
 	unserved []string
+	// orgHooks are the organizations' webhooks, and outbox the deliveries
+	// the call being served queued (hooks.go).
+	orgHooks map[string][]*hook
+	outbox   []delivery
 }
 
 // repo is what the fake keeps of a repository beside its Git.
@@ -117,6 +124,8 @@ type repo struct {
 	releases  []*release
 	// runs are the workflow runs a test said ran, oldest first (actions.go).
 	runs []*run
+	// hooks are the repository's own webhooks (hooks.go).
+	hooks []*hook
 }
 
 // New starts a fake GitHub that takes token, whose user is user. It skips the
@@ -132,7 +141,7 @@ func New(t *testing.T, user, token string) *Server {
 		t.Skipf("git has no git-http-backend: %v", err)
 	}
 	s := &Server{tokens: map[string]string{token: user}, admin: user, grants: map[string]*grant{}, root: t.TempDir(),
-		orgs: map[string]bool{}, repos: map[string]*repo{}}
+		orgs: map[string]bool{}, repos: map[string]*repo{}, orgHooks: map[string][]*hook{}}
 	s.git = &cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + s.root, "GIT_HTTP_EXPORT_ALL=1"}}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.srv.Close)
@@ -187,7 +196,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.done()
 	if s.appsAPI(w, r) {
 		return
 	}
@@ -218,6 +227,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.createRepo(w, r, org)
+	case orgHooksPath.MatchString(r.URL.Path):
+		m := orgHooksPath.FindStringSubmatch(r.URL.Path)
+		if !s.orgs[m[1]] {
+			reply(w, http.StatusNotFound, message("Not Found"))
+			return
+		}
+		s.orgHooks[m[1]] = s.hooksAPI(w, r, s.orgHooks[m[1]], m[2], ofOrganization, nil)
 	case repoPath.MatchString(r.URL.Path):
 		m := repoPath.FindStringSubmatch(r.URL.Path)
 		s.repo(w, r, m[1], m[2], m[3])
@@ -237,8 +253,14 @@ func (s *Server) serveGit(w http.ResponseWriter, r *http.Request, owner, name st
 	login, known := s.tokens[password]
 	g := s.grants[password]
 	held, workflows := "", "yes"
-	if kept := s.repos[owner+"/"+name]; kept != nil && known {
+	kept := s.repos[owner+"/"+name]
+	if kept != nil && known {
 		held = s.held(kept, login, g)
+	}
+	// A push that a webhook waits for is told from the refs it moved.
+	var before map[string]string
+	if s.watched(kept) && r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-receive-pack") {
+		before = s.refs(owner, name)
 	}
 	s.mu.Unlock()
 	switch {
@@ -259,6 +281,11 @@ func (s *Server) serveGit(w http.ResponseWriter, r *http.Request, owner, name st
 	git.Env = append(slices.Clone(s.git.Env), "GITHUB_FAKE_HELD="+held, "GITHUB_FAKE_WORKFLOWS="+workflows)
 	git.Stderr = &s.refusals
 	git.ServeHTTP(w, r)
+	if before != nil {
+		s.mu.Lock()
+		s.pushed(kept, login, before)
+		s.done()
+	}
 }
 
 // Refusals returns what the fake told the pushes it refused, as GitHub
@@ -429,6 +456,10 @@ func (s *Server) repo(w http.ResponseWriter, r *http.Request, owner, name, rest 
 	if !s.permitted(w, r, owner, name, rest) {
 		return
 	}
+	if m := repoHooksPath.FindStringSubmatch(rest); m != nil {
+		kept.hooks = s.hooksAPI(w, r, kept.hooks, m[1], ofRepository, kept)
+		return
+	}
 	if s.actionsAPI(w, r, kept, rest) || s.hostAPI(w, r, kept, rest) || s.pullsAPI(w, r, kept, rest) || s.issuesAPI(w, r, kept, rest) {
 		return
 	}
@@ -505,11 +536,13 @@ func (s *Server) createRef(w http.ResponseWriter, r *http.Request, owner, name s
 		reply(w, http.StatusUnprocessableEntity, message(err.Error()))
 		return
 	}
+	s.push(s.repos[owner+"/"+name], s.acting, body.Ref, "", body.SHA)
 	reply(w, http.StatusCreated, gitRef{Ref: body.Ref, Object: object{SHA: body.SHA}})
 }
 
 func (s *Server) deleteRef(w http.ResponseWriter, owner, name, ref string) {
-	if _, err := s.gitIn(owner, name, "rev-parse", "--verify", "--quiet", ref); err != nil {
+	was, err := s.gitIn(owner, name, "rev-parse", "--verify", "--quiet", ref)
+	if err != nil {
 		reply(w, http.StatusUnprocessableEntity, message("Reference does not exist"))
 		return
 	}
@@ -520,6 +553,7 @@ func (s *Server) deleteRef(w http.ResponseWriter, owner, name, ref string) {
 		reply(w, http.StatusInternalServerError, message(err.Error()))
 		return
 	}
+	s.push(s.repos[owner+"/"+name], s.acting, ref, was, "")
 	reply(w, http.StatusNoContent, nil)
 }
 

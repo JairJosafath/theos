@@ -350,6 +350,7 @@ func (s *Server) issuesList(w http.ResponseWriter, r *http.Request, kept *repo) 
 			i.labels = append(i.labels, kept.label(l).Name)
 		}
 		kept.issues = append(kept.issues, i)
+		s.issueEvent(kept, i, "opened", nil)
 		reply(w, http.StatusCreated, s.issueJSON(kept, i))
 	default:
 		s.notServed(w, r)
@@ -388,6 +389,10 @@ func (s *Server) issueAPI(w http.ResponseWriter, r *http.Request, kept *repo, re
 			return
 		}
 		i.comments = append(i.comments, body.Body)
+		s.emit(kept, s.acting, eventComment, func() eventBody {
+			return eventBody{Action: actionCreated, Issue: s.issueJSON(kept, i),
+				Comment: &eventNote{Body: body.Body, User: account{s.acting}}}
+		})
 		reply(w, http.StatusCreated, body)
 	case issueLabelsPath.MatchString(rest) && (r.Method == http.MethodPost || r.Method == http.MethodPut):
 		s.setLabels(w, r, kept, i)
@@ -397,7 +402,9 @@ func (s *Server) issueAPI(w http.ResponseWriter, r *http.Request, kept *repo, re
 			reply(w, http.StatusNotFound, message("Label does not exist"))
 			return
 		}
+		before := slices.Clone(i.labels)
 		i.labels = slices.DeleteFunc(i.labels, func(l string) bool { return strings.EqualFold(l, name) })
+		s.labelEvents(kept, i, before)
 		reply(w, http.StatusOK, s.issueJSON(kept, i)["labels"])
 	case issueBlockedByPath.MatchString(rest):
 		s.blockedBy(w, r, i)
@@ -428,11 +435,13 @@ func (s *Server) patchIssue(w http.ResponseWriter, r *http.Request, kept *repo, 
 		i.milestone = number
 	}
 	// GitHub closes an issue whatever it depends on.
-	if body.State != nil {
+	if body.State != nil && *body.State != i.state {
 		i.state = *body.State
+		s.issueEvent(kept, i, map[string]string{open: "reopened", closed: closed}[i.state], nil)
 	}
-	if body.Body != nil {
+	if body.Body != nil && *body.Body != i.body {
 		i.body = *body.Body
+		s.issueEvent(kept, i, "edited", nil)
 	}
 	if body.Assignees != nil {
 		i.assignees = *body.Assignees
@@ -448,6 +457,7 @@ func (s *Server) setLabels(w http.ResponseWriter, r *http.Request, kept *repo, i
 		reply(w, http.StatusUnprocessableEntity, message("Validation Failed"))
 		return
 	}
+	before := slices.Clone(i.labels)
 	if r.Method == http.MethodPut {
 		i.labels = slices.DeleteFunc(i.labels, func(l string) bool { return l != pullRequestMark })
 	}
@@ -461,6 +471,7 @@ func (s *Server) setLabels(w http.ResponseWriter, r *http.Request, kept *repo, i
 			i.labels = append(i.labels, l.Name)
 		}
 	}
+	s.labelEvents(kept, i, before)
 	reply(w, http.StatusOK, s.issueJSON(kept, i)["labels"])
 }
 

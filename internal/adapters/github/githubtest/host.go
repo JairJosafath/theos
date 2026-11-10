@@ -151,13 +151,16 @@ const (
 // conclusion such as success or failure.
 func (s *Server) AddCheckRun(owner, name, sha, run, status, conclusion string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.done()
 	r := s.repos[owner+"/"+name]
 	c := checkRun{Name: run, Status: status, HTMLURL: s.srv.URL + "/" + owner + "/" + name + "/runs/" + run}
 	if conclusion != "" {
 		c.Conclusion = &conclusion
 	}
 	r.checkRuns[sha] = append(r.checkRuns[sha], c)
+	if s.watched(r) {
+		s.checkRunEvent(r, c, sha, s.headOf(r, sha), []pullRef{})
+	}
 }
 
 // Rulesets returns a repository's rulesets, in the order they were made.
@@ -185,7 +188,7 @@ func (s *Server) Variable(owner, name, variable string) (string, bool) {
 // when the repository has none; a draft has no tag yet, as on GitHub.
 func (s *Server) AddRelease(owner, name, tag, commit, body, assetName, content string, draft bool) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.done()
 	r := s.repos[owner+"/"+name]
 	if !draft {
 		if _, err := s.gitIn(owner, name, "rev-parse", "--verify", "--quiet", "refs/tags/"+tag); err != nil {
@@ -199,6 +202,12 @@ func (s *Server) AddRelease(owner, name, tag, commit, body, assetName, content s
 	s.nextID++
 	rel.assets = append(rel.assets, &asset{id: s.nextID, name: assetName, content: []byte(content)})
 	r.releases = append(r.releases, rel)
+	if !draft {
+		s.emit(r, actionsBot, eventRelease, func() eventBody {
+			listed := s.releaseJSON(r, rel)
+			return eventBody{Action: "published", Release: &listed}
+		})
+	}
 	return nil
 }
 
@@ -357,6 +366,10 @@ func (s *Server) setStatus(w http.ResponseWriter, r *http.Request, kept *repo, s
 		body.Context = "default"
 	}
 	kept.statuses[sha] = append(kept.statuses[sha], body)
+	s.emit(kept, s.acting, eventStatus, func() eventBody {
+		return eventBody{statusBody: &statusBody{SHA: sha, Name: kept.owner + "/" + kept.name, commitStatus: body,
+			Branches: s.holding(kept, sha)}}
+	})
 	reply(w, http.StatusCreated, body)
 }
 

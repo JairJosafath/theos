@@ -127,13 +127,13 @@ func (h *host) CommitRuns(ctx context.Context, repo ports.Repository, commit str
 // TagRuns returns the workflow runs a push of tag at commit started, newest
 // first. GitHub names the tag where it names a branch's runs their branch.
 func (h *host) TagRuns(ctx context.Context, repo ports.Repository, tag, commit string) ([]ports.WorkflowRun, error) {
-	listed, err := h.runs(ctx, repo, commit, url.Values{"event": {"push"}, "branch": {tag}})
+	listed, err := h.runs(ctx, repo, commit, url.Values{"event": {eventPush}, "branch": {tag}})
 	if err != nil {
 		return nil, err
 	}
 	var out []ports.WorkflowRun
 	for _, r := range listed {
-		if r.Event == "push" && r.HeadBranch == tag {
+		if r.Event == eventPush && r.HeadBranch == tag {
 			run := r.run()
 			run.Ref = "refs/tags/" + tag
 			out = append(out, run)
