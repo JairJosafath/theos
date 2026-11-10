@@ -45,11 +45,22 @@ quick() {
   env PATH="$T/fakes:$PATH" HOME="$T/userhome" THEOS_HOME="$T/home" GHCR_USER="${GHCR_USER:-}" \
     GHCR_TOKEN="${GHCR_TOKEN:-}" "$QUICK" "$@" >"$T/out" 2>&1
 }
+# forwarded PORT: waits until the UI's port-forward, which the script leaves
+# running in the background, has been logged; the script returns before it,
+# and a line it logged late would land in the next run's log.
+forwarded() {
+  local n=0
+  until grep -q "port-forward svc/theos-ui $1:8080$" "$T/log" || [ $n -ge 50 ]; do
+    sleep 0.1
+    n=$((n + 1))
+  done
+}
 kubeconfig="--kubeconfig $T/home/kubeconfig"
 chart_version=$(sed -n 's/^version: *//p' "$ROOT/dist/chart/Chart.yaml")
 
 quick
 check "up exits 0" "$?" 0
+forwarded 8080
 check "it makes a cluster of its own, with its own kubeconfig" \
   "$(grep -c "^kind create cluster --name theos-quickstart $kubeconfig --wait 120s$" "$T/log")" 1
 check "it installs Agent Sandbox at the guide's version" \
@@ -75,12 +86,14 @@ check "the Brief is config/samples/brief/stand-in.yaml" "$(grep -v '^kind: Fake$
 
 echo theos-quickstart >"$T/clusters"
 quick
+forwarded 8080
 check "a cluster that exists is used, not made again" "$(grep -c '^kind create cluster' "$T/log")" 0
 check "and its kubeconfig is written" \
   "$(grep -c "^kind export kubeconfig --name theos-quickstart $kubeconfig$" "$T/log")" 1
 rm -f "$T/clusters"
 
 GHCR_USER=ada GHCR_TOKEN=t0ken quick
+forwarded 8080
 check "with GHCR_USER it logs helm in" "$(grep -c "^helm $kubeconfig registry login ghcr.io -u ada --password-stdin$" "$T/log")" 1
 check "makes the pull secret in both namespaces" "$(grep -c 'create secret docker-registry ghcr .*--docker-username=ada' "$T/log")" 2
 check "and names it in the release" \
@@ -88,6 +101,7 @@ check "and names it in the release" \
 check "the token is in no output" "$(grep -c t0ken "$T/out")" 0
 
 env THEOS_PROJECT=shop THEOS_UI_PORT=9090 THEOS_VERSION=9.9.9 PATH="$T/fakes:$PATH" THEOS_HOME="$T/home" "$QUICK" >"$T/out" 2>&1
+forwarded 9090
 check "THEOS_PROJECT, THEOS_VERSION and THEOS_UI_PORT are used" \
   "$(grep -c -- '--version 9.9.9 .*gitea.projects={shop}$\|-n shop wait brief\|port-forward svc/theos-ui 9090:8080$' "$T/log")" 3
 

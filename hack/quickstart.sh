@@ -174,7 +174,7 @@ stop_forward() {
 }
 
 up() {
-  local kind kubectl helm started=$SECONDS sets
+  local kind kubectl helm started=$SECONDS sets clusters
   command -v docker >/dev/null 2>&1 || die "needs Docker: install Docker Desktop or Docker Engine, start it, and run this again"
   [ -n "$DRY" ] || docker info >/dev/null 2>&1 || die "Docker is installed but not running, or this user may not use it: start it and run this again"
   # One by one: a failed download ends the script here, which a failure
@@ -187,7 +187,11 @@ up() {
   helm="$helm --kubeconfig $KUBECONFIG_FILE"
 
   say "A Kind cluster, $CLUSTER, with a kubeconfig of its own ($KUBECONFIG_FILE)"
-  if [ -z "$DRY" ] && "$kind" get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
+  # Read first, then match: grep -q in a pipe under pipefail turns a match
+  # into a miss when kind is still writing (hack/grep-q-pipe_test.sh).
+  clusters=
+  [ -n "$DRY" ] || clusters=$("$kind" get clusters 2>/dev/null || true)
+  if grep -qx "$CLUSTER" <<<"$clusters"; then
     echo "It exists; using it."
     "$kind" export kubeconfig --name "$CLUSTER" --kubeconfig "$KUBECONFIG_FILE" >/dev/null
   else
