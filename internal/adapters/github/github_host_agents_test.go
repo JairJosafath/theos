@@ -25,6 +25,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -149,10 +150,7 @@ func TestAgentAccessStateOnGitHub(t *testing.T) {
 	gh.AddOrg("acme")
 	whole, _ := agentsSecret(gh, "acme", agentPermissions())
 	with := func(change func(map[string][]byte)) map[string][]byte {
-		secret := map[string][]byte{}
-		for k, v := range whole {
-			secret[k] = v
-		}
+		secret := maps.Clone(whole)
 		change(secret)
 		return secret
 	}

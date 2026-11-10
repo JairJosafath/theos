@@ -12,6 +12,8 @@
 /internal/controller/ci_runner_pod.go               @JairJosafath
 /internal/controller/protection.go                  @JairJosafath
 /internal/adapters/gitea/gitea_agents.go            @JairJosafath
+/internal/adapters/github/github_host_agents.go     @JairJosafath
+/internal/adapters/github/github_host_rules.go      @JairJosafath
 /dist/chart/                                        @JairJosafath
 /hack/                                              @JairJosafath
 /Makefile                                           @JairJosafath

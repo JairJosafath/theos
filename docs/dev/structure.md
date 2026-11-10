@@ -18,7 +18,7 @@ internal/model/                    Pure business rules: choices, bundles, relati
 internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
 internal/adapters/gitea/           The Gitea adapter: the Git host ports over REST (+ go-git through adapters/git)
 internal/adapters/matrix/          The Matrix adapter: the ChatHost port over the client-server API; matrixtest/ is its fake homeserver
-internal/adapters/github/          The GitHub adapter: the release copy, a Brief's requests, a GitHub App's tokens, and the Git host ports as docs/plans/github-host.md adds them (GitHost and Issues, so far); githubtest/ is its fake GitHub, REST and Git over HTTP
+internal/adapters/github/          The GitHub adapter: the release copy, a Brief's requests, a GitHub App's tokens, and the Git host ports as docs/plans/github-host.md adds them (GitHost, Issues and AgentAccess, so far); githubtest/ is its fake GitHub, REST and Git over HTTP
 internal/adapters/localenv/        The local TestEnvironment provider: a fenced pod per lease, with client-go
 internal/adapters/awsenv/          The aws TestEnvironment provider: a fenced EC2 machine per lease (a Mac's on a kept host; one that runs a CI job in ci.go), and the deviceFarm one's test runs, with the AWS SDK
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete

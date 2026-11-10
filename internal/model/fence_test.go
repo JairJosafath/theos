@@ -138,6 +138,8 @@ func TestFactorySelfProtectedPathsAreTheFence(t *testing.T) {
 		"internal/controller/ci_runner_pod.go",
 		"internal/controller/protection.go",
 		"internal/adapters/gitea/gitea_agents.go",
+		"internal/adapters/github/github_host_agents.go",
+		"internal/adapters/github/github_host_rules.go",
 		"dist/chart/",
 		"Makefile",
 		".golangci.yml",

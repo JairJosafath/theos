@@ -328,13 +328,17 @@ func (s *Server) permitted(w http.ResponseWriter, r *http.Request, owner, name, 
 	return true
 }
 
-// The rules of a ruleset the fake holds a ref's writer to, and the id of
-// the repository role admin among a ruleset's bypass actors.
+// The rules of a ruleset the fake holds a ref's writer to, the enforcement
+// of one that holds anybody, the ways past one, and the id of the
+// repository role admin among a ruleset's bypass actors.
 const (
 	ruleCreation       = "creation"
 	ruleUpdate         = "update"
 	ruleDeletion       = "deletion"
 	ruleNonFastForward = "non_fast_forward"
+	enforced           = "active"
+	bypassAlways       = "always"
+	bypassByPull       = "pull_request"
 	adminRole          = 5
 )
 
@@ -344,7 +348,7 @@ func (s *Server) bypasses(rs *Ruleset, login string, g *grant, viaPull bool) boo
 	for _, actor := range rs.BypassActors {
 		is := actor.ActorType == "RepositoryRole" && actor.ActorID == adminRole && g == nil && login == s.admin ||
 			actor.ActorType == "Integration" && g != nil && actor.ActorID == g.app.id
-		if is && (actor.BypassMode == "always" || viaPull && actor.BypassMode == "pull_request") {
+		if is && (actor.BypassMode == bypassAlways || viaPull && actor.BypassMode == bypassByPull) {
 			return true
 		}
 	}
@@ -376,7 +380,7 @@ func matches(rs *Ruleset, ref string) bool {
 func (s *Server) held(kept *repo, login string, g *grant) string {
 	var lines []string
 	for _, rs := range kept.rulesets {
-		if rs.Enforcement != "active" || s.bypasses(rs, login, g, false) {
+		if rs.Enforcement != enforced || s.bypasses(rs, login, g, false) {
 			continue
 		}
 		for _, rule := range rs.Rules {
@@ -394,7 +398,7 @@ func (s *Server) held(kept *repo, login string, g *grant) string {
 // request's merge.
 func (s *Server) refused(w http.ResponseWriter, kept *repo, rule, ref string, viaPull bool) bool {
 	for _, rs := range kept.rulesets {
-		if rs.Enforcement != "active" || !matches(rs, ref) || s.bypasses(rs, s.acting, s.grant, viaPull) ||
+		if rs.Enforcement != enforced || !matches(rs, ref) || s.bypasses(rs, s.acting, s.grant, viaPull) ||
 			!slices.ContainsFunc(rs.Rules, func(r struct {
 				Type string `json:"type"`
 			}) bool {

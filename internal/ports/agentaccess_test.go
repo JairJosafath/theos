@@ -31,7 +31,7 @@ func (minter) EnsureAgentAccess(context.Context, Repository, string) (Credential
 	return Credentials{}, nil
 }
 func (minter) RemoveAgentAccess(context.Context, Repository, string) error { return nil }
-func (minter) RevokeOldAgentTokens(context.Context, string) error         { return nil }
+func (minter) RevokeOldAgentTokens(context.Context, string) error          { return nil }
 
 type checked struct {
 	minter

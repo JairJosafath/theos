@@ -130,8 +130,14 @@ func (h *host) CheckAgentAccess() error {
 // else is ever asked for: not workflows, not administration, not the
 // variables of Actions.
 func agentPermissions() map[string]string {
-	return map[string]string{"contents": "write", "pull_requests": "write", "issues": "read"}
+	return map[string]string{"contents": mayWrite, "pull_requests": mayWrite, "issues": mayRead}
 }
+
+// The levels of a permission of an installation token.
+const (
+	mayRead  = "read"
+	mayWrite = "write"
+)
 
 // agentTokenRequest is what a run's token is asked of GitHub with.
 type agentTokenRequest struct {
@@ -265,10 +271,10 @@ func (h *host) EnsureAgentAccess(ctx context.Context, repo ports.Repository, use
 func wider(asked agentTokenRequest, permissions map[string]string, selection string, repositories int) string {
 	for permission, level := range permissions {
 		// metadata is every installation token's: the repository's name and visibility.
-		if permission == "metadata" && level == "read" {
+		if permission == "metadata" && level == mayRead {
 			continue
 		}
-		if want, ok := asked.Permissions[permission]; !ok || level != want && level != "read" {
+		if want, ok := asked.Permissions[permission]; !ok || level != want && level != mayRead {
 			return "may " + level + " " + permission + ", which was not asked for"
 		}
 	}
