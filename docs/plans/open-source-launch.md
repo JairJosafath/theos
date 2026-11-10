@@ -132,7 +132,8 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 | #57 GitHub as a Git host | planned ([github-host.md](github-host.md)), nine steps filed as #74 to #82; steps 1 (#74) and 3 (#76) are built |
 | #62 a Crew's approval rules | done ([approval-rules.md](done/approval-rules.md); #93, #105): the rules, the wait and the merge; a waiting change's thread in chat; the triager's `risk/high` label; the reviewer raises a change to a person, never lowers; merged Tasks split by who approved |
 | #60 bring a repository you already have | planned ([adopt-existing.md](adopt-existing.md)), six steps; steps 1 to 3, 5 and 6 (#95, #96, #98, #99) are built: an adopting Container needs nothing from the catalog, a Crew works on it once main requires the repository's own checks, `theos-session adopt` proposes the model, the Crew's first issue there writes `AGENTS.md`, and [docs/adopt.md](../adopt.md) walks it; open: #97 (a Standard as a pull request) |
-| #54, #58, #61, #64, #66, #73 | open |
+| #58 more harnesses and models | planned ([harnesses.md](harnesses.md)), eight steps; step 1 (the harness table in the runner) and the proxy's part of step 2 (named upstreams) are built; open: the chart's upstreams, the price table, and the `codex` harness, which no session has run |
+| #54, #61, #64, #66, #73 | open |
 
 ## For the owner
 
