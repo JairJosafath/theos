@@ -115,6 +115,8 @@ type repo struct {
 	rulesets  []*Ruleset
 	variables map[string]string
 	releases  []*release
+	// runs are the workflow runs a test said ran, oldest first (actions.go).
+	runs []*run
 }
 
 // New starts a fake GitHub that takes token, whose user is user. It skips the
@@ -179,6 +181,9 @@ var (
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	if m := gitPath.FindStringSubmatch(r.URL.Path); m != nil {
 		s.serveGit(w, r, m[1], m[2])
+		return
+	}
+	if s.serveLog(w, r) {
 		return
 	}
 	s.mu.Lock()
@@ -424,7 +429,7 @@ func (s *Server) repo(w http.ResponseWriter, r *http.Request, owner, name, rest 
 	if !s.permitted(w, r, owner, name, rest) {
 		return
 	}
-	if s.hostAPI(w, r, kept, rest) || s.pullsAPI(w, r, kept, rest) || s.issuesAPI(w, r, kept, rest) {
+	if s.actionsAPI(w, r, kept, rest) || s.hostAPI(w, r, kept, rest) || s.pullsAPI(w, r, kept, rest) || s.issuesAPI(w, r, kept, rest) {
 		return
 	}
 	switch {

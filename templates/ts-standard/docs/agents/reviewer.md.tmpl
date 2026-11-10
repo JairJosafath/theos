@@ -125,7 +125,7 @@ A blocking problem is never a follow-up.
 
 ## When CI runs the full check
 
-When `.gitea/workflows/check.yaml` has a `full` job, the Container's owner chose
+When `{{ .CI.Dir }}workflows/check.yaml` has a `full` job, the Container's owner chose
 `BeforeRelease`: green CI on the pull request means `make check-light` passed
 (lint and the type or vet checks), not the tests. Take the tests' result
 from the implementer's _How it was checked_ and judge the tests in the diff

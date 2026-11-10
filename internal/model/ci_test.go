@@ -42,7 +42,10 @@ func TestHostCI(t *testing.T) {
 	}{
 		{host: "gitea", wantName: CIGiteaActions, wantContexts: []string{"check*"},
 			paths: []string{".devcontainer/", ".gitea/", ".theos.yaml"}},
-		{host: "github", wantErr: true},
+		// #78: GitHub's own CI system is GitHub Actions.
+		{host: "github", wantName: CIGitHubActions, wantContexts: []string{"check*"},
+			paths: []string{".devcontainer/", ".github/", ".theos.yaml"}},
+		{host: "gitlab", wantErr: true},
 		{host: "", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -61,6 +64,20 @@ func TestHostCI(t *testing.T) {
 				t.Errorf("PlatformProtectedPaths(%s) = %v, want %v", ci.Name, got, tt.paths)
 			}
 		})
+	}
+}
+
+// #78: CINames lists every CI system of the table, sorted, each by the name
+// CIByName finds it under.
+func TestCINames(t *testing.T) {
+	names := CINames()
+	if len(names) != len(ciSystems) || !slices.IsSorted(names) {
+		t.Fatalf("CINames() = %v, want the %d systems of the table, sorted", names, len(ciSystems))
+	}
+	for _, name := range names {
+		if ci, err := CIByName(name); err != nil || ci.Name != name {
+			t.Errorf("CIByName(%q) = %+v, %v", name, ci, err)
+		}
 	}
 }
 
@@ -105,6 +122,60 @@ func TestCIRulesTakeTheCI(t *testing.T) {
 	}
 	if got := FactoryOwnPaths(other); slices.Contains(got, ".gitea/") || !slices.Contains(got, ".other-ci.yml") {
 		t.Errorf("FactoryOwnPaths(other) = %v, want .other-ci.yml and no .gitea/", got)
+	}
+}
+
+// #78: GitHub Actions is a CI system of its own. A job reports as a check
+// run under its own name, with no workflow or event in it, and everything
+// under .github/ is the platform's: no agent changes a workflow, an issue
+// template or the code owners there.
+func TestGitHubActionsRow(t *testing.T) {
+	ci := mustCI(CIGitHubActions)
+	tests := []struct {
+		name     string
+		contexts map[string]string
+		want     string
+	}{
+		{"the check job passed", map[string]string{"check": "success"}, ""},
+		{"the check job and the full one passed", map[string]string{"check": "success", "check (full)": "success"}, ""},
+		{"the check job failed", map[string]string{"check": "failure"},
+			`no passing check matches "check*", which main requires`},
+		{"only another job passed", map[string]string{"build": "success"},
+			`no passing check matches "check*", which main requires`},
+		{"nothing reported", nil, `no passing check matches "check*", which main requires`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GatedMergeRefusal(ci, checkSuccess, tt.contexts, VerdictApprove, []string{"Makefile"},
+				[]string{"Makefile"}, AgentProtectedPaths(ci, []string{"Makefile"}))
+			if got != tt.want {
+				t.Errorf("GatedMergeRefusal() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+	if got, want := AgentProtectedPaths(ci, []string{"Makefile"}), []string{".devcontainer/", ".github/", ".theos.yaml",
+		"Makefile"}; !slices.Equal(got, want) {
+		t.Errorf("AgentProtectedPaths(githubActions) = %v, want %v", got, want)
+	}
+	if got := FactoryOwnPaths(ci); !slices.Contains(got, ".github/") || len(got) != len(FactoryOwnPaths(CI{}))+1 {
+		t.Errorf("FactoryOwnPaths(githubActions) = %v, want the factory's own and .github/ alone of a CI system", got)
+	}
+	if ci.Dir() != ".github/" || (CI{ProtectedPaths: []string{".ci.yml"}}).Dir() != "" {
+		t.Errorf("Dir() = %q, and %q of a system with one file; want .github/ and none", ci.Dir(),
+			(CI{ProtectedPaths: []string{".ci.yml"}}).Dir())
+	}
+	// It reads workflows from one place, so an adopted repository's are
+	// protected already.
+	if got := ci.ForAdopted(nil); !slices.Equal(got.ProtectedPaths, []string{".github/"}) ||
+		!slices.Equal(got.CheckContexts, []string{"check*"}) {
+		t.Errorf("ForAdopted(nil) = %+v, want the row as it is", got)
+	}
+	// A Standard change for the Makefile may not carry a workflow with it.
+	want := "the change touches .github/workflows/check.yaml, protected and outside the allowed paths"
+	if got := GatedMergeRefusal(ci, checkSuccess, map[string]string{"check": "success"}, VerdictApprove,
+		[]string{"Makefile", ".github/workflows/check.yaml"}, []string{"Makefile"},
+		AgentProtectedPaths(ci, []string{"Makefile"})); got != want {
+		t.Errorf("GatedMergeRefusal() of a change that carries a workflow = %q, want %q", got, want)
 	}
 }
 

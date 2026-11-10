@@ -29,9 +29,8 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
 - **Keep the change focused:** one issue, one pull request, small Conventional
   Commits.
 - **Update what users read** in the same change when behaviour they see changes:
-  `README.md`, the API's models and descriptions or `--help` text, error
-  messages, docstrings.
-- **`make check` green before every commit.** When a rule fires, fix the code.
+  `README.md`, `--help` text, error messages, doc comments.
+- **`make check` green before every commit.** When a linter fires, fix the code.
 - **Protected files** (the Standard's and the platform's, listed in
   `AGENTS.md`) change only through a Standard change, below. The Git host
   refuses them in a normal pull request.
@@ -39,7 +38,7 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
 ## When CI runs the full check
 
 The Container's owner chooses it (its `checks` setting). When
-`.gitea/workflows/check.yaml` has a `full` job, the choice is `BeforeRelease`:
+`{{ .CI.Dir }}workflows/check.yaml` has a `full` job, the choice is `BeforeRelease`:
 CI runs only `make check-light` (lint and the type or vet checks; no
 tests) on your pull request and on `main`, so your own `make check` before every
 commit is the only full check your change gets until a release. The full
@@ -60,7 +59,7 @@ Task that reviews and merges it. Then:
   rest of your work. Never have it call a file only your branch has; use a hook
   that does nothing until the rest lands, such as a `Makefile` target that runs
   an optional script only when it exists
-  (`[ ! -f scripts/dist.py ] || uv run --no-sync python scripts/dist.py`).
+  (`[ ! -x scripts/dist.sh ] || scripts/dist.sh`).
 - The rest of your work merges after it and may rely on it.
 - End your summary with a line: `Standard change: <why the issue needs it>`.
 - Never change `AGENTS.md`, `docs/agents/` or `.theos.yaml`. No Standard
@@ -70,36 +69,36 @@ Task that reviews and merges it. Then:
   that checks what those paths produce; change no other protected file, and do
   not propose another Standard change.
 
-## Python notes
+## Go notes
 
-- Iterate with `uv run pytest tests/test_<module>.py`, `uv run mypy .` and
-  `uv run ruff check`; finish with `make check`, which also builds the wheel.
-- New logic goes in a module of its own under the package, with its tests in
-  `tests/test_<module>.py`; keep entry points (the app's routes, the
-  command-line function) to wiring.
-- Tables with `@pytest.mark.parametrize` and `ids`; fixtures in
-  `tests/conftest.py` once two test modules share them.
-- Tests never measure time: no `time.sleep`, no wall-clock bounds such as
-  "responds within 500 ms", no best-of-N samples. They pass in your sandbox and
-  fail on the shared CI runner.
-- A budget in the issue or the needs ("within 200 ms", "fast on 10,000
-  orders") gets a measurement on realistic input with `timeit`, not a test; put
-  the numbers and the input size in the summary.
-- Timing logic (timeouts, retries, expiry) takes an injected clock or sleep
-  function the test controls; the test advances it and checks the outcome.
-- New packages: `uv add <package>` (`--dev` for test tools), which updates
-  `pyproject.toml` and `uv.lock`; name each one and why in the summary. Prefer
-  the standard library. Never edit `uv.lock` by hand.
+- New code goes in `internal/<package>/`; `main.go` only wires. Pick an existing
+  package when the issue's work fits its purpose; create one when it doesn't.
+- Iterate with `go test -race -count=1 ./internal/<package>/`; finish with
+  `make check`.
+- Table tests with `t.Run`; golden files in `testdata/` behind an `-update`
+  flag; a `FuzzX` for anything that parses untrusted input.
+- Pass `ctx` through and test that cancelling it stops the work.
+- Unit tests never measure time: no `time.Sleep`, no wall-clock bounds such as
+  "arrives within 500ms", no best-of-N samples. They pass in your sandbox and
+  fail on the shared CI runner or under `-race`.
+- A budget in the issue or the needs ("within 200 ms", "fast on a 10,000-line
+  file") gets a `BenchmarkX` with `for b.Loop()` on realistic input, not a
+  test; put `ns/op` and the input size in the summary.
+- Timing logic (debounce, timeouts, retries) takes an injected clock or a
+  channel the test controls; the test advances it, or waits for an event, and
+  checks the outcome.
+- New modules: `go get module@version`, then `go mod tidy`; name each one and
+  why in the summary. Prefer the standard library.
 
 ## Your summary
 
 Your summary becomes the pull request description, in the shape of
-`.gitea/PULL_REQUEST_TEMPLATE.md`:
+`{{ .CI.Dir }}PULL_REQUEST_TEMPLATE.md`:
 
 - **Summary:** what changed and why, in two or three sentences.
 - **Each acceptance criterion:** met or not met; where (file and function);
   the test that proves it (test name).
-- **How it was checked:** `make check`, numbers for any budget, manual runs.
-- **Could not be verified:** what and why (needs a cluster, a real database, the
+- **How it was checked:** `make check`, benchmark numbers, manual runs.
+- **Could not be verified:** what and why (needs a real editor, a cluster, the
   network). Never claim what you didn't run.
 - **Follow-ups:** problems you saw outside the issue's scope.

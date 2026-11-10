@@ -265,9 +265,12 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 
 		By("reading them again for a Task merged before they were kept")
+		// The size changes on the host before the status forgets it: the
+		// operator reads it once, at the first reconcile that finds none kept,
+		// which the status update starts.
+		gitFake.SetPullSize(ns, "orders-api", 1, 121, 30, 4)
 		merged.Status.PullRequestSize, merged.Status.PersonCommits = c4v1beta1.TaskPullRequestSize{}, nil
 		Expect(k8sClient.Status().Update(ctx, merged)).To(Succeed())
-		gitFake.SetPullSize(ns, "orders-api", 1, 121, 30, 4)
 		Eventually(func(g Gomega) {
 			task := getTask(g, ns, "add-crop")
 			g.Expect(task.Status.PullRequestSize).To(Equal(c4v1beta1.TaskPullRequestSize{Additions: 121, Deletions: 30,

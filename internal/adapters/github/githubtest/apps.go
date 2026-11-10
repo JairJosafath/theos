@@ -86,6 +86,7 @@ const (
 	levelRead  = "read"
 	levelWrite = "write"
 
+	permActions        = "actions"
 	permAdministration = "administration"
 	permChecks         = "checks"
 	permContents       = "contents"
@@ -291,6 +292,8 @@ func needs(method, rest string) (perm string, write bool) {
 	switch {
 	case rest == "":
 		return "", write
+	case actionsAt.MatchString(rest):
+		return permActions, write
 	case variablesAt.MatchString(rest):
 		return permVariables, write
 	case rulesetsAt.MatchString(rest):
