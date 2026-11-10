@@ -174,6 +174,24 @@ Signed-Releases (next: sign the release files in a GitHub workflow with its
 own identity, no key to keep), Maintained (the repository is younger than
 90 days) and Contributors.
 
+## Signed releases (10 November)
+
+Decision 5 changed: a GitHub workflow has a signing identity of its own, so
+no key has to be kept by anyone. `sign-release.yml` (cel-lens-vscode #25,
+Gitea PR #26, GitHub JairJosafath/cel-lens#16, merged) signs each file of a
+release with Sigstore when the release is published, or by hand for a tag,
+and uploads `<file>.sigstore.json` beside it. It claims no provenance: the
+files are built by the factory, not by that workflow, and SECURITY.md says
+what a signature does say. It runs only from `main` or a tag, and the
+verify command accepts only those.
+
+The 47 releases already out are signed by running the workflow for each.
+
+Dependabot opened eight pull requests on GitHub within minutes of the first
+merge (#8 to #15): the engine's and the extension's minor and patch groups,
+TypeScript 7, `@types/node` 26, and four for the workflows' actions. They are
+applied through the source, as CONTRIBUTING.md says.
+
 ## What the owner does
 
 1. **Merge and publish,** then copy `public-repo/` to the GitHub root (or
