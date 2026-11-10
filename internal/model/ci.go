@@ -36,6 +36,75 @@ type CI struct {
 	// ProtectedPaths are the paths the CI system reads, which no agent may
 	// change. A path ending in "/" is a directory.
 	ProtectedPaths []string
+	// FallbackPaths are the paths the CI system reads workflows from when a
+	// repository has none under ProtectedPaths. A repository the factory
+	// scaffolded has its workflows where the system looks first; one it
+	// adopted may have them here (ForAdopted).
+	FallbackPaths []string
+}
+
+// ForAdopted is the CI system as a Container that adopts its repository
+// with no Standard uses it (docs/plans/adopt-existing.md, step 2): the check
+// contexts the Container names, the system's own when it names none, and the
+// system's fallback paths protected beside its own, since the repository's
+// workflows may be there.
+func (ci CI) ForAdopted(contexts []string) CI {
+	if len(contexts) > 0 {
+		ci.CheckContexts = slices.Clone(contexts)
+	}
+	ci.ProtectedPaths = sortedPaths(ci.ProtectedPaths, ci.FallbackPaths)
+	return ci
+}
+
+// Reasons of a Container's Protected condition, which one that adopts its
+// repository with no Standard has.
+const (
+	// ReasonProtected: main's head reports a check its contexts match, and
+	// main requires them.
+	ReasonProtected = "Protected"
+	// ReasonNoMatchingCheck: main's head reports no such check, so main
+	// isn't protected and no agent works on the repository.
+	ReasonNoMatchingCheck = "NoMatchingCheck"
+)
+
+// AdoptedChecks says whether an adopted repository's default branch can be
+// protected by required, the check contexts its Container asks for: its
+// head, whose checks by context are contexts, reports at least one check
+// that matches each pattern, skipped ones aside. A pattern nothing reports
+// would block every merge, the people's too, so the operator requires none
+// until each has a check. message says which checks main then requires, or
+// what the head reports instead, for the Container's Protected condition.
+func AdoptedChecks(required []string, contexts map[string]string) (ok bool, message string) {
+	var missing []string
+	for _, pattern := range required {
+		if len(RequiredChecks([]string{pattern}, contexts)) == 0 {
+			missing = append(missing, pattern)
+		}
+	}
+	if len(missing) == 0 {
+		return true, fmt.Sprintf("main requires the checks matching %s, which its head reports (%s)",
+			joinAnd(required), joinAnd(RequiredChecks(required, contexts)))
+	}
+	reported := make([]string, 0, len(contexts))
+	for context, state := range contexts {
+		if state != checkSkipped {
+			reported = append(reported, context)
+		}
+	}
+	slices.Sort(reported)
+	reports := "it reports no check at all: add a CI workflow, and the factory looks again once main has a result"
+	if len(reported) > 0 {
+		const shown = 8
+		more := ""
+		if len(reported) > shown {
+			more = fmt.Sprintf(" and %d more", len(reported)-shown)
+			reported = reported[:shown]
+		}
+		reports = fmt.Sprintf("it reports %s%s: name the repository's own in spec.checkContexts, a pattern such "+
+			"as \"ci / test*\" for a workflow's job on every event", joinAnd(reported), more)
+	}
+	return false, fmt.Sprintf("main's head reports no check matching %s, so main isn't protected and no agent "+
+		"works on the repository; %s", joinAnd(missing), reports)
 }
 
 // CIGiteaActions names Gitea Actions, the CI system of a Gitea host.
@@ -45,7 +114,10 @@ const CIGiteaActions = "giteaActions"
 var ciSystems = map[string]CI{
 	// Gitea Actions reports a context per workflow, job and event, such as
 	// "check / check (pull_request)", and reads .gitea/.
-	CIGiteaActions: {Name: CIGiteaActions, CheckContexts: []string{"check*"}, ProtectedPaths: []string{".gitea/"}},
+	// It reads .github/workflows/ when a repository has no workflows where it
+	// looks first.
+	CIGiteaActions: {Name: CIGiteaActions, CheckContexts: []string{"check*"}, ProtectedPaths: []string{".gitea/"},
+		FallbackPaths: []string{".github/workflows/"}},
 }
 
 // hostCI is each Git host's own CI system, which a Container uses unless its

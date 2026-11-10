@@ -161,6 +161,18 @@ function containerNeeds(c: Container): Need[] {
       command: `kubectl -n ${ns} annotate container ${c.metadata.name} theos.factory.io/retry=$(date +%s) --overwrite`,
     })
   }
+  // #95: a repository adopted with no Standard is protected by its own checks,
+  // and only a person can name them when main reports none the Container asks for.
+  const protection = findCondition(c.status?.conditions, 'Protected')
+  if (protection?.status === 'False') {
+    items.push({
+      ...base('Container', c, 'Unprotected'),
+      title: 'needs its checks named before agents can work on it',
+      ...why(protection, 'NoMatchingCheck'),
+      place,
+      links: c.status?.repositoryURL ? [{ label: 'Its repository', url: c.status.repositoryURL }] : [],
+    })
+  }
   const updated = findCondition(c.status?.conditions, 'StandardUpdated')
   if (updated?.status === 'False' && STANDARD_UPDATE_HELD.includes(updated.reason ?? '')) {
     const url = c.status?.standard?.update?.pullRequestURL

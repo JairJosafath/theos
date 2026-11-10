@@ -382,7 +382,11 @@ type TaskFacts struct {
 	ContainerReady bool
 	// Protected means the Container's default branch is protected (see Protected):
 	// agents work only where the Git host enforces checks and review.
-	Protected bool
+	// Unprotected says why a Container that adopts its repository with no
+	// Standard isn't yet (its Protected condition's message): the Task waits
+	// for it, where one on any other unprotected Container fails.
+	Protected   bool
+	Unprotected string
 	// BlockedBy names an earlier Task on the same Container that is still active.
 	BlockedBy string
 	// Base is the CI state of main's head for the Container's check contexts
@@ -1127,6 +1131,11 @@ func ChecksBound(message string) string {
 	return fmt.Sprintf("The operator fails it if no CI run starts within %s.", spellDuration(ChecksStartLimit))
 }
 
+// ReasonNotProtected is the reason of a Task waiting for the default branch
+// of a Container that adopts its repository to be protected, and of a Crew
+// that starts no Task for it.
+const ReasonNotProtected = "ContainerNotProtected"
+
 // TaskAction is what the operator does next.
 type TaskAction string
 
@@ -1329,23 +1338,7 @@ func nextTaskStep(f TaskFacts) TaskStep {
 	}
 	switch f.Phase {
 	case "", TaskPending:
-		switch {
-		case !f.Protected:
-			return TaskStep{Action: ActionFail, Message: fmt.Sprintf("Container %s has no Standard, so its default "+
-				"branch has no checks to protect it; agents work only on protected repositories", f.Container)}
-		case !f.ContainerReady:
-			return TaskStep{Action: ActionWait, Message: fmt.Sprintf("Waiting for Container %s to be Ready", f.Container)}
-		case f.BlockedBy != "":
-			return TaskStep{Action: ActionWait,
-				Message: fmt.Sprintf("Waiting for Task %s: one Task works on a Container at a time", f.BlockedBy)}
-		case checksFailed(f.Base):
-			return TaskStep{Action: ActionWait, Reason: ReasonBaseRed, Recheck: true,
-				Message: fmt.Sprintf("Main's checks failed (%s): round 1 starts only on a green base; "+
-					"fix main's checks", orUnknown(f.BaseURL))}
-		case f.Base == checkPending:
-			return TaskStep{Action: ActionWait, Recheck: true, Message: "Waiting for main's checks to end before round 1"}
-		}
-		return TaskStep{Action: ActionStartImplement, Message: "Starting round 1"}
+		return pendingStep(f)
 
 	case TaskImplementing:
 		return implementingStep(f)
@@ -1412,6 +1405,33 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return awaitingApprovalStep(f)
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// pendingStep decides what follows for a Task that has not started: round 1
+// starts on a Ready Container whose default branch is protected, at the
+// Task's turn, on a green base.
+func pendingStep(f TaskFacts) TaskStep {
+	switch {
+	case !f.Protected && f.Unprotected != "":
+		return TaskStep{Action: ActionWait, Recheck: true, Reason: ReasonNotProtected, Message: fmt.Sprintf(
+			"Waiting for the main of Container %s to be protected; agents work only on protected repositories: %s",
+			f.Container, f.Unprotected)}
+	case !f.Protected:
+		return TaskStep{Action: ActionFail, Message: fmt.Sprintf("Container %s has no Standard, so its default "+
+			"branch has no checks to protect it; agents work only on protected repositories", f.Container)}
+	case !f.ContainerReady:
+		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("Waiting for Container %s to be Ready", f.Container)}
+	case f.BlockedBy != "":
+		return TaskStep{Action: ActionWait,
+			Message: fmt.Sprintf("Waiting for Task %s: one Task works on a Container at a time", f.BlockedBy)}
+	case checksFailed(f.Base):
+		return TaskStep{Action: ActionWait, Reason: ReasonBaseRed, Recheck: true,
+			Message: fmt.Sprintf("Main's checks failed (%s): round 1 starts only on a green base; "+
+				"fix main's checks", orUnknown(f.BaseURL))}
+	case f.Base == checkPending:
+		return TaskStep{Action: ActionWait, Recheck: true, Message: "Waiting for main's checks to end before round 1"}
+	}
+	return TaskStep{Action: ActionStartImplement, Message: "Starting round 1"}
 }
 
 // rerunStep runs again the checks that failed through the runner's fault, as

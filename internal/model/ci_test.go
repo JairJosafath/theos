@@ -18,6 +18,7 @@ package model
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -104,5 +105,92 @@ func TestCIRulesTakeTheCI(t *testing.T) {
 	}
 	if got := FactoryOwnPaths(other); slices.Contains(got, ".gitea/") || !slices.Contains(got, ".other-ci.yml") {
 		t.Errorf("FactoryOwnPaths(other) = %v, want .other-ci.yml and no .gitea/", got)
+	}
+}
+
+// #95: a Container that adopts its repository with no Standard names its own
+// check contexts, and its workflows may be where the CI system looks second.
+func TestCIForAdopted(t *testing.T) {
+	ci := CI{Name: "someActions", CheckContexts: []string{"check*"}, ProtectedPaths: []string{".ci/"},
+		FallbackPaths: []string{".github/workflows/"}}
+	own := ci.ForAdopted([]string{"ci / test*", "ci / lint*"})
+	if !slices.Equal(own.CheckContexts, []string{"ci / test*", "ci / lint*"}) {
+		t.Errorf("ForAdopted() contexts = %v, want the Container's", own.CheckContexts)
+	}
+	if got := ci.ForAdopted(nil).CheckContexts; !slices.Equal(got, []string{"check*"}) {
+		t.Errorf("ForAdopted(nil) contexts = %v, want the CI system's", got)
+	}
+	want := []string{".ci/", ".devcontainer/", ".github/workflows/", ".theos.yaml"}
+	if got := AgentProtectedPaths(own, nil); !slices.Equal(got, want) {
+		t.Errorf("AgentProtectedPaths(adopted) = %v, want %v", got, want)
+	}
+	if got := AgentProtectedPaths(ci, nil); slices.Contains(got, ".github/workflows/") {
+		t.Errorf("AgentProtectedPaths(scaffolded) = %v: a scaffolded repository's .github/ is its own", got)
+	}
+	if !slices.Equal(ci.CheckContexts, []string{"check*"}) || !slices.Equal(ci.ProtectedPaths, []string{".ci/"}) {
+		t.Errorf("ForAdopted changed the CI system it came from: %+v", ci)
+	}
+	// Every CI system that reads workflows from a second place says so: an
+	// adopted repository's may be there, in an agent's reach otherwise.
+	for name, system := range ciSystems {
+		if len(system.FallbackPaths) == 0 && !slices.Contains(system.ProtectedPaths, ".github/") {
+			t.Errorf("CI system %s names no fallback paths: where else does its host read workflows from?", name)
+		}
+	}
+}
+
+func TestAdoptedChecks(t *testing.T) {
+	tests := []struct {
+		name     string
+		required []string
+		contexts map[string]string
+		ok       bool
+		message  string
+	}{
+		{"the default pattern, reported", []string{"check*"}, map[string]string{"check / check (push)": "success"},
+			true, "main requires the checks matching check*, which its head reports (check / check (push))"},
+		{"a failed check is still a check: protection is about what reports", []string{"check*"},
+			map[string]string{"check / check (push)": "failure"}, true, ""},
+		{"the Container's own pattern", []string{"ci / test*"},
+			map[string]string{"ci / test (push)": "success", "ci / docs (push)": "success"}, true,
+			"its head reports (ci / test (push))"},
+		{"another name than the default", []string{"check*"},
+			map[string]string{"ci / test (push)": "success", "ci / lint (push)": "pending"}, false,
+			"main's head reports no check matching check*, so main isn't protected and no agent works on the " +
+				"repository; it reports ci / lint (push) and ci / test (push): name the repository's own in " +
+				"spec.checkContexts"},
+		{"one of two patterns unreported", []string{"ci / test*", "ci / e2e*"},
+			map[string]string{"ci / test (push)": "success"}, false, "no check matching ci / e2e*, so"},
+		{"no check at all", []string{"check*"}, nil, false, "it reports no check at all: add a CI workflow"},
+		{"a skipped check reports nothing", []string{"check*"}, map[string]string{"check / check (push)": "skipped"},
+			false, "it reports no check at all"},
+		{"many checks are told short", []string{"check*"}, map[string]string{"a": "success", "b": "success",
+			"c": "success", "d": "success", "e": "success", "f": "success", "g": "success", "h": "success",
+			"i": "success", "j": "success"}, false, "g and h and 2 more"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ok, message := AdoptedChecks(tt.required, tt.contexts)
+			if ok != tt.ok || !strings.Contains(message, tt.message) {
+				t.Errorf("AdoptedChecks() = %v, %q, want %v with %q", ok, message, tt.ok, tt.message)
+			}
+		})
+	}
+}
+
+func TestProtected(t *testing.T) {
+	for _, tt := range []struct {
+		name                    string
+		standard, adoptedChecks bool
+		want                    bool
+	}{
+		{"a Standard brings the checks", true, false, true},
+		{"an adopted repository with its own checks", false, true, true},
+		{"an adopted repository whose main reports none", false, false, false},
+		{"neither", false, false, false},
+	} {
+		if got := Protected(tt.standard, tt.adoptedChecks); got != tt.want {
+			t.Errorf("%s: Protected() = %v, want %v", tt.name, got, tt.want)
+		}
 	}
 }

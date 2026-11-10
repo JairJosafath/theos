@@ -1,0 +1,59 @@
+#95, step 2 of docs/plans/adopt-existing.md: an adopted repository's own
+check, and the fence on it
+=======================================================================
+
+2026-11-10. Test output is the evidence; no cluster was used.
+
+The repository, the Container, the Crew and a Task on the fake Git host
+(envtest, internal/controller/container_adopt_checks_test.go):
+
+$ go test -v ./internal/controller -run '^TestControllers$' -ginkgo.focus "Container adoption with the repository's own check" -ginkgo.v
+Container adoption with the repository's own check takes checkCommand and checkContexts only on a Container that adopts with no Standard
+Container adoption with the repository's own check protects main with the Container's contexts once its head reports them, and never before
+Container adoption with the repository's own check has no Protected condition on a Container with a Standard
+Container adoption with the repository's own check starts no Task while main isn't protected, and then builds an issue with the Container's command
+Container adoption with the repository's own check has a Task made by hand wait for the protection, where one on a Container that adopts nothing fails
+Ran 5 of 766 Specs in 21.685 seconds
+SUCCESS! -- 5 Passed | 0 Failed | 0 Pending | 761 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	21.722s
+
+The rules as tables (internal/model/ci_test.go, task_test.go):
+
+$ go test ./internal/model -run 'TestCIForAdopted|TestAdoptedChecks|TestProtected' -v
+--- PASS: TestCIForAdopted (0.00s)
+--- PASS: TestAdoptedChecks (0.00s)
+    --- PASS: TestAdoptedChecks/the_default_pattern,_reported (0.00s)
+    --- PASS: TestAdoptedChecks/a_failed_check_is_still_a_check:_protection_is_about_what_reports (0.00s)
+    --- PASS: TestAdoptedChecks/the_Container's_own_pattern (0.00s)
+    --- PASS: TestAdoptedChecks/another_name_than_the_default (0.00s)
+    --- PASS: TestAdoptedChecks/one_of_two_patterns_unreported (0.00s)
+    --- PASS: TestAdoptedChecks/no_check_at_all (0.00s)
+    --- PASS: TestAdoptedChecks/a_skipped_check_reports_nothing (0.00s)
+    --- PASS: TestAdoptedChecks/many_checks_are_told_short (0.00s)
+--- PASS: TestProtected (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.015s
+
+The whole suite with the change in, both shards (make test):
+
++ env THEOS_TEST_SHARD=1/2 go test -trimpath -timeout 20m github.com/JairJosafath/theos/internal/controller
+ok  	github.com/JairJosafath/theos/internal/controller	570.734s
++ env THEOS_TEST_SHARD=2/2 go test -trimpath -timeout 20m -run '^TestControllers$' github.com/JairJosafath/theos/internal/controller
+ok  	github.com/JairJosafath/theos/internal/controller	748.872s
+
+Its first run found what the focused specs had not: TestAgentNetworkFence
+builds a sandbox with no Container, and the check command, read from the
+Container there, was a nil pointer. It is a run input of its own now.
+
+  --- FAIL: TestAgentNetworkFence (0.01s)
+  panic: runtime error: invalid memory address or nil pointer dereference
+    internal/controller.buildSandbox task_sandbox.go:208
+
+After that run two things changed, each with the specs above and the
+triage and protection specs run again (34 passed): a Crew's triager waits
+for the protection too, and the Crew's Ready reason moved into a function
+of its own for the linter.
+
+Not run here: make validate-yaml, whose download of the Kubernetes schemas
+this session's network refuses; CI's Lint job runs it, the samples under
+config/samples/adopt included.

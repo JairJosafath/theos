@@ -180,6 +180,12 @@ export interface Container extends K8sObject {
     deploymentRef?: LocalRef
     /** When CI runs the full check; the API server defaults it to EveryChange. */
     checks?: ChecksMode
+    /** It takes over a repository that already has commits; nothing is scaffolded, and it needs nothing from the catalog. */
+    adopt?: boolean
+    /** The check of a repository adopted with no Standard: what the agent's workspace runs; make check when unset. */
+    checkCommand?: string
+    /** The status checks main requires on a repository adopted with no Standard, as patterns; check* when unset. */
+    checkContexts?: string[]
     /** Backups, recovery and alerts; any field left out takes its default. */
     operations?: Operations
     /** The DeployTargets each release ships to, in order (docs/plans/done/deploy.md). */

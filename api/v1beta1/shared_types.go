@@ -186,6 +186,13 @@ const (
 	// listing the sides that differ, or saying the Bundle is gone. A changed
 	// Bundle is reported, never applied. Absent on a Container naming its sides.
 	ConditionBundleCurrent = "BundleCurrent"
+	// ConditionProtected, on a Container that adopts its repository with no
+	// Standard, is True when the default branch requires the Container's
+	// check contexts, and False, reason NoMatchingCheck, while its head
+	// reports no check for one of them: no agent works on the repository
+	// until it does (docs/design.md, "Adopting a repository").
+	ConditionProtected = "Protected"
+
 	// ConditionChecksApplied is True when a Container's Standard runs its CI's
 	// full check when the Container's spec.checks asks, and its repository's CI
 	// already does; False with the update in flight or its stop while not.

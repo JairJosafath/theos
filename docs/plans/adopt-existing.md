@@ -103,7 +103,7 @@ Each step is its own issue, names #60 and lands with `make check`.
 | Step | Issue | Depends on | Done when |
 | --- | --- | --- | --- |
 | 1. An adopting Container needs nothing from the catalog (done) | #60 | | the CRD takes it; it goes Ready on the identity alone, with and without a Framework, in envtest; a Container that doesn't adopt still needs a Framework |
-| 2. The repository's own check, and the fence on it | #95 | 1 | `checkCommand`, `checkContexts`, the `Protected` condition; envtest: a Task runs the named command on a protected adopted repository; a Crew waits on one that isn't |
+| 2. The repository's own check, and the fence on it (done) | #95 | 1 | `checkCommand`, `checkContexts`, the `Protected` condition; envtest: a Task runs the named command on a protected adopted repository; a Crew waits on one that isn't |
 | 3. `theos-session adopt` | #96 | 2 | the detector's table tests; the YAML it prints passes `make validate-yaml` |
 | 4. A Standard that differs arrives as a pull request | #97 | 1 | envtest: adopting with a Standard whose files differ opens the pull request and the Container is Ready |
 | 5. The Crew's first issue: AGENTS.md and what it found | #98 | 2 | envtest: one `kind/onboarding` issue per adopted Container, never a second |
@@ -124,6 +124,34 @@ Each step is its own issue, names #60 and lands with `make check`.
   spec; it has one now, with a Framework and without.
 - The adopting Container is Ready and unprotected, and a Task on it still
   fails "has no Standard": step 2 is what lets a Crew work there.
+
+## What step 2 found
+
+- A Task waits for the commit's combined status, whatever its contexts are
+  called, so only two things needed the Container's contexts: main's rule
+  and the reading of main's state before round 1 (`BaseState`), and the
+  merge that skips main's push run.
+- The probe sits where a Ready Container already reads main's checks
+  (`refreshChecks`), so it costs no call of its own, and a Container is
+  protected at its first reading after adoption, not in `adopt()`.
+- A check that failed still protects: the rule is about what reports, and a
+  red main holds round 1 as on any Container (`BaseRed`).
+- A CEL rule with `\s` in a quoted string doesn't compile, and envtest says
+  so only when it installs the CRDs; `checkCommand`'s rule is
+  `startsWith`/`endsWith`.
+- The full suite found what the focused specs didn't: a unit test builds a
+  sandbox with no Container, so the check command is a run input of its
+  own, as the registries are.
+- Once protected, an adopted repository stays so in the Container's eyes: a
+  head with no result yet, as after every merge until its run starts, says
+  nothing against the rule, and reading it as "no matching check" would
+  stop the Crew after each of its own merges.
+- A Crew's triager waits with the rest: a triage pushes nothing, but its
+  clone's token could, and main takes pushes until it is protected. A
+  Triage Task made by hand on such a Container still runs, as on any
+  Container without a Standard.
+- Left as it is: the words "`make check` fails on main too" in a round's
+  note name the default command even when the Container names another.
 
 ## Done when
 

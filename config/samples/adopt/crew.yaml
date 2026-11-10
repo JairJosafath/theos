@@ -1,0 +1,21 @@
+# invoices' Crew (docs/getting-started.md, "Start small"): on a repository
+# that was here before the factory, it merges documentation on CI alone and
+# holds every other change for a person. It starts its first Task once the
+# Container's main is protected (the Container's Protected condition).
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: invoices
+spec:
+  containerRef:
+    name: invoices
+  displayName: Invoices crew
+  description: Works invoices issue by issue; a person approves what isn't documentation.
+  implementer:
+    name: implementer
+  reviewer:
+    name: reviewer
+  approval:
+  - paths: ["docs/", "*.md"]
+    require: None
+  - require: Person
