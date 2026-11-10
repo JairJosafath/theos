@@ -18,9 +18,20 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 # The fakes log each call as "<tool> <args>" in $T/log; kubectl keeps what
 # apply -f - read in $T/applied, and kind lists the clusters in $T/clusters.
 mkdir -p "$T/fakes"
-for tool in docker helm curl; do
+for tool in docker curl; do
   printf '#!/usr/bin/env bash\necho "%s $*" >>"%s/log"\n' "$tool" "$T" >"$T/fakes/$tool"
 done
+# helm reads what it is piped, as helm registry login --password-stdin does.
+# A stand-in that exits without reading leaves the script's printf writing to
+# a closed pipe once in a thousand runs, more under load: printf dies of
+# SIGPIPE, pipefail fails the pipeline, and the script stops after the login,
+# before the pull secrets and the release (seen once in a busy make check).
+cat >"$T/fakes/helm" <<FAKE
+#!/usr/bin/env bash
+echo "helm \$*" >>"$T/log"
+case " \$* " in *" --password-stdin "*) cat >/dev/null ;; esac
+exit 0
+FAKE
 cat >"$T/fakes/kind" <<FAKE
 #!/usr/bin/env bash
 echo "kind \$*" >>"$T/log"
