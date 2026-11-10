@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
@@ -329,4 +330,46 @@ func (h *host) ProtectBranch(ctx context.Context, repo ports.Repository, branch 
 func (h *host) ProtectTags(ctx context.Context, repo ports.Repository, pattern string) error {
 	rs := tagRuleset(pattern)
 	return h.putRuleset(ctx, repo, rs, func(name string) bool { return name == rs.Name })
+}
+
+// refusal says why the rule refuses the merge of a pull request at headSHA,
+// or "" when it passes.
+func (h *host) refusal(ctx context.Context, repo ports.Repository, number int, headSHA string,
+	rule ports.BranchRule) (string, error) {
+	if len(rule.ProtectedPaths) > 0 {
+		files, err := h.PullRequestFiles(ctx, repo, number)
+		if err != nil {
+			return "", err
+		}
+		var protected []string
+		for _, f := range files {
+			if underPaths(f, rule.ProtectedPaths) {
+				protected = append(protected, f)
+			}
+		}
+		if len(protected) > 0 {
+			return "it changes " + strings.Join(protected, ", ") + ", which no pull request may", nil
+		}
+	}
+	if len(rule.StatusContexts) > 0 {
+		checks, err := h.CombinedStatus(ctx, repo, headSHA)
+		if err != nil {
+			return "", err
+		}
+		if unpassed := model.UnpassedChecks(rule.StatusContexts, checks.Contexts); len(unpassed) > 0 {
+			return "no check matching " + strings.Join(unpassed, ", ") + " has passed on " + headSHA, nil
+		}
+	}
+	return "", nil
+}
+
+// underPaths reports whether file is one of paths or below one that is a
+// directory, ending in "/".
+func underPaths(file string, paths []string) bool {
+	for _, p := range paths {
+		if file == p || strings.HasSuffix(p, "/") && strings.HasPrefix(file, p) {
+			return true
+		}
+	}
+	return false
 }

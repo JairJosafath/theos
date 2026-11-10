@@ -18,6 +18,7 @@ package github
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"slices"
@@ -31,7 +32,9 @@ import (
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
-const hostToken = "ghs_contract"
+// hostToken is the operator's token on every fake GitHub of these tests,
+// made for this run.
+var hostToken = rand.Text()
 
 // TestGitHostContract covers #74 and #75: the GitHub adapter passes the whole
 // GitHost contract against the fake GitHub, each subtest in an organization

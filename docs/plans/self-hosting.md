@@ -186,6 +186,7 @@ Done when:
    | `internal/model/fence.go` | the fence's rules, gathered by step 2 |
    | `internal/controller/task_sandbox.go`, `internal/controller/project_agent_network.go`, `internal/controller/ci_runner_pod.go`, `internal/controller/protection.go` | the sandbox pod, its NetworkPolicy, egress, branch protection |
    | `internal/gitprovider/gitea_agents.go` | bot users and protected-file patterns |
+   | `internal/adapters/github/github_host_agents.go`, `internal/adapters/github/github_host_rules.go` | the same on GitHub: the agents' tokens, the rulesets and the merge's own check (#77) |
    | `dist/chart/` | what the cluster runs |
    | `Makefile`, `.golangci.yml`, `.custom-gcl.yml` | the check and the guards |
    | `.claude/`, `CLAUDE.md`, `GOVERNANCE.md` | the agents' settings and rules |

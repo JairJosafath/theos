@@ -36,14 +36,21 @@ and the chart's Gitea becomes optional.
 
 ## Decisions, and why
 
-1. **A GitHub App is the operator's identity; a token is enough to try it.**
-   The App gives what the fence needs: an installation token for one
-   repository, with named permissions, that expires in an hour and can be
-   revoked. `spec.credentialsSecretRef` holds the App's id and private key,
-   or a `token` (a fine-grained personal access token). With a token alone
-   the provider is Ready for scaffolding and issues, but AgentAccess is
-   missing, and the GitProvider says so (`AgentAccess=False`, reason
-   `NeedsGitHubApp`): a person's token never reaches a sandbox.
+1. **A token is the operator's identity; a GitHub App is the agents'.**
+   `spec.credentialsSecretRef` holds a `token` of an account that
+   administers the owner's repositories, which the operator acts with, and
+   the `appId` and `privateKey` of a GitHub App installed on the owner,
+   which mints the agents' credentials. The App gives what the fence needs:
+   an installation token for one repository, with named permissions, that
+   expires in an hour and can be revoked. With a token alone the provider
+   is Ready for scaffolding and issues, but AgentAccess is missing, and the
+   GitProvider says so (`AgentAccess=False`, reason `NeedsGitHubApp`): a
+   person's token never reaches a sandbox. This decision first read "a
+   GitHub App is the operator's identity". Steps 2 and 4 found that one App
+   can't be both: a ruleset tells accounts apart, not tokens, and nobody
+   reviews the pull request they opened. An operator that is an App of its
+   own, with a second App for the agents, would need no person's token at
+   all; nobody has asked for that yet.
 2. **`spec.url` names the instance.** `https://github.com` means the API at
    `api.github.com`; any other URL is a GitHub Enterprise Server, API under
    `/api/v3`. `spec.owner` is an organization, or the user the token is of.
@@ -55,7 +62,7 @@ and the chart's Gitea becomes optional.
    | GitHost | repositories, Git over HTTPS, refs, tags, releases, pull requests, reviews, squash merges with a head SHA, update-branch, commit statuses | branch rules as a repository ruleset; the protected paths stay the operator's own check of a pull request's files, which no host setting replaces |
    | Issues | issues, labels, milestones, comments, assignees, the dependencies API (`blocked_by`) | an exclusive scoped label: adding `status/x` removes the issue's other `status/*`; closing an issue with an open dependency is refused by the adapter (`ErrOpenDependencies`), since GitHub closes it |
    | CI | Actions runs of a commit, re-runs, job logs | a project's own runners (`JobRunners`) are optional: GitHub's hosted runners are the default; a pool of just-in-time runners is a later step |
-   | AgentAccess | an installation token scoped to one repository, revoked by `DELETE /installation/token` | no bot user: the commits' author is the agent's `@agents.theos.factory.io` address, as on Gitea |
+   | AgentAccess | an installation token scoped to one repository, revoked by `DELETE /installation/token` | no bot user: the commits' author is the agent's `@agents.theos.factory.io` address, as on Gitea; a token the operator no longer holds runs out instead of being revoked |
    | Registry | GHCR for images, npm on `npm.pkg.github.com` | Go modules come straight from the repository (`GOPRIVATE`, the token as a Git credential) with no proxy; PyPI is missing, so `spec.packages` must name an index or Python packages aren't published |
    | Events | an organization webhook, `X-Hub-Signature-256` | none |
 
@@ -91,11 +98,11 @@ Each step is its own issue, names #57 and lands with `make check`.
 | 1. The fake GitHub, and repositories, files and refs (done) | #74 | | `githubtest` serves repositories, Git over HTTP, refs and tags; the adapter passes the GitHost contract's repository, file, branch and tag subtests, the rest listed in `Cannot` |
 | 2. Pull requests, reviews, merges and statuses (done) | #75 | #74 | the GitHost contract passes whole; `Cannot` is empty or names what GitHub can't do, with why |
 | 3. Issues (done) | #76 | #74 | the Issues contract passes, exclusive labels and refused closes emulated |
-| 4. AgentAccess from a GitHub App | #77 | #75 | the AgentAccess contract passes: a token for one repository, a push to main refused, revoked on removal; a provider with a token alone reports `NeedsGitHubApp` |
+| 4. AgentAccess from a GitHub App (done) | #77 | #75 | the AgentAccess contract passes: a token for one repository, a push to main refused, revoked on removal; a provider with a token alone reports `NeedsGitHubApp` |
 | 5. CI on GitHub Actions | #78 | #75 | the CI contract passes with `JobRunners` in `Cannot`; `model.CI` has `githubActions`, and every Standard renders its workflow for both hosts |
 | 6. Events | #79 | #74 | the Events contract passes: one organization hook, signed deliveries, a bad signature refused |
 | 7. Registry | #80 | #74 | the Registry contract passes for images and npm; Go modules resolve from the repository; PyPI is in `Cannot` |
-| 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; `TestHostNeutral`'s allowlist has no controller in it |
+| 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; the GitProvider's `AgentAccess` condition comes from `ports.AgentAccessState` and no Task starts without it; an agent's credential is minted again before it expires; `TestHostNeutral`'s allowlist has no controller in it |
 | 9. The guide, and a run on the real thing | #82 | #81 | "Use the factory on your GitHub organization" in the guide, the App's permissions listed with why; a human runs `make test-github` and the first-app Crew on a test organization, with the output as evidence |
 
 ## What step 1 found
@@ -187,7 +194,8 @@ The GitHost contract passes whole against the fake, with nothing in
   `pull_requests` and never `administration`.
 - **The operator's token needs** `administration` (rulesets), `variables`
   of Actions, `contents`, `pull_requests`, `statuses` and `checks: read`,
-  for step 9's list of the App's permissions.
+  for step 9's list of what the operator's token and the agents' App are
+  given.
 
 What the fake encodes of GitHub's documented behaviour, by the page it is
 taken from (docs.github.com/en/rest/...): `pulls/pulls` (422 for a second
@@ -208,6 +216,77 @@ through the `update` rule, that variables are served for a repository
 with Actions turned off, and that a fine-grained personal access token
 reads the check runs of a private repository. Step 9's run on a real
 organization is where those three show.
+
+## What step 4 found
+
+The AgentAccess contract passes against the fake, with nothing in `Cannot`.
+
+- **Who is who.** Decision 1, rewritten: the operator is the Secret's
+  `token`, the agents are a GitHub App's installation tokens. Nothing of
+  step 2 changed for it: the ruleset's bypass actor is the admin role, the
+  operator's account holds it and the App doesn't. The pull request an
+  agent opens is the App's, so the operator's account may approve it, which
+  GitHub refuses the account that opened it.
+- **What a token is asked for.** One repository, and `contents: write`,
+  `pull_requests: write`, `issues: read`. Never `workflows`,
+  `administration` or `actions_variables`. A token GitHub answers with that
+  may do more than was asked is revoked and never handed on.
+- **What holds it.** Another repository answers 404. `main` and the `v*`
+  tags are the rulesets'. A push that changes a file under
+  `.github/workflows/` is refused by GitHub for want of the `workflows`
+  permission, on any branch; that matters there, because a pull request's
+  checks run the workflow of its own branch. The rest of `.github/` and
+  the Standard's protected paths are the merge's own check
+  (`MergePullRequest`). The rulesets, the kept rule and a check's status
+  need permissions the token lacks.
+- **A token is revoked with itself alone.** GitHub has no call that revokes
+  another token, and no bot user to delete. So the adapter keeps the tokens
+  it minted, in the operator's memory, by repository and agent:
+  `EnsureAgentAccess` adds one and leaves the earlier ones to a run that
+  may hold them, `RevokeOldAgentTokens` revokes all but the newest, and
+  `RemoveAgentAccess` all of them. A token minted before the operator
+  restarted is not among them and runs out within its hour.
+- **An hour.** `ports.Credentials` has `Expires` now, zero for a token that
+  lives until revoked. Step 8 makes the controller mint the agent's Secret
+  again before that and gets the new token to a sandbox that is still
+  running.
+- **The provider's Secret reaches the adapter whole.** `ports.Config.Secret`
+  is what the Secret holds beside the user and the token; the adapter reads
+  `appId`, `privateKey` and, where it is given, `installationId` (else it
+  asks GitHub for the installation that reaches the repository). Step 8's
+  controller fills it.
+- **The condition.** An adapter that can say whether it mints is a
+  `ports.AgentAccessChecker`, and `ports.AgentAccessState` turns its answer
+  into a condition's status, reason and message: `Available`,
+  `NeedsGitHubApp` for a token alone or half an App, `GitHubAppInvalid` for
+  an id or a key that can't be read. Step 8 sets the GitProvider's
+  condition from it and starts no Task without it.
+- **A refused deletion is no branch gone.** `DeleteBranch` read every 422 as
+  "Reference does not exist"; a ruleset's refusal is a 422 too. It reads
+  the message now.
+- **The fake holds everyone to the rulesets now,** the operator too: a push
+  in each repository's `pre-receive` hook, a merge and a ref over REST in
+  the handler. Step 2's tests pass unchanged against it: the operator's
+  merges go through by the `pull_request` bypass, its pushes only where the
+  rule says `OperatorPushes`.
+- **For step 7 (#80).** An agent's token reaches one repository and has no
+  `packages` permission. A Go module in a sibling private repository can't
+  be fetched with it as a Git credential, and GitHub's npm registry and
+  GHCR won't read for it. Step 7 decides what an agent reads the owner's
+  packages with: a second, read-only token, or a proxy.
+
+What the fake encodes, by the page it is taken from: `apps/apps` (a JSON
+Web Token of at most ten minutes, signed by the App's key; an installation
+by repository, organization or user; a token for `repositories` and
+`permissions`, 422 for a repository the installation doesn't reach or a
+permission the App lacks), `apps/installations` (`DELETE
+/installation/token`), "About rulesets" (`GH013: Repository rule violations
+found`), and the push refusal "refusing to allow a GitHub App to create or
+update workflow ... without `workflows` permission". Not verified against
+github.com, for step 9's run: that Git over HTTPS takes an installation
+token with the agent's name as the user (GitHub documents `x-access-token`),
+and the exact status of a merge and of a ref deletion that a ruleset
+refuses over REST, which the fake answers 405 and 422.
 
 ## What step 3 found
 

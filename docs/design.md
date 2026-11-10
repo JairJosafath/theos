@@ -518,6 +518,28 @@ agents' code too and is fenced the same way (*Test environments*); the
 sandbox fence lets out one more port, `theos-env`'s, to the project's own
 environment pods.
 
+On GitHub the Git host's part of the fence is made of other pieces
+([plans/github-host.md](plans/github-host.md); no GitProvider reaches GitHub
+before that plan's step 8). There is no bot user: an agent's credential is
+an installation token of a GitHub App, minted for the one repository with
+the permissions to write its contents, open its pull request and read its
+issues, and no other. The operator acts with the GitProvider's own token,
+of an account that administers the owner's repositories, never as that App:
+GitHub tells accounts apart, not tokens, so the rulesets that keep `main`
+and `v*` tags to the operator let the administrators past and nobody else,
+and the pull request the App opened is one the operator's account may
+review. GitHub itself refuses a push that changes a workflow from a token
+without the `workflows` permission, which an agent's token never has. The
+Standard's protected paths and its checks are no setting of a branch there:
+the operator's merge checks the pull request's files and its checks itself,
+against a rule only an administrator of the repository can change. What
+differs from Gitea: a credential lives an hour and is minted again for a
+longer run; one minted before the operator restarted can't be revoked and
+runs out within that hour; and a person who administers the repository is
+held by nothing of this, on GitHub as on any host. A GitProvider whose
+Secret holds a token and no App scaffolds and reads issues, and its agent
+access says `NeedsGitHubApp`: a person's token never reaches a sandbox.
+
 ### The CI fence
 
 CI runs the agents' code too. A job running a Container repository's code runs

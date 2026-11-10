@@ -35,6 +35,9 @@ const DefaultBranch = "main"
 type Credentials struct {
 	Username string
 	Token    string
+	// Expires is when the host stops taking Token; zero for a token that
+	// lives until it is revoked.
+	Expires time.Time
 }
 
 // Kinds of Git hosting. Gitea is the only one in v1.
@@ -50,6 +53,10 @@ type Config struct {
 	// installed from, the GitProvider's spec.packages. A field left "" takes
 	// its default: the scope @theos, and the host's own registries.
 	Packages Packages
+	// Secret is what the provider's Secret holds beside the user and the
+	// token, by key. An adapter reads the keys its host needs, such as the
+	// App that mints a host's agent credentials, and no other.
+	Secret map[string][]byte
 }
 
 // DefaultNpmScope is the npm scope the factory's packages share when the
