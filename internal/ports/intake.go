@@ -74,16 +74,20 @@ type GitHubIssue struct {
 	// Author is the login of the person who opened it.
 	Author string
 	// URL is the issue's page.
-	URL     string
+	URL string
+	// Created is when it was filed.
 	Created time.Time
 }
 
 // GitHubComment is a comment on a GitHub issue.
 type GitHubComment struct {
-	ID     int64
-	Body   string
+	// ID is the comment's own, never 0 and never another comment's.
+	ID   int64
+	Body string
+	// Author is the login of the account that wrote it.
 	Author string
-	URL    string
+	// URL is the comment's page.
+	URL string
 }
 
 // IssueList is a repository's open issues, or that they didn't change.
@@ -93,8 +97,9 @@ type IssueList struct {
 	Issues []GitHubIssue
 	// NotModified: the list is the one ETag was given for.
 	NotModified bool
-	// ETag is passed to the next ListOpenIssues. It is empty when the list took
-	// more than one page, since a page's ETag doesn't cover the others.
+	// ETag is passed to the next ListOpenIssues. A NotModified list carries
+	// one too, to ask with again. It is empty when the list took more than one
+	// page, since a page's ETag doesn't cover the others.
 	ETag string
 }
 
@@ -113,18 +118,22 @@ const (
 type IssueTracker interface {
 	// ListOpenIssues returns the open issues. Given the ETag of the last list,
 	// it asks with If-None-Match, which an unchanged list answers with a 304
-	// that costs no rate limit.
+	// that costs no rate limit. A list that failed is empty.
 	ListOpenIssues(ctx context.Context, etag string) (IssueList, error)
 	// TeamMember reports whether login is an active member of team, org/slug.
-	// A pending invitation is not; neither is a team the token can't see.
+	// A pending invitation is not; neither is a team the token can't see. It
+	// is false when the call failed.
 	TeamMember(ctx context.Context, team, login string) (bool, error)
 	// FindComment returns the first comment on issue number written by the
 	// token's own account whose body contains marker, nil when there is none.
 	// Anyone can copy a marker into a comment of their own; theirs is ignored.
+	// An empty marker is in every comment and says nothing: it finds none.
 	FindComment(ctx context.Context, number int, marker string) (*GitHubComment, error)
-	// Comment posts body on issue number.
+	// Comment posts body on issue number as the token's account, and returns
+	// the comment with its ID, Author and URL.
 	Comment(ctx context.Context, number int, body string) (GitHubComment, error)
 	// CloseIssue closes issue number with reason. Closing a closed issue
-	// changes nothing but its reason.
+	// changes nothing but its reason. A reason that is neither CloseCompleted
+	// nor CloseNotPlanned is refused with an error, the issue left as it was.
 	CloseIssue(ctx context.Context, number int, reason CloseReason) error
 }

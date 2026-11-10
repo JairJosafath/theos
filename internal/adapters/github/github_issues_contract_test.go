@@ -47,7 +47,9 @@ func TestIssueTrackerContract(t *testing.T) {
 				return other
 			}
 			return contract.TrackerHost{
-				Tracker:      tracker,
+				Tracker: tracker,
+				// The token's account, as the fake names who wrote a comment.
+				Account:      "theos-bot",
 				Refused:      with(fakeGitHubRepo, rand.Text(), ""),
 				LacksIssues:  with(fakeGitHubRepo, rand.Text(), lacksIssues),
 				LacksMembers: with(fakeGitHubRepo, rand.Text(), lacksMembers),
@@ -121,7 +123,8 @@ func (f *fakeGitHubIssues) shown(t *testing.T, number int) contract.TrackedIssue
 	if i == nil {
 		t.Fatalf("the fake has no issue %d", number)
 	}
-	out := contract.TrackedIssue{Title: i.Title, Body: i.Body, Author: i.User.Login, Closed: i.State == stateClosed}
+	out := contract.TrackedIssue{Title: i.Title, Body: i.Body, Author: i.User.Login, Created: i.Created,
+		Closed: i.State == stateClosed}
 	if out.Closed {
 		out.Reason = ports.CloseReason(i.StateReason)
 	}

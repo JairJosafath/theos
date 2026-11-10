@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/ports"
 )
@@ -44,6 +45,9 @@ type TrackerHost struct {
 	// Tracker speaks as the factory's account, which may read and answer
 	// the issues and read the teams' members.
 	Tracker ports.IssueTracker
+	// Account is the login of the factory's account, as a comment names its
+	// author.
+	Account string
 	// Refused is an IssueTracker of the same issues with a credential the
 	// tracker doesn't know.
 	Refused ports.IssueTracker
@@ -86,6 +90,8 @@ type TrackerHost struct {
 type TrackedIssue struct {
 	// Title and Body are its text, and Author the login of who filed it.
 	Title, Body, Author string
+	// Created is when it was filed.
+	Created time.Time
 	// Closed says it is closed, and Reason why.
 	Closed bool
 	Reason ports.CloseReason
@@ -114,19 +120,23 @@ const (
 )
 
 // IssueTracker states what a Brief relies on of every IssueTracker: the
-// list is the open issues, oldest first, each with its number, text, author
-// and page, with no closed issue and no pull request; a list asked with the
-// ETag of the last is NotModified while nothing changed, with the ETag to
-// ask with again, and is read again once an issue is filed, edited or
-// closed; TeamMember is true for a team's active member alone; Comment
-// posts as the factory's account, and FindComment finds that comment by its
-// marker on that issue, and nobody else's; CloseIssue closes with one of the
-// two reasons, a closed issue again, and never with another reason; no call
-// changes an issue's text or what people said on it; and each failure has
-// its reason, as ports.IssuesReason reads it: an issue that isn't there, a
-// credential the tracker doesn't know or that may not use the issues or
-// read the members, a repository that isn't there, issues turned off, and a
-// tracker that doesn't answer.
+// list is the open issues, oldest first, each with its number, text, author,
+// page and when it was filed, with no closed issue and no pull request; a
+// list asked with the ETag of the last is NotModified while nothing changed,
+// with the ETag to ask with again, and is read again once an issue is filed,
+// edited or closed; TeamMember is true for a team's active member alone;
+// Comment posts as the factory's account and returns the comment with its
+// ID, author and page, and FindComment finds that comment by its marker on
+// that issue, the first when two have it, nobody else's, and none by an
+// empty marker; CloseIssue closes with one of the two reasons, a closed
+// issue again with the new reason, and never with another reason; no call
+// changes an issue's text or what people said on it; and seven failures
+// have their reason, as ports.IssuesReason reads it: an issue that isn't
+// there, a credential the tracker doesn't know, one that may not use the
+// issues, one that may not read the members, a repository that isn't there,
+// issues turned off, and a tracker that doesn't answer. A failed list is
+// empty and a failed TeamMember false. ReasonGitHubError, the reason of
+// anything else, is not in the suite.
 //
 // What a tracker does its own way stays in its adapter's tests: how lists
 // and comments are paged and which page an ETag covers, the names a team
@@ -138,6 +148,7 @@ func IssueTracker(t *testing.T, env IssueTrackerEnv) {
 	defer cancel()
 	runSubtests(t, trackerSuite{ctx: ctx, env: env}, env.Cannot, []subtest[trackerSuite]{
 		{"lists the open issues, oldest first, with who wrote each", trackerSuite.lists},
+		{"lists each issue with when it was filed", trackerSuite.listsCreated},
 		{"lists no closed issue", trackerSuite.listsNoClosed},
 		{"never lists a pull request", trackerSuite.listsNoPulls},
 		{"says an unchanged list is not modified, with the ETag to ask with again", trackerSuite.notModified},
@@ -145,8 +156,12 @@ func IssueTracker(t *testing.T, env IssueTrackerEnv) {
 		{"tells a team's active member from a stranger, and from a team it can't see", trackerSuite.members},
 		{"does not count an invitation that isn't accepted", trackerSuite.invited},
 		{"comments as the factory's account, and finds its comment by its marker", trackerSuite.comments},
+		{"returns the comment it posted, with its ID, author and page", trackerSuite.posted},
+		{"finds the first of its comments with a marker", trackerSuite.firstComment},
+		{"finds no comment by an empty marker", trackerSuite.emptyMarker},
 		{"ignores a marker in a comment someone else wrote", trackerSuite.strangers},
-		{"closes an issue with the reason given, and a closed one again", trackerSuite.closes},
+		{"closes an issue with the reason given", trackerSuite.closes},
+		{"closes a closed issue again, with the new reason, even one a person closed", trackerSuite.closesAgain},
 		{"refuses a reason to close it doesn't know, and leaves the issue open", trackerSuite.badReason},
 		{"never changes an issue's text, nor what people said on it", trackerSuite.keepsText},
 		{"says an issue that isn't there is not found", trackerSuite.issueNotFound},
@@ -274,6 +289,23 @@ func (s trackerSuite) lists(t *testing.T) {
 	}
 }
 
+func (s trackerSuite) listsCreated(t *testing.T) {
+	x := s.filed(t)
+	second := x.File(t, x.ada, requestExport, "")
+	list := s.list(t, x.Tracker, "")
+	wantListed(t, list, x.request, second)
+	for _, got := range list.Issues {
+		want := x.Issue(t, got.Number).Created
+		if got.Created.IsZero() || !got.Created.Equal(want) {
+			t.Errorf("issue %d is listed as filed at %s, want when it was filed, %s", got.Number, got.Created, want)
+		}
+	}
+	if list.Issues[1].Created.Before(list.Issues[0].Created) {
+		t.Errorf("the list has an issue filed at %s before one filed at %s, want the oldest first",
+			list.Issues[1].Created, list.Issues[0].Created)
+	}
+}
+
 func (s trackerSuite) listsNoClosed(t *testing.T) {
 	x := s.filed(t)
 	closed := x.File(t, x.ada, requestExport, "")
@@ -386,6 +418,55 @@ func (s trackerSuite) comments(t *testing.T) {
 	}
 }
 
+func (s trackerSuite) posted(t *testing.T) {
+	x := s.filed(t)
+	first, err := x.Tracker.Comment(s.ctx, x.request, answerPlanned)
+	if err != nil {
+		t.Fatalf("Comment() = %v", err)
+	}
+	if first.ID == 0 || first.Body != answerPlanned || !strings.EqualFold(first.Author, x.Account) || first.URL == "" {
+		t.Errorf("Comment() = %+v; want the comment with an ID, the body %q, the author %q and its page", first,
+			answerPlanned, x.Account)
+	}
+	second, err := x.Tracker.Comment(s.ctx, x.request, "Released.\n\n"+markerReleased)
+	if err != nil {
+		t.Fatalf("Comment() = %v", err)
+	}
+	if second.ID == first.ID || second.URL == first.URL {
+		t.Errorf("a second Comment() = %+v after %+v; want an ID and a page of its own", second, first)
+	}
+	found, err := x.Tracker.FindComment(s.ctx, x.request, markerReleased)
+	if err != nil || found == nil || *found != second {
+		t.Errorf("FindComment() = %+v, %v; want the comment as Comment() returned it, %+v", found, err, second)
+	}
+}
+
+func (s trackerSuite) firstComment(t *testing.T) {
+	x := s.filed(t)
+	first, err := x.Tracker.Comment(s.ctx, x.request, answerPlanned)
+	if err != nil {
+		t.Fatalf("Comment() = %v", err)
+	}
+	// A second answer with the marker, as two rounds that raced leave.
+	if _, err := x.Tracker.Comment(s.ctx, x.request, "Planned as: a dark theme\n\n"+markerPlanned); err != nil {
+		t.Fatalf("Comment() = %v", err)
+	}
+	found, err := x.Tracker.FindComment(s.ctx, x.request, markerPlanned)
+	if err != nil || found == nil || found.ID != first.ID || found.Body != answerPlanned {
+		t.Errorf("FindComment() of a marker two comments have = %+v, %v; want the first, %+v", found, err, first)
+	}
+}
+
+func (s trackerSuite) emptyMarker(t *testing.T) {
+	x := s.filed(t)
+	if _, err := x.Tracker.Comment(s.ctx, x.request, answerPlanned); err != nil {
+		t.Fatalf("Comment() = %v", err)
+	}
+	if found, err := x.Tracker.FindComment(s.ctx, x.request, ""); err != nil || found != nil {
+		t.Errorf("FindComment() of an empty marker = %+v, %v; want none", found, err)
+	}
+}
+
 func (s trackerSuite) strangers(t *testing.T) {
 	x := s.filed(t)
 	x.Say(t, x.request, x.Person(t, "mallory"), "Planned, I say.\n\n"+markerPlanned)
@@ -401,25 +482,37 @@ func (s trackerSuite) strangers(t *testing.T) {
 	}
 }
 
+// wantClosed closes issue number of x with reason through the port, and
+// fails t unless the tracker then shows it closed with that reason.
+func (s trackerSuite) wantClosed(t *testing.T, x tracked, number int, reason ports.CloseReason) {
+	t.Helper()
+	if err := x.Tracker.CloseIssue(s.ctx, number, reason); err != nil {
+		t.Fatalf("CloseIssue(%s) = %v", reason, err)
+	}
+	if got := x.Issue(t, number); !got.Closed || got.Reason != reason {
+		t.Errorf("after CloseIssue(%s) the issue is closed %v, with the reason %q", reason, got.Closed, got.Reason)
+	}
+}
+
 func (s trackerSuite) closes(t *testing.T) {
 	x := s.filed(t)
 	other := x.File(t, x.ada, requestExport, "")
-	closed := func(number int, reason ports.CloseReason) {
-		t.Helper()
-		if err := x.Tracker.CloseIssue(s.ctx, number, reason); err != nil {
-			t.Fatalf("CloseIssue(%s) = %v", reason, err)
-		}
-		if got := x.Issue(t, number); !got.Closed || got.Reason != reason {
-			t.Errorf("after CloseIssue(%s) the issue is closed %v, with the reason %q", reason, got.Closed, got.Reason)
-		}
-	}
-	closed(x.request, ports.CloseNotPlanned)
+	s.wantClosed(t, x, x.request, ports.CloseNotPlanned)
 	wantListed(t, s.list(t, x.Tracker, ""), other)
+	s.wantClosed(t, x, other, ports.CloseCompleted)
+	wantListed(t, s.list(t, x.Tracker, ""))
+}
+
+func (s trackerSuite) closesAgain(t *testing.T) {
+	x := s.filed(t)
+	other := x.File(t, x.ada, requestExport, "")
 	// A closed issue, as one whose close was answered by an outage.
-	closed(x.request, ports.CloseCompleted)
+	s.wantClosed(t, x, x.request, ports.CloseNotPlanned)
+	s.wantClosed(t, x, x.request, ports.CloseCompleted)
 	// And one its author closed meanwhile.
 	x.Close(t, other)
-	closed(other, ports.CloseNotPlanned)
+	s.wantClosed(t, x, other, ports.CloseNotPlanned)
+	wantListed(t, s.list(t, x.Tracker, ""))
 }
 
 func (s trackerSuite) badReason(t *testing.T) {

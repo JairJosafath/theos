@@ -195,6 +195,11 @@ func (f *fakeGitHubIssues) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// listQuery is what the client lists the issues with, on every page. The
+// fake answers a list without state=open or sort=created as GitHub does, the
+// same, so the tests of the list hold the client to asking for both.
+const listQuery = "state=open&sort=created&direction=asc"
+
 // list answers a page of the issues as GitHub lists them: the open ones, the
 // newest first, unless the query says otherwise.
 func (f *fakeGitHubIssues) list(w http.ResponseWriter, r *http.Request) {
@@ -298,8 +303,9 @@ func TestGitHubIssuesList(t *testing.T) {
 	if err != nil || !same.NotModified || same.ETag != list.ETag || len(same.Issues) != 0 {
 		t.Errorf("ListOpenIssues(unchanged) = %+v, %v; want NotModified with the same ETag", same, err)
 	}
-	if calls := f.takeCalls(); len(calls) != 1 || !strings.HasSuffix(calls[0], " "+list.ETag) {
-		t.Errorf("unchanged list calls = %q; want one, with If-None-Match", calls)
+	if calls := f.takeCalls(); len(calls) != 1 || !strings.Contains(calls[0], listQuery) ||
+		!strings.HasSuffix(calls[0], " "+list.ETag) {
+		t.Errorf("unchanged list calls = %q; want one, with %s and If-None-Match", calls, listQuery)
 	}
 
 	f.mu.Lock()
@@ -335,15 +341,21 @@ func TestGitHubIssuesListPages(t *testing.T) {
 	if list.ETag != "" || list.NotModified {
 		t.Errorf("ListOpenIssues() of three pages has ETag %q, NotModified %v; want neither", list.ETag, list.NotModified)
 	}
-	if calls := f.takeCalls(); len(calls) != 3 {
+	calls := f.takeCalls()
+	if len(calls) != 3 {
 		t.Errorf("ListOpenIssues() made %d calls; want 3: %q", len(calls), calls)
+	}
+	for _, call := range calls {
+		if !strings.Contains(call, listQuery) {
+			t.Errorf("ListOpenIssues() called %q; want every page asked with %s", call, listQuery)
+		}
 	}
 
 	// An ETag of page 1 is never trusted for the pages after it.
 	if _, err := g.ListOpenIssues(ctx, `W/"stale"`); err != nil {
 		t.Fatal(err)
 	}
-	calls := f.takeCalls()
+	calls = f.takeCalls()
 	if len(calls) != 3 || !strings.HasSuffix(calls[0], `W/"stale"`) || strings.Contains(calls[1]+calls[2], "stale") {
 		t.Errorf("calls with an ETag = %q; want If-None-Match on page 1 only", calls)
 	}
