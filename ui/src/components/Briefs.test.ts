@@ -241,7 +241,7 @@ describe('the Briefs area', () => {
   )
   /** The card of the Brief `name`. */
   const card = (name: string) => {
-    const from = html.indexOf(`aria-label="Brief ${name}:`)
+    const from = html.indexOf(`class="brief-card-name mono">${name}</span>`)
     return html.slice(html.lastIndexOf('<li', from), html.indexOf('</li>', from))
   }
 
@@ -253,8 +253,10 @@ describe('the Briefs area', () => {
   it('makes each card a link to the Brief’s page, with its name and phase', () => {
     const c = card('webshop')
     expect(c).toContain(`href="${pageHref('webshop').replace('&', '&amp;')}"`)
-    expect(c).toMatch(/aria-label="Brief webshop: Planned"/)
-    expect(c).toContain('class="brief-card-name mono">webshop</span>')
+    // #109: the card's own text names the link, with "Brief" said before it for a screen reader.
+    expect(c).not.toContain('aria-label="Brief')
+    expect(c).toContain('<span class="visually-hidden">Brief </span><span class="brief-card-name mono">webshop</span>')
+    expect(c).toMatch(/<span class="badge-dot" aria-hidden="true"><\/span>Planned<\/span>/)
   })
 
   it('says what a Brief waits for, its round and cost, and its latest round cut short', () => {

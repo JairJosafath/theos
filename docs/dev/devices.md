@@ -554,6 +554,12 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   vulnerability the code reaches, in a module or in the standard library of
   `go.mod`'s toolchain; two failed runs on main file "main is red:
   Vulnerabilities", which a bump of the toolchain or the module fixes.
+- **CodeQL scans the code.** *CodeQL* (`codeql.yml`) runs GitHub's code
+  scanning in two jobs, the Go code and the UI's TypeScript, on pushes to
+  main and pull requests to main that change either, and every Monday at
+  03:41 UTC, so a new query finds what is already there (#51). Its alerts
+  are under the repository's *Security* tab. It needs the network for
+  CodeQL's bundle, so it stays out of `make check`.
 - Jobs use the device's Docker through its socket, on the host's network, so
   `docker build` and Kind work and a Kind cluster a job makes answers on
   127.0.0.1. The socket is root on the device, which is acceptable for a

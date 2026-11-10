@@ -9,3 +9,5 @@ lint.yml Shell tests
 ui.yml UI
 vulncheck.yml Vulnerabilities
 secrets.yml Secrets
+codeql.yml CodeQL Go
+codeql.yml CodeQL TypeScript

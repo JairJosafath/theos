@@ -1,0 +1,41 @@
+# #109: the UI's controls are named by what they show (2026-11-10)
+#
+# Before, with Dependabot's UI update (#87, axe-core 4.14) and no fix: three
+# test files fail, on these elements.
+$ cd ui && npm run test:e2e
+# pass 75
+# fail 3
+.node-external-system
+.node-external-system.node[role="link"]:nth-child(23)
+.tone-waiting > .brief-card-link.panel
+a[aria-label="Brief gift-cards: Planned"]
+a[aria-label="Brief returns: Planning"]
+a[aria-label="Brief webshop: Planned"]
+div[aria-label="Container: Catalog API"]
+div[aria-label="Container: Inventory API"]
+div[aria-label="Container: Order Worker"]
+div[aria-label="Container: Orders API"]
+div[aria-label="Container: Storefront"]
+div[aria-label="Data store: Cart Cache"]
+div[aria-label="Data store: Catalog DB"]
+div[aria-label="Data store: Orders DB"]
+div[aria-label="Person: Customer"]
+div[aria-label="Person: Shop manager"]
+div[aria-label="Software system: Warehouse"]
+div[aria-label="Software system: Webshop Core"]
+div[data-node-id="SoftwareSystem/warehouse"]
+.project-button
+.search-button
+button[aria-label="Stop publishing cel-lens"]
+
+# After, same packages, with the names fixed: no rule disabled, no element excluded.
+$ cd ui && npm run check
+      Tests  998 passed (998)
+# pass 270
+# fail 0
+$ npm run test:e2e
+# pass 78
+# fail 0
+
+# Chromium here is the session's preinstalled build (revision 1243) under
+# Playwright 1.65, which asks for 1254; CI's UI job installs its own.

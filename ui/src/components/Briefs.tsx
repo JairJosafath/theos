@@ -110,8 +110,11 @@ function BriefCard({
   const waits = waitsFor(view)
   return (
     <li className={`brief-card tone-${view.phase.tone}`}>
-      <a className="panel brief-card-link" href={href} aria-label={`Brief ${view.name}: ${view.phase.label}`}>
+      {/* The card's text names the link (WCAG 2.5.3, label in name); what isn't shown, that it is a Brief, is
+          said for a screen reader, so the name starts "Brief <name> <phase>". */}
+      <a className="panel brief-card-link" href={href}>
         <span className="brief-card-head">
+          <span className="visually-hidden">Brief </span>
           <span className="brief-card-name mono">{view.name}</span>
           <span className={`badge badge-${view.phase.tone} badge-sm`} title={view.phase.explanation}>
             <span className="badge-dot" aria-hidden="true" />
