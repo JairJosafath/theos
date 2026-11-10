@@ -172,15 +172,19 @@ The GitHost contract passes whole against the fake, with nothing in
   repositories are made with `delete_branch_on_merge`, whichever comes
   first.
 - **For step 4: the operator and the agents can't be one App.** A ruleset
-  tells actors apart, not tokens: an installation token minted for an
-  agent is the same App as the operator's, so it would bypass the ruleset
-  the operator bypasses. With a token of a person who administers the
-  repository as the operator, as in this step, the admin role is the
-  bypass actor and an App's tokens for the agents are outside it. When
-  the operator itself runs as an App, the bypass actor is that App
-  (`Integration`, by its id) and the agents need a second one. The agents'
-  tokens need `contents` and `pull_requests` and neither `administration`
-  nor `actions_variables`.
+  tells actors apart, not tokens. An installation token minted for an
+  agent, however few its permissions, is the same App as the operator's
+  own, so a ruleset that lets the operator merge into main or make a `v*`
+  tag lets the agent's token do it too: `contents: write`, which an agent
+  needs to push its branch, is all either takes. Decision 1 and #77 have
+  one App for both, and that can't hold the fence. What this step built
+  fits the other way round: the operator acts with a token of an account
+  that administers the repositories, whose admin role is the ruleset's
+  bypass actor, and the App mints the agents' tokens, which are outside
+  it. An operator that is itself an App needs `Integration` as the bypass
+  actor and a second App for the agents. Step 4 settles which and rewrites
+  decision 1. Either way the agents' tokens get `contents` and
+  `pull_requests` and never `administration`.
 - **The operator's token needs** `administration` (rulesets), `variables`
   of Actions, `contents`, `pull_requests`, `statuses` and `checks: read`,
   for step 9's list of the App's permissions.
@@ -200,9 +204,10 @@ enough), `releases` (a draft is not found by its tag; an asset's bytes with
 `Accept: application/octet-stream`) and `repos/contents` (the zipball's one
 top directory). Not verified against github.com, which no agent holds a
 credential for: that the admin role's `pull_request` bypass lets a merge
-through the `update` rule, and that variables are served for a repository
-with Actions turned off. Step 9's run on a real organization is where
-those two show.
+through the `update` rule, that variables are served for a repository
+with Actions turned off, and that a fine-grained personal access token
+reads the check runs of a private repository. Step 9's run on a real
+organization is where those three show.
 
 ## What step 3 found
 
