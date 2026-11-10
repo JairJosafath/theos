@@ -54,7 +54,6 @@ func TestOperatorHeadersNameTheScaffoldsLicense(t *testing.T) {
 				{model.SideFramework, "go-kubebuilder"},
 				{model.SideStandard, "go-operator-standard"},
 				{model.SideCompute, "small"},
-				{model.SideDeployment, "gitea-release"},
 			}, "")
 			in.License = c.lic
 			result, err := Build(in, layers, Options{})
