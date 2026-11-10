@@ -92,6 +92,19 @@ describe('How well it works (measure-and-improve, step 3)', () => {
     expect(factoryMetrics(tasks, NOW, 30).all.merged).toBe(2)
   })
 
+  // #92: who let a merged change in, so a Crew that starts small sees what it could hand over.
+  it('counts the Tasks a person approved: a change its Crew’s approval rules held, or a spec', () => {
+    const held = merged('held')
+    held.status = { ...held.status, approval: { require: 'Person', rule: 1, approvedBy: 'ada' } }
+    const waived = merged('waived')
+    waived.status = { ...waived.status, approval: { require: 'None', rule: 2 } }
+    const spec = merged('spec')
+    spec.status = { ...spec.status, spec: { path: 'docs/specs/4.md', approval: 'Person', approvedBy: 'ada' } }
+    const m = factoryMetrics([held, waived, spec, merged('plain')], NOW, 7)
+    expect(m.all.personApproved).toBeCloseTo(2 / 4)
+    expect(factoryMetrics([merged('plain')], NOW, 7).all.personApproved).toBe(0)
+  })
+
   it('counts autonomy over the Tasks whose commits were read, and says how many were', () => {
     const m = factoryMetrics(
       [

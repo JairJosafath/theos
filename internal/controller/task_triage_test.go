@@ -28,6 +28,8 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/agentrunner"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // newTriageTask is a triage of issue 4 of orders-api.
@@ -230,6 +232,50 @@ var _ = Describe("Crew triage", func() {
 			pod := sandboxPodSpec(g, sandboxExists(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", n)))
 			g.Expect(envVar(pod, "THEOS_ENV_BROWSER_URL")).NotTo(BeNil())
 		}, "20s").Should(Succeed())
+	})
+
+	// #92: the triager's guide to risk. The operator labels the issue
+	// risk/high, and the Crew's approval rule that names the label holds the
+	// issue's change for a person.
+	It("labels an issue the triager calls high-risk, and the Crew's rule for the label holds its change", func() {
+		crew := triagingCrew(ns)
+		crew.Spec.Approval = []c4v1beta1.ApprovalRule{{Labels: []string{model.LabelRiskHigh},
+			Require: c4v1beta1.ApprovalPerson}}
+		mustCreate(crew)
+		n := gitFake.AddIssue(ns, "orders-api", "Drop the legacy column", clearIssue, []string{model.LabelProposed})
+		name := fmt.Sprintf("orders-api-%d-triage", n)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, name+"-r1-triage") }).Should(Succeed())
+		finishSandbox(ns, name+"-r1-triage", name, triageResult(model.Triage{Decision: model.TriageReady,
+			Reason: "It drops a column that holds data.", Risk: " High "}), "")
+		Eventually(func(g Gomega) {
+			task := triaged(g, name, model.TriageReady)
+			g.Expect(task.Status.Triage.Risk).To(Equal(model.RiskHigh))
+			g.Expect(task.Status.Triage.Applied).To(Equal("Labelled status/ready and risk/high"))
+			issue := gitFake.Issue(ns, "orders-api", n)
+			g.Expect(issue.Labels).To(ContainElement(model.LabelRiskHigh))
+			g.Expect(issue.Comments).To(ContainElement(ContainSubstring("Labelled risk/high: a mistake in this change")))
+		}).Should(Succeed())
+
+		By("building the issue: the Crew's rule for the label asks for a person")
+		task := fmt.Sprintf("orders-api-%d", n)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, task+"-r1-implement") }).Should(Succeed())
+		head, err := gitFake.PushBranch(ctx, ports.Repository{Owner: ns, Name: "orders-api"},
+			gitFake.MainHead(ns, "orders-api").Hash, "task/"+task,
+			scaffold.Tree{"internal/orders/schema.go": scaffold.File{Data: []byte("package orders\n")}}, nil, "",
+			ports.Signature{})
+		Expect(err).NotTo(HaveOccurred())
+		finishSandbox(ns, task+"-r1-implement", task,
+			&agentrunner.Result{Role: "implement", Commit: head, Summary: "Dropped the column."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, task).Status.Phase).To(Equal(c4v1beta1.TaskChecking))
+		}).Should(Succeed())
+		gitFake.SetChecks(ns, "orders-api", head, "success")
+		Eventually(func(g Gomega) {
+			approval := getTask(g, ns, task).Status.Approval
+			g.Expect(approval).NotTo(BeNil())
+			g.Expect(approval.Require).To(Equal(c4v1beta1.ApprovalPerson))
+			g.Expect(approval.Reason).To(Equal("approval rule 1 (labels risk/high) asks for a person"))
+		}).Should(Succeed())
 	})
 
 	It("keeps a ready issue's own criteria", func() {

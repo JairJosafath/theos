@@ -68,6 +68,12 @@ export function MetricsPanel({
                   Autonomy
                 </th>
                 <th scope="col">Round 1</th>
+                <th
+                  scope="col"
+                  title="Merged on a person’s approval: a spec, or a change the Crew’s approval rules held"
+                >
+                  A person approved
+                </th>
                 <th scope="col" title="The median, from the first run">
                   To pull request
                 </th>
@@ -135,6 +141,7 @@ function MetricsTableRow({ row }: { row: MetricsRow }) {
       <td>{row.merged}</td>
       <td title={`Of ${plural(row.commitsRead, 'Task')} whose commits were read`}>{share(row.autonomy)}</td>
       <td>{share(row.firstRound)}</td>
+      <td>{share(row.personApproved)}</td>
       <td>{span(row.toPullMs)}</td>
       <td>{span(row.toReviewMs)}</td>
       <td>{span(row.toMergeMs)}</td>

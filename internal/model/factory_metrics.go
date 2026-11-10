@@ -61,6 +61,22 @@ const (
 	CodeUnknown = "unknown"
 )
 
+// Who let a merged Task's change in, the "approved" label of
+// MetricTasksMerged (#92): a team that starts small, with its Crew's
+// approval rules holding changes for a person, sees there what it could hand
+// over next.
+const (
+	// ApprovedPerson: a person approved the pull request, a spec's at its
+	// review point or a change's its Crew's approval rules held.
+	ApprovedPerson = "person"
+	// ApprovedReviewer: the reviewer Agent's approval, and the verifier's
+	// where the Task has one, merged it.
+	ApprovedReviewer = "reviewer"
+	// ApprovedNone: nobody reviewed it. Its Crew's approval rules asked for
+	// no review, or the Task is of a kind that has none (a plan, a triage).
+	ApprovedNone = MetricNone
+)
+
 // KindBenchmark is the metricLabelKind label of a Benchmark's Tasks: they are
 // Implement Tasks that never merge, and counting them as work would bend
 // every rate.
@@ -95,7 +111,12 @@ type TaskMetricFacts struct {
 	// PersonCommits is the merged pull request's commits a person wrote; nil
 	// when it wasn't read.
 	PersonCommits *int
-	CostMilliUSD  int64
+	// ApprovedByPerson means a person approved the merged pull request, and
+	// Unreviewed that no agent reviewed it, as its Crew's approval rules
+	// asked.
+	ApprovedByPerson bool
+	Unreviewed       bool
+	CostMilliUSD     int64
 	// History is the Task's timeline, oldest first.
 	History []TaskMetricStep
 	Runs    []TaskMetricRun
@@ -202,7 +223,7 @@ func FactoryMetrics(tasks []TaskMetricFacts) []MetricFamily {
 					code = CodePerson
 				}
 			}
-			add(MetricTasksMerged, 1, t.Namespace, container, kind, code)
+			add(MetricTasksMerged, 1, t.Namespace, container, kind, code, mergedApproval(t))
 		}
 
 		// Each step lasts until the next one; the last step is where the Task
@@ -248,8 +269,9 @@ func FactoryMetrics(tasks []TaskMetricFacts) []MetricFamily {
 	families := []MetricFamily{
 		{Name: MetricTasks, Labels: append(slices.Clone(task), "phase"),
 			Help: "Tasks that exist, by project, Container, kind and phase."},
-		{Name: MetricTasksMerged, Labels: append(slices.Clone(task), "code"),
-			Help: "Merged Tasks that exist, by who wrote the change's code: factory (no person's commit), person or unknown."},
+		{Name: MetricTasksMerged, Labels: append(slices.Clone(task), "code", "approved"),
+			Help: "Merged Tasks that exist, by who wrote the change's code (factory: no person's commit, person or " +
+				"unknown) and who approved it (person, reviewer or none)."},
 		{Name: MetricTasksCostUSD, Labels: task,
 			Help: "What the agent runs of the Tasks that exist cost, in US dollars, as the agents reported it."},
 		{Name: MetricTaskSeconds, Labels: []string{metricLabelNamespace, metricLabelKind, "outcome"},
@@ -294,4 +316,17 @@ func FactoryMetrics(tasks []TaskMetricFacts) []MetricFamily {
 		})
 	}
 	return families
+}
+
+// mergedApproval is who let a merged Task's change in, the "approved" label:
+// a person, the reviewer, or nobody.
+func mergedApproval(t TaskMetricFacts) string {
+	reviewed := t.Kind == "" || t.Kind == chatKindImplement || t.Kind == chatKindSpec
+	switch {
+	case t.ApprovedByPerson:
+		return ApprovedPerson
+	case t.Unreviewed || !reviewed || t.Benchmark:
+		return ApprovedNone
+	}
+	return ApprovedReviewer
 }

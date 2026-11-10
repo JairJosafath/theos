@@ -61,6 +61,24 @@ type Triage struct {
 	// the operator labels it env/<name> for each the project has
 	// (docs/plans/done/test-environments.md, T13).
 	Environments []string `json:"environments,omitempty"`
+	// Risk is RiskHigh when a mistake in the issue's change would be costly
+	// or hard to undo: the operator labels the issue risk/high, which a
+	// Crew's approval rules can name (docs/design.md, "Approval rules"; #92).
+	Risk string `json:"risk,omitempty"`
+}
+
+// RiskHigh is the one risk a triager names; an issue is otherwise unmarked.
+const RiskHigh = "high"
+
+// LabelRiskHigh marks an issue whose change, done wrong, is costly or hard to
+// undo. It decides nothing by itself: a Crew's approval rule that names it
+// says what such a change needs.
+const LabelRiskHigh = "risk/high"
+
+// RiskLabel is the label the triager's risk, or a person, puts on an issue.
+func RiskLabel() IssueLabel {
+	return IssueLabel{LabelRiskHigh, "#e99695",
+		"A mistake here is costly or hard to undo; the Crew's approval rules can hold its change for a person", false}
 }
 
 // checkbox is a checklist item's or a list item's marker, which a criterion
@@ -69,11 +87,15 @@ var checkbox = regexp.MustCompile(`^(?:[-*]\s+)?(?:\[[ xX]\]\s*)?`)
 
 // NormalTriage is d as the operator keeps it: the decision in lower case, each
 // text trimmed and bounded, each criterion one line without its marker, the
-// empty ones dropped, at most MaxTriageCriteria.
+// empty ones dropped, at most MaxTriageCriteria, and a risk that is RiskHigh
+// or nothing.
 func NormalTriage(d Triage) Triage {
 	out := Triage{Decision: strings.ToLower(strings.TrimSpace(d.Decision)),
 		Reason: clip(strings.TrimSpace(d.Reason), maxTriageText), Question: clip(strings.TrimSpace(d.Question), maxTriageText),
 		Duplicate: d.Duplicate, Environments: normalEnvironments(d.Environments)}
+	if strings.EqualFold(strings.TrimSpace(d.Risk), RiskHigh) {
+		out.Risk = RiskHigh
+	}
 	for _, c := range d.Criteria {
 		c = strings.Join(strings.Fields(c), " ")
 		c = strings.TrimSpace(checkbox.ReplaceAllString(c, ""))
@@ -132,6 +154,9 @@ type TriageActions struct {
 	// EnvLabels are the env/<name> labels a ready issue gets, one per test
 	// environment the decision names that the project has.
 	EnvLabels []string
+	// RiskLabel is LabelRiskHigh for an issue the decision calls high-risk
+	// that stays open and doesn't have the label yet.
+	RiskLabel string
 	// Comment says on the issue what was decided and why.
 	Comment string
 	// Close closes the issue after the comment.
@@ -144,7 +169,8 @@ type TriageActions struct {
 // task: a ready issue gets its criteria written into a body that has none and
 // status/ready; one that needs a spec status/needs-spec; a parked one
 // status/needs-human and the question; a duplicate is closed. Each gets a
-// comment with the reason. An issue that is closed, or no longer labelled
+// comment with the reason, and one that stays open and is called high-risk
+// the risk/high label, which is never taken off again. An issue that is closed, or no longer labelled
 // status/proposed, was decided by a person meanwhile, and keeps that.
 func PlanTriage(task string, issue TriageIssue, d Triage) TriageActions {
 	switch {
@@ -161,6 +187,20 @@ func PlanTriage(task string, issue TriageIssue, d Triage) TriageActions {
 	if problem := TriageProblem(issue.Number, d); problem != "" {
 		return TriageActions{Problem: problem}
 	}
+	out := planOpenTriage(task, issue, d)
+	if out.Problem != "" || out.Close || d.Risk != RiskHigh || slices.Contains(issue.Labels, LabelRiskHigh) {
+		return out
+	}
+	out.RiskLabel = LabelRiskHigh
+	out.Comment += fmt.Sprintf("\n\nLabelled %s: a mistake in this change would be costly or hard to undo. What "+
+		"that asks of the change is the Crew's to say, in an approval rule that names the label.", LabelRiskHigh)
+	out.Applied += " and " + LabelRiskHigh
+	return out
+}
+
+// planOpenTriage is PlanTriage for a decision that can be applied to an open
+// issue still status/proposed, before its risk.
+func planOpenTriage(task string, issue TriageIssue, d Triage) TriageActions {
 	by := "Triaged by Task " + task
 	switch d.Decision {
 	case TriageReady:
@@ -365,9 +405,20 @@ func (s *CrewStep) AddTriage(t TriageStep) {
 // StandInTriage is the stand-in triager's decision for an issue's text, so
 // the whole loop can run without a model: "stand-in: spec" in it needs a
 // spec, "stand-in: park" parks it, "stand-in: duplicate of #N" makes it a
-// duplicate of N, and anything else is ready, with two criteria.
+// duplicate of N, and anything else is ready, with two criteria. "stand-in:
+// risk high" makes any of them high-risk.
 func StandInTriage(issue string) Triage {
 	text := strings.ToLower(issue)
+	d := standInDecision(text)
+	if strings.Contains(text, "stand-in: risk high") {
+		d.Risk = RiskHigh
+	}
+	return d
+}
+
+// standInDecision is the stand-in triager's decision for an issue's text in
+// lower case, before its risk.
+func standInDecision(text string) Triage {
 	switch {
 	case strings.Contains(text, "stand-in: spec"):
 		return Triage{Decision: TriageSpec, Reason: "Stand-in triage: the issue asks for a spec."}

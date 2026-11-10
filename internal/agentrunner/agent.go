@@ -412,6 +412,11 @@ type FakeAgent struct {
 	Criteria []string
 }
 
+// standInRisk in an issue's text has the stand-in reviewer call its change
+// high-risk, as it has the stand-in triager label the issue
+// (model.StandInTriage).
+const standInRisk = "stand-in: risk high"
+
 // Run does the scripted work.
 func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	if a.Role == RolePlan {
@@ -440,6 +445,10 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 		if a.Open {
 			return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine, one criterion open.", ` +
 				`"open": [{"criterion": "A screenshot of the editor", "why": "no desktop in the sandbox"}]}`, nil
+		}
+		if strings.Contains(strings.ToLower(a.Goal), standInRisk) {
+			return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine.", ` +
+				`"risk": "high", "riskReason": "Stand-in review: the issue asks to be called high-risk."}`, nil
 		}
 		return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine."}`, nil
 	}

@@ -525,6 +525,13 @@ type TriageDecision struct {
 	// +optional
 	Environments []string `json:"environments,omitempty"`
 
+	// risk is "high" when the triager called the issue's change costly or
+	// hard to undo if done wrong. The operator labelled the issue risk/high
+	// for it, which the Crew's approval rules can name.
+	// +kubebuilder:validation:Enum=high
+	// +optional
+	Risk string `json:"risk,omitempty"`
+
 	// applied says what the operator did to the issue, or why it did nothing:
 	// a person closed or triaged the issue meanwhile.
 	// +kubebuilder:validation:MaxLength=1024
@@ -642,6 +649,13 @@ type TaskApproval struct {
 	// the Git host.
 	// +optional
 	ApprovedInChat bool `json:"approvedInChat,omitempty"`
+
+	// raisedByReviewer says the reviewer, and no rule, asked for the person:
+	// it approved the change and called it high-risk, and reason has its
+	// words. The rules left the change to the reviewer; a reviewer may raise
+	// what a change needs, never lower it.
+	// +optional
+	RaisedByReviewer bool `json:"raisedByReviewer,omitempty"`
 }
 
 // TaskStandardChange is the Standard change a Task proposed: the protected files
