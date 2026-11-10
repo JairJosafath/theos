@@ -4,6 +4,9 @@ Each milestone of the [plan](plans/done/mvp-v1.md) ends in a check you can run i
 the Kind cluster. This page shows each check passing, with screenshots of real
 output. [`hack/evidence.sh`](../hack/evidence.sh) takes them again.
 
+This is a record of runs on the test rig, a Kind cluster of one node. An
+install is a Kubernetes cluster of your own: [design.md](design.md#why-kubernetes).
+
 | # | Milestone | Done when | Result |
 | --- | --- | --- | --- |
 | 1 | Test environment | `make cluster gitea seed` gives a Gitea with tagged templates and the `gitea-credentials` Secret | Passed |

@@ -232,7 +232,7 @@ func makeSecrets(ctx context.Context, t *testing.T, cs kubernetes.Interface, own
 }
 
 // helmLabels and helmOwner are the metadata helm puts on what a release owns;
-// the release that made the namespace gitea owns it, as on a device.
+// the release that made the namespace gitea owns it, as on an install.
 var helmLabels = map[string]string{"app.kubernetes.io/managed-by": "Helm"}
 
 func helmOwner(release string) map[string]string {
