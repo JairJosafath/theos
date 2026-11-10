@@ -160,6 +160,10 @@ func TestGitHubActionsRow(t *testing.T) {
 	if got := FactoryOwnPaths(ci); !slices.Contains(got, ".github/") || len(got) != len(FactoryOwnPaths(CI{}))+1 {
 		t.Errorf("FactoryOwnPaths(githubActions) = %v, want the factory's own and .github/ alone of a CI system", got)
 	}
+	if ci.Dir() != ".github/" || (CI{ProtectedPaths: []string{".ci.yml"}}).Dir() != "" {
+		t.Errorf("Dir() = %q, and %q of a system with one file; want .github/ and none", ci.Dir(),
+			(CI{ProtectedPaths: []string{".ci.yml"}}).Dir())
+	}
 	// It reads workflows from one place, so an adopted repository's are
 	// protected already.
 	if got := ci.ForAdopted(nil); !slices.Equal(got.ProtectedPaths, []string{".github/"}) ||

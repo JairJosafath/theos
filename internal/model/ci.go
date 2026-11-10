@@ -135,6 +135,18 @@ var ciSystems = map[string]CI{
 // GitProvider names another.
 var hostCI = map[string]string{"gitea": CIGiteaActions, "github": CIGitHubActions}
 
+// Dir is the folder the CI system reads in a repository, such as .github/:
+// where its workflows and its issue and pull request templates are. A
+// template names it as {{ .CI.Dir }}; "" for a system that reads none.
+func (ci CI) Dir() string {
+	for _, p := range ci.ProtectedPaths {
+		if strings.HasSuffix(p, "/") {
+			return p
+		}
+	}
+	return ""
+}
+
 // CINames names the CI systems the factory knows, sorted.
 func CINames() []string {
 	return slices.Sorted(maps.Keys(ciSystems))

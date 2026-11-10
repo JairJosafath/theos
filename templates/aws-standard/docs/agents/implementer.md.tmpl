@@ -87,7 +87,7 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
 ## When CI runs the full check
 
 The Container's owner chooses it (its `checks` setting). When
-`.gitea/workflows/check.yaml` has a `full` job, the choice is `BeforeRelease`:
+`{{ .CI.Dir }}workflows/check.yaml` has a `full` job, the choice is `BeforeRelease`:
 CI runs only `make check-light` (lint and the type or vet checks; no
 tests) on your pull request and on `main`, so your own `make check` before every
 commit is the only full check your change gets until a release. The full
@@ -310,7 +310,7 @@ Task that reviews and merges it. Then:
 ## Your summary
 
 Your summary becomes the pull request description, in the shape of
-`.gitea/PULL_REQUEST_TEMPLATE.md`:
+`{{ .CI.Dir }}PULL_REQUEST_TEMPLATE.md`:
 
 - **Summary:** what changed and why, in two or three sentences.
 - **Each acceptance criterion:** met or not met; where (file and function);

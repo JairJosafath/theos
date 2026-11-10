@@ -335,6 +335,12 @@ func testStandardCI(t *testing.T, in Input, layer Layer) {
 		if strings.HasPrefix(p, metaDir) {
 			t.Errorf("%s is written under %s", p, metaDir)
 		}
+		// Its guides and ignore lists name this system's folder, no other's.
+		for _, name := range model.CINames() {
+			if other, _ := model.CIByName(name); name != in.CI.Name && strings.Contains(string(files[p].Data), other.Dir()) {
+				t.Errorf("%s names %s, the folder of %s, in a repository on %s", p, other.Dir(), name, in.CI.Name)
+			}
+		}
 		// What only this CI system's folder writes is the system's own, and
 		// no agent may change it.
 		if _, shared := todaysLayout(layer).Files[p]; !shared && !fromTemplate(layer, p) {

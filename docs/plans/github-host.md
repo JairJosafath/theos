@@ -250,6 +250,11 @@ organization is where those three show.
   was. factory-self keeps one system: the factory's own repository has
   workflows of its own on GitHub, so adopting it there names those checks
   (`spec.checkContexts`) and takes no workflow from a Standard.
+- **A Standard's own files name the system's folder, not `.gitea/`.** Its
+  agent guides and the TypeScript Standards' Prettier ignore list said
+  `.gitea/`; they say `{{ .CI.Dir }}` now, `model.CI`'s folder, so a
+  repository on GitHub is told `.github/` is the platform's and where its
+  pull request template is. Three guides became templates for it.
 - **GitHub's runners carry none of the factory's toolchain,** and a
   Standard's `make check` calls its tools from the `PATH`, as it does in an
   agent's sandbox and on a Gitea runner. So the job runs in the toolchain
