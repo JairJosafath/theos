@@ -38,6 +38,39 @@ draws the story on top.
 | Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
+| Where it runs | One Kubernetes cluster per install, of any number of nodes. Kind on one machine is the test rig and a way to try it, never the purpose ([Why Kubernetes](#why-kubernetes)). |
+
+### Why Kubernetes
+
+theos runs on Kubernetes because agentic work is distributed work: many
+agents, each in a sandbox of its own, building at once. The cluster already
+does what that needs.
+
+- **Every run is a pod.** An agent's run is a sandboxed pod, and so are a
+  project's CI jobs and its local test environments. The scheduler places
+  each on any node with room; the operator never picks a node.
+- **One truth.** The model is custom resources in the cluster's API. Every
+  client reads and writes the same objects, and the operator reconciles
+  them.
+- **The cluster enforces the fence.** NetworkPolicies, on a network plugin
+  that enforces them, and pods that hold no ServiceAccount token keep an
+  agent in ([The fence](#the-fence)).
+- **A run outlives its pod.** A run that a node shutdown or an eviction
+  interrupts resumes from its checkpoint.
+- **Capacity is the cluster's.** How many agents work at once is a setting
+  (the operator's `--max-agent-sandboxes`), and the cluster's nodes are what
+  bounds it.
+- **It installs from a chart,** on a Kubernetes 1.30 or later cluster
+  ([Distribution and issues](#distribution-and-issues)).
+
+A Kind cluster on one machine is how theos is tested ([Test tiers](#test-tiers))
+and the quickest way to try it. It is not what theos is for.
+
+One install is one cluster and one trust domain. The design claims no
+multi-cluster and no high availability of the Git host the chart brings.
+The test rig has one node, and parts of the factory still assume one; they
+are open points, each with its issue
+([Out of scope and open points](#out-of-scope-and-open-points)).
 
 ## The model
 
@@ -1467,7 +1500,7 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
 
 ## Factory components: ports and adapters
 
-The factory is built from parts a device can swap: another Git host, its own
+The factory is built from parts an install can swap: another Git host, its own
 Argo CD, later another CI or agent runtime. A port is cut by what the
 controllers call, not by one product's API;
 [architecture.md](architecture.md#ports) keeps one row per port.
@@ -1707,10 +1740,11 @@ its images on GHCR. The release installs:
 | Shared Secrets | copied from the release namespace | the pull Secrets; a project's own Secret of that name wins. The Agents' token is read by the model proxy there and never copied |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release doesn't run |
 
-A device installs Agent Sandbox first and gives the Agents' token once. An
-upgrade leaves running work alone
-([plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md)). A device
-reports issues through the form *Report from a device*.
+An install is one cluster: whoever runs it installs Agent Sandbox first and
+gives the Agents' token once. An upgrade leaves running work alone
+([plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md)). An
+install reports issues through the form *Report from a device*, under a name
+of its own.
 
 ## Compatibility
 
@@ -1777,9 +1811,11 @@ reads into an unset field are left to review.
 ## Test tiers
 
 Each rule is verified at the lowest tier that can see it; `make check` runs
-the table, offline YAML and envtest tiers before every merge. A Kind cluster exists only when a
+the table, offline YAML and envtest tiers before every merge. Kind is the test rig: a cluster of one
+node on one machine, which exists only when a
 human asks; agents never create, lease or deploy to one. What only a real
-node would catch is not tested before release.
+node would catch is not tested before release, and nothing runs the factory
+on more than one node (#125).
 
 | Tier | Verifies |
 | --- | --- |
@@ -1811,3 +1847,13 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
   briefly; a webhook could reject it up front.
 - **Trust.** Until the gaps in [The fence](#the-fence) and
   [The CI fence](#the-ci-fence) close, one install is one trust domain.
+- **One node assumed.** The factory is meant for a cluster of many nodes
+  ([Why Kubernetes](#why-kubernetes)) and was built on a rig of one. What
+  still assumes one node: the Go build caches are hostPath directories, one
+  per node, and refused where Pod Security is enforced (#120); the chart's
+  Gitea has no address outside the cluster, so nodes can't pull the images
+  it holds (#121); the UI's health history reads the first node (#122); the
+  chart's defaults are the rig's, and an Agent's sandboxes can't be placed
+  on nodes (#123); the chart's Gitea is one pod on a ReadWriteOnce volume,
+  so its node's loss stops the factory (#124); no release check runs on
+  more than one node (#125).
