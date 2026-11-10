@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/adapters/git"
 	"github.com/JairJosafath/theos/internal/ports"
@@ -38,7 +39,8 @@ import (
 // github_host_pulls.go, branch and tag rules in github_host_rules.go,
 // statuses in github_host_status.go, releases and the source at a tag in
 // github_host_releases.go. The Issues port, step 3 (#76), is in
-// github_host_issues.go. No GitProvider reaches this before step 8.
+// github_host_issues.go, and AgentAccess, step 4 (#77), in
+// github_host_agents.go. No GitProvider reaches this before step 8.
 
 // GitHubWebURL is github.com, where a GitProvider's spec.url means the public
 // GitHub; any other URL is a GitHub Enterprise Server.
@@ -57,21 +59,32 @@ type host struct {
 	owner    string
 	creds    ports.Credentials
 	http     *http.Client
+	// agents is the App that mints the agents' credentials, nil without
+	// one; noAgents says why the provider has none it can use.
+	agents   *agentApp
+	noAgents *ports.AgentAccessUnavailable
+	now      func() time.Time
 }
 
 // Host is the part of ports.Provider the GitHub adapter has so far.
 type Host interface {
 	ports.GitHost
 	ports.Issues
+	ports.AgentAccess
+	ports.AgentAccessChecker
 }
 
 // GitHost returns the GitHost of cfg's owner, as Host does.
 func (c Client) GitHost(cfg ports.Config) (ports.GitHost, error) { return c.Host(cfg) }
 
-// Host returns the GitHost and the Issues of cfg's owner. cfg.URL is
-// https://github.com, whose API is api.github.com, or a GitHub Enterprise
-// Server's address, whose API is under /api/v3. cfg.Credentials holds a
-// token; its user name is the one GitHub takes over Git whatever it says.
+// Host returns the GitHost, the Issues and the AgentAccess of cfg's owner.
+// cfg.URL is https://github.com, whose API is api.github.com, or a GitHub
+// Enterprise Server's address, whose API is under /api/v3. cfg.Credentials
+// holds the operator's token, of an account that administers the owner's
+// repositories; its user name is the one GitHub takes over Git whatever it
+// says. cfg.Secret names the GitHub App that mints the agents' credentials
+// (appId, privateKey, and installationId where it is known); without one
+// the host has no agent access, and CheckAgentAccess says so.
 func (c Client) Host(cfg ports.Config) (Host, error) {
 	if cfg.Owner == "" {
 		return nil, errors.New("github: owner is required")
@@ -94,7 +107,8 @@ func (c Client) Host(cfg ports.Config) (Host, error) {
 	if client == nil {
 		client = &http.Client{}
 	}
-	return &host{api: api, web: web, owner: cfg.Owner, http: client,
+	agents, noAgents := agentsOf(cfg.Secret)
+	return &host{api: api, web: web, owner: cfg.Owner, http: client, agents: agents, noAgents: noAgents, now: c.now,
 		creds: ports.Credentials{Username: gitUsername, Token: cfg.Credentials.Token}}, nil
 }
 
@@ -108,8 +122,14 @@ func (h *host) repoPath(repo ports.Repository) string {
 	return "/repos/" + url.PathEscape(repo.Owner) + "/" + url.PathEscape(repo.Name)
 }
 
-// do sends one API call and returns its status and body.
+// do sends one API call as the operator and returns its status and body.
 func (h *host) do(ctx context.Context, method, path string, body any) (int, []byte, error) {
+	return h.doAs(ctx, h.creds.Token, method, path, body)
+}
+
+// doAs sends one API call with token as its bearer: the operator's own, an
+// App's JSON Web Token, or an installation token.
+func (h *host) doAs(ctx context.Context, token, method, path string, body any) (int, []byte, error) {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -122,7 +142,7 @@ func (h *host) do(ctx context.Context, method, path string, body any) (int, []by
 	if err != nil {
 		return 0, nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+h.creds.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if body != nil {
@@ -348,9 +368,11 @@ func (h *host) DeleteBranch(ctx context.Context, repo ports.Repository, branch s
 	if err != nil {
 		return err
 	}
-	switch status {
-	// 422 "Reference does not exist", and 404 for a repository that is gone.
-	case http.StatusNoContent, http.StatusUnprocessableEntity, http.StatusNotFound:
+	switch {
+	// 404 is a repository that is gone. 422 is "Reference does not exist",
+	// and also a ruleset's refusal, which is no branch gone (#77).
+	case status == http.StatusNoContent, status == http.StatusNotFound,
+		status == http.StatusUnprocessableEntity && strings.Contains(string(data), "Reference does not exist"):
 		return nil
 	}
 	return failed("deleting branch "+branch+" of "+repo.Owner+"/"+repo.Name, status, data)
