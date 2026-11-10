@@ -279,7 +279,11 @@ queue:
   On a miss, `make check` runs only the steps the change since `origin/main`
   selects (`hack/check.sh`, #127; [testenv.md](testenv.md#testing--development)
   says what selects each), so a docs-only change runs nothing and takes no
-  heavy-job slot, on a device that never ran `make check` too. Go's test
+  heavy-job slot, on a device that never ran `make check` too. Every check is
+  partial like that, on the branch `main` and in the workflows too; only a
+  release runs every step (`make check FORCE=1`, the *Release* workflow's
+  first job). A run of a part of the steps (`CHECK_STEPS`, what a workflow's
+  job runs) records no pass of the tree. Go's test
   cache (above) still answers each unchanged package it does test,
   and three tiers answer from their own cache (#1285): `validate-yaml`,
   `test-hack` and `ui-test`, when a file among their inputs changed since the

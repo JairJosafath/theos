@@ -10,11 +10,15 @@
 # manifests and generate, and fmt, vet, lint and test on the packages gta
 # selects; a UI-only change runs the UI's check alone, a hack/ script the shell
 # tests alone; a CRD, a template, go.mod and the linter's configuration run
-# what reads them; the Makefile, a script that selects the steps, FORCE,
-# TEST_ALL, the branch main and a missing merge base run every step; a file
+# what reads them, and so do the Makefile and a script that selects the
+# steps; FORCE, TEST_ALL and a missing merge base run every step; a file
 # make manifests writes selects the steps below it; a tier whose inputs passed
 # on this device is answered from its cache, unless FORCE is set; a failing
 # step ends the check, says so in the block and records no pass.
+# Every check is partial, on the branch main too: only a release runs every
+# step, by asking. CHECK_STEPS takes a part of the check, as a workflow's job
+# does, and test-gitea runs only when named and when the Gitea adapter, the
+# seed or the local Gitea is what the change reaches.
 # Run: hack/check_test.sh
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
@@ -24,7 +28,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GOWORK=off
-unset TEST_ALL FORCE TEST_BASE GENERATED_PATHS THEOS_HEAVY_SLOT MAKE
+unset TEST_ALL FORCE TEST_BASE GENERATED_PATHS THEOS_HEAVY_SLOT MAKE CHECK_STEPS
 
 (cd "$REPO" && go build -o "$T/gta" ./hack/gta) || { echo "FAIL hack/gta does not build"; exit 1; }
 export THEOS_GTA=$T/gta
@@ -52,8 +56,8 @@ chmod +x "$T/make"
 export CHECK_MAKE=$T/make CALLS=$T/calls CHECK_CACHE_DIR=$T/checks
 
 # The readers table of hack/test-packages.sh: the tests of internal/scaffold
-# read templates/, those of internal/other config/.
-printf 'templates internal/scaffold\nconfig internal/other\n' >"$T/readers"
+# and of the Gitea adapter read templates/, those of internal/other config/.
+printf 'templates internal/scaffold internal/adapters/gitea\nconfig internal/other\n' >"$T/readers"
 export TEST_READERS=$T/readers
 
 # A module as the tiers of hack/check-cache.sh know it: hack/render builds
@@ -61,7 +65,7 @@ export TEST_READERS=$T/readers
 src=$T/src
 git init -q -b main "$src"
 cd "$src" || exit 1
-mkdir -p hack/lib hack/render hack/runner-fence internal/scaffold internal/other ui config/crd/bases templates/x docs
+mkdir -p hack/lib hack/render hack/runner-fence internal/scaffold internal/other internal/adapters/gitea ui config/crd/bases templates/x docs
 cp "$HERE/check.sh" "$HERE/check-cache.sh" "$HERE/test-packages.sh" hack/
 cp "$HERE/lib/change.sh" hack/lib/
 printf 'module example.com/r\n\ngo 1.22\n' >go.mod
@@ -71,6 +75,7 @@ pkg() { # pkg DIR NAME
 }
 pkg internal/scaffold scaffold
 pkg internal/other other
+pkg internal/adapters/gitea gitea
 printf 'package main\n\nimport _ "example.com/r/internal/scaffold"\n\nfunc main() {}\n' >hack/render/main.go
 printf 'package main\n\nfunc main() {}\n' >hack/runner-fence/main.go
 for f in Makefile .golangci.yml ui/package.json ui/app.ts hack/x.sh config/crd/bases/a.yaml templates/x/a.txt docs/notes.md; do echo 1 >"$f"; done
@@ -107,7 +112,7 @@ calls() { tr '\n' ';' <"$T/calls"; }
 m=example.com/r
 none="skipped skipped skipped skipped skipped skipped skipped skipped"
 every="ran ran ran ran ran ran ran ran"
-all_pkgs="$m/hack/render $m/hack/runner-fence $m/internal/other $m/internal/scaffold"
+all_pkgs="$m/hack/render $m/hack/runner-fence $m/internal/adapters/gitea $m/internal/other $m/internal/scaffold"
 
 change docs/notes.md
 run; check "docs only: exit 0" $? 0
@@ -130,7 +135,7 @@ check "one Go package: that package alone" "$(calls)" \
 check "one Go package: the block says which gta selects" \
   "$(grep -c '^  vet  *ran  *[0-9]*s; the package gta selects: internal/other$' "$T/out")" 1
 check "one Go package: the block says which are tested" \
-  "$(grep -c '^  test  *ran  *[0-9]*s; 1 of 4 packages, .*; changed: internal/other$' "$T/out")" 1
+  "$(grep -c '^  test  *ran  *[0-9]*s; 1 of 5 packages, .*; changed: internal/other$' "$T/out")" 1
 hack/check.sh --idle >"$T/idle" 2>&1; check "one Go package: --idle exits 1" $? 1
 check "one Go package: --idle says nothing" "$(cat "$T/idle")" ""
 check "--idle runs nothing" "$(: >"$T/calls"; hack/check.sh --idle >/dev/null 2>&1; calls)" ""
@@ -181,7 +186,8 @@ check "a CRD: the tests that read config/" "$(grep -c "^test TEST_PACKAGES=$m/in
 change templates/x/a.txt
 run
 check "a template: validate-yaml and its readers" "$(states)" "skipped skipped skipped skipped ran skipped skipped ran"
-check "a template: the tests that read templates/" "$(grep -c "^test TEST_PACKAGES=$m/internal/scaffold\$" "$T/calls")" 1
+check "a template: the tests that read templates/" \
+  "$(grep -c "^test TEST_PACKAGES=$m/internal/adapters/gitea $m/internal/scaffold\$" "$T/calls")" 1
 
 change go.mod
 run
@@ -192,23 +198,36 @@ check "go.mod: says why" "$(grep -c '^  vet  *ran  *[0-9]*s; every package: go.m
 
 change .golangci.yml
 run
-check "the linter's configuration: lint on every package, no fmt or vet" "$(states)" "skipped skipped skipped ran skipped ran skipped ran"
+check "the linter's configuration: lint on every package, no fmt, vet or test" "$(states)" "skipped skipped skipped ran skipped ran skipped skipped"
 check "the linter's configuration: says why" "$(grep -c '^  lint  *ran  *[0-9]*s; every package: .golangci.yml changed$' "$T/out")" 1
 change .golangci.yml internal/other/other.go
 run
 check "the linter's configuration and a package: lint on every package" "$(grep -c '^lint LINT_PACKAGES=$' "$T/calls")" 1
 check "the linter's configuration and a package: vet on that package" "$(grep -c "^vet GO_PACKAGES=$m/internal/other\$" "$T/calls")" 1
 
-# A tier that every step selects is still answered from the cache, so each
-# case starts on a device without one.
-for f in Makefile hack/ui.mk hack/check.sh hack/check-cache.sh hack/test-packages.sh hack/lib/change.sh hack/gta/main.go; do
-  change "$f"
-  [ "$f" != hack/gta/main.go ] || printf 'package main\n\nfunc main() {}\n' >"$f"
+# #127: no file selects every step, on a device as in a workflow: only a
+# release runs them all. The Makefile, a *.mk and the scripts that select the
+# steps select what reads them: the steps whose tools the Makefile pins and
+# the tiers whose inputs list the file. Each case starts without a cache.
+# selects FILE STATES: a change to FILE alone runs the steps STATES says.
+selects() {
+  change "$1"
+  [ "$1" != hack/gta/main.go ] || printf 'package main\n\nfunc main() {}\n' >"$1"
   rm -rf "$CHECK_CACHE_DIR"
   run
-  check "$f: every step" "$(states)" "$every"
-  check "$f: says why" "$(grep -c "^  vet  *ran  *[0-9]*s; every package: $f changed, which selects or runs the steps\$" "$T/out")" 1
-done
+  check "#127 $1: what reads it, not every step" "$(states)" "$2"
+}
+selects Makefile "ran skipped skipped ran ran ran ran skipped"
+check "#127 Makefile: the linter it pins reads every package" "$(grep -c '^  lint  *ran  *[0-9]*s; every package: Makefile changed$' "$T/out")" 1
+check "#127 Makefile: no Go test reads it" "$(grep -c '^test ' "$T/calls")" 0
+selects hack/ui.mk "skipped skipped skipped skipped ran ran ran skipped"
+selects hack/check-cache.sh "skipped skipped skipped skipped ran ran ran skipped"
+selects hack/check.sh "skipped skipped skipped skipped skipped ran skipped skipped"
+selects hack/test-packages.sh "skipped skipped skipped skipped skipped ran skipped skipped"
+selects hack/lib/change.sh "skipped skipped skipped skipped skipped ran skipped skipped"
+selects hack/gta/main.go "skipped ran ran ran skipped ran skipped ran"
+check "#127 hack/gta: its own package" "$(grep -c "^test TEST_PACKAGES=$m/hack/gta\$" "$T/calls")" 1
+selects README.md "skipped skipped skipped skipped skipped ran skipped skipped"
 
 # What make manifests writes counts for the steps below it.
 change internal/other/other.go
@@ -244,10 +263,70 @@ head=$(git rev-parse HEAD)
 git switch -q --detach "$head"
 TEST_BASE=HEAD~1 run
 check "#2058 detached, TEST_BASE the commit before a docs change: no step" "$(states)" "$none"
+
+# #127: every check is partial, on the branch main too: what main holds that
+# origin/main doesn't. Only a release runs every step, by asking (FORCE=1).
 git switch -q main
 rm -rf "$CHECK_CACHE_DIR"
 run
-check "the branch main: every step" "$(states)" "$every"
+check "#127 the branch main, as origin/main: no step" "$(states)" "$none"
+echo "// c" >>internal/other/other.go
+run
+check "#127 the branch main, a change: the steps it selects" "$(states)" "ran ran ran ran skipped skipped skipped ran"
+git commit -qam other
+run
+check "#127 the branch main, a commit origin/main lacks: the same" "$(states)" "ran ran ran ran skipped skipped skipped ran"
+git switch -q feature
+
+# CHECK_STEPS takes a part of the check: a workflow's job runs its part,
+# selected the same way, and records no pass of the tree.
+change internal/scaffold/scaffold.go
+echo "// part" >>internal/scaffold/scaffold.go
+CHECK_STEPS="generate lint validate-yaml" run; check "a part of the steps: exit 0" $? 0
+check "a part: those steps alone" "$(calls)" "manifests generate;lint LINT_PACKAGES=./hack/render ./internal/scaffold;validate-yaml;"
+check "a part: the block lists them alone" "$(states)" "ran ran ran"
+check "a part: the block says so" "$(grep -c '; of the steps asked for (CHECK_STEPS), the steps that change selects:$' "$T/out")" 1
+check "a part: no pass of the tree is recorded" "$(grep -c 'passed on tree' "$T/out")" 0
+CHECK_STEPS=manifests run
+check "a part: manifests names the step generate" "$(calls)" "manifests generate;"
+change docs/notes.md
+CHECK_STEPS=test-hack run
+check "a part, docs only: the shell tests are skipped" "$(states)" "skipped"
+check "a part, docs only: --idle says idle" "$(CHECK_STEPS="lint test-hack" hack/check.sh --idle 2>&1)" "idle"
+change hack/x.sh
+echo "# part" >>hack/x.sh
+CHECK_STEPS=test-hack run
+check "a part, a hack/ script: the shell tests" "$(calls)" "test-hack;"
+FORCE=1 CHECK_STEPS="vet test-hack" run
+check "a part, FORCE=1: every step asked for" "$(calls)" "vet GO_PACKAGES=./...;test-hack;"
+check "a part, FORCE=1: says so" "$(grep -c '^make check: passed. Every step asked for (CHECK_STEPS) was selected: FORCE is set.$' "$T/out")" 1
+CHECK_STEPS="lint nope" run; check "a part naming no step: exit 2" $? 2
+check "a part naming no step: says which" "$(grep -c 'CHECK_STEPS names nope, which is no step' "$T/out")" 1
+check "a part naming no step: runs nothing" "$(calls)" ""
+
+# test-gitea, the Gitea adapter against a real Gitea, runs only when named:
+# when make test tests the adapter, or the seed or the local Gitea changed.
+change internal/adapters/gitea/gitea.go
+CHECK_STEPS="test test-gitea" run
+check "test-gitea, the adapter changed: its tests and the integration tests" "$(calls)" \
+  "test TEST_PACKAGES=$m/internal/adapters/gitea;test-gitea;"
+change templates/x/a.txt
+CHECK_STEPS=test-gitea run
+check "test-gitea, a template the adapter's tests read: runs" "$(calls)" "test-gitea;"
+change hack/seed/seed.sh
+CHECK_STEPS="test test-gitea" run
+check "test-gitea, the seed changed: runs, with no package to test" "$(states)" "skipped ran"
+check "test-gitea, the seed changed: says which file" "$(grep -c '^  test-gitea  *ran  *[0-9]*s; hack/seed/seed.sh changed$' "$T/out")" 1
+change internal/other/other.go
+CHECK_STEPS="test test-gitea" run
+check "test-gitea, another package changed: skipped" "$(states)" "ran skipped"
+check "test-gitea, skipped: says why" \
+  "$(grep -c '^  test-gitea  *skipped  the change reaches neither internal/adapters/gitea, the seed nor' "$T/out")" 1
+FORCE=1 CHECK_STEPS=test-gitea run
+check "test-gitea, FORCE=1: runs" "$(calls)" "test-gitea;"
+change internal/adapters/gitea/gitea.go
+run
+check "test-gitea is no step of a plain make check" "$(grep -c '^test-gitea' "$T/calls")" 0
 
 # The Makefile of this repository: make check runs hack/check.sh, a dry run
 # runs nothing of it, and a check that is idle takes no heavy-job slot.

@@ -104,7 +104,7 @@ vet: ## Run go vet against code.
 # slot, a docs-only change's (hack/check.sh --idle, #127): it runs nothing.
 # Before GNU make 4.4 a variable of the command line (make check FORCE=1)
 # doesn't reach $(shell), so the ones the two scripts read are passed by name.
-CHECK_ENV = FORCE='$(FORCE)' TEST_ALL='$(TEST_ALL)' TEST_BASE='$(TEST_BASE)'
+CHECK_ENV = FORCE='$(FORCE)' TEST_ALL='$(TEST_ALL)' TEST_BASE='$(TEST_BASE)' CHECK_STEPS='$(CHECK_STEPS)'
 ifeq ($(MAKECMDGOALS)$(THEOS_HEAVY_SLOT),check)
 CHECK_CACHED := $(shell $(CHECK_ENV) hack/check-cache.sh lookup)
 CHECK_IDLE := $(if $(CHECK_CACHED),,$(shell $(CHECK_ENV) hack/check.sh --idle 2>/dev/null))
@@ -160,9 +160,10 @@ TEST_CACHE_HOME ?= $(HOME)/.cache/theos/test-cache
 
 .PHONY: test
 # make test tests only the packages the change since origin/main can affect,
-# as digitalocean/gta selects them (hack/gta, #127), and every package on
-# main, after a change to go.mod, the Makefile and the like, or with
-# TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which and why.
+# as digitalocean/gta selects them (hack/gta, #127), on the branch main too,
+# and every package only after a change to go.mod or go.sum, or with
+# TEST_ALL=1 (or FORCE=1), which a release sets; hack/test-packages.sh says
+# which and why.
 # TEST_PACKAGES names them instead: make check passes the selection its last
 # block reports. Go's test cache still answers the unchanged ones among them.
 # With COVER=1, cover.out covers the packages that ran, and is empty when none
@@ -236,8 +237,16 @@ test-e2e: e2e ## Same as e2e.
 # (hack/gta). validate-yaml, test-hack and ui-test run when one of their inputs
 # changed, unless those inputs already passed on this device
 # (hack/check-cache.sh, #1285). The run ends with one block that says what ran,
-# what was skipped and why. TEST_ALL=1 selects every step; FORCE=1 runs every
-# step, past every cache.
+# what was skipped and why.
+# Every check is partial, against main, on a device as in a workflow and on
+# the branch main too: no file selects every step, this Makefile neither (it
+# selects the steps whose tools it pins and the tiers that read it). Only a
+# release runs every step: the Release workflow's first job is make check
+# FORCE=1, and nothing is published unless it passes. By hand, TEST_ALL=1
+# selects every step and FORCE=1 runs every step, past every cache.
+# CHECK_STEPS takes a part of the check, by the steps' names (generate fmt vet
+# lint validate-yaml test-hack ui-test test, and test-gitea, which only runs
+# when named): a workflow's job runs its part, selected the same way.
 # The UI's own check (make ui-test: typecheck, eslint, prettier, its tests) is
 # part of it: the UI workflow runs only after a merge to main, so nothing else
 # before a merge would see a UI change break it (#1006). ./dev setup installs
@@ -250,8 +259,8 @@ test-e2e: e2e ## Same as e2e.
 CHECK_MAKE = $(MAKE)
 .PHONY: check
 ifeq ($(CHECK_CACHED),)
-check: ## Everything to run before finishing a change, each step only when the change can have broken it: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
-	@CHECK_MAKE="$(CHECK_MAKE)" GENERATED_PATHS="$(GENERATED_PATHS)" hack/check.sh
+check: ## Everything to run before finishing a change, each step only when the change can have broken it: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too (FORCE=1: every step, as a release runs; CHECK_STEPS=...: a part of them).
+	@CHECK_MAKE="$(CHECK_MAKE)" GENERATED_PATHS="$(GENERATED_PATHS)" CHECK_STEPS="$(CHECK_STEPS)" hack/check.sh
 else
 check:
 	@echo "$(CHECK_CACHED)"

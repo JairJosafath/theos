@@ -17,7 +17,7 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] 
 # (-q), so nothing runs. hack/check_test.sh shows hack/check.sh running make
 # ui-test for a change under ui/, and nothing else.
 make -pq help 2>/dev/null | grep -A8 '^check:' | grep -q 'hack/check.sh$'; check "make check runs hack/check.sh" $? 0
-grep -q '^\[ ! -f ui/package.json \] || tier ui-test$' hack/check.sh; check "hack/check.sh holds ui-test, through the tier cache" $? 0
+grep -q '|| \[ ! -f ui/package.json \] || tier ui-test$' hack/check.sh; check "hack/check.sh holds ui-test, through the tier cache" $? 0
 
 # A fake npm: logs where it ran and with what, makes node_modules on npm ci,
 # and fails as npm run check does on a file Prettier would rewrite.

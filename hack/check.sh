@@ -14,11 +14,13 @@
 #   manifests generate   a Go file under api/, cmd/ or internal/, whose markers
 #                        and types controller-gen reads, go.mod, go.sum, a file
 #                        they write (config/crd, config/rbac, the chart's
-#                        copies) or a script they run
+#                        copies), a script they run or the Makefile, which
+#                        pins controller-gen
 #   fmt, vet, lint       the packages gta says the change affects (hack/gta):
 #                        those a changed file lies in and those that depend on
 #                        them. Every package after a change to go.mod or
 #                        go.sum, and for lint after one to its configuration
+#                        or to the Makefile, which pins the linter
 #   validate-yaml,       a changed file among the tier's inputs
 #   test-hack, ui-test   (hack/check-cache.sh changed). A tier the change selects
 #                        is still answered from the device's cache when those
@@ -26,18 +28,29 @@
 #   test                 the packages hack/test-packages.sh prints: gta's, and
 #                        the readers of the files Go tests read without
 #                        importing them
+#   test-gitea           only when CHECK_STEPS names it: internal/adapters/gitea
+#                        is among the packages make test tests, or the seed
+#                        or the local Gitea's script changed
 #
-# Every step runs when everything is to be checked (TEST_ALL or FORCE is set,
-# the branch is main, there is no merge base) and after a change to the
-# Makefile, a *.mk or a script that selects the steps: a selection can't vouch
-# for itself. FORCE=1 also passes by every cache. When in doubt a step runs: a
-# tier whose inputs can't be compared, or packages gta can't select.
+# Every check is partial, against main, on a device as in a workflow. Every
+# step runs only when someone asks for it (TEST_ALL or FORCE is set, which a
+# release does and nothing else) or when the change can't be known (no merge
+# base). FORCE=1 also passes by every cache. No file selects every step: the
+# Makefile, a *.mk and the scripts that select the steps are read by the steps
+# named above and by the tiers whose inputs list them, and select those. When
+# in doubt a step runs: a tier whose inputs can't be compared, or packages gta
+# can't select.
 #
 # The run ends with one block that names each step and says whether it ran,
 # was skipped, was answered from a cache or failed, and why. A step that fails
 # ends the check; the block then lists the later steps as not run.
 #
 #   TEST_BASE, TEST_ALL, FORCE   as in hack/lib/change.sh
+#   CHECK_STEPS       the steps to take, by name: generate fmt vet lint
+#                     validate-yaml test-hack ui-test test test-gitea. Empty:
+#                     all but test-gitea. A workflow's job takes its part of
+#                     the check with it; such a run records no pass of the
+#                     tree
 #   CHECK_MAKE        the make that runs the steps (default make)
 #   GENERATED_PATHS   what make manifests and make generate write (the
 #                     Makefile's list), for the note on uncommitted ones
@@ -52,21 +65,37 @@ MAKE=${CHECK_MAKE:-make}
 GENERATED_PATHS=${GENERATED_PATHS:-config/crd config/rbac api dist/chart/templates/crd dist/chart/templates/rbac}
 # The steps run in the environment make check was started in, without what the
 # recipe passes to this script.
-export -n CHECK_MAKE GENERATED_PATHS
+export -n CHECK_MAKE GENERATED_PATHS CHECK_STEPS
 idle=
 [ "${1:-}" != --idle ] || idle=1
 
-# A change to one of these runs every step: what runs the steps, and what
-# selects them.
-SELF=(Makefile '*.mk' hack/check.sh hack/check-cache.sh hack/test-packages.sh hack/lib/change.sh 'hack/gta/*')
-# What make manifests and make generate read, run and write. In a case
-# pattern * matches a / too, so cmd/*.go is every Go file below cmd/.
+# The steps asked for. manifests names the step generate too, as its goals do.
+DEFAULT_STEPS="generate fmt vet lint validate-yaml test-hack ui-test test"
+steps=${CHECK_STEPS:-}
+steps=" ${steps//manifests/generate} "
+[ -n "${steps// /}" ] || steps=" $DEFAULT_STEPS "
+for s in $steps; do
+  case $s in
+    generate | fmt | vet | lint | validate-yaml | test-hack | ui-test | test | test-gitea) ;;
+    *)
+      echo "make check: CHECK_STEPS names $s, which is no step of: $DEFAULT_STEPS test-gitea" >&2
+      exit 2
+      ;;
+  esac
+done
+# asked STEP: whether the run takes STEP.
+asked() { [[ $steps == *" $1 "* ]]; }
+
+# What make manifests and make generate read, run and write; the Makefile
+# pins controller-gen and names what it reads. In a case pattern * matches a
+# / too, so cmd/*.go is every Go file below cmd/.
 GENERATE=('api/*' 'cmd/*.go' 'internal/*.go' go.mod go.sum go.work go.work.sum
   'config/crd/*' 'config/rbac/*' 'dist/chart/templates/crd/*' 'dist/chart/templates/rbac/*'
-  hack/chart-crds.sh hack/chart-role.sh hack/keep-mtime.sh hack/boilerplate.go.txt)
-# A change to one of these can reach every package.
+  hack/chart-crds.sh hack/chart-role.sh hack/keep-mtime.sh hack/boilerplate.go.txt Makefile)
+# A change to one of these reaches every package: each is built from them.
 GO_ALL=(go.mod go.sum go.work go.work.sum)
-LINT_ALL=(.golangci.yml .custom-gcl.yml)
+# The linter's configuration, and the Makefile, which pins its version.
+LINT_ALL=(.golangci.yml .custom-gcl.yml Makefile)
 
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -89,14 +118,12 @@ first() {
 }
 
 # load: the changed files into files, and into all the reason every step
-# runs, if there is one. Called again after a step that writes files.
+# runs, if someone asked for that or the change can't be known. Called again
+# after a step that writes files.
 load() {
-  local f
   files=()
   all=$CHANGE_ALL
-  [ -z "$all" ] || return 0
-  mapfile -t files < <(change_files)
-  if f=$(first "${SELF[@]}"); then all="$f changed, which selects or runs the steps"; fi
+  [ -n "$all" ] || mapfile -t files < <(change_files)
 }
 
 # in_go_tree: whether a changed file lies where a Go package can own or embed
@@ -236,10 +263,11 @@ report() {
   local i head n=${#files[@]}
   if [ -n "$failed" ]; then head="make check: FAILED at $failed."; else head="make check: passed."; fi
   if [ -n "$CHANGE_ALL" ]; then
-    head+=" Every step was selected: $CHANGE_ALL."
+    head+=" Every step${CHECK_STEPS:+ asked for (CHECK_STEPS)} was selected: $CHANGE_ALL."
   else
     if [ "$n" = 1 ]; then head+=" 1 file"; else head+=" $n files"; fi
-    head+=" changed since $CHANGE_FROM (${CHANGE_BASE:0:12}); the steps that change selects:"
+    head+=" changed since $CHANGE_FROM (${CHANGE_BASE:0:12});"
+    head+=" ${CHECK_STEPS:+of the steps asked for (CHECK_STEPS), }the steps that change selects:"
   fi
   echo
   echo "$head"
@@ -254,61 +282,93 @@ rc_failed=0
 cached=
 load
 
-why= skip=
-if [ -n "$all" ]; then
-  why=$all
-elif f=$(first "${GENERATE[@]}"); then
-  why="$f changed"
-else
-  skip="no Go file under api/, cmd/ or internal/ changed, nor go.mod, go.sum or a generated file"
+if asked generate; then
+  why= skip=
+  if [ -n "$all" ]; then
+    why=$all
+  elif f=$(first "${GENERATE[@]}"); then
+    why="$f changed"
+  else
+    skip="no Go file under api/, cmd/ or internal/ changed, nor go.mod, go.sum or a generated file"
+  fi
+  step "manifests generate" "$MAKE" --no-print-directory manifests generate
+  # What they wrote counts for the steps below: a regenerated CRD selects
+  # validate-yaml and the tests that load it.
+  [ ${#ran[@]} -eq 0 ] || load
 fi
-step "manifests generate" "$MAKE" --no-print-directory manifests generate
-# What they wrote counts for the steps below: a regenerated CRD selects
-# validate-yaml and the tests that load it.
-[ ${#ran[@]} -eq 0 ] || load
 
-go_scope
-why= skip=
-if [ ${#go_pkgs[@]} -gt 0 ]; then why=$go_why; else skip=$go_why; fi
-step fmt "$MAKE" --no-print-directory fmt GO_PACKAGES="${go_pkgs[*]}"
-step vet "$MAKE" --no-print-directory vet GO_PACKAGES="${go_pkgs[*]}"
-# The linter's configuration reaches every package, whatever gta selects.
-if [ "${go_pkgs[*]}" != ./... ] && f=$(first "${LINT_ALL[@]}"); then
-  go_pkgs=(./...)
-  why="every package: $f changed"
+if asked fmt || asked vet || asked lint; then
+  go_scope
+  why= skip=
+  if [ ${#go_pkgs[@]} -gt 0 ]; then why=$go_why; else skip=$go_why; fi
+  ! asked fmt || step fmt "$MAKE" --no-print-directory fmt GO_PACKAGES="${go_pkgs[*]}"
+  ! asked vet || step vet "$MAKE" --no-print-directory vet GO_PACKAGES="${go_pkgs[*]}"
+  if asked lint; then
+    # The linter's configuration reaches every package, whatever gta selects.
+    if [ "${go_pkgs[*]}" != ./... ] && f=$(first "${LINT_ALL[@]}"); then
+      go_pkgs=(./...)
+      why="every package: $f changed"
+    fi
+    [ -n "$why" ] || skip+=", and no linter configuration changed"
+    lint_dirs
+    step lint "$MAKE" --no-print-directory lint LINT_PACKAGES="${dirs[*]}"
+  fi
 fi
-[ -n "$why" ] || skip+=", and no linter configuration changed"
-lint_dirs
-step lint "$MAKE" --no-print-directory lint LINT_PACKAGES="${dirs[*]}"
 
-tier validate-yaml
-tier test-hack
-[ ! -f ui/package.json ] || tier ui-test
+! asked validate-yaml || tier validate-yaml
+! asked test-hack || tier test-hack
+! asked ui-test || [ ! -f ui/package.json ] || tier ui-test
 
-# hack/test-packages.sh says on stderr which packages it chose and why. When
-# every step runs it tests every package, whatever it would choose.
-why= skip= cached=
-if [ -n "$failed" ]; then
-  pkgs=
-elif pkgs=$(TEST_ALL=${TEST_ALL:-${all:+1}} hack/test-packages.sh 2>"$T/test.err"); then
-  said=$(sed -n 's/^make test: testing //p' "$T/test.err" | tail -n 1)
-  [ -z "$all" ] || said="every package: $all"
-  if [ -n "$pkgs" ]; then why=$said; else skip=${said#no package: }; fi
-else
-  cat "$T/test.err" >&2
-  why="hack/test-packages.sh could not select the packages"
+if asked test || asked test-gitea; then
+  # hack/test-packages.sh says on stderr which packages it chose and why. When
+  # every step runs it tests every package, whatever it would choose.
+  why= skip= cached= unselected=
+  if [ -n "$failed" ]; then
+    pkgs=
+  elif pkgs=$(TEST_ALL=${TEST_ALL:-${all:+1}} hack/test-packages.sh 2>"$T/test.err"); then
+    said=$(sed -n 's/^make test: testing //p' "$T/test.err" | tail -n 1)
+    [ -z "$all" ] || said="every package: $all"
+    if [ -n "$pkgs" ]; then why=$said; else skip=${said#no package: }; fi
+  else
+    cat "$T/test.err" >&2
+    unselected="hack/test-packages.sh could not select the packages"
+    why=$unselected
+  fi
+  ! asked test ||
+    step test "$MAKE" --no-print-directory -o manifests -o generate -o fmt -o vet test TEST_PACKAGES="${pkgs//$'\n'/ }"
+  if asked test-gitea; then
+    # The Gitea adapter's tests against a real Gitea, seeded with templates/:
+    # when make test tests that package (its code, what it builds on or the
+    # templates changed), or what seeds and starts the local Gitea changed.
+    gitea=internal/adapters/gitea
+    why= skip=
+    if [ -n "$all" ]; then
+      why=$all
+    elif [ -n "$unselected" ]; then
+      why=$unselected
+    elif f=$(first hack/gitea-local.sh 'hack/seed/*'); then
+      why="$f changed"
+    elif grep -q "/$gitea\$" <<<"$pkgs"; then
+      why="make test tests $gitea"
+    else
+      skip="the change reaches neither $gitea, the seed nor the local Gitea's script"
+    fi
+    step test-gitea "$MAKE" --no-print-directory test-gitea
+  fi
 fi
-step test "$MAKE" --no-print-directory -o manifests -o generate -o fmt -o vet test TEST_PACKAGES="${pkgs//$'\n'/ }"
 
 if [ -n "$idle" ]; then
   echo idle
   exit 0
 fi
 if [ -z "$failed" ]; then
-  # shellcheck disable=SC2086 # GENERATED_PATHS is a list of paths.
-  dirty=$(git status --porcelain --untracked-files=all -- $GENERATED_PATHS 2>/dev/null)
-  [ -z "$dirty" ] || printf 'Generated files changed; commit them with your change:\n%s\n' "$dirty"
-  hack/check-cache.sh record
+  if asked generate; then
+    # shellcheck disable=SC2086 # GENERATED_PATHS is a list of paths.
+    dirty=$(git status --porcelain --untracked-files=all -- $GENERATED_PATHS 2>/dev/null)
+    [ -z "$dirty" ] || printf 'Generated files changed; commit them with your change:\n%s\n' "$dirty"
+  fi
+  # A pass of the tree is a pass of every step: a part of them records none.
+  [ -n "${CHECK_STEPS:-}" ] || hack/check-cache.sh record
 fi
 report
 exit "$rc_failed"

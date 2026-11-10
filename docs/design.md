@@ -1778,7 +1778,8 @@ reads into an unset field are left to review.
 
 Each rule is verified at the lowest tier that can see it; `make check` runs
 the table, offline YAML and envtest tiers before every merge, each for the
-part of the factory the change can have broken. A Kind cluster exists only when a
+part of the factory the change can have broken, and a release runs all of
+them in full before anything ships. A Kind cluster exists only when a
 human asks; agents never create, lease or deploy to one. What only a real
 node would catch is not tested before release.
 

@@ -40,7 +40,8 @@ limitations under the License.
 //   - gta marks a package changed by a Go file, a file it embeds or a file
 //     below its testdata. Tests here also read other files beside them by a
 //     relative path, so a package owns every file in its directory and below,
-//     down to the next package (the owner type below).
+//     down to the next package (the owner type below). A file below testdata
+//     stays gta's: it selects the package alone, whose tests read it.
 //   - gta (v0.2.0) records what a package's tests import only when the
 //     package has Go files besides its tests. A package of tests alone, as
 //     test/chart, is never a dependent there; testOnlyDependents adds it.
@@ -261,16 +262,28 @@ func (o owner) PackageFromDir(dir string) (*gta.Package, error) {
 }
 
 // EmbeddedBy returns the packages that embed file and, when it is no Go file,
-// the package that owns it.
+// the package that owns it. A file below a testdata directory is left to gta,
+// which selects the package it lies in and no dependent: only that package's
+// tests read it.
 func (o owner) EmbeddedBy(file string) []string {
 	pkgs := o.Packager.EmbeddedBy(file)
-	if filepath.Ext(file) == ".go" {
+	if filepath.Ext(file) == ".go" || belowTestdata(o.root, file) {
 		return pkgs
 	}
 	if p := o.owning(filepath.Dir(file)); p != "" {
 		pkgs = append(pkgs, p)
 	}
 	return pkgs
+}
+
+// belowTestdata says whether file lies below a directory named testdata
+// inside root.
+func belowTestdata(root, file string) bool {
+	rel, err := filepath.Rel(root, filepath.Dir(file))
+	if err != nil {
+		return false
+	}
+	return slices.Contains(strings.Split(filepath.ToSlash(rel), "/"), "testdata")
 }
 
 // owning returns the import path of the nearest package in dir or above it,

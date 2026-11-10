@@ -205,7 +205,7 @@ kill "$holder"
 # make check runs the tiers through this cache: hack/check.sh, whose test
 # shows a cached tier answered without make and a dry run recording nothing.
 for t in validate-yaml test-hack ui-test; do
-  check "hack/check.sh runs $t through the tier cache" "$(grep -c "tier $t\$" "$HACK/check.sh")" 1
+  check "hack/check.sh runs $t through the tier cache" "$(grep -c "|| tier $t\$" "$HACK/check.sh")" 1
 done
 check "hack/check.sh: a tier runs under check-cache.sh run" "$(grep -c 'step "$1" hack/check-cache.sh run "$1" "$MAKE"' "$HACK/check.sh")" 1
 

@@ -11,9 +11,15 @@ name: Release
 # (#1079, #1175, #1706); with the UI on, a scaffolded devcontainer downloads its
 # Session client from the UI image, which carries the same files under
 # /downloads/ (#1151).
-# One job builds the images in order with the local Docker daemon, so the agent
-# and runner images build on the toolchains just built. It runs no tests:
-# releases are cut from main. The release's notes are hack/release-notes.sh's
+# A release is the one place every step of make check runs (#127): every
+# other check, on a device, on a pull request and on main, is partial, against
+# main. The first job, Full check, runs make check FORCE=1, every step
+# whatever changed and past every cache, and the Gitea integration tests;
+# nothing is built or published unless it passes. A tag whose full check
+# fails is not a release: fix main and tag the next patch.
+# Then one job builds the images in order with the local Docker daemon, so the
+# agent and runner images build on the toolchains just built. The release's
+# notes are hack/release-notes.sh's
 # draft from the pull requests merged since the previous release, the newest
 # published one below the tag (hack/previous-release.sh): a tag whose release
 # failed is not a release. The maintainer edits them on the release.
@@ -31,7 +37,71 @@ on:
 permissions: {}
 
 jobs:
+  # Every step of make check, on every package: what the partial checks since
+  # the last release could have missed shows here, before anything ships.
+  check:
+    permissions:
+      contents: read
+    name: Full check
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    # The Tests workflow's 60 minutes for the Go tests on a loaded device, and
+    # as long again for the linter on every package, the YAML, the shell tests
+    # and the UI's check, all from cold caches.
+    timeout-minutes: 120
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A tag the chart and the guide don't name is refused before the hour of
+      # checks, as Build and publish refuses it before it builds (#370).
+      - name: The tag is the version the chart and the guide name
+        run: hack/release.sh --check "$GITHUB_REF_NAME"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # The UI's check needs npm, and the Gitea integration tests install the
+      # packages they publish with the real npm and uv (#1702).
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+          # A release takes nothing from a cache an earlier run could have filled.
+          package-manager-cache: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+
+      # FORCE=1: every step, every package, past the device's caches and Go's
+      # test cache. TEST_TIMEOUT as the Tests workflow sets it (#1504).
+      - name: Run every step of make check
+        env:
+          # hack/k8s-openapi.sh lists the Kubernetes schemas through the GitHub API.
+          GITHUB_TOKEN: ${{ github.token }}
+          TEST_TIMEOUT: 60m
+        run: make check FORCE=1
+
+      # make manifests and make generate just ran: a stale committed file
+      # shows as a change here (#1689).
+      - name: Generated files are committed
+        run: make check-generated
+
+      - name: Gitea integration tests
+        run: make test-gitea
+
+      - name: Stop the local Gitea
+        if: always()
+        run: hack/gitea-local.sh stop
+
   release:
+    needs: check
     permissions:
       actions: write
       contents: write

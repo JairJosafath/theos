@@ -241,3 +241,108 @@ ok   changed, a package nothing renders with: not validate-yaml
 ok   changed, a base that is no commit: exit 2
 ok   changed, unknown tier: exit 2
 ok   make check FORCE=1: waits for a slot
+
+# ---------------------------------------------------------------------------------------
+# Later the same day, the owner's rule: only a release runs everything; every other check
+# is partial, against main, on a device too. What is above ran before it: there the
+# Makefile still selected every step. Below, the same container, after the rule.
+
+# Which files the Go tests really open, from Go's own test log of every package: what
+# the readers table of hack/test-packages.sh now holds. No test opens the Makefile, a
+# *.mk, README.md or any other file at the top.
+$ for each package: go test -c -o P.test ./P && (cd P && ./P.test -test.testlogfile=P.log)
+32 packages with tests ran, each exit 0; the files of the checkout each opened outside its own directory:
+  cmd                            .dockerignore (2), Dockerfile (1), hack/agent/Dockerfile (1), hack/agent/Dockerfile.dockerignore (1), hack/env-android/Dockerfile (1), hack/env-browser/Dockerfile (1), hack/env-godot/Dockerfile (1), hack/gh-runner/Dockerfile (1), hack/runner/Dockerfile (1), hack/seed/ (1), hack/session/Dockerfile (1), hack/toolchain-base/Dockerfile (1), hack/toolchain-go/Dockerfile (1), ui/Dockerfile (1), ui/Dockerfile.dockerignore (1)
+  hack/template-go-kubebuilder   templates/ (33)
+  internal/adapters/argocd       test/crds/ (8)
+  internal/controller            Go files (25), config/ (129), templates/ (517), test/crds/ (3)
+  internal/model                 config/ (15), dist/ (43), internal/adapters/cloudformation/testdata/ (24)
+  internal/ports                 Go files (651)
+  internal/scaffold              Go files (1), templates/ (42894)
+  internal/sessionclient         config/ (48)
+  test/chart                     .github/workflows/release.yml (2), .github/workflows/verify-release.yml (3), config/ (108), dist/ (4), docs/getting-started.md (3), hack/seed/ (8), templates/ (35), ui/Dockerfile (1)
+  test/compat                    config/ (48)
+  test/e2e/standin               test/e2e/testdata/ (6)
+
+# A Makefile-only change: the steps whose tools it pins and the tiers that read it, and
+# no Go test. It ran every step before (16 minutes).
+$ git status --short
+ M Makefile
+$ time make check
+make check: passed on tree ec93c5ba157645ccea31a32d25c71fd16942bcb5; recorded
+
+make check: passed. 1 file changed since HEAD (ca64029c5682); the steps that change selects:
+  manifests generate  ran      1m18s; Makefile changed
+  fmt                 skipped  no changed file lies in a Go package
+  vet                 skipped  no changed file lies in a Go package
+  lint                ran      26s; every package: Makefile changed
+  validate-yaml       ran      19s; Makefile changed
+  test-hack           ran      1m4s; Makefile changed
+  ui-test             ran      42s; Makefile changed
+  test                skipped  no Go package changed since HEAD (ca64029c5682)
+
+real	3m52.038s
+
+# A README.md-only change: the shell tests, which read it. It tested every Go package before.
+$ git status --short    # README.md, which tested every Go package before
+ M README.md
+$ time make check
+make check: passed on tree d40010cbde03407f753d591fb0345a35216ff01c; recorded
+
+make check: passed. 1 file changed since HEAD (ca64029c5682); the steps that change selects:
+  manifests generate  skipped  no Go file under api/, cmd/ or internal/ changed, nor go.mod, go.sum or a generated file
+  fmt                 skipped  no changed file lies in a Go package
+  vet                 skipped  no changed file lies in a Go package
+  lint                skipped  no changed file lies in a Go package, and no linter configuration changed
+  validate-yaml       skipped  none of its inputs changed: the YAML, api/, templates/ and hack/render
+  test-hack           ran      1m2s; README.md changed
+  ui-test             skipped  none of its inputs changed: ui/
+  test                skipped  no Go package changed since HEAD (ca64029c5682)
+
+real	1m3.325s
+
+# What the workflows' jobs now run: each its part of make check, selected the same way.
+$ git status --short
+ M internal/buildinfo/buildinfo.go
+$ make check CHECK_STEPS="generate lint validate-yaml"    # the Lint job
+
+make check: passed. 1 file changed since HEAD (ca64029c5682); of the steps asked for (CHECK_STEPS), the steps that change selects:
+  manifests generate  ran      5s; internal/buildinfo/buildinfo.go changed
+  lint                ran      1s; the 4 packages gta selects; changed: internal/buildinfo
+  validate-yaml       skipped  none of its inputs changed: the YAML, api/, templates/ and hack/render
+$ make check CHECK_STEPS=test-hack    # the Shell tests job
+make check: passed. 1 file changed since HEAD (ca64029c5682); of the steps asked for (CHECK_STEPS), the steps that change selects:
+  test-hack           skipped  none of its inputs changed: hack/ and the rest outside the Go, UI and docs trees
+$ COVER=1 make check CHECK_STEPS="generate fmt vet test"    # the Tests job
+
+make check: passed. 1 file changed since HEAD (ca64029c5682); of the steps asked for (CHECK_STEPS), the steps that change selects:
+  manifests generate  ran      4s; internal/buildinfo/buildinfo.go changed
+  fmt                 ran      1s; the 4 packages gta selects; changed: internal/buildinfo
+  vet                 ran      34s; the 4 packages gta selects; changed: internal/buildinfo
+  test                ran      24s; 5 of 42 packages, those the change since HEAD (ca64029c5682) affects; changed: internal/buildinfo; read by their tests: *.go
+$ make check CHECK_STEPS=test-gitea    # the Tests job, the Gitea integration tests
+make check: passed. 1 file changed since HEAD (ca64029c5682); of the steps asked for (CHECK_STEPS), the steps that change selects:
+  test-gitea          skipped  the change reaches neither internal/adapters/gitea, the seed nor the local Gitea's script
+
+# The workflows, which no run on GitHub has tried yet.
+$ hack/check-workflows.sh; echo "exit $?"
+exit 0
+$ actionlint .github/workflows/*.yml; echo "exit $?"    # 1.7.12
+exit 0
+$ zizmor --pedantic --offline .github/workflows/{test,lint,release}.yml | tail -n 1    # both in release.yml, as before the change
+2 findings: 0 informational, 2 low, 0 medium, 0 high
+
+# The tests, as last run on this state.
+$ make test-hack | tail -n 1
+test-hack: all 50 shell tests passed
+$ hack/check_test.sh | grep -c "^ok"; hack/test-packages_test.sh | grep -c "^ok"; hack/check-workflows_test.sh | grep -c "^ok"    # none FAIL
+104
+134
+111
+$ go test -count=1 ./hack/gta/
+ok  	github.com/JairJosafath/theos/hack/gta	1.056s
+
+# Not run to its end on this state: make check as a whole. The owner stopped it, since a
+# full run is a release's alone. It had passed manifests and generate, fmt, vet, lint,
+# validate-yaml, the 50 shell tests and the UI's check, and was in the Go tests, every
+# package of them, as this branch changes go.mod.

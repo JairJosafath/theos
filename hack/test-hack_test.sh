@@ -51,6 +51,11 @@ mkdir -p "$T/envfail"
 printf '[ -z "${MAKEFLAGS-}${MAKELEVEL-}${THEOS_HEAVY_SLOT-}${IS_SANDBOX-}" ]\n' >"$T/envfail/e_test.sh"
 MAKEFLAGS=k MAKELEVEL=1 THEOS_HEAVY_SLOT=1 IS_SANDBOX=1 "$RUN" "$T/envfail" >/dev/null
 check "under make, in a sandbox: the test sees none of make's variables, nor IS_SANDBOX (#1894)" $? 0
+# Nor what selects make check's steps (#127): a workflow's job sets TEST_BASE
+# and CHECK_STEPS for its part of the check, a release FORCE.
+printf '[ -z "${TEST_BASE-}${TEST_ALL-}${FORCE-}${CHECK_STEPS-}" ]\n' >"$T/envfail/e_test.sh"
+TEST_BASE=abc TEST_ALL=1 FORCE=1 CHECK_STEPS=test-hack "$RUN" "$T/envfail" >/dev/null
+check "under make check: the test sees none of what selects its steps (#127)" $? 0
 
 # No tests at all is an error, not a pass.
 mkdir -p "$T/empty"
@@ -59,7 +64,7 @@ mkdir -p "$T/empty"
 # make check runs the shell tests: its steps hold make test-hack (hack/check.sh,
 # #127; hack/check_test.sh shows what selects it), whose recipe is this runner.
 cd "$HACK/.." || exit 1
-grep -qx 'tier test-hack' hack/check.sh; check "make check: its steps hold test-hack" $? 0
+grep -q '|| tier test-hack$' hack/check.sh; check "make check: its steps hold test-hack" $? 0
 timeout 60 make -n test-hack 2>/dev/null | grep -qx 'hack/test-hack.sh'
 check "make test-hack: runs hack/test-hack.sh" $? 0
 

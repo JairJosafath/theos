@@ -132,12 +132,9 @@ func TestRunSelectsWhatAChangeAffects(t *testing.T) {
 			want:    []string{"changed data"},
 		},
 		{
-			name:    "a file below testdata: its package and, as a file it owns, the dependents",
+			name:    "a file below testdata: its package alone, whose tests read it",
 			changed: []string{"leaf/testdata/in.txt"},
-			want: []string{
-				"dependent chart", "changed leaf", "dependent mid", "dependent suite",
-				"dependent tool", "dependent top", "dependent user",
-			},
+			want:    []string{"changed leaf"},
 		},
 		{
 			name:    "a file that is gone: the package that owned it",

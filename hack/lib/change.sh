@@ -4,11 +4,17 @@
 # changes and untracked files that git doesn't ignore. hack/check.sh and
 # hack/test-packages.sh source this file, in the checkout's top directory.
 #
+# Every check is partial, against main, on the branch main too: there it is
+# what main holds that origin/main doesn't. Everything is checked only when
+# someone asks for it (TEST_ALL, FORCE), which a release does and nothing
+# else (#127, docs/plans/done/selective-check.md), or when the change can't be
+# known, since there is no merge base.
+#
 #   change_base    sets CHANGE_FROM to the base's name and CHANGE_BASE to the
 #                  merge base. When everything is to be checked it sets
 #                  CHANGE_ALL to the reason instead and leaves CHANGE_BASE
-#                  empty: TEST_ALL or FORCE is set, the branch is main, or
-#                  there is no merge base (a shallow clone, a tarball)
+#                  empty: TEST_ALL or FORCE is set, or there is no merge base
+#                  (a shallow clone, a tarball, a base that was never fetched)
 #   change_files   prints the files that differ from CHANGE_BASE, one a line
 #
 #   TEST_BASE   the branch or commit to diff against (default origin/main)
@@ -16,7 +22,6 @@
 #   FORCE       non-empty: everything
 
 change_base() {
-  local branch
   CHANGE_FROM=${TEST_BASE:-origin/main}
   CHANGE_BASE=
   CHANGE_ALL=
@@ -24,8 +29,6 @@ change_base() {
     CHANGE_ALL="TEST_ALL is set"
   elif [ -n "${FORCE:-}" ]; then
     CHANGE_ALL="FORCE is set"
-  elif branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) && [ "$branch" = main ]; then
-    CHANGE_ALL="the branch is main"
   elif ! CHANGE_BASE=$(git merge-base "$CHANGE_FROM" HEAD 2>/dev/null); then
     CHANGE_BASE=
     CHANGE_ALL="no merge base with $CHANGE_FROM"

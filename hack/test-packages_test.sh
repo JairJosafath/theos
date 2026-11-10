@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tests for hack/test-packages.sh: a change to a leaf package tests it alone,
 # one to a package others import tests them too, a docs-only change tests
-# nothing, and go.mod, testdata, main, no merge base, TEST_ALL and FORCE test
-# every package (#1295); a package below test/e2e is tested, a non-Go file or
+# nothing, and go.mod, testdata, no merge base, TEST_ALL and FORCE test every
+# package (#1295), the branch main no longer does (#127: only a release tests
+# everything); a package below test/e2e is tested, a non-Go file or
 # a //go:embed line also tests cmd (#1321); in a throwaway module and clone.
 # digitalocean/gta selects the packages (hack/gta, built here once): a test
 # file tests its package alone, a package whose tests alone import a changed
@@ -17,8 +18,10 @@
 # _test.go that climbs to a table path ("../../templates",
 # filepath.Join("..", "..", "config", ...), filepath.Join(root, "dist", ...))
 # lies in a package the table lists for it (#1523); and every hack/ path a Go
-# test names lies in a package, is listed in the table for that test's
-# package, or tests every package (#1318).
+# test names lies in a package or is listed in the table for that test's
+# package (#1318). Only go.mod and go.sum test every package: a file no Go
+# test reads tests nothing, a Dockerfile, a workflow and the like the
+# packages that read them (#127).
 # Run: hack/test-packages_test.sh
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
@@ -113,8 +116,13 @@ change docs/guide.md
 check "docs only: no package" "$(run)" ""
 check "says no package" "$(grep -c 'testing no package' "$T/err")" 1
 
-change README.md
-check "README.md: every package" "$(run)" "$every"
+# #127: a file no Go test reads tests nothing, on a device too: only a
+# release tests every package. README.md, the Makefile and a workflow tested
+# every package before, in case a test read them.
+for f in README.md Makefile hack/testenv.mk .golangci.yml .github/workflows/t.yml; do
+  change "$f"
+  check "#127 $f, which no Go test reads: no package" "$(run)" ""
+done
 
 change test/e2e/e2e.go
 check "e2e only: no package" "$(run)" ""
@@ -136,11 +144,17 @@ change
 printf 'package top\nimport _ "embed"\n//go:embed top.go\nvar s string\n' >top/new.go
 check "#1321 a new file with //go:embed: its package and cmd" "$(run)" "cmd top"
 
-for f in go.mod hack/agent/Dockerfile leaf/testdata/in.txt Makefile .github/workflows/t.yml; do
+for f in go.mod go.sum; do
   change "$f"
-  check "$f: every package" "$(run)" "$every"
+  check "$f: every package, each is built from it" "$(run)" "$every"
   check "$f: says why" "$(grep -c "every package (8): $f changed" "$T/err")" 1
 done
+
+change hack/agent/Dockerfile
+check "#127 a Dockerfile: cmd, whose test reads every one" "$(run)" "cmd"
+check "#127 a Dockerfile: says which pattern of the table" "$(grep -c 'testing 1 of 8 packages.*read by their tests: \*/Dockerfile' "$T/err")" 1
+change leaf/testdata/in.txt
+check "#127 a file below a package's testdata: that package alone, and cmd" "$(run)" "cmd leaf"
 
 for f in hack/pull.sh hack/lib/github.sh; do
   change "$f"
@@ -186,6 +200,22 @@ unset TEST_READERS
 change config/crd.yaml
 check "#1523 the table's readers not in the module: no package" "$(run)" ""
 
+# A path of the table with a * is a pattern, and a file tests the readers of
+# every path it matches (#127).
+cat >"$T/readers" <<EOF
+*.go top
+hack/seed other
+*/Dockerfile mid
+EOF
+export TEST_READERS=$T/readers
+change leaf/leaf_test.go
+check "#127 a pattern of the table: its readers" "$(run)" "leaf top"
+change hack/seed/Dockerfile
+check "#127 a file two paths of the table match: the readers of both" "$(run)" "mid other"
+change docs/guide.md
+check "#127 a pattern the file doesn't match: no package" "$(run)" ""
+unset TEST_READERS
+
 # Against this repository (#1523, #1318). The table's packages exist and have
 # tests; a test that climbs to a table path lies in a listed package.
 mapfile -t table < <(cd "$REPO" && hack/test-packages.sh --readers)
@@ -198,11 +228,17 @@ reads() {
   (cd "$REPO" && git ls-files '*_test.go' |
     xargs grep -lE "\"(\.\./)+$1(/|\")|(\.\.\", *|root, *)\"$segs\"" | xargs -rn1 dirname | sort -u)
 }
-# listed PATH DIR: the table lists package DIR for PATH.
+# covers KEY PATH: the table's path KEY is PATH, holds it, or is a pattern
+# PATH matches.
+covers() {
+  # shellcheck disable=SC2053 # A path with a * in it is a pattern.
+  [ "$2" = "$1" ] || [[ "$2" == "$1"/* ]] || { [[ $1 == *'*'* ]] && [[ $2 == $1 ]]; }
+}
+# listed PATH DIR: a path of the table that covers PATH lists package DIR.
 listed() {
   local line
   for line in "${table[@]}"; do
-    [ "${line%% *}" = "$1" ] || continue
+    covers "${line%% *}" "$1" || continue
     [[ " ${line#* } " == *" $2 "* ]] && return 0
   done
   return 1
@@ -212,7 +248,7 @@ for line in "${table[@]}"; do
   for p in ${line#* }; do
     check "$path: reader $p is a package with tests" "$(ls "$REPO/$p"/*_test.go >/dev/null 2>&1 && echo yes)" yes
   done
-  case "$path" in hack/*) continue ;; esac
+  case "$path" in hack/* | *'*'*) continue ;; esac
   for d in $(reads "$path"); do
     check "$d's tests read $path: the table lists it (#1716)" "$(listed "$path" "$d" && echo yes)" yes
   done
@@ -220,9 +256,9 @@ done
 check "internal/scaffold's tests climb to templates/" "$(reads templates | grep -c '^internal/scaffold$')" 1
 
 # Every hack/ path a Go test of this repository names, in a string or a
-# filepath.Join, lies in a package, is listed in the table for that test's
-# package, or tests every package, so a new test that reads a script can't be
-# skipped (#1318, #1523). A directory gets a file in it.
+# filepath.Join, lies in a package or is listed in the table for that test's
+# package, so a new test that reads a script can't be skipped (#1318, #1523).
+# No path tests every package any more (#127). A directory gets a file in it.
 mapfile -t named < <(cd "$REPO" && git ls-files '*_test.go' | xargs grep -oE \
   'hack/[A-Za-z0-9._/-]*|"hack"(, *"[A-Za-z0-9._-]+")+' |
   sed -E 's/", *"/\//g; s/"//g; s/\.+$//; s|/$|/x|; s|^([^:]*)/[^/:]*:|\1 |' | sort -u)
@@ -238,25 +274,12 @@ in_package() {
   done
   return 1
 }
-# tabled PATH: the table's path that is PATH or holds it, if any.
-tabled() {
-  local line path
-  for line in "${table[@]}"; do
-    path=${line%% *}
-    if [ "$1" = "$path" ] || [[ "$1" == "$path"/* ]]; then echo "$path"; return; fi
-  done
-}
 for pair in "${named[@]}"; do
   d=${pair%% *}
   f=${pair#* }
   if in_package "$f"; then echo "ok   $f: in a package"; continue; fi
-  if t=$(tabled "$f") && [ -n "$t" ]; then
-    check "$f, named by $d's tests: the table lists $d for $t" "$(listed "$t" "$d" && echo yes)" yes
-    continue
-  fi
   [ ! -d "$REPO/$f" ] || f=$f/x
-  change "$f"
-  check "$f, named by a Go test: every package" "$(run)" "$every"
+  check "$f, named by $d's tests: the table lists $d for it" "$(listed "$f" "$d" && echo yes)" yes
 done
 
 change top/top.go
@@ -264,14 +287,21 @@ check "TEST_ALL: every package" "$(TEST_ALL=1 run)" "$every"
 check "FORCE: every package" "$(FORCE=1 run)" "$every"
 check "no merge base: every package" "$(TEST_BASE=nope run)" "$every"
 check "says no merge base" "$(grep -c 'no merge base with nope' "$T/err")" 1
+# #127: every test is partial, against main, on the branch main too: there it
+# is what main holds that origin/main doesn't. Only a release tests everything.
 git switch -q main
-check "main: every package" "$(run)" "$every"
+check "#127 main, an uncommitted change: that change" "$(run)" "top"
+check "#127 main: says what it compares with" "$(grep -c 'testing 1 of 8 packages.*since origin/main' "$T/err")" 1
 
 # #2058: the factory's CI checks out a detached commit; a push to main sets
 # TEST_BASE to main's previous head, so only what the push changed is tested.
 change top/top.go
 git commit -qam three
+check "#127 main, a commit origin/main lacks: that change" "$(run)" "top"
 head=$(git rev-parse HEAD)
+git reset -q --hard origin/main
+check "#127 main, as origin/main: no package" "$(run)" ""
+git reset -q --hard "$head"
 git switch -q --detach "$head"
 check "#2058 detached, TEST_BASE a commit: what changed since it" "$(TEST_BASE=HEAD~1 run)" "top"
 check "#2058 detached, says the base" "$(grep -c 'testing 1 of 8 packages.*since HEAD~1' "$T/err")" 1
