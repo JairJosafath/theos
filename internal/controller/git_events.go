@@ -324,8 +324,7 @@ func providerEvents(ctx context.Context, apiReader client.Reader, git GitClient,
 	if !found {
 		return nil, fmt.Errorf("secret %s of GitProvider %s not found", gp.Spec.CredentialsSecretRef.Name, gp.Name)
 	}
-	p, err := git.Provider(ports.Config{Kind: string(gp.Spec.Provider), URL: gp.Spec.URL,
-		Owner: gp.Spec.Owner, Credentials: creds})
+	p, err := git.Provider(providerConfig(gp, creds, ports.Packages{}))
 	if err != nil {
 		return nil, err
 	}

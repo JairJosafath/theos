@@ -80,13 +80,7 @@ func (r *BriefReconciler) briefGit(ctx context.Context, brief *c4v1beta1.Brief) 
 		return nil, errNeedsInput{fmt.Sprintf("Secret %s of GitProvider %s is missing: make it with the Git host's "+
 			"username and token, so the Brief has a repository to plan in", provider.Spec.CredentialsSecretRef.Name, name)}
 	}
-	return r.Git.Provider(ports.Config{
-		Kind:        string(provider.Spec.Provider),
-		URL:         provider.Spec.URL,
-		Owner:       provider.Spec.Owner,
-		Credentials: creds,
-		Packages:    packagesOf(&provider),
-	})
+	return r.Git.Provider(providerConfig(&provider, creds, packagesOf(&provider)))
 }
 
 // prepareWorkspace makes the Brief's repository and its bot the first time,

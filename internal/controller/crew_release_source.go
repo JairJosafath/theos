@@ -137,6 +137,14 @@ func knownCredentials(ctx context.Context, c client.Reader, apiReader client.Rea
 		return nil, err
 	}
 	known = append(known, creds.Token)
+	// The rest of the provider's Secret is the host's own: a key that names a
+	// credential, such as the private key that mints the agents' tokens,
+	// holds one.
+	for key, value := range creds.Rest {
+		if model.CredentialKey(key) {
+			known = append(known, string(value))
+		}
+	}
 	// The agent Git Secret's other keys, its user and scopes, are no secret.
 	agentGit, err := secretData(ctx, apiReader, ns, agentGitSecret(container.Name))
 	if err != nil {

@@ -35,7 +35,7 @@ import (
 type resolved struct {
 	provider *c4v1beta1.GitProvider
 	// creds come from the GitProvider's credentials Secret.
-	creds ports.Credentials
+	creds hostSecret
 	// entries are the catalog entries in layer order: Framework, Standard,
 	// Compute, Deployment, each Connector, then each Domain.
 	entries []model.CatalogEntry
@@ -194,26 +194,65 @@ func domainNames(system *c4v1beta1.SoftwareSystem) []string {
 
 // credentials reads a GitProvider's Secret. It goes straight to the API server
 // rather than through the cache, so the operator never caches every Secret.
-func (r *ContainerReconciler) credentials(ctx context.Context, provider *c4v1beta1.GitProvider) (ports.Credentials, bool, error) {
+func (r *ContainerReconciler) credentials(ctx context.Context, provider *c4v1beta1.GitProvider) (hostSecret, bool, error) {
 	return readCredentials(ctx, r.APIReader, provider)
 }
 
+// hostSecret is a GitProvider's Secret as the operator reads it: who it acts
+// as on the host, and the Secret's other keys, of which the host's adapter
+// reads those it needs and no other (ports.Config.Secret).
+type hostSecret struct {
+	ports.Credentials
+	// Rest is what the Secret holds beside the user name and the token.
+	Rest map[string][]byte
+}
+
+// The keys of a GitProvider's Secret every host has.
+const (
+	secretKeyUsername = "username"
+	secretKeyToken    = "token"
+)
+
 // readCredentials reads a GitProvider's Secret without caching it.
-func readCredentials(ctx context.Context, apiReader client.Reader, provider *c4v1beta1.GitProvider) (ports.Credentials, bool, error) {
+func readCredentials(ctx context.Context, apiReader client.Reader, provider *c4v1beta1.GitProvider) (hostSecret, bool, error) {
 	var secret corev1.Secret
 	err := apiReader.Get(ctx, types.NamespacedName{
 		Namespace: provider.Namespace, Name: provider.Spec.CredentialsSecretRef.Name,
 	}, &secret)
 	if apierrors.IsNotFound(err) {
-		return ports.Credentials{}, false, nil
+		return hostSecret{}, false, nil
 	}
 	if err != nil {
-		return ports.Credentials{}, false, err
+		return hostSecret{}, false, err
 	}
-	return ports.Credentials{
-		Username: string(secret.Data["username"]),
-		Token:    string(secret.Data["token"]),
-	}, true, nil
+	out := hostSecret{Credentials: ports.Credentials{
+		Username: string(secret.Data[secretKeyUsername]),
+		Token:    string(secret.Data[secretKeyToken]),
+	}}
+	for key, value := range secret.Data {
+		if key == secretKeyUsername || key == secretKeyToken {
+			continue
+		}
+		if out.Rest == nil {
+			out.Rest = map[string][]byte{}
+		}
+		out.Rest[key] = value
+	}
+	return out, true, nil
+}
+
+// providerConfig is what a GitProvider's adapter is built with: the host, the
+// owner, who the operator acts as there, the rest of the provider's Secret,
+// and where the owner's packages are.
+func providerConfig(gp *c4v1beta1.GitProvider, secret hostSecret, packages ports.Packages) ports.Config {
+	return ports.Config{
+		Kind:        string(gp.Spec.Provider),
+		URL:         gp.Spec.URL,
+		Owner:       gp.Spec.Owner,
+		Credentials: secret.Credentials,
+		Packages:    packages,
+		Secret:      secret.Rest,
+	}
 }
 
 // lookup gets a named object and reports whether it exists.

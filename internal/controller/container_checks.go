@@ -125,13 +125,7 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 	if err != nil {
 		return gitAccess{}, fmt.Errorf("GitProvider %s: %w", name, err)
 	}
-	p, err := git.Provider(ports.Config{
-		Kind:        string(provider.Spec.Provider),
-		URL:         provider.Spec.URL,
-		Owner:       provider.Spec.Owner,
-		Credentials: creds,
-		Packages:    packages,
-	})
+	p, err := git.Provider(providerConfig(&provider, creds, packages))
 	if err != nil {
 		return gitAccess{}, err
 	}
@@ -139,7 +133,7 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 	if err != nil {
 		return gitAccess{}, err
 	}
-	return gitAccess{gitProvider: &provider, creds: creds, provider: p, ci: ci}, nil
+	return gitAccess{gitProvider: &provider, creds: creds.Credentials, provider: p, ci: ci}, nil
 }
 
 // reportChecksApplied sets ChecksApplied: whether the Container's Standard runs

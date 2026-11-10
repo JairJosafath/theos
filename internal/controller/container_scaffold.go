@@ -104,13 +104,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
 	defer cancel()
 
-	provider, err := r.Git.Provider(ports.Config{
-		Kind:        string(res.provider.Spec.Provider),
-		URL:         res.provider.Spec.URL,
-		Owner:       res.provider.Spec.Owner,
-		Credentials: res.creds,
-		Packages:    packagesOf(res.provider),
-	})
+	provider, err := r.Git.Provider(providerConfig(res.provider, res.creds, packagesOf(res.provider)))
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionRepositoryCreated, c4v1beta1.ReasonFailed,
 			fmt.Sprintf("GitProvider %s: %v", res.provider.Name, err))
@@ -372,7 +366,7 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 	for _, entry := range res.entries {
 		var creds *ports.Credentials
 		if ports.SameHost(res.provider.Spec.URL, entry.TemplateURL) {
-			creds = &res.creds
+			creds = &res.creds.Credentials
 		}
 		files, err := r.Git.FetchTemplate(ctx, entry.TemplateURL, entry.TemplateRef, entry.TemplatePath, creds)
 		if err != nil {
