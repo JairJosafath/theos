@@ -1,0 +1,68 @@
+name: Branch hygiene
+
+# No dead branch is left hanging: a branch merged to main is deleted (#118).
+# A push to main deletes the head branch of each pull request that push
+# merged; every Monday, and on a manual run, a sweep deletes every branch
+# whose tip main already contains, which also catches a branch merged without
+# a pull request. hack/delete-merged-branches.sh decides: it keeps the default
+# branch, a protected branch, a fork's branch, the head of an open pull
+# request and a branch with a commit main doesn't have, and prints each
+# branch it deletes with its commit, so it can be pushed back.
+#
+# It runs on the push a merge makes, not on the pull request's closed event:
+# a push to main runs main's workflow and main's script, never a pull
+# request's, with nothing of a fork in reach of the token that may delete,
+# and a workflow on pull requests would be one more check each of them waits
+# for (.github/required-checks). A manual run from another branch than the
+# default one does nothing, for the same reason.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only list the branches the sweep would delete
+        type: boolean
+        default: false
+
+# One run per commit of main and none cancelled, so each merge's run deletes
+# its own branches (hack/check-workflows.sh, docs/dev/devices.md).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+
+permissions: {}
+
+jobs:
+  delete:
+    permissions:
+      contents: write # deletes a branch
+      pull-requests: read # lists the open pull requests and a commit's merged ones
+    name: Delete merged branches
+    if: github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The commit and the repository reach the script through env, and the
+      # branch names it reads from GitHub never reach a shell word unquoted.
+      - name: Delete the head branches of the pull requests this push merged
+        if: github.event_name == 'push'
+        run: hack/delete-merged-branches.sh merged "$SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          THEOS_GITHUB_REPO: ${{ github.repository }}
+
+      - name: Delete every branch main contains
+        if: github.event_name != 'push'
+        run: hack/delete-merged-branches.sh sweep
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          THEOS_GITHUB_REPO: ${{ github.repository }}

@@ -61,6 +61,15 @@ Not sure whether theos does what you need?
 - It merges with a merge commit once the checks pass and it is approved.
   Fixes ship as a patch release soon after ([ROADMAP.md](ROADMAP.md),
   *Releases are a train*).
+- Its branch is deleted once it is merged (#118):
+  [Branch hygiene](.github/workflows/branch-hygiene.yml) deletes the head
+  branch of a pull request merged to main, and every Monday every branch
+  whose tip main already contains. It keeps the default branch, a protected
+  branch, a fork's branch, the head of an open pull request and a branch
+  with a commit main doesn't have. Its log names each deleted branch with
+  its commit, so `git push origin <sha>:refs/heads/<branch>` brings one
+  back; a branch pushed before its first commit is in main too, goes with
+  the sweep, and comes back with its next push.
 
 ## Tests and warnings
 
