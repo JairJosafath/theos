@@ -47,8 +47,8 @@ runs on a schedule, through the same loop as everything else.
 | --- | --- | --- |
 | 1. The rule, the field, the Crew files the issue | #63 | `model.NextScheduleStep` and `ParseCron` table-tested; `spec.schedules` with its CEL; envtest: due, held while open, one for many missed, paused, invalid, refused by the CRD; the sample and the guide |
 | 2. "Nothing to do" is a result (done) | #72 | an implementer that finds nothing to change ends with `Nothing to do: <why>`; the Task closes the issue as done instead of failing. It touches `internal/agentrunner/`, a protected path |
-| 3. Run one now | #72 | an annotation on the Crew, and a button in the UI, file a schedule's issue at once |
-| 4. The UI shows schedules | #72 | the Crew's page lists each schedule, its next time and its last issue |
+| 3. Run one now (done) | #72 | an annotation on the Crew, and a button in the UI, file a schedule's issue at once |
+| 4. The UI shows schedules (done) | #72 | the Crew's page lists each schedule, its next time and its last issue |
 | 5. Standards propose schedules | #72 | a Standard names schedules for its language; a Crew takes or leaves them |
 
 ## Done when
@@ -84,3 +84,28 @@ prompt being the runner's.
   how to reopen it, and the stand-in says it for "stand-in: nothing to do".
 - The check command still runs before the round ends, as for any round: an
   agent that changed nothing costs one run of it.
+
+## What step 3 found
+
+Built 2026-11-10.
+
+- The annotation's value is the schedule's name, and the request stands
+  until it is answered: `theos.factory.io/run-schedule` stays on the Crew
+  while the schedule's last issue is open or the Crew is paused, and the
+  schedule runs when that ends. A request that vanished when it couldn't
+  run at once would have to be made again by a person who can't see why.
+- The run is the schedule's own filing with "due" set to now: the same
+  issue, the same marker, the same hold by an open issue. Its next time
+  stays as it was; a run asked for on Saturday doesn't move Monday's, which
+  is passed over if Saturday's issue is still open then.
+- The reason is in the `Scheduled` condition's message while the request
+  waits, with the condition still True: the schedules can be used. A name
+  the Crew doesn't have makes it False, reason `UnknownSchedule`, since
+  what was asked can't be done; the annotation stays for the person to fix.
+- The operator takes the annotation off right after it filed. If that
+  write fails, the request files nothing while the issue is open and is
+  taken off at a later poll; it would run once more after the issue closed
+  if every removal until then failed.
+- The UI's server allows one more write, the annotation alone on a Crew,
+  as it allows the re-run of a release. The button shows only where the
+  page can write, and reads "Asked to run now" while the request stands.

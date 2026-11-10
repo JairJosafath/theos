@@ -1025,8 +1025,15 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   and the Crew's issues go on. The Crew is requeued for its next due time,
   whatever the host's events stretch its poll to. A run that finds nothing
   to do closes its issue as done (*Agents and Tasks*, "Nothing to do" is a
-  result), so a quiet week asks nobody anything. Not yet: nothing runs a
-  schedule now by hand.
+  result), so a quiet week asks nobody anything. A person runs a schedule
+  now with the Crew's `theos.factory.io/run-schedule` annotation, set to the
+  schedule's name: its issue is filed at once, dated today, its next time
+  stays, and the operator takes the annotation off. The two rules hold for
+  a run asked for as for a due one: while an issue of the schedule is open,
+  or the Crew is paused, the run waits, the annotation stays, and the
+  `Scheduled` condition's message says which. A name that is none of the
+  Crew's schedules leaves `Scheduled` False, reason `UnknownSchedule`,
+  naming the ones it has.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
@@ -1372,6 +1379,7 @@ other path, method, content type or field, and by RBAC for anything else:
 | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.pauseRuns`, `spec.autopilot`, `spec.parallel`, `spec.releases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.pauseRuns`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` |
+| Crew | `PATCH`, merge patch | annotation `theos.factory.io/run-schedule` |
 | Container | `PATCH`, merge patch | annotations `theos.factory.io/retry`, `theos.factory.io/standard-take`, `theos.factory.io/standard-keep` |
 | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` and a `test` of the approval the page showed: its old `approved`, or, when it had none, the whole entry as read (JSON Patch can't test a missing member), so a stale page fails, and says it is out of date, rather than overwrite a newer approval, a first one too |
 | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |

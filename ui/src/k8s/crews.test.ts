@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { LiveCrewWriter, RERUN_RELEASE, releasePatch, releaseSettings, settledEdits, sourceTagPrefix } from './crews'
+import {
+  LiveCrewWriter,
+  RERUN_RELEASE,
+  RUN_SCHEDULE,
+  releasePatch,
+  releaseSettings,
+  settledEdits,
+  sourceTagPrefix,
+} from './crews'
 import type { Crew } from './types'
 
 const base: Crew = {
@@ -247,6 +255,17 @@ describe('the Crew writer', () => {
     await w.rerunRelease('webshop', 'orders-api', 'v1')
     expect((sent[0].init.headers as Record<string, string>)['Content-Type']).toBe('application/merge-patch+json')
     expect(JSON.parse(sent[0].init.body as string)).toEqual({ metadata: { annotations: { [RERUN_RELEASE]: 'v1' } } })
+  })
+
+  // #72: running a schedule now is the annotation with the schedule's name.
+  it('asks to run a schedule now with a merge patch of the annotation', async () => {
+    const { sent, w } = writer()
+    await w.runSchedule('webshop', 'orders-api', 'dependencies')
+    expect(sent[0].init.method).toBe('PATCH')
+    expect((sent[0].init.headers as Record<string, string>)['Content-Type']).toBe('application/merge-patch+json')
+    expect(JSON.parse(sent[0].init.body as string)).toEqual({
+      metadata: { annotations: { [RUN_SCHEDULE]: 'dependencies' } },
+    })
   })
 
   it('rejects with the API server’s message', async () => {

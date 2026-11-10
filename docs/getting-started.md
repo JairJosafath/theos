@@ -1059,6 +1059,11 @@ with no pull request and nothing for you to look at.
 - **Nothing is made up for.** A new schedule waits for its next time, and
   after an outage one issue is filed, not one per time missed.
 - **Paused means paused.** A paused Crew files nothing.
+- **Run one now.** *Run now* beside a schedule on the Crew's page files its
+  issue at once; so does
+  `kubectl annotate crew orders-cli theos.factory.io/run-schedule=dependencies`.
+  The same two rules hold: while the schedule's last issue is open, or the
+  Crew is paused, the run waits and the page says which.
 - **Where it stands:** `kubectl get crew orders-cli -o jsonpath='{.status.schedules}'`
   shows each schedule's next time and the last issue it filed, and the
   `Scheduled` condition says why a schedule can't be used: `InvalidSchedule`

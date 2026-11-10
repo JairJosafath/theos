@@ -545,7 +545,7 @@ describe('server.mjs', () => {
     it('says on /ui/session that actions are on, made as the ServiceAccount, with every write', async () => {
       const answer = await (await fetch(`${actionBase}/ui/session`)).json()
       assert.deepEqual([answer.actions, answer.mode, answer.user], [true, 'service-account', null])
-      assert.equal(answer.writes.length, 12)
+      assert.equal(answer.writes.length, 13)
       assert.ok(!JSON.stringify(answer).includes(browserToken))
     })
 
@@ -586,6 +586,13 @@ describe('server.mjs', () => {
         '/crews/orders-api',
         MP,
         { metadata: { annotations: { 'theos.factory.io/rerun-release': '2026-10-09T01:00:00Z' } } },
+      ],
+      [
+        "a Crew's schedule run now (#72)",
+        'PATCH',
+        '/crews/orders-api',
+        MP,
+        { metadata: { annotations: { 'theos.factory.io/run-schedule': 'dependencies' } } },
       ],
       [
         "a Container's scaffold retry",
@@ -839,6 +846,22 @@ describe('server.mjs', () => {
       ],
       ['another Crew annotation', 'PATCH', '/crews/orders-api', MP, crewAnn('theos.factory.io/paused-by'), 403],
       ['the retry annotation on a Crew', 'PATCH', '/crews/orders-api', MP, crewAnn('theos.factory.io/retry'), 403],
+      [
+        'the run-schedule annotation on a Container',
+        'PATCH',
+        '/containers/orders-api',
+        MP,
+        crewAnn('theos.factory.io/run-schedule'),
+        403,
+      ],
+      [
+        'the run-schedule annotation with another beside it',
+        'PATCH',
+        '/crews/orders-api',
+        MP,
+        { metadata: { annotations: { 'theos.factory.io/run-schedule': 'x', 'theos.factory.io/paused-by': 'me' } } },
+        403,
+      ],
       [
         'the re-run annotation on a Container',
         'PATCH',

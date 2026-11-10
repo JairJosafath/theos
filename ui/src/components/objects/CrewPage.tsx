@@ -11,7 +11,7 @@
 // release and its runs) and Related (its Tasks, links).
 
 import type { BriefWriter } from '../../k8s/briefs'
-import { briefTarget, type CrewWriter } from '../../k8s/crews'
+import { RUN_SCHEDULE, briefTarget, type CrewWriter } from '../../k8s/crews'
 import type { Agent, ApprovalRule, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
 import { useActs } from '../../lib/hooks'
 import { approvalAsks, approvalRuleFor, crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
@@ -28,6 +28,7 @@ import {
   ParallelForm,
   ReleaseForm,
   RerunButton,
+  RunScheduleButton,
   SignInToAct,
 } from './CrewActions'
 import { pageHref, storyHref } from './links'
@@ -172,7 +173,7 @@ function CrewOverview({
 
       {summary.routes.length ? <RoutesPanel routes={summary.routes} /> : null}
       {crew.spec.approval?.length ? <ApprovalPanel rules={crew.spec.approval} /> : null}
-      {crew.spec.schedules?.length ? <SchedulesPanel crew={crew} /> : null}
+      {crew.spec.schedules?.length ? <SchedulesPanel crew={crew} writer={acts === 'act' ? writer : undefined} /> : null}
     </>
   )
 }
@@ -202,8 +203,10 @@ function ApprovalPanel({ rules }: { rules: ApprovalRule[] }) {
 }
 
 /** The Crew's recurring goals: when each is next due, and the issue it filed last. */
-function SchedulesPanel({ crew }: { crew: Crew }) {
+function SchedulesPanel({ crew, writer }: { crew: Crew; writer?: CrewWriter }) {
   const scheduled = crew.status?.conditions?.find((c) => c.type === 'Scheduled')
+  // The schedule a person asked to run now, while the operator has not filed its issue.
+  const asked = crew.metadata.annotations?.[RUN_SCHEDULE]
   return (
     <section className="panel" aria-labelledby="crew-schedules">
       <h2 className="panel-title small-title" id="crew-schedules">
@@ -211,8 +214,14 @@ function SchedulesPanel({ crew }: { crew: Crew }) {
       </h2>
       <p className="panel-text">
         When a schedule comes due the Crew files an issue with its goal and works it like any other. While that issue is
-        open, the schedule’s next time is passed over{crew.spec.paused ? '; a paused Crew files none' : ''}.
+        open, the schedule’s next time is passed over{crew.spec.paused ? '; a paused Crew files none' : ''}. Run now
+        files a schedule’s issue at once, under the same two rules.
       </p>
+      {asked && scheduled?.status === 'True' ? (
+        <p className="panel-text" role="status">
+          {scheduled.message}
+        </p>
+      ) : null}
       {scheduled && scheduled.status !== 'True' ? (
         <p className="panel-text" role="alert">
           {scheduled.message}
@@ -245,6 +254,16 @@ function SchedulesPanel({ crew }: { crew: Crew }) {
                   ' · nothing filed yet'
                 )}
               </div>
+              {writer ? (
+                // A new button once the request is answered: the operator took the annotation off.
+                <RunScheduleButton
+                  key={`${s.name}|${asked === s.name ? 'asked' : (st?.lastFiled ?? '')}`}
+                  crew={crew}
+                  schedule={s.name}
+                  asked={asked === s.name}
+                  writer={writer}
+                />
+              ) : null}
             </li>
           )
         })}

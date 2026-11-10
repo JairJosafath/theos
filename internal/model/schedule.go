@@ -243,6 +243,30 @@ type ScheduleStep struct {
 	Next time.Time
 }
 
+// ReasonUnknownSchedule is the Scheduled condition's reason when the Crew is
+// asked to run a schedule now that it doesn't have.
+const ReasonUnknownSchedule = "UnknownSchedule"
+
+// RunNowWaits says why a schedule a person asked to run now (#72) has filed
+// no issue yet: the Crew is paused, or the schedule's last issue is still
+// open, which holds a run asked for as it holds a due one.
+func RunNowWaits(name string, paused bool) string {
+	if paused {
+		return fmt.Sprintf("schedule %s is asked to run now, and runs when the Crew resumes", name)
+	}
+	return fmt.Sprintf("schedule %s is asked to run now, and waits for its open issue to close", name)
+}
+
+// RunNowUnknown says a Crew was asked to run a schedule it doesn't have,
+// naming the ones it has.
+func RunNowUnknown(asked string, names []string) string {
+	have := "the Crew has no schedules"
+	if len(names) > 0 {
+		have = "the Crew's schedules are " + strings.Join(names, ", ")
+	}
+	return fmt.Sprintf("asked to run schedule %q now, which is none of the Crew's: %s", asked, have)
+}
+
 // NextScheduleStep decides what to do about a schedule at now.
 func NextScheduleStep(f ScheduleFacts, now time.Time) (ScheduleStep, error) {
 	cron, loc, err := scheduleParts(f.Schedule)
