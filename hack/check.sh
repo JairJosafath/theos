@@ -6,8 +6,9 @@
 # Makefile's check recipe runs this script.
 #
 #   hack/check.sh          run the steps the change selects, then say what ran
-#   hack/check.sh --idle   print "idle" when no step would run, and run nothing:
-#                          such a make check takes no heavy-job slot
+#   hack/check.sh --idle   print "idle" when no step but a scan would run, and
+#                          run nothing: such a make check takes no heavy-job
+#                          slot, the scans taking seconds
 #
 # The steps, in order, and what selects each:
 #
@@ -19,12 +20,20 @@
 #   fmt, vet, lint       the packages gta says the change affects (hack/gta):
 #                        those a changed file lies in and those that depend on
 #                        them. Every package after a change to go.mod or
-#                        go.sum, and for lint after one to its configuration
-#                        or to the Makefile, which pins the linter
+#                        go.sum; for vet and lint after one to the Makefile
+#                        or a *.mk, which hold vet's flags and pin the
+#                        linter; for lint after one to its configuration
 #   validate-yaml,       a changed file among the tier's inputs
 #   test-hack, ui-test   (hack/check-cache.sh changed). A tier the change selects
 #                        is still answered from the device's cache when those
 #                        inputs passed here before
+#   doc-links,           three scans of the whole repository that the shell
+#   license-headers,     tests make: a changed Markdown file, or a file that
+#   readers              is gone, which a link may name; a changed Go file; a
+#                        changed Go test or readers table. Each runs by
+#                        itself, in seconds, unless the shell tests just ran
+#                        them all. A docs-only change runs the link check and
+#                        no shell test
 #   test                 the packages hack/test-packages.sh prints: gta's, and
 #                        the readers of the files Go tests read without
 #                        importing them
@@ -47,8 +56,9 @@
 #
 #   TEST_BASE, TEST_ALL, FORCE   as in hack/lib/change.sh
 #   CHECK_STEPS       the steps to take, by name: generate fmt vet lint
-#                     validate-yaml test-hack ui-test test test-gitea. Empty:
-#                     all but test-gitea. A workflow's job takes its part of
+#                     validate-yaml test-hack doc-links license-headers
+#                     readers ui-test test test-gitea. Empty: all but
+#                     test-gitea. A workflow's job takes its part of
 #                     the check with it; such a run records no pass of the
 #                     tree
 #   CHECK_MAKE        the make that runs the steps (default make)
@@ -70,13 +80,14 @@ idle=
 [ "${1:-}" != --idle ] || idle=1
 
 # The steps asked for. manifests names the step generate too, as its goals do.
-DEFAULT_STEPS="generate fmt vet lint validate-yaml test-hack ui-test test"
+DEFAULT_STEPS="generate fmt vet lint validate-yaml test-hack doc-links license-headers readers ui-test test"
 steps=${CHECK_STEPS:-}
 steps=" ${steps//manifests/generate} "
 [ -n "${steps// /}" ] || steps=" $DEFAULT_STEPS "
 for s in $steps; do
   case $s in
-    generate | fmt | vet | lint | validate-yaml | test-hack | ui-test | test | test-gitea) ;;
+    generate | fmt | vet | lint | validate-yaml | test-hack | doc-links | license-headers | readers | \
+      ui-test | test | test-gitea) ;;
     *)
       echo "make check: CHECK_STEPS names $s, which is no step of: $DEFAULT_STEPS test-gitea" >&2
       exit 2
@@ -94,8 +105,11 @@ GENERATE=('api/*' 'cmd/*.go' 'internal/*.go' go.mod go.sum go.work go.work.sum
   hack/chart-crds.sh hack/chart-role.sh hack/keep-mtime.sh hack/boilerplate.go.txt Makefile)
 # A change to one of these reaches every package: each is built from them.
 GO_ALL=(go.mod go.sum go.work go.work.sum)
-# The linter's configuration, and the Makefile, which pins its version.
-LINT_ALL=(.golangci.yml .custom-gcl.yml Makefile)
+# The Makefile and what it includes hold vet's flags and pin the linter: a
+# change to one reaches every package for those two.
+MAKE_FILES=(Makefile '*.mk')
+# The linter's configuration.
+LINT_ALL=(.golangci.yml .custom-gcl.yml)
 
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -214,7 +228,11 @@ step() {
     note "$name" cached "$cached"
     return 0
   fi
-  [ -z "$idle" ] || exit 1
+  # A scan takes seconds and no heavy-job slot: it leaves the check idle.
+  if [ -n "$idle" ]; then
+    [ -n "$light" ] || exit 1
+    return 0
+  fi
   echo "make check: $name: $why"
   "$@"
   rc=$?
@@ -228,34 +246,65 @@ step() {
   ran+=("$name")
 }
 
+# inputs NAME: selects the tier or scan NAME by its inputs
+# (hack/check-cache.sh): why when one changed, else skip.
+inputs() {
+  local out n
+  why= skip= cached=
+  if [ -n "$all" ]; then
+    why=$all
+    return 0
+  fi
+  out=$(hack/check-cache.sh changed "$1" "$CHANGE_BASE" 2>/dev/null)
+  case $? in
+    0)
+      n=$(wc -l <<<"$out")
+      why="${out%%$'\n'*} changed"
+      [ "$n" -le 1 ] || why+=", and $((n - 1)) more of its inputs"
+      ;;
+    1) skip="none of its inputs changed: $(hack/check-cache.sh inputs "$1")" ;;
+    *) why="its inputs could not be compared with $CHANGE_FROM" ;;
+  esac
+}
+
 # tier NAME: selects the tier by its inputs and runs it through the device's
 # cache of tier passes.
 tier() {
-  local out line n
-  why= skip= cached=
+  local line
   if [ -n "$failed" ]; then
     step "$1"
     return 0
-  elif [ -n "$all" ]; then
-    why=$all
-  else
-    out=$(hack/check-cache.sh changed "$1" "$CHANGE_BASE" 2>/dev/null)
-    case $? in
-      0)
-        n=$(wc -l <<<"$out")
-        why="${out%%$'\n'*} changed"
-        [ "$n" -le 1 ] || why+=", and $((n - 1)) more of its inputs"
-        ;;
-      1) skip="none of its inputs changed: $(hack/check-cache.sh inputs "$1")" ;;
-      *) why="its inputs could not be compared with $CHANGE_FROM" ;;
-    esac
   fi
+  inputs "$1"
   if [ -n "$why" ] && line=$(hack/check-cache.sh cached "$1"); then
     [ -n "$idle" ] || echo "$line"
     line=${line#"$1: cached ("}
     cached="$why; this device's cache answers: ${line%"); FORCE=1 to rerun"}"
   fi
   step "$1" hack/check-cache.sh run "$1" "$MAKE" --no-print-directory -o manifests "$1"
+}
+
+# scan NAME: one of the scans of the whole repository the shell tests make,
+# by itself: when a file it reads changed, and the shell tests did not just
+# run it with the others. It takes seconds, so no cache answers it.
+scan() {
+  if [ -n "$failed" ]; then
+    step "$1"
+    return 0
+  fi
+  inputs "$1"
+  # A link names a file: one that is gone can break a link no Markdown
+  # change made.
+  if [ "$1" = doc-links ] && [ -z "$why" ] && [ -n "$gone" ]; then
+    why="$gone is gone, which a link may name"
+  fi
+  if [ -n "$why" ] && [ -n "$shell_tests_ran" ]; then
+    why=
+    skip="the shell tests just ran it"
+  fi
+  light=1
+  step "$1" "$MAKE" --no-print-directory "$1"
+  light=
 }
 
 # report: the block the run ends with.
@@ -280,7 +329,13 @@ change_base
 ran=()
 rc_failed=0
 cached=
+light=
+shell_tests_ran=
 load
+# The first file the change removes, if any.
+gone=
+[ -n "$all" ] || gone=$(git diff --name-only --no-renames --diff-filter=D "$CHANGE_BASE" -- 2>/dev/null)
+gone=${gone%%$'\n'*}
 
 if asked generate; then
   why= skip=
@@ -302,6 +357,10 @@ if asked fmt || asked vet || asked lint; then
   why= skip=
   if [ ${#go_pkgs[@]} -gt 0 ]; then why=$go_why; else skip=$go_why; fi
   ! asked fmt || step fmt "$MAKE" --no-print-directory fmt GO_PACKAGES="${go_pkgs[*]}"
+  if [ "${go_pkgs[*]}" != ./... ] && f=$(first "${MAKE_FILES[@]}"); then
+    go_pkgs=(./...)
+    why="every package: $f changed"
+  fi
   ! asked vet || step vet "$MAKE" --no-print-directory vet GO_PACKAGES="${go_pkgs[*]}"
   if asked lint; then
     # The linter's configuration reaches every package, whatever gta selects.
@@ -317,6 +376,11 @@ fi
 
 ! asked validate-yaml || tier validate-yaml
 ! asked test-hack || tier test-hack
+# The shell tests run the three scans below with the rest.
+[ "${ran[*]:+${ran[-1]}}" != test-hack ] || shell_tests_ran=1
+! asked doc-links || scan doc-links
+! asked license-headers || scan license-headers
+! asked readers || scan readers
 ! asked ui-test || [ ! -f ui/package.json ] || tier ui-test
 
 if asked test || asked test-gitea; then

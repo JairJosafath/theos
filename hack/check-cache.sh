@@ -62,14 +62,30 @@ add_all() { git add -A >/dev/null 2>&1 && "$@"; }
 # is listed on its own. docs/dev/testenv.md says what each covers.
 tier_paths() {
   case $1 in
-    ui-test) printf '%s\n' ui Makefile 'hack/*.mk' hack/check-cache.sh ;;
+    # ui/ and the CRDs, which ui/src/demo/limits.test.ts reads (#127).
+    ui-test) printf '%s\n' ui config/crd/bases Makefile 'hack/*.mk' hack/check-cache.sh ;;
     # The shell tests read the Makefile, the chart, config/, .claude/ and more,
-    # so everything but the Go, UI and docs trees, and the files there they read.
+    # so everything but the Go, UI and docs trees, and the files there they
+    # read. Three of them scan the whole repository, the trees left out here
+    # too; those scans are below, each with what it reads.
     test-hack)
       printf '%s\n' . ':!api' ':!cmd' ':!internal' ':!templates' ':!test' ':!features' ':!docs' ':!ui' --
-      printf '%s\n' docs/getting-started.md docs/dev/testenv.md \
-        ui/Dockerfile ui/package.json ui/package-lock.json
+      printf '%s\n' docs/getting-started.md docs/dev/testenv.md docs/monitoring.md \
+        internal/model/factory_metrics.go ui/Dockerfile ui/package.json ui/package-lock.json
       ;;
+    # The scans (#127): what hack/check-doc-links.sh, hack/check-license-headers.sh
+    # and hack/check-readers.sh read. make check runs one by itself, in
+    # seconds, when a file it reads changed and the shell tests don't run; the
+    # shell tests run all three. No pass of them is cached.
+    doc-links)
+      printf '%s\n' '*.md' ':!docs/plans/done' ':!docs/design-history.md' ':!docs/screenshots' ':!templates' --
+      printf '%s\n' hack/check-doc-links.sh
+      ;;
+    license-headers)
+      printf '%s\n' '*.go' ':!templates' --
+      printf '%s\n' hack/check-license-headers.sh
+      ;;
+    readers) printf '%s\n' '*_test.go' hack/test-packages.sh hack/check-readers.sh ;;
     # validate-yaml renders repositories with go run ./hack/render and fences
     # the runner with ./hack/runner-fence: the module's packages they build
     # count too, go.sum the rest.
@@ -109,8 +125,11 @@ version() {
 # tier_desc TIER: what TIER's key covers, in a word, for the cached line.
 tier_desc() {
   case $1 in
-    ui-test) echo "ui/" ;;
+    ui-test) echo "ui/ and the CRDs" ;;
     test-hack) echo "hack/ and the rest outside the Go, UI and docs trees" ;;
+    doc-links) echo "the Markdown" ;;
+    license-headers) echo "the Go files" ;;
+    readers) echo "the Go tests and the readers table" ;;
     validate-yaml) echo "the YAML, api/, templates/ and hack/render" ;;
   esac
 }

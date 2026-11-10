@@ -93,12 +93,16 @@ template needs a row there. In tests, write with merge patches
 | `manifests`, `generate` | a Go file under `api/`, `cmd/` or `internal/` changed, `go.mod`, `go.sum`, a file they write (`config/crd`, `config/rbac`, the chart's copies) or a script they run |
 | `fmt`, `vet`, `lint` | on the packages [gta](https://github.com/digitalocean/gta) says the change affects: those a changed file lies in and those that depend on them. On every package after a change to `go.mod` or `go.sum`, and `lint` after one to `.golangci.yml` or `.custom-gcl.yml` |
 | `validate-yaml`, `test-hack`, `ui-test` | a file among the tier's inputs changed ([devices.md](devices.md#memory-on-the-cluster-device) lists them), unless those inputs already passed on this device |
+| `doc-links`, `license-headers`, `readers` | three scans of the whole repository that the shell tests make, each by itself when a file it reads changed and the shell tests don't run: a Markdown file, or a file that is gone, which a link may name (`hack/check-doc-links.sh`); a Go file (`hack/check-license-headers.sh`); a Go test or the readers table (`hack/check-readers.sh`). They take seconds |
 | `test` | on the packages `make test` selects, below |
 
-So a docs-only change runs none of them, on a device that never ran `make
+So a docs-only change runs the link check and nothing else, in two seconds,
+on a device that never ran `make
 check` too, and takes no heavy-job slot; a UI-only change runs the UI's check
 and nothing of Go; a change to one Go package runs `vet`, `lint` and the tests
-on that package and its dependents. What `make
+on that package and its dependents. The shell tests' own inputs leave out the
+Go and docs trees, which those three scans read: without the scans a docs-only
+change with a dead link, or a Go file with no license header, passed. What `make
 manifests` writes counts for the steps after it: a regenerated CRD selects
 `validate-yaml` and the tests that load it.
 
@@ -113,8 +117,10 @@ every step; `FORCE=1` also passes by every cache) or when the change can't
 be known (no merge base: a shallow clone, a base that was never fetched).
 
 No file selects every step. The Makefile selects the steps whose tools it
-pins (`manifests`, `generate`, `lint` on every package) and the three tiers,
-whose inputs list it, and no Go test: none reads it. A `*.mk` and
+pins or whose flags it holds (`manifests`, `generate`, and `vet` and `lint`
+on every package) and the three tiers,
+whose inputs list it, and no Go test: none reads it. A `*.mk` selects `vet`
+and `lint` on every package too. A `*.mk` and
 `hack/check-cache.sh` select the tiers; the other scripts that select the
 steps (`hack/check.sh`, `hack/test-packages.sh`, `hack/lib/change.sh`) the
 shell tests, which test them; `hack/gta/` its own package besides. Only
@@ -122,7 +128,8 @@ shell tests, which test them; `hack/gta/` its own package besides. Only
 
 `CHECK_STEPS` takes a part of the check, by the steps' names: `generate`
 (`manifests` and `generate`), `fmt`, `vet`, `lint`, `validate-yaml`,
-`test-hack`, `ui-test`, `test`, and `test-gitea`, which runs only when named:
+`test-hack`, `doc-links`, `license-headers`, `readers`, `ui-test`, `test`,
+and `test-gitea`, which runs only when named:
 the Gitea adapter against a local Gitea, when `make test` tests
 `internal/adapters/gitea` or `hack/seed/` or `hack/gitea-local.sh` changed.
 A workflow's job runs its part that way; such a run records no pass of the
@@ -136,6 +143,9 @@ make check: passed. 1 file changed since origin/main (fc9adcb1d2e3); the steps t
   lint                skipped  no changed file lies in a Go package, and no linter configuration changed
   validate-yaml       skipped  none of its inputs changed: the YAML, api/, templates/ and hack/render
   test-hack           skipped  none of its inputs changed: hack/ and the rest outside the Go, UI and docs trees
+  doc-links           skipped  none of its inputs changed: the Markdown
+  license-headers     skipped  none of its inputs changed: the Go files
+  readers             skipped  none of its inputs changed: the Go tests and the readers table
   ui-test             ran      42s; ui/src/model/loop.ts changed
   test                skipped  no Go package changed since origin/main (fc9adcb1d2e3)
 ```
@@ -198,7 +208,8 @@ now selects `lint`, and each other step, by the change since the same base
 the same way, and so do the workflows on GitHub, each job with its part of
 `make check`: *Tests* runs `CHECK_STEPS="generate fmt vet test"` and then
 `CHECK_STEPS=test-gitea`, *Lint* `CHECK_STEPS="generate lint validate-yaml"`
-and, in its *Shell tests* job, `CHECK_STEPS=test-hack`. They set `TEST_BASE`:
+and, in its *Shell tests* job, `CHECK_STEPS="test-hack doc-links
+license-headers readers"`. They set `TEST_BASE`:
 a pull request is compared with its base branch, a push to main with main's
 head before the push (`github.event.before`), a manual run with main. Each
 push to main gets its own run, none cancelled or dropped for a newer one,

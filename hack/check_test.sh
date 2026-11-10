@@ -103,10 +103,17 @@ run() {
   hack/check.sh >"$T/out" 2>&1
 }
 # states: how each step went, in the order of the block: manifests generate,
-# fmt, vet, lint, validate-yaml, test-hack, ui-test, test.
+# fmt, vet, lint, validate-yaml, test-hack, ui-test, test. The three scans
+# are left out of it; scans says how they went: doc-links, license-headers,
+# readers.
+SCANS='doc-links\|license-headers\|readers'
 states() {
-  sed -n '/^make check: \(passed\|FAILED\)/,$p' "$T/out" |
+  sed -n '/^make check: \(passed\|FAILED\)/,$p' "$T/out" | grep -v "^  \($SCANS\) " |
     sed -n 's/^  \(manifests generate\|[a-z-]*\)  *\(ran\|skipped\|cached\|FAILED\|not run\)  .*/\2/p' | paste -sd' '
+}
+scans() {
+  sed -n '/^make check: \(passed\|FAILED\)/,$p' "$T/out" |
+    sed -n "s/^  \($SCANS\)  *\(ran\|skipped\|cached\|FAILED\|not run\)  .*/\2/p" | paste -sd' '
 }
 calls() { tr '\n' ';' <"$T/calls"; }
 m=example.com/r
@@ -117,21 +124,24 @@ all_pkgs="$m/hack/render $m/hack/runner-fence $m/internal/adapters/gitea $m/inte
 change docs/notes.md
 run; check "docs only: exit 0" $? 0
 check "docs only: no step runs, on a device that never ran make check" "$(states)" "$none"
-check "docs only: make is not called" "$(calls)" ""
+check "docs only: but the link check, the one scan that reads Markdown" "$(scans)" "ran skipped skipped"
+check "docs only: make runs the link check and no shell test" "$(calls)" "doc-links;"
+check "docs only: says which file" "$(grep -c '^  doc-links  *ran  *[0-9]*s; docs/notes.md changed$' "$T/out")" 1
 check "docs only: the block says what the change is" \
   "$(grep -c '^make check: passed. 1 file changed since origin/main ([0-9a-f]\{12\}); the steps that change selects:$' "$T/out")" 1
 check "docs only: says why vet is skipped" "$(grep -c '^  vet  *skipped  no changed file lies in a Go package$' "$T/out")" 1
-check "docs only: says why the UI check is skipped" "$(grep -c '^  ui-test  *skipped  none of its inputs changed: ui/$' "$T/out")" 1
+check "docs only: says why the UI check is skipped" "$(grep -c '^  ui-test  *skipped  none of its inputs changed: ui/ and the CRDs$' "$T/out")" 1
 check "docs only: says why no package is tested" "$(grep -c '^  test  *skipped  no Go package changed since origin/main' "$T/out")" 1
 check "docs only: the pass is recorded" "$(grep -c '^make check: passed on tree [0-9a-f]*; recorded$' "$T/out")" 1
 check "the block ends the output" "$(tail -n 1 "$T/out" | cut -c1-8)" "  test  "
-check "docs only: --idle says idle" "$(hack/check.sh --idle 2>&1)" "idle"
+check "docs only: --idle says idle, a scan takes no heavy-job slot" "$(hack/check.sh --idle 2>&1)" "idle"
 
 change internal/other/other.go
 run
 check "one Go package: generate, fmt, vet, lint and test" "$(states)" "ran ran ran ran skipped skipped skipped ran"
-check "one Go package: that package alone" "$(calls)" \
-  "manifests generate;fmt GO_PACKAGES=$m/internal/other;vet GO_PACKAGES=$m/internal/other;lint LINT_PACKAGES=./internal/other;test TEST_PACKAGES=$m/internal/other;"
+check "one Go package: that package alone, and its license header" "$(calls)" \
+  "manifests generate;fmt GO_PACKAGES=$m/internal/other;vet GO_PACKAGES=$m/internal/other;lint LINT_PACKAGES=./internal/other;license-headers;test TEST_PACKAGES=$m/internal/other;"
+check "one Go package: the scan that reads Go files" "$(scans)" "skipped ran skipped"
 check "one Go package: the block says which gta selects" \
   "$(grep -c '^  vet  *ran  *[0-9]*s; the package gta selects: internal/other$' "$T/out")" 1
 check "one Go package: the block says which are tested" \
@@ -146,11 +156,29 @@ check "a package hack/render builds: its dependent, and validate-yaml" "$(states
 check "a package hack/render builds: the block counts them" \
   "$(grep -c '^  vet  *ran  *[0-9]*s; the 2 packages gta selects; changed: internal/scaffold$' "$T/out")" 1
 check "a package hack/render builds: both packages" "$(calls)" \
-  "manifests generate;fmt GO_PACKAGES=$m/hack/render $m/internal/scaffold;vet GO_PACKAGES=$m/hack/render $m/internal/scaffold;lint LINT_PACKAGES=./hack/render ./internal/scaffold;validate-yaml;test TEST_PACKAGES=$m/hack/render $m/internal/scaffold;"
+  "manifests generate;fmt GO_PACKAGES=$m/hack/render $m/internal/scaffold;vet GO_PACKAGES=$m/hack/render $m/internal/scaffold;lint LINT_PACKAGES=./hack/render ./internal/scaffold;validate-yaml;license-headers;test TEST_PACKAGES=$m/hack/render $m/internal/scaffold;"
 
 change internal/other/other_test.go
 run
 check "a test file: its package alone" "$(grep -c "^test TEST_PACKAGES=$m/internal/other\$" "$T/calls")" 1
+check "a test file: its license header, and the readers table against it" "$(scans)" "skipped ran ran"
+
+# The scans the shell tests make of the whole repository run by themselves
+# when a file they read changed (#127): the shell tests' own inputs leave out
+# the Go and docs trees, and a Go file without a license header passed.
+change
+git rm -q ui/app.ts
+run
+check "a file that is gone: the link check, a link may name it" "$(grep -c '^  doc-links  *ran  *[0-9]*s; ui/app.ts is gone, which a link may name$' "$T/out")" 1
+change hack/x.sh docs/notes.md internal/other/other_test.go
+echo "# with the scans" >>hack/x.sh
+run
+check "the shell tests ran: they ran the scans, which don't run again" "$(scans)" "skipped skipped skipped"
+check "the shell tests ran: says so" "$(grep -c '^  doc-links  *skipped  the shell tests just ran it$' "$T/out")" 1
+check "the shell tests ran: make runs no scan" "$(grep -c '^\(doc-links\|license-headers\|readers\)$' "$T/calls")" 0
+change internal/other/other.go
+CHECK_STEPS="test-hack doc-links license-headers readers" run
+check "the Shell tests job's part, a Go file: the license check alone" "$(calls)" "license-headers;"
 
 change ui/app.ts
 run
@@ -180,7 +208,7 @@ check "a hack/ script: the shell tests alone" "$(states)" "skipped skipped skipp
 
 change config/crd/bases/a.yaml
 run
-check "a CRD: generate, validate-yaml, the shell tests and its readers" "$(states)" "ran skipped skipped skipped ran ran skipped ran"
+check "a CRD: generate, validate-yaml, the shell tests, the UI's check, which reads the CRDs, and its readers" "$(states)" "ran skipped skipped skipped ran ran ran ran"
 check "a CRD: the tests that read config/" "$(grep -c "^test TEST_PACKAGES=$m/internal/other\$" "$T/calls")" 1
 
 change templates/x/a.txt
@@ -217,10 +245,11 @@ selects() {
   run
   check "#127 $1: what reads it, not every step" "$(states)" "$2"
 }
-selects Makefile "ran skipped skipped ran ran ran ran skipped"
+selects Makefile "ran skipped ran ran ran ran ran skipped"
+check "#127 Makefile: vet, whose flags it holds, reads every package" "$(grep -c '^vet GO_PACKAGES=./...$' "$T/calls")" 1
 check "#127 Makefile: the linter it pins reads every package" "$(grep -c '^  lint  *ran  *[0-9]*s; every package: Makefile changed$' "$T/out")" 1
 check "#127 Makefile: no Go test reads it" "$(grep -c '^test ' "$T/calls")" 0
-selects hack/ui.mk "skipped skipped skipped skipped ran ran ran skipped"
+selects hack/ui.mk "skipped skipped ran ran ran ran ran skipped"
 selects hack/check-cache.sh "skipped skipped skipped skipped ran ran ran skipped"
 selects hack/check.sh "skipped skipped skipped skipped skipped ran skipped skipped"
 selects hack/test-packages.sh "skipped skipped skipped skipped skipped ran skipped skipped"
@@ -232,7 +261,7 @@ selects README.md "skipped skipped skipped skipped skipped ran skipped skipped"
 # What make manifests writes counts for the steps below it.
 change internal/other/other.go
 FAKE_GENERATES=config/crd/bases/a.yaml run
-check "a CRD make manifests regenerates: validate-yaml and the shell tests too" "$(states)" "ran ran ran ran ran ran skipped ran"
+check "a CRD make manifests regenerates: validate-yaml, the shell tests and the UI's check too" "$(states)" "ran ran ran ran ran ran ran ran"
 
 change internal/other/other.go
 THEOS_GTA=false run

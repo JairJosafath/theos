@@ -128,7 +128,7 @@ out=$(ran ui-test); check "run, miss: exit 0" $? 0
 [ -e "$T/ran" ]; check "run, miss: runs the command" $? 0
 out=$(ran ui-test); check "run, hit: exit 0" $? 0
 [ ! -e "$T/ran" ]; check "run, hit: doesn't run it" $? 0
-[[ $out == "ui-test: cached (ui/ unchanged since "*", passed in $R); FORCE=1 to rerun" ]]
+[[ $out == "ui-test: cached (ui/ and the CRDs unchanged since "*", passed in $R); FORCE=1 to rerun" ]]
 check "run, hit: says so in one line" $? 0
 FORCE=1 ran ui-test >/dev/null; [ -e "$T/ran" ]; check "run, FORCE=1: runs it" $? 0
 echo 2 >>hack/x.sh
@@ -142,13 +142,13 @@ ran ui-test >/dev/null; [ ! -e "$T/ran" ]; check "run, back to inputs that passe
 # cached (#127): the cached line of a tier whose inputs passed, without
 # running anything; a miss on other inputs and with FORCE=1.
 out=$("$CACHE" cached ui-test); check "cached, inputs that passed: exit 0" $? 0
-[[ $out == "ui-test: cached (ui/ unchanged since "*", passed in $R); FORCE=1 to rerun" ]]
+[[ $out == "ui-test: cached (ui/ and the CRDs unchanged since "*", passed in $R); FORCE=1 to rerun" ]]
 check "cached: the line run prints" $? 0
 FORCE=1 "$CACHE" cached ui-test >/dev/null; check "cached, FORCE=1: miss" $? 1
 echo 3 >>ui/app.ts
 "$CACHE" cached ui-test >/dev/null; check "cached, ui/ changed since: miss" $? 1
 git checkout -q -- ui/app.ts
-check "inputs: what a tier reads, in a few words" "$("$CACHE" inputs ui-test)" "ui/"
+check "inputs: what a tier reads, in a few words" "$("$CACHE" inputs ui-test)" "ui/ and the CRDs"
 
 # changed (#127): the files among a tier's inputs that differ from a commit,
 # committed, uncommitted or untracked: what make check selects the tier by,
@@ -180,6 +180,24 @@ git checkout -q -- internal/scaffold/s.go
 echo 2 >>internal/other/o.go
 check "changed, a package nothing renders with: not validate-yaml" "$(differs validate-yaml)" " [1]"
 git checkout -q -- internal/other/o.go
+# #127: the CRDs are an input of the UI's check, whose limits test reads
+# them; and the three scans the shell tests make of the whole repository
+# have inputs of their own, the trees the shell tests' tier leaves out.
+mkdir -p config/crd/bases docs/plans/done templates/x && echo 1 >config/crd/bases/a.yaml
+check "changed, a CRD: an input of the UI's check" "$(differs ui-test)" "config/crd/bases/a.yaml ui/app.ts ui/new.ts [0]"
+rm -rf config/crd
+echo 2 >>docs/notes.md
+check "changed, Markdown: the link check" "$(differs doc-links)" "docs/notes.md [0]"
+git checkout -q -- docs/notes.md
+echo 1 >docs/plans/done/old.md && echo 1 >templates/x/README.md
+check "changed, the Markdown the link check skips: not its input" "$(differs doc-links)" " [1]"
+rm -rf docs/plans templates
+echo 2 >>internal/other/o.go
+check "changed, a Go file: the license check, not the readers table's" "$(differs license-headers; differs readers)" "internal/other/o.go [0]"$'\n'" [1]"
+git checkout -q -- internal/other/o.go
+echo 'package other' >internal/other/o_test.go
+check "changed, a Go test: both" "$(differs license-headers; differs readers)" "internal/other/o_test.go [0]"$'\n'"internal/other/o_test.go [0]"
+rm internal/other/o_test.go
 "$CACHE" changed ui-test nope >/dev/null 2>&1; check "changed, a base that is no commit: exit 2" $? 2
 "$CACHE" changed nope "$base" >/dev/null 2>&1; check "changed, unknown tier: exit 2" $? 2
 

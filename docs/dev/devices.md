@@ -296,7 +296,8 @@ queue:
   `generate` and `fmt`, and the versions of the tools the Makefile doesn't
   pin; every key covers the Makefile, `hack/*.mk` and `hack/check-cache.sh`,
   whose pins and rules the tier runs by:
-  - `ui-test`: `ui/`, `node --version` and `npm --version`.
+  - `ui-test`: `ui/`, `config/crd/bases/` (a test of the UI reads the
+    CRDs), `node --version` and `npm --version`.
   - `test-hack`: everything but `api/`, `cmd/`, `internal/`, `templates/`,
     `test/`, `features/`, `docs/` and `ui/`, since the shell tests read the
     Makefile, the chart, `config/`, `.claude/` and `.github/` as well as

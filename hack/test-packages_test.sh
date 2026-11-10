@@ -14,13 +14,11 @@
 # nor the readers' dependents (#1523). A hack/ script no Go test reads tests
 # no package (#1318).
 #
-# Against this repository: every package the readers table names exists; a
-# _test.go that climbs to a table path ("../../templates",
-# filepath.Join("..", "..", "config", ...), filepath.Join(root, "dist", ...))
-# lies in a package the table lists for it (#1523); and every hack/ path a Go
-# test names lies in a package or is listed in the table for that test's
-# package (#1318). Only go.mod and go.sum test every package: a file no Go
-# test reads tests nothing, a Dockerfile, a workflow and the like the
+# Against this repository, hack/check-readers.sh: every package the readers
+# table names exists, and a _test.go that climbs to a file outside its
+# package or names a hack/ path lies in a package the table lists for it
+# (#1523, #1318, #66). Only go.mod and go.sum test every package: a file no
+# Go test reads tests nothing, a Dockerfile, a workflow and the like the
 # packages that read them (#127).
 # Run: hack/test-packages_test.sh
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -216,92 +214,25 @@ change docs/guide.md
 check "#127 a pattern the file doesn't match: no package" "$(run)" ""
 unset TEST_READERS
 
-# Against this repository (#1523, #1318). The table's packages exist and have
-# tests; a test that climbs to a table path lies in a listed package.
-mapfile -t table < <(cd "$REPO" && hack/test-packages.sh --readers)
-check "the table has entries" "$([ ${#table[@]} -gt 5 ] && echo yes)" yes
-# reads PATH: the directories of the _test.go files of this repository that
-# climb to PATH: "../../PATH", or "..", "PATH-segments" or root, "PATH-segments".
-reads() {
-  local segs
-  segs=$(sed 's|/|", *"|g' <<<"$1")
-  (cd "$REPO" && git ls-files '*_test.go' |
-    xargs grep -lE "\"(\.\./)+$1(/|\")|(\.\.\", *|root, *)\"$segs\"" | xargs -rn1 dirname | sort -u)
-}
-# covers KEY PATH: the table's path KEY is PATH, holds it, or is a pattern
-# PATH matches.
-covers() {
-  # shellcheck disable=SC2053 # A path with a * in it is a pattern.
-  [ "$2" = "$1" ] || [[ "$2" == "$1"/* ]] || { [[ $1 == *'*'* ]] && [[ $2 == $1 ]]; }
-}
-# listed PATH DIR: a path of the table that covers PATH lists package DIR.
-listed() {
-  local line
-  for line in "${table[@]}"; do
-    covers "${line%% *}" "$1" || continue
-    [[ " ${line#* } " == *" $2 "* ]] && return 0
-  done
-  return 1
-}
-for line in "${table[@]}"; do
-  path=${line%% *}
-  for p in ${line#* }; do
-    check "$path: reader $p is a package with tests" "$(ls "$REPO/$p"/*_test.go >/dev/null 2>&1 && echo yes)" yes
-  done
-  case "$path" in hack/* | *'*'*) continue ;; esac
-  for d in $(reads "$path"); do
-    check "$d's tests read $path: the table lists it (#1716)" "$(listed "$path" "$d" && echo yes)" yes
-  done
-done
-check "internal/scaffold's tests climb to templates/" "$(reads templates | grep -c '^internal/scaffold$')" 1
-
-# Every path a Go test of this repository climbs to, in a string ("../x") or
-# a filepath.Join("..", ...), that is a file or directory of the repository
-# outside the test's own package, is listed in the table for that package
-# (#127): no path tests every package any more, so a file a test reads and
-# the table doesn't name would test nothing, as the report fixture that
-# internal/model shares with the UI's tests did (#66). A package's Go sources
-# are gta's and the *.go pattern's; .dev and bin hold tools.
-climbs=0
-while IFS=: read -r file lit; do
-  dir=$(dirname "$file")
-  target=$(realpath -m --relative-to="$REPO" "$REPO/$dir/$lit")
-  case $target in . | ..* | .dev | .dev/* | bin | bin/* | "$dir" | "$dir"/*) continue ;; esac
-  [ -e "$REPO/$target" ] || continue
-  if [ -d "$REPO/$target" ] && ls "$REPO/$target"/*.go >/dev/null 2>&1; then continue; fi
-  climbs=$((climbs + 1))
-  check "$dir's tests climb to $target: the table lists $dir for it" "$(listed "$target" "$dir" && echo yes)" yes
-done < <(cd "$REPO" && git ls-files '*_test.go' |
-  xargs grep -oE '"(\.\./)+[A-Za-z0-9._/-]+"|"\.\."(, *"[A-Za-z0-9._-]+")+' |
-  sed -E 's/", *"/\//g' | tr -d '"' | sort -u)
-check "Go tests climb to files of the repository" "$([ "$climbs" -gt 5 ] && echo yes)" yes
-
-# Every hack/ path a Go test of this repository names, in a string or a
-# filepath.Join, lies in a package or is listed in the table for that test's
-# package, so a new test that reads a script can't be skipped (#1318, #1523).
-# No path tests every package any more (#127). A directory gets a file in it.
-mapfile -t named < <(cd "$REPO" && git ls-files '*_test.go' | xargs grep -oE \
-  'hack/[A-Za-z0-9._/-]*|"hack"(, *"[A-Za-z0-9._-]+")+' |
-  sed -E 's/", *"/\//g; s/"//g; s/\.+$//; s|/$|/x|; s|^([^:]*)/[^/:]*:|\1 |' | sort -u)
-check "Go tests name hack/ paths" "$([ ${#named[@]} -gt 0 ] && echo yes)" yes
-# in_package PATH: a directory of PATH or above it, under hack/, holds Go
-# files other than tests.
-in_package() {
-  local d=$1
-  [ -d "$REPO/$d" ] || d=$(dirname "$d")
-  while [ "$d" != hack ] && [ "$d" != . ]; do
-    if find "$REPO/$d" -maxdepth 1 -name '*.go' ! -name '*_test.go' | grep -q .; then return 0; fi
-    d=$(dirname "$d")
-  done
-  return 1
-}
-for pair in "${named[@]}"; do
-  d=${pair%% *}
-  f=${pair#* }
-  if in_package "$f"; then echo "ok   $f: in a package"; continue; fi
-  [ ! -d "$REPO/$f" ] || f=$f/x
-  check "$f, named by $d's tests: the table lists $d for it" "$(listed "$f" "$d" && echo yes)" yes
-done
+# Against this repository: hack/check-readers.sh holds the table to the Go
+# tests (#1523, #1318, #127). It passes on the table as it is, and fails on
+# one without the fixture internal/model's tests share with the UI's (#66),
+# naming the test that climbs to it.
+out=$("$HERE/check-readers.sh" 2>&1)
+check "the readers table holds what this repository's Go tests read" "$?" 0
+grep '^check-readers: ' <<<"$out" | sed 's/^/     /'
+(cd "$REPO" && hack/test-packages.sh --readers | grep -v '^ui/src/model/testdata ') >"$T/readers"
+check "the table without that fixture is one line shorter" \
+  "$(wc -l <"$T/readers")" "$(($(cd "$REPO" && hack/test-packages.sh --readers | wc -l) - 1))"
+out=$(TEST_READERS=$T/readers "$HERE/check-readers.sh" 2>&1)
+check "#66 a test that climbs to a file the table doesn't name fails the check" "$?" 1
+check "#66 it names the test and the file" \
+  "$(grep -c "internal/model's tests climb to ui/src/model/testdata/report, and the table doesn't list internal/model for it" <<<"$out")" 1
+(cd "$REPO" && hack/test-packages.sh --readers | sed 's|^hack/go-test.sh .*|hack/go-test.sh cmd|') >"$T/readers"
+out=$(TEST_READERS=$T/readers "$HERE/check-readers.sh" 2>&1)
+check "#1318 a hack/ path a test names, listed for another package: fails" "$?" 1
+check "#1318 it names the test and the path" \
+  "$(grep -c "internal/controller's tests name hack/go-test.sh, and the table doesn't list internal/controller for it" <<<"$out")" 1
 
 change top/top.go
 check "TEST_ALL: every package" "$(TEST_ALL=1 run)" "$every"
