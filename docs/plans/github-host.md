@@ -101,106 +101,9 @@ Each step is its own issue, names #57 and lands with `make check`.
 | 4. AgentAccess from a GitHub App (done) | #77 | #75 | the AgentAccess contract passes: a token for one repository, a push to main refused, revoked on removal; a provider with a token alone reports `NeedsGitHubApp` |
 | 5. CI on GitHub Actions (done) | #78 | #75 | the CI contract passes with `JobRunners` in `Cannot`; `model.CI` has `githubActions`, and every Standard renders its workflow for both hosts |
 | 6. Events (done) | #79 | #74 | the Events contract passes: one organization hook, signed deliveries, a bad signature refused |
-| 7. Registry | #80 | #74 | the Registry contract passes for images and npm; Go modules resolve from the repository; PyPI is in `Cannot` |
-| 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; the GitProvider's `AgentAccess` condition comes from `ports.AgentAccessState` and no Task starts without it; an agent's credential is minted again before it expires; the organization's `THEOS_CI_*` variables are set from the GitProvider; the GitProvider's hook names its Containers' and Briefs' repositories (`ports.EventHook.Repositories`), for an owner that is a user's account; `TestHostNeutral`'s allowlist has no controller in it |
+| 7. Registry (done) | #80 | #74 | the Registry contract passes for images and npm; Go modules resolve from the repository; PyPI is in `Cannot` |
+| 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; the GitProvider's `AgentAccess` condition comes from `ports.AgentAccessState` and no Task starts without it; an agent's credential is minted again before it expires; the organization's `THEOS_CI_*` variables are set from the GitProvider; the GitProvider's hook names its Containers' and Briefs' repositories (`ports.EventHook.Repositories`), for an owner that is a user's account; a Framework's Go module path is the repository's own where the host serves modules from repositories, `DecideModule` takes such a module as published, a run and a job get a credential that reads the project's other repositories, and the GitProvider's own registries reach a job (`ports.OwnerActions`); `TestHostNeutral`'s allowlist has no controller in it |
 | 9. The guide, and a run on the real thing | #82 | #81 | "Use the factory on your GitHub organization" in the guide, the App's permissions listed with why; a human runs `make test-github` and the first-app Crew on a test organization, with the output as evidence |
-
-## Step 7's plan (#80)
-
-Written before the step is built; "What step 7 found" replaces it. Two
-pull requests: the port, then where a run and a job get what the port
-publishes.
-
-**Where things are.** `Repository` names, for an owner on github.com:
-images at `ghcr.io/<owner>`, npm at `https://npm.pkg.github.com/` under the
-scope `@<owner>`, no Go proxy, and a Python index only when `spec.packages`
-names one. On an Enterprise Server the two registries are
-`containers.<host>` and `https://npm.<host>/`, which is how GitHub names
-them with subdomain isolation, and the container registry needs that
-anyway; an instance without it gives `spec.packages.npm.registry`.
-
-**The scope.** GitHub's npm registry takes a package under its owner's
-scope and no other, in lower case. So the scope defaults to `@<owner>`
-there, and a `spec.packages.npm.scope` that is another fails the provider
-with the reason, before anything is scaffolded under a name that could
-never be published. A registry that is not GitHub's takes any scope, and
-defaults to `@theos` as on every host.
-
-**Part 1, the port.**
-
-- The reading of a release's package files and the npm and PyPI protocols
-  move out of the Gitea adapter into `internal/adapters/packages`, as
-  `git.ReadArchive` did in step 2. Each adapter signs its own requests.
-- **Images** go through `internal/oci`: push the release's `*.oci.tar`,
-  resolve a tag, copy by digest. GitHub links an image to a repository by
-  the image's own `org.opencontainers.image.source` label, and has no call
-  that links one after the push, so the link is the build's to make and
-  the adapter says so.
-- **npm**: the publish document, with the operator's token or
-  `spec.packages.npm`'s. A manifest that names no repository gets this
-  one in the document, which is what links the package.
-- **PyPI**: published where `spec.packages.pypi` says. Without one a wheel
-  or an sdist is `Invalid`, with the reason that GitHub has no Python
-  index.
-- **Go modules**: nothing is uploaded. `PublishGoModule` checks what `go`
-  would need: a `go.mod` at the tag, a version the path allows, and a path
-  that is the repository's own (`github.com/<owner>/<name>`), since that
-  is the only place `go` looks. It answers `Exists`, never `Published`:
-  the tag is the publication. The contract's module subtest learns both:
-  the path a host wants, and a host that uploads nothing.
-- The fake serves an OCI registry, GitHub's npm registry and a file at a
-  ref.
-
-**What part 1 found** (it is built; part 2 is not).
-
-- **GitHub's registries take a classic personal access token and no
-  other** kind of a person's token, and an installation token has no
-  permission for packages. So the operator's token must be a classic one
-  with `write:packages` for anything to be published, which narrows what
-  step 2 and step 6 asked of it: the guide (step 9) says so, and names
-  `spec.packages.npm`'s own token as the way to publish with another.
-- **The operator's token goes to GitHub's own registries only.** A
-  registry or an index the GitProvider names gets the token the
-  GitProvider names for it, or none.
-- **A module path has no port.** The path a module must declare is the
-  host's name, the owner and the repository. An Enterprise Server on a port
-  of its own can serve no Go module, since a module path can't hold a port.
-- **The contract has no subtest for images, npm or PyPI,** so nothing of
-  them is in `Cannot`, PyPI neither. Its two subtests are of Go modules and
-  the adapter passes both; images and packages are covered by the
-  adapter's own tests against the fake's registries
-  (`TestImagesOnGitHub`, `TestPackagesOnGitHub`), as Gitea's are by its.
-- **`.golangci.yml` lists the adapters that stay out of Kubernetes by
-  name;** `internal/adapters/packages` is added to it.
-
-The fake encodes `working-with-the-npm-registry` (a scoped name, in lower
-case, under an account's scope; a Bearer token) and
-`working-with-the-container-registry` (Basic auth with a token as the
-password; an Enterprise Server's registry at `containers.<host>`). Not
-verified against github.com: that the container registry doesn't check the
-user name sent with the token; that the npm registry answers 404 for a
-package it doesn't have, 409 for a version it has and 200 or 201 for a
-publish; that it links a package by the `repository` of the publish
-document where the tarball's own manifest names none; and that the
-contents call answers a file's bytes at a commit when asked for the raw
-media type.
-
-**Part 2, where a run and a job get them.**
-
-- `ports.Repository` says what `GOPRIVATE` is on a host that serves
-  modules from repositories; the sandbox sets it where there is no proxy.
-- The Standards' GitHub workflows get the step step 5 left out: `.npmrc`
-  and `.netrc` for the owner's registries, `GOPRIVATE` and the job's token
-  as Git's credential.
-- Table tests of the scope rule and of both environments.
-
-**Left to step 8, and why.** A Framework's `go.mod` says
-`theos.local/<project>/<container>` today; on GitHub it must be the
-repository's path, a scaffold value as the npm scope is. `DecideModule`
-must take a module its host serves as published. And an agent's token and
-a job's token each read one repository, so a module of another private
-repository needs a credential that reads it. All three need a GitProvider
-that reaches GitHub to be tested end to end.
 
 ## What step 1 found
 
@@ -380,6 +283,103 @@ that `branch=<tag>` selects the push of a tag. And no Standard's workflow
 has run on GitHub Actions: they render, parse and name the check the row
 requires, and whether a job with an empty `container:` reaches its first
 step, to say which variable is missing, is for step 9's run to show.
+
+## What step 7 found
+
+The Registry contract passes against the fake, with nothing in `Cannot`.
+It has two subtests, both of Go modules. It has none for images, npm or
+PyPI, so those are covered by the adapter's own tests against the fake's
+registries (`TestImagesOnGitHub`, `TestPackagesOnGitHub`), as Gitea's are
+by its own, and nothing of PyPI is in `Cannot`.
+
+- **Where things are.** `Repository` names, for an owner on github.com:
+  images at `ghcr.io/<owner>`, npm at `https://npm.pkg.github.com/` under
+  the scope `@<owner>`, no Go proxy, and a Python index only when
+  `spec.packages` names one. On an Enterprise Server the two registries
+  are `containers.<host>` and `https://npm.<host>/`, which is how GitHub
+  names them with subdomain isolation, and the container registry needs
+  that anyway; an instance without it gives `spec.packages.npm.registry`.
+- **The scope.** GitHub's npm registry takes a package under its owner's
+  scope and no other, in lower case. So the scope defaults to `@<owner>`
+  there, and a `spec.packages.npm.scope` that is another fails the
+  provider with the reason, before anything is scaffolded under a name
+  that could never be published. A registry that is not GitHub's takes any
+  scope, and defaults to `@theos` as on every host.
+- **Images** go through `internal/oci`: push the release's `*.oci.tar`,
+  resolve a tag, copy by digest. GitHub links an image to a repository by
+  the image's own `org.opencontainers.image.source` label and has no call
+  that links one after the push, so the link is the build's to make:
+  whatever builds a release's image on GitHub sets the label.
+- **npm**: the publish document, with the operator's token or
+  `spec.packages.npm`'s. A manifest that names no repository gets this
+  one in the document, which is what links the package.
+- **PyPI**: published where `spec.packages.pypi` says. Without one a wheel
+  or an sdist is `Invalid`, with the reason that there is no index.
+- **Go modules: nothing is uploaded.** GitHub has no module proxy, and `go`
+  reads a module of github.com from its repository at the tag, so the tag
+  is the publication. `PublishGoModule` checks what `go` would need: a
+  `go.mod` at the tag, a version the path allows, and a path that is the
+  repository's own (`github.com/<owner>/<name>`), since that is the only
+  place `go` looks. It answers `Exists`, never `Published`. The contract's
+  module subtest learned both: the path a host wants (`ModulePath`) and a
+  host with nothing to upload (`NoUpload`). The path has no port: an
+  Enterprise Server on a port of its own can serve no Go module.
+- **A run fetches them with `GOPRIVATE`.** `ports.Repository.GoPrivate` is
+  the prefix of the owner's module paths on a host that serves modules
+  from repositories, `github.com/<owner>`. A sandbox there gets
+  `GOPRIVATE` for it and no proxy of ours, and `go` fetches with the Git
+  credential the agent already has in `~/.netrc`. A host with a module
+  proxy keeps the loopback proxy (`TestBuildSandboxGoModules`).
+- **A GitHub job finds the owner's packages.** The check workflow of the
+  five Standards whose check installs packages has the step step 5 left
+  out, the same in all five: Git's credential and `GOPRIVATE` for the
+  owner's Go modules, `~/.npmrc` for the owner's scope on GitHub's
+  registry, and a login for a Python index only when the GitProvider names
+  one. The job's token may read packages (`packages: read`) and goes to
+  GitHub alone: a registry the GitProvider names gets the GitProvider's
+  token for it, or none. `TestGitHubJobsFindTheOwnersPackages` runs the
+  step's script as a job would and reads back what it wrote. The five
+  moved a minor version; what they render for Gitea Actions is unchanged.
+- **The publishing code is shared.** The reading of a release's package
+  files and the npm and PyPI protocols moved out of the Gitea adapter into
+  `internal/adapters/packages`, as `git.ReadArchive` did in step 2. Each
+  adapter reads the release and signs its own requests. `.golangci.yml`
+  lists the adapters that stay out of Kubernetes by name, and the package
+  is added to it.
+- **GitHub's registries take a classic personal access token and no
+  other** kind of a person's token, and an installation token has no
+  permission for packages. So the operator's token must be a classic one
+  with `write:packages` for anything to be published, which narrows what
+  steps 2 and 6 asked of it: the guide (step 9) says so, and names
+  `spec.packages.npm`'s own token as the way to publish with another.
+- **The operator's token goes to GitHub's own registries only.** A
+  registry or an index the GitProvider names gets the token the
+  GitProvider names for it, or none.
+- **Left to step 8, and why.** A Framework's `go.mod` says
+  `theos.local/<project>/<container>` today, which `PublishGoModule`
+  reports `Invalid` on GitHub: the path must be the repository's, a
+  scaffold value as the npm scope is. `DecideModule` must take a module
+  its host serves as published, where it asks a public proxy today. An
+  agent's token and a job's token each read one repository, so a module or
+  a package of another private repository needs a credential that reads
+  it. And the Actions variables and secrets that carry a GitProvider's own
+  registry to a job are set only through `ports.OwnerActions`, which the
+  adapter gets in step 8. All four need a GitProvider that reaches GitHub
+  to be tested end to end.
+
+The fake encodes `working-with-the-npm-registry` (a scoped name, in lower
+case, under an account's scope; a Bearer token),
+`working-with-the-container-registry` (Basic auth with a token as the
+password; an Enterprise Server's registry at `containers.<host>`) and
+`repos/contents` (a file at a ref, its bytes for the raw media type). Not
+verified against github.com: that the container registry doesn't check the
+user name sent with the token; that the npm registry answers 404 for a
+package it doesn't have, 409 for a version it has and 200 or 201 for a
+publish; that it links a package by the `repository` of the publish
+document where the tarball's own manifest names none; that the contents
+call answers a file's bytes at a commit when asked for the raw media type;
+and that a job's token with `packages: read` installs a package linked to
+its repository. No Standard's workflow has run on GitHub Actions.
 
 ## What step 6 found
 
