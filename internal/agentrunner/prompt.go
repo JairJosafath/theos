@@ -218,6 +218,16 @@ reason. Write that line only when something blocks the issue; never write it to
 say nothing does. Never stop without saying why: a round with no change and no
 such line is wasted.
 `, model.BlockedPrefix)
+	if takesNothing(job) {
+		fmt.Fprintf(&b, `
+If the issue needs no change at all (what it asks for is already so, or there
+is nothing to update), change nothing and end your summary with a line %q
+followed by why, in at most five sentences that name what you checked. The
+issue is then closed with your words and nobody reviews them, so write that
+line only when you are sure. When part of the issue is done and part is not,
+do the part that is not.
+`, model.NothingPrefix)
+	}
 	if job.Issue > 0 {
 		met := "met and tested"
 		if gated {
@@ -348,6 +358,14 @@ End your reply with one line of JSON and nothing after it:
 {"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "...", "criteria": ["..."]}], "open": [{"criterion": "...", "why": "..."}], "risk": "high" or "", "riskReason": "..."}
 `)
 	return b.String()
+}
+
+// takesNothing reports whether the job's Task may end on "nothing to do"
+// (#72): the build of an issue, no spec and no Standard change, with no
+// pull request yet and not resumed after a Standard change.
+func takesNothing(job Job) bool {
+	return job.Role == RoleImplement && job.Issue > 0 && job.SpecPath == "" && len(job.AllowedPaths) == 0 &&
+		job.PullRequest == 0 && !job.Resumed
 }
 
 // TriagePrompt is what the triager is asked to do: decide what the issue needs

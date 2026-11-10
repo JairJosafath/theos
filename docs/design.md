@@ -385,8 +385,19 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
   on the base in the sandbox only is the workspace's, which the prompts say.
 - **Blocked is said, not guessed.** An implementer that can't do the issue
   yet, or not in the sandbox, changes nothing and ends with `Blocked: <why>`;
-  the Task fails at once, reason `Blocked`, with those words on the issue. A round
-  with no change and no such line fails with the end of the agent's summary.
+  the Task fails at once, reason `Blocked`, with those words on the issue.
+- **"Nothing to do" is a result.** An implementer that finds its issue
+  needs no change (what it asks for is already so, or a scheduled update
+  found nothing to update) changes nothing and ends with
+  `Nothing to do: <why>`. The Task ends done, phase `Merged` with reason
+  `NothingToDo`, with no pull request, no review and no merge; the operator
+  closes the issue with the agent's words and how to reopen it. Nobody
+  reviews those words, which the prompt says. Only the build of an issue
+  ends this way: not a spec, a Standard change, a Benchmark's Task, or a
+  Task that has a pull request, whose branch the reviewer judges as it is.
+  Such a Task merged nothing: no release waits for its merge commit,
+  `theos_tasks_merged` doesn't count it, and no Scorer judges it. A round
+  with no change and neither line fails with the end of the agent's summary.
   When the check fails on the base too, the implementer is sent back once
   first, in a fresh session whose prompt is the round's own, the issue
   included, then its first answer and the base's failure (#2037). A note
@@ -1012,9 +1023,17 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   zone it can't load, the 30th of February) leaves the Crew's `Scheduled`
   condition False, reason `InvalidSchedule`, naming it; the other schedules
   and the Crew's issues go on. The Crew is requeued for its next due time,
-  whatever the host's events stretch its poll to. Not yet: a run that finds
-  nothing to do still fails its Task instead of closing the issue as done,
-  and nothing runs a schedule now by hand.
+  whatever the host's events stretch its poll to. A run that finds nothing
+  to do closes its issue as done (*Agents and Tasks*, "Nothing to do" is a
+  result), so a quiet week asks nobody anything. A person runs a schedule
+  now with the Crew's `theos.factory.io/run-schedule` annotation, set to the
+  schedule's name: its issue is filed at once, dated today, its next time
+  stays, and the operator takes the annotation off. The two rules hold for
+  a run asked for as for a due one: while an issue of the schedule is open,
+  or the Crew is paused, the run waits, the annotation stays, and the
+  `Scheduled` condition's message says which. A name that is none of the
+  Crew's schedules leaves `Scheduled` False, reason `UnknownSchedule`,
+  naming the ones it has.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
@@ -1360,6 +1379,7 @@ other path, method, content type or field, and by RBAC for anything else:
 | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.pauseRuns`, `spec.autopilot`, `spec.parallel`, `spec.releases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.pauseRuns`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` |
+| Crew | `PATCH`, merge patch | annotation `theos.factory.io/run-schedule` |
 | Container | `PATCH`, merge patch | annotations `theos.factory.io/retry`, `theos.factory.io/standard-take`, `theos.factory.io/standard-keep` |
 | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` and a `test` of the approval the page showed: its old `approved`, or, when it had none, the whole entry as read (JSON Patch can't test a missing member), so a stale page fails, and says it is out of date, rather than overwrite a newer approval, a first one too |
 | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |

@@ -97,6 +97,9 @@ type RunResult struct {
 	// Blocked is the agent's blocked note (BlockedNote): it can't start the
 	// issue, and says why. The Task fails at once.
 	Blocked string
+	// Nothing is why the agent found the issue needs no change (NothingNote),
+	// with no change made. The Task ends done and its issue closes.
+	Nothing string
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []FollowUp
 	// Open are the criteria an approved review accepted as left open: they need
@@ -1159,6 +1162,10 @@ const (
 	// ActionDoneByStandardChange ends a resumed Task whose branch has nothing
 	// beyond main: the Standard change did the whole issue.
 	ActionDoneByStandardChange TaskAction = "DoneByStandardChange"
+	// ActionNothingToDo ends a Task whose agent found its issue needs no
+	// change: the operator closes the issue with the agent's reason, which is
+	// the step's Feedback, and no reviewer runs.
+	ActionNothingToDo TaskAction = "NothingToDo"
 	// ActionResolveConflicts sends an approved change back to the implementer, in
 	// the same round, to merge main and resolve the conflicts.
 	ActionResolveConflicts TaskAction = "ResolveConflicts"
@@ -1667,6 +1674,13 @@ func implementingStep(f TaskFacts) TaskStep {
 	case f.Run.Result.Blocked != "" && !f.Plan && !f.Triage && !f.Score:
 		// The agent says the issue can't start yet: more rounds won't change that.
 		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Message: BlockedMessage(f.Run.Result.Blocked)}
+	case f.Run.Result.Nothing != "" && !takesNothing(f):
+		// Only an issue's own build ends on "nothing to do": the runner says it
+		// of no other, and a round that changed nothing has failed.
+		return roundFailed(f, NoChangeNoReason)
+	case f.Run.Result.Nothing != "":
+		return TaskStep{Action: ActionNothingToDo, Feedback: f.Run.Result.Nothing,
+			Message: NothingMessage(f.Run.Result.Nothing)}
 	case IsScopeRefusal(f.Run.Result.Error) && IsScopeRefusal(f.Feedback):
 		// Turned back for scope twice in a row: the change can't be made here.
 		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Feedback: f.Run.Result.Error,
@@ -1681,6 +1695,13 @@ func implementingStep(f TaskFacts) TaskStep {
 		return scoredStep(f)
 	}
 	return implementedStep(f)
+}
+
+// takesNothing reports whether the Task may end on its agent's "nothing to
+// do" (#72): an Implement Task, no spec and no Standard change, whose
+// approved change has something to merge or whose issue was wrong.
+func takesNothing(f TaskFacts) bool {
+	return !f.Plan && !f.Triage && !f.Score && !f.Spec && len(f.AllowedPaths) == 0
 }
 
 // reviewingStep decides what follows in the Reviewing phase.

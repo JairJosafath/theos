@@ -503,6 +503,86 @@ func TestRunImplementWithoutCommitOnAPullRequest(t *testing.T) {
 	}
 }
 
+// noteEditAgent changes a file and ends its summary with a note.
+type noteEditAgent struct{ note string }
+
+func (a noteEditAgent) Run(_ context.Context, dir, _ string) (string, error) {
+	return "Changed the README.\n" + a.note, os.WriteFile(filepath.Join(dir, "README.md"), []byte("changed\n"), 0o644)
+}
+
+// #72: an implementer that changes nothing and says "Nothing to do: <why>"
+// reports that as its result, where a Task may end on it; anywhere else a
+// round with no change fails as before.
+func TestRunImplementNothingToDo(t *testing.T) {
+	ctx := context.Background()
+	const summary = "Ran go list -m -u all.\nNothing to do: every module is at its newest version."
+	issueJob := func(t *testing.T, url string) Job {
+		job := testJob(t, url, RoleImplement, 1)
+		job.Issue = 4
+		return job
+	}
+	t.Run("an issue's build that changed nothing says why, and pushes nothing", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		got := Run(ctx, issueJob(t, url), summaryAgent{summary}, t.TempDir())
+		if got.Error != "" || got.Commit != "" || got.Nothing != "every module is at its newest version." {
+			t.Errorf("result = %+v, want nothing to do and no error", got)
+		}
+		if branchHead(t, url, "task/add-crop") != "" {
+			t.Error("a branch was pushed for no change")
+		}
+	})
+	t.Run("a change wins over the line: the round goes on as any", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		got := Run(ctx, issueJob(t, url), noteEditAgent{"Nothing to do: it was fine already."}, t.TempDir())
+		if got.Error != "" || got.Commit == "" || got.Nothing != "" {
+			t.Errorf("result = %+v, want the change's commit and no note", got)
+		}
+	})
+	t.Run("a round that says only that it did nothing still fails", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		got := Run(ctx, issueJob(t, url), summaryAgent{"Nothing to do."}, t.TempDir())
+		if got.Nothing != "" || got.Error != model.NoChangeError("Nothing to do.") ||
+			!strings.Contains(got.Error, `"Nothing to do: ..."`) {
+			t.Errorf("result = %+v, want the no-change error that names the line", got)
+		}
+	})
+	for name, change := range map[string]func(*Job){
+		"a Task with no issue":            func(j *Job) { j.Issue = 0 },
+		"a Standard change":               func(j *Job) { j.AllowedPaths = []string{"Makefile"} },
+		"a spec":                          func(j *Job) { j.SpecPath = "docs/specs/4.md" },
+		"a Task resumed after its change": func(j *Job) { j.Resumed = true },
+	} {
+		job := issueJob(t, "https://git.example/webshop/orders-api.git")
+		change(&job)
+		if takesNothing(job) {
+			t.Errorf("%s may end on nothing to do", name)
+		}
+		if strings.Contains(ImplementPrompt(job, Workspace{}), model.NothingPrefix) {
+			t.Errorf("%s is told of the %q line", name, model.NothingPrefix)
+		}
+	}
+	prompt := ImplementPrompt(issueJob(t, "https://git.example/webshop/orders-api.git"), Workspace{})
+	for _, want := range []string{`end your summary with a line "Nothing to do:"`, "nobody reviews them",
+		"do the part that is not"} {
+		if !strings.Contains(strings.Join(strings.Fields(prompt), " "), want) {
+			t.Errorf("the implementer's prompt lacks %q", want)
+		}
+	}
+	t.Run("the stand-in finds nothing for an issue that asks", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		got := Run(ctx, issueJob(t, url), FakeAgent{Role: RoleImplement, Round: 1,
+			Goal: "Update the modules\n\nStand-in: nothing to do"}, t.TempDir())
+		if got.Error != "" || got.Nothing != "the stand-in was asked to find nothing." {
+			t.Errorf("result = %+v, want the stand-in's nothing to do", got)
+		}
+	})
+	var back Result
+	long := Result{Role: RoleImplement, Summary: strings.Repeat("s", 3000), Nothing: strings.Repeat("word ", 400)}
+	if data := long.Encode(); len(data) > MaxResultBytes || json.Unmarshal(data, &back) != nil || back.Nothing == "" {
+		t.Errorf("Encode() is %d bytes with note %q; want it to fit and keep a note", len(data), back.Nothing)
+	}
+}
+
 func TestRunImplementFailures(t *testing.T) {
 	ctx := context.Background()
 	t.Run("no change", func(t *testing.T) {
@@ -511,7 +591,7 @@ func TestRunImplementFailures(t *testing.T) {
 		// The handed-back issue says what the agent did say (#602).
 		if got.Error != model.NoChangeError("Nothing to do.") ||
 			!strings.Contains(got.Error, `its summary ends: "Nothing to do."`) ||
-			!strings.Contains(got.Error, `"Blocked: ..."`) {
+			!strings.Contains(got.Error, `"Blocked: ..."`) || got.Nothing != "" {
 			t.Errorf("Error = %q", got.Error)
 		}
 		if branchHead(t, url, "task/add-crop") != "" {

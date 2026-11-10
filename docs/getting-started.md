@@ -1050,13 +1050,20 @@ spec:
 is that Crew. When a schedule comes due, the Crew files an issue in the
 repository, `dependencies, 2026-11-09`, labelled `kind/schedule` and
 `status/ready`, and works it like any other: a Task, CI, the reviewer, a
-merge.
+merge. A week with nothing to update is no failure: the agent says
+`Nothing to do:` and why, and the Crew closes the issue with those words,
+with no pull request and nothing for you to look at.
 
 - **One at a time.** While the issue a schedule filed is open, its next time
   is passed over. A schedule that is slower than its interval never piles up.
 - **Nothing is made up for.** A new schedule waits for its next time, and
   after an outage one issue is filed, not one per time missed.
 - **Paused means paused.** A paused Crew files nothing.
+- **Run one now.** *Run now* beside a schedule on the Crew's page files its
+  issue at once; so does
+  `kubectl annotate crew orders-cli theos.factory.io/run-schedule=dependencies`.
+  The same two rules hold: while the schedule's last issue is open, or the
+  Crew is paused, the run waits and the page says which.
 - **Where it stands:** `kubectl get crew orders-cli -o jsonpath='{.status.schedules}'`
   shows each schedule's next time and the last issue it filed, and the
   `Scheduled` condition says why a schedule can't be used: `InvalidSchedule`
