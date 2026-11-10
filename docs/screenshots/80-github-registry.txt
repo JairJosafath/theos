@@ -1,0 +1,67 @@
+# #80, part 1: the Registry port on GitHub. 2026-11-10, on main at d50de838 plus the step (f3422e21).
+# 1. The Registry contract on the fake GitHub, with nothing in Cannot (a module is served from its repository: its path is the repository's and nothing is uploaded); where packages are and the npm scope rule; images; Go modules; a release's packages:
+#    go test ./internal/adapters/github -v -run 'TestRegistryContract|TestPackagePlaces|TestImagesOnGitHub|TestGoModulesOnGitHub|TestPackagesOnGitHub'
+--- PASS: TestRegistryContract (0.17s)
+    --- PASS: TestRegistryContract/has_no_Go_module_to_publish_without_a_go.mod (0.09s)
+    --- PASS: TestRegistryContract/publishes_a_Go_module_once (0.07s)
+--- PASS: TestPackagePlaces (0.00s)
+    --- PASS: TestPackagePlaces/github.com:_ghcr.io,_npm.pkg.github.com_and_the_owner's_scope (0.00s)
+    --- PASS: TestPackagePlaces/an_owner_in_upper_case_has_a_scope_and_an_image_path_in_lower_case (0.00s)
+    --- PASS: TestPackagePlaces/an_Enterprise_Server:_its_registries_at_subdomains (0.00s)
+    --- PASS: TestPackagePlaces/the_owner's_scope,_set,_is_the_one_GitHub_takes (0.00s)
+    --- PASS: TestPackagePlaces/another_scope_on_GitHub's_registry_is_refused,_naming_both (0.00s)
+    --- PASS: TestPackagePlaces/GitHub's_registry_named_outright_is_still_GitHub's (0.00s)
+    --- PASS: TestPackagePlaces/another_registry_takes_any_scope (0.00s)
+    --- PASS: TestPackagePlaces/another_registry_with_no_scope_set_has_the_factory's (0.00s)
+    --- PASS: TestPackagePlaces/an_Enterprise_Server_without_subdomains_names_its_npm_registry,_and_it_is_not_GitHub's_own (0.00s)
+    --- PASS: TestPackagePlaces/the_Python_index_is_the_one_the_GitProvider_names (0.00s)
+--- PASS: TestImagesOnGitHub (0.19s)
+    --- PASS: TestImagesOnGitHub/copies_the_image_to_another_registry_by_its_digest (0.01s)
+    --- PASS: TestImagesOnGitHub/a_second_archive_on_the_release_is_an_outcome_that_names_both (0.00s)
+    --- PASS: TestImagesOnGitHub/an_installation_token_is_no_credential_for_the_registry (0.11s)
+--- PASS: TestGoModulesOnGitHub (0.50s)
+    --- PASS: TestGoModulesOnGitHub/the_repository's_own_path_is_fetchable (0.06s)
+    --- PASS: TestGoModulesOnGitHub/from_v2_on_the_path_ends_in_the_major (0.06s)
+    --- PASS: TestGoModulesOnGitHub/no_go.mod (0.07s)
+    --- PASS: TestGoModulesOnGitHub/a_factory_path,_which_no_host_serves (0.08s)
+    --- PASS: TestGoModulesOnGitHub/another_repository's_path (0.07s)
+    --- PASS: TestGoModulesOnGitHub/a_module_below_the_root (0.05s)
+    --- PASS: TestGoModulesOnGitHub/a_v2_tag_on_a_path_without_the_major (0.05s)
+    --- PASS: TestGoModulesOnGitHub/a_tag_that_is_no_canonical_version (0.06s)
+--- PASS: TestPackagesOnGitHub (0.19s)
+    --- PASS: TestPackagesOnGitHub/npm_packages_are_published_once,_under_the_owner's_scope,_naming_the_repository (0.06s)
+    --- PASS: TestPackagesOnGitHub/a_Python_package_has_nowhere_to_go_until_the_GitProvider_names_an_index (0.10s)
+    --- PASS: TestPackagesOnGitHub/a_registry_that_is_not_GitHub's_never_sees_the_operator's_token (0.03s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/adapters/github	1.067s
+# 2. The package publishing moved to internal/adapters/packages: the Gitea adapter's publishing tests, unchanged, and the moved functions' own:
+#    go test ./internal/adapters/gitea ./internal/adapters/packages -v -run 'TestPublishReleasePackages|TestRepositoryPackageRegistries|TestSdistDir|TestNormalize'
+--- PASS: TestPublishReleasePackages (0.01s)
+--- PASS: TestPublishReleasePackagesUploads (0.01s)
+--- PASS: TestPublishReleasePackagesOutcomes (0.02s)
+--- PASS: TestPublishReleasePackagesCustomRegistry (0.02s)
+--- PASS: TestRepositoryPackageRegistries (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	0.063s
+--- PASS: TestSdistDir (0.00s)
+--- PASS: TestNormalizePEP440 (0.00s)
+--- PASS: TestNormalizeProjectName (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/adapters/packages	0.005s
+# 3. Every adapter and the ports (go test ./internal/adapters/... ./internal/ports/...):
+ok  	github.com/JairJosafath/theos/internal/adapters/argocd	0.247s
+ok  	github.com/JairJosafath/theos/internal/adapters/awsenv	0.330s
+ok  	github.com/JairJosafath/theos/internal/adapters/cloudformation	0.246s
+ok  	github.com/JairJosafath/theos/internal/adapters/git	1.156s
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	2.776s
+ok  	github.com/JairJosafath/theos/internal/adapters/github	13.659s
+?   	github.com/JairJosafath/theos/internal/adapters/github/githubtest	[no test files]
+ok  	github.com/JairJosafath/theos/internal/adapters/gitlab	0.086s
+?   	github.com/JairJosafath/theos/internal/adapters/gitlab/gitlabtest	[no test files]
+ok  	github.com/JairJosafath/theos/internal/adapters/localenv	0.021s
+ok  	github.com/JairJosafath/theos/internal/adapters/matrix	0.166s
+?   	github.com/JairJosafath/theos/internal/adapters/matrix/matrixtest	[no test files]
+ok  	github.com/JairJosafath/theos/internal/adapters/packages	0.005s
+ok  	github.com/JairJosafath/theos/internal/ports	0.077s
+?   	github.com/JairJosafath/theos/internal/ports/contract	[no test files]
+ok  	github.com/JairJosafath/theos/internal/ports/fake	0.011s
