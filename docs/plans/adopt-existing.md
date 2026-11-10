@@ -107,7 +107,7 @@ Each step is its own issue, names #60 and lands with `make check`.
 | 3. `theos-session adopt` (done) | #96 | 2 | the detector's table tests; the YAML it prints passes `make validate-yaml` |
 | 4. A Standard that differs arrives as a pull request | #97 | 1 | envtest: adopting with a Standard whose files differ opens the pull request and the Container is Ready |
 | 5. The Crew's first issue: AGENTS.md and what it found | #98 | 2 | envtest: one `kind/onboarding` issue per adopted Container, never a second |
-| 6. The guide's second page | #99 | 2, 3 | "Bring a repository you already have" follows the quickstart, and follows what the specs show |
+| 6. The guide's second page (done) | #99 | 2, 3 | "Bring a repository you already have" follows the quickstart, and follows what the specs show |
 
 ## What step 1 found
 
@@ -175,6 +175,24 @@ Each step is its own issue, names #60 and lands with `make check`.
 - The proposals of eight repositories are files under
   `config/samples/adopt/proposed/`, which `make validate-yaml` holds to the
   CRDs; the table test fails when the detector's output leaves them.
+
+## What step 6 found
+
+- The page's order is the one the operator gives for free: apply the model,
+  which has it make the empty repository in the project's organization and
+  fail `NothingToAdopt`; push the history; retry. No call to the Git host's
+  API is needed to make the repository, and a spec holds the order.
+- The hard part of an adoption on the factory's own Git host is not the
+  model, it is CI: a workflow written for another host's runners
+  (`runs-on: ubuntu-latest`) never runs here. The page says so where the
+  `Protected` condition does, and what to do; it is the strongest reason
+  for `provider: github` (#57), where a repository's CI runs where it
+  always has.
+- The page says what no test holds: an adoption on a real cluster, and
+  whether a person's workflow runs on the factory's runner images.
+- It is a page of its own, `docs/adopt.md`, after the quickstart in README
+  and at the head of getting started's "Next"; cutting the guide itself
+  into pages is #53's.
 
 ## Done when
 

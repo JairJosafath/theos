@@ -167,6 +167,28 @@ var _ = Describe("Container adoption without the catalog", func() {
 		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1))
 	})
 
+	// The order docs/adopt.md gives (#99): the model first, which has the
+	// operator make the repository in the project's organization; then the
+	// history; then a retry.
+	It("fails NothingToAdopt while the repository is empty, and adopts it once its history is pushed", func() {
+		ns := newProjectNamespace()
+		mustCreate(newSystem(ns, "webshop-core"), createBareAdoption(ns, nil))
+
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)).To(And(
+			HaveField("Reason", c4v1beta1.ReasonNothingToAdopt),
+			HaveField("Message", ContainSubstring("has no commits to adopt"))))
+		Expect(container.Status.RepositoryURL).NotTo(BeEmpty(), "the operator made the repository to push to")
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(BeEmpty())
+
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", rustService(ns))
+		Expect(patch(container, func() {
+			container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: "after-push"}
+		})).To(Succeed())
+		container = eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1), "the pushed history, and nothing of the factory's")
+	})
+
 	// docs/design.md has said so since #1888; no spec held it.
 	It("adopts with a Framework and no Standard on the identity alone", func() {
 		ns := newProjectNamespace()
