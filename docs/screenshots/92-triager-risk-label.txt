@@ -1,0 +1,25 @@
+# #92, part 3: the triager marks an issue risk/high (2026-11-10)
+#
+# The model: the risk is "high" or nothing, the plan of what the operator
+# does to the issue, and the stand-in triager.
+$ go test -v ./internal/model -run "TestNormalTriageRisk|TestPlanTriage|TestStandInTriage"
+--- PASS: TestNormalTriageRisk (0.00s)
+--- PASS: TestPlanTriage (0.00s)
+--- PASS: TestStandInTriage (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.024s
+
+# The runner: the prompt says when, and the decision keeps the word.
+$ go test -v ./internal/agentrunner -run TestTriageRisk
+--- PASS: TestTriageRisk (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/agentrunner	0.008s
+
+# envtest: the operator labels the issue, and the Crew's rule for the label
+# asks for a person on the issue's change.
+$ go test -v ./internal/controller -run "^TestControllers$" -ginkgo.focus "high-risk"
+Ran 1 of 774 Specs in 9.309 seconds
+SUCCESS! -- 1 Passed | 0 Failed | 0 Pending | 773 Skipped
+--- PASS: TestControllers (9.32s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/controller	9.362s

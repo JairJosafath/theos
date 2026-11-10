@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-// The rules of docs/plans/approval-rules.md's example (#62): two folders and
+// The rules of docs/plans/done/approval-rules.md's example (#62): two folders and
 // a label wait for a person, as does a big change, and docs merge on CI.
 var approvalExample = []ApprovalRule{
 	{Paths: []string{"migrations/", "internal/auth/"}, Require: ApprovalPerson},
@@ -302,5 +302,47 @@ func TestApprovalSteps(t *testing.T) {
 		if !strings.Contains(wait, want) {
 			t.Errorf("ChangeWaitMessage() = %q, want %q in it", wait, want)
 		}
+	}
+}
+
+// #92: the reviewer may raise what a change needs, never lower it.
+func TestRaisedByReviewer(t *testing.T) {
+	reviewer := ApprovalNeed{Require: ApprovalReviewer, Why: "no approval rule matches app.py"}
+	person := ApprovalNeed{Require: ApprovalPerson, Rule: 1, Why: "approval rule 1 (paths migrations/) asks for a person"}
+	none := ApprovalNeed{Require: ApprovalNone, Rule: 2, Why: "approval rule 2 (paths docs/) asks for no review"}
+	tests := []struct {
+		name string
+		need ApprovalNeed
+		risk string
+		want ApprovalNeed
+	}{
+		{"a change left to the reviewer waits for a person", reviewer, "It drops a column.", ApprovalNeed{
+			Require: ApprovalPerson, Raised: true, Why: `the reviewer called the change high-risk ("It drops a column")`}},
+		{"also by a rule that asks for the reviewer", ApprovalNeed{Require: ApprovalReviewer, Rule: 3, Why: "rule 3"},
+			" It moves money ", ApprovalNeed{Require: ApprovalPerson, Raised: true,
+				Why: `the reviewer called the change high-risk ("It moves money")`}},
+		{"a reviewer that says nothing raises nothing", reviewer, "", reviewer},
+		{"nor one that says only spaces", reviewer, "  ", reviewer},
+		{"a change that needs a person keeps its rule", person, "It is a migration.", person},
+		{"a change the rules ask no review of has no reviewer to raise it", none, "It rewrites the docs.", none},
+		{"a Crew without rules has no person in the loop", ApprovalNeed{}, "It drops a column.", ApprovalNeed{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, raised := RaisedByReviewer(tt.need, tt.risk)
+			if got != tt.want || raised != got.Raised {
+				t.Errorf("RaisedByReviewer() = %+v, %v; want %+v", got, raised, tt.want)
+			}
+		})
+	}
+	// What the reviewer raised waits for a person as a rule's answer does,
+	// and the merge's note says whose word it was.
+	raised, _ := RaisedByReviewer(reviewer, "It drops a column.")
+	if !WaitsForPerson(TaskFacts{Approval: raised}) {
+		t.Error("a raised change does not wait for a person")
+	}
+	if got, want := ApprovalNote(raised, "ada", true, true),
+		`ada approved it in chat, because the reviewer called the change high-risk ("It drops a column").`; got != want {
+		t.Errorf("ApprovalNote() = %q, want %q", got, want)
 	}
 }

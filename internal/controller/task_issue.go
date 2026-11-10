@@ -246,7 +246,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 	comment := fmt.Sprintf("Merged in %s after %d %s.", status.PullRequestURL, status.Round, plural(int(status.Round), "round", "rounds"))
 	if a := status.Approval; a != nil {
 		// Who let it in, where the Crew's approval rules decided that (#62).
-		if note := model.ApprovalNote(model.ApprovalNeed{Require: string(a.Require), Why: a.Reason}, a.ApprovedBy,
+		if note := model.ApprovalNote(approvalNeed(a), a.ApprovedBy,
 			a.ApprovedInChat, status.Review != nil); note != "" {
 			comment += " " + note
 		}
@@ -372,7 +372,7 @@ func (r *TaskReconciler) gitCall(ctx context.Context, call func(context.Context)
 
 // issueLabels are the factory's issue labels, for the Git host.
 func issueLabels() []ports.Label {
-	labels := append(model.StatusLabels(), model.UrgentLabel())
+	labels := append(model.StatusLabels(), model.UrgentLabel(), model.RiskLabel())
 	out := make([]ports.Label, 0, len(labels))
 	for _, l := range labels {
 		out = append(out, ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})

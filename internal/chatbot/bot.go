@@ -341,6 +341,10 @@ func taskView(t *c4v1beta1.Task) model.ChatTaskView {
 	if s.Spec != nil {
 		v.SpecApproval, v.ApprovedBy, v.ApprovedInChat = string(s.Spec.Approval), s.Spec.ApprovedBy, s.Spec.ApprovedInChat
 	}
+	if a := s.Approval; a != nil && a.Require == c4v1beta1.ApprovalPerson {
+		// A change its Crew's approval rules hold for a person (#92).
+		v.ApprovalReason, v.ApprovedBy, v.ApprovedInChat = a.Reason, a.ApprovedBy, a.ApprovedInChat
+	}
 	if d := s.Triage; d != nil {
 		v.Triage = &model.ChatTriageView{Decision: d.Decision, Reason: d.Reason, Question: d.Question,
 			Duplicate: int(d.Duplicate), Applied: d.Applied, AnsweredBy: d.AnsweredBy}

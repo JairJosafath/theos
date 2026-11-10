@@ -439,6 +439,13 @@ spec:
                       its checks pass.
                     maxLength: 64
                     type: string
+                  raisedByReviewer:
+                    description: |-
+                      raisedByReviewer says the reviewer, and no rule, asked for the person:
+                      it approved the change and called it high-risk, and reason has its
+                      words. The rules left the change to the reviewer; a reviewer may raise
+                      what a change needs, never lower it.
+                    type: boolean
                   reason:
                     description: reason says which rule asks it, and for which file.
                     maxLength: 1024
@@ -1267,6 +1274,14 @@ spec:
                   reason:
                     description: reason is why, in the triager's words.
                     maxLength: 2000
+                    type: string
+                  risk:
+                    description: |-
+                      risk is "high" when the triager called the issue's change costly or
+                      hard to undo if done wrong. The operator labelled the issue risk/high
+                      for it, which the Crew's approval rules can name.
+                    enum:
+                    - high
                     type: string
                 required:
                 - decision

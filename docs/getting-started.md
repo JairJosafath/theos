@@ -986,7 +986,8 @@ approval rule 2 (every change) asks for a person
 
 On the Git host, **approve** the pull request and the Crew merges it;
 **request changes** and the implementer gets another round with your words;
-close it and the Task ends. While it waits it holds nothing up: the Crew
+close it and the Task ends. With a Chat, the change has a thread in its
+`reviews` room: say `approve` there, or `changes: <what to change>`. While it waits it holds nothing up: the Crew
 goes on with the next issue.
 
 Widen as you gain trust. A common second step is the other way round, with
@@ -1003,6 +1004,17 @@ the Crew merging by itself except where it hurts:
     - paths: ["docs/", "*.md"]
       require: None
 ```
+
+`risk/high` is one of the factory's own labels. A Crew with a triager has it
+put on an issue whose change, done wrong, would be costly or hard to undo (a
+data migration, who may sign in, money), and you can put it on any issue
+yourself. It does nothing until a rule names it.
+
+The reviewer can ask for you too. When it approves a change that no rule
+holds and finds it high-risk all the same, the change waits for you with the
+reviewer's reason, as if a rule had asked. It never works the other way: no
+agent lets a change past a rule of yours. A Crew with no `approval` at all
+merges on its reviewer's word, as before.
 
 [config/samples/first-app/crew-approval.yaml](../config/samples/first-app/crew-approval.yaml)
 is a Crew with such rules. Changing the rules takes effect at once, also for

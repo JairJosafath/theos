@@ -26,9 +26,10 @@ const rows = (html: string, caption: string) => {
 describe('How well it works (measure-and-improve, step 3)', () => {
   it('rows every merged Task and each configuration its implementer ran on, the unrecorded last', () => {
     expect(rows(panel(), 'by their implementer')).toEqual([
-      'All 3 67% 67% 13 min 16 min 22 min $2.21',
-      'claude-code · claude-sonnet-5-5 2 50% 50% 13 min 16 min 27 min $2.16',
-      'Not recorded 1 100% 100% 9 min 12 min 15 min $2.21',
+      // Merged, autonomy, round 1, a person approved (#92: none of these was held), the three times, cost.
+      'All 3 67% 67% 0% 13 min 16 min 22 min $2.21',
+      'claude-code · claude-sonnet-5-5 2 50% 50% 0% 13 min 16 min 27 min $2.16',
+      'Not recorded 1 100% 100% 0% 9 min 12 min 15 min $2.21',
     ])
   })
 

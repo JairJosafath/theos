@@ -17,6 +17,7 @@ limitations under the License.
 package model
 
 import (
+	"maps"
 	"reflect"
 	"testing"
 	"time"
@@ -94,9 +95,9 @@ func TestFactoryMetrics(t *testing.T) {
 			}},
 		{name: "merged Tasks by who wrote the code: no person's commit, a person's, not read", family: MetricTasksMerged,
 			want: []MetricSample{
-				{Values: []string{"webshop", "orders-api", "Implement", CodeFactory}, Value: 1},
-				{Values: []string{"webshop", "orders-api", "Implement", CodePerson}, Value: 1},
-				{Values: []string{"webshop", "storefront", "Implement", CodeUnknown}, Value: 1},
+				{Values: []string{"webshop", "orders-api", "Implement", CodeFactory, ApprovedReviewer}, Value: 1},
+				{Values: []string{"webshop", "orders-api", "Implement", CodePerson, ApprovedReviewer}, Value: 1},
+				{Values: []string{"webshop", "storefront", "Implement", CodeUnknown, ApprovedReviewer}, Value: 1},
 			}},
 		{name: "cost in dollars, summed per Container", family: MetricTasksCostUSD,
 			want: []MetricSample{{Values: []string{"webshop", "orders-api", "Implement"}, Value: 1.75}}},
@@ -220,4 +221,48 @@ func TestFactoryMetrics(t *testing.T) {
 			}
 		}
 	})
+}
+
+// #92: who let a merged change in is a label of its own, so a team whose
+// Crew holds changes for a person sees the share it could hand over.
+func TestFactoryMetricsApproved(t *testing.T) {
+	merged := func(kind string, mutate func(*TaskMetricFacts)) TaskMetricFacts {
+		f := TaskMetricFacts{Namespace: "webshop", Container: "orders-api", Kind: kind, Phase: TaskMerged}
+		if mutate != nil {
+			mutate(&f)
+		}
+		return f
+	}
+	merges := family(t, FactoryMetrics([]TaskMetricFacts{
+		merged("Implement", nil),
+		merged("Implement", func(f *TaskMetricFacts) { f.ApprovedByPerson = true }),
+		merged("Implement", func(f *TaskMetricFacts) { f.ApprovedByPerson = true }),
+		merged("Implement", func(f *TaskMetricFacts) { f.Unreviewed = true }),
+		merged("Spec", func(f *TaskMetricFacts) { f.ApprovedByPerson = true }),
+		merged("Spec", nil),
+		merged("Triage", nil),
+		merged("Plan", nil),
+		merged("", nil),
+		{Namespace: "webshop", Container: "orders-api", Kind: "Implement", Phase: TaskFailed, ApprovedByPerson: true},
+	}), MetricTasksMerged)
+	if got := merges.Labels[len(merges.Labels)-1]; got != "approved" {
+		t.Fatalf("the last label is %q, want approved", got)
+	}
+	want := map[string]float64{
+		"Implement/reviewer": 1,
+		"none/reviewer":      1, // a Task with no kind is an Implement Task, and reviewed as one
+		"Implement/person":   2,
+		"Implement/none":     1,
+		"Spec/person":        1,
+		"Spec/reviewer":      1,
+		"Triage/none":        1,
+		"Plan/none":          1,
+	}
+	got := map[string]float64{}
+	for _, s := range merges.Samples {
+		got[s.Values[2]+"/"+s.Values[len(s.Values)-1]] += s.Value
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("merged Tasks by kind and who approved = %v, want %v", got, want)
+	}
 }

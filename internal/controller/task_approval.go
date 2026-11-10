@@ -83,8 +83,9 @@ func (r *TaskReconciler) ruleFacts(ctx context.Context, task *c4v1beta1.Task, st
 			}
 		}
 	}
+	raiseForReviewer(ctx, status, facts.Run)
 	if a := status.Approval; a != nil {
-		facts.Approval = model.ApprovalNeed{Require: string(a.Require), Rule: int(a.Rule), Why: a.Reason}
+		facts.Approval = approvalNeed(a)
 	}
 	if !waiting {
 		return nil
@@ -98,8 +99,35 @@ func (r *TaskReconciler) ruleFacts(ctx context.Context, task *c4v1beta1.Task, st
 	return nil
 }
 
+// approvalNeed is a Task's recorded answer as the model reads it.
+func approvalNeed(a *c4v1beta1.TaskApproval) model.ApprovalNeed {
+	return model.ApprovalNeed{Require: string(a.Require), Rule: int(a.Rule), Why: a.Reason, Raised: a.RaisedByReviewer}
+}
+
+// raiseForReviewer records that the reviewer that approved the round called
+// its change high-risk (#92): a change the Crew's rules left to the reviewer
+// then needs a person, for the reviewer's reason. It is recorded when the
+// review ends, so it holds through a verification, and it is the answer for
+// this head only: the next round's reviewer says it again, or doesn't.
+func raiseForReviewer(ctx context.Context, status *c4v1beta1.TaskStatus, run model.RunState) {
+	a := status.Approval
+	if a == nil || a.Commit != status.Commit || status.Phase != c4v1beta1.TaskReviewing || !run.Done ||
+		run.Result == nil || run.Result.Verdict != model.VerdictApprove {
+		return
+	}
+	need, raised := model.RaisedByReviewer(approvalNeed(a), run.Result.Risk)
+	if !raised {
+		return
+	}
+	a.Require, a.Rule, a.Reason, a.RaisedByReviewer = c4v1beta1.ApprovalPerson, 0, model.Clip(need.Why, 1024), true
+	logf.FromContext(ctx).Info("The reviewer raised the change to a person's approval", "why", need.Why,
+		"commit", status.Commit)
+}
+
 // askRules reads the Task's pull request, its changed files and its issue's
-// labels, and records in status.approval what rules ask of them.
+// labels, and records in status.approval what rules ask of them. What the
+// head's reviewer raised (raiseForReviewer) stays while the rules leave the
+// change to the reviewer.
 func (r *TaskReconciler) askRules(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, rules []model.ApprovalRule, key string) error {
 	provider, repo, err := r.gitRepo(ctx, container)
@@ -138,6 +166,13 @@ func (r *TaskReconciler) askRules(ctx context.Context, task *c4v1beta1.Task, sta
 	before := status.Approval
 	status.Approval = &c4v1beta1.TaskApproval{Require: c4v1beta1.ApprovalRequirement(need.Require),
 		Rule: int32(need.Rule), Reason: model.Clip(need.Why, 1024), Commit: status.Commit, Rules: key}
+	if before != nil && before.RaisedByReviewer && before.Commit == status.Commit &&
+		need.Require == model.ApprovalReviewer {
+		// Other rules that still leave this head to the reviewer keep what
+		// its reviewer said of it.
+		a := status.Approval
+		a.Require, a.Rule, a.Reason, a.RaisedByReviewer = before.Require, 0, before.Reason, true
+	}
 	if before == nil || before.Require != status.Approval.Require || before.Rule != status.Approval.Rule {
 		logf.FromContext(ctx).Info("Asked the Crew's approval rules", "require", need.Require, "rule", need.Rule,
 			"why", need.Why, "files", len(change.Files), "lines", change.Lines, "commit", status.Commit)

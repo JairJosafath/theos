@@ -196,6 +196,72 @@ func TestPromptsNeverLeaveAnEnvironmentsCriterionOpen(t *testing.T) {
 	}
 }
 
+// #92: the triager is told when an issue is high-risk, and its word is kept
+// as "high" or nothing.
+func TestTriageRisk(t *testing.T) {
+	prompt := TriagePrompt(Job{Container: "orders-api", Project: "webshop", Issue: 4, Goal: "Drop the column."},
+		Workspace{})
+	for _, want := range []string{`say "risk": "high" when a mistake`, "migrates or deletes data", "handles money",
+		`"risk": "high" or ""`} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("triage prompt lacks %q", want)
+		}
+	}
+	for reply, want := range map[string]string{
+		`{"decision": "ready", "reason": "It drops a column.", "risk": "High"}`: model.RiskHigh,
+		`{"decision": "spec", "reason": "It moves money.", "risk": "high"}`:     model.RiskHigh,
+		`{"decision": "ready", "reason": "Clear.", "risk": "low"}`:              "",
+		`{"decision": "ready", "reason": "Clear.", "risk": ""}`:                 "",
+		`{"decision": "ready", "reason": "Clear."}`:                             "",
+	} {
+		if d, err := ParseTriage(reply); err != nil || d.Risk != want {
+			t.Errorf("ParseTriage(%s) has risk %q, %v; want %q", reply, d.Risk, err, want)
+		}
+	}
+}
+
+// #92: the reviewer is told when a change it approves is high-risk, and only
+// an approval carries its reason.
+func TestReviewRisk(t *testing.T) {
+	prompt := ReviewPrompt(Job{Container: "orders-api", Project: "webshop", Issue: 4, Goal: "Drop the column.",
+		Base: "main", Branch: "task/orders-api-4"}, Workspace{})
+	for _, want := range []string{`say "risk": "high"`, `in "riskReason" one sentence`,
+		"It replaces no change you require", `"risk": "high" or "", "riskReason": "..."`} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("review prompt lacks %q", want)
+		}
+	}
+	for reply, want := range map[string]string{
+		`{"verdict": "approve", "summary": "Fine.", "risk": "High", "riskReason": " It drops\na column. "}`: "It drops a column.",
+		`{"verdict": "approve", "summary": "Fine.", "risk": "high"}`:                                        noRiskReason,
+		`{"verdict": "approve", "summary": "Fine.", "risk": "low", "riskReason": "A typo."}`:                "",
+		`{"verdict": "approve", "summary": "Fine.", "riskReason": "It drops a column."}`:                    "",
+		`{"verdict": "approve", "summary": "Fine."}`:                                                        "",
+		`{"verdict": "changes", "summary": "Fix it.", "risk": "high", "riskReason": "It drops a column."}`:  "",
+	} {
+		if v, err := ParseVerdict(reply); err != nil || v.Risk != want {
+			t.Errorf("ParseVerdict(%s) has risk %q, %v; want %q", reply, v.Risk, err, want)
+		}
+	}
+	// The verifier reports in the same format, and raises nothing: its run
+	// keeps no risk (verify.go).
+	long := Result{Role: RoleReview, Verdict: VerdictApprove, Risk: strings.Repeat("word ", 200)}
+	var back Result
+	if err := json.Unmarshal(long.Encode(), &back); err != nil || len(back.Risk) > maxFollowUpCriterion || back.Risk == "" {
+		t.Errorf("Encode() keeps a risk of %d bytes, %v; want at most %d", len(back.Risk), err, maxFollowUpCriterion)
+	}
+	// The stand-in reviewer says it for an issue that asks, so the loop is
+	// tested without a model.
+	out, err := FakeAgent{Role: RoleReview, Round: 1, Goal: "Drop it.\n\nStand-in: risk high"}.Run(t.Context(), t.TempDir(), "")
+	if v, perr := ParseVerdict(out); err != nil || perr != nil || v.Verdict != VerdictApprove || v.Risk == "" {
+		t.Errorf("the stand-in reviewer says %q, %v, %v; want an approval that calls the change high-risk", out, err, perr)
+	}
+	out, _ = FakeAgent{Role: RoleReview, Round: 1, Goal: "Drop it."}.Run(t.Context(), t.TempDir(), "")
+	if v, _ := ParseVerdict(out); v.Risk != "" {
+		t.Errorf("the stand-in reviewer calls a plain issue's change high-risk: %q", v.Risk)
+	}
+}
+
 // TestPromptsProjectNotes pins that both prompts send the agent to the
 // project's notes right after AGENTS.md, and that AGENTS.md and the role
 // guide win where they disagree.

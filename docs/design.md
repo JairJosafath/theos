@@ -805,6 +805,14 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   reason and acts: `ready` writes the checklist into a body that has none and
   labels `status/ready`; `spec` labels `status/needs-spec`; `park` labels
   `status/needs-human` and asks the question; `duplicate` closes the issue.
+  Whatever it decides, the triager may call the issue's change high-risk
+  (`"risk": "high"`): done wrong it would be costly or hard to undo, as a
+  change that migrates or deletes data, changes who may do what, handles
+  money or breaks an interface others build on. The operator labels such an
+  issue `risk/high` when it stays open, says so in its comment, and never
+  takes the label off; a person may set it too. The label decides nothing:
+  the Crew's approval rule that names it says what the change needs
+  (*Approval rules*).
   An issue a person closed or relabelled meanwhile keeps that. The Task ends
   `Merged`, as a Plan Task does, with the decision, its reason and what was
   done in `status.triage`. A person can answer a parked issue's question
@@ -883,9 +891,9 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   approval of a review run that still lasts. Without a verifier, the
   reviewer's approval merges.
 - **Approval rules** (`spec.approval`,
-  [plans/approval-rules.md](plans/approval-rules.md)). An ordered list of up
-  to 16 rules says which changes wait for a person and which merge on CI
-  alone. A rule has `require` (`Person`, `Reviewer` or `None`), and what it
+  [plans/done/approval-rules.md](plans/done/approval-rules.md)). An ordered
+  list of up to 16 rules says which changes wait for a person and which
+  merge on CI alone. A rule has `require` (`Person`, `Reviewer` or `None`), and what it
   is for: `labels` (the issue has one of them), `changedLinesOver` (the pull
   request adds and deletes more lines than that) and `paths` (a file, a
   folder ending in `/`, or a pattern in which `*` is any run of characters:
@@ -904,12 +912,19 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   the Task waits in `AwaitingApproval` with `NeedsYou`, taking no place from
   `parallel`, as a spec does at its review point and by the same rules: a
   person, not the operator's user or an agent bot, approves the reviewed
-  commit on the Git host or with the Task's `theos.factory.io/approve-spec`
-  annotation; a request for changes starts the next round with their words;
+  commit on the Git host or from chat, in the change's thread in `reviews`
+  (the Task's `theos.factory.io/approve-spec` annotation); a request for
+  changes, there or from chat, starts the next round with their words;
   a push is checked and reviewed again; closing the pull request ends the
   Task. A main that moved while it waited is merged in and the change merges
-  on green checks with no second approval. Rules that no longer ask for a
-  person let a waiting Task merge. `status.approval.approvedBy` records who
+  on green checks with no second approval. The reviewer may raise what the
+  rules ask, never lower it: when it approves a change the rules left to it
+  and calls it high-risk (`"risk": "high"` with a reason, in its verdict), the
+  change needs `Person` for that reason (`status.approval.raisedByReviewer`),
+  for this head only, and through a verification. A change a rule holds
+  keeps its rule, one that needs `None` has no reviewer, and a Crew without
+  rules has no person in its loop whatever its reviewer says. Rules that no
+  longer ask for a person let a waiting Task merge. `status.approval.approvedBy` records who
   approved, and the issue's closing comment says who let the change in: the
   person, or no agent's review, with the rule. The rules are for Implement
   Tasks: a spec has `specApproval`, a Standard change always has its lasting
@@ -1070,7 +1085,9 @@ be judged by numbers the factory keeps itself.
   (`status.pullRequestSize`), read from the Git host when it merges, and
   later for a Task merged before. The UI computes the
   metrics from Tasks: merged, autonomy (merged with no person's commit;
-  approving a spec or a deploy is a decision, not code), cycle time per
+  approving a spec or a deploy is a decision, not code), the share a
+  person approved (a spec, or a change the Crew's approval rules held:
+  what a Crew that starts small could hand over next, #92), cycle time per
   stage, and cost per merged Task by size, per period and per
   configuration: *How well it works*, in the Work area. No metrics store:
   the manager serves the same numbers as Prometheus series on `/metrics`
@@ -1382,12 +1399,17 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
   each with its companion `<annotation>-by` naming the writer's Kubernetes
   user. `theos-chat` sends it as the person, by impersonation, and posts the
   API server's refusal, or what was done, back in the thread. The operator
-  acts on the three as *Spec* and *Triage* say.
+  acts on the three as *Spec* and *Triage* say. A change its Crew's approval
+  rules hold for a person takes the first two as a spec does (*Approval
+  rules*): its thread is in `reviews`, where `approve` and `changes: <text>`
+  are said, beside a deploy's `approve <version>`; the thread's item says
+  which of the two an `approve` is for (#92).
 - **`theos-chat` posts and listens.** A separate binary
   (`cmd/theos-chat`, `internal/chatbot`) with its own ServiceAccount
   (`config/chat`), for each Ready Chat: a thread per item that needs a
-  decision (a spec waiting for a person, a parked issue's question, a deploy
-  waiting for approval, a failed scaffold), its root edited as the item moves
+  decision (a spec waiting for a person, a change its Crew's approval rules
+  hold for one, a parked issue's question, a deploy waiting for approval, a
+  failed scaffold), its root edited as the item moves
   and marked ✅ once done; plain posts for the rest; merges, releases,
   deploys and Brief rounds batched into one `updates` message per
   `digestMinutes`. Its first pass tells no history: only live threads. What

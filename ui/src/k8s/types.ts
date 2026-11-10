@@ -868,6 +868,8 @@ export interface Task extends K8sObject {
       commit?: string
       approvedBy?: string
       approvedInChat?: boolean
+      /** The reviewer, and no rule, asked for the person: it called the change high-risk. */
+      raisedByReviewer?: boolean
     }
     /** The Standard change the Task waits for while Blocked. */
     standardChange?: {
