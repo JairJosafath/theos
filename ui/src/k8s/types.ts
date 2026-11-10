@@ -969,6 +969,8 @@ export interface Crew extends K8sObject {
     specApproval?: SpecApproval
     /** The Agent that builds, starts and checks each approved change before it merges; unset, the review merges it. */
     verifier?: LocalRef
+    /** Recurring goals: when one comes due, the Crew files an issue with its goal and works it. */
+    schedules?: CrewSchedule[]
   }
   status?: {
     phase?: CrewPhase
@@ -988,7 +990,26 @@ export interface Crew extends K8sObject {
     observedGeneration?: number
     /** Ready: whether the Crew can pick up issues, and why not; Released: whether its next release went out, and why not. */
     conditions?: Condition[]
+    /** Where each of spec.schedules stands. */
+    schedules?: CrewScheduleStatus[]
   }
+}
+
+/** One recurring goal of a Crew: a five-field cron expression in timeZone (UTC unset), and what its issue asks for. */
+export interface CrewSchedule {
+  name: string
+  cron: string
+  timeZone?: string
+  goal: string
+}
+
+/** A schedule's next time, and the issue it filed last. */
+export interface CrewScheduleStatus {
+  name: string
+  since: string
+  lastFiled?: string
+  lastIssue?: number
+  next?: string
 }
 
 /**

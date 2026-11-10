@@ -196,3 +196,66 @@ describe('the Crew page’s routes by label', () => {
     }
   })
 })
+
+// #63, #72: a Crew's schedules are on its page, with when each is next due,
+// the issue it filed last, and why one can't be used.
+describe('the Crew page’s schedules', () => {
+  const scheduled = (): Crew => {
+    const c = crew()
+    c.spec.schedules = [
+      { name: 'dependencies', cron: '0 6 * * 1', timeZone: 'Europe/Amsterdam', goal: 'Update the dependencies.' },
+      { name: 'flakes', cron: '0 2 * * *', goal: 'Find the flaky tests.' },
+    ]
+    c.status = {
+      schedules: [
+        {
+          name: 'dependencies',
+          since: '2026-11-09T05:00:00Z',
+          lastFiled: '2026-11-09T05:00:00Z',
+          lastIssue: 12,
+          next: '2026-11-16T05:00:00Z',
+        },
+        { name: 'flakes', since: '2026-11-09T00:00:00Z' },
+      ],
+    }
+    return c
+  }
+
+  it('shows no schedules panel for a Crew without schedules', () => {
+    expect(render(undefined, crew())).not.toContain('Work on a timer')
+  })
+
+  it('lists each schedule with its cron, zone, goal, next time and last issue', () => {
+    const html = render(undefined, scheduled())
+    expect(html).toContain('Work on a timer')
+    expect(html).toContain('<span class="mono">dependencies</span>')
+    expect(html).toContain('<span class="mono">0 6 * * 1</span>')
+    expect(html).toContain('(Europe/Amsterdam)')
+    expect(html).toContain('Update the dependencies.')
+    expect(html).toContain('<time dateTime="2026-11-16T05:00:00Z">')
+    expect(html).toContain('last filed issue #12')
+    expect(html).toContain('(UTC)')
+    expect(html).toContain('No next time · nothing filed yet')
+  })
+
+  it('says why a schedule can’t be used, from the Scheduled condition', () => {
+    const c = scheduled()
+    c.status!.conditions = [
+      {
+        type: 'Scheduled',
+        status: 'False',
+        reason: 'InvalidSchedule',
+        message: 'schedule flakes: time zone "Mars/Olympus" is not one the operator can load',
+      },
+    ]
+    const html = render(undefined, c)
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('schedule flakes: time zone &quot;Mars/Olympus&quot; is not one the operator can load')
+  })
+
+  it('says a paused Crew files none', () => {
+    const c = scheduled()
+    c.spec.paused = true
+    expect(render(undefined, c)).toContain('a paused Crew files none')
+  })
+})

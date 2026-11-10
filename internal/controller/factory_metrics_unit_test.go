@@ -1,21 +1,32 @@
 /*
-Copyright (c) 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's prior
-written permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
 
 import (
+	"maps"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
@@ -114,4 +125,28 @@ theos_agent_runs_tokens{agent="implementer",harness="claude-code",model="claude-
 			t.Errorf("%s: got %d observations, want %d (all: %v)", key, histograms[key], want, histograms)
 		}
 	}
+}
+
+// factoryMetricValue scrapes a fresh registry with FactoryMetrics on reader and
+// returns the gauge name with exactly these labels; 0 when no such sample.
+func factoryMetricValue(g gomega.Gomega, reader client.Reader, name string, labels map[string]string) float64 {
+	reg := prometheus.NewPedanticRegistry()
+	g.Expect(reg.Register(FactoryMetrics{Reader: reader})).To(gomega.Succeed())
+	families, err := reg.Gather()
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			got := map[string]string{}
+			for _, l := range m.GetLabel() {
+				got[l.GetName()] = l.GetValue()
+			}
+			if maps.Equal(got, labels) {
+				return m.GetGauge().GetValue()
+			}
+		}
+	}
+	return 0
 }

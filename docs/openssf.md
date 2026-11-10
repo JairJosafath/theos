@@ -19,11 +19,11 @@ because the form asks for them.
 | Criterion | Level | State | Evidence |
 | --- | --- | --- | --- |
 | description_good | MUST | Met | [README.md](../README.md), its opening and *How it works* |
-| interact | MUST | Met | [README.md](../README.md) *Try it*, *Report an issue*, *Contributing* |
+| interact | MUST | Met | [README.md](../README.md) *Quickstart*, *Develop the factory*, *Report an issue*, *Contributing* |
 | contribution | MUST | Met | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | contribution_requirements | SHOULD | Met | [CONTRIBUTING.md](../CONTRIBUTING.md): the commit format, tests and lint required, `make check` |
-| floss_license | MUST | **Owner** | [LICENSE](../LICENSE) is proprietary, all rights reserved. The badge needs a FLOSS licence |
-| floss_license_osi | SUGGESTED | **Owner** | as above, an OSI-approved licence |
+| floss_license | MUST | Met | [LICENSE](../LICENSE) is the Apache License 2.0 (#47); `hack/check-license-headers.sh` keeps every Go file's header |
+| floss_license_osi | SUGGESTED | Met | Apache-2.0 is OSI-approved |
 | license_location | MUST | Met | `LICENSE` at the root |
 | documentation_basics | MUST | Met | [docs/getting-started.md](getting-started.md), [docs/design.md](design.md), [docs/architecture.md](architecture.md) |
 | documentation_interface | MUST | Met | the CRDs' field descriptions (`config/crd/bases/`, `kubectl explain`), the model in [docs/design.md](design.md), the chart's `values.yaml` |
@@ -116,9 +116,8 @@ because the form asks for them.
 Only the owner can close these. Nothing else stands between the repository and
 the passing badge.
 
-1. **Choose a FLOSS licence** (floss_license, floss_license_osi). The
-   contributors already agreed to relicensing ([CONTRIBUTING.md](../CONTRIBUTING.md),
-   *License*). Whether 1.0 is public is the owner's decision ([ROADMAP.md](../ROADMAP.md)).
+1. ~~Choose a FLOSS licence~~: done, Apache-2.0 (#47), by the owner's word of
+   2026-11-09.
 2. **Make the repository public** (repo_public, discussion, report_archive).
 3. **Turn on private vulnerability reporting** in *Settings → Code security*
    (vulnerability_report_private), then drop the "while the repository is

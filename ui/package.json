@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "UI for theos: draws the story from the custom resources, live through watches; with actions off, its only writes create a Brief, add a prompt to one, and pause or resume one.",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=22.12"

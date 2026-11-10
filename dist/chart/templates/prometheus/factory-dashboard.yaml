@@ -1,0 +1,20 @@
+{{- if .Values.prometheus.dashboard.enabled }}
+# The factory's Grafana dashboard (docs/monitoring.md, #59): Grafana's
+# dashboard sidecar loads a ConfigMap with the label grafana_dashboard.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "theos.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- with .Values.prometheus.dashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  name: {{ include "theos.resourceName" (dict "suffix" "factory-dashboard" "context" $) }}
+  namespace: {{ .Values.prometheus.dashboard.namespace | default .Release.Namespace }}
+data:
+  theos-factory.json: |-
+    {{- .Files.Get "files/theos-dashboard.json" | nindent 4 }}
+{{- end }}

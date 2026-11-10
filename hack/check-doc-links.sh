@@ -7,8 +7,6 @@
 # History is left alone: docs/plans/done/, docs/design-history.md and
 # docs/screenshots/ say what was true when they were written. A template's
 # Markdown (templates/) links inside the repository it becomes, not this one.
-# GOVERNANCE.md is the owner's alone to change; #55 proposes its text, and
-# until the owner takes it the file is skipped.
 # hack/check-doc-links_test.sh runs it on the repository in make check.
 #
 #   hack/check-doc-links.sh [ROOT]   the tracked *.md under ROOT (default: the repository)
@@ -20,7 +18,7 @@ cd "$ROOT"
 fail=0
 while IFS= read -r f; do
   case $f in
-  GOVERNANCE.md | docs/plans/done/* | docs/design-history.md | docs/screenshots/* | templates/* | */node_modules/*) continue ;;
+  docs/plans/done/* | docs/design-history.md | docs/screenshots/* | templates/* | */node_modules/*) continue ;;
   esac
   dir=$(dirname "$f")
   n=0

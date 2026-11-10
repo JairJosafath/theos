@@ -234,6 +234,28 @@ prometheus:
   ##
   # annotations: {}
 
+  ## The factory's own numbers (docs/monitoring.md): the manager serves them
+  ## on /metrics as theos_* series whatever these say.
+  ##
+  ## dashboard: a ConfigMap with the Grafana dashboard "theos: how well the
+  ## factory works". Grafana's dashboard sidecar loads ConfigMaps with the
+  ## label below; set namespace when the sidecar watches one namespace only.
+  ## It needs no prometheus-operator, and no prometheus.enabled.
+  dashboard:
+    enabled: false
+    # namespace: monitoring
+    labels:
+      grafana_dashboard: "1"
+
+  ## rules: a PrometheusRule (prometheus-operator) with the factory's alerts:
+  ## a project's agents cost over dailyBudgetUSD in a day (0 leaves that
+  ## alert out), more Tasks failed than merged in a day, a spec waits
+  ## specWaits for a person, most runs of an Agent report no cost.
+  rules:
+    enabled: false
+    dailyBudgetUSD: 50
+    specWaits: 1d
+
 ## The Go proxy the operator asks whether go get finds a released Go module
 ## whose path is outside theos.local/ (the operator's --go-proxy). off asks
 ## none, for an install without that egress: the Crew's own GitHub source tag

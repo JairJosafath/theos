@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package v1beta1
@@ -138,6 +146,17 @@ type CrewSpec struct {
 	// starting Tasks. A Brief writes its own value onto the Crews it made.
 	// +optional
 	ReleaseCadence *ReleaseCadence `json:"releaseCadence,omitempty"`
+
+	// schedules are the Crew's recurring goals: work that starts from the
+	// clock (docs/design.md, "Schedules"). When one comes due the Crew files
+	// an issue with its goal, labelled kind/schedule and status/ready, and
+	// works it as any other. While that issue is open the schedule files no
+	// other, and a paused Crew files none.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=8
+	// +optional
+	Schedules []CrewSchedule `json:"schedules,omitempty"`
 
 	// publishReleases copies each release the Crew tags to another repository
 	// once its release runs succeed: the same tag, notes and files. It only adds
@@ -532,6 +551,67 @@ type CrewPublishTarget struct {
 	ID int64 `json:"id"`
 }
 
+// CrewSchedule is one recurring goal of a Crew: when its time comes, the Crew
+// files an issue with the goal.
+type CrewSchedule struct {
+	// name names the schedule in its issues' titles and in the status.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +required
+	Name string `json:"name"`
+
+	// cron is when the schedule is due, as five fields: minute, hour, day of
+	// month, month and day of week (0 or 7 is Sunday), each a number, a range
+	// a-b, a step */n or a-b/n, a comma-separated list of those, or *. An
+	// expression the operator can't use (minute 60, the 30th of February)
+	// leaves the Crew's Scheduled condition False, reason InvalidSchedule.
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:Pattern=`^[0-9*/,-]+( [0-9*/,-]+){4}$`
+	// +required
+	Cron string `json:"cron"`
+
+	// timeZone is the IANA time zone cron is in, such as Europe/Amsterdam;
+	// daylight saving follows it. Unset is UTC. A name the operator can't
+	// load leaves the Scheduled condition False, reason InvalidSchedule.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:default=UTC
+	// +optional
+	TimeZone string `json:"timeZone,omitempty"`
+
+	// goal is what the issue asks for, in plain words: what to do, and what
+	// to leave. It becomes the issue's Goal section.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=4000
+	// +required
+	Goal string `json:"goal"`
+}
+
+// CrewScheduleStatus is where one of a Crew's schedules stands.
+type CrewScheduleStatus struct {
+	// name is the schedule's.
+	// +required
+	Name string `json:"name"`
+
+	// since is when the schedule last filed an issue, last passed a due time
+	// over because its issue was still open, or was first seen: it is due at
+	// its first time after since.
+	// +required
+	Since metav1.Time `json:"since"`
+
+	// lastFiled is when it last filed an issue, and lastIssue that issue's
+	// number.
+	// +optional
+	LastFiled *metav1.Time `json:"lastFiled,omitempty"`
+	// +optional
+	LastIssue int32 `json:"lastIssue,omitempty"`
+
+	// next is its next time, unset when the schedule can't be used.
+	// +optional
+	Next *metav1.Time `json:"next,omitempty"`
+}
+
 // CrewStatus is what the Crew saw on its last look at the issues.
 type CrewStatus struct {
 	// phase is Waiting, Idle, Working or Paused.
@@ -612,10 +692,19 @@ type CrewStatus struct {
 	// set, says how publishing the last release went, and why it failed.
 	// ModulePublished, when spec.tagReleases is set and a release was tagged,
 	// says whether the last release's Go module is in the registry, and why not.
+	// Scheduled, when spec.schedules is set, says whether every schedule can
+	// be used and its last due issue was filed, and why not.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// schedules is where each of spec.schedules stands.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=8
+	// +optional
+	Schedules []CrewScheduleStatus `json:"schedules,omitempty"`
 }
 
 // +kubebuilder:object:root=true

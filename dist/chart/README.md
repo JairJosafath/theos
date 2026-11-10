@@ -337,6 +337,7 @@ as the run's artifact); a failing release gets an issue titled
 | `chat.homeserver.enabled` | with `chat.enabled`, the in-cluster homeserver (default off): Tuwunel as StatefulSet and Service `<release>-matrix` on 8008, federation and registration off; `image` (pinned by `digest`), `serverName` (default `theos.internal`), `persistence`, `resources`, `config` (more `TUWUNEL_*` settings), `waitSeconds` |
 | `chat.homeserver.bot`, `chat.homeserver.accounts` | the bot's `localpart` (`theos`) and the Secret its token goes in (`secretName`, `matrix-bot`) in each of `gitea.projects` and `namespaces`; people's accounts by localpart, each with a first password in Secret `<release>-matrix-account-<name>` |
 | `metrics`, `prometheus`, `networkPolicy` | the generated metrics endpoint, ServiceMonitor and NetworkPolicy |
+| `prometheus.dashboard`, `prometheus.rules` | the factory's Grafana dashboard as a ConfigMap, and its alerts as a PrometheusRule ([docs/monitoring.md](../../docs/monitoring.md)) |
 
 ### Git providers
 

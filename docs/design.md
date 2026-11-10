@@ -858,6 +858,31 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   jobs, once per value. While a failed full check holds the next release, the
   value re-runs that check first: its issue holds the release no more, is
   closed if the check passes, and holds it again if it fails (#2028).
+- **Schedules** (`spec.schedules`, [plans/crew-schedules.md](plans/crew-schedules.md), #63).
+  Work that starts from the clock: up to eight named goals, each with a
+  five-field `cron` and a `timeZone` (UTC unset). When one comes due the
+  Crew files an issue in the Container's repository, titled with the
+  schedule's name and the date, with the goal as its Goal, two acceptance
+  criteria (the goal is met or the pull request says what was left;
+  `make check` passes) and a marker line naming the schedule, labelled
+  `kind/schedule` and `status/ready`, in the release that takes work; the
+  normal loop takes it from there, triage skipped. A schedule is due at its
+  first time after `status.schedules[].since`: when it last filed, last
+  passed a time over, or was first seen, so a new schedule waits for its
+  next time and however many times passed while the operator or the host
+  was down, one issue is filed, for the first of them. While the issue it
+  filed is open a due time is passed over, so a schedule never piles up; a
+  paused Crew files nothing and passes nothing over. The rule is
+  `model.NextScheduleStep`; `model.ParseCron` reads numbers, ranges, steps
+  and lists (no names, no macros), a day matches either days field when
+  both are set, a wall-clock time the zone skips doesn't come that day and
+  one it repeats comes twice. A schedule the operator can't use (a time
+  zone it can't load, the 30th of February) leaves the Crew's `Scheduled`
+  condition False, reason `InvalidSchedule`, naming it; the other schedules
+  and the Crew's issues go on. The Crew is requeued for its next due time,
+  whatever the host's events stretch its poll to. Not yet: a run that finds
+  nothing to do still fails its Task instead of closing the issue as done,
+  and nothing runs a schedule now by hand.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
@@ -936,7 +961,8 @@ be judged by numbers the factory keeps itself.
   `theos_agent_runs_cost_usd` and the rest, [monitoring.md](monitoring.md)),
   computed from the Tasks that exist at each scrape by one rule in
   `internal/model`, so they are gauges, a restart counts nothing twice, and
-  keeping history is the Prometheus's job (#59).
+  keeping history is the Prometheus's job (#59). The chart installs a
+  Grafana dashboard and alert rules on them, each behind a value.
 - **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent
   (`judgeRef`), what it selects (kinds, Containers, outcomes; by default
   merged Implement Tasks), a sample picked by a hash of the Scorer and the

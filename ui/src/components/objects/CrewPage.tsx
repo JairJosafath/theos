@@ -1,8 +1,9 @@
 // A Crew's page: the object header (its state, its Ready condition, its Tasks,
 // and what a person does: re-run a failed release, resume it, or fix what
 // keeps it waiting), then who works and how many at once, its issues, and its
-// routes by label, and its last release with its runs, Go module, publishing
-// and bump issues. With the UI server's actions on, the person pauses or
+// routes by label, its schedules (work on a timer: when each is next due and
+// the issue it filed last), and its last release with its runs, Go module,
+// publishing and bump issues. With the UI server's actions on, the person pauses or
 // resumes it or its running Tasks, sets those and its release settings, and
 // re-runs a failed release's runs (CrewActions). Where
 // it publishes says so when its Brief sets that, and the form changes it on
@@ -16,6 +17,7 @@ import { useActs } from '../../lib/hooks'
 import { crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
 import { PUBLISH_MIGRATION_URL, RELEASE_RUN, publishFailure } from '../../model/releases'
 import type { AgentRole } from '../../model/factory'
+import { absoluteTime } from '../../model/format'
 import { crewNextStep } from '../../model/lifecycle'
 import { AgentName, When } from '../bits'
 import { ExternalLinkIcon } from '../icons'
@@ -169,7 +171,60 @@ function CrewOverview({
       </section>
 
       {summary.routes.length ? <RoutesPanel routes={summary.routes} /> : null}
+      {crew.spec.schedules?.length ? <SchedulesPanel crew={crew} /> : null}
     </>
+  )
+}
+
+/** The Crew's recurring goals: when each is next due, and the issue it filed last. */
+function SchedulesPanel({ crew }: { crew: Crew }) {
+  const scheduled = crew.status?.conditions?.find((c) => c.type === 'Scheduled')
+  return (
+    <section className="panel" aria-labelledby="crew-schedules">
+      <h2 className="panel-title small-title" id="crew-schedules">
+        Work on a timer
+      </h2>
+      <p className="panel-text">
+        When a schedule comes due the Crew files an issue with its goal and works it like any other. While that issue is
+        open, the schedule’s next time is passed over{crew.spec.paused ? '; a paused Crew files none' : ''}.
+      </p>
+      {scheduled && scheduled.status !== 'True' ? (
+        <p className="panel-text" role="alert">
+          {scheduled.message}
+        </p>
+      ) : null}
+      <ol className="routes">
+        {(crew.spec.schedules ?? []).map((s) => {
+          const st = crew.status?.schedules?.find((x) => x.name === s.name)
+          return (
+            <li key={s.name}>
+              <span className="mono">{s.name}</span>
+              <span className="muted"> · </span>
+              <span className="mono">{s.cron}</span>
+              <span className="muted"> ({s.timeZone ?? 'UTC'})</span>
+              <div>{s.goal}</div>
+              <div className="muted">
+                {st?.next ? (
+                  <>
+                    Next due <time dateTime={st.next}>{absoluteTime(st.next)}</time>
+                  </>
+                ) : (
+                  'No next time'
+                )}
+                {st?.lastIssue ? (
+                  <>
+                    {' · last filed issue #'}
+                    {st.lastIssue} <When at={st.lastFiled} />
+                  </>
+                ) : (
+                  ' · nothing filed yet'
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
   )
 }
 

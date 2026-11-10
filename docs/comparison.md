@@ -32,7 +32,7 @@ current. [README.md](../README.md#the-loop) draws the loop,
 | | theos | Warp (Oz, `oz-for-oss`, Warp Factories) |
 | --- | --- | --- |
 | What it is | a Kubernetes operator, a UI and a Helm chart you install | a hosted agent platform (Oz), GitHub Actions workflows that call it (`oz-for-oss`), and a managed factory on top (Warp Factories) |
-| Source | all of it in this repository; the licence is being chosen (#47) | the Warp client is open source; the factory's workflows and skills are public; Oz and Warp Factories are a service |
+| Source | all of it in this repository, under the Apache License 2.0 | the Warp client is open source; the factory's workflows and skills are public; Oz and Warp Factories are a service |
 | Availability | install the release | Oz: all plans. Warp Factories: closed early access, on request |
 | Where agents run | in sandboxes on your cluster ([Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)) | in Warp's cloud environments; the workflow steps on GitHub's runners |
 | Where the model key lives | in a Secret only a proxy reads; it never enters a sandbox | a `WARP_API_KEY` secret in the repository; Warp reports zero-data-retention options and bring-your-own hosting for Factories |
@@ -50,10 +50,10 @@ current. [README.md](../README.md#the-loop) draws the loop,
 | The fence | no service account token and no model key in the sandbox, egress limited by NetworkPolicy, protected paths the agent's credential can't change, issue text handled as data | isolated cloud sandboxes |
 | Requests come from | Gitea issues, GitHub issues for a Brief, a Matrix room. **Slack, Linear, Jira: not yet (#61)** | GitHub, Linear, Jira, Slack, Teams |
 | Chat | Matrix: a room per kind of work, a thread per decision | Slack and Teams |
-| Work on a timer | **not yet (#63)** | yes |
-| Numbers | the UI's *How well it works*: merged, share with no person's code, time per stage, cost per merged Task by size, Agent and model; the same as Prometheus series, with a Grafana dashboard and example alerts ([monitoring.md](monitoring.md)) | cost, throughput and code quality in the factory app |
+| Work on a timer | a Crew's `schedules`: a cron expression and a goal file an issue the loop works | yes |
+| Numbers | the UI's *How well it works*: merged, share with no person's code, time per stage, cost per merged Task by size, Agent and model; the same as Prometheus series, with a Grafana dashboard and alerts the chart installs ([monitoring.md](monitoring.md)) | cost, throughput and code quality in the factory app |
 | Comparing configurations | Benchmarks run the same goals under two to four Agent setups and report each rate with its 95% interval; Scorers judge finished work against criteria you write | evaluation and benchmarking tools in Warp Factories |
-| First run | a cluster, a Helm install and a long guide. **One command: not yet (#53)** | a workflow file and an API key |
+| First run | `hack/quickstart.sh`: one command to a local cluster where a token-free stand-in runs the whole loop; real agents and your own cluster take the guide | a workflow file and an API key |
 | Price | the software is free of charge; you pay your cluster and your model use | usage-based; early-access credits were reported |
 
 ## Where theos is behind
@@ -64,10 +64,10 @@ Each has an issue under #46, and the order is in
 1. It works only against the Gitea it installs, so a team must move its work
    to try it (#57).
 2. It runs one vendor's agent (#58).
-3. The first run is long (#53), and adopting a repository you already have
-   is poorly guided (#60).
-4. Requests and chat reach it from fewer places (#61), nothing runs on a
-   timer (#63), and a person can't yet say which changes wait for them (#62).
+3. Adopting a repository you already have is poorly guided (#60), and the
+   one-command first run is a local demo, not yet your own code.
+4. Requests and chat reach it from fewer places (#61), and a person can't
+   yet say which changes wait for them (#62).
 5. It publishes no numbers about itself (#66). Warp runs its open-source repository with its own factory in
    public and quotes the share of pull requests merged with no person.
 

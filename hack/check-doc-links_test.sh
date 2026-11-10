@@ -52,9 +52,8 @@ echo '[old](https://github.com/JairJosafath/c4factory/issues/1) [gone](gone.md)'
 echo '[old](https://github.com/JairJosafath/c4factory/issues/1)' >"$T/r/docs/design-history.md"
 echo '[gone](gone.md)' >"$T/r/docs/screenshots/s.md"
 echo '[its own](docs/style/go.md)' >"$T/r/templates/x/README.md"
-echo '[gone](gone.md)' >"$T/r/GOVERNANCE.md"
 run
-check "history, templates and the owner's GOVERNANCE.md are left alone" "$rc" 0
+check "history and templates are left alone" "$rc" 0
 
 tree
 printf '%s\n' 'text' '```' '[example](gone.md)' '```' >"$T/r/README.md"

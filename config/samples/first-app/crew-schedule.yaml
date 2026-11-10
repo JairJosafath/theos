@@ -1,0 +1,25 @@
+# orders-cli's Crew with work on a timer (docs/getting-started.md, "Work on a
+# timer"): every Monday at 06:00 in Amsterdam it files an issue with the goal
+# below, labelled kind/schedule and status/ready, and works it as any other.
+# Apply it instead of crew.yaml; while the issue is open, the next Monday is
+# passed over.
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: orders-cli
+spec:
+  containerRef:
+    name: orders-cli
+  displayName: Orders CLI crew
+  description: Builds orders-cli issue by issue, and keeps its dependencies current.
+  implementer:
+    name: implementer
+  reviewer:
+    name: reviewer
+  schedules:
+    - name: dependencies
+      cron: "0 6 * * 1"
+      timeZone: Europe/Amsterdam
+      goal: >-
+        Update the dependencies that have a new minor or patch version. One
+        pull request. Say what you updated, and what you left and why.

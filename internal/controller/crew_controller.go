@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -220,6 +228,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		ports.Registry
 	}
 	var repo ports.Repository
+	// untilSchedule is how long until the Crew's next schedule is due, 0 with
+	// none.
+	var untilSchedule time.Duration
 	if facts.ContainerReady {
 		provider, err = providerFor(ctx, r.Client, r.APIReader, r.Git, crew.Namespace, container.Spec.GitProviderRef.Name)
 		if err != nil {
@@ -245,6 +256,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			facts.Issues = append(facts.Issues, *filed)
 		}
 		facts.Preparing = preparing
+		// A schedule that came due files its issue (#63); the next poll reads
+		// it among the ready ones.
+		untilSchedule = r.schedule(ctx, &crew, status, provider, repo)
 	}
 
 	step := model.NextCrewStep(container.Name, facts)
@@ -289,7 +303,12 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		// waiting for its Container is woken by the Container's watch.
 		poll = hostRecheck(withHostEvents(ctx, r.Client, crew.Namespace, container.Spec.GitProviderRef.Name), poll)
 	}
-	return ctrl.Result{RequeueAfter: r.cutPoll(cadence, status, poll)}, r.writeStatus(ctx, &crew, status)
+	after := r.cutPoll(cadence, status, poll)
+	if untilSchedule > 0 && untilSchedule < after {
+		// A schedule is on time whatever the host's events stretch the poll to.
+		after = untilSchedule
+	}
+	return ctrl.Result{RequeueAfter: after}, r.writeStatus(ctx, &crew, status)
 }
 
 // cutPoll is poll, or less when the Crew's next cut comes sooner, so a cut is

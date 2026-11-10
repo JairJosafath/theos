@@ -4,7 +4,8 @@ name: Release
 # building anything: the operator, UI, seed, toolchain, agent and runner images to
 # ghcr.io/<owner>/theos/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
 # to oci://ghcr.io/<owner>/theos/charts and to a GitHub release for the tag,
-# with the theos-session binaries, theos-env's for Linux and macOS, the Gitea
+# with hack/quickstart.sh, which installs that release in one command (#53),
+# the theos-session binaries, theos-env's for Linux and macOS, the Gitea
 # runner a remote test environment's CI machine runs, their SHA256SUMS and its keyless cosign
 # signature, SHA256SUMS.sigstore.json, for a chart whose UI is off
 # (#1079, #1175, #1706); with the UI on, a scaffolded devcontainer downloads its
@@ -190,7 +191,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" "theos-$VERSION.tgz" theos-session-linux-amd64 theos-session-linux-arm64 \
             theos-env-linux-amd64 theos-env-linux-arm64 theos-env-darwin-amd64 theos-env-darwin-arm64 \
             gitea-runner-linux-amd64 gitea-runner-linux-arm64 \
-            SHA256SUMS SHA256SUMS.sigstore.json \
+            SHA256SUMS SHA256SUMS.sigstore.json hack/quickstart.sh \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
 
       # A dispatch made with GITHUB_TOKEN starts a run, unlike its other events.
