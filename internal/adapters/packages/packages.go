@@ -31,7 +31,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/md5"  //nolint:gosec // PyPI's md5_digest: a checksum, not a signature
+	"crypto/md5" //nolint:gosec // PyPI's md5_digest: a checksum, not a signature
+	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // npm's shasum: a checksum, not a signature
 	"crypto/sha256"
 	"crypto/sha512"
@@ -488,7 +489,7 @@ func (p Publisher) publishNpm(ctx context.Context, repo ports.Repository, pkg *p
 	}
 	bare := pkg.Name[strings.LastIndex(pkg.Name, "/")+1:]
 	fileName := bare + "-" + pkg.Version + ".tgz"
-	version := make(map[string]json.RawMessage, len(meta.manifest)+2)
+	version := map[string]json.RawMessage{}
 	maps.Copy(version, meta.manifest)
 	if _, named := version[repositoryField]; !named && p.LinkNpm {
 		version[repositoryField], _ = json.Marshal(map[string]string{"type": "git", "url": "git+" + repo.CloneURL})
@@ -499,29 +500,43 @@ func (p Publisher) publishNpm(ctx context.Context, repo ports.Repository, pkg *p
 		"shasum":    hex.EncodeToString(sums.sha1),
 		"tarball":   repo.NpmRegistry + pkg.Name + "/-/" + fileName,
 	})
-	head := struct {
+	// The document is marshalled whole, with a mark where the tarball goes,
+	// and cut at the mark: the tarball is streamed between the two halves, in
+	// base64, never held whole. The mark is made for this call, so nothing a
+	// manifest holds can be taken for it.
+	mark := rand.Text()
+	doc, err := json.Marshal(struct {
 		ID          string                                `json:"_id"`
 		Name        string                                `json:"name"`
 		Description json.RawMessage                       `json:"description,omitempty"`
 		DistTags    map[string]string                     `json:"dist-tags"`
 		Versions    map[string]map[string]json.RawMessage `json:"versions"`
+		Attachments map[string]npmAttachment              `json:"_attachments"`
 	}{
 		ID: pkg.Name, Name: pkg.Name, Description: meta.manifest["description"],
-		DistTags: map[string]string{"latest": pkg.Version},
-		Versions: map[string]map[string]json.RawMessage{pkg.Version: version},
-	}
-	headJSON, err := json.Marshal(head)
+		DistTags:    map[string]string{"latest": pkg.Version},
+		Versions:    map[string]map[string]json.RawMessage{pkg.Version: version},
+		Attachments: map[string]npmAttachment{fileName: {ContentType: "application/octet-stream", Length: size, Data: mark}},
+	})
 	if err != nil {
 		return pkg, err
 	}
-	attachment, _ := json.Marshal(fileName)
-	prefix := string(headJSON[:len(headJSON)-1]) + `,"_attachments":{` + string(attachment) +
-		`:{"content_type":"application/octet-stream","length":` + fmt.Sprint(size) + `,"data":"`
-	suffix := `"}}}`
-	body := io.MultiReader(strings.NewReader(prefix), &base64Reader{r: file}, strings.NewReader(suffix))
+	prefix, suffix, cut := bytes.Cut(doc, []byte(mark))
+	if !cut {
+		return pkg, fmt.Errorf("%s: the publish document of %s has no place for its tarball", p.Name, pkg.Name)
+	}
+	body := io.MultiReader(bytes.NewReader(prefix), &base64Reader{r: file}, bytes.NewReader(suffix))
 	total := int64(len(prefix)) + int64(base64.StdEncoding.EncodedLen(int(size))) + int64(len(suffix))
 	err = p.upload(ctx, http.MethodPut, target, ports.EcosystemNpm, "application/json", body, total, pkg)
 	return pkg, err
+}
+
+// npmAttachment is the tarball in an npm publish document: its content in
+// base64.
+type npmAttachment struct {
+	ContentType string `json:"content_type"`
+	Length      int64  `json:"length"`
+	Data        string `json:"data"`
 }
 
 // rewind puts file, which reading its metadata moved, back at its start, and
