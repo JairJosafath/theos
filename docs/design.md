@@ -1074,6 +1074,19 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   `Scheduled` condition's message says which. A name that is none of the
   Crew's schedules leaves `Scheduled` False, reason `UnknownSchedule`,
   naming the ones it has.
+  A Standard proposes schedules (`Standard.spec.schedules`, #72): up to
+  eight, each in the shape of a Crew's schedule and held by the CRD to the
+  same patterns, such as its language's weekly dependency update. A proposal
+  turns nothing on: the operator copies none into a Crew unasked and files
+  nothing for it. A Crew takes one when a person adds it to the Crew's own
+  `spec.schedules` under the proposal's name, where its time and its words
+  may be changed; a Crew with a schedule of that name has taken it, and one
+  without has left it. The name is the proposal's identity: renaming one
+  drops it and proposes another, and a Crew that took it under the old name
+  keeps its schedule. A changed or removed proposal changes no Crew. What
+  only the operator can tell is wrong in a proposal (a time zone it can't
+  load) is said by the Crew that takes it, in `Scheduled`. Not yet: the UI
+  offering a Crew the proposals of its Container's Standard.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
@@ -1206,7 +1219,9 @@ be judged by numbers the factory keeps itself.
 **A Standard** is the rules as a layer: lint and format config, `AGENTS.md`
 and the role guides, the `make check` contract and its CI workflow. A change
 touching only the changelog, `docs/` or images passes CI without `make check`.
-`status.checks` reports CI on `main`.
+`status.checks` reports CI on `main`. A Standard may also propose its
+language's upkeep to the Crews of its Containers, as `spec.schedules`
+(*Schedules*, above); a proposal is a Crew's to take or leave.
 
 **A Standard's fixes reach its Containers.** Bumping its pinned `ref` updates
 every Ready Container on it: the operator renders the Standard at the old and
