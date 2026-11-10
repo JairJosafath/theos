@@ -373,8 +373,15 @@ Decide exactly one of:
   same. Name its number in "duplicate".
 In "reason", say in two or three sentences why, so a person can check you.
 
+Whatever you decide, say "risk": "high" when a mistake in this issue's change
+would be costly or hard to undo: it migrates or deletes data, changes how
+people sign in or what they may do, handles money, or breaks an interface
+others build on. The project may have a person approve such a change, so say
+in "reason" what makes it so. Most issues are not high-risk: leave "risk"
+empty for them.
+
 End your reply with one line of JSON and nothing after it:
-{"decision": "ready", "spec", "park" or "duplicate", "reason": "...", "criteria": ["..."], "question": "...", "duplicate": <issue number>, "environments": ["..."]}
+{"decision": "ready", "spec", "park" or "duplicate", "reason": "...", "criteria": ["..."], "question": "...", "duplicate": <issue number>, "environments": ["..."], "risk": "high" or ""}
 `, job.Base, model.MaxTriageCriteria, maxCriterionChars)
 	return b.String()
 }

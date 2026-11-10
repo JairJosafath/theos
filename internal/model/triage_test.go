@@ -49,6 +49,16 @@ func TestNormalTriage(t *testing.T) {
 	}
 }
 
+// #92: a triager's risk is "high" or nothing, whatever it wrote.
+func TestNormalTriageRisk(t *testing.T) {
+	for risk, want := range map[string]string{"high": RiskHigh, " High ": RiskHigh, "HIGH": RiskHigh,
+		"": "", "low": "", "medium": "", "very high": "", "none": ""} {
+		if got := NormalTriage(Triage{Decision: TriageReady, Risk: risk}).Risk; got != want {
+			t.Errorf("NormalTriage(risk %q).Risk = %q, want %q", risk, got, want)
+		}
+	}
+}
+
 func TestTriageProblem(t *testing.T) {
 	tests := []struct {
 		name string
@@ -75,6 +85,10 @@ func TestTriageProblem(t *testing.T) {
 		})
 	}
 }
+
+// riskComment is what a triage says on an issue it labels risk/high.
+const riskComment = "\n\nLabelled risk/high: a mistake in this change would be costly or hard to undo. What that " +
+	"asks of the change is the Crew's to say, in an approval rule that names the label."
 
 func TestPlanTriage(t *testing.T) {
 	proposed := []string{LabelProposed, "kind/bug"}
@@ -121,6 +135,29 @@ func TestPlanTriage(t *testing.T) {
 		{"duplicate", open("Validate orders."), Triage{Decision: TriageDuplicate, Reason: "Same ask.", Duplicate: 3},
 			TriageActions{Close: true, Applied: "Closed as a duplicate of #3",
 				Comment: "Triaged by Task api-7-triage: a duplicate of #3. Same ask."}},
+		// #92: the triager's guide to risk/high. The label goes on whatever the
+		// decision, while the issue stays open, and decides nothing itself.
+		{"ready and high-risk gets the risk label", open(criteria),
+			Triage{Decision: TriageReady, Reason: "It drops a column.", Risk: RiskHigh},
+			TriageActions{Label: LabelReady, RiskLabel: LabelRiskHigh,
+				Comment: "Triaged by Task api-7-triage: ready to build. It drops a column." + riskComment,
+				Applied: "Labelled status/ready and risk/high"}},
+		{"so does one that needs a spec", open("Rebuild billing."),
+			Triage{Decision: TriageSpec, Reason: "It moves money.", Risk: RiskHigh},
+			TriageActions{Label: LabelNeedsSpec, RiskLabel: LabelRiskHigh, Applied: "Labelled status/needs-spec and risk/high",
+				Comment: "Triaged by Task api-7-triage: this issue needs a spec before it is built. It moves money." +
+					riskComment}},
+		{"an issue a person labelled risk/high already keeps it, unsaid",
+			TriageIssue{Number: 7, Body: criteria, Labels: []string{LabelProposed, LabelRiskHigh}},
+			Triage{Decision: TriageReady, Reason: "Clear.", Risk: RiskHigh}, TriageActions{Label: LabelReady,
+				Comment: "Triaged by Task api-7-triage: ready to build. Clear.", Applied: "Labelled status/ready"}},
+		{"a duplicate is closed, not labelled", open("Validate orders."),
+			Triage{Decision: TriageDuplicate, Reason: "Same ask.", Duplicate: 3, Risk: RiskHigh},
+			TriageActions{Close: true, Applied: "Closed as a duplicate of #3",
+				Comment: "Triaged by Task api-7-triage: a duplicate of #3. Same ask."}},
+		{"a ready decision that can't be applied is not labelled either", open("Validate orders."),
+			Triage{Decision: TriageReady, Reason: "Clear.", Risk: RiskHigh},
+			TriageActions{Problem: "the triager called the issue ready, but gave no acceptance criteria and the issue has none"}},
 		{"a decision the operator can't apply", open("x"), Triage{Decision: TriagePark, Reason: "unclear"},
 			TriageActions{Problem: "the triager parked the issue without the question a person must answer"}},
 		{"an issue closed meanwhile is left alone", TriageIssue{Number: 7, Labels: proposed, Closed: true}, ready,
@@ -305,5 +342,15 @@ func TestStandInTriage(t *testing.T) {
 	}
 	if got := StandInTriage("stand-in: duplicate of #2"); got.Duplicate != 2 {
 		t.Errorf("StandInTriage() duplicates #%d, want #2", got.Duplicate)
+	}
+	// #92: the stand-in can call any issue high-risk, so the loop is tested
+	// without a model.
+	for _, issue := range []string{"Drop the column.\n\nStand-in: risk high", "stand-in: spec\nstand-in: risk high"} {
+		if got := StandInTriage(issue); got.Risk != RiskHigh {
+			t.Errorf("StandInTriage(%q).Risk = %q, want %q", issue, got.Risk, RiskHigh)
+		}
+	}
+	if got := StandInTriage("Reject empty orders."); got.Risk != "" {
+		t.Errorf("StandInTriage() of a plain issue has risk %q, want none", got.Risk)
 	}
 }

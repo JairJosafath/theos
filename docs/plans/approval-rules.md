@@ -107,8 +107,17 @@ the loop"), and its advice is ours: start with low-risk work and widen.
   also has the deploys' threads, whose `approve` names a version: a bare
   `approve` is parsed as a change's, and the thread's item decides, so in a
   deploy's thread it answers with what a deploy's approval takes.
-- Open, as #92: the reviewer's `Risk: high` and the triager's `risk/*`
-  labels, both in the runner.
+- The triager's guide to risk (2026-11-10, in a session the owner ran, as
+  the prompt is the runner's): one label, `risk/high`, among the factory's
+  own (`model.RiskLabel`). The triager's prompt says when a change is
+  high-risk and its decision carries `"risk": "high"`, whatever it decides;
+  the operator labels an issue that stays open, says so in the triage's
+  comment and keeps it in `status.triage.risk`. Decided here: one label and
+  not a scale, since a rule either names it or doesn't; the label is never
+  taken off by a later triage, as a person may have set it; and it decides
+  nothing by itself. The stand-in triager says it for "stand-in: risk
+  high".
+- Open, as #92: the reviewer's `Risk: high`.
 
 ## Done when
 

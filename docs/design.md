@@ -805,6 +805,14 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   reason and acts: `ready` writes the checklist into a body that has none and
   labels `status/ready`; `spec` labels `status/needs-spec`; `park` labels
   `status/needs-human` and asks the question; `duplicate` closes the issue.
+  Whatever it decides, the triager may call the issue's change high-risk
+  (`"risk": "high"`): done wrong it would be costly or hard to undo, as a
+  change that migrates or deletes data, changes who may do what, handles
+  money or breaks an interface others build on. The operator labels such an
+  issue `risk/high` when it stays open, says so in its comment, and never
+  takes the label off; a person may set it too. The label decides nothing:
+  the Crew's approval rule that names it says what the change needs
+  (*Approval rules*).
   An issue a person closed or relabelled meanwhile keeps that. The Task ends
   `Merged`, as a Plan Task does, with the decision, its reason and what was
   done in `status.triage`. A person can answer a parked issue's question

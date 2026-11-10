@@ -196,6 +196,30 @@ func TestPromptsNeverLeaveAnEnvironmentsCriterionOpen(t *testing.T) {
 	}
 }
 
+// #92: the triager is told when an issue is high-risk, and its word is kept
+// as "high" or nothing.
+func TestTriageRisk(t *testing.T) {
+	prompt := TriagePrompt(Job{Container: "orders-api", Project: "webshop", Issue: 4, Goal: "Drop the column."},
+		Workspace{})
+	for _, want := range []string{`say "risk": "high" when a mistake`, "migrates or deletes data", "handles money",
+		`"risk": "high" or ""`} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("triage prompt lacks %q", want)
+		}
+	}
+	for reply, want := range map[string]string{
+		`{"decision": "ready", "reason": "It drops a column.", "risk": "High"}`: model.RiskHigh,
+		`{"decision": "spec", "reason": "It moves money.", "risk": "high"}`:     model.RiskHigh,
+		`{"decision": "ready", "reason": "Clear.", "risk": "low"}`:              "",
+		`{"decision": "ready", "reason": "Clear.", "risk": ""}`:                 "",
+		`{"decision": "ready", "reason": "Clear."}`:                             "",
+	} {
+		if d, err := ParseTriage(reply); err != nil || d.Risk != want {
+			t.Errorf("ParseTriage(%s) has risk %q, %v; want %q", reply, d.Risk, err, want)
+		}
+	}
+}
+
 // TestPromptsProjectNotes pins that both prompts send the agent to the
 // project's notes right after AGENTS.md, and that AGENTS.md and the role
 // guide win where they disagree.

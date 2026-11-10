@@ -525,6 +525,13 @@ type TriageDecision struct {
 	// +optional
 	Environments []string `json:"environments,omitempty"`
 
+	// risk is "high" when the triager called the issue's change costly or
+	// hard to undo if done wrong. The operator labelled the issue risk/high
+	// for it, which the Crew's approval rules can name.
+	// +kubebuilder:validation:Enum=high
+	// +optional
+	Risk string `json:"risk,omitempty"`
+
 	// applied says what the operator did to the issue, or why it did nothing:
 	// a person closed or triaged the issue meanwhile.
 	// +kubebuilder:validation:MaxLength=1024

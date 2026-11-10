@@ -1005,6 +1005,11 @@ the Crew merging by itself except where it hurts:
       require: None
 ```
 
+`risk/high` is one of the factory's own labels. A Crew with a triager has it
+put on an issue whose change, done wrong, would be costly or hard to undo (a
+data migration, who may sign in, money), and you can put it on any issue
+yourself. It does nothing until a rule names it.
+
 [config/samples/first-app/crew-approval.yaml](../config/samples/first-app/crew-approval.yaml)
 is a Crew with such rules. Changing the rules takes effect at once, also for
 changes under way: take a rule away and what waited for it merges. Specs have

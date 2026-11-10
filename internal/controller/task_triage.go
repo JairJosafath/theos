@@ -276,7 +276,7 @@ func (r *TaskReconciler) applyDecision(ctx context.Context, task *c4v1beta1.Task
 	}
 	status.Triage = &c4v1beta1.TriageDecision{Decision: decision.Decision, Reason: decision.Reason,
 		Criteria: decision.Criteria, Question: decision.Question, Duplicate: int32(decision.Duplicate), Applied: applied,
-		Environments: decision.Environments}
+		Environments: decision.Environments, Risk: decision.Risk}
 	status.Summary = decision.Reason
 	if err := r.endRun(ctx, task, status); err != nil {
 		return err
@@ -288,7 +288,8 @@ func (r *TaskReconciler) applyDecision(ctx context.Context, task *c4v1beta1.Task
 }
 
 // applyTriageActions writes a decision's actions to the issue and says what
-// it did: the body, the comment, the close, then the status label. A host
+// it did: the body, the comment, the close, the environments' and the risk's
+// labels, then the status label. A host
 // that won't close an issue with open dependencies leaves it open, said.
 func (r *TaskReconciler) applyTriageActions(ctx context.Context, provider ports.Issues, repo ports.Repository,
 	number int, actions model.TriageActions) (string, error) {
@@ -312,6 +313,11 @@ func (r *TaskReconciler) applyTriageActions(ctx context.Context, provider ports.
 	}
 	for _, l := range actions.EnvLabels {
 		if err := provider.AddIssueLabel(ctx, repo, number, l); err != nil {
+			return "", err
+		}
+	}
+	if actions.RiskLabel != "" {
+		if err := provider.AddIssueLabel(ctx, repo, number, actions.RiskLabel); err != nil {
 			return "", err
 		}
 	}
