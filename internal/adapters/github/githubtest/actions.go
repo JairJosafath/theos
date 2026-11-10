@@ -69,12 +69,14 @@ const (
 // run's id; the run is queued until it has a job.
 func (s *Server) AddRun(owner, name, workflow, event, branch, sha string, pull int) int64 {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.done()
 	kept := s.repos[owner+"/"+name]
 	s.nextID++
-	kept.runs = append(kept.runs, &run{id: s.nextID, workflow: workflow, event: event, branch: branch, sha: sha,
-		pull: pull, created: time.Now().UTC().Truncate(time.Second), attempt: 1})
-	return s.nextID
+	made := &run{id: s.nextID, workflow: workflow, event: event, branch: branch, sha: sha,
+		pull: pull, created: time.Now().UTC().Truncate(time.Second), attempt: 1}
+	kept.runs = append(kept.runs, made)
+	s.runEvent(kept, made, "requested")
+	return made.id
 }
 
 // AddJob says a job of run is at status, queued, in_progress or completed,
@@ -84,7 +86,7 @@ func (s *Server) AddRun(owner, name, workflow, event, branch, sha string, pull i
 // is what a check links to.
 func (s *Server) AddJob(owner, name string, runID int64, jobName, status, conclusion, log string) (int64, string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.done()
 	kept := s.repos[owner+"/"+name]
 	r := kept.runs[slices.IndexFunc(kept.runs, func(r *run) bool { return r.id == runID })]
 	s.nextID++
@@ -100,6 +102,10 @@ func (s *Server) AddJob(owner, name string, runID int64, jobName, status, conclu
 		check.Conclusion = &conclusion
 	}
 	kept.checkRuns[r.sha] = append(kept.checkRuns[r.sha], check)
+	s.checkRunEvent(kept, check, r.sha, &r.branch, r.pulls())
+	if state, _ := r.state(); state != statusQueued {
+		s.runEvent(kept, r, state)
+	}
 	return j.id, page
 }
 
@@ -236,20 +242,28 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request, kept *repo) {
 		if branch := q.Get("branch"); branch != "" && branch != found.branch {
 			continue
 		}
-		status, conclusion := found.state()
-		pulls := []pullRef{}
-		if found.pull != 0 {
-			pulls = append(pulls, pullRef{found.pull})
-		}
-		listed = append(listed, runJSON{ID: found.id, Path: ".github/workflows/" + found.workflow, Event: found.event,
-			HeadBranch: found.branch, HeadSHA: found.sha, Status: status, Conclusion: conclusion,
-			RunAttempt: found.attempt, RunStartedAt: found.created.Format(time.RFC3339), PullRequests: pulls,
-			HTMLURL: s.srv.URL + "/" + kept.owner + "/" + kept.name + "/actions/runs/" + strconv.FormatInt(found.id, 10)})
+		listed = append(listed, s.runJSON(kept, found))
 	}
 	reply(w, http.StatusOK, struct {
 		TotalCount   int       `json:"total_count"`
 		WorkflowRuns []runJSON `json:"workflow_runs"`
 	}{len(listed), page(q, listed)})
+}
+
+// pulls are the pull requests a run is for, as its JSON lists them.
+func (r *run) pulls() []pullRef {
+	if r.pull == 0 {
+		return []pullRef{}
+	}
+	return []pullRef{{r.pull}}
+}
+
+func (s *Server) runJSON(kept *repo, r *run) runJSON {
+	status, conclusion := r.state()
+	return runJSON{ID: r.id, Path: ".github/workflows/" + r.workflow, Event: r.event,
+		HeadBranch: r.branch, HeadSHA: r.sha, Status: status, Conclusion: conclusion,
+		RunAttempt: r.attempt, RunStartedAt: r.created.Format(time.RFC3339), PullRequests: r.pulls(),
+		HTMLURL: s.srv.URL + "/" + kept.owner + "/" + kept.name + "/actions/runs/" + strconv.FormatInt(r.id, 10)}
 }
 
 func (s *Server) jobJSON(kept *repo, r *run, j *job) jobJSON {

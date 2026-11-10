@@ -112,7 +112,7 @@ func (g *Git) EnsureEventHook(_ context.Context, hook ports.EventHook) (bool, er
 		switch {
 		case u.Path != want.Path:
 			kept = append(kept, h)
-		case h == hook:
+		case h.URL == hook.URL && h.Secret == hook.Secret:
 			changed = false
 		}
 	}
