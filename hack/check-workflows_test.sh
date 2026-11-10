@@ -200,6 +200,22 @@ out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Tests keeping a superseded head of main fails" "$?" 1
 check "Tests keeping a superseded head says so" "$(grep -c 'test.yml: cancel-in-progress:' <<<"$out")" 1
 
+# #66: Tests left out all of ui/, where the Go tests read the fixtures the
+# UI's tests share with them, so a pull request that changed a UI rule and
+# the fixture's report ran no Go test.
+real test '/^      - ui\/src\/model\/testdata\/\*\*$/d'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests without the fixtures under ui/ fails (#66)" "$?" 1
+check "Tests without the fixtures under ui/ says so" "$(grep -c "test.yml: leaves out ui/\*\* without taking ui/src/model/testdata/\*\* back in after it" <<<"$out")" 1
+
+# A later pattern wins: taken back in before the exclusion, they are left out.
+real test "/^      - ui\/src\/model\/testdata\/\*\*$/d; s|^      - '!docs/\*\*'$|      - ui/src/model/testdata/**\n&|"
+check "the edit takes the fixtures in before the exclusion, on pushes and pull requests" \
+  "$(grep -A1 '^      - ui/src/model/testdata/\*\*$' "$T/r/wf/test.yml" | grep -c "^      - '!docs/\*\*'$")" 2
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests taking the fixtures in before leaving ui/ out fails (#66)" "$?" 1
+check "Tests taking the fixtures in before leaving ui/ out says so" "$(grep -c "test.yml: leaves out ui/\*\* without taking" <<<"$out")" 1
+
 real ui '/^  cancel-in-progress:/d'
 out=$("$CHECK" "$T/r/wf" 2>&1)
 check "UI without cancel-in-progress fails" "$?" 1

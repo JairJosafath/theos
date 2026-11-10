@@ -104,7 +104,7 @@ func taskMetricFacts(task *c4v1beta1.Task) model.TaskMetricFacts {
 	f.Unreviewed = approval != nil && approval.Require == c4v1beta1.ApprovalNone && task.Status.Review == nil
 	f.NoChange = endedWithNoChange(task)
 	for _, step := range task.Status.History {
-		f.History = append(f.History, model.TaskMetricStep{At: step.At.Time, Phase: string(step.Phase)})
+		f.History = append(f.History, model.TaskMetricStep{At: step.At.Time, Phase: string(step.Phase), Reason: step.Reason})
 	}
 	for _, run := range task.Status.Runs {
 		r := model.TaskMetricRun{Agent: run.Agent, Harness: run.Harness, Model: run.Model, Role: run.Role,
