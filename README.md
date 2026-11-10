@@ -2,11 +2,6 @@
 
 **THE Open Software-factory. Tell the story first; the factory builds the workspace.**
 
-theos began as C4 Factory and keeps its history. Most issue and pull request
-numbers in the docs and plans (`#1094`) are from that project's repository,
-which stays private as the archive, so they are not links; numbers from
-2026-11 on are this repository's.
-
 theos turns an idea into working, scaffolded repositories. You describe your
 software as a small [C4](https://c4model.com)-style model: who uses it, which
 systems exist, and which applications and data stores they are made of. A Kubernetes
@@ -29,6 +24,30 @@ your cluster, every part is in this repository, and it builds new software
 from a model as well as maintaining what exists.
 [docs/comparison.md](docs/comparison.md) puts it next to Warp's factory, row
 by row, with what theos doesn't do yet.
+
+## Quickstart
+
+With Docker running, on Linux, macOS or WSL, from a clone at a release's tag:
+
+```sh
+hack/quickstart.sh
+```
+
+It makes a Kind cluster of its own, installs Agent Sandbox and the release's
+chart (the operator, the UI, Gitea and its CI runners), and gives the
+stand-in Agent a Brief, so the whole loop runs with no model and no token:
+a plan, a scaffolded repository, an issue, a change, CI, a review, a merge.
+Then it opens the UI on <http://localhost:8080>. It needs about 4 CPUs and
+8 GiB free, uses a kubeconfig of its own and never yours, and downloads
+`kind`, `kubectl` and `helm` only when they aren't on your PATH, checked
+against pinned checksums. `hack/quickstart.sh --down` removes all of it.
+
+While the chart and the images on GHCR are private, give it a GitHub user
+and a token with `read:packages`: `GHCR_USER=you GHCR_TOKEN=... hack/quickstart.sh`.
+
+[docs/getting-started.md](docs/getting-started.md) goes on from there: real
+agents with a Claude token, a model and a Crew of your own, releases and
+deploys.
 
 ## How it works
 
@@ -140,30 +159,6 @@ for developing the factory itself.
 [ROADMAP.md](ROADMAP.md) has the release train, the milestones and what 1.0
 means.
 
-## Quickstart
-
-With Docker running, on Linux, macOS or WSL, from a clone at a release's tag:
-
-```sh
-hack/quickstart.sh
-```
-
-It makes a Kind cluster of its own, installs Agent Sandbox and the release's
-chart (the operator, the UI, Gitea and its CI runners), and gives the
-stand-in Agent a Brief, so the whole loop runs with no model and no token:
-a plan, a scaffolded repository, an issue, a change, CI, a review, a merge.
-Then it opens the UI on <http://localhost:8080>. It needs about 4 CPUs and
-8 GiB free, uses a kubeconfig of its own and never yours, and downloads
-`kind`, `kubectl` and `helm` only when they aren't on your PATH, checked
-against pinned checksums. `hack/quickstart.sh --down` removes all of it.
-
-While the chart and the images on GHCR are private, give it a GitHub user
-and a token with `read:packages`: `GHCR_USER=you GHCR_TOKEN=... hack/quickstart.sh`.
-
-[docs/getting-started.md](docs/getting-started.md) goes on from there: real
-agents with a Claude token, a model and a Crew of your own, releases and
-deploys.
-
 ## Develop the factory
 
 Clone the repository on Linux or WSL and open it in VS Code: `./dev setup` downloads
@@ -247,6 +242,13 @@ gh issue create -R JairJosafath/theos --title "Crew stalls" --label source/user 
 [CONTRIBUTING.md](CONTRIBUTING.md) takes you from a fork to a merged pull
 request. [AGENTS.md](AGENTS.md) has the project layout and the rules for
 changing it; they apply to humans and AI agents alike.
+
+## History
+
+theos began as C4 Factory and keeps its history. Most issue and pull request
+numbers in the docs and plans (`#1094`) are from that project's repository,
+which stays private as the archive, so they are not links; numbers from
+2026-11 on are this repository's.
 
 ## License
 
