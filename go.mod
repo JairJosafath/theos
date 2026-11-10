@@ -23,9 +23,9 @@ require (
 	github.com/google/go-containerregistry v0.22.1
 	github.com/moby/patternmatcher v0.6.1
 	github.com/onsi/ginkgo/v2 v2.34.0
-	github.com/onsi/gomega v1.40.0
+	github.com/onsi/gomega v1.44.0
 	github.com/prometheus/client_golang v1.25.0
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/image v0.47.0
 	golang.org/x/mod v0.42.0
 	golang.org/x/net v0.62.0
