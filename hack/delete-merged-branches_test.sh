@@ -115,7 +115,12 @@ world() {
   branch main "$(sha 1)" | jq -s . >"$T/gh/branches.json"
 }
 # branches BRANCH...: the repository's branches, main first, two to a page.
-branches() { { branch main "$(sha 1)" && cat; } | jq -c -n '[inputs] | _nwise(2)' >"$T/gh/branches.json"; }
+# The pages are cut with a slice: jq 1.8, the hosted runner's, dropped the
+# private _nwise that older ones had.
+branches() {
+  { branch main "$(sha 1)" && cat; } |
+    jq -c -n '[inputs] | range(0; length; 2) as $i | .[$i:$i + 2]' >"$T/gh/branches.json"
+}
 # run ARGS...: the script against the stand-in; its output in $T/out, the
 # calls that changed something in $T/calls.
 run() {
@@ -137,6 +142,9 @@ world
 echo 2 >"$T/gh/ahead/$(sha 4)"
 { pull 7 claude/open "$(sha 5)" && pull 8 patch-1 "$(sha 6)" stranger/r; } | jq -s . >"$T/gh/open.json"
 echo keep/ruled >"$T/gh/ruled"
+check "the stand-in lists the seven branches two to a page, on any jq (#118)" \
+  "$(jq -c 'map(.name)' "$T/gh/branches.json" | tr '\n' ' ')" \
+  '["main","claude/done"] ["release","claude/ahead"] ["claude/open","patch-1"] ["keep/ruled"] '
 run sweep
 check "a sweep exits 0" "$?" 0
 check "a sweep deletes the branches main contains, and only them (#118)" "$(deleted)" \
