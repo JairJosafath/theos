@@ -223,14 +223,17 @@ describe('needs', () => {
       name: 'a spec waiting for a person',
       input: input({
         tasks: [
-          task('api-4-spec', {
-            phase: 'AwaitingApproval',
-            pullRequest: 5,
-            pullRequestURL: 'https://git.example/shop/api/pulls/5',
-            conditions: [
-              cond('NeedsYou', 'True', 'WaitingForApproval', 'The spec of issue #4 passed CI and the reviewer'),
-            ],
-          }),
+          {
+            ...task('api-4-spec', {
+              phase: 'AwaitingApproval',
+              pullRequest: 5,
+              pullRequestURL: 'https://git.example/shop/api/pulls/5',
+              conditions: [
+                cond('NeedsYou', 'True', 'WaitingForApproval', 'The spec of issue #4 passed CI and the reviewer'),
+              ],
+            }),
+            spec: { kind: 'Spec', containerRef: { name: 'api' }, agentRef: { name: 'claude' }, issue: 4 },
+          },
         ],
       }),
       want: {
@@ -238,6 +241,35 @@ describe('needs', () => {
         reason: 'WaitingForApproval',
         message: 'The spec of issue #4 passed CI and the reviewer',
         links: ['https://git.example/shop/api/pulls/5'],
+        place: 'Task',
+      },
+    },
+    {
+      // #62: a change its Crew's approval rules hold for a person.
+      name: 'a change waiting for a person',
+      input: input({
+        tasks: [
+          task('api-9', {
+            phase: 'AwaitingApproval',
+            pullRequest: 12,
+            pullRequestURL: 'https://git.example/shop/api/pulls/12',
+            approval: { require: 'Person', rule: 1, reason: 'approval rule 1 (paths migrations/) asks for a person' },
+            conditions: [
+              cond(
+                'NeedsYou',
+                'True',
+                'WaitingForApproval',
+                'The change for issue #9 passed CI and the factory’s review, and waits for a person',
+              ),
+            ],
+          }),
+        ],
+      }),
+      want: {
+        kind: 'Task',
+        reason: 'WaitingForApproval',
+        message: 'The change for issue #9 passed CI and the factory’s review, and waits for a person',
+        links: ['https://git.example/shop/api/pulls/12'],
         place: 'Task',
       },
     },
@@ -459,6 +491,30 @@ describe('needs', () => {
       },
     })),
   ]
+
+  // #62: what waits is told apart, a spec at its review point or a change its
+  // Crew's approval rules hold.
+  it('says whether a spec or a change waits for you, and links its pull request so', () => {
+    const waiting = (name: string, kind?: 'Spec'): Task => ({
+      ...task(name, {
+        phase: 'AwaitingApproval',
+        pullRequest: 5,
+        pullRequestURL: 'https://git.example/shop/api/pulls/5',
+        conditions: [cond('NeedsYou', 'True', 'WaitingForApproval', 'Approve it.')],
+      }),
+      spec: { kind, containerRef: { name: 'api' }, agentRef: { name: 'claude' }, issue: 4 },
+    })
+    const [spec] = needs(input({ tasks: [waiting('api-4-spec', 'Spec')] }))
+    expect([spec.title, spec.links[0].label]).toEqual([
+      'waits for you to approve its spec',
+      'The spec’s pull request #5',
+    ])
+    const [change] = needs(input({ tasks: [waiting('api-4')] }))
+    expect([change.title, change.links[0].label]).toEqual([
+      'waits for you to approve its change',
+      'Its pull request #5',
+    ])
+  })
 
   it.each(cases)('lists $name, with why and where', ({ input, want }) => {
     const items = needs(input)

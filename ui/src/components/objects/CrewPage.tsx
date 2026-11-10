@@ -12,9 +12,9 @@
 
 import type { BriefWriter } from '../../k8s/briefs'
 import { briefTarget, type CrewWriter } from '../../k8s/crews'
-import type { Agent, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
+import type { Agent, ApprovalRule, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
 import { useActs } from '../../lib/hooks'
-import { crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
+import { approvalAsks, approvalRuleFor, crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
 import { PUBLISH_MIGRATION_URL, RELEASE_RUN, publishFailure } from '../../model/releases'
 import type { AgentRole } from '../../model/factory'
 import { absoluteTime } from '../../model/format'
@@ -171,8 +171,33 @@ function CrewOverview({
       </section>
 
       {summary.routes.length ? <RoutesPanel routes={summary.routes} /> : null}
+      {crew.spec.approval?.length ? <ApprovalPanel rules={crew.spec.approval} /> : null}
       {crew.spec.schedules?.length ? <SchedulesPanel crew={crew} /> : null}
     </>
+  )
+}
+
+/** Which of the Crew's changes wait for a person, and which merge on CI alone. */
+function ApprovalPanel({ rules }: { rules: ApprovalRule[] }) {
+  return (
+    <section className="panel" aria-labelledby="crew-approval">
+      <h2 className="panel-title small-title" id="crew-approval">
+        Who approves a change
+      </h2>
+      <p className="panel-text">
+        Each file a pull request changes takes the first rule that matches it, and the change needs the strictest of
+        what its files need. A file no rule matches merges on the reviewer’s approval.
+      </p>
+      <ol className="routes">
+        {rules.map((rule, i) => (
+          <li key={i}>
+            <span className="mono">{approvalRuleFor(rule)}</span>
+            <span className="muted"> · </span>
+            {approvalAsks(rule.require)}
+          </li>
+        ))}
+      </ol>
+    </section>
   )
 }
 

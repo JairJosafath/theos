@@ -304,14 +304,16 @@ function taskNeeds(task: Task, input: NeedsInput): Need[] {
     ]
   }
   if (s?.phase === 'AwaitingApproval' && findCondition(s.conditions, 'NeedsYou')?.status === 'True') {
+    const spec = task.spec.kind === 'Spec'
     return [
       {
         ...base('Task', task, 'AwaitingApproval'),
-        title: 'waits for you to approve its spec',
+        // A spec at its review point, or a change its Crew's approval rules hold (#62).
+        title: spec ? 'waits for you to approve its spec' : 'waits for you to approve its change',
         ...why(findCondition(s.conditions, 'NeedsYou'), 'WaitingForApproval'),
         place,
         links: s.pullRequestURL
-          ? [{ label: `The spec's pull request #${s.pullRequest ?? ''}`, url: s.pullRequestURL }]
+          ? [{ label: `${spec ? 'The spec’s' : 'Its'} pull request #${s.pullRequest ?? ''}`, url: s.pullRequestURL }]
           : [],
       },
     ]

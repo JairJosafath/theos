@@ -288,7 +288,8 @@ squash-merges on approval. Failed checks, requested changes or a failed run
 start the next round with that feedback, up to the Agent's `maxRounds`.
 Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, `Verifying` (a
 verifier runs the approved change), `Blocked` (waiting on a Standard change),
-`AwaitingApproval` (a spec waiting for a person), then `Merged` or `Failed`. A
+`AwaitingApproval` (a spec, or a change its Crew's approval rules hold,
+waiting for a person), then `Merged` or `Failed`. A
 Triage Task (`kind: Triage`) runs one triager on an issue instead and applies
 its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
 *Triage*, *Spec* and *Verify* under Crews and releases.
@@ -806,6 +807,39 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   its own review point, and a Standard change's gated merge needs the
   approval of a review run that still lasts. Without a verifier, the
   reviewer's approval merges.
+- **Approval rules** (`spec.approval`,
+  [plans/approval-rules.md](plans/approval-rules.md)). An ordered list of up
+  to 16 rules says which changes wait for a person and which merge on CI
+  alone. A rule has `require` (`Person`, `Reviewer` or `None`), and what it
+  is for: `labels` (the issue has one of them), `changedLinesOver` (the pull
+  request adds and deletes more lines than that) and `paths` (a file, a
+  folder ending in `/`, or a pattern in which `*` is any run of characters:
+  `*.md`). Each changed file takes the first rule that is for the change and
+  matches the file, a rule without `paths` matching every file; a file no
+  rule matches needs `Reviewer`. The change needs the strictest of what its
+  files need, `Person` over `Reviewer` over `None`, so a rule can only
+  loosen the files it names. A pull request with more files than the Git
+  host lists never gets `None`.
+  The Task asks the rules once its round's checks passed, and again when the
+  Crew's rules change, and keeps the answer in `status.approval` with the
+  rule and the file that decided. `None` merges then, with no reviewer and
+  no verifier run and no approval posted. `Person` comes last: once the
+  reviewer and any verifier approved, their approvals go on the pull
+  request, what the review left for the merge stays in `status.review`, and
+  the Task waits in `AwaitingApproval` with `NeedsYou`, taking no place from
+  `parallel`, as a spec does at its review point and by the same rules: a
+  person, not the operator's user or an agent bot, approves the reviewed
+  commit on the Git host or with the Task's `theos.factory.io/approve-spec`
+  annotation; a request for changes starts the next round with their words;
+  a push is checked and reviewed again; closing the pull request ends the
+  Task. A main that moved while it waited is merged in and the change merges
+  on green checks with no second approval. Rules that no longer ask for a
+  person let a waiting Task merge. `status.approval.approvedBy` records who
+  approved, and the issue's closing comment says who let the change in: the
+  person, or no agent's review, with the rule. The rules are for Implement
+  Tasks: a spec has `specApproval`, a Standard change always has its lasting
+  review run, and a Crew without rules reviews and merges everything, as
+  before them.
 
 A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
 

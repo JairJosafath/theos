@@ -274,8 +274,9 @@ const (
 	// verifier builds, starts and checks against its acceptance criteria
 	// before it merges.
 	TaskVerifying TaskPhase = "Verifying"
-	// TaskAwaitingApproval is a Spec Task whose spec passed CI and the
-	// reviewer: it waits for a person to approve its pull request.
+	// TaskAwaitingApproval is a spec, or a change its Crew's approval rules
+	// hold for a person, that passed CI and the factory's review: it waits
+	// for a person to approve its pull request.
 	TaskAwaitingApproval TaskPhase = "AwaitingApproval"
 	TaskBlocked          TaskPhase = "Blocked"
 	TaskMerged           TaskPhase = "Merged"
@@ -597,6 +598,52 @@ type TaskSpecResult struct {
 	Applied string `json:"applied,omitempty"`
 }
 
+// TaskApproval is what a Crew's approval rules (its spec.approval) ask of a
+// Task's change, and who met it.
+type TaskApproval struct {
+	// require is what the change needs before it merges: Person, a person's
+	// approval of its pull request after the agents'; Reviewer, the agents'
+	// alone; or None, CI alone.
+	// +required
+	Require ApprovalRequirement `json:"require"`
+
+	// rule is the number, from 1, of the rule in the Crew's approval that
+	// decided; unset when a file no rule matches did.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Rule int32 `json:"rule,omitempty"`
+
+	// reason says which rule asks it, and for which file.
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// commit is the head the answer is of; a later head is asked again once
+	// its checks pass.
+	// +kubebuilder:validation:MaxLength=64
+	// +optional
+	Commit string `json:"commit,omitempty"`
+
+	// rules names the Crew's rules the answer came from, by what they say:
+	// when the Crew's rules change, the answer is worked out again.
+	// +kubebuilder:validation:MaxLength=64
+	// +optional
+	Rules string `json:"rules,omitempty"`
+
+	// approvedBy is who approved the change, once a person did: the Git host
+	// user who approved the pull request, or the Kubernetes user who approved
+	// it from chat (the theos.factory.io/approve-spec annotation; then
+	// approvedInChat).
+	// +kubebuilder:validation:MaxLength=256
+	// +optional
+	ApprovedBy string `json:"approvedBy,omitempty"`
+
+	// approvedInChat says approvedBy approved the change from chat, not on
+	// the Git host.
+	// +optional
+	ApprovedInChat bool `json:"approvedInChat,omitempty"`
+}
+
 // TaskStandardChange is the Standard change a Task proposed: the protected files
 // it wants changed, and where that change is being reviewed.
 type TaskStandardChange struct {
@@ -800,6 +847,12 @@ type TaskStatus struct {
 	// operator did to the issue once it merged.
 	// +optional
 	Spec *TaskSpecResult `json:"spec,omitempty"`
+
+	// approval is what the Crew's approval rules ask of the Task's change,
+	// once its checks passed, and who approved it when they ask for a
+	// person. Unset for a Task whose Crew has no rules.
+	// +optional
+	Approval *TaskApproval `json:"approval,omitempty"`
 
 	// standardChange is the Standard change the Task filed last: the one it
 	// waits for while Blocked. It stays after the Task resumes: it counts the

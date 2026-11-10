@@ -209,7 +209,10 @@ export function taskStage(task: Task): StageKey | undefined {
         case 'Checking':
         case 'Blocked':
           return 'implement'
+        // AwaitingApproval is a change its Crew's approval rules hold for a
+        // person: still in review, now a person's.
         case 'Reviewing':
+        case 'AwaitingApproval':
           return 'codeReview'
         case 'Verifying':
           return 'verify'

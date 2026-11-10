@@ -302,8 +302,9 @@ func ReviewAgain(p TaskProgress) TaskProgress {
 	return p
 }
 
-// AwaitApproval is the progress of a Spec Task whose reviewer approved its
-// spec: it waits for its review point, in the same round.
+// AwaitApproval is the progress of a Task whose agents approved its pull
+// request, a spec's or a change's its Crew holds for a person: it waits for
+// a person's approval, in the same round.
 func AwaitApproval(p TaskProgress) TaskProgress {
 	p.Phase = TaskAwaitingApproval
 	return p

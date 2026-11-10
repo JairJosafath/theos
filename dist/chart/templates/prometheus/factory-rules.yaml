@@ -40,14 +40,14 @@ spec:
           annotations:
             summary: {{ `"More Tasks failed than merged in {{ $labels.namespace }} over a day"` }}
             description: "Look at the failed Tasks' reasons in the UI's Work area: a red main, a broken check and a missing credential each fail every Task."
-        - alert: TheosSpecWaitsForAPerson
+        - alert: TheosApprovalWaitsForAPerson
           expr: sum by (namespace) (theos_tasks{phase="AwaitingApproval"}) > 0
-          for: {{ .Values.prometheus.rules.specWaits }}
+          for: {{ .Values.prometheus.rules.approvalWaits }}
           labels:
             severity: info
           annotations:
-            summary: {{ `"A spec in {{ $labels.namespace }} waits for a person's approval"` }}
-            description: "Approve it or ask for changes on its pull request, in the UI's Needs you list or in the Chat's specs room."
+            summary: {{ `"A spec or a change in {{ $labels.namespace }} waits for a person's approval"` }}
+            description: "Approve it or ask for changes on its pull request: the UI's Needs you list has it, and a spec is in the Chat's specs room too."
         - alert: TheosRunsWithoutCost
           expr: sum by (namespace, agent) (theos_agent_runs_without_cost) / sum by (namespace, agent) (theos_agent_runs) > 0.5
           for: 6h

@@ -67,6 +67,77 @@ spec:
           spec:
             description: spec defines the Container and the Agents for each role
             properties:
+              approval:
+                description: |-
+                  approval says which of the Crew's changes wait for a person, and which
+                  merge on CI alone (docs/design.md, "Approval rules"). Each file a pull
+                  request changes takes the first rule in the list that matches it, and
+                  the change needs the strictest of what its files need: Person over
+                  Reviewer over None. A file no rule matches needs Reviewer, which is
+                  what every change needs without rules. The rules are read when a
+                  change's checks pass and again when they change, so they hold for the
+                  Tasks under way too. They are for the Crew's Implement Tasks: a spec
+                  has specApproval, and a Standard change is always reviewed.
+                items:
+                  description: |-
+                    ApprovalRule is one rule of a Crew's approval: the changes it is for, the
+                    files of those it matches, and what it asks of them. A rule with labels is
+                    for a change whose issue has one of them; one with changedLinesOver, for a
+                    pull request that adds and deletes more lines than that; with both, for a
+                    change that is both; with neither, for every change. It matches the files
+                    under one of its paths, or every file when it has none.
+                  properties:
+                    changedLinesOver:
+                      description: |-
+                        changedLinesOver makes the rule for a pull request that adds and
+                        deletes more lines than this, counted together. Unset, the size
+                        doesn't matter.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    labels:
+                      description: |-
+                        labels are issue labels, matched exactly: the rule is for a change
+                        whose issue has one of them. Unset, the issue's labels don't matter.
+                      items:
+                        maxLength: 100
+                        minLength: 1
+                        type: string
+                      maxItems: 16
+                      type: array
+                      x-kubernetes-list-type: set
+                    paths:
+                      description: |-
+                        paths are the files the rule matches: a file, a folder ending in "/"
+                        for everything in it, as a Standard's protectedPaths are, or a pattern
+                        in which * stands for any run of characters, slashes included (*.md,
+                        docs/*). Unset, the rule matches every file.
+                      items:
+                        maxLength: 256
+                        minLength: 1
+                        type: string
+                      maxItems: 16
+                      type: array
+                      x-kubernetes-list-type: set
+                      x-kubernetes-validations:
+                      - message: 'paths are relative to the repository''s root: no
+                          leading /'
+                        rule: self.all(p, !p.startsWith('/'))
+                    require:
+                      description: |-
+                        require is what the files the rule matches need before the change
+                        merges: Person, Reviewer or None.
+                      enum:
+                      - Person
+                      - Reviewer
+                      - None
+                      type: string
+                  required:
+                  - require
+                  type: object
+                maxItems: 16
+                type: array
+                x-kubernetes-list-type: atomic
               containerRef:
                 description: |-
                   containerRef names the Container whose repository's issues the Crew works

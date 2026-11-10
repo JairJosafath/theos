@@ -127,6 +127,9 @@ type WatchedTask struct {
 	// Reason and Message are its Progressing condition's.
 	Reason  string
 	Message string
+	// Spec means a Spec Task: what waits for a person's approval is its
+	// spec, not a change its Crew's approval rules hold.
+	Spec bool
 	// AgentBackAt is when its agent is back, while it waits for one.
 	AgentBackAt time.Time
 	// StandardChange is the issue of the Standard change it waits on, and
@@ -367,6 +370,13 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 			fmt.Sprintf("Task `%s` has waited %s for main to turn green.", t.Name, waited),
 			"Fix main's checks, or revert the change that broke them.",
 			sentence(t.Message, "round 1 starts only on a green base"), t.Since}
+	case t.Reason == ReasonAwaitingApproval && !t.Spec:
+		// A change its Crew's approval rules hold: only a person lets it in (#62).
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` waits for you to approve its change: %s", t.Name, sentence(t.Message,
+				"its pull request passed CI and the factory's review")),
+			"Approve the pull request on the Git host, ask for changes there, or close it to drop the change.",
+			"The Crew's approval rules hold this change until a person approved it.", t.Since}
 	case t.Reason == ReasonAwaitingApproval:
 		// A spec's review point: only a person approves it (docs/plans/done/sdlc-loop.md).
 		return nil, &NeedsYou{AttentionTask, t.Name,
