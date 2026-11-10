@@ -93,6 +93,82 @@ var _ = Describe("Standard schedules (#72)", func() {
 		Expect(filed[0].Body).To(ContainSubstring("## Goal\n\n" + want.Goal))
 	})
 
+	It("changes no Container and no Crew when a proposal is added, changed or removed", func() {
+		ns := newProjectNamespace()
+		createFactory(ns)
+		standard := newStandard(ns, "python-strict", "python-fastapi")
+		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		container.Spec.StandardRef = &c4v1beta1.LocalRef{Name: "python-strict"}
+		mustCreate(newSystem(ns, "webshop-core"), standard, container)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+			g.Expect(container.Status.Standard).NotTo(BeNil())
+		}).Should(Succeed())
+		scaffolded := container.Status.Standard.DeepCopy()
+		head := gitFake.MainHead(ns, "orders-api")
+
+		// The Crew has a schedule of its own under the name the Standard will use.
+		crewAgents(ns, 1)
+		crewClockAt(scheduleMonday.Add(-time.Hour))
+		crew := newCrew(ns)
+		crew.Spec.Schedules = []c4v1beta1.CrewSchedule{weeklySchedule()}
+		mustCreate(crew)
+		own := weeklySchedule()
+		own.TimeZone = "UTC"
+		Eventually(func(g Gomega) {
+			st := scheduleStatus(g, ns, "dependencies")
+			g.Expect(st.Next).NotTo(BeNil())
+			g.Expect(st.Next.Time).To(BeTemporally("==", scheduleMonday))
+		}).Should(Succeed())
+		unchanged := func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+			g.Expect(container.Status.Standard).To(Equal(scaffolded), "a proposal is no Standard update")
+			g.Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty(), "a proposal opens no pull request")
+			g.Expect(gitFake.MainHead(ns, "orders-api")).To(Equal(head))
+			g.Expect(getCrew(g, ns).Spec.Schedules).To(Equal([]c4v1beta1.CrewSchedule{own}), "the Crew's schedule is its own")
+			next := scheduleStatus(g, ns, "dependencies").Next
+			g.Expect(next).NotTo(BeNil())
+			g.Expect(next.Time).To(BeTemporally("==", scheduleMonday))
+			g.Expect(scheduledIssues(ns)).To(BeEmpty())
+		}
+
+		By("adding a proposal of the Crew's schedule's name")
+		Expect(k8sClient.Get(ctx, key(ns, "python-strict"), standard)).To(Succeed())
+		generation := standard.Generation
+		Expect(patch(standard, func() { standard.Spec.Schedules = []c4v1beta1.CrewSchedule{weeklySchedule()} })).To(Succeed())
+		// A change of the spec, which the Container's watch of its Standard passes on.
+		Expect(standard.Generation).To(BeNumerically(">", generation))
+		Consistently(unchanged, 2*time.Second).Should(Succeed())
+
+		By("changing its time and its words")
+		Expect(patch(standard, func() {
+			standard.Spec.Schedules[0].Cron = "0 7 1 * *"
+			standard.Spec.Schedules[0].TimeZone = "Europe/Amsterdam"
+			standard.Spec.Schedules[0].Goal = "Other words."
+		})).To(Succeed())
+		Consistently(unchanged, 2*time.Second).Should(Succeed())
+
+		By("removing it")
+		Expect(patch(standard, func() { standard.Spec.Schedules = nil })).To(Succeed())
+		Expect(k8sClient.Get(ctx, key(ns, "python-strict"), standard)).To(Succeed())
+		Expect(standard.Spec.Schedules).To(BeEmpty())
+		Consistently(unchanged, 2*time.Second).Should(Succeed())
+
+		By("filing the Crew's schedule at its own time, in its own words")
+		crewClockAt(scheduleMonday.Add(time.Minute))
+		var filed []fake.Issue
+		Eventually(func(g Gomega) {
+			filed = scheduledIssues(ns)
+			g.Expect(filed).To(HaveLen(1))
+		}).Should(Succeed())
+		Expect(filed[0].Title).To(Equal("dependencies, 2030-01-07"))
+		Expect(filed[0].Body).To(ContainSubstring("## Goal\n\n" + own.Goal))
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+		Expect(container.Status.Standard).To(Equal(scaffolded))
+	})
+
 	It("refuses a proposal the CRD can tell is wrong, as it refuses a Crew's schedule", func() {
 		ns := newProjectNamespace()
 		for why, c := range map[string]struct {
@@ -112,8 +188,9 @@ var _ = Describe("Standard schedules (#72)", func() {
 			Expect(k8sClient.Create(ctx, standard)).To(MatchError(ContainSubstring(c.want)), why)
 		}
 
-		// A time zone of no characters, and a proposal with no goal at all:
-		// the typed client leaves an empty one out, so these go as written.
+		// A time zone of no characters, and a proposal with no goal, no name
+		// or no cron at all: the typed client leaves an empty time zone out
+		// and sends an empty string for the others, so these go as written.
 		for why, c := range map[string]struct {
 			schedule map[string]any
 			want     string
@@ -122,6 +199,10 @@ var _ = Describe("Standard schedules (#72)", func() {
 				"spec.schedules[0].timeZone in body should be at least 1 chars long"},
 			"a proposal without a goal": {map[string]any{"name": "dependencies", "cron": "0 6 * * 1"},
 				"spec.schedules[0].goal: Required value"},
+			"a proposal without a name": {map[string]any{"cron": "0 6 * * 1", "goal": "Update the dependencies."},
+				"spec.schedules[0].name: Required value"},
+			"a proposal without a cron": {map[string]any{"name": "dependencies", "goal": "Update the dependencies."},
+				"spec.schedules[0].cron: Required value"},
 		} {
 			raw := &unstructured.Unstructured{Object: map[string]any{
 				"apiVersion": c4v1beta1.GroupVersion.String(),

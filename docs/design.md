@@ -1037,11 +1037,13 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   A Standard proposes schedules (`Standard.spec.schedules`, #72): up to
   eight, each in the shape of a Crew's schedule and held by the CRD to the
   same patterns, such as its language's weekly dependency update. A proposal
-  turns nothing on: the operator never copies one into a Crew and files
+  turns nothing on: the operator copies none into a Crew unasked and files
   nothing for it. A Crew takes one when a person adds it to the Crew's own
   `spec.schedules` under the proposal's name, where its time and its words
   may be changed; a Crew with a schedule of that name has taken it, and one
-  without has left it. A changed or removed proposal changes no Crew. What
+  without has left it. The name is the proposal's identity: renaming one
+  drops it and proposes another, and a Crew that took it under the old name
+  keeps its schedule. A changed or removed proposal changes no Crew. What
   only the operator can tell is wrong in a proposal (a time zone it can't
   load) is said by the Crew that takes it, in `Scheduled`. Not yet: the UI
   offering a Crew the proposals of its Container's Standard.
