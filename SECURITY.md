@@ -3,9 +3,10 @@
 ## Reporting a vulnerability
 
 Don't open an issue. Use GitHub's private vulnerability reporting
-(*Security* → *Report a vulnerability* on the repository). While the
-repository is still private, or if that button isn't there, report to the
-owner, @JairJosafath ([MAINTAINERS.md](MAINTAINERS.md)), privately.
+(*Security* → *Report a vulnerability* on the repository). If that button
+isn't there, report to the owner, @JairJosafath
+([MAINTAINERS.md](MAINTAINERS.md)), privately, through the contact on their
+GitHub profile.
 
 Include the version (`vX.Y.Z`, or the commit), what an attacker gains, and how
 to reproduce it.

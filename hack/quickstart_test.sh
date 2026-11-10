@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Tests for hack/quickstart.sh (#53), with docker, kind, kubectl, helm and
 # curl faked: it follows the guide's install step for step, on a kubeconfig of
-# its own and never the user's; it uses a cluster that exists; with
+# its own and never the user's; it asks for the release's chart before it
+# makes anything, and says why when it can't pull it; it uses a cluster that
+# exists; with
 # GHCR_USER and GHCR_TOKEN it logs in and names the pull secret; --down
 # removes the cluster; --dry-run runs nothing; a download whose sha256 isn't
 # the pinned one installs nothing; and what it pins is what the repository
@@ -26,10 +28,19 @@ done
 # a closed pipe once in a thousand runs, more under load: printf dies of
 # SIGPIPE, pipefail fails the pipeline, and the script stops after the login,
 # before the pull secrets and the release (seen once in a busy make check).
+# With $T/nochart there, it can't pull the chart, in GHCR's words.
 cat >"$T/fakes/helm" <<FAKE
 #!/usr/bin/env bash
 echo "helm \$*" >>"$T/log"
-case " \$* " in *" --password-stdin "*) cat >/dev/null ;; esac
+case " \$* " in
+  *" --password-stdin "*) cat >/dev/null ;;
+  *" show chart "*)
+    if [ -e "$T/nochart" ]; then
+      echo "Error: GET https://ghcr.io/v2/: DENIED: requested access to the resource is denied" >&2
+      exit 1
+    fi
+    ;;
+esac
 exit 0
 FAKE
 cat >"$T/fakes/kind" <<FAKE
@@ -72,6 +83,9 @@ chart_version=$(sed -n 's/^version: *//p' "$ROOT/dist/chart/Chart.yaml")
 quick
 check "up exits 0" "$?" 0
 forwarded 8080
+check "it asks for the chart first, before anything is made (#53)" \
+  "$(grep -v '^docker info$' "$T/log" | sed -n 1p)" \
+  "helm $kubeconfig show chart oci://ghcr.io/jairjosafath/theos/charts/theos --version $chart_version"
 check "it makes a cluster of its own, with its own kubeconfig" \
   "$(grep -c "^kind create cluster --name theos-quickstart $kubeconfig --wait 120s$" "$T/log")" 1
 check "it installs Agent Sandbox at the guide's version" \
@@ -110,6 +124,19 @@ check "makes the pull secret in both namespaces" "$(grep -c 'create secret docke
 check "and names it in the release" \
   "$(grep -c -- '--set gitea.createNamespace=false,gitea.projects={webshop},global.imagePullSecrets\[0\].name=ghcr,manager.imagePullSecrets\[0\].name=ghcr$' "$T/log")" 1
 check "the token is in no output" "$(grep -c t0ken "$T/out")" 0
+check "the login comes before it asks for the chart" \
+  "$(grep -v '^docker info$' "$T/log" | sed -n 1,2p | cut -d' ' -f4-5 | tr '\n' ' ')" "registry login show chart "
+
+# #53: a release that isn't published, or packages that are private. The
+# script says so before it makes anything, with helm's words and its own.
+touch "$T/nochart"
+quick
+check "a chart that can't be pulled ends the script" "$?" 1
+check "nothing was made" "$(grep -vc '^docker info$\|^helm .* show chart ' "$T/log")" 0
+check "it shows helm's words" "$(grep -c 'DENIED: requested access to the resource is denied' "$T/out")" 1
+check "and says the two reasons and what to do" \
+  "$(grep -c "^quickstart: can't pull the chart of theos $chart_version from ghcr.io/jairjosafath/theos, and nothing was made. Either that release isn't published there (THEOS_VERSION picks another), or its packages are private: then GHCR_USER and GHCR_TOKEN" "$T/out")" 1
+rm -f "$T/nochart"
 
 env THEOS_PROJECT=shop THEOS_UI_PORT=9090 THEOS_VERSION=9.9.9 PATH="$T/fakes:$PATH" THEOS_HOME="$T/home" "$QUICK" >"$T/out" 2>&1
 forwarded 9090
@@ -124,6 +151,7 @@ quick --dry-run
 check "--dry-run exits 0" "$?" 0
 check "--dry-run runs nothing" "$(grep -vc '^$' "$T/log")" 0
 check "and prints the install" "$(grep -c '^+ .*upgrade --install theos oci://' "$T/out")" 1
+check "and the question for the chart" "$(grep -c '^+ .* show chart oci://ghcr.io/jairjosafath/theos/charts/theos --version ' "$T/out")" 1
 
 quick --nope
 check "an unknown argument is refused" "$?" 1

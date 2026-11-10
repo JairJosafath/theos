@@ -23,8 +23,10 @@ You need:
 - `jq` and `curl`, for the Gitea step;
 - a Claude subscription or API account and the `claude` CLI, for the agents'
   token;
-- the GitHub CLI (`gh`), logged in, while the chart and the images on GHCR
-  are private.
+- the GitHub CLI (`gh`), logged in as an account that may read them, while
+  the chart and the images on GHCR are private. Nobody else can install a
+  release until they are public; `hack/quickstart.sh` says which it is
+  before it makes anything.
 
 The commands use the release `0.32.0`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
