@@ -222,7 +222,11 @@ var _ = Describe("Crew release cadence", func() {
 		Expect(gitFake.Tag(ns, "orders-api", "v0.15.0")).To(BeEmpty())
 		Expect(milestonesTitled(ns, "v0.15.0")).To(BeEmpty(), "the release took the patch title")
 		Eventually(func(g Gomega) {
-			g.Expect(getCrew(g, ns).Status.LastRelease.Tag).To(Equal("v0.14.1"))
+			// The Crew tags and closes the milestone before it writes its
+			// status, so the status may not name a release yet.
+			last := getCrew(g, ns).Status.LastRelease
+			g.Expect(last).NotTo(BeNil())
+			g.Expect(last.Tag).To(Equal("v0.14.1"))
 		}).Should(Succeed())
 	})
 

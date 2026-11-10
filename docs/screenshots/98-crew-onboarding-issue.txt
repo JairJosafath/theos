@@ -1,0 +1,64 @@
+#98, step 5 of docs/plans/adopt-existing.md: the Crew's first issue on an
+adopted repository writes AGENTS.md and says what it found
+=========================================================================
+
+2026-11-10. Test output is the evidence; no cluster was used.
+
+$ go test -v ./internal/controller -run '^TestControllers$' -ginkgo.focus "Crew onboarding" -ginkgo.v
+Crew onboarding files one issue once main is protected, builds it, and files no second
+Crew onboarding asks to check and complete the guide a repository already has
+Crew onboarding records the open issue it finds, whose filing its status lost, instead of filing a second
+Crew onboarding files none on a Container the factory scaffolded, which has its Standard's guides
+Ran 4 of 771 Specs in 20.064 seconds
+SUCCESS! -- 4 Passed | 0 Failed | 0 Pending | 767 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	20.103s
+
+$ go test ./internal/model -run 'TestFilesOnboarding|TestOnboardingIssue' -v
+--- PASS: TestFilesOnboarding (0.00s)
+--- PASS: TestOnboardingIssue (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.012s
+
+The issue as the Crew files it on a repository with no AGENTS.md
+(model.OnboardingIssue(false)):
+
+TITLE: Write AGENTS.md for this repository, and say what you found
+
+The factory adopted this repository as it is: it scaffolded nothing here, so nothing tells an agent 
+how the repository is built. Every agent reads `AGENTS.md` before it works. This repository has no 
+`AGENTS.md`. Write it.
+
+## Goal
+
+`AGENTS.md` at the repository's root says, from what the repository holds and what you ran, never 
+from a guess:
+
+- how to build it, how to run its tests and how to run it, each with the command;
+- where things are: the code, the tests, the CI workflows, the configuration;
+- what its conventions are, where the code shows them (naming, layout, how errors and logs are 
+written);
+- what not to touch, and why, where the repository says so.
+
+Change no other file. In the pull request's description, list what you found that a person should 
+know: a test that fails on main, a check that needs a secret or a service, a command the README 
+names that doesn't work, a dependency without a lockfile. Say "nothing found" when that is so.
+
+## Acceptance criteria
+
+- [ ] `AGENTS.md` gives the commands to build, to test and to run the repository, and each was run
+- [ ] It says where the code, the tests and the CI workflows are
+- [ ] The pull request changes no file but `AGENTS.md`
+- [ ] The pull request's description lists what was found, or says nothing was
+
+<!-- theos-onboarding -->
+
+The whole Go suite with steps 2, 3, 5 and 6 of the plan stacked (#95, #96,
+#98, #99), both shards (make test):
+
++ env THEOS_TEST_SHARD=1/2 go test -trimpath -timeout 20m github.com/JairJosafath/theos/internal/controller
+ok  	github.com/JairJosafath/theos/internal/controller	632.904s
++ env THEOS_TEST_SHARD=2/2 go test -trimpath -timeout 20m -run '^TestControllers$' github.com/JairJosafath/theos/internal/controller
+ok  	github.com/JairJosafath/theos/internal/controller	721.743s
+
+Not run here: make validate-yaml, whose download of the Kubernetes schemas
+this session's network refuses; CI's Lint job runs it.

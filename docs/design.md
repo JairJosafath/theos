@@ -265,6 +265,31 @@ starts no Task (`Ready=False`, `ContainerNotProtected`), and a Task made by
 hand waits with that reason. A Container that neither adopts nor has a
 Standard has no checks to require: its Tasks fail, as before. The operator
 follows a change of `checkContexts` and never takes a rule away.
+
+**Proposing the model** (#96). `theos-session adopt --project <ns>
+--git-provider <name>` reads a clone and prints the model that adopts it:
+a SoftwareSystem, the Container with `adopt: true` and the check command
+and contexts it found, and a Crew whose approval rules hold every change
+for a person. It applies nothing and talks to no cluster. It reads the
+build files at the root (`go.mod`, `Cargo.toml`, `package.json`,
+`pyproject.toml`, `Makefile`) and the workflows the host runs, and what it
+can't tell (the language, the kind of application, a check, a workflow
+that runs on a pull request) is a note in the proposal, never a guess. It
+also prints the `.theos.yaml` to commit to main, which stays the person's
+to commit: that file is how a repository's owner says the project may work
+there.
+
+**The Crew's first issue** (#98). A repository the factory scaffolded has
+its Standard's guides for agents; one it adopted with no Standard has what
+its people wrote. So the Crew's first issue there is its own: once main is
+protected and the Crew isn't paused, it files "Write AGENTS.md for this
+repository, and say what you found" (or "Check and complete AGENTS.md",
+when the repository has one), labelled `kind/onboarding` and
+`status/ready`, with criteria a reviewer checks, and builds it as any
+issue; the Crew's approval rules hold its pull request like any other. It
+is filed once: `status.onboarding` records it, and an open issue with its
+marker, which a lost status write leaves, is recorded instead of a second
+one filed.
 Adoption checks the Standard's files and nothing of the Framework's: the
 block `spec.operations` names at adoption is recorded as the one the
 repository holds, when the Framework reads it, and a later change is

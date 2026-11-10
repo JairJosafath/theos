@@ -1,0 +1,43 @@
+# go-cli, a repository the factory adopts as it is: nothing is scaffolded or rewritten.
+# Read from the repository: Go.
+apiVersion: theos.factory.io/v1beta1
+kind: SoftwareSystem
+metadata:
+  name: billing-core
+  namespace: billing
+spec:
+  displayName: billing-core
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: go-cli
+  namespace: billing
+spec:
+  softwareSystemRef:
+    name: billing-core
+  displayName: go-cli
+  type: cli
+  gitProviderRef:
+    name: git
+  adopt: true
+  checkCommand: go test ./...
+  checkContexts:
+  - "test / unit*"
+---
+# Start small: the Crew holds every change for a person. Loosen it rule by
+# rule (docs/getting-started.md, "Start small").
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: go-cli
+  namespace: billing
+spec:
+  containerRef:
+    name: go-cli
+  implementer:
+    name: implementer
+  reviewer:
+    name: reviewer
+  approval:
+  - require: Person

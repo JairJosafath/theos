@@ -261,6 +261,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		// A schedule that came due files its issue (#63); the next poll reads
 		// it among the ready ones.
 		untilSchedule = r.schedule(ctx, &crew, status, provider, repo)
+		// A repository adopted with no Standard gets its guide for agents
+		// first (#98); the next poll reads the issue among the ready ones.
+		r.onboard(ctx, &crew, status, &container, provider, repo)
 	}
 
 	step := model.NextCrewStep(container.Name, facts)

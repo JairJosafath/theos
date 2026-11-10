@@ -1525,6 +1525,8 @@ restart of the UI, or the ID token's expiry, signs everyone out.
 
 ## Next
 
+- A repository you already have: [adopt.md](adopt.md) puts a Crew on it as
+  it is, with its own check command and CI.
 - Your own project: add it to `gitea.projects` and `helm upgrade` with the
   same values ([Upgrading](#upgrading)).
 - [docs/design.md](design.md) explains the model, the catalog, Crews and

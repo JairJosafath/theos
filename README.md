@@ -47,7 +47,10 @@ and a token with `read:packages`: `GHCR_USER=you GHCR_TOKEN=... hack/quickstart.
 
 [docs/getting-started.md](docs/getting-started.md) goes on from there: real
 agents with a Claude token, a model and a Crew of your own, releases and
-deploys.
+deploys. Have a repository already?
+[docs/adopt.md](docs/adopt.md) puts a Crew on it as it is, checked by your
+own command and CI, with every change waiting for your approval until you
+say otherwise.
 
 ## How it works
 

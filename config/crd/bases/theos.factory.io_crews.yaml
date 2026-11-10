@@ -989,6 +989,27 @@ spec:
                   reflects.
                 format: int64
                 type: integer
+              onboarding:
+                description: |-
+                  onboarding is the issue the Crew filed, once, on a repository its
+                  Container adopted with no Standard: write AGENTS.md and say what it
+                  found (docs/design.md, "Adopting a repository"). Unset on any other
+                  Crew, and until it is filed.
+                properties:
+                  filed:
+                    description: filed is when the Crew filed it, or found the one
+                      it had filed.
+                    format: date-time
+                    type: string
+                  issue:
+                    description: issue is the issue's number.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                required:
+                - filed
+                - issue
+                type: object
               phase:
                 description: phase is Waiting, Idle, Working or Paused.
                 enum:

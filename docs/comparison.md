@@ -43,7 +43,7 @@ current. [README.md](../README.md#the-loop) draws the loop,
 | Loop: monitor | a failed or degraded deploy files a bug. **Alerts from a running app: not yet (#64)** | listed as a stage of Warp Factories |
 | Who merges | the factory, once CI, the reviewer and the verifier pass; a person approves specs and deploys, and the changes a Crew's `approval` rules hold for one: by path, label and size, with documentation on CI alone if you say so | a person merges each pull request in the documented workflow; setup asks where people enter, such as high-risk changes |
 | New software | describe a C4-style model or a Brief in plain words; the operator scaffolds each repository from pinned templates, with CI, a devcontainer and agent guides | starts from a repository that exists |
-| Existing software | `spec.adopt` takes over a repository. **A guided path: not yet (#60)** | built for it |
+| Existing software | `spec.adopt` takes over a repository as it is, with no template: its own check command and CI, `theos-session adopt` to propose the model, and a page that walks it ([adopt.md](adopt.md)). **On the factory's own Git host only, until GitHub is one (#57)** | built for it, on GitHub in place |
 | Keeping repositories to a standard | Standards: a version bump arrives in every Container as a pull request the operator opens and merges | skills shared across repositories |
 | Agent harness | Claude Code, and a scripted stand-in for demos and tests. **Others: not yet (#58)** | Warp Agent, Claude Code, Codex |
 | Models | Claude's. **Others and self-hosted: not yet (#58)** | any, per Warp, open-weight ones included |
@@ -64,8 +64,9 @@ Each has an issue under #46, and the order is in
 1. It works only against the Gitea it installs, so a team must move its work
    to try it (#57).
 2. It runs one vendor's agent (#58).
-3. Adopting a repository you already have is poorly guided (#60), and the
-   one-command first run is a local demo, not yet your own code.
+3. A repository you already have must move to the factory's Git host to
+   be adopted (#57 again), and the one-command first run is a local demo,
+   not yet your own code.
 4. Requests and chat reach it from fewer places (#61).
 5. It publishes no numbers about itself (#66). Warp runs its open-source repository with its own factory in
    public and quotes the share of pull requests merged with no person.

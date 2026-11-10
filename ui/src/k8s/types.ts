@@ -1013,6 +1013,8 @@ export interface Crew extends K8sObject {
     conditions?: Condition[]
     /** Where each of spec.schedules stands. */
     schedules?: CrewScheduleStatus[]
+    /** The issue the Crew filed, once, on a repository it adopted: write AGENTS.md and say what it found. */
+    onboarding?: { issue: number; filed: string }
   }
 }
 
