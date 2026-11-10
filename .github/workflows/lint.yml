@@ -3,8 +3,13 @@ name: Lint
 # Go sources, the linter's configuration and the YAML that make validate-yaml
 # checks (with the templates and tools it renders them with), and what the
 # shell tests of hack/ read (make test-hack). It runs on pull requests to main
-# too, with the same paths, so vet, lint and the shell tests answer before
+# too, with the same paths, so lint and the shell tests answer before
 # hack/lib/github.sh land (hack/check-workflows.sh).
+# Every run is partial, against main (#127): each job runs its part of make
+# check (CHECK_STEPS), each step only when the change can have broken it
+# (hack/check.sh). The linter reads the packages gta selects; validate-yaml
+# and the shell tests run when one of their inputs changed. Nothing here runs
+# every step: only a release does, Release's own first job (release.yml).
 on:
   push:
     branches: [main]
@@ -46,15 +51,23 @@ on:
       - .github/workflows/**
   workflow_dispatch:
 
-# One group per branch or pull request. On main a running run finishes, so
-# main keeps getting a verdict, and GitHub cancels the older pending ones when
-# a newer push comes; on a pull request a new push cancels the run in
-# progress too (hack/check-workflows.sh, docs/dev/testenv.md).
+# One group per pull request, where a new push cancels the run in progress, and
+# one per commit on main: a push to main is compared with the head before it,
+# so each push needs its own run, and a pending run GitHub dropped for a newer
+# push would leave its change unchecked until a release (#127;
+# hack/check-workflows.sh, docs/dev/testenv.md).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
+
+env:
+  # What a run is compared with: a pull request with its base branch, a push
+  # to main with main's head before the push, a manual run with main. When
+  # that commit is not in the clone (a forced push), the change can't be
+  # known and every step runs.
+  TEST_BASE: ${{ github.event_name == 'push' && github.event.before || format('origin/{0}', github.base_ref || 'main') }}
 
 jobs:
   lint:
@@ -68,6 +81,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The whole history: make check diffs against the merge base with
+          # TEST_BASE (hack/lib/change.sh).
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -78,15 +94,17 @@ jobs:
 
       - name: Check linter configuration
         run: make lint-config
-      - name: Run linter
-        run: make lint
-      - name: Validate the YAML
-        run: make validate-yaml
+      # This job's part of make check: manifests and generate when what they
+      # read changed, the linter on the packages the change affects, and
+      # validate-yaml when one of its inputs changed.
+      - name: Lint and validate the YAML
+        run: make check CHECK_STEPS="generate lint validate-yaml"
         env:
           # hack/k8s-openapi.sh lists the Kubernetes schemas through the GitHub API.
           GITHUB_TOKEN: ${{ github.token }}
-      # make validate-yaml regenerated the CRDs, the role and the chart's copies
-      # of them; a stale committed one shows as a change here (#1689).
+      # make manifests regenerated the CRDs, the role and the chart's copies of
+      # them when what they are made from changed; a stale committed one shows
+      # as a change here (#1689).
       - name: Generated files are committed
         run: make check-generated
 
@@ -101,6 +119,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The whole history: make check diffs against the merge base with
+          # TEST_BASE (hack/lib/change.sh).
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -109,5 +130,7 @@ jobs:
           # A self-hosted runner keeps its Go caches on a volume (make gh-runner).
           cache: ${{ runner.environment == 'github-hosted' }}
 
+      # When a file the shell tests read changed (hack/check-cache.sh says
+      # which those are); the step says so when it skips them.
       - name: Run the shell tests
-        run: make test-hack
+        run: make check CHECK_STEPS=test-hack

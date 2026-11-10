@@ -103,7 +103,7 @@ check "untracked file under ui/: ui-test" "$([ "$("$CACHE" key ui-test)" != "$(h
 rm ui/new.ts
 # A file outside a tier's inputs that git can't add, as a parallel test's
 # scratch that vanishes mid-add, leaves the key as it was: the key adds only
-# the tier's files, and make check-tier-ui-test once missed and ran (#1814).
+# the tier's files, and make check's ui-test once missed and ran (#1814).
 if [ "$(id -u)" != 0 ]; then
   echo x >docs/unreadable.md && chmod 000 docs/unreadable.md
   check "unreadable file outside ui/: ui-test keys as before" "$("$CACHE" key ui-test)" "$(head -1 <<<"$k0")"
@@ -139,6 +139,50 @@ ran ui-test >/dev/null; [ -e "$T/ran" ]; check "run, ui/ changed since: runs it"
 git checkout -q -- hack/x.sh ui/app.ts
 ran ui-test >/dev/null; [ ! -e "$T/ran" ]; check "run, back to inputs that passed before: cached" $? 0
 
+# cached (#127): the cached line of a tier whose inputs passed, without
+# running anything; a miss on other inputs and with FORCE=1.
+out=$("$CACHE" cached ui-test); check "cached, inputs that passed: exit 0" $? 0
+[[ $out == "ui-test: cached (ui/ unchanged since "*", passed in $R); FORCE=1 to rerun" ]]
+check "cached: the line run prints" $? 0
+FORCE=1 "$CACHE" cached ui-test >/dev/null; check "cached, FORCE=1: miss" $? 1
+echo 3 >>ui/app.ts
+"$CACHE" cached ui-test >/dev/null; check "cached, ui/ changed since: miss" $? 1
+git checkout -q -- ui/app.ts
+check "inputs: what a tier reads, in a few words" "$("$CACHE" inputs ui-test)" "ui/"
+
+# changed (#127): the files among a tier's inputs that differ from a commit,
+# committed, uncommitted or untracked: what make check selects the tier by,
+# on a device that holds no pass of it too.
+base=$(git rev-parse HEAD)
+# differs TIER: the changed inputs of TIER, space-separated, and the exit code.
+differs() {
+  local out rc
+  out=$("$CACHE" changed "$1" "$base")
+  rc=$?
+  echo "$(paste -sd' ' <<<"$out") [$rc]"
+}
+check "changed, nothing changed: exit 1" "$(differs ui-test)" " [1]"
+echo 2 >>docs/notes.md
+check "changed, docs/ changed: no tier's inputs" "$(differs ui-test; differs test-hack; differs validate-yaml)" " [1]"$'\n'" [1]"$'\n'" [1]"
+git checkout -q -- docs/notes.md
+echo 2 >>ui/app.ts && echo x >ui/new.ts
+check "changed, ui/: the changed file and the untracked one" "$(differs ui-test)" "ui/app.ts ui/new.ts [0]"
+check "changed, ui/: not an input of the shell tests" "$(differs test-hack)" " [1]"
+git add -A && git commit -qm ui
+check "changed, committed: still differs from the base" "$(differs ui-test)" "ui/app.ts ui/new.ts [0]"
+echo 2 >>config/a.yaml
+check "changed, config/: an input of the shell tests" "$(differs test-hack)" "config/a.yaml [0]"
+check "changed, config/: and of validate-yaml" "$(differs validate-yaml)" "config/a.yaml [0]"
+git checkout -q -- config/a.yaml
+echo 2 >>internal/scaffold/s.go
+check "changed, a package hack/render builds: validate-yaml" "$(differs validate-yaml)" "internal/scaffold/s.go [0]"
+git checkout -q -- internal/scaffold/s.go
+echo 2 >>internal/other/o.go
+check "changed, a package nothing renders with: not validate-yaml" "$(differs validate-yaml)" " [1]"
+git checkout -q -- internal/other/o.go
+"$CACHE" changed ui-test nope >/dev/null 2>&1; check "changed, a base that is no commit: exit 2" $? 2
+"$CACHE" changed nope "$base" >/dev/null 2>&1; check "changed, unknown tier: exit 2" $? 2
+
 # The Makefile: a cached plain `make check` answers without a heavy slot; a
 # miss or FORCE=1 queues for one. The one slot is held while it runs.
 cd "$HACK/.." || exit 1
@@ -146,26 +190,23 @@ cd "$HACK/.." || exit 1
 # broken one: it answers at once, but a loaded device took over 5s (#1409).
 sleep 3600 & holder=$!
 "$HACK/heavy-slot.sh" acquire "$holder" "holder" 2>/dev/null
-timeout 5 make -n check >/dev/null 2>&1; check "make check, not cached: waits for a slot" $? 124
+# TEST_ALL=1 selects every step: a make check whose change selects none takes
+# no slot either (#127, hack/check_test.sh), whatever this checkout holds.
+TEST_ALL=1 timeout 5 make -n check >/dev/null 2>&1; check "make check, not cached: waits for a slot" $? 124
 "$CACHE" record >/dev/null
 out=$(timeout 120 make check 2>&1); check "make check, cached: exit 0 without a slot" $? 0
 check "make check, cached: says so" "$(grep -c '(cached); FORCE=1 to rerun' <<<"$out")" 1
 FORCE=1 timeout 5 make -n check >/dev/null 2>&1; check "FORCE=1 make check: waits for a slot" $? 124
+# As a variable of the command line too, which make before 4.4 keeps from $(shell) (#127).
+timeout 5 make -n check FORCE=1 >/dev/null 2>&1; check "make check FORCE=1: waits for a slot" $? 124
 timeout 5 make -n manifests check >/dev/null 2>&1; check "make manifests check: not answered from the cache" $? 124
 kill "$holder"
 
-# The Makefile's tier rule: a tier whose key passed answers without running
-# it (NPM=false would fail it), and a dry run records nothing.
-skip="-o manifests -o generate -o fmt"
-"$CACHE" run ui-test true >/dev/null
-out=$(timeout 30 make -s $skip check-tier-ui-test NPM=false 2>&1); check "make check-tier-ui-test, cached: exit 0" $? 0
-check "make check-tier-ui-test, cached: says so" "$(grep -c '^ui-test: cached (ui/ unchanged since ' <<<"$out")" 1
-rm -rf "$CHECK_CACHE_DIR/tiers"
-timeout 30 make -n $skip check-tier-ui-test >/dev/null 2>&1
-[ ! -e "$CHECK_CACHE_DIR/tiers" ]; check "make -n check-tier-ui-test: records nothing" $? 0
-rule=$(make -pq help 2>/dev/null | grep -m1 '^check:')
-for t in validate-yaml test-hack; do
-  [[ " $rule " == *" check-tier-$t "* ]]; check "check runs $t through the tier cache" $? 0
+# make check runs the tiers through this cache: hack/check.sh, whose test
+# shows a cached tier answered without make and a dry run recording nothing.
+for t in validate-yaml test-hack ui-test; do
+  check "hack/check.sh runs $t through the tier cache" "$(grep -c "|| tier $t\$" "$HACK/check.sh")" 1
 done
+check "hack/check.sh: a tier runs under check-cache.sh run" "$(grep -c 'step "$1" hack/check-cache.sh run "$1" "$MAKE"' "$HACK/check.sh")" 1
 
 exit $fail

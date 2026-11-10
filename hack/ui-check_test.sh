@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tests that make check runs the UI's check (#1006): check depends on ui-test,
-# through the tier cache (check-tier-ui-test, #1285),
+# Tests that make check runs the UI's check (#1006): its steps (hack/check.sh,
+# #127) hold ui-test, run through the tier cache (#1285) when ui/ changed,
 # and ui-test runs npm run check in ui/ and fails when it fails, a Prettier
 # violation among them. npm is a fake that records its calls, so the test needs
 # neither Node nor the network.
@@ -13,10 +13,11 @@ unset FORCE THEOS_HEAVY_SLOT
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got [$2] want [$3]"; fail=1; fi; }
 
-# The rule make check has, from make's database; help is only asked about
-# (-q), so nothing runs.
-rule=$(make -pq help 2>/dev/null | grep -m1 '^check:')
-[[ " $rule " == *" check-tier-ui-test "* ]]; check "check depends on ui-test, through the tier cache" $? 0
+# The recipe make check has, from make's database; help is only asked about
+# (-q), so nothing runs. hack/check_test.sh shows hack/check.sh running make
+# ui-test for a change under ui/, and nothing else.
+make -pq help 2>/dev/null | grep -A8 '^check:' | grep -q 'hack/check.sh$'; check "make check runs hack/check.sh" $? 0
+grep -q '|| \[ ! -f ui/package.json \] || tier ui-test$' hack/check.sh; check "hack/check.sh holds ui-test, through the tier cache" $? 0
 
 # A fake npm: logs where it ran and with what, makes node_modules on npm ci,
 # and fails as npm run check does on a file Prettier would rewrite.

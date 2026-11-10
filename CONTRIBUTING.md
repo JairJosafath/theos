@@ -41,7 +41,10 @@ Not sure whether theos does what you need?
    ([ROADMAP.md](ROADMAP.md)).
 6. **Run `make check`** before you push. It regenerates the CRDs and the
    DeepCopy code, formats, vets and lints, runs the unit and envtest suites,
-   validates the YAML and runs the UI's checks. No cluster is needed, and
+   validates the YAML and runs the UI's checks, each only when your change
+   can have broken it, and ends by saying what ran, what was skipped and
+   why. The workflows on your pull request run the same, partial against
+   main; only a release runs everything. No cluster is needed, and
    nobody is asked to run one: `make e2e` is a maintainer's tool.
 7. **Open one small pull request to main per issue.** The template asks for
    `Closes #N`, what changed, the evidence (the end of `make check`'s

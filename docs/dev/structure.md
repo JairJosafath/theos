@@ -55,6 +55,8 @@ hack/env-android/                  The android test environment's image: the And
 hack/env-godot/                    The godot test environment's image: the Godot engine, its renderers' libraries and a virtual display
 hack/gh-runner/                    Self-hosted GitHub Actions runners for this repository (make gh-runner RUNNERS=N)
 hack/render/                       Renders templates locally, the way the operator scaffolds
+hack/gta/                          The Go packages a change affects, selected by digitalocean/gta: what make test and make check test, vet and lint
+hack/check.sh                      make check's steps, each run only when the change can have broken it, and the block that says what ran
 test/chart/                        The chart against envtest: its upgrade-only hooks (make test)
 test/compat/                       The compatibility guard: each served version against the last release's CRDs in baseline/ (make test)
 test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox, Argo CD)

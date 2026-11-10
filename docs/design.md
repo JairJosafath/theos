@@ -1833,7 +1833,9 @@ reads into an unset field are left to review.
 ## Test tiers
 
 Each rule is verified at the lowest tier that can see it; `make check` runs
-the table, offline YAML and envtest tiers before every merge. Kind is the test rig: a cluster of one
+the table, offline YAML and envtest tiers before every merge, each for the
+part of the factory the change can have broken, and a release runs all of
+them in full before anything ships. Kind is the test rig: a cluster of one
 node on one machine, which exists only when a
 human asks; agents never create, lease or deploy to one. What only a real
 node would catch is not tested before release, and nothing runs the factory

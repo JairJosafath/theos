@@ -14,11 +14,21 @@
 #   hack/check-cache.sh record   record a pass of the working state; warn and exit 0 when it can't
 #   hack/check-cache.sh key TIER        print the hash of TIER's inputs in the working state
 #   hack/check-cache.sh run TIER CMD... run CMD unless TIER's inputs passed on this device; record a pass
+#   hack/check-cache.sh cached TIER     print the cached line and exit 0 when TIER's inputs passed on this device; exit 1 on a miss or FORCE=1
+#   hack/check-cache.sh changed TIER BASE
+#                                       print the files among TIER's inputs that differ from the commit BASE in the
+#                                       working state, untracked ones too; exit 1 when none does, 2 when it can't tell
+#   hack/check-cache.sh inputs TIER     print what TIER's inputs are, in a few words
 #
 # A tier of make check (ui-test, test-hack, validate-yaml) is cached on its own,
 # keyed on the git hashes of the files it reads and the versions of the tools
 # it runs, so a change to hack/ doesn't rerun the UI's check, nor one to ui/ the
 # shell tests (#1285). The whole-tree record stays for land and CHECK_CACHED.
+#
+# make check asks changed first (hack/check.sh, #127): a tier none of whose
+# inputs the change since the merge base touches is skipped on any device, one
+# that never ran make check too. The cache then answers a tier the change does
+# touch, when those inputs already passed here.
 #
 #   CHECK_CACHE_DIR  where passes live (default $XDG_CACHE_HOME/theos/checks, which ./dev puts in .dev/cache)
 #   FORCE            non-empty: lookup always misses
@@ -152,10 +162,55 @@ key() {
   [ "${PIPESTATUS[0]}" = 0 ]
 }
 
+# hit TIER FILE: the cached line of TIER's pass recorded in FILE; exit 1 when
+# there is none, or with FORCE set.
+hit() {
+  local when= checkout= name val
+  [ -z "${FORCE:-}" ] && [ -f "$2" ] || return 1
+  while IFS='=' read -r name val; do
+    case $name in
+      when) when=$val ;;
+      checkout) checkout=$val ;;
+    esac
+  done <"$2"
+  echo "$1: cached ($(tier_desc "$1") unchanged since $when, passed in $checkout); FORCE=1 to rerun"
+}
+
+# cached TIER: the cached line and exit 0 when TIER's key passed on this
+# device; exit 1 on a miss, with FORCE set, or when the key can't be taken.
+cached() {
+  local k
+  k=$(key "$1" 2>/dev/null) || return 1
+  hit "$1" "$DIR/tiers/$1-$k"
+}
+
+# changed TIER BASE: the files under TIER's paths that differ from the commit
+# BASE in the working state, and the untracked ones there. Exit 1 when there
+# is none, 2 when the paths or the diff can't be had.
+changed() {
+  local paths group=() p out all=
+  cd "$(git rev-parse --show-toplevel)" || return 2
+  paths=$(tier_paths "$1") || return 2
+  while IFS= read -r p; do
+    if [ "$p" != -- ]; then
+      group+=("$p")
+      continue
+    fi
+    if [ ${#group[@]} -gt 0 ]; then
+      out=$(git diff --name-only --no-renames "$2" -- "${group[@]}" &&
+        git ls-files --others --exclude-standard -- "${group[@]}") || return 2
+      [ -z "$out" ] || all+=$out$'\n'
+    fi
+    group=()
+  done <<<"$paths"$'\n--'
+  [ -n "$all" ] || return 1
+  sort -u <<<"${all%$'\n'}"
+}
+
 # run TIER CMD...: CMD's exit code, or 0 without running it when TIER's key
 # passed on this device. A key that can't be taken runs CMD and records nothing.
 run() {
-  local tier=$1 k f when= checkout= name val
+  local tier=$1 k f
   shift
   if ! k=$(key "$tier"); then
     echo "$tier: warning: could not hash its inputs; running it uncached" >&2
@@ -163,16 +218,7 @@ run() {
     return
   fi
   f=$DIR/tiers/$tier-$k
-  if [ -z "${FORCE:-}" ] && [ -f "$f" ]; then
-    while IFS='=' read -r name val; do
-      case $name in
-        when) when=$val ;;
-        checkout) checkout=$val ;;
-      esac
-    done <"$f"
-    echo "$tier: cached ($(tier_desc "$tier") unchanged since $when, passed in $checkout); FORCE=1 to rerun"
-    return 0
-  fi
+  if hit "$tier" "$f"; then return 0; fi
   "$@" || return
   if ! { mkdir -p "$DIR/tiers" &&
     printf 'when=%s\ncheckout=%s\n' "$(date '+%Y-%m-%d %H:%M')" "$(git rev-parse --show-toplevel)" >"$f.$$" &&
@@ -225,5 +271,8 @@ case ${1:-} in
   record) record ;;
   key) [ $# -eq 2 ] || { echo "usage: hack/check-cache.sh key TIER" >&2; exit 64; }; key "$2" ;;
   run) [ $# -ge 3 ] || { echo "usage: hack/check-cache.sh run TIER CMD..." >&2; exit 64; }; shift; run "$@" ;;
-  *) echo "usage: hack/check-cache.sh tree | lookup | record | key TIER | run TIER CMD..." >&2; exit 64 ;;
+  cached) [ $# -eq 2 ] || { echo "usage: hack/check-cache.sh cached TIER" >&2; exit 64; }; cached "$2" ;;
+  changed) [ $# -eq 3 ] || { echo "usage: hack/check-cache.sh changed TIER BASE" >&2; exit 64; }; changed "$2" "$3" ;;
+  inputs) [ $# -eq 2 ] || { echo "usage: hack/check-cache.sh inputs TIER" >&2; exit 64; }; tier_desc "$2" ;;
+  *) echo "usage: hack/check-cache.sh tree | lookup | record | key TIER | run TIER CMD... | cached TIER | changed TIER BASE | inputs TIER" >&2; exit 64 ;;
 esac
