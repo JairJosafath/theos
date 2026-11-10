@@ -105,6 +105,69 @@ Each step is its own issue, names #57 and lands with `make check`.
 | 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; the GitProvider's `AgentAccess` condition comes from `ports.AgentAccessState` and no Task starts without it; an agent's credential is minted again before it expires; the organization's `THEOS_CI_*` variables are set from the GitProvider; the GitProvider's hook names its Containers' and Briefs' repositories (`ports.EventHook.Repositories`), for an owner that is a user's account; `TestHostNeutral`'s allowlist has no controller in it |
 | 9. The guide, and a run on the real thing | #82 | #81 | "Use the factory on your GitHub organization" in the guide, the App's permissions listed with why; a human runs `make test-github` and the first-app Crew on a test organization, with the output as evidence |
 
+## Step 7's plan (#80)
+
+Written before the step is built; "What step 7 found" replaces it. Two
+pull requests: the port, then where a run and a job get what the port
+publishes.
+
+**Where things are.** `Repository` names, for an owner on github.com:
+images at `ghcr.io/<owner>`, npm at `https://npm.pkg.github.com/` under the
+scope `@<owner>`, no Go proxy, and a Python index only when `spec.packages`
+names one. On an Enterprise Server the two registries are
+`containers.<host>` and `https://npm.<host>/`, which is how GitHub names
+them with subdomain isolation, and the container registry needs that
+anyway; an instance without it gives `spec.packages.npm.registry`.
+
+**The scope.** GitHub's npm registry takes a package under its owner's
+scope and no other, in lower case. So the scope defaults to `@<owner>`
+there, and a `spec.packages.npm.scope` that is another fails the provider
+with the reason, before anything is scaffolded under a name that could
+never be published. A registry that is not GitHub's takes any scope, and
+defaults to `@theos` as on every host.
+
+**Part 1, the port.**
+
+- The reading of a release's package files and the npm and PyPI protocols
+  move out of the Gitea adapter into `internal/adapters/packages`, as
+  `git.ReadArchive` did in step 2. Each adapter signs its own requests.
+- **Images** go through `internal/oci`: push the release's `*.oci.tar`,
+  resolve a tag, copy by digest. GitHub links an image to a repository by
+  the image's own `org.opencontainers.image.source` label, and has no call
+  that links one after the push, so the link is the build's to make and
+  the adapter says so.
+- **npm**: the publish document, with the operator's token or
+  `spec.packages.npm`'s. A manifest that names no repository gets this
+  one in the document, which is what links the package.
+- **PyPI**: published where `spec.packages.pypi` says. Without one a wheel
+  or an sdist is `Invalid`, with the reason that GitHub has no Python
+  index.
+- **Go modules**: nothing is uploaded. `PublishGoModule` checks what `go`
+  would need: a `go.mod` at the tag, a version the path allows, and a path
+  that is the repository's own (`github.com/<owner>/<name>`), since that
+  is the only place `go` looks. It answers `Exists`, never `Published`:
+  the tag is the publication. The contract's module subtest learns both:
+  the path a host wants, and a host that uploads nothing.
+- The fake serves an OCI registry, GitHub's npm registry and a file at a
+  ref.
+
+**Part 2, where a run and a job get them.**
+
+- `ports.Repository` says what `GOPRIVATE` is on a host that serves
+  modules from repositories; the sandbox sets it where there is no proxy.
+- The Standards' GitHub workflows get the step step 5 left out: `.npmrc`
+  and `.netrc` for the owner's registries, `GOPRIVATE` and the job's token
+  as Git's credential.
+- Table tests of the scope rule and of both environments.
+
+**Left to step 8, and why.** A Framework's `go.mod` says
+`theos.local/<project>/<container>` today; on GitHub it must be the
+repository's path, a scaffold value as the npm scope is. `DecideModule`
+must take a module its host serves as published. And an agent's token and
+a job's token each read one repository, so a module of another private
+repository needs a credential that reads it. All three need a GitProvider
+that reaches GitHub to be tested end to end.
+
 ## What step 1 found
 
 - The fake serves Git with Git's own `git-http-backend` through
