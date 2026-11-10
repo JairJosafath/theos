@@ -106,8 +106,9 @@ func (r storedRule) digest() string {
 }
 
 // digestLength is how many hex digits of a rule's digest its ruleset's name
-// carries: 48 bits, which nobody finds a second rule for by trying.
-const digestLength = 12
+// carries: 128 bits, so that nobody finds a weaker rule of the same digest
+// by trying.
+const digestLength = 32
 
 // branchRulesetName is the name of the ruleset that fences branch for the
 // rule of digest.

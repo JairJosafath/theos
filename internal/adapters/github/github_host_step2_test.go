@@ -188,27 +188,29 @@ func TestBranchRulesetsOnGitHub(t *testing.T) {
 		if name(checked) == name(weaker) || name(checked) == name(ports.BranchRule{}) {
 			t.Errorf("rules that differ share the name %q", name(checked))
 		}
+		const digest = "0123456789abcdef0123456789abcdef"
 		for name, branch := range map[string]string{
-			"theos: main (rule 0123456789ab)":                     "main",
-			"theos: a (rule x) (rule 0123456789ab)":               "a (rule x)",
-			"theos: release/1.x (rule ffffffffffff)":              "release/1.x",
-			"theos: main (rule 0123456789ab) (rule 0123456789ab)": "main (rule 0123456789ab)",
+			"theos: main (rule " + digest + ")":                       "main",
+			"theos: a (rule x) (rule " + digest + ")":                 "a (rule x)",
+			"theos: release/1.x (rule " + digest + ")":                "release/1.x",
+			"theos: main (rule " + digest + ") (rule " + digest + ")": "main (rule " + digest + ")",
 		} {
-			if _, ok := ruleDigest(name, branch); !ok {
-				t.Errorf("%q is not read as the ruleset of %q", name, branch)
+			if got, ok := ruleDigest(name, branch); !ok || got != digest {
+				t.Errorf("%q is not read as the ruleset of %q: %q, %v", name, branch, got, ok)
 			}
 		}
 		for name, branch := range map[string]string{
-			"theos: main":                             "main",
-			"theos: main (rule 0123456789AB)":         "main",
-			"theos: main (rule 0123456789abc)":        "main",
-			"theos: maintenance (rule 0123456789ab)":  "main",
-			"theos: tags v*":                          "tags v*",
-			"theos: main (rule x) (rule 0123456789ab": "main",
-			"mine: main (rule 0123456789ab)":          "main",
+			"theos: main": "main",
+			"theos: main (rule " + strings.ToUpper(digest) + ")": "main",
+			"theos: main (rule " + digest + "0)":                 "main",
+			"theos: main (rule " + digest[1:] + ")":              "main",
+			"theos: maintenance (rule " + digest + ")":           "main",
+			"theos: tags v*":                       "tags v*",
+			"theos: main (rule x) (rule " + digest: "main",
+			"mine: main (rule " + digest + ")":     "main",
 		} {
-			if digest, ok := ruleDigest(name, branch); ok {
-				t.Errorf("%q is read as the ruleset of %q, rule %s", name, branch, digest)
+			if got, ok := ruleDigest(name, branch); ok {
+				t.Errorf("%q is read as the ruleset of %q, rule %s", name, branch, got)
 			}
 		}
 	})

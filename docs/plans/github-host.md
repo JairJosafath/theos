@@ -145,7 +145,7 @@ The GitHost contract passes whole against the fake, with nothing in
   time, and a repository variable is the one free-form place GitHub's API
   gives a repository. It is not an administrator's alone: GitHub lets
   anyone with write access set a variable through the API. So the
-  ruleset's name, which only an administrator writes, carries the first 12
+  ruleset's name, which only an administrator writes, carries the first 32
   hex digits of the rule's SHA-256, and a variable whose rule is another,
   or is gone, refuses every merge into that branch until `ProtectBranch`
   runs again. Weakening the variable stops merges; it never loosens one.
