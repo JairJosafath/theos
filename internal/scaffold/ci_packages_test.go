@@ -18,6 +18,7 @@ package scaffold
 
 import (
 	"crypto/rand"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"sigs.k8s.io/yaml"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/JairJosafath/theos/internal/model"
 )
@@ -45,14 +46,14 @@ var standardsWithPackages = []string{"aws-standard", "go-operator-standard", "go
 // steppedWorkflow is what the test reads of a workflow: what its token may
 // do, and each job's steps.
 type steppedWorkflow struct {
-	Permissions map[string]string `json:"permissions"`
+	Permissions map[string]string `yaml:"permissions"`
 	Jobs        map[string]struct {
 		Steps []struct {
-			Name string `json:"name"`
-			If   string `json:"if"`
-			Run  string `json:"run"`
-		} `json:"steps"`
-	} `json:"jobs"`
+			Name string `yaml:"name"`
+			If   string `yaml:"if"`
+			Run  string `yaml:"run"`
+		} `yaml:"steps"`
+	} `yaml:"jobs"`
 }
 
 // ownersPackagesScript renders every Standard's check workflow for GitHub
@@ -182,9 +183,7 @@ func TestGitHubJobsFindTheOwnersPackages(t *testing.T) {
 			// GitHub gives a variable or a secret that isn't set as "".
 			env := map[string]string{"NPM_SCOPE": "", "NPM_REGISTRY": "", "NPM_TOKEN": "", "PYPI_INDEX": "",
 				"PYPI_TOKEN": "", "TOKEN": job, "HOME": home, "GITHUB_ENV": exported, "PATH": os.Getenv("PATH")}
-			for name, value := range c.env {
-				env[name] = value
-			}
+			maps.Copy(env, c.env)
 			//nolint:gosec // the script of the repository's own template, run in a temporary home
 			cmd := exec.Command(sh, "-eu", "-c", script)
 			for name, value := range env {
