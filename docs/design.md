@@ -1743,7 +1743,7 @@ its images on GHCR. The release installs:
 An install is one cluster: whoever runs it installs Agent Sandbox first and
 gives the Agents' token once. An upgrade leaves running work alone
 ([plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md)). An
-install reports issues through the form *Report from a device*, under a name
+install reports issues through the form *Report from an install*, under a name
 of its own.
 
 ## Compatibility

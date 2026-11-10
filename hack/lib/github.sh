@@ -323,7 +323,7 @@ GH_LABELS=(
   'kind/docs|0075ca|Documentation'
   'kind/improvement|84b6eb|Make something that works better'
   'source/dev|bfd4f2|Made while developing theos'
-  'source/user|f9d0c4|Reported from a device that runs theos; user/<name> names it'
+  'source/user|f9d0c4|Reported from an install of theos; user/<name> names it'
   'maintainer/report|5319e7|The pinned Maintainer report; the maintainer rewrites it each sweep'
   'mode/yolo|ff7f0e|Yolo mode: a pull request merges once made, until only the Maintainer report is open'
 )
@@ -3211,7 +3211,7 @@ gh_intake() {
   if [ -n "${user_label:-}" ] && [[ " ${add[*]} " == *" $user_label "* ]] &&
     ! gh_api "repos/$THEOS_GITHUB_REPO/labels/${user_label//\//%2F}" >/dev/null 2>&1; then
     gh_api --method POST "repos/$THEOS_GITHUB_REPO/labels" -f name="$user_label" -f color="$GH_USER_COLOR" \
-      -f description="Reported by the device $slug" >/dev/null || return 1
+      -f description="Reported by the install $slug" >/dev/null || return 1
   fi
   jq -n '{labels: $ARGS.positional}' --args "${add[@]}" |
     gh_api --method POST "repos/$THEOS_GITHUB_REPO/issues/$n/labels" --input - >/dev/null

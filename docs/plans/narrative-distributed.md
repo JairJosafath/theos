@@ -80,11 +80,13 @@ it stands).
    `docs/design.md`'s *Out of scope and open points* now does. No page says
    a gap is closed before its issue is.
 5. **The report form is renamed with its users,** in one package: the issue
-   template, the intake label's description, the README and
-   `docs/design.md` all say *Report from a device* until that package says
-   *Report from an install*. The heading `### Reported by` and the labels
+   template, the intake labels' descriptions, the README and
+   `docs/design.md` said *Report from a device* until package 3 made them
+   say *Report from an install*. The heading `### Reported by` and the labels
    `source/user` and `user/<name>` are what `hack/lib/github.sh intake`
-   reads and stay.
+   reads and stay; nothing reads the form's name. The labels on GitHub keep
+   their old descriptions until a person runs `hack/lib/github.sh labels`
+   (`source/user`); a `user/<name>` label made before keeps its own.
 6. **The boards are redrawn, not captioned away.** Both Excalidraw boards
    draw "one Kind cluster on a laptop". Until they are redrawn, the text
    beside each says the board draws the test rig.
@@ -95,7 +97,7 @@ it stands).
 | --- | --- | --- |
 | 1 | `README.md`, `docs/design.md`, `docs/architecture.md`, this plan | done with this plan |
 | 2 | `docs/getting-started.md`, `dist/chart/README.md`, `dist/chart/values.yaml` (comments only), `dist/chart/templates/NOTES.txt` if it frames, `docs/comparison.md`, `docs/adopt.md`, `ROADMAP.md` | done; `NOTES.txt` and `docs/adopt.md` framed nothing and stay as they were |
-| 3 | `.github/ISSUE_TEMPLATE/user-report.yml`, `hack/lib/github.sh` (`gh_intake`'s label description) and its test, `hack/github-templates_test.sh`, then the form's name in `README.md` and `docs/design.md` | open |
+| 3 | `.github/ISSUE_TEMPLATE/user-report.yml`, `hack/lib/github.sh` (`gh_intake`'s label description) and its test, `hack/github-templates_test.sh`, then the form's name in `README.md` and `docs/design.md` | done; `hack/github-templates_test.sh` reads no changed string and stays |
 | 4 | `ui/src/components/Panels.tsx`, `Shell.tsx`, `factory/Health.tsx`, `model/attention.ts`: copy and comments only; the one-node read is #122 | open |
 | 5 | `docs/images/how-it-works.excalidraw` and `architecture.excalidraw` with their `.svg` and `.png`: "Where it runs" and "Kind cluster theos" | open; needs a person or a renderer |
 | 6 | a line at the top of `docs/results.md` and `docs/results-v3.md`; `docs/templates.md`, `docs/template-authoring.md`, `ui/README.md`, `docs/dev/*`, `DEVELOPMENT.md`, `.claude/skills/factory-ops`, `hack/kind.yaml`'s comment: read once more, change only a sentence that calls Kind or a laptop the home | open |

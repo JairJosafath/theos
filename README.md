@@ -273,10 +273,10 @@ on every device.
 pick the form: a bug, a feature or improvement, or a catalog template. A
 vulnerability goes to [SECURITY.md](SECURITY.md) instead.
 
-An install that reports under a name of its own (`laptop-2`) uses the
-*Report from a device* form, or the GitHub CLI: a body with a `### Reported by`
+An install that reports under a name of its own (`team-a`) uses the
+*Report from an install* form, or the GitHub CLI: a body with a `### Reported by`
 heading and the name under it gets the labels `source/user` and
-`user/laptop-2`.
+`user/team-a`.
 
 ```
 gh issue create -R JairJosafath/theos --title "Crew stalls" --label source/user --body-file report.md
