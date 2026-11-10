@@ -102,7 +102,7 @@ because the form asks for them.
 
 | Criterion | Level | State | Evidence |
 | --- | --- | --- | --- |
-| static_analysis | MUST | Met | golangci-lint (staticcheck, govet, revive and more) in `make check` and the *Lint* workflow, before every release |
+| static_analysis | MUST | Met | golangci-lint (staticcheck, govet, revive and more) in `make check` and the *Lint* workflow, before every release; CodeQL on the Go code and the UI's TypeScript (the *CodeQL* workflow), on every pull request that changes them and every Monday |
 | static_analysis_common_vulnerabilities | SUGGESTED | Met | `gosec` runs in golangci-lint (`make check`, the *Lint* workflow). `.golangci.yml` turns off G115 (int to the API's int32 fields) and gosec in tests; each other finding is fixed or carries a `//nolint:gosec // why` (#1148) |
 | static_analysis_fixed | MUST | Met | `make check` fails on a finding, so none merges |
 | static_analysis_often | SUGGESTED | Met | on every pull request |

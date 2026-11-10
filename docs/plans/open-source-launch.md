@@ -127,7 +127,7 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 | #49 fork pull requests on hosted runners | the rule is in (#67); open: a run from a real fork, the approval setting |
 | #56 private links and logins | the links are gone (#67), and the guide clones with `git` now the repository is public; open: the guide's `gh` login for GHCR, until the packages are public (the owner's step 2) |
 | #52 history and secrets | scanned clean, gitleaks on every pull request (#69); the repository is public since 2026-11-10 |
-| #51 signing, SBOM, scanning | Dependabot is in (#71); open: image and chart signatures, SBOM, provenance, Scorecard, CodeQL |
+| #51 signing, SBOM, scanning | Dependabot is in (#71), with the Kubernetes libraries and the Go and Node versions left to us; CodeQL scans the Go code and the UI; open: image and chart signatures, SBOM, provenance, Scorecard |
 | #50 a release from this repository | v0.32.0 is bumped on main and not tagged: the tag push is the owner's step 5 |
 | #57 GitHub as a Git host | planned ([github-host.md](github-host.md)), nine steps filed as #74 to #82; steps 1 (#74) and 3 (#76) are built |
 | #62 a Crew's approval rules | done ([approval-rules.md](done/approval-rules.md); #93, #105): the rules, the wait and the merge; a waiting change's thread in chat; the triager's `risk/high` label; the reviewer raises a change to a person, never lowers; merged Tasks split by who approved |
