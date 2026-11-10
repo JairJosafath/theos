@@ -129,7 +129,7 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 | #52 history and secrets | scanned clean, gitleaks on every pull request (#69); open: the publication itself, the owner's step 1 |
 | #51 signing, SBOM, scanning | Dependabot is in (#71); open: image and chart signatures, SBOM, provenance, Scorecard, CodeQL |
 | #50 a release from this repository | v0.32.0 is bumped on main and not tagged: the tag push is the owner's step 5 |
-| #57 GitHub as a Git host | planned ([github-host.md](github-host.md)), nine steps filed as #74 to #82 |
+| #57 GitHub as a Git host | planned ([github-host.md](github-host.md)), nine steps filed as #74 to #82; steps 1 (#74) and 3 (#76) are built |
 | #54, #58, #60, #61, #62, #64, #66, #73 | open; #60 and #62 carry what was found in the code |
 
 ## For the owner

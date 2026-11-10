@@ -33,7 +33,8 @@ import (
 )
 
 // The GitHub side of the GitHost port (docs/plans/github-host.md). Step 1
-// (#74) is here: repositories, files, branches and tags. Pull requests,
+// (#74) is here: repositories, files, branches and tags; the Issues port,
+// step 3 (#76), is in github_host_issues.go. Pull requests,
 // reviews, merges, statuses, branch rules and releases are step 2 (#75), and
 // until then answer ErrNotYet. No GitProvider reaches this before step 8.
 
@@ -64,11 +65,20 @@ type host struct {
 	http     *http.Client
 }
 
-// GitHost returns the GitHost of cfg's owner. cfg.URL is https://github.com,
-// whose API is api.github.com, or a GitHub Enterprise Server's address, whose
-// API is under /api/v3. cfg.Credentials holds a token; its user name is the
-// one GitHub takes over Git whatever it says.
-func (c Client) GitHost(cfg ports.Config) (ports.GitHost, error) {
+// Host is the part of ports.Provider the GitHub adapter has so far.
+type Host interface {
+	ports.GitHost
+	ports.Issues
+}
+
+// GitHost returns the GitHost of cfg's owner, as Host does.
+func (c Client) GitHost(cfg ports.Config) (ports.GitHost, error) { return c.Host(cfg) }
+
+// Host returns the GitHost and the Issues of cfg's owner. cfg.URL is
+// https://github.com, whose API is api.github.com, or a GitHub Enterprise
+// Server's address, whose API is under /api/v3. cfg.Credentials holds a
+// token; its user name is the one GitHub takes over Git whatever it says.
+func (c Client) Host(cfg ports.Config) (Host, error) {
 	if cfg.Owner == "" {
 		return nil, errors.New("github: owner is required")
 	}

@@ -20,8 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/adapters/github/githubtest"
 	"github.com/JairJosafath/theos/internal/ports"
@@ -230,4 +232,173 @@ func TestGitHostRefsOnGitHub(t *testing.T) {
 	if calls := gh.Unserved(); len(calls) > 0 {
 		t.Errorf("the adapter made calls the fake GitHub doesn't serve: %q", calls)
 	}
+}
+
+// TestIssuesContract covers #76: the GitHub adapter passes the Issues
+// contract against the fake GitHub, exclusive labels and refused closes
+// emulated.
+func TestIssuesContract(t *testing.T) {
+	gh := githubtest.New(t, "ada", hostToken)
+	orgs := 0
+	contract.Issues(t, contract.IssuesEnv{
+		New: func(t *testing.T) (ports.GitHost, ports.Issues) {
+			t.Helper()
+			orgs++
+			org := fmt.Sprintf("issues-%d", orgs)
+			gh.AddOrg(org)
+			h, err := (Client{}).Host(ports.Config{URL: gh.URL(), Owner: org, Credentials: ports.Credentials{Token: hostToken}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return h, h
+		},
+		Assignee: "ada",
+	})
+	if calls := gh.Unserved(); len(calls) > 0 {
+		t.Errorf("the adapter made calls the fake GitHub doesn't serve: %q", calls)
+	}
+}
+
+// TestIssuesOnGitHub covers what GitHub does differently and the contract
+// can't see (#76): pull requests among the issues, lists longer than a page,
+// and the note that marks an exclusive label.
+func TestIssuesOnGitHub(t *testing.T) {
+	ctx := context.Background()
+	gh := githubtest.New(t, "ada", hostToken)
+	gh.AddOrg("acme")
+	h, err := (Client{}).Host(ports.Config{URL: gh.URL(), Owner: "acme", Credentials: ports.Credentials{Token: hostToken}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := h.EnsureRepository(ctx, "shop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := []ports.Label{{Name: "status/ready", Color: "#0e8a16", Description: "Ready", Exclusive: true},
+		{Name: "status/doing", Color: "#fbca04", Exclusive: true}, {Name: "kind/bug", Color: "#d73a4a", Description: "A bug"}}
+	if err := h.EnsureLabels(ctx, repo, labels); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("lists leave pull requests out and read every page", func(t *testing.T) {
+		gh.AddPullRequest("acme", "shop", "A pull request")
+		for n := range 130 {
+			if _, err := h.CreateIssue(ctx, repo, fmt.Sprintf("Issue %d", n), "", []string{"kind/bug"}, 0); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, label := range []string{"", "kind/bug"} {
+			listed, err := h.ListIssues(ctx, repo, label)
+			if err != nil || len(listed) != 130 {
+				t.Errorf("ListIssues(%q) lists %d issues, %v; want the 130 that are no pull request", label, len(listed), err)
+			}
+		}
+	})
+
+	t.Run("an exclusive label replaces its scope's others and keeps the rest; a plain one adds", func(t *testing.T) {
+		issue, err := h.CreateIssue(ctx, repo, "Labelled", "", []string{"status/ready", "kind/bug"}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, add := range []string{"status/doing", "status/ready", "status/doing"} {
+			if err := h.AddIssueLabel(ctx, repo, issue.Number, add); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, _ := h.GetIssue(ctx, repo, issue.Number)
+		if want := []string{"kind/bug", "status/doing"}; !slices.Equal(sortedCopy(got.Labels), want) {
+			t.Errorf("labels %q, want %q: one status, the kind kept", got.Labels, want)
+		}
+	})
+
+	t.Run("a label a person described keeps their words when its scope turns exclusive", func(t *testing.T) {
+		labels[2].Exclusive = true
+		if err := h.EnsureLabels(ctx, repo, labels); err != nil {
+			t.Fatal(err)
+		}
+		exclusive, err := h.(*host).exclusive(ctx, repo, "kind/bug")
+		if err != nil || !exclusive {
+			t.Errorf("kind/bug exclusive = %v, %v; want true", exclusive, err)
+		}
+		labels[2].Exclusive = false
+		if err := h.EnsureLabels(ctx, repo, labels); err != nil {
+			t.Fatal(err)
+		}
+		if exclusive, _ := h.(*host).exclusive(ctx, repo, "kind/bug"); exclusive {
+			t.Error("kind/bug stayed exclusive")
+		}
+		if exclusive, _ := h.(*host).exclusive(ctx, repo, "unscoped"); exclusive {
+			t.Error("a label without a scope is exclusive")
+		}
+	})
+
+	if calls := gh.Unserved(); len(calls) > 0 {
+		t.Errorf("the adapter made calls the fake GitHub doesn't serve: %q", calls)
+	}
+}
+
+// TestIssueNotesOnGitHub covers what a comment, an assignment and a
+// milestone's edits leave on the host (#76).
+func TestIssueNotesOnGitHub(t *testing.T) {
+	ctx := context.Background()
+	gh := githubtest.New(t, "ada", hostToken)
+	gh.AddOrg("acme")
+	h, err := (Client{}).Host(ports.Config{URL: gh.URL(), Owner: "acme", Credentials: ports.Credentials{Token: hostToken}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := h.EnsureRepository(ctx, "shop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("a comment and an assignment reach the issue", func(t *testing.T) {
+		issue, err := h.CreateIssue(ctx, repo, "Talked about", "", nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := h.CommentIssue(ctx, repo, issue.Number, "Picked up"); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.AssignIssue(ctx, repo, issue.Number, []string{"ada"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := gh.Comments("acme", "shop", issue.Number); !slices.Equal(got, []string{"Picked up"}) {
+			t.Errorf("comments %q", got)
+		}
+		if got := gh.Assignees("acme", "shop", issue.Number); !slices.Equal(got, []string{"ada"}) {
+			t.Errorf("assignees %q", got)
+		}
+		if err := h.AssignIssue(ctx, repo, issue.Number, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := gh.Assignees("acme", "shop", issue.Number); len(got) != 0 {
+			t.Errorf("assignees after clearing them: %q", got)
+		}
+	})
+
+	t.Run("a milestone's description and title change, its due date stays", func(t *testing.T) {
+		due := time.Date(2030, 1, 7, 12, 0, 0, 0, time.UTC)
+		made, err := h.CreateMilestone(ctx, repo, "v0.1.0", "First", due)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := h.DescribeMilestone(ctx, repo, made.ID, "The first release"); err != nil {
+			t.Fatal(err)
+		}
+		all, err := h.ListAllMilestones(ctx, repo)
+		if err != nil || len(all) != 1 || all[0].Description != "The first release" || !all[0].Due.Equal(due) {
+			t.Errorf("ListAllMilestones() = %+v, %v", all, err)
+		}
+	})
+
+	if calls := gh.Unserved(); len(calls) > 0 {
+		t.Errorf("the adapter made calls the fake GitHub doesn't serve: %q", calls)
+	}
+}
+
+func sortedCopy(in []string) []string {
+	out := slices.Clone(in)
+	slices.Sort(out)
+	return out
 }

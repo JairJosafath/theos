@@ -90,7 +90,7 @@ Each step is its own issue, names #57 and lands with `make check`.
 | --- | --- | --- | --- |
 | 1. The fake GitHub, and repositories, files and refs (done) | #74 | | `githubtest` serves repositories, Git over HTTP, refs and tags; the adapter passes the GitHost contract's repository, file, branch and tag subtests, the rest listed in `Cannot` |
 | 2. Pull requests, reviews, merges and statuses | #75 | #74 | the GitHost contract passes whole; `Cannot` is empty or names what GitHub can't do, with why |
-| 3. Issues | #76 | #74 | the Issues contract passes, exclusive labels and refused closes emulated |
+| 3. Issues (done) | #76 | #74 | the Issues contract passes, exclusive labels and refused closes emulated |
 | 4. AgentAccess from a GitHub App | #77 | #75 | the AgentAccess contract passes: a token for one repository, a push to main refused, revoked on removal; a provider with a token alone reports `NeedsGitHubApp` |
 | 5. CI on GitHub Actions | #78 | #75 | the CI contract passes with `JobRunners` in `Cannot`; `model.CI` has `githubActions`, and every Standard renders its workflow for both hosts |
 | 6. Events | #79 | #74 | the Events contract passes: one organization hook, signed deliveries, a bad signature refused |
@@ -116,6 +116,26 @@ Each step is its own issue, names #57 and lands with `make check`.
 - "pushes the default branch" is in the contract's `Cannot` until step 2,
   because the subtest ends by pushing past a branch rule; the adapter's own
   test covers the pushes before that point.
+
+## What step 3 found
+
+- GitHub's dependencies API is `…/issues/{n}/dependencies/blocked_by`, takes
+  the blocking issue's `issue_id` (its id, not its number) and works across
+  repositories; adding one that is there answers 422, which the adapter
+  tells apart by reading the list.
+- A label's exclusive scope is kept as a note ending its description,
+  " (one per issue)". `EnsureLabels` sets and clears only that note, so a
+  description a person edited stays.
+- `AddIssueLabel` of an exclusive label sets the issue's whole label list in
+  one `PUT`: two writers at once leave one label of the scope, the last
+  one's. The cost is that a label of another scope added in the same instant
+  by someone else can be lost; GitHub has no call that does both.
+- A milestone's ID in the port is GitHub's milestone number, which is what
+  its API takes. GitHub refuses a second milestone of one title, where
+  Gitea makes it; nothing in the contract relies on the second.
+- Lists are read 100 a page, to the end, and fail past 5,000 entries
+  instead of coming back cut short. Pull requests, which GitHub lists among
+  the issues, are left out.
 
 ## Done when
 

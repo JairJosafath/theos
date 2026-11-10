@@ -32,6 +32,12 @@ limitations under the License.
 //	DELETE /repos/{owner}/{repo}/git/refs/{ref}  delete a ref; 422 when it doesn't exist
 //	POST   /repos/{owner}/{repo}/git/tags        make an annotated tag object
 //
+// and, in issues.go, labels, issues with their comments, assignees and
+// labels, milestones and the dependencies of an issue (blocked_by), as
+// /rest/issues documents them: a list answers 100 a page at most, pull
+// requests are none of its business, a label's name matches without case,
+// and an issue closes whatever it depends on.
+//
 // https://docs.github.com/en/rest/repos/repos, /rest/users/users, /rest/branches/branches,
 // /rest/commits/commits, /rest/git/refs and /rest/git/tags. Every call needs
 // the token New was given, as a Bearer token for the API and as the password
@@ -67,9 +73,20 @@ type Server struct {
 	// orgs are the organizations; user is the account the token is of.
 	orgs map[string]bool
 	user string
-	// repos holds each repository's description by owner/name.
-	repos    map[string]string
+	// repos holds each repository by owner/name; nextID numbers the issues
+	// across them, as GitHub's ids do.
+	repos    map[string]*repo
+	nextID   int64
 	unserved []string
+}
+
+// repo is what the fake keeps of a repository beside its Git.
+type repo struct {
+	owner, name string
+	description string
+	labels      []*label
+	issues      []*issue
+	milestones  []*milestone
 }
 
 // New starts a fake GitHub that takes token, whose user is user. It skips the
@@ -84,7 +101,7 @@ func New(t *testing.T, user, token string) *Server {
 	if _, err := os.Stat(backend); err != nil {
 		t.Skipf("git has no git-http-backend: %v", err)
 	}
-	s := &Server{token: token, user: user, root: t.TempDir(), orgs: map[string]bool{}, repos: map[string]string{}}
+	s := &Server{token: token, user: user, root: t.TempDir(), orgs: map[string]bool{}, repos: map[string]*repo{}}
 	s.git = &cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + s.root, "GIT_HTTP_EXPORT_ALL=1"}}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.srv.Close)
@@ -206,7 +223,7 @@ func reply(w http.ResponseWriter, status int, body any) {
 
 func (s *Server) repoJSON(owner, name string) repository {
 	at := s.srv.URL + "/" + owner + "/" + name
-	return repository{Name: name, FullName: owner + "/" + name, Description: s.repos[owner+"/"+name],
+	return repository{Name: name, FullName: owner + "/" + name, Description: s.repos[owner+"/"+name].description,
 		CloneURL: at + ".git", HTMLURL: at, DefaultBranch: "main", Private: true}
 }
 
@@ -258,7 +275,7 @@ func (s *Server) createRepo(w http.ResponseWriter, r *http.Request, owner string
 			return
 		}
 	}
-	s.repos[key] = body.Description
+	s.repos[key] = &repo{owner: owner, name: body.Name, description: body.Description}
 	reply(w, http.StatusCreated, s.repoJSON(owner, body.Name))
 }
 
@@ -279,8 +296,12 @@ func (s *Server) commit(owner, name, ref string) (sha, tree string, ok bool) {
 }
 
 func (s *Server) repo(w http.ResponseWriter, r *http.Request, owner, name, rest string) {
-	if _, ok := s.repos[owner+"/"+name]; !ok {
+	kept, ok := s.repos[owner+"/"+name]
+	if !ok {
 		reply(w, http.StatusNotFound, message("Not Found"))
+		return
+	}
+	if s.issuesAPI(w, r, kept, rest) {
 		return
 	}
 	switch {
