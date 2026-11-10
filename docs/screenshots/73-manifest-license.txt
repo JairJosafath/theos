@@ -1,0 +1,17 @@
+# #73: the Node templates' package.json and package-lock.json name the scaffold's license. 2026-11-10, on d4a6c0d5 (main at cf21ea32 plus the fix).
+# 1. Before the fix (the old templates, the new test): go test ./internal/scaffold -run TestNodeManifestsNameTheScaffoldsLicense
+--- FAIL: TestNodeManifestsNameTheScaffoldsLicense
+    --- FAIL: TestNodeManifestsNameTheScaffoldsLicense/vscode_extension/MIT
+        package.json says license "UNLICENSED", want "MIT"
+        package-lock.json's root package says license "UNLICENSED", want "MIT" as package.json
+    74 subtests fail: every combination with a package.json, with MIT and with Apache-2.0
+# 2. After the fix, the same test:
+    subtests passing: 111, failing: 0
+# 3. The rendered template's own checks: COMBO="node cli" make test-templates (no license set, so UNLICENSED)
+test-templates: 1 combos pass their make check and their Deployment's build
+# 4. The same rendered repository with "license": "MIT" in package.json and package-lock.json, as the template renders them for MIT: its make check
+exit 0
+# 5. make check
+The chart's catalog matches templates/versions.txt; off, it renders no catalog, bundles or Agents
+make check: passed on tree 28cb924cf7bbb777d3ee594fed6ea15e192da82b; recorded
+exit 0
