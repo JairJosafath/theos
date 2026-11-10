@@ -1,6 +1,9 @@
 # theos is a distributed factory on Kubernetes, not a tool for one device
 
 GitHub issue #119. The owner's session of 2026-11-10. Written 2026-11-10.
+Done 2026-11-10: all six packages are in; the evidence is
+[119-narrative-distributed-check.txt](../../screenshots/119-narrative-distributed-check.txt).
+The gaps #120 to #125 are work of their own and stay open.
 
 ## Goal
 
@@ -87,9 +90,20 @@ it stands).
    reads and stay; nothing reads the form's name. The labels on GitHub keep
    their old descriptions until a person runs `hack/lib/github.sh labels`
    (`source/user`); a `user/<name>` label made before keeps its own.
-6. **The boards are redrawn, not captioned away.** Both Excalidraw boards
-   draw "one Kind cluster on a laptop". Until they are redrawn, the text
-   beside each says the board draws the test rig.
+6. **The boards say it themselves, not a caption beside them.** Both
+   Excalidraw boards drew "one Kind cluster on a laptop". Package 5 changed
+   their words, in the `.excalidraw`, the `.svg` and the `.png` alike:
+   *how it works* now says "Where it runs: a Kubernetes cluster"; the
+   architecture board, which draws the test rig's one node down to its
+   hostPath caches, is titled "The test rig: Kind cluster theos" and says
+   under it that an install is a cluster of any number of nodes, as
+   `docs/architecture.md` beside it does. A board that draws an install on
+   several nodes waits for #125: nothing has run on more than one node, so
+   there is nothing to draw from yet.
+7. **"A laptop" as the place a person sits is "outside the cluster"** (the
+   guide's port-forwards, the UI's note under a repository address). Where
+   it is the machine the test rig runs on (`hack/kind.yaml`, `config/`'s
+   comments) it is true and stays.
 
 ## Packages
 
@@ -98,13 +112,19 @@ it stands).
 | 1 | `README.md`, `docs/design.md`, `docs/architecture.md`, this plan | done with this plan |
 | 2 | `docs/getting-started.md`, `dist/chart/README.md`, `dist/chart/values.yaml` (comments only), `dist/chart/templates/NOTES.txt` if it frames, `docs/comparison.md`, `docs/adopt.md`, `ROADMAP.md` | done; `NOTES.txt` and `docs/adopt.md` framed nothing and stay as they were |
 | 3 | `.github/ISSUE_TEMPLATE/user-report.yml`, `hack/lib/github.sh` (`gh_intake`'s label description) and its test, `hack/github-templates_test.sh`, then the form's name in `README.md` and `docs/design.md` | done; `hack/github-templates_test.sh` reads no changed string and stays |
-| 4 | `ui/src/components/Panels.tsx`, `Shell.tsx`, `factory/Health.tsx`, `model/attention.ts`: copy and comments only; the one-node read is #122 | open |
-| 5 | `docs/images/how-it-works.excalidraw` and `architecture.excalidraw` with their `.svg` and `.png`: "Where it runs" and "Kind cluster theos" | open; needs a person or a renderer |
-| 6 | a line at the top of `docs/results.md` and `docs/results-v3.md`; `docs/templates.md`, `docs/template-authoring.md`, `ui/README.md`, `docs/dev/*`, `DEVELOPMENT.md`, `.claude/skills/factory-ops`, `hack/kind.yaml`'s comment: read once more, change only a sentence that calls Kind or a laptop the home | open |
+| 4 | `ui/src/components/Panels.tsx`, `Shell.tsx`, `factory/Health.tsx`, `model/attention.ts`: copy and comments only; the one-node read is #122 | done; `Panels.tsx` and `attention.ts` changed, and "the node's usage" in `Shell.tsx` and `Health.tsx` stays, since it is one node's until #122 |
+| 5 | `docs/images/how-it-works.excalidraw` and `architecture.excalidraw` with their `.svg` and `.png`: "Where it runs" and "Kind cluster theos" | done; each `.png` is its `.svg` rendered by Chromium at the same size, which also put the name theos on the two pictures: the old exports predated the rename |
+| 6 | a line at the top of `docs/results.md` and `docs/results-v3.md`; `docs/templates.md`, `docs/template-authoring.md`, `ui/README.md`, `docs/dev/*`, `DEVELOPMENT.md`, `.claude/skills/factory-ops`, `hack/kind.yaml`'s comment: read once more, change only a sentence that calls Kind or a laptop the home | done; those pages call Kind the rig and stay. What changed: the two results pages' top line, and "a device" meaning an install in `hack/release-notes.sh` (the sentence it prints, with its test), the comments of `release.yml`, `test-chart.yml` and `verify-release.yml`, `config/samples/first-app/kustomization.yaml` and two comments in `test/chart` |
 
 `dist/chart/`, `hack/`, `.github/` and `.claude/` are protected paths
 (`.github/CODEOWNERS`); packages 2, 3 and 6 touch them for their words
 only, in the owner's session.
+
+Found on the way and fixed in a commit of its own: `dist/chart/README.md`,
+*What the factory trusts*, still said the shared runners run every
+project's checks one after another. A project's checks run on its own pool
+of single-job runner pods (`internal/controller/ci_runner_pod.go`), as the
+guide and `docs/design.md` say; the README now says so too.
 
 ## The gaps
 
