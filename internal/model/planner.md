@@ -424,10 +424,10 @@ Push the branch `plan/<round>` with these files:
     `model/requests.yaml` in `plan/requests.yaml`, one entry each:
 
     ```yaml
-    - request: gray-lenovo/cel-lens#12
+    - request: acme/cel-lens#12
       answer: take        # or skip
       issues: [2, 3]      # take: the plan's issues it became, their nn
-    - request: gray-lenovo/cel-lens#13
+    - request: acme/cel-lens#13
       answer: skip
       why: Already there; the linter reports it since v0.2.0.
     ```

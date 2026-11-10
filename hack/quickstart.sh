@@ -3,7 +3,9 @@
 # with no model and no token (#53): a Kind cluster of its own, Agent Sandbox,
 # the published chart with Gitea and its runners, and a Brief the stand-in
 # Agent plans, implements and reviews. It follows docs/getting-started.md,
-# sections 1 and "Without a token", step for step.
+# sections 1 and "Without a token", step for step, after one question the
+# guide doesn't ask: can the release's chart be pulled at all? A release
+# that isn't published, or packages that are private, end it there.
 #
 #   hack/quickstart.sh            bring the factory up, and say where to look
 #   hack/quickstart.sh --status   what the factory is doing
@@ -173,6 +175,19 @@ stop_forward() {
   fi
 }
 
+# published HELM: the chart of this release can be pulled, or the script ends
+# here saying the two reasons it can't, with helm's own words.
+published() {
+  local helm=$1 why
+  if [ -n "$DRY" ]; then
+    printf '+ %s show chart oci://%s/charts/theos --version %s\n' "$helm" "$REGISTRY" "$VERSION"
+    return 0
+  fi
+  why=$($helm show chart "oci://$REGISTRY/charts/theos" --version "$VERSION" 2>&1 >/dev/null) && return 0
+  printf '%s\n' "$why" | tail -n 3 >&2
+  die "can't pull the chart of theos $VERSION from $REGISTRY, and nothing was made. Either that release isn't published there (THEOS_VERSION picks another), or its packages are private: then GHCR_USER and GHCR_TOKEN, a GitHub user and a token that may read them, log this in"
+}
+
 up() {
   local kind kubectl helm started=$SECONDS sets clusters
   command -v docker >/dev/null 2>&1 || die "needs Docker: install Docker Desktop or Docker Engine, start it, and run this again"
@@ -185,6 +200,19 @@ up() {
   mkdir -p "$THEOS_HOME"
   kubectl="$kubectl --kubeconfig $KUBECONFIG_FILE"
   helm="$helm --kubeconfig $KUBECONFIG_FILE"
+
+  if [ -n "${GHCR_USER:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
+    say "A login for the private packages, as $GHCR_USER"
+    if [ -n "$DRY" ]; then
+      printf '+ %s registry login ghcr.io -u %s --password-stdin\n' "$helm" "$GHCR_USER"
+    else
+      printf '%s' "$GHCR_TOKEN" | $helm registry login ghcr.io -u "$GHCR_USER" --password-stdin
+    fi
+  fi
+  # Before anything is made: a release that isn't published, or packages
+  # that are private, would otherwise fail fifteen minutes in, on helm's
+  # words alone, with a cluster left behind.
+  published "$helm"
 
   say "A Kind cluster, $CLUSTER, with a kubeconfig of its own ($KUBECONFIG_FILE)"
   # Read first, then match: grep -q in a pipe under pipefail turns a match
@@ -214,12 +242,7 @@ up() {
 
   sets="gitea.createNamespace=false,gitea.projects={$PROJECT}"
   if [ -n "${GHCR_USER:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
-    say "A login for the private packages, as $GHCR_USER"
-    if [ -n "$DRY" ]; then
-      printf '+ %s registry login ghcr.io -u %s --password-stdin\n' "$helm" "$GHCR_USER"
-    else
-      printf '%s' "$GHCR_TOKEN" | $helm registry login ghcr.io -u "$GHCR_USER" --password-stdin
-    fi
+    say "The pull secret for the private packages, as $GHCR_USER"
     for ns in theos-system gitea; do
       if [ -n "$DRY" ]; then
         printf '+ %s -n %s create secret docker-registry ghcr\n' "$kubectl" "$ns"

@@ -42,8 +42,11 @@ Then it opens the UI on <http://localhost:8080>. It needs about 4 CPUs and
 `kind`, `kubectl` and `helm` only when they aren't on your PATH, checked
 against pinned checksums. `hack/quickstart.sh --down` removes all of it.
 
-While the chart and the images on GHCR are private, give it a GitHub user
-and a token with `read:packages`: `GHCR_USER=you GHCR_TOKEN=... hack/quickstart.sh`.
+It installs a published release, and asks for its chart before it makes
+anything. Until a release is on the
+[releases page](https://github.com/JairJosafath/theos/releases) with public
+packages, it stops there and says so; an account that may read the private
+packages runs it as `GHCR_USER=you GHCR_TOKEN=... hack/quickstart.sh`.
 
 [docs/getting-started.md](docs/getting-started.md) goes on from there: real
 agents with a Claude token, a model and a Crew of your own, releases and
