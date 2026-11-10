@@ -127,12 +127,12 @@ rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  issues:\n    types: [
 "$CHECK" "$T/wf" 2>/dev/null
 check "issues and tag pushes need no group" "$?" 0
 
-# real NAME SED: the repository's Lint, UI, Tests, Vulnerabilities and
-# Secrets workflows and its required checks, alone in a directory, NAME.yml (or
+# real NAME SED: the repository's Lint, UI, Tests, Vulnerabilities, Secrets
+# and CodeQL workflows and its required checks, alone in a directory, NAME.yml (or
 # required-checks for NAME list) edited with the sed script SED.
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 real() {
-  rm -rf "$T/r" && mkdir -p "$T/r/wf" && cp "$REPO"/.github/workflows/{lint,ui,test,vulncheck,secrets}.yml "$T/r/wf/"
+  rm -rf "$T/r" && mkdir -p "$T/r/wf" && cp "$REPO"/.github/workflows/{lint,ui,test,vulncheck,secrets,codeql}.yml "$T/r/wf/"
   cp "$REPO"/.github/required-checks "$T/r/"
   local f="$T/r/wf/$1.yml"
   [ "$1" = list ] && f=$T/r/required-checks
@@ -141,8 +141,9 @@ real() {
 
 real lint ''
 "$CHECK" "$T/r/wf" 2>/dev/null
-check "Lint, UI, Tests, Vulnerabilities and Secrets as they are pass" "$?" 0
-for c in 'test.yml Tests' 'lint.yml Lint' 'lint.yml Shell tests' 'ui.yml UI'; do
+check "Lint, UI, Tests, Vulnerabilities, Secrets and CodeQL as they are pass" "$?" 0
+for c in 'test.yml Tests' 'lint.yml Lint' 'lint.yml Shell tests' 'ui.yml UI' 'codeql.yml CodeQL Go' \
+  'codeql.yml CodeQL TypeScript'; do
   check "the required checks list $c" "$(grep -cx "$c" "$REPO/.github/required-checks")" 1
 done
 

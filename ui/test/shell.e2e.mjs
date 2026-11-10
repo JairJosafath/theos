@@ -184,7 +184,7 @@ describe('the shell', () => {
   it('opens a Brief page from its card, and a Container page from what the Brief made', async () => {
     await page.goto(`${base}/?area=briefs`)
     // A Brief's card is a link to its page (docs/plans/done/ui-shell.md, step 2).
-    await page.getByRole('link', { name: /^Brief webshop: / }).click()
+    await page.getByRole('link', { name: /^Brief webshop / }).click()
     const header = page.getByRole('region', { name: 'Brief webshop', exact: true })
     await header.waitFor({ timeout: 10000 })
     let params = new URL(page.url()).searchParams
