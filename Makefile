@@ -76,9 +76,13 @@ check-generated: ## Fail when a generated file differs from what is committed, a
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	hack/keep-mtime.sh $(GENERATED_GO) -- "$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="$(CONTROLLER_GEN_PATHS)"
 
+# The packages go fmt and go vet read: every one, unless make check names
+# those its change affects (hack/check.sh, #127).
+GO_PACKAGES ?= ./...
+
 .PHONY: fmt
 fmt: ## Run go fmt against code.
-	go fmt ./...
+	go fmt $(GO_PACKAGES)
 
 # -trimpath keeps each checkout's absolute directory out of Go's cache keys, so
 # worktrees on the same code share compiled packages and test results in the
@@ -87,7 +91,7 @@ GO_TRIM = -trimpath
 
 .PHONY: vet
 vet: ## Run go vet against code.
-	go vet $(GO_TRIM) ./...
+	go vet $(GO_TRIM) $(GO_PACKAGES)
 
 # Heavy goals queue device-wide for one of HEAVY_JOBS slots (default 2), shared
 # by every checkout, before anything builds (hack/heavy-slot.sh). The slot is
@@ -96,13 +100,18 @@ vet: ## Run go vet against code.
 # the next free slot ahead of the waiters; the recipes don't inherit it.
 # A plain `make check` on a tree that already passed on this device, in any
 # checkout, is answered from the cache (hack/check-cache.sh) without a slot;
-# FORCE=1 runs it anyway.
+# FORCE=1 runs it anyway. Nor does one whose change selects no step take a
+# slot, a docs-only change's (hack/check.sh --idle, #127): it runs nothing.
+# Before GNU make 4.4 a variable of the command line (make check FORCE=1)
+# doesn't reach $(shell), so the ones the two scripts read are passed by name.
+CHECK_ENV = FORCE='$(FORCE)' TEST_ALL='$(TEST_ALL)' TEST_BASE='$(TEST_BASE)'
 ifeq ($(MAKECMDGOALS)$(THEOS_HEAVY_SLOT),check)
-CHECK_CACHED := $(shell hack/check-cache.sh lookup)
+CHECK_CACHED := $(shell $(CHECK_ENV) hack/check-cache.sh lookup)
+CHECK_IDLE := $(if $(CHECK_CACHED),,$(shell $(CHECK_ENV) hack/check.sh --idle 2>/dev/null))
 endif
 HEAVY_GOALS = check test lint lint-fix vulncheck docker-build deploy e2e test-e2e test-templates-operator test-templates
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
-ifeq ($(THEOS_HEAVY_SLOT)$(CHECK_CACHED),)
+ifeq ($(THEOS_HEAVY_SLOT)$(CHECK_CACHED)$(CHECK_IDLE),)
 $(shell hack/heavy-slot.sh acquire $(if $(THEOS_HEAVY_FIRST),--first )$$PPID "make $(MAKECMDGOALS)" >&2)
 export THEOS_HEAVY_SLOT := 1
 endif
@@ -151,14 +160,17 @@ TEST_CACHE_HOME ?= $(HOME)/.cache/theos/test-cache
 
 .PHONY: test
 # make test tests only the packages the change since origin/main can affect,
-# and every package on main, after a change to go.mod, hack/, config/, api/ and
-# the like, or with TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which
-# and why. Go's test cache still answers the unchanged ones among them. With
-# COVER=1, cover.out covers the packages that ran, and is empty when none did.
-# The controller envtest suite runs in THEOS_TEST_PROCS processes at once (default
-# 2, 1 when memory is short), each a go test of part of it (hack/go-test.sh).
-test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package; FORCE=1 reruns cached ones, COVER=1 writes cover.out).
-	@pkgs="$$(hack/test-packages.sh)" || exit; \
+# as digitalocean/gta selects them (hack/gta, #127), and every package on
+# main, after a change to go.mod, the Makefile and the like, or with
+# TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which and why.
+# TEST_PACKAGES names them instead: make check passes the selection its last
+# block reports. Go's test cache still answers the unchanged ones among them.
+# With COVER=1, cover.out covers the packages that ran, and is empty when none
+# did. The controller envtest suite runs in THEOS_TEST_PROCS processes at once
+# (default 2, 1 when memory is short), each a go test of part of it
+# (hack/go-test.sh).
+test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package; TEST_PACKAGES=...: those; FORCE=1 reruns cached ones, COVER=1 writes cover.out).
+	@pkgs="$(TEST_PACKAGES)"; [ -n "$$pkgs" ] || pkgs="$$(hack/test-packages.sh)" || exit; \
 	if [ -z "$$pkgs" ]; then $(if $(COVER),echo 'mode: set' >cover.out;) exit 0; fi; \
 	set -x; \
 	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" hack/go-test.sh $(GO_TRIM) $(TEST_FLAGS) -- $$pkgs
@@ -216,42 +228,40 @@ e2e: cluster metrics-server argocd gitea seed deploy session-image sample toolch
 .PHONY: test-e2e
 test-e2e: e2e ## Same as e2e.
 
-# A pass is recorded under the tree as the check left it, after manifests,
-# generate and fmt, so a tree with stale generated files never hits the cache.
+# make check runs each of its steps only when the change since origin/main can
+# have broken it (hack/check.sh, #127; docs/dev/testenv.md says what selects
+# each): manifests and generate, fmt, vet, lint, validate-yaml, test-hack,
+# ui-test and test, in that order. A docs-only change runs none of them.
+# digitalocean/gta selects the packages fmt, vet, lint and test read
+# (hack/gta). validate-yaml, test-hack and ui-test run when one of their inputs
+# changed, unless those inputs already passed on this device
+# (hack/check-cache.sh, #1285). The run ends with one block that says what ran,
+# what was skipped and why. TEST_ALL=1 selects every step; FORCE=1 runs every
+# step, past every cache.
 # The UI's own check (make ui-test: typecheck, eslint, prettier, its tests) is
 # part of it: the UI workflow runs only after a merge to main, so nothing else
 # before a merge would see a UI change break it (#1006). ./dev setup installs
 # Node on every device, a lite one too.
-# validate-yaml, test-hack and ui-test each run only when their own inputs
-# changed since they last passed on this device (hack/check-cache.sh run, #1285;
-# docs/dev/testenv.md says what each key covers); FORCE=1 runs them anyway. The
-# key is taken after manifests, generate and fmt, so the tier's sub-make skips
-# manifests. A dry run (make -n) still runs a recipe line with $(MAKE) in it,
-# so it goes straight to the tier and records nothing.
-CHECK_UI := $(if $(wildcard ui/package.json),ui-test)
-CHECK_TIERS := validate-yaml test-hack $(CHECK_UI)
-check-tier-%: manifests generate fmt
-	@$(if $(findstring n,$(firstword -$(MAKEFLAGS))),,hack/check-cache.sh run $* )$(MAKE) --no-print-directory -o manifests $*
-# LINT_CHANGED_ONLY=1 (the factory's own CI sets it) lints only when Go can have
-# changed since TEST_BASE (hack/go-changed.sh, #2058).
-CHECK_LINT := $(if $(LINT_CHANGED_ONLY),lint-if-go-changed,lint)
-.PHONY: lint-if-go-changed
-lint-if-go-changed:
-	@if hack/go-changed.sh; then $(MAKE) --no-print-directory lint; else echo "make lint: skipped, no Go file or its config changed since the base"; fi
+# A pass is recorded under the tree as the check left it, after manifests,
+# generate and fmt, so a tree with stale generated files never hits the cache.
+# The recipe names $(MAKE) through another variable: make runs a recipe line
+# that names it even in a dry run (make -n), which then would run the steps'
+# sub-makes dry and record them as passed.
+CHECK_MAKE = $(MAKE)
 .PHONY: check
 ifeq ($(CHECK_CACHED),)
-check: manifests generate fmt vet $(CHECK_LINT) $(addprefix check-tier-,$(CHECK_TIERS)) test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
-	@dirty=$$($(GENERATED_DIRTY)); [ -z "$$dirty" ] || \
-		{ echo "Generated files changed; commit them with your change:"; echo "$$dirty"; }
-	@hack/check-cache.sh record
+check: ## Everything to run before finishing a change, each step only when the change can have broken it: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
+	@CHECK_MAKE="$(CHECK_MAKE)" GENERATED_PATHS="$(GENERATED_PATHS)" hack/check.sh
 else
 check:
 	@echo "$(CHECK_CACHED)"
 endif
 
+# LINT_PACKAGES: the directories golangci-lint reads; none means every
+# package. make check names those of the packages its change affects.
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
-	"$(GOLANGCI_LINT)" run
+	"$(GOLANGCI_LINT)" run $(LINT_PACKAGES)
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes

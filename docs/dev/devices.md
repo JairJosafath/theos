@@ -232,7 +232,9 @@ queue:
   the turn across every device, so the other waiters can't starve. The check
   `land` runs before it queues for the turn waits its turn like any other. A
   job that ends, fails or is killed frees its slot within a second; its
-  sub-makes don't take another. `hack/heavy-slot.sh status` shows the slots
+  sub-makes don't take another. A plain `make check` takes none when the tree
+  already passed on this device, or when its change selects no step, as a
+  docs-only change does (`hack/check.sh --idle`, #127). `hack/heavy-slot.sh status` shows the slots
   and the waiters, the one going first marked `goes first` and the slot it
   took `went first`.
 - The controller suite runs in `THEOS_TEST_PROCS` processes (default 2), each
@@ -274,9 +276,15 @@ queue:
   cached pass counts as a pass. A failure records nothing; `FORCE=1 make
   check` always runs the whole check and records it. Tool versions,
   `go.mod`/`go.sum` and the Makefile are in the tree, so bumping them misses.
-  On a miss, Go's test cache (above) still answers each unchanged package,
+  On a miss, `make check` runs only the steps the change since `origin/main`
+  selects (`hack/check.sh`, #127; [testenv.md](testenv.md#testing--development)
+  says what selects each), so a docs-only change runs nothing and takes no
+  heavy-job slot, on a device that never ran `make check` too. Go's test
+  cache (above) still answers each unchanged package it does test,
   and three tiers answer from their own cache (#1285): `validate-yaml`,
-  `test-hack` and `ui-test` each run through `hack/check-cache.sh run TIER`,
+  `test-hack` and `ui-test`, when a file among their inputs changed since the
+  merge base (`hack/check-cache.sh changed TIER BASE`), each run through
+  `hack/check-cache.sh run TIER`,
   which skips a tier whose key passed on this device, in any checkout, and
   says so in one line (`ui-test: cached (ui/ unchanged since <time>, passed
   in <checkout>); FORCE=1 to rerun`). A key is the hash of `git ls-files -s`
@@ -298,7 +306,9 @@ queue:
     `go run ./hack/render` and `./hack/runner-fence` build (`go list -deps`),
     and `go version`.
 
-  `lint` keeps golangci-lint's own cache. Tier passes live in
+  The same lists of files select a tier and key its cache. `lint` keeps
+  golangci-lint's own cache, and reads only the packages the change affects.
+  Tier passes live in
   `.dev/cache/theos/checks/tiers/<tier>-<key>`; a failing tier records
   nothing, `FORCE=1` runs every tier, and a dry run (`make -n check`)
   records nothing. So a `hack/`-only change runs the shell tests and skips
@@ -331,7 +341,9 @@ check cache: a pass, then a hit on the same tree from another worktree, a miss
 on one changed byte (tracked or untracked), and `FORCE=1` queueing again; and
 the tiers: which keys a change under `ui/`, `hack/`, `config/`, `docs/` or a
 package `hack/render` builds moves, a hit that doesn't run the tier, `FORCE=1`
-and a failure that do, and the Makefile's cached and dry-run paths.
+and a failure that do, which of a tier's inputs differ from a commit, and the
+Makefile's cached path. `hack/check_test.sh` tests the steps `make check`
+selects, the block it ends with, its dry run and the check that takes no slot.
 
 ## Disk space on WSL
 

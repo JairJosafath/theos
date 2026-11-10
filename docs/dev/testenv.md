@@ -51,7 +51,8 @@ network.
 ```bash
 make test                # Unit and envtest tests of the packages the change affects (real K8s API + etcd, no cluster needed)
 make test TEST_ALL=1     # The same, every package
-make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack, ui-test and test
+make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack, ui-test and test, each only when the change can have broken it
+make check FORCE=1       # The same, every step, past every cache
 make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
 make test-hack           # The shell tests of hack/ (hack/**/*_test.sh), all at once, about a minute
 make test-templates-operator  # The operator combo's make check before and after kubebuilder create api, then its make dist; not in make check
@@ -82,10 +83,55 @@ fails on a render error, a path two layers write, or YAML that doesn't parse. A 
 template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
 
+`make check` runs each of its steps only when the change since `origin/main`
+(its merge base, with uncommitted and untracked files) can have broken it
+(`hack/check.sh`, #127; [the plan](../plans/done/selective-check.md)):
+
+| Step | Runs when |
+| --- | --- |
+| `manifests`, `generate` | a Go file under `api/`, `cmd/` or `internal/` changed, `go.mod`, `go.sum`, a file they write (`config/crd`, `config/rbac`, the chart's copies) or a script they run |
+| `fmt`, `vet`, `lint` | on the packages [gta](https://github.com/digitalocean/gta) says the change affects: those a changed file lies in and those that depend on them. On every package after a change to `go.mod` or `go.sum`, and `lint` after one to `.golangci.yml` or `.custom-gcl.yml` |
+| `validate-yaml`, `test-hack`, `ui-test` | a file among the tier's inputs changed ([devices.md](devices.md#memory-on-the-cluster-device) lists them), unless those inputs already passed on this device |
+| `test` | on the packages `make test` selects, below |
+
+So a docs-only change runs none of them, on a device that never ran `make
+check` too, and takes no heavy-job slot; a UI-only change runs the UI's check
+and nothing of Go; a change to one Go package runs `vet`, `lint` and the tests
+on that package and its dependents. Every step runs with `TEST_ALL=1` or
+`FORCE=1` (which also passes by every cache), on the branch `main`, without a
+merge base, and after a change to the Makefile, a `*.mk` or a script that
+selects the steps (`hack/check.sh`, `hack/check-cache.sh`,
+`hack/test-packages.sh`, `hack/lib/change.sh`, `hack/gta/`). What `make
+manifests` writes counts for the steps after it: a regenerated CRD selects
+`validate-yaml` and the tests that load it. The run ends with one block, which
+is what a pull request pastes:
+
+```
+make check: passed. 1 file changed since origin/main (fc9adcb1d2e3); the steps that change selects:
+  manifests generate  skipped  no Go file under api/, cmd/ or internal/ changed, nor go.mod, go.sum or a generated file
+  fmt                 skipped  no changed file lies in a Go package
+  vet                 skipped  no changed file lies in a Go package
+  lint                skipped  no changed file lies in a Go package, and no linter configuration changed
+  validate-yaml       skipped  none of its inputs changed: the YAML, api/, templates/ and hack/render
+  test-hack           skipped  none of its inputs changed: hack/ and the rest outside the Go, UI and docs trees
+  ui-test             ran      42s; ui/src/model/loop.ts changed
+  test                skipped  no Go package changed since origin/main (fc9adcb1d2e3)
+```
+
+A step is `ran`, `skipped`, `cached` (selected, and answered from this
+device's cache), `FAILED` or `not run` (a step before it failed, which ends
+the check). `make vet`, `make lint` and `make fmt` by themselves read every
+package; `make check` names the affected ones (`GO_PACKAGES`,
+`LINT_PACKAGES`). `hack/check_test.sh` tests the selection on a throwaway
+module.
+
 `make test` tests only the packages the change since `origin/main` (its merge
-base, with uncommitted and untracked files) can affect: a package with a changed
-file (its directory or one below it, so embedded files count) and every package
-whose test binary links one, transitively (`hack/test-packages.sh`, #1295). It
+base, with uncommitted and untracked files) can affect, as gta selects them
+(`hack/gta`, our command on its library): a package with a changed file (its
+directory or one below it, so embedded files and fixtures count) and every
+package that depends on one, through its tests too (`hack/test-packages.sh`,
+#1295, #127). A package whose `_test.go` files alone changed is tested alone,
+since no other package links them. It
 prints which ran and why: `make test: testing 2 of 21 packages, ...; changed:
 internal/model`, or `testing every package (21): <reason>`. A changed non-Go
 file in a package, or a changed `//go:embed` line, also tests `cmd`: its
@@ -110,9 +156,9 @@ path joins that list. In the factory's own CI (`.gitea/workflows/check.yaml`,
 a pull request selects against `origin/main` as on a device; a push to main
 sets `TEST_BASE` to main's previous head (`TEST_ALL=1` when that head is zeros
 or can't be fetched), since its detached HEAD is no branch. The workflow also
-sets `LINT_CHANGED_ONLY=1`, which makes `make check` lint only when
-`hack/go-changed.sh` finds a `*.go`, `go.mod`, `go.sum`, `.golangci.yml` or
-`.custom-gcl.yml` changed since the same base. `land`'s `make check` selects
+sets `LINT_CHANGED_ONLY=1`, which nothing reads any more: every `make check`
+now selects `lint`, and each other step, by the change since the same base
+(#127). `land`'s `make check` selects
 the same way, and so does the *Tests* workflow on a pull request (against
 its base branch); its `paths` filter skips a pull request that changes only
 `*.md`, `docs/`, `ui/`, `config/ui/`, `config/samples/`, `test/e2e/`, the
@@ -123,11 +169,19 @@ manual run it sets `TEST_ALL=1` and tests every package, and that run
 catches what a selection missed (#1522). Main's run is the one that shows a
 red main while yolo mode merges a pull request unchecked (#1556). With `COVER=1`,
 `cover.out` covers the packages that ran (`mode: set` and nothing else when none
-did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage. DigitalOcean's `gta`
-selects the same way, but it loads every package of every module in the build
-list (`go list ...`), which this module's `go.mod` can't (`go mod tidy` wants
-more requirements) and which takes a minute where `go list -test ./...` takes
-half a second.
+did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage.
+`make test TEST_PACKAGES=./internal/model` tests the packages it names
+instead; `make check` passes the selection its last block reports.
+
+gta's own command can't run here: it loads every package of every module in
+the build list (`...`), which this module's `go.mod` can't (`go: updates to
+go.mod needed`), and its git differ reads commits only. `hack/gta` uses its
+library on this module's packages alone, with the changed files the scripts
+list (`hack/lib/change.sh`), and adds what gta v0.2.0 leaves out: a package
+owns every file in its directory and below, down to the next package, and a
+package of tests alone (`test/chart`) that imports an affected package is
+selected too. `hack/gta/main_test.go` holds it to that. When gta fails, every
+package is tested.
 
 `make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why;
 the *Tests* workflow gives its loaded self-hosted runners 60m, #1504). The

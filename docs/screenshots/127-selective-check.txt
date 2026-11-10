@@ -1,0 +1,243 @@
+# GitHub issue #127: make check runs each step only when the change can have broken it,
+# and digitalocean/gta selects the Go packages. Run on 2026-11-10 in a cloud container
+# (4 CPUs, 15 GiB) that had never run make check. The short runs set TEST_BASE=HEAD, so
+# the change is what is uncommitted in the checkout, and start on an empty CHECK_CACHE_DIR.
+# Lines of downloads, of set -x and of controller-gen's own commands are left out.
+
+# gta's own command can't load this module; its library, on this module's packages, can.
+$ go install github.com/digitalocean/gta/cmd/gta@v0.2.0 && gta -base origin/main -include github.com/JairJosafath/theos/
+can't list dirty packages: building dependency graph, loading packages: err: exit status 1: stderr: go: updates to go.mod needed; to update it:
+	go mod tidy
+exit 1
+
+$ echo internal/oci/push.go | go run ./hack/gta    # its library, on this module's packages alone
+dependent github.com/JairJosafath/theos/cmd
+dependent github.com/JairJosafath/theos/internal/adapters/argocd
+dependent github.com/JairJosafath/theos/internal/adapters/cloudformation
+dependent github.com/JairJosafath/theos/internal/adapters/gitea
+dependent github.com/JairJosafath/theos/internal/adapters/github
+dependent github.com/JairJosafath/theos/internal/adapters/gitlab
+dependent github.com/JairJosafath/theos/internal/controller
+changed github.com/JairJosafath/theos/internal/oci
+real	0m0.945s
+
+$ echo internal/model/fence_test.go | go run ./hack/gta    # a test file: its package alone
+changed github.com/JairJosafath/theos/internal/model
+
+$ echo internal/scaffold/scaffold.go | go run ./hack/gta | grep test/    # a package of tests alone, which gta v0.2.0 leaves out
+dependent github.com/JairJosafath/theos/test/chart
+
+# A docs-only change: no step runs, on a device that holds no pass of anything.
+$ git status --short
+ M docs/design.md
+$ time make check
+make check: passed on tree fc1c328fa0c23b7f4d1c3cdcf688d42633f0e430; recorded
+
+make check: passed. 1 file changed since HEAD (5886e12722d5); the steps that change selects:
+  manifests generate  skipped  no Go file under api/, cmd/ or internal/ changed, nor go.mod, go.sum or a generated file
+  fmt                 skipped  no changed file lies in a Go package
+  vet                 skipped  no changed file lies in a Go package
+  lint                skipped  no changed file lies in a Go package, and no linter configuration changed
+  validate-yaml       skipped  none of its inputs changed: the YAML, api/, templates/ and hack/render
+  test-hack           skipped  none of its inputs changed: hack/ and the rest outside the Go, UI and docs trees
+  ui-test             skipped  none of its inputs changed: ui/
+  test                skipped  no Go package changed since HEAD (5886e12722d5)
+
+real	0m2.316s
+
+# It takes no heavy-job slot either, where a change to a Go file waits for one (timeout 10).
+$ hack/heavy-slot.sh status    # HEAVY_JOBS=1, and the one slot is taken
+heavy-slot: 0 of 1 slots free, 0 waiting
+  slot 1: pid 3151 in /home/user/theos, `a running make check`, since 14:46
+$ make check    # a docs-only change
+
+make check: passed. 1 file changed since HEAD (5886e12722d5); the steps that change selects:
+  manifests generate  skipped  no Go file under api/, cmd/ or internal/ changed, nor go.mod, go.sum or a generated file
+exit 0
+$ echo "// c" >>internal/buildinfo/buildinfo.go; timeout 10 make check    # a Go change waits for the slot
+exit 124 (timeout)
+
+# A change to one Go package: generate, then fmt, vet, lint and the tests on the 4 packages gta
+# selects. (The second changed file is this file, untracked, which selects nothing.)
+$ git status --short
+ M internal/buildinfo/buildinfo.go
+?? docs/screenshots/127-selective-check.txt
+$ time make check
+make check: manifests generate: internal/buildinfo/buildinfo.go changed
+make check: fmt: the 4 packages gta selects; changed: internal/buildinfo
+go fmt github.com/JairJosafath/theos/cmd github.com/JairJosafath/theos/cmd/model-proxy github.com/JairJosafath/theos/cmd/theos-chat github.com/JairJosafath/theos/internal/buildinfo
+internal/buildinfo/buildinfo.go
+make check: vet: the 4 packages gta selects; changed: internal/buildinfo
+go vet -trimpath github.com/JairJosafath/theos/cmd github.com/JairJosafath/theos/cmd/model-proxy github.com/JairJosafath/theos/cmd/theos-chat github.com/JairJosafath/theos/internal/buildinfo
+make check: lint: the 4 packages gta selects; changed: internal/buildinfo
+"/home/user/theos/.dev/make/bin/golangci-lint-v2.13.1-custom-3965669120" run ./cmd ./cmd/model-proxy ./cmd/theos-chat ./internal/buildinfo
+0 issues.
+make check: test: 4 of 42 packages, those the change since HEAD (fa6fad154062) affects; changed: internal/buildinfo
+ok  	github.com/JairJosafath/theos/cmd	1.069s
+ok  	github.com/JairJosafath/theos/cmd/model-proxy	(cached)
+?   	github.com/JairJosafath/theos/cmd/theos-chat	[no test files]
+ok  	github.com/JairJosafath/theos/internal/buildinfo	(cached)
+make check: passed on tree 4cdeed0c6784f2048bb26e6726d39e8a13228b19; recorded
+
+make check: passed. 2 files changed since HEAD (fa6fad154062); the steps that change selects:
+  manifests generate  ran      4s; internal/buildinfo/buildinfo.go changed
+  fmt                 ran      0s; the 4 packages gta selects; changed: internal/buildinfo
+  vet                 ran      1s; the 4 packages gta selects; changed: internal/buildinfo
+  lint                ran      1s; the 4 packages gta selects; changed: internal/buildinfo
+  validate-yaml       skipped  none of its inputs changed: the YAML, api/, templates/ and hack/render
+  test-hack           skipped  none of its inputs changed: hack/ and the rest outside the Go, UI and docs trees
+  ui-test             skipped  none of its inputs changed: ui/
+  test                ran      5s; 4 of 42 packages, those the change since HEAD (fa6fad154062) affects; changed: internal/buildinfo
+
+real	0m13.300s
+
+# A UI-only change: the UI's check and nothing of Go.
+$ git status --short
+ M ui/src/model/loop.ts
+$ time make check
+make check: passed on tree 4030147556dfcd59cb9d8cc16511b1e170317435; recorded
+
+make check: passed. 1 file changed since HEAD (fa6fad154062); the steps that change selects:
+  manifests generate  skipped  no Go file under api/, cmd/ or internal/ changed, nor go.mod, go.sum or a generated file
+  fmt                 skipped  no changed file lies in a Go package
+  vet                 skipped  no changed file lies in a Go package
+  lint                skipped  no changed file lies in a Go package, and no linter configuration changed
+  validate-yaml       skipped  none of its inputs changed: the YAML, api/, templates/ and hack/render
+  test-hack           skipped  none of its inputs changed: hack/ and the rest outside the Go, UI and docs trees
+  ui-test             ran      35s; ui/src/model/loop.ts changed
+  test                skipped  no Go package changed since HEAD (fa6fad154062)
+
+real	0m36.196s
+
+# A step that fails ends the check; the block says where, and what was not run.
+$ git status --short    # a blank line at the end, which Prettier refuses
+ M ui/README.md
+$ make check; echo "exit $?"
+
+Checking formatting...
+[warn] README.md
+[warn] Code style issues found in the above file. Run Prettier with --write to fix.
+make[1]: *** [hack/ui.mk:53: ui-test] Error 1
+
+make check: FAILED at ui-test. 1 file changed since HEAD (fa6fad154062); the steps that change selects:
+  manifests generate  skipped  no Go file under api/, cmd/ or internal/ changed, nor go.mod, go.sum or a generated file
+  fmt                 skipped  no changed file lies in a Go package
+  vet                 skipped  no changed file lies in a Go package
+  lint                skipped  no changed file lies in a Go package, and no linter configuration changed
+  validate-yaml       skipped  none of its inputs changed: the YAML, api/, templates/ and hack/render
+  test-hack           skipped  none of its inputs changed: hack/ and the rest outside the Go, UI and docs trees
+  ui-test             FAILED   exit 2 after 27s; ui/README.md changed
+  test                not run  ui-test failed
+make: *** [Makefile:254: check] Error 2
+exit 2
+
+# This change itself touches the Makefile, so every step runs. In a worktree of the branch,
+# first run: 16 minutes, the controller envtest suite 14 of them. validate-yaml had passed
+# on these inputs in a run before it, which ended at a shell test that still read
+# make -n check for hack/test-hack.sh (fixed in hack/test-hack_test.sh).
+# Not from the repository: in this container hack/k8s-openapi.sh can't list the Kubernetes
+# schemas (the GitHub API answers 403 here), so validate-yaml failed on its first run; the
+# same files were copied from the Go module k8s.io/kubernetes@v1.37.0 into the tool
+# directory, where the script finds them, before the runs below.
+$ time make check
+make check: passed on tree 02ad85b58a36de2ec21ee10fe62db0b4280257bb; recorded
+
+make check: passed. 22 files changed since origin/main (fc9adcbb3f53); the steps that change selects:
+  manifests generate  ran      4s; Makefile changed, which selects or runs the steps
+  fmt                 ran      1s; every package: Makefile changed, which selects or runs the steps
+  vet                 ran      1s; every package: Makefile changed, which selects or runs the steps
+  lint                ran      1s; every package: Makefile changed, which selects or runs the steps
+  validate-yaml       cached   Makefile changed, which selects or runs the steps; this device's cache answers: the YAML, api/, templates/ and hack/render unchanged since 2026-11-10 14:45, passed in <worktree>
+  test-hack           ran      1m5s; Makefile changed, which selects or runs the steps
+  ui-test             ran      42s; Makefile changed, which selects or runs the steps
+  test                ran      14m16s; every package: Makefile changed, which selects or runs the steps
+
+real	16m10.652s
+
+# The same on the final tree: Go's test cache answers the suites whose inputs did not change.
+$ time make check
+make check: passed on tree 42b65fcd90687c9bad9054da8970285060eb0ce5; recorded
+
+make check: passed. 22 files changed since origin/main (fc9adcbb3f53); the steps that change selects:
+  manifests generate  ran      4s; Makefile changed, which selects or runs the steps
+  fmt                 ran      1s; every package: Makefile changed, which selects or runs the steps
+  vet                 ran      1s; every package: Makefile changed, which selects or runs the steps
+  lint                ran      2s; every package: Makefile changed, which selects or runs the steps
+  validate-yaml       ran      12s; Makefile changed, which selects or runs the steps
+  test-hack           ran      59s; Makefile changed, which selects or runs the steps
+  ui-test             ran      38s; Makefile changed, which selects or runs the steps
+  test                ran      58s; every package: Makefile changed, which selects or runs the steps
+
+real	2m56.023s
+
+# make check FORCE=1, the variable given on the command line, on a tree that already passed
+# and with the one heavy-job slot taken. GNU make 4.3 keeps such a variable from $(shell),
+# so the Makefile before this change let the tree cache answer; now the check queues to run.
+$ timeout 5 make -f Makefile.before -n check FORCE=1; echo "exit $?"
+echo "make check: passed on tree 42b65fcd90687c9bad9054da8970285060eb0ce5 at 2026-11-10 14:51 in /home/user/theos (cached); FORCE=1 to rerun"
+exit 0
+$ timeout 5 make -n check FORCE=1; echo "exit $?"
+exit 124
+
+# The selection against the one before it, hack/test-packages.sh of fc9adcb, on one test file,
+# one other Go file and one other file of each package directory (74 files): a package the old
+# selection held and gta's lacks shows only for a change to a test file, which now tests its
+# package alone (22 files). internal/model/abandoned_test.go: 24 packages before, 1 now.
+
+# The tests.
+$ go test -count=1 -v ./hack/gta/ | grep -e "^    ---" -e "^ok"
+--- PASS: TestRunSelectsWhatAChangeAffects (1.14s)
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_Go_file:_its_package,_what_imports_it_and_what_tests_with_it,_and_their_dependents
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_test_file_alone:_its_package,_since_no_other_links_it
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_package_only_a_package_of_tests_alone_imports:_both_(gta_alone_misses_it)
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_package_of_tests_alone:_itself
+    --- PASS: TestRunSelectsWhatAChangeAffects/two_files:_each_package_once,_and_what_tests_their_dependents
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_package_nothing_imports:_itself
+    --- PASS: TestRunSelectsWhatAChangeAffects/an_embedded_file:_the_package_that_embeds_it
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_file_a_package's_tests_read_beside_them:_the_package_that_owns_it
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_file_below_testdata:_its_package_and,_as_a_file_it_owns,_the_dependents
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_file_that_is_gone:_the_package_that_owned_it
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_Go_file_of_a_nested_module:_no_package_of_this_module,_and_no_failure
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_Go_file_a_build_constraint_excludes:_no_package
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_Go_file_of_a_package_that_is_gone:_nothing_is_left_to_test
+    --- PASS: TestRunSelectsWhatAChangeAffects/a_file_in_no_package
+    --- PASS: TestRunSelectsWhatAChangeAffects/no_file
+--- PASS: TestRunReadsTheListFromAFile
+ok  	github.com/JairJosafath/theos/hack/gta	1.234s
+$ hack/check_test.sh | tail -n 12; hack/check_test.sh | grep -c "^ok"
+ok   a failing tier: runs again, nothing was cached
+ok   no merge base: every step
+ok   no merge base: says so
+ok   #2058 detached, TEST_BASE the commit before a docs change: no step
+ok   the branch main: every step
+ok   make -n check: prints the recipe, hack/check.sh
+ok   make -n check: runs no step
+ok   make -n check: records nothing
+ok   the Makefile asks hack/check.sh --idle before it takes a slot
+ok   make check, steps to run: waits for a slot
+ok   make check TEST_ALL=1, a variable of the command line: waits too
+ok   make check, idle: takes no slot
+83 ok, 0 FAIL
+$ hack/test-packages_test.sh | grep -e "#127" -e FAIL; hack/test-packages_test.sh | grep -c "^ok"
+ok   #127 a test file: its package alone, no other links it
+ok   #127 a test file and a Go file: the package and its dependents
+ok   #127 gta fails: every package
+ok   #127 gta fails: says why
+ok   #1523 api/ has no readers: the package and the one whose tests import it, from gta (#127)
+112 ok
+$ hack/check-cache_test.sh | grep -e "changed" -e "cached," -e "FORCE=1:" -e FAIL | head -30
+ok   cached, inputs that passed: exit 0
+ok   cached, FORCE=1: miss
+ok   cached, ui/ changed since: miss
+ok   changed, nothing changed: exit 1
+ok   changed, docs/ changed: no tier's inputs
+ok   changed, ui/: the changed file and the untracked one
+ok   changed, ui/: not an input of the shell tests
+ok   changed, committed: still differs from the base
+ok   changed, config/: an input of the shell tests
+ok   changed, config/: and of validate-yaml
+ok   changed, a package hack/render builds: validate-yaml
+ok   changed, a package nothing renders with: not validate-yaml
+ok   changed, a base that is no commit: exit 2
+ok   changed, unknown tier: exit 2
+ok   make check FORCE=1: waits for a slot

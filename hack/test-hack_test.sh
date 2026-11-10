@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for hack/test-hack.sh, the runner of the shell tests in hack/, against
-# stand-in tests in a temporary directory, and for make check running it.
+# stand-in tests in a temporary directory, and for make check holding it.
 # Run: hack/test-hack_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -56,9 +56,11 @@ check "under make, in a sandbox: the test sees none of make's variables, nor IS_
 mkdir -p "$T/empty"
 "$RUN" "$T/empty" 2>/dev/null; check "no tests: exit 1" $? 1
 
-# make check runs the shell tests (THEOS_HEAVY_SLOT=1: no slot for a dry run).
+# make check runs the shell tests: its steps hold make test-hack (hack/check.sh,
+# #127; hack/check_test.sh shows what selects it), whose recipe is this runner.
 cd "$HACK/.." || exit 1
-THEOS_HEAVY_SLOT=1 timeout 60 make -n check 2>/dev/null | grep -qx 'hack/test-hack.sh'
-check "make check: runs hack/test-hack.sh" $? 0
+grep -qx 'tier test-hack' hack/check.sh; check "make check: its steps hold test-hack" $? 0
+timeout 60 make -n test-hack 2>/dev/null | grep -qx 'hack/test-hack.sh'
+check "make test-hack: runs hack/test-hack.sh" $? 0
 
 exit $fail
