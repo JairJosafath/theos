@@ -189,7 +189,8 @@ spec:
               frameworkRef:
                 description: |-
                   frameworkRef names the Framework catalog entry: language, framework and
-                  tooling. Set it, or bundleRef.
+                  tooling. Set it, or bundleRef. A Container that adopts its repository
+                  may name neither: nothing of a Framework is rendered into it.
                 properties:
                   name:
                     description: name of the referenced object.
@@ -342,8 +343,10 @@ spec:
             - type
             type: object
             x-kubernetes-validations:
-            - message: name a bundleRef or a frameworkRef
-              rule: has(self.bundleRef) || has(self.frameworkRef)
+            - message: name a bundleRef or a frameworkRef; only a Container that adopts
+                its repository needs neither
+              rule: has(self.bundleRef) || has(self.frameworkRef) || (has(self.adopt)
+                && self.adopt)
             - message: bundleRef replaces frameworkRef, standardRef, computeRef and
                 deploymentRef
               rule: '!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef)

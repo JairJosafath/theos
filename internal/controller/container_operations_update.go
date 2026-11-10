@@ -232,9 +232,13 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 	// #1909: an adopted repository was never scaffolded, so nothing says
 	// whether the operations file on its main is one the Framework renders.
 	if u.container.Spec.Adopt {
+		framework := "the Framework " + name
+		if name == "" {
+			framework = "a Framework"
+		}
 		stopped(c4v1beta1.ReasonAdoptedRepository, fmt.Sprintf("spec.operations changed after the adoption of "+
-			"the repository, which the factory never scaffolded, so it can't know whether the Framework %s "+
-			"renders the %s there; change it by a Task", name, model.OperationsFile))
+			"the repository, which the factory never scaffolded, so it can't know whether %s "+
+			"renders the %s there; change it by a Task", framework, model.OperationsFile))
 		log.Info("Did not carry a changed spec.operations to an adopted repository", "framework", name)
 		return
 	}

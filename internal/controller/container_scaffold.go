@@ -155,7 +155,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 			standard = b.Standard
 		}
 		return r.ready(ctx, container, status, standard, model.ScaffoldedRef(info.ScaffoldedFrom, standard),
-			info.ScaffoldedFrom, info.Domains, info.Relationships, info.Checks, res.entries[0].ReadsOperations,
+			info.ScaffoldedFrom, info.Domains, info.Relationships, info.Checks, frameworkEntry(res.entries).ReadsOperations,
 			"Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonForeignCommits,
@@ -211,7 +211,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
 		"scaffoldedFrom", result.ScaffoldedFrom)
 	return r.ready(ctx, container, status, res.choices.Standard, model.ScaffoldedRef(result.ScaffoldedFrom, res.choices.Standard),
-		result.ScaffoldedFrom, in.Domains, res.use.Relationships, in.Checks, res.entries[0].ReadsOperations,
+		result.ScaffoldedFrom, in.Domains, res.use.Relationships, in.Checks, frameworkEntry(res.entries).ReadsOperations,
 		fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
 }
 
@@ -342,7 +342,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.choices.Standard, "ref", standardRef,
 		"domains", domains)
 	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, domains, nil, checks,
-		res.entries[0].ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
+		frameworkEntry(res.entries).ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
 }
 
 // adoptionDomains are the sets of Domains an adoption tries the Standard

@@ -121,10 +121,15 @@ func (r *ContainerReconciler) reportOperationsApplied(container *c4v1beta1.Conta
 			meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionOperationsApplied)
 			return true
 		}
+		message := fmt.Sprintf("Framework %s doesn't read spec.operations (readsOperations is not set), so its "+
+			"repository has none of it; change the repository by a Task", container.Choices().Framework)
+		if container.Choices().Framework == "" {
+			// An adopted repository with no Framework (#60).
+			message = "The Container names no Framework to read spec.operations, so its repository has none of " +
+				"it; change the repository by a Task"
+		}
 		r.condition(container, status, c4v1beta1.ConditionOperationsApplied, metav1.ConditionFalse,
-			c4v1beta1.ReasonNotReadByFramework, fmt.Sprintf("Framework %s doesn't read spec.operations "+
-				"(readsOperations is not set), so its repository has none of it; change the repository by a Task",
-				container.Choices().Framework))
+			c4v1beta1.ReasonNotReadByFramework, message)
 		return true
 	}
 	if model.NextOperationsStep(operationsFacts(container, status)).Action != model.OperationsUpToDate {

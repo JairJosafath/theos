@@ -131,7 +131,8 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 | #50 a release from this repository | v0.32.0 is bumped on main and not tagged: the tag push is the owner's step 5 |
 | #57 GitHub as a Git host | planned ([github-host.md](github-host.md)), nine steps filed as #74 to #82; steps 1 (#74) and 3 (#76) are built |
 | #62 a Crew's approval rules | step 1 is built ([approval-rules.md](approval-rules.md)): the rules, the wait and the merge; open, as #92: the chat thread, the reviewer's `Risk: high`, the split by who approved |
-| #54, #58, #60, #61, #64, #66, #73 | open; #60 carries what was found in the code |
+| #60 bring a repository you already have | planned ([adopt-existing.md](adopt-existing.md)), six steps; step 1 is built: an adopting Container needs nothing from the catalog; open: #95 to #99 |
+| #54, #58, #61, #64, #66, #73 | open |
 
 ## For the owner
 

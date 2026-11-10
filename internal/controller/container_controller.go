@@ -315,8 +315,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		err = model.CheckWiring(choices.Framework, res.entries)
 	}
 	if err == nil {
-		// Resolved, so entries start with the Framework.
-		err = model.CheckDeploysItself(res.entries[0], string(container.Spec.Type), choices.Compute, choices.Deployment)
+		err = model.CheckDeploysItself(frameworkEntry(res.entries), string(container.Spec.Type), choices.Compute,
+			choices.Deployment)
 	}
 	err = model.InBundle(choices.Bundle, err)
 	if err != nil {
