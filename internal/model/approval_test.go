@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-// The rules of docs/plans/approval-rules.md's example (#62): two folders and
+// The rules of docs/plans/done/approval-rules.md's example (#62): two folders and
 // a label wait for a person, as does a big change, and docs merge on CI.
 var approvalExample = []ApprovalRule{
 	{Paths: []string{"migrations/", "internal/auth/"}, Require: ApprovalPerson},

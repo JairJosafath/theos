@@ -891,9 +891,9 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   approval of a review run that still lasts. Without a verifier, the
   reviewer's approval merges.
 - **Approval rules** (`spec.approval`,
-  [plans/approval-rules.md](plans/approval-rules.md)). An ordered list of up
-  to 16 rules says which changes wait for a person and which merge on CI
-  alone. A rule has `require` (`Person`, `Reviewer` or `None`), and what it
+  [plans/done/approval-rules.md](plans/done/approval-rules.md)). An ordered
+  list of up to 16 rules says which changes wait for a person and which
+  merge on CI alone. A rule has `require` (`Person`, `Reviewer` or `None`), and what it
   is for: `labels` (the issue has one of them), `changedLinesOver` (the pull
   request adds and deletes more lines than that) and `paths` (a file, a
   folder ending in `/`, or a pattern in which `*` is any run of characters:

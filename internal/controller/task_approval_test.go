@@ -32,7 +32,7 @@ import (
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
-// The shape of a Crew's approval rules (docs/plans/approval-rules.md, #62).
+// The shape of a Crew's approval rules (docs/plans/done/approval-rules.md, #62).
 var _ = Describe("Crew approval", func() {
 	It("takes rules by path, label and size, and refuses one that asks nothing it knows", func() {
 		ns := newProjectNamespace()
@@ -69,7 +69,7 @@ var _ = Describe("Crew approval", func() {
 	})
 })
 
-// A Crew's approval rules at work (docs/plans/approval-rules.md, #62): a
+// A Crew's approval rules at work (docs/plans/done/approval-rules.md, #62): a
 // change the rules hold for a person waits, after its agents approved, until
 // a person approves its pull request; one they ask no review of merges on
 // its checks; and one no rule matches is reviewed and merged as ever.

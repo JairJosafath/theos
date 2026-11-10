@@ -1,6 +1,6 @@
 # A Crew says which changes wait for a person
 
-GitHub issue #62, a step of [open-source-launch.md](open-source-launch.md)
+GitHub issue #62, a step of [open-source-launch.md](../open-source-launch.md)
 (#46). Written 2026-11-10 in a session the owner ran.
 
 ## Goal
@@ -90,15 +90,15 @@ the loop"), and its advice is ours: start with low-risk work and widen.
 
 | Step | Done when |
 | --- | --- |
-| 1. The rules, the wait and the merge (this plan's pull request) | `Crew.spec.approval` with its CEL; `model.ApprovalFor` table-tested; envtest: a change under a `Person` path waits and merges on a person's approval, not an agent's; one that needs `None` merges with no reviewer run; no rules is today's behaviour; the Crew's page shows the rules and *Needs you* the waiting change; the guide's "Start small" |
-| 2. The rest (#92) | a thread in the Chat's `reviews` room with `approve` and `changes:`; the reviewer raises with a `Risk: high` verdict line (the runner, an owner's path); the triager's guide to `risk/*` labels; merged Tasks split by who approved in *How well it works* and in `theos_tasks_merged` |
+| 1. The rules, the wait and the merge (done, #93) | `Crew.spec.approval` with its CEL; `model.ApprovalFor` table-tested; envtest: a change under a `Person` path waits and merges on a person's approval, not an agent's; one that needs `None` merges with no reviewer run; no rules is today's behaviour; the Crew's page shows the rules and *Needs you* the waiting change; the guide's "Start small" |
+| 2. The rest (done, #92) | a thread in the Chat's `reviews` room with `approve` and `changes:`; the reviewer raises with a `Risk: high` verdict line (the runner, an owner's path); the triager's guide to `risk/*` labels; merged Tasks split by who approved in *How well it works* and in `theos_tasks_merged` |
 
 ## What is done of step 2
 
 - Who approved, in the numbers (2026-11-10): `theos_tasks_merged` has an
   `approved` label, `person`, `reviewer` or `none`, read from
   `status.approval` and `status.spec`; the dashboard has a panel for it,
-  [docs/monitoring.md](../monitoring.md) the query, and the UI's *How well
+  [docs/monitoring.md](../../monitoring.md) the query, and the UI's *How well
   it works* a column, "A person approved".
 - The chat thread (2026-11-10): a waiting change is a thread in the Chat's
   `reviews` room (`ChatEventChangeWaiting`), opened when the change waits
@@ -137,3 +137,5 @@ the loop"), and its advice is ours: start with low-risk work and widen.
 ## Done when
 
 Step 1's checks pass in `make check`, and #92, step 2, is closed.
+
+Done 2026-11-10: step 1 merged as #93, step 2 as #105.
