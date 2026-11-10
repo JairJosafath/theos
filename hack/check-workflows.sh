@@ -23,7 +23,9 @@
 # make secrets-scan from a full clone on every pull request and push to main,
 # without paths (#52). Tests must run on pushes to main, since yolo mode
 # merges a pull request unchecked and main's run is what shows a red main
-# (#1556).
+# (#1556). Tests leaves ui/ out of its paths and takes ui/src/model/testdata/
+# back in after it: the Go tests read the fixtures there, which the UI's
+# tests share with them (#66).
 # Every check is partial, against main, and only a release runs every step
 # (#127). So Lint and Tests clone the whole history (fetch-depth: 0, or there
 # is no merge base and everything runs), name what a run is compared with
@@ -223,6 +225,21 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       fi
       if grep -q '^tags ' <<<"$(trigger "$f" push)"; then
         echo "$f: runs on a pushed tag; a release's run of every step is Release's own job, which gates the release (#127)" >&2
+        fail=1
+      fi
+      # #66: internal/model's TestFactoryReportFixture reads the fixture the
+      # UI's tests share with it, ui/src/model/testdata/report. With ui/**
+      # left out and that path not taken back in, a pull request that changed
+      # a UI rule and the fixture's report never ran the Go test that reads
+      # it. A later pattern wins, so the path comes after the exclusion. The
+      # pushes have the same paths (above).
+      if ! awk '
+        { gsub(/['"'"'"]/, "") }
+        $0 == "path !ui/**" { out = NR }
+        $0 == "path ui/src/model/testdata/**" { back = NR }
+        END { exit !(out == 0 || back > out) }
+      ' <<<"$pr"; then
+        echo "$f: leaves out ui/** without taking ui/src/model/testdata/** back in after it, so a pull request that changes the fixtures the UI's tests share with Go's never runs the Go tests that read them (#66)" >&2
         fail=1
       fi
       ;;

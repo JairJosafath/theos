@@ -177,7 +177,8 @@ function ContainerDetails({ node }: { node: ContainerNode }) {
       </dl>
       {node.repositoryURL ? (
         <p className="panel-note">
-          Repository addresses point inside the cluster. From a laptop, Gitea is usually reached through a port-forward.
+          Repository addresses point inside the cluster. From outside the cluster, Gitea is usually reached through a
+          port-forward.
         </p>
       ) : null}
 

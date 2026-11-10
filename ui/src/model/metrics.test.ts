@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task, TaskTransition } from '../k8s/types'
-import { changeSize, configKey, factoryMetrics, implementerConfig, NOT_RECORDED } from './metrics'
+import { changeSize, compareText, configKey, factoryMetrics, implementerConfig, NOT_RECORDED } from './metrics'
 
 const NOW = Date.parse('2026-11-05T12:00:00Z')
 const MIN = 60_000
@@ -178,5 +178,27 @@ describe('How well it works (measure-and-improve, step 3)', () => {
     const m = factoryMetrics([], NOW, 7)
     expect(m.all).toEqual({ key: 'all', merged: 0, commitsRead: 0 })
     expect(m.byConfig).toEqual([])
+  })
+})
+
+// #66: rows with as many Tasks were ordered by localeCompare, the reader's
+// locale's order, where internal/model's report orders by code points.
+describe('compareText', () => {
+  it.each([
+    ['claude-code · Opus', 'claude-code · haiku'],
+    ['claude-code · m-1', 'claude-code · m_1'],
+    ['Z', 'a'],
+    ['z', 'ä'],
+    ['a', 'a b'],
+    // A code point, not a UTF-16 unit: U+FF5A is before U+1F600, whose first unit is 0xD83D.
+    ['\uff5a', '\u{1f600}'],
+  ])('puts %s before %s', (first, second) => {
+    expect(compareText(first, second)).toBeLessThan(0)
+    expect(compareText(second, first)).toBeGreaterThan(0)
+    expect([second, first].sort(compareText)).toEqual([first, second])
+  })
+
+  it('finds a name equal to itself', () => {
+    expect(compareText('claude-code · opus', 'claude-code · opus')).toBe(0)
   })
 })

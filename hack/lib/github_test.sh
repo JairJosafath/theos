@@ -646,9 +646,9 @@ check "slug long" "$(gh_user_slug "$(printf 'a%.0s' {1..39})-bbbb")" "$(printf '
 issue 90 OWNER '' "$form"; gh_intake 90 >/dev/null
 check "new report" "$(calls)" "POST $R/issues/90/labels {\"labels\":[\"user/laptop-2\",\"source/user\",\"status/proposed\"]}"
 issue 91 OWNER '' "${form/laptop-2/laptop-3}"; gh_intake 91 >/dev/null
-check "new device" "$(calls | sed 's|^\(POST [^ ]*\) .*|\1|')" "POST $R/labels
+check "new install" "$(calls | sed 's|^\(POST [^ ]*\) .*|\1|')" "POST $R/labels
 POST $R/issues/91/labels"
-check "new device labels" "$(calls | tail -1)" "POST $R/issues/91/labels {\"labels\":[\"user/laptop-3\",\"source/user\",\"status/proposed\"]}"
+check "new install labels" "$(calls | tail -1)" "POST $R/issues/91/labels {\"labels\":[\"user/laptop-3\",\"source/user\",\"status/proposed\"]}"
 issue 92 OWNER 'user/laptop-3 source/dev status/ready' "$form"; gh_intake 92 >/dev/null
 check "reporter changed" "$(calls)" "DELETE $R/issues/92/labels/user%2Flaptop-3
 DELETE $R/issues/92/labels/source%2Fdev

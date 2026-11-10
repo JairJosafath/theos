@@ -83,7 +83,7 @@ grep -E '"number":(9|10|11|12|13|14|16|17|18),' "$HACK/testdata/release-notes-pr
 VERSION=1.2.0 "$NOTES" --prs "$T/none.jsonl" v1.1.0 >"$T/out" 2>&1
 check "a range with nothing to list: drafts" $? 0
 check "  no sections" "$(grep -c '^### ' "$T/out")" 0
-has "  says nothing changed" "Nothing a device runs changed since v1.1.0."
+has "  says nothing changed" "Nothing an install runs changed since v1.1.0."
 has "  still ends with the images" 'Images: `ghcr.io/jairjosafath/theos/<name>:1.2.0` for operator, ui, seed, the toolchains'
 
 # A repository with two tags and pull requests merged between them; gh knows

@@ -169,7 +169,9 @@ a change to `go.mod` or `go.sum`, which every package is built from.
 A file some Go tests read without importing it tests the packages whose
 tests read it, the readers table in `hack/test-packages.sh`: `templates/`,
 `config/` (the CRDs and RBAC envtest loads), `api/`, `dist/`, `test/crds/`,
-`test/e2e/testdata/`, the CloudFormation adapter's `testdata/`, the workflows
+`test/e2e/testdata/`, the CloudFormation adapter's `testdata/`, the report
+fixture the UI's tests share with `internal/model`'s
+(`ui/src/model/testdata/`, #66), the workflows
 and `docs/getting-started.md` (`test/chart`), every Dockerfile and
 `.dockerignore` (`cmd`), every Go file (`internal/ports`, whose
 `TestHostNeutral` reads them all), and the `hack/` files Go tests read
@@ -203,7 +205,8 @@ push to main gets its own run, none cancelled or dropped for a newer one,
 since a run now covers only its own push (`hack/check-workflows.sh` holds
 the workflows to all of this). *Tests*' `paths` filter skips a pull request
 that changes only
-`*.md`, `docs/`, `ui/`, `config/ui/`, `config/samples/`, `test/e2e/`, the
+`*.md`, `docs/`, `ui/` (but `ui/src/model/testdata/`, the fixtures the UI's
+tests share with Go's, #66), `config/ui/`, `config/samples/`, `test/e2e/`, the
 linter configs, `hack/` (but the files it names: what Go tests read, and the
 scripts that select and run them), `dev`, `.vscode/` or
 `.github/` (but its own workflow) files. Main's run is the one that shows a

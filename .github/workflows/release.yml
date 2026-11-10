@@ -1,6 +1,6 @@
 name: Release
 
-# A pushed vX.Y.Z tag publishes theos, so a device installs it without
+# A pushed vX.Y.Z tag publishes theos, so a user installs it on a cluster without
 # building anything: the operator, UI, seed, toolchain, agent and runner images to
 # ghcr.io/<owner>/theos/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
 # to oci://ghcr.io/<owner>/theos/charts and to a GitHub release for the tag,

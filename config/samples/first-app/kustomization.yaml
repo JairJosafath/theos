@@ -1,4 +1,4 @@
-# The first app a device builds from the release (docs/getting-started.md): a Go
+# The first app an install builds from the release (docs/getting-started.md): a Go
 # command-line Container in project webshop, and a Crew of Claude Code Agents that
 # build it from its Gitea issues. Needs the chart installed with
 # gitea.projects={webshop}: GitProvider gitea, Secret gitea-credentials, the

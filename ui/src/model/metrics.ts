@@ -44,6 +44,21 @@ export function configKey(config: RunConfig | undefined): string {
   return config ? `${config.harness} · ${config.model || 'default model'}` : NOT_RECORDED
 }
 
+/**
+ * Orders two names by their code points: "Opus" before "haiku". The same in
+ * every browser and locale, and the order internal/model's report gives its
+ * rows (#66); localeCompare follows the reader's locale, so two readers saw
+ * rows with as many Tasks in different orders.
+ */
+export function compareText(a: string, b: string): number {
+  const x = Array.from(a, (c) => c.codePointAt(0) ?? 0)
+  const y = Array.from(b, (c) => c.codePointAt(0) ?? 0)
+  for (let i = 0; i < x.length && i < y.length; i++) {
+    if (x[i] !== y[i]) return x[i] - y[i]
+  }
+  return x.length - y.length
+}
+
 /** The implementer's configuration a Task ran on: its newest implement run's that recorded one. */
 export function implementerConfig(task: Task): RunConfig | undefined {
   const runs: TaskAgentRun[] = task.status?.runs ?? []
@@ -89,7 +104,7 @@ export interface SizeCost {
 export interface Metrics {
   period: Period
   all: MetricsRow
-  /** One row per configuration, most merged first; "not recorded" last. */
+  /** One row per configuration, most merged first, then by name (compareText); "not recorded" last. */
   byConfig: MetricsRow[]
   bySize: SizeCost[]
   /** Merged Tasks whose size wasn't read: left out of bySize. */
@@ -168,7 +183,7 @@ export function factoryMetrics(tasks: Task[], now: number, period: Period): Metr
       (a, b) =>
         Number(a.key === NOT_RECORDED) - Number(b.key === NOT_RECORDED) ||
         b.merged - a.merged ||
-        a.key.localeCompare(b.key),
+        compareText(a.key, b.key),
     )
   const sized = merged.filter((t) => t.status?.pullRequestSize)
   const bySize = SIZES.map(({ key }) => {

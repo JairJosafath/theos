@@ -5,7 +5,7 @@
 // criteria and the judged Task's configuration.
 
 import type { ScoreCriterion, Task } from '../k8s/types'
-import { configKey, NOT_RECORDED } from './metrics'
+import { compareText, configKey, NOT_RECORDED } from './metrics'
 import { isFinal, time } from './factory'
 
 export function isScoreTask(task: Task): boolean {
@@ -58,7 +58,7 @@ export interface ScorerRates {
   /** The finished Score Tasks of its newest generation. */
   scored: number
   criteria: string[]
-  /** The configurations, the most judged first and "not recorded" last. */
+  /** The configurations, the most judged first, then by name (compareText), and "not recorded" last. */
   configs: string[]
   /** rates[i][config] is criterion i's under config. */
   rates: Record<string, CriterionRate>[]
@@ -108,7 +108,7 @@ export function scorerRates(tasks: Task[]): ScorerRates[] {
       (a, b) =>
         Number(a === NOT_RECORDED) - Number(b === NOT_RECORDED) ||
         (counts.get(b) ?? 0) - (counts.get(a) ?? 0) ||
-        a.localeCompare(b),
+        compareText(a, b),
     )
     const [namespace, scorer] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)]
     out.push({
@@ -121,7 +121,7 @@ export function scorerRates(tasks: Task[]): ScorerRates[] {
       rates: raw.map((byConfig) => Object.fromEntries(Object.entries(byConfig).map(([c, r]) => [c, rate(r)]))),
     })
   }
-  return out.sort((a, b) => a.key.localeCompare(b.key))
+  return out.sort((a, b) => compareText(a.key, b.key))
 }
 
 /** "75% (3 of 4)", and how many were unclear; "–" when none was judged either way. */

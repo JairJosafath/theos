@@ -1,0 +1,2477 @@
+{
+  "apiVersion": "theos.factory.io/v1beta1",
+  "kind": "TaskList",
+  "metadata": {
+    "resourceVersion": "1"
+  },
+  "items": [
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "checkout-11",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-04T11:32:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 111
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 11,
+        "completedAt": "2026-11-04T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-04T11:32:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-04T11:34:00Z",
+            "phase": "Pending",
+            "reason": "WaitingForSlot"
+          },
+          {
+            "at": "2026-11-04T11:40:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-04T11:50:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-04T11:55:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-04T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 40,
+          "deletions": 10,
+          "files": 3
+        },
+        "costMilliUSD": 800,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-11-04T12:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-11-04T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "checkout-12",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-03T10:45:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 112
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 2,
+        "pullRequest": 12,
+        "completedAt": "2026-11-03T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-03T10:45:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-03T10:46:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-03T11:16:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-03T11:26:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-03T11:34:00Z",
+            "phase": "Implementing",
+            "round": 2
+          },
+          {
+            "at": "2026-11-03T11:46:00Z",
+            "phase": "Checking",
+            "round": 2
+          },
+          {
+            "at": "2026-11-03T11:55:00Z",
+            "phase": "Reviewing",
+            "round": 2
+          },
+          {
+            "at": "2026-11-03T12:00:00Z",
+            "phase": "Merged",
+            "round": 2
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 20,
+          "deletions": 0,
+          "files": 3
+        },
+        "costMilliUSD": 1200,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-11-03T12:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-11-03T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          },
+          {
+            "round": 2,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-11-03T12:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 2,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-11-03T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "payments-13",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-02T08:22:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "senior"
+        },
+        "issue": 113
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 13,
+        "completedAt": "2026-11-02T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-02T08:22:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-02T08:25:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-02T08:45:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-02T08:50:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-02T09:00:00Z",
+            "phase": "AwaitingApproval",
+            "round": 1
+          },
+          {
+            "at": "2026-11-02T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 2,
+        "pullRequestSize": {
+          "additions": 60,
+          "deletions": 40,
+          "files": 3
+        },
+        "costMilliUSD": 2500,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "senior",
+            "endedAt": "2026-11-02T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-11-02T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ],
+        "approval": {
+          "require": "Person",
+          "rule": 1,
+          "approvedBy": "ada"
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "legacy-14",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-31T10:30:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 114
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 14,
+        "completedAt": "2026-10-31T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-31T10:30:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-31T11:00:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-31T11:30:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-31T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "search-15",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-25T10:10:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 115
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 15,
+        "completedAt": "2026-10-26T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-25T10:10:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-25T10:15:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-25T10:55:00Z",
+            "phase": "Blocked",
+            "round": 1
+          },
+          {
+            "at": "2026-10-26T10:55:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-26T11:15:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-26T11:30:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-26T11:40:00Z",
+            "phase": "Verifying",
+            "round": 1
+          },
+          {
+            "at": "2026-10-26T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 400,
+          "deletions": 100,
+          "files": 3
+        },
+        "costMilliUSD": 9000,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-10-26T12:00:00Z",
+            "harness": "claude-code"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-10-26T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "spec-16",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-24T01:34:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "spec-writer"
+        },
+        "issue": 116,
+        "kind": "Spec"
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 16,
+        "completedAt": "2026-10-24T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-24T01:34:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-24T01:35:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-24T01:50:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-24T01:54:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-24T02:00:00Z",
+            "phase": "AwaitingApproval",
+            "round": 1
+          },
+          {
+            "at": "2026-10-24T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 60,
+          "deletions": 39,
+          "files": 3
+        },
+        "costMilliUSD": 500,
+        "runs": [
+          {
+            "round": 1,
+            "role": "spec",
+            "agent": "spec-writer",
+            "endedAt": "2026-10-24T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ],
+        "spec": {
+          "path": "docs/specs/116.md",
+          "approval": "Person",
+          "approvedBy": "ada"
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "catalog-17",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-05T07:16:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "senior"
+        },
+        "issue": 117
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 3,
+        "pullRequest": 17,
+        "completedAt": "2026-11-05T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-05T07:16:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-05T07:20:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-05T08:50:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-05T09:10:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-05T09:40:00Z",
+            "phase": "Implementing",
+            "round": 2
+          },
+          {
+            "at": "2026-11-05T10:25:00Z",
+            "phase": "Checking",
+            "round": 2
+          },
+          {
+            "at": "2026-11-05T10:45:00Z",
+            "phase": "Reviewing",
+            "round": 2
+          },
+          {
+            "at": "2026-11-05T11:00:00Z",
+            "phase": "Implementing",
+            "round": 3
+          },
+          {
+            "at": "2026-11-05T11:30:00Z",
+            "phase": "Checking",
+            "round": 3
+          },
+          {
+            "at": "2026-11-05T11:50:00Z",
+            "phase": "Reviewing",
+            "round": 3
+          },
+          {
+            "at": "2026-11-05T12:00:00Z",
+            "phase": "Merged",
+            "round": 3
+          }
+        ],
+        "personCommits": 1,
+        "pullRequestSize": {
+          "additions": 1000,
+          "deletions": 0,
+          "files": 3
+        },
+        "costMilliUSD": 20000,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-11-05T12:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-11-05T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          },
+          {
+            "round": 2,
+            "role": "implement",
+            "agent": "senior",
+            "endedAt": "2026-11-05T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          },
+          {
+            "round": 3,
+            "role": "implement",
+            "agent": "senior",
+            "endedAt": "2026-11-05T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "checkout-18",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-16T11:37:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 118
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 18,
+        "completedAt": "2026-10-16T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-16T11:37:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-16T11:38:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-16T11:50:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-16T11:56:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-16T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 400,
+          "deletions": 99,
+          "files": 3
+        },
+        "costMilliUSD": 0,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-10-16T12:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-10-16T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "docs-19",
+        "namespace": "docs",
+        "creationTimestamp": "2026-10-11T11:44:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "site"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 119
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 19,
+        "completedAt": "2026-10-11T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-11T11:44:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-11T11:46:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-11T11:54:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-11T11:57:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-11T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 10,
+          "deletions": 2,
+          "files": 3
+        },
+        "costMilliUSD": 300,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-10-11T12:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-10-11T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "hotfix-22",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-01T11:36:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 122
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 22,
+        "completedAt": "2026-11-01T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-01T11:36:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-01T11:36:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-01T11:50:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-01T11:56:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-01T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 8,
+          "deletions": 2,
+          "files": 3
+        },
+        "costMilliUSD": 125,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-11-01T12:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-11-01T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "pricing-23",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-30T11:15:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 123
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 23,
+        "completedAt": "2026-10-30T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-30T11:15:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-30T11:18:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-30T11:43:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-30T11:51:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-30T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 120,
+          "deletions": 30,
+          "files": 3
+        },
+        "costMilliUSD": 1125,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-10-30T12:00:00Z",
+            "harness": "claude-code",
+            "model": "Opus"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-10-30T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "pricing-24",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-29T11:26:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 124
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 24,
+        "completedAt": "2026-10-29T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-29T11:26:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-29T11:28:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-29T11:46:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-29T11:55:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-29T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 70,
+          "deletions": 5,
+          "files": 3
+        },
+        "costMilliUSD": 400,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-10-29T12:00:00Z",
+            "harness": "claude-code",
+            "model": "haiku"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-10-29T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "adopted-25",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-27T09:30:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "senior"
+        },
+        "issue": 125
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 25,
+        "completedAt": "2026-10-27T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-27T09:30:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-27T10:00:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-27T10:10:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-27T11:00:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-27T11:40:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-27T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 200,
+          "deletions": 50,
+          "files": 3
+        },
+        "costMilliUSD": 3000,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "senior",
+            "endedAt": "2026-10-27T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-10-27T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "edge-26",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-06T11:39:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 126
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 26,
+        "completedAt": "2026-10-06T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-06T11:39:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-06T11:40:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-06T11:50:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-06T11:55:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-06T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 30,
+          "deletions": 0,
+          "files": 3
+        },
+        "costMilliUSD": 700,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-10-06T12:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-10-06T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "old-20",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-05T11:40:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 120
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 20,
+        "completedAt": "2026-10-05T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-05T11:40:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-05T11:50:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-05T11:55:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-05T12:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 0,
+        "pullRequestSize": {
+          "additions": 30,
+          "deletions": 0,
+          "files": 3
+        },
+        "costMilliUSD": 700,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-10-05T12:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-10-05T12:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "late-21",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-05T12:40:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 121
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "pullRequest": 21,
+        "completedAt": "2026-11-05T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-05T12:40:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-05T12:50:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-05T12:55:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-05T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "personCommits": 3,
+        "pullRequestSize": {
+          "additions": 30,
+          "deletions": 0,
+          "files": 3
+        },
+        "costMilliUSD": 700,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-11-05T13:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-11-05T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "flaky-31",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-01T10:53:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 200
+      },
+      "status": {
+        "phase": "Failed",
+        "round": 1,
+        "completedAt": "2026-11-01T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-01T10:53:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-01T10:55:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-01T11:20:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-01T12:00:00Z",
+            "phase": "Failed",
+            "round": 1,
+            "reason": "NoCIResult"
+          }
+        ],
+        "costMilliUSD": 3000
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "broken-32",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-30T10:53:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 200
+      },
+      "status": {
+        "phase": "Failed",
+        "round": 1,
+        "completedAt": "2026-10-30T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-30T10:53:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-30T10:55:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-30T11:20:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-30T12:00:00Z",
+            "phase": "Failed",
+            "round": 1
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "flaky-33",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-29T10:53:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 200
+      },
+      "status": {
+        "phase": "Failed",
+        "round": 1,
+        "completedAt": "2026-10-29T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-29T10:53:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-29T10:55:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-29T11:20:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-29T12:00:00Z",
+            "phase": "Failed",
+            "round": 1,
+            "reason": "NoCIResult"
+          }
+        ],
+        "costMilliUSD": 1500
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "base-34",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-27T10:53:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 200
+      },
+      "status": {
+        "phase": "Failed",
+        "round": 1,
+        "completedAt": "2026-10-27T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-27T10:53:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-27T10:55:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-27T11:20:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-10-27T12:00:00Z",
+            "phase": "Failed",
+            "round": 1,
+            "reason": "BaseRed"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "old-35",
+        "namespace": "shop",
+        "creationTimestamp": "2026-09-26T10:53:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 200
+      },
+      "status": {
+        "phase": "Failed",
+        "round": 1,
+        "completedAt": "2026-09-26T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-09-26T10:53:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-09-26T10:55:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-09-26T11:20:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-09-26T12:00:00Z",
+            "phase": "Failed",
+            "round": 1,
+            "reason": "NoCIResult"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "bench-36",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-03T10:53:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 200,
+        "benchmark": {
+          "benchmarkRef": {
+            "name": "models"
+          },
+          "variant": "opus",
+          "goal": 0,
+          "repetition": 1,
+          "base": "0123456789abcdef0123456789abcdef01234567"
+        }
+      },
+      "status": {
+        "phase": "Failed",
+        "round": 1,
+        "completedAt": "2026-11-03T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-03T10:53:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-03T10:55:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-03T11:20:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-03T12:00:00Z",
+            "phase": "Failed",
+            "round": 1,
+            "reason": "NoCIResult"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "done-41",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-28T11:50:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 141
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-10-28T12:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-28T11:50:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-10-28T11:51:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-28T12:00:00Z",
+            "phase": "Merged",
+            "round": 1,
+            "reason": "NothingToDo"
+          }
+        ],
+        "costMilliUSD": 200,
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "NothingToDo",
+            "message": "The issue needs no change.",
+            "lastTransitionTime": "2026-10-28T12:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "active-42",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-05T09:00:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 142
+      },
+      "status": {
+        "phase": "Implementing",
+        "round": 1,
+        "history": [
+          {
+            "at": "2026-11-05T09:00:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-05T09:05:00Z",
+            "phase": "Implementing",
+            "round": 1
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-11",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-04T12:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 2,
+          "taskRef": {
+            "name": "checkout-11"
+          },
+          "criteria": [
+            "The change does what the issue asks",
+            "New behaviour has a test"
+          ],
+          "config": {
+            "harness": "claude-code",
+            "model": "sonnet"
+          }
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-11-04T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-04T12:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-04T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-11-04T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "The change does what the issue asks",
+              "verdict": "Pass",
+              "reason": "As the diff shows."
+            },
+            {
+              "criterion": "New behaviour has a test",
+              "verdict": "Fail",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-12",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-03T12:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 2,
+          "taskRef": {
+            "name": "checkout-12"
+          },
+          "criteria": [
+            "The change does what the issue asks",
+            "New behaviour has a test"
+          ],
+          "config": {
+            "harness": "claude-code",
+            "model": "sonnet"
+          }
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-11-03T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-03T12:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-03T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-11-03T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "The change does what the issue asks",
+              "verdict": "Pass",
+              "reason": "As the diff shows."
+            },
+            {
+              "criterion": "New behaviour has a test",
+              "verdict": "Pass",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-13",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-02T12:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 2,
+          "taskRef": {
+            "name": "payments-13"
+          },
+          "criteria": [
+            "The change does what the issue asks",
+            "New behaviour has a test"
+          ],
+          "config": {
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-11-02T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-02T12:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-02T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-11-02T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "The change does what the issue asks",
+              "verdict": "Pass",
+              "reason": "As the diff shows."
+            },
+            {
+              "criterion": "New behaviour has a test",
+              "verdict": "Unclear",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-14",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-31T12:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 2,
+          "taskRef": {
+            "name": "legacy-14"
+          },
+          "criteria": [
+            "The change does what the issue asks",
+            "New behaviour has a test"
+          ]
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-10-31T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-31T12:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-31T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-10-31T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "The change does what the issue asks",
+              "verdict": "Fail",
+              "reason": "As the diff shows."
+            },
+            {
+              "criterion": "New behaviour has a test",
+              "verdict": "Pass",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-15",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-26T12:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 2,
+          "taskRef": {
+            "name": "search-15"
+          },
+          "criteria": [
+            "The change does what the issue asks",
+            "New behaviour has a test"
+          ],
+          "config": {
+            "harness": "claude-code"
+          }
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-10-26T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-26T12:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-26T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-10-26T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "The change does what the issue asks",
+              "verdict": "Pass",
+              "reason": "As the diff shows."
+            },
+            {
+              "criterion": "New behaviour has a test",
+              "verdict": "Fail",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-18",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-16T12:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 2,
+          "taskRef": {
+            "name": "checkout-18"
+          },
+          "criteria": [
+            "The change does what the issue asks",
+            "New behaviour has a test"
+          ],
+          "config": {
+            "harness": "claude-code",
+            "model": "sonnet"
+          }
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-10-16T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-16T12:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-16T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-10-16T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "The change does what the issue asks",
+              "verdict": "Fail",
+              "reason": "As the diff shows."
+            },
+            {
+              "criterion": "New behaviour has a test",
+              "verdict": "Fail",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-23",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-30T12:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 2,
+          "taskRef": {
+            "name": "pricing-23"
+          },
+          "criteria": [
+            "The change does what the issue asks",
+            "New behaviour has a test"
+          ],
+          "config": {
+            "harness": "claude-code",
+            "model": "Opus"
+          }
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-10-30T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-30T12:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-30T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-10-30T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "The change does what the issue asks",
+              "verdict": "Pass",
+              "reason": "As the diff shows."
+            },
+            {
+              "criterion": "New behaviour has a test",
+              "verdict": "Pass",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-19",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-11T12:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 1,
+          "taskRef": {
+            "name": "docs-19"
+          },
+          "criteria": [
+            "The change is small"
+          ],
+          "config": {
+            "harness": "claude-code",
+            "model": "sonnet"
+          }
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-10-11T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-11T12:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-11T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-10-11T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "The change is small",
+              "verdict": "Fail",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-20",
+        "namespace": "shop",
+        "creationTimestamp": "2026-10-05T12:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 2,
+          "taskRef": {
+            "name": "old-20"
+          },
+          "criteria": [
+            "The change does what the issue asks",
+            "New behaviour has a test"
+          ],
+          "config": {
+            "harness": "claude-code",
+            "model": "sonnet"
+          }
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-10-05T13:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-05T12:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-05T13:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-10-05T13:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "The change does what the issue asks",
+              "verdict": "Fail",
+              "reason": "As the diff shows."
+            },
+            {
+              "criterion": "New behaviour has a test",
+              "verdict": "Fail",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-quality-17",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-05T10:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "quality"
+          },
+          "scorerGeneration": 2,
+          "taskRef": {
+            "name": "catalog-17"
+          },
+          "criteria": [
+            "The change does what the issue asks",
+            "New behaviour has a test"
+          ],
+          "config": {
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        }
+      },
+      "status": {
+        "phase": "Failed",
+        "round": 1,
+        "completedAt": "2026-11-05T11:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-05T10:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-05T11:00:00Z",
+            "phase": "Failed",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-11-05T11:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "score-tone-19",
+        "namespace": "docs",
+        "creationTimestamp": "2026-10-11T13:54:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "site"
+        },
+        "agentRef": {
+          "name": "judge"
+        },
+        "kind": "Score",
+        "score": {
+          "scorerRef": {
+            "name": "tone"
+          },
+          "scorerGeneration": 5,
+          "taskRef": {
+            "name": "docs-19"
+          },
+          "criteria": [
+            "Plain words | no <br> tags, no `code` and no [link](https://example.com) in a heading"
+          ],
+          "config": {
+            "harness": "claude-code",
+            "model": "sonnet"
+          }
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-10-11T14:00:00Z",
+        "history": [
+          {
+            "at": "2026-10-11T13:54:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-10-11T14:00:00Z",
+            "phase": "Merged",
+            "round": 1
+          }
+        ],
+        "costMilliUSD": 150,
+        "runs": [
+          {
+            "round": 1,
+            "role": "score",
+            "agent": "judge",
+            "endedAt": "2026-10-11T14:00:00Z",
+            "harness": "claude-code",
+            "model": "opus",
+            "costMilliUSD": 150
+          }
+        ],
+        "score": {
+          "criteria": [
+            {
+              "criterion": "Plain words | no <br> tags, no `code` and no [link](https://example.com) in a heading",
+              "verdict": "Unclear",
+              "reason": "As the diff shows."
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
