@@ -110,6 +110,28 @@ owner's acts are listed under *For the owner*.
 | Alerts file bugs | #64 | | `AlertSource`, Alertmanager and Sentry |
 | The factory's own numbers, published | #66 | #59 helps | the report with each release |
 
+## Progress
+
+As of 2026-11-10. The issues hold the live state; this is the short of it.
+
+| Step | State |
+| --- | --- |
+| #48 issue forms, pull request template, CODEOWNERS | done (#67) |
+| #65 docs/comparison.md | done (#67) |
+| #47 the licence | done (#71): Apache-2.0 |
+| #55 contributor and governance docs | done (#67, #71) |
+| #63 work on a timer | done (#71); the rest is #72, whose UI part is done |
+| #70 the flaky cost spec | done (#71) |
+| #59 Prometheus metrics, the dashboard and alerts | done (#67, #71) |
+| #53 a first run in ten minutes | `hack/quickstart.sh` and README's first screen are in; open: the guide cut into pages, the time measured, a run on a real machine |
+| #49 fork pull requests on hosted runners | the rule is in (#67); open: a run from a real fork, the approval setting |
+| #56 private links and logins | the links are gone (#67); open: the guide without `gh`, once the packages are public |
+| #52 history and secrets | scanned clean, gitleaks on every pull request (#69); open: the publication itself, the owner's step 1 |
+| #51 signing, SBOM, scanning | Dependabot is in (#71); open: image and chart signatures, SBOM, provenance, Scorecard, CodeQL |
+| #50 a release from this repository | v0.32.0 is bumped on main and not tagged: the tag push is the owner's step 5 |
+| #57 GitHub as a Git host | planned ([github-host.md](github-host.md)), nine steps filed as #74 to #82 |
+| #54, #58, #60, #61, #62, #64, #66, #73 | open; #60 and #62 carry what was found in the code |
+
 ## For the owner
 
 Every decision in this plan is made. What is left for the owner is what no
