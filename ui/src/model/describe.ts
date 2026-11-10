@@ -95,7 +95,7 @@ export function describeTaskPhase(phase: TaskPhase | undefined): PhaseInfo {
       return {
         label: 'Awaiting approval',
         tone: 'waiting',
-        explanation: 'Its spec passed CI and the reviewer; a person approves its pull request.',
+        explanation: 'It passed CI and the factory’s review; a person approves its pull request.',
       }
     case 'Merged':
       return { label: 'Merged', tone: 'ok', explanation: 'The pull request is merged.' }

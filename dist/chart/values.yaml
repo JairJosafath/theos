@@ -249,12 +249,13 @@ prometheus:
 
   ## rules: a PrometheusRule (prometheus-operator) with the factory's alerts:
   ## a project's agents cost over dailyBudgetUSD in a day (0 leaves that
-  ## alert out), more Tasks failed than merged in a day, a spec waits
-  ## specWaits for a person, most runs of an Agent report no cost.
+  ## alert out), more Tasks failed than merged in a day, a spec or a change
+  ## a Crew's approval rules hold waits approvalWaits for a person, most runs
+  ## of an Agent report no cost.
   rules:
     enabled: false
     dailyBudgetUSD: 50
-    specWaits: 1d
+    approvalWaits: 1d
 
 ## The Go proxy the operator asks whether go get finds a released Go module
 ## whose path is outside theos.local/ (the operator's --go-proxy). off asks

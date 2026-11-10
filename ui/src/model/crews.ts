@@ -1,7 +1,7 @@
 // Crews as the views show them: who implements and reviews, what each is doing,
 // and the running Tasks of a project's Crews.
 
-import type { Agent, Crew, CrewPhase, Task, TaskPhase } from '../k8s/types'
+import type { Agent, ApprovalRequirement, ApprovalRule, Crew, CrewPhase, Task, TaskPhase } from '../k8s/types'
 import { findCondition } from '../k8s/types'
 import { plural, titleOf } from './describe'
 import { agentRole, taskHeadline, taskRoles, type AgentRole } from './factory'
@@ -153,4 +153,27 @@ export function activeCrewTasks(crews: Crew[], tasks: Task[], agents: Agent[], c
     }
   }
   return found.sort((a, b) => a.container.localeCompare(b.container) || (a.issue ?? 0) - (b.issue ?? 0))
+}
+
+/**
+ * What an approval rule is for, in words: the changes (by label and size) and,
+ * when it names paths, the files of those it matches (design.md, "Approval rules").
+ */
+export function approvalRuleFor(rule: ApprovalRule): string {
+  const labels = rule.labels?.length ? ` for issues labelled ${rule.labels.join(' or ')}` : ''
+  const size = rule.changedLinesOver ? ` of more than ${rule.changedLinesOver} lines` : ''
+  const changes = labels || size ? `changes${size}${labels}` : 'every change'
+  return rule.paths?.length ? `${rule.paths.join(', ')} in ${changes}` : changes
+}
+
+/** What an approval rule asks of the files it matches, in words. */
+export function approvalAsks(require: ApprovalRequirement): string {
+  switch (require) {
+    case 'Person':
+      return 'waits for a person'
+    case 'None':
+      return 'merges once CI passes, with no review'
+    default:
+      return 'merges on the reviewer’s approval'
+  }
 }

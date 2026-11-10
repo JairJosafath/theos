@@ -1,0 +1,90 @@
+#62, step 1 of docs/plans/approval-rules.md: a Crew's approval rules
+====================================================================
+
+2026-11-10. Test output is the evidence; no cluster was used.
+
+The rules as a table (internal/model/approval_test.go):
+
+$ go test ./internal/model -run 'TestMatchesPath|TestApprovalFor|TestApprovalRulesKey|TestApprovalNote|TestApprovalSteps' -v
+--- PASS: TestMatchesPath (0.00s)
+--- PASS: TestApprovalFor (0.00s)
+    --- PASS: TestApprovalFor/no_rules_ask_for_nothing (0.00s)
+    --- PASS: TestApprovalFor/a_file_no_rule_matches_needs_the_reviewer (0.00s)
+    --- PASS: TestApprovalFor/a_file_under_a_Person_path_waits_for_a_person (0.00s)
+    --- PASS: TestApprovalFor/a_label_waits_for_a_person,_whatever_the_files (0.00s)
+    --- PASS: TestApprovalFor/a_change_over_the_size_waits_for_a_person (0.00s)
+    --- PASS: TestApprovalFor/a_change_at_the_size_doesn't (0.00s)
+    --- PASS: TestApprovalFor/a_labelled_docs_change_merges_on_CI (0.00s)
+    --- PASS: TestApprovalFor/a_docs_label_doesn't_loosen_a_Person_path (0.00s)
+    --- PASS: TestApprovalFor/a_docs_label_doesn't_loosen_a_big_change (0.00s)
+    --- PASS: TestApprovalFor/start_small:_docs_alone_merge_on_CI (0.00s)
+    --- PASS: TestApprovalFor/start_small:_docs_with_code_wait_for_a_person (0.00s)
+    --- PASS: TestApprovalFor/the_first_matching_rule_decides_a_file (0.00s)
+    --- PASS: TestApprovalFor/the_strictest_file_decides,_not_the_first (0.00s)
+    --- PASS: TestApprovalFor/None_with_a_file_no_rule_matches_is_the_reviewer's (0.00s)
+    --- PASS: TestApprovalFor/more_files_than_the_host_lists_is_never_None (0.00s)
+    --- PASS: TestApprovalFor/more_files_than_the_host_lists_waits_when_a_rule_asks_a_person (0.00s)
+    --- PASS: TestApprovalFor/a_Person_rule_that_isn't_for_the_change_doesn't_hold_unlisted_files (0.00s)
+    --- PASS: TestApprovalFor/no_file_listed_is_never_None (0.00s)
+    --- PASS: TestApprovalFor/a_long_rule_is_told_short (0.00s)
+--- PASS: TestApprovalRulesKey (0.00s)
+--- PASS: TestApprovalNote (0.00s)
+    --- PASS: TestApprovalNote/a_person's_approval_is_named (0.00s)
+    --- PASS: TestApprovalNote/from_chat,_said_so (0.00s)
+    --- PASS: TestApprovalNote/a_person_merged_it_by_hand:_nobody_to_name (0.00s)
+    --- PASS: TestApprovalNote/no_review_is_said (0.00s)
+    --- PASS: TestApprovalNote/a_review_that_was_made_anyway_is_not_denied (0.00s)
+    --- PASS: TestApprovalNote/the_reviewer's_approval_needs_no_note (0.00s)
+    --- PASS: TestApprovalNote/nor_a_Crew_without_rules (0.00s)
+--- PASS: TestApprovalSteps (0.00s)
+    --- PASS: TestApprovalSteps/no_rules:_the_reviewer's_approval_merges (0.00s)
+    --- PASS: TestApprovalSteps/Reviewer:_the_reviewer's_approval_merges (0.00s)
+    --- PASS: TestApprovalSteps/Person:_an_approved_change_waits,_with_why (0.00s)
+    --- PASS: TestApprovalSteps/Person:_the_reviewer's_changes_still_start_the_next_round (0.00s)
+    --- PASS: TestApprovalSteps/Person,_with_a_verifier:_the_verifier_runs_first (0.00s)
+    --- PASS: TestApprovalSteps/Person:_a_verified_change_waits (0.00s)
+    --- PASS: TestApprovalSteps/no_rules:_a_verified_change_merges (0.00s)
+    --- PASS: TestApprovalSteps/Person:_a_Standard_change_is_never_held (0.00s)
+    --- PASS: TestApprovalSteps/None:_passed_checks_merge_it,_no_review (0.00s)
+    --- PASS: TestApprovalSteps/None:_main_moved,_so_it_takes_main_in_first (0.00s)
+    --- PASS: TestApprovalSteps/None:_a_Standard_change_is_still_reviewed (0.00s)
+    --- PASS: TestApprovalSteps/None:_failed_checks_still_start_the_next_round (0.00s)
+    --- PASS: TestApprovalSteps/Reviewer:_passed_checks_start_the_review (0.00s)
+    --- PASS: TestApprovalSteps/no_merge_before_a_person's_approval (0.00s)
+    --- PASS: TestApprovalSteps/a_person's_approval_merges_it (0.00s)
+    --- PASS: TestApprovalSteps/an_approval_from_chat_merges_it,_said_so (0.00s)
+    --- PASS: TestApprovalSteps/approved,_but_main_moved (0.00s)
+    --- PASS: TestApprovalSteps/a_person's_changes_start_the_next_round (0.00s)
+    --- PASS: TestApprovalSteps/a_person_merged_it (0.00s)
+    --- PASS: TestApprovalSteps/a_person_closed_it:_the_merge_step_ends_the_Task (0.00s)
+    --- PASS: TestApprovalSteps/its_branch_moved:_checked_again (0.00s)
+    --- PASS: TestApprovalSteps/rules_that_no_longer_ask_a_person_let_it_go (0.00s)
+    --- PASS: TestApprovalSteps/rules_taken_away_let_it_go (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.019s
+
+The Crew, the wait and the merge on the fake Git host (envtest,
+internal/controller/task_approval_test.go):
+
+$ go test -v ./internal/controller -run '^TestControllers$' -ginkgo.focus "Crew approval" -ginkgo.v
+Crew approval rules holds a change under a Person path until a person approves it, not an agent
+Crew approval rules starts the next round with the changes a person asked for, and holds that round too
+Crew approval rules merges a change the rules ask no review of on its checks, with no reviewer run
+Crew approval rules doesn't let a label that asks no review loosen a file a rule holds for a person
+Crew approval rules reviews and merges a change no rule matches as a Crew without rules does
+Crew approval rules holds a big change by its size, and lets it go when the Crew's rule is taken away
+Crew approval rules waits for a person after the verifier, with both agents' approvals on the pull request
+Crew approval takes rules by path, label and size, and refuses one that asks nothing it knows
+Ran 8 of 755 Specs in 28.132 seconds
+SUCCESS! -- 8 Passed | 0 Failed | 0 Pending | 747 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	28.174s
+
+The whole controller suite with the change in, both shards (make test):
+
++ env THEOS_TEST_SHARD=1/2 go test -trimpath -timeout 20m github.com/JairJosafath/theos/internal/controller
+ok  	github.com/JairJosafath/theos/internal/controller	606.833s
++ env THEOS_TEST_SHARD=2/2 go test -trimpath -timeout 20m -run '^TestControllers$' github.com/JairJosafath/theos/internal/controller
+ok  	github.com/JairJosafath/theos/internal/controller	722.014s
+
+Not run here: make validate-yaml, whose download of the Kubernetes schemas
+this session's network refuses; CI's Lint job runs it.

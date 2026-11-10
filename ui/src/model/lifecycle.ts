@@ -186,7 +186,7 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
       {
         phase: 'AwaitingApproval',
         person:
-          'A spec only: read it and approve its pull request on the Git host; then it merges and its issue is built.',
+          'A spec, or a change the Crew’s approval rules hold for a person: read it and approve its pull request on the Git host; then it merges.',
       },
       {
         phase: 'Blocked',
@@ -622,8 +622,8 @@ export function crewNextStep(crew: Crew, briefs: Brief[]): NextStep | undefined 
 
 /**
  * What a person does next on this Task: a Blocked one waits on the Standard
- * change it filed; a Spec awaiting approval waits for a person to approve its
- * pull request; a Failed one handed its issue back. Undefined while the
+ * change it filed; a spec, or a change its Crew's approval rules hold, waits
+ * for a person to approve its pull request; a Failed one handed its issue back. Undefined while the
  * loop needs nobody.
  */
 export function taskNextStep(task: Task): NextStep | undefined {
@@ -633,6 +633,17 @@ export function taskNextStep(task: Task): NextStep | undefined {
     return {
       text: `It waits for the Standard change it filed, #${change.issue}, for ${change.paths.join(', ')}. Review and merge it; the Task goes on when it merges.`,
       link: change.issueURL ? { href: change.issueURL, label: `Open the Standard change #${change.issue}` } : undefined,
+    }
+  }
+  if (status?.phase === 'AwaitingApproval' && task.spec.kind !== 'Spec') {
+    // A change its Crew's approval rules hold for a person (#62).
+    const pr = status.pullRequest
+    const why = status.approval?.reason ? ` (${status.approval.reason})` : ''
+    return {
+      text: `Its change passed CI and the factory’s review and waits for you${pr ? ` in pull request #${pr}` : ''}, as the Crew’s approval rules ask${why}: approve the pull request on the Git host and the operator merges it; request changes there for another round, or close it to drop the change.`,
+      link: status.pullRequestURL
+        ? { href: status.pullRequestURL, label: `Open the pull request${pr ? ` #${pr}` : ''}` }
+        : undefined,
     }
   }
   if (status?.phase === 'AwaitingApproval') {

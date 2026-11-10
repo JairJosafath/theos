@@ -41,7 +41,7 @@ current. [README.md](../README.md#the-loop) draws the loop,
 | Loop: verify | a verifier Agent runs the change against each acceptance criterion before the merge | listed as a stage of Warp Factories |
 | Loop: ship | releases, and deploys through GitHub, CloudFormation, Argo CD or Flux, with your approval | not described in the public workflows |
 | Loop: monitor | a failed or degraded deploy files a bug. **Alerts from a running app: not yet (#64)** | listed as a stage of Warp Factories |
-| Who merges | the factory, once CI, the reviewer and the verifier pass; a person approves specs and deploys. **Rules for which changes wait for a person: not yet (#62)** | a person merges each pull request in the documented workflow; setup asks where people enter, such as high-risk changes |
+| Who merges | the factory, once CI, the reviewer and the verifier pass; a person approves specs and deploys, and the changes a Crew's `approval` rules hold for one: by path, label and size, with documentation on CI alone if you say so | a person merges each pull request in the documented workflow; setup asks where people enter, such as high-risk changes |
 | New software | describe a C4-style model or a Brief in plain words; the operator scaffolds each repository from pinned templates, with CI, a devcontainer and agent guides | starts from a repository that exists |
 | Existing software | `spec.adopt` takes over a repository. **A guided path: not yet (#60)** | built for it |
 | Keeping repositories to a standard | Standards: a version bump arrives in every Container as a pull request the operator opens and merges | skills shared across repositories |
@@ -66,8 +66,7 @@ Each has an issue under #46, and the order is in
 2. It runs one vendor's agent (#58).
 3. Adopting a repository you already have is poorly guided (#60), and the
    one-command first run is a local demo, not yet your own code.
-4. Requests and chat reach it from fewer places (#61), and a person can't
-   yet say which changes wait for them (#62).
+4. Requests and chat reach it from fewer places (#61).
 5. It publishes no numbers about itself (#66). Warp runs its open-source repository with its own factory in
    public and quotes the share of pull requests merged with no person.
 

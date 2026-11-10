@@ -197,6 +197,38 @@ describe('the Crew page’s routes by label', () => {
   })
 })
 
+// #62: a Crew's approval rules are on its page, each with what it is for and
+// what it asks.
+describe('the Crew page’s approval rules', () => {
+  it('shows no approval panel for a Crew without rules', () => {
+    expect(render(undefined, crew())).not.toContain('Who approves a change')
+  })
+
+  it('lists each rule in order, with the files and changes it is for and what it asks', () => {
+    const c = crew()
+    c.spec.approval = [
+      { paths: ['migrations/', 'internal/auth/'], require: 'Person' },
+      { labels: ['risk/high', 'kind/security'], require: 'Person' },
+      { changedLinesOver: 400, require: 'Person' },
+      { paths: ['*.md'], labels: ['kind/docs'], require: 'None' },
+      { require: 'Reviewer' },
+    ]
+    const html = render(undefined, c)
+    expect(html).toContain('Who approves a change')
+    expect(html).toContain('the strictest of what its files need')
+    const rules = [...html.matchAll(/<span class="mono">([^<]*)<\/span><span class="muted"> · <\/span>([^<]*)</g)]
+      .map((m) => [m[1], m[2]])
+      .filter(([, asks]) => /waits|merges/.test(asks))
+    expect(rules).toEqual([
+      ['migrations/, internal/auth/ in every change', 'waits for a person'],
+      ['changes for issues labelled risk/high or kind/security', 'waits for a person'],
+      ['changes of more than 400 lines', 'waits for a person'],
+      ['*.md in changes for issues labelled kind/docs', 'merges once CI passes, with no review'],
+      ['every change', 'merges on the reviewer’s approval'],
+    ])
+  })
+})
+
 // #63, #72: a Crew's schedules are on its page, with when each is next due,
 // the issue it filed last, and why one can't be used.
 describe('the Crew page’s schedules', () => {

@@ -59,6 +59,12 @@ func (a taskAgents) forRole(role string) *c4v1beta1.Agent {
 func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+	if step.Unreviewed {
+		// No agent judged this round's change (its Crew's approval rules ask
+		// for no review): an earlier round's verdict is not its own, and
+		// must not go on the pull request as an approval of it.
+		status.Review, status.Verification = nil, nil
+	}
 	switch step.Action {
 	case model.ActionWait:
 		return r.wait(ctx, task, status, step), nil
@@ -854,12 +860,14 @@ func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider ports.GitHo
 		return refusal, nil, err
 	}
 	switch {
+	case status.Phase == c4v1beta1.TaskAwaitingApproval:
+		// The agents' approvals went on the pull request as it began to wait
+		// for a person's, a spec's or a change's.
 	case verifies(task):
 		// The reviewer's approval went on the pull request as the verification
 		// began; the verifier's goes with the merge.
 		r.postVerification(ctx, task, status, container, agents.verifier, ports.ReviewApprove)
-	case !isSpec(task) || status.Phase != c4v1beta1.TaskAwaitingApproval:
-		// A waiting spec's approval went on its pull request as it began to wait.
+	default:
 		r.approve(ctx, task, status, container, agents.reviewer)
 	}
 	skip = r.planSkip(ctx, provider, repo, status, container, behind)

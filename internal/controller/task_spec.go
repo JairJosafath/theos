@@ -78,7 +78,12 @@ func (r *TaskReconciler) specFacts(ctx context.Context, task *c4v1beta1.Task, st
 		facts.SpecRefusal = refusal
 		return err
 	case status.Phase == c4v1beta1.TaskAwaitingApproval:
-		return r.specPull(ctx, task, status, container, facts)
+		if err := r.waitingPull(ctx, task, status, container, facts); err != nil {
+			return err
+		}
+		if by := facts.WaitingPull.People; by.ApprovedBy != "" && approval == c4v1beta1.SpecApprovalPerson {
+			status.Spec.ApprovedBy, status.Spec.ApprovedInChat = by.ApprovedBy, by.ApprovedInChat
+		}
 	}
 	return nil
 }
@@ -118,14 +123,15 @@ func (r *TaskReconciler) specRefusal(ctx context.Context, status *c4v1beta1.Task
 	return model.SpecRefusal(path, changed, string(spec), found), nil
 }
 
-// specPull reads a waiting spec's pull request: merged or closed on the Git
-// host, moved past the reviewed commit, behind main or in conflict with it,
-// and what people other than the factory's own accounts said of the reviewed
-// commit, there and from chat: the Task's approve-spec and spec-changes
-// annotations, each counted as the person its -by companion names, which
-// the admission policy holds to whoever wrote it (model.ChatSpecVerdict). A
-// person's approval is recorded in status.
-func (r *TaskReconciler) specPull(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+// waitingPull reads the pull request of a Task that waits for a person, a
+// spec's or a change's its Crew's approval rules hold: merged or closed on
+// the Git host, moved past the reviewed commit, behind main or in conflict
+// with it, and what people other than the factory's own accounts said of
+// the reviewed commit, there and from chat: the Task's approve-spec and
+// spec-changes annotations, each counted as the person its -by companion
+// names, which the admission policy holds to whoever wrote it
+// (model.ChatSpecVerdict).
+func (r *TaskReconciler) waitingPull(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, facts *model.TaskFacts) error {
 	git, err := gitAccessFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace, container.Spec.GitProviderRef.Name)
 	if err != nil {
@@ -139,7 +145,7 @@ func (r *TaskReconciler) specPull(ctx context.Context, task *c4v1beta1.Task, sta
 	}); err != nil {
 		return err
 	}
-	pull := &facts.SpecPull
+	pull := &facts.WaitingPull
 	pull.Merged, pull.Closed = pr.Merged, pr.State == stateClosed && !pr.Merged
 	pull.HeadMoved = pr.HeadSHA != "" && pr.HeadSHA != status.Commit
 	if pull.Merged || pull.Closed || pull.HeadMoved {
@@ -163,18 +169,19 @@ func (r *TaskReconciler) specPull(ctx context.Context, task *c4v1beta1.Task, sta
 		model.ChatWordOf(task.Annotations, model.ChatAnnotationSpecChanges), status.Commit)
 	pull.People = model.CombineVerdicts(model.PersonReviews(seen, factory, status.Commit), chat)
 	pull.Ignored = ignored
-	if pull.People.ApprovedBy != "" && facts.SpecApproval == string(c4v1beta1.SpecApprovalPerson) {
-		status.Spec.ApprovedBy, status.Spec.ApprovedInChat = pull.People.ApprovedBy, pull.People.ApprovedInChat
-	}
 	return nil
 }
 
-// applySpec does a step only a Spec Task takes: wait for its approval, or
-// fail as declined.
+// applySpec does a step of a pull request that waits for a person: a spec
+// waits for its approval or fails as declined, and a change its Crew's
+// approval rules hold waits for its own (awaitPerson).
 func (r *TaskReconciler) applySpec(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
 	if step.Action == model.ActionSpecDeclined {
 		return ctrl.Result{}, r.failWith(ctx, task, status, container, model.SpecDeclined(status.PullRequestURL))
+	}
+	if !isSpec(task) {
+		return r.awaitPerson(ctx, task, status, container, agents, step)
 	}
 	return r.awaitApproval(ctx, task, status, container, agents, step)
 }
@@ -199,17 +206,24 @@ func (r *TaskReconciler) awaitApproval(ctx context.Context, task *c4v1beta1.Task
 	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 }
 
-// syncNeedsYou sets the Task's NeedsYou condition while its spec waits for a
-// person to approve its pull request, and takes it away once it doesn't.
+// syncNeedsYou sets the Task's NeedsYou condition while its spec, or its
+// change its Crew's approval rules hold, waits for a person to approve its
+// pull request, and takes it away once it doesn't.
 func syncNeedsYou(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) {
-	waiting := status.Phase == c4v1beta1.TaskAwaitingApproval &&
-		(status.Spec == nil || status.Spec.Approval != c4v1beta1.SpecApprovalReviewer)
+	waiting := status.Phase == c4v1beta1.TaskAwaitingApproval
+	message := model.SpecWaitMessage(int(task.Spec.Issue), status.PullRequestURL)
+	if isSpec(task) {
+		waiting = waiting && (status.Spec == nil || status.Spec.Approval != c4v1beta1.SpecApprovalReviewer)
+	} else {
+		waiting = waiting && status.Approval != nil && status.Approval.Require == c4v1beta1.ApprovalPerson
+		message = changeWaitMessage(task, status)
+	}
 	if !waiting {
 		apimeta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionNeedsYou)
 		return
 	}
 	setCondition(&status.Conditions, task.Generation, c4v1beta1.ConditionNeedsYou, metav1.ConditionTrue,
-		model.ReasonAwaitingApproval, model.SpecWaitMessage(int(task.Spec.Issue), status.PullRequestURL))
+		model.ReasonAwaitingApproval, message)
 }
 
 // labelSpecReview labels a spec's issue status/spec-review once its pull

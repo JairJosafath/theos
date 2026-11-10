@@ -118,8 +118,8 @@ func TestChartInstallsTheFactoryAlerts(t *testing.T) {
 		return byName
 	}
 
-	got := alerts("prometheus.rules.dailyBudgetUSD=120", "prometheus.rules.specWaits=4h")
-	for _, name := range []string{"TheosDailyCostOverBudget", "TheosTasksFailing", "TheosSpecWaitsForAPerson",
+	got := alerts("prometheus.rules.dailyBudgetUSD=120", "prometheus.rules.approvalWaits=4h")
+	for _, name := range []string{"TheosDailyCostOverBudget", "TheosTasksFailing", "TheosApprovalWaitsForAPerson",
 		"TheosRunsWithoutCost"} {
 		if got[name] == nil {
 			t.Errorf("no alert %s", name)
@@ -128,8 +128,8 @@ func TestChartInstallsTheFactoryAlerts(t *testing.T) {
 	if expr, _ := got["TheosDailyCostOverBudget"]["expr"].(string); !strings.HasSuffix(expr, "> 120") {
 		t.Errorf("the cost alert's expression %q doesn't use the values' budget", expr)
 	}
-	if f, _ := got["TheosSpecWaitsForAPerson"]["for"].(string); f != "4h" {
-		t.Errorf("the spec alert waits %q, want the values' 4h", f)
+	if f, _ := got["TheosApprovalWaitsForAPerson"]["for"].(string); f != "4h" {
+		t.Errorf("the approval alert waits %q, want the values' 4h", f)
 	}
 	summary, _ := got["TheosTasksFailing"]["annotations"].(map[string]any)["summary"].(string)
 	if !strings.Contains(summary, "{{ $labels.namespace }}") {
