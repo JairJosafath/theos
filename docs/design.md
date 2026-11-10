@@ -265,6 +265,19 @@ starts no Task (`Ready=False`, `ContainerNotProtected`), and a Task made by
 hand waits with that reason. A Container that neither adopts nor has a
 Standard has no checks to require: its Tasks fail, as before. The operator
 follows a change of `checkContexts` and never takes a rule away.
+
+**Proposing the model** (#96). `theos-session adopt --project <ns>
+--git-provider <name>` reads a clone and prints the model that adopts it:
+a SoftwareSystem, the Container with `adopt: true` and the check command
+and contexts it found, and a Crew whose approval rules hold every change
+for a person. It applies nothing and talks to no cluster. It reads the
+build files at the root (`go.mod`, `Cargo.toml`, `package.json`,
+`pyproject.toml`, `Makefile`) and the workflows the host runs, and what it
+can't tell (the language, the kind of application, a check, a workflow
+that runs on a pull request) is a note in the proposal, never a guess. It
+also prints the `.theos.yaml` to commit to main, which stays the person's
+to commit: that file is how a repository's owner says the project may work
+there.
 Adoption checks the Standard's files and nothing of the Framework's: the
 block `spec.operations` names at adoption is recorded as the one the
 repository holds, when the Framework reads it, and a later change is

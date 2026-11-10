@@ -1,0 +1,43 @@
+# unknown, a repository the factory adopts as it is: nothing is scaffolded or rewritten.
+# Look at this: No go.mod, Cargo.toml, package.json or pyproject.toml at the root: the language is not told, and nothing depends on it.
+# Look at this: Nothing says what kind of application this is (no Dockerfile, no command it installs): the proposal says service; change spec.type to what it is.
+# Look at this: No check was found (no Makefile with a check target, and no test command the language's files name): name the command that checks a change in spec.checkCommand.
+# Look at this: It has no workflow under .gitea/workflows/ or .github/workflows/: nothing checks a change, and no agent works on a repository whose main requires no check. Add one first.
+apiVersion: theos.factory.io/v1beta1
+kind: SoftwareSystem
+metadata:
+  name: billing-core
+  namespace: billing
+spec:
+  displayName: billing-core
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: unknown
+  namespace: billing
+spec:
+  softwareSystemRef:
+    name: billing-core
+  displayName: unknown
+  type: service
+  gitProviderRef:
+    name: git
+  adopt: true
+---
+# Start small: the Crew holds every change for a person. Loosen it rule by
+# rule (docs/getting-started.md, "Start small").
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: unknown
+  namespace: billing
+spec:
+  containerRef:
+    name: unknown
+  implementer:
+    name: implementer
+  reviewer:
+    name: reviewer
+  approval:
+  - require: Person

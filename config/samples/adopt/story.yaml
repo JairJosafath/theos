@@ -13,7 +13,11 @@
 #   type: service
 #   scaffoldedFrom: []
 #
-# Apply with: kubectl -n billing apply -f config/samples/adopt/
+# theos-session adopt writes this file's like from a clone, and that
+# .theos.yaml (config/samples/adopt/proposed/ has what it proposes for eight
+# repositories).
+#
+# Apply with: kubectl -n billing apply -f config/samples/adopt/story.yaml -f config/samples/adopt/crew.yaml
 # Then: kubectl -n billing get container invoices -o jsonpath='{.status.conditions[?(@.type=="Protected")].message}'
 # says whether main reports the checks named here, or which it reports instead.
 apiVersion: theos.factory.io/v1beta1

@@ -104,7 +104,7 @@ Each step is its own issue, names #60 and lands with `make check`.
 | --- | --- | --- | --- |
 | 1. An adopting Container needs nothing from the catalog (done) | #60 | | the CRD takes it; it goes Ready on the identity alone, with and without a Framework, in envtest; a Container that doesn't adopt still needs a Framework |
 | 2. The repository's own check, and the fence on it (done) | #95 | 1 | `checkCommand`, `checkContexts`, the `Protected` condition; envtest: a Task runs the named command on a protected adopted repository; a Crew waits on one that isn't |
-| 3. `theos-session adopt` | #96 | 2 | the detector's table tests; the YAML it prints passes `make validate-yaml` |
+| 3. `theos-session adopt` (done) | #96 | 2 | the detector's table tests; the YAML it prints passes `make validate-yaml` |
 | 4. A Standard that differs arrives as a pull request | #97 | 1 | envtest: adopting with a Standard whose files differ opens the pull request and the Container is Ready |
 | 5. The Crew's first issue: AGENTS.md and what it found | #98 | 2 | envtest: one `kind/onboarding` issue per adopted Container, never a second |
 | 6. The guide's second page | #99 | 2, 3 | "Bring a repository you already have" follows the quickstart, and follows what the specs show |
@@ -152,6 +152,29 @@ Each step is its own issue, names #60 and lands with `make check`.
   Container without a Standard.
 - Left as it is: the words "`make check` fails on main too" in a round's
   note name the default command even when the Container names another.
+
+## What step 3 found
+
+- The command reads a clone, `--dir`, not a URL: the person has one, and a
+  command that clones needs credentials the factory shouldn't ask for
+  twice. It lists what Git tracks, or every file when the folder is no
+  clone.
+- The detector reads five files at the root and the workflows, nothing
+  else. Where workflows are comes from the CI systems the factory knows
+  (`model.WorkflowDirs`), and a host that has its own reads no others, as
+  the host does.
+- A check's pattern is `<workflow name> / <job name or id>*`: the job on
+  every event and for every matrix entry. A workflow without a name is left
+  out with a note, since the host names its checks after its file in a way
+  the detector can't know; so is a job whose name is an expression.
+- What it can't tell is a note in the proposal, never a guess: no language,
+  no kind of application (the proposal says `service`, the type being
+  required, and says to change it), no check, no workflow that runs on a
+  pull request.
+- `--git-provider` has no default: the name is the user's.
+- The proposals of eight repositories are files under
+  `config/samples/adopt/proposed/`, which `make validate-yaml` holds to the
+  CRDs; the table test fails when the detector's output leaves them.
 
 ## Done when
 
