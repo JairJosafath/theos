@@ -151,6 +151,40 @@ defaults to `@theos` as on every host.
 - The fake serves an OCI registry, GitHub's npm registry and a file at a
   ref.
 
+**What part 1 found** (it is built; part 2 is not).
+
+- **GitHub's registries take a classic personal access token and no
+  other** kind of a person's token, and an installation token has no
+  permission for packages. So the operator's token must be a classic one
+  with `write:packages` for anything to be published, which narrows what
+  step 2 and step 6 asked of it: the guide (step 9) says so, and names
+  `spec.packages.npm`'s own token as the way to publish with another.
+- **The operator's token goes to GitHub's own registries only.** A
+  registry or an index the GitProvider names gets the token the
+  GitProvider names for it, or none.
+- **A module path has no port.** The path a module must declare is the
+  host's name, the owner and the repository. An Enterprise Server on a port
+  of its own can serve no Go module, since a module path can't hold a port.
+- **The contract has no subtest for images, npm or PyPI,** so nothing of
+  them is in `Cannot`, PyPI neither. Its two subtests are of Go modules and
+  the adapter passes both; images and packages are covered by the
+  adapter's own tests against the fake's registries
+  (`TestImagesOnGitHub`, `TestPackagesOnGitHub`), as Gitea's are by its.
+- **`.golangci.yml` lists the adapters that stay out of Kubernetes by
+  name;** `internal/adapters/packages` is added to it.
+
+The fake encodes `working-with-the-npm-registry` (a scoped name, in lower
+case, under an account's scope; a Bearer token) and
+`working-with-the-container-registry` (Basic auth with a token as the
+password; an Enterprise Server's registry at `containers.<host>`). Not
+verified against github.com: that the container registry doesn't check the
+user name sent with the token; that the npm registry answers 404 for a
+package it doesn't have, 409 for a version it has and 200 or 201 for a
+publish; that it links a package by the `repository` of the publish
+document where the tarball's own manifest names none; and that the
+contents call answers a file's bytes at a commit when asked for the raw
+media type.
+
 **Part 2, where a run and a job get them.**
 
 - `ports.Repository` says what `GOPRIVATE` is on a host that serves

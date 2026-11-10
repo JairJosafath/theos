@@ -17,14 +17,23 @@ limitations under the License.
 package github
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/rand"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/registry"
@@ -358,5 +367,204 @@ func TestGoModulesOnGitHub(t *testing.T) {
 				t.Errorf("the adapter made calls the fake GitHub doesn't serve: %q", calls)
 			}
 		})
+	}
+}
+
+// npmTarball is the tarball npm pack makes of a package with manifest.
+func npmTarball(t *testing.T, manifest map[string]any) []byte {
+	t.Helper()
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "package/package.json", Mode: 0o644, Size: int64(len(data))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := errors.Join(tw.Close(), gz.Close()); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// wheel is a wheel of the Python package name at version.
+func wheel(t *testing.T, name, version string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create(name + "-" + version + ".dist-info/METADATA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprintf(w, "Metadata-Version: 2.1\nName: %s\nVersion: %s\n", name, version); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// elsewhere is a registry that is not GitHub's: it has no package, takes
+// every upload, and keeps what each request was signed with.
+type elsewhere struct {
+	srv     *httptest.Server
+	mu      sync.Mutex
+	signed  []string
+	uploads int
+}
+
+func newElsewhere(t *testing.T) *elsewhere {
+	t.Helper()
+	e := &elsewhere{}
+	e.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.signed = append(e.signed, r.Header.Get("Authorization"))
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		e.uploads++
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(e.srv.Close)
+	return e
+}
+
+// requests returns how many uploads arrived and what every request was
+// signed with.
+func (e *elsewhere) requests() (uploads int, signed []string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.uploads, slices.Clone(e.signed)
+}
+
+const (
+	ordersWheel = "orders-1.0.0-py3-none-any.whl"
+	noReadme    = "README.md"
+)
+
+// TestPackagesOnGitHub covers #80: a release's npm tarballs go to GitHub's
+// npm registry under the owner's scope, linked to the repository; its
+// Python packages go where the GitProvider says, and nowhere without that;
+// and the operator's token goes to GitHub's own registry alone.
+func TestPackagesOnGitHub(t *testing.T) {
+	t.Run("npm packages are published once, under the owner's scope, naming the repository", ownNpm)
+	t.Run("a Python package has nowhere to go until the GitProvider names an index", pythonIndex)
+	t.Run("a registry that is not GitHub's never sees the operator's token", otherNpm)
+}
+
+func ownNpm(t *testing.T) {
+	r := newReleased(t, ports.Packages{}, scaffold.Tree{noReadme: {Data: []byte("hello\n")}})
+	if _, err := r.h.PublishReleasePackages(r.ctx, r.repo, "v9.9.9"); !errors.Is(err, ports.ErrNoRelease) {
+		t.Errorf("PublishReleasePackages() of a tag with no release gave %v, want ErrNoRelease", err)
+	}
+	const elsewhereURL = "https://example.com/acme/web"
+	for file, manifest := range map[string]map[string]any{
+		"1-orders.tgz": {"name": "@acme/orders", "version": "1.0.0", "description": "Orders"},
+		"2-web.tgz":    {"name": "@acme/web", "version": "1.0.0", "repository": elsewhereURL},
+		"3-tool.tgz":   {"name": "@other/tool", "version": "1.0.0"},
+		"4-old.tgz":    {"name": "@acme/old", "version": "0.9.0"},
+	} {
+		r.gh.AddReleaseAsset("acme", "orders", releasedTag, file, npmTarball(t, manifest))
+	}
+	outcomes := func(first ports.PackageOutcome) map[string]ports.PackageOutcome {
+		return map[string]ports.PackageOutcome{"@acme/orders": first, "@acme/web": first,
+			"@other/tool": ports.PackageUnscoped, "@acme/old": ports.PackageInvalid}
+	}
+	for _, want := range []map[string]ports.PackageOutcome{outcomes(ports.PackagePublished), outcomes(ports.PackageExists)} {
+		got, err := r.h.PublishReleasePackages(r.ctx, r.repo, releasedTag)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Packages) != len(want) {
+			t.Fatalf("PublishReleasePackages() = %+v, want %d packages", got, len(want))
+		}
+		for _, pkg := range got.Packages {
+			if pkg.Outcome != want[pkg.Name] || pkg.Ecosystem != ports.EcosystemNpm {
+				t.Errorf("%s is %s (%s), want %s", pkg.Name, pkg.Outcome, pkg.Reason, want[pkg.Name])
+			}
+		}
+	}
+	for name, versions := range map[string][]string{"@acme/orders": {"1.0.0"}, "@acme/web": {"1.0.0"},
+		"@other/tool": nil, "@acme/old": nil} {
+		if got := r.gh.NpmVersions(name); !slices.Equal(got, versions) {
+			t.Errorf("the registry has %s at %q, want %q", name, got, versions)
+		}
+	}
+	linked := func(name string) string {
+		repository, _ := r.gh.NpmManifest(name, "1.0.0")["repository"].(map[string]any)
+		at, _ := repository["url"].(string)
+		return at
+	}
+	if got, want := linked("@acme/orders"), "git+"+r.repo.CloneURL; got != want {
+		t.Errorf("a manifest that names no repository was published naming %q, want %s", got, want)
+	}
+	if got := linked("@acme/web"); got != elsewhereURL {
+		t.Errorf("a manifest that names a repository was published naming %q, want its own, %s", got, elsewhereURL)
+	}
+}
+
+func pythonIndex(t *testing.T) {
+	files := scaffold.Tree{noReadme: {Data: []byte("hello\n")}}
+	r := newReleased(t, ports.Packages{}, files)
+	r.gh.AddReleaseAsset("acme", "orders", releasedTag, ordersWheel, wheel(t, "orders", "1.0.0"))
+	got, err := r.h.PublishReleasePackages(r.ctx, r.repo, releasedTag)
+	if err != nil || len(got.Packages) != 1 || got.Packages[0].Outcome != ports.PackageInvalid ||
+		got.Packages[0].Ecosystem != ports.EcosystemPyPI || !strings.Contains(got.Packages[0].Reason, "no Python package index") {
+		t.Errorf("PublishReleasePackages() of a wheel with no index named = %+v, %v; want it Invalid for want of an index",
+			got, err)
+	}
+
+	index, token := newElsewhere(t), rand.Text()
+	r = newReleased(t, ports.Packages{PyPIIndex: index.srv.URL + "/simple", PyPIUpload: index.srv.URL + "/legacy/",
+		PyPIToken: token}, files)
+	r.gh.AddReleaseAsset("acme", "orders", releasedTag, ordersWheel, wheel(t, "orders", "1.0.0"))
+	got, err = r.h.PublishReleasePackages(r.ctx, r.repo, releasedTag)
+	if err != nil || len(got.Packages) != 1 || got.Packages[0].Outcome != ports.PackagePublished {
+		t.Fatalf("PublishReleasePackages() of a wheel with an index named = %+v, %v; want it Published", got, err)
+	}
+	uploads, signed := index.requests()
+	if uploads != 1 {
+		t.Errorf("the index took %d uploads, want one", uploads)
+	}
+	var probe http.Request
+	probe.Header = http.Header{}
+	probe.SetBasicAuth("__token__", token)
+	for _, authorization := range signed {
+		if authorization != probe.Header.Get("Authorization") {
+			t.Error("a request to the index was not signed with the index's own token and nothing else")
+		}
+	}
+}
+
+func otherNpm(t *testing.T) {
+	other := newElsewhere(t)
+	r := newReleased(t, ports.Packages{NpmScope: "@shop", NpmRegistry: other.srv.URL},
+		scaffold.Tree{noReadme: {Data: []byte("hello\n")}})
+	r.gh.AddReleaseAsset("acme", "orders", releasedTag, "orders.tgz",
+		npmTarball(t, map[string]any{"name": "@shop/orders", "version": "1.0.0"}))
+	got, err := r.h.PublishReleasePackages(r.ctx, r.repo, releasedTag)
+	if err != nil || len(got.Packages) != 1 || got.Packages[0].Outcome != ports.PackagePublished {
+		t.Fatalf("PublishReleasePackages() to another registry = %+v, %v; want the package Published", got, err)
+	}
+	uploads, signed := other.requests()
+	if uploads != 1 {
+		t.Errorf("the registry took %d uploads, want one", uploads)
+	}
+	for _, authorization := range signed {
+		if authorization != "" {
+			t.Error("a request to a registry that is not GitHub's carried a credential, and the GitProvider named none for it")
+		}
+	}
+	if got := r.gh.NpmVersions("@shop/orders"); got != nil {
+		t.Errorf("GitHub's registry has @shop/orders at %q, want it nowhere but the registry named", got)
 	}
 }

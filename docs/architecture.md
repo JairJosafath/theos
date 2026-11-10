@@ -36,7 +36,7 @@ every scaffolded repository.
 | API types | `api/v1beta1`, the one version served and stored | apimachinery | anything under `internal/` |
 | Business rules | `internal/model`, `internal/scaffold` | the standard library, `text/template`, YAML; `scaffold` may use `model` | Kubernetes, controller-runtime, `net/http`, `api/`, other `internal/` layers |
 | Ports | `internal/ports` and its `fake`, `contract` (the Deployer from #1161; the Git host's from #1094) | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
-| Adapters | `internal/adapters/*`: `gitea`, `git`, `github`, `gitlab`, `argocd`, `cloudformation`, `matrix`, `localenv` | ports, business rules; host adapters `net/http` and go-git, the chat adapter `net/http`; runtime, deploy and test environment adapters client-go | `api/`, `internal/controller`; host and chat adapters also Kubernetes |
+| Adapters | `internal/adapters/*`: `gitea`, `git`, `github`, `gitlab`, `packages`, `argocd`, `cloudformation`, `matrix`, `localenv` | ports, business rules; host adapters `net/http` and go-git, the chat adapter `net/http`; runtime, deploy and test environment adapters client-go | `api/`, `internal/controller`; host and chat adapters also Kubernetes |
 | OCI images | `internal/oci` | the standard library, `net/http`, go-containerregistry; host adapters use it | Kubernetes, controller-runtime, `api/`, any other `internal/` package |
 | Sandbox runner | `internal/agentrunner`, `cmd/theos-agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
 | Test environment tool | `cmd/theos-env`: `run` in a sandbox, `serve` in a leased environment ([plans/done/test-environments.md](plans/done/test-environments.md), T4) | the standard library, `internal/model`, go-git's gitignore matcher | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
@@ -101,7 +101,9 @@ it against this table. Where the code lives:
   `cloudformation` implement the Deployer, `gitlab` follows, `matrix`
   implements ChatHost, and `localenv` and `awsenv` implement TestEnvironments. Plain Git over HTTPS (go-git: template fetches and pushes) is
   shared in `internal/adapters/git`, and so is the reader of a host's
-  archive of a tag (`ReadArchive`). A host adapter imports no Kubernetes;
+  archive of a tag (`ReadArchive`). What the host adapters share of
+  publishing a release's npm and Python packages is in
+  `internal/adapters/packages`. A host adapter imports no Kubernetes;
   the runtime, deploy and test environment adapters may use client-go,
   never `api/` or `internal/controller`.
 - **Controllers take ports.** Only `cmd/main.go` imports adapters: it builds

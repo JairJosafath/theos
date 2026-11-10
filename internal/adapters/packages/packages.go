@@ -61,8 +61,12 @@ import (
 const maxPackageFile = 512 << 20
 
 // nameField is the field that names a package, in an npm manifest and in
-// the PyPI upload form.
-const nameField = "name"
+// the PyPI upload form; repositoryField is the field of an npm manifest
+// that names its repository.
+const (
+	nameField       = "name"
+	repositoryField = "repository"
+)
 
 // Publisher publishes the package files of a release for one adapter, which
 // sets every field.
@@ -82,6 +86,11 @@ type Publisher struct {
 	// address. target is the address as the repository spells it; req.URL is
 	// the same, but for an empty port, which net/http drops from its host.
 	Sign func(req *http.Request, target *url.URL, ecosystem string)
+	// LinkNpm names the repository in the document an npm package is
+	// published with when its manifest names none: a registry that files a
+	// package under the repository its manifest names links it by that.
+	// Unset, a manifest is published as it is.
+	LinkNpm bool
 }
 
 // Publish publishes each package file among assets, the files of repo's
@@ -149,6 +158,12 @@ func (p Publisher) publishAsset(ctx context.Context, repo ports.Repository, asse
 		}
 		return p.publishNpm(ctx, repo, pkg, meta, file, sums)
 	default:
+		if repo.PyPIIndex == "" || repo.PyPIUpload == "" {
+			pkg.Outcome = ports.PackageInvalid
+			pkg.Reason = "there is no Python package index to publish it to: the host has none of its own, " +
+				"and the GitProvider's spec.packages.pypi names none"
+			return pkg, nil
+		}
 		want, ok := normalizePEP440(tag)
 		if !ok {
 			pkg.Outcome, pkg.Reason = ports.PackageInvalid, fmt.Sprintf("tag %s is not a PEP 440 version", tag)
@@ -275,8 +290,8 @@ func readPackageJSON(data []byte, asset ports.ReleaseAsset) (*ports.Package, pac
 	}
 	// npm publishes a repository given as a string as the object it stands for.
 	var repository string
-	if json.Unmarshal(meta.manifest["repository"], &repository) == nil && repository != "" {
-		meta.manifest["repository"], _ = json.Marshal(map[string]string{"type": "git", "url": repository})
+	if json.Unmarshal(meta.manifest[repositoryField], &repository) == nil && repository != "" {
+		meta.manifest[repositoryField], _ = json.Marshal(map[string]string{"type": "git", "url": repository})
 	}
 	return &ports.Package{Ecosystem: ports.EcosystemNpm, Name: name, Version: version, File: asset.Name}, meta, nil
 }
@@ -475,6 +490,9 @@ func (p Publisher) publishNpm(ctx context.Context, repo ports.Repository, pkg *p
 	fileName := bare + "-" + pkg.Version + ".tgz"
 	version := make(map[string]json.RawMessage, len(meta.manifest)+2)
 	maps.Copy(version, meta.manifest)
+	if _, named := version[repositoryField]; !named && p.LinkNpm {
+		version[repositoryField], _ = json.Marshal(map[string]string{"type": "git", "url": "git+" + repo.CloneURL})
+	}
 	version["_id"], _ = json.Marshal(pkg.Name + "@" + pkg.Version)
 	version["dist"], _ = json.Marshal(map[string]string{
 		"integrity": "sha512-" + base64.StdEncoding.EncodeToString(sums.sha512),
