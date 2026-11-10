@@ -12,11 +12,16 @@
 # commit, and stays when it was pushed further, is the head or the base of
 # another open pull request, is protected or belongs to a fork; a pull
 # request that isn't merged, or merged elsewhere than main, deletes nothing.
-# A branch pushed to after the run read it is kept, with its new commit. A
-# dry run deletes nothing. A branch name reaches GitHub percent-encoded, git
-# as one word, and the restore line quoted for a shell. The token is in no
-# argument and no output. What GitHub refuses or can't answer is kept, and
-# the run fails unless a rejection explains it. And the Branch hygiene
+# A branch pushed to after the run read it is kept, with its new commit, and
+# no other ref whose name ends in the branch's is deleted in its place. A
+# dry run deletes nothing, and only DRY_RUN=false or none deletes. A branch
+# name reaches GitHub percent-encoded, git as one word, and the restore line
+# quoted for a shell. The token is in no argument, no URL and no output, and
+# no credential helper of the runner's sees it. What GitHub refuses or can't
+# answer is kept, and the run fails unless a rejection explains it; a branch
+# with no common ancestor with main is kept without failing it. The
+# keep-list splits on CRLF line ends too, and the run prints the patterns it
+# read. And the Branch hygiene
 # workflow runs the script from main only, with the token it needs and no
 # more, and hands it nothing from an event or a variable but through env.
 # Run: hack/delete-merged-branches_test.sh
@@ -62,13 +67,17 @@ sha() {
 #   open.json        the open pull requests, one array per page
 #   pulls.json       the pull requests of a commit
 #   ahead/SHA        how many commits SHA is ahead of the default branch (0
-#                    when absent); "fail" makes the comparison fail
+#                    when absent), as JSON, so null is no count; "fail" makes
+#                    the comparison fail, and "unrelated" is GitHub's answer
+#                    for a commit with no common ancestor with that branch
 #   ruled            the branches (as in the URL) a ruleset forbids deleting:
 #                    the deletion rule is on the second page of their rules
 #   refused          "BRANCH MESSAGE": the deletions the repository rejects
 #   moved            "BRANCH SHA": the commit a branch moved to after the
 #                    branches were listed; "BRANCH -": it was deleted
 #   down             the URL paths GitHub fails to answer (a prefix each)
+#   unguarded        when it exists, git push loses the leases that expect no
+#                    ref, its guards: a git that deletes another ref
 mkdir -p "$T/fakes" "$T/gh/ahead"
 sed "s|@T@|$T|g" >"$T/fakes/gh" <<'FAKE'
 #!/usr/bin/env bash
@@ -117,7 +126,8 @@ case $path in
   /compare/*)
     sha=${path##*...}
     n=$(cat "$G/ahead/$sha" 2>/dev/null || echo 0)
-    [ "$n" = fail ] && err 404 "No common ancestor"
+    [ "$n" = fail ] && err 404 "Not Found"
+    [ "$n" = unrelated ] && err 404 "No common ancestor between $(cat "$G/default") and $sha."
     echo "{\"ahead_by\":$n}" | out
     ;;
   /commits/*/pulls*) out <"$G/pulls.json" ;;
@@ -133,7 +143,13 @@ esac
 FAKE
 # The stand-in git is the real one, and notes what it was run with: every
 # argument in $T/git-args, and in $T/git-cred what the credential settings of
-# a push would hand to github.com.
+# a push would hand to github.com; it then tells those settings the push
+# succeeded, as git does, which is when a helper that stores is handed the
+# password. The runs' own global configuration, $T/gitconfig, has such a
+# helper, as a runner may: it writes all it is asked and told to
+# $T/helper-spy. That configuration also sends https://github.com/o/r.git,
+# and the same on ghe.example.invalid, to the stand-in repository, and the
+# runs allow git no transport but a local path: no case reaches the network.
 sed -e "s|@T@|$T|g" -e "s|@GIT@|$GIT|g" >"$T/fakes/git" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>@T@/git-args
@@ -145,11 +161,22 @@ for ((i = 0; i < $#; i++)); do
   esac
 done
 if [ -n "$push" ]; then
-  printf 'protocol=https\nhost=github.com\n\n' | @GIT@ "${cfg[@]}" credential fill >>@T@/git-cred 2>&1
+  cred=$(printf 'protocol=https\nhost=github.com\n\n' | @GIT@ "${cfg[@]}" credential fill 2>&1)
+  printf '%s\n' "$cred" >>@T@/git-cred
+  printf '%s\n\n' "$cred" | @GIT@ "${cfg[@]}" credential approve >/dev/null 2>&1
+  if [ -e @T@/gh/unguarded ]; then
+    for a in "$@"; do
+      shift
+      [[ $a == --force-with-lease=*: ]] || set -- "$@" "$a"
+    done
+  fi
 fi
 exec @GIT@ "$@"
 FAKE
 chmod +x "$T/fakes/gh" "$T/fakes/git"
+git config --file "$T/gitconfig" credential.helper "!f() { { echo \"\$1\" && cat; } >>'$T/helper-spy'; }; f"
+git config --file "$T/gitconfig" --add "url.$REMOTE.insteadOf" https://github.com/o/r.git
+git config --file "$T/gitconfig" --add "url.$REMOTE.insteadOf" https://ghe.example.invalid/o/r.git
 
 # branch NAME SHA [PROTECTED]: one branch as GitHub lists it.
 branch() { jq -cn --arg n "$1" --arg s "$2" --argjson p "${3:-false}" '{name: $n, commit: {sha: $s}, protected: $p}'; }
@@ -183,13 +210,20 @@ open() { paged >"$T/gh/open.json"; }
 # run ARGS...: the script against the stand-ins, from a directory that is no
 # clone; its output in $T/out, the calls that changed something in $T/calls.
 # The repository first gets the branches GitHub lists, and then what moved
-# since: the push that lands while the script decides.
+# since: the push that lands while the script decides. DRY_RUN is empty, as
+# on the workflow's schedule, unless the case sets it; DRY_RUN=unset and
+# REMOTE_URL=unset leave the script without DRY_RUN and THEOS_GIT_REMOTE,
+# and SERVER_URL is its GITHUB_SERVER_URL, which it otherwise doesn't have.
 run() {
-  local s n
+  local s n vars=()
+  [ "${DRY_RUN:-}" = unset ] || vars+=(DRY_RUN="${DRY_RUN:-}")
+  [ "${REMOTE_URL:-}" = unset ] || vars+=(THEOS_GIT_REMOTE="${REMOTE_URL:-$REMOTE}")
+  [ -z "${SERVER_URL:-}" ] || vars+=(GITHUB_SERVER_URL="$SERVER_URL")
   : >"$T/calls"
   : >"$T/paths"
   : >"$T/git-args"
   : >"$T/git-cred"
+  : >"$T/helper-spy"
   git -C "$REMOTE" for-each-ref --format='delete %(refname)' refs/heads | git -C "$REMOTE" update-ref --stdin
   jq -r '.[] | [.commit.sha, .name] | @tsv' "$T/gh/branches.json" | while IFS=$'\t' read -r s n; do
     git -C "$REMOTE" update-ref "refs/heads/$n" "$s"
@@ -201,8 +235,9 @@ run() {
       *) git -C "$REMOTE" update-ref "refs/heads/$n" "$s" ;;
     esac
   done <"$T/gh/moved"
-  (cd "$T" && env PATH="$T/fakes:$PATH" GH_TOKEN="$TOKEN" THEOS_GITHUB_REPO=o/r THEOS_GIT_REMOTE="${REMOTE_URL:-$REMOTE}" \
-    DRY_RUN="${DRY_RUN:-}" THEOS_KEEP_BRANCHES="${KEEP:-}" "$SCRIPT" "$@" >"$T/out" 2>&1)
+  (cd "$T" && env -u DRY_RUN -u THEOS_GIT_REMOTE -u GITHUB_SERVER_URL PATH="$T/fakes:$PATH" GH_TOKEN="$TOKEN" \
+    GIT_CONFIG_GLOBAL="$T/gitconfig" GIT_ALLOW_PROTOCOL=file THEOS_GITHUB_REPO=o/r THEOS_KEEP_BRANCHES="${KEEP:-}" \
+    "${vars[@]}" "$SCRIPT" "$@" >"$T/out" 2>&1)
 }
 # deleted: the listed branches the repository no longer has.
 deleted() {
@@ -290,7 +325,7 @@ check "and no restore line names a commit it had left" "$(grep -c "^deleted race
 check "the branch still where the run read it is deleted" "$(grep -c "^deleted calm $(sha 3) " "$T/out")" 1
 check "a branch that went in between is no error" "$(grep -c '^gone went: already deleted$' "$T/out")" 1
 check "the delete names the commit the branch must be at" \
-  "$(grep -c -- " push --porcelain --force-with-lease=refs/heads/raced:$(sha 2) -- $REMOTE :refs/heads/raced$" "$T/git-args")" 1
+  "$(grep -c -- " --force-with-lease=refs/heads/raced:$(sha 2) -- $REMOTE :refs/heads/raced$" "$T/git-args")" 1
 check "nothing is deleted by its name alone through the API" "$(cat "$T/calls")" ""
 
 # The token.
@@ -298,6 +333,129 @@ check "git gets the token from a credential helper, as GitHub's x-access-token" 
   "$(sort -u "$T/git-cred" | grep -c -x -e 'username=x-access-token' -e "password=$TOKEN")" 2
 check "the token is in no argument of git" "$(grep -c -F "$TOKEN" "$T/git-args")" 0
 check "nor in what the run prints" "$(grep -c -F "$TOKEN" "$T/out")" 0
+check "a credential helper the runner has set up is neither asked for the token nor handed it to store (#118)" \
+  "$(cat "$T/helper-spy")" ""
+
+# Where git deletes when nothing says: the repository on github.com, or on
+# the server the runner names.
+world
+branch a "$(sha 2)" | branches
+REMOTE_URL='unset' run sweep
+check "with no THEOS_GIT_REMOTE the delete goes to the repository on github.com, by a URL that holds no credential (#118)" \
+  "$(grep -c -- " -- https://github.com/o/r.git :refs/heads/a$" "$T/git-args")" 1
+check "and the branch is deleted there" "$(deleted)" a
+check "the token is in no argument of git then either (#118)" "$(grep -c -F "$TOKEN" "$T/git-args")" 0
+REMOTE_URL='unset' SERVER_URL=https://ghe.example.invalid run sweep
+check "on another server, it goes to the repository on GITHUB_SERVER_URL (#118)" \
+  "$(grep -c -- " -- https://ghe.example.invalid/o/r.git :refs/heads/a$" "$T/git-args") $(deleted)" "1 a"
+
+# A ref whose name ends in the branch's. For the refs/heads/NAME of a push,
+# git takes refs/tags/refs/heads/NAME or refs/heads/refs/heads/NAME as well,
+# and three more: the one of them that is there once the branch itself is
+# gone.
+world
+{
+  branch lost "$(sha 2)"
+  branch lost-a "$(sha 2)"
+  branch lost-b "$(sha 2)"
+  branch lost-c "$(sha 2)"
+  branch went "$(sha 3)"
+  branch refs/heads/went "$(sha 3)"
+  branch both "$(sha 4)"
+  branch calm "$(sha 5)"
+} | branches
+pull 9 refs/heads/went "$(sha 3)" | open
+printf '%s -\n' lost lost-a lost-b lost-c went >"$T/gh/moved"
+# strays: the refs that are no branch and named like a branch's full ref, at
+# that branch's commit; the last one is named like a branch that is there.
+STRAYS=(refs/refs/heads/lost-a refs/remotes/refs/heads/lost-b refs/remotes/refs/heads/lost-c/HEAD refs/tags/refs/heads/lost)
+strays() {
+  local r
+  for r in "${STRAYS[@]}"; do
+    git -C "$REMOTE" update-ref "$r" "$(sha 2)"
+  done
+  git -C "$REMOTE" update-ref refs/tags/refs/heads/both "$(sha 4)"
+}
+strays
+run sweep
+check "a ref named like a branch's doesn't fail the run" "$?" 0
+check "no ref named like the full ref of a branch that went is deleted in its place, a tag least of all (#118)" \
+  "$(git -C "$REMOTE" for-each-ref --format='%(refname)' "${STRAYS[@]}" | tr '\n' ' ')" "${STRAYS[*]} "
+check "nor is a branch named like it, which the run printed as kept (#118)" \
+  "$(at refs/heads/went) $(grep -c "^kept refs/heads/went $(sha 3): the head of the open pull request #9$" "$T/out")" "$(sha 3) 1"
+check "the branches that went are gone, and no error" "$(grep -c -x 'gone \(lost\|lost-[abc]\|went\): already deleted' "$T/out")" 5
+check "a branch git can't tell from a tag named like its full ref is kept, with the tag's name (#118)" \
+  "$(grep -c "^kept both $(sha 4): git can't tell it from refs/tags/refs/heads/both, and deletes neither while both are there$" "$T/out")" 1
+check "and both are still there" "$(at both) $(git -C "$REMOTE" rev-parse -q --verify refs/tags/refs/heads/both)" "$(sha 4) $(sha 4)"
+check "the branch nothing is named like is deleted" "$(grep -c "^deleted calm $(sha 5) " "$T/out")" 1
+strays
+: >"$T/gh/unguarded"
+run sweep
+check "should git delete another ref than the branch all the same, the run fails (#118)" "$?" 1
+check "it names the ref git deleted, by the line git printed for it, and how to bring it back (#118)" \
+  "$(grep -c "^error lost $(sha 2): git deleted refs/tags/refs/heads/lost in its place (restore: git push origin $(sha 2):refs/tags/refs/heads/lost)$" "$T/out")" 1
+check "and prints no branch as deleted that git didn't name" "$(grep -c '^deleted lost ' "$T/out")" 0
+git -C "$REMOTE" for-each-ref --format='delete %(refname)' refs/tags refs/refs refs/remotes | git -C "$REMOTE" update-ref --stdin
+
+# What GitHub answers about a branch that main can't be compared with.
+world
+{ branch gh-pages "$(sha 2)" && branch odd "$(sha 3)" && branch fine "$(sha 4)"; } | branches
+echo unrelated >"$T/gh/ahead/$(sha 2)"
+run sweep
+check "a branch with no common ancestor with main doesn't fail the run, week after week (#118)" "$?" 0
+check "it is kept, with the reason (#118)" \
+  "$(grep -c "^kept gh-pages $(sha 2): no common ancestor with main, so main doesn't contain it$" "$T/out")" 1
+check "and the run goes on with the others" "$(deleted)" "odd fine"
+echo null >"$T/gh/ahead/$(sha 3)"
+run sweep
+check "a comparison that holds no count of commits fails the run (#118)" "$?" 1
+check "and keeps the branch: no count is not a count of 0 (#118)" "$(deleted)" "fine"
+check "it says what GitHub answered in the count's place" \
+  "$(grep -c "^error odd $(sha 3): GitHub's comparison with main holds no count of commits (null), so it is kept$" "$T/out")" 1
+
+# The keep-list as a repository variable holds it.
+world
+{ branch long/lived/1 "$(sha 2)" && branch dev "$(sha 3)" && branch developer "$(sha 4)"; } | branches
+KEEP=$'long/*\r\ndev\r\n' run sweep
+check "a keep-list saved with CRLF line ends keeps the branches of every pattern, not of the last one (#118)" "$(deleted)" developer
+check "the run prints the patterns it read (#118)" \
+  "$(grep -c '^THEOS_KEEP_BRANCHES: 2 pattern(s): \[long/\*\] \[dev\]$' "$T/out")" 1
+KEEP='"long/* dev"' run sweep
+check "a keep-list typed in quotes shows them in the patterns the run read, where they match nothing (#118)" \
+  "$(grep -c '^THEOS_KEEP_BRANCHES: 2 pattern(s): \["long/\*\] \[dev"\]$' "$T/out") $(deleted)" "1 long/lived/1 dev developer"
+run sweep
+check "an empty keep-list is printed as no pattern" "$(grep -c '^THEOS_KEEP_BRANCHES: no pattern$' "$T/out")" 1
+
+# Only DRY_RUN=false, or none, deletes.
+world
+branch a "$(sha 2)" | branches
+for v in True TRUE 1 yes on 0 FALSE ' false'; do
+  DRY_RUN=$v run sweep
+  check "DRY_RUN=[$v] is a dry run: nothing but false deletes (#118)" "$(deleted) $(grep -c "^would delete a $(sha 2)$" "$T/out")" " 1"
+done
+DRY_RUN=True run sweep
+check "the run says which value made it a dry run (#118)" \
+  "$(grep -c '^dry run: nothing is deleted (DRY_RUN is True: only false, or none, deletes)$' "$T/out")" 1
+DRY_RUN=true run sweep
+check "and says no more than that for true" "$(grep -c '^dry run: nothing is deleted$' "$T/out")" 1
+DRY_RUN=false run sweep
+check "DRY_RUN=false deletes, as a manual run with the box unticked" "$(deleted)" a
+DRY_RUN='unset' run sweep
+check "no DRY_RUN deletes, as the step of a push, which names none" "$(deleted)" a
+run sweep
+check "an empty DRY_RUN deletes, as the schedule, which has no input" "$(deleted)" a
+
+# GitHub's names are the same in any case.
+world
+{ branch cased "$(sha 2)" && branch plain "$(sha 3)"; } | branches
+pull 5 cased "$(sha 2)" O/R | open
+run sweep
+check "the head of an open pull request is kept when GitHub spells the repository in another case (#118)" \
+  "$(grep -c "^kept cased $(sha 2): the head of the open pull request #5$" "$T/out") $(deleted)" "1 plain"
+echo '[]' >"$T/gh/open.json"
+pull 6 cased "$(sha 2)" O/R | jq -s . >"$T/gh/pulls.json"
+run merged "$(sha 99)"
+check "and a merged head is this repository's, and deleted, in another case too" "$(deleted)" cased
 
 # A branch is named by whoever pushed it.
 world
@@ -444,6 +602,8 @@ check "and by hand, with a dry_run input" "$(grep -A3 '^  workflow_dispatch:$' "
 check "a run by hand is a dry run unless someone says otherwise (#118)" \
   "$(sed -n '/^      dry_run:$/,/^[^ ]/p' "$WF" | grep -E '^        (type|default): ' | tr -s ' ' | tr '\n' ';')" \
   " type: boolean; default: true;"
+check "its example of the keep-list is as it is typed, without the quotes that would be part of a pattern (#118)" \
+  "$(grep -c '"release/' "$WF") $(grep -c '(release/\* dev; a \* also$' "$WF")" "0 1"
 check "it never runs on a pull request's event, so never a pull request's code" \
   "$(grep -c '^  pull_request' "$WF")" 0
 check "the workflow grants nothing by default" "$(grep -c '^permissions: {}$' "$WF")" 1

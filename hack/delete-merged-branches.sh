@@ -20,10 +20,14 @@
 #                         and read pull requests. gh reads it, and git gets it
 #                         from a credential helper that reads this variable:
 #                         it is in no argument, no URL, no file and no output
-#   DRY_RUN=true          say what would be deleted, delete nothing
-#   THEOS_KEEP_BRANCHES   glob patterns, split on spaces and newlines, of
-#                         branches that are never deleted (release/* dev);
-#                         a * also matches a slash. Default: none
+#   DRY_RUN=true          say what would be deleted, delete nothing. Any
+#                         value does that but false and the empty one: a
+#                         True or a 1 is no order to delete
+#   THEOS_KEEP_BRANCHES   glob patterns, split on spaces and newlines (CRLF
+#                         ones too), of branches that are never deleted
+#                         (release/* dev); a * also matches a slash, and a
+#                         quote is part of its pattern. Default: none. The
+#                         run prints the patterns it read
 #   THEOS_GIT_REMOTE      where git deletes. Default: the repository on
 #                         GITHUB_SERVER_URL, or on https://github.com
 #
@@ -32,7 +36,8 @@
 # when THEOS_KEEP_BRANCHES names it, when it is the head of an open pull
 # request of this repository or the base of any open pull request (deleting
 # the base closes the pull request stacked on it), and when it has a commit
-# the default branch doesn't have. The last one has one
+# the default branch doesn't have, as a branch with no common ancestor with
+# it has (gh-pages). The last one has one
 # exception: after a merge, the branch still at the commit its pull request
 # merged is deleted, since a squash or a rebase leaves main without that
 # commit and with its changes. A branch pushed further after its merge is
@@ -42,7 +47,11 @@
 # A branch is deleted only while it is still at the commit this run decided
 # on: the delete is git push --force-with-lease=refs/heads/BRANCH:SHA, which
 # GitHub applies or refuses in one step. A branch pushed to in between is kept,
-# with the commit it is at now.
+# with the commit it is at now. And only the branch is deleted: git takes the
+# refs/heads/BRANCH of a push for another ref whose name ends in it as well
+# (refs/tags/refs/heads/BRANCH), so the push carries a lease on each such
+# name that no ref meets. While one of them stands next to the branch, git
+# deletes neither, and the branch is kept.
 #
 # Every deleted branch is printed with its commit, the restore command quoted
 # for a shell, since a branch name may hold ; $( ) and backticks:
@@ -53,10 +62,17 @@
 set -uo pipefail
 
 REPO=${THEOS_GITHUB_REPO:?set THEOS_GITHUB_REPO to OWNER/NAME}
-DRY=${DRY_RUN:-false}
+# Only false deletes, and no value at all, which is what the workflow's
+# schedule and its push hand over: a True, a 1 or a typo is a dry run.
+case ${DRY_RUN:-} in
+  '' | false) DRY=false ;;
+  *) DRY=true ;;
+esac
 REMOTE=${THEOS_GIT_REMOTE:-${GITHUB_SERVER_URL:-https://github.com}/$REPO.git}
+# A variable saved with CRLF line ends splits on them like on any other.
 KEEP=()
-read -rd '' -a KEEP <<<"${THEOS_KEEP_BRANCHES:-}" || true
+keep=${THEOS_KEEP_BRANCHES:-}
+read -rd '' -a KEEP <<<"${keep//$'\r'/ }" || true
 SCRATCH=
 trap '[ -z "$SCRATCH" ] || rm -rf "$SCRATCH"' EXIT
 failed=0
@@ -96,8 +112,16 @@ why() {
 # GitHub rejecting the deletion means a rule this token can't read protects
 # the branch: it is kept. A branch gone in between (GitHub's own
 # "Automatically delete head branches" got there first) is no error.
+#
+# git matches the destination of a push as it resolves a revision: for
+# refs/heads/BRANCH it also takes refs/refs/heads/BRANCH, that name under
+# refs/tags/, refs/heads/ and refs/remotes/, and refs/remotes/.../HEAD, and
+# it matches a lease the same way. Once the branch is gone, the push would
+# delete the one of those that is at SHA. So each of those names gets a lease
+# of its own first, one that expects no ref: git uses the first lease that
+# matches, and refuses such a ref as stale.
 remove() {
-  local name=$1 sha=$2 out flag='' summary='' f r s now=''
+  local name=$1 sha=$2 ref=refs/heads/$1 out push flag='' pushed='' summary='' f r s now='' other='' leases=()
   if [ "$DRY" = true ]; then
     echo "would delete $name $sha"
     return 0
@@ -110,33 +134,60 @@ remove() {
       return 0
     fi
   fi
-  out=$(remote push --porcelain "--force-with-lease=refs/heads/$name:$sha" -- "$REMOTE" ":refs/heads/$name" 2>&1)
+  for f in refs/ refs/tags/ refs/heads/ refs/remotes/; do
+    leases+=("--force-with-lease=$f$ref:")
+  done
+  leases+=("--force-with-lease=refs/remotes/$ref/HEAD:" "--force-with-lease=$ref:$sha")
+  push=$(remote push --porcelain "${leases[@]}" -- "$REMOTE" ":$ref" 2>&1)
   # The porcelain line of the one ref pushed: FLAG, [(delete)]:REF, SUMMARY.
+  # REF is the ref git took the destination for: the branch, or not.
   while IFS=$'\t' read -r f r s; do
-    [ "${r#(delete)}" = ":refs/heads/$name" ] && flag=$f summary=$s
-  done <<<"$out"
+    case $r in
+      :refs/* | '(delete):refs/'*) flag=$f pushed=${r#*:} summary=$s ;;
+    esac
+  done <<<"$push"
   case "$flag $summary" in
     '- [deleted]')
-      printf 'deleted %s %s (restore: git push origin %q)\n' "$name" "$sha" "$sha:refs/heads/$name"
+      if [ "$pushed" = "$ref" ]; then
+        printf 'deleted %s %s (restore: git push origin %q)\n' "$name" "$sha" "$sha:$ref"
+      else
+        oops "$name $sha: git deleted $pushed in its place (restore: git push origin $(printf %q "$sha:$pushed"))"
+      fi
+      return 0
       ;;
-    '! [rejected] (stale info)')
-      # Not at SHA any more: pushed to, or gone.
-      if ! out=$(remote ls-remote "$REMOTE" "refs/heads/$name" 2>&1); then
-        oops "$name $sha: it is no longer at that commit, and couldn't be read again, so it is kept: $(why "$out")"
+    '! [rejected] (stale info)') ;; # not at SHA any more: pushed to, or gone
+    '! [remote rejected] '*)
+      kept "$name" "$sha" "GitHub refuses to delete it: ${summary#\[remote rejected\] }"
+      return 0
+      ;;
+    *)
+      # Nothing was pushed. git names no ref when it finds more than one.
+      if [[ $push != *"dst refspec $ref matches more than one"* ]]; then
+        oops "$name $sha: couldn't delete it: $(why "$push")"
         return 0
       fi
-      while read -r s r; do
-        [ "$r" = "refs/heads/$name" ] && now=$s
-      done <<<"$out"
-      if [ -z "$now" ]; then
-        echo "gone $name: already deleted"
-      else
-        kept "$name" "$now" "pushed to since this run read it at $sha"
-      fi
       ;;
-    '! [remote rejected] '*) kept "$name" "$sha" "GitHub refuses to delete it: ${summary#\[remote rejected\] }" ;;
-    *) oops "$name $sha: couldn't delete it: $(why "$out")" ;;
   esac
+  # Not deleted, and not for an error: what is there now says why.
+  if ! out=$(remote ls-remote "$REMOTE" "$ref" 2>&1); then
+    oops "$name $sha: it wasn't deleted, and couldn't be read again, so it is kept: $(why "$out")"
+    return 0
+  fi
+  while read -r s r; do
+    case $r in
+      "$ref") now=$s ;;
+      "refs/$ref" | "refs/tags/$ref" | "refs/heads/$ref") other=$r ;;
+    esac
+  done <<<"$out"
+  if [ -z "$now" ]; then
+    echo "gone $name: already deleted"
+  elif [ "$now" != "$sha" ]; then
+    kept "$name" "$now" "pushed to since this run read it at $sha"
+  elif [ -n "$other" ]; then
+    kept "$name" "$sha" "git can't tell it from $other, and deletes neither while both are there"
+  else
+    oops "$name $sha: couldn't delete it: $(why "$push")"
+  fi
 }
 
 # consider BRANCH SHA PROTECTED [MERGED]: keep the branch at SHA or delete it.
@@ -168,7 +219,18 @@ consider() {
   fi
   if [ "$sha" != "$merged" ]; then
     if ! ahead=$(api "repos/$REPO/compare/$(enc "$DEFAULT")...$sha" --jq .ahead_by 2>&1); then
-      oops "$name $sha: couldn't compare it with $DEFAULT, so it is kept: $(tail -n 1 <<<"$ahead")"
+      # GitHub's 404 for two histories that never met (gh-pages) is an
+      # answer, not a failure: the sweep would fail on that branch for good.
+      if [[ $ahead == *[Nn]'o common ancestor'*'(HTTP 404)'* ]]; then
+        kept "$name" "$sha" "no common ancestor with $DEFAULT, so $DEFAULT doesn't contain it"
+      else
+        oops "$name $sha: couldn't compare it with $DEFAULT, so it is kept: $(tail -n 1 <<<"$ahead")"
+      fi
+      return 0
+    fi
+    # No count is no count of 0: main isn't known to contain the branch.
+    if ! [[ $ahead =~ ^[0-9]+$ ]]; then
+      oops "$name $sha: GitHub's comparison with $DEFAULT holds no count of commits ($(tail -n 1 <<<"$ahead")), so it is kept"
       return 0
     fi
     if [ "$ahead" != 0 ]; then
@@ -270,7 +332,20 @@ while IFS=$'\t' read -r end n ref; do
   esac
 done <<<"$pulls"
 
-[ "$DRY" = true ] && echo "dry run: nothing is deleted"
+if [ "$DRY" = true ]; then
+  if [ "$DRY_RUN" = true ]; then
+    echo "dry run: nothing is deleted"
+  else
+    printf 'dry run: nothing is deleted (DRY_RUN is %q: only false, or none, deletes)\n' "$DRY_RUN"
+  fi
+fi
+# The patterns as they were read, each in brackets: quotes typed around the
+# list show here, as a part of the first pattern and of the last.
+if [ ${#KEEP[@]} -eq 0 ]; then
+  echo "THEOS_KEEP_BRANCHES: no pattern"
+else
+  echo "THEOS_KEEP_BRANCHES: ${#KEEP[@]} pattern(s):$(printf ' [%s]' "${KEEP[@]}")"
+fi
 if [ "$mode" = merged ]; then
   merged "$2"
 else
