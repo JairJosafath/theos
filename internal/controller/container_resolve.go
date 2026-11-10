@@ -271,3 +271,15 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 		ReadsOperations:     readsOperations,
 	}
 }
+
+// frameworkEntry is the Framework's entry among a Container's resolved
+// entries, which start with it. A Container that adopts its repository may
+// name no Framework (#60): its entries then start with another side, or are
+// none, and the entry is the zero one, a Framework that deploys nothing
+// itself and reads no operations.
+func frameworkEntry(entries []model.CatalogEntry) model.CatalogEntry {
+	if len(entries) == 0 || entries[0].Side != model.SideFramework {
+		return model.CatalogEntry{}
+	}
+	return entries[0]
+}

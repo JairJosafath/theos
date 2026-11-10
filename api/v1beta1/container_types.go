@@ -22,7 +22,7 @@ import (
 )
 
 // ContainerSpec defines the desired state of Container.
-// +kubebuilder:validation:XValidation:rule="has(self.bundleRef) || has(self.frameworkRef)",message="name a bundleRef or a frameworkRef"
+// +kubebuilder:validation:XValidation:rule="has(self.bundleRef) || has(self.frameworkRef) || (has(self.adopt) && self.adopt)",message="name a bundleRef or a frameworkRef; only a Container that adopts its repository needs neither"
 // +kubebuilder:validation:XValidation:rule="!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef) || has(self.computeRef) || has(self.deploymentRef))",message="bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef"
 // +kubebuilder:validation:XValidation:rule="has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef) || self.bundleRef == oldSelf.bundleRef)",message="bundleRef is immutable"
 // +kubebuilder:validation:XValidation:rule="(has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)",message="adopt is immutable"
@@ -60,7 +60,8 @@ type ContainerSpec struct {
 	BundleRef *LocalRef `json:"bundleRef,omitempty"`
 
 	// frameworkRef names the Framework catalog entry: language, framework and
-	// tooling. Set it, or bundleRef.
+	// tooling. Set it, or bundleRef. A Container that adopts its repository
+	// may name neither: nothing of a Framework is rendered into it.
 	// +optional
 	FrameworkRef LocalRef `json:"frameworkRef,omitzero"`
 
