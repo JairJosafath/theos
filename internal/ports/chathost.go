@@ -92,7 +92,9 @@ type ChatSync struct {
 // ChatHost is the chat port (docs/plans/done/chat-matrix.md, "Matrix through a
 // port"): the operator makes a Chat's Space and rooms with it, and
 // theos-chat posts, threads, edits, reacts and reads the rooms. One value
-// speaks as one bot on one homeserver.
+// speaks as one bot on one homeserver. What the two rely on of every
+// adapter is the suite contract.ChatHost (internal/ports/contract/chathost.go),
+// which each adapter's tests run.
 type ChatHost interface {
 	// WhoAmI is the bot's user ID; ErrChatCredentialRefused when the
 	// homeserver doesn't know the token.
@@ -113,8 +115,9 @@ type ChatHost interface {
 	Edit(ctx context.Context, room, event string, msg ChatMessage) (string, error)
 	// React puts the reaction key, such as ✅, on event.
 	React(ctx context.Context, room, event, key string) (string, error)
-	// Sync returns the messages posted in the bot's rooms since the token
-	// since ("" for the first sync), waiting up to wait for one.
+	// Sync returns the messages people posted in the bot's rooms since the
+	// token since ("" for the first sync), each once and none of the bot's
+	// own, waiting up to wait for one.
 	Sync(ctx context.Context, since string, wait time.Duration) (ChatSync, error)
 }
 
