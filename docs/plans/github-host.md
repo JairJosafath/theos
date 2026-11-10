@@ -105,6 +105,81 @@ Each step is its own issue, names #57 and lands with `make check`.
 | 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; the GitProvider's `AgentAccess` condition comes from `ports.AgentAccessState` and no Task starts without it; an agent's credential is minted again before it expires; the organization's `THEOS_CI_*` variables are set from the GitProvider; the GitProvider's hook names its Containers' and Briefs' repositories (`ports.EventHook.Repositories`), for an owner that is a user's account; a Framework's Go module path is the repository's own where the host serves modules from repositories, `DecideModule` takes such a module as published, a run and a job get a credential that reads the project's other repositories, and the GitProvider's own registries reach a job (`ports.OwnerActions`); `TestHostNeutral`'s allowlist has no controller in it |
 | 9. The guide, and a run on the real thing | #82 | #81 | "Use the factory on your GitHub organization" in the guide, the App's permissions listed with why; a human runs `make test-github` and the first-app Crew on a test organization, with the output as evidence |
 
+## Step 8's plan (#81)
+
+Written before the step is built; "What step 8 found" replaces it. The
+adapter already is a whole `ports.Provider`; what is missing is around it.
+Five pull requests, and the one that lets a GitProvider say `github` is
+the last, so nothing reachable is half-built (decision 7).
+
+**Part 1, what the controllers need of a host that is not shaped like the
+first.** Host-neutral, and tested on the in-memory fake.
+
+- **The provider's Secret reaches the adapter.** Every place that builds a
+  `ports.Config` builds it through one function, which carries the
+  Secret's keys beside the user name and the token (`ports.Config.Secret`).
+- **The GitProvider says what its host can't do,** one condition a
+  capability: `Events` is there; `AgentAccess` comes from
+  `ports.AgentAccessState`, and the host's own runners and its Python
+  index get one each. No Task starts on a GitProvider whose `AgentAccess`
+  is False: it waits with the provider's reason.
+- **A run starts with a credential that outlives it.** The agent's Secret
+  keeps when its token ends (`ports.Credentials.Expires`). Before a run
+  the operator mints again when the kept token would end before the run's
+  time limit does. An Agent whose `timeoutMinutes` no credential of the
+  host outlives starts no run, and says so: nothing has to reach a pod
+  that is running.
+- **The hook names the repositories.** The GitProvider's reconciler fills
+  `ports.EventHook.Repositories` from its Containers and Briefs.
+
+**Part 2, the Go module path follows the host.** `scaffold.Input` gets the
+module path, as it has the npm scope: `theos.local/<project>/<container>`
+on a host with a module proxy, the repository's own path on one that
+serves modules from repositories (`Repository.GoPrivate`). The three
+Frameworks that write a `go.mod` use it. `model.DecideModule` takes a
+module its host serves as published.
+
+**Part 3, CI on a host whose runners are its own.** `spec.ci` gets a
+second member, `githubActions`: the runner a job runs on and the toolchain
+images, which the chart fills from the release's own. The adapter becomes
+a `ports.OwnerActions` (an organization's Actions variables and secrets),
+and the Project's reconciler sets the organization's `THEOS_CI_*`
+variables and the packages' variables and secrets from the GitProvider.
+
+**Part 4, the controllers name no host.** Every file of
+`internal/controller` that is not a test, and `cmd/main.go`, leaves
+`TestHostNeutral`'s allowlist: what they call Gitea is the source host of
+a release, and is named that.
+
+**Part 5, the switch.** `spec.provider` takes `github`; `spec.url` may be
+left out for it and means github.com; a CEL rule keeps each `spec.ci`
+member to its host. `cmd/main.go` picks the adapter by the kind. envtest
+runs the reconcilers against the real adapter on the fake GitHub: a
+Container scaffolded with its workflow under `.github/workflows/`, a
+Crew's issue taken to a merged pull request, a repository adopted, and a
+provider with a token alone that scaffolds and starts no Task. The chart
+installs with no Gitea and a `gitProviders` entry of `provider: github`.
+docs/design.md names two hosts.
+
+**What the issue asks that this step does differently, and why.**
+
+- The issue has the Secret hold "a `token`, or a GitHub App's `appID` and
+  `privateKey` (CEL: one or the other)". Step 4 found one identity can't
+  be both the operator and the agents, so the Secret holds a `token`, and
+  an App's `appId` and `privateKey` beside it for the agents. A CRD's
+  rules can't read a Secret either. What a Secret lacks is a condition:
+  `AgentAccess=False`, `NeedsGitHubApp`.
+- "The Standard's files arriving as the operator's pull request" on
+  adoption is #97, which is open: until it is built, a repository whose
+  Standard files differ fails its adoption on GitHub as on every host.
+
+**Left open after step 8.** An agent's token and a job's token each read
+one repository. A Go module or a package of another private repository of
+the owner needs a second, read-only credential and Git told which
+repository takes which, which a `.netrc` can't say. Until someone builds
+that, a Container on GitHub depends on the owner's public modules and on
+the packages its own repository may read.
+
 ## What step 1 found
 
 - The fake serves Git with Git's own `git-http-backend` through
