@@ -162,12 +162,27 @@ func (s *Server) Leave(roomID, user string) {
 func (s *Server) Post(roomID, sender, body, threadRoot string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	content := map[string]any{"msgtype": "m.text", "body": body}
+	content := text(body)
 	if threadRoot != "" {
 		content["m.relates_to"] = map[string]any{"rel_type": "m.thread", keyEventID: threadRoot}
 	}
 	return s.addEvent(roomID, "m.room.message", sender, content).id
 }
+
+// Edit replaces the text of sender's message eventID in room with body, as
+// a person's client does: a new m.text event that names the one it replaces.
+// It returns the edit's event ID.
+func (s *Server) Edit(roomID, sender, eventID, body string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	content := text("* " + body)
+	content["m.new_content"] = text(body)
+	content["m.relates_to"] = map[string]any{"rel_type": "m.replace", keyEventID: eventID}
+	return s.addEvent(roomID, "m.room.message", sender, content).id
+}
+
+// text is the content of a person's m.text message.
+func text(body string) map[string]any { return map[string]any{"msgtype": "m.text", "body": body} }
 
 // Room is a snapshot of a room.
 type Room struct {
