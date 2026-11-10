@@ -115,7 +115,8 @@ sets `LINT_CHANGED_ONLY=1`, which makes `make check` lint only when
 `.custom-gcl.yml` changed since the same base. `land`'s `make check` selects
 the same way, and so does the *Tests* workflow on a pull request (against
 its base branch); its `paths` filter skips a pull request that changes only
-`*.md`, `docs/`, `ui/`, `config/ui/`, `config/samples/`, `test/e2e/`, the
+`*.md`, `docs/`, `ui/` (but `ui/src/model/testdata/`, the fixtures the UI's
+tests share with Go's, #66), `config/ui/`, `config/samples/`, `test/e2e/`, the
 linter configs, `hack/` (but the four files it names), `dev`, `.vscode/` or
 `.github/` (but its own workflow) files. *Tests* runs on pushes to main
 too, with the same `paths`, and on a pushed `vX.Y.Z` tag: there and on a
