@@ -191,9 +191,15 @@ every file of every release has its `.sigstore.json`. The Scorecard went from
 workflow cannot honestly give), and Token-Permissions stayed 10.
 
 Dependabot opened eight pull requests on GitHub within minutes of the first
-merge (#8 to #15): the engine's and the extension's minor and patch groups,
-TypeScript 7, `@types/node` 26, and four for the workflows' actions. They are
-applied through the source, as CONTRIBUTING.md says.
+merge (#8 to #15). They were applied through the source, as CONTRIBUTING.md
+says: cel-lens-core #38 (Gitea PR #39) for the engine's group, and
+cel-lens-vscode #27 (Gitea PR #28) for the extension's group, the CodeQL
+action and the three actions' majors; both reviewed and approved, then
+JairJosafath/cel-lens#17, merged with all nine checks green. `@types/vscode`
+and `@types/node` majors are now ignored by Dependabot, each for its reason,
+and TypeScript 7 waits for typescript-eslint (cel-lens-vscode #29).
+Dependabot closed #13 and #14 at once; it closes the others when it next
+looks, and #15 stays open as the reminder.
 
 ## What the owner does
 
