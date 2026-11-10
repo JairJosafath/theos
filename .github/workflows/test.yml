@@ -4,6 +4,10 @@ name: Tests
 # (make test-gitea). They read the Go code, the generated CRDs, the admission
 # policy, the templates (the fake Git host serves them) and the seed, so only
 # documentation, the UI and the Kind-only parts of the test environment are left out.
+# Of the UI, the fixtures its tests share with Go's stay in: internal/model's
+# TestFactoryReportFixture reads ui/src/model/testdata/report, and a pull
+# request that changed a UI rule and that report must run it (#66). A later
+# pattern wins, so the path comes after '!ui/**'.
 # A pull request to main tests only the packages its change affects
 # (hack/test-packages.sh against the base branch); its run is the check
 # hack/lib/github.sh land waits for (.github/required-checks). A push to main
@@ -22,6 +26,7 @@ on:
       - '!**/*.md'
       - '!docs/**'
       - '!ui/**'
+      - ui/src/model/testdata/**
       - '!config/ui/**'
       - '!config/samples/**'
       - '!test/e2e/**'
@@ -43,6 +48,7 @@ on:
       - '!**/*.md'
       - '!docs/**'
       - '!ui/**'
+      - ui/src/model/testdata/**
       - '!config/ui/**'
       - '!config/samples/**'
       - '!test/e2e/**'

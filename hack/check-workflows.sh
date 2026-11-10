@@ -28,7 +28,9 @@
 # red main (#1556). Tests also runs on a pushed release tag, the
 # 'v[0-9]+.[0-9]+.[0-9]+' tags Release (release.yml) runs on, and on a manual
 # run; the tag's run tests every package before the release ships (#1522),
-# so test.yml must keep that trigger (#1525).
+# so test.yml must keep that trigger (#1525). Tests leaves ui/ out of its
+# paths and takes ui/src/model/testdata/ back in after it: the Go tests read
+# the fixtures there, which the UI's tests share with them (#66).
 # Every job of a workflow that runs on pull requests is listed, by its
 # workflow file and its name:, in .github/required-checks (the checks
 # hack/lib/github.sh land waits for), the names are distinct, and every line
@@ -206,6 +208,21 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       fi
       if [ "$cancel" != "$ON_PR_OR_MAIN" ]; then
         echo "$f: cancel-in-progress: $cancel, not $ON_PR_OR_MAIN, so a superseded head of main keeps its runner (#1556)" >&2
+        fail=1
+      fi
+      # #66: internal/model's TestFactoryReportFixture reads the fixture the
+      # UI's tests share with it, ui/src/model/testdata/report. With ui/**
+      # left out and that path not taken back in, a pull request that changed
+      # a UI rule and the fixture's report never ran the Go test that reads
+      # it. A later pattern wins, so the path comes after the exclusion. The
+      # pushes have the same paths (above).
+      if ! awk '
+        { gsub(/['"'"'"]/, "") }
+        $0 == "path !ui/**" { out = NR }
+        $0 == "path ui/src/model/testdata/**" { back = NR }
+        END { exit !(out == 0 || back > out) }
+      ' <<<"$pr"; then
+        echo "$f: leaves out ui/** without taking ui/src/model/testdata/** back in after it, so a pull request that changes the fixtures the UI's tests share with Go's never runs the Go tests that read them (#66)" >&2
         fail=1
       fi
       ;;
