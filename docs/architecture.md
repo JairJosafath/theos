@@ -4,9 +4,12 @@ How the code is split, and which way dependencies may point. Read this before ad
 code. [design.md](design.md) says *what* theos does; this file says *where* the
 code for it goes.
 
-[![theos's architecture: what runs where in the Kind cluster, the code layers, and where state lives](images/architecture.png)](images/architecture.svg)
+[![theos's architecture: what runs where in the test rig's Kind cluster, the code layers, and where state lives](images/architecture.png)](images/architecture.svg)
 
 The board's source is [images/architecture.excalidraw](images/architecture.excalidraw).
+It draws the test rig, a Kind cluster of one node. An install is a cluster
+of any number of nodes, where the same parts run as pods the scheduler
+places ([design.md](design.md#why-kubernetes)).
 
 ## Layers
 
@@ -391,8 +394,9 @@ release.
 
 A Go Task runs `make check` three or four times a round: the agent while it
 works, `internal/agentrunner` after it, CI on the `go` runner and the reviewer.
-Two caches on the Kind node's disk keep compiled packages between pods, so
-each run compiles only what changed:
+Two caches on a node's disk keep compiled packages between pods, so
+each run compiles only what changed. They were built for the test rig's one
+node: on a cluster of several, each node holds its own (#120).
 
 | Cache | Node directory | Mounted by | Set up by |
 | --- | --- | --- | --- |
@@ -411,8 +415,9 @@ each run compiles only what changed:
   day, then all of them, and seeds again. It deletes entry files only, under a
   lock, so a build running at the same time sees a miss, not an error. An agent
   image without Go has no `c4-go-cache`, and its init container exits at once.
-- hostPath, not a PVC: one node, one directory per cache, and no project
-  namespace enforces Pod Security. Remove the flag, or the runner's volume, to
+- hostPath, not a PVC: it assumes one node, one directory per cache, and
+  that no project namespace enforces Pod Security. That holds on the rig and
+  not on every cluster (#120). Remove the flag, or the runner's volume, to
   go back to cold builds.
 
 ## Flow of one Crew

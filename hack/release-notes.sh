@@ -11,7 +11,7 @@
 # the newest vX.Y.Z tag before TO (the whole history when there is none). The
 # Release workflow passes hack/previous-release.sh's answer, the newest
 # published release before TO, so a tag whose release failed doesn't cut the
-# notes short: they list everything since the last release devices got.
+# notes short: they list everything since the last release installs got.
 #
 # A pull request is a first-parent merge commit "Merge pull request #N from
 # owner/branch": its title is the commit's body, its files what it changed, its
@@ -113,7 +113,7 @@ for section in Added Changed Deprecated Removed Fixed Security; do
   listed=1
 done
 if [ $listed = 0 ]; then
-  echo "Nothing a device runs changed${from:+ since $from}."
+  echo "Nothing an install runs changed${from:+ since $from}."
 fi
 
 cat <<EOF
