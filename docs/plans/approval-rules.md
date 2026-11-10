@@ -99,8 +99,16 @@ the loop"), and its advice is ours: start with low-risk work and widen.
   `approved` label, `person`, `reviewer` or `none`, read from
   `status.approval` and `status.spec`; the dashboard has a panel for it,
   [docs/monitoring.md](../monitoring.md) the query, and the UI's *How well
-  it works* a column, "A person approved". The rest of #92 is open: the
-  chat thread, the reviewer's `Risk: high`, the triager's `risk/*` labels.
+  it works* a column, "A person approved".
+- The chat thread (2026-11-10): a waiting change is a thread in the Chat's
+  `reviews` room (`ChatEventChangeWaiting`), opened when the change waits
+  and followed until its Task ends. `approve` and `changes: <text>` there
+  write the annotations a spec's thread writes, as the person. `reviews`
+  also has the deploys' threads, whose `approve` names a version: a bare
+  `approve` is parsed as a change's, and the thread's item decides, so in a
+  deploy's thread it answers with what a deploy's approval takes.
+- Open, as #92: the reviewer's `Risk: high` and the triager's `risk/*`
+  labels, both in the runner.
 
 ## Done when
 

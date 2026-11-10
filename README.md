@@ -137,7 +137,7 @@ edits as it moves:
 | `general` | answers | `status`, `brief <idea>`, `prompt <brief>: <text>`, `pause <brief>`, `resume <brief>`, `help` |
 | `triage` | each triage decision; a parked issue's question as a thread | answer in the thread |
 | `specs` | a thread per spec waiting for approval | `approve`, or `changes: <text>` |
-| `reviews` | a thread per deploy waiting for you, and each review's verdict | `approve <version>` |
+| `reviews` | a thread per deploy waiting for you and per change a Crew's approval rules hold for you, and each review's verdict | `approve <version>` for a deploy; `approve`, or `changes: <text>`, for a change |
 | `alerts` | failed deploys and Tasks, a red base, an unhealthy factory part | `retry` on a failed Container |
 
 Chat enforces nothing: each command is one request the UI could make, sent as

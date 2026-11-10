@@ -183,10 +183,10 @@ func ChatCommandRequest(cmd ChatCommand, c ChatContext) (ChatRequest, bool, erro
 		err = chatItemIs(c, ChatEventTriageQuestion, cmd.Kind)
 		req = ChatAnswer(c.Item.Name, cmd.Text, c.By)
 	case ChatCommandApproveSpec:
-		err = chatItemIs(c, ChatEventSpecWaiting, cmd.Kind)
+		err = chatItemWaits(c, cmd.Kind)
 		req = ChatApproveSpec(c.Item.Name, c.Item.Commit, c.By)
 	case ChatCommandChanges:
-		err = chatItemIs(c, ChatEventSpecWaiting, cmd.Kind)
+		err = chatItemWaits(c, cmd.Kind)
 		req = ChatSpecChanges(c.Item.Name, c.Item.Commit, cmd.Text, c.By)
 	case ChatCommandApproveDeploy:
 		if err = chatItemIs(c, ChatEventDeployWaiting, cmd.Kind); err == nil {
@@ -207,6 +207,26 @@ func ChatCommandRequest(cmd ChatCommand, c ChatContext) (ChatRequest, bool, erro
 	return req, true, nil
 }
 
+// chatItemWaits refuses an approval or a request for changes outside the
+// thread of a pull request that waits for a person: a spec's, or a change's
+// its Crew's approval rules hold (#92). In a deploy's thread, which shares
+// the reviews room with a change's, it says what a deploy's approval takes.
+func chatItemWaits(c ChatContext, cmd ChatCommandKind) error {
+	switch c.Item.Event {
+	case ChatEventChangeWaiting:
+		return chatItemIs(c, ChatEventChangeWaiting, cmd)
+	case ChatEventDeployWaiting:
+		return fmt.Errorf("%w: approve <version>, the release the thread names, such as v1.2.0",
+			ErrChatInvalidCommand)
+	}
+	return chatItemIs(c, ChatEventSpecWaiting, cmd)
+}
+
+// chatWaits reports whether event is a pull request waiting for a person.
+func chatWaits(event ChatEventKind) bool {
+	return event == ChatEventSpecWaiting || event == ChatEventChangeWaiting
+}
+
 // chatItemIs refuses a thread command on a thread about something else, and
 // one of the chat annotations from nobody.
 func chatItemIs(c ChatContext, want ChatEventKind, cmd ChatCommandKind) error {
@@ -214,10 +234,10 @@ func chatItemIs(c ChatContext, want ChatEventKind, cmd ChatCommandKind) error {
 	if item.Event != want || item.Name == "" {
 		return fmt.Errorf("%w: %s answers a thread the factory started about it", ErrChatInvalidCommand, cmd)
 	}
-	if want == ChatEventSpecWaiting && item.Commit == "" {
+	if chatWaits(want) && item.Commit == "" {
 		return fmt.Errorf("%w: nothing in this thread waits for approval now", ErrChatInvalidCommand)
 	}
-	if (want == ChatEventSpecWaiting || want == ChatEventTriageQuestion) && c.By == "" {
+	if (chatWaits(want) || want == ChatEventTriageQuestion) && c.By == "" {
 		return fmt.Errorf("%w: %s needs the person's Kubernetes user", ErrChatInvalidCommand, cmd)
 	}
 	return nil

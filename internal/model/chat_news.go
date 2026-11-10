@@ -194,10 +194,13 @@ type ChatTaskView struct {
 	// Commit is the round's head.
 	Commit string
 	// SpecApproval is a Spec Task's Person or Reviewer; ApprovedBy and
-	// ApprovedInChat who approved its spec.
+	// ApprovedInChat who approved its spec, or its change.
 	SpecApproval   string
 	ApprovedBy     string
 	ApprovedInChat bool
+	// ApprovalReason is why the Crew's approval rules hold the Task's change
+	// for a person (status.approval's reason); empty when they don't.
+	ApprovalReason string
 	// Triage is a Triage Task's decision, nil before it has one.
 	Triage *ChatTriageView
 	// ReviewVerdict and ReviewSummary are the round's review.
@@ -266,6 +269,11 @@ func ChatTaskNews(t ChatTaskView) []ChatNews {
 	if t.Kind == chatKindSpec && t.SpecApproval != "Reviewer" {
 		news = append(news, chatSpecNews(t, final))
 	}
+	if (t.Kind == chatKindImplement || t.Kind == "") && t.PullRequest != 0 {
+		// A thread only once the change waits for a person (Open); the news
+		// is there for every change so a thread follows its Task to the end.
+		news = append(news, chatChangeNews(t, final))
+	}
 	if t.Kind == chatKindTriage && t.Triage != nil && t.Phase == chatPhaseMerged {
 		news = append(news, chatTriageNews(t))
 	}
@@ -295,6 +303,44 @@ func ChatTaskNews(t ChatTaskView) []ChatNews {
 	return news
 }
 
+// chatChangeNews is the thread in reviews of a change its Crew's approval
+// rules hold for a person (#92): it opens when the change waits, takes
+// approve and changes as a spec's does, and follows the Task until it ends.
+func chatChangeNews(t ChatTaskView, final bool) ChatNews {
+	n := ChatNews{Key: ChatItemKey(ChatEventChangeWaiting, t.Name), Event: ChatEventChangeWaiting,
+		Open: t.Phase == chatPhaseWaiting, Done: final, Item: ChatItem{Event: ChatEventChangeWaiting, Name: t.Name}}
+	status := fmt.Sprintf("Round %d: %s.", max(t.Round, 1), t.Phase)
+	switch t.Phase {
+	case chatPhaseWaiting:
+		n.Item.Commit = t.Commit
+		why := ""
+		if t.ApprovalReason != "" {
+			why = " (" + t.ApprovalReason + ")"
+		}
+		status = fmt.Sprintf("Passed CI and the factory's review, and waits for your approval of commit %s%s: say "+
+			"approve in this thread, or changes: <what to change>.", shortCommit(t.Commit), why)
+	case chatPhaseMerged:
+		status = chatMergedStatus(t)
+	case chatPhaseFailed:
+		status = "Failed: " + orUnknown(t.Message)
+	}
+	n.Post = ChatPost{Title: "Change for " + t.issue(), Status: status, Links: t.chatLinks()}
+	return n
+}
+
+// chatMergedStatus says a waiting pull request merged, and who approved it
+// when a person did.
+func chatMergedStatus(t ChatTaskView) string {
+	if t.ApprovedBy == "" {
+		return "Merged."
+	}
+	where := ""
+	if t.ApprovedInChat {
+		where = " in chat"
+	}
+	return fmt.Sprintf("Merged: %s approved it%s.", t.ApprovedBy, where)
+}
+
 // chatSpecNews is a Spec Task's thread in specs.
 func chatSpecNews(t ChatTaskView, final bool) ChatNews {
 	n := ChatNews{Key: ChatItemKey(ChatEventSpecWaiting, t.Name), Event: ChatEventSpecWaiting,
@@ -306,14 +352,7 @@ func chatSpecNews(t ChatTaskView, final bool) ChatNews {
 		status = fmt.Sprintf("Waits for your approval of commit %s: say approve in this thread, or changes: "+
 			"<what to change>.", shortCommit(t.Commit))
 	case chatPhaseMerged:
-		status = "Merged."
-		if t.ApprovedBy != "" {
-			where := ""
-			if t.ApprovedInChat {
-				where = " in chat"
-			}
-			status = fmt.Sprintf("Merged: %s approved it%s.", t.ApprovedBy, where)
-		}
+		status = chatMergedStatus(t)
 	case chatPhaseFailed:
 		status = "Failed: " + orUnknown(t.Message)
 	}

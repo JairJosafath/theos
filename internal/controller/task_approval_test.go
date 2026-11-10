@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -323,6 +324,112 @@ var _ = Describe("Crew approval rules", func() {
 				ContainSubstring("The Crew's approval rules no longer ask for a person; merging")))
 		}).Should(Succeed())
 		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
+	})
+
+	// theos-chat on chatFake, as its own ServiceAccount, beside the operator
+	// (#92): a waiting change is a thread in reviews, as a waiting spec is
+	// one in specs.
+	It("puts a waiting change up in chat, once, and merges it when a person approves it there, as them", func() {
+		name := start(personForMigrations, nil)
+		head := push(name, 1, "migrations/001.sql")
+		approve(name, 1, agentrunner.Result{Summary: "The migration is safe."})
+		awaiting(name, whyMigrations)
+
+		By("making the project's Chat, with one person who may write Tasks")
+		bot := chatBot(ns)
+		adaID, _ := chatFake.NewUser("ada-" + ns)
+		malloryID, _ := chatFake.NewUser("mallory-" + ns)
+		ada := "ada-" + ns + "@example.com"
+		grant(ada, roleChatPeople, roleTaskWord)
+		chat := newChat(ns, "chat", "matrix-bot", c4v1beta1.ChatPerson{MatrixID: adaID, User: ada})
+		Expect(asUser(ada).Create(ctx, chat)).To(Succeed())
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		reviews := chatRoom(chat, model.ChatReviews)
+
+		By("posting one thread in reviews for the change, with the rule that holds it")
+		theosChat := newTheosChat()
+		chatPass(theosChat, chat)
+		var root string
+		for id, body := range botPosts(reviews, bot) {
+			if strings.Contains(body, "Change for issue #1") {
+				root = id
+				Expect(body).To(And(ContainSubstring("waits for your approval of commit "+head[:7]),
+					ContainSubstring(whyMigrations), ContainSubstring("say approve in this thread")))
+			}
+		}
+		Expect(root).NotTo(BeEmpty(), "no thread for the waiting change among %v", botPosts(reviews, bot))
+		posted := len(botPosts(reviews, bot))
+		chatPass(theosChat, chat)
+		chatPass(newTheosChat(), chat)
+		Expect(botPosts(reviews, bot)).To(HaveLen(posted), "nothing more on the next pass, nor after a restart")
+
+		By("refusing a stranger's approve, which changes nothing")
+		chatFake.Post(reviews, malloryID, "approve", root)
+		chatPass(theosChat, chat)
+		Expect(related(reviews, bot, "m.thread", root)).To(ConsistOf(ContainSubstring(
+			malloryID + " is not one of Chat chat's people, so nothing was done")))
+		task := &c4v1beta1.Task{}
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(task.Annotations).NotTo(HaveKey(model.ChatAnnotationApproveSpec))
+
+		By("writing a listed person's approve as that person, and the operator merging the change")
+		chatFake.Post(reviews, adaID, "approve", root)
+		chatPass(theosChat, chat)
+		Expect(related(reviews, bot, "m.thread", root)).To(ContainElement(
+			"Done as " + ada + ": approved the change at " + head[:7] + "; the operator merges it."))
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(task.Annotations).To(And(HaveKeyWithValue(model.ChatAnnotationApproveSpec, head),
+			HaveKeyWithValue(model.ChatAnnotationBy(model.ChatAnnotationApproveSpec), ada)))
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, name)
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			g.Expect(task.Status.Approval).To(And(HaveField("ApprovedBy", ada), HaveField("ApprovedInChat", true)))
+		}).Should(Succeed())
+		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
+		Expect(gitFake.Issue(ns, "orders-api", 1).Comments).To(ContainElement(ContainSubstring(
+			ada + " approved it in chat, as the Crew's approval rules ask")))
+
+		By("editing the thread's root as the change merged, and marking it done")
+		chatPass(theosChat, chat)
+		Expect(related(reviews, bot, "m.replace", root)).To(ContainElement(ContainSubstring(
+			"Merged: " + ada + " approved it in chat.")))
+		Expect(related(reviews, bot, "m.annotation", root)).To(ConsistOf(model.ChatDoneReaction))
+	})
+
+	It("starts the next round with the changes a person asked for in the change's thread", func() {
+		name := start(personForMigrations, nil)
+		head := push(name, 1, "migrations/001.sql")
+		approve(name, 1, agentrunner.Result{Summary: "Fine."})
+		awaiting(name, whyMigrations)
+		bot := chatBot(ns)
+		adaID, _ := chatFake.NewUser("ada-" + ns)
+		ada := "ada-" + ns + "@example.com"
+		grant(ada, roleChatPeople, roleTaskWord)
+		chat := newChat(ns, "chat", "matrix-bot", c4v1beta1.ChatPerson{MatrixID: adaID, User: ada})
+		Expect(asUser(ada).Create(ctx, chat)).To(Succeed())
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		reviews := chatRoom(chat, model.ChatReviews)
+		theosChat := newTheosChat()
+		chatPass(theosChat, chat)
+		var root string
+		for id, body := range botPosts(reviews, bot) {
+			if strings.Contains(body, "Change for issue #1") {
+				root = id
+			}
+		}
+		Expect(root).NotTo(BeEmpty())
+
+		chatFake.Post(reviews, adaID, "changes: Keep the old column for one release.", root)
+		chatPass(theosChat, chat)
+		Expect(related(reviews, bot, "m.thread", root)).To(ContainElement(
+			"Done as " + ada + ": asked for changes at " + head[:7] + "; the next round takes them."))
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, name)
+			g.Expect(task.Status.Round).To(Equal(int32(2)))
+			g.Expect(task.Status.Feedback).To(ContainSubstring(
+				ada + " asked for changes in chat:\nKeep the old column for one release."))
+		}).Should(Succeed())
+		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeFalse())
 	})
 
 	It("waits for a person after the verifier, with both agents' approvals on the pull request", func() {

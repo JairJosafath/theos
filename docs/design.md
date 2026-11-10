@@ -904,8 +904,9 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   the Task waits in `AwaitingApproval` with `NeedsYou`, taking no place from
   `parallel`, as a spec does at its review point and by the same rules: a
   person, not the operator's user or an agent bot, approves the reviewed
-  commit on the Git host or with the Task's `theos.factory.io/approve-spec`
-  annotation; a request for changes starts the next round with their words;
+  commit on the Git host or from chat, in the change's thread in `reviews`
+  (the Task's `theos.factory.io/approve-spec` annotation); a request for
+  changes, there or from chat, starts the next round with their words;
   a push is checked and reviewed again; closing the pull request ends the
   Task. A main that moved while it waited is merged in and the change merges
   on green checks with no second approval. Rules that no longer ask for a
@@ -1384,12 +1385,17 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
   each with its companion `<annotation>-by` naming the writer's Kubernetes
   user. `theos-chat` sends it as the person, by impersonation, and posts the
   API server's refusal, or what was done, back in the thread. The operator
-  acts on the three as *Spec* and *Triage* say.
+  acts on the three as *Spec* and *Triage* say. A change its Crew's approval
+  rules hold for a person takes the first two as a spec does (*Approval
+  rules*): its thread is in `reviews`, where `approve` and `changes: <text>`
+  are said, beside a deploy's `approve <version>`; the thread's item says
+  which of the two an `approve` is for (#92).
 - **`theos-chat` posts and listens.** A separate binary
   (`cmd/theos-chat`, `internal/chatbot`) with its own ServiceAccount
   (`config/chat`), for each Ready Chat: a thread per item that needs a
-  decision (a spec waiting for a person, a parked issue's question, a deploy
-  waiting for approval, a failed scaffold), its root edited as the item moves
+  decision (a spec waiting for a person, a change its Crew's approval rules
+  hold for one, a parked issue's question, a deploy waiting for approval, a
+  failed scaffold), its root edited as the item moves
   and marked ✅ once done; plain posts for the rest; merges, releases,
   deploys and Brief rounds batched into one `updates` message per
   `digestMinutes`. Its first pass tells no history: only live threads. What

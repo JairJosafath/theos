@@ -215,8 +215,15 @@ func ChatDone(cmd ChatCommand, item ChatItem, user, made string) string {
 		what = "sent your answer; it goes to the issue, which is then triaged again"
 	case ChatCommandApproveSpec:
 		what = fmt.Sprintf("approved the spec at %s; the operator merges it", shortCommit(item.Commit))
+		if item.Event == ChatEventChangeWaiting {
+			what = fmt.Sprintf("approved the change at %s; the operator merges it", shortCommit(item.Commit))
+		}
 	case ChatCommandChanges:
-		what = fmt.Sprintf("asked for changes to the spec at %s; the next round takes them", shortCommit(item.Commit))
+		to := " to the spec"
+		if item.Event == ChatEventChangeWaiting {
+			to = ""
+		}
+		what = fmt.Sprintf("asked for changes%s at %s; the next round takes them", to, shortCommit(item.Commit))
 	case ChatCommandApproveDeploy:
 		what = fmt.Sprintf("let %s into %s", cmd.Version, item.Target)
 	case ChatCommandRetry:

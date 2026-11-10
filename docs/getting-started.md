@@ -986,7 +986,8 @@ approval rule 2 (every change) asks for a person
 
 On the Git host, **approve** the pull request and the Crew merges it;
 **request changes** and the implementer gets another round with your words;
-close it and the Task ends. While it waits it holds nothing up: the Crew
+close it and the Task ends. With a Chat, the change has a thread in its
+`reviews` room: say `approve` there, or `changes: <what to change>`. While it waits it holds nothing up: the Crew
 goes on with the next issue.
 
 Widen as you gain trust. A common second step is the other way round, with

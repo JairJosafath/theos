@@ -1766,9 +1766,9 @@ func specRefusedStep(f TaskFacts) TaskStep {
 // no longer asks for a person (specApproval Reviewer, or rules that changed).
 func awaitingApprovalStep(f TaskFacts) TaskStep {
 	pull := f.WaitingPull
-	what, the := "change", "The change"
+	the, approved := "The change", "%s approved the change%s; merging"
 	if f.Spec {
-		what, the = "spec", "The spec"
+		the, approved = "The spec", "%s approved the spec%s; merging"
 	}
 	switch {
 	case pull.Merged && f.Spec:
@@ -1797,9 +1797,9 @@ func awaitingApprovalStep(f TaskFacts) TaskStep {
 		return roundFailed(f, fmt.Sprintf("%s asked for changes%s %s:\n%s",
 			pull.People.ChangesBy, to, where, orUnknown(pull.People.Changes)))
 	case pull.People.ApprovedBy != "" && pull.People.ApprovedInChat:
-		return approvedStep(f, fmt.Sprintf("%s approved the %s in chat; merging", pull.People.ApprovedBy, what))
+		return approvedStep(f, fmt.Sprintf(approved, pull.People.ApprovedBy, " in chat"))
 	case pull.People.ApprovedBy != "":
-		return approvedStep(f, fmt.Sprintf("%s approved the %s; merging", pull.People.ApprovedBy, what))
+		return approvedStep(f, fmt.Sprintf(approved, pull.People.ApprovedBy, ""))
 	}
 	message := the + " waits for a person to approve its pull request"
 	if !f.Spec && f.Approval.Why != "" {

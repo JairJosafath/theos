@@ -165,6 +165,9 @@ const (
 	// reviews
 	ChatEventDeployWaiting ChatEventKind = "DeployWaiting"
 	ChatEventReviewVerdict ChatEventKind = "ReviewVerdict"
+	// ChatEventChangeWaiting is a change its Crew's approval rules hold for
+	// a person (#92): a thread that takes approve and changes, as a spec's.
+	ChatEventChangeWaiting ChatEventKind = "ChangeWaiting"
 	// alerts
 	ChatEventDeployFailed    ChatEventKind = "DeployFailed"
 	ChatEventTaskFailed      ChatEventKind = "TaskFailed"
@@ -197,6 +200,7 @@ var chatRoutes = map[ChatEventKind]ChatRoute{
 	ChatEventSpecWaiting:     {Room: ChatSpecs, Thread: true},
 	ChatEventDeployWaiting:   {Room: ChatReviews, Thread: true},
 	ChatEventReviewVerdict:   {Room: ChatReviews},
+	ChatEventChangeWaiting:   {Room: ChatReviews, Thread: true},
 	ChatEventDeployFailed:    {Room: ChatAlerts},
 	ChatEventTaskFailed:      {Room: ChatAlerts},
 	ChatEventContainerFailed: {Room: ChatAlerts, Thread: true},
