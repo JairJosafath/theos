@@ -165,10 +165,24 @@ out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Lint with fewer paths on pull requests fails" "$?" 1
 check "Lint with fewer paths says so" "$(grep -c 'lint.yml: runs on pull requests with other paths' <<<"$out")" 1
 
-real lint 's/run: make check CHECK_STEPS=test-hack/run: make help/'
+real lint 's/run: make check CHECK_STEPS="test-hack .*/run: make help/'
 out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Lint without the shell tests' part of make check fails" "$?" 1
 check "Lint without the shell tests says so" "$(grep -c 'lint.yml: has no test-hack job' <<<"$out")" 1
+
+# #127: the shell tests' own inputs leave out the Go and docs trees, which
+# three of them scan; without the scans a Go file with no license header
+# passed the Shell tests job.
+real lint 's/run: make check CHECK_STEPS="test-hack doc-links license-headers readers"/run: make check CHECK_STEPS=test-hack/'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Lint's shell tests without the scans fail (#127)" "$?" 1
+check "Lint's shell tests without the scans say so" "$(grep -c 'lint.yml: has no test-hack job running make check CHECK_STEPS="test-hack doc-links license-headers readers"' <<<"$out")" 1
+
+# #127: a test of the UI reads the CRDs.
+real ui '/config\/crd\/bases/d'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "UI off the CRDs fails (#127)" "$?" 1
+check "UI off the CRDs says so" "$(grep -c "ui.yml: doesn't run for a change to config/crd/bases" <<<"$out")" 1
 
 real test '/^  pull_request:/,/^  workflow_dispatch:/{/^  workflow_dispatch:/!d;}'
 out=$("$CHECK" "$T/r/wf" 2>&1)

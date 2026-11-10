@@ -131,6 +131,10 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
 
       # When a file the shell tests read changed (hack/check-cache.sh says
-      # which those are); the step says so when it skips them.
+      # which those are); the step says so when it skips them. Three of them
+      # scan the whole repository, and each runs by itself when a file it
+      # reads changed and the shell tests don't: the links of the Markdown,
+      # the license header of every Go file, and the table of the files Go
+      # tests read. Without them a Go file with no license header passed here.
       - name: Run the shell tests
-        run: make check CHECK_STEPS=test-hack
+        run: make check CHECK_STEPS="test-hack doc-links license-headers readers"

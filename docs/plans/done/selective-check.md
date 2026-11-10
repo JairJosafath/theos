@@ -278,6 +278,33 @@ new group and never ask for every step; no workflow but *Release* names
 `TEST_ALL` or `FORCE`; *Tests* runs on no tag; *Release* has a job that runs
 `make check FORCE=1`, and the job that pushes the images needs it.
 
+**After the merge: what the shell tests read.** Another session's safety
+pass on the same issue found two wrong skips, both checked against the tree.
+The shell tests' tier leaves out the Go and docs trees, but three of its
+tests scan the whole repository: `hack/check-doc-links.sh` every Markdown
+file, `hack/check-license-headers.sh` every Go file, and the readers check
+every Go test. As a device's cache key that was a small hole; as the
+selection it let a docs-only change with a dead link through, and in the
+*Shell tests* job, which ran in full before, a Go file with no license
+header. And the UI's check reads `config/crd/bases/`
+(`ui/src/demo/limits.test.ts`), which neither its inputs nor the UI
+workflow's paths named.
+
+The three scans are now steps of their own, `doc-links`, `license-headers`
+and `readers` (`hack/check-readers.sh`, taken out of
+`hack/test-packages_test.sh`), each selected by what it reads and run by
+itself in seconds when the shell tests don't run. So a docs-only change runs
+the link check, two seconds, and still no shell test; running all fifty
+shell tests for every change, a minute of four CPUs, was the alternative.
+The link check also runs when a file is gone, which a link may name. A scan
+takes no heavy-job slot and no cache answers it. The *Shell tests* job runs
+them with its part; the CRDs are inputs of `ui-test` and paths of the UI
+workflow; `docs/monitoring.md` and `internal/model/factory_metrics.go`,
+which `hack/monitoring_test.sh` reads, are inputs of the shell tests; and
+the Makefile and a `*.mk` reach every package for `vet` as for `lint`. One
+scan is left to the shell tests and the release: the wording check that
+greps every file (`hack/check-license-headers_test.sh`).
+
 What this costs: a selection that misses a test is found at the next
 release, not at the next push to main or the next change to the Makefile. A
 test that starts to read a file the table doesn't name is such a miss:

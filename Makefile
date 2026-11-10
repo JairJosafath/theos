@@ -182,6 +182,23 @@ test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of 
 test-hack: install-helm ## Run the shell tests of the scripts in hack/.
 	@hack/test-hack.sh
 
+# Three of the shell tests scan the whole repository: every Markdown link,
+# every Go file's license header, and every Go test against the table of the
+# files tests read. make check runs a scan by itself, in seconds, when a file
+# it reads changed and the shell tests don't run (hack/check.sh, #127): a
+# docs-only change runs the link check and no shell test.
+.PHONY: doc-links
+doc-links: ## Check that every relative link in the Markdown names a file that exists.
+	@hack/check-doc-links.sh
+
+.PHONY: license-headers
+license-headers: ## Check that every Go file starts with the license header.
+	@hack/check-license-headers.sh
+
+.PHONY: readers
+readers: ## Check the table of the files Go tests read (hack/test-packages.sh) against the tests.
+	@hack/check-readers.sh
+
 # Renders the operator combo (go-kubebuilder, go-operator-standard, small) and
 # runs its make check before and after kubebuilder create api, with this
 # repository's pinned tools (hack/test-templates-operator.sh). Not part of
@@ -245,8 +262,9 @@ test-e2e: e2e ## Same as e2e.
 # FORCE=1, and nothing is published unless it passes. By hand, TEST_ALL=1
 # selects every step and FORCE=1 runs every step, past every cache.
 # CHECK_STEPS takes a part of the check, by the steps' names (generate fmt vet
-# lint validate-yaml test-hack ui-test test, and test-gitea, which only runs
-# when named): a workflow's job runs its part, selected the same way.
+# lint validate-yaml test-hack doc-links license-headers readers ui-test test,
+# and test-gitea, which only runs when named): a workflow's job runs its part,
+# selected the same way.
 # The UI's own check (make ui-test: typecheck, eslint, prettier, its tests) is
 # part of it: the UI workflow runs only after a merge to main, so nothing else
 # before a merge would see a UI change break it (#1006). ./dev setup installs

@@ -19,7 +19,11 @@
 # ${{ github.event_name == 'pull_request' }}, so a new push to a pull request
 # replaces its run and main's runs still finish. Lint (lint.yml), UI (ui.yml)
 # and Tests (test.yml) run on pull requests to main, and Lint has a test-hack
-# job running the shell tests' part of make check. Secrets (secrets.yml) runs
+# job running the shell tests' part of make check, with the three scans of
+# the whole repository the shell tests make (the Markdown's links, the Go
+# files' license headers, the readers table), each of which runs by itself
+# when the shell tests don't. UI runs for a change to the CRDs too, which a
+# test of its reads. Secrets (secrets.yml) runs
 # make secrets-scan from a full clone on every pull request and push to main,
 # without paths (#52). Tests must run on pushes to main, since yolo mode
 # merges a pull request unchecked and main's run is what shows a red main
@@ -213,8 +217,19 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       fi
       ;;&
     lint.yml)
-      if ! grep -q '^  test-hack:' "$f" || ! grep -q 'run: make check CHECK_STEPS=test-hack$' "$f"; then
-        echo "$f: has no test-hack job running make check CHECK_STEPS=test-hack" >&2
+      # The scans read the Go and docs trees, which the shell tests' own
+      # inputs leave out: without them a pull request that changes only a Go
+      # file runs no license check here (#127).
+      if ! grep -q '^  test-hack:' "$f" ||
+        ! grep -q 'run: make check CHECK_STEPS="test-hack doc-links license-headers readers"$' "$f"; then
+        echo "$f: has no test-hack job running make check CHECK_STEPS=\"test-hack doc-links license-headers readers\"" >&2
+        fail=1
+      fi
+      ;;
+    ui.yml)
+      # #127: ui/src/demo/limits.test.ts reads the CRDs.
+      if ! grep -qx 'path config/crd/bases/\*\*' <<<"$pr"; then
+        echo "$f: doesn't run for a change to config/crd/bases/**, which a test of the UI reads (#127)" >&2
         fail=1
       fi
       ;;
