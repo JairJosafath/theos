@@ -917,8 +917,14 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   changes, there or from chat, starts the next round with their words;
   a push is checked and reviewed again; closing the pull request ends the
   Task. A main that moved while it waited is merged in and the change merges
-  on green checks with no second approval. Rules that no longer ask for a
-  person let a waiting Task merge. `status.approval.approvedBy` records who
+  on green checks with no second approval. The reviewer may raise what the
+  rules ask, never lower it: when it approves a change the rules left to it
+  and calls it high-risk (`"risk": "high"` with a reason, in its verdict), the
+  change needs `Person` for that reason (`status.approval.raisedByReviewer`),
+  for this head only, and through a verification. A change a rule holds
+  keeps its rule, one that needs `None` has no reviewer, and a Crew without
+  rules has no person in its loop whatever its reviewer says. Rules that no
+  longer ask for a person let a waiting Task merge. `status.approval.approvedBy` records who
   approved, and the issue's closing comment says who let the change in: the
   person, or no agent's review, with the rule. The rules are for Implement
   Tasks: a spec has `specApproval`, a Standard change always has its lasting

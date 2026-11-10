@@ -1,0 +1,31 @@
+# #92, part 2: the reviewer may raise what a change needs, never lower it (2026-11-10)
+#
+# The model: a need of Reviewer becomes Person for the reviewer's reason; a
+# rule's Person, None and a Crew without rules stay as they are.
+$ go test -v ./internal/model -run TestRaisedByReviewer
+--- PASS: TestRaisedByReviewer (0.00s)
+    --- PASS: TestRaisedByReviewer/a_change_left_to_the_reviewer_waits_for_a_person (0.00s)
+    --- PASS: TestRaisedByReviewer/also_by_a_rule_that_asks_for_the_reviewer (0.00s)
+    --- PASS: TestRaisedByReviewer/a_reviewer_that_says_nothing_raises_nothing (0.00s)
+    --- PASS: TestRaisedByReviewer/nor_one_that_says_only_spaces (0.00s)
+    --- PASS: TestRaisedByReviewer/a_change_that_needs_a_person_keeps_its_rule (0.00s)
+    --- PASS: TestRaisedByReviewer/a_change_the_rules_ask_no_review_of_has_no_reviewer_to_raise_it (0.00s)
+    --- PASS: TestRaisedByReviewer/a_Crew_without_rules_has_no_person_in_the_loop (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.006s
+
+# The runner: the prompt, the verdict's risk (only an approval's), its bound in
+# the result, and the stand-in reviewer.
+$ go test -v ./internal/agentrunner -run TestReviewRisk
+--- PASS: TestReviewRisk (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/agentrunner	0.007s
+
+# envtest: the wait, through a changed rule set and through a verification;
+# no lowering, and nothing for a Crew without rules.
+$ go test -v ./internal/controller -run "^TestControllers$" -ginkgo.focus "reviewer raised|reviewer.s word|calls it high-risk"
+Ran 3 of 777 Specs in 16.631 seconds
+SUCCESS! -- 3 Passed | 0 Failed | 0 Pending | 774 Skipped
+--- PASS: TestControllers (16.64s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/controller	16.672s

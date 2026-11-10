@@ -65,11 +65,13 @@ type ApprovalChange struct {
 
 // ApprovalNeed is what a Crew's rules ask of a change: Require, the rule
 // that decided (from 1; 0 when no rule matched the deciding file) and Why,
-// which reads after "because" or before ", so".
+// which reads after "because" or before ", so". Raised is set when the
+// change's reviewer, and no rule, asked for the person (RaisedByReviewer).
 type ApprovalNeed struct {
 	Require string
 	Rule    int
 	Why     string
+	Raised  bool
 }
 
 // approvalRank orders what a change may need, loosest first; an unknown word
@@ -199,6 +201,21 @@ func approvalUnlisted(rules []ApprovalRule, c ApprovalChange) ApprovalNeed {
 	return ApprovalNeed{Require: ApprovalReviewer, Why: unlisted + ", so no approval rule spares it the review"}
 }
 
+// RaisedByReviewer is what a change needs once the reviewer that approved it
+// called it high-risk, for the reason risk (#92): a change its Crew's rules
+// left to the reviewer waits for a person, and raised says so. The reviewer
+// never lowers: a change that needs a person keeps its rule's reason. One the
+// rules ask no review of has no reviewer, and a Crew without rules (the zero
+// need) has said it wants no person in the loop; both stay as they are.
+func RaisedByReviewer(need ApprovalNeed, risk string) (raisedNeed ApprovalNeed, raised bool) {
+	risk = strings.TrimSpace(risk)
+	if need.Require != ApprovalReviewer || risk == "" {
+		return need, false
+	}
+	return ApprovalNeed{Require: ApprovalPerson, Raised: true,
+		Why: fmt.Sprintf("the reviewer called the change high-risk (%q)", strings.TrimRight(risk, "."))}, true
+}
+
 // ApprovalRulesKey names a list of rules by what they say, so a Task can
 // tell that its Crew's rules changed since it asked them; "" for none.
 func ApprovalRulesKey(rules []ApprovalRule) string {
@@ -232,8 +249,8 @@ func approvalRulesApply(f TaskFacts) bool {
 }
 
 // ApprovalNote says on a merged change's issue who let it in, where its
-// Crew's approval rules decided that: the person who approved it (inChat
-// when from chat), or nobody when the rules asked for no review and none
+// Crew's approval rules decided that, or its reviewer raised it: the person
+// who approved it (inChat when from chat), or nobody when the rules asked for no review and none
 // was made (reviewed is whether an agent reviewed the merged round). Empty
 // when the reviewer's approval merged it, as without rules.
 func ApprovalNote(need ApprovalNeed, approvedBy string, inChat, reviewed bool) string {
@@ -242,6 +259,9 @@ func ApprovalNote(need ApprovalNeed, approvedBy string, inChat, reviewed bool) s
 		where := ""
 		if inChat {
 			where = " in chat"
+		}
+		if need.Raised {
+			return fmt.Sprintf("%s approved it%s, because %s.", approvedBy, where, orUnknown(need.Why))
 		}
 		return fmt.Sprintf("%s approved it%s, as the Crew's approval rules ask: %s.", approvedBy, where,
 			orUnknown(need.Why))

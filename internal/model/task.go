@@ -102,6 +102,9 @@ type RunResult struct {
 	// Open are the criteria an approved review accepted as left open: they need
 	// what no agent's sandbox has, so a person does them.
 	Open []OpenCriterion
+	// Risk is why the reviewer calls the change it approves high-risk; empty
+	// when it doesn't (RaisedByReviewer).
+	Risk string
 	// Triage is a triager's decision; nil when it gave none.
 	Triage *Triage
 	// Score is a judge's verdicts; nil when it gave none.

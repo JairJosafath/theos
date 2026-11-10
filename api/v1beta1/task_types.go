@@ -649,6 +649,13 @@ type TaskApproval struct {
 	// the Git host.
 	// +optional
 	ApprovedInChat bool `json:"approvedInChat,omitempty"`
+
+	// raisedByReviewer says the reviewer, and no rule, asked for the person:
+	// it approved the change and called it high-risk, and reason has its
+	// words. The rules left the change to the reviewer; a reviewer may raise
+	// what a change needs, never lower it.
+	// +optional
+	RaisedByReviewer bool `json:"raisedByReviewer,omitempty"`
 }
 
 // TaskStandardChange is the Standard change a Task proposed: the protected files

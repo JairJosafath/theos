@@ -296,6 +296,88 @@ var _ = Describe("Crew approval rules", func() {
 		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
 	})
 
+	// #92: the reviewer may raise what a change needs, never lower it. A
+	// change the Crew's rules left to the reviewer waits for a person when the
+	// reviewer that approves it calls it high-risk.
+	It("waits for a person when the reviewer that approves a change calls it high-risk", func() {
+		name := start(personForMigrations, nil)
+		head := push(name, 1, "app.py")
+		approve(name, 1, agentrunner.Result{Summary: "Right, but look at the rounding.",
+			Risk: "It changes how every order's total is rounded."})
+		const why = `the reviewer called the change high-risk ("It changes how every order's total is rounded")`
+		task := awaiting(name, why)
+		Expect(task.Status.Approval).To(Equal(&c4v1beta1.TaskApproval{Require: c4v1beta1.ApprovalPerson,
+			Reason: why, Commit: head, Rules: task.Status.Approval.Rules, RaisedByReviewer: true}))
+
+		By("keeping the reviewer's word when the Crew's rules change and still leave the change to the reviewer")
+		crew := getCrew(Default, ns)
+		Expect(patch(crew, func() {
+			crew.Spec.Approval = append(crew.Spec.Approval,
+				c4v1beta1.ApprovalRule{Paths: []string{"docs/"}, Require: c4v1beta1.ApprovalNone})
+		})).To(Succeed())
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, name)
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskAwaitingApproval))
+			g.Expect(task.Status.Approval).To(And(HaveField("Require", c4v1beta1.ApprovalPerson),
+				HaveField("RaisedByReviewer", true), HaveField("Reason", why),
+				HaveField("Rules", Not(Equal(model.ApprovalRulesKey(approvalRules(&c4v1beta1.Crew{
+					Spec: c4v1beta1.CrewSpec{Approval: personForMigrations}})))))))
+		}).Should(Succeed())
+
+		By("merging once a person approved, and saying on the issue whose word held it")
+		pr := gitFake.PullRequests(ns, "orders-api")[0]
+		gitFake.AddReview(ns, "orders-api", pr.Number, fake.Review{User: "ada", Event: ports.ReviewApprove, Commit: head})
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, name)
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			g.Expect(task.Status.Approval).To(And(HaveField("ApprovedBy", "ada"), HaveField("RaisedByReviewer", true)))
+		}).Should(Succeed())
+		Expect(gitFake.Issue(ns, "orders-api", int(task.Spec.Issue)).Comments).To(ContainElement(
+			ContainSubstring("ada approved it, because " + why + ".")))
+	})
+
+	It("holds what the reviewer raised through the verification", func() {
+		verifierAgent(ns)
+		name := start(personForMigrations, func(crew *c4v1beta1.Crew) {
+			crew.Spec.Verifier = &c4v1beta1.LocalRef{Name: "verifier"}
+		})
+		head := push(name, 1, "app.py")
+		approve(name, 1, agentrunner.Result{Summary: "Right.", Risk: "It deletes the archived orders"})
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, name).Status.Phase).To(Equal(c4v1beta1.TaskVerifying))
+			sandboxExists(g, ns, name+"-r1-verify-a1")
+		}).Should(Succeed())
+		finishSandbox(ns, name+"-r1-verify-a1", name, &agentrunner.Result{Role: "verify", Commit: head,
+			Verdict: model.VerdictApprove, Summary: "The archive is gone and the rest is whole."}, "")
+		awaiting(name, `the reviewer called the change high-risk ("It deletes the archived orders")`)
+	})
+
+	It("lets no reviewer's word lower a rule, nor put a person in the loop of a Crew without rules", func() {
+		By("a change its rule holds for a person keeps the rule's reason")
+		name := start(personForMigrations, nil)
+		push(name, 1, "migrations/001.sql")
+		approve(name, 1, agentrunner.Result{Summary: "Safe.", Risk: "It is a migration."})
+		task := awaiting(name, whyMigrations)
+		Expect(task.Status.Approval).To(And(HaveField("Rule", int32(1)), HaveField("RaisedByReviewer", false)))
+
+		By("a Crew without rules merges on its reviewer's approval, whatever the reviewer calls the change")
+		crew := getCrew(Default, ns)
+		Expect(patch(crew, func() { crew.Spec.Approval = nil })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, name).Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+		}).Should(Succeed())
+		next := gitFake.AddIssue(ns, "orders-api", "Export customers", clearIssue, []string{model.LabelReady})
+		other := fmt.Sprintf("orders-api-%d", next)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, other+"-r1-implement") }).Should(Succeed())
+		push(other, 1, "customers.py")
+		approve(other, 1, agentrunner.Result{Summary: "Fine.", Risk: "It reads every customer."})
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, other)
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			g.Expect(task.Status.Approval).To(BeNil())
+		}).Should(Succeed())
+	})
+
 	It("holds a big change by its size, and lets it go when the Crew's rule is taken away", func() {
 		name := start([]c4v1beta1.ApprovalRule{{ChangedLinesOver: 400, Require: c4v1beta1.ApprovalPerson}}, nil)
 		tree := scaffold.Tree{"app.py": {Data: []byte("export\n")}}

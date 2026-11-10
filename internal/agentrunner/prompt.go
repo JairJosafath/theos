@@ -337,8 +337,15 @@ sentence of at most ` + strconv.Itoa(maxCriterionChars) + ` characters (each bec
 checklist item on the issue). Never use a follow-up for something this change
 must fix.
 
+When you approve a change in which a mistake would be costly or hard to undo
+(it migrates or deletes data, changes how people sign in or what they may do,
+handles money, or breaks an interface others build on), say "risk": "high" and
+in "riskReason" one sentence saying what makes it so: the project may then
+have a person approve it after you. It replaces no change you require, and
+most changes are not high-risk: leave both out for them.
+
 End your reply with one line of JSON and nothing after it:
-{"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "...", "criteria": ["..."]}], "open": [{"criterion": "...", "why": "..."}]}
+{"verdict": "approve" or "changes", "summary": "<what is good, and every change required, concretely>", "followUps": [{"title": "...", "body": "...", "criteria": ["..."]}], "open": [{"criterion": "...", "why": "..."}], "risk": "high" or "", "riskReason": "..."}
 `)
 	return b.String()
 }
@@ -625,7 +632,14 @@ type Verdict struct {
 	// Open are the criteria the reviewer accepted as left open; only an
 	// approval carries them.
 	Open []model.OpenCriterion
+	// Risk is why the reviewer calls the change it approves high-risk; empty
+	// when it doesn't. Only an approval carries it.
+	Risk string
 }
+
+// noRiskReason stands for the reason of a reviewer that called a change
+// high-risk and gave none.
+const noRiskReason = "it gave no reason"
 
 // criteria keeps a follow-up's non-empty criteria, trimmed, up to
 // model.MaxFollowUpCriteria.
@@ -642,7 +656,7 @@ func criteria(in []string) []string {
 // ParseVerdict finds the reviewer's JSON verdict: the last JSON object in the
 // output that has a verdict. It keeps the titled follow-ups, up to
 // model.MaxFollowUps, and on an approval the named open criteria, trimmed, up to
-// model.MaxFollowUpCriteria.
+// model.MaxFollowUpCriteria, and the reason of a "risk" that is "high".
 func ParseVerdict(output string) (Verdict, error) { return parseVerdict(output, "reviewer") }
 
 // parseVerdict is ParseVerdict of who's output: the reviewer's, or the
@@ -651,10 +665,12 @@ func parseVerdict(output, who string) (Verdict, error) {
 	for end := strings.LastIndex(output, "}"); end >= 0; end = strings.LastIndex(output[:end], "}") {
 		for start := strings.LastIndex(output[:end], "{"); start >= 0; start = strings.LastIndex(output[:start], "{") {
 			var v struct {
-				Verdict   string                `json:"verdict"`
-				Summary   string                `json:"summary"`
-				FollowUps []model.FollowUp      `json:"followUps"`
-				Open      []model.OpenCriterion `json:"open"`
+				Verdict    string                `json:"verdict"`
+				Summary    string                `json:"summary"`
+				FollowUps  []model.FollowUp      `json:"followUps"`
+				Open       []model.OpenCriterion `json:"open"`
+				Risk       string                `json:"risk"`
+				RiskReason string                `json:"riskReason"`
 			}
 			if json.Unmarshal([]byte(output[start:end+1]), &v) != nil || v.Verdict == "" {
 				continue
@@ -675,6 +691,11 @@ func parseVerdict(output, who string) (Verdict, error) {
 				o.Criterion, o.Why = strings.TrimSpace(o.Criterion), strings.TrimSpace(o.Why)
 				if verdict == VerdictApprove && o.Criterion != "" && len(out.Open) < model.MaxFollowUpCriteria {
 					out.Open = append(out.Open, o)
+				}
+			}
+			if verdict == VerdictApprove && strings.EqualFold(strings.TrimSpace(v.Risk), model.RiskHigh) {
+				if out.Risk = strings.Join(strings.Fields(v.RiskReason), " "); out.Risk == "" {
+					out.Risk = noRiskReason
 				}
 			}
 			return out, nil

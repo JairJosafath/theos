@@ -1010,6 +1010,12 @@ put on an issue whose change, done wrong, would be costly or hard to undo (a
 data migration, who may sign in, money), and you can put it on any issue
 yourself. It does nothing until a rule names it.
 
+The reviewer can ask for you too. When it approves a change that no rule
+holds and finds it high-risk all the same, the change waits for you with the
+reviewer's reason, as if a rule had asked. It never works the other way: no
+agent lets a change past a rule of yours. A Crew with no `approval` at all
+merges on its reviewer's word, as before.
+
 [config/samples/first-app/crew-approval.yaml](../config/samples/first-app/crew-approval.yaml)
 is a Crew with such rules. Changing the rules takes effect at once, also for
 changes under way: take a rule away and what waited for it merges. Specs have

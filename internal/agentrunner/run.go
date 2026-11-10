@@ -69,6 +69,9 @@ type Result struct {
 	// Open are the acceptance criteria an approving reviewer accepted as left
 	// open, for a person.
 	Open []model.OpenCriterion `json:"open,omitempty"`
+	// Risk is why the reviewer calls the change it approves high-risk; empty
+	// when it doesn't.
+	Risk string `json:"risk,omitempty"`
 	// Triage is a triager's decision about its issue.
 	Triage *model.Triage `json:"triage,omitempty"`
 	// Score is a judge run's verdicts, one per criterion.
@@ -140,6 +143,7 @@ func (r Result) Encode() []byte {
 		r.Open[i].Criterion = shortenWords(r.Open[i].Criterion, maxFollowUpCriterion)
 		r.Open[i].Why = shortenWords(r.Open[i].Why, maxFollowUpCriterion)
 	}
+	r.Risk = shortenWords(r.Risk, maxFollowUpCriterion)
 	if r.Proposal != nil {
 		p := *r.Proposal
 		r.Proposal = &p
@@ -736,7 +740,7 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 		return result
 	}
 	result.Verdict, result.Summary, result.FollowUps = verdict.Verdict, verdict.Summary, verdict.FollowUps
-	result.Open = verdict.Open
+	result.Open, result.Risk = verdict.Open, verdict.Risk
 	return result
 }
 

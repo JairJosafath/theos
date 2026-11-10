@@ -246,7 +246,7 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 	comment := fmt.Sprintf("Merged in %s after %d %s.", status.PullRequestURL, status.Round, plural(int(status.Round), "round", "rounds"))
 	if a := status.Approval; a != nil {
 		// Who let it in, where the Crew's approval rules decided that (#62).
-		if note := model.ApprovalNote(model.ApprovalNeed{Require: string(a.Require), Why: a.Reason}, a.ApprovedBy,
+		if note := model.ApprovalNote(approvalNeed(a), a.ApprovedBy,
 			a.ApprovedInChat, status.Review != nil); note != "" {
 			comment += " " + note
 		}

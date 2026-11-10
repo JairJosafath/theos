@@ -117,7 +117,22 @@ the loop"), and its advice is ours: start with low-risk work and widen.
   taken off by a later triage, as a person may have set it; and it decides
   nothing by itself. The stand-in triager says it for "stand-in: risk
   high".
-- Open, as #92: the reviewer's `Risk: high`.
+- The reviewer raises, never lowers (2026-11-10, in the same session; the
+  verdict and the prompt are the runner's): a reviewer that approves says
+  `"risk": "high"` and a `riskReason`, the run's result carries the reason,
+  and `model.RaisedByReviewer` turns a need of `Reviewer` into `Person` for
+  it. The operator records that as the review ends
+  (`status.approval.raisedByReviewer`, with the reviewer's words as the
+  reason), so it holds through a verification, and the wait, the chat
+  thread, the merge note and the `approved` label follow from the need as
+  for a rule. Decided here: the raise is of one head, so the next round's
+  reviewer says it again or doesn't; other rules that still leave the head
+  to the reviewer keep it; a rule that now asks for no review, or a Crew
+  whose rules are gone, drops it, since the Crew's word comes first; only
+  an approval raises, a request for changes being its own answer; and the
+  verifier raises nothing. The stand-in reviewer says it for "stand-in:
+  risk high", the words that have the stand-in triager label the issue.
+- Nothing of #92 is open.
 
 ## Done when
 
