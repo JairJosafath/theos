@@ -100,7 +100,8 @@ it against this table. Where the code lives:
   `agentsandbox` implements AgentRuntime, `github`, `argocd` and
   `cloudformation` implement the Deployer, `gitlab` follows, `matrix`
   implements ChatHost, and `localenv` and `awsenv` implement TestEnvironments. Plain Git over HTTPS (go-git: template fetches and pushes) is
-  shared in `internal/adapters/git`. A host adapter imports no Kubernetes;
+  shared in `internal/adapters/git`, and so is the reader of a host's
+  archive of a tag (`ReadArchive`). A host adapter imports no Kubernetes;
   the runtime, deploy and test environment adapters may use client-go,
   never `api/` or `internal/controller`.
 - **Controllers take ports.** Only `cmd/main.go` imports adapters: it builds

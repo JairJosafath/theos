@@ -1,0 +1,84 @@
+# #75: the GitHub adapter passes the whole GitHost contract on the fake GitHub. 2026-11-10, on c8bc0e7a (main at 39fe7fa9 plus the step).
+# 1. The contract, nothing skipped, and what GitHub does its own way:
+#    go test ./internal/adapters/github -v -run 'TestGitHostContract|TestBranchRulesetsOnGitHub|TestProtectOnGitHub|TestMergeRuleOnGitHub|TestPullRequestsOnGitHub|TestStatusesOnGitHub|TestReleasesOnGitHub'
+--- PASS: TestBranchRulesetsOnGitHub (0.00s)
+    --- PASS: TestBranchRulesetsOnGitHub/a_fence_alone_lets_the_operator_in_by_pull_request_only (0.00s)
+    --- PASS: TestBranchRulesetsOnGitHub/checks_and_protected_paths_change_no_rule_of_the_ruleset (0.00s)
+    --- PASS: TestBranchRulesetsOnGitHub/a_rule_that_lets_the_operator_push_lets_it_bypass_always (0.00s)
+    --- PASS: TestBranchRulesetsOnGitHub/so_does_one_with_nothing_else (0.00s)
+    --- PASS: TestBranchRulesetsOnGitHub/the_name_carries_the_rule's_checks_and_paths,_not_who_pushes (0.00s)
+    --- PASS: TestBranchRulesetsOnGitHub/a_tag_pattern_is_the_operator's_to_make,_move_and_delete (0.00s)
+    --- PASS: TestBranchRulesetsOnGitHub/GitHub_takes_lists,_never_null (0.00s)
+--- PASS: TestProtectOnGitHub (0.04s)
+    --- PASS: TestProtectOnGitHub/a_second_rule_replaces_the_first_in_the_one_ruleset_and_in_the_variable (0.00s)
+    --- PASS: TestProtectOnGitHub/a_second_branch_and_the_tags_get_rulesets_of_their_own,_once (0.00s)
+    --- PASS: TestProtectOnGitHub/the_rule_read_back_is_the_one_protected,_and_none_for_a_branch_never_fenced (0.00s)
+    --- PASS: TestProtectOnGitHub/an_account_that_administers_nothing_can't_fence_a_branch (0.00s)
+--- PASS: TestMergeRuleOnGitHub (1.55s)
+    --- PASS: TestMergeRuleOnGitHub/a_check_must_have_passed_on_the_head:_none,_a_running_one_and_a_failed_one_refuse (0.47s)
+    --- PASS: TestMergeRuleOnGitHub/a_commit_status_passes_a_rule_as_a_check_run_does (0.15s)
+    --- PASS: TestMergeRuleOnGitHub/a_protected_path_refuses,_by_name,_a_rename's_old_path_too;_a_forced_merge_goes_through (0.19s)
+    --- PASS: TestMergeRuleOnGitHub/a_forced_merge_needs_no_check_either,_and_still_the_head_it_was_given (0.13s)
+    --- PASS: TestMergeRuleOnGitHub/a_rule_someone_weakened_or_removed_refuses_the_merge_until_the_branch_is_protected_again (0.46s)
+    --- PASS: TestMergeRuleOnGitHub/a_branch_never_protected_merges_unchecked (0.12s)
+--- PASS: TestPullRequestsOnGitHub (0.69s)
+    --- PASS: TestPullRequestsOnGitHub/reviews:_who,_what,_of_which_commit;_stale,_dismissed_and_unsent_ones (0.15s)
+    --- PASS: TestPullRequestsOnGitHub/a_comment_lands_on_the_pull_request (0.07s)
+    --- PASS: TestPullRequestsOnGitHub/its_size,_behind_its_base_until_updated,_its_commits_before_and_after_the_merge (0.27s)
+    --- PASS: TestPullRequestsOnGitHub/a_closed_pull_request_is_closed,_not_merged,_and_its_branch_opens_a_new_one (0.14s)
+    --- PASS: TestPullRequestsOnGitHub/a_branch_with_nothing_its_base_lacks_opens_none,_with_GitHub's_words (0.02s)
+    --- PASS: TestPullRequestsOnGitHub/a_pull_request_the_repository_lacks_is_not_found,_whatever_is_asked_of_it (0.00s)
+--- PASS: TestStatusesOnGitHub (0.78s)
+    --- PASS: TestStatusesOnGitHub/a_check_run's_state:_pending_until_done,_then_its_conclusion (0.00s)
+    --- PASS: TestStatusesOnGitHub/the_worst_check_decides,_and_its_page_is_the_one_to_open (0.22s)
+    --- PASS: TestStatusesOnGitHub/the_latest_status_and_run_of_a_context_count,_by_branch_as_by_commit (0.09s)
+    --- PASS: TestStatusesOnGitHub/a_description_longer_than_GitHub_takes_is_cut,_not_refused (0.06s)
+    --- PASS: TestStatusesOnGitHub/more_checks_than_a_page_are_all_read (0.37s)
+    --- PASS: TestStatusesOnGitHub/a_commit_the_repository_lacks_is_an_error (0.01s)
+--- PASS: TestReleasesOnGitHub (0.04s)
+    --- PASS: TestReleasesOnGitHub/a_draft_has_no_tag_yet_and_is_found_all_the_same (0.00s)
+    --- PASS: TestReleasesOnGitHub/an_asset_that_is_not_the_size_its_release_says_is_refused (0.00s)
+    --- PASS: TestReleasesOnGitHub/a_body_that_is_short_or_long_of_its_size_fails_as_it_is_read (0.00s)
+    --- PASS: TestReleasesOnGitHub/notes_of_a_release_GitHub_lacks,_and_the_source_of_a_tag_it_lacks,_fail_with_its_words (0.01s)
+--- PASS: TestGitHostContract (1.72s)
+    --- PASS: TestGitHostContract/makes_a_repository_once,_empty (0.02s)
+    --- PASS: TestGitHostContract/pushes_the_initial_commit_once (0.06s)
+    --- PASS: TestGitHostContract/reads_files,_directories_and_missing_paths (0.04s)
+    --- PASS: TestGitHostContract/pushes_a_branch (0.12s)
+    --- PASS: TestGitHostContract/pushes_the_default_branch (0.12s)
+    --- PASS: TestGitHostContract/creates_and_deletes_branches (0.05s)
+    --- PASS: TestGitHostContract/creates_tags_once (0.05s)
+    --- PASS: TestGitHostContract/protects_branches_and_tags_again (0.03s)
+    --- PASS: TestGitHostContract/opens_and_merges_a_pull_request (0.28s)
+    --- PASS: TestGitHostContract/refuses_a_merge_past_the_rule_and_forces_it (0.23s)
+    --- PASS: TestGitHostContract/updates_a_pull_request,_or_reports_a_conflict (0.34s)
+    --- PASS: TestGitHostContract/lists_a_pull_request's_files,_a_rename's_old_path_too (0.13s)
+    --- PASS: TestGitHostContract/combines_the_statuses_of_a_commit (0.08s)
+    --- PASS: TestGitHostContract/reads_a_release_and_its_asset (0.04s)
+    --- PASS: TestGitHostContract/reads_the_source_at_a_tag (0.09s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/adapters/github	4.833s
+# 2. The reader of a host's archive, shared by both adapters: go test ./internal/adapters/git ./internal/adapters/gitea -v -run 'TestReadArchive|TestReadSource'
+--- PASS: TestReadArchive (0.00s)
+ok  	github.com/JairJosafath/theos/internal/adapters/git	0.006s
+--- PASS: TestReadSource (0.01s)
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	0.018s
+# 3. make check (its Go tests are those of the packages the change affects; the shell tests, cached there, forced after it)
+0 issues.
+validate-yaml: cached (the YAML, api/, templates/ and hack/render unchanged since 2026-11-10 02:02, passed in /home/user/theos); FORCE=1 to rerun
+test-hack: cached (hack/ and the rest outside the Go, UI and docs trees unchanged since 2026-11-10 01:49, passed in /home/user/theos); FORCE=1 to rerun
+ui-test: cached (ui/ unchanged since 2026-11-10 01:50, passed in /home/user/theos); FORCE=1 to rerun
+ok  	github.com/JairJosafath/theos/cmd	4.121s
+ok  	github.com/JairJosafath/theos/internal/adapters/git	2.170s
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	2.933s
+ok  	github.com/JairJosafath/theos/internal/adapters/github	12.458s
+ok  	github.com/JairJosafath/theos/internal/controller	607.008s
+ok  	github.com/JairJosafath/theos/internal/controller	688.768s
+make check: passed on tree 6f957c25c41070eb477b86ec0f891443412d3d12; recorded
+exit 0
+$ FORCE=1 make test-hack
+test-hack: all 49 shell tests passed
+exit 0
+$ go test ./internal/ports/...   # TestHostNeutral, outside the affected packages
+ok  	github.com/JairJosafath/theos/internal/ports	0.041s
+ok  	github.com/JairJosafath/theos/internal/ports/fake	(cached)
