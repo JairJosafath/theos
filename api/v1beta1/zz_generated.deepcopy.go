@@ -1619,6 +1619,11 @@ func (in *ContainerSpec) DeepCopyInto(out *ContainerSpec) {
 		*out = new(LocalRef)
 		**out = **in
 	}
+	if in.CheckContexts != nil {
+		in, out := &in.CheckContexts, &out.CheckContexts
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Operations != nil {
 		in, out := &in.Operations, &out.Operations
 		*out = new(OperationsSpec)

@@ -101,6 +101,10 @@ type sandboxRun struct {
 	// goCache, when set, is the directory on the node of the Go build cache the
 	// sandboxes share.
 	goCache string
+	// checkCommand, when set, is the check of a repository the Container
+	// adopted with no Standard (its spec.checkCommand, #95); theos-agent runs
+	// make check without it.
+	checkCommand string
 	// goProxy, when set, is the Git host's Go module proxy for the owner's
 	// released modules, the only one theos-agent asks for the factory's modules.
 	goProxy string
@@ -204,6 +208,9 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	// The reviewer gets the feedback too, to check it was addressed.
 	if run.status.Feedback != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvFeedback, Value: run.status.Feedback})
+	}
+	if run.checkCommand != "" {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvCheckCommand, Value: run.checkCommand})
 	}
 	if run.goCache != "" {
 		env = append(env,

@@ -242,9 +242,29 @@ Framework, Standard, Compute or Deployment: the rule "name a bundleRef or a
 frameworkRef" is for a Container the factory scaffolds, and a repository it
 never scaffolded, a Rust service, has no Framework to name
 ([plans/adopt-existing.md](plans/adopt-existing.md), #60). The factory
-wires no Connector into it, whatever its Relationships say. Until its own
-checks are named (that plan's step 2), its main isn't protected and no
-agent works on it, as for any Container without a Standard.
+wires no Connector into it, whatever its Relationships say.
+
+**An adopted repository's own check** (#95). A Container that adopts with
+no Standard is checked by the repository's own means, which it names:
+`spec.checkCommand` (default `make check`), what the agent's workspace runs
+after the agent and the agent is told to run, and `spec.checkContexts`
+(default the CI system's, `check*`), the status checks main requires, as
+patterns (`ci / test*` is the job `test` of the workflow `ci` on every
+event). CEL refuses both beside a Standard, which brings its Makefile and
+its workflow. Agents work only on protected repositories, so the operator
+reads main's head. Once it reports a check for each of the Container's
+contexts, the operator protects main with them, the platform's paths and
+the CI system's workflow paths wherever the host reads them (Gitea Actions
+reads `.github/workflows/` when a repository has no `.gitea/workflows/`,
+so both), and the Container gets `Protected=True`. While the head reports
+none for one of them the operator protects nothing, since a pattern nothing
+reports would block every merge, the people's too, and says
+`Protected=False`, reason `NoMatchingCheck`, with the checks the head does
+report, so a person can name theirs. Meanwhile a Crew on the Container
+starts no Task (`Ready=False`, `ContainerNotProtected`), and a Task made by
+hand waits with that reason. A Container that neither adopts nor has a
+Standard has no checks to require: its Tasks fail, as before. The operator
+follows a change of `checkContexts` and never takes a rule away.
 Adoption checks the Standard's files and nothing of the Framework's: the
 block `spec.operations` names at adoption is recorded as the one the
 repository holds, when the Framework reads it, and a later change is

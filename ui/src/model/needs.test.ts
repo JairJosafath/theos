@@ -133,6 +133,33 @@ describe('needs', () => {
       },
     },
     {
+      // #95: a repository adopted with no Standard, whose main reports none of the checks it names.
+      name: 'an adopted Container whose main isn’t protected',
+      input: input({
+        containers: [
+          container({
+            phase: 'Ready',
+            repositoryURL: 'https://git.example/shop/api',
+            conditions: [
+              cond(
+                'Protected',
+                'False',
+                'NoMatchingCheck',
+                'main’s head reports no check matching check*; it reports ci / test (push)',
+              ),
+            ],
+          }),
+        ],
+      }),
+      want: {
+        kind: 'Container',
+        reason: 'NoMatchingCheck',
+        message: 'main’s head reports no check matching check*; it reports ci / test (push)',
+        links: ['https://git.example/shop/api'],
+        place: 'Container',
+      },
+    },
+    {
       name: 'a Container whose Standard update waits on a person',
       input: input({
         containers: [

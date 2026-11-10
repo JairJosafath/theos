@@ -312,7 +312,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		Round:          int(status.Round),
 		MaxRounds:      int(agent.Spec.MaxRounds),
 		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady,
-		Protected:      model.Protected(container.Choices().Standard != ""),
+		Protected:      model.Protected(container.Choices().Standard != "", adoptedChecks(container)),
+		Unprotected:    unprotected(container),
 		ReviewAttempts: int(status.ReviewAttempts),
 		ReviewAgains:   int(status.ReviewAgains),
 		Reruns:         int(status.Reruns),
@@ -468,7 +469,7 @@ func (r *TaskReconciler) baseFacts(ctx context.Context, container *c4v1beta1.Con
 	if err != nil {
 		return err
 	}
-	facts.Base = model.BaseState(git.ci.CheckContexts, checks.State, checks.Contexts)
+	facts.Base = model.BaseState(containerCIOf(git.ci, container).CheckContexts, checks.State, checks.Contexts)
 	facts.BaseURL = checks.URL
 	return nil
 }

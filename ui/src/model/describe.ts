@@ -211,6 +211,9 @@ const REASON_WORDING: Record<string, string> = {
   NothingToAdopt: 'The repository to adopt has no commits',
   IdentityMismatch: 'The adopted repository’s .theos.yaml does not name this container',
   StandardFilesDiffer: 'The adopted repository’s files differ from what its Standard renders',
+  NoMatchingCheck:
+    'Main reports none of the checks this container names, so main isn’t protected and no agent works on the repository',
+  ContainerNotProtected: 'Its container’s main isn’t protected yet, and agents work only on protected repositories',
   UnsupportedCI: 'A template has CI files, but none for the Git host’s CI system',
   UnpinnedRef: 'A template points to a branch instead of a fixed version',
   TemplatePathNotFound: 'A template’s directory is not in its repository at the pinned version',

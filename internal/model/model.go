@@ -563,10 +563,13 @@ func matchGlob(pattern, s string) bool {
 	return strings.HasSuffix(s, parts[len(parts)-1])
 }
 
-// Protected reports whether a Container's default branch is protected by required
-// checks: only a Standard brings CI, so only a Container with one has checks to
-// require.
-func Protected(hasStandard bool) bool { return hasStandard }
+// Protected reports whether a Container's default branch is protected by
+// required checks, which is where agents may work. A Standard brings CI, so a
+// Container with one has checks to require. A Container that adopts its
+// repository with no Standard brings its own: it is protected once main's
+// head reports the checks it names (adoptedChecks: its Protected condition,
+// from AdoptedChecks). Any other Container has no checks to require.
+func Protected(hasStandard, adoptedChecks bool) bool { return hasStandard || adoptedChecks }
 
 // ProjectNotesPath is the project's own word to its agents about its workspace
 // and ways, read after AGENTS.md when the repository has it. No Standard

@@ -95,6 +95,35 @@ spec:
                 required:
                 - name
                 type: object
+              checkCommand:
+                description: |-
+                  checkCommand is the command that checks the repository of a Container
+                  that adopts it with no Standard: the agent's workspace runs it after
+                  the agent, and the agent is told to run it. Its words are split on
+                  spaces and run as they are, with no shell. Unset, it is make check.
+                maxLength: 256
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: checkCommand starts and ends with a word
+                  rule: '!self.startsWith('' '') && !self.endsWith('' '')'
+              checkContexts:
+                description: |-
+                  checkContexts are the status checks the default branch of a Container
+                  that adopts its repository with no Standard requires, as patterns in
+                  which * stands for any run of characters: "ci / test*" is the job test
+                  of the workflow ci on every event. The operator protects main with
+                  them once main's head reports a check for each (the condition
+                  Protected says when it doesn't), and agents work on the repository
+                  only then. Unset, they are the CI system's own: check*.
+                items:
+                  maxLength: 255
+                  minLength: 1
+                  type: string
+                maxItems: 8
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: set
               checks:
                 default: EveryChange
                 description: |-
@@ -361,6 +390,10 @@ spec:
                 || self.bundleRef == oldSelf.bundleRef)
             - message: adopt is immutable
               rule: (has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)
+            - message: 'checkCommand and checkContexts are for a Container that adopts
+                its repository with no Standard: a Standard brings its own check'
+              rule: '!(has(self.checkCommand) || has(self.checkContexts)) || (has(self.adopt)
+                && self.adopt && !has(self.standardRef) && !has(self.bundleRef))'
           status:
             description: status defines the observed state of Container
             properties:

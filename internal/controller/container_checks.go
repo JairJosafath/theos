@@ -45,20 +45,30 @@ func (r *ContainerReconciler) checksRecheck() time.Duration {
 
 // refreshChecks reads the latest CI result on the default branch into status.
 // A Git error keeps the last known result: checks are a report, not a step.
+// For a Container that adopts its repository with no Standard the checks
+// main's head reports also decide whether main is protected (protectAdopted).
 func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus) ctrl.Result {
-	if !model.Protected(container.Choices().Standard != "") {
+	bare := adoptsBare(container)
+	if !bare {
+		meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionProtected)
+	}
+	if !bare && !model.Protected(container.Choices().Standard != "", false) {
 		return ctrl.Result{}
 	}
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace, container.Spec.GitProviderRef.Name)
 	if err == nil {
 		var checks ports.CheckStatus
 		gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		checks, err = provider.CombinedStatus(gitCtx, provider.Repository(container.Name), ports.DefaultBranch)
-		cancel()
+		repo := provider.Repository(container.Name)
+		checks, err = provider.CombinedStatus(gitCtx, repo, ports.DefaultBranch)
 		if err == nil {
 			status.Checks = &c4v1beta1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
+			if bare {
+				err = protectAdopted(gitCtx, r.Client, provider, repo, container, status, checks.Contexts)
+			}
 		}
+		cancel()
 	}
 	if err != nil {
 		logf.FromContext(ctx).Info("Could not read checks", "error", err.Error())
