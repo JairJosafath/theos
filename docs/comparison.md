@@ -34,7 +34,7 @@ current. [README.md](../README.md#the-loop) draws the loop,
 | What it is | a Kubernetes operator, a UI and a Helm chart you install | a hosted agent platform (Oz), GitHub Actions workflows that call it (`oz-for-oss`), and a managed factory on top (Warp Factories) |
 | Source | all of it in this repository, under the Apache License 2.0 | the Warp client is open source; the factory's workflows and skills are public; Oz and Warp Factories are a service |
 | Availability | install the release | Oz: all plans. Warp Factories: closed early access, on request |
-| Where agents run | in sandboxes on your cluster ([Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)) | in Warp's cloud environments; the workflow steps on GitHub's runners |
+| Where agents run | in sandboxes on your Kubernetes cluster ([Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)): each run is a pod, which the scheduler places on any node with room | in Warp's cloud environments; the workflow steps on GitHub's runners |
 | Where the model key lives | in a Secret only a proxy reads; it never enters a sandbox | a `WARP_API_KEY` secret in the repository; Warp reports zero-data-retention options and bring-your-own hosting for Factories |
 | Git host | the Gitea the chart installs. **GitHub: not yet (#57)** | GitHub |
 | Loop: triage, spec, implement, review | yes, each an Agent a Crew names | yes, each a label-triggered job |

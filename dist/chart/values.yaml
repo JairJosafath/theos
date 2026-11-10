@@ -24,8 +24,8 @@ manager:
     pullPolicy: IfNotPresent
 
   ## Arguments (go run ./cmd --help lists them). These are the Kind test
-  ## environment's: four agent sandboxes at once, each workspace in memory up to
-  ## 3Gi, and a Go build cache the sandboxes share on the node.
+  ## environment's, one node's (#123): four agent sandboxes at once, each workspace
+  ## in memory up to 3Gi, and a Go build cache the sandboxes share on the node (#120).
   ##
   args:
     - --leader-elect
@@ -295,8 +295,8 @@ clusterDNS:
 ## #1151): http://localhost:<ui.service.port>/... for the port-forward, or
 ## <ui.sessionBinaryScheme>://<ui.allowedHosts[0]>/... behind an Ingress
 ## (https unless set). The devcontainer's build must reach that address; a
-## port-forward's localhost is the laptop's, not a container's, so set an
-## address it reaches when it isn't. With ui.enabled
+## port-forward's localhost is the machine's that runs it, not a container's, so
+## set an address it reaches when it isn't. With ui.enabled
 ## false the default is the binaries attached to this chart's GitHub release.
 ## Either way a SHA256SUMS sits next to the binaries and the feature refuses a
 ## download that doesn't match it (#1175); a URL of your own needs one too.

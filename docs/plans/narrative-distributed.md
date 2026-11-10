@@ -94,7 +94,7 @@ it stands).
 | # | Files | State |
 | --- | --- | --- |
 | 1 | `README.md`, `docs/design.md`, `docs/architecture.md`, this plan | done with this plan |
-| 2 | `docs/getting-started.md`, `dist/chart/README.md`, `dist/chart/values.yaml` (comments only), `dist/chart/templates/NOTES.txt` if it frames, `docs/comparison.md`, `docs/adopt.md`, `ROADMAP.md` | open |
+| 2 | `docs/getting-started.md`, `dist/chart/README.md`, `dist/chart/values.yaml` (comments only), `dist/chart/templates/NOTES.txt` if it frames, `docs/comparison.md`, `docs/adopt.md`, `ROADMAP.md` | done; `NOTES.txt` and `docs/adopt.md` framed nothing and stay as they were |
 | 3 | `.github/ISSUE_TEMPLATE/user-report.yml`, `hack/lib/github.sh` (`gh_intake`'s label description) and its test, `hack/github-templates_test.sh`, then the form's name in `README.md` and `docs/design.md` | open |
 | 4 | `ui/src/components/Panels.tsx`, `Shell.tsx`, `factory/Health.tsx`, `model/attention.ts`: copy and comments only; the one-node read is #122 | open |
 | 5 | `docs/images/how-it-works.excalidraw` and `architecture.excalidraw` with their `.svg` and `.png`: "Where it runs" and "Kind cluster theos" | open; needs a person or a renderer |
