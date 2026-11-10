@@ -97,7 +97,7 @@ the function with Go and synthesizes the CloudFormation offline.
   `infra/connectors.ts`, `README.md`,
   `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
-  `UNLICENSED`, an ES module, `engines.node` `>=22`; only
+  licensed as the repository is scaffolded (`UNLICENSED` with no license, #73), an ES module, `engines.node` `>=22`; only
   `devDependencies`: the CDK, CDK Nag, `cdk-monitoring-constructs` 10.3.2,
   tsx and the Standard's tools, at aws-lambda-ts's versions. `allowScripts`
   lets esbuild's install script run (tsx needs esbuild).

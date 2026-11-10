@@ -3,7 +3,7 @@
   "description": "The {{ .Container }} service of {{ .SoftwareSystem }}.",
   "version": "0.0.1",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "{{ or .License.ID "UNLICENSED" }}",
   "type": "module",
   "engines": {
     "node": ">=22"

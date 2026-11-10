@@ -13,7 +13,7 @@ of its own.
   `vite.config.ts`, `index.html`, `src/`, `public/favicon.svg`, `README.md`,
   `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
-  `UNLICENSED`, an ES module. React and React DOM 19.3 are `dependencies`;
+  licensed as the repository is scaffolded (`UNLICENSED` with no license, #73), an ES module. React and React DOM 19.3 are `dependencies`;
   everything else is a `devDependency`, since the build bundles what the page
   imports.
 - **The app's name** is `index.html`'s `<title>` (the display name, HTML

@@ -195,7 +195,10 @@ Domains catalog page, a system's Domains and a Container's `DomainsApplied`.
    the holder the Project's `displayName`, else its name. The factory never
    picks a license: with none set, no file. It is an operator path like
    `.theos.yaml`, which records the id; a layer writing `LICENSE` is the
-   two-layers collision below. Read at scaffold only: changing the setting
+   two-layers collision below. A template's manifest that names a license
+   names the same id (`{{ .License.ID }}`): the Node templates'
+   `package.json` and `package-lock.json` say it, and `UNLICENSED`, npm's
+   word for no license granted, with none set (#73). Read at scaffold only: changing the setting
    later rewrites nothing, and a Container already scaffolded gets its
    license by a commit ([plans/license.md](plans/license.md)).
 8. **Push one commit,** protect `main` with the Standard's required checks,

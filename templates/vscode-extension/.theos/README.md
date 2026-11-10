@@ -13,7 +13,7 @@ run in plain Node.
   `esbuild.mjs`, `vitest.config.mts`, `src/`, `test/vscode.ts`, `.vscodeignore`,
   `README.md`, `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, `displayName` its display name,
-  `publisher` the project, version `0.0.1`, private and `UNLICENSED`;
+  `publisher` the project, version `0.0.1`, private and licensed as the repository is scaffolded (`UNLICENSED` with no license, #73);
   `engines.vscode` `^1.100.0` with `@types/vscode` 1.100.0. One command,
   `<container>.sayHello`, under the display name's category; activation is
   implicit through it.

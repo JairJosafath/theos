@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "publisher": "{{ .Project }}",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "{{ or .License.ID "UNLICENSED" }}",
   "engines": {
     "vscode": "^1.100.0"
   },
