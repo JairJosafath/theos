@@ -185,7 +185,10 @@ files are built by the factory, not by that workflow, and SECURITY.md says
 what a signature does say. It runs only from `main` or a tag, and the
 verify command accepts only those.
 
-The 47 releases already out are signed by running the workflow for each.
+The 47 releases already out were signed by running the workflow for each:
+every file of every release has its `.sigstore.json`. The Scorecard went from
+6.5 to **7.1**: Signed-Releases is 8 of 10 (10 needs provenance, which this
+workflow cannot honestly give), and Token-Permissions stayed 10.
 
 Dependabot opened eight pull requests on GitHub within minutes of the first
 merge (#8 to #15): the engine's and the extension's minor and patch groups,

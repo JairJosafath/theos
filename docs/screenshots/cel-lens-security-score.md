@@ -54,6 +54,32 @@ score 6.5
  10  Vulnerabilities          0 existing vulnerabilities detected
 ```
 
+## The Scorecard after the releases were signed
+
+JairJosafath/cel-lens#16 merged (1704d85), the 47 releases signed by `sign-release.yml` (each file has its `.sigstore.json`; counted through the GitHub API), and the Scorecard workflow run again on 10 November 2026:
+
+```
+score 7.1
+ -1  Packaging                packaging workflow not detected
+  0  Branch-Protection        branch protection not enabled on development/release branches
+  0  CII-Best-Practices       no effort to earn an OpenSSF best practices badge detected
+  0  Code-Review              Found 0/5 approved changesets -- score normalized to 0
+  0  Contributors             project has 0 contributing companies or organizations -- score normalized to 0
+  0  Maintained               project was created within the last 90 days. Please review its contents carefully
+  8  Signed-Releases          5 out of the last 5 releases have a total of 5 signed artifacts.
+ 10  Binary-Artifacts         no binaries found in the repo
+ 10  CI-Tests                 2 out of 2 merged PRs checked by a CI test -- score normalized to 10
+ 10  Dangerous-Workflow       no dangerous workflow patterns detected
+ 10  Dependency-Update-Tool   update tool detected
+ 10  Fuzzing                  project is fuzzed
+ 10  License                  license file detected
+ 10  Pinned-Dependencies      all dependencies are pinned
+ 10  SAST                     SAST tool is run on all commits
+ 10  Security-Policy          security policy file detected
+ 10  Token-Permissions        GitHub workflow tokens follow principle of least privilege
+ 10  Vulnerabilities          0 existing vulnerabilities detected
+```
+
 ## The OSV query, before and after
 
 Every pin of `engine/go.mod` (the Go version as the standard library) and of `vscode/package-lock.json`, asked of `api.osv.dev` by `docs/plans/cloud-session/osvcheck.py`. On GitHub `main` (7d4c292):
