@@ -345,7 +345,10 @@ by its own, and nothing of PyPI is in `Cannot`.
   `internal/adapters/packages`, as `git.ReadArchive` did in step 2. Each
   adapter reads the release and signs its own requests. `.golangci.yml`
   lists the adapters that stay out of Kubernetes by name, and the package
-  is added to it.
+  is added to it. CodeQL read the moved code as new and found the npm
+  publish document joined by hand around the tarball; it is marshalled
+  whole now and cut where the tarball is streamed in, byte for byte what
+  it was (`TestNpmPublishDocument`).
 - **GitHub's registries take a classic personal access token and no
   other** kind of a person's token, and an installation token has no
   permission for packages. So the operator's token must be a classic one
