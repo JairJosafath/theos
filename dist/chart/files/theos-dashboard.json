@@ -465,6 +465,41 @@
           "legendFormat": "{{role}}"
         }
       ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Merged changes, by who approved",
+      "description": "Merged Implement Tasks by who let the change in: a person (the Crew's approval rules held it), the reviewer Agent, or none (the rules asked for no review). A Crew that starts small has most under person; what it hands over moves to reviewer and none.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (approved) (theos_tasks_merged{namespace=~\"$namespace\",kind=\"Implement\"})",
+          "legendFormat": "{{approved}}"
+        }
+      ]
     }
   ]
 }

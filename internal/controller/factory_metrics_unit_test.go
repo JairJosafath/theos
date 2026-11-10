@@ -44,6 +44,8 @@ func TestFactoryMetricsServesTheTasksNumbers(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: "webshop", Name: "orders-api-7"},
 		Spec:       c4v1beta1.TaskSpec{ContainerRef: c4v1beta1.LocalRef{Name: "orders-api"}},
 		Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskMerged, Round: 2, PersonCommits: &none, CostMilliUSD: 1250,
+			// #92: its Crew's approval rules held it, and ada approved it.
+			Approval: &c4v1beta1.TaskApproval{Require: c4v1beta1.ApprovalPerson, Rule: 1, ApprovedBy: "ada"},
 			History: []c4v1beta1.TaskTransition{{At: t0, Phase: c4v1beta1.TaskImplementing},
 				{At: later(10), Phase: c4v1beta1.TaskReviewing}, {At: later(15), Phase: c4v1beta1.TaskMerged}},
 			Runs: []c4v1beta1.TaskAgentRun{{Round: 1, Role: "implement", Agent: "implementer", Harness: "claude-code",
@@ -73,9 +75,9 @@ func TestFactoryMetricsServesTheTasksNumbers(t *testing.T) {
 theos_tasks{container="none",kind="Benchmark",namespace="lab",phase="Approved"} 1
 theos_tasks{container="orders-api",kind="Implement",namespace="webshop",phase="Failed"} 1
 theos_tasks{container="orders-api",kind="Implement",namespace="webshop",phase="Merged"} 1
-# HELP theos_tasks_merged Merged Tasks that exist, by who wrote the change's code: factory (no person's commit), person or unknown.
+# HELP theos_tasks_merged Merged Tasks that exist, by who wrote the change's code (factory: no person's commit, person or unknown) and who approved it (person, reviewer or none).
 # TYPE theos_tasks_merged gauge
-theos_tasks_merged{code="factory",container="orders-api",kind="Implement",namespace="webshop"} 1
+theos_tasks_merged{approved="person",code="factory",container="orders-api",kind="Implement",namespace="webshop"} 1
 # HELP theos_tasks_cost_usd What the agent runs of the Tasks that exist cost, in US dollars, as the agents reported it.
 # TYPE theos_tasks_cost_usd gauge
 theos_tasks_cost_usd{container="orders-api",kind="Implement",namespace="webshop"} 1.25

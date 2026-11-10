@@ -204,6 +204,13 @@ var _ = Describe("Crew approval rules", func() {
 			"the reviewer's approval is posted once, as the change began to wait")
 		issue := gitFake.Issue(ns, "orders-api", int(task.Spec.Issue))
 		Expect(issue.State).To(Equal("closed"))
+
+		By("counting it among the merged changes a person approved (#92)")
+		Eventually(func(g Gomega) {
+			g.Expect(factoryMetricValue(g, managerClient, model.MetricTasksMerged, map[string]string{
+				"namespace": ns, "container": "orders-api", "kind": "Implement", "code": model.CodeFactory,
+				"approved": model.ApprovedPerson})).To(Equal(1.0))
+		}).Should(Succeed())
 		Expect(issue.Comments).To(ContainElement(And(ContainSubstring("Merged in"), ContainSubstring(
 			"ada approved it, as the Crew's approval rules ask: "+whyMigrations+"."))))
 	})
@@ -257,6 +264,11 @@ var _ = Describe("Crew approval rules", func() {
 		Expect(gitFake.MainFiles(ns, "orders-api")).To(HaveKey("docs/export.md"))
 		Expect(gitFake.Issue(ns, "orders-api", 1).Comments).To(ContainElement(ContainSubstring(
 			"No agent reviewed it, as the Crew's approval rules ask: approval rule 2 (labels kind/docs) asks for no review.")))
+		Eventually(func(g Gomega) {
+			g.Expect(factoryMetricValue(g, managerClient, model.MetricTasksMerged, map[string]string{
+				"namespace": ns, "container": "orders-api", "kind": "Implement", "code": model.CodeFactory,
+				"approved": model.ApprovedNone})).To(Equal(1.0), "nobody approved it (#92)")
+		}).Should(Succeed())
 	})
 
 	It("doesn't let a label that asks no review loosen a file a rule holds for a person", func() {

@@ -1070,7 +1070,9 @@ be judged by numbers the factory keeps itself.
   (`status.pullRequestSize`), read from the Git host when it merges, and
   later for a Task merged before. The UI computes the
   metrics from Tasks: merged, autonomy (merged with no person's commit;
-  approving a spec or a deploy is a decision, not code), cycle time per
+  approving a spec or a deploy is a decision, not code), the share a
+  person approved (a spec, or a change the Crew's approval rules held:
+  what a Crew that starts small could hand over next, #92), cycle time per
   stage, and cost per merged Task by size, per period and per
   configuration: *How well it works*, in the Work area. No metrics store:
   the manager serves the same numbers as Prometheus series on `/metrics`

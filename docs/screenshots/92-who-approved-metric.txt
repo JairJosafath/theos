@@ -1,0 +1,35 @@
+#92, part 4: who approved a merged change, in the numbers
+==========================================================
+
+2026-11-10. Test output is the evidence; no cluster was used.
+
+$ go test ./internal/model -run 'TestFactoryMetrics' -v
+--- PASS: TestFactoryMetrics (0.00s)
+--- PASS: TestFactoryMetricsApproved (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.008s
+
+$ go test ./internal/controller -run 'TestFactoryMetrics' -v     (a scrape of the registry)
+--- PASS: TestFactoryMetricsServesTheTasksNumbers (0.12s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/controller	0.156s
+
+  # HELP theos_tasks_merged Merged Tasks that exist, by who wrote the change's code (factory: no person's commit, person or unknown) and who approved it (person, reviewer or none).
+  theos_tasks_merged{approved="person",code="factory",container="orders-api",kind="Implement",namespace="webshop"} 1
+
+On the fake Git host, from the Tasks the approval specs merge (envtest):
+
+$ go test -v ./internal/controller -run '^TestControllers$' -ginkgo.focus "Crew approval rules|runs rounds of implement, check and review until it merges"
+  a change a person approved:          theos_tasks_merged{approved="person",code="factory",...} 1
+  a change the rules asked no review of: theos_tasks_merged{approved="none",code="factory",...} 1
+  a change the reviewer approved:      theos_tasks_merged{approved="reviewer",code="person",...} 1
+SUCCESS! -- 8 Passed | 0 Failed
+
+$ hack/monitoring_test.sh      (the dashboard, the alerts and the doc name only served series)
+ok   docs/monitoring.md lists theos_tasks
+ok   docs/monitoring.md lists theos_tasks_cost_usd
+ok   docs/monitoring.md lists theos_tasks_merged
+
+$ npx vitest run src/model/metrics.test.ts src/components/factory/MetricsPanel.test.ts
+ Test Files  2 passed (2)
+      Tests  13 passed (13)

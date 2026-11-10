@@ -65,6 +65,12 @@ export interface MetricsRow {
   commitsRead: number
   /** Merged in round 1, of merged. */
   firstRound?: number
+  /**
+   * Merged on a person's approval, of merged: a spec at its review point, or a
+   * change the Crew's approval rules held (#92). What a Crew that starts small
+   * could hand over next.
+   */
+  personApproved?: number
   /** Medians from the first Implementing step: to the pull request (Checking), to the first review, to the merge. */
   toPullMs?: number
   toReviewMs?: number
@@ -113,6 +119,11 @@ function firstAt(task: Task, phase: string, from: number): number | undefined {
   return undefined
 }
 
+/** Whether a person approved the Task's merged pull request: its spec, or its change the Crew's approval rules held. */
+export function approvedByPerson(task: Task): boolean {
+  return Boolean(task.status?.approval?.approvedBy || task.status?.spec?.approvedBy)
+}
+
 function row(key: string, tasks: Task[]): MetricsRow {
   const read = tasks.filter((t) => t.status?.personCommits !== undefined)
   const toPull: number[] = []
@@ -135,6 +146,7 @@ function row(key: string, tasks: Task[]): MetricsRow {
     commitsRead: read.length,
     autonomy: read.length ? read.filter((t) => t.status?.personCommits === 0).length / read.length : undefined,
     firstRound: tasks.length ? tasks.filter((t) => (t.status?.round ?? 1) <= 1).length / tasks.length : undefined,
+    personApproved: tasks.length ? tasks.filter(approvedByPerson).length / tasks.length : undefined,
     toPullMs: median(toPull),
     toReviewMs: median(toReview),
     toMergeMs: median(toMerge),

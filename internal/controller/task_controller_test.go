@@ -255,7 +255,8 @@ var _ = Describe("Task", func() {
 		By("serving the merged Task on the manager's metrics, as one a person wrote code for (#59)")
 		Eventually(func(g Gomega) {
 			g.Expect(factoryMetricValue(g, managerClient, model.MetricTasksMerged, map[string]string{
-				"namespace": ns, "container": "orders-api", "kind": "Implement", "code": model.CodePerson})).To(Equal(1.0))
+				"namespace": ns, "container": "orders-api", "kind": "Implement", "code": model.CodePerson,
+				"approved": model.ApprovedReviewer})).To(Equal(1.0))
 			g.Expect(factoryMetricValue(g, managerClient, model.MetricTasks, map[string]string{
 				"namespace": ns, "container": "orders-api", "kind": "Implement", "phase": "Merged"})).To(Equal(1.0))
 			g.Expect(factoryMetricValue(g, managerClient, model.MetricAgentRuns, map[string]string{
