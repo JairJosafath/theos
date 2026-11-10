@@ -104,7 +104,8 @@ func TestGitHostOnGitHub(t *testing.T) {
 		}
 		h, _ := (Client{}).GitHost(ports.Config{Owner: "acme", Credentials: creds})
 		want := ports.Repository{Owner: "acme", Name: "shop", CloneURL: "https://github.com/acme/shop.git",
-			WebURL: "https://github.com/acme/shop", ImageRegistry: "ghcr.io/acme", NpmScope: "@acme",
+			WebURL: "https://github.com/acme/shop", GoPrivate: "github.com/acme",
+			ImageRegistry: "ghcr.io/acme", NpmScope: "@acme",
 			NpmRegistry: "https://npm.pkg.github.com/"}
 		if got := h.Repository("shop"); got != want {
 			t.Errorf("Repository() = %+v, want %+v", got, want)

@@ -93,6 +93,12 @@ type Repository struct {
 	// GoProxy is the Go module proxy of the owner's package registry, where the
 	// owner's released Go modules are fetched from; empty when the host has none.
 	GoProxy string
+	// GoPrivate is the prefix of the module paths of the owner's Go modules
+	// on a host that serves a module from its repository, such as
+	// "github.com/acme": a run and a CI job set GOPRIVATE to it, and fetch
+	// those modules with their Git credential. Empty on a host with a
+	// GoProxy.
+	GoPrivate string
 	// ImageRegistry is the owner's container registry, <host>/<owner>, where
 	// the images of the owner's releases are pushed; empty when the host has
 	// none.

@@ -129,11 +129,14 @@ func (c Client) Host(cfg ports.Config) (Host, error) {
 }
 
 // Repository returns the repository's addresses, and where the owner's
-// packages are, without asking GitHub. GitHub has no Go module proxy, and
-// no Python index but the one the GitProvider names.
+// packages are, without asking GitHub. GitHub has no Go module proxy: it
+// serves a module from its repository, so the owner's modules are the
+// paths below GoPrivate. It has no Python index but the one the
+// GitProvider names.
 func (h *host) Repository(name string) ports.Repository {
 	at := h.web.JoinPath(h.owner, name).String()
 	return ports.Repository{Owner: h.owner, Name: name, CloneURL: at + ".git", WebURL: at,
+		GoPrivate:     h.web.Hostname() + "/" + h.owner,
 		ImageRegistry: h.places.images + "/" + strings.ToLower(h.owner),
 		NpmScope:      h.places.npmScope, NpmRegistry: h.places.npm,
 		PyPIIndex: h.packages.PyPIIndex, PyPIUpload: h.packages.PyPIUpload}

@@ -647,6 +647,61 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 	}
 }
 
+// TestBuildSandboxGoModules covers #80: the environment a run gets for the
+// owner's Go modules, by where the host keeps them. A host with a module
+// proxy has the loopback proxy and no GOPRIVATE, which would fetch the
+// factory's paths from a host that doesn't exist. A host that serves a
+// module from its repository has GOPRIVATE for the owner's paths and no
+// proxy of ours, so go fetches them with the Git credential in ~/.netrc. A
+// host with neither gets nothing.
+func TestBuildSandboxGoModules(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	const registry, owners = "https://git.example.com/api/packages/apps/go", "github.com/apps"
+	loopback := []corev1.EnvVar{
+		{Name: "THEOS_GO_REGISTRY", Value: registry},
+		{Name: "GOPROXY", Value: "http://127.0.0.1:3127,direct"},
+		{Name: "GONOSUMDB", Value: "theos.local"},
+	}
+	for _, tt := range []struct {
+		name               string
+		goProxy, goPrivate string
+		want               []corev1.EnvVar
+	}{
+		{name: "a module proxy of the host's", goProxy: registry, want: loopback},
+		{name: "modules served from their repositories", goPrivate: owners,
+			want: []corev1.EnvVar{{Name: "GOPRIVATE", Value: owners}}},
+		{name: "a host that names both has its proxy asked", goProxy: registry, goPrivate: owners, want: loopback},
+		{name: "a host with neither"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sandbox, err := buildSandbox(sandboxRun{
+				task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+				status:    &c4v1beta1.TaskStatus{Round: 1, Branch: "task/add-crop"},
+				container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				agent:     &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+				name:      "add-crop-r1-implement", role: model.RoleImplementer,
+				repoURL: "https://github.com/apps/image-shrink.git", gitSecret: "image-shrink-agent-git",
+				goProxy: tt.goProxy, goPrivate: tt.goPrivate,
+			}, scheme, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []corev1.EnvVar
+			for _, e := range podOf(t, sandbox).Containers[0].Env {
+				if strings.HasPrefix(e.Name, "GO") || e.Name == "THEOS_GO_REGISTRY" {
+					got = append(got, e)
+				}
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Go env %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // The npm scope and registry and the PyPI index come from the GitProvider's
 // URL and owner by default, in cluster or not, with no token env: the pod
 // installs with the agent bot's Git token. A spec.packages of its own sends
