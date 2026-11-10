@@ -75,7 +75,8 @@ say() { echo "make test: $*" >&2; }
 # Dockerfile and .dockerignore: its TestDockerContextHasEmbeddedFiles. The
 # tests of test/chart read the Release and Verify Release workflows, the
 # guide and the UI's Dockerfile; those of internal/model the CloudFormation
-# adapter's testdata, and test/e2e/standin the e2e fixtures.
+# adapter's testdata and the report fixture the UI's tests share with them
+# (#66), and test/e2e/standin the e2e fixtures.
 declare -A readers=(
   [templates]="hack/template-go-kubebuilder internal/controller internal/adapters/gitea internal/model internal/scaffold test/chart"
   [config]="internal/controller internal/model internal/sessionclient test/chart test/compat"
@@ -84,6 +85,7 @@ declare -A readers=(
   [test/crds]="internal/controller internal/adapters/argocd"
   [test/e2e/testdata]="test/e2e/standin"
   [internal/adapters/cloudformation/testdata]="internal/model"
+  [ui/src/model/testdata]="internal/model"
   ['*.go']="internal/ports"
   [Dockerfile]="cmd"
   ['*/Dockerfile']="cmd"

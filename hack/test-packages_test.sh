@@ -255,6 +255,27 @@ for line in "${table[@]}"; do
 done
 check "internal/scaffold's tests climb to templates/" "$(reads templates | grep -c '^internal/scaffold$')" 1
 
+# Every path a Go test of this repository climbs to, in a string ("../x") or
+# a filepath.Join("..", ...), that is a file or directory of the repository
+# outside the test's own package, is listed in the table for that package
+# (#127): no path tests every package any more, so a file a test reads and
+# the table doesn't name would test nothing, as the report fixture that
+# internal/model shares with the UI's tests did (#66). A package's Go sources
+# are gta's and the *.go pattern's; .dev and bin hold tools.
+climbs=0
+while IFS=: read -r file lit; do
+  dir=$(dirname "$file")
+  target=$(realpath -m --relative-to="$REPO" "$REPO/$dir/$lit")
+  case $target in . | ..* | .dev | .dev/* | bin | bin/* | "$dir" | "$dir"/*) continue ;; esac
+  [ -e "$REPO/$target" ] || continue
+  if [ -d "$REPO/$target" ] && ls "$REPO/$target"/*.go >/dev/null 2>&1; then continue; fi
+  climbs=$((climbs + 1))
+  check "$dir's tests climb to $target: the table lists $dir for it" "$(listed "$target" "$dir" && echo yes)" yes
+done < <(cd "$REPO" && git ls-files '*_test.go' |
+  xargs grep -oE '"(\.\./)+[A-Za-z0-9._/-]+"|"\.\."(, *"[A-Za-z0-9._-]+")+' |
+  sed -E 's/", *"/\//g' | tr -d '"' | sort -u)
+check "Go tests climb to files of the repository" "$([ "$climbs" -gt 5 ] && echo yes)" yes
+
 # Every hack/ path a Go test of this repository names, in a string or a
 # filepath.Join, lies in a package or is listed in the table for that test's
 # package, so a new test that reads a script can't be skipped (#1318, #1523).
