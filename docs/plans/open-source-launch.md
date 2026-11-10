@@ -125,8 +125,8 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 | #59 Prometheus metrics, the dashboard and alerts | done (#67, #71) |
 | #53 a first run in ten minutes | `hack/quickstart.sh` and README's first screen are in; open: the guide cut into pages, the time measured, a run on a real machine |
 | #49 fork pull requests on hosted runners | the rule is in (#67); open: a run from a real fork, the approval setting |
-| #56 private links and logins | the links are gone (#67); open: the guide without `gh`, once the packages are public |
-| #52 history and secrets | scanned clean, gitleaks on every pull request (#69); open: the publication itself, the owner's step 1 |
+| #56 private links and logins | the links are gone (#67), and the guide clones with `git` now the repository is public; open: the guide's `gh` login for GHCR, until the packages are public (the owner's step 2) |
+| #52 history and secrets | scanned clean, gitleaks on every pull request (#69); the repository is public since 2026-11-10 |
 | #51 signing, SBOM, scanning | Dependabot is in (#71); open: image and chart signatures, SBOM, provenance, Scorecard, CodeQL |
 | #50 a release from this repository | v0.32.0 is bumped on main and not tagged: the tag push is the owner's step 5 |
 | #57 GitHub as a Git host | planned ([github-host.md](github-host.md)), nine steps filed as #74 to #82; steps 1 (#74) and 3 (#76) are built |
@@ -137,26 +137,13 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 ## For the owner
 
 Every decision in this plan is made. What is left for the owner is what no
-session can reach: a setting, an account, a force-push. Each is one step.
+session can reach: a setting, an account, a tag. Each is one step.
 
-1. **Publish.** From a fresh clone, rewrite the author address and push,
-   then make the repository public (*Settings → General → Change
-   visibility*):
-
-   ```bash
-   git clone https://github.com/JairJosafath/theos theos-public && cd theos-public
-   printf '%s\n' 'JairJosafath <58106977+JairJosafath@users.noreply.github.com> <OLD-ADDRESS>' >../mailmap
-   git filter-repo --mailmap ../mailmap --force
-   git remote add origin https://github.com/JairJosafath/theos
-   git push --force --all origin && git push --force --tags origin
-   ```
-
-   `OLD-ADDRESS` is the address `git log --format=%ae | sort -u` shows that
-   isn't a noreply one. Every open branch and pull request must be merged
-   or closed first: a rewrite orphans them.
+1. ~~Publish.~~ Done 2026-11-10: the repository is public, with its
+   history as it was.
 2. **Make the GHCR packages public** (each package has its own visibility:
    the chart and the thirteen images under `ghcr.io/jairjosafath/theos`).
-3. **Settings when public:** private vulnerability reporting on;
+3. **Settings, now it is public:** private vulnerability reporting on;
    Discussions on, for questions; Actions' "Require approval for all outside
    collaborators"; the main ruleset's required checks as
    `.github/required-checks` lists them.
@@ -164,15 +151,15 @@ session can reach: a setting, an account, a force-push. Each is one step.
    answer its two questions about the owner's own knowledge.
 5. **Push a release tag when a session can't** (#50): the session that cut
    v0.32.0 was refused the tag push, and the issue has the two commands.
-6. **Keep Actions able to start jobs.** On 2026-11-10 at 07:14 UTC every
+6. ~~Keep Actions able to start jobs.~~ Over since the repository is
+   public: its hosted minutes are free, and jobs started again at 08:27 UTC.
+   What happened: on 2026-11-10 at 07:14 UTC every
    run in the repository began to fail within three seconds, with no runner
    and no log, on main and on every pull request, while githubstatus.com
    reported Actions as operational. The jobs ask for `ubuntu-latest` and the
    repository is private, so the likeliest cause is the account's Actions
    minutes or spending limit (*Settings → Billing and plans*) after a day
-   of long *Tests* runs. Nothing merges while checks can't run. A public
-   repository's hosted minutes are free, which step 1 brings; until then
-   the limit, or `RUNS_ON=self-hosted` with the devices on, is the owner's.
+   of long *Tests* runs. Nothing merged while checks couldn't run.
 
 ## Done when
 

@@ -28,7 +28,7 @@ because the form asks for them.
 | documentation_basics | MUST | Met | [docs/getting-started.md](getting-started.md), [docs/design.md](design.md), [docs/architecture.md](architecture.md) |
 | documentation_interface | MUST | Met | the CRDs' field descriptions (`config/crd/bases/`, `kubectl explain`), the model in [docs/design.md](design.md), the chart's `values.yaml` |
 | sites_https | MUST | Met | GitHub, `ghcr.io`, all over HTTPS |
-| discussion | MUST | **Owner** | GitHub issues are searchable, addressable and need no proprietary client, but they are open to new people only once the repository is public |
+| discussion | MUST | Met | GitHub issues are searchable, addressable and need no proprietary client, and the repository is public |
 | english | MUST | Met | every document, issue and pull request is in English |
 | maintained | MUST | Met | the relay and the maintainer ([GOVERNANCE.md](../GOVERNANCE.md)); releases every few days (v0.23.0, 2026-10-13) |
 
@@ -36,7 +36,7 @@ because the form asks for them.
 
 | Criterion | Level | State | Evidence |
 | --- | --- | --- | --- |
-| repo_public | MUST | **Owner** | the repository is private |
+| repo_public | MUST | Met | <https://github.com/JairJosafath/theos>, public since 2026-11-10 |
 | repo_track | MUST | Met | Git: who changed what and when, pull requests with `Closes #N` |
 | repo_interim | MUST | Met | every pull request merges to main between releases |
 | repo_distributed | SUGGESTED | Met | Git |
@@ -54,7 +54,7 @@ because the form asks for them.
 | report_tracker | SHOULD | Met | GitHub issues |
 | report_responses | MUST | Met | the maintainer answers each report ([GOVERNANCE.md](../GOVERNANCE.md)); triage runs on every relay pass |
 | enhancement_responses | SHOULD | Met | as above; triage readies or answers every `status/proposed` issue |
-| report_archive | MUST | **Owner** | the GitHub issues are the archive; public once the repository is |
+| report_archive | MUST | Met | the GitHub issues are the archive, public with the repository |
 | vulnerability_report_process | MUST | Met | [SECURITY.md](../SECURITY.md), linked from [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | vulnerability_report_private | MUST | **Owner** | [SECURITY.md](../SECURITY.md) names GitHub private vulnerability reporting; the owner turns it on in the repository's settings when it goes public |
 | vulnerability_report_response | MUST | Met | [SECURITY.md](../SECURITY.md): an answer within 3 business days, never later than 14. No report yet |
@@ -118,7 +118,8 @@ the passing badge.
 
 1. ~~Choose a FLOSS licence~~: done, Apache-2.0 (#47), by the owner's word of
    2026-11-09.
-2. **Make the repository public** (repo_public, discussion, report_archive).
+2. ~~Make the repository public~~: done 2026-11-10 (repo_public, discussion,
+   report_archive).
 3. **Turn on private vulnerability reporting** in *Settings → Code security*
    (vulnerability_report_private), then drop the "while the repository is
    private" sentence from [SECURITY.md](../SECURITY.md).

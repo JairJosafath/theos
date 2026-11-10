@@ -23,19 +23,19 @@ You need:
 - `jq` and `curl`, for the Gitea step;
 - a Claude subscription or API account and the `claude` CLI, for the agents'
   token;
-- the GitHub CLI (`gh`), logged in, while this repository, the chart and the
-  images on GHCR are private.
+- the GitHub CLI (`gh`), logged in, while the chart and the images on GHCR
+  are private.
 
 The commands use the release `0.32.0`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
-match the release (`gh` clones it while the repository is private). From the
+match the release. From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
 its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
 VERSION=0.32.0
-gh repo clone JairJosafath/theos && cd theos && git checkout "v$VERSION"
+git clone https://github.com/JairJosafath/theos && cd theos && git checkout "v$VERSION"
 ```
 
 ## What the factory trusts
