@@ -132,7 +132,7 @@ func (r *TaskReconciler) triageFacts(ctx context.Context, task *c4v1beta1.Task,
 		}
 		facts.NoFreeSlot = noSlot
 	}
-	if err := r.crewFacts(ctx, task, status, &facts); err != nil {
+	if _, err := r.crewFacts(ctx, task, status, &facts); err != nil {
 		return facts, err
 	}
 	if status.Phase == c4v1beta1.TaskImplementing {

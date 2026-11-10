@@ -127,7 +127,7 @@ func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1beta1.B
 // watchedTask is a Task that is not final as model.BriefAttention sees it:
 // its stage and since when, as the Factory view shows them.
 func watchedTask(t *c4v1beta1.Task) model.WatchedTask {
-	w := model.WatchedTask{Name: t.Name, Container: t.Spec.ContainerRef.Name}
+	w := model.WatchedTask{Name: t.Name, Container: t.Spec.ContainerRef.Name, Spec: isSpec(t)}
 	if cond := meta.FindStatusCondition(t.Status.Conditions, "Progressing"); cond != nil {
 		w.Reason, w.Message = cond.Reason, cond.Message
 	}

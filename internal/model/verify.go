@@ -78,7 +78,7 @@ func verifyingStep(f TaskFacts) TaskStep {
 		return noVerificationStep(f)
 	}
 	if f.Run.Result.Verdict == VerdictApprove {
-		return approvedStep(f, "Verified; merging")
+		return acceptedStep(f, "The verifier approved", "Verified; merging")
 	}
 	return roundFailed(f, VerifierChanges(f.Run.Result.Summary))
 }

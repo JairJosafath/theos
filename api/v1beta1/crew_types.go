@@ -158,6 +158,20 @@ type CrewSpec struct {
 	// +optional
 	Schedules []CrewSchedule `json:"schedules,omitempty"`
 
+	// approval says which of the Crew's changes wait for a person, and which
+	// merge on CI alone (docs/design.md, "Approval rules"). Each file a pull
+	// request changes takes the first rule in the list that matches it, and
+	// the change needs the strictest of what its files need: Person over
+	// Reviewer over None. A file no rule matches needs Reviewer, which is
+	// what every change needs without rules. The rules are read when a
+	// change's checks pass and again when they change, so they hold for the
+	// Tasks under way too. They are for the Crew's Implement Tasks: a spec
+	// has specApproval, and a Standard change is always reviewed.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=16
+	// +optional
+	Approval []ApprovalRule `json:"approval,omitempty"`
+
 	// publishReleases copies each release the Crew tags to another repository
 	// once its release runs succeed: the same tag, notes and files. It only adds
 	// releases there, never a commit. It needs tagReleases. Removing it stops
@@ -201,6 +215,64 @@ type CrewRoute struct {
 	// issues. Its issues are verified even when the Crew has no verifier.
 	// +optional
 	Verifier *LocalRef `json:"verifier,omitempty"`
+}
+
+// What a change needs before it merges, as an ApprovalRule asks.
+const (
+	// ApprovalPerson waits, once the reviewer and any verifier approved, for
+	// a person other than the factory's own accounts to approve the pull
+	// request, on the Git host or from chat.
+	ApprovalPerson ApprovalRequirement = "Person"
+	// ApprovalReviewer merges on the reviewer's approval, and the verifier's
+	// where the Task has one: what a Crew without rules does.
+	ApprovalReviewer ApprovalRequirement = "Reviewer"
+	// ApprovalNone merges once CI passes: no reviewer and no verifier runs.
+	ApprovalNone ApprovalRequirement = "None"
+)
+
+// ApprovalRequirement is what a change needs before it merges.
+// +kubebuilder:validation:Enum=Person;Reviewer;None
+type ApprovalRequirement string
+
+// ApprovalRule is one rule of a Crew's approval: the changes it is for, the
+// files of those it matches, and what it asks of them. A rule with labels is
+// for a change whose issue has one of them; one with changedLinesOver, for a
+// pull request that adds and deletes more lines than that; with both, for a
+// change that is both; with neither, for every change. It matches the files
+// under one of its paths, or every file when it has none.
+type ApprovalRule struct {
+	// paths are the files the rule matches: a file, a folder ending in "/"
+	// for everything in it, as a Standard's protectedPaths are, or a pattern
+	// in which * stands for any run of characters, slashes included (*.md,
+	// docs/*). Unset, the rule matches every file.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.all(p, !p.startsWith('/'))",message="paths are relative to the repository's root: no leading /"
+	// +optional
+	Paths []string `json:"paths,omitempty"`
+
+	// labels are issue labels, matched exactly: the rule is for a change
+	// whose issue has one of them. Unset, the issue's labels don't matter.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=100
+	// +optional
+	Labels []string `json:"labels,omitempty"`
+
+	// changedLinesOver makes the rule for a pull request that adds and
+	// deletes more lines than this, counted together. Unset, the size
+	// doesn't matter.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	ChangedLinesOver int32 `json:"changedLinesOver,omitempty"`
+
+	// require is what the files the rule matches need before the change
+	// merges: Person, Reviewer or None.
+	// +required
+	Require ApprovalRequirement `json:"require"`
 }
 
 // CrewPublishReleases is where a Crew publishes its releases.

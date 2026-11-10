@@ -350,7 +350,8 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		facts.MaxRounds = 3
 	}
 
-	if err := r.crewFacts(ctx, task, status, &facts); err != nil {
+	rules, err := r.crewFacts(ctx, task, status, &facts)
+	if err != nil {
 		return facts, err
 	}
 
@@ -380,6 +381,9 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		}
 	}
 
+	if err := r.ruleFacts(ctx, task, status, container, rules, &facts); err != nil {
+		return facts, err
+	}
 	if err := r.pullFacts(ctx, task, container, status, &facts); err != nil {
 		return facts, err
 	}
@@ -393,25 +397,27 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 
 // crewFacts adds the cost cap and the pause of the Crew that started the Task:
 // a Crew's Task stops at the Crew's cost cap (#1893), and its runs pause with
-// the Crew's. A Crew that is gone caps and pauses nothing.
+// the Crew's. It returns the Crew's approval rules, for ruleFacts. A Crew
+// that is gone caps and pauses nothing, and has no rules.
 func (r *TaskReconciler) crewFacts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	facts *model.TaskFacts) error {
+	facts *model.TaskFacts) ([]model.ApprovalRule, error) {
 	crewName := task.Labels[LabelCrew]
 	if crewName == "" {
-		return nil
+		return nil, nil
 	}
 	var crew c4v1beta1.Crew
 	switch err := r.Get(ctx, types.NamespacedName{Namespace: task.Namespace, Name: crewName}, &crew); {
 	case apierrors.IsNotFound(err):
 	case err != nil:
-		return err
+		return nil, err
 	default:
 		facts.BudgetMilliUSD = int64(crew.Spec.TaskBudgetUSD) * 1000
 		facts.CostMilliUSD = status.CostMilliUSD
 		facts.Pause = crewPause(&crew)
 		facts.SpecApproval = string(crew.Spec.SpecApproval)
+		return approvalRules(&crew), nil
 	}
-	return nil
+	return nil, nil
 }
 
 // turnFacts reads, for a Pending Task, whether an earlier Task on its
@@ -724,8 +730,9 @@ func (r *TaskReconciler) pullFacts(ctx context.Context, task *c4v1beta1.Task, co
 	run := facts.Run
 	judging := status.Phase == c4v1beta1.TaskReviewing || status.Phase == c4v1beta1.TaskVerifying
 	approved := judging && run.Done && run.Result != nil && run.Result.Verdict == model.VerdictApprove
-	updated := status.Phase == c4v1beta1.TaskChecking && status.MergeWhenChecksPass &&
-		facts.Checks == ports.CheckSuccess
+	// A change its Crew's approval rules ask no review of merges on its checks.
+	updated := status.Phase == c4v1beta1.TaskChecking && facts.Checks == ports.CheckSuccess &&
+		(status.MergeWhenChecksPass || model.MergesUnreviewed(*facts))
 	if !approved && !updated || status.PullRequest == 0 {
 		return nil
 	}

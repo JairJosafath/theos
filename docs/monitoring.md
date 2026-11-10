@@ -79,7 +79,8 @@ helm upgrade theos oci://ghcr.io/jairjosafath/theos/charts/theos --reuse-values 
 - **`prometheus.rules.enabled`** makes a PrometheusRule (prometheus-operator)
   with four alerts: a project's agents cost over
   `prometheus.rules.dailyBudgetUSD` in a day (0 leaves it out), more Tasks
-  failed than merged in a day, a spec waits `prometheus.rules.specWaits`
-  for a person, and most runs of an Agent report no cost. Without the
-  operator, `helm template … -s templates/prometheus/factory-rules.yaml`
-  prints the rules to copy into your Prometheus's own.
+  failed than merged in a day, a spec or a change a Crew's approval rules
+  hold waits `prometheus.rules.approvalWaits` for a person, and most runs of
+  an Agent report no cost. Without the operator,
+  `helm template … -s templates/prometheus/factory-rules.yaml` prints the
+  rules to copy into your Prometheus's own.

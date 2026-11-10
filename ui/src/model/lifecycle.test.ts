@@ -540,10 +540,29 @@ describe('taskNextStep', () => {
   })
 
   it('asks a person to approve a spec waiting for approval', () => {
-    const t = task({ phase: 'AwaitingApproval', pullRequest: 9, pullRequestURL: 'http://gitea/api/pulls/9' })
+    const t = task(
+      { phase: 'AwaitingApproval', pullRequest: 9, pullRequestURL: 'http://gitea/api/pulls/9' },
+      { kind: 'Spec' },
+    )
     expect(taskNextStep(t)).toEqual({
       text: expect.stringMatching(/^Its spec waits for you in pull request #9: read it and approve/),
       link: { href: 'http://gitea/api/pulls/9', label: 'Open the spec #9' },
+    })
+  })
+
+  // #62: a change its Crew's approval rules hold for a person.
+  it('asks a person to approve a change its Crew’s approval rules hold, with the rule', () => {
+    const t = task({
+      phase: 'AwaitingApproval',
+      pullRequest: 12,
+      pullRequestURL: 'http://gitea/api/pulls/12',
+      approval: { require: 'Person', rule: 1, reason: 'approval rule 1 (paths migrations/) asks for a person' },
+    })
+    expect(taskNextStep(t)).toEqual({
+      text: expect.stringMatching(
+        /^Its change passed CI and the factory’s review and waits for you in pull request #12, as the Crew’s approval rules ask \(approval rule 1 \(paths migrations\/\) asks for a person\): approve the pull request/,
+      ),
+      link: { href: 'http://gitea/api/pulls/12', label: 'Open the pull request #12' },
     })
   })
 

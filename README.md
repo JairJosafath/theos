@@ -90,7 +90,9 @@ idea or bug ─▶ triage ─▶ spec ─▶ [you review the spec] ─▶ implem
   Git host (or let the reviewer, with `specApproval: Reviewer`), and the issue
   goes on to be built.
 - **Implement and review.** As before: an implementer in a sandbox, CI, a
-  reviewer Agent, rounds until it merges.
+  reviewer Agent, rounds until it merges. A Crew's `approval` rules say
+  which changes wait for you first, by path, label and size, and which merge
+  on CI alone ([Start small](docs/getting-started.md#start-small-let-the-factory-merge-only-what-you-are-sure-of)).
 - **Verify.** A verifier runs the change and checks each acceptance criterion
   against what it does before it merges.
 - **Ship and review the product.** Releases, and the deploys you approve.

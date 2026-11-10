@@ -937,6 +937,78 @@ kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type
 
 Releases still publish while requests can't be read.
 
+## Start small: let the factory merge only what you are sure of
+
+Out of the box a Crew merges every change its checks and its reviewer pass.
+On a repository that matters you may not want that on the first day. Give
+the Crew `approval` rules, and it merges what you are sure of and holds the
+rest for you:
+
+```yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: orders-cli
+spec:
+  containerRef: {name: orders-cli}
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  approval:
+    - paths: ["docs/", "*.md"]
+      require: None              # documentation merges once CI passes
+    - require: Person            # everything else waits for you
+```
+
+Each rule says what it `require`s: `Person` (you approve the pull request),
+`Reviewer` (the reviewer Agent's approval merges it, which is what happens
+without rules) or `None` (CI alone; no reviewer runs). And it says what it is
+for:
+
+- `paths`: a file, a folder ending in `/`, or a pattern with `*` (`*.md`).
+- `labels`: the issue has one of these labels.
+- `changedLinesOver`: the pull request adds and deletes more lines than this.
+
+**Each changed file takes the first rule that matches it, and the change
+needs the strictest of what its files need.** With the rules above, a pull
+request that changes `docs/usage.md` merges on CI; one that changes
+`docs/usage.md` and `main.go` waits for you, because `main.go` falls to the
+second rule. A rule can only loosen the files it names, so you can't let
+something through by accident.
+
+A change that waits for you has passed CI and the reviewer (and the
+verifier, when the Crew has one); their approvals are on the pull request.
+You find it under *Needs you* in the UI, and in the Task:
+
+```console
+$ kubectl -n webshop get task orders-cli-7 -o jsonpath='{.status.approval.reason}'
+approval rule 2 (every change) asks for a person
+```
+
+On the Git host, **approve** the pull request and the Crew merges it;
+**request changes** and the implementer gets another round with your words;
+close it and the Task ends. While it waits it holds nothing up: the Crew
+goes on with the next issue.
+
+Widen as you gain trust. A common second step is the other way round, with
+the Crew merging by itself except where it hurts:
+
+```yaml
+  approval:
+    - paths: ["migrations/", "internal/auth/"]
+      require: Person
+    - labels: ["risk/high"]
+      require: Person
+    - changedLinesOver: 400
+      require: Person
+    - paths: ["docs/", "*.md"]
+      require: None
+```
+
+[config/samples/first-app/crew-approval.yaml](../config/samples/first-app/crew-approval.yaml)
+is a Crew with such rules. Changing the rules takes effect at once, also for
+changes under way: take a rule away and what waited for it merges. Specs have
+their own setting, `specApproval`, and a Standard change is always reviewed.
+
 ## Work on a timer
 
 A Crew can start work from the clock: update the dependencies every Monday,

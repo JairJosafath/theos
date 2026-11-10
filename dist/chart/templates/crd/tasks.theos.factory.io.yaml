@@ -414,6 +414,61 @@ spec:
                   usage limit, was overloaded or refused the credentials. Waiting costs no round.
                 format: date-time
                 type: string
+              approval:
+                description: |-
+                  approval is what the Crew's approval rules ask of the Task's change,
+                  once its checks passed, and who approved it when they ask for a
+                  person. Unset for a Task whose Crew has no rules.
+                properties:
+                  approvedBy:
+                    description: |-
+                      approvedBy is who approved the change, once a person did: the Git host
+                      user who approved the pull request, or the Kubernetes user who approved
+                      it from chat (the theos.factory.io/approve-spec annotation; then
+                      approvedInChat).
+                    maxLength: 256
+                    type: string
+                  approvedInChat:
+                    description: |-
+                      approvedInChat says approvedBy approved the change from chat, not on
+                      the Git host.
+                    type: boolean
+                  commit:
+                    description: |-
+                      commit is the head the answer is of; a later head is asked again once
+                      its checks pass.
+                    maxLength: 64
+                    type: string
+                  reason:
+                    description: reason says which rule asks it, and for which file.
+                    maxLength: 1024
+                    type: string
+                  require:
+                    description: |-
+                      require is what the change needs before it merges: Person, a person's
+                      approval of its pull request after the agents'; Reviewer, the agents'
+                      alone; or None, CI alone.
+                    enum:
+                    - Person
+                    - Reviewer
+                    - None
+                    type: string
+                  rule:
+                    description: |-
+                      rule is the number, from 1, of the rule in the Crew's approval that
+                      decided; unset when a file no rule matches did.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  rules:
+                    description: |-
+                      rules names the Crew's rules the answer came from, by what they say:
+                      when the Crew's rules change, the answer is worked out again.
+                    maxLength: 64
+                    type: string
+                required:
+                - require
+                type: object
               branch:
                 description: branch is where the agent works.
                 type: string

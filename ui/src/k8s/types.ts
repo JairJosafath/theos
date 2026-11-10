@@ -854,6 +854,15 @@ export interface Task extends K8sObject {
       criteria?: string[]
       applied?: string
     }
+    /** What the Crew's approval rules ask of the change, which rule and why, and who approved it. */
+    approval?: {
+      require: ApprovalRequirement
+      rule?: number
+      reason?: string
+      commit?: string
+      approvedBy?: string
+      approvedInChat?: boolean
+    }
     /** The Standard change the Task waits for while Blocked. */
     standardChange?: {
       issue: number
@@ -971,6 +980,12 @@ export interface Crew extends K8sObject {
     verifier?: LocalRef
     /** Recurring goals: when one comes due, the Crew files an issue with its goal and works it. */
     schedules?: CrewSchedule[]
+    /**
+     * Which changes wait for a person and which merge on CI alone: each changed
+     * file takes the first rule that matches it, and the change needs the
+     * strictest of what its files need. Unset, the reviewer's approval merges.
+     */
+    approval?: ApprovalRule[]
   }
   status?: {
     phase?: CrewPhase
@@ -993,6 +1008,21 @@ export interface Crew extends K8sObject {
     /** Where each of spec.schedules stands. */
     schedules?: CrewScheduleStatus[]
   }
+}
+
+/** What a change needs before it merges: a person's approval, the reviewer's, or CI alone. */
+export type ApprovalRequirement = 'Person' | 'Reviewer' | 'None'
+
+/**
+ * One rule of a Crew's approval: for the changes whose issue has one of labels
+ * and that change more than changedLinesOver lines (either unset is any), it
+ * matches the files under paths (unset is every file) and asks require of them.
+ */
+export interface ApprovalRule {
+  paths?: string[]
+  labels?: string[]
+  changedLinesOver?: number
+  require: ApprovalRequirement
 }
 
 /** One recurring goal of a Crew: a five-field cron expression in timeZone (UTC unset), and what its issue asks for. */
