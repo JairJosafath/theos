@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -137,12 +138,19 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1beta1
 			return "", fmt.Errorf("protecting %s: %w", ports.DefaultBranch, err)
 		}
 	}
+	// A host that gives agents no credential, as its provider is configured,
+	// has none for the planner: the Brief asks for what the provider lacks.
+	if ok, _, why := ports.AgentAccessState(provider); !ok {
+		return "", errNeedsInput{fmt.Sprintf("GitProvider %s gives agents no credential, so the Brief's planner "+
+			"has none: %s", brief.Spec.GitProviderRef.Name, why)}
+	}
 	if err := r.holdForBot(ctx, brief); err != nil {
 		return "", err
 	}
+	// A plan run asks for a token that outlives it when it starts
+	// (TaskReconciler.planSandbox); here the Secret only has to be there.
 	if _, err := ensureAgentSecret(ctx, r.Client, r.APIReader, brief, briefGitSecret(brief.Name),
-		map[string]string{c4v1beta1.LabelProject: brief.Namespace, c4v1beta1.LabelBrief: brief.Name},
-		map[string]string{"repository": repo.CloneURL}, r.now(),
+		briefBotLabels(brief), briefBotExtra(repo), r.now(), 0,
 		func() (ports.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo,
 				model.AgentUsername(brief.Namespace, model.BriefRepository(brief.Name)))
@@ -150,6 +158,17 @@ func (r *BriefReconciler) prepareWorkspace(ctx context.Context, brief *c4v1beta1
 		return "", err
 	}
 	return repo.WebURL, nil
+}
+
+// briefBotLabels and briefBotExtra are the labels of a Brief bot's Secret
+// and what it keeps beside the credential: the repository it is for, so
+// another repository's is minted again.
+func briefBotLabels(brief *c4v1beta1.Brief) map[string]string {
+	return map[string]string{c4v1beta1.LabelProject: brief.Namespace, c4v1beta1.LabelBrief: brief.Name}
+}
+
+func briefBotExtra(repo ports.Repository) map[string]string {
+	return map[string]string{"repository": repo.CloneURL}
 }
 
 // briefBotFinalizer keeps a Brief until the operator deleted its bot on the
@@ -584,14 +603,27 @@ func installedBundles(ctx context.Context, c client.Reader, ns string) ([]model.
 // bot's older tokens may still be live, in sandboxes started before now. The
 // Secret is read and written without the cache: the operator doesn't watch
 // Secrets.
+//
+// On a host whose credentials end (ports.Credentials.Expires), the Secret
+// keeps when its token ends and how long the host let it live. outlive is
+// how long the token must still live, the time limit of the run it is for;
+// 0 asks nothing. A token that would end sooner is minted again, and a host
+// whose credentials live shorter than outlive gives a *credentialTooShort,
+// after one minting and none again: no new token would be longer.
 func ensureAgentSecret(ctx context.Context, c client.Client, apiReader client.Reader, owner client.Object,
-	name string, labels, extra map[string]string, now time.Time,
+	name string, labels, extra map[string]string, now time.Time, outlive time.Duration,
 	access func() (ports.Credentials, error)) (string, error) {
 	var secret corev1.Secret
 	err := apiReader.Get(ctx, client.ObjectKey{Namespace: owner.GetNamespace(), Name: name}, &secret)
-	current := err == nil && len(secret.Data["token"]) > 0
+	current := err == nil && len(secret.Data[secretKeyToken]) > 0
 	for k, v := range extra {
 		current = current && string(secret.Data[k]) == v
+	}
+	if ends, lifetime, ending := agentTokenEnds(secret.Data); current && ending && outlive > 0 {
+		if lifetime < outlive {
+			return "", &credentialTooShort{lives: lifetime, needs: outlive}
+		}
+		current = !ends.Before(now.Add(outlive))
 	}
 	if current {
 		return name, nil
@@ -606,10 +638,15 @@ func ensureAgentSecret(ctx context.Context, c client.Client, apiReader client.Re
 	}
 	desired := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: owner.GetNamespace(), Name: name, Labels: labels},
-		Data:       map[string][]byte{"username": []byte(creds.Username), "token": []byte(creds.Token)},
+		Data:       map[string][]byte{secretKeyUsername: []byte(creds.Username), secretKeyToken: []byte(creds.Token)},
 	}
 	for k, v := range extra {
 		desired.Data[k] = []byte(v)
+	}
+	lifetime := creds.Expires.Sub(now)
+	if !creds.Expires.IsZero() {
+		desired.Data[agentSecretExpires] = []byte(creds.Expires.UTC().Format(time.RFC3339))
+		desired.Data[agentSecretLifetime] = []byte(strconv.Itoa(int(lifetime.Seconds())))
 	}
 	if err := controllerutil.SetControllerReference(owner, &desired, c.Scheme()); err != nil {
 		return "", err
@@ -628,7 +665,62 @@ func ensureAgentSecret(ctx context.Context, c client.Client, apiReader client.Re
 		return "", err
 	}
 	logf.FromContext(ctx).Info("Created agent Git access", "user", creds.Username, "secret", name)
+	if !creds.Expires.IsZero() && lifetime < outlive {
+		return "", &credentialTooShort{lives: lifetime, needs: outlive}
+	}
 	return name, nil
+}
+
+// The keys of an agent Git Secret on a host whose credentials end: when the
+// token ends (RFC 3339), and how long the host let it live when it was
+// minted, in seconds.
+const (
+	agentSecretExpires  = "expires"
+	agentSecretLifetime = "lifetimeSeconds"
+)
+
+// credentialFollowUp is how long an agent's credential must live past its
+// run's time limit: the operator opens the run's pull request with it.
+const credentialFollowUp = 5 * time.Minute
+
+// agentTokenEnds reads when an agent Git Secret's token ends and how long
+// the host let it live; ending is false for a token that never ends, as on
+// a host whose credentials live until revoked.
+func agentTokenEnds(data map[string][]byte) (ends time.Time, lifetime time.Duration, ending bool) {
+	ends, err := time.Parse(time.RFC3339, string(data[agentSecretExpires]))
+	if err != nil {
+		return time.Time{}, 0, false
+	}
+	seconds, err := strconv.Atoi(string(data[agentSecretLifetime]))
+	if err != nil {
+		return time.Time{}, 0, false
+	}
+	return ends, time.Duration(seconds) * time.Second, true
+}
+
+// credentialTooShort is the error of an agent credential that the host lets
+// live shorter than the run it is for may take: minting again changes
+// nothing, a shorter run does.
+type credentialTooShort struct {
+	lives, needs time.Duration
+}
+
+func (e *credentialTooShort) Error() string {
+	return fmt.Sprintf("a credential of the Git host lives %s, and the run needs one for %s",
+		e.lives.Round(time.Minute), e.needs.Round(time.Minute))
+}
+
+// reasonCredentialTooShort is the Progressing reason of a Task whose Agent's
+// runs may take longer than a credential of its Git host lives.
+const reasonCredentialTooShort = "CredentialTooShort"
+
+// tooShortForAgent is what such a Task says: the two times, and the
+// timeoutMinutes that would fit.
+func tooShortForAgent(agent *c4v1beta1.Agent, e *credentialTooShort) string {
+	fits := int((e.lives - credentialFollowUp) / time.Minute)
+	return fmt.Sprintf("A run of Agent %s may take %d minutes, and a credential of its Git host lives %d: the "+
+		"run could end without one. Set the Agent's spec.timeoutMinutes to %d or less.", agent.Name,
+		int(runTimeout(agent)/time.Minute), int(e.lives/time.Minute), fits)
 }
 
 // needsInputSentence returns the sentence of an errNeedsInput in err.

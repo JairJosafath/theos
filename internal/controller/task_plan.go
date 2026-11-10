@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -31,6 +32,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // reconcilePlan takes the next step of a Plan Task, one round of a Brief
@@ -269,6 +271,22 @@ func (r *TaskReconciler) planSandbox(ctx context.Context, task *c4v1beta1.Task, 
 		return nil, ctrl.Result{}, err
 	}
 	repo := provider.Repository(model.BriefRepository(brief.Name))
+	// The planner, like any agent, starts with a credential that outlives
+	// its run: on a host whose credentials end, the Brief's bot gets a new
+	// one when the kept one would end first.
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	_, err = ensureAgentSecret(ctx, r.Client, r.APIReader, brief, gitSecret, briefBotLabels(brief), briefBotExtra(repo),
+		r.now(), runTimeout(agent)+credentialFollowUp, func() (ports.Credentials, error) {
+			return provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(brief.Namespace, repo.Name))
+		})
+	if short, ok := errors.AsType[*credentialTooShort](err); ok {
+		r.progress(task, status, metav1.ConditionFalse, reasonCredentialTooShort, tooShortForAgent(agent, short))
+		return nil, ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
+	}
+	if err != nil {
+		return nil, ctrl.Result{}, err
+	}
 	run := status.DeepCopy()
 	run.Branch = model.PlanBranch(round)
 	sandbox, err := buildSandbox(sandboxRun{

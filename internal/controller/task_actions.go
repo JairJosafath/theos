@@ -423,7 +423,13 @@ func (r *TaskReconciler) runInputs(ctx context.Context, task *c4v1beta1.Task, st
 	if err != nil {
 		return nil, ctrl.Result{}, err
 	}
-	gitSecret, err := r.ensureAgentGit(ctx, container, provider, repo)
+	// The run starts with a credential that outlives it, and the operator's
+	// pull request for it.
+	gitSecret, err := r.ensureAgentGit(ctx, container, provider, repo, runTimeout(agent)+credentialFollowUp)
+	if short, ok := errors.AsType[*credentialTooShort](err); ok {
+		r.progress(task, status, metav1.ConditionFalse, reasonCredentialTooShort, tooShortForAgent(agent, short))
+		return nil, ctrl.Result{RequeueAfter: r.secretRecheck()}, nil
+	}
 	if err != nil {
 		return nil, ctrl.Result{}, err
 	}
@@ -535,16 +541,18 @@ func (r *TaskReconciler) agentCredentials(ctx context.Context, task *c4v1beta1.T
 
 // ensureAgentGit returns the Secret with the Container's agent Git credentials,
 // creating the bot user and the Secret the first time. The Secret is owned by the
-// Container, so it goes when the Container goes.
+// Container, so it goes when the Container goes. outlive is how long the
+// credential must still live, on a host whose credentials end
+// (ensureAgentSecret).
 func (r *TaskReconciler) ensureAgentGit(ctx context.Context, container *c4v1beta1.Container,
-	provider ports.AgentAccess, repo ports.Repository) (string, error) {
+	provider ports.AgentAccess, repo ports.Repository, outlive time.Duration) (string, error) {
 	r.revokeOldAgentTokens(ctx, container.Namespace, container.Name, "")
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	// The scopes are kept with the token, so a token made with fewer is made again.
 	return ensureAgentSecret(ctx, r.Client, r.APIReader, container, agentGitSecret(container.Name),
 		map[string]string{c4v1beta1.LabelProject: container.Namespace, c4v1beta1.LabelContainer: container.Name},
-		map[string]string{"scopes": ports.AgentTokenScopes}, r.now(),
+		map[string]string{"scopes": ports.AgentTokenScopes}, r.now(), outlive,
 		func() (ports.Credentials, error) {
 			return provider.EnsureAgentAccess(gitCtx, repo, model.AgentUsername(container.Namespace, container.Name))
 		})
@@ -1346,6 +1354,13 @@ func (r *TaskReconciler) agentGitRepo(ctx context.Context, container *c4v1beta1.
 	if err := r.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: container.Spec.GitProviderRef.Name},
 		&gp); err != nil {
 		return nil, ports.Repository{}, fmt.Errorf("GitProvider %s: %w", container.Spec.GitProviderRef.Name, err)
+	}
+	// On a host whose credentials end, the bot's may have ended since its
+	// run: the operator acts with one that lives long enough for what it does.
+	if host, repo, err := r.gitRepo(ctx, container); err != nil {
+		return nil, ports.Repository{}, err
+	} else if _, err := r.ensureAgentGit(ctx, container, host, repo, credentialFollowUp); err != nil {
+		return nil, ports.Repository{}, fmt.Errorf("agent Git access of %s: %w", container.Name, err)
 	}
 	var secret corev1.Secret
 	if err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: agentGitSecret(container.Name)},
