@@ -39,7 +39,7 @@ export function RequestButtons({
   releases: BriefRelease[]
   resourceVersion?: string
   request: { repository: string; number: number }
-  /** The request, as its buttons name it: "gray-lenovo/cel-lens #12". */
+  /** The request, as its buttons name it: "acme/cel-lens #12". */
   label: string
   /** The repository's answered numbers whose issues are closed, which an answer drops. */
   settled?: number[]

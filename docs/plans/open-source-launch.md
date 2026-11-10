@@ -123,9 +123,9 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 | #63 work on a timer | done (#71). Of the rest, #72: the UI lists the schedules, a run that finds nothing to do closes its issue instead of failing, and a person runs a schedule now ([crew-schedules.md](crew-schedules.md), steps 2 to 4); open: Standards that propose schedules |
 | #70 the flaky cost spec | done (#71) |
 | #59 Prometheus metrics, the dashboard and alerts | done (#67, #71) |
-| #53 a first run in ten minutes | `hack/quickstart.sh` and README's first screen are in; open: the guide cut into pages, the time measured, a run on a real machine |
-| #49 fork pull requests on hosted runners | the rule is in (#67); open: a run from a real fork, the approval setting |
-| #56 private links and logins | the links are gone (#67), and the guide clones with `git` now the repository is public; open: the guide's `gh` login for GHCR, until the packages are public (the owner's step 2) |
+| #53 a first run in ten minutes | `hack/quickstart.sh` and README's first screen are in; the script asks for the release's chart before it makes anything, and says the two reasons when it can't pull it (no such release, private packages); open: the guide cut into pages, the time measured, a run on a real machine |
+| #49 fork pull requests on hosted runners | done: the rule is in (#67), and since the repository is public every pull-request workflow has run on GitHub's hosted runner (*Tests* in 21 minutes, run 42806713504). Not tried: a pull request from a real fork. The approval setting is the owner's step 3 |
+| #56 private links and logins | the links are gone (#67), the guide clones with `git`, `SECURITY.md` names the report button and the owner's profile, and the sample, the planner's example and the UI's comments use `acme/cel-lens`; open: the guide's `gh` login for GHCR, until the packages are public (the owner's step 2) |
 | #52 history and secrets | scanned clean, gitleaks on every pull request (#69); the repository is public since 2026-11-10 |
 | #51 signing, SBOM, scanning | Dependabot is in (#71), with the Kubernetes libraries and the Go and Node versions left to us; CodeQL scans the Go code and the UI; open: image and chart signatures, SBOM, provenance, Scorecard |
 | #50 a release from this repository | v0.32.0 is bumped on main and not tagged: the tag push is the owner's step 5 |
@@ -141,8 +141,11 @@ session can reach: a setting, an account, a tag. Each is one step.
 
 1. ~~Publish.~~ Done 2026-11-10: the repository is public, with its
    history as it was.
-2. **Make the GHCR packages public** (each package has its own visibility:
-   the chart and the thirteen images under `ghcr.io/jairjosafath/theos`).
+2. **Make the GHCR packages public**, after step 5: the first release
+   from this repository makes them, private (each package has its own
+   visibility: the chart and the thirteen images under
+   `ghcr.io/jairjosafath/theos`). Until then nobody but the owner can
+   install a release, and `hack/quickstart.sh` says so and stops.
 3. **Settings, now it is public:** private vulnerability reporting on;
    Discussions on, for questions; Actions' "Require approval for all outside
    collaborators"; the main ruleset's required checks as
