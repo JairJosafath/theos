@@ -88,7 +88,7 @@ Each step is its own issue, names #57 and lands with `make check`.
 
 | Step | Issue | Depends on | Done when |
 | --- | --- | --- | --- |
-| 1. The fake GitHub, and repositories, files and refs | #74 | | `githubtest` serves repositories, Git over HTTP, refs and tags; the adapter passes the GitHost contract's repository, file, branch and tag subtests, the rest listed in `Cannot` |
+| 1. The fake GitHub, and repositories, files and refs (done) | #74 | | `githubtest` serves repositories, Git over HTTP, refs and tags; the adapter passes the GitHost contract's repository, file, branch and tag subtests, the rest listed in `Cannot` |
 | 2. Pull requests, reviews, merges and statuses | #75 | #74 | the GitHost contract passes whole; `Cannot` is empty or names what GitHub can't do, with why |
 | 3. Issues | #76 | #74 | the Issues contract passes, exclusive labels and refused closes emulated |
 | 4. AgentAccess from a GitHub App | #77 | #75 | the AgentAccess contract passes: a token for one repository, a push to main refused, revoked on removal; a provider with a token alone reports `NeedsGitHubApp` |
@@ -97,6 +97,25 @@ Each step is its own issue, names #57 and lands with `make check`.
 | 7. Registry | #80 | #74 | the Registry contract passes for images and npm; Go modules resolve from the repository; PyPI is in `Cannot` |
 | 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; `TestHostNeutral`'s allowlist has no controller in it |
 | 9. The guide, and a run on the real thing | #82 | #81 | "Use the factory on your GitHub organization" in the guide, the App's permissions listed with why; a human runs `make test-github` and the first-app Crew on a test organization, with the output as evidence |
+
+## What step 1 found
+
+- The fake serves Git with Git's own `git-http-backend` through
+  `net/http/cgi`, from bare repositories on disk: a push and a clone in the
+  tests are real ones, and the fake's refs endpoints run `git` on the same
+  repositories, so the REST and the Git views can't disagree. A machine
+  whose Git lacks `git-http-backend` skips the tests.
+- One endpoint answers three questions: `GET /repos/{owner}/{repo}/commits/{ref}`
+  resolves a SHA, `heads/<branch>` and `tags/<tag>`, peels an annotated tag,
+  and carries the tree, so `BranchCommit`, `HasBranch`, `GetTag` and
+  `CommitTree` share it. An empty repository answers 409 there, a missing
+  ref 422.
+- An owner that is neither an organization the token sees nor the token's
+  own account is refused before anything is made: falling back to
+  `POST /user/repos` unasked would put the repository in the wrong account.
+- "pushes the default branch" is in the contract's `Cannot` until step 2,
+  because the subtest ends by pushing past a branch rule; the adapter's own
+  test covers the pushes before that point.
 
 ## Done when
 
