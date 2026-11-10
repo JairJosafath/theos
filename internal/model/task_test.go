@@ -57,6 +57,14 @@ func TestNextTaskStep(t *testing.T) {
 			want: ActionStartImplement},
 		{name: "fails on a Container without protection", facts: TaskFacts{Phase: TaskPending, ContainerReady: true,
 			Container: "photo-editor", MaxRounds: 3}, want: ActionFail, message: "photo-editor has no Standard"},
+		{name: "waits for an adopted Container's main to be protected (#95)", facts: TaskFacts{Phase: TaskPending,
+			ContainerReady: true, Container: "photo-editor", MaxRounds: 3,
+			Unprotected: "main's head reports no check matching check*"}, want: ActionWait,
+			message: "Waiting for the main of Container photo-editor to be protected; agents work only on " +
+				"protected repositories: main's head reports no check matching check*"},
+		{name: "starts on an adopted Container whose main is protected (#95)", facts: TaskFacts{Phase: TaskPending,
+			ContainerReady: true, Container: "photo-editor", MaxRounds: 3, Protected: true},
+			want: ActionStartImplement},
 
 		{name: "restarts a lost implement sandbox", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3},
 			want: ActionStartImplement},

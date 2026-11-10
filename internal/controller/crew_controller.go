@@ -200,7 +200,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 	facts := model.CrewFacts{Paused: crew.Spec.Paused, Parallel: int(crew.Spec.Parallel),
 		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady, Routes: crewRoutes(&crew.Spec),
-		Cadence: cadence.Cuts()}
+		Cadence: cadence.Cuts(), Unprotected: unprotected(&container)}
 	// Read live: a Task created a moment ago must count, or the Crew starts two.
 	var tasks c4v1beta1.TaskList
 	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(crew.Namespace)); err != nil {
@@ -214,8 +214,10 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	// A Triage Task is no try at its issue, takes no place from parallel and
 	// merges nothing a release could hold: the Crew reads them apart.
+	// On a repository whose main isn't protected yet no agent runs, the
+	// triager included: it pushes nothing, but its clone's token could (#95).
 	triage := model.TriageFacts{On: crew.Spec.Triager != nil, Paused: crew.Spec.Paused,
-		ContainerReady: facts.ContainerReady}
+		ContainerReady: facts.ContainerReady && facts.Unprotected == ""}
 	triage.Tasks, containerTasks = triageTasks(containerTasks)
 	for i := range containerTasks {
 		facts.Tasks = append(facts.Tasks, crewTask(&containerTasks[i]))
@@ -286,11 +288,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		now := metav1.NewTime(r.now())
 		status.LastPolled = &now
 	}
-	ready := metav1.ConditionTrue
-	reason := step.Phase
-	if step.Phase == model.CrewWaiting {
-		ready, reason = metav1.ConditionFalse, "ContainerNotReady"
-	}
+	ready, reason := crewReady(step)
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, ready, reason, step.Message)
 	setCrewPaused(&crew, status, tasks.Items)
 	if !crew.Spec.TagReleases {
@@ -660,6 +658,19 @@ func (r *CrewReconciler) observe(ctx context.Context, crew *c4v1beta1.Crew) *c4v
 	status.ObservedGeneration = crew.Generation
 	r.releaseTarget(ctx, crew, status)
 	return status
+}
+
+// crewReady is a step's Ready condition: True with the step's phase as its
+// reason, and False while the Crew waits for its Container to be Ready, or
+// for what the step says instead (model.ReasonNotProtected).
+func crewReady(step model.CrewStep) (metav1.ConditionStatus, string) {
+	switch {
+	case step.Phase != model.CrewWaiting:
+		return metav1.ConditionTrue, step.Phase
+	case step.Reason != "":
+		return metav1.ConditionFalse, step.Reason
+	}
+	return metav1.ConditionFalse, "ContainerNotReady"
 }
 
 func (r *CrewReconciler) writeStatus(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus) error {

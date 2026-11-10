@@ -155,6 +155,11 @@ type IssueChange struct {
 type CrewFacts struct {
 	Paused         bool
 	ContainerReady bool
+	// Unprotected says why the default branch of a Container that adopts
+	// its repository with no Standard isn't protected yet (#95); empty for
+	// a protected one and for any other Container. The Crew starts no Task
+	// while it isn't: agents work only on protected repositories.
+	Unprotected string
 	// Parallel is how many Tasks the Crew may run at once; less than 1 means 1.
 	Parallel int
 	// Tasks are all Tasks on the Container.
@@ -259,6 +264,9 @@ type CrewStep struct {
 	// NotReady are issues to hand back to a person.
 	NotReady []IssueRejection
 	Message  string
+	// Reason is why a waiting Crew waits, when not for its Container to be
+	// Ready: ReasonNotProtected.
+	Reason string
 }
 
 // NextCrewStep decides what a Crew does: it keeps up to Parallel Tasks working,
@@ -334,6 +342,12 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 	case !f.ContainerReady:
 		step.Phase, step.Ready, step.NotReady = CrewWaiting, candidates, nil
 		step.Message = fmt.Sprintf("Waiting for Container %s to be Ready", container)
+		return step
+	case f.Unprotected != "":
+		step.Phase, step.Ready, step.NotReady = CrewWaiting, candidates, nil
+		step.Reason = ReasonNotProtected
+		step.Message = fmt.Sprintf("Waiting for the main of Container %s to be protected; agents work only on "+
+			"protected repositories: %s", container, f.Unprotected)
 		return step
 	}
 

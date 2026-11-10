@@ -460,7 +460,7 @@ func crewAttention(c WatchedCrew, now time.Time) (*Healing, *NeedsYou) {
 		return &Healing{AttentionCrew, c.Name, "Its Git host or Container may come back.", acts}, nil
 	}
 	recommend := "Check the GitProvider, its Secret and the Git host."
-	if c.Reason == "ContainerNotReady" {
+	if c.Reason == "ContainerNotReady" || c.Reason == ReasonNotProtected {
 		recommend = "See its Container."
 	}
 	return nil, &NeedsYou{AttentionCrew, c.Name,

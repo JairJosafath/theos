@@ -26,6 +26,7 @@ import (
 // +kubebuilder:validation:XValidation:rule="!has(self.bundleRef) || !(has(self.frameworkRef) || has(self.standardRef) || has(self.computeRef) || has(self.deploymentRef))",message="bundleRef replaces frameworkRef, standardRef, computeRef and deploymentRef"
 // +kubebuilder:validation:XValidation:rule="has(self.bundleRef) == has(oldSelf.bundleRef) && (!has(self.bundleRef) || self.bundleRef == oldSelf.bundleRef)",message="bundleRef is immutable"
 // +kubebuilder:validation:XValidation:rule="(has(self.adopt) && self.adopt) == (has(oldSelf.adopt) && oldSelf.adopt)",message="adopt is immutable"
+// +kubebuilder:validation:XValidation:rule="!(has(self.checkCommand) || has(self.checkContexts)) || (has(self.adopt) && self.adopt && !has(self.standardRef) && !has(self.bundleRef))",message="checkCommand and checkContexts are for a Container that adopts its repository with no Standard: a Standard brings its own check"
 type ContainerSpec struct {
 	// softwareSystemRef names the SoftwareSystem this Container belongs to. It can't change.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="softwareSystemRef is immutable"
@@ -96,6 +97,31 @@ type ContainerSpec struct {
 	// fails NothingToAdopt. Set at creation and immutable.
 	// +optional
 	Adopt bool `json:"adopt,omitempty"`
+
+	// checkCommand is the command that checks the repository of a Container
+	// that adopts it with no Standard: the agent's workspace runs it after
+	// the agent, and the agent is told to run it. Its words are split on
+	// spaces and run as they are, with no shell. Unset, it is make check.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="!self.startsWith(' ') && !self.endsWith(' ')",message="checkCommand starts and ends with a word"
+	// +optional
+	CheckCommand string `json:"checkCommand,omitempty"`
+
+	// checkContexts are the status checks the default branch of a Container
+	// that adopts its repository with no Standard requires, as patterns in
+	// which * stands for any run of characters: "ci / test*" is the job test
+	// of the workflow ci on every event. The operator protects main with
+	// them once main's head reports a check for each (the condition
+	// Protected says when it doesn't), and agents work on the repository
+	// only then. Unset, they are the CI system's own: check*.
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=8
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=255
+	// +optional
+	CheckContexts []string `json:"checkContexts,omitempty"`
 
 	// operations is what the application promises whatever tier runs it: how
 	// long its backups are kept and where they are copied, its recovery
