@@ -259,8 +259,8 @@ type namedWorkflow struct {
 }
 
 // reportedContexts are the contexts a workflow's jobs report under on a
-// pull request: "<workflow> / <job> (<event>)" on Gitea Actions, the job's
-// own name on GitHub Actions.
+// pull request: the job's own name on GitHub Actions, and
+// "<workflow> / <job> (<event>)" where a context names all three.
 func reportedContexts(ci model.CI, w namedWorkflow) []string {
 	var contexts []string
 	for id, job := range w.Jobs {
@@ -287,7 +287,10 @@ var pinnedAction = regexp.MustCompile(`^[\w.-]+/[\w./-]+@[0-9a-f]{40}$`)
 // the system's row requires, and nothing outside the paths the row keeps
 // from agents.
 func TestStandardsRenderForEveryCISystem(t *testing.T) {
-	systems := []string{model.CIGiteaActions, model.CIGitHubActions}
+	systems := model.CINames()
+	if len(systems) < 2 {
+		t.Fatalf("the factory knows the CI systems %v, want more than one", systems)
+	}
 	// Every Standard under templates/ that keeps CI files is in the list, or
 	// is factory-self.
 	for _, c := range templateCombos {
@@ -362,12 +365,10 @@ func testStandardCI(t *testing.T, in Input, layer Layer) {
 			}
 		}
 		// Each system's files speak its own language.
-		other := "gitea."
-		if in.CI.Name == model.CIGiteaActions {
-			other = "github."
-		}
-		if strings.Contains(data, "{{ "+other) || strings.Contains(data, " "+other+"event") {
-			t.Errorf("%s reads %s expressions, another CI system's", p, other)
+		for _, name := range model.CINames() {
+			if other, _ := model.CIByName(name); name != in.CI.Name && strings.Contains(data, "{{ "+expressionContext(other)) {
+				t.Errorf("%s reads %s expressions, which are %s's", p, expressionContext(other), name)
+			}
 		}
 		for _, job := range w.Jobs {
 			for _, step := range job.Steps {
@@ -380,6 +381,12 @@ func testStandardCI(t *testing.T, in Input, layer Layer) {
 	if workflows == 0 {
 		t.Errorf("%s writes no workflow under %v for %s: %v", layer.Name, in.CI.ProtectedPaths, in.CI.Name, files.Paths())
 	}
+}
+
+// expressionContext is what a CI system's expressions read a run from,
+// named as its folder is: the system that reads .github/ says github.*.
+func expressionContext(ci model.CI) string {
+	return strings.Trim(ci.ProtectedPaths[0], "./") + "."
 }
 
 // fromTemplate says whether a rendered path comes from a file of the layer

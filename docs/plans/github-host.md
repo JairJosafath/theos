@@ -99,10 +99,10 @@ Each step is its own issue, names #57 and lands with `make check`.
 | 2. Pull requests, reviews, merges and statuses (done) | #75 | #74 | the GitHost contract passes whole; `Cannot` is empty or names what GitHub can't do, with why |
 | 3. Issues (done) | #76 | #74 | the Issues contract passes, exclusive labels and refused closes emulated |
 | 4. AgentAccess from a GitHub App (done) | #77 | #75 | the AgentAccess contract passes: a token for one repository, a push to main refused, revoked on removal; a provider with a token alone reports `NeedsGitHubApp` |
-| 5. CI on GitHub Actions | #78 | #75 | the CI contract passes with `JobRunners` in `Cannot`; `model.CI` has `githubActions`, and every Standard renders its workflow for both hosts |
+| 5. CI on GitHub Actions (done) | #78 | #75 | the CI contract passes with `JobRunners` in `Cannot`; `model.CI` has `githubActions`, and every Standard renders its workflow for both hosts |
 | 6. Events | #79 | #74 | the Events contract passes: one organization hook, signed deliveries, a bad signature refused |
 | 7. Registry | #80 | #74 | the Registry contract passes for images and npm; Go modules resolve from the repository; PyPI is in `Cannot` |
-| 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; the GitProvider's `AgentAccess` condition comes from `ports.AgentAccessState` and no Task starts without it; an agent's credential is minted again before it expires; `TestHostNeutral`'s allowlist has no controller in it |
+| 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; the GitProvider's `AgentAccess` condition comes from `ports.AgentAccessState` and no Task starts without it; an agent's credential is minted again before it expires; the organization's `THEOS_CI_*` variables are set from the GitProvider; `TestHostNeutral`'s allowlist has no controller in it |
 | 9. The guide, and a run on the real thing | #82 | #81 | "Use the factory on your GitHub organization" in the guide, the App's permissions listed with why; a human runs `make test-github` and the first-app Crew on a test organization, with the output as evidence |
 
 ## What step 1 found
@@ -219,9 +219,6 @@ organization is where those three show.
 
 ## What step 5 found
 
-In two pull requests: the port and the table's row first, the Standards'
-workflows after.
-
 - **The CI contract passes** against the fake with its two `JobRunners`
   subtests in `Cannot`: GitHub's hosted runners take the jobs, so the
   adapter is no `ports.JobRunners` and no `ports.OwnerRunners`, and
@@ -244,12 +241,43 @@ workflows after.
   request template and the code owners are there too. It has no fallback
   paths; GitHub reads workflows from one place.
 - An agent's token has no `actions` permission: it can't run a job again.
+- **Six Standards render for both systems:** aws-standard,
+  go-operator-standard, go-standard, hello-standard, python-standard and
+  ts-standard keep `.theos/ci/githubActions/` beside `giteaActions/`, with
+  the same `make check` and the same issue and pull request templates
+  (`TestStandardsRenderForEveryCISystem`). Their tags moved a minor
+  version; what they render for Gitea Actions is byte for byte what it
+  was. factory-self keeps one system: the factory's own repository has
+  workflows of its own on GitHub, so adopting it there names those checks
+  (`spec.checkContexts`) and takes no workflow from a Standard.
+- **GitHub's runners carry none of the factory's toolchain,** and a
+  Standard's `make check` calls its tools from the `PATH`, as it does in an
+  agent's sandbox and on a Gitea runner. So the job runs in the toolchain
+  image, named by an Actions variable of the organization:
+  `THEOS_CI_IMAGE_GO` for the Standards that run on the `go` label on
+  Gitea, `THEOS_CI_IMAGE_BASE` for those on `base`, and on the runner
+  `THEOS_CI_RUNS_ON` names, `ubuntu-latest` without one. Nothing of that
+  is in the file. A job whose image isn't named fails saying so. Step 8
+  has the operator set the three from the GitProvider (`ports.OwnerActions`,
+  which the adapter gets then), the images defaulting to the release's own
+  runner images; those must be ones the organization's jobs can pull.
+- **The checkout is `actions/checkout` pinned to a commit,** the one the
+  factory's own workflows pin. The workflow asks for `contents: read` and
+  nothing else, and a newer push ends the run of an older one on the same
+  pull request.
+- **No registry step yet.** The Gitea workflows fetch the factory's own
+  packages from the owner's registry before `make check`. Where those come
+  from on GitHub is step 7's, so a Container that depends on another of
+  the project's packages has no check that passes on GitHub until then.
 
 The fake encodes `actions/workflow-runs` (the `head_sha`, `event` and
 `branch` filters; a re-run of failed jobs is a new attempt, refused while
 the run is not completed) and `actions/workflow-jobs` (`filter=latest`; a
 job's log by a redirect, 404 without one). Not verified against github.com:
-that `branch=<tag>` selects the push of a tag.
+that `branch=<tag>` selects the push of a tag. And no Standard's workflow
+has run on GitHub Actions: they render, parse and name the check the row
+requires, and whether a job with an empty `container:` reaches its first
+step, to say which variable is missing, is for step 9's run to show.
 
 ## What step 4 found
 

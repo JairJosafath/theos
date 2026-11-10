@@ -135,6 +135,11 @@ var ciSystems = map[string]CI{
 // GitProvider names another.
 var hostCI = map[string]string{"gitea": CIGiteaActions, "github": CIGitHubActions}
 
+// CINames names the CI systems the factory knows, sorted.
+func CINames() []string {
+	return slices.Sorted(maps.Keys(ciSystems))
+}
+
 // CIByName returns the CI system name names.
 func CIByName(name string) (CI, error) {
 	ci, ok := ciSystems[name]

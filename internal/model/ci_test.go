@@ -67,6 +67,20 @@ func TestHostCI(t *testing.T) {
 	}
 }
 
+// #78: CINames lists every CI system of the table, sorted, each by the name
+// CIByName finds it under.
+func TestCINames(t *testing.T) {
+	names := CINames()
+	if len(names) != len(ciSystems) || !slices.IsSorted(names) {
+		t.Fatalf("CINames() = %v, want the %d systems of the table, sorted", names, len(ciSystems))
+	}
+	for _, name := range names {
+		if ci, err := CIByName(name); err != nil || ci.Name != name {
+			t.Errorf("CIByName(%q) = %+v, %v", name, ci, err)
+		}
+	}
+}
+
 func TestCIByNameUnknown(t *testing.T) {
 	if _, err := CIByName("jenkins"); err == nil {
 		t.Error("CIByName(jenkins) = nil error, want unknown")
