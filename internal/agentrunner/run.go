@@ -433,13 +433,13 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 		var err error
 		if summary, err = prog.session(ctx, agent, r.dir, prompt); err != nil {
 			result.Summary = summary
-			return agentFailed(result, err)
+			return agentFailed(job, result, err)
 		}
 		if model.BlockedNote(summary) != "" {
 			if summary, err = sendBackBlocked(ctx, prog.checksContext(ctx), job, agent, r.dir, &base, prompt,
 				summary); err != nil {
 				result.Summary = summary
-				return agentFailed(result, err)
+				return agentFailed(job, result, err)
 			}
 			if note := model.BlockedNote(summary); note != "" {
 				// The agent can't start the issue and says why: nothing it left is kept.
@@ -454,7 +454,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, prog.checksContext(ctx), job, agent, r.dir, &base,
 		prompt, prog.checkNote())
 	if err != nil {
-		return agentFailed(result, err)
+		return agentFailed(job, result, err)
 	}
 	// With the check failing on the base too, the workspace can't judge the
 	// change: CI does.
@@ -748,7 +748,7 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 	}
 	output, err := prog.session(ctx, agent, r.dir, reviewPrompt(job, ws))
 	if err != nil {
-		return agentFailed(result, err)
+		return agentFailed(job, result, err)
 	}
 	verdict, err := ParseVerdict(output)
 	if err != nil {
@@ -762,9 +762,9 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 
 // agentFailed reports an agent run that failed, telling an unavailable service
 // (which costs no round) from the agent's own failure.
-func agentFailed(result Result, err error) Result {
+func agentFailed(job Job, result Result, err error) Result {
 	result.Error = err.Error()
-	if down, back := unavailable(result.Error, time.Now()); down {
+	if down, back := unavailable(job, result.Error, time.Now()); down {
 		result.Unavailable = true
 		if !back.IsZero() {
 			result.RetryAt = &back

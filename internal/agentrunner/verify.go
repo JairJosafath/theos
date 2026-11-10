@@ -44,7 +44,7 @@ func verify(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 	ws.MakeVerify = hasVerifyTarget(r.dir)
 	output, err := prog.session(ctx, agent, r.dir, VerifyPrompt(job, ws))
 	if err != nil {
-		return agentFailed(result, err)
+		return agentFailed(job, result, err)
 	}
 	verdict, err := parseVerdict(output, "verifier")
 	if err != nil {

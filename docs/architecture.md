@@ -273,6 +273,15 @@ Each step is safe to repeat: see "Two rules keep this safe to retry" in
    message. A reviewer run answers with a JSON verdict and up to three follow-ups,
    each with up to three acceptance criteria, instead. A usage limit, an overload, a 5xx server error or rejected credentials come back as
    `unavailable`: the Task keeps its round and tries again later.
+   Which agent runs is the job's harness, one entry of the table in
+   `internal/agentrunner/harness.go`: how its agent is made for a job, and
+   what its CLI prints when its service can't go on. Recording sessions and
+   resuming one are interfaces an agent has or hasn't; the runner never
+   asks which harness it is. A new harness is an entry there, a value in
+   `Agent.spec.harness`'s enum, a case of the contract test
+   (`harness_test.go`) and its transcripts in `testdata/harness/<name>/`;
+   the tests fail until the four agree
+   ([plans/harnesses.md](plans/harnesses.md)).
 5. The controller reads the result from the pod status, opens the pull request as
    the agent bot (Gitea refuses a review of one's own pull request), polls the
    combined commit status until CI is done, runs the reviewer, posts its verdict
