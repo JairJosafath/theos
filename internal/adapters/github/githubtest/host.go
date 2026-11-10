@@ -211,6 +211,17 @@ func (s *Server) AddRelease(owner, name, tag, commit, body, assetName, content s
 	return nil
 }
 
+// AddReleaseAsset adds a file to the release of tag that AddRelease made,
+// as a release run that uploads more than one does.
+func (s *Server) AddReleaseAsset(owner, name, tag, assetName string, content []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := s.repos[owner+"/"+name]
+	i := slices.IndexFunc(r.releases, func(rel *release) bool { return rel.tag == tag })
+	s.nextID++
+	r.releases[i].assets = append(r.releases[i].assets, &asset{id: s.nextID, name: assetName, content: content})
+}
+
 // hostAPI serves the calls of this file, and says whether rest was one.
 func (s *Server) hostAPI(w http.ResponseWriter, r *http.Request, kept *repo, rest string) bool {
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost

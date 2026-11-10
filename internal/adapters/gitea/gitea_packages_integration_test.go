@@ -177,7 +177,9 @@ func TestGiteaPackagesIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Contains(lock, []byte("name = \""+normalizeProjectName(pyName)+"\"\nversion = \"0.1.0\"")) ||
+		// uv.lock names the package as PEP 503 spells it, which pyName is
+		// already: lower case, its words joined by single dashes.
+		if !bytes.Contains(lock, []byte("name = \""+pyName+"\"\nversion = \"0.1.0\"")) ||
 			!bytes.Contains(lock, []byte(repo.PyPIIndex)) {
 			t.Errorf("uv.lock does not pin %s 0.1.0 to %s:\n%s", pyName, repo.PyPIIndex, lock)
 		}
