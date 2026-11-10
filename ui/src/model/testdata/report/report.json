@@ -1,0 +1,386 @@
+{
+  "name": "fixture",
+  "from": "2026-10-06T12:00:00Z",
+  "to": "2026-11-05T12:00:00Z",
+  "merged": 9,
+  "failed": 4,
+  "noChange": 1,
+  "failedByReason": [
+    {
+      "key": "NoCIResult",
+      "tasks": 2
+    },
+    {
+      "key": "BaseRed",
+      "tasks": 1
+    },
+    {
+      "key": "Failed",
+      "tasks": 1
+    }
+  ],
+  "noPersonCommit": {
+    "tasks": 6,
+    "of": 8,
+    "share": 0.75
+  },
+  "personApproved": {
+    "tasks": 2,
+    "of": 9,
+    "share": 0.2222222222222222
+  },
+  "firstRound": {
+    "tasks": 7,
+    "of": 9,
+    "share": 0.7777777777777778
+  },
+  "leadTimes": [
+    {
+      "key": "toPullRequest",
+      "label": "The pull request",
+      "tasks": 9,
+      "medianSeconds": 1200,
+      "p90Seconds": 90000
+    },
+    {
+      "key": "toFirstReview",
+      "label": "The first review",
+      "tasks": 9,
+      "medianSeconds": 1500,
+      "p90Seconds": 90900
+    },
+    {
+      "key": "toMerge",
+      "label": "The merge",
+      "tasks": 9,
+      "medianSeconds": 5400,
+      "p90Seconds": 92700
+    }
+  ],
+  "stageTimes": [
+    {
+      "key": "queued",
+      "label": "Queued",
+      "tasks": 8,
+      "medianSeconds": 120,
+      "p90Seconds": 300
+    },
+    {
+      "key": "slot",
+      "label": "Waiting for a slot",
+      "tasks": 1,
+      "medianSeconds": 360,
+      "p90Seconds": 360
+    },
+    {
+      "key": "implement",
+      "label": "Implementing",
+      "tasks": 9,
+      "medianSeconds": 1200,
+      "p90Seconds": 9900
+    },
+    {
+      "key": "checks",
+      "label": "CI checks",
+      "tasks": 9,
+      "medianSeconds": 360,
+      "p90Seconds": 3600
+    },
+    {
+      "key": "review",
+      "label": "Reviewing",
+      "tasks": 9,
+      "medianSeconds": 600,
+      "p90Seconds": 3300
+    },
+    {
+      "key": "verify",
+      "label": "Verifying",
+      "tasks": 1,
+      "medianSeconds": 1200,
+      "p90Seconds": 1200
+    },
+    {
+      "key": "approval",
+      "label": "Awaiting approval",
+      "tasks": 2,
+      "medianSeconds": 23400,
+      "p90Seconds": 36000
+    },
+    {
+      "key": "blocked",
+      "label": "Blocked",
+      "tasks": 1,
+      "medianSeconds": 86400,
+      "p90Seconds": 86400
+    }
+  ],
+  "cost": {
+    "tasks": 7,
+    "medianMilliUSD": 1200
+  },
+  "costBySize": [
+    {
+      "size": "S",
+      "merged": 4,
+      "cost": {
+        "tasks": 4,
+        "medianMilliUSD": 650
+      }
+    },
+    {
+      "size": "M",
+      "merged": 2,
+      "cost": {
+        "tasks": 1,
+        "medianMilliUSD": 2500
+      }
+    },
+    {
+      "size": "L",
+      "merged": 1,
+      "cost": {
+        "tasks": 1,
+        "medianMilliUSD": 9000
+      }
+    },
+    {
+      "size": "XL",
+      "merged": 1,
+      "cost": {
+        "tasks": 1,
+        "medianMilliUSD": 20000
+      }
+    }
+  ],
+  "withoutSize": 1,
+  "byConfig": [
+    {
+      "key": "claude-code · sonnet",
+      "merged": 4,
+      "noPersonCommit": {
+        "tasks": 4,
+        "of": 4,
+        "share": 1
+      },
+      "cost": {
+        "tasks": 3,
+        "medianMilliUSD": 800
+      },
+      "toMergeSeconds": 1260
+    },
+    {
+      "key": "claude-code · opus",
+      "merged": 2,
+      "noPersonCommit": {
+        "tasks": 0,
+        "of": 2,
+        "share": 0
+      },
+      "cost": {
+        "tasks": 2,
+        "medianMilliUSD": 11250
+      },
+      "toMergeSeconds": 14850
+    },
+    {
+      "key": "claude-code · default model",
+      "merged": 1,
+      "noPersonCommit": {
+        "tasks": 1,
+        "of": 1,
+        "share": 1
+      },
+      "cost": {
+        "tasks": 1,
+        "medianMilliUSD": 9000
+      },
+      "toMergeSeconds": 92700
+    },
+    {
+      "key": "not recorded",
+      "merged": 2,
+      "noPersonCommit": {
+        "tasks": 1,
+        "of": 1,
+        "share": 1
+      },
+      "cost": {
+        "tasks": 1,
+        "medianMilliUSD": 500
+      },
+      "toMergeSeconds": 21450
+    }
+  ],
+  "byAgent": [
+    {
+      "key": "implementer",
+      "merged": 5,
+      "noPersonCommit": {
+        "tasks": 5,
+        "of": 5,
+        "share": 1
+      },
+      "cost": {
+        "tasks": 4,
+        "medianMilliUSD": 1000
+      },
+      "toMergeSeconds": 1320
+    },
+    {
+      "key": "senior",
+      "merged": 2,
+      "noPersonCommit": {
+        "tasks": 0,
+        "of": 2,
+        "share": 0
+      },
+      "cost": {
+        "tasks": 2,
+        "medianMilliUSD": 11250
+      },
+      "toMergeSeconds": 14850
+    },
+    {
+      "key": "not recorded",
+      "merged": 2,
+      "noPersonCommit": {
+        "tasks": 1,
+        "of": 1,
+        "share": 1
+      },
+      "cost": {
+        "tasks": 1,
+        "medianMilliUSD": 500
+      },
+      "toMergeSeconds": 21450
+    }
+  ],
+  "scorers": [
+    {
+      "namespace": "docs",
+      "scorer": "tone",
+      "generation": 5,
+      "scores": 1,
+      "configs": [
+        "claude-code · sonnet"
+      ],
+      "criteria": [
+        {
+          "criterion": "The page reads plainly | no jargon",
+          "all": {
+            "pass": 0,
+            "fail": 0,
+            "unclear": 1
+          },
+          "byConfig": [
+            {
+              "config": "claude-code · sonnet",
+              "pass": 0,
+              "fail": 0,
+              "unclear": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "namespace": "shop",
+      "scorer": "quality",
+      "generation": 2,
+      "scores": 6,
+      "configs": [
+        "claude-code · sonnet",
+        "claude-code · default model",
+        "claude-code · opus",
+        "not recorded"
+      ],
+      "criteria": [
+        {
+          "criterion": "The change does what the issue asks",
+          "all": {
+            "pass": 4,
+            "fail": 2,
+            "unclear": 0,
+            "rate": 0.6666666666666666
+          },
+          "byConfig": [
+            {
+              "config": "claude-code · sonnet",
+              "pass": 2,
+              "fail": 1,
+              "unclear": 0,
+              "rate": 0.6666666666666666
+            },
+            {
+              "config": "claude-code · default model",
+              "pass": 1,
+              "fail": 0,
+              "unclear": 0,
+              "rate": 1
+            },
+            {
+              "config": "claude-code · opus",
+              "pass": 1,
+              "fail": 0,
+              "unclear": 0,
+              "rate": 1
+            },
+            {
+              "config": "not recorded",
+              "pass": 0,
+              "fail": 1,
+              "unclear": 0,
+              "rate": 0
+            }
+          ]
+        },
+        {
+          "criterion": "New behaviour has a test",
+          "all": {
+            "pass": 2,
+            "fail": 3,
+            "unclear": 1,
+            "rate": 0.4
+          },
+          "byConfig": [
+            {
+              "config": "claude-code · sonnet",
+              "pass": 1,
+              "fail": 2,
+              "unclear": 0,
+              "rate": 0.3333333333333333
+            },
+            {
+              "config": "claude-code · default model",
+              "pass": 0,
+              "fail": 1,
+              "unclear": 0,
+              "rate": 0
+            },
+            {
+              "config": "claude-code · opus",
+              "pass": 0,
+              "fail": 0,
+              "unclear": 1
+            },
+            {
+              "config": "not recorded",
+              "pass": 1,
+              "fail": 0,
+              "unclear": 0,
+              "rate": 1
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notShown": [
+    "What people decided. Which issues were filed, what a spec says and when a release is deployed are people's choices. A Task a person approved still counts as merged with no person's commit when the person wrote none of its code: the share is of code, not of decisions.",
+    "Why a Task failed. Failed Tasks are counted by the reason the Task recorded; what went wrong is on each Task's issue and pull request.",
+    "What the failures cost. Cost is the median of the merged Tasks whose agents reported one. A failed Task's runs cost money too, and are in no number here.",
+    "What is no longer recorded. The numbers come from the Tasks the cluster held when the report was made: a Task deleted before that is not counted, and a Task keeps the newest 64 steps of its timeline, so the times of a longer one are cut short.",
+    "Other projects. This is one factory building one codebase, with its own Standards, Agents and issues. It says how that went, not how another project would go."
+  ]
+}
