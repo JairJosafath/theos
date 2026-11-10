@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -42,8 +43,10 @@ var update = flag.Bool("update", false, "write the report fixture's report.json 
 var reportTo = time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 
 // reportFixturePeriod is the fixture's period: the 30 days the UI's test asks
-// its own rules for.
-var reportFixturePeriod = ReportPeriod{Name: "fixture", From: reportTo.Add(-30 * 24 * time.Hour), To: reportTo}
+// its own rules for. It is called "report", so the fixture's directory holds
+// it as a repository holds a release's: report.md and the report.json its
+// page links, which the check of the Markdown's links finds there.
+var reportFixturePeriod = ReportPeriod{Name: "report", From: reportTo.Add(-30 * 24 * time.Hour), To: reportTo}
 
 // fixtureTask is a Task as the API serves it, as far as the report reads it.
 type fixtureTask struct {
@@ -143,8 +146,16 @@ func TestFactoryReportFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, got := range map[string][]byte{"report.json": document, "report.md": []byte(r.Markdown())} {
-		path := filepath.Join(reportFixture, name)
+	page, err := r.Markdown()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pagePath, documentPath, err := ReportPaths(reportFixture, r.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, got := range map[string][]byte{documentPath: document, pagePath: []byte(page)} {
+		name := filepath.Base(path)
 		if *update {
 			if err := os.WriteFile(path, got, 0o644); err != nil {
 				t.Fatal(err)
@@ -166,16 +177,65 @@ func TestFactoryReportFixture(t *testing.T) {
 	if r.PersonApproved.Tasks != 2 {
 		t.Errorf("approved by a person = %d, want 2: a held change and a spec", r.PersonApproved.Tasks)
 	}
-	if r.Merged != 9 || r.Failed != 4 || r.NoChange != 1 {
-		t.Errorf("merged, failed, no change = %d, %d, %d, want 9, 4, 1", r.Merged, r.Failed, r.NoChange)
+	if r.Merged != 13 || r.Failed != 4 || r.NoChange != 1 {
+		t.Errorf("merged, failed, no change = %d, %d, %d, want 13, 4, 1", r.Merged, r.Failed, r.NoChange)
 	}
-	if got := r.NoPersonCommit; got.Tasks != 6 || got.Of != 8 {
-		t.Errorf("no person's commit = %d of %d, want 6 of 8", got.Tasks, got.Of)
+	if got := r.NoPersonCommit; got.Tasks != 10 || got.Of != 12 {
+		t.Errorf("no person's commit = %d of %d, want 10 of 12", got.Tasks, got.Of)
+	}
+	// The rules the fixture pins on both sides (docs/plans/results-report.md,
+	// "What the fixture holds"): each needs its Task to still be there.
+	merged := map[string]bool{}
+	for _, m := range r.MergedTasks {
+		merged[m.Task] = true
+	}
+	for _, name := range []string{"hotfix-22", "pricing-23", "pricing-24", "adopted-25", "catalog-17", "checkout-18"} {
+		if !merged[name] {
+			t.Errorf("the fixture's report has no merged Task %s", name)
+		}
+	}
+	if merged["edge-26"] {
+		t.Error("edge-26 finished on the period's first instant and is the report before's, yet it is counted")
+	}
+	if queued := r.StageTimes[0]; queued.Key != StageQueued || queued.Tasks != 11 {
+		t.Errorf("queued = %+v, want 11 Tasks: hotfix-22 was queued for zero seconds, and counts", queued)
+	}
+	keys := make([]string, 0, len(r.ByConfig))
+	for _, g := range r.ByConfig {
+		keys = append(keys, g.Key)
+	}
+	if want := []string{"claude-code · sonnet", "claude-code · opus", "claude-code · Opus",
+		"claude-code · default model", "claude-code · haiku", ReportNotRecorded}; !reflect.DeepEqual(keys, want) {
+		t.Errorf("by harness and model = %q, want %q: catalog-17 under its newest run's opus, and the three "+
+			"with one Task each by their code points", keys, want)
+	}
+	if got := r.Cost.Tasks; got != 11 {
+		t.Errorf("%d merged Tasks reported a cost, want 11: checkout-18's cost of 0 is none", got)
+	}
+	for _, lead := range r.LeadTimes {
+		if lead.Tasks != 13 || *lead.P90Seconds == slowest(t, lead.Key) {
+			t.Errorf("%s: over %d Tasks, 90th percentile %v: want 13 Tasks and not the slowest of them",
+				lead.Key, lead.Tasks, *lead.P90Seconds)
+		}
 	}
 	var back Report
 	if err := json.Unmarshal(document, &back); err != nil || !reflect.DeepEqual(back, r) {
 		t.Errorf("the JSON document doesn't read back as the report (%v)", err)
 	}
+}
+
+// slowest is the longest lead time of the fixture's merged Tasks under key,
+// which the 90th percentile of thirteen Tasks is not.
+func slowest(t *testing.T, key string) float64 {
+	t.Helper()
+	longest := 0.0
+	for _, task := range readReportFixture(t) {
+		if lead := reportLead(task)[key]; lead != nil && task.Phase == TaskMerged && task.PullRequest != 0 &&
+			reportFixturePeriod.holds(task.Completed) {
+			longest = max(longest, *lead)
+		}
+	}
+	return longest
 }
 
 // minutesAgo is a time so many minutes before the period's end.
@@ -378,6 +438,101 @@ func TestFactoryReportTimes(t *testing.T) {
 	}
 }
 
+// #66: a Task that left a stage in the second it entered it was in the stage.
+// The report dropped it, so three Tasks queued for no time and one for ten
+// minutes read "Queued | 1 | 10m".
+func TestFactoryReportCountsAZeroSecondStay(t *testing.T) {
+	at := func(queued int) ReportTask {
+		return mergedTask(10, reportStep{TaskPending, queued, ""}, reportStep{TaskImplementing, 5, ""})
+	}
+	r := FactoryReport(period(), []ReportTask{at(0), at(0), at(10), at(0)})
+	queued := r.StageTimes[0]
+	if queued.Key != StageQueued || queued.Tasks != 4 || queued.MedianSeconds == nil || *queued.MedianSeconds != 0 ||
+		*queued.P90Seconds != 600 {
+		t.Fatalf("queued = %+v, want 4 Tasks, a median of 0 seconds and a 90th percentile of 600", queued)
+	}
+	page, err := r.Markdown()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "| Queued | 4 | 0s | 10m |\n"; !strings.Contains(page, want) {
+		t.Errorf("the page lacks %q:\n%s", want, page)
+	}
+	// A stage none of them was in is still no row and no time.
+	if blocked := r.StageTimes[7]; blocked.Tasks != 0 || blocked.MedianSeconds != nil || strings.Contains(page, "| Blocked |") {
+		t.Errorf("blocked = %+v, want no Task and no row", blocked)
+	}
+}
+
+// #66: the lead times run from the first Implementing step to the first
+// Checking and Reviewing steps from then on. A Task that took up a pull
+// request already in CI has both before it, and they are no lead time.
+func TestFactoryReportLeadTimesStartAtTheFirstImplementingStep(t *testing.T) {
+	task := mergedTask(10, reportStep{TaskChecking, 30, ""}, reportStep{TaskReviewing, 10, ""},
+		reportStep{TaskImplementing, 50, ""}, reportStep{TaskChecking, 40, ""}, reportStep{TaskReviewing, 20, ""})
+	lead := reportLead(task)
+	for key, want := range map[string]float64{LeadToPullRequest: 50 * 60, LeadToFirstReview: 90 * 60, LeadToMerge: 110 * 60} {
+		if lead[key] == nil || *lead[key] != want {
+			t.Errorf("%s = %v, want %v seconds from the first Implementing step", key, lead[key], want)
+		}
+	}
+	// A step at the very second Implementing began is from then on.
+	same := mergedTask(10, reportStep{TaskImplementing, 0, ""}, reportStep{TaskChecking, 5, ""})
+	if got := reportLead(same)[LeadToPullRequest]; got == nil || *got != 0 {
+		t.Errorf("a pull request in the second Implementing began = %v, want 0 seconds", got)
+	}
+}
+
+// #66: the JSON names each merged Task and its pull request, so a reader can
+// hold a number against the pull requests it counts.
+func TestFactoryReportNamesTheMergedTasks(t *testing.T) {
+	named := func(ago int, namespace, container, name string, pr int) ReportTask {
+		t := mergedTask(ago)
+		t.Namespace, t.Container, t.Name, t.PullRequest = namespace, container, name, pr
+		return t
+	}
+	failed := named(5, "shop", "api", "failed", 9)
+	failed.Phase = TaskFailed
+	r := FactoryReport(period(), []ReportTask{
+		named(10, "shop", "api", "b", 7), named(30, "shop", "web", "late", 3), named(10, "shop", "api", "a", 8),
+		named(10, "docs", "site", "z", 1), named(48*60, "shop", "api", "before", 2), failed,
+	})
+	want := []ReportMerged{
+		{"shop", "web", "late", 3, "2026-11-05T11:30:00Z"},
+		{"docs", "site", "z", 1, "2026-11-05T11:50:00Z"},
+		{"shop", "api", "a", 8, "2026-11-05T11:50:00Z"},
+		{"shop", "api", "b", 7, "2026-11-05T11:50:00Z"},
+	}
+	if !reflect.DeepEqual(r.MergedTasks, want) {
+		t.Errorf("merged Tasks = %+v, want %+v: the period's, the oldest merge first, then by namespace and name",
+			r.MergedTasks, want)
+	}
+	if none := FactoryReport(period(), nil); none.MergedTasks == nil || len(none.MergedTasks) != 0 {
+		t.Errorf("with no merged Task the list is %v, want an empty one, which the JSON writes as []", none.MergedTasks)
+	}
+}
+
+// #66: rows with as many Tasks are in the order of their names' code points,
+// which the UI's compareText gives too; a locale's order is another on
+// another machine.
+func TestReportKeyOrder(t *testing.T) {
+	for _, c := range [][]string{
+		{"claude-code · Opus", "claude-code · haiku"},
+		{"claude-code · m-1", "claude-code · m_1"},
+		{"claude-code · Z", "claude-code · a"},
+		{"claude-code · z", "claude-code · ä"},
+		{"a", "a b"},
+		{"zebra", ReportNotRecorded},
+	} {
+		if reportKeyOrder(c[0], c[1], 1, 1) >= 0 || reportKeyOrder(c[1], c[0], 1, 1) <= 0 {
+			t.Errorf("%q is not before %q", c[0], c[1])
+		}
+	}
+	if reportKeyOrder("b", "a", 2, 1) >= 0 || reportKeyOrder(ReportNotRecorded, "a", 9, 1) <= 0 {
+		t.Error("the larger count is not first, or the unrecorded not last")
+	}
+}
+
 func TestFactoryReportCost(t *testing.T) {
 	implement := func(agent, harness, model string) TaskMetricRun {
 		return TaskMetricRun{Agent: agent, Harness: harness, Model: model, Role: RoleImplementer}
@@ -425,24 +580,25 @@ func TestFactoryReportCost(t *testing.T) {
 	}
 
 	type group struct {
-		key    string
-		merged int
-		median float64
+		key           string
+		merged, costs int
+		median        float64
 	}
 	groups := func(rows []ReportGroup) []group {
 		out := make([]group, 0, len(rows))
 		for _, g := range rows {
-			out = append(out, group{g.Key, g.Merged, *g.Cost.MedianMilliUSD})
+			out = append(out, group{g.Key, g.Merged, g.Cost.Tasks, *g.Cost.MedianMilliUSD})
 		}
 		return out
 	}
-	// The most merged first, then by name, and the unrecorded last.
-	if got, want := groups(r.ByConfig), []group{{"claude-code · sonnet", 3, 1000}, {"claude-code · default model", 1, 4000},
-		{"claude-code · opus", 1, 9000}, {ReportNotRecorded, 1, 100}}; !reflect.DeepEqual(got, want) {
+	// The most merged first, then by name, and the unrecorded last. A cost of
+	// zero is none reported: sonnet's median is over two of its three.
+	if got, want := groups(r.ByConfig), []group{{"claude-code · sonnet", 3, 2, 1000}, {"claude-code · default model", 1, 1, 4000},
+		{"claude-code · opus", 1, 1, 9000}, {ReportNotRecorded, 1, 1, 100}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("by harness and model = %v, want %v", got, want)
 	}
-	if got, want := groups(r.ByAgent), []group{{"junior", 3, 1000}, {"senior", 2, 6500},
-		{ReportNotRecorded, 1, 100}}; !reflect.DeepEqual(got, want) {
+	if got, want := groups(r.ByAgent), []group{{"junior", 3, 2, 1000}, {"senior", 2, 2, 6500},
+		{ReportNotRecorded, 1, 1, 100}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("by Agent = %v, want %v", got, want)
 	}
 	if got := *r.ByAgent[1].ToMergeSeconds; got != 65*60 {
@@ -521,17 +677,27 @@ func TestReportPage(t *testing.T) {
 		"days":              {reportDuration(new(187200.0)), "2d 4h"},
 		"no time":           {reportDuration(nil), "–"},
 		"cost":              {reportMoney(new(1500.0)), "$1.50"},
+		"half a cent, up":   {reportMoney(new(125.0)), "$0.13"},
+		"and over a dollar": {reportMoney(new(1125.0)), "$1.13"},
+		"under a cent":      {reportMoney(new(9.5)), "<$0.01"},
 		"no cost":           {reportMoney(nil), "–"},
 		"share":             {reportPercent(new(2.0 / 3)), "67%"},
 		"rate":              {reportRate(ReportVerdicts{Pass: 3, Fail: 1, Unclear: 2, Rate: new(0.75)}), "75% (3 of 4), 2 unclear"},
 		"nothing judged":    {reportRate(ReportVerdicts{}), "–"},
 		"a cell stays one":  {reportCell("reads plainly | no\njargon"), `reads plainly \| no jargon`},
+		"its own backslash": {reportCell(`a\|b`), `a\\\|b`},
+		"a tag":             {reportCell(`<img src=x>`), `&lt;img src=x>`},
+		"an entity":         {reportCell(`a &lt; b && c`), `a &amp;lt; b &amp;&amp; c`},
+		"a code span":       {reportCell("uses `a|b` not `c\\d`"), "uses \\`a\\|b\\` not \\`c\\\\d\\`"},
+		"a link":            {reportCell(`[see here](https://example.com/x_y)`), `\[see here\](https://example.com/x\_y)`},
+		"an image":          {reportCell(`![x](https://example.com/p.png)`), `!\[x\](https://example.com/p.png)`},
+		"emphasis":          {reportCell(`*all* of __it__ ~~now~~`), `\*all\* of \_\_it\_\_ \~\~now\~\~`},
+		"plain text":        {reportCell("claude-code · opus (4.5), 100% + more: yes/no #1"), "claude-code · opus (4.5), 100% + more: yes/no #1"},
 		"default model":     {ReportConfigKey("claude-code", ""), "claude-code · default model"},
 		"no harness":        {ReportConfigKey("", "opus"), ReportNotRecorded},
 		"a time, in UTC":    {reportTime("2026-11-05T14:00:00+02:00"), "2026-11-05 12:00 UTC"},
-		"the page's place":  {first(ReportPaths("v0.5.0")), "docs/results/v0.5.0.md"},
-		"the JSON's place":  {second(ReportPaths("v0.5.0")), "docs/results/v0.5.0.json"},
-		"the period's line": {strings.Split(FactoryReport(ReportPeriod{Name: "v1", To: reportTo}, nil).Markdown(), "\n")[2], "The Tasks that finished up to 2026-11-05 12:00 UTC, counted from what each Task records. The same numbers as JSON: [v1.json](v1.json)."},
+		"the period's line": {strings.Split(reportPage(t, FactoryReport(ReportPeriod{Name: "v1", To: reportTo}, nil)), "\n")[2], "The Tasks that finished up to 2026-11-05 12:00 UTC, counted from what each Task records. The same numbers as JSON: [v1.json](v1.json)."},
+		"a name's heading":  {strings.Split(reportPage(t, FactoryReport(ReportPeriod{Name: "v1._rc_", To: reportTo}, nil)), "\n")[0], `# The factory's numbers: v1.\_rc\_`},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s: %q, want %q", name, c.got, c.want)
@@ -539,7 +705,7 @@ func TestReportPage(t *testing.T) {
 	}
 
 	// A period in which nothing finished still says so, and what it can't show.
-	page := FactoryReport(period(), nil).Markdown()
+	page := reportPage(t, FactoryReport(period(), nil))
 	for _, want := range []string{
 		"# The factory's numbers: v1\n",
 		"| Merged a pull request | 0 |",
@@ -554,10 +720,71 @@ func TestReportPage(t *testing.T) {
 			t.Errorf("the empty period's page lacks %q:\n%s", want, page)
 		}
 	}
-	if strings.Contains(page, "by the reason each recorded") || strings.Contains(page, "| Agent |") {
-		t.Errorf("the empty period's page has a table of nothing:\n%s", page)
+	if strings.Contains(page, "by the reason each recorded") || strings.Contains(page, "| Agent |") ||
+		strings.Contains(page, "mergedTasks") {
+		t.Errorf("the empty period's page has a table of nothing, or points at merged Tasks it has none of:\n%s", page)
 	}
 }
 
-func first(a, _ string) string  { return a }
-func second(_, b string) string { return b }
+// reportPage is r's page.
+func reportPage(t *testing.T, r Report) string {
+	t.Helper()
+	page, err := r.Markdown()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page
+}
+
+// #66: a report's name is two files' and goes into its page's heading and
+// link, so one that is a path, or empty, is refused before anything is
+// written.
+func TestReportPathsRefuseANameThatIsNoName(t *testing.T) {
+	for _, c := range []struct{ dir, name, page, document string }{
+		{"", "v0.5.0", "docs/results/v0.5.0.md", "docs/results/v0.5.0.json"},
+		{"", "2026-11", "docs/results/2026-11.md", "docs/results/2026-11.json"},
+		{"", "v1.0.0-rc.1+build_7", "docs/results/v1.0.0-rc.1+build_7.md", "docs/results/v1.0.0-rc.1+build_7.json"},
+		// The directory is the repository's own to choose.
+		{"site/numbers", "v0.5.0", "site/numbers/v0.5.0.md", "site/numbers/v0.5.0.json"},
+		{"../pages/results/", "v0.5.0", "../pages/results/v0.5.0.md", "../pages/results/v0.5.0.json"},
+	} {
+		page, document, err := ReportPaths(c.dir, c.name)
+		if err != nil || page != c.page || document != c.document {
+			t.Errorf("ReportPaths(%q, %q) = %q, %q, %v, want %q and %q", c.dir, c.name, page, document, err, c.page, c.document)
+		}
+	}
+	for _, name := range []string{"", "../../README", "a/b", `a\b`, "..", ".hidden", "-rf", "v1 final", "v1\n", "v1|x",
+		"<b>", "[x](y)", "v1*", "é"} {
+		page, document, err := ReportPaths("", name)
+		if err == nil || page != "" || document != "" || !strings.Contains(err.Error(), strconv.Quote(name)) {
+			t.Errorf("ReportPaths(%q) = %q, %q, %v, want an error that quotes the name and no path", name, page, document, err)
+		}
+		if page, err := (Report{Name: name, To: "2026-11-05T12:00:00Z"}).Markdown(); err == nil || page != "" {
+			t.Errorf("a report called %q has a page:\n%s", name, page)
+		}
+	}
+}
+
+// #66: the page writes money as the UI's formatCost does. money.json has the
+// costs both must print alike; ui/src/model/report.test.ts reads it too.
+func TestReportMoneyIsTheUIs(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(reportFixture, "money.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		MilliUSD float64
+		Shown    string
+	}
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) < 10 {
+		t.Fatalf("money.json has %d cases", len(cases))
+	}
+	for _, c := range cases {
+		if got := reportMoney(&c.MilliUSD); got != c.Shown {
+			t.Errorf("%v thousandths of a dollar: %q, want %q", c.MilliUSD, got, c.Shown)
+		}
+	}
+}

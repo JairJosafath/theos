@@ -1,8 +1,8 @@
 {
-  "name": "fixture",
+  "name": "report",
   "from": "2026-10-06T12:00:00Z",
   "to": "2026-11-05T12:00:00Z",
-  "merged": 9,
+  "merged": 13,
   "failed": 4,
   "noChange": 1,
   "failedByReason": [
@@ -20,50 +20,50 @@
     }
   ],
   "noPersonCommit": {
-    "tasks": 6,
-    "of": 8,
-    "share": 0.75
+    "tasks": 10,
+    "of": 12,
+    "share": 0.8333333333333334
   },
   "personApproved": {
     "tasks": 2,
-    "of": 9,
-    "share": 0.2222222222222222
+    "of": 13,
+    "share": 0.15384615384615385
   },
   "firstRound": {
-    "tasks": 7,
-    "of": 9,
-    "share": 0.7777777777777778
+    "tasks": 11,
+    "of": 13,
+    "share": 0.8461538461538461
   },
   "leadTimes": [
     {
       "key": "toPullRequest",
       "label": "The pull request",
-      "tasks": 9,
+      "tasks": 13,
       "medianSeconds": 1200,
-      "p90Seconds": 90000
+      "p90Seconds": 5400
     },
     {
       "key": "toFirstReview",
       "label": "The first review",
-      "tasks": 9,
-      "medianSeconds": 1500,
-      "p90Seconds": 90900
+      "tasks": 13,
+      "medianSeconds": 1620,
+      "p90Seconds": 6600
     },
     {
       "key": "toMerge",
       "label": "The merge",
-      "tasks": 9,
-      "medianSeconds": 5400,
-      "p90Seconds": 92700
+      "tasks": 13,
+      "medianSeconds": 4440,
+      "p90Seconds": 37500
     }
   ],
   "stageTimes": [
     {
       "key": "queued",
       "label": "Queued",
-      "tasks": 8,
+      "tasks": 11,
       "medianSeconds": 120,
-      "p90Seconds": 300
+      "p90Seconds": 240
     },
     {
       "key": "slot",
@@ -75,23 +75,23 @@
     {
       "key": "implement",
       "label": "Implementing",
-      "tasks": 9,
+      "tasks": 13,
       "medianSeconds": 1200,
-      "p90Seconds": 9900
+      "p90Seconds": 3600
     },
     {
       "key": "checks",
       "label": "CI checks",
-      "tasks": 9,
-      "medianSeconds": 360,
+      "tasks": 13,
+      "medianSeconds": 480,
       "p90Seconds": 3600
     },
     {
       "key": "review",
       "label": "Reviewing",
-      "tasks": 9,
-      "medianSeconds": 600,
-      "p90Seconds": 3300
+      "tasks": 13,
+      "medianSeconds": 540,
+      "p90Seconds": 1800
     },
     {
       "key": "verify",
@@ -116,23 +116,23 @@
     }
   ],
   "cost": {
-    "tasks": 7,
-    "medianMilliUSD": 1200
+    "tasks": 11,
+    "medianMilliUSD": 1125
   },
   "costBySize": [
     {
       "size": "S",
-      "merged": 4,
+      "merged": 6,
       "cost": {
-        "tasks": 4,
-        "medianMilliUSD": 650
+        "tasks": 6,
+        "medianMilliUSD": 450
       }
     },
     {
       "size": "M",
-      "merged": 2,
+      "merged": 4,
       "cost": {
-        "tasks": 1,
+        "tasks": 3,
         "medianMilliUSD": 2500
       }
     },
@@ -157,31 +157,45 @@
   "byConfig": [
     {
       "key": "claude-code · sonnet",
-      "merged": 4,
+      "merged": 5,
       "noPersonCommit": {
-        "tasks": 4,
-        "of": 4,
+        "tasks": 5,
+        "of": 5,
         "share": 1
       },
       "cost": {
-        "tasks": 3,
-        "medianMilliUSD": 800
+        "tasks": 4,
+        "medianMilliUSD": 550
       },
-      "toMergeSeconds": 1260
+      "toMergeSeconds": 1320
     },
     {
       "key": "claude-code · opus",
-      "merged": 2,
+      "merged": 3,
       "noPersonCommit": {
-        "tasks": 0,
-        "of": 2,
-        "share": 0
+        "tasks": 1,
+        "of": 3,
+        "share": 0.3333333333333333
       },
       "cost": {
-        "tasks": 2,
-        "medianMilliUSD": 11250
+        "tasks": 3,
+        "medianMilliUSD": 3000
       },
-      "toMergeSeconds": 14850
+      "toMergeSeconds": 12900
+    },
+    {
+      "key": "claude-code · Opus",
+      "merged": 1,
+      "noPersonCommit": {
+        "tasks": 1,
+        "of": 1,
+        "share": 1
+      },
+      "cost": {
+        "tasks": 1,
+        "medianMilliUSD": 1125
+      },
+      "toMergeSeconds": 2520
     },
     {
       "key": "claude-code · default model",
@@ -196,6 +210,20 @@
         "medianMilliUSD": 9000
       },
       "toMergeSeconds": 92700
+    },
+    {
+      "key": "claude-code · haiku",
+      "merged": 1,
+      "noPersonCommit": {
+        "tasks": 1,
+        "of": 1,
+        "share": 1
+      },
+      "cost": {
+        "tasks": 1,
+        "medianMilliUSD": 400
+      },
+      "toMergeSeconds": 1920
     },
     {
       "key": "not recorded",
@@ -215,31 +243,31 @@
   "byAgent": [
     {
       "key": "implementer",
-      "merged": 5,
+      "merged": 8,
       "noPersonCommit": {
-        "tasks": 5,
-        "of": 5,
+        "tasks": 8,
+        "of": 8,
         "share": 1
       },
       "cost": {
-        "tasks": 4,
-        "medianMilliUSD": 1000
+        "tasks": 7,
+        "medianMilliUSD": 800
       },
-      "toMergeSeconds": 1320
+      "toMergeSeconds": 1680
     },
     {
       "key": "senior",
-      "merged": 2,
+      "merged": 3,
       "noPersonCommit": {
-        "tasks": 0,
-        "of": 2,
-        "share": 0
+        "tasks": 1,
+        "of": 3,
+        "share": 0.3333333333333333
       },
       "cost": {
-        "tasks": 2,
-        "medianMilliUSD": 11250
+        "tasks": 3,
+        "medianMilliUSD": 3000
       },
-      "toMergeSeconds": 14850
+      "toMergeSeconds": 12900
     },
     {
       "key": "not recorded",
@@ -267,7 +295,7 @@
       ],
       "criteria": [
         {
-          "criterion": "The page reads plainly | no jargon",
+          "criterion": "Plain words | no <br> tags, no `code` and no [link](https://example.com) in a heading",
           "all": {
             "pass": 0,
             "fail": 0,
@@ -288,9 +316,10 @@
       "namespace": "shop",
       "scorer": "quality",
       "generation": 2,
-      "scores": 6,
+      "scores": 7,
       "configs": [
         "claude-code · sonnet",
+        "claude-code · Opus",
         "claude-code · default model",
         "claude-code · opus",
         "not recorded"
@@ -299,10 +328,10 @@
         {
           "criterion": "The change does what the issue asks",
           "all": {
-            "pass": 4,
+            "pass": 5,
             "fail": 2,
             "unclear": 0,
-            "rate": 0.6666666666666666
+            "rate": 0.7142857142857143
           },
           "byConfig": [
             {
@@ -311,6 +340,13 @@
               "fail": 1,
               "unclear": 0,
               "rate": 0.6666666666666666
+            },
+            {
+              "config": "claude-code · Opus",
+              "pass": 1,
+              "fail": 0,
+              "unclear": 0,
+              "rate": 1
             },
             {
               "config": "claude-code · default model",
@@ -338,10 +374,10 @@
         {
           "criterion": "New behaviour has a test",
           "all": {
-            "pass": 2,
+            "pass": 3,
             "fail": 3,
             "unclear": 1,
-            "rate": 0.4
+            "rate": 0.5
           },
           "byConfig": [
             {
@@ -350,6 +386,13 @@
               "fail": 2,
               "unclear": 0,
               "rate": 0.3333333333333333
+            },
+            {
+              "config": "claude-code · Opus",
+              "pass": 1,
+              "fail": 0,
+              "unclear": 0,
+              "rate": 1
             },
             {
               "config": "claude-code · default model",
@@ -374,6 +417,99 @@
           ]
         }
       ]
+    }
+  ],
+  "mergedTasks": [
+    {
+      "namespace": "docs",
+      "container": "site",
+      "task": "docs-19",
+      "pullRequest": 19,
+      "completed": "2026-10-11T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "checkout-18",
+      "pullRequest": 18,
+      "completed": "2026-10-16T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "spec-16",
+      "pullRequest": 16,
+      "completed": "2026-10-24T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "search-15",
+      "pullRequest": 15,
+      "completed": "2026-10-26T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "adopted-25",
+      "pullRequest": 25,
+      "completed": "2026-10-27T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "pricing-24",
+      "pullRequest": 24,
+      "completed": "2026-10-29T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "pricing-23",
+      "pullRequest": 23,
+      "completed": "2026-10-30T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "legacy-14",
+      "pullRequest": 14,
+      "completed": "2026-10-31T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "hotfix-22",
+      "pullRequest": 22,
+      "completed": "2026-11-01T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "payments-13",
+      "pullRequest": 13,
+      "completed": "2026-11-02T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "checkout-12",
+      "pullRequest": 12,
+      "completed": "2026-11-03T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "checkout-11",
+      "pullRequest": 11,
+      "completed": "2026-11-04T12:00:00Z"
+    },
+    {
+      "namespace": "shop",
+      "container": "api",
+      "task": "catalog-17",
+      "pullRequest": 17,
+      "completed": "2026-11-05T12:00:00Z"
     }
   ],
   "notShown": [

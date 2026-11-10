@@ -32,12 +32,14 @@ import (
 // together: ui/src/model/testdata/report has Tasks as the API serves them
 // and the report they give, the UI's test computes its numbers from the same
 // Tasks and compares them with that report, and a rule changed on one side
-// alone fails the other's test.
+// alone fails the other's test, for the rules the fixture has a Task for
+// (the plan lists them).
 
 // ReportTask is what the report reads of one Task: the metrics' facts, and
 // what only a report needs.
 type ReportTask struct {
 	TaskMetricFacts
+	// Name is the Task's; the report names each merged Task by it.
 	Name string
 	// PullRequest is the Task's pull request; 0 when it has none.
 	PullRequest int
@@ -129,8 +131,22 @@ type Report struct {
 	ByAgent  []ReportGroup `json:"byAgent"`
 
 	Scorers []ReportScorer `json:"scorers"`
+	// MergedTasks names every merged Task the numbers are over, with its pull
+	// request, in the order they merged, so a reader can hold a number against
+	// the pull requests it counts.
+	MergedTasks []ReportMerged `json:"mergedTasks"`
 	// NotShown is what the numbers leave out, said on every report.
 	NotShown []string `json:"notShown"`
+}
+
+// ReportMerged is one merged Task: its Container, whose repository the pull
+// request is in, and when it merged, RFC 3339 in UTC.
+type ReportMerged struct {
+	Namespace   string `json:"namespace"`
+	Container   string `json:"container"`
+	Task        string `json:"task"`
+	PullRequest int    `json:"pullRequest"`
+	Completed   string `json:"completed"`
 }
 
 // ReportCount is how many Tasks share a key.
@@ -339,6 +355,15 @@ func FactoryReport(period ReportPeriod, tasks []ReportTask) Report {
 		}
 	}
 	r.Merged = len(merged)
+	r.MergedTasks = make([]ReportMerged, 0, len(merged))
+	for _, t := range merged {
+		r.MergedTasks = append(r.MergedTasks, ReportMerged{Namespace: t.Namespace, Container: t.Container,
+			Task: t.Name, PullRequest: t.PullRequest, Completed: t.Completed.UTC().Format(time.RFC3339)})
+	}
+	slices.SortFunc(r.MergedTasks, func(a, b ReportMerged) int {
+		return cmp.Or(cmp.Compare(a.Completed, b.Completed), cmp.Compare(a.Namespace, b.Namespace),
+			cmp.Compare(a.Task, b.Task))
+	})
 	for reason, n := range failed {
 		r.FailedByReason = append(r.FailedByReason, ReportCount{Key: reason, Tasks: n})
 	}
@@ -447,7 +472,7 @@ func reportGroup(key string, tasks []ReportTask) ReportGroup {
 }
 
 // reportGroups groups the merged Tasks by key: the most merged first, then by
-// key, and the ones that recorded none last.
+// key (reportKeyOrder), and the ones that recorded none last.
 func reportGroups(merged []ReportTask, key func(ReportTask) string) []ReportGroup {
 	by := map[string][]ReportTask{}
 	for _, t := range merged {
@@ -465,7 +490,10 @@ func reportGroups(merged []ReportTask, key func(ReportTask) string) []ReportGrou
 }
 
 // reportKeyOrder sorts keys by their counts, the larger first, then by name,
-// and ReportNotRecorded last.
+// and ReportNotRecorded last. Names are in the order of their code points,
+// which Go's string comparison gives and the UI's compareText: "Opus" before
+// "haiku", the same on every machine. A locale's order differs from one
+// reader's browser to the next.
 func reportKeyOrder(a, b string, na, nb int) int {
 	last := func(k string) int {
 		if k == ReportNotRecorded {
@@ -511,8 +539,10 @@ func reportLead(t ReportTask) map[string]*float64 {
 	return out
 }
 
-// reportStageSeconds is how long a finished Task spent in each stage: each
-// step lasts until the next one, and the last until the Task finished.
+// reportStageSeconds is how long a finished Task spent in each stage it was
+// in: each step lasts until the next one, and the last until the Task
+// finished. A stage none of its steps is in has no entry, which is not zero
+// seconds.
 func reportStageSeconds(t ReportTask) map[string]float64 {
 	out := map[string]float64{}
 	for i, step := range t.History {
@@ -541,12 +571,12 @@ func reportTimes(merged []ReportTask) (leads, stages []ReportTime) {
 		for k, v := range reportLead(t) {
 			lead[k] = append(lead[k], *v)
 		}
-		// A stage a Task never was in is no observation of it: most Tasks are
-		// never blocked, and their zeros would make every median zero.
+		// A stage a Task never was in is no observation of it, and
+		// reportStageSeconds has no entry for it: most Tasks are never
+		// blocked, and their zeros would make every median zero. A Task that
+		// left a stage in the second it entered was in it, for zero seconds.
 		for k, v := range reportStageSeconds(t) {
-			if v > 0 {
-				stage[k] = append(stage[k], v)
-			}
+			stage[k] = append(stage[k], v)
 		}
 	}
 	row := func(s reportStage, values []float64) ReportTime {
@@ -654,8 +684,9 @@ func Median(values []float64) *float64 {
 
 // Percentile is the p-th percentile of values by nearest rank: the smallest
 // value that at least p in a hundred of them are at or under. It is always
-// one of the values, so the 90th percentile of ten Tasks is the ninth
-// slowest, a Task a reader can go and look at. Nil without values.
+// one of the values, so the 90th percentile of ten Tasks is the second
+// slowest of them (the ninth from the fastest), a Task a reader can go and
+// look at. Nil without values.
 func Percentile(values []float64, p int) *float64 {
 	if len(values) == 0 {
 		return nil

@@ -19,19 +19,45 @@ package model
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 )
 
-// ReportDir is where a repository keeps its reports (#66): one page and one
-// JSON document per period, named after it.
+// ReportDir is where a repository keeps its reports unless it says another
+// place (#66): one page and one JSON document per period, named after it.
 const ReportDir = "docs/results"
 
-// ReportPaths is where the report of the period called name lives: its page
-// and its JSON document, from the repository's root.
-func ReportPaths(name string) (page, document string) {
-	return path.Join(ReportDir, name+".md"), path.Join(ReportDir, name+".json")
+// reportName is what a report may be called: a release's tag, or a word like
+// one. The name is two files' and goes into the page's heading and its link
+// to the JSON, so it holds no path separator, no space and nothing a path or
+// a link reads as more than a name.
+var reportName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+
+// CheckReportName is the error of a name no report can have, and nil for
+// one it can: "v0.5.0", not "", "a/b" or "../../README".
+func CheckReportName(name string) error {
+	if !reportName.MatchString(name) {
+		return fmt.Errorf("a report can't be called %q: a name is letters, digits and . _ + -, and begins with a "+
+			"letter or a digit", name)
+	}
+	return nil
+}
+
+// ReportPaths is where the report of the period called name lives under dir,
+// a repository's directory for its reports (ReportDir when dir is empty): its
+// page and its JSON document. The directory is the caller's own to choose and
+// is taken as given; a name that could leave it is an error.
+func ReportPaths(dir, name string) (page, document string, err error) {
+	if err := CheckReportName(name); err != nil {
+		return "", "", err
+	}
+	if dir == "" {
+		dir = ReportDir
+	}
+	return path.Join(dir, name+".md"), path.Join(dir, name+".json"), nil
 }
 
 // reportNone stands in a table for a number that has no value.
@@ -39,8 +65,15 @@ const reportNone = "–"
 
 // Markdown is the report as the page a release publishes. It prints nothing
 // the JSON doesn't hold, and the same report gives the same page, byte for
-// byte.
-func (r Report) Markdown() string {
+// byte. The page links its JSON document by file name, so the two lie in one
+// directory, whichever it is. A report whose name is none (CheckReportName)
+// has no page. Text that comes from the cluster (a reason, a harness and
+// model, an Agent, a Scorer and its criteria) is printed as text
+// (reportCell), whatever it holds.
+func (r Report) Markdown() (string, error) {
+	if err := CheckReportName(r.Name); err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	line := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 	table := func(head string, align string, rows [][]string) {
@@ -52,15 +85,15 @@ func (r Report) Markdown() string {
 		line("")
 	}
 
-	_, document := ReportPaths(r.Name)
-	line("# The factory's numbers: %s", r.Name)
+	document := r.Name + ".json"
+	line("# The factory's numbers: %s", reportCell(r.Name))
 	line("")
 	period := "The Tasks that finished up to " + reportTime(r.To)
 	if r.From != "" {
 		period = "The Tasks that finished after " + reportTime(r.From) + ", up to " + reportTime(r.To)
 	}
 	line("%s, counted from what each Task records. The same numbers as JSON: [%s](%s).",
-		period, path.Base(document), path.Base(document))
+		period, reportCell(document), document)
 	line("")
 
 	line("## What finished")
@@ -70,6 +103,11 @@ func (r Report) Markdown() string {
 		{"Failed", fmt.Sprint(r.Failed)},
 		{"Ended with no change needed", fmt.Sprint(r.NoChange)},
 	})
+	if r.Merged > 0 {
+		line("The JSON names each merged Task and its pull request, under `mergedTasks`, so a number here can be " +
+			"held against the pull requests it counts.")
+		line("")
+	}
 	if len(r.FailedByReason) > 0 {
 		line("The failed Tasks, by the reason each recorded:")
 		line("")
@@ -157,7 +195,7 @@ func (r Report) Markdown() string {
 		line("")
 	}
 	for _, s := range r.Scorers {
-		line("### %s/%s", s.Namespace, s.Scorer)
+		line("### %s/%s", reportCell(s.Namespace), reportCell(s.Scorer))
 		line("")
 		line("%d %s on the criteria of generation %d. A rate is the passes out of the passes and fails; "+
 			"an unclear verdict is said apart.", s.Scores, plural(s.Scores, "Score", "Scores"), s.Generation)
@@ -182,7 +220,7 @@ func (r Report) Markdown() string {
 	for _, s := range r.NotShown {
 		line("- %s", s)
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 // reportTime writes an RFC 3339 time as a page says it: 2026-11-05 12:00 UTC.
@@ -194,9 +232,30 @@ func reportTime(rfc3339 string) string {
 	return t.UTC().Format("2006-01-02 15:04 UTC")
 }
 
-// reportCell makes s safe in a table cell: one line, no column of its own.
+// reportEscapes takes from a text what Markdown reads in it, in one pass, so
+// no escape is escaped again. A backslash goes before the backslash, so the
+// text's own can't undo the escape after it ("a\|b"), and before a pipe, a
+// backtick, an asterisk, an underscore, a tilde and both square brackets.
+// The backtick is one of them because a code span takes backslashes as they
+// are, and would show the escapes inside it; with it there, the emphasis and
+// link characters cost nothing more, and a criterion that says
+// [see here](https://...) prints as it was typed and links nowhere. An
+// ampersand and a less-than sign become their HTML entities, which every
+// Markdown renderer prints as the character: no tag and no entity of the
+// text's own reaches the page.
+var reportEscapes = strings.NewReplacer(
+	`\`, `\\`, "|", `\|`, "`", "\\`", "*", `\*`, "_", `\_`, "~", `\~`, "[", `\[`, "]", `\]`,
+	"&", "&amp;", "<", "&lt;",
+)
+
+// reportCell makes text that came from the cluster safe on the page, in a
+// table cell or a heading: one line, no column of its own, and printed as
+// the characters it is. A reason, a harness and model, an Agent's name and a
+// Scorer's criteria are what someone typed into a resource; none of it is
+// the page's markup. A bare address is left as it is: GitHub links it, to
+// the address it shows.
 func reportCell(s string) string {
-	return strings.ReplaceAll(strings.Join(strings.Fields(s), " "), "|", `\|`)
+	return reportEscapes.Replace(strings.Join(strings.Fields(s), " "))
 }
 
 // reportOf writes a share's count: 6 of 8.
@@ -212,12 +271,27 @@ func reportPercent(share *float64) string {
 	return fmt.Sprintf("%d%%", int(math.Round(*share*100)))
 }
 
-// reportMoney writes thousandths of a US dollar as dollars and cents.
+// reportMoney writes thousandths of a US dollar as the UI's formatCost does
+// (ui/src/model/brief.ts): dollars and the nearest cent, half a cent going
+// up, and "<$0.01" for a cost under one cent, which is not nothing. The
+// nearest cent is to the number of dollars as the machine holds it, as
+// JavaScript's toFixed takes it: $1.125 is held exactly and prints $1.13,
+// $1.115 is held a hair under and prints $1.11. fmt's %.2f rounds an exact
+// half to the even cent, $1.12, and the page would differ from the UI by a
+// cent. The cases both sides must print are in the fixture's money.json.
 func reportMoney(milliUSD *float64) string {
 	if milliUSD == nil {
 		return reportNone
 	}
-	return fmt.Sprintf("$%.2f", *milliUSD/1000)
+	if *milliUSD > 0 && *milliUSD < 10 {
+		// No tag begins with "<$", so the sign needs no entity.
+		return "<$0.01"
+	}
+	// Exact: a float64 times a hundred, plus a half, fits in 128 bits.
+	usd := new(big.Float).SetPrec(128).SetFloat64(*milliUSD / 1000)
+	cents, _ := usd.Mul(usd, big.NewFloat(100)).Add(usd, big.NewFloat(0.5)).Int(nil)
+	dollars, rest := new(big.Int).QuoRem(cents, big.NewInt(100), new(big.Int))
+	return fmt.Sprintf("$%d.%02d", dollars, rest)
 }
 
 // reportDuration writes seconds in its two largest units: 45s, 12m 30s,
