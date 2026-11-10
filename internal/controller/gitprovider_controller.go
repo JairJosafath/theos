@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"slices"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -78,6 +79,7 @@ const eventsHostTimeout = time.Minute
 // +kubebuilder:rbac:groups=theos.factory.io,resources=gitproviders,verbs=get;list;watch
 // +kubebuilder:rbac:groups=theos.factory.io,resources=gitproviders/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=theos.factory.io,resources=gitproviders/finalizers,verbs=update
+// +kubebuilder:rbac:groups=theos.factory.io,resources=containers;briefs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create
 
 // Reconcile says what the GitProvider's host can do (setCapabilities) and
@@ -122,7 +124,12 @@ func (r *GitProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	hookURL := model.GitEventsURL(r.GitEventsURL, gp.Namespace, gp.Name)
 	hostCtx, cancel := context.WithTimeout(ctx, eventsHostTimeout)
 	defer cancel()
-	changed, err := events.EnsureEventHook(hostCtx, ports.EventHook{URL: hookURL, Secret: secret})
+	repositories, err := r.repositories(ctx, &gp)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	changed, err := events.EnsureEventHook(hostCtx, ports.EventHook{URL: hookURL, Secret: secret,
+		Repositories: repositories})
 	if err != nil {
 		r.setEvents(ctx, &gp, status, metav1.ConditionFalse, c4v1beta1.ReasonEventsRegisterFailed,
 			fmt.Sprintf("Could not register the hook to %s on %s: %v", hookURL, gp.Spec.Owner, err))
@@ -203,6 +210,35 @@ func (r *GitProviderReconciler) eventsSecret(ctx context.Context, gp *c4v1beta1.
 	}
 	logf.FromContext(ctx).Info("Created the delivery Secret", "secret", name)
 	return value, nil
+}
+
+// repositories are the repositories the operator works in on gp's host: its
+// Containers' and its Briefs', sorted. A host whose owner holds the hook
+// ignores them; one whose owner can hold none hooks each
+// (ports.EventHook.Repositories). A repository made after this ensure is
+// hooked at the next.
+func (r *GitProviderReconciler) repositories(ctx context.Context, gp *c4v1beta1.GitProvider) ([]string, error) {
+	var names []string
+	var containers c4v1beta1.ContainerList
+	if err := r.List(ctx, &containers, client.InNamespace(gp.Namespace)); err != nil {
+		return nil, err
+	}
+	for _, c := range containers.Items {
+		if c.Spec.GitProviderRef.Name == gp.Name {
+			names = append(names, c.Name)
+		}
+	}
+	var briefs c4v1beta1.BriefList
+	if err := r.List(ctx, &briefs, client.InNamespace(gp.Namespace)); err != nil {
+		return nil, err
+	}
+	for _, b := range briefs.Items {
+		if b.Spec.GitProviderRef.Name == gp.Name {
+			names = append(names, model.BriefRepository(b.Name))
+		}
+	}
+	slices.Sort(names)
+	return names, nil
 }
 
 // setCapabilities sets what the GitProvider's host can do, as the provider

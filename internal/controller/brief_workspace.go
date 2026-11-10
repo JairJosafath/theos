@@ -712,7 +712,7 @@ func (e *credentialTooShort) Error() string {
 
 // reasonCredentialTooShort is the Progressing reason of a Task whose Agent's
 // runs may take longer than a credential of its Git host lives.
-const reasonCredentialTooShort = "CredentialTooShort"
+const reasonCredentialTooShort = "CredentialTooShort" //nolint:gosec // a condition's reason
 
 // tooShortForAgent is what such a Task says: the two times, and the
 // timeoutMinutes that would fit.

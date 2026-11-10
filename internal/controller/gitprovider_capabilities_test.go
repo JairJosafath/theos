@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
@@ -41,6 +42,17 @@ func setAgentsNeed(ns, secret, need string) {
 		s.Data[agentsNeedKey] = []byte(need)
 	}
 	Expect(k8sClient.Patch(ctx, &s, client.MergeFrom(orig))).To(Succeed())
+}
+
+// factoryProvider is the GitProvider that the Container readyContainer made
+// in ns is on, read back: the fixture names it, not this file.
+func factoryProvider(ns string) *c4v1beta1.GitProvider {
+	GinkgoHelper()
+	var container c4v1beta1.Container
+	Expect(k8sClient.Get(ctx, key(ns, "orders-api"), &container)).To(Succeed())
+	var gp c4v1beta1.GitProvider
+	Expect(k8sClient.Get(ctx, key(ns, container.Spec.GitProviderRef.Name), &gp)).To(Succeed())
+	return &gp
 }
 
 var _ = Describe("What a GitProvider's host can do (#81)", func() {
@@ -103,7 +115,8 @@ var _ = Describe("What a GitProvider's host can do (#81)", func() {
 	It("starts no Task on a host that gives agents no credential, and starts it once the Secret has what it lacked", func() {
 		ns := newProjectNamespace()
 		readyContainer(ns)
-		setAgentsNeed(ns, "gitea-credentials", "an identity for the agents")
+		gp := factoryProvider(ns)
+		setAgentsNeed(ns, gp.Spec.CredentialsSecretRef.Name, "an identity for the agents")
 		mustCreate(newAgent(ns, 3), newTask(ns, "add-crop", "Add crop"))
 
 		By("waiting with the provider's reason, and making no sandbox and no agent credential")
@@ -113,7 +126,7 @@ var _ = Describe("What a GitProvider's host can do (#81)", func() {
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Reason).To(Equal(reasonNeedsAgentIdentity))
-			g.Expect(cond.Message).To(And(ContainSubstring("GitProvider gitea gives agents no credential"),
+			g.Expect(cond.Message).To(And(ContainSubstring("GitProvider "+gp.Name+" gives agents no credential"),
 				ContainSubstring("The Secret lacks an identity for the agents.")))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
@@ -123,11 +136,28 @@ var _ = Describe("What a GitProvider's host can do (#81)", func() {
 		}, "2s").Should(Succeed())
 
 		By("starting the run once the Secret has it")
-		setAgentsNeed(ns, "gitea-credentials", "")
+		setAgentsNeed(ns, gp.Spec.CredentialsSecretRef.Name, "")
 		Eventually(func(g Gomega) {
 			sandboxExists(g, ns, "add-crop-r1-implement")
 			g.Expect(getTask(g, ns, "add-crop").Status.Phase).To(Equal(c4v1beta1.TaskImplementing))
 		}).Should(Succeed())
+	})
+
+	It("names its Containers' and its Briefs' repositories in the hook, and no other provider's", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		gp := factoryProvider(ns)
+		other := newEventsProvider(ns, "elsewhere-"+ns)
+		elsewhere := newContainer(ns, "billing-api", "webshop-core", c4v1beta1.ContainerTypeService)
+		elsewhere.Spec.GitProviderRef.Name = other.Name
+		mustCreate(elsewhere, &c4v1beta1.Brief{ObjectMeta: objectMeta(ns, "shop"),
+			Spec: c4v1beta1.BriefSpec{Idea: "A shop."}})
+		// The hook was ensured when the GitProvider was made, before either
+		// existed; the next ensure names them.
+		reconcileEvents(gp, testGitEventsURL)
+		hooks := gitFake.EventHooks(ns)
+		Expect(hooks).To(HaveLen(1))
+		Expect(hooks[0].Repositories).To(Equal([]string{model.BriefRepository("shop"), "orders-api"}))
 	})
 
 	It("is the fake host's own word, as any host's", func() {
