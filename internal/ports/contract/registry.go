@@ -34,6 +34,15 @@ type RegistryEnv struct {
 	// declares apart from the files pushed records it, and a host that
 	// keeps modules after a test may remove this one when t ends.
 	GoMod func(t *testing.T, repo ports.Repository, path string)
+	// ModulePath, when set, is the module path the go.mod of repo declares
+	// in the suite: a host that serves a module from its repository takes
+	// that repository's path and no other. Unset, the suite declares
+	// example.com/<owner>/<name>.
+	ModulePath func(repo ports.Repository) string
+	// NoUpload says the host serves a module from its repository and has
+	// nothing to upload: a module's tag is its publication, so publishing
+	// says the module exists, the first time as every time.
+	NoUpload bool
 	// Cannot names the subtests the host can't run, with why; they are
 	// skipped.
 	Cannot map[string]string
@@ -41,7 +50,9 @@ type RegistryEnv struct {
 
 // Registry states what the controllers rely on of every Registry's Go
 // modules: a repository with no go.mod is an outcome, not an error, and a
-// module is published once, a repeat publishing nothing.
+// module is published once, a repeat publishing nothing. A host with
+// nothing to upload (RegistryEnv.NoUpload) says the module exists both
+// times.
 func Registry(t *testing.T, env RegistryEnv) {
 	t.Helper()
 	ctx, cancel := suiteContext()
@@ -84,6 +95,9 @@ func (s registrySuite) noGoMod(t *testing.T) {
 
 func (s registrySuite) publishesGoModule(t *testing.T) {
 	path := func(repo ports.Repository) string { return "example.com/" + repo.Owner + "/" + repo.Name }
+	if s.env.ModulePath != nil {
+		path = s.env.ModulePath
+	}
 	registry, repo := s.tagged(t, func(repo ports.Repository) scaffold.Tree {
 		return scaffold.Tree{
 			"go.mod": {Data: []byte("module " + path(repo) + "\n\ngo 1.24\n")},
@@ -94,7 +108,11 @@ func (s registrySuite) publishesGoModule(t *testing.T) {
 	if s.env.GoMod != nil {
 		s.env.GoMod(t, repo, path(repo))
 	}
-	for _, want := range []ports.GoModuleOutcome{ports.GoModulePublished, ports.GoModuleExists} {
+	first := ports.GoModulePublished
+	if s.env.NoUpload {
+		first = ports.GoModuleExists
+	}
+	for _, want := range []ports.GoModuleOutcome{first, ports.GoModuleExists} {
 		got, err := registry.PublishGoModule(s.ctx, repo, firstTag)
 		if w := (ports.GoModule{Outcome: want, Path: path(repo), Version: firstTag}); err != nil || got != w {
 			t.Errorf("PublishGoModule() = %+v, %v; want %+v", got, err, w)
