@@ -681,28 +681,28 @@ catalog:
         supportedTypes: [service]
     - kind: Framework
       name: vscode-extension
-      ref: v1.1.0
+      ref: v1.1.1
       spec:
         displayName: VS Code extension (TypeScript)
         description: A VS Code extension in TypeScript, bundled with esbuild, with a pure module and its unit tests.
         supportedTypes: [extension]
     - kind: Framework
       name: react-vite
-      ref: v1.0.0
+      ref: v1.0.1
       spec:
         displayName: Web app with pages (React, Vite)
         description: A page in the browser in React and TypeScript, built with Vite into a static site, with a pure module and its unit tests.
         supportedTypes: [static-site]
     - kind: Framework
       name: node-cli
-      ref: v1.1.1
+      ref: v1.1.2
       spec:
         displayName: Command-line program (TypeScript, Node)
         description: A command-line program in TypeScript for Node, bundled with esbuild into one file and packed with npm pack, with flags parsed by util.parseArgs and unit tests.
         supportedTypes: [cli]
     - kind: Framework
       name: aws-lambda-ts
-      ref: v1.5.0
+      ref: v1.5.1
       spec:
         displayName: Serverless API on AWS (Lambda, TypeScript)
         description: "A serverless HTTP API on AWS: a TypeScript Lambda behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK v3, Powertools' logs, metrics and idempotency, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -713,7 +713,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-ec2-ts
-      ref: v1.4.0
+      ref: v1.4.1
       spec:
         displayName: Service on AWS EC2 (TypeScript)
         description: "An HTTP service on AWS infrastructure: a TypeScript Node server on EC2 instances in an Auto Scaling group behind an internal Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, rolling updates that stop on an unhealthy instance, and its CDK stack in infra/, which is its deployment, built for production (backups, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector in its own VPC."
@@ -724,7 +724,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-fargate-ts
-      ref: v2.2.0
+      ref: v2.2.1
       spec:
         displayName: Container service on AWS (ECS on Fargate, TypeScript)
         description: "An HTTP service on AWS: a TypeScript Node server in a container on ECS on Fargate behind an Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, deployments that roll back on them, and its CDK stack in infra/, which is its deployment, built for production (backups, OpenTelemetry tracing, a NAT gateway per zone, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector in its own VPC."
@@ -735,7 +735,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-lambda-go
-      ref: v1.5.0
+      ref: v1.5.1
       spec:
         displayName: Serverless API on AWS (Lambda, Go)
         description: "A serverless HTTP API on AWS: a Go Lambda on provided.al2023, built with go build, behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK for Go v2, slog's JSON logs, alarms and a dashboard, and its CDK stack in TypeScript in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -746,7 +746,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-lambda-py
-      ref: v1.5.0
+      ref: v1.5.1
       spec:
         displayName: Serverless API on AWS (Lambda, Python)
         description: "A serverless HTTP API on AWS: a Python Lambda using boto3 behind an API Gateway HTTP API with IAM auth, items in DynamoDB, managed with uv, Powertools' logs, metrics and idempotency, alarms and a dashboard, and its TypeScript CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -757,7 +757,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-static-site-ts
-      ref: v1.0.0
+      ref: v1.0.1
       spec:
         displayName: Static site on AWS (S3 and CloudFront, TypeScript)
         description: "A static site on AWS: a TypeScript page built with Vite into a private S3 bucket behind a CloudFront distribution with origin access control, access logs, TLS 1.2 on its own domain, a web application firewall and the files versioned in production, alarms and a dashboard, and its CDK stack in infra/, which is its deployment."
@@ -768,7 +768,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-queue-ts
-      ref: v1.3.0
+      ref: v1.3.1
       spec:
         displayName: Queue consumer on AWS (SQS and Lambda, TypeScript)
         description: "A queue consumer on AWS: an SQS queue with a dead-letter queue, consumed in batches by a TypeScript Lambda that reports only the messages that failed, with Powertools' batch processing, logs, metrics and idempotency, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -779,7 +779,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-schedule-ts
-      ref: v1.3.0
+      ref: v1.3.1
       spec:
         displayName: Scheduled job on AWS (EventBridge Scheduler and Lambda, TypeScript)
         description: "A scheduled job on AWS: an EventBridge Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a dead-letter queue and the schedule's role scoped to the one function, with Powertools' logs, metrics and idempotency, a record of each run in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -790,7 +790,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-event-ts
-      ref: v1.3.0
+      ref: v1.3.1
       spec:
         displayName: Event consumer on AWS (EventBridge and Lambda, TypeScript)
         description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."

@@ -128,7 +128,7 @@ CloudFormation offline.
   `infra/user_pool.ts`, `infra/connectors.ts`,
   `infra/operations.ts`, `README.md`, `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
-  `UNLICENSED`, an ES module, `engines.node` `>=22`. The SDK clients are
+  licensed as the repository is scaffolded (`UNLICENSED` with no license, #73), an ES module, `engines.node` `>=22`. The SDK clients are
   `dependencies`, which esbuild bundles into the server; the CDK, CDK Nag,
   `cdk-monitoring-constructs` 10.3.2, tsx and the Standard's tools are
   `devDependencies`. `npm start` runs the

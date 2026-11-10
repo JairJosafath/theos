@@ -87,7 +87,7 @@ synthesizes the CloudFormation offline.
   `infra/backups.ts`, `infra/operations.ts`, `infra/connectors.ts`,
   `README.md`, `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
-  `UNLICENSED`, an ES module, `engines.node` `>=22`. The SDK clients and
+  licensed as the repository is scaffolded (`UNLICENSED` with no license, #73), an ES module, `engines.node` `>=22`. The SDK clients and
   Powertools' `batch`, `logger`, `metrics` and `idempotency` 2.36.0 are
   `dependencies`, which esbuild bundles into the function (not the
   runtime's copy); the CDK, CDK Nag, `cdk-monitoring-constructs` 10.3.2,

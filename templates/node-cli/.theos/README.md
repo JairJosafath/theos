@@ -13,7 +13,7 @@ unit tests, and one bundled file behind a `bin` entry, packed by `npm pack`.
   `esbuild.mjs`, `vitest.config.mts`, `src/`, `README.md`, `CHANGELOG.md`,
   `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
-  `UNLICENSED`, an ES module; `bin` maps the Container's name to
+  licensed as the repository is scaffolded (`UNLICENSED` with no license, #73), an ES module; `bin` maps the Container's name to
   `out/cli.js`, `files` packs only that and `CHANGELOG.md`, `engines.node`
   is `>=22`. No `dependencies`: esbuild bundles what the program imports.
 - **Flags:** `-n, --name`, `--version` (prints `<name> <version>` from
