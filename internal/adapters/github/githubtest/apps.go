@@ -90,6 +90,7 @@ const (
 	permAdministration = "administration"
 	permChecks         = "checks"
 	permContents       = "contents"
+	permHooks          = "repository_hooks"
 	permIssues         = "issues"
 	permPulls          = "pull_requests"
 	permStatuses       = "statuses"
@@ -292,6 +293,8 @@ func needs(method, rest string) (perm string, write bool) {
 	switch {
 	case rest == "":
 		return "", write
+	case hooksAt.MatchString(rest):
+		return permHooks, write
 	case actionsAt.MatchString(rest):
 		return permActions, write
 	case variablesAt.MatchString(rest):

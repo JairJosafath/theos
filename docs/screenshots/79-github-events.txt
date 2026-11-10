@@ -1,0 +1,41 @@
+# #79: Events on GitHub, from an organization's webhook. 2026-11-10, on main at e0985cec plus the step.
+# 1. The Events contract on the fake GitHub, with nothing in Cannot; what GitHub does its own way; the signature GitHub documents; and each event's payload mapped to what the receiver reconciles:
+#    go test ./internal/adapters/github -v -run 'TestEventsContract|TestEventsOnGitHub|TestParseEvent'
+--- PASS: TestEventsContract (0.22s)
+    --- PASS: TestEventsContract/ensures_one_hook (0.00s)
+    --- PASS: TestEventsContract/edits_a_hook_whose_URL_changed (0.01s)
+    --- PASS: TestEventsContract/takes_a_new_secret (0.01s)
+    --- PASS: TestEventsContract/delivers_changes_to_issues,_pull_requests_and_statuses (0.17s)
+    --- PASS: TestEventsContract/refuses_a_wrong_signature (0.01s)
+--- PASS: TestEventsOnGitHub (0.54s)
+    --- PASS: TestEventsOnGitHub/the_webhook_asks_for_the_events_the_operator_reconciles_on,_as_JSON (0.05s)
+    --- PASS: TestEventsOnGitHub/it_puts_back_what_somebody_changed_on_the_webhook (0.04s)
+    --- PASS: TestEventsOnGitHub/it_removes_its_duplicates_and_leaves_the_others'_webhooks_alone (0.05s)
+    --- PASS: TestEventsOnGitHub/GitHub's_ping_of_the_new_webhook_arrives_and_concerns_no_repository (0.06s)
+    --- PASS: TestEventsOnGitHub/a_push,_a_tag,_a_comment,_a_review,_a_merge_and_a_run_each_deliver_what_they_concern (0.30s)
+    --- PASS: TestEventsOnGitHub/a_user's_account_has_a_webhook_on_each_repository_the_operator_names (0.02s)
+    --- PASS: TestEventsOnGitHub/an_owner_that_is_neither,_and_webhooks_the_token_may_not_manage,_are_errors_that_say_what_to_grant (0.02s)
+--- PASS: TestParseEventSignature (0.00s)
+--- PASS: TestParseEvent (0.00s)
+    --- PASS: TestParseEvent/an_issue_opened (0.00s)
+    --- PASS: TestParseEvent/a_comment_on_an_issue (0.00s)
+    --- PASS: TestParseEvent/a_pull_request_opened (0.00s)
+    --- PASS: TestParseEvent/a_pull_request_opened,_changed_to_come_from_a_fork:_its_branch_is_none_of_the_repository's (0.00s)
+    --- PASS: TestParseEvent/a_review_submitted (0.00s)
+    --- PASS: TestParseEvent/a_status_on_a_commit_that_is_the_newest_of_none_of_its_branches (0.00s)
+    --- PASS: TestParseEvent/a_status,_changed_to_be_on_the_newest_commit_of_one_branch (0.00s)
+    --- PASS: TestParseEvent/a_check_run_completed (0.00s)
+    --- PASS: TestParseEvent/a_workflow_run_completed (0.00s)
+    --- PASS: TestParseEvent/a_push_that_made_a_branch (0.00s)
+    --- PASS: TestParseEvent/a_push_that_deleted_a_tag (0.00s)
+    --- PASS: TestParseEvent/a_release_published (0.00s)
+    --- PASS: TestParseEvent/the_ping_of_a_repository's_webhook (0.00s)
+    --- PASS: TestParseEvent/the_ping_of_an_organization's_webhook,_which_names_no_repository (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/adapters/github	0.776s
+# 2. The other contracts of the adapter still pass on the fake, whose calls now deliver to webhooks (go test ./internal/adapters/github/...), and the ports' own tests with the in-memory fake (go test ./internal/ports/...):
+ok  	github.com/JairJosafath/theos/internal/adapters/github	10.741s
+?   	github.com/JairJosafath/theos/internal/adapters/github/githubtest	[no test files]
+ok  	github.com/JairJosafath/theos/internal/ports	0.073s
+?   	github.com/JairJosafath/theos/internal/ports/contract	[no test files]
+ok  	github.com/JairJosafath/theos/internal/ports/fake	0.015s

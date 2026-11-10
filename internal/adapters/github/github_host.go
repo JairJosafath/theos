@@ -40,8 +40,9 @@ import (
 // statuses in github_host_status.go, releases and the source at a tag in
 // github_host_releases.go. The Issues port, step 3 (#76), is in
 // github_host_issues.go, AgentAccess, step 4 (#77), in
-// github_host_agents.go, and CI, step 5 (#78), in github_host_ci.go. No
-// GitProvider reaches this before step 8.
+// github_host_agents.go, CI, step 5 (#78), in github_host_ci.go, and Events,
+// step 6 (#79), in github_host_events.go. No GitProvider reaches this
+// before step 8.
 
 // GitHubWebURL is github.com, where a GitProvider's spec.url means the public
 // GitHub; any other URL is a GitHub Enterprise Server.
@@ -74,6 +75,7 @@ type Host interface {
 	ports.AgentAccess
 	ports.AgentAccessChecker
 	ports.CI
+	ports.Events
 }
 
 // GitHost returns the GitHost of cfg's owner, as Host does.

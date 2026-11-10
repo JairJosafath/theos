@@ -172,7 +172,7 @@ func (s *Server) pullsAPI(w http.ResponseWriter, r *http.Request, kept *repo, re
 		case re == pullUpdatePath && r.Method == http.MethodPut:
 			s.updatePull(w, kept, p)
 		case re == pullReviewsPath && r.Method == http.MethodPost:
-			s.reviewPull(w, r, p)
+			s.reviewPull(w, r, kept, p)
 		case re == pullReviewsPath && r.Method == http.MethodGet:
 			reply(w, http.StatusOK, page(r.URL.Query(), append([]*pullReview{}, p.reviews...)))
 		default:
@@ -302,6 +302,7 @@ func (s *Server) openPull(w http.ResponseWriter, r *http.Request, kept *repo) {
 		state: open}
 	kept.pulls[p.number] = p
 	s.follow(kept, p)
+	s.pullEvent(kept, p, "opened", nil)
 	reply(w, http.StatusCreated, s.pullJSON(kept, p))
 }
 
@@ -337,6 +338,7 @@ func (s *Server) patchPull(w http.ResponseWriter, r *http.Request, kept *repo, p
 		p.forkPoint = s.fork(kept, p)
 		p.state = closed
 		kept.issue(p.number).state = closed
+		s.pullEvent(kept, p, closed, nil)
 	}
 	reply(w, http.StatusOK, s.pullJSON(kept, p))
 }
@@ -454,6 +456,8 @@ func (s *Server) mergePull(w http.ResponseWriter, r *http.Request, kept *repo, p
 	}
 	p.state, p.merged, p.mergeCommit, p.forkPoint = closed, true, commit, fork
 	kept.issue(p.number).state = closed
+	s.push(kept, s.acting, "refs/heads/"+p.base, base, commit)
+	s.pullEvent(kept, p, closed, nil)
 	reply(w, http.StatusOK, struct {
 		SHA     string `json:"sha"`
 		Merged  bool   `json:"merged"`
@@ -485,11 +489,12 @@ func (s *Server) updatePull(w http.ResponseWriter, kept *repo, p *pull) {
 		reply(w, http.StatusInternalServerError, message(err.Error()))
 		return
 	}
+	s.push(kept, s.acting, "refs/heads/"+p.head, p.headSHA, commit)
 	s.follow(kept, p)
 	reply(w, http.StatusAccepted, message("Updating pull request branch."))
 }
 
-func (s *Server) reviewPull(w http.ResponseWriter, r *http.Request, p *pull) {
+func (s *Server) reviewPull(w http.ResponseWriter, r *http.Request, kept *repo, p *pull) {
 	var body struct {
 		Commit string `json:"commit_id"`
 		Event  string `json:"event"`
@@ -522,6 +527,9 @@ func (s *Server) reviewPull(w http.ResponseWriter, r *http.Request, p *pull) {
 	rv := &pullReview{ID: s.nextID, State: state[body.Event], Commit: body.Commit, Body: body.Body}
 	rv.User.Login = s.acting
 	p.reviews = append(p.reviews, rv)
+	s.emit(kept, s.acting, eventReview, func() eventBody {
+		return eventBody{Action: "submitted", Review: rv, PullRequest: s.pullJSON(kept, p)}
+	})
 	reply(w, http.StatusOK, rv)
 }
 

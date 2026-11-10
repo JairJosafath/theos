@@ -44,6 +44,11 @@ type EventHook struct {
 	URL string
 	// Secret signs every delivery.
 	Secret string
+	// Repositories are the owner's repositories the operator works in. A
+	// host whose owner holds the hook ignores them. One whose owner can
+	// hold none hooks each of them that exists, and none else: a
+	// repository made later is hooked the next time the hook is ensured.
+	Repositories []string
 }
 
 // Event is what a delivery concerns.

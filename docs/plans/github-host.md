@@ -100,9 +100,9 @@ Each step is its own issue, names #57 and lands with `make check`.
 | 3. Issues (done) | #76 | #74 | the Issues contract passes, exclusive labels and refused closes emulated |
 | 4. AgentAccess from a GitHub App (done) | #77 | #75 | the AgentAccess contract passes: a token for one repository, a push to main refused, revoked on removal; a provider with a token alone reports `NeedsGitHubApp` |
 | 5. CI on GitHub Actions (done) | #78 | #75 | the CI contract passes with `JobRunners` in `Cannot`; `model.CI` has `githubActions`, and every Standard renders its workflow for both hosts |
-| 6. Events | #79 | #74 | the Events contract passes: one organization hook, signed deliveries, a bad signature refused |
+| 6. Events (done) | #79 | #74 | the Events contract passes: one organization hook, signed deliveries, a bad signature refused |
 | 7. Registry | #80 | #74 | the Registry contract passes for images and npm; Go modules resolve from the repository; PyPI is in `Cannot` |
-| 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; the GitProvider's `AgentAccess` condition comes from `ports.AgentAccessState` and no Task starts without it; an agent's credential is minted again before it expires; the organization's `THEOS_CI_*` variables are set from the GitProvider; `TestHostNeutral`'s allowlist has no controller in it |
+| 8. `provider: github` | #81 | #74 to #80 | the CRD takes it, `cmd/main.go` wires it, envtest scaffolds a Container, runs a Task to a merge and adopts a repository on the fake; the GitProvider's `AgentAccess` condition comes from `ports.AgentAccessState` and no Task starts without it; an agent's credential is minted again before it expires; the organization's `THEOS_CI_*` variables are set from the GitProvider; the GitProvider's hook names its Containers' and Briefs' repositories (`ports.EventHook.Repositories`), for an owner that is a user's account; `TestHostNeutral`'s allowlist has no controller in it |
 | 9. The guide, and a run on the real thing | #82 | #81 | "Use the factory on your GitHub organization" in the guide, the App's permissions listed with why; a human runs `make test-github` and the first-app Crew on a test organization, with the output as evidence |
 
 ## What step 1 found
@@ -283,6 +283,98 @@ that `branch=<tag>` selects the push of a tag. And no Standard's workflow
 has run on GitHub Actions: they render, parse and name the check the row
 requires, and whether a job with an empty `container:` reaches its first
 step, to say which variable is missing, is for step 9's run to show.
+
+## What step 6 found
+
+The Events contract passes against the fake, with nothing in `Cannot`.
+
+- **One webhook, the organization's.** `EnsureEventHook` reads the
+  organization's webhooks, makes the one to the receiver's path or edits
+  it, and removes the others with that path; a webhook to another path is
+  somebody else's and stays. It asks for the nine events the issue lists
+  (`issues`, `issue_comment`, `pull_request`, `pull_request_review`,
+  `status`, `check_run`, `workflow_run`, `push`, `release`), as JSON, with
+  the receiver's certificate checked. A branch or a tag made or deleted
+  arrives as a `push`, so `create` and `delete` are not asked for.
+- **The secret is set each time, and its fingerprint is in the URL.**
+  GitHub shows `********` for a secret, so nothing can be compared. As on
+  Gitea, the URL the webhook holds carries `?fingerprint=`, the first 12
+  hex digits of the secret's SHA-256: a webhook whose URL is the one
+  wanted has the secret wanted, and `changed` is true only for a webhook
+  that was made or whose URL, so its secret, changed. GitHub's edit takes
+  a new secret, where Gitea 1.27's does not, so a rotation edits the
+  webhook and keeps its id and its list of deliveries. Every ensure, each
+  10 minutes, sets the events, the content type and the secret again, so
+  what somebody changed in the organization's settings is put back.
+- **A user's account has no webhook of its own,** and the issue asks for
+  the repository's there. The port could not say which repositories, so
+  `ports.EventHook` has `Repositories` now: the owner's repositories the
+  operator works in. A host whose owner holds the hook ignores it. For an
+  owner that is the token's own account the adapter ensures the webhook on
+  each of them that exists, and on no other repository of the account: a
+  person's other repositories are none of the factory's. Step 8 fills it
+  from the GitProvider's Containers and Briefs; until then a user's
+  account has no webhook and the operator polls. A repository made after
+  an ensure is hooked at the next. A webhook on a repository whose
+  Container is gone stays, and what it delivers concerns nothing.
+- **404 means two things on GitHub:** an owner that is no organization,
+  and webhooks the token may not manage. The adapter asks who the token is
+  to tell them apart, and reads the repository for a user's account, so
+  the error names what to grant instead of saying "Not Found".
+- **What a delivery concerns:**
+
+  | Event | Number | Branch |
+  | --- | --- | --- |
+  | `issues`, `issue_comment` | the issue's, or the pull request's a comment is on | |
+  | `pull_request`, `pull_request_review` | the pull request's | its head, unless the head is in a fork |
+  | `push` | | the branch; none for a tag |
+  | `check_run` | | its check suite's `head_branch` |
+  | `workflow_run` | | its `head_branch`, which is a tag's name for the run of a tag |
+  | `status` | | the one branch whose newest commit it is on |
+  | `release` | | |
+
+  A status lists up to ten branches that hold its commit, and the commit
+  "may or may not be the head of the branch": a status on a commit that is
+  the newest of none of them, or of several, names no branch, and the
+  receiver enqueues every unfinished Task of the repository, as it does
+  for Gitea's status.
+- **GitHub pings a new webhook,** and an organization's ping names no
+  repository. `ParseEvent` reads a signed delivery without one as an Event
+  with its kind alone: the receiver finds nothing to reconcile, answers
+  202 and counts it as verified. So the GitProvider's `Events` says
+  `Receiving` as soon as GitHub reaches the receiver, before anything
+  happens in a repository, and GitHub's page of the webhook shows a
+  delivery that arrived.
+- **The signature is `X-Hub-Signature-256`,** `sha256=` and the hex
+  HMAC-SHA256 of the body. `TestParseEventSignature` checks it against the
+  secret, the payload and the signature GitHub's documentation gives to
+  test a receiver with. The SHA-1 header GitHub also sends is not read.
+- **For step 9's guide.** The operator's token takes `admin:org_hook`, or,
+  fine-grained, the organization's "Webhooks" permission to write; for a
+  user's account `admin:repo_hook`, or the repository's "Webhooks". A
+  cluster GitHub can't reach gets no deliveries: `Events` stays
+  `Registered` and GitHub's page of the webhook lists the deliveries that
+  failed. The two ways out are an ingress that serves the receiver's path
+  (`/git-events/`) and nothing else, with `gitEvents.url` its public
+  address, or `gitEvents` left off and polling alone. The webhook checks
+  the receiver's certificate, so one GitHub doesn't trust fails every
+  delivery; there is no setting that turns the check off.
+
+`TestParseEvent` maps each event's payload as github.com/octokit/webhooks
+records GitHub's deliveries (the examples GitHub's documentation showed),
+cut down to what says what a delivery concerns; the adapter read the whole
+examples to the same events while this was built. The fake encodes
+`orgs/webhooks` and `repos/webhooks` (a name that must be `web`, a secret
+shown as `********`, an edit whose config replaces the config whole, 404
+for an owner that is no organization and for a token that may not manage
+webhooks, the `repository_hooks` permission of an installation token) and
+`webhooks/webhook-events-and-payloads` (the delivery's headers, a ping for
+a new webhook, each payload's shape, a status's branches). It delivers
+before the call that caused the event returns, where GitHub delivers a
+moment later. Not verified against github.com: that a second webhook with
+the URL of another is refused (422), which the pages don't say and the
+adapter doesn't rely on; and that a classic token without the scope gets
+404, not 403, for an organization's webhooks.
 
 ## What step 4 found
 
