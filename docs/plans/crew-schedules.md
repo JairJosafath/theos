@@ -46,13 +46,41 @@ runs on a schedule, through the same loop as everything else.
 | Step | Issue | Done when |
 | --- | --- | --- |
 | 1. The rule, the field, the Crew files the issue | #63 | `model.NextScheduleStep` and `ParseCron` table-tested; `spec.schedules` with its CEL; envtest: due, held while open, one for many missed, paused, invalid, refused by the CRD; the sample and the guide |
-| 2. "Nothing to do" is a result | to file | an implementer that finds nothing to change ends with `Nothing to do: <why>`; the Task closes the issue as done instead of failing. It touches `internal/agentrunner/`, a protected path |
-| 3. Run one now | to file | an annotation on the Crew, and a button in the UI, file a schedule's issue at once |
-| 4. The UI shows schedules | to file | the Crew's page lists each schedule, its next time and its last issue |
-| 5. Standards propose schedules | to file | a Standard names schedules for its language; a Crew takes or leaves them |
+| 2. "Nothing to do" is a result (done) | #72 | an implementer that finds nothing to change ends with `Nothing to do: <why>`; the Task closes the issue as done instead of failing. It touches `internal/agentrunner/`, a protected path |
+| 3. Run one now | #72 | an annotation on the Crew, and a button in the UI, file a schedule's issue at once |
+| 4. The UI shows schedules | #72 | the Crew's page lists each schedule, its next time and its last issue |
+| 5. Standards propose schedules | #72 | a Standard names schedules for its language; a Crew takes or leaves them |
 
 ## Done when
 
 Step 1 is merged: a Crew with a schedule files one issue when it comes due
 and works it (the envtest specs in `internal/controller/crew_schedule_test.go`),
 and the later steps are filed as their own issues.
+
+## What step 2 found
+
+Built 2026-11-10 in a session the owner ran, the result's field and the
+prompt being the runner's.
+
+- The line is the agent's to write, `Nothing to do: <why>`, as `Blocked:`
+  is, and it counts only with no change made: a change beside the line goes
+  on as any change, and a round that says "Nothing to do." with no reason
+  still fails, with a hint that names the line.
+- The Task ends `Merged`, reason `NothingToDo`, as `DoneByStandardChange`
+  ends one whose Standard change did its issue: no new phase, since every
+  reader of a Task's end knows `Merged` and `Failed`. What reads `Merged` as
+  "a change landed" is told apart: a release would have waited forever for
+  the merge commit of a Task that merged nothing (the release's rule for a
+  merge not yet read), so such a Task is no merge to a release;
+  `theos_tasks_merged` doesn't count it; a Scorer doesn't judge it. The
+  UI's numbers already count only Tasks with a pull request.
+- Only the build of an issue ends so. The runner says it of no spec, no
+  Standard change, no Task with a pull request or resumed after its
+  Standard change; the operator turns it back into a failed round for a
+  Benchmark's Task and a Task with no issue, which the runner can't tell.
+- Nobody reviews the agent's reason: there is no change to review, and a
+  review run each quiet week is what the issue was filed against. The
+  prompt says so, the comment on the closed issue quotes the reason and says
+  how to reopen it, and the stand-in says it for "stand-in: nothing to do".
+- The check command still runs before the round ends, as for any round: an
+  agent that changed nothing costs one run of it.

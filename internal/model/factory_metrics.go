@@ -116,7 +116,10 @@ type TaskMetricFacts struct {
 	// asked.
 	ApprovedByPerson bool
 	Unreviewed       bool
-	CostMilliUSD     int64
+	// NoChange means the Task ended done with nothing merged: its agent found
+	// its issue needs no change (#72). It is no merged change.
+	NoChange     bool
+	CostMilliUSD int64
 	// History is the Task's timeline, oldest first.
 	History []TaskMetricStep
 	Runs    []TaskMetricRun
@@ -215,7 +218,7 @@ func FactoryMetrics(tasks []TaskMetricFacts) []MetricFamily {
 		if t.CostMilliUSD != 0 {
 			add(MetricTasksCostUSD, float64(t.CostMilliUSD)/1000, t.Namespace, container, kind)
 		}
-		if phase == TaskMerged {
+		if phase == TaskMerged && !t.NoChange {
 			code := CodeUnknown
 			if t.PersonCommits != nil {
 				code = CodeFactory

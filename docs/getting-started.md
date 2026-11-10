@@ -1050,7 +1050,9 @@ spec:
 is that Crew. When a schedule comes due, the Crew files an issue in the
 repository, `dependencies, 2026-11-09`, labelled `kind/schedule` and
 `status/ready`, and works it like any other: a Task, CI, the reviewer, a
-merge.
+merge. A week with nothing to update is no failure: the agent says
+`Nothing to do:` and why, and the Crew closes the issue with those words,
+with no pull request and nothing for you to look at.
 
 - **One at a time.** While the issue a schedule filed is open, its next time
   is passed over. A schedule that is slower than its interval never piles up.

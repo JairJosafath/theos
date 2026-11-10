@@ -417,6 +417,10 @@ type FakeAgent struct {
 // (model.StandInTriage).
 const standInRisk = "stand-in: risk high"
 
+// standInNothing in an issue's text has the stand-in implementer find
+// nothing to do: it changes nothing and says so (#72).
+const standInNothing = "stand-in: nothing to do"
+
 // Run does the scripted work.
 func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	if a.Role == RolePlan {
@@ -454,6 +458,9 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	}
 	if a.NoChange {
 		return "Nothing to do.", nil
+	}
+	if a.Role == RoleImplement && a.Spec == "" && strings.Contains(strings.ToLower(a.Goal), standInNothing) {
+		return "Looked at it.\n" + model.NothingPrefix + " the stand-in was asked to find nothing.", nil
 	}
 	if a.Spec != "" {
 		return a.writeSpec(dir)

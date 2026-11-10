@@ -373,7 +373,7 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		if name == status.Sandbox && startedOn == "" {
 			status.SandboxPod = run.Pod // the pod the run started on
 		}
-		facts.Run = r.withSuspendedFor(run)
+		facts.Run = withoutNothing(task, status, r.withSuspendedFor(run))
 	}
 
 	if status.Phase == c4v1beta1.TaskChecking && status.Commit != "" {
