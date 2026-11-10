@@ -75,7 +75,7 @@ func shown(t *testing.T, hs *matrixtest.Server, room string) contract.ChatRoomVi
 	if !ok {
 		t.Fatalf("the homeserver has no room %s", room)
 	}
-	view := contract.ChatRoomView{Name: r.Name, Private: r.JoinRule == "invite",
+	view := contract.ChatRoomView{Name: r.Name, Topic: r.Topic, Private: r.JoinRule == "invite",
 		Members: slices.Sorted(maps.Keys(r.Members))}
 	at := map[string]int{}
 	for _, e := range r.Events {

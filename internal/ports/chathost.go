@@ -38,7 +38,8 @@ type ChatRoomSpec struct {
 	// Alias is the localpart of the room's alias: the room is found by it
 	// when ID finds none, and made with it.
 	Alias string
-	// Name and Topic are the room's; an existing room's name follows Name.
+	// Name and Topic are the room's when it is made; an existing room's name
+	// follows Name.
 	Name  string
 	Topic string
 	// Space makes the room a Space.
@@ -77,15 +78,17 @@ type ChatEvent struct {
 	// Replaces is the event an edit replaces, "" for a new message: an edit
 	// runs no command again.
 	Replaces string
-	// Time is when the homeserver received it.
+	// Time is when the homeserver received it, never the zero time.
 	Time time.Time
 }
 
 // ChatSync is what happened since a sync's token.
 type ChatSync struct {
-	// Next is the token the next sync starts from.
+	// Next is the token the next sync starts from, never "", and not the
+	// token this sync started from when Events holds a message.
 	Next string
-	// Events are the new messages, oldest first.
+	// Events are the new messages, a room's oldest first; the messages of
+	// two rooms come in no promised order.
 	Events []ChatEvent
 }
 
@@ -103,6 +106,8 @@ type ChatHost interface {
 	// among the rooms the bot is in, or makes it: private, invite only and
 	// unencrypted. It makes an existing room's name and Space link match the
 	// spec. An alias held by a room the bot is not in is ErrChatAliasTaken.
+	// A token the homeserver doesn't know is ErrChatCredentialRefused, as
+	// WhoAmI's.
 	EnsureRoom(ctx context.Context, spec ChatRoomSpec) (ChatRoom, error)
 	// Invite invites user to room; a user already invited or in the room is
 	// no error.
@@ -117,7 +122,8 @@ type ChatHost interface {
 	React(ctx context.Context, room, event, key string) (string, error)
 	// Sync returns the messages people posted in the bot's rooms since the
 	// token since ("" for the first sync), each once and none of the bot's
-	// own, waiting up to wait for one.
+	// own, waiting up to wait for one: with a wait of 0 it returns at once,
+	// with or without messages.
 	Sync(ctx context.Context, since string, wait time.Duration) (ChatSync, error)
 }
 

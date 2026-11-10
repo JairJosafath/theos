@@ -52,10 +52,14 @@ type ChatServer struct {
 	// Join makes user a member of room, as accepting an invite does.
 	Join func(t *testing.T, room, user string)
 	// Post posts text in room as user, in the thread whose root is
-	// threadRoot when it isn't "", and returns the message's ID.
+	// threadRoot when it isn't "", and returns the message's ID. It returns
+	// only once the host would deliver the message to a Sync: the suite
+	// reads it with the next one, without waiting.
 	Post func(t *testing.T, room, user, text, threadRoot string) string
 	// Amend replaces the text of user's message with text, as a person's
-	// edit does, and returns the edit's ID.
+	// edit does, and returns the edit's ID as a Sync names it: the edited
+	// message's own on a host whose edits have no ID of their own. Like
+	// Post, it returns only once the host would deliver the edit to a Sync.
 	Amend func(t *testing.T, room, user, message, text string) string
 	// Squat makes a room the bot is not in that holds alias, as someone
 	// else on the host would.
@@ -68,8 +72,9 @@ type ChatServer struct {
 
 // ChatRoomView is a room as its host shows it.
 type ChatRoomView struct {
-	// Name is the room's name.
-	Name string
+	// Name is the room's name, and Topic its topic.
+	Name  string
+	Topic string
 	// Private says only the people invited can enter the room and read it.
 	Private bool
 	// Members are the users in the room and those invited to it.
@@ -88,19 +93,20 @@ type ChatPosted struct {
 	Text string
 	// ThreadRoot is the message it answers in a thread, "" outside one.
 	ThreadRoot string
-	// Reactions are the reaction keys on it.
+	// Reactions are the reaction keys on it, as React was given them.
 	Reactions []string
 }
 
 // The names the ChatHost suite uses more than once.
 const (
-	chatSpace   = "contract-shop"
-	chatGeneral = "contract-shop-general"
-	chatAlerts  = "contract-shop-alerts"
-	nameShop    = "Shop"
-	nameGeneral = "general"
-	personAda   = "ada"
-	reactedDone = "✅"
+	chatSpace    = "contract-shop"
+	chatGeneral  = "contract-shop-general"
+	chatAlerts   = "contract-shop-alerts"
+	nameGeneral  = "general"
+	nameAlerts   = "alerts"
+	topicGeneral = "Anything"
+	personAda    = "ada"
+	reactedDone  = "✅"
 	// The bot's two messages.
 	textDarkMode = "Spec: dark mode"
 	textExport   = "Spec: export"
@@ -109,18 +115,25 @@ const (
 // ChatHost states what the Chat controller and theos-chat rely on of every
 // ChatHost: WhoAmI is the bot's user ID, and a credential the host doesn't
 // know is ErrChatCredentialRefused; EnsureRoom makes a private room once
-// and finds it again by its ID, then by its alias, with its name brought to
-// the one asked for; an alias held by a room the bot is not in, one it was
-// taken out of included, is a ChatAliasTakenError that names it; Invite is
-// no error however often it is asked; Send, Reply, Edit and React post as
-// the bot, in the thread, in place and on the message named; and Sync
-// returns what people said since its token, each message once, a room's
-// oldest first, with its room, sender, thread and the message an edit
-// replaces, and nothing the bot said.
+// and finds it again by its ID, then by its alias; a room has the name
+// asked for, when it is made and when it is found; a room made has its
+// topic; a Space and the rooms in it are each a room of their own; an alias
+// held by a room the bot is not in, one it was taken out of included, is a
+// ChatAliasTakenError that names it; Invite is no error however often it is
+// asked; Send, Reply, Edit and React post as the bot, in the thread, in
+// place and on the message named; and Sync returns what people said since
+// its token, each message once, a room's oldest first, with its room,
+// sender, thread and the message an edit replaces, and nothing the bot
+// said, and with a wait of 0 it returns at once when nothing is new.
+//
+// A room's name, its topic and a Space are asserted only in the subtests
+// named for them, and no other subtest makes a Space or gives a topic: a
+// host without one of the three names that subtest in Cannot and runs the
+// rest.
 //
 // What a host does its own way stays in its adapter's tests: how a Space
 // and its rooms are linked, the HTML and the events written, rate limits,
-// and how long an idle Sync waits.
+// and how long a Sync with a wait above 0 waits.
 func ChatHost(t *testing.T, env ChatHostEnv) {
 	t.Helper()
 	ctx, cancel := suiteContext()
@@ -128,6 +141,9 @@ func ChatHost(t *testing.T, env ChatHostEnv) {
 	runSubtests(t, chatSuite{ctx: ctx, env: env}, env.Cannot, []subtest[chatSuite]{
 		{"says who the bot is, and that a credential is refused", chatSuite.whoAmI},
 		{"makes a private room once, and finds it by its ID, then its alias", chatSuite.ensuresRoom},
+		{"brings a room's name to the one asked for", chatSuite.names},
+		{"gives a room it makes its topic", chatSuite.topics},
+		{"makes a Space and the rooms in it, each a room of its own", chatSuite.spaces},
 		{"refuses an alias held by a room the bot is not in", chatSuite.aliasTaken},
 		{"does not go back into a room the bot was taken out of", chatSuite.removed},
 		{"invites a person, however often it is asked", chatSuite.invites},
@@ -137,6 +153,7 @@ func ChatHost(t *testing.T, env ChatHostEnv) {
 		{"puts a reaction on a message", chatSuite.reacts},
 		{"reads what people said since a token, each message once and none of the bot's", chatSuite.syncs},
 		{"reads a person's edit as the message it replaces", chatSuite.syncsEdits},
+		{"reads nothing, at once, when nothing is new", chatSuite.syncsIdle},
 	})
 }
 
@@ -146,8 +163,8 @@ type chatSuite struct {
 	env ChatHostEnv
 }
 
-// chatRooms is a fresh host with its Space, the rooms general and alerts,
-// and ada in both rooms.
+// chatRooms is a fresh host with the rooms general and alerts, and ada in
+// both.
 type chatRooms struct {
 	ChatServer
 	bot, ada        string
@@ -165,18 +182,15 @@ func (s chatSuite) room(t *testing.T, srv ChatServer, spec ports.ChatRoomSpec) p
 	return room
 }
 
-// rooms makes a fresh host's Space and rooms, as the Chat controller does,
-// and puts ada in the rooms.
+// rooms makes a fresh host's two rooms and puts ada in them. The rooms are
+// in no Space and have no topic: a host without either still runs every
+// subtest that starts here.
 func (s chatSuite) rooms(t *testing.T) chatRooms {
 	t.Helper()
 	x := chatRooms{ChatServer: s.env.New(t)}
 	x.bot = must(x.Host.WhoAmI(s.ctx))(t)
-	space := s.room(t, x.ChatServer, ports.ChatRoomSpec{Alias: chatSpace, Name: nameShop, Topic: "The shop",
-		Space: true})
-	x.general = s.room(t, x.ChatServer, ports.ChatRoomSpec{Alias: chatGeneral, Name: nameGeneral,
-		Topic: "Anything", Parent: space.ID}).ID
-	x.alerts = s.room(t, x.ChatServer, ports.ChatRoomSpec{Alias: chatAlerts, Name: "alerts",
-		Topic: "What failed", Parent: space.ID}).ID
+	x.general = s.room(t, x.ChatServer, ports.ChatRoomSpec{Alias: chatGeneral, Name: nameGeneral}).ID
+	x.alerts = s.room(t, x.ChatServer, ports.ChatRoomSpec{Alias: chatAlerts, Name: nameAlerts}).ID
 	x.ada = x.Person(t, personAda)
 	for _, room := range []string{x.general, x.alerts} {
 		if err := x.Host.Invite(s.ctx, room, x.ada); err != nil {
@@ -222,8 +236,8 @@ func (s chatSuite) whoAmI(t *testing.T) {
 	if _, err := srv.Refused.WhoAmI(s.ctx); !errors.Is(err, ports.ErrChatCredentialRefused) {
 		t.Errorf("WhoAmI() with a credential the host doesn't know = %v, want ErrChatCredentialRefused", err)
 	}
-	if _, err := srv.Refused.EnsureRoom(s.ctx, ports.ChatRoomSpec{Alias: chatSpace, Name: nameShop,
-		Space: true}); !errors.Is(err, ports.ErrChatCredentialRefused) {
+	if _, err := srv.Refused.EnsureRoom(s.ctx, ports.ChatRoomSpec{Alias: chatGeneral,
+		Name: nameGeneral}); !errors.Is(err, ports.ErrChatCredentialRefused) {
 		t.Errorf("EnsureRoom() with a credential the host doesn't know = %v, want ErrChatCredentialRefused", err)
 	}
 }
@@ -231,41 +245,90 @@ func (s chatSuite) whoAmI(t *testing.T) {
 func (s chatSuite) ensuresRoom(t *testing.T) {
 	srv := s.env.New(t)
 	bot := must(srv.Host.WhoAmI(s.ctx))(t)
-	space := s.room(t, srv, ports.ChatRoomSpec{Alias: chatSpace, Name: nameShop, Topic: "The shop", Space: true})
-	spec := ports.ChatRoomSpec{Alias: chatGeneral, Name: nameGeneral, Topic: "Anything", Parent: space.ID}
+	spec := ports.ChatRoomSpec{Alias: chatGeneral, Name: nameGeneral}
 	made := s.room(t, srv, spec)
-	if made.ID == space.ID {
-		t.Fatalf("EnsureRoom() gave the room its Space's ID %s", made.ID)
-	}
-	if got := srv.Room(t, made.ID); got.Name != nameGeneral || !got.Private || !slices.Equal(got.Members, []string{bot}) {
-		t.Errorf("the room made = %+v, want general, private, with the bot %s alone", got, bot)
+	if got := srv.Room(t, made.ID); !got.Private || !slices.Equal(got.Members, []string{bot}) {
+		t.Errorf("the room made = %+v, want it private, with the bot %s alone", got, bot)
 	}
 
-	found := func(how string, spec ports.ChatRoomSpec) {
-		t.Helper()
-		got, err := srv.Host.EnsureRoom(s.ctx, spec)
-		if err != nil || got.ID != made.ID || got.Created {
-			t.Errorf("EnsureRoom() by %s = %+v, %v; want room %s found, not made", how, got, err, made.ID)
-		}
-		if spec.Alias != "" && got.Alias != made.Alias {
-			t.Errorf("EnsureRoom() by %s gave alias %q, want %q", how, got.Alias, made.Alias)
-		}
-	}
 	withID := spec
 	withID.ID = made.ID
-	found("its ID and alias", withID)
-	found("its ID alone", ports.ChatRoomSpec{ID: made.ID, Name: nameGeneral, Parent: space.ID})
-	found("its alias alone", spec)
+	s.found(t, srv, "its ID and alias", withID, made)
+	s.found(t, srv, "its ID alone", ports.ChatRoomSpec{ID: made.ID, Name: nameGeneral}, made)
+	s.found(t, srv, "its alias alone", spec, made)
 	// An ID the host has no room for, as a recorded one that was lost.
 	lost := spec
 	lost.ID = made.ID + "0"
-	found("its alias, with an ID the host doesn't have", lost)
+	s.found(t, srv, "its alias, with an ID the host doesn't have", lost, made)
+}
 
-	renamed := withID
-	renamed.Name = "lobby"
-	found("its ID, with a new name", renamed)
-	if got := srv.Room(t, made.ID); got.Name != "lobby" {
-		t.Errorf("the room's name after EnsureRoom() with a new one = %q, want lobby", got.Name)
+// found fails t unless EnsureRoom finds the room made for spec, and makes
+// none; how says what of spec it is found by.
+func (s chatSuite) found(t *testing.T, srv ChatServer, how string, spec ports.ChatRoomSpec, made ports.ChatRoom) {
+	t.Helper()
+	got, err := srv.Host.EnsureRoom(s.ctx, spec)
+	if err != nil || got.ID != made.ID || got.Created {
+		t.Errorf("EnsureRoom() by %s = %+v, %v; want room %s found, not made", how, got, err, made.ID)
+	}
+	if spec.Alias != "" && got.Alias != made.Alias {
+		t.Errorf("EnsureRoom() by %s gave alias %q, want %q", how, got.Alias, made.Alias)
+	}
+}
+
+func (s chatSuite) names(t *testing.T) {
+	srv := s.env.New(t)
+	spec := ports.ChatRoomSpec{Alias: chatGeneral, Name: nameGeneral}
+	made := s.room(t, srv, spec)
+	if got := srv.Room(t, made.ID).Name; got != nameGeneral {
+		t.Errorf("the name of the room made = %q, want %q", got, nameGeneral)
+	}
+	for _, renamed := range []ports.ChatRoomSpec{{ID: made.ID, Alias: chatGeneral, Name: "lobby"},
+		{Alias: chatGeneral, Name: "foyer"}} {
+		how := "its alias"
+		if renamed.ID != "" {
+			how = "its ID"
+		}
+		s.found(t, srv, how+", with a new name", renamed, made)
+		if got := srv.Room(t, made.ID).Name; got != renamed.Name {
+			t.Errorf("the room's name after EnsureRoom() by %s with a new one = %q, want %q", how, got,
+				renamed.Name)
+		}
+	}
+}
+
+func (s chatSuite) topics(t *testing.T) {
+	srv := s.env.New(t)
+	made := s.room(t, srv, ports.ChatRoomSpec{Alias: chatGeneral, Name: nameGeneral, Topic: topicGeneral})
+	if got := srv.Room(t, made.ID).Topic; got != topicGeneral {
+		t.Errorf("the topic of the room made = %q, want %q", got, topicGeneral)
+	}
+}
+
+// spaces makes a Space and its rooms as the Chat controller does: the Space
+// first, then each room with the Space's ID as its Parent.
+func (s chatSuite) spaces(t *testing.T) {
+	srv := s.env.New(t)
+	bot := must(srv.Host.WhoAmI(s.ctx))(t)
+	specs := []ports.ChatRoomSpec{{Alias: chatSpace, Name: "Shop", Space: true},
+		{Alias: chatGeneral, Name: nameGeneral}, {Alias: chatAlerts, Name: nameAlerts}}
+	made := make([]ports.ChatRoom, len(specs))
+	for i := range specs {
+		if !specs[i].Space {
+			specs[i].Parent = made[0].ID
+		}
+		made[i] = s.room(t, srv, specs[i])
+		if got := srv.Room(t, made[i].ID); !got.Private || !slices.Equal(got.Members, []string{bot}) {
+			t.Errorf("%s as made = %+v, want it private, with the bot %s alone", specs[i].Alias, got, bot)
+		}
+	}
+	if made[0].ID == made[1].ID || made[0].ID == made[2].ID || made[1].ID == made[2].ID {
+		t.Fatalf("EnsureRoom() made the Space %s and its rooms %s and %s, want three rooms", made[0].ID,
+			made[1].ID, made[2].ID)
+	}
+	for i, spec := range specs {
+		s.found(t, srv, "the alias of "+spec.Alias, spec, made[i])
+		spec.ID = made[i].ID
+		s.found(t, srv, "the ID of "+spec.Alias, spec, made[i])
 	}
 }
 
@@ -388,9 +451,10 @@ func (s chatSuite) reacts(t *testing.T) {
 	}
 }
 
-// read syncs from since and fails t unless it returns want: every message
-// once, each room's in the order given, with a time. Messages of two rooms
-// may come in either order, since a host tells their order by its clock.
+// read syncs from since, without waiting, and fails t unless it returns
+// want: every message once, each room's in the order given, with a time.
+// Messages of two rooms may come in either order, since a host tells their
+// order by its clock.
 func (s chatSuite) read(t *testing.T, x chatRooms, since string, want ...ports.ChatEvent) string {
 	t.Helper()
 	got := must(x.Host.Sync(s.ctx, since, 0))(t)
@@ -474,4 +538,33 @@ func (s chatSuite) syncsEdits(t *testing.T) {
 	s.read(t, x, since,
 		ports.ChatEvent{Room: x.general, ID: said, Sender: x.ada, Text: "pause shp"},
 		ports.ChatEvent{Room: x.general, ID: edit, Sender: x.ada, Text: "pause shop", Replaces: said})
+}
+
+// chatAtOnce is far longer than a Sync with a wait of 0 takes, and far
+// shorter than the suite's own bound: a host that waits for a message
+// anyway fails here, not after ten minutes.
+const chatAtOnce = 30 * time.Second
+
+// syncsIdle is theos-chat's pass over rooms where nobody said anything: it
+// syncs with a wait of 0 and goes on with the token that returns.
+func (s chatSuite) syncsIdle(t *testing.T) {
+	x := s.rooms(t)
+	idle := func(when, since string) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(s.ctx, chatAtOnce)
+		defer cancel()
+		got, err := x.Host.Sync(ctx, since, 0)
+		if err != nil || len(got.Events) != 0 || got.Next == "" {
+			t.Fatalf("Sync(%q, 0) %s = %+v, %v; want no message and a token to go on from, at once", since,
+				when, got, err)
+		}
+		return got.Next
+	}
+	next := idle("the first time, in rooms where nobody spoke", "")
+	next = idle("with nothing new", next)
+	next = idle("with nothing new, again", next)
+	s.send(t, x, x.general, textDarkMode)
+	next = idle("after only the bot spoke", next)
+	said := x.Post(t, x.general, x.ada, "status", "")
+	s.read(t, x, next, ports.ChatEvent{Room: x.general, ID: said, Sender: x.ada, Text: "status"})
 }
