@@ -19,6 +19,7 @@ limitations under the License.
 //
 //	theos-session run    register a Session and keep it alive until stopped
 //	theos-session start  the same, in the background (for postStartCommand)
+//	theos-session adopt  read a repository you already have and propose its model
 package main
 
 import (
@@ -46,6 +47,8 @@ const usage = `theos-session registers the work in a devcontainer as a Session o
 Usage:
   theos-session run   [flags]   register a Session and keep it alive until stopped
   theos-session start [flags]   the same, in the background; never fails (for postStartCommand)
+  theos-session adopt [flags]   read a repository you already have and propose the model that adopts it
+                                (theos-session adopt -h; it talks to no cluster)
 
 Flags:
 `
@@ -73,6 +76,10 @@ func main() {
 		os.Exit(2)
 	}
 	cmd := os.Args[1]
+	if cmd == "adopt" {
+		// It talks to no cluster, and has flags of its own.
+		os.Exit(adoptMain(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	// flag.CommandLine also carries --kubeconfig, registered by controller-runtime.
 	if err := flag.CommandLine.Parse(os.Args[2:]); err != nil {
 		os.Exit(2)

@@ -1,0 +1,41 @@
+# python-service, a repository the factory adopts as it is: nothing is scaffolded or rewritten.
+# Read from the repository: Python.
+# Look at this: .github/workflows/main.yml has no name, so its checks are called after its file as the Git host shows it: they are not in the proposal.
+apiVersion: theos.factory.io/v1beta1
+kind: SoftwareSystem
+metadata:
+  name: billing-core
+  namespace: billing
+spec:
+  displayName: billing-core
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: python-service
+  namespace: billing
+spec:
+  softwareSystemRef:
+    name: billing-core
+  displayName: python-service
+  type: service
+  gitProviderRef:
+    name: git
+  adopt: true
+---
+# Start small: the Crew holds every change for a person. Loosen it rule by
+# rule (docs/getting-started.md, "Start small").
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: python-service
+  namespace: billing
+spec:
+  containerRef:
+    name: python-service
+  implementer:
+    name: implementer
+  reviewer:
+    name: reviewer
+  approval:
+  - require: Person

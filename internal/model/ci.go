@@ -18,7 +18,9 @@ package model
 
 import (
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 )
 
 // CI is what a CI system means to a Container: where its files go, the check
@@ -149,6 +151,24 @@ func HostCI(host string) (CI, error) {
 		return CI{}, fmt.Errorf("git host %q has no CI system the factory knows", host)
 	}
 	return CIByName(name)
+}
+
+// WorkflowDirs are where the CI systems the factory knows read a repository's
+// workflows, in the order a host looks: workflows/ under each system's own
+// paths, then its fallbacks. The adoption detector reads them (adopt.go).
+func WorkflowDirs() []string {
+	var own, fallback []string
+	for _, name := range slices.Sorted(maps.Keys(ciSystems)) {
+		ci := ciSystems[name]
+		for _, dir := range ci.ProtectedPaths {
+			if strings.HasSuffix(dir, "/") {
+				own = append(own, dir+"workflows/")
+			}
+		}
+		fallback = append(fallback, ci.FallbackPaths...)
+	}
+	out := slices.Concat(own, fallback)
+	return slices.Compact(out)
 }
 
 // PlatformProtectedPaths are the paths that belong to the operator and the CI

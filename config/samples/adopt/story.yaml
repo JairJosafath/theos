@@ -7,14 +7,19 @@
 # Before applying, the repository's main needs .theos.yaml, which is how its
 # owner says this project may work there:
 #
-#   project: billing
+#   project: webshop
 #   softwareSystem: billing-core
 #   container: invoices
 #   type: service
 #   scaffoldedFrom: []
 #
-# Apply with: kubectl -n billing apply -f config/samples/adopt/
-# Then: kubectl -n billing get container invoices -o jsonpath='{.status.conditions[?(@.type=="Protected")].message}'
+# theos-session adopt writes this file's like from a clone, and that
+# .theos.yaml (config/samples/adopt/proposed/ has what it proposes for eight
+# repositories).
+#
+# docs/adopt.md walks it. Apply with:
+#   kubectl -n webshop apply -f config/samples/adopt/story.yaml -f config/samples/adopt/crew.yaml
+# Then: kubectl -n webshop get container invoices -o jsonpath='{.status.conditions[?(@.type=="Protected")].message}'
 # says whether main reports the checks named here, or which it reports instead.
 apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem

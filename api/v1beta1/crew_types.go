@@ -777,6 +777,25 @@ type CrewStatus struct {
 	// +kubebuilder:validation:MaxItems=8
 	// +optional
 	Schedules []CrewScheduleStatus `json:"schedules,omitempty"`
+
+	// onboarding is the issue the Crew filed, once, on a repository its
+	// Container adopted with no Standard: write AGENTS.md and say what it
+	// found (docs/design.md, "Adopting a repository"). Unset on any other
+	// Crew, and until it is filed.
+	// +optional
+	Onboarding *CrewOnboardingStatus `json:"onboarding,omitempty"`
+}
+
+// CrewOnboardingStatus is the onboarding issue a Crew filed.
+type CrewOnboardingStatus struct {
+	// issue is the issue's number.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Issue int32 `json:"issue"`
+
+	// filed is when the Crew filed it, or found the one it had filed.
+	// +required
+	Filed metav1.Time `json:"filed"`
 }
 
 // +kubebuilder:object:root=true

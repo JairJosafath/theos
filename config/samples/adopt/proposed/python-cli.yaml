@@ -1,0 +1,45 @@
+# python-cli, a repository the factory adopts as it is: nothing is scaffolded or rewritten.
+# Read from the repository: Python.
+# Look at this: .github/workflows/bad.yml could not be read as YAML: its checks are not in the proposal.
+apiVersion: theos.factory.io/v1beta1
+kind: SoftwareSystem
+metadata:
+  name: billing-core
+  namespace: billing
+spec:
+  displayName: billing-core
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: python-cli
+  namespace: billing
+spec:
+  softwareSystemRef:
+    name: billing-core
+  displayName: python-cli
+  type: cli
+  gitProviderRef:
+    name: git
+  adopt: true
+  checkCommand: pytest
+  checkContexts:
+  - "ci / Lint*"
+  - "ci / test*"
+---
+# Start small: the Crew holds every change for a person. Loosen it rule by
+# rule (docs/getting-started.md, "Start small").
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: python-cli
+  namespace: billing
+spec:
+  containerRef:
+    name: python-cli
+  implementer:
+    name: implementer
+  reviewer:
+    name: reviewer
+  approval:
+  - require: Person
