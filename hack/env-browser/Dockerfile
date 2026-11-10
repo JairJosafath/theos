@@ -8,7 +8,7 @@
 # holds nothing of the factory's. Published as theos/env-browser with each
 # release; the chart's browser TestEnvironment names it.
 # Build: docker build -t theos/env-browser:dev hack/env-browser
-FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+FROM mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
 
 # xvfb-run, and the xauth it needs, for headed runs.
 RUN apt-get -o Acquire::Retries=5 update \

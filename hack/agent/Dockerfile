@@ -7,7 +7,7 @@
 # (docs/plans/done/test-environments.md, T4).
 # Build from the repository root: docker build -f hack/agent/Dockerfile .
 ARG BASE=theos/base:dev
-FROM golang:1.26.10@sha256:3745f1aa11822297b79113f5e84ce2bffeb039734571c39855809cfe9e5d7be6 AS build
+FROM golang:1.27.3@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 # go mod download retries (retry: 5 tries, 10 to 40 seconds apart), so one
