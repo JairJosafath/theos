@@ -1,0 +1,40 @@
+#60, step 1 of docs/plans/adopt-existing.md: an adopting Container needs
+nothing from the catalog
+========================================================================
+
+2026-11-10. Test output is the evidence; no cluster was used.
+
+$ go test -v ./internal/controller -run '^TestControllers$' -ginkgo.focus "Container adoption without the catalog" -ginkgo.v
+Container adoption without the catalog adopts a repository on its identity alone, naming no Framework, Standard, Compute or Deployment
+Container adoption without the catalog adopts with a Relationship to a DataStore, whose Connector it wires nothing of
+Container adoption without the catalog adopts with a Framework and no Standard on the identity alone
+Container adoption without the catalog still fails IdentityMismatch for a repository that doesn't name the Container
+Container adoption without the catalog keeps a Container that doesn't adopt to a bundleRef or a frameworkRef
+Container adoption without the catalog says the Container names no Framework when its spec.operations has nothing to read it
+Ran 6 of 761 Specs in 8.574 seconds
+SUCCESS! -- 6 Passed | 0 Failed | 0 Pending | 755 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	8.613s
+
+Before the change the Container could not be made:
+
+  Container.theos.factory.io "orders-api" is invalid: spec: Invalid value:
+  name a bundleRef or a frameworkRef
+
+and with the rule alone loosened, the first spec failed on the reconciler's
+panic, which the Framework's entry now guards:
+
+  ERROR Observed a panic {"controller": "container", ...
+    "panic": "runtime error: index out of range [0] with length 0"
+    internal/controller.(*ContainerReconciler).Reconcile container_controller.go:318
+  FAIL! -- 0 Passed | 1 Failed | 0 Pending | 760 Skipped
+
+$ go test ./internal/model -run TestCheckWiring -v
+--- PASS: TestCheckWiring (0.00s)
+    --- PASS: TestCheckWiring/no_connector (0.00s)
+    --- PASS: TestCheckWiring/wiredBy_unset (0.00s)
+    --- PASS: TestCheckWiring/framework_inside_wiredBy (0.00s)
+    --- PASS: TestCheckWiring/framework_outside_wiredBy (0.00s)
+    --- PASS: TestCheckWiring/only_connectors_are_checked (0.00s)
+    --- PASS: TestCheckWiring/no_Framework,_an_adopted_repository's_(#60):_nothing_is_wired (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.005s

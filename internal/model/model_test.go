@@ -314,6 +314,7 @@ func TestCheckWiring(t *testing.T) {
 			"dynamodb is not wired by python-fastapi, only by aws-lambda-ts and aws-lambda-go"},
 		{"only connectors are checked", "python-fastapi",
 			[]CatalogEntry{{Side: SideStandard, Name: "aws-standard", WiredBy: []string{"aws-lambda-ts"}}}, ""},
+		{"no Framework, an adopted repository's (#60): nothing is wired", "", []CatalogEntry{postgres, dynamodb}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

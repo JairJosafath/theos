@@ -160,8 +160,13 @@ func (e *WiringError) Error() string {
 
 // CheckWiring returns a *WiringError for the first Connector among entries
 // whose WiredBy is set and doesn't list the Container's Framework. A Connector
-// with no WiredBy takes any Framework.
+// with no WiredBy takes any Framework. A Container with no Framework, which
+// only one that adopts its repository may be (#60), is wired by nothing: the
+// factory renders no Connector into a repository it never scaffolded.
 func CheckWiring(framework string, entries []CatalogEntry) error {
+	if framework == "" {
+		return nil
+	}
 	for _, entry := range entries {
 		if entry.Side != SideConnector || len(entry.WiredBy) == 0 || slices.Contains(entry.WiredBy, framework) {
 			continue

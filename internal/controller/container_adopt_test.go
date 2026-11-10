@@ -98,6 +98,119 @@ func failedAdoption(ns, reason string) *metav1.Condition {
 	return cond
 }
 
+// bareIdentity is the .theos.yaml a person commits to a repository of their
+// own, so project ns may adopt it as orders-api: the identity, and nothing
+// said of a scaffold.
+func bareIdentity(ns string) scaffold.File {
+	GinkgoHelper()
+	data, err := scaffold.Identity{Project: ns, SoftwareSystem: "webshop-core", Container: "orders-api",
+		Type: string(c4v1beta1.ContainerTypeService)}.Marshal()
+	Expect(err).NotTo(HaveOccurred())
+	return scaffold.File{Data: data}
+}
+
+// createBareAdoption creates webshop-core and orders-api adopting its
+// repository, naming nothing from the catalog unless mutate does, in a
+// project with the factory's catalog and Git host.
+func createBareAdoption(ns string, mutate func(*c4v1beta1.Container)) *c4v1beta1.Container {
+	GinkgoHelper()
+	createFactory(ns)
+	container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
+	container.Spec.FrameworkRef, container.Spec.ComputeRef, container.Spec.DeploymentRef = c4v1beta1.LocalRef{}, nil, nil
+	container.Spec.Adopt = true
+	if mutate != nil {
+		mutate(container)
+	}
+	return container
+}
+
+// #60 (docs/plans/adopt-existing.md, step 1): a repository the factory never
+// scaffolded has no Framework to name, and needs none to be adopted.
+var _ = Describe("Container adoption without the catalog", func() {
+	// A Rust service: the catalog has no Framework for it.
+	rustService := func(ns string) scaffold.Tree {
+		return scaffold.Tree{
+			scaffold.IdentityPath: bareIdentity(ns),
+			"Cargo.toml":          {Data: []byte("[package]\nname = \"orders-api\"\n")},
+			"src/main.rs":         {Data: []byte("fn main() {}\n")},
+			"Makefile":            {Data: []byte("check:\n\tcargo test\n")},
+		}
+	}
+
+	It("adopts a repository on its identity alone, naming no Framework, Standard, Compute or Deployment", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", rustService(ns))
+		mustCreate(newSystem(ns, "webshop-core"), createBareAdoption(ns, nil))
+
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionChoicesValid)).To(
+			HaveField("Status", metav1.ConditionTrue))
+		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)).To(And(
+			HaveField("Status", metav1.ConditionTrue), HaveField("Message", ContainSubstring("Adopted repository"))))
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1), "an adopted repository is never written")
+		Expect(container.Status.ScaffoldedFrom).To(BeEmpty(), "nothing was scaffolded")
+		Expect(container.Status.Standard).To(BeNil())
+		Expect(container.Status.Operations).To(BeNil())
+		Expect(container.Status.RepositoryURL).NotTo(BeEmpty())
+	})
+
+	It("adopts with a Relationship to a DataStore, whose Connector it wires nothing of", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", rustService(ns))
+		mustCreate(newSystem(ns, "webshop-core"), newOrdersDB(ns),
+			newRelationship(ns, "orders-api-to-orders-db", element(c4v1beta1.ElementContainer, "orders-api"),
+				element(c4v1beta1.ElementDataStore, "orders-db")),
+			createBareAdoption(ns, nil))
+
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+		Expect(container.Status.AppliedConnectors).To(BeEmpty(), "the factory rendered no Connector into it")
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1))
+	})
+
+	// docs/design.md has said so since #1888; no spec held it.
+	It("adopts with a Framework and no Standard on the identity alone", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", scaffold.Tree{
+			scaffold.IdentityPath: bareIdentity(ns), "app.py": {Data: []byte("print('orders')\n")}})
+		mustCreate(newSystem(ns, "webshop-core"), createBareAdoption(ns, func(c *c4v1beta1.Container) {
+			c.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: "python-fastapi"}
+		}))
+
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+		Expect(container.Status.Standard).To(BeNil())
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1))
+	})
+
+	It("still fails IdentityMismatch for a repository that doesn't name the Container", func() {
+		ns := newProjectNamespace()
+		files := rustService(ns)
+		delete(files, scaffold.IdentityPath)
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
+		mustCreate(newSystem(ns, "webshop-core"), createBareAdoption(ns, nil))
+		Expect(failedAdoption(ns, c4v1beta1.ReasonIdentityMismatch).Message).To(ContainSubstring(scaffold.IdentityPath))
+	})
+
+	It("keeps a Container that doesn't adopt to a bundleRef or a frameworkRef", func() {
+		ns := newProjectNamespace()
+		scaffolded := createBareAdoption(ns, func(c *c4v1beta1.Container) { c.Spec.Adopt = false })
+		Expect(k8sClient.Create(ctx, scaffolded)).To(MatchError(ContainSubstring(
+			"name a bundleRef or a frameworkRef; only a Container that adopts its repository needs neither")))
+	})
+
+	It("says the Container names no Framework when its spec.operations has nothing to read it", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", rustService(ns))
+		days := int32(7)
+		mustCreate(newSystem(ns, "webshop-core"), createBareAdoption(ns, func(c *c4v1beta1.Container) {
+			c.Spec.Operations = &c4v1beta1.OperationsSpec{Backups: &c4v1beta1.OperationsBackups{RetentionDays: &days}}
+		}))
+		container := eventuallyOperationsApplied(ns, metav1.ConditionFalse, c4v1beta1.ReasonNotReadByFramework)
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionOperationsApplied).Message).To(HavePrefix(
+			"The Container names no Framework to read spec.operations"))
+	})
+})
+
 // #1888: a Container with spec.adopt takes over a repository that already has
 // commits, writing nothing.
 var _ = Describe("Container adoption", func() {

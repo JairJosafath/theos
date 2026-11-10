@@ -237,6 +237,14 @@ fails `NothingToAdopt`; one with commits but no `main` branch fails
 `NoDefaultBranch`, telling the user to rename its default branch to `main`
 first (#1908). A Container without a Standard adopts on the
 identity alone ([plans/self-hosting.md](plans/self-hosting.md), #1888).
+An adopting Container may name nothing from the catalog at all, no
+Framework, Standard, Compute or Deployment: the rule "name a bundleRef or a
+frameworkRef" is for a Container the factory scaffolds, and a repository it
+never scaffolded, a Rust service, has no Framework to name
+([plans/adopt-existing.md](plans/adopt-existing.md), #60). The factory
+wires no Connector into it, whatever its Relationships say. Until its own
+checks are named (that plan's step 2), its main isn't protected and no
+agent works on it, as for any Container without a Standard.
 Adoption checks the Standard's files and nothing of the Framework's: the
 block `spec.operations` names at adoption is recorded as the one the
 repository holds, when the Framework reads it, and a later change is
