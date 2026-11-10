@@ -2,19 +2,25 @@ name: Branch hygiene
 
 # No dead branch is left hanging: a branch merged to main is deleted (#118).
 # A push to main deletes the head branch of each pull request that push
-# merged; every Monday, and on a manual run, a sweep deletes every branch
-# whose tip main already contains, which also catches a branch merged without
-# a pull request. hack/delete-merged-branches.sh decides: it keeps the default
-# branch, a protected branch, a fork's branch, the head of an open pull
-# request and a branch with a commit main doesn't have, and prints each
-# branch it deletes with its commit, so it can be pushed back.
+# merged; every Monday a sweep deletes every branch whose tip main already
+# contains, which also catches a branch merged without a pull request. A
+# manual run is that sweep as a dry run, which only lists, unless its dry_run
+# box is unticked. hack/delete-merged-branches.sh decides: it keeps the
+# default branch, a protected branch, a fork's branch, the head and the base
+# of an open pull request, a branch with a commit main doesn't have and a
+# branch pushed to since the run read it, and prints each branch it deletes
+# with its commit, so it can be pushed back.
 #
-# It runs on the push a merge makes, not on the pull request's closed event:
-# a push to main runs main's workflow and main's script, never a pull
-# request's, with nothing of a fork in reach of the token that may delete,
+# The repository variable KEEP_BRANCHES holds glob patterns, split on spaces
+# and newlines, of branches it never deletes ("release/* dev"; a * also
+# matches a slash): a long-lived branch that isn't protected, or one pushed
+# back after a deletion. It is empty by default.
+#
+# It runs on the push a merge makes, not on the pull request's closed event,
 # and a workflow on pull requests would be one more check each of them waits
-# for (.github/required-checks). A manual run from another branch than the
-# default one does nothing, for the same reason.
+# for (.github/required-checks). The job runs only when the run's ref is the
+# default branch, as the schedule's always is: a manual run from another
+# branch or from a tag, one named main included, does nothing.
 on:
   push:
     branches: [main]
@@ -23,9 +29,9 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Only list the branches the sweep would delete
+        description: Only list the branches the sweep would delete (untick to delete them)
         type: boolean
-        default: false
+        default: true
 
 # One run per commit of main and none cancelled, so each merge's run deletes
 # its own branches (hack/check-workflows.sh, docs/dev/devices.md).
@@ -40,7 +46,7 @@ jobs:
       contents: write # deletes a branch
       pull-requests: read # lists the open pull requests and a commit's merged ones
     name: Delete merged branches
-    if: github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch
+    if: github.event_name == 'schedule' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
@@ -49,8 +55,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # The commit and the repository reach the script through env, and the
-      # branch names it reads from GitHub never reach a shell word unquoted.
+      # The commit, the repository and the keep-list reach the script through
+      # env, and the branch names it reads from GitHub never reach a shell
+      # word unquoted. The script deletes with git push from a scratch
+      # repository, with the token from env: the clone keeps no credentials.
       - name: Delete the head branches of the pull requests this push merged
         if: github.event_name == 'push'
         run: hack/delete-merged-branches.sh merged "$SHA"
@@ -58,7 +66,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.sha }}
           THEOS_GITHUB_REPO: ${{ github.repository }}
+          THEOS_KEEP_BRANCHES: ${{ vars.KEEP_BRANCHES }}
 
+      # DRY_RUN is empty on the schedule, which deletes, and the dry_run box
+      # of a manual run, ticked unless someone unticks it.
       - name: Delete every branch main contains
         if: github.event_name != 'push'
         run: hack/delete-merged-branches.sh sweep
@@ -66,3 +77,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
           THEOS_GITHUB_REPO: ${{ github.repository }}
+          THEOS_KEEP_BRANCHES: ${{ vars.KEEP_BRANCHES }}

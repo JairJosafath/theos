@@ -64,12 +64,17 @@ Not sure whether theos does what you need?
 - Its branch is deleted once it is merged (#118):
   [Branch hygiene](.github/workflows/branch-hygiene.yml) deletes the head
   branch of a pull request merged to main, and every Monday every branch
-  whose tip main already contains. It keeps the default branch, a protected
-  branch, a fork's branch, the head of an open pull request and a branch
-  with a commit main doesn't have. Its log names each deleted branch with
-  its commit, so `git push origin <sha>:refs/heads/<branch>` brings one
-  back; a branch pushed before its first commit is in main too, goes with
-  the sweep, and comes back with its next push.
+  whose tip main already contains. Run by hand it only lists what that
+  sweep would delete, unless you untick `dry_run`. It keeps the default
+  branch, a protected branch, a fork's branch, the head and the base of an
+  open pull request, a branch with a commit main doesn't have and a branch
+  pushed to while it ran. A branch that matches a glob in the repository
+  variable `KEEP_BRANCHES` (`release/* dev`, empty by default) is never
+  deleted: put a long-lived branch that isn't protected there, or one you
+  pushed back. Its log names each deleted branch with its commit and the
+  `git push origin <sha>:refs/heads/<branch>` that brings it back; a branch
+  pushed before its first commit is in main too, goes with the sweep, and
+  comes back with its next push.
 
 ## Tests and warnings
 
