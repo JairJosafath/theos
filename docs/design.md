@@ -198,7 +198,12 @@ Domains catalog page, a system's Domains and a Container's `DomainsApplied`.
    two-layers collision below. A template's manifest that names a license
    names the same id (`{{ .License.ID }}`): the Node templates'
    `package.json` and `package-lock.json` say it, and `UNLICENSED`, npm's
-   word for no license granted, with none set (#73). Read at scaffold only: changing the setting
+   word for no license granted, with none set (#73). So does a source
+   header that grants one: go-kubebuilder's Go files and its
+   `hack/boilerplate.go.txt` keep kubebuilder's Apache grant only for
+   `Apache-2.0`, name another license by `SPDX-License-Identifier`, and with
+   none carry the copyright line alone, so no header grants a license nobody
+   chose (#83). Read at scaffold only: changing the setting
    later rewrites nothing, and a Container already scaffolded gets its
    license by a commit ([plans/license.md](plans/license.md)).
 8. **Push one commit,** protect `main` with the Standard's required checks,

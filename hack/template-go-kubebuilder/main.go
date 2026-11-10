@@ -137,6 +137,42 @@ var copyright = regexp.MustCompile(`Copyright 20[0-9]{2}\.`)
 
 const fixedCopyright = "Copyright 2026."
 
+// apacheText is the license grant kubebuilder writes under the copyright
+// line of every Go file and of hack/boilerplate.go.txt, its --license
+// default, up to its last line; apacheGrant is the grant as a file has it.
+const apacheText = `
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.`
+
+const apacheGrant = apacheText + "\n"
+
+// licenseGrant stands in apacheGrant's place, so a header says what the
+// repository's LICENSE says (#83): kubebuilder's grant when it is scaffolded
+// as Apache-2.0, the SPDX id of another license, and the copyright line alone
+// with none, since the factory never picks a license. Rendered for Apache-2.0
+// it is apacheGrant, byte for byte.
+const licenseGrant = `
+{{- if eq .License.ID "Apache-2.0" }}` + apacheText + `
+{{- else if .License.ID }}
+
+SPDX-License-Identifier: {{ .License.ID }}
+{{- end }}
+`
+
+// apacheMark is in any header that grants the Apache license. One left after
+// the substitution means kubebuilder writes another header than apacheGrant.
+const apacheMark = "Licensed under the Apache License"
+
 // escaper escapes a file's own template delimiters, such as the go-template
 // strings of test/e2e, in one pass so they render as themselves.
 var escaper = strings.NewReplacer("{{", `{{"{{"}}`, "}}", `{{"}}"}}`)
@@ -147,20 +183,31 @@ func hasPlaceholder(data []byte) bool {
 }
 
 // transform turns one Framework file into its template file: the year fixed,
-// and, for a .go file or one that has a placeholder, its own delimiters
-// escaped, the placeholders made template fields and ".tmpl" added to its name.
-// Other files keep their bytes. No "placeholder" may remain.
+// and, for a .go file, one that has a placeholder or one with kubebuilder's
+// license grant, its own delimiters escaped, the placeholders made template
+// fields, the grant made licenseGrant and ".tmpl" added to its name. Other
+// files keep their bytes. No "placeholder" and no Apache grant may remain.
 func transform(p string, data []byte) (string, []byte, error) {
 	data = copyright.ReplaceAll(data, []byte(fixedCopyright))
-	if path.Ext(p) == ".go" || hasPlaceholder(data) {
+	if path.Ext(p) == ".go" || hasPlaceholder(data) || bytes.Contains(data, []byte(apacheGrant)) {
 		s := escaper.Replace(string(data))
 		for _, r := range replacements {
 			s = r.re.ReplaceAllLiteralString(s, r.new)
+		}
+		// The grant has no delimiter, so the escaping left it as it was.
+		s = strings.ReplaceAll(s, apacheGrant, licenseGrant)
+		if strings.Count(s, apacheMark) != strings.Count(s, licenseGrant) {
+			return "", nil, fmt.Errorf("%s: grants the Apache license in a header that is not apacheGrant; "+
+				"kubebuilder's header changed, so update apacheGrant", p)
 		}
 		p, data = p+".tmpl", []byte(s)
 	}
 	if bytes.Contains(data, []byte("placeholder")) {
 		return "", nil, fmt.Errorf("%s: still says \"placeholder\" after the substitutions", p)
+	}
+	if !strings.HasSuffix(p, ".tmpl") && bytes.Contains(data, []byte(apacheMark)) {
+		return "", nil, fmt.Errorf("%s: grants the Apache license in a header that is not apacheGrant; "+
+			"kubebuilder's header changed, so update apacheGrant", p)
 	}
 	return p, data, nil
 }
