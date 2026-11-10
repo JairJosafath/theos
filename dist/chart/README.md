@@ -41,11 +41,13 @@ cluster. Anyone who can create a Project or a Brief in the cluster, the UI's
 users included, can have the factory run code: in an agent's sandbox and in
 a CI job. The sandbox holds no Claude token: the model proxy in the release
 namespace adds it to the agent's requests, and the token never enters a
-project namespace. The `base`, `go` and `image` runners run every project's checks and
-image builds one after another in host mode, a NetworkPolicy keeping them to
-DNS, Gitea and public HTTPS; the `image` runner's job container runs with
-seccomp and AppArmor `Unconfined`, which rootless BuildKit needs (c4factory #1076 gives
-each job a pod of its own).
+project namespace. A project's checks run on a pool of single-job runner
+pods of its own, in its namespace, each replaced after its job, under a
+NetworkPolicy that keeps a job to DNS, Gitea and public HTTPS; the shared
+`base`, `go` and `image` runners below register to the `templates`
+organization and serve the templates' checks only. The `image` runner's job
+container runs with seccomp and AppArmor `Unconfined`, which rootless
+BuildKit needs. What the runner pods still share is the node.
 [docs/getting-started.md](../../docs/getting-started.md#what-the-factory-trusts)
 says more.
 
