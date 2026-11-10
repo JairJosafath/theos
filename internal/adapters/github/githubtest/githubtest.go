@@ -63,6 +63,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -71,14 +72,22 @@ import (
 // Server is a fake GitHub instance.
 type Server struct {
 	srv *httptest.Server
-	// tokens are the tokens the instance takes, each with its user's login;
-	// admin is New's user, and acting the user of the call being served.
+	// tokens are the tokens the instance takes, each with its account's login;
+	// admin is New's user, and acting the account of the call being served.
+	// An installation token has a grant, what it may do, and grant is the
+	// one of the call being served; apps are the registered GitHub Apps
+	// (apps.go).
 	tokens map[string]string
 	admin  string
 	acting string
-	// root holds the bare repositories, as <owner>/<name>.git.
-	root string
-	git  http.Handler
+	grants map[string]*grant
+	grant  *grant
+	apps   []*app
+	// root holds the bare repositories, as <owner>/<name>.git; refusals is
+	// what their hooks said to the pushes they refused.
+	root     string
+	git      *cgi.Handler
+	refusals log
 
 	mu sync.Mutex
 	// orgs are the organizations.
@@ -120,8 +129,8 @@ func New(t *testing.T, user, token string) *Server {
 	if _, err := os.Stat(backend); err != nil {
 		t.Skipf("git has no git-http-backend: %v", err)
 	}
-	s := &Server{tokens: map[string]string{token: user}, admin: user, root: t.TempDir(), orgs: map[string]bool{},
-		repos: map[string]*repo{}}
+	s := &Server{tokens: map[string]string{token: user}, admin: user, grants: map[string]*grant{}, root: t.TempDir(),
+		orgs: map[string]bool{}, repos: map[string]*repo{}}
 	s.git = &cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + s.root, "GIT_HTTP_EXPORT_ALL=1"}}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.srv.Close)
@@ -169,27 +178,28 @@ var (
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	if m := gitPath.FindStringSubmatch(r.URL.Path); m != nil {
-		_, password, ok := r.BasicAuth()
-		s.mu.Lock()
-		_, known := s.tokens[password]
-		s.mu.Unlock()
-		if !ok || !known {
-			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
-			http.Error(w, "Bad credentials", http.StatusUnauthorized)
-			return
-		}
-		s.git.ServeHTTP(w, r)
+		s.serveGit(w, r, m[1], m[2])
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	user, known := s.tokens[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+	if s.appsAPI(w, r) {
+		return
+	}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	user, known := s.tokens[token]
 	if !known || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 		reply(w, http.StatusUnauthorized, message("Bad credentials"))
 		return
 	}
-	s.acting = user
+	s.acting, s.grant = user, s.grants[token]
 	switch {
+	case r.Method == http.MethodDelete && r.URL.Path == revokePath:
+		s.revokeToken(w, token)
+	case s.grant != nil && !repoPath.MatchString(r.URL.Path):
+		// An installation token is no person: it has no account of its own
+		// and makes no repository.
+		reply(w, http.StatusForbidden, message("Resource not accessible by integration"))
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v3/user":
 		reply(w, http.StatusOK, struct {
 			Login string `json:"login"`
@@ -209,6 +219,65 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.notServed(w, r)
 	}
+}
+
+// serveGit serves Git's smart HTTP on owner/name to a token that may: a
+// push takes the contents permission to write of an installation token,
+// which reaches its own repositories only, and meets the repository's
+// rulesets in the pre-receive hook.
+func (s *Server) serveGit(w http.ResponseWriter, r *http.Request, owner, name string) {
+	_, password, ok := r.BasicAuth()
+	push := r.URL.Query().Get("service") == "git-receive-pack" || strings.HasSuffix(r.URL.Path, "/git-receive-pack")
+	s.mu.Lock()
+	login, known := s.tokens[password]
+	g := s.grants[password]
+	held, workflows := "", "yes"
+	if kept := s.repos[owner+"/"+name]; kept != nil && known {
+		held = s.held(kept, login, g)
+	}
+	s.mu.Unlock()
+	switch {
+	case !ok || !known:
+		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+		http.Error(w, "Bad credentials", http.StatusUnauthorized)
+		return
+	case g != nil && (g.owner != owner || !slices.Contains(g.repos, name)):
+		http.Error(w, "Repository not found.", http.StatusNotFound)
+		return
+	case g != nil && !g.allows(permContents, push):
+		http.Error(w, "Permission to "+owner+"/"+name+".git denied to "+login+".", http.StatusForbidden)
+		return
+	case g != nil && !g.allows(permWorkflows, true):
+		workflows = "no"
+	}
+	git := *s.git
+	git.Env = append(slices.Clone(s.git.Env), "GITHUB_FAKE_HELD="+held, "GITHUB_FAKE_WORKFLOWS="+workflows)
+	git.Stderr = &s.refusals
+	git.ServeHTTP(w, r)
+}
+
+// Refusals returns what the fake told the pushes it refused, as GitHub
+// tells a client after "remote:".
+func (s *Server) Refusals() string {
+	return s.refusals.String()
+}
+
+// log is a writer several pushes share.
+type log struct {
+	mu   sync.Mutex
+	text strings.Builder
+}
+
+func (l *log) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.text.Write(p)
+}
+
+func (l *log) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.text.String()
 }
 
 func (s *Server) notServed(w http.ResponseWriter, r *http.Request) {
@@ -314,6 +383,17 @@ func (s *Server) createRepo(w http.ResponseWriter, r *http.Request, owner string
 			return
 		}
 	}
+	// The repository's rulesets hold a push in this hook (apps.go).
+	hook := filepath.Join(dir, "hooks", "pre-receive")
+	err := os.MkdirAll(filepath.Dir(hook), 0o750)
+	if err == nil {
+		//nolint:gosec // a hook has to be executable, and the directory is the test's own
+		err = os.WriteFile(hook, []byte(preReceive), 0o700)
+	}
+	if err != nil {
+		reply(w, http.StatusInternalServerError, message(err.Error()))
+		return
+	}
 	s.repos[key] = &repo{owner: owner, name: body.Name, description: body.Description, pulls: map[int]*pull{},
 		statuses: map[string][]commitStatus{}, checkRuns: map[string][]checkRun{}, variables: map[string]string{}}
 	reply(w, http.StatusCreated, s.repoJSON(owner, body.Name))
@@ -339,6 +419,9 @@ func (s *Server) repo(w http.ResponseWriter, r *http.Request, owner, name, rest 
 	kept, ok := s.repos[owner+"/"+name]
 	if !ok {
 		reply(w, http.StatusNotFound, message("Not Found"))
+		return
+	}
+	if !s.permitted(w, r, owner, name, rest) {
 		return
 	}
 	if s.hostAPI(w, r, kept, rest) || s.pullsAPI(w, r, kept, rest) || s.issuesAPI(w, r, kept, rest) {
@@ -410,6 +493,9 @@ func (s *Server) createRef(w http.ResponseWriter, r *http.Request, owner, name s
 		reply(w, http.StatusUnprocessableEntity, message("Object does not exist"))
 		return
 	}
+	if s.refused(w, s.repos[owner+"/"+name], ruleCreation, body.Ref, false) {
+		return
+	}
 	if _, err := s.gitIn(owner, name, "update-ref", body.Ref, body.SHA); err != nil {
 		reply(w, http.StatusUnprocessableEntity, message(err.Error()))
 		return
@@ -420,6 +506,9 @@ func (s *Server) createRef(w http.ResponseWriter, r *http.Request, owner, name s
 func (s *Server) deleteRef(w http.ResponseWriter, owner, name, ref string) {
 	if _, err := s.gitIn(owner, name, "rev-parse", "--verify", "--quiet", ref); err != nil {
 		reply(w, http.StatusUnprocessableEntity, message("Reference does not exist"))
+		return
+	}
+	if s.refused(w, s.repos[owner+"/"+name], ruleDeletion, ref, false) {
 		return
 	}
 	if _, err := s.gitIn(owner, name, "update-ref", "-d", ref); err != nil {

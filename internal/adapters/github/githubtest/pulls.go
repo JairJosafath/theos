@@ -433,6 +433,9 @@ func (s *Server) mergePull(w http.ResponseWriter, r *http.Request, kept *repo, p
 		reply(w, http.StatusMethodNotAllowed, message("Pull Request is not mergeable"))
 		return
 	}
+	if s.refused(w, kept, ruleUpdate, "refs/heads/"+p.base, true) {
+		return
+	}
 	text := body.Title
 	if text == "" {
 		text = p.title

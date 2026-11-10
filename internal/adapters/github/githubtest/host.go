@@ -373,7 +373,7 @@ func (s *Server) administers(w http.ResponseWriter) bool {
 // The rules and the bypass actors of a ruleset GitHub knows, of those the
 // adapter may send.
 var (
-	ruleTypes  = []string{"creation", "update", "deletion", "non_fast_forward", "pull_request", "required_status_checks"}
+	ruleTypes  = []string{ruleCreation, ruleUpdate, ruleDeletion, ruleNonFastForward, "pull_request", "required_status_checks"}
 	actorTypes = []string{"RepositoryRole", "OrganizationAdmin", "Integration", "Team", "DeployKey"}
 )
 
@@ -390,7 +390,7 @@ func (s *Server) rulesetsAPI(w http.ResponseWriter, r *http.Request, kept *repo,
 		var rs Ruleset
 		if err := json.NewDecoder(r.Body).Decode(&rs); err != nil || rs.Name == "" ||
 			!slices.Contains([]string{"branch", "tag"}, rs.Target) ||
-			!slices.Contains([]string{"active", "disabled", "evaluate"}, rs.Enforcement) {
+			!slices.Contains([]string{enforced, "disabled", "evaluate"}, rs.Enforcement) {
 			reply(w, http.StatusUnprocessableEntity, message("Validation Failed"))
 			return nil, false
 		}
@@ -401,7 +401,7 @@ func (s *Server) rulesetsAPI(w http.ResponseWriter, r *http.Request, kept *repo,
 			}
 		}
 		for _, a := range rs.BypassActors {
-			if !slices.Contains(actorTypes, a.ActorType) || !slices.Contains([]string{"always", "pull_request"}, a.BypassMode) {
+			if !slices.Contains(actorTypes, a.ActorType) || !slices.Contains([]string{bypassAlways, bypassByPull}, a.BypassMode) {
 				reply(w, http.StatusUnprocessableEntity, message("Invalid bypass actor"))
 				return nil, false
 			}

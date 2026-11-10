@@ -18,6 +18,7 @@ package github
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,7 +82,7 @@ func newShop(t *testing.T) shop {
 // repository and administers nothing, as a collaborator does.
 func (s shop) as(t *testing.T, login string) Host {
 	t.Helper()
-	token := "ghp_" + login
+	token := rand.Text()
 	s.gh.AddUser(login, token)
 	h, err := (Client{}).Host(ports.Config{URL: s.gh.URL(), Owner: "acme", Credentials: ports.Credentials{Token: token}})
 	if err != nil {
