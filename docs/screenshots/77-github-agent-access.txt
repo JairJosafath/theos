@@ -1,0 +1,81 @@
+# #77: the GitHub adapter passes the AgentAccess contract on the fake GitHub, and what holds an agent's token. 2026-11-10, on 4660b3e3 (main at 395009ad plus the step).
+# 1. The contracts, nothing skipped, and the fence:
+#    go test ./internal/adapters/github -v -run 'TestAgentAccessContract|TestAgentTokenRequest|TestAgentAccessStateOnGitHub|TestAgentFenceOnGitHub|TestAgentTokensOnGitHub|TestGitHostContract'
+--- PASS: TestAgentAccessContract (0.37s)
+    --- PASS: TestAgentAccessContract/writes_its_repository_and_no_other (0.11s)
+    --- PASS: TestAgentAccessContract/can't_push_to_a_protected_main (0.10s)
+    --- PASS: TestAgentAccessContract/is_refused_once_removed (0.07s)
+    --- PASS: TestAgentAccessContract/keeps_the_current_credential_when_revoking_old_ones (0.07s)
+--- PASS: TestAgentTokenRequest (0.00s)
+--- PASS: TestAgentAccessStateOnGitHub (0.00s)
+    --- PASS: TestAgentAccessStateOnGitHub/a_token_alone (0.00s)
+    --- PASS: TestAgentAccessStateOnGitHub/an_App's_id_without_its_key (0.00s)
+    --- PASS: TestAgentAccessStateOnGitHub/an_App's_key_without_its_id (0.00s)
+    --- PASS: TestAgentAccessStateOnGitHub/an_id_that_is_no_number (0.00s)
+    --- PASS: TestAgentAccessStateOnGitHub/a_key_that_is_no_key (0.00s)
+    --- PASS: TestAgentAccessStateOnGitHub/an_installation_that_is_no_number (0.00s)
+    --- PASS: TestAgentAccessStateOnGitHub/an_App_whole (0.00s)
+    --- PASS: TestAgentAccessStateOnGitHub/an_App_with_its_installation (0.00s)
+--- PASS: TestAgentFenceOnGitHub (0.57s)
+    --- PASS: TestAgentFenceOnGitHub/the_credential_is_the_App's,_for_the_agent,_for_an_hour (0.00s)
+    --- PASS: TestAgentFenceOnGitHub/it_pushes_its_branch,_opens_its_pull_request_and_reads_its_issue,_and_writes_no_issue (0.09s)
+    --- PASS: TestAgentFenceOnGitHub/it_can't_merge_its_pull_request,_which_the_operator_reviews_and_merges (0.23s)
+    --- PASS: TestAgentFenceOnGitHub/it_can't_write_main_or_a_release_tag_over_the_API_either (0.05s)
+    --- PASS: TestAgentFenceOnGitHub/it_can't_change_a_workflow,_on_any_branch (0.11s)
+    --- PASS: TestAgentFenceOnGitHub/it_reaches_no_other_repository (0.01s)
+    --- PASS: TestAgentFenceOnGitHub/it_can't_touch_the_rulesets,_the_kept_rule_or_a_check's_status (0.01s)
+--- PASS: TestAgentTokensOnGitHub (0.20s)
+    --- PASS: TestAgentTokensOnGitHub/a_second_token_leaves_the_first_to_a_run_that_holds_it,_until_the_old_ones_are_revoked (0.10s)
+    --- PASS: TestAgentTokensOnGitHub/removing_the_access_revokes_every_token_of_the_agent,_and_no_other_agent's (0.04s)
+    --- PASS: TestAgentTokensOnGitHub/an_App_that_is_not_installed,_or_was_given_too_little,_mints_nothing (0.01s)
+    --- PASS: TestAgentTokensOnGitHub/a_token_that_may_do_more_than_was_asked_is_no_agent's_token (0.00s)
+--- PASS: TestGitHostContract (1.70s)
+    --- PASS: TestGitHostContract/makes_a_repository_once,_empty (0.02s)
+    --- PASS: TestGitHostContract/pushes_the_initial_commit_once (0.06s)
+    --- PASS: TestGitHostContract/reads_files,_directories_and_missing_paths (0.04s)
+    --- PASS: TestGitHostContract/pushes_a_branch (0.12s)
+    --- PASS: TestGitHostContract/pushes_the_default_branch (0.14s)
+    --- PASS: TestGitHostContract/creates_and_deletes_branches (0.06s)
+    --- PASS: TestGitHostContract/creates_tags_once (0.05s)
+    --- PASS: TestGitHostContract/protects_branches_and_tags_again (0.03s)
+    --- PASS: TestGitHostContract/opens_and_merges_a_pull_request (0.26s)
+    --- PASS: TestGitHostContract/refuses_a_merge_past_the_rule_and_forces_it (0.23s)
+    --- PASS: TestGitHostContract/updates_a_pull_request,_or_reports_a_conflict (0.33s)
+    --- PASS: TestGitHostContract/lists_a_pull_request's_files,_a_rename's_old_path_too (0.13s)
+    --- PASS: TestGitHostContract/combines_the_statuses_of_a_commit (0.07s)
+    --- PASS: TestGitHostContract/reads_a_release_and_its_asset (0.04s)
+    --- PASS: TestGitHostContract/reads_the_source_at_a_tag (0.09s)
+ok  	github.com/JairJosafath/theos/internal/adapters/github	2.858s
+# 2. What a provider's condition says of agent access, the hosts kept apart, and the fence's files: go test ./internal/ports ./internal/model -v -run 'TestAgentAccessState|TestHostNeutral|Fence'
+--- PASS: TestAgentAccessState (0.00s)
+--- PASS: TestHostNeutral (0.07s)
+ok  	github.com/JairJosafath/theos/internal/ports	0.075s
+--- PASS: TestFactorySelfProtectedPathsAreTheFence (0.00s)
+ok  	github.com/JairJosafath/theos/internal/model	0.013s
+# 3. Before DeleteBranch told a ruleset's refusal from a branch already gone (it read every 422 as gone):
+--- FAIL: TestAgentFenceOnGitHub (0.58s)
+    --- FAIL: TestAgentFenceOnGitHub/it_can't_write_main_or_a_release_tag_over_the_API_either (0.05s)
+        github_host_agents_test.go:352: the agent deleting main = <nil>, want the ruleset's refusal
+# 4. FORCE=1 make check (nothing cached): lint, validate-yaml, the shell tests, the UI's check, every Go package
+0 issues.
+Validating 59 files
+All valid
+All 29 invalid files rejected
+test-hack: all 49 shell tests passed
+ Test Files  69 passed (69)
+      Tests  993 passed (993)
+make check: passed on tree ab4f6ff3a13a96de97a7ed7732053424efe1fc0f; recorded
+ok  	github.com/JairJosafath/theos/cmd	3.894s
+ok  	github.com/JairJosafath/theos/cmd/model-proxy	2.041s
+ok  	github.com/JairJosafath/theos/cmd/theos-env	2.476s
+ok  	github.com/JairJosafath/theos/internal/adapters/git	1.556s
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	2.851s
+ok  	github.com/JairJosafath/theos/internal/adapters/github	9.989s
+ok  	github.com/JairJosafath/theos/internal/model	0.667s
+ok  	github.com/JairJosafath/theos/internal/ports	0.083s
+ok  	github.com/JairJosafath/theos/internal/ports/fake	0.012s
+ok  	github.com/JairJosafath/theos/internal/controller	531.288s
+ok  	github.com/JairJosafath/theos/internal/controller	784.264s
+packages that passed: 98
+packages that failed: 0
+exit 0
