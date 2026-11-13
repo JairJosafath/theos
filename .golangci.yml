@@ -75,13 +75,14 @@ linters:
             - pkg: github.com/JairJosafath/theos/internal/adapters
               desc: taskfacts must not depend on adapters (docs/architecture.md)
         # Argo CD's adapter talks to the cluster; the Git host's, the
-        # releases' and the chat's adapters don't.
+        # releases', the chat's and Linear's adapters don't.
         adapters-stay-out-of-kubernetes:
           files:
             - "**/internal/adapters/gitea/**"
             - "**/internal/adapters/git/**"
             - "**/internal/adapters/github/**"
             - "**/internal/adapters/gitlab/**"
+            - "**/internal/adapters/linear/**"
             - "**/internal/adapters/matrix/**"
             - "**/internal/adapters/packages/**"
           deny:

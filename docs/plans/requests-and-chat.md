@@ -232,7 +232,8 @@ corrects this plan where it differs.
 13. **The label is the door, and `Ask` the default.** An open item of the
     team or project that carries the label is a request. Open is the
     tracker's own word for it: on Linear a state whose type is not
-    `completed` or `canceled`, on Jira a status whose category is not Done
+    `completed`, `canceled` or `duplicate` (the third is in Linear's schema,
+    step 6 as built), on Jira a status whose category is not Done
     (both from memory; step 6 checks). `authors` and
     `teams` are not offered: their patterns are GitHub's and can't change,
     a Jira account ID doesn't fit them, and who may label an item is a rule
@@ -305,8 +306,8 @@ corrects this plan where it differs.
 17. **The factory closes the item,** as it closes a GitHub issue: a request
     leaves `status.requests` when its item is closed (brief-requests,
     decision 10), and an item left open would be listed for ever. Linear:
-    the team's first state of type `completed`, or `canceled` for not
-    planned. Jira: a transition the item offers into a status of category
+    the team's first state, by position, of type `completed`, or `canceled`
+    for not planned. Jira: a transition the item offers into a status of category
     Done, with a resolution where the transition's screen takes one. Which
     status and which resolution are names the site holds: a Jira admin
     writes the workflow and the resolutions, older and translated sites
@@ -535,6 +536,85 @@ What the step chose where the plan says nothing:
   `theos-chat` that matched a thread by its ID alone would approve the spec
   from a person's thread in `reviews`. With the room dropped from
   `state.thread` the spec failed; nothing in `internal/chatbot` changed.
+
+## Step 6 as built, Linear (#156)
+
+Read on 2026-11-13: Linear's developer pages for the GraphQL API, paging,
+filtering, rate limits and OAuth (linear.app/developers), and Linear's
+published schema (`packages/sdk/src/schema.graphql` in the `linear/linear`
+repository), whose description of each field and argument is the reference
+for a call. What that settled:
+
+- **Corrected: a state's type.** The schema lists seven: `triage`, `backlog`,
+  `unstarted`, `started`, `completed`, `canceled` and `duplicate`. A
+  `duplicate` is closed too, so the list excludes those three, not two as
+  decision 13 had it. An item in triage is open.
+- **Confirmed: the calls.** `issues(filter:, first:, after:)` with
+  `IssueFilter` `team: {key: {eq}}`, `labels: {some: {name: {eq}}}` and
+  `state: {type: {nin: [...]}}`; `issue(id:)`, which takes the UUID or the
+  key (`ENG-412`); `commentCreate(input: {issueId, body})`, whose `issueId`
+  takes either; `issueUpdate(id:, input: {stateId})`; `team.states` with each
+  state's `type` and `position`; `viewer` for the token's own user. A page is
+  1 to 250 nodes (the default is 50) and a query over 10,000 points is
+  refused, so a page is 100.
+- **Confirmed: the key.** A personal API key is sent as it is in
+  `Authorization`, with no `Bearer`, which is an OAuth token's. The address
+  is `https://api.linear.app/graphql`.
+- **Found: Linear lists newest first** with `first`, which the schema says of
+  every connection. The adapter sorts a list oldest first and reads every
+  page of a comment thread, taking the earliest of its own comments that has
+  the marker.
+- **Found: who made an item.** `creator` is null for an item made by an
+  integration or whose maker's account is gone; `botActor` and
+  `externalUserCreator` then say who. The author is the creator's
+  `displayName` (the workspace-unique handle, not the full `name`), else the
+  bot's `name`, else the external user's `displayName`, else empty, cut to
+  one line of 100 characters.
+- **Found: a moved item.** The schema has `previousIdentifiers` on an item
+  and says `identifier` changes with a move. It doesn't say whether
+  `issue(id: "ENG-412")` still finds an item that moved, so the adapter
+  depends on neither answer: every call that names an item compares the team
+  and the number Linear returned with its own and says `IssueNotFound` when
+  they differ. `lineartest` answers a moved item by its old key, and the
+  moved-item test fails without the comparison.
+- **Not reached.** The reference names one error code, `RATELIMITED`, on a
+  429 with `Retry-After`. The codes and statuses of a refused key, a key
+  that may not read the team and an entity that isn't there are from memory
+  (`AUTHENTICATION_ERROR`, `FORBIDDEN`, "Entity not found"); the adapter
+  reads them with the status behind them, so a 401, a 403 or a 5xx says the
+  same where the body says nothing. The page on API keys (their read and
+  write permissions and their limit to a team) was not fetched: the OAuth
+  page covers OAuth's scopes only. No page says whether a comment advances an
+  item's `updatedAt`, or whether Linear keeps a `<!-- -->` marker in the body
+  it gives back; the adapter finds the marker in that body, so a workspace
+  that strips it would find no answer and the Brief would answer twice. Only
+  a real workspace shows it: step 10 and the guide (step 13) say so. A key limited to other teams may see an empty
+  `teams` list (`TrackerNotFound`) rather than `FORBIDDEN`: not reached either.
+
+What the step chose where the plan says nothing:
+
+- **The adapter is `linear.Client{HTTP}.Issues(linear.Config{Team, Label,
+  Token, APIURL})`,** an `IssueTracker` and no `ports.TeamMembers`: Linear's
+  teams are where the items are, and decision 13 offers no `teams` for it. A
+  test holds that.
+- **The ETag costs the IDs and times alone.** Given one, the adapter reads
+  each page's `id` and `updatedAt` first and the items' text only when their
+  hash differs. The ETag is the hash of what is returned, so it covers the
+  list the caller got.
+- **Closing** moves the item to the team's first state of the type, by
+  position, and leaves it where it is when it is in a state of that type
+  already, so closing twice is one move and an item a person closed into
+  another `completed` state stays there. An item in the `duplicate` state is
+  not planned already. A team with no state of the type is `TrackerError`
+  naming the type, the item left open. A comment goes to the item's ID, after
+  the key was read and compared, never to the key.
+- **`lineartest` answers by operation name,** with the filter as a variable
+  it reads and refuses what Linear's schema lacks; it parses no GraphQL, so
+  a query Linear's validator would refuse passes it. The queries' fields were
+  read against the schema by hand.
+- **Two subtests are in `Cannot`,** with their reasons, as decision 22 says.
+  `.golangci.yml`'s `adapters-stay-out-of-kubernetes` lists
+  `internal/adapters/linear`; step 5 adds the others.
 
 ## How we will know #61 is done
 
