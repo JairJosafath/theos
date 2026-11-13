@@ -175,6 +175,12 @@ spec:
             - secretRef
             - type
             type: object
+            x-kubernetes-validations:
+            - message: 'containerLabel and namespaceLabel must differ, their defaults
+                theos_container and namespace included: one label can''t name both
+                an alert''s Container and its namespace (#187)'
+              rule: '(has(self.containerLabel) ? self.containerLabel : ''theos_container'')
+                != (has(self.namespaceLabel) ? self.namespaceLabel : ''namespace'')'
           status:
             description: status defines the observed state of AlertSource
             properties:

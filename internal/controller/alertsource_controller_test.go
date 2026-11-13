@@ -170,6 +170,15 @@ var _ = Describe("AlertSource", func() {
 		Entry("a containerLabel over 100 characters", func(src *c4v1beta1.AlertSource) {
 			src.Spec.ContainerLabel = fmt.Sprintf("%0101d", 0)
 		}, "spec.containerLabel: Too long"),
+		Entry("#187: containerLabel and namespaceLabel both set to one name", func(src *c4v1beta1.AlertSource) {
+			src.Spec.ContainerLabel, src.Spec.NamespaceLabel = "app", "app"
+		}, "containerLabel and namespaceLabel must differ"),
+		Entry("#187: containerLabel set to namespaceLabel's default", func(src *c4v1beta1.AlertSource) {
+			src.Spec.ContainerLabel = model.DefaultAlertNamespaceLabel
+		}, "containerLabel and namespaceLabel must differ"),
+		Entry("#187: namespaceLabel set to containerLabel's default", func(src *c4v1beta1.AlertSource) {
+			src.Spec.NamespaceLabel = model.DefaultAlertContainerLabel
+		}, "containerLabel and namespaceLabel must differ"),
 	)
 
 	DescribeTable("refuses a value the typed client can't send",
@@ -191,4 +200,23 @@ var _ = Describe("AlertSource", func() {
 		err := updateAlertSource(src, func(s *c4v1beta1.AlertSource) { s.Spec.Type = c4v1beta1.AlertSourceGeneric })
 		Expect(err).To(MatchError(ContainSubstring("type is immutable")))
 	})
+
+	DescribeTable("#187: refuses an update that makes containerLabel and namespaceLabel one name",
+		func(mutate func(*c4v1beta1.AlertSource)) {
+			src := newAlertSource(newProjectNamespace())
+			src.Spec.ContainerLabel, src.Spec.NamespaceLabel = "app", "exported_namespace"
+			mustCreate(src)
+			err := updateAlertSource(src, mutate)
+			Expect(err).To(MatchError(ContainSubstring("containerLabel and namespaceLabel must differ")))
+		},
+		Entry("both set to one name", func(src *c4v1beta1.AlertSource) {
+			src.Spec.NamespaceLabel = "app"
+		}),
+		Entry("containerLabel set to namespaceLabel's default, namespaceLabel left at it", func(src *c4v1beta1.AlertSource) {
+			src.Spec.ContainerLabel, src.Spec.NamespaceLabel = model.DefaultAlertNamespaceLabel, ""
+		}),
+		Entry("namespaceLabel set to containerLabel's default, containerLabel left at it", func(src *c4v1beta1.AlertSource) {
+			src.Spec.ContainerLabel, src.Spec.NamespaceLabel = "", model.DefaultAlertContainerLabel
+		}),
+	)
 })
