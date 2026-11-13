@@ -1649,7 +1649,8 @@ controllers call, not by one product's API;
   (`make lint` enforces it). The Deployer and the Git host's five ports are
   there today, with Gitea in `internal/adapters/gitea`; ChatHost, with
   Matrix in `internal/adapters/matrix`; and request intake (`IssueTracker`),
-  with GitHub in `internal/adapters/github`. Each has its fake in
+  with GitHub in `internal/adapters/github` and Linear in
+  `internal/adapters/linear`, which nothing builds yet. Each has its fake in
   `internal/ports/fake`, which passes its suite: ChatHost's in two shapes,
   with Spaces and without, and request intake's in a shape with teams and
   one without.
@@ -1676,7 +1677,8 @@ controllers call, not by one product's API;
   `readToken`, which the user makes for installs alone: it reaches agent
   pods and CI as the agent bot's token does.
 - **A port is swappable only once its fake and two real adapters pass its
-  contract;** none is yet.
+  contract;** request intake is, with its fake, GitHub and Linear (#156); no
+  other is yet.
 
 ## Deploys: each release to its targets
 
