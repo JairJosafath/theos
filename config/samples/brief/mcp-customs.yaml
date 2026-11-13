@@ -1,0 +1,58 @@
+# MCP Customs, the factory's first real project from outside the factory
+# (docs/plans/mcp-customs.md): an entry for the AWS "No Pipeline, No Problem"
+# weekend challenge, planned and built by the Crew from these words alone.
+# Needs the chart installed with gitea.projects={mcp-customs}, which makes the
+# catalog, the Agents and the GitProvider, and Secret claude-credentials,
+# which you create yourself.
+# Apply with: kubectl apply -f config/samples/brief/mcp-customs.yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Brief
+metadata:
+  name: mcp-customs
+  namespace: mcp-customs
+spec:
+  idea: >-
+    MCP Customs checks an MCP server before an AI agent is allowed to use it.
+    A developer or a platform team submits a server, as an npm package, a
+    PyPI package or a remote URL, on a web page or through an API, and gets
+    a verdict (pass, review or block) with a report that says why.
+
+    The check is a Go AWS Lambda durable function (the AWS Durable Execution
+    SDK for Go, v1, on provided.al2023, arm64, in us-east-2). Its path is
+    planned at runtime: a planning step asks an Amazon Bedrock model, through
+    a JSON Schema tool, for a plan of actions as data, and a small
+    interpreter runs each action as one durable operation: a call as a Step,
+    one tool over many items as a Map, a human decision as WaitForCallback,
+    a pause as Wait. After each observation a decide step may change the
+    rest of the plan. Every model call, clock read and lookup happens inside
+    a step, so a replay follows the same path. The actions come from a fixed
+    registry: resolve the package and its publisher, look up earlier
+    verdicts by content hash, start the sandbox, list the server's tools,
+    scan the tool descriptions for injected instructions, call each tool
+    that says it is read-only with canary arguments, report the sandbox's
+    network and file activity, compare the tool list with the last approved
+    one, ask a human, and wait to check again.
+
+    The server under test runs in an AWS Lambda MicroVM: an image with Node
+    and Python, and a small harness that starts the server, speaks MCP to it
+    over stdio, records every outbound connection and every file written,
+    and answers the durable function over the MicroVM's HTTPS URL. The
+    sandbox holds no credentials, only canary values, and is suspended
+    between steps.
+
+    Hard rules live in code, not in the prompt: a server whose descriptions
+    carry instructions to the model, or whose read-only tool writes or
+    sends a canary anywhere, is never passed without a human; a plan may only
+    name registered actions, with capped fan-outs and timeouts. A server
+    seen before with the same hash and tool list passes in a few steps; a
+    new one gets the whole check. An approved server is checked again after
+    a set time (24 hours, a minute in the demo), and a changed tool list
+    needs a new approval.
+
+    The web page, a static site on S3 and CloudFront, submits a server,
+    shows the run's steps as they happen, shows the report, and has Approve
+    and Block buttons for a run that waits on a human. Checks, verdicts and
+    tool-list snapshots live in DynamoDB; reports in S3. Everything scales
+    to zero. The repository also carries a demo server that looks like a
+    weather tool but hides an instruction in a tool description and sends
+    its arguments to an outside host, so the demo can show a block.
