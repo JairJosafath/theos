@@ -32,7 +32,9 @@ import {
   containerNextStep,
   describeStandardAdoption,
   describeStandardUpdate,
+  STANDARD_FIX_REASONS,
   standardAdoptionPullRequest,
+  standardWaits,
 } from '../../model/lifecycle'
 import { sessionsOf } from '../../model/story'
 import { SessionContext } from '../../lib/hooks'
@@ -93,7 +95,12 @@ export function ContainerPage({
   // #172: the pull request that brings its Standard into the repository it adopted, while it is open.
   const adoption = status?.standardAdoption
   const adopting = describeStandardAdoption(container)
-  const adoptionPR = standardAdoptionPullRequest(container)
+  // #183: not linked while the Standard waits on a fix (UnsupportedFramework keeps one open as it
+  // is): merging it unblocks nothing. Under any other condition, a transient GitError included,
+  // an open pull request is still the one a person merges.
+  const waits = standardWaits(container)
+  const adoptionPR =
+    waits && STANDARD_FIX_REASONS.some((r) => r === waits.reason) ? undefined : standardAdoptionPullRequest(container)
   if (adoptionPR)
     links.push({
       href: adoptionPR.href,

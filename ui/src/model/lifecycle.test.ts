@@ -426,6 +426,59 @@ describe('a Standard that waits to come into an adopted repository (#172)', () =
     },
   )
 
+  // #183: four more reasons wait on a person, who fixes the Standard.
+  describe('a Standard a person fixes (#183)', () => {
+    const fixes: [string, RegExp, boolean][] = [
+      ['NotFound', /Standard go-standard, which does not exist\. Create it, or name another Standard/, false],
+      [
+        'UnpinnedRef',
+        /ref is a branch, or a tag or commit its repository does not have\. Pin its ref to a tag or commit the repository has, on the Standard/,
+        true,
+      ],
+      ['TemplatePathNotFound', /template path is not a directory its repository has at the pinned ref/, true],
+      ['Failed', /files could not be rendered: the condition says why\. Fix its templates/, true],
+    ]
+
+    it.each(fixes)('on %s, says what is wrong, where it is fixed, and gives no retry line', (reason, text, page) => {
+      const c = adopting(reason, undefined, 'the operator’s words')
+      expect(standardWaits(c)).toMatchObject({ standard: 'go-standard', reason, condition: { reason } })
+      const step = containerNextStep(c)!
+      expect(step.text).toMatch(text)
+      expect(step.text).toMatch(/no agent works on the repository until then/)
+      expect(step.text).not.toMatch(/retry/)
+      expect(step.command).toBe(undefined)
+      expect(step.page).toEqual(
+        page ? { kind: 'Standard', name: 'go-standard', label: 'Open Standard go-standard' } : undefined,
+      )
+    })
+
+    it('on NotFound under a Bundle, says only creating the Standard fixes it (#183)', () => {
+      const c = adopting('NotFound', undefined, 'the operator’s words')
+      const bundled: Container = {
+        ...c,
+        spec: { ...c.spec, frameworkRef: undefined, standardRef: undefined, bundleRef: { name: 'go-service' } },
+        status: { ...c.status, bundle: { name: 'go-service', framework: 'go-chi', standard: 'go-standard' } },
+      }
+      const step = containerNextStep(bundled)!
+      expect(step.text).toMatch(
+        /Standard go-standard, which this Container’s Bundle names, does not exist.*Create it\./,
+      )
+      expect(step.text).not.toMatch(/name another Standard\./)
+      expect(step.page).toBe(undefined)
+      expect(step.command).toBe(undefined)
+    })
+
+    it.each(fixes)(
+      'on %s, is no next step on a Container whose Standard is recorded: an update’s rules answer',
+      (reason) => {
+        const c = adopting(reason, undefined, 'the operator’s words')
+        const recorded: Container = { ...c, status: { ...c.status, standard: { name: 'go-standard', ref: 'v1.2.0' } } }
+        expect(standardWaits(recorded)).toBe(undefined)
+        expect(containerNextStep(recorded)).toBe(undefined)
+      },
+    )
+  })
+
   it('leaves an ordinary update’s UpdateClosed as it reads: no next step, and the update’s own words', () => {
     const c = container({
       phase: 'Ready',
