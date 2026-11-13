@@ -59,9 +59,10 @@ describe('A Benchmark’s page (measure-and-improve, step 7)', () => {
   })
 
   it('prints its budget as it prints its cost, with two decimals (#168)', () => {
+    // The cell itself, not what stands around it: static markup joins its text nodes.
     const spent = (b: typeof bench) =>
-      text(renderToStaticMarkup(createElement(BenchmarkPage, { bench: b, tasks: [] }))).match(
-        /Spent (.*?) Judged by/,
+      renderToStaticMarkup(createElement(BenchmarkPage, { bench: b, tasks: [] })).match(
+        /<dt>Spent<\/dt><dd>(.*?)<\/dd>/,
       )?.[1]
     expect(spent(bench)).toBe('$21.48 of $30.00')
     // At its cap the two amounts read the same.
