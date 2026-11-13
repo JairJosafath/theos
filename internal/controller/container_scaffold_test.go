@@ -111,13 +111,16 @@ func eventuallyOrdersAPI(ns string, phase c4v1beta1.ContainerPhase) *c4v1beta1.C
 
 // historySettle is how long settledHistoryCount waits without a read. It
 // is far longer than the reconciles a story's own creation queues take
-// (milliseconds), and short enough that a reconciler retrying a Failed
-// Container cannot slip past both it and the 2s the specs then watch the
-// count for: a retry every historySettle or less never settles; a doubling
-// backoff settles on its first pause longer than historySettle, at most twice
-// it, and its next read comes at most four times it (2s) after the last,
-// while the watch runs from historySettle to 2.5s after it.
-const historySettle = 500 * time.Millisecond
+// (milliseconds, a second read following another reconcile's status write
+// and live read, which a loaded API server can stretch), and short enough
+// that a reconciler retrying a Failed Container cannot slip past both it and
+// the 2s the specs then watch the count for, from historySettle to 3s after
+// the last read: a retry every historySettle or less never settles; a fixed
+// period under 3s reads inside the watch; a doubling backoff settles on its
+// first pause longer than historySettle, which is at most twice it, so its
+// next read comes at most 2s after the last read, at most historySettle (1s)
+// into the watch (#238).
+const historySettle = 1 * time.Second
 
 // settledHistoryCount waits until ns/orders-api's history has not been read
 // for historySettle and returns how often it was read. A Failed Container's
