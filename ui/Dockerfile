@@ -11,7 +11,7 @@
 # builds (#912). Bump both together, from docker buildx imagetools inspect.
 ARG NODE_IMAGE=node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 # The Go image the root Dockerfile pins.
-ARG GO_IMAGE=golang:1.26.10@sha256:3745f1aa11822297b79113f5e84ce2bffeb039734571c39855809cfe9e5d7be6
+ARG GO_IMAGE=golang:1.26.11@sha256:957952ae74dc010608717144399a59a2c6e82ea03d63be1c7ff6577c5a135f93
 
 FROM ${NODE_IMAGE} AS build
 WORKDIR /src

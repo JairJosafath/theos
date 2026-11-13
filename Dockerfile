@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Build the manager, model-proxy and theos-chat binaries
-# Override BASE_IMAGE to build from another registry, e.g. docker.io/library/golang:1.26.10@sha256:...
-ARG BASE_IMAGE=golang:1.26.10@sha256:3745f1aa11822297b79113f5e84ce2bffeb039734571c39855809cfe9e5d7be6
+# Override BASE_IMAGE to build from another registry, e.g. docker.io/library/golang:1.26.11@sha256:...
+ARG BASE_IMAGE=golang:1.26.11@sha256:957952ae74dc010608717144399a59a2c6e82ea03d63be1c7ff6577c5a135f93
 FROM ${BASE_IMAGE} AS builder
 ARG TARGETOS
 ARG TARGETARCH
