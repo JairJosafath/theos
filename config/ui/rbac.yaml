@@ -59,7 +59,7 @@ subjects:
   name: theos-ui
   namespace: theos-ui
 ---
-# For GET /factory/health, read by server.mjs itself: the node, and its CPU
+# For GET /factory/health, read by server.mjs itself: the nodes, and their CPU
 # and memory from metrics-server. The server sends the browser only a summary
 # (names, states, restarts, usage), never pod specs, and the browser can't
 # reach these paths through /k8s. Still no Secrets, no writes.

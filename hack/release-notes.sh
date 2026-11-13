@@ -11,7 +11,7 @@
 # the newest vX.Y.Z tag before TO (the whole history when there is none). The
 # Release workflow passes hack/previous-release.sh's answer, the newest
 # published release before TO, so a tag whose release failed doesn't cut the
-# notes short: they list everything since the last release devices got.
+# notes short: they list everything since the last release installs got.
 #
 # A pull request is a first-parent merge commit "Merge pull request #N from
 # owner/branch": its title is the commit's body, its files what it changed, its
@@ -40,7 +40,12 @@
 #
 #   VERSION   the version the image list and install command name (default TO without its v)
 #   REGISTRY  the images' registry (default ghcr.io/jairjosafath/theos)
-#   REPO      owner/name, for the getting-started link (default JairJosafath/theos)
+#   REPO      owner/name, for the links (default JairJosafath/theos)
+#   RESULTS   the directory the repository keeps the factory's reports in (default docs/results)
+#
+# The factory's numbers (#66): theos-session report writes a release's as
+# RESULTS/<tag>.md, and the notes link that page when the release's tree has
+# it. A release with no report has no such line.
 set -euo pipefail
 
 prs=
@@ -53,6 +58,7 @@ else
 fi
 REPO=${REPO:-JairJosafath/theos}
 REGISTRY=${REGISTRY:-ghcr.io/jairjosafath/theos}
+RESULTS=${RESULTS:-docs/results}
 if [ -z "${VERSION:-}" ]; then
   case $to in v[0-9]*) VERSION=${to#v} ;; *) VERSION=X.Y.Z ;; esac
 fi
@@ -113,7 +119,15 @@ for section in Added Changed Deprecated Removed Fixed Security; do
   listed=1
 done
 if [ $listed = 0 ]; then
-  echo "Nothing a device runs changed${from:+ since $from}."
+  echo "Nothing an install runs changed${from:+ since $from}."
+fi
+
+# The page is the one in TO's tree, where the links of these notes point: a
+# report committed after the tag is not the release's.
+report=${RESULTS%/}/$TAG.md
+if git cat-file -e "$to:$report" 2>/dev/null; then
+  printf "\nThe factory's numbers for this release, from what its own Tasks recorded since the release before: [%s](%s).\n" \
+    "$report" "https://github.com/$REPO/blob/$TAG/$report"
 fi
 
 cat <<EOF

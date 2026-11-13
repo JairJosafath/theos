@@ -261,12 +261,25 @@ describe('attention', () => {
     expect(new Set(items.map(attentionKey)).size).toBe(items.length)
   })
 
-  it('warns when the node runs out of memory', () => {
+  it('warns when a node runs out of memory', () => {
     const full = health()
     full.nodes[0].memoryBytes = 15 * 2 ** 30
     expect(attention({ tasks: [], containers: [], sessions: [], health: full, now: T0 })[0].title).toBe(
-      'Node memory at 94%',
+      'Node kind memory at 94%',
     )
+  })
+
+  it('names each node that runs out of memory (#122)', () => {
+    const full = health()
+    const node = { ...full.nodes[0], memoryBytes: 15 * 2 ** 30 }
+    full.nodes = [
+      { ...node, name: 'worker-a' },
+      { ...node, name: 'worker-b' },
+    ]
+    expect(attention({ tasks: [], containers: [], sessions: [], health: full, now: T0 }).map((i) => i.title)).toEqual([
+      'Node worker-a memory at 94%',
+      'Node worker-b memory at 94%',
+    ])
   })
 
   it('lists recent failures, failed Containers and stale Sessions', () => {

@@ -106,13 +106,14 @@ owner's acts are listed under *For the owner*.
 | Approval rules on a Crew | #62 | | `spec.approval`, a person's review merges |
 | Recurring Tasks | #63 | | `spec.schedules` files issues on time |
 | Bring your own repository | #60 | better with #57 | `adopt` proposes a model; no Standard needed |
-| Slack, Linear, Jira | #61 | | a second ChatHost, two more IssueTrackers |
+| Slack, Linear, Jira | #61 | | a second ChatHost, two more IssueTrackers ([requests-and-chat.md](requests-and-chat.md)) |
 | Alerts file bugs | #64 | | `AlertSource`, Alertmanager and Sentry |
 | The factory's own numbers, published | #66 | #59 helps | the report with each release |
 
 ## Progress
 
-As of 2026-11-10. The issues hold the live state; this is the short of it.
+As of 2026-11-10, but for a row that names a later day. The issues hold the
+live state; this is the short of it.
 
 | Step | State |
 | --- | --- |
@@ -132,8 +133,9 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 | #57 GitHub as a Git host | planned ([github-host.md](github-host.md)), nine steps filed as #74 to #82; steps 1 (#74) and 3 (#76) are built |
 | #62 a Crew's approval rules | done ([approval-rules.md](done/approval-rules.md); #93, #105): the rules, the wait and the merge; a waiting change's thread in chat; the triager's `risk/high` label; the reviewer raises a change to a person, never lowers; merged Tasks split by who approved |
 | #60 bring a repository you already have | planned ([adopt-existing.md](adopt-existing.md)), six steps; steps 1 to 3, 5 and 6 (#95, #96, #98, #99) are built: an adopting Container needs nothing from the catalog, a Crew works on it once main requires the repository's own checks, `theos-session adopt` proposes the model, the Crew's first issue there writes `AGENTS.md`, and [docs/adopt.md](../adopt.md) walks it; open: #97 (a Standard as a pull request) |
+| #61 Slack, Linear and Jira | planned on 2026-11-13 ([requests-and-chat.md](requests-and-chat.md)): thirteen steps, none filed or started; the two ports' contract suites are merged (#131); nothing else is built |
 | #58 more harnesses and models | planned ([harnesses.md](harnesses.md)), eight steps; step 1 (the harness table in the runner) and the proxy's part of step 2 (named upstreams) are built; open: the chart's upstreams, the price table, and the `codex` harness, which no session has run |
-| #54, #61, #64, #66, #73 | open |
+| #54, #64, #66, #73 | open |
 
 ## For the owner
 

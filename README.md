@@ -6,7 +6,9 @@ theos turns an idea into working, scaffolded repositories. You describe your
 software as a small [C4](https://c4model.com)-style model: who uses it, which
 systems exist, and which applications and data stores they are made of. A Kubernetes
 operator reads that model and creates a ready-to-code repository for every
-application.
+application, and agents build the applications from issues. theos runs on
+Kubernetes to be a distributed solution for agentic work: many agents, each
+in a sandbox of its own, building at once ([Why Kubernetes](#why-kubernetes)).
 
 ```
 Person ──uses──▶ SoftwareSystem ──contains──▶ Container ──reads/writes──▶ DataStore
@@ -25,9 +27,44 @@ from a model as well as maintaining what exists.
 [docs/comparison.md](docs/comparison.md) puts it next to Warp's factory, row
 by row, with what theos doesn't do yet.
 
+## Why Kubernetes
+
+theos runs on Kubernetes because agentic work is distributed work: many
+agents, each in a sandbox of its own, building at once. The cluster already
+does what that needs.
+
+- **Every run is a pod.** An agent's run is a sandboxed pod, and so are a
+  project's CI jobs and its local test environments. The scheduler places
+  each on any node with room.
+- **One truth.** The model is custom resources in the cluster's API. kubectl,
+  GitOps, the UI and a Brief's planner read and write the same objects, and
+  the operator reconciles them.
+- **The cluster enforces the fence.** NetworkPolicies, on a network plugin
+  that enforces them, and pods that hold no ServiceAccount token keep an
+  agent in, not the agent's good will.
+- **A run outlives its pod.** A run that a node shutdown or an eviction
+  interrupts resumes from its checkpoint, where the checkpoint's volume can
+  attach: on node-local storage, a run whose node is gone can't resume on
+  another. Not yet tested on more than one node (#125).
+- **Capacity is a setting.** How many agents work at once is one setting of
+  the operator, and the cluster's nodes are where that many agents find
+  room. Adding nodes adds no agent until the setting is raised (#123).
+- **It installs from a chart,** on a Kubernetes 1.30 or later cluster.
+
+A Kind cluster on one machine is how theos is tested and the quickest way to
+try it. It is not what theos is for.
+
+One install is one cluster and one trust domain: no multi-cluster, and no
+high availability of the Git host the chart brings. The test rig has one
+node, so parts of the factory still assume one; each is an issue: the Go
+build caches (#120), the chart's Gitea as a registry and an address (#121),
+the chart's defaults and where agents are placed (#123), what one node's
+loss stops (#124), and a release check on more than one node (#125).
+
 ## Quickstart
 
-With Docker running, on Linux, macOS or WSL, from a clone at a release's tag:
+To try theos on one machine, with Docker running, on Linux, macOS or WSL,
+from a clone at a release's tag:
 
 ```sh
 hack/quickstart.sh
@@ -48,9 +85,9 @@ anything. Until a release is on the
 packages, it stops there and says so; an account that may read the private
 packages runs it as `GHCR_USER=you GHCR_TOKEN=... hack/quickstart.sh`.
 
-[docs/getting-started.md](docs/getting-started.md) goes on from there: real
-agents with a Claude token, a model and a Crew of your own, releases and
-deploys. Have a repository already?
+[docs/getting-started.md](docs/getting-started.md) goes on from there: the
+install on a cluster of your own, real agents with a Claude token, a model
+and a Crew of your own, releases and deploys. Have a repository already?
 [docs/adopt.md](docs/adopt.md) puts a Crew on it as it is, checked by your
 own command and CI, with every change waiting for your approval until you
 say otherwise.
@@ -152,17 +189,20 @@ has the design.
 
 ## Status
 
-The factory runs end to end in a local Kind cluster: the story model, the
+The factory runs end to end: the story model, the
 catalog, scaffolding into Gitea, Sessions, Tasks and Crews that build from
 issues, Standards that keep their Containers current, and a UI with the story,
 the work and what needs a person. [docs/design.md](docs/design.md) holds the design,
 [docs/results.md](docs/results.md) shows v1 working, with screenshots, and
-[docs/results-v3.md](docs/results-v3.md) the factory watching itself.
+[docs/results-v3.md](docs/results-v3.md) the factory watching itself. Those
+runs, and every release's checks, are on a Kind cluster of one node: that is
+the test rig. What still assumes one node is listed under
+[Why Kubernetes](#why-kubernetes).
 
-Devices install the factory from its Helm chart (see
-[docs/getting-started.md](docs/getting-started.md)), build their products with
-it, and report problems here (see *Report an issue*). The Kind path below is
-for developing the factory itself.
+An install comes from the Helm chart, on a cluster of your own (see
+[docs/getting-started.md](docs/getting-started.md)). Its users build their
+products with it and report problems here (see *Report an issue*). The Kind
+path below is for developing the factory itself.
 
 [ROADMAP.md](ROADMAP.md) has the release train, the milestones and what 1.0
 means.
@@ -190,11 +230,11 @@ FastAPI, Kubernetes manifests and a devcontainer with Postgres, pushed as one co
 in, `make gitea-admin` prints the admin password, which `make gitea` generates for
 each cluster.
 
-To use theos on your own cluster instead, install a release: apply Agent
+To use theos on your own cluster, install a release: apply Agent
 Sandbox, make the project namespaces, then `helm install` the chart with
 `gitea.projects`, which brings the operator, the UI and a seeded Gitea with its
 CI runners. The chart and images are published to GHCR by a version tag.
-[docs/getting-started.md](docs/getting-started.md) takes a device from there to
+[docs/getting-started.md](docs/getting-started.md) takes an install from there to
 its first app: the install, the agents' Claude token, a model, an Agent and a
 Crew that turn a Gitea issue into a merged pull request.
 [The chart's README](dist/chart/README.md) gives the install sequence, its
@@ -202,7 +242,8 @@ values and how to pull private images.
 
 ## A device without the cluster
 
-The Kind cluster wants about 32 GB of disk. A device with less can still work the
+A device here is a contributor's machine, not an install of theos. The test
+rig's Kind cluster wants about 32 GB of disk. A device with less can still work the
 factory's issues with the light setup, `./dev setup --lite`: Go, Node, git, the
 GitHub CLI and Claude Code, without Docker, Kind, kubectl or Helm, and with
 `THEOS_CLUSTER=none` set.
@@ -236,10 +277,10 @@ on every device.
 pick the form: a bug, a feature or improvement, or a catalog template. A
 vulnerability goes to [SECURITY.md](SECURITY.md) instead.
 
-An install that reports under a name of its own (`laptop-2`) uses the
-*Report from a device* form, or the GitHub CLI: a body with a `### Reported by`
+An install that reports under a name of its own (`team-a`) uses the
+*Report from an install* form, or the GitHub CLI: a body with a `### Reported by`
 heading and the name under it gets the labels `source/user` and
-`user/laptop-2`.
+`user/team-a`.
 
 ```
 gh issue create -R JairJosafath/theos --title "Crew stalls" --label source/user --body-file report.md

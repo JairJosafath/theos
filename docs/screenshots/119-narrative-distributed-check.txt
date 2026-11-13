@@ -1,0 +1,94 @@
+# The narrative: a distributed factory on Kubernetes (docs/plans/done/narrative-distributed.md, #119): packages 1 to 6, checked on the branch with all six in, 2026-11-10.
+# The plan's two greps, hack/check-doc-links.sh, the UI's check, and make check whole. Words only: no test changed but hack/release-notes_test.sh's one sentence.
+
+$ grep -rnE "\b[Dd]evices?\b" README.md ROADMAP.md docs/design.md docs/getting-started.md docs/comparison.md docs/adopt.md dist/chart/README.md .github/ISSUE_TEMPLATE | grep -viE "device ?farm|deviceFarm|device plugin|local\.devices|android|emulator|phone" | cut -c1-110
+README.md:239:## A device without the cluster
+README.md:241:A device here is a contributor's machine, not an install of theos. The test
+README.md:242:rig's Kind cluster wants about 32 GB of disk. A device with less can still work the
+README.md:254:acquire`; agents never lease one). So a device without it works every ready
+README.md:268:on every device.
+docs/design.md:448:  | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
+docs/design.md:522:  a device, an account) is left open with why, never faked; the operator
+docs/design.md:689:  ServiceAccount token, no user Secret, not privileged, its devices only
+docs/design.md:743:  environment's device pool when the token signed it and the day's budget
+docs/design.md:744:  allows, pushes the report (each device's result, the tests that didn't
+docs/design.md:749:  its runs' metered device minutes; returning it stops its runs. It runs no
+docs/design.md:760:  the environment's image and devices under the CI fence, so a Standard's
+docs/getting-started.md:1203:(`config/samples/webshop/testenvironment.yaml`). A device on a node comes
+docs/getting-started.md:1212:device.
+docs/getting-started.md:1294:(`config/samples/webshop/testenvironment-devices.yaml`). It runs test
+docs/getting-started.md:1298:A run whose issue is labelled `env/devices` builds the app and its tests,
+docs/getting-started.md:1302:theos-env test devices --type instrumentation \
+docs/getting-started.md:1310:it on its poll, runs it on the pool's devices, pushes the report, each
+docs/getting-started.md:1311:device's result, the tests that didn't pass and their screenshots and logs
+docs/getting-started.md:1312:back to the branch, which `theos-env test` writes into `test-runs/devices/`
+# the README's section for contributors, design.md's log line and open reasons, and test environments' devices: none means an install
+
+$ grep -rnE "laptop|local Kind|Kind cluster" README.md docs/design.md docs/getting-started.md dist/chart/README.md ROADMAP.md ui/src | cut -c1-110
+README.md:49:A Kind cluster on one machine is how theos is tested and the quickest way to
+README.md:69:It makes a Kind cluster of its own, installs Agent Sandbox and the release's
+README.md:194:runs, and every release's checks, are on a Kind cluster of one node: that is
+README.md:215:make cluster gitea seed   # a Kind cluster with Gitea and the tagged templates
+README.md:242:rig's Kind cluster wants about 32 GB of disk. A device with less can still work the
+README.md:252:No issue needs the cluster: Go tests are the gate, and a Kind cluster runs only
+docs/design.md:66:A Kind cluster on one machine is how theos is tested ([Test tiers](#test-tiers))
+docs/getting-started.md:14:[Without a token](#without-a-token) in one command, on a Kind cluster of its
+docs/getting-started.md:18:A Kind cluster on one machine is how theos is tested and the quickest way to
+docs/getting-started.md:29:  pointing at it (a Kind cluster on your machine, Kind v0.23 or later, is
+dist/chart/README.md:25:are what bounds it. A Kind cluster on one machine is how theos is tested and
+ROADMAP.md:83:| Reference app: the webshop ships | the webshop Brief in `config/samples/webshop` builds four C
+# the test rig, the one-machine try-out, and ROADMAP's reached milestone (a record); nothing in ui/src
+
+$ grep -c "laptop" docs/images/*.svg docs/images/*.excalidraw
+docs/images/architecture.svg:0
+docs/images/how-it-works.svg:0
+docs/images/architecture.excalidraw:0
+docs/images/how-it-works.excalidraw:0
+
+$ hack/check-doc-links.sh; echo "exit $?"
+exit 0
+
+$ make check   # its tiers, in the order they ended
+0 issues.
+All valid
+All 29 invalid files rejected
+test-hack: all 49 shell tests passed
+ Test Files  69 passed (69)
+      Tests  998 passed (998)
+# tests 270
+# pass 270
+# fail 0
+ok  	github.com/JairJosafath/theos/cmd	2.346s
+ok  	github.com/JairJosafath/theos/cmd/model-proxy	(cached)
+ok  	github.com/JairJosafath/theos/cmd/theos-env	1.788s
+ok  	github.com/JairJosafath/theos/cmd/theos-session	(cached)
+ok  	github.com/JairJosafath/theos/features	0.460s
+ok  	github.com/JairJosafath/theos/hack/runner-fence	(cached)
+ok  	github.com/JairJosafath/theos/hack/template-go-kubebuilder	0.007s
+ok  	github.com/JairJosafath/theos/internal/adapters/argocd	71.401s
+ok  	github.com/JairJosafath/theos/internal/adapters/awsenv	(cached)
+ok  	github.com/JairJosafath/theos/internal/adapters/cloudformation	0.372s
+ok  	github.com/JairJosafath/theos/internal/adapters/git	(cached)
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	2.928s
+ok  	github.com/JairJosafath/theos/internal/adapters/github	36.238s
+ok  	github.com/JairJosafath/theos/internal/adapters/gitlab	(cached)
+ok  	github.com/JairJosafath/theos/internal/adapters/localenv	(cached)
+ok  	github.com/JairJosafath/theos/internal/adapters/matrix	(cached)
+ok  	github.com/JairJosafath/theos/internal/adapters/packages	(cached)
+ok  	github.com/JairJosafath/theos/internal/agentrunner	98.509s
+ok  	github.com/JairJosafath/theos/internal/buildinfo	(cached)
+ok  	github.com/JairJosafath/theos/internal/chatbot	(cached)
+ok  	github.com/JairJosafath/theos/internal/model	1.646s
+ok  	github.com/JairJosafath/theos/internal/modelproxy	(cached)
+ok  	github.com/JairJosafath/theos/internal/oci	(cached)
+ok  	github.com/JairJosafath/theos/internal/ports	0.115s
+ok  	github.com/JairJosafath/theos/internal/ports/fake	(cached)
+ok  	github.com/JairJosafath/theos/internal/scaffold	25.926s
+ok  	github.com/JairJosafath/theos/internal/sessionclient	27.577s
+ok  	github.com/JairJosafath/theos/test/chart	63.666s
+ok  	github.com/JairJosafath/theos/test/compat	0.546s
+ok  	github.com/JairJosafath/theos/test/e2e/standin	0.012s
+ok  	github.com/JairJosafath/theos/internal/controller	580.207s
+ok  	github.com/JairJosafath/theos/internal/controller	898.605s
+make check: passed; recorded
+exit 0

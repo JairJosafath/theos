@@ -41,7 +41,10 @@ Not sure whether theos does what you need?
    ([ROADMAP.md](ROADMAP.md)).
 6. **Run `make check`** before you push. It regenerates the CRDs and the
    DeepCopy code, formats, vets and lints, runs the unit and envtest suites,
-   validates the YAML and runs the UI's checks. No cluster is needed, and
+   validates the YAML and runs the UI's checks, each only when your change
+   can have broken it, and ends by saying what ran, what was skipped and
+   why. The workflows on your pull request run the same, partial against
+   main; only a release runs everything. No cluster is needed, and
    nobody is asked to run one: `make e2e` is a maintainer's tool.
 7. **Open one small pull request to main per issue.** The template asks for
    `Closes #N`, what changed, the evidence (the end of `make check`'s
@@ -61,6 +64,20 @@ Not sure whether theos does what you need?
 - It merges with a merge commit once the checks pass and it is approved.
   Fixes ship as a patch release soon after ([ROADMAP.md](ROADMAP.md),
   *Releases are a train*).
+- Its branch is deleted once it is merged (#118):
+  [Branch hygiene](.github/workflows/branch-hygiene.yml) deletes the head
+  branch of a pull request merged to main, and every Monday every branch
+  whose tip main already contains. Run by hand it only lists what that
+  sweep would delete, unless you untick `dry_run`. It keeps the default
+  branch, a protected branch, a fork's branch, the head and the base of an
+  open pull request, a branch with a commit main doesn't have and a branch
+  pushed to while it ran. A branch that matches a glob in the repository
+  variable `KEEP_BRANCHES` (`release/* dev`, empty by default) is never
+  deleted: put a long-lived branch that isn't protected there, or one you
+  pushed back. Its log names each deleted branch with its commit and the
+  `git push origin <sha>:refs/heads/<branch>` that brings it back; a branch
+  pushed before its first commit is in main too, goes with the sweep, and
+  comes back with its next push.
 
 ## Tests and warnings
 

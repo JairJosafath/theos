@@ -102,6 +102,16 @@ spec:
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-standard
     ref: v1.7.0
+  # Upkeep the Standard proposes to the Crews of its Containers (docs/design.md,
+  # "Schedules"). Nothing here runs: a Crew takes a proposal by adding it to
+  # its own spec.schedules, and may change the time and the words there.
+  schedules:
+    - name: dependencies
+      cron: "0 6 * * 1"            # Mondays at 06:00, UTC
+      goal: >-
+        Update the dependencies in pyproject.toml that have a new minor or
+        patch version, and uv.lock with them. One pull request. Say what you
+        updated, and what you left and why.
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: Compute

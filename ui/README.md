@@ -99,9 +99,9 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   _Releases_, and _Time & tokens_ (where the time goes across Tasks, and what
   they used). Each Task and Crew opens its page.
 - **Factory**, a dashboard: a card for each part of the factory, healthy or
-  not, with restarts, CPU and memory; the node's usage; the last hour (API
-  server response, CPU, memory) side by side; the agent slots and who waits
-  for one.
+  not, with restarts, CPU and memory; each node's usage; the last hour (API
+  server response, and the CPU and memory of all nodes together) side by
+  side; the agent slots and who waits for one.
 - **About**: the versions running, and links to the running release's design
   and release notes, and to the repository.
 
@@ -120,7 +120,7 @@ on its first): _Overview_ (the kind's own sections), _Status_ (conditions),
 _Activity_ (timeline, rounds and runs) and _Related_ (children and links out).
 The Task page adds its rounds,
 checks, review and agent runs, and the test environments its run holds a lease
-of, those its runs leased, and why its run waits for one; the Crew page its slots, Tasks, routes by label and last release;
+of, those its runs leased, and why its run waits for one; the Crew page its slots, Tasks, routes by label, schedules, the schedules its Standard proposes and last release;
 the Container page, for a Container with a Standard, when CI runs its full
 check (`spec.checks`), what its repository runs now and `ChecksApplied` when
 False, with a choice that sets it when actions are on; and where it ships:
@@ -208,7 +208,8 @@ that way:
 application/json-patch+json`: a patch whose one operation is `add` at
      `/spec/prompts/-`. When the Brief has no prompts yet, the server sends the
      equivalent `add /spec/prompts`, guarded by a `test` of the
-     resourceVersion it read.
+     resourceVersion it read; a Brief that changed in between is answered
+     with `409 Conflict`, and the same request again goes through.
    - the same `PATCH`, whose one operation is `add` of `true` or `false` at
      `/spec/paused`: Pause and Resume.
 
@@ -233,17 +234,18 @@ With the chart's `ui.actions.enabled` (off by default; design.md, _UI
 actions_), the server's action table (`ACTIONS` in [server.mjs](server.mjs))
 takes more writes, each one method, path, content type and body shape:
 
-| Kind      | Request              | Fields                                                                                                                                                                                                                                                                                                     |
-| --------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Brief     | `POST`, JSON         | a new Brief, as above                                                                                                                                                                                                                                                                                      |
-| Brief     | `PATCH`, JSON patch  | `add` at `/spec/prompts/-` alone, as above; or `add` of any of `/spec/paused`, `/spec/autopilot`, `/spec/parallel`, `/spec/releases`; `/spec/releases` only after a `test` of `/metadata/resourceVersion`, and a Brief changed since that version is refused with `409 Conflict`                           |
-| Crew      | `PATCH`, JSON patch  | `add` of any of `/spec/paused`, `/spec/parallel`, `/spec/tagReleases`, `/spec/prepareReleases`, `/spec/publishReleases` (or `remove` of it), `/spec/publishReleases` only after a `test` of `/metadata/resourceVersion`, and a Crew changed since that version is refused with `409 Conflict`              |
-| Crew      | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` alone                                                                                                                                                                                                                                                          |
-| Container | `PATCH`, merge patch | one annotation alone: `theos.factory.io/retry`, or the answer to its Standard's bump, `theos.factory.io/standard-take` or `theos.factory.io/standard-keep`                                                                                                                                                 |
-| Container | `PATCH`, JSON patch  | `add` at `/spec/checks`                                                                                                                                                                                                                                                                                    |
-| Container | `PATCH`, JSON patch  | the approval of a deploy: a `test` of `/spec/deploy/N/target` (a string), optionally a `test` of `/spec/deploy/N/approved` as it was, then its one write, `add` of a string at `/spec/deploy/N/approved`, the same N; the tests refuse a list reordered since the page read it, and an approval made since |
-| Task      | `POST`, JSON         | `spec.kind: Implement` with `containerRef`, `agentRef`, `reviewerRef`, `goal`; only its name and spec go upstream                                                                                                                                                                                          |
-| Standard  | `PATCH`, JSON patch  | `add` at `/spec/template/ref`                                                                                                                                                                                                                                                                              |
+| Kind      | Request              | Fields                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Brief     | `POST`, JSON         | a new Brief, as above                                                                                                                                                                                                                                                                                                                                                                                             |
+| Brief     | `PATCH`, JSON patch  | `add` at `/spec/prompts/-` alone, as above; or `add` of any of `/spec/paused`, `/spec/autopilot`, `/spec/parallel`, `/spec/releases`; `/spec/releases` only after a `test` of `/metadata/resourceVersion`, and a Brief changed since that version is refused with `409 Conflict`                                                                                                                                  |
+| Crew      | `PATCH`, JSON patch  | `add` of any of `/spec/paused`, `/spec/parallel`, `/spec/tagReleases`, `/spec/prepareReleases`, `/spec/publishReleases` (or `remove` of it), `/spec/publishReleases` only after a `test` of `/metadata/resourceVersion`, and a Crew changed since that version is refused with `409 Conflict`                                                                                                                     |
+| Crew      | `PATCH`, merge patch | one annotation alone: `theos.factory.io/rerun-release`, or `theos.factory.io/run-schedule`                                                                                                                                                                                                                                                                                                                        |
+| Crew      | `PATCH`, JSON patch  | one `add` at `/spec/schedules/-` alone, of an object of `name`, `cron`, `timeZone` and `goal`, each a string: a Standard's proposal, taken. For a Crew with no schedules the server sends `add` of the list instead, after a `test` of the `resourceVersion` it read, and answers a Crew that changed in between with `409 Conflict`: the same request again goes through. No schedule is set, changed or removed |
+| Container | `PATCH`, merge patch | one annotation alone: `theos.factory.io/retry`, or the answer to its Standard's bump, `theos.factory.io/standard-take` or `theos.factory.io/standard-keep`                                                                                                                                                                                                                                                        |
+| Container | `PATCH`, JSON patch  | `add` at `/spec/checks`                                                                                                                                                                                                                                                                                                                                                                                           |
+| Container | `PATCH`, JSON patch  | the approval of a deploy: a `test` of `/spec/deploy/N/target` (a string), optionally a `test` of `/spec/deploy/N/approved` as it was, then its one write, `add` of a string at `/spec/deploy/N/approved`, the same N; the tests refuse a list reordered since the page read it, and an approval made since                                                                                                        |
+| Task      | `POST`, JSON         | `spec.kind: Implement` with `containerRef`, `agentRef`, `reviewerRef`, `goal`; only its name and spec go upstream                                                                                                                                                                                                                                                                                                 |
+| Standard  | `PATCH`, JSON patch  | `add` at `/spec/template/ref`                                                                                                                                                                                                                                                                                                                                                                                     |
 
 The server checks each body's shape and the JSON type of each value, not the
 values: limits and enums are the CRD's, and the API server's refusal comes
@@ -308,7 +310,10 @@ and metrics-server's figures itself and sends only a
 summary (component states, restarts, CPU and memory, agent slots and sandboxes,
 the last hour), never a pod spec. It samples every 15 seconds in the background
 (`FACTORY_SAMPLE_SECONDS`; 0 turns it off) and keeps an hour in memory, timing
-its own API calls as the API server's response time. Components are found by
+its own API calls as the API server's response time. A sample's CPU and memory
+are the cluster's: every node's usage added up, which the chart draws against
+what the nodes can allocate together, next to what CI and the agents used on
+whichever node. Components are found by
 namespace and labels; `FACTORY_COMPONENTS` (a JSON list of `{key, name,
 namespace, selector, optional}`) replaces the built-in list. Without
 metrics-server (`make metrics-server`) the view shows states but no figures.

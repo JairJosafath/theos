@@ -103,6 +103,7 @@ async function render(c: Crew, briefs: Brief[] = [BRIEF]) {
     agents: [],
     tasks: [],
     containers: [],
+    standards: [],
     briefs,
     writer: new LiveCrewWriter('k8s', fetchImpl),
     briefWriter: new LiveBriefWriter('k8s', fetchImpl),

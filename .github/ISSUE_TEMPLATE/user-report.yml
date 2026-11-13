@@ -1,12 +1,12 @@
-name: Report from a device
-description: Something went wrong, or could be better, on a device that runs theos
+name: Report from an install
+description: Something went wrong, or could be better, on an install of theos
 labels: [source/user]
 body:
   - type: input
     id: reporter
     attributes:
       label: Reported by
-      description: The device's name, e.g. laptop-2
+      description: The install's name, e.g. team-a
     validations:
       required: true
   - type: input

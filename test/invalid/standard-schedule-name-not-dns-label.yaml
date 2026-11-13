@@ -1,0 +1,17 @@
+# expect: spec.schedules[0].name in body should match '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+apiVersion: theos.factory.io/v1beta1
+kind: Standard
+metadata:
+  name: go-standard
+  namespace: webshop
+spec:
+  displayName: Go quality standard
+  supportedTypes: [cli]
+  supportedFrameworks: [go-cli]
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/go-standard
+    ref: v1.7.0
+  schedules:
+    - name: Weekly Update
+      cron: "0 6 * * 1"
+      goal: Update the dependencies that have a new minor or patch version.

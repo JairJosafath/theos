@@ -446,8 +446,11 @@ spec:
                   other, and a paused Crew files none.
                 items:
                   description: |-
-                    CrewSchedule is one recurring goal of a Crew: when its time comes, the Crew
-                    files an issue with the goal.
+                    CrewSchedule is one recurring goal, held by a Crew (CrewSpec.Schedules) or
+                    proposed by a Standard (StandardSpec.Schedules) in the same shape, so a
+                    Crew takes a proposal as it is written. A Crew that has the schedule files
+                    an issue with the goal when its time comes; a Standard's proposal files
+                    nothing.
                   properties:
                     cron:
                       description: |-
@@ -455,20 +458,24 @@ spec:
                         month, month and day of week (0 or 7 is Sunday), each a number, a range
                         a-b, a step */n or a-b/n, a comma-separated list of those, or *. An
                         expression the operator can't use (minute 60, the 30th of February)
-                        leaves the Crew's Scheduled condition False, reason InvalidSchedule.
+                        leaves the Scheduled condition of a Crew that has the schedule False,
+                        reason InvalidSchedule.
                       maxLength: 100
                       pattern: ^[0-9*/,-]+( [0-9*/,-]+){4}$
                       type: string
                     goal:
                       description: |-
-                        goal is what the issue asks for, in plain words: what to do, and what
-                        to leave. It becomes the issue's Goal section.
+                        goal is what the schedule's issue asks for, in plain words: what to do,
+                        and what to leave. It becomes the Goal section of the issue a Crew
+                        that has the schedule files.
                       maxLength: 4000
                       minLength: 1
                       type: string
                     name:
-                      description: name names the schedule in its issues' titles and
-                        in the status.
+                      description: |-
+                        name names the schedule: a Crew that has it uses the name in its
+                        issues' titles and in its status, and a Crew takes a Standard's
+                        proposal under its name.
                       maxLength: 63
                       minLength: 1
                       pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
@@ -478,7 +485,8 @@ spec:
                       description: |-
                         timeZone is the IANA time zone cron is in, such as Europe/Amsterdam;
                         daylight saving follows it. Unset is UTC. A name the operator can't
-                        load leaves the Scheduled condition False, reason InvalidSchedule.
+                        load leaves the Scheduled condition of a Crew that has the schedule
+                        False, reason InvalidSchedule.
                       maxLength: 64
                       minLength: 1
                       type: string

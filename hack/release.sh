@@ -6,7 +6,9 @@
 # the release its prose names, and hack/quickstart.sh's default VERSION (#53).
 # This bumps them in a pull request of their own,
 # merges it with a merge commit, and tags that commit; the pushed tag starts
-# Release, which checks the same thing (--check) before it builds anything.
+# Release, which checks the same thing (--check) and then runs every step of
+# make check (FORCE=1) before it builds anything: a release is the one place
+# the whole check runs (#127).
 # The same pull request copies config/crd/bases to test/compat/baseline, the
 # CRDs make check holds the next release to (docs/design.md, "Compatibility"),
 # and empties test/compat/dropped.txt's entries, done with once the baseline

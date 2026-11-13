@@ -15,11 +15,19 @@ In a hurry? [hack/quickstart.sh](../hack/quickstart.sh) does section 1 and
 own, and `--down` removes it again. The rest of this guide says what it did
 and goes on from there.
 
+A Kind cluster on one machine is how theos is tested and the quickest way to
+try it; it is not what theos is for. theos runs on Kubernetes because agentic
+work is distributed work: an agent's run is a sandboxed pod, and so are a
+project's CI jobs and its local test environments, and the scheduler places
+each on any node with room. [design.md](design.md#why-kubernetes) says why,
+and which parts of the factory still assume one node (#120 to #125).
+
 You need:
 
-- a Kubernetes 1.30 or later cluster (Kind v0.23 or later) with about 4 CPUs
-  and 8 GiB of memory free for the factory and two agents (a Kind cluster on
-  your machine works), with `kubectl` and `helm` 3.8 or later pointing at it;
+- a Kubernetes 1.30 or later cluster with about 4 CPUs and 8 GiB of memory
+  free for the factory and two agents, with `kubectl` and `helm` 3.8 or later
+  pointing at it (a Kind cluster on your machine, Kind v0.23 or later, is
+  enough to try it);
 - `jq` and `curl`, for the Gitea step;
 - a Claude subscription or API account and the `claude` CLI, for the agents'
   token;
@@ -42,7 +50,7 @@ git clone https://github.com/JairJosafath/theos && cd theos && git checkout "v$V
 
 ## What the factory trusts
 
-One install is one trust domain: run it on a device you own, for people you
+One install is one trust domain: run it on a cluster you own, for people you
 would hand the Claude token to, and never on a shared or production cluster.
 Anyone who can create a Project or a Brief in the cluster, the UI's users
 included, can have the factory run code: in an agent's sandbox, and in a CI
@@ -52,7 +60,7 @@ the agent's code never sees it
 (c4factory #1075 closed that
 gap). What the runners still share:
 
-- **The Gitea CI runners share the node.** A project's checks run on its own
+- **The Gitea CI runners share a node.** A project's checks run on its own
   pool of single-job runner pods in its namespace, each registered to the
   project's organization for one job and replaced after it, under a
   NetworkPolicy that keeps a job to DNS, Gitea and public HTTPS (on a network
@@ -62,7 +70,7 @@ gap). What the runners still share:
   checks only. The chart's GitProviders carry that pool (a `base` and a
   `go` runner, the labels the templates' checks run on), so a fresh install
   needs nothing added for a project's checks to run. What the pods still
-  share is the node: its
+  share is a node: its
   kernel, and the cache directories on its disk, which only the kubelet's
   mounts keep apart.
 
@@ -243,9 +251,9 @@ it. The GitHub release's `SHA256SUMS` is also signed, keyless with cosign
 (`SHA256SUMS.sigstore.json`), which the feature verifies when `cosign` is on
 the devcontainer's `PATH`; the UI's `/downloads/` serves no signature, so
 from there the checksum alone decides (#1706). The build must reach that address: a port-forward's localhost is the
-laptop's, not a container's, so a laptop devcontainer needs the chart's
-`sessionBinaryURL` set to an address it reaches, or it starts without
-becoming a Session.
+machine's that runs the port-forward, not a container's, so a devcontainer
+outside the cluster needs the chart's `sessionBinaryURL` set to an address it
+reaches, or it starts without becoming a Session.
 
 Open *Briefs* in the top bar, pick project `cel-lens`, write the idea in the
 box under *Describe an app*, and create the Brief. Or, the same without the UI,
@@ -753,12 +761,12 @@ message. Nothing is written to the repository at deploy; a rollback pins
 `version` in the entry.
 
 The cluster's nodes pull the image from the registry the Container's Git
-provider serves. In the Kind test environment that is the Gitea in the
+provider serves. In the Kind test rig that is the Gitea in the
 cluster, which the node can't resolve by its Service name, so `make cluster`
 maps it for containerd (`hack/kind.sh registry-hosts`) to the Service's fixed
-ClusterIP, over plain HTTP. That is the test environment's shortcut: a real
-cluster pulls from a registry with a real name and TLS, and the organization
-is public, so the pull and the clone need no credential.
+ClusterIP, over plain HTTP. That is the test rig's shortcut: a real
+cluster pulls from a registry with a real name and TLS (#121), and the
+organization is public, so the pull and the clone need no credential.
 
 ## Release a Brief's app
 
@@ -1066,6 +1074,12 @@ with no pull request and nothing for you to look at.
   `kubectl annotate crew orders-cli theos.factory.io/run-schedule=dependencies`.
   The same two rules hold: while the schedule's last issue is open, or the
   Crew is paused, the run waits and the page says which.
+- **Take one your Standard proposes.** A Standard can propose schedules
+  (`spec.schedules`, such as its language's weekly dependency update). None
+  runs by itself. The Crew's page lists the ones the Crew doesn't have; with
+  the UI's actions on, type the time zone and press *Take*, and the Crew has
+  it as its own, to change like any other. For a name the Crew already uses,
+  the page shows where the Crew's schedule differs from the proposal.
 - **Where it stands:** `kubectl get crew orders-cli -o jsonpath='{.status.schedules}'`
   shows each schedule's next time and the last issue it filed, and the
   `Scheduled` condition says why a schedule can't be used: `InvalidSchedule`
