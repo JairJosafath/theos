@@ -153,3 +153,13 @@ Each is an issue in the session's Gitea (bodies in
   drifts from the API server, and the oracle could only hold it to the
   cases it has. A bigger download is the price of results a person can
   trust.
+- **13 November, 15:30 UTC. Released for CRDs.** Engine v0.29.0 (#22 on
+  GitHub, run 43443279056) and the extension v0.37.0 pinning it (#24, run
+  43452229443), built, attested and signed by `release.yml`; checked
+  here with cosign, and the engine inside the Linux `.vsix` is the pinned
+  one. The extension's step 7 (cel-lens-vscode#15) took the two pictures.
+  Step 4 is on `main` too (#23, cel-lens-core#22 in Gitea, two rounds:
+  a policy with no binding whose match condition reads `params` showed
+  every example wrongly refused, fixed before merge). Left: releasing
+  step 4 (cel-lens-core#23, Prepare v0.30.0, in progress), the extension
+  pinning it, and step 5, the command line.
