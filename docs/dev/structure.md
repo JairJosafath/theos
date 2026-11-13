@@ -19,6 +19,7 @@ internal/scaffold/                 Pure rendering: layers, conflicts, devcontain
 internal/adapters/gitea/           The Gitea adapter: the Git host ports over REST (+ go-git through adapters/git)
 internal/adapters/packages/        What the host adapters share of publishing a release's packages: npm tarballs, wheels and sdists read and sent to an npm registry and a Python index
 internal/adapters/linear/          The Linear adapter: request intake (ports.IssueTracker) over Linear's GraphQL API, for one team and one label, wired to nothing yet; lineartest/ is its fake Linear
+internal/adapters/jira/            The Jira Cloud adapter: request intake (ports.IssueTracker) over the REST API version 3, for one project and one label, wired to nothing yet; jiratest/ is its fake Jira Cloud
 internal/adapters/matrix/          The Matrix adapter: the ChatHost port over the client-server API; matrixtest/ is its fake homeserver
 internal/adapters/github/          The GitHub adapter: the release copy, a Brief's requests, a GitHub App's tokens, and the Git host ports as docs/plans/github-host.md adds them (GitHost, Issues, AgentAccess, CI, Events and the Registry, so far); githubtest/ is its fake GitHub, REST and Git over HTTP
 internal/adapters/localenv/        The local TestEnvironment provider: a fenced pod per lease, with client-go
