@@ -528,7 +528,7 @@ func main() {
 		Scheme:          mgr.GetScheme(),
 		APIReader:       mgr.GetAPIReader(),
 		Git:             gitClient{},
-		Issues:          github.Client{},
+		Issues:          ports.IssueTrackers{model.TrackerGitHub: github.Client{}},
 		Recorder:        mgr.GetEventRecorder("brief"),
 		GitEvents:       gitEvents,
 		SharedSecrets:   sharedSecrets,

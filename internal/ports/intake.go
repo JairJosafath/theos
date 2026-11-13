@@ -163,3 +163,56 @@ type TeamMembers interface {
 	// team the credential can't see. It is false when the call failed.
 	TeamMember(ctx context.Context, team, login string) (bool, error)
 }
+
+// TrackerSource is where a Brief reads requests: a project of a tracker.
+type TrackerSource struct {
+	// Tracker names the kind of tracker, as IssueTrackers key their
+	// adapters.
+	Tracker string
+	// Address is the tracker's API, "" for its public service's.
+	Address string
+	// Project is the repository, team or project whose issues are read, as
+	// the tracker names it.
+	Project string
+}
+
+// CredentialMissingError is a Secret whose data holds no whole credential
+// for a tracker, or no Secret at all.
+type CredentialMissingError struct {
+	// Keys says which keys the tracker takes, as a person reads it: "the
+	// key token", or a choice of keys.
+	Keys string
+}
+
+func (e *CredentialMissingError) Error() string {
+	return "the Secret lacks " + e.Keys
+}
+
+// TrackerAdapter builds the IssueTracker of a source of its tracker. It
+// reads the credential out of the data of the source's Secret, nil when
+// there is none, and turns it into what the tracker takes, minting a token
+// where the tracker does: which keys a Secret holds is the adapter's
+// business, never its caller's. A Secret without a whole credential is a
+// CredentialMissingError; a credential the tracker refuses while it is
+// built is an IssuesError with the reason.
+type TrackerAdapter interface {
+	Tracker(ctx context.Context, source TrackerSource, secret map[string][]byte) (IssueTracker, error)
+}
+
+// IssueTrackers are the operator's tracker adapters, by the name of their
+// tracker: they build a tracker for a source of any of them.
+type IssueTrackers map[string]TrackerAdapter
+
+var _ TrackerAdapter = IssueTrackers(nil)
+
+// Tracker builds the tracker of source with the adapter of source.Tracker.
+// A tracker no adapter is kept for is ReasonTrackerError.
+func (t IssueTrackers) Tracker(ctx context.Context, source TrackerSource,
+	secret map[string][]byte) (IssueTracker, error) {
+	adapter, ok := t[source.Tracker]
+	if !ok || adapter == nil {
+		return nil, &IssuesError{Reason: ReasonTrackerError,
+			Message: fmt.Sprintf("the operator has no adapter for tracker %q", source.Tracker)}
+	}
+	return adapter.Tracker(ctx, source, secret)
+}

@@ -153,6 +153,25 @@ func (tr *IssueTracker) For(project, token string) ports.IssueTracker {
 	return &teamsView{v}
 }
 
+// CredentialKey is the key of a Secret's data the fake tracker reads an
+// account's credential from.
+const CredentialKey = "token"
+
+var _ ports.TrackerAdapter = (*IssueTracker)(nil)
+
+// Tracker is the fake as a ports.TrackerAdapter: For on source.Project as
+// the account whose credential the Secret's CredentialKey holds. A Secret
+// without it, or none, is a ports.CredentialMissingError; the address is
+// not read.
+func (tr *IssueTracker) Tracker(_ context.Context, source ports.TrackerSource,
+	secret map[string][]byte) (ports.IssueTracker, error) {
+	token := strings.TrimSpace(string(secret[CredentialKey]))
+	if token == "" {
+		return nil, &ports.CredentialMissingError{Keys: "the key " + CredentialKey}
+	}
+	return tr.For(source.Project, token), nil
+}
+
 // File files an issue on project as author and returns its number.
 func (tr *IssueTracker) File(project, author, title, body string) (int, error) {
 	return tr.file(project, author, title, body, false)

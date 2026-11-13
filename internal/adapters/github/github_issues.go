@@ -30,11 +30,37 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The issues client is a ports.TeamMembers too: GitHub has teams.
 var _ ports.TeamMembers = (*githubIssues)(nil)
+
+// Client is the adapter of GitHub's issues in ports.IssueTrackers.
+var _ ports.TrackerAdapter = Client{}
+
+// Tracker returns GitHubIssues on source's repository (owner/name), at
+// source.Address when set, with the credential secret holds: its token, or
+// its GitHub App's installation token for the repository alone, minted and
+// kept as GitHubToken does. A Secret with neither whole is a
+// ports.CredentialMissingError; a mint that fails is a ports.IssuesError
+// with the mint's reason, status and message.
+func (c Client) Tracker(ctx context.Context, source ports.TrackerSource,
+	secret map[string][]byte) (ports.IssueTracker, error) {
+	if _, _, ok := model.GitHubCredential(secret); !ok {
+		return nil, &ports.CredentialMissingError{Keys: fmt.Sprintf("the key token (or a GitHub App's %s)",
+			strings.Join(model.GitHubAppKeys, ", "))}
+	}
+	token, err := c.GitHubToken(ctx, source.Address, source.Project, secret)
+	if mint, ok := errors.AsType[*ports.ReleaseError](err); ok {
+		return nil, &ports.IssuesError{Reason: mint.Reason, Status: mint.Status, Message: mint.Message}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return c.GitHubIssues(ports.GitHubConfig{Repository: source.Project, Token: token, APIURL: source.Address})
+}
 
 // GitHubIssues returns an IssueTracker on cfg's repository, which is a
 // ports.TeamMembers too. ctx bounds each call; UploadURL is not used.
