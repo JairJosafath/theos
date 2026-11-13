@@ -163,3 +163,12 @@ Each is an issue in the session's Gitea (bodies in
   every example wrongly refused, fixed before merge). Left: releasing
   step 4 (cel-lens-core#23, Prepare v0.30.0, in progress), the extension
   pinning it, and step 5, the command line.
+- **13 November, 17:25 UTC. Released for admission policies.** Engine
+  v0.30.0 (#25; its `sign` job failed a signed release on a race,
+  cel-lens-vscode#18, fixed and proven by the next release) and the
+  extension v0.38.0 pinning it (#26), whose list behind a rule had
+  silently dropped every policy verdict but allowed and refused. Step 5,
+  `cel-lens-core examples`, is approved (cel-lens-core#26) and is released
+  next with the YAML 1.1 fix (cel-lens-core#28, three review rounds: the
+  issue's premise was wrong, and the fix had to stop dropping Kyverno
+  policies silently too). Then #1 closes.
