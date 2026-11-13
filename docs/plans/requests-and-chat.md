@@ -588,7 +588,8 @@ for a call. What that settled:
   item's `updatedAt`, or whether Linear keeps a `<!-- -->` marker in the body
   it gives back; the adapter finds the marker in that body, so a workspace
   that strips it would find no answer and the Brief would answer twice. Only
-  a real workspace shows it: step 10 and the guide (step 13) say so.
+  a real workspace shows it: step 10 and the guide (step 13) say so. A key limited to other teams may see an empty
+  `teams` list (`TrackerNotFound`) rather than `FORBIDDEN`: not reached either.
 
 What the step chose where the plan says nothing:
 

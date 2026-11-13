@@ -605,3 +605,18 @@ func TestOneLine(t *testing.T) {
 		}
 	}
 }
+
+// TestLowerCaseTeam covers #156: a team configured as "eng" lists and reads
+// the items of ENG, as Linear's filter compares the key case-sensitively.
+func TestLowerCaseTeam(t *testing.T) {
+	w := newWorld(t)
+	n := w.request("Dark mode")
+	tr := tracker(t, w.Server, strings.ToLower(testTeam), w.token)
+	list, err := tr.ListOpenIssues(context.Background(), "")
+	if err != nil || len(list.Issues) != 1 || list.Issues[0].Number != n {
+		t.Fatalf("ListOpenIssues() = %v, %v, want item %d", list.Issues, err, n)
+	}
+	if c, err := tr.FindComment(context.Background(), n, marker); err != nil || c != nil {
+		t.Errorf("FindComment(%d) = %v, %v, want none and no error", n, c, err)
+	}
+}

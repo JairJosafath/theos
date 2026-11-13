@@ -118,7 +118,9 @@ func (c Client) Issues(cfg Config) (ports.IssueTracker, error) {
 	// the call fails with the redirect's status instead.
 	redirectless := *client
 	redirectless.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &linear{team: cfg.Team, label: cfg.Label, token: cfg.Token, api: api, http: &redirectless}, nil
+	// Linear's team keys are upper case and its filter compares them
+	// case-sensitively, while own() ignores case: one form for both.
+	return &linear{team: strings.ToUpper(strings.TrimSpace(cfg.Team)), label: cfg.Label, token: cfg.Token, api: api, http: &redirectless}, nil
 }
 
 type linear struct {
