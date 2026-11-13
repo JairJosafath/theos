@@ -169,6 +169,10 @@ func TestAlertDrainSaysYesterdaysFoldOnceAcrossAFailedStep(t *testing.T) {
 	if got := countSaid(u.git.Issue("shop", "orders-api", first).Comments, yesterday); got != 1 {
 		t.Fatalf("%q said %d times by the failed step, want 1", yesterday, got)
 	}
+	// Four alerts were delivered; the failed step counted them once.
+	if got := u.status().Deliveries; got != 4 {
+		t.Errorf("deliveries after the failed step = %d, want 4", got)
+	}
 	if days := u.status().Containers; len(days) != 1 || days[0].FoldReported != 2 {
 		t.Errorf("days = %+v, want yesterday's fold written as said", days)
 	}
@@ -177,6 +181,10 @@ func TestAlertDrainSaysYesterdaysFoldOnceAcrossAFailedStep(t *testing.T) {
 	u.mustDrain()
 	if got := countSaid(u.git.Issue("shop", "orders-api", first).Comments, yesterday); got != 1 {
 		t.Errorf("%q said %d times once the host answered, want 1", yesterday, got)
+	}
+	// The retry did not count the failed step's alerts again.
+	if got := u.status().Deliveries; got != 4 {
+		t.Errorf("deliveries once the host answered = %d, want 4", got)
 	}
 	if got := u.issues(); len(got) != 2 || got[1].Title != "Alert: Cache cold" {
 		t.Errorf("alert issues = %+v, want Cache cold filed as today's first", got)
@@ -212,5 +220,40 @@ func TestAlertDrainCountsAnAlertTakenAfterMidnightOnItsDay(t *testing.T) {
 	days := u.status().Containers
 	if len(days) != 1 || days[0].Date != "2026-03-02" || days[0].Filed != 1 || days[0].Folded != 0 {
 		t.Errorf("days = %+v, want 2026-03-02 with one filed", days)
+	}
+}
+
+// The clock is read again before the comments are owed: midnight that passes
+// after the last alert is taken makes the pass say that day's fold at its
+// end, not a pass later (#64).
+func TestAlertDrainSaysTheFoldOfADayThatEndedWhileTheDrainRan(t *testing.T) {
+	u := newAlertDrainUnit(t)
+	late := time.Date(2026, 3, 1, 23, 59, 59, 0, time.UTC)
+	u.clockAt(late.Add(-10 * time.Second))
+	u.fire("Disk full")
+	u.fire("Queue backed up")
+	u.mustDrain()
+	first := u.issues()[0].Number
+
+	// The third alert is folded within the comment interval, so its day's
+	// fold is unsaid; midnight passes once it is written to the status.
+	u.mu.Lock()
+	u.now = func() time.Time {
+		var src c4v1beta1.AlertSource
+		if err := u.c.Get(context.Background(), alertUnitKey, &src); err != nil {
+			u.t.Error(err)
+		}
+		if src.Status.Deliveries >= 3 {
+			return late.Add(2 * time.Second)
+		}
+		return late
+	}
+	u.mu.Unlock()
+	u.fire("Latency high")
+	u.mustDrain()
+
+	yesterday := "2 more alerts fired for this Container on 2026-03-01"
+	if got := countSaid(u.git.Issue("shop", "orders-api", first).Comments, yesterday); got != 1 {
+		t.Errorf("%q said %d times by the pass midnight fell in, want 1", yesterday, got)
 	}
 }
