@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
@@ -88,6 +89,33 @@ func updateAlertSource(src *c4v1beta1.AlertSource, mutate func(*c4v1beta1.AlertS
 	return err
 }
 
+// alertSourceURLAt runs src's reconciles, under the generated role, as an
+// operator with --git-events-url eventsURL and --alerts-url alertsURL would,
+// until src's status.url is want, and returns src's Ready. The suite's
+// operator, which has neither, loses its status writes on src that carry
+// another url meanwhile, so it doesn't write its own back.
+func alertSourceURLAt(src *c4v1beta1.AlertSource, eventsURL, alertsURL, want string) *metav1.Condition {
+	GinkgoHelper()
+	k := key(src.Namespace, src.Name)
+	other := func(s *c4v1beta1.AlertSource) bool { return s.Status.URL != want }
+	alertStatusFaults.failNext(k, 1<<30, other)
+	DeferCleanup(alertStatusFaults.failNext, k, 0, other)
+	r := &AlertSourceReconciler{Client: managerClient, Scheme: managerClient.Scheme(), APIReader: managerAPIReader,
+		Git: fakeGitClient{gitFake}, Receiver: alertReceiver, EventsURL: eventsURL, AlertsURL: alertsURL,
+		Now: alertNow}
+	var cond *metav1.Condition
+	Eventually(func(g Gomega) {
+		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: k})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(k8sClient.Get(ctx, k, src)).To(Succeed())
+		g.Expect(src.Status.URL).To(Equal(want))
+		cond = condition(src.Status.Conditions, c4v1beta1.ConditionAlertSourceReady)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonAlertSourceReceiving), cond.Message)
+	}).Should(Succeed())
+	return cond
+}
+
 var _ = Describe("AlertSource", func() {
 	It("defaults its labels, comment interval and daily limit", func() {
 		src := newAlertSource(newProjectNamespace())
@@ -111,6 +139,34 @@ var _ = Describe("AlertSource", func() {
 		cond = alertSourceReady(src, c4v1beta1.ReasonAlertSourceReceiving)
 		Expect(cond.Message).To(ContainSubstring("/alerts/" + ns + "/alerts"))
 		Expect(src.Status.URL).To(Equal("/alerts/" + ns + "/alerts"))
+	})
+
+	It("#240: shows the --alerts-url address in status.url when the operator has one", func() {
+		ns := newProjectNamespace()
+		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "alerts-webhook"),
+			Data: map[string][]byte{model.AlertSecretKeyToken: []byte(rand.Text())}})
+		src := newAlertSource(ns)
+		mustCreate(src)
+		alertSourceReady(src, c4v1beta1.ReasonAlertSourceReceiving)
+
+		// The chart's alert Ingress, its trailing slash trimmed as
+		// --git-events-url's is.
+		want := "https://alerts.example.com/alerts/" + ns + "/alerts"
+		cond := alertSourceURLAt(src, testGitEventsURL, "https://alerts.example.com/", want)
+		Expect(cond.Message).To(ContainSubstring(want))
+	})
+
+	It("#240: without --alerts-url keeps the --git-events-url address in status.url", func() {
+		ns := newProjectNamespace()
+		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "alerts-webhook"),
+			Data: map[string][]byte{model.AlertSecretKeyToken: []byte(rand.Text())}})
+		src := newAlertSource(ns)
+		mustCreate(src)
+		alertSourceReady(src, c4v1beta1.ReasonAlertSourceReceiving)
+
+		want := testGitEventsURL + "/alerts/" + ns + "/alerts"
+		cond := alertSourceURLAt(src, testGitEventsURL+"/", "", want)
+		Expect(cond.Message).To(ContainSubstring(want))
 	})
 
 	It("is SecretMissing while the key its type reads is empty, and Receiving once it has a value", func() {

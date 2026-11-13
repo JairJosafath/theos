@@ -5,7 +5,8 @@
 # everyone; the alert Ingress serves /alerts/ alone, with TLS, and is refused
 # without its host, its peers or the listener; the manager takes
 # --alert-drain-timeout from alerts.drainTimeout, and the chart refuses one
-# that is no Go duration.
+# that is no Go duration; the manager's --alerts-url is alerts.url, else the
+# alert Ingress's https://<host> (#240).
 # Run: hack/chart-alerts_test.sh (needs bin/helm: make install-helm)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -159,6 +160,27 @@ for v in 0 0s 00s 0ms; do
 		ok "--set-string alerts.drainTimeout=$v under grace 3 is refused"
 	fi
 done
+# #240: --alerts-url, which AlertSource status.url starts with: none by
+# default, https://<host> with the alert Ingress, alerts.url when given (its
+# trailing slash trimmed), and none without the listener.
+alerts_url() { # alerts_url WHAT SET WANT: the manager's --alerts-url is WANT, or absent when WANT is empty.
+	if ! render "$2"; then
+		bad "$1: does not render $2:"
+		head -3 "$T/out"
+		return
+	fi
+	got=$(sed -n 's/^ *- --alerts-url=//p' "$T/out")
+	if [ "$got" = "$3" ]; then ok "$1"; else bad "$1: --alerts-url is [$got], want [$3]"; fi
+}
+alerts_url "by default no --alerts-url" "" ""
+alerts_url "the alert Ingress's host is the --alerts-url" "$PEER,$INGRESS" "https://alerts.example.com"
+alerts_url "alerts.url is the --alerts-url" "alerts.url=https://hooks.example.org/" "https://hooks.example.org"
+alerts_url "alerts.url wins over the Ingress's host" "$PEER,$INGRESS,alerts.url=https://hooks.example.org" \
+	"https://hooks.example.org"
+alerts_url "without the listener no --alerts-url" "gitEvents.enabled=false,alerts.url=https://hooks.example.org" ""
+# #240: alerts.url without a scheme is refused, naming the value.
+refuses "alerts.url" "alerts.url=hooks.example.org"
+
 if ! render "gitEvents.enabled=false"; then
 	bad "the chart without the listener does not render:"
 	head -3 "$T/out"

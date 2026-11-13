@@ -146,8 +146,11 @@ type AlertSourceStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
-	// url is where the sender delivers: the path, after the operator's
-	// --git-events-url when that is set.
+	// url is where the sender delivers: the path /alerts/<namespace>/<name>,
+	// after the operator's --alerts-url when that is set (the chart sets it
+	// to its alert Ingress, https://<alerts.ingress.host>), else after its
+	// --git-events-url, the in-cluster address. The in-cluster address stays
+	// valid for senders inside the cluster.
 	// +optional
 	URL string `json:"url,omitempty"`
 

@@ -113,6 +113,7 @@ func main() {
 	var chatHomeserver string
 	var linearAPIURL, jiraAPIURL string
 	var gitEventsURL string
+	var alertsURL string
 	var gitEventsAddr string
 	var alertDrainTimeout time.Duration
 	var testEnvToolsImage, testEnvToolsURL, testEnvRunnerURL string
@@ -213,6 +214,10 @@ func main() {
 		"The base address the Git host delivers events to, such as http://theos-git-events.<namespace>.svc:8082: "+
 			"each GitProvider's hook delivers to <url>/git-events/<namespace>/<name>. None: no hook, and the "+
 			"operator polls the host.")
+	flag.StringVar(&alertsURL, "alerts-url", "",
+		"The base address senders outside the cluster deliver alerts to, such as https://alerts.example.com "+
+			"through the chart's alert Ingress: each AlertSource's status.url is <url>/alerts/<namespace>/<name>. "+
+			"None: status.url starts with --git-events-url, the in-cluster address.")
 	flag.StringVar(&gitEventsAddr, "git-events-bind-address", "0",
 		"The address the receiver of the Git host's deliveries binds to, such as :8082, on the leader. "+
 			"Leave as 0 to receive none: the operator polls the host.")
@@ -636,6 +641,7 @@ func main() {
 		Git:       gitClient{},
 		Receiver:  alerts,
 		EventsURL: gitEventsURL,
+		AlertsURL: alertsURL,
 	}
 	if alerts != nil {
 		alerts.Drainer = alertSources
