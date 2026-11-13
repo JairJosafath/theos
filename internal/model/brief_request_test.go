@@ -72,6 +72,24 @@ func TestRequestName(t *testing.T) {
 	if got := RequestName("ada/cel-lens", 12); got != "ada/cel-lens#12" {
 		t.Errorf("RequestName = %q", got)
 	}
+	// #160: a request source's item is source:key, which no owner/name#N
+	// can equal.
+	tests := []struct {
+		name string
+		r    Request
+		want string
+	}{
+		{"a GitHub issue", Request{Repository: "ada/cel-lens", Number: 12}, "ada/cel-lens#12"},
+		{"a Linear item", Request{Source: "product", Key: "ENG-412", Number: 412}, "product:ENG-412"},
+		{"a Jira item", Request{Source: "support", Key: "SHOP-7", Number: 7}, "support:SHOP-7"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.r.Name(); got != tc.want {
+				t.Errorf("Name = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 func TestRequestStage(t *testing.T) {
@@ -355,6 +373,44 @@ func TestRequestNeedsYou(t *testing.T) {
 	if !strings.Contains(n.Question, `"Dark theme"`) || !strings.Contains(n.Question, "ada") ||
 		!strings.Contains(n.Recommend, "12") {
 		t.Errorf("RequestNeedsYou = %+v", n)
+	}
+}
+
+// #160: a request source's item is named source:key in needsYou, and one
+// whose tracker names no author is asked about without "by".
+func TestRequestNeedsYouFromASource(t *testing.T) {
+	since := time.Unix(5, 0)
+	tests := []struct {
+		name                string
+		r                   Request
+		question, recommend string
+	}{
+		{"a GitHub issue", Request{Repository: "ada/cel-lens", Number: 12, Author: "ada", Title: "Dark theme"},
+			`Request ada/cel-lens#12 "Dark theme" by ada waits for you.`,
+			"Add 12 to the accepted requests of ada/cel-lens to plan it, or to the declined ones."},
+		{"a Linear item with an author", Request{Source: "product", Key: "ENG-412", Number: 412,
+			Author: "Ada Lovelace", Title: "Dark theme"},
+			`Request product:ENG-412 "Dark theme" by Ada Lovelace waits for you.`,
+			"Add 412 to the accepted requests of request source product to plan it, or to the declined ones."},
+		{"a Jira item with no author (a service desk's)", Request{Source: "support", Key: "SHOP-7", Number: 7,
+			Title: "Refunds"},
+			`Request support:SHOP-7 "Refunds" waits for you.`,
+			"Add 7 to the accepted requests of request source support to plan it, or to the declined ones."},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.r.Since = since
+			n := RequestNeedsYou(tc.r)
+			if n.Kind != AttentionRequest || n.Name != tc.r.Name() || !n.Since.Equal(since) {
+				t.Errorf("RequestNeedsYou = %+v", n)
+			}
+			if n.Question != tc.question {
+				t.Errorf("Question = %q, want %q", n.Question, tc.question)
+			}
+			if n.Recommend != tc.recommend {
+				t.Errorf("Recommend = %q, want %q", n.Recommend, tc.recommend)
+			}
+		})
 	}
 }
 

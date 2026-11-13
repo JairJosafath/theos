@@ -1,0 +1,15 @@
+# expect: spec.requestSources[0].jira.cloudID: Required value
+apiVersion: theos.factory.io/v1beta1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: webshop
+spec:
+  idea: A linter for CEL rules.
+  requestSources:
+  - name: support
+    jira:
+      site: https://acme.atlassian.net
+      project: SHOP
+      label: factory
+    credentialsSecretRef: {name: acme-jira}

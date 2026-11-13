@@ -55,7 +55,7 @@ func TakenRequests(requests []Request) []Request {
 func NewRequests(requests []Request, lastRound []string) int {
 	n := 0
 	for _, r := range TakenRequests(requests) {
-		if !slices.Contains(lastRound, RequestName(r.Repository, r.Number)) {
+		if !slices.Contains(lastRound, r.Name()) {
 			n++
 		}
 	}
@@ -71,19 +71,23 @@ func WorkspaceRequests(requests []Request, roundRequests []string, roundRuns boo
 	}
 	var out []Request
 	for _, r := range requests {
-		if slices.Contains(roundRequests, RequestName(r.Repository, r.Number)) {
+		if slices.Contains(roundRequests, r.Name()) {
 			out = append(out, r)
 		}
 	}
 	return out
 }
 
-// requestOut is one request in model/requests.yaml.
+// requestOut is one request in model/requests.yaml: a GitHub issue by its
+// repository, a source's item by its source and key. The author is left out
+// when the tracker names nobody (#160).
 type requestOut struct {
 	Request    string `yaml:"request"`
-	Repository string `yaml:"repository"`
+	Source     string `yaml:"source,omitempty"`
+	Key        string `yaml:"key,omitempty"`
+	Repository string `yaml:"repository,omitempty"`
 	Number     int    `yaml:"number"`
-	Author     string `yaml:"author"`
+	Author     string `yaml:"author,omitempty"`
 	Title      string `yaml:"title"`
 	Body       string `yaml:"body"`
 }
@@ -93,7 +97,7 @@ type requestOut struct {
 func workspaceRequests(requests []Request) []requestOut {
 	out := make([]requestOut, 0, len(requests))
 	for _, r := range requests {
-		out = append(out, requestOut{RequestName(r.Repository, r.Number), r.Repository, r.Number, r.Author,
+		out = append(out, requestOut{r.Name(), r.Source, r.Key, r.Repository, r.Number, r.Author,
 			r.Title, strings.TrimSpace(r.Body)})
 	}
 	return out
@@ -101,7 +105,8 @@ func workspaceRequests(requests []Request) []requestOut {
 
 // RequestAnswer is a plan's answer to one request its round took.
 type RequestAnswer struct {
-	// Request is owner/name#number, as model/requests.yaml names it.
+	// Request is owner/name#number, or source:key, as model/requests.yaml
+	// names it.
 	Request string `yaml:"request"`
 	Answer  string `yaml:"answer"`
 	// Issues are the plan's numbers (N) of the issues a taken request became.
