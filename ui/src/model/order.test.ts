@@ -116,7 +116,6 @@ describe('compareTitle', () => {
         Intl.Collator = function (locales?: Intl.LocalesArgument, options?: Intl.CollatorOptions) {
           return new real(locales ?? locale, options)
         } as typeof Intl.Collator
-        // eslint-disable-next-line no-restricted-syntax -- the machine's own order is what this case sets up
         expect(new Intl.Collator().compare(first, second)).toBeGreaterThan(0)
         vi.resetModules()
         const fresh = await import('./order')

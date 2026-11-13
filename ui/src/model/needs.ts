@@ -82,6 +82,10 @@ export function needs(input: NeedsInput): Need[] {
     (a, b) =>
       compareText(a.namespace, b.namespace) ||
       (time(a.since) ?? Infinity) - (time(b.since) ?? Infinity) ||
+      // Kind, then name, then the key: names order as everywhere else (#175),
+      // where the joined key put "orders2" before "orders".
+      compareText(a.kind, b.kind) ||
+      compareText(a.name, b.name) ||
       compareText(a.key, b.key),
   )
 }

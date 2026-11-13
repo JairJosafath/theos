@@ -471,7 +471,7 @@ export function systemsForPicker(data: StoryData): { name: string; title: string
       title: titleOf(s),
       containers: data.containers.filter((c) => c.spec.softwareSystemRef?.name === s.metadata.name).length,
     }))
-    .sort((a, b) => b.containers - a.containers || compareTitle(a.title, b.title))
+    .sort((a, b) => b.containers - a.containers || compareTitle(a.title, b.title) || compareText(a.name, b.name))
 }
 
 export interface Link {
@@ -547,5 +547,7 @@ export function linksOf(data: StoryData, kind: ElementKind, name: string): Link[
 export function containerNodes(data: StoryData, system?: string): ContainerNode[] {
   const index = new StoryIndex(data)
   const systems = system ? [system] : [...new Set(data.containers.map((c) => c.spec.softwareSystemRef?.name))]
-  return systems.flatMap((s) => index.containerNodes(s)).sort((a, b) => compareTitle(a.title, b.title))
+  return systems
+    .flatMap((s) => index.containerNodes(s))
+    .sort((a, b) => compareTitle(a.title, b.title) || compareText(a.id, b.id))
 }

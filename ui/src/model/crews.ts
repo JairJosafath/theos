@@ -94,7 +94,9 @@ export function crewSummary(crew: Crew, agents: Agent[], tasks: Task[]): CrewSum
 export function crewSummaries(crews: Crew[], agents: Agent[], tasks: Task[]): CrewSummary[] {
   return crews
     .map((c) => crewSummary(c, agents, tasks))
-    .sort((a, b) => compareText(a.namespace, b.namespace) || compareTitle(a.title, b.title))
+    .sort(
+      (a, b) => compareText(a.namespace, b.namespace) || compareTitle(a.title, b.title) || compareText(a.key, b.key),
+    )
 }
 
 /** What a Crew is doing, in a few words: "working on #4", "paused", "no ready issues". */
