@@ -56,7 +56,7 @@ What was already done on 2026-10-19 by the stopped first run, and stays:
 the milestone *Reference app: the webshop ships* (number 12); the step
 issues #1428 to #1433, now `status/proposed`; the priority moves of step 2;
 the comments of steps 1, 2, 9 and 10 on #1112, #1116, #1424, #1425, #1379
-and #261; the git identity in this checkout's repository config on 3st8JJ.
+and #261; the git identity in this checkout's repository config on device 1.
 Not done: landing this plan and #1412, the AGENTS.md exception, readying
 the steps, installing the watch, closing #1388 and #1389, removing `dev`.
 
@@ -82,10 +82,10 @@ webshop's gap list shrinks.
 | Full sample applications | 1, `config/samples/webshop`, with one Container |
 | Open issues before this plan | 84: 2 at priority/1, 29 at priority/2, 38 at 5, 13 at 8 and 9 |
 | Open pull requests | #1412 green; #1423 fails Vulnerabilities; #1411 fails Tests |
-| Relay | stopped since 2026-10-17 06:10 on every device; the night of 2026-10-16 Skinny-vivobook ran logged out: about 190 strike comments, 15 false escalations across 19 issues |
-| Relay login | the installed watch (`hack/relay-watch.sh --install`) gives its unit PATH but no `CLAUDE_CONFIG_DIR`, so its sessions use `~/.claude`, the same login as VS Code; the project shell's `CLAUDE_CONFIG_DIR=.dev/claude` is a separate, empty login on 3st8JJ |
-| Git identity on 3st8JJ | was missing in every shell; set in this checkout's repository config on 2026-10-19, which the relay's worktrees share (#1289) |
-| Self-hosted runners | 3st8JJ's three online; Skinny-vivobook's and gray-lenovo's offline |
+| Relay | stopped since 2026-10-17 06:10 on every device; the night of 2026-10-16 device 2 ran logged out: about 190 strike comments, 15 false escalations across 19 issues |
+| Relay login | the installed watch (`hack/relay-watch.sh --install`) gives its unit PATH but no `CLAUDE_CONFIG_DIR`, so its sessions use `~/.claude`, the same login as VS Code; the project shell's `CLAUDE_CONFIG_DIR=.dev/claude` is a separate, empty login on device 1 |
+| Git identity on device 1 | was missing in every shell; set in this checkout's repository config on 2026-10-19, which the relay's worktrees share (#1289) |
+| Self-hosted runners | device 1's three online; device 2's and device 3's offline |
 | `main` | green: test.yml passed on de933e4b; v0.27.0 is the newest tag |
 | ci-gate | half-built: #1381 on `dev` only, `dev` 25 commits behind main, no `promote`, `dev` unprotected, default branch still main |
 
@@ -121,7 +121,7 @@ quality of the applications.
    (5fd71b34, PR #1414), which nothing uses; it stays until the owner
    removes it, and nothing waits on that.
 5. **The relay restarts small.** One device whose `~/.claude` is logged in
-   (3st8JJ), two workers, triage on, the maintainer sweep at its default
+   (device 1), two workers, triage on, the maintainer sweep at its default
    (every two hours). It grows by one worker at a time, only while test.yml
    on main has been green for three days and the milestone's open count
    fell in the last week, and shrinks on any strike from a login or
@@ -142,7 +142,7 @@ quality of the applications.
 
 ### Step 0: the step-0 session
 
-Started by the owner, from a plain shell in the checkout on 3st8JJ, after
+Started by the owner, from a plain shell in the checkout on device 1, after
 the owner's part below is done:
 
 ```bash
@@ -219,7 +219,7 @@ ships to a cluster (only GitHub), so the deploy line waits on #1072, not
 
 ### Step 4: the verifier session (#1429, the owner starts it)
 
-The owner's one command, from their own shell on 3st8JJ, once #1428 is
+The owner's one command, from their own shell on device 1, once #1428 is
 closed and #1429 is under *Needs you*:
 
 ```bash
@@ -272,7 +272,7 @@ testenv.md keeps a pointer where each was.
 
 ### Step 12: grow, and the first release (maintainer)
 
-The maintainer's sweep raises `--workers` by one, on 3st8JJ or a second
+The maintainer's sweep raises `--workers` by one, on device 1 or a second
 logged-in device, only when test.yml on main has been green for three days
 and the milestone's open count fell in the last week; it lowers it on any
 strike from a login or identity failure. The first release after #1429's
@@ -302,8 +302,8 @@ Three things, once. Then nothing until *Needs you* says so.
    in step 4.
 
 Optional, whenever convenient: remove the `dev` branch (`git push origin
---delete dev`); keep Claude Code logged in on 3st8JJ (`claude -p ok` from a
-plain shell answers); log it in on Skinny-vivobook before any relay runs
+--delete dev`); keep Claude Code logged in on device 1 (`claude -p ok` from a
+plain shell answers); log it in on device 2 before any relay runs
 there.
 
 ## Done when
@@ -320,7 +320,7 @@ there.
 - `docs/design.md` is under 600 lines with no version headings, and
   `docs/design-history.md` holds the old text (#1431); testenv.md is split
   (#1432).
-- The relay runs on 3st8JJ with two workers under the installed watch, and
+- The relay runs on device 1 with two workers under the installed watch, and
   no strike since the restart came from a login or identity failure.
 - The first release after the milestone closes ships the webshop as the
   example in `docs/getting-started.md`.
