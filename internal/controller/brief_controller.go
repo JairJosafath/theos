@@ -286,18 +286,31 @@ func madeContainers(brief *c4v1beta1.Brief) bool {
 	})
 }
 
-// writeStatus patches the Brief's status when it changed. A reconcile that
-// ends a round writes only the Brief it read: one that read a stale copy, from
-// before an earlier reconcile ended the round, would end it again against a
-// namespace that has changed since, and overwrite how it ended (#540).
+// writeStatus patches the Brief's status when it changed, always under the
+// optimistic lock: a reconcile writes only the Brief it read, and one that
+// read a stale copy writes nothing and reads the Brief again. A merge patch
+// of what changed against a stale copy writes half of the status the
+// reconcile computed over a newer one: a reconcile that ends a round again
+// would overwrite how an earlier one ended it, against a namespace that has
+// changed since (#540), and one that clears status.requests would keep the
+// request a newer status lists in needsYou (#199).
 func (r *BriefReconciler) writeStatus(ctx context.Context, brief, orig *c4v1beta1.Brief) error {
 	if equality.Semantic.DeepEqual(brief.Status, orig.Status) {
 		return nil
 	}
-	if !roundOver(&brief.Status) || roundOver(&orig.Status) {
-		return r.Status().Patch(ctx, brief, client.MergeFrom(orig))
-	}
-	err := r.Status().Patch(ctx, brief, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{}))
+	return r.patchStatusLocked(ctx, brief, orig)
+}
+
+// patchStatusLocked patches the Brief's status from orig under the
+// optimistic lock, as every status write of a reconcile is (writeStatus,
+// startRound, recordIssue): one that read a stale copy writes nothing, and
+// its conflict is errStaleBrief, for finishReconcile to read the Brief again.
+// The lock holds the version this reconcile last read or wrote: putting the
+// finalizer on (holdForBot) moves brief's on, not orig's.
+func (r *BriefReconciler) patchStatusLocked(ctx context.Context, brief, orig *c4v1beta1.Brief) error {
+	base := orig.DeepCopy()
+	base.ResourceVersion = brief.ResourceVersion
+	err := r.Status().Patch(ctx, brief, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))
 	if apierrors.IsConflict(err) {
 		return fmt.Errorf("%w: %w", errStaleBrief, err)
 	}
