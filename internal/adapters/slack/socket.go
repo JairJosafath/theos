@@ -394,6 +394,12 @@ func (c *Client) connect(ctx context.Context, old *websocket.Conn, first bool, f
 	f.gen++
 	gen := f.gen
 	f.conn, f.opened, f.heard = ws, true, time.Now()
+	// caught speaks of an open socket: set it with conn when no catch-up is
+	// needed, and after a catch-up only if this socket is still the open one,
+	// so that one which dropped meanwhile stays not caught (#155).
+	if from.IsZero() {
+		f.caught = true
+	}
 	if first {
 		f.floor = from
 		if from.IsZero() {
@@ -405,12 +411,7 @@ func (c *Client) connect(ctx context.Context, old *websocket.Conn, first bool, f
 		_ = old.Close()
 	}
 	go c.read(ws, gen)
-	// caught speaks of an open socket: one that dropped meanwhile, and that
-	// down already marked closed, stays not caught (#155).
 	if from.IsZero() {
-		f.mu.Lock()
-		f.caught = f.conn == ws
-		f.mu.Unlock()
 		return nil
 	}
 	read, err := c.catchUp(ctx, from)
