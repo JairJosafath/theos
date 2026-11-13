@@ -48,7 +48,7 @@ check "it names the target" "$(grep -c "^README.md:1: links to docs/gone.md, whi
 
 tree
 echo 'ok' >"$T/r/README.md"
-echo '[old](https://github.com/JairJosafath/c4factory/issues/1) [gone](gone.md)' >"$T/r/docs/plans/done/p.md"
+echo '[old](https://github.com/JairJosafath/c4factory/issues/1) [ok](../../../README.md)' >"$T/r/docs/plans/done/p.md"
 echo '[old](https://github.com/JairJosafath/c4factory/issues/1)' >"$T/r/docs/design-history.md"
 echo '[gone](gone.md)' >"$T/r/docs/screenshots/s.md"
 echo '[its own](docs/style/go.md)' >"$T/r/templates/x/README.md"
@@ -64,5 +64,24 @@ tree
 echo 'Two: [a](README.md) and [b](gone.md "title").' >"$T/r/README.md"
 run
 check "the second link on a line is checked, a title ignored" "$(grep -c 'links to gone.md' <<<"$out")" 1
+
+tree
+echo 'ok' >"$T/r/README.md"
+echo 'See [gone](gone.md).' >"$T/r/docs/plans/done/p.md"
+run
+check "a broken relative link in a done plan fails (#243)" "$rc" 1
+check "it names the done plan and line (#243)" "$(grep -c "^docs/plans/done/p.md:1: links to gone.md, which doesn't exist" <<<"$out")" 1
+
+tree
+printf '%s\n' 'Code: `[x](gone.md)` and `a` then [ok](README.md).' >"$T/r/README.md"
+cp "$T/r/README.md" "$T/r/docs/plans/done/p.md"
+sed -i 's#(README.md)#(../../../README.md)#' "$T/r/docs/plans/done/p.md"
+run
+check "link-like text in an inline code span is not a link (#243)" "$rc" 0
+
+tree
+printf '%s\n' 'Code: `[x](gone.md)` and [y](gone.md).' >"$T/r/README.md"
+run
+check "a real link after a code span is still checked (#243)" "$(grep -c 'links to gone.md' <<<"$out")" 1
 
 exit $fail

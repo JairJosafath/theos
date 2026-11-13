@@ -4,9 +4,12 @@
 # theos's history comes from (a number from there is plain text, c4factory
 # #1094), and every relative link names a file or directory that exists.
 # Prints each bad link as FILE:LINE: why, and exits 1.
-# History is left alone: docs/plans/done/, docs/design-history.md and
-# docs/screenshots/ say what was true when they were written. A template's
-# Markdown (templates/) links inside the repository it becomes, not this one.
+# History is left alone: docs/design-history.md and docs/screenshots/ say what
+# was true when they were written, and docs/plans/done/ may name c4factory as
+# it was then. But a done plan's relative links are checked (#243): a plan moved
+# there keeps links that must still resolve. A template's Markdown (templates/)
+# links inside the repository it becomes, not this one. Inline code spans are
+# not links.
 # hack/check-doc-links_test.sh runs it on the repository in make check.
 #
 #   hack/check-doc-links.sh [ROOT]   the tracked *.md under ROOT (default: the repository)
@@ -18,9 +21,11 @@ cd "$ROOT"
 fail=0
 while IFS= read -r f; do
   case $f in
-  docs/plans/done/* | docs/design-history.md | docs/screenshots/* | templates/* | */node_modules/*) continue ;;
+  docs/design-history.md | docs/screenshots/* | templates/* | */node_modules/*) continue ;;
   esac
   dir=$(dirname "$f")
+  history=0
+  [[ $f == docs/plans/done/* ]] && history=1
   n=0
   fence=0
   while IFS= read -r line || [ -n "$line" ]; do
@@ -32,11 +37,16 @@ while IFS= read -r f; do
     fi
     [ "$fence" = 0 ] || continue
     rest=$line
+    # An inline code span is text, not a link (#243).
+    while [[ $rest =~ \`[^\`]*\` ]]; do
+      rest=${rest/"${BASH_REMATCH[0]}"/}
+    done
     while [[ $rest =~ \]\(([^\)\ ]+)[^\)]*\) ]]; do
       target=${BASH_REMATCH[1]}
       rest=${rest#*"${BASH_REMATCH[0]}"}
       case $target in
       *github.com/JairJosafath/c4factory*)
+        [ "$history" = 0 ] || continue
         echo "$f:$n: links to the private c4factory repository; write c4factory #N as plain text"
         fail=1
         ;;
