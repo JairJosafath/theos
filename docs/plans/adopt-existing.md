@@ -272,9 +272,12 @@ Choices the issue left open, and why:
 
 Left as it is:
 
-- The UI shows the condition's reason and message, and nothing of
-  `status.standardAdoption`; `describe.ts` still describes
-  `StandardFilesDiffer` as a failed adoption.
+- The UI showed the condition's reason and message, and nothing of
+  `status.standardAdoption`. Answered by #172: one rule in
+  `ui/src/model/lifecycle.ts` (`standardWaits`) that the Container's page,
+  its next step and Needs you read; the page links the pull request while
+  it is open and lists the files it writes, and `describe.ts` has a
+  sentence for each of the four reasons.
 - A status write lost right after the pull request opened opens no second
   one: `OpenPullRequest` returns the open one for the head, on every
   adapter. The next pass pushes the branch again, a new commit with the
