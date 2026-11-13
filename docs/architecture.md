@@ -456,7 +456,7 @@ lives in the catalog's templates.
    (`DEFAULT_COMPONENTS`, overridable with `FACTORY_COMPONENTS`), finds the agent
    sandboxes by their label, and reads the operator's `--max-agent-sandboxes`.
 3. It returns states, restarts, usage and the last hour of samples, never a pod
-   spec.
+   spec. A sample holds the cluster's CPU and memory, every node's added up.
 4. The browser combines that with the Tasks, Agents, Containers, Sessions,
    Crews and Briefs it watches (`src/model/factory.ts`): the board, each Task's timeline
    from `status.history`, the Crews, the time per stage and the "Needs a look"

@@ -99,9 +99,9 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   _Releases_, and _Time & tokens_ (where the time goes across Tasks, and what
   they used). Each Task and Crew opens its page.
 - **Factory**, a dashboard: a card for each part of the factory, healthy or
-  not, with restarts, CPU and memory; the node's usage; the last hour (API
-  server response, CPU, memory) side by side; the agent slots and who waits
-  for one.
+  not, with restarts, CPU and memory; each node's usage; the last hour (API
+  server response, and the CPU and memory of all nodes together) side by
+  side; the agent slots and who waits for one.
 - **About**: the versions running, and links to the running release's design
   and release notes, and to the repository.
 
@@ -308,7 +308,10 @@ and metrics-server's figures itself and sends only a
 summary (component states, restarts, CPU and memory, agent slots and sandboxes,
 the last hour), never a pod spec. It samples every 15 seconds in the background
 (`FACTORY_SAMPLE_SECONDS`; 0 turns it off) and keeps an hour in memory, timing
-its own API calls as the API server's response time. Components are found by
+its own API calls as the API server's response time. A sample's CPU and memory
+are the cluster's: every node's usage added up, which the chart draws against
+what the nodes can allocate together, next to what CI and the agents used on
+whichever node. Components are found by
 namespace and labels; `FACTORY_COMPONENTS` (a JSON list of `{key, name,
 namespace, selector, optional}`) replaces the built-in list. Without
 metrics-server (`make metrics-server`) the view shows states but no figures.
