@@ -39,7 +39,7 @@ once ([Why Kubernetes](#why-kubernetes)).
 | Container type | `static-site`, `service`, `job`, `worker`, `mobile-app`, `cli`, `extension`, `operator`, `function`. The operator never branches on a type; a test keeps it so. |
 | Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
-| Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
+| Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools, whose alerts file bugs. |
 | Where it runs | One Kubernetes cluster per install, of any number of nodes. Kind on one machine is the test rig and a way to try it, never the purpose ([Why Kubernetes](#why-kubernetes)). |
 
 ### Why Kubernetes
@@ -1739,15 +1739,17 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   second. A new version or another state files again; recovering to `Healthy`
   files nothing. A failure to reach the Git host is not filed.
   (`model.DeployMonitorDue`.)
-- **Alerts** ([plans/alerts.md](plans/alerts.md), #64; the rules and the
-  `AlertSource` kind are built, the receiver is still to come): the operator
+- **Alerts** ([plans/alerts.md](plans/alerts.md), #64; built, set up as
+  [alerts.md](alerts.md) shows): the operator
   monitors no app, it listens to the tools that do. An `AlertSource` in the
   Project's namespace names one sender (`alertmanager`, `sentry` or
   `generic`), the Secret that checks its deliveries, and how an alert finds
   its Container: the label `theos_container`, else a route, the namespace an `argoCD`
   target deploys to, or the Sentry project. The receiver of the Git host's
   deliveries takes them on `/alerts/<namespace>/<alertsource>`; none is
-  taken unauthenticated. A firing alert files one issue in its Container's
+  taken unauthenticated. The chart lets only the senders `alerts.from`
+  names reach it, and gives the path an Ingress with TLS for a sender
+  outside the cluster (`alerts.ingress`, off by default). A firing alert files one issue in its Container's
   repository, `Alert: <name>`, labelled `kind/bug`, `source/monitor` and
   `status/proposed`, so triage decides and the Crew's approval rules hold:
   since when, what is deployed, the link back, and what the alert says, cut
@@ -2009,8 +2011,10 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
   may be adopted with `spec.adopt`); Component and Code
   levels; provisioning data stores (a Connector only scaffolds: the files
   it writes may run the store, as postgres's StatefulSet, dynamodb's table or rds's cluster,
-  but the operator creates none); monitoring the apps beyond what a deploy
-  target's tool reports.
+  but the operator creates none); monitoring the apps itself, beyond what a
+  deploy target's tool reports and the alerts the tools that watch them
+  deliver (**Alerts**, [alerts.md](alerts.md)): theos scrapes no app and
+  holds no alert rules.
 - **One Git host.** Gitea is the only one built; another plugs into the
   [ports](#factory-components-ports-and-adapters) (#1094).
 - **Shared files between layers.** A Connector often needs a line in a file
