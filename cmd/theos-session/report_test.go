@@ -22,10 +22,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,6 +35,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/taskfacts"
 )
 
 // reportFixture is the report's fixture, which internal/model's test and the
@@ -421,16 +424,12 @@ func TestReportMain(t *testing.T) {
 	}
 }
 
-// What the fixture has no Task for, and the command's mapping decides
-// (docs/plans/results-report.md, "What step 2 found"): a Task ended with no
-// change only when its Succeeded condition says NothingToDo and it is
-// Merged, a change is unreviewed only where the Crew asked for no review and
-// none was made, and a size that says nothing was not read.
+// What the fixture has no Task for, and the command's own reading decides
+// (docs/plans/results-report.md, "What step 2 found"): the name, the pull
+// request and the repository, when it finished, a size that says nothing
+// was not read, and a Score with no verdicts yet. The metric facts are
+// taskfacts.Metric's (#142), whose own table holds them (internal/taskfacts).
 func TestReportTask(t *testing.T) {
-	succeeded := func(reason string) []metav1.Condition {
-		return []metav1.Condition{{Type: "Progressing", Reason: model.ReasonNothingToDo},
-			{Type: conditionSucceeded, Reason: reason}}
-	}
 	task := func(change func(*c4v1beta1.Task)) model.ReportTask {
 		task := &c4v1beta1.Task{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "checkout-1"},
 			Spec:   c4v1beta1.TaskSpec{ContainerRef: c4v1beta1.LocalRef{Name: "api"}},
@@ -445,6 +444,10 @@ func TestReportTask(t *testing.T) {
 		plain.PersonCommits != nil || !plain.Completed.IsZero() {
 		t.Errorf("a merged Task that says no more reads as %+v", plain)
 	}
+	at := metav1.NewTime(time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC))
+	succeeded := func(reason string) []metav1.Condition {
+		return []metav1.Condition{{Type: taskfacts.ConditionSucceeded, Status: metav1.ConditionTrue, Reason: reason}}
+	}
 	for name, c := range map[string]struct {
 		change func(*c4v1beta1.Task)
 		holds  func(model.ReportTask) bool
@@ -453,29 +456,11 @@ func TestReportTask(t *testing.T) {
 			func(r model.ReportTask) bool { return r.NoChange }},
 		"merged for another reason: a change": {func(t *c4v1beta1.Task) { t.Status.Conditions = succeeded("Merged") },
 			func(r model.ReportTask) bool { return !r.NoChange }},
-		"only Progressing says so: a change": {func(t *c4v1beta1.Task) { t.Status.Conditions = succeeded("Merged")[:1] },
-			func(r model.ReportTask) bool { return !r.NoChange }},
-		"failed, not merged: no ending with no change": {func(t *c4v1beta1.Task) {
-			t.Status.Phase, t.Status.Conditions = c4v1beta1.TaskFailed, succeeded(model.ReasonNothingToDo)
-		}, func(r model.ReportTask) bool { return !r.NoChange }},
-		"no review asked and none made: unreviewed": {func(t *c4v1beta1.Task) {
-			t.Status.Approval = &c4v1beta1.TaskApproval{Require: c4v1beta1.ApprovalNone}
-		}, func(r model.ReportTask) bool { return r.Unreviewed && !r.ApprovedByPerson }},
-		"no review asked, one made: reviewed": {func(t *c4v1beta1.Task) {
-			t.Status.Approval = &c4v1beta1.TaskApproval{Require: c4v1beta1.ApprovalNone}
-			t.Status.Review = &c4v1beta1.TaskReview{}
-		}, func(r model.ReportTask) bool { return !r.Unreviewed }},
-		"a person approved the held change": {func(t *c4v1beta1.Task) {
-			t.Status.Approval = &c4v1beta1.TaskApproval{Require: c4v1beta1.ApprovalPerson, ApprovedBy: "ada"}
-		}, func(r model.ReportTask) bool { return r.ApprovedByPerson && !r.Unreviewed }},
-		"a person approved the spec": {func(t *c4v1beta1.Task) {
-			t.Status.Spec = &c4v1beta1.TaskSpecResult{ApprovedBy: "ada"}
-		}, func(r model.ReportTask) bool { return r.ApprovedByPerson }},
+		"when it finished": {func(t *c4v1beta1.Task) { t.Status.CompletedAt = &at },
+			func(r model.ReportTask) bool { return r.Completed.Equal(at.Time) }},
 		"a size of files only was read": {func(t *c4v1beta1.Task) {
 			t.Status.PullRequestSize = c4v1beta1.TaskPullRequestSize{Files: 1}
 		}, func(r model.ReportTask) bool { return r.Size != nil && *r.Size == model.ReportSize{} }},
-		"no person's commit is a count, of none": {func(t *c4v1beta1.Task) { t.Status.PersonCommits = new(int32) },
-			func(r model.ReportTask) bool { return r.PersonCommits != nil && *r.PersonCommits == 0 }},
 		"a Score with no verdicts yet": {func(t *c4v1beta1.Task) {
 			t.Spec.Kind = c4v1beta1.TaskScore
 			t.Spec.Score = &c4v1beta1.TaskScoreSpec{ScorerRef: c4v1beta1.LocalRef{Name: "quality"}, ScorerGeneration: 3,
@@ -488,5 +473,48 @@ func TestReportTask(t *testing.T) {
 		if got := task(c.change); !c.holds(got) {
 			t.Errorf("%s: read as %+v", name, got)
 		}
+	}
+}
+
+// #142: the report reads a Task's metric facts through the one mapping the
+// operator's Prometheus series read them through, taskfacts.Metric, and adds
+// only its own. Every Task of the fixture says so, and the fixture holds
+// what tells the ways a Task ends done apart: its merged Tasks carry the
+// Succeeded condition the operator writes, reason Merged where a pull
+// request merged, Scored on a judge's run, and NothingToDo on one Task. A
+// mapping that took any Succeeded=True for "no change" then gives another
+// report (TestReportOfTheFixture).
+func TestReportReadsATaskAsTheSeriesDo(t *testing.T) {
+	reasons := map[string]int{}
+	tasks := fixtureTasks(t)
+	for i := range tasks.Items {
+		task := &tasks.Items[i]
+		if got, want := reportTask(task, "").TaskMetricFacts, taskfacts.Metric(task); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: the report reads its metric facts as\n%+v, and the series as\n%+v", task.Name, got, want)
+		}
+		if task.Status.Phase != c4v1beta1.TaskMerged {
+			continue
+		}
+		done := apimeta.FindStatusCondition(task.Status.Conditions, taskfacts.ConditionSucceeded)
+		if done == nil || done.Status != metav1.ConditionTrue {
+			t.Errorf("%s is Merged with no Succeeded=True condition: the API serves one for every Task that "+
+				"ended done", task.Name)
+			continue
+		}
+		reasons[done.Reason]++
+		want := "Merged"
+		switch {
+		case task.Spec.Kind == c4v1beta1.TaskScore:
+			want = "Scored"
+		case task.Status.PullRequest == 0:
+			want = model.ReasonNothingToDo
+		}
+		if done.Reason != want {
+			t.Errorf("%s ended done with reason %s, want %s: what the operator writes for it", task.Name,
+				done.Reason, want)
+		}
+	}
+	if reasons["Merged"] != 16 || reasons["Scored"] != 10 || reasons[model.ReasonNothingToDo] != 1 {
+		t.Errorf("the fixture's merged Tasks ended done as %v, want 16 Merged, 10 Scored and 1 NothingToDo", reasons)
 	}
 }

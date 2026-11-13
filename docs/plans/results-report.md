@@ -191,25 +191,26 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
   is made after the cluster was read, and both files are rendered before
   either is written. `TestReportChecksBeforeItReadsOrWrites` holds each to a
   cluster never opened and a folder with nothing new in it.
-- **The mapping is the command's, and is the operator's written again.**
-  `reportTask` (`cmd/theos-session/report.go`) reads the metric facts as
-  `taskMetricFacts` does in `internal/controller`, which a command of a
+- **The mapping was the command's, and the operator's written again;**
+  "One mapping for the series and the report", below, made it one (#142).
+  `reportTask` (`cmd/theos-session/report.go`) read the metric facts as
+  `taskMetricFacts` did in `internal/controller`, which a command of a
   devcontainer shouldn't link (the whole operator would come with it).
   `TestReportOfTheFixture` decodes `tasks.json` into `c4v1beta1.TaskList`,
   refusing a field the API's types don't have, runs the command on a fake
   cluster holding it, and compares the two files it wrote with
   `report.json` and `report.md` byte for byte. Tried: a size always read,
   and a person's approval of a held change left out, each failed it.
-- **What the fixture can't hold of the mapping is table-tested beside it**
-  (`TestReportTask`). The fixture has one Task with a `Succeeded` condition,
-  the one that ended with no change, so reading any `Succeeded` condition as
-  "no change" passed the fixture; the table has a merged Task whose reason
-  is another, one that only `Progressing` says it of, and a failed one.
-  `Unreviewed` is read by the Prometheus series and by no number of the
-  report, so no report can show it wrong; the table holds it to the
-  operator's rule all the same. `status.pullRequestSize` is a struct the API
-  leaves out when it is empty: one that says nothing was not read, and one
-  that names only files (a rename) was read, as a change of no lines.
+- **What the fixture can't hold of the mapping is table-tested.** Of the
+  command's own reading, beside it (`TestReportTask`):
+  `status.pullRequestSize` is a struct the API leaves out when it is empty:
+  one that says nothing was not read, and one that names only files (a
+  rename) was read, as a change of no lines. Of the shared facts, in
+  `internal/taskfacts` (`TestEndedWithNoChange`, `TestMetric`): `Unreviewed`
+  is read by the Prometheus series and by no number of the report, so no
+  report can show it wrong, and a Task that only `Progressing` says
+  `NothingToDo` of, or a failed one, ended with no change no more than a
+  merged one.
 - **A merged Task's `repository` is its Container's `status.repositoryURL`**
   (decision 15), by namespace and name, read in one list of Containers. It
   is absent, not empty, for a Container deleted since or not scaffolded
@@ -259,6 +260,63 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
     the string; the rendering itself has not been looked at by a person, on
     GitHub or on another project's Git host.
 
+## One mapping for the series and the report
+
+GitHub issue #142, from the review of step 2. Written 2026-11-13.
+
+- **What was wrong.** Filling `model.TaskMetricFacts` from the API's Task
+  was written twice, in `taskMetricFacts` (`internal/controller`) and in
+  `reportTask` (`cmd/theos-session`), with "ended with no change" and the
+  `Succeeded` condition's name twice as well. The two had already come
+  apart: the operator's read a run's tokens and the command's did not,
+  which no number of the report shows. A rule changed on one side would
+  have left the dashboard and the report counting one Task differently,
+  with nothing failing.
+- **The mapping is `taskfacts.Metric`, in `internal/taskfacts`,** with
+  `EndedWithNoChange` and `ConditionSucceeded` beside it. The collector
+  (`FactoryMetrics.Collect`), the Scorer's and the release's "was this a
+  change" and `reportTask` call it; `reportTask` adds what the report alone
+  reads (the name, the pull request, the repository, when it finished, the
+  size, the Score). `internal/controller`'s `ConditionSucceeded` is that
+  constant.
+- **Why a package of its own.** `internal/model` takes plain values and
+  can't import `api/`; `api/v1beta1` imports nothing under `internal/`, so
+  it can't return `model.TaskMetricFacts`; `internal/controller` is the
+  whole operator, which the command doesn't link; and
+  `internal/sessionclient` is the Session's logic, which the operator
+  doesn't import. So the mapping is a layer between the API's types and
+  their clients ([architecture.md](../architecture.md), "Readings of the
+  API's resources"): it imports `api/v1beta1`, apimachinery and
+  `internal/model`, and nothing else of the module or of
+  controller-runtime. Its own test holds that (`TestImports`); the
+  compiler refuses it `internal/controller`. A depguard rule would say the
+  same in `make lint`; `.golangci.yml` is the owner's, so it is not added
+  here.
+- **`internal/model`'s test still reads the fixture its own way**
+  (`fixtureTask.reportTask`), since it can't import the API's types. That
+  is a reading of the fixture and not of a cluster, and the fixture now
+  fails it too if it takes a Task that ended done for one with no change.
+- **The fixture's merged Tasks say how they ended.** Each of the 27 Tasks
+  in phase Merged has the `Succeeded` condition the operator writes, status
+  True: reason `Merged` on the 16 with a pull request, `Scored` on the 10
+  Score Tasks, `NothingToDo` on `done-41`, as before. `report.json` and
+  `report.md` are unchanged: 13 merged and 1 ended with no change in the
+  period. The fixture has no Plan or Triage Task and none a Standard change
+  finished, so `PlanAccepted`, `Triaged` and `DoneByStandardChange` are in
+  `internal/taskfacts`' table only.
+- **Tried.** `EndedWithNoChange` taking any `Succeeded=True` of a Merged
+  Task for "no change": with the fixture as it was, `TestReportOfTheFixture`
+  passed; with the conditions in, it fails, on both files and on what the
+  command says (0 merged and 14 ended with no change, for 13 and 1).
+- **What holds the two readers to it.**
+  `TestReportReadsATaskAsTheSeriesDo` (`cmd/theos-session`): every Task of
+  the fixture gives `reportTask` the facts `taskfacts.Metric` gives, and the
+  fixture's merged Tasks carry the reasons above.
+  `TestFactoryMetricsCountAChangeByHowTheTaskEnded`
+  (`internal/controller`): a scrape counts a Task that ended `Merged` or
+  `DoneByStandardChange` as a merged change and one that ended
+  `NothingToDo` as none.
+
 ## What the fixture holds
 
 `tasks.json` is 35 Tasks; 13 merged in the period. A rule is held on both
@@ -284,6 +342,7 @@ directory holds it as a repository holds a release's: `report.md`, and the
 | A person's approval, of a spec or a held change | `spec-16`, `payments-13` |
 | The sizes' bounds | `spec-16` at 99 lines and `payments-13` at 100, `checkout-18` at 499 and `search-15` at 500, `catalog-17` at 1000 |
 | A Benchmark's run and a judge run are no failed Task | `bench-36`, `score-quality-17` |
+| Only `NothingToDo` is an ending with no change (Go's alone, #142) | `done-41` ended `NothingToDo`; the 16 merged Tasks with a pull request have `Succeeded` with reason `Merged`, the 10 Score Tasks with `Scored` |
 | Only a Scorer's newest generation counts | `score-quality-19` is of generation 1 |
 | Text is printed as text | `score-tone-19`'s criterion has a pipe, a tag, backticks and a link |
 
@@ -298,6 +357,8 @@ ignores (their names are Kubernetes names; `compareText` has its own test).
   `make ui-test` pass.
 - Step 2: `go test ./cmd/theos-session -run Report` and
   `hack/release-notes_test.sh` pass.
+- The one mapping (#142): `go test ./internal/taskfacts ./cmd/theos-session`
+  and `go test ./internal/controller -run TestFactoryMetrics` pass.
 - Changing a rule the table above lists, on either side, fails a test.
   Tried on 2026-11-10, one change at a time. In Go, each of these failed
   Go's test and, once the fixture was written again with `-update`, the

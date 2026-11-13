@@ -19,8 +19,6 @@ package controller
 import (
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
 )
@@ -67,17 +65,5 @@ func TestWithoutNothing(t *testing.T) {
 	plain := model.RunState{Started: true, Done: true, Result: &model.RunResult{Commit: "abc"}}
 	if got := withoutNothing(task, status, plain); got.Result != plain.Result {
 		t.Error("a run with a change was touched")
-	}
-
-	// A Task that ended this way is told from one that merged a change.
-	done := &c4v1beta1.Task{Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskMerged, Conditions: []metav1.Condition{
-		{Type: ConditionSucceeded, Status: metav1.ConditionTrue, Reason: model.ReasonNothingToDo}}}}
-	merged := &c4v1beta1.Task{Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskMerged, Conditions: []metav1.Condition{
-		{Type: ConditionSucceeded, Status: metav1.ConditionTrue, Reason: "Merged"}}}}
-	if !endedWithNoChange(done) || endedWithNoChange(merged) || endedWithNoChange(&c4v1beta1.Task{}) {
-		t.Error("endedWithNoChange tells a Task with nothing to do from a merged one wrongly")
-	}
-	if taskMetricFacts(done).NoChange != true || taskMetricFacts(merged).NoChange {
-		t.Error("the metrics' facts don't say which Task merged nothing")
 	}
 }

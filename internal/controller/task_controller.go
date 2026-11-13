@@ -41,14 +41,16 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/taskfacts"
 )
 
 // Task condition types.
 const (
 	// ConditionProgressing says what the Task is doing or waiting for.
 	ConditionProgressing = "Progressing"
-	// ConditionSucceeded is True once merged and False once failed.
-	ConditionSucceeded = "Succeeded"
+	// ConditionSucceeded is True once merged and False once failed. The
+	// name is taskfacts', which reads how a Task ended for the numbers.
+	ConditionSucceeded = taskfacts.ConditionSucceeded
 )
 
 // Polling intervals for what the cluster doesn't tell us about.

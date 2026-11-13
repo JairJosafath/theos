@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"time"
 
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,6 +34,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/taskfacts"
 )
 
 const reportUsage = `theos-session report writes the factory's numbers over a period as one page and
@@ -59,10 +59,6 @@ that can't be one, writes nothing.
 
 Flags:
 `
-
-// conditionSucceeded is the Task condition whose reason says how a Task
-// ended (internal/controller's ConditionSucceeded).
-const conditionSucceeded = "Succeeded"
 
 // reportFlags are what a person says of the report they want.
 type reportFlags struct {
@@ -306,48 +302,21 @@ func reportTasks(tasks *c4v1beta1.TaskList, containers *c4v1beta1.ContainerList)
 }
 
 // reportTask is what the report reads of task, whose Container's repository
-// is at repository. Its metric facts are the ones the operator's
-// taskMetricFacts reads (internal/controller/factory_metrics.go), so the
-// report and the Prometheus series count a Task alike; the report's fixture
-// holds this mapping to the UI's numbers (TestReportOfTheFixture).
+// is at repository. Its metric facts are taskfacts.Metric's, which the
+// operator's Prometheus series read too (#142), so the report and the series
+// count a Task alike; what is added here is what the report alone reads. The
+// report's fixture holds the whole to the UI's numbers
+// (TestReportOfTheFixture).
 func reportTask(task *c4v1beta1.Task, repository string) model.ReportTask {
 	status := &task.Status
 	t := model.ReportTask{
-		TaskMetricFacts: model.TaskMetricFacts{
-			Namespace:    task.Namespace,
-			Container:    task.Spec.ContainerRef.Name,
-			Kind:         string(task.Spec.Kind),
-			Benchmark:    task.Spec.Benchmark != nil,
-			Phase:        string(status.Phase),
-			Round:        int(status.Round),
-			CostMilliUSD: status.CostMilliUSD,
-		},
-		Name:        task.Name,
-		PullRequest: int(status.PullRequest),
-		Repository:  repository,
-	}
-	if t.Kind == "" {
-		t.Kind = string(c4v1beta1.TaskImplement)
-	}
-	if n := status.PersonCommits; n != nil {
-		commits := int(*n)
-		t.PersonCommits = &commits
+		TaskMetricFacts: taskfacts.Metric(task),
+		Name:            task.Name,
+		PullRequest:     int(status.PullRequest),
+		Repository:      repository,
 	}
 	if status.CompletedAt != nil {
 		t.Completed = status.CompletedAt.Time
-	}
-	spec, approval := status.Spec, status.Approval
-	t.ApprovedByPerson = spec != nil && spec.ApprovedBy != "" || approval != nil && approval.ApprovedBy != ""
-	t.Unreviewed = approval != nil && approval.Require == c4v1beta1.ApprovalNone && status.Review == nil
-	done := apimeta.FindStatusCondition(status.Conditions, conditionSucceeded)
-	t.NoChange = status.Phase == c4v1beta1.TaskMerged && done != nil && done.Reason == model.ReasonNothingToDo
-	for _, step := range status.History {
-		t.History = append(t.History, model.TaskMetricStep{At: step.At.Time, Phase: string(step.Phase),
-			Reason: step.Reason})
-	}
-	for _, run := range status.Runs {
-		t.Runs = append(t.Runs, model.TaskMetricRun{Agent: run.Agent, Harness: run.Harness, Model: run.Model,
-			Role: run.Role, CostMilliUSD: run.CostMilliUSD})
 	}
 	// The size is read from the Git host when a Task merges; one that says
 	// nothing was not read, which is not a change of no lines.
