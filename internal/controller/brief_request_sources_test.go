@@ -110,6 +110,13 @@ var _ = Describe("Brief spec.requestSources", func() {
 		Expect(k8sClient.Create(ctx, sourcing("project", jiraSource("support", "SHOP"),
 			jiraSource("shop", "shop")))).To(MatchError(ContainSubstring(
 			"at most one request source per Jira site and project: an item is read once")))
+		// The same cloudID and project under another site is the same
+		// project: the rule's two sides apart (#160).
+		sameCloud := jiraSource("shop", "SHOP")
+		sameCloud.Jira.Site = "https://other.atlassian.net"
+		Expect(k8sClient.Create(ctx, sourcing("cloud-twice", jiraSource("support", "SHOP"),
+			sameCloud))).To(MatchError(ContainSubstring(
+			"at most one request source per Jira site and project: an item is read once")))
 		other := jiraSource("shop", "SHOP")
 		other.Jira.Site = "https://other.atlassian.net"
 		other.Jira.CloudID = "11111111-1111-4111-8111-111111111111"
@@ -132,8 +139,8 @@ var _ = Describe("Brief spec.requestSources", func() {
 		for i := range 11 {
 			eleven = append(eleven, linearSource(fmt.Sprintf("team-%d", i), fmt.Sprintf("T%d", i)))
 		}
-		Expect(k8sClient.Create(ctx, sourcing("eleven", eleven...))).To(MatchError(ContainSubstring(
-			"spec.requestSources")))
+		Expect(k8sClient.Create(ctx, sourcing("eleven", eleven...))).To(MatchError(And(
+			ContainSubstring("spec.requestSources"), ContainSubstring("Too many"))))
 		mustCreate(sourcing("ten", eleven[:10]...))
 	})
 
