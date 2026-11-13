@@ -351,6 +351,41 @@ describe('linksOf and systemsForPicker', () => {
   })
 })
 
+describe('two rows with one title (#175)', () => {
+  const twins = (kind: 'systems' | 'containers', names: string[]): StoryData => {
+    const story = sampleStory()
+    const meta = (name: string) => ({ name, namespace: 'webshop' })
+    if (kind === 'systems') {
+      story.systems = names.map((name) => ({ metadata: meta(name), spec: { displayName: 'Same title' } }))
+      story.containers = []
+    } else {
+      story.containers = names.map((name) => ({
+        metadata: meta(name),
+        spec: {
+          softwareSystemRef: { name: 'webshop-core' },
+          displayName: 'Same title',
+          type: 'service',
+          gitProviderRef: { name: 'gitea' },
+          frameworkRef: { name: 'go' },
+        },
+      }))
+    }
+    return story
+  }
+
+  it('offers systems of one title and one number of Containers in one order', () => {
+    const picked = (names: string[]) => systemsForPicker(twins('systems', names)).map((s) => s.name)
+    expect(picked(['b-system', 'a-system'])).toEqual(['a-system', 'b-system'])
+    expect(picked(['a-system', 'b-system'])).toEqual(['a-system', 'b-system'])
+  })
+
+  it('lists Container cards of one title in one order', () => {
+    const cards = (names: string[]) => containerNodes(twins('containers', names)).map((c) => c.name)
+    expect(cards(['b-api', 'a-api'])).toEqual(['a-api', 'b-api'])
+    expect(cards(['a-api', 'b-api'])).toEqual(['a-api', 'b-api'])
+  })
+})
+
 describe('linksOf for a system', () => {
   it("includes its parts' links with the outside world, and skips links inside it", () => {
     const links = linksOf(demoStory(NOW), 'SoftwareSystem', 'webshop-core')
