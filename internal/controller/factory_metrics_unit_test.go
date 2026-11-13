@@ -134,6 +134,11 @@ theos_agent_runs_tokens{agent="implementer",harness="claude-code",model="claude-
 // read a Task through taskfacts.Metric, as theos-session report does, so a
 // Task that ended done counts as a merged change for every reason the
 // operator writes on its Succeeded condition but NothingToDo (#72).
+//
+// The facts are the same for both; the count is not yet. The
+// DoneByStandardChange case pins today's count of the series, a merged
+// change: theos-session report counts such a Task only when its
+// status.pullRequest is set. Both rules are internal/model's.
 func TestFactoryMetricsCountAChangeByHowTheTaskEnded(t *testing.T) {
 	ended := func(name, reason string) *c4v1beta1.Task {
 		return &c4v1beta1.Task{
@@ -143,6 +148,8 @@ func TestFactoryMetricsCountAChangeByHowTheTaskEnded(t *testing.T) {
 				{Type: ConditionSucceeded, Status: metav1.ConditionTrue, Reason: reason}}},
 		}
 	}
+	// orders-api-2 has no pull request: a merged change of the series today,
+	// and in no number of the report.
 	c := fake.NewClientBuilder().WithScheme(briefScheme(t)).WithObjects(ended("orders-api-1", "Merged"),
 		ended("orders-api-2", reasonDoneByStandardChange), ended("orders-api-3", model.ReasonNothingToDo)).Build()
 	g := gomega.NewWithT(t)

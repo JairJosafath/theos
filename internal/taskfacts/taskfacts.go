@@ -17,8 +17,13 @@ limitations under the License.
 // Package taskfacts reads the API's Task into the plain values the factory's
 // numbers are computed from (#142). The operator's Prometheus series (#59,
 // internal/controller) and theos-session report (#66, cmd/theos-session)
-// both call it, so the two count a Task alike: a new fact, or a new way a
-// Task ends, is written here once.
+// both call it, so the two read the same facts of a Task: a new fact, or a
+// new way a Task ends, is written here once.
+//
+// What each counts from those facts is internal/model's rule, and the two
+// rules differ for a Task ended DoneByStandardChange: the series count every
+// Merged Task that is not NoChange as a merged change, the report only one
+// whose status.pullRequest is set.
 //
 // It imports the API's types, apimachinery and internal/model, and nothing
 // else of the module or of controller-runtime (TestImports), so a command in
@@ -33,8 +38,10 @@ import (
 )
 
 // ConditionSucceeded is the Task condition that is True once the Task ended
-// done and False once it failed. Its reason says how it ended: Merged,
-// PlanAccepted, Scored, Triaged, DoneByStandardChange or NothingToDo.
+// done and False once it failed. Its reason says how it ended: of a Merged
+// Task Merged, PlanAccepted, Scored, Triaged, DoneByStandardChange or
+// NothingToDo, and of a Benchmark's Task, which ends Approved and never
+// merges, Approved.
 const ConditionSucceeded = "Succeeded"
 
 // EndedWithNoChange reports whether the Task ended done with nothing merged:
