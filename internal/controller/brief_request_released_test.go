@@ -143,7 +143,7 @@ var _ = Describe("Brief requests shipped", func() {
 			g.Expect(issue.Closed).To(BeTrue())
 			g.Expect(issue.Reason).To(Equal(ports.CloseCompleted))
 			g.Expect(comments).To(HaveLen(2))
-			g.Expect(comments[1]).To(Equal(model.ReleasedComment("cel-lens", []model.Shipped{{Tag: "v0.2.0", URL: url}}) +
+			g.Expect(comments[1]).To(Equal(model.ReleasedComment("cel-lens", []model.Shipped{{Tag: "v0.2.0", URL: url}}, nil) +
 				model.RequestReleasedMarker("cel-lens", 2) + "\n"))
 			g.Expect(comments[1]).To(ContainSubstring("Shipped in v0.2.0: " + url))
 			issue, comments = tr.issue(early)

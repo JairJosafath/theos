@@ -59,6 +59,8 @@ import (
 	"github.com/JairJosafath/theos/internal/adapters/gitea"
 	"github.com/JairJosafath/theos/internal/adapters/github"
 	"github.com/JairJosafath/theos/internal/adapters/gitlab"
+	"github.com/JairJosafath/theos/internal/adapters/jira"
+	"github.com/JairJosafath/theos/internal/adapters/linear"
 	"github.com/JairJosafath/theos/internal/adapters/localenv"
 	"github.com/JairJosafath/theos/internal/adapters/matrix"
 	"github.com/JairJosafath/theos/internal/buildinfo"
@@ -109,6 +111,7 @@ func main() {
 	var uiServiceAccount string
 	var modelProxyURL string
 	var chatHomeserver string
+	var linearAPIURL, jiraAPIURL string
 	var gitEventsURL string
 	var gitEventsAddr string
 	var alertDrainTimeout time.Duration
@@ -201,6 +204,11 @@ func main() {
 	flag.StringVar(&chatHomeserver, "chat-homeserver", "",
 		"The Matrix homeserver of a Chat that names none, such as the chart's in-cluster one. None: each Chat "+
 			"names its homeserver.")
+	flag.StringVar(&linearAPIURL, "linear-api-url", linear.APIURL,
+		"Linear's GraphQL address, which a Brief's request source on Linear is read and answered at.")
+	flag.StringVar(&jiraAPIURL, "jira-api-url", jira.APIURL,
+		"Atlassian's API gateway, which a Brief's request source on Jira Cloud is read and answered at, "+
+			"with the site's cloud ID: <url>/ex/jira/<cloudID>.")
 	flag.StringVar(&gitEventsURL, "git-events-url", "",
 		"The base address the Git host delivers events to, such as http://theos-git-events.<namespace>.svc:8082: "+
 			"each GitProvider's hook delivers to <url>/git-events/<namespace>/<name>. None: no hook, and the "+
@@ -542,12 +550,16 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "crew")
 		os.Exit(1)
 	}
+	// A Brief reads requests from its releases repositories' GitHub issues
+	// and from its request sources on Linear and Jira Cloud.
+	trackers := ports.IssueTrackers{model.TrackerGitHub: github.Client{},
+		model.TrackerLinear: linear.Client{APIURL: linearAPIURL}, model.TrackerJira: jira.Client{Address: jiraAPIURL}}
 	if err := (&controller.BriefReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		APIReader:       mgr.GetAPIReader(),
 		Git:             gitClient{},
-		Issues:          ports.IssueTrackers{model.TrackerGitHub: github.Client{}},
+		Issues:          trackers,
 		Recorder:        mgr.GetEventRecorder("brief"),
 		GitEvents:       gitEvents,
 		SharedSecrets:   sharedSecrets,

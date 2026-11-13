@@ -1458,8 +1458,30 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   each, and closes it once shipped. A source is a Linear team or a Jira
   project and a label: an open item with the label is a request (`Ask` by
   default), named `<source>:<key>` (`product:ENG-412`); its author, when
-  the tracker names one, is a display name kept as data. The operator
-  doesn't read sources yet (docs/plans/requests-and-chat.md, step 10).
+  the tracker names one, is a display name kept as data. The operator reads
+  each source every ten minutes, as it reads GitHub, and nothing of one in
+  `Off`. A tracker's item goes the way a GitHub request goes, and the
+  operator writes on it once per stage, its markers as the comment's last
+  lines: `planned` when the round is applied (the issues it became, each
+  with its link, and the release; or the round's reason for skipping it,
+  then closed as not planned), `declined` (closed as not planned) and
+  `released` once every issue it became is closed and released (where it
+  shipped and each issue's merged pull request, then closed as completed).
+  Each issue a round files for a request, from any source, links it back.
+  An item's text is data: nothing of its description is in `needsYou`
+  before a person accepts; its title and description, cut at 4000
+  characters, are taken once on accept and reach the planner only in
+  `model/requests.yaml`, and `brief.md` names the request by its source
+  and key. Taking the label off reads as closing the item: the request
+  leaves `status.requests`, and the factory writes nothing more on the item
+  and doesn't close it; the label put back is a new request. An item the
+  operator closed is no new request, however long the tracker's search
+  lags behind it: before an item becomes a request the operator reads that
+  item on its own, and takes it only while it is open and labelled. A
+  workflow that can't close the item as asked is `Requests=False`,
+  `CannotClose`, the comment posted all the same and the close tried again
+  every ten minutes; a team or project the credential can't
+  see is `TrackerNotFound` (docs/plans/requests-and-chat.md, step 10).
 - **The person answers in prompts.** Reviewers' suggestions
   (`status/proposed`) and failed issues (`status/needs-human`) in the Brief's
   apps are listed in its status; a plan answers only those a new prompt
@@ -1645,7 +1667,7 @@ controllers call, not by one product's API;
 | Port | What the operator asks of it | Today |
 | --- | --- | --- |
 | GitHost | repositories, files, branches, tags, branch rules, pull requests, merges, commit statuses | Gitea |
-| Issues | issues, comments, labels, milestones, dependencies; request intake is a port of its own (`IssueTracker`: the open issues a Brief reads as requests, its answer on each, the close), with any tracker behind it | Gitea; GitHub for request intake |
+| Issues | issues, comments, labels, milestones, dependencies; request intake is a port of its own (`IssueTracker`: the open issues a Brief reads as requests, its answer on each, the close), with any tracker behind it | Gitea; GitHub, Linear and Jira Cloud for request intake |
 | CI | runs of a commit or tag, reruns, job logs, runners; the jobs that wait for a label's runner, and a runner registered for one job | Gitea Actions |
 | AgentAccess | a credential for one repository, and revoking it | Gitea bot users |
 | Registry | Go modules and the proxy; npm, PyPI and images to come | Gitea packages |
@@ -1683,8 +1705,10 @@ controllers call, not by one product's API;
   default to the host's own (`spec.packages` names another npm registry or
   PyPI index, and the npm scope), a DeployTarget names each deploy's tool.
 - **A user's credential never reaches code the agents wrote:** only the
-  operator reads the GitProvider's, a Brief's and a DeployTarget's Secrets,
-  and a registry Secret's `token`. The one exception is a registry Secret's
+  operator reads the GitProvider's, a Brief's (its releases entries' and its
+  request sources' Linear and Jira credentials) and a DeployTarget's
+  Secrets, and a registry Secret's `token`; never an agent, CI or
+  `theos-chat`. The one exception is a registry Secret's
   `readToken`, which the user makes for installs alone: it reaches agent
   pods and CI as the agent bot's token does.
 - **A port is swappable only once its fake and two real adapters pass its

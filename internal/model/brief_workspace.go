@@ -222,11 +222,7 @@ func renderBrief(ws BriefWorkspace) string {
 		}
 	}
 	if len(ws.Requests) > 0 {
-		fmt.Fprintf(&b, "\n## Requests (**new**)\n\nThe round takes %s from GitHub issues, listed in `%s`. Each is a request "+
-			"from the GitHub user who opened it, whom the person lets ask: plan it like a **new** prompt, within "+
-			"the idea. Answer each in `%s`: take it with the issues it became, or skip it saying why; "+
-			"the answer is posted on the issue.\n", count(len(ws.Requests), "request"), WorkspaceRequestsFile,
-			PlanRequestsFile)
+		writeRequests(&b, ws.Requests)
 	}
 	fmt.Fprintf(&b, "\n## Namespace\n\nThe Brief's namespace is `%s`; a Project the plan makes is named `%s`.\n",
 		ws.Namespace, ws.Namespace)
@@ -307,6 +303,35 @@ func renderParallel(ws BriefWorkspace) string {
 	}
 	return head + fmt.Sprintf("the operator's default. Write `%s` only when a **new** prompt asks how many to "+
 		"build at once.\n", PlanParallelFile)
+}
+
+// writeRequests is brief.md's section on the round's requests. A GitHub
+// request is from the GitHub user who opened it; a source's request is named
+// by its source and key alone, since whoever made a tracker's item chose the
+// name it shows, which is a field of model/requests.yaml and nothing more
+// (decision 15 of docs/plans/requests-and-chat.md).
+func writeRequests(b *strings.Builder, requests []Request) {
+	var issues int
+	var items []string
+	for _, r := range requests {
+		if r.Source == "" {
+			issues++
+		} else {
+			items = append(items, "`"+r.Name()+"`")
+		}
+	}
+	fmt.Fprintf(b, "\n## Requests (**new**)\n\nThe round takes %s, listed in `%s`.", count(len(requests), "request"),
+		WorkspaceRequestsFile)
+	if issues > 0 {
+		fmt.Fprintf(b, " Those from GitHub issues (%d) are each a request from the GitHub user who opened it, "+
+			"whom the person lets ask.", issues)
+	}
+	if len(items) > 0 {
+		fmt.Fprintf(b, " Those from the items of a request source (%d), a tracker the person reads requests "+
+			"from, are named by their source and key: %s.", len(items), strings.Join(items, ", "))
+	}
+	fmt.Fprintf(b, " Plan each like a **new** prompt, within the idea. Answer each in `%s`: take it with the "+
+		"issues it became, or skip it saying why; the answer is posted on the issue or item.\n", PlanRequestsFile)
 }
 
 // oneParagraph keeps a prompt inside its list item: its line breaks become spaces.

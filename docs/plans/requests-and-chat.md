@@ -955,6 +955,126 @@ What the step chose where the plan says nothing:
   unchanged), `brief.md`'s words for a tracker's request and the
   `Requests` condition's message.
 
+## Step 10 as built (#161)
+
+Checked before building, as decision 16 asks: the issues a round filed for
+a GitHub request did not link the request. `model.BriefIssueBodyUsing`
+wrote the planner's text, the `Builds on` and `Uses` lines and the marker,
+and nothing of the request; a planner may have named it in its own words,
+which no rule held. The line is now the operator's, for every source.
+
+What the step chose where the plan says nothing:
+
+- **The adapter's own settings ride on `ports.TrackerSource`,** in words
+  that name no product: `Label`, `Site` (where people open the pages),
+  `Instance` (the site's ID at the tracker: Jira's cloud ID) and `Close`, a
+  map from a close reason to its `CloseOutcome{Status, Resolution}`. Each
+  adapter is a `ports.TrackerAdapter` through `Tracker`: Linear reads the
+  Secret's `token`, Jira its `email` and `token`, and a source the adapter
+  refuses is `TrackerError` with the adapter's words. The operator's
+  `--linear-api-url` and `--jira-api-url` are the `linear.Client`'s
+  `APIURL` and the `jira.Client`'s `Address`; `TrackerSource.Address` stays
+  empty for a source, since no entry names one.
+- **One loop reads both kinds.** A repository and a source are each a
+  `requestOrigin` in the controller: what was read, the ETag, the answers
+  said and the shipped checks are kept in memory by an ID, `owner/name` or
+  `source:<name>`, which never equal each other. `model.RequestsRead` gains
+  `Source`; a source's listed item is a request whoever made it, with or
+  without an author (the label is the door, #160), and a GitHub issue is
+  one by `IsRequest`, as before. A source's mode defaults to `Ask` when the
+  API server didn't fill it.
+- **The markers go last on a tracker.** `model.MarkersLast` moves the stage
+  marker a comment starts with to its end, after the round's or the
+  release's marker, for a source's item: Linear's and Jira's comments show
+  `<!-- -->` as text (decision 17). A GitHub comment is as before.
+- **Each issue's link, and each merged pull request.** The planned comment
+  names each issue by its title and its page, as `status.issues` recorded
+  it, for every source, GitHub included. The released comment adds
+  `Merged in <pull request> for <issue>` for each issue whose Task merged
+  its work (`mergedItsIssue`, the rule a release waits on), read from the
+  namespace's Tasks when the comment is said; an issue no Task merged, one
+  closed by hand, is named in no such line. It is read when said, not kept
+  in status: a Task deleted before then leaves its line out.
+- **The link back is `Requested in <name>: <page>`,** one line per request
+  an answer `take`s the issue for, after the `Uses` lines and before the
+  marker, the request's name and page with no `<!--` in them. A pinned
+  `uses:` issue's body, edited when its packages publish, keeps it.
+- **`brief.md` counts a round's requests by kind:** those from GitHub
+  issues, from a user the person lets ask, and those from a request
+  source, by `source:key` alone. The display name is in
+  `model/requests.yaml` and nowhere else; a spec holds that the
+  description's words reach no other workspace file.
+- **`CannotClose`** is a port reason, the comment comes before the close in
+  every stage, and a request whose close failed stays in
+  `status.requests`, so a later read finds its comment by the marker, posts
+  none again and tries the close again. A workflow that has no way to close
+  an item won't have one a second later, so the refusal is kept in memory
+  (`requestsHeld`) and the close, with the fresh read of the source an owed
+  answer forces, waits for the suggestions recheck rather than coming on
+  every reconcile; the `Requests` condition says `CannotClose` all along
+  (review of #161, `TestACloseTheWorkflowRefusesWaitsForTheRecheck`). The
+  fake tracker gained `CannotClose(project, why)`, and `Unlabel` and
+  `Label`, an open item no list shows, for the specs.
+- **An item the Brief closed is no new request, whatever a lagging search
+  says** (review of #161). A source's list is a search, and Jira's index
+  can lag behind a change for minutes and sometimes longer (step 6 as
+  built, Jira): the item a round skipped, or the Brief declined or released
+  and closed, is listed again on the next fresh search. It was read as a
+  new request, `Accepted` in `On`, or in `Ask` while its number was still
+  in `accepted` (which nobody can have pruned inside the window, since
+  `status.requestSourcesSettled` can't list a number the search still
+  returns). A second round then planned it, posted a second comment (its
+  round marker differs, so the dedupe missed it) and could file its issues
+  twice. The fix rests on the item itself, not on the search: a tracker
+  whose list is a search is a `ports.IssueReader`, whose `IssueOpen(number)`
+  reads the one item, which no index lags (Jira's `GET /issue/{key}`,
+  Linear's `issue(id:)`), and says whether the list should show it: open
+  and carrying the label. Before an item of a source becomes a request, one
+  no request is kept for in `status.requests`, the Brief reads it so, and
+  leaves it out unless it is open. That holds after an operator restart and
+  through a lag of any length, since the truth is the item's state, which
+  the Brief's close set. In memory, as a cheap first filter, each read
+  keeps what the Brief closed (`forgetIssue`) and what `IssueOpen` said,
+  with when, until the list no longer shows the item: within a suggestions
+  recheck the item is not read again, so a lagging item costs one read per
+  recheck. A read that fails leaves the item out of that pass and names the
+  `Requests` condition. Both adapters and the fake tracker are
+  `IssueReader`s; the fake gained `Lag(project, on)`, a list that goes on
+  showing closed issues, and `jiratest` the same for its search. A
+  repository's GitHub list doesn't lag that way and its adapter is no
+  `IssueReader`: there the in-memory filter alone applies. A capability,
+  not a fifth `IssueTracker` method, so the GitHub adapter and its contract
+  suite are unchanged. A durable mark on the Brief (a list of closed
+  numbers in status) was the other way; it would grow with every request
+  and need its own pruning, where the item already holds the answer.
+- **The condition names a source as `request source <name>`,** in
+  `Reading the issues of …` and before a failure's message.
+
+Left as it is, and why:
+
+- **What the lag still leaves.** A person who reopens, or relabels, an
+  item the Brief closed less than a suggestions recheck ago waits up to that
+  recheck before it is a request again: the in-memory filter skips it
+  unread until then (after a restart, it is read at once). On a repository,
+  whose GitHub adapter is no `IssueReader`, a closed issue a lagging list
+  still showed after a restart, or after the recheck, would be read as a
+  request as before; GitHub's issue list has not been seen to lag so. The
+  envtest specs of the lag run on the fake tracker; how long a real Jira
+  site lags is still unread, and no longer matters to the outcome.
+- **Not done: an envtest of `Merged in <PR> for <issue>`** (review of
+  #161, a nit). The line is covered by `TestRequestComments` and
+  `TestMergedPulls`; seeing it end to end needs a merged Task of the
+  linter in the Brief's specs, which the Crew's release logic also reads,
+  and isn't cheap to make without a new helper. A follow-up.
+- **Whether Linear keeps a `<!-- -->` marker in a comment's body,** and
+  whether Jira's document format does, is still unread (step 6 as built,
+  Linear): the markers are the comment's last lines there, shown, and the
+  adapters find them as text. A workspace that strips them would see the
+  Brief answer twice; the guide (step 13) says so.
+- **No chart value** sets the two flags; that is step 13's, as is the
+  guide's page for each tracker. The UI (step 12) still reads a source's
+  request as `undefined #412`: steps 9, 10 and 12 ship in one release.
+
 ## How we will know #61 is done
 
 The issue's done-when, by step:

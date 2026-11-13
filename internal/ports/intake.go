@@ -169,6 +169,20 @@ type TeamMembers interface {
 	TeamMember(ctx context.Context, team, login string) (bool, error)
 }
 
+// IssueReader is an optional capability of an IssueTracker whose list is a
+// search, which may lag behind the issues themselves the way a search index
+// does: an issue closed a minute ago can still be listed (#161). It reads one
+// issue on its own, which never lags, so a Brief can tell an issue it closed
+// from a new one before it makes a request of it. Find it with a type
+// assertion; a tracker whose list doesn't lag needn't have it.
+type IssueReader interface {
+	// IssueOpen reports whether issue number is one ListOpenIssues lists
+	// now, read from the issue itself: open and, where the source has a
+	// Label, carrying it. An issue deleted, moved to another project or never
+	// filed is false, with no error.
+	IssueOpen(ctx context.Context, number int) (bool, error)
+}
+
 // TrackerSource is where a Brief reads requests: a project of a tracker.
 type TrackerSource struct {
 	// Tracker names the kind of tracker, as IssueTrackers key their
@@ -179,6 +193,27 @@ type TrackerSource struct {
 	// Project is the repository, team or project whose issues are read, as
 	// the tracker names it.
 	Project string
+	// Label, where set, is the label that makes an issue of Project a
+	// request: the tracker lists only the open issues that carry it.
+	Label string
+	// Site is the address people open the tracker's pages at, where it is
+	// not Address; the issues' links point to it.
+	Site string
+	// Instance is the tracker's own ID of the site, where its API's address
+	// names one.
+	Instance string
+	// Close says how an issue is closed for each reason, where the
+	// tracker's workflow takes names: an absent reason takes the adapter's
+	// default.
+	Close map[CloseReason]CloseOutcome
+}
+
+// CloseOutcome is how an issue is closed for one reason, as the tracker
+// names its states: the status it is moved to and the resolution it is
+// given, each optional.
+type CloseOutcome struct {
+	Status     string
+	Resolution string
 }
 
 // CredentialMissingError is a Secret whose data holds no whole credential

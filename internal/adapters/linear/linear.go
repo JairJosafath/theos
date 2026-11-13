@@ -18,11 +18,12 @@ limitations under the License.
 // Linear's GraphQL API: the open items of one team that carry one label are
 // the requests (docs/plans/requests-and-chat.md, decisions 13, 14 and 17 to
 // 20). Linear has no teams to ask about members of, so it is no
-// ports.TeamMembers. Nothing builds one yet: no Brief can name Linear until
-// the plan's steps 9 and 10.
+// ports.TeamMembers. A Brief's spec.requestSources entry builds one through
+// Client.Tracker (step 10).
 package linear
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -83,9 +84,37 @@ type Config struct {
 }
 
 // Client builds the issue tracker. HTTP is the client it calls Linear with,
-// a default one when nil.
+// a default one when nil. APIURL is where Linear is for every source that
+// names no address of its own, the package's APIURL when empty: the
+// operator's --linear-api-url.
 type Client struct {
-	HTTP *http.Client
+	HTTP   *http.Client
+	APIURL string
+}
+
+// SecretToken is the key of a source's Secret that holds the API key.
+const SecretToken = "token"
+
+var _ ports.TrackerAdapter = Client{}
+
+// Tracker is the adapter as a ports.TrackerAdapter: the tracker of
+// source.Project, the team's key, and source.Label, with the API key the
+// Secret's SecretToken holds. source.Address, else the Client's APIURL, is
+// where Linear is. A Secret without the key is a
+// ports.CredentialMissingError; a source the adapter can't read
+// ReasonTrackerError.
+func (c Client) Tracker(_ context.Context, source ports.TrackerSource,
+	secret map[string][]byte) (ports.IssueTracker, error) {
+	token := strings.TrimSpace(string(secret[SecretToken]))
+	if token == "" {
+		return nil, &ports.CredentialMissingError{Keys: "the key " + SecretToken}
+	}
+	tr, err := c.Issues(Config{Team: source.Project, Label: source.Label, Token: token,
+		APIURL: cmp.Or(source.Address, c.APIURL)})
+	if err != nil {
+		return nil, &ports.IssuesError{Reason: ports.ReasonTrackerError, Message: err.Error()}
+	}
+	return tr, nil
 }
 
 // Issues returns an IssueTracker on the items of cfg's team with cfg's
@@ -128,7 +157,10 @@ type linear struct {
 	http                    *http.Client
 }
 
-var _ ports.IssueTracker = (*linear)(nil)
+var (
+	_ ports.IssueTracker = (*linear)(nil)
+	_ ports.IssueReader  = (*linear)(nil)
+)
 
 // key is item number as people name it: ENG-412.
 func (l *linear) key(number int) string {
@@ -174,6 +206,12 @@ type (
 		External    *user     `json:"externalUserCreator"`
 		Team        *team     `json:"team"`
 		State       *state    `json:"state"`
+		Labels      *struct {
+			Nodes []labelNode `json:"nodes"`
+		} `json:"labels"`
+	}
+	labelNode struct {
+		Name string `json:"name"`
 	}
 	commentNode struct {
 		ID        string    `json:"id"`
@@ -191,6 +229,7 @@ const (
 	opOpenIssues  = "TheosOpenIssues"
 	opOpenStamps  = "TheosOpenIssueStamps"
 	opIssue       = "TheosIssue"
+	opIssueOpen   = "TheosIssueOpen"
 	opComments    = "TheosIssueComments"
 	opComment     = "TheosComment"
 	opCloseTarget = "TheosCloseTarget"
@@ -226,6 +265,12 @@ const queryOpenStamps = `query ` + opOpenStamps + `($team: String!, $filter: Iss
 
 const queryIssue = `query ` + opIssue + `($id: String!) {
   issue(id: $id) { id number team { key } }
+}`
+
+// queryIssueOpen reads what makes an item a request: its state's type and
+// its labels. An item carries at most a few labels; 250 is Linear's most.
+const queryIssueOpen = `query ` + opIssueOpen + `($id: String!) {
+  issue(id: $id) { id number team { key } state { type } labels(first: 250) { nodes { name } } }
 }`
 
 const queryComments = `query ` + opComments + `($id: String!, $first: Int!, $after: String) {
@@ -432,6 +477,38 @@ func (l *linear) issue(ctx context.Context, number int) (issueNode, error) {
 		return issueNode{}, err
 	}
 	return *data.Issue, nil
+}
+
+// IssueOpen reads item number on its own, never through the search
+// ListOpenIssues makes, and reports whether that search lists it: in a state
+// that isn't closed, and carrying the label (#161). An item that isn't
+// there, or is another team's now, is false.
+func (l *linear) IssueOpen(ctx context.Context, number int) (bool, error) {
+	if number < 1 {
+		return false, nil
+	}
+	var data struct {
+		Issue *issueNode `json:"issue"`
+	}
+	err := l.call(ctx, "reading issue "+l.key(number), opIssueOpen, queryIssueOpen,
+		map[string]any{"id": l.key(number)}, ports.ReasonIssueNotFound, &data)
+	if ports.IssuesReason(err) == ports.ReasonIssueNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if data.Issue == nil || l.own(data.Issue, number) != nil {
+		return false, nil
+	}
+	if data.Issue.State == nil {
+		return false, &ports.IssuesError{Reason: ports.ReasonTrackerError,
+			Message: "linear: reading issue " + l.key(number) + ": the answer names no state"}
+	}
+	if slices.Contains(closedTypes, data.Issue.State.Type) || data.Issue.Labels == nil {
+		return false, nil
+	}
+	return slices.ContainsFunc(data.Issue.Labels.Nodes, func(n labelNode) bool { return n.Name == l.label }), nil
 }
 
 // asComment is c as the port names it.

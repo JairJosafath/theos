@@ -149,6 +149,8 @@ type project struct {
 	key      string
 	next     int
 	workflow Workflow
+	// lags: the search's index lags, and still finds an item done.
+	lags bool
 }
 
 type item struct {
@@ -258,6 +260,16 @@ func (s *Server) SetWorkflow(key string, w Workflow) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.projects[key].workflow = w
+}
+
+// Lag makes the search of project lag behind its items, as Jira's index can
+// for minutes and longer: while it lags, a search still finds an item that
+// is done, and reading the item itself says it is. Lag(project, false)
+// catches up.
+func (s *Server) Lag(project string, lags bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.projects[project].lags = lags
 }
 
 // Down makes the site answer 503 from now on; Down(false) brings it back.
@@ -642,7 +654,8 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	var found []*item
 	for _, it := range s.items {
-		if it.project == key && slices.Contains(it.labels, label) && p.workflow.category(it.status) != CategoryDone {
+		if it.project == key && slices.Contains(it.labels, label) &&
+			(p.lags || p.workflow.category(it.status) != CategoryDone) {
 			found = append(found, it)
 		}
 	}
