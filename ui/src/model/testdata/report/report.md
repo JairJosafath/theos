@@ -6,11 +6,11 @@ The Tasks that finished after 2026-10-06 12:00 UTC, up to 2026-11-05 12:00 UTC, 
 
 | Outcome | Tasks |
 | --- | ---: |
-| Merged a pull request | 14 |
+| Merged a change | 14 |
 | Failed | 4 |
 | Ended with no change needed | 1 |
 
-The JSON names each merged Task and its pull request, under `mergedTasks`, so a number here can be held against the pull requests it counts.
+The JSON names each merged Task and its pull request, or its Standard change, under `mergedTasks`, so a number here can be held against the changes it counts.
 
 The failed Tasks, by the reason each recorded:
 

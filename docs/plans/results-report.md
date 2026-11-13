@@ -135,7 +135,8 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
     match both. The UI changed; a capital now sorts before a small letter
     there.
 15. **The JSON names every merged Task:** `mergedTasks` has each one's
-    namespace, Container, name, pull request number and when it merged, in
+    namespace, Container, name, pull request number (or its Standard change,
+    for a Task that ended DoneByStandardChange) and when it merged, in
     the order they merged, and the page says so in a line. That is the
     issue's "anyone can check a number against the pull requests": the
     numbers are over these Tasks, and a pull request names its Task. The

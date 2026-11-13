@@ -757,7 +757,7 @@ func TestReportPage(t *testing.T) {
 	page := reportPage(t, FactoryReport(period(), nil))
 	for _, want := range []string{
 		"# The factory's numbers: v1\n",
-		"| Merged a pull request | 0 |",
+		"| Merged a change | 0 |",
 		"| With no commit by a person | 0 of 0 | – |",
 		"No merged Task has a timeline in this period.",
 		"The median is –, over the merged Tasks whose agents reported a cost: 0 of 0.",
