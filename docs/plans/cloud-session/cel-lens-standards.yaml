@@ -1,0 +1,55 @@
+apiVersion: theos.factory.io/v1beta1
+kind: Standard
+metadata:
+  name: cel-lens-ts-standard
+  namespace: cel-lens
+spec:
+  checksBeforeRelease: true
+  description: Strictest typescript-eslint, Prettier, role guides for agents and the
+    make check CI.
+  displayName: TypeScript quality standard (cel-lens)
+  protectedPaths:
+  - AGENTS.md
+  - Makefile
+  - eslint.config.mjs
+  - .prettierrc.json
+  - .prettierignore
+  - .editorconfig
+  - docs/style/
+  - docs/agents/
+  supportedFrameworks:
+  - vscode-extension
+  - react-vite
+  - node-cli
+  supportedTypes:
+  - extension
+  - static-site
+  - cli
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/cel-lens-ts-standard
+    ref: v1.0.2
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Standard
+metadata:
+  name: cel-lens-go-standard
+  namespace: cel-lens
+spec:
+  checksBeforeRelease: true
+  description: Strict golangci-lint, gofumpt, race-checked tests, role guides for
+    agents and the make check CI.
+  displayName: Go quality standard (cel-lens)
+  protectedPaths:
+  - AGENTS.md
+  - Makefile
+  - .golangci.yml
+  - .editorconfig
+  - docs/style/
+  - docs/agents/
+  supportedFrameworks:
+  - go-cli
+  supportedTypes:
+  - cli
+  template:
+    url: http://gitea.gitea.svc.cluster.local:3000/templates/cel-lens-go-standard
+    ref: v1.0.1

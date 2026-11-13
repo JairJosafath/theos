@@ -1,0 +1,90 @@
+# Builds the release files with `make dist` when a version tag (v1.2.3) is
+# pushed, and attaches every file in dist/ but dotfiles to the Gitea release of that tag,
+# creating the release when it is missing. Running it again replaces the files.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  # The release runs on go-release, not go: its Go cache is its own, so the
+  # release files link nothing a pull request's job left in a shared cache.
+  release:
+    runs-on: go-release
+    env:
+      API: ${{ gitea.server_url }}/api/v1/repos/${{ gitea.repository }}
+      TOKEN: ${{ gitea.token }}
+      TAG: ${{ gitea.ref_name }}
+      # Go builds in the workspace, not in the runner's memory.
+      GOTMPDIR: ${{ gitea.workspace }}/.gotmp
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git -c http.extraHeader="Authorization: token $TOKEN" \
+            fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
+          git checkout -q FETCH_HEAD
+      - name: Go's temporary folder
+        run: mkdir -p "$GOTMPDIR"
+      - name: Credentials for the package registries
+        # The factory's packages (other apps of this project) come from the
+        # owner's npm registry and PyPI index, the Git host's own unless the
+        # GitProvider's spec.packages names others: then the operator sets
+        # these Actions variables and secrets, and empty ones mean the host.
+        # npm sends the scope to the registry through ~/.npmrc; uv logs in to
+        # the index with ~/.netrc, whose machine is the hostname alone: uv, pip
+        # and requests match it without the port, which npm keeps. A token of
+        # the index is the password of the user __token__. A package the
+        # registry lacks fails here instead of being asked of npmjs.org or
+        # pypi.org.
+        env:
+          NPM_SCOPE: ${{ vars.THEOS_NPM_SCOPE }}
+          NPM_REGISTRY: ${{ vars.THEOS_NPM_REGISTRY }}
+          NPM_TOKEN: ${{ secrets.THEOS_NPM_TOKEN }}
+          PYPI_INDEX: ${{ vars.THEOS_PYPI_INDEX }}
+          PYPI_TOKEN: ${{ secrets.THEOS_PYPI_TOKEN }}
+          SERVER: ${{ gitea.server_url }}
+          OWNER: ${{ gitea.repository_owner }}
+          ACTOR: ${{ gitea.actor }}
+          TOKEN: ${{ gitea.token }}
+        run: |
+          registry=${NPM_REGISTRY:-$SERVER/api/packages/$OWNER/npm/}
+          registry=${registry%/}/
+          index=${PYPI_INDEX:-$SERVER/api/packages/$OWNER/pypi/simple}
+          host=${index#*://}
+          host=${host%%/*}
+          host=${host%%:*}
+          login=${PYPI_TOKEN:+__token__}
+          login=${login:-$ACTOR}
+          umask 077
+          printf '%s:registry=%s\n//%s:_authToken=%s\n' "${NPM_SCOPE:-@theos}" "$registry" "${registry#*://}" "${NPM_TOKEN:-$TOKEN}" > "$HOME/.npmrc"
+          printf 'machine %s\nlogin %s\npassword %s\n' "$host" "$login" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
+      # uv's cache and the Python it installs, for a Python project, go in the
+      # checkout, which is in memory and goes with the job, as in the checks.
+      - name: make dist
+        run: make dist VERSION="$TAG"
+      - name: Attach dist/ to the release
+        run: |
+          auth="Authorization: token $TOKEN"
+          # A dotfile, such as the .gitignore that keeps dist/ out of git, is
+          # not a release file.
+          files=$(find dist -maxdepth 1 -type f ! -name '.*' | sort)
+          test -n "$files" || { echo "make dist wrote no files into dist/" >&2; exit 1; }
+          release=$(curl -sf -H "$auth" "$API/releases/tags/$TAG" || true)
+          if [ -z "$release" ]; then
+            release=$(curl -sS --fail-with-body -X POST -H "$auth" -H "Content-Type: application/json" \
+              -d "{\"tag_name\": \"$TAG\", \"name\": \"$TAG\"}" "$API/releases")
+            echo "Created release $TAG"
+          fi
+          id=$(printf '%s' "$release" | jq -r .id)
+          for file in $files; do
+            name=$(basename "$file")
+            old=$(printf '%s' "$release" | jq -r --arg n "$name" '(.assets // [])[] | select(.name == $n) | .id')
+            if [ -n "$old" ]; then
+              curl -sS --fail-with-body -X DELETE -H "$auth" "$API/releases/$id/assets/$old"
+            fi
+            curl -sS --fail-with-body -X POST -H "$auth" -F "attachment=@$file" \
+              "$API/releases/$id/assets?name=$name" > /dev/null
+            echo "Attached $name to release $TAG"
+          done
