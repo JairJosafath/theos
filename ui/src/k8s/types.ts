@@ -145,6 +145,29 @@ export interface StandardFile {
   change?: string
 }
 
+/** A Container's status.standardAdoption (api/v1beta1 StandardAdoptionStatus). */
+export interface StandardAdoption {
+  /** The Standard the pull request brings; empty reads as the one the Container names. */
+  name?: string
+  /** The Standard's template ref the pull request brings the files at. */
+  ref: string
+  /** When CI runs the full check as the pull request renders the files; empty is EveryChange. */
+  checks?: ChecksMode
+  branch?: string
+  commit?: string
+  /** Main's head the pull request was planned from; once stopped, the head main's files were last compared at. */
+  base?: string
+  pullRequest?: number
+  pullRequestURL?: string
+  /** The Standard's files the pull request writes: the ones main didn't hold as the Standard renders them. */
+  paths?: string[]
+  /**
+   * Why it stopped, or empty while the pull request is open: UpdateClosed when a person closed it,
+   * StandardFilesDiffer when it merged and main holds a file the Standard protects with other content.
+   */
+  stopped?: string
+}
+
 /** A Container's operations: what its deploy target's backups, recovery and alarms are rendered with. */
 export interface Operations {
   backups?: {
@@ -255,6 +278,12 @@ export interface Container extends K8sObject {
         stopped?: string
       }
     }
+    /**
+     * The pull request that brings its Standard's files into a repository it adopted without them
+     * (#97). A person merges or closes it; the operator never merges it. Gone once the Standard is
+     * recorded in status.standard.
+     */
+    standardAdoption?: StandardAdoption
     /** The newest release whose runs succeeded: the version an unpinned spec.deploy entry follows. */
     newestRelease?: string
     /** What runs at each of spec.deploy's targets, in its order. */

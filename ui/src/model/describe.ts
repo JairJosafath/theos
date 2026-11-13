@@ -214,7 +214,15 @@ const REASON_WORDING: Record<string, string> = {
   LayerConflict: 'Two templates wanted to write the same file',
   NothingToAdopt: 'The repository to adopt has no commits',
   IdentityMismatch: 'The adopted repository’s .theos.yaml does not name this container',
-  StandardFilesDiffer: 'The adopted repository’s files differ from what its Standard renders',
+  // A Standard comes into an adopted repository as a pull request a person merges or closes (#97, #172).
+  PullRequestOpen:
+    'A pull request brings its Standard’s files into the adopted repository, and waits for a person to merge or close it',
+  StandardFilesDiffer:
+    'The pull request with its Standard’s files merged, but main holds a file the Standard protects with other content',
+  // Said of that pull request and of an ordinary update's alike: the condition alone doesn't tell the two apart.
+  'StandardUpdated.UpdateClosed': 'Its Standard’s pull request was closed without merging',
+  'StandardUpdated.UnsupportedFramework':
+    'Its Standard fits only the Frameworks it lists, and this container names none of them',
   NoMatchingCheck:
     'Main reports none of the checks this container names, so main isn’t protected and no agent works on the repository',
   ContainerNotProtected: 'Its container’s main isn’t protected yet, and agents work only on protected repositories',
@@ -237,6 +245,8 @@ const WAITING_REASONS = new Set([
   'NoRelease',
   // A Ready Container's Bundle changed: reported, never applied (docs/plans/done/catalog-bundles.md, decision 6).
   'BundleChanged',
+  // The pull request that brings a Standard into an adopted repository waits to be read (#172).
+  'PullRequestOpen',
 ])
 
 // A Brief's conditions that flag something for a person: False is the calm state.
