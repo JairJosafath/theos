@@ -1,3 +1,7 @@
+# The host runner's configuration: docs/plans/cloud-session/runner-config.yaml,
+# with the session's proxy port, the system CA bundle (user ci can't read
+# /root/.ccr), NODE_USE_ENV_PROXY (Node's fetch otherwise ignores HTTPS_PROXY)
+# and /home/ci/bin on PATH. restore.sh rewrites the proxy port after a restart.
 log:
   level: info
 runner:
@@ -13,7 +17,15 @@ runner:
     https_proxy: http://127.0.0.1:<session proxy port>
     NO_PROXY: localhost,127.0.0.1,::1,127.0.0.0/8,0.0.0.0/8,::,169.254.0.0/16,api.anthropic.com,api-staging.anthropic.com,api-pr-preview.anthropic.com,mcp-proxy.anthropic.com,mcp-proxy-staging.anthropic.com,registry.npmjs.org,jsr.io,npm.jsr.io,pypi.org,files.pythonhosted.org,index.crates.io,proxy.golang.org,host.docker.internal,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,.svc.cluster.local,*.svc.cluster.local,gitea.gitea.svc.cluster.local
     no_proxy: localhost,127.0.0.1,::1,127.0.0.0/8,0.0.0.0/8,::,169.254.0.0/16,api.anthropic.com,api-staging.anthropic.com,api-pr-preview.anthropic.com,mcp-proxy.anthropic.com,mcp-proxy-staging.anthropic.com,registry.npmjs.org,jsr.io,npm.jsr.io,pypi.org,files.pythonhosted.org,index.crates.io,proxy.golang.org,host.docker.internal,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,.svc.cluster.local,*.svc.cluster.local,gitea.gitea.svc.cluster.local
+    SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+    CURL_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+    GIT_SSL_CAINFO: /etc/ssl/certs/ca-certificates.crt
+    NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
+    NODE_USE_ENV_PROXY: "1"
+    NODE_DISABLE_COMPILE_CACHE: "1"
     GOFLAGS: -p=2
-    PATH: /home/ci/node/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+    PATH: /home/ci/node/bin:/home/ci/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+cache:
+  enabled: false
 host:
   workdir_parent: /home/ci/work

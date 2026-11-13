@@ -190,3 +190,59 @@ rule, and takes only `int` or `string`; `.cellens` structs are for a policy's
    are settled, slimmer if they must be.
 5. **The container is reclaimed when the session is idle,** and the cluster
    with it. This plan and `cloud-session/` rebuild it.
+
+## Rebuilt on 13 November
+
+The owner: "Continue work via theos on cel-lens." The session of 9 and 10
+November was idle for three days and its container was reclaimed, as
+"What waits for the owner", 5, said it would be. A new session rebuilt the
+factory from this plan and `cloud-session/` in about 25 minutes, on theos
+`main` at 8e5fb79 (223 commits later), and imported cel-lens again from
+GitHub `main` (01d4ec3), which holds everything the first session built.
+[cloud-session/state-2026-11-13.md](cloud-session/state-2026-11-13.md) is
+its record: what runs, each step's command, and how to open a pull request
+as `claude` and read its checks.
+
+What came out differently:
+
+- **GitHub release downloads work.** The 504 is gone, so the extension's
+  whole `make check`, its e2e step included, is green in Gitea's CI.
+- **kind is built with `go install`.** GitHub answers 403 for
+  kubernetes-sigs/kind's releases through the session's proxy, so
+  `./dev setup` cannot fetch it.
+- **Adoption follows [adopt.md](../adopt.md):** the model first, then the
+  push, then the retry annotation. A repository whose files differ from its
+  Standard's is now adopted without it and gets a pull request (#97), so
+  the adoption commit also brings three published files to what the
+  Standards render (`docs/style/SOURCES.md` in both, `.prettierignore` and
+  `docs/style/vscode.md` in the extension); GitHub's copies still say
+  `c4factory` and lack the UX bar. `adoptrender` takes the Container's
+  `checks` and writes `.theos.yaml`.
+- **The runner** uses the system CA bundle (user `ci` cannot read the
+  session's), sets `NODE_USE_ENV_PROXY`, because Node's `fetch` ignores
+  `HTTPS_PROXY` without it, and has its cache server off.
+- **`restore.sh` and the helper scripts** (`cloud-session/scripts/`) read
+  the session's folder from `THEOS_SESSION_DIR`; the relay follows the
+  session's proxy port, which changes with the session.
+
+Still as before: no Claude token, so no Agent runs and both Crews are
+paused; the session works the issues as Gitea user `claude`, each built by
+an implementer and judged by a separate reviewer; only the operator's
+account may merge, so approved pull requests stack and reach GitHub through
+the mirror branch (`claude/jolly-ritchie-onxx00`).
+
+Left open by the rebuild:
+
+- The two per-repository Standards still sit on go-standard v1.4.0 and
+  ts-standard v1.8.0; the catalog has v1.6.0 and v1.9.0.
+- The repositories' tests list the factory's identity file as
+  `.c4factory.yaml`; the factory writes `.theos.yaml`. The checks pass, and
+  nothing here publishes a copy, so it was read and not tried.
+- ts-standard's UX bar ([gitlens-grade-ux.md](gitlens-grade-ux.md), step 1)
+  never reached theos `main`: the branch that held v1.8.0 was not merged,
+  and `main` went to v1.9.0 without it. cel-lens has it through
+  `cel-lens-ts-standard`; the catalog's ts-standard does not.
+
+What this session builds is in
+[cel-lens-releases-itself.md](cel-lens-releases-itself.md) and
+[cel-lens-example-results.md](cel-lens-example-results.md).

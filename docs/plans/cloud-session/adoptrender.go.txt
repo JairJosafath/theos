@@ -28,13 +28,15 @@ func main() {
 	flag.StringVar(&in.Standard, "standard", "", "")
 	flag.StringVar(&in.Deployment, "deployment", "", "")
 	checksBeforeRelease := flag.Bool("standard-checks-before-release", false, "")
+	asked := flag.String("checks", "", "the Container's spec.checks")
+	identity := flag.Bool("identity", false, "also write .theos.yaml")
 	flag.Parse()
 	ci, err := model.CIByName(model.CIGiteaActions)
 	if err != nil {
 		panic(err)
 	}
 	in.CI = ci
-	in.Checks = model.EffectiveChecks("", *checksBeforeRelease)
+	in.Checks = model.EffectiveChecks(*asked, *checksBeforeRelease)
 	in.Operations = model.ResolveOperations(model.OperationsChoices{})
 	in.NpmScope = "@theos"
 	files, err := scaffold.ReadTree(os.DirFS(filepath.Join(*templatesDir, in.Standard)))
@@ -44,6 +46,21 @@ func main() {
 	tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideStandard, Name: in.Standard, Ref: "local", Files: files})
 	if err != nil {
 		panic(err)
+	}
+	if *identity {
+		id := scaffold.Identity{Project: in.Project, SoftwareSystem: in.SoftwareSystem, Container: in.Container,
+			Type: in.Type, ScaffoldedFrom: []string{}, Checks: in.Checks}
+		data, err := id.Marshal()
+		if err != nil {
+			panic(err)
+		}
+		if err := os.MkdirAll(*out, 0o755); err != nil {
+			panic(err)
+		}
+		if err := os.WriteFile(filepath.Join(*out, scaffold.IdentityPath), data, 0o644); err != nil {
+			panic(err)
+		}
+		fmt.Println(scaffold.IdentityPath)
 	}
 	for _, p := range tree.Paths() {
 		dst := filepath.Join(*out, p)
