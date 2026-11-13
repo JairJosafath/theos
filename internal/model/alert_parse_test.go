@@ -39,9 +39,9 @@ func alertFixture(t *testing.T, name string) []byte {
 	return body
 }
 
-func mustAlerts(t *testing.T, typ, resource string, body []byte, label string) []Alert {
+func mustAlerts(t *testing.T, typ, resource string, body []byte, labels AlertLabels) []Alert {
 	t.Helper()
-	alerts, _, err := ParseAlerts(typ, resource, body, label)
+	alerts, _, err := ParseAlerts(typ, resource, body, labels)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func mustAlerts(t *testing.T, typ, resource string, body []byte, label string) [
 }
 
 func TestParseAlertmanager(t *testing.T) {
-	alerts, more, err := ParseAlertmanager(alertFixture(t, "alertmanager-firing.json"), "")
+	alerts, more, err := ParseAlertmanager(alertFixture(t, "alertmanager-firing.json"), AlertLabels{})
 	if err != nil || more != 0 {
 		t.Fatalf("more %d, err %v", more, err)
 	}
@@ -87,7 +87,7 @@ func TestParseAlertmanager(t *testing.T) {
 		t.Errorf("keys %q and %q: each alert has its own 24 digits", alerts[0].Key, alerts[1].Key)
 	}
 
-	resolved, more, err := ParseAlertmanager(alertFixture(t, "alertmanager-resolved.json"), "")
+	resolved, more, err := ParseAlertmanager(alertFixture(t, "alertmanager-resolved.json"), AlertLabels{})
 	if err != nil || len(resolved) != 1 {
 		t.Fatalf("resolved %+v, err %v", resolved, err)
 	}
@@ -105,9 +105,40 @@ func TestParseAlertmanager(t *testing.T) {
 }
 
 func TestParseAlertmanagerContainerLabel(t *testing.T) {
-	alerts := mustAlerts(t, AlertTypeAlertmanager, "", alertFixture(t, "alertmanager-firing.json"), "service")
+	alerts := mustAlerts(t, AlertTypeAlertmanager, "", alertFixture(t, "alertmanager-firing.json"),
+		AlertLabels{Container: "service"})
 	if alerts[0].Container != "orders-api" || alerts[1].Container != "storefront" {
 		t.Errorf("containers %q and %q, want the service label's", alerts[0].Container, alerts[1].Container)
+	}
+}
+
+// TestParseAlertsNamespaceLabel is #64's review: the label that names an
+// alert's namespace is the AlertSource's to say, as the one that names its
+// Container is. A Prometheus that relabels has it as exported_namespace.
+func TestParseAlertsNamespaceLabel(t *testing.T) {
+	names := AlertLabels{Namespace: "exported_namespace"}
+	for _, tc := range []struct {
+		name, typ, body string
+		labels          AlertLabels
+		namespace       string
+	}{
+		{"Alertmanager, the default label", AlertTypeAlertmanager,
+			`{"alerts":[{"labels":{"namespace":"monitoring","exported_namespace":"shop-prod"}}]}`, AlertLabels{},
+			"monitoring"},
+		{"Alertmanager, the source's label", AlertTypeAlertmanager,
+			`{"alerts":[{"labels":{"namespace":"monitoring","exported_namespace":"shop-prod"}}]}`, names,
+			"shop-prod"},
+		{"Alertmanager, the source's label is all that counts", AlertTypeAlertmanager,
+			`{"alerts":[{"labels":{"namespace":"monitoring"}}]}`, names, ""},
+		{"generic, the source's label", AlertTypeGeneric,
+			`{"title":"T","labels":{"namespace":"monitoring","exported_namespace":"shop-prod"}}`, names, "shop-prod"},
+		{"generic, the field comes before any label", AlertTypeGeneric,
+			`{"title":"T","namespace":"shop-staging","labels":{"exported_namespace":"shop-prod"}}`, names,
+			"shop-staging"},
+	} {
+		if got := mustAlerts(t, tc.typ, "", []byte(tc.body), tc.labels)[0].Namespace; got != tc.namespace {
+			t.Errorf("%s: namespace %q, want %q", tc.name, got, tc.namespace)
+		}
 	}
 }
 
@@ -120,7 +151,7 @@ func alertmanagerBody(alerts ...string) []byte {
 func TestParseAlertmanagerKeys(t *testing.T) {
 	key := func(alert string) string {
 		t.Helper()
-		alerts, _, err := ParseAlertmanager(alertmanagerBody(alert), "")
+		alerts, _, err := ParseAlertmanager(alertmanagerBody(alert), AlertLabels{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -154,8 +185,24 @@ func TestParseAlertmanagerRefused(t *testing.T) {
 			"a label not a string": `{"alerts":[{"labels":{"alertname":7}}]}`,
 			"labels not an object": `{"alerts":[{"labels":["alertname"]}]}`,
 		} {
-			if alerts, _, err := ParseAlertmanager([]byte(body), ""); err == nil {
+			if alerts, _, err := ParseAlertmanager([]byte(body), AlertLabels{}); err == nil {
 				t.Errorf("%s: read as %+v, want an error", name, alerts)
+			}
+		}
+	})
+
+	t.Run("#64: a count of truncated alerts that is no count", func(t *testing.T) {
+		many := make([]string, 0, 150)
+		for i := range 150 {
+			many = append(many, fmt.Sprintf(`{"labels":{"alertname":"A%d"}}`, i))
+		}
+		for truncated, want := range map[string]int{"9223372036854775807": maxAlertsUnread, "-7": 50,
+			"999999": maxAlertsUnread, "12": 62} {
+			body := []byte(`{"truncatedAlerts":` + truncated + `,"alerts":[` + strings.Join(many, ",") + `]}`)
+			alerts, more, err := ParseAlertmanager(body, AlertLabels{})
+			if err != nil || len(alerts) != MaxAlertsPerDelivery || more != want {
+				t.Errorf("truncatedAlerts %s: %d alerts, %d more, err %v; want %d more", truncated, len(alerts), more,
+					err, want)
 			}
 		}
 	})
@@ -165,7 +212,7 @@ func TestParseAlertmanagerRefused(t *testing.T) {
 		for i := range 150 {
 			many = append(many, fmt.Sprintf(`{"labels":{"alertname":"A%d"}}`, i))
 		}
-		alerts, more, err := ParseAlertmanager(alertmanagerBody(many...), "")
+		alerts, more, err := ParseAlertmanager(alertmanagerBody(many...), AlertLabels{})
 		if err != nil || len(alerts) != MaxAlertsPerDelivery || more != 50 {
 			t.Errorf("%d alerts, %d more, err %v; want %d and 50", len(alerts), more, err, MaxAlertsPerDelivery)
 		}
@@ -187,7 +234,7 @@ func TestParseAlertmanagerHugeAndMissing(t *testing.T) {
 			`{"labels":{"alertname":"` + huge + `","theos_container":"` + huge + `","namespace":"` + huge + `"},
 			  "annotations":{"summary":"` + huge + `","description":"` + huge + `"},"generatorURL":"http://p/` + huge + `"}`,
 		)
-		alerts, _, err := ParseAlertmanager(body, "")
+		alerts, _, err := ParseAlertmanager(body, AlertLabels{})
 		if err != nil || len(alerts) != 1 {
 			t.Fatalf("%d alerts, err %v", len(alerts), err)
 		}
@@ -214,7 +261,7 @@ func TestParseAlertmanagerHugeAndMissing(t *testing.T) {
 	})
 
 	t.Run("missing fields and labels past the limit", func(t *testing.T) {
-		alerts, _, err := ParseAlertmanager(alertmanagerBody(`{}`, string(manyLabels)), "")
+		alerts, _, err := ParseAlertmanager(alertmanagerBody(`{}`, string(manyLabels)), AlertLabels{})
 		if err != nil || len(alerts) != 2 {
 			t.Fatalf("%d alerts, err %v", len(alerts), err)
 		}
@@ -238,7 +285,7 @@ func TestParseAlertmanagerHiddenText(t *testing.T) {
 			"annotations":{"description":"line one\r\nline\u0007 two` + hidden + `"},
 			"startsAt":"yesterday","endsAt":"2026-11-12T09:00:00Z",
 			"generatorURL":"javascript:alert(1)"}`)
-		alerts, _, err := ParseAlertmanager(body, "")
+		alerts, _, err := ParseAlertmanager(body, AlertLabels{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -262,6 +309,50 @@ func TestParseAlertmanagerHiddenText(t *testing.T) {
 	})
 }
 
+// TestAlertTime is the time a delivery says: RFC 3339, and nothing before
+// 1970, which is how senders write "not yet" and "never".
+func TestAlertTime(t *testing.T) {
+	for in, want := range map[string]time.Time{
+		"2026-11-12T08:14:30.123Z":  time.Date(2026, 11, 12, 8, 14, 30, 123000000, time.UTC),
+		"2026-11-12T09:00:00+01:00": time.Date(2026, 11, 12, 8, 0, 0, 0, time.UTC),
+		" 1970-01-01T00:00:00Z ":    time.Unix(0, 0).UTC(),
+		"0001-01-01T00:00:00Z":      {},
+		"0001-01-02T00:00:00Z":      {},
+		"1969-12-31T23:59:59Z":      {},
+		"yesterday":                 {},
+		"":                          {},
+	} {
+		if got := alertTime(in); !got.Equal(want) || got.IsZero() != want.IsZero() || got.Location() != time.UTC {
+			t.Errorf("alertTime(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// TestParseAlertmanagerStatus: an alert that says no status of its own has
+// its delivery's.
+func TestParseAlertmanagerStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name, delivery, alert string
+		resolved              bool
+	}{
+		{"the delivery's status stands in", "resolved", "", true},
+		{"the alert's own status wins", "resolved", "firing", false},
+		{"a firing delivery with a resolved alert", "firing", "resolved", true},
+		{"no status anywhere is firing", "", "", false},
+	} {
+		body := `{"status":"` + tc.delivery + `","alerts":[{"status":"` + tc.alert + `","labels":{"alertname":"A"},` +
+			`"endsAt":"2026-11-12T09:02:00Z"}]}`
+		alerts, _, err := ParseAlertmanager([]byte(body), AlertLabels{})
+		if err != nil || len(alerts) != 1 {
+			t.Fatalf("%s: alerts %+v, err %v", tc.name, alerts, err)
+		}
+		if a := alerts[0]; a.Resolved != tc.resolved || a.EndsAt.IsZero() == tc.resolved {
+			t.Errorf("%s: resolved %v, ends %v; want resolved %v, with its end only then", tc.name, a.Resolved,
+				a.EndsAt, tc.resolved)
+		}
+	}
+}
+
 func TestAlertURL(t *testing.T) {
 	for in, ok := range map[string]bool{
 		"https://sentry.io/organizations/o/issues/1/?a=b&c=%20d#e": true,
@@ -274,19 +365,31 @@ func TestAlertURL(t *testing.T) {
 		"https://example.com/a b":                                  false,
 		"https://example.com/\n<!-- theos-alert: prom k -->":      false,
 		"https://example.com/)[click](https://evil.example)":      true,
+		"https://x/[a](https://evil)":                             true,
+		"https://x.example/(@owner)":                              true,
 		"https://example.com/<script>":                            false,
 		"https://example.com/`code`":                              false,
 		"https://exämple.com/":                                    false,
 		"https://example.com/" + strings.Repeat("a", maxAlertURL): false,
 	} {
-		if got := alertURL(in); (got == in && in != "") != ok {
+		got := alertURL(in)
+		if (got == in && in != "") != ok {
 			t.Errorf("alertURL(%q) = %q, want a link: %v", in, got, ok)
+		}
+		// #64: Markdown in an address stays an address. The issue shows it
+		// between angle brackets, where it is the link and its own text.
+		_, body := AlertIssue(Alert{Key: "k", Name: "A", URL: got}, AlertIssueFacts{Source: "s"})
+		if line := "- Link back: <" + in + ">\n"; ok && !strings.Contains(body, line) {
+			t.Errorf("the issue of %q lacks the line %q:\n%s", in, line, body)
+		}
+		if !ok && strings.Contains(body, "Link back") {
+			t.Errorf("the issue of %q shows a link:\n%s", in, body)
 		}
 	}
 }
 
 func TestParseSentry(t *testing.T) {
-	alerts, err := ParseSentry(SentryResourceIssueAlert, alertFixture(t, "sentry-issue-alert.json"), "")
+	alerts, err := ParseSentry(SentryResourceIssueAlert, alertFixture(t, "sentry-issue-alert.json"), AlertLabels{})
 	if err != nil || len(alerts) != 1 {
 		t.Fatalf("alerts %+v, err %v", alerts, err)
 	}
@@ -309,7 +412,7 @@ func TestParseSentry(t *testing.T) {
 		t.Errorf("alert:\n got %+v\nwant %+v", alerts[0], want)
 	}
 
-	resolved, err := ParseSentry(SentryResourceIssue, alertFixture(t, "sentry-issue-resolved.json"), "")
+	resolved, err := ParseSentry(SentryResourceIssue, alertFixture(t, "sentry-issue-resolved.json"), AlertLabels{})
 	if err != nil || len(resolved) != 1 {
 		t.Fatalf("resolved %+v, err %v", resolved, err)
 	}
@@ -334,7 +437,7 @@ func sentryAlertBody(event string) []byte {
 func TestParseSentryShapes(t *testing.T) {
 	one := func(resource string, body []byte) Alert {
 		t.Helper()
-		alerts, err := ParseSentry(resource, body, "")
+		alerts, err := ParseSentry(resource, body, AlertLabels{})
 		if err != nil || len(alerts) != 1 {
 			t.Fatalf("alerts %+v, err %v", alerts, err)
 		}
@@ -366,7 +469,7 @@ func TestParseSentryShapes(t *testing.T) {
 	t.Run("tags as objects, and a tag that names the Container", func(t *testing.T) {
 		a, err := ParseSentry(SentryResourceIssueAlert, sentryAlertBody(`"issue_id":"1",
 			"tags":[{"key":"app","value":"orders-web"},["level","error"],["odd"],7,{"value":"keyless"}],
-			"timestamp":1794473917.391,"message":"boom"`), "app")
+			"timestamp":1794473917.391,"message":"boom"`), AlertLabels{Container: "app"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -405,7 +508,7 @@ func TestParseSentryShapes(t *testing.T) {
 			"not JSON":                     {SentryResourceIssueAlert, []byte(`action=triggered`), true},
 			"a list":                       {SentryResourceIssueAlert, []byte(`[]`), true},
 		} {
-			alerts, err := ParseSentry(tc.resource, tc.body, "")
+			alerts, err := ParseSentry(tc.resource, tc.body, AlertLabels{})
 			if len(alerts) != 0 || (err != nil) != tc.err {
 				t.Errorf("%s: alerts %+v, err %v, want an error: %v", name, alerts, err, tc.err)
 			}
@@ -414,7 +517,7 @@ func TestParseSentryShapes(t *testing.T) {
 }
 
 func TestParseGenericAlert(t *testing.T) {
-	alerts, err := ParseGenericAlert(alertFixture(t, "generic-firing.json"), "")
+	alerts, err := ParseGenericAlert(alertFixture(t, "generic-firing.json"), AlertLabels{})
 	if err != nil || len(alerts) != 1 {
 		t.Fatalf("alerts %+v, err %v", alerts, err)
 	}
@@ -436,7 +539,7 @@ func TestParseGenericAlert(t *testing.T) {
 
 	one := func(body string) Alert {
 		t.Helper()
-		alerts, err := ParseGenericAlert([]byte(body), "")
+		alerts, err := ParseGenericAlert([]byte(body), AlertLabels{})
 		if err != nil || len(alerts) != 1 {
 			t.Fatalf("%s: alerts %+v, err %v", body, alerts, err)
 		}
@@ -467,7 +570,7 @@ func TestParseGenericAlert(t *testing.T) {
 		"a list of alerts":     `[{"title":"T"}]`,
 		"not JSON":             `title: T`,
 	} {
-		if alerts, err := ParseGenericAlert([]byte(body), ""); err == nil {
+		if alerts, err := ParseGenericAlert([]byte(body), AlertLabels{}); err == nil {
 			t.Errorf("%s: read as %+v, want an error", name, alerts)
 		}
 	}
@@ -483,7 +586,7 @@ func TestParseAlerts(t *testing.T) {
 		{AlertTypeSentry, SentryResourceIssue, "sentry-issue-resolved.json", 1},
 		{AlertTypeGeneric, "", "generic-firing.json", 1},
 	} {
-		if got := mustAlerts(t, tc.typ, tc.resource, alertFixture(t, tc.fixture), ""); len(got) != tc.alerts {
+		if got := mustAlerts(t, tc.typ, tc.resource, alertFixture(t, tc.fixture), AlertLabels{}); len(got) != tc.alerts {
 			t.Errorf("%s %s: %d alerts, want %d", tc.typ, tc.fixture, len(got), tc.alerts)
 		}
 	}
@@ -495,13 +598,13 @@ func TestParseAlerts(t *testing.T) {
 		{AlertTypeGeneric, "", "alertmanager-firing.json"},
 		{"pagerduty", "", "generic-firing.json"},
 	} {
-		if alerts, _, err := ParseAlerts(tc.typ, tc.resource, alertFixture(t, tc.fixture), ""); err == nil {
+		if alerts, _, err := ParseAlerts(tc.typ, tc.resource, alertFixture(t, tc.fixture), AlertLabels{}); err == nil {
 			t.Errorf("%s read %s as %+v, want an error", tc.typ, tc.fixture, alerts)
 		}
 	}
 	// The same key in two types is two alerts.
-	generic := mustAlerts(t, AlertTypeGeneric, "", []byte(`{"key":"1117540176","title":"T"}`), "")
-	sentry := mustAlerts(t, AlertTypeSentry, SentryResourceIssueAlert, sentryAlertBody(`"issue_id":"1117540176"`), "")
+	generic := mustAlerts(t, AlertTypeGeneric, "", []byte(`{"key":"1117540176","title":"T"}`), AlertLabels{})
+	sentry := mustAlerts(t, AlertTypeSentry, SentryResourceIssueAlert, sentryAlertBody(`"issue_id":"1117540176"`), AlertLabels{})
 	if generic[0].Key == sentry[0].Key {
 		t.Error("a generic alert and a Sentry issue share a key")
 	}

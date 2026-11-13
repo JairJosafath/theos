@@ -79,13 +79,13 @@ func TestAlertStep(t *testing.T) {
 	now := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 	today, yesterday := "2026-11-12", now.Add(-24*time.Hour)
 	earlier := now.Add(-2 * time.Hour)
-	firing, resolved := Alert{Key: "k1"}, Alert{Key: "k1", Resolved: true}
+	firing, resolved := Alert{Key: "k1", Name: "HighErrorRate"}, Alert{Key: "k1", Resolved: true}
 	day := AlertDay{Date: today, Filed: 2, LastIssue: 8}
 	full := AlertDay{Date: today, Filed: 5, LastIssue: 11, Folded: 3, FoldReported: 3, FoldReportedAt: earlier}
-	fresh := AlertRecord{Key: "k1", Container: "orders-api", FiledAt: now, LastSeen: now, Count: 1, Reported: 1,
-		ReportedAt: now}
-	open := AlertRecord{Key: "k1", Container: "orders-api", Issue: 7, FiledAt: earlier, LastSeen: earlier,
-		Count: 3, Reported: 1, ReportedAt: earlier}
+	fresh := AlertRecord{Key: "k1", Container: "orders-api", Name: "HighErrorRate", FiledAt: now, LastSeen: now,
+		Count: 1, Reported: 1, ReportedAt: now}
+	open := AlertRecord{Key: "k1", Container: "orders-api", Name: "HighErrorRate", Issue: 7, FiledAt: earlier,
+		LastSeen: earlier, Count: 3, Reported: 1, ReportedAt: earlier}
 	with := func(r AlertRecord, change func(*AlertRecord)) *AlertRecord {
 		change(&r)
 		return &r
@@ -111,6 +111,14 @@ func TestAlertStep(t *testing.T) {
 				Record: *with(fresh, func(r *AlertRecord) { r.Issue, r.Folded = 11, true }),
 				Day: AlertDay{Date: today, Filed: 5, LastIssue: 11, Folded: 4, FoldReported: 3,
 					FoldReportedAt: earlier}}},
+		{"#64: past the limit with no room in status the delivery is counted and no record kept", firing,
+			AlertFacts{Day: full, Full: true}, AlertSettings{},
+			AlertDecision{Action: AlertOverflow,
+				Day: AlertDay{Date: today, Filed: 5, LastIssue: 11, Folded: 3, Unrecorded: 1, FoldReported: 3,
+					FoldReportedAt: earlier}}},
+		{"under the limit an alert files whether or not status has room", firing,
+			AlertFacts{Day: day, Full: true}, AlertSettings{},
+			AlertDecision{Action: AlertFile, Record: fresh, Day: AlertDay{Date: today, Filed: 3, LastIssue: 8}}},
 		{"the limit is the source's", firing, AlertFacts{Day: day}, AlertSettings{DailyLimit: 2},
 			AlertDecision{Action: AlertFold,
 				Record: *with(fresh, func(r *AlertRecord) { r.Issue, r.Folded = 8, true }),
@@ -141,10 +149,30 @@ func TestAlertStep(t *testing.T) {
 			AlertFacts{Record: &open, IssueOpen: false, Day: day}, AlertSettings{},
 			AlertDecision{Action: AlertNote,
 				Record: *with(open, func(r *AlertRecord) { r.Count, r.LastSeen = 4, now }), Day: day}},
-		{"an issue closed on an earlier day is filed anew", firing,
+		{"an issue filed and closed on an earlier day is filed anew", firing,
+			AlertFacts{Record: with(open, func(r *AlertRecord) { r.FiledAt = yesterday }), IssueOpen: false,
+				ClosedAt: yesterday.Add(time.Hour), Day: day},
+			AlertSettings{},
+			AlertDecision{Action: AlertFile, Record: fresh, Day: AlertDay{Date: today, Filed: 3, LastIssue: 8}}},
+		{"#64: an issue filed yesterday and closed today is counted, not filed again", firing,
+			AlertFacts{Record: with(open, func(r *AlertRecord) { r.FiledAt = yesterday }), IssueOpen: false,
+				ClosedAt: earlier, Day: day},
+			AlertSettings{},
+			AlertDecision{Action: AlertNote,
+				Record: *with(open, func(r *AlertRecord) { r.FiledAt, r.Count, r.LastSeen = yesterday, 4, now }),
+				Day:    day}},
+		{"a closed issue whose host says no closing time is filed anew", firing,
 			AlertFacts{Record: with(open, func(r *AlertRecord) { r.FiledAt = yesterday }), IssueOpen: false, Day: day},
 			AlertSettings{},
 			AlertDecision{Action: AlertFile, Record: fresh, Day: AlertDay{Date: today, Filed: 3, LastIssue: 8}}},
+		{"#64: a clock that went back over midnight keeps the day and its limit", firing,
+			AlertFacts{Day: AlertDay{Date: "2026-11-13", Filed: 5, LastIssue: 11}}, AlertSettings{},
+			AlertDecision{Action: AlertFold,
+				Record: *with(fresh, func(r *AlertRecord) { r.Issue, r.Folded = 11, true }),
+				Day:    AlertDay{Date: "2026-11-13", Filed: 5, LastIssue: 11, Folded: 1}}},
+		{"a day further ahead than a clock goes back starts afresh", firing,
+			AlertFacts{Day: AlertDay{Date: "2026-11-14", Filed: 5, LastIssue: 11}}, AlertSettings{},
+			AlertDecision{Action: AlertFile, Record: fresh, Day: AlertDay{Date: today, Filed: 1}}},
 		{"an issue closed on an earlier day is folded past the limit", firing,
 			AlertFacts{Record: with(open, func(r *AlertRecord) { r.FiledAt = yesterday }), IssueOpen: false, Day: full},
 			AlertSettings{},
@@ -395,8 +423,17 @@ func TestAlertDayOwed(t *testing.T) {
 				Day: said(with(func(d *AlertDay) { d.Folded, d.FoldReported = 1, 0 }))}, 0},
 		{"nothing folded since the last word", with(func(d *AlertDay) { d.FoldReported = 40 }), AlertSettings{},
 			nil, 0},
+		{"#64: deliveries status kept no record of are owed a word too",
+			with(func(d *AlertDay) { d.Unrecorded, d.FoldReported = 9, 40 }), AlertSettings{},
+			&AlertFoldReport{Issue: 11, More: 40, Unrecorded: 9, Date: "2026-11-12",
+				Day: with(func(d *AlertDay) { d.Unrecorded, d.FoldReported, d.FoldReportedAt = 9, 49, now })}, 0},
+		{"folded and unrecorded, all said", with(func(d *AlertDay) { d.Unrecorded, d.FoldReported = 9, 49 }),
+			AlertSettings{}, nil, 0},
 		{"nothing folded", AlertDay{Date: "2026-11-12", Filed: 2, LastIssue: 3}, AlertSettings{}, nil, 0},
 		{"no issue to say it on", with(func(d *AlertDay) { d.LastIssue = 0 }), AlertSettings{}, nil, 0},
+		{"#64: a clock that went back over midnight keeps the interval",
+			with(func(d *AlertDay) { d.Date, d.FoldReportedAt = "2026-11-13", now.Add(-20*time.Minute) }),
+			AlertSettings{}, nil, 40 * time.Minute},
 		{"a day that is over is settled at once",
 			with(func(d *AlertDay) { d.Date, d.FoldReportedAt = "2026-11-11", now.Add(-time.Minute) }),
 			AlertSettings{},
@@ -445,5 +482,113 @@ func TestPutAlertRecord(t *testing.T) {
 	}
 	if !has(out, "k001") || !has(out, "new0") {
 		t.Error("an alert that should have stayed made room")
+	}
+
+	// #64: among the records seen today a folded one makes room before a
+	// filed one, whichever was seen last, and a record of an earlier day
+	// before either.
+	today := make([]AlertRecord, 0, MaxAlertRecords)
+	for i := range MaxAlertRecords {
+		today = append(today, AlertRecord{Key: fmt.Sprintf("k%03d", i), Folded: i >= 5 && i != 99,
+			LastSeen: at.Add(time.Duration(i) * time.Minute)})
+	}
+	if !AlertRecordsFull(today, at.Add(2*time.Hour)) || AlertRecordsFull(today[1:], at) {
+		t.Error("status is full with 100 records seen today, and with no fewer")
+	}
+	today[99].LastSeen = at.Add(-24 * time.Hour)
+	if AlertRecordsFull(today, at) {
+		t.Error("status is full though a record of an earlier day can make room")
+	}
+	out = today
+	for i, gone := range []string{"k099", "k005", "k006"} {
+		out = PutAlertRecord(out, AlertRecord{Key: fmt.Sprintf("new%d", i), LastSeen: at.Add(3 * time.Hour)})
+		if len(out) != MaxAlertRecords || has(out, gone) {
+			t.Errorf("record %d over the limit: %d records, %s still there: %v", i, len(out), gone, has(out, gone))
+		}
+	}
+	for i := range 5 {
+		if key := fmt.Sprintf("k%03d", i); !has(out, key) {
+			t.Errorf("the filed alert %s made room while folded ones were held", key)
+		}
+	}
+}
+
+// TestAlertStormPastTheRecords is #64's review: 150 alerts, each delivered
+// three times in a day, are more than status remembers. The alerts that were
+// filed keep their records, and so their counts, and no alert is folded into
+// the day's count twice: past the records the day counts deliveries.
+func TestAlertStormPastTheRecords(t *testing.T) {
+	start := time.Date(2026, 11, 12, 8, 0, 0, 0, time.UTC)
+	settings := AlertSettings{}
+	var records []AlertRecord
+	days := map[string]AlertDay{}
+	issues := 0
+	deliver := func(container, key string, now time.Time) AlertAction {
+		var rec *AlertRecord
+		for i := range records {
+			if records[i].Key == key {
+				rec = &records[i]
+			}
+		}
+		d := AlertStep(Alert{Key: key}, container, AlertFacts{Record: rec, IssueOpen: true, Day: days[container],
+			Full: AlertRecordsFull(records, now)}, settings, now)
+		if d.Action == AlertFile {
+			issues++
+			d = d.Filed(100 + issues)
+		}
+		if d.Action != AlertOverflow {
+			records = PutAlertRecord(records, d.Record)
+		}
+		days[container] = d.Day
+		return d.Action
+	}
+	for round := range 3 {
+		for i := range 150 {
+			deliver("orders-api", fmt.Sprintf("alert-%03d", i), start.Add(time.Duration(round*150+i)*time.Second))
+		}
+	}
+	filed := func() (n int) {
+		for _, r := range records {
+			if !r.Folded && r.Container == "orders-api" {
+				n++
+				if r.Count != 3 {
+					t.Errorf("the filed alert %s counts %d deliveries, want all 3", r.Key, r.Count)
+				}
+			}
+		}
+		return n
+	}
+	if issues != DefaultAlertDailyLimit || filed() != DefaultAlertDailyLimit || len(records) != MaxAlertRecords {
+		t.Errorf("%d issues, %d of their records among the %d held; want %d, %d and %d", issues, filed(),
+			len(records), DefaultAlertDailyLimit, DefaultAlertDailyLimit, MaxAlertRecords)
+	}
+	// 95 alerts were folded with a record; the other 50 had none, three
+	// times each.
+	if day := days["orders-api"]; day.Folded != 95 || day.Unrecorded != 150 {
+		t.Errorf("the day counts %d folded alerts and %d unrecorded deliveries, want 95 and 150", day.Folded,
+			day.Unrecorded)
+	}
+
+	// Another Container's alert files, and a folded record makes room for
+	// it. That alert's next delivery is not folded a second time.
+	later := start.Add(time.Hour)
+	if got := deliver("orders-web", "other", later); got != AlertFile || filed() != DefaultAlertDailyLimit ||
+		len(records) != MaxAlertRecords {
+		t.Errorf("another Container's alert: %s, %d filed records of the storm's, %d records", got, filed(),
+			len(records))
+	}
+	if got := deliver("orders-api", "alert-005", later); got != AlertOverflow || days["orders-api"].Folded != 95 {
+		t.Errorf("the alert whose record made room: %s, %d folded; want %s and 95 still", got,
+			days["orders-api"].Folded, AlertOverflow)
+	}
+
+	// The next day the storm's records make room, one for each alert that
+	// comes, and nothing is unrecorded.
+	next := start.Add(24 * time.Hour)
+	if AlertRecordsFull(records, next) {
+		t.Error("status is full on a day none of its records was seen")
+	}
+	if got := deliver("orders-api", "alert-149", next); got != AlertFile || days["orders-api"].Unrecorded != 0 {
+		t.Errorf("an unrecorded alert on the next day: %s, day %+v", got, days["orders-api"])
 	}
 }

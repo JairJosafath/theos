@@ -58,9 +58,29 @@ func AlertsURL(base, namespace, name string) string {
 // names its Container, unless the AlertSource names another (decision 4).
 const DefaultAlertContainerLabel = "theos_container"
 
-// AlertNamespaceLabel is the label of an alert that names the namespace its
-// app runs in, as Prometheus's Kubernetes metrics carry it.
-const AlertNamespaceLabel = "namespace"
+// DefaultAlertNamespaceLabel is the label of an alert that names the
+// namespace its app runs in, unless the AlertSource names another: the one
+// Prometheus's Kubernetes metrics carry. A Prometheus that relabels has it
+// under another name (exported_namespace, kubernetes_namespace), which is
+// its user's to say.
+const DefaultAlertNamespaceLabel = "namespace"
+
+// AlertLabels are the names an AlertSource reads an alert by: the label, tag
+// or field that names its Container, and the label that names the namespace
+// its app runs in. An empty one is its default.
+type AlertLabels struct {
+	Container, Namespace string
+}
+
+func (l AlertLabels) withDefaults() AlertLabels {
+	if l.Container == "" {
+		l.Container = DefaultAlertContainerLabel
+	}
+	if l.Namespace == "" {
+		l.Namespace = DefaultAlertNamespaceLabel
+	}
+	return l
+}
 
 // MaxAlertsPerDelivery is how many alerts of one delivery are read; the rest
 // are counted, never read.

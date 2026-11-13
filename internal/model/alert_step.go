@@ -22,8 +22,9 @@ import (
 )
 
 // What an alert's delivery does (docs/plans/alerts.md, decisions 8 to 11): it
-// files an issue, is folded into the day's "and N more", says the alert
-// resolved, or is only noted. A delivery never comments on a count; what an
+// files an issue, is folded into the day's "and N more" (or only counted
+// there, past what status remembers), says the alert resolved, or is only
+// noted. A delivery never comments on a count; what an
 // issue is owed about repeats is a rule of its own, AlertRecordOwed, so the
 // comments keep their interval however the deliveries arrive.
 
@@ -35,6 +36,11 @@ const (
 
 // MaxAlertRecords is how many alerts an AlertSource's status remembers.
 const MaxAlertRecords = 100
+
+// maxAlertClockBack is how far a clock is taken to go back: a new leader on
+// a node whose clock is behind. A day further ahead than that is no day a
+// clock gets back from, and is started afresh.
+const maxAlertClockBack = 24 * time.Hour
 
 // AlertSettings are an AlertSource's limits; a zero one is its default.
 type AlertSettings struct {
@@ -59,6 +65,9 @@ func (s AlertSettings) withDefaults() AlertSettings {
 // AlertRecord is what an AlertSource's status keeps of one alert.
 type AlertRecord struct {
 	Key, Container string
+	// Name is the alert's, as it was filed or folded: for people who read
+	// status, and the only text of an alert that status holds.
+	Name string
 	// Issue is the issue the alert was filed as, or the one its day's
 	// "and N more" is said on when it was Folded.
 	Issue  int
@@ -82,20 +91,31 @@ type AlertDay struct {
 	Date string
 	// Filed counts the issues filed that day and LastIssue is the last.
 	Filed, LastIssue int
-	// Folded counts the alerts past the limit that day, and FoldReported
-	// the Folded the last "and N more" said, at FoldReportedAt.
-	Folded, FoldReported int
-	FoldReportedAt       time.Time
+	// Folded counts the alerts past the limit that day, each once: it has a
+	// record. Unrecorded counts the deliveries of alerts past the limit that
+	// status had no room to remember (AlertRecordsFull): deliveries, since
+	// the same alert delivered again can't be told from another.
+	Folded, Unrecorded int
+	// FoldReported is Folded and Unrecorded together as the last "and N
+	// more" said them, at FoldReportedAt.
+	FoldReported   int
+	FoldReportedAt time.Time
 }
 
 // AlertFacts are what is known when an alert's delivery arrives.
 type AlertFacts struct {
 	// Record is what status holds for the alert's key; nil when nothing.
 	Record *AlertRecord
-	// IssueOpen says Record's issue is open on the Git host.
+	// IssueOpen says Record's issue is open on the Git host, and ClosedAt
+	// when it was closed: zero while it is open, or when the host doesn't
+	// say.
 	IssueOpen bool
+	ClosedAt  time.Time
 	// Day is the Container's day as status holds it, whatever its date.
 	Day AlertDay
+	// Full says status has no room to remember another alert past the limit
+	// (AlertRecordsFull).
+	Full bool
 }
 
 // AlertAction is what a delivery does.
@@ -107,6 +127,9 @@ const (
 	// AlertFold counts the alert into the day's "and N more": the limit of
 	// issues for its Container is reached.
 	AlertFold AlertAction = "Fold"
+	// AlertOverflow counts the delivery on the day and keeps no record: the
+	// limit is reached and status has no room to remember the alert.
+	AlertOverflow AlertAction = "Overflow"
 	// AlertResolve says on the alert's issue that it resolved.
 	AlertResolve AlertAction = "Resolve"
 	// AlertNote changes the record alone: nothing goes to the Git host.
@@ -124,7 +147,8 @@ type AlertDecision struct {
 	// Again is how often the alert fired that its issue hasn't said, which
 	// an AlertResolve's comment adds.
 	Again int
-	// Record and Day are status after the action; unset for AlertIgnore.
+	// Record and Day are status after the action; both are unset for
+	// AlertIgnore, and Record for AlertOverflow, which keeps none.
 	Record AlertRecord
 	Day    AlertDay
 }
@@ -139,44 +163,69 @@ func alertDate(t time.Time) string {
 	return t.UTC().Format(time.DateOnly)
 }
 
+// alertDayAt is day when it is the UTC day of now, or the one after it: a
+// clock that went back over midnight doesn't start the day, and with it the
+// limit, a second time. Any other day is over, and the count starts afresh.
+func alertDayAt(day AlertDay, now time.Time) AlertDay {
+	if today := alertDate(now); day.Date != today && day.Date != alertDate(now.Add(maxAlertClockBack)) {
+		return AlertDay{Date: today}
+	}
+	return day
+}
+
 // AlertStep decides what the delivery of a, an alert of container, does.
 //
 // A firing alert files an issue when it has none to go on with: it is new,
-// its issue was closed on an earlier day, or it was folded on an earlier
-// day. Past the Container's limit for the day it is folded instead. With an
-// open issue, or one filed, folded or closed today, it is only counted: an
-// alert files at most once a day, and closing its issue doesn't silence it
-// for longer. A resolved alert says so once on its open issue, and is noted
-// otherwise; one never seen is ignored.
+// its issue was filed and closed on earlier days, or it was folded on an
+// earlier day. Past the Container's limit for the day it is folded instead,
+// or, when status has no room to remember it, only counted on the day
+// (AlertOverflow). With an open issue, or one filed, folded or closed today,
+// it is only counted: an alert files at most once a day, a fix that merged
+// today is given the day to reach the app, and closing an issue doesn't
+// silence its alert for longer. A resolved alert says so once on its open
+// issue, and is noted otherwise; one never seen is ignored.
 //
 // A step on a new day starts the day's count afresh, so the caller settles
 // what the old day is owed (AlertDayOwed) first.
 func AlertStep(a Alert, container string, f AlertFacts, s AlertSettings, now time.Time) AlertDecision {
 	s = s.withDefaults()
-	today := alertDate(now)
-	day := f.Day
-	if day.Date != today {
-		day = AlertDay{Date: today}
-	}
+	day := alertDayAt(f.Day, now)
 	rec := f.Record
 	if a.Resolved {
 		return alertResolved(rec, f.IssueOpen, day, now)
 	}
-	if rec != nil && (alertDate(rec.FiledAt) == today || (!rec.Folded && f.IssueOpen)) {
+	if rec != nil && alertGoesOn(*rec, f, alertDate(now)) {
 		next := *rec
 		next.Count++
 		next.LastSeen, next.Resolved = now, false
 		return AlertDecision{Action: AlertNote, Record: next, Day: day}
 	}
-	next := AlertRecord{Key: a.Key, Container: container, FiledAt: now, LastSeen: now, Count: 1, Reported: 1,
-		ReportedAt: now}
+	next := AlertRecord{Key: a.Key, Container: container, Name: a.Name, FiledAt: now, LastSeen: now, Count: 1,
+		Reported: 1, ReportedAt: now}
 	if day.Filed < s.DailyLimit {
 		day.Filed++
 		return AlertDecision{Action: AlertFile, Record: next, Day: day}
 	}
+	if f.Full {
+		day.Unrecorded++
+		return AlertDecision{Action: AlertOverflow, Day: day}
+	}
 	next.Issue, next.Folded = day.LastIssue, true
 	day.Folded++
 	return AlertDecision{Action: AlertFold, Record: next, Day: day}
+}
+
+// alertGoesOn says a firing alert goes on with what rec holds: it was filed
+// or folded today, or its issue is open or was closed today. A day after
+// today is today, to a clock that went back.
+func alertGoesOn(rec AlertRecord, f AlertFacts, today string) bool {
+	if alertDate(rec.FiledAt) >= today {
+		return true
+	}
+	if rec.Folded {
+		return false
+	}
+	return f.IssueOpen || (!f.ClosedAt.IsZero() && alertDate(f.ClosedAt) >= today)
 }
 
 func alertResolved(rec *AlertRecord, issueOpen bool, day AlertDay, now time.Time) AlertDecision {
@@ -230,50 +279,86 @@ func AlertRecordOwed(rec AlertRecord, issueOpen bool, s AlertSettings, now time.
 // AlertFoldReport is the "and N more" comment a Container's day is owed.
 type AlertFoldReport struct {
 	Issue int
-	// More is the alerts folded that day, and Date the day.
-	More int
-	Date string
+	// More is the alerts folded that day, Unrecorded the deliveries of
+	// alerts status had no room to remember, and Date the day.
+	More, Unrecorded int
+	Date             string
 	// Day is status once the comment is made.
 	Day AlertDay
 }
 
 // AlertDayOwed says whether the last issue of a Container's day is owed an
-// "and N more" now: alerts were folded since the last one said so, and the
-// interval has passed since then, or the day is over. wait is as
-// AlertRecordOwed's.
+// "and N more" now: alerts were folded, or counted unrecorded, since the
+// last one said so, and the interval has passed since then, or the day is
+// over. wait is as AlertRecordOwed's.
 func AlertDayOwed(day AlertDay, s AlertSettings, now time.Time) (report *AlertFoldReport, wait time.Duration) {
 	s = s.withDefaults()
-	if day.LastIssue == 0 || day.Folded <= day.FoldReported {
+	more := day.Folded + day.Unrecorded
+	if day.LastIssue == 0 || more <= day.FoldReported {
 		return nil, 0
 	}
-	if due := day.FoldReportedAt.Add(s.CommentInterval); day.Date == alertDate(now) &&
-		!day.FoldReportedAt.IsZero() && now.Before(due) {
+	// A day after now's is not over: the clock went back (alertDayAt).
+	if due := day.FoldReportedAt.Add(s.CommentInterval); day.Date >= alertDate(now) && now.Before(due) {
 		return nil, due.Sub(now)
 	}
 	next := day
-	next.FoldReported, next.FoldReportedAt = day.Folded, now
-	return &AlertFoldReport{Issue: day.LastIssue, More: day.Folded, Date: day.Date, Day: next}, 0
+	next.FoldReported, next.FoldReportedAt = more, now
+	return &AlertFoldReport{Issue: day.LastIssue, More: day.Folded, Unrecorded: day.Unrecorded, Date: day.Date,
+		Day: next}, 0
+}
+
+// AlertRecordsFull says status has no room to remember another alert past
+// the limit: it holds MaxAlertRecords, and every one of them was seen on the
+// day of now. A record of an earlier day makes room (PutAlertRecord); one of
+// today doesn't, since an alert folded today and forgotten would be folded
+// into the day's count again at its next delivery.
+func AlertRecordsFull(records []AlertRecord, now time.Time) bool {
+	today := alertDate(now)
+	return len(records) >= MaxAlertRecords &&
+		!slices.ContainsFunc(records, func(r AlertRecord) bool { return alertDate(r.LastSeen) < today })
 }
 
 // PutAlertRecord is records with rec in the place of the one with its key,
-// or added. Past MaxAlertRecords the alert seen longest ago makes room, a
-// resolved one before a firing one: its issue stays, and is found again by
+// or added. Past MaxAlertRecords one record makes room: one not seen on
+// rec's day before one that was, then a folded one before a filed one, a
+// resolved one before a firing one, and the one seen longest ago. So the
+// alerts filed today keep their records, and their issues their counts, the
+// longest. The issue of a record that made room stays, and is found again by
 // its marker (HasAlertMarker) if the alert comes back.
+//
+// An AlertFold is put only when AlertRecordsFull said there was room, so a
+// record folded today makes room for a filed alert alone, and status is full
+// from then on for the day: its alert's next delivery is an AlertOverflow,
+// never a second fold.
 func PutAlertRecord(records []AlertRecord, rec AlertRecord) []AlertRecord {
 	out := slices.Clone(records)
 	if i := slices.IndexFunc(out, func(r AlertRecord) bool { return r.Key == rec.Key }); i >= 0 {
 		out[i] = rec
 		return out
 	}
+	today := alertDate(rec.LastSeen)
 	for len(out) >= MaxAlertRecords {
-		oldest := 0
+		first := 0
 		for i, r := range out {
-			o := out[oldest]
-			if (r.Resolved && !o.Resolved) || (r.Resolved == o.Resolved && r.LastSeen.Before(o.LastSeen)) {
-				oldest = i
+			if alertRecordGoesBefore(r, out[first], today) {
+				first = i
 			}
 		}
-		out = slices.Delete(out, oldest, oldest+1)
+		out = slices.Delete(out, first, first+1)
 	}
 	return append(out, rec)
+}
+
+// alertRecordGoesBefore says a makes room before b does, on the day today.
+func alertRecordGoesBefore(a, b AlertRecord, today string) bool {
+	if seenA, seenB := alertDate(a.LastSeen) >= today, alertDate(b.LastSeen) >= today; seenA != seenB {
+		return seenB
+	}
+	if a.Folded != b.Folded {
+		return a.Folded
+	}
+	if a.Resolved != b.Resolved {
+		return a.Resolved
+	}
+	return a.LastSeen.Before(b.LastSeen)
 }

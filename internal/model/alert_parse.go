@@ -46,17 +46,17 @@ const (
 
 // ParseAlerts reads the delivery body of an AlertSource of type typ.
 // resource is Sentry's Sentry-Hook-Resource header, unused by the others;
-// containerLabel is the AlertSource's, "" for the default. more counts the
-// alerts the delivery held, or says its sender left out, past the ones read.
-func ParseAlerts(typ, resource string, body []byte, containerLabel string) (alerts []Alert, more int, err error) {
+// labels are the AlertSource's. more counts the alerts the delivery held, or
+// says its sender left out, past the ones read.
+func ParseAlerts(typ, resource string, body []byte, labels AlertLabels) (alerts []Alert, more int, err error) {
 	switch typ {
 	case AlertTypeAlertmanager:
-		return ParseAlertmanager(body, containerLabel)
+		return ParseAlertmanager(body, labels)
 	case AlertTypeSentry:
-		alerts, err = ParseSentry(resource, body, containerLabel)
+		alerts, err = ParseSentry(resource, body, labels)
 		return alerts, 0, err
 	case AlertTypeGeneric:
-		alerts, err = ParseGenericAlert(body, containerLabel)
+		alerts, err = ParseGenericAlert(body, labels)
 		return alerts, 0, err
 	}
 	return nil, 0, fmt.Errorf("unknown alert source type %q", typ)
@@ -98,16 +98,14 @@ func alertTime(s string) time.Time {
 	return t.UTC()
 }
 
-func containerLabelOr(label string) string {
-	if label == "" {
-		return DefaultAlertContainerLabel
-	}
-	return label
-}
+// maxAlertsUnread is the most alerts one delivery is taken to have left
+// unread: truncatedAlerts is its sender's word, and no sender has a million
+// more to say.
+const maxAlertsUnread = 1_000_000
 
 // alertmanagerDelivery is Alertmanager's webhook body, version 4.
 type alertmanagerDelivery struct {
-	TruncatedAlerts int    `json:"truncatedAlerts"`
+	TruncatedAlerts int64  `json:"truncatedAlerts"`
 	Status          string `json:"status"`
 	ExternalURL     string `json:"externalURL"`
 	Alerts          []struct {
@@ -121,11 +119,15 @@ type alertmanagerDelivery struct {
 }
 
 // ParseAlertmanager reads Alertmanager's webhook body: one alert for each of
-// its alerts, the first MaxAlertsPerDelivery. An alert's key is a digest of
+// its alerts, the first MaxAlertsPerDelivery; more counts the rest and the
+// ones Alertmanager says it left out, never below zero nor past
+// maxAlertsUnread. Its body has one shape: a field of another JSON type than
+// that shape gives it (a label that is no string) is no Alertmanager's body,
+// and an error. An alert's key is a digest of
 // its labels, as Alertmanager's own fingerprint is, so a firing alert, its
 // repeats and its resolution are the same alert and a change of annotations
 // makes no new one.
-func ParseAlertmanager(body []byte, containerLabel string) (alerts []Alert, more int, err error) {
+func ParseAlertmanager(body []byte, labels AlertLabels) (alerts []Alert, more int, err error) {
 	var d alertmanagerDelivery
 	if err := json.Unmarshal(body, &d); err != nil {
 		return nil, 0, fmt.Errorf("not Alertmanager's webhook body: %w", err)
@@ -133,12 +135,12 @@ func ParseAlertmanager(body []byte, containerLabel string) (alerts []Alert, more
 	if len(d.Alerts) == 0 {
 		return nil, 0, errors.New("not Alertmanager's webhook body: it holds no alerts")
 	}
-	more = max(d.TruncatedAlerts, 0)
+	more = int(min(max(d.TruncatedAlerts, 0), maxAlertsUnread))
 	if len(d.Alerts) > MaxAlertsPerDelivery {
-		more += len(d.Alerts) - MaxAlertsPerDelivery
+		more = min(more+len(d.Alerts)-MaxAlertsPerDelivery, maxAlertsUnread)
 		d.Alerts = d.Alerts[:MaxAlertsPerDelivery]
 	}
-	containerLabel = containerLabelOr(containerLabel)
+	labels = labels.withDefaults()
 	alerts = make([]Alert, 0, len(d.Alerts))
 	for _, in := range d.Alerts {
 		status := in.Status
@@ -153,8 +155,8 @@ func ParseAlertmanager(body []byte, containerLabel string) (alerts []Alert, more
 			Description: alertBlock(firstNonEmpty(in.Annotations["description"], in.Annotations["message"]), maxAlertDescription),
 			StartsAt:    alertTime(in.StartsAt),
 			URL:         firstAlertURL(in.GeneratorURL, d.ExternalURL),
-			Container:   alertLine(in.Labels[containerLabel], maxAlertHint),
-			Namespace:   alertLine(in.Labels[AlertNamespaceLabel], maxAlertHint),
+			Container:   alertLine(in.Labels[labels.Container], maxAlertHint),
+			Namespace:   alertLine(in.Labels[labels.Namespace], maxAlertHint),
 		}
 		if a.Resolved {
 			a.EndsAt = alertTime(in.EndsAt)
@@ -240,8 +242,9 @@ type sentryIssue struct {
 // the Sentry issue the event belongs to, so every event of an issue is the
 // same alert. An issue that was resolved (issue, action resolved) is that
 // alert, resolved. Every other resource and action is Sentry's but no alert:
-// no alerts and no error.
-func ParseSentry(resource string, body []byte, containerLabel string) ([]Alert, error) {
+// no alerts and no error. A Sentry alert names no namespace: its project
+// leads to its Container (AlertContainer).
+func ParseSentry(resource string, body []byte, labels AlertLabels) ([]Alert, error) {
 	var d sentryDelivery
 	if err := json.Unmarshal(body, &d); err != nil {
 		return nil, fmt.Errorf("not a Sentry webhook body: %w", err)
@@ -251,7 +254,7 @@ func ParseSentry(resource string, body []byte, containerLabel string) ([]Alert, 
 		if d.Data.Event == nil {
 			return nil, errors.New("not a Sentry issue alert: it holds no data.event")
 		}
-		return []Alert{sentryIssueAlert(d, containerLabelOr(containerLabel))}, nil
+		return []Alert{sentryIssueAlert(d, labels.withDefaults().Container)}, nil
 	case SentryResourceIssue:
 		if d.Data.Issue == nil {
 			return nil, errors.New("not a Sentry issue delivery: it holds no data.issue")
@@ -387,8 +390,10 @@ type genericAlert struct {
 // ParseGenericAlert reads the generic body: one JSON object with a title,
 // and optionally key, status (firing or resolved), summary, description,
 // container, namespace, startsAt, endsAt, url, labels and annotations. Its
-// key is a digest of key, or of the title when it gives none.
-func ParseGenericAlert(body []byte, containerLabel string) ([]Alert, error) {
+// key is a digest of key, or of the title when it gives none. A label of the
+// AlertSource's names (names) says the Container or the namespace when the
+// field of that name doesn't.
+func ParseGenericAlert(body []byte, names AlertLabels) ([]Alert, error) {
 	var in genericAlert
 	if err := json.Unmarshal(body, &in); err != nil {
 		return nil, fmt.Errorf("not a generic alert: %w", err)
@@ -403,6 +408,7 @@ func ParseGenericAlert(body []byte, containerLabel string) ([]Alert, error) {
 		return nil, fmt.Errorf("not a generic alert: status %q is neither firing nor resolved",
 			alertLine(string(in.Status), maxAlertHint))
 	}
+	names = names.withDefaults()
 	labels, annotations := textPairs(in.Labels), textPairs(in.Annotations)
 	a := Alert{
 		Key:         alertKey(AlertTypeGeneric, firstNonEmpty(string(in.Key), string(in.Title))),
@@ -412,9 +418,8 @@ func ParseGenericAlert(body []byte, containerLabel string) ([]Alert, error) {
 		Description: alertBlock(string(in.Description), maxAlertDescription),
 		StartsAt:    alertTime(string(in.StartsAt)),
 		URL:         alertURL(string(in.URL)),
-		Container: alertLine(firstNonEmpty(string(in.Container), labels[containerLabelOr(containerLabel)]),
-			maxAlertHint),
-		Namespace: alertLine(firstNonEmpty(string(in.Namespace), labels[AlertNamespaceLabel]), maxAlertHint),
+		Container:   alertLine(firstNonEmpty(string(in.Container), labels[names.Container]), maxAlertHint),
+		Namespace:   alertLine(firstNonEmpty(string(in.Namespace), labels[names.Namespace]), maxAlertHint),
 	}
 	if a.Resolved {
 		a.EndsAt = alertTime(string(in.EndsAt))
