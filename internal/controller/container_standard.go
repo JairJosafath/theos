@@ -97,7 +97,13 @@ func (r *ContainerReconciler) liveContainer(ctx context.Context, container *c4v1
 func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus, live func() bool) bool {
 	name := container.Choices().Standard
-	if status.Standard == nil || status.Standard.Name != name {
+	// #97: an adopted repository grows into its Standard. Until main holds the
+	// Standard's files none is recorded, and the pass brings them in.
+	adopting := awaitsStandard(container, status)
+	if !adopting {
+		status.StandardAdoption = nil
+	}
+	if !adopting && (status.Standard == nil || status.Standard.Name != name) {
 		ref := model.ScaffoldedRef(status.ScaffoldedFrom, name)
 		if ref == "" {
 			r.condition(container, status, c4v1beta1.ConditionStandardUpdated, metav1.ConditionFalse,
@@ -120,6 +126,10 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 		return false
 	}
 
+	if adopting && !r.standardFits(ctx, container, status, &standard) {
+		return false
+	}
+
 	if !live() {
 		return false
 	}
@@ -128,6 +138,9 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 	gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
 	defer cancel()
 	u := &standardUpdate{r: r, container: container, status: status}
+	if adopting && !u.adoptStandard(ctx, gitCtx, &standard) {
+		return false
+	}
 	u.run(ctx, gitCtx, &standard)
 	return u.answered
 }
@@ -667,15 +680,16 @@ func (r *standardRenders) bases(ctx context.Context, behind []c4v1beta1.Standard
 // take: an unpinned ref or a render that fails, or a Git error, retried at the
 // next pass.
 func (u *standardUpdate) renderFailed(ctx context.Context, err error) {
-	s := u.status.Standard
+	// The Container's Standard, recorded or still to be brought in (#97).
+	name := u.container.Choices().Standard
 	switch {
 	case errors.Is(err, ports.ErrUnpinnedRef):
-		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", s.Name, err))
+		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", name, err))
 	case errors.Is(err, ports.ErrTemplatePathNotFound):
-		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonTemplatePathNotFound, fmt.Sprintf("Standard %s: %v", s.Name, err))
+		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonTemplatePathNotFound, fmt.Sprintf("Standard %s: %v", name, err))
 	case errors.As(err, new(*renderError)):
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonFailed,
-			fmt.Sprintf("Could not render the Standard %s %v", s.Name, err))
+			fmt.Sprintf("Could not render the Standard %s %v", name, err))
 	case errors.As(err, new(*frameworkRenderError)):
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonFailed, err.Error())
 	case errors.As(err, new(*frameworkNotFoundError)):
@@ -1127,7 +1141,7 @@ func (u *standardUpdate) updating() {
 // recheck tries again.
 func (u *standardUpdate) gitError(ctx context.Context, err error) {
 	u.condition(metav1.ConditionFalse, c4v1beta1.ReasonGitError, err.Error()+"; retrying")
-	logf.FromContext(ctx).Info("Could not update the Standard's files", "standard", u.status.Standard.Name,
+	logf.FromContext(ctx).Info("Could not update the Standard's files", "standard", u.container.Choices().Standard,
 		"error", err.Error())
 }
 

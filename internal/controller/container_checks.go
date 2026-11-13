@@ -146,11 +146,14 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 // the full check when spec.checks asks. Once scaffolded, that is what the
 // repository's CI runs (status.standard.checks): while it differs, the condition
 // is False and says why, the update in flight or the stop. A Container without
-// a Standard, or whose Standard isn't there (ReferencesResolved says so), has no
+// a Standard, or whose Standard isn't there (ReferencesResolved says so), or
+// isn't on the main of the repository it adopted yet (awaitsStandard), has no
 // such condition; a read error keeps the last one.
 func (r *ContainerReconciler) reportChecksApplied(ctx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus) {
-	if container.Choices().Standard == "" {
+	// #97: a Standard an adopted repository hasn't merged yet runs no check
+	// there; StandardUpdated says where its files are.
+	if container.Choices().Standard == "" || awaitsStandard(container, status) {
 		meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionChecksApplied)
 		return
 	}

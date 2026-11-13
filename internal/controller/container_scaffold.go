@@ -217,11 +217,13 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 
 // adopt takes over a repository that already has commits (#1888, spec.adopt).
 // Nothing is written: main must exist and carry a .theos.yaml naming this project
-// and Container, and every file of the Container's Standard with the content
-// the Standard renders for it at its ref. Then main is protected and the
-// Container is Ready, its Standard recorded at that ref and nothing recorded
-// as scaffolded. Its spec.operations is recorded as it is now, as a recovered
-// scaffold's is.
+// and Container. When it also carries every file of the Container's Standard
+// with the content the Standard renders for it at its ref, main is protected
+// and the Container is Ready, its Standard recorded at that ref. When it
+// doesn't, the Container is Ready on its identity, its Standard unrecorded
+// and main unprotected, and the Standard's files arrive as a pull request
+// (#97, adoptStandard). Nothing is recorded as scaffolded. Its spec.operations
+// is recorded as it is now, as a recovered scaffold's is.
 func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus, res resolved, view *c4v1beta1.Container, provider ports.GitHost,
 	repo ports.Repository) (ctrl.Result, error) {
@@ -314,25 +316,28 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	// The closest render names the paths when none matches: the fewest
-	// paths that differ, the earlier set on a tie.
-	var differ []string
+	differ := make([]int, len(renders))
 	adopted := -1
 	for i, rendered := range renders {
-		changed := scaffold.ChangedPaths(rendered, onMain)
-		if len(changed) == 0 {
+		differ[i] = len(scaffold.ChangedPaths(rendered, onMain))
+		if differ[i] == 0 {
 			adopted = i
 			break
 		}
-		if differ == nil || len(changed) < len(differ) {
-			differ = changed
-		}
 	}
 	if adopted < 0 {
-		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonStandardFilesDiffer,
-			fmt.Sprintf("Repository %s: %s differs from Standard %s at %s in %s; an adopted repository carries the "+
-				"Standard's files as it renders them", repo.WebURL, ports.DefaultBranch, res.choices.Standard,
-				standardRef, strings.Join(differ, ", ")))
+		// #97: a Standard is something an adopted repository grows into. The
+		// Container is Ready on its identity, with the Domains of the render
+		// main is closest to; nothing is written or protected here, and the
+		// Standard isn't recorded. The Ready Container's next pass opens the
+		// pull request with the files that differ (adoptStandard).
+		domains := domainSets[model.ClosestRender(differ)]
+		log.Info("Adopted repository without its Standard's files", "url", repo.WebURL,
+			"standard", res.choices.Standard, "ref", standardRef, "domains", domains)
+		return r.ready(ctx, container, status, "", "", nil, domains, nil, checks,
+			frameworkEntry(res.entries).ReadsOperations, fmt.Sprintf(
+				"Adopted repository %s; the files of its Standard %s arrive as a pull request", repo.WebURL,
+				res.choices.Standard))
 	}
 	domains := domainSets[adopted]
 

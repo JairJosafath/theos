@@ -277,6 +277,8 @@ func TestCheckStandard(t *testing.T) {
 		{"no standard", "python-fastapi", nil, ""},
 		{"listed framework", "go-cli", &standard, ""},
 		{"unlisted framework", "python-fastapi", &standard, "strict-standard does not support python-fastapi"},
+		{"#97: no framework, as an adoption may name none", "", &standard,
+			"strict-standard supports only the Frameworks it lists, and the Container names no frameworkRef"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

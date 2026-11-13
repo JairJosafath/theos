@@ -85,6 +85,26 @@ func containerPhaseChanges() builder.WatchesOption {
 	})
 }
 
+// containerPhaseOrStandardRecorded passes what containerPhaseChanges passes,
+// and a Container's Standard being recorded (status.standard going from unset
+// to set): the Task and the Crew that wait for an adopted repository's
+// Standard to be on main go on then, not at their next timed recheck (#97).
+func containerPhaseOrStandardRecorded() builder.WatchesOption {
+	return builder.WithPredicates(phaseOrStandardRecorded())
+}
+
+// phaseOrStandardRecorded is containerPhaseOrStandardRecorded's predicate.
+func phaseOrStandardRecorded() predicate.Funcs {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldContainer, ok1 := e.ObjectOld.(*c4v1beta1.Container)
+			newContainer, ok2 := e.ObjectNew.(*c4v1beta1.Container)
+			return !ok1 || !ok2 || oldContainer.Status.Phase != newContainer.Status.Phase ||
+				(oldContainer.Status.Standard == nil && newContainer.Status.Standard != nil)
+		},
+	}
+}
+
 // containerPhaseOrBehindChanges passes what containerPhaseChanges passes, and
 // a change of the Container's Standard files waiting on a person: its Brief
 // lists them under Needs you.

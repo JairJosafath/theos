@@ -303,6 +303,30 @@ func TestUpdateMessage(t *testing.T) {
 	}
 }
 
+// #97: the commit that brings a Standard into an adopted repository.
+func TestAdoptionMessage(t *testing.T) {
+	in := Input{Project: "tools", SoftwareSystem: "tools", Container: "cel-language-server"}
+	want := "Bring in the Standard go-standard at v1.1.1\n\n" +
+		"Writes the files of go-standard at v1.1.1 that the repository of Container cel-language-server didn't " +
+		"hold as the Standard renders them.\n" +
+		"CI runs the full check on every change.\n\n" +
+		"theos-Container: tools/cel-language-server\n" +
+		"Standard-Adoption: go-standard@v1.1.1\n"
+	if got := AdoptionMessage(in, "go-standard", model.StandardVersion{Ref: "v1.1.1"}); got != want {
+		t.Errorf("AdoptionMessage() =\n%s\nwant\n%s", got, want)
+	}
+	want = "Bring in the Standard go-standard at v1.1.1 with the full check before release\n\n" +
+		"Writes the files of go-standard at v1.1.1 that the repository of Container cel-language-server didn't " +
+		"hold as the Standard renders them.\n" +
+		"CI runs the full check only before a release.\n\n" +
+		"theos-Container: tools/cel-language-server\n" +
+		"Standard-Adoption: go-standard@v1.1.1\n"
+	got := AdoptionMessage(in, "go-standard", model.StandardVersion{Ref: "v1.1.1", Checks: model.ChecksBeforeRelease})
+	if got != want {
+		t.Errorf("AdoptionMessage() before release =\n%s\nwant\n%s", got, want)
+	}
+}
+
 func TestUpdateMessageBetweenChecksModes(t *testing.T) {
 	in := Input{Project: "tools", SoftwareSystem: "tools", Container: "cel-language-server"}
 	u := Update{Files: tree(".gitea/workflows/check.yaml", "x")}

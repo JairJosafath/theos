@@ -130,7 +130,8 @@ var _ = Describe("Container adoption with Domains", func() {
 		}).Should(Succeed())
 	})
 
-	It("still fails StandardFilesDiffer when the repository's domain section differs (#42)", func() {
+	It("brings only the changed guide, rendered with the repository's Domains, when its domain section "+
+		"differs (#42, #97)", func() {
 		ns := newProjectNamespace()
 		files := scaffoldedWithDomain(ns)
 		agents := files["AGENTS.md"]
@@ -140,7 +141,17 @@ var _ = Describe("Container adoption with Domains", func() {
 		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
 		adoptOnDomains(ns, "webshop")
 
-		cond := failedAdoption(ns, c4v1beta1.ReasonStandardFilesDiffer)
-		Expect(cond.Message).To(ContainSubstring("in AGENTS.md;"), "only the changed guide, against the closest render")
+		Eventually(func(g Gomega) {
+			container := getContainer(g, ns)
+			g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+			g.Expect(container.Status.ScaffoldedDomains).To(Equal([]string{"webshop"}), "the closest render's Domains")
+			g.Expect(container.Status.StandardAdoption).NotTo(BeNil())
+			g.Expect(container.Status.StandardAdoption.Paths).To(Equal([]string{"AGENTS.md"}),
+				"only the changed guide, against the closest render")
+			g.Expect(gitFake.BranchEdits(ns, "orders-api", container.Status.StandardAdoption.Branch)).To(
+				HaveKeyWithValue("AGENTS.md", HaveValue(HaveField("Data",
+					ContainSubstring("docs/agents/domain/webshop/README.md")))))
+		}).Should(Succeed())
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1), "an adopted repository's main is never written")
 	})
 })
