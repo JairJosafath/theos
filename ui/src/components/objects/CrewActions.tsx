@@ -580,17 +580,22 @@ function browserTimeZone(): string | undefined {
  * that. What is typed goes as it is; a zone the operator can't load is said by
  * the Crew's Scheduled condition, and a refused write shows the API server's
  * message. `zones` is the id of the TimeZoneList to suggest names from.
+ * The form goes from the page once the Crew has the schedule, so a list of
+ * these forms passes `onTaken` and says the result itself, where it stays;
+ * without `onTaken` the form says it.
  */
 export function TakeProposalForm({
   crew,
   proposal,
   zones,
   writer,
+  onTaken,
 }: {
   crew: Crew
   proposal: CrewSchedule
   zones?: string
   writer: CrewWriter
+  onTaken?: (name: string) => void
 }) {
   const id = useId()
   const [zone, setZone] = useState('')
@@ -601,10 +606,10 @@ export function TakeProposalForm({
   function submit(e: FormEvent) {
     e.preventDefault()
     if (!given) return
-    void run(
-      () => writer.addSchedule(crew.metadata.namespace ?? '', crew.metadata.name, takenSchedule(proposal, zone)),
-      'Added to the Crew’s schedules',
-    )
+    void run(async () => {
+      await writer.addSchedule(crew.metadata.namespace ?? '', crew.metadata.name, takenSchedule(proposal, zone))
+      onTaken?.(proposal.name)
+    }, 'Added to the Crew’s schedules')
   }
 
   return (
@@ -623,6 +628,7 @@ export function TakeProposalForm({
           list={zones}
           spellCheck={false}
           autoComplete="off"
+          required
           onChange={(e) => setZone(e.target.value)}
           disabled={sending}
         />
@@ -630,7 +636,7 @@ export function TakeProposalForm({
         <button type="submit" className="button button-secondary" disabled={sending || !given || Boolean(done)}>
           {sending ? 'Taking…' : `Take ${proposal.name}`}
         </button>
-        <Done text={done} />
+        {onTaken ? null : <Done text={done} />}
       </div>
       {error ? <FormError error={error} /> : null}
     </form>

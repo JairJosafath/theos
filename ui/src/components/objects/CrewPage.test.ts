@@ -389,6 +389,17 @@ describe('the Crew page’s Standard proposals', () => {
     expect(acting).toMatch(/<input[^>]*class="input mono crew-zone"[^>]*value=""/)
   })
 
+  it('shows the zone a Standard wrote into a proposal on the offered row, and still asks for the Crew’s', () => {
+    const NY = { ...DEPS, timeZone: 'America/New_York' }
+    for (const session of [ACTING, undefined]) {
+      const html = panel(page(session, crew(), [NY, FLAKES]))
+      expect(html).toContain('Written for the time zone <span class="mono">America/New_York</span>.')
+      // Only on the row of the proposal that names one.
+      expect(html.match(/Written for the time zone/g)).toHaveLength(1)
+    }
+    expect(panel(page(ACTING, crew(), [NY]))).toMatch(/<input[^>]*class="input mono crew-zone"[^>]*value=""/)
+  })
+
   it('offers to take a proposal only where the page can write, and says how otherwise', () => {
     const acting = panel(page(ACTING, crew(), [DEPS, FLAKES]))
     expect(acting).toContain('>Take dependencies</button>')
@@ -408,8 +419,23 @@ describe('the Crew page’s Standard proposals', () => {
     expect(html).toContain('Names this Crew uses')
     expect(html).not.toContain('>Take dependencies</button>')
     expect(html).toContain('>Take flakes</button>')
-    expect(html).toContain('the Crew’s schedule of this name has the proposal’s cron, time zone and goal')
+    // UTC is not called the proposal's: one that names no zone reads UTC too.
+    expect(html).toContain(
+      'the Crew’s schedule of this name has the proposal’s cron and goal, and is in UTC, ' +
+        'which a proposal that names no time zone also reads as',
+    )
+    expect(html).not.toContain('the proposal’s cron, time zone and goal')
     expect(html).not.toContain('differs from the proposal')
+  })
+
+  it('says the Crew’s schedule has the proposal’s time zone only for a zone the Standard wrote', () => {
+    const NY = { ...DEPS, timeZone: 'America/New_York' }
+    const html = panel(page(ACTING, withSchedules([{ ...NY }]), [NY]))
+    expect(html).toContain('the Crew’s schedule of this name has the proposal’s cron, time zone and goal')
+    const differing = panel(page(ACTING, withSchedules([{ ...NY, timeZone: 'UTC' }]), [NY]))
+    expect(differing).toContain(
+      '<div><span class="muted">The proposal’s: </span><span class="mono">America/New_York</span></div>',
+    )
   })
 
   it('shows where the Crew’s schedule differs from the proposal of its name: cron, zone and goal', () => {
@@ -422,12 +448,14 @@ describe('the Crew page’s Standard proposals', () => {
     )
     expect(html).toContain(
       '<dt>Time zone</dt><dd><div><span class="muted">The Crew’s: </span><span class="mono">Europe/Amsterdam</span></div>' +
-        '<div><span class="muted">The proposal’s: </span><span class="mono">UTC</span></div></dd>',
+        '<div><span class="muted">The proposal: </span><span class="mono">UTC</span>' +
+        '<span class="muted">, which one that names no time zone also reads as</span></div></dd>',
     )
     expect(html).toContain(
       '<dt>Goal</dt><dd><div><span class="muted">The Crew’s: </span><span>Update them all.</span></div>' +
         '<div><span class="muted">The proposal’s: </span><span>Update the deps.</span></div></dd>',
     )
+    expect(html).not.toContain('The proposal’s: </span><span class="mono">UTC')
     expect(html).not.toContain('Not in use by this Crew')
   })
 

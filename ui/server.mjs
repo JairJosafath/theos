@@ -684,43 +684,68 @@ const KEPT_PLANNED_PROMPTS = 10
 
 /**
  * Appends a prompt. A JSON patch can't append to a list that isn't there, and
- * a Brief without prompts has none: then the patch adds the list, guarded by
- * the resourceVersion just read so it never replaces a list made meanwhile.
+ * a Brief without prompts has none: then the patch adds the list (addFirst).
  * To a full list, the append retires the planned prompts past the newest ten
  * in the same write (retiringAppend); the operator never writes the spec.
  */
-async function addPrompt({ res, upstream, log, apiPath, namespace, name, body: op, as }) {
+async function addPrompt(args) {
+  const { res, upstream, log, apiPath, namespace, name, body: op, as } = args
   const current = await requestJson(upstream, apiPath)
   if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
-  const prompts = current.body?.spec?.prompts
-  const ops = !Array.isArray(prompts)
-    ? [
-        { op: 'test', path: '/metadata/resourceVersion', value: current.body?.metadata?.resourceVersion },
-        { op: 'add', path: '/spec/prompts', value: [op.value] },
-      ]
-    : (retiringAppend(current.body, op.value) ?? [op])
   log(`Adding a prompt to Brief ${namespace}/${name}${by(as)}`)
+  if (!Array.isArray(current.body?.spec?.prompts)) {
+    return addFirst(args, { kind: 'Brief', item: 'prompt', list: '/spec/prompts', current: current.body })
+  }
+  const ops = retiringAppend(current.body, op.value) ?? [op]
   return forwardWrite(res, upstream, 'PATCH', apiPath, JSON_PATCH, ops, as)
 }
 
 /**
  * Appends a schedule to a Crew. As for a Brief's first prompt, a JSON patch
  * can't append to a list that isn't there: for a Crew with no schedules the
- * patch adds the list, guarded by the resourceVersion just read so it never
- * replaces a list made meanwhile. A name the Crew already uses, a ninth
+ * patch adds the list (addFirst). A name the Crew already uses, a ninth
  * schedule and a cron of the wrong shape are the API server's to refuse.
  */
-async function addSchedule({ res, upstream, log, apiPath, namespace, name, body: op, as }) {
+async function addSchedule(args) {
+  const { res, upstream, log, apiPath, namespace, name, body: op, as } = args
   const current = await requestJson(upstream, apiPath)
   if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
-  const ops = Array.isArray(current.body?.spec?.schedules)
-    ? [op]
-    : [
-        { op: 'test', path: RV_PATH, value: current.body?.metadata?.resourceVersion },
-        { op: 'add', path: '/spec/schedules', value: [op.value] },
-      ]
   log(`Adding a schedule to Crew ${namespace}/${name}${by(as)}`)
-  return forwardWrite(res, upstream, 'PATCH', apiPath, JSON_PATCH, ops, as)
+  if (!Array.isArray(current.body?.spec?.schedules)) {
+    return addFirst(args, { kind: 'Crew', item: 'schedule', list: '/spec/schedules', current: current.body })
+  }
+  return forwardWrite(res, upstream, 'PATCH', apiPath, JSON_PATCH, [op], as)
+}
+
+/**
+ * Adds the list at `list` with the value of the checked append as its first
+ * entry, for an object of `kind` that has none: `current` is the object as
+ * just read. The patch tests the resourceVersion read, so it never replaces a
+ * list made meanwhile. The API server refuses a failed test as a 422 that
+ * doesn't say the object changed; when it has changed since the read, that
+ * refusal is answered as a Conflict that says so, and that the same request
+ * made again goes through. Any other refusal goes back as it is.
+ */
+async function addFirst({ res, upstream, apiPath, namespace, name, body: op, as }, { kind, item, list, current }) {
+  const read = current?.metadata?.resourceVersion
+  const ops = [
+    { op: 'test', path: RV_PATH, value: read },
+    { op: 'add', path: list, value: [op.value] },
+  ]
+  const answer = await writeUpstream(upstream, 'PATCH', apiPath, JSON_PATCH, ops, as)
+  if (answer.status === 422) {
+    const now = await requestJson(upstream, apiPath)
+    if (now.status === 200 && now.body?.metadata?.resourceVersion !== read) {
+      return sendStatus(
+        res,
+        409,
+        'Conflict',
+        `${kind} ${namespace}/${name} changed while its first ${item} was being added, so nothing was saved: ` +
+          'adding it again the same way works',
+      )
+    }
+  }
+  return sendAnswer(res, answer)
 }
 
 /**
@@ -772,10 +797,14 @@ function forwardPatch({ res, upstream, log, apiPath, namespace, name, entry, bod
 
 const JSON_TYPE = { 'content-type': 'application/json', 'cache-control': 'no-store' }
 
-/** Sends one write upstream and the API's answer, a refusal included, back to the browser. */
-async function forwardWrite(res, upstream, method, apiPath, contentType, body, as) {
+/** Sends one write upstream as the UI and gives the API's answer. */
+function writeUpstream(upstream, method, apiPath, contentType, body, as) {
   const search = `?${new URLSearchParams({ fieldManager: FIELD_MANAGER })}`
-  const answer = await requestJson(upstream, apiPath, { method, search, contentType, body, as })
+  return requestJson(upstream, apiPath, { method, search, contentType, body, as })
+}
+
+/** Sends the API's answer to a write, a refusal included, back to the browser. */
+function sendAnswer(res, answer) {
   send(
     res,
     answer.status,
@@ -783,6 +812,11 @@ async function forwardWrite(res, upstream, method, apiPath, contentType, body, a
 `,
     JSON_TYPE,
   )
+}
+
+/** Sends one write upstream and the API's answer, a refusal included, back to the browser. */
+async function forwardWrite(res, upstream, method, apiPath, contentType, body, as) {
+  sendAnswer(res, await writeUpstream(upstream, method, apiPath, contentType, body, as))
 }
 
 /** Proxies one GET request to the Kubernetes API and streams the answer back. */

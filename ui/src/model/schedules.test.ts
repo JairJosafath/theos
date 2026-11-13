@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Container, Crew, CrewSchedule, Standard } from '../k8s/types'
-import { scheduleDifferences, scheduleProposals } from './schedules'
+import { scheduleDifferences, scheduleProposals, writtenZone } from './schedules'
 
 const DEPS: CrewSchedule = {
   name: 'dependencies',
@@ -184,6 +184,15 @@ describe('scheduleProposals', () => {
       offered: [],
       inUse: [],
     },
+    {
+      name: 'a Standard of the name only in another namespace is not this Container’s: named, and offers none',
+      crew: crew(),
+      containers: [PY],
+      standards: [standard('python-standard', [DEPS], 'other')],
+      standard: 'python-standard',
+      offered: [],
+      inUse: [],
+    },
   ]
   for (const c of cases) {
     it(c.name, () => {
@@ -199,6 +208,14 @@ describe('scheduleProposals', () => {
     const [use] = scheduleProposals(crew([mine]), [PY], [standard('python-standard', [DEPS])]).inUse
     expect(use.schedule).toEqual(mine)
     expect(use.proposal).toEqual(DEPS)
+  })
+})
+
+describe('writtenZone', () => {
+  it('is the zone a proposal names, and none for UTC, which the API server writes into one that names none', () => {
+    expect(writtenZone({ ...DEPS, timeZone: 'America/New_York' })).toBe('America/New_York')
+    expect(writtenZone({ ...DEPS, timeZone: 'UTC' })).toBeUndefined()
+    expect(writtenZone({ ...DEPS, timeZone: undefined })).toBeUndefined()
   })
 })
 

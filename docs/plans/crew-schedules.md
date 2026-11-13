@@ -194,13 +194,29 @@ no chart change. It closes #72.
     `kubectl edit` and the patch already do.
   - Nothing is lost by it: the same RBAC decides either way, since both are
     patches of the Crew.
+- **No chart change, because the chart's UI role already grants the
+  write.** In `dist/chart/templates/ui/rbac.yaml`, with `ui.actions.enabled`,
+  ClusterRole `<ui name>-actions` has the rule `patch` on `briefs`, `crews`,
+  `containers` and `standards`: a taken schedule is a patch of a Crew. The
+  read the server makes first is the `<ui name>-reader` role's `get` on
+  `crews`, always the ServiceAccount's. Over a port-forward the actions role
+  is bound to the UI's ServiceAccount; with OIDC the write is made as the
+  person, who needs that role (`ui.auth.oidc.actionGroups`, or a binding of
+  their own). `config/ui` runs with actions off, where the server takes no
+  schedule (405), so its role needs nothing either.
 - **The write is an append, and the UI server lets through nothing else.**
   The browser sends one JSON patch operation, `add` at `/spec/schedules/-`,
   with an object of `name`, `cron`, `timeZone` and `goal`. `ui/server.mjs`
   checks that shape (strings, no other field) and, as for a Brief's first
   prompt, makes the list for a Crew that has none, guarded by the
   `resourceVersion` it just read. So the UI can add a schedule and can't
-  set, change or remove one: a stale page loses nobody's schedule. The
+  set, change or remove one: a stale page loses nobody's schedule. When
+  the Crew changes between that read and the write (the operator's status
+  writes move the `resourceVersion` too), the API server refuses the test
+  with a 422 that doesn't say why; the server reads the Crew again and, if
+  it has changed, answers `409 Conflict` saying so and that adding it again
+  works. A Brief's first prompt gets the same answer from the same helper
+  (`addFirst`). The
   values are the CRD's to judge: a name already in use (`listType=map`), a
   ninth schedule and a cron of the wrong shape are refused by the API server
   and the form shows its message.
@@ -211,7 +227,9 @@ no chart change. It closes #72.
   read. The hint names the browser's zone and the field suggests the IANA
   names the browser knows. What is typed goes as typed, trimmed: a zone the
   operator can't load is said by the Crew's `Scheduled` condition, on the
-  same page.
+  same page. A zone other than UTC in a proposal was written by its
+  Standard (the CRD lets a proposal name one), so the offered row shows it
+  ("Written for the time zone ..."); the field still starts empty.
 - **Only the zone is asked.** The cron and the goal are copied as written;
   a person who wants other words takes it and edits the Crew. A form that
   edits a whole schedule would be the UI editing the model, which it
@@ -227,7 +245,15 @@ no chart change. It closes #72.
 - **A taken proposal says its zone differs,** when the zone given isn't UTC:
   the page shows the Crew's zone beside the proposal's stored `UTC`. That is
   what the two objects say, and it tells the reader the two run at different
-  hours. The page words it as a difference, not as a change someone made.
+  hours. The page words it as a difference, not as a change someone made,
+  and never calls UTC the proposal's own zone: it says UTC is what a
+  proposal that names no time zone also reads as.
+- **The result outlives the row.** When the watch brings the Crew's new
+  schedule, the taken proposal's row, form and all, leaves the offered list.
+  The panel says "Added <name> to the Crew's schedules." in a live region of
+  its own that is in the page from the start, and focus that went with the
+  row moves there; focus a person moved elsewhere stays. The zone field is
+  `required`.
 - **Without a writer the page still shows both lists** (actions off, the
   demo, nobody signed in), with the `kubectl edit` line in place of the
   form, as the header does for a step the UI can't take.

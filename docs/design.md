@@ -1095,8 +1095,9 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   as written would run at UTC unasked. One whose name the Crew uses is shown
   as in use, with where the Crew's schedule differs in cron, time zone or
   goal. The page says nothing of where a schedule came from: the name is all
-  that links the two. The write is the UI's own, as the person signed in;
-  the operator still reads no proposal.
+  that links the two. The write is the UI's own: made as the person signed
+  in where the UI signs people in with OIDC, and as the UI's ServiceAccount
+  over a port-forward. The operator still reads no proposal.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.

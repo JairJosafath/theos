@@ -46,6 +46,16 @@ export function scheduleZone(schedule: CrewSchedule): string {
 }
 
 /**
+ * The zone a Standard wrote into `proposal`, or undefined when it reads UTC.
+ * The API server writes UTC into a proposal that names no zone, so UTC there
+ * may be nobody's choice; any other zone was written.
+ */
+export function writtenZone(proposal: CrewSchedule): string | undefined {
+  const zone = scheduleZone(proposal)
+  return zone === 'UTC' ? undefined : zone
+}
+
+/**
  * Where `schedule` differs from `proposal`: the cron as written, the time zone
  * (UTC for one that names none) and the goal, whose leading and trailing
  * white space doesn't count, since YAML's block styles end a text differently.

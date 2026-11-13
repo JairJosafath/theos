@@ -16,14 +16,14 @@
 import type { BriefWriter } from '../../k8s/briefs'
 import { RUN_SCHEDULE, briefTarget, type CrewWriter } from '../../k8s/crews'
 import type { Agent, ApprovalRule, Brief, Container, Crew, CrewRelease, Standard, Task } from '../../k8s/types'
-import { useId } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useActs } from '../../lib/hooks'
 import { approvalAsks, approvalRuleFor, crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
 import { PUBLISH_MIGRATION_URL, RELEASE_RUN, publishFailure } from '../../model/releases'
 import type { AgentRole } from '../../model/factory'
 import { absoluteTime } from '../../model/format'
 import { crewNextStep } from '../../model/lifecycle'
-import { scheduleProposals, type ScheduleField, type ScheduleProposals } from '../../model/schedules'
+import { scheduleProposals, writtenZone, type ScheduleField, type ScheduleProposals } from '../../model/schedules'
 import { AgentName, When } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
@@ -295,9 +295,15 @@ const FIELD_NAME: Record<ScheduleField, string> = { cron: 'Cron', timeZone: 'Tim
  * giving the time zone. Those whose name it uses are listed with where the
  * Crew's schedule differs. The name is all that links a schedule to a
  * proposal, so the panel says "in use" and "differs", never that a schedule
- * was taken from here or changed since.
+ * was taken from here or changed since. Nor does it call UTC a proposal's
+ * own zone: the API server writes UTC into one that names none, so only
+ * another zone is shown as written (writtenZone).
+ *
+ * A taken proposal's row, form and all, goes from the offered list when the
+ * watch brings the Crew's new schedule. So the panel says the result, in a
+ * live region that stays, and focus the row took with it moves there.
  */
-function ProposalsPanel({
+export function ProposalsPanel({
   crew,
   proposals,
   writer,
@@ -309,6 +315,15 @@ function ProposalsPanel({
   const zones = useId()
   const ns = crew.metadata.namespace ?? ''
   const { standard = '', offered, inUse } = proposals
+  const [taken, setTaken] = useState<string>()
+  const result = useRef<HTMLParagraphElement>(null)
+  const listed = taken !== undefined && inUse.some((u) => u.proposal.name === taken)
+  useEffect(() => {
+    if (!listed) return
+    // Only focus that went with the row: a person who moved on meanwhile stays where they are.
+    const active = document.activeElement
+    if (!active || active === document.body || !active.isConnected) result.current?.focus()
+  }, [listed])
   return (
     <section className="panel" aria-labelledby="crew-proposals">
       <h2 className="panel-title small-title" id="crew-proposals">
@@ -319,6 +334,12 @@ function ProposalsPanel({
         Containers. A proposal files nothing: the Crew works one once it has a schedule of that name, which is then the
         Crew’s own to change.
       </p>
+      {writer ? (
+        // Always there, so what it comes to say is announced.
+        <p className="form-done proposals-result" role="status" tabIndex={-1} ref={result}>
+          {taken ? `Added ${taken} to the Crew’s schedules.` : null}
+        </p>
+      ) : null}
       {offered.length ? (
         <>
           <h3 className="object-section">Not in use by this Crew</h3>
@@ -335,7 +356,15 @@ function ProposalsPanel({
                 <span className="muted"> · </span>
                 <span className="mono">{p.cron}</span>
                 <div>{p.goal}</div>
-                {writer ? <TakeProposalForm crew={crew} proposal={p} zones={zones} writer={writer} /> : null}
+                {writtenZone(p) ? (
+                  <div className="muted">
+                    Written for the time zone <span className="mono">{writtenZone(p)}</span>. The zone this Crew reads
+                    it in is still the one you give.
+                  </div>
+                ) : null}
+                {writer ? (
+                  <TakeProposalForm crew={crew} proposal={p} zones={zones} writer={writer} onTaken={setTaken} />
+                ) : null}
               </li>
             ))}
           </ol>
@@ -351,7 +380,9 @@ function ProposalsPanel({
                 <span className="muted">
                   {differs.length
                     ? ' · the Crew’s schedule of this name differs from the proposal:'
-                    : ' · the Crew’s schedule of this name has the proposal’s cron, time zone and goal'}
+                    : writtenZone(proposal)
+                      ? ' · the Crew’s schedule of this name has the proposal’s cron, time zone and goal'
+                      : ' · the Crew’s schedule of this name has the proposal’s cron and goal, and is in UTC, which a proposal that names no time zone also reads as'}
                 </span>
                 {differs.length ? (
                   <dl className="facts">
@@ -363,10 +394,18 @@ function ProposalsPanel({
                             <span className="muted">The Crew’s: </span>
                             <span className={d.field === 'goal' ? undefined : 'mono'}>{d.crew}</span>
                           </div>
-                          <div>
-                            <span className="muted">The proposal’s: </span>
-                            <span className={d.field === 'goal' ? undefined : 'mono'}>{d.proposal}</span>
-                          </div>
+                          {d.field === 'timeZone' && !writtenZone(proposal) ? (
+                            <div>
+                              <span className="muted">The proposal: </span>
+                              <span className="mono">{d.proposal}</span>
+                              <span className="muted">, which one that names no time zone also reads as</span>
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="muted">The proposal’s: </span>
+                              <span className={d.field === 'goal' ? undefined : 'mono'}>{d.proposal}</span>
+                            </div>
+                          )}
                         </dd>
                       </div>
                     ))}

@@ -9,7 +9,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LiveCrewWriter } from '../../k8s/crews'
 import type { Crew, CrewSchedule } from '../../k8s/types'
+import type { ScheduleProposals } from '../../model/schedules'
 import { TakeProposalForm } from './CrewActions'
+import { ProposalsPanel } from './CrewPage'
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean
@@ -70,6 +72,7 @@ describe('taking a schedule the Standard proposes', () => {
   it('asks for the time zone: the field starts empty and nothing is sent without one', async () => {
     const { page, input, button, type, sent } = await show()
     expect(input.value).toBe('')
+    expect(input.required).toBe(true)
     expect(button.textContent).toBe('Take dependencies')
     expect(button.disabled).toBe(true)
     await type('   ')
@@ -121,5 +124,78 @@ describe('taking a schedule the Standard proposes', () => {
     await act(async () => button.click())
     expect(page.querySelector('[role="alert"]')?.textContent).toContain('Duplicate value')
     expect(button.disabled).toBe(false)
+  })
+})
+
+// The review of #72's step 6: the watch brings the Crew's new schedule, the
+// taken proposal's row leaves the offered list, and the result and the
+// keyboard focus must not leave with it.
+describe('the proposals panel once a proposal is taken', () => {
+  const other: CrewSchedule = { name: 'flakes', cron: '0 2 * * *', timeZone: 'UTC', goal: 'Find the flaky tests.' }
+  const before: ScheduleProposals = { standard: 'python-standard', offered: [proposal, other], inUse: [] }
+  const taken = { ...proposal, timeZone: 'Europe/Amsterdam' }
+  const after: ScheduleProposals = {
+    standard: 'python-standard',
+    offered: [other],
+    inUse: [{ proposal, schedule: taken, differs: [{ field: 'timeZone', crew: 'Europe/Amsterdam', proposal: 'UTC' }] }],
+  }
+
+  async function showPanel() {
+    const writer = new LiveCrewWriter(
+      'k8s',
+      vi.fn(async () => answer(200)),
+    )
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    const page = host
+    const render = (proposals: ScheduleProposals) =>
+      act(async () => root!.render(createElement(ProposalsPanel, { crew, proposals, writer })))
+    await render(before)
+    const result = page.querySelector<HTMLElement>('p[role="status"]')!
+    /** Takes "dependencies" in Europe/Amsterdam with the keyboard's focus on its button. */
+    const take = async () => {
+      const input = page.querySelector<HTMLInputElement>('input')!
+      const button = [...page.querySelectorAll<HTMLButtonElement>('button')].find(
+        (b) => b.textContent === 'Take dependencies',
+      )!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Europe/Amsterdam')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      button.focus()
+      await act(async () => button.click())
+      return button
+    }
+    return { page, render, result, take }
+  }
+
+  it('has a live region before anything is taken, and says the result there, once', async () => {
+    const { page, result, take } = await showPanel()
+    expect(result.textContent).toBe('')
+    await take()
+    expect(result.textContent).toBe('Added dependencies to the Crew’s schedules.')
+    expect(page.querySelectorAll('[role="status"]')).toHaveLength(1)
+  })
+
+  it('keeps the result, and moves the focus to it, when the taken proposal’s row leaves the list', async () => {
+    const { page, render, result, take } = await showPanel()
+    const button = await take()
+    await render(after)
+    expect(button.isConnected).toBe(false)
+    expect(page.textContent).not.toContain('Take dependencies')
+    expect(page.querySelector('p[role="status"]')).toBe(result)
+    expect(result.textContent).toBe('Added dependencies to the Crew’s schedules.')
+    expect(document.activeElement).toBe(result)
+  })
+
+  it('leaves the focus where a person moved it meanwhile', async () => {
+    const { page, render, take } = await showPanel()
+    await take()
+    const elsewhere = [...page.querySelectorAll<HTMLInputElement>('input')].at(-1)!
+    elsewhere.focus()
+    await render(after)
+    expect(elsewhere.isConnected).toBe(true)
+    expect(document.activeElement).toBe(elsewhere)
   })
 })
