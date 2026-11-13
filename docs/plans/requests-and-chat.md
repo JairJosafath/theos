@@ -1059,6 +1059,18 @@ What the step chose where the plan says nothing:
 - **The condition names a source as `request source <name>`,** in
   `Reading the issues of …` and before a failure's message.
 
+Done since:
+
+- **An envtest of `Merged in <PR> for <issue>`** (review of #161, a
+  nit; #245). Beside `TestRequestComments` and `TestMergedPulls`,
+  the spec "names the pull request a Task merged for each issue of a
+  request, and none for an issue closed by hand" sees the line end to end.
+  A merged Task is read by its Crew's release logic too, so the helper
+  `mergedFiledTask` keeps the two apart: it makes the Task only on a Crew
+  that neither tags nor prepares releases (a plan with no releases file),
+  and checks that first; the Task's Agent doesn't exist and it records no
+  merge commit.
+
 Left as it is, and why:
 
 - **What the lag still leaves.** A person who reopens, or relabels, an
@@ -1070,15 +1082,6 @@ Left as it is, and why:
   request as before; GitHub's issue list has not been seen to lag so. The
   envtest specs of the lag run on the fake tracker; how long a real Jira
   site lags is still unread, and no longer matters to the outcome.
-- **Done since: an envtest of `Merged in <PR> for <issue>`** (review of
-  #161, a nit; #245). Beside `TestRequestComments` and `TestMergedPulls`,
-  the spec "names the pull request a Task merged for each issue of a
-  request, and none for an issue closed by hand" sees the line end to end.
-  A merged Task is read by its Crew's release logic too, so the helper
-  `mergedFiledTask` keeps the two apart: it makes the Task only on a Crew
-  that neither tags nor prepares releases (a plan with no releases file),
-  and checks that first; the Task's Agent doesn't exist and it records no
-  merge commit.
 - **Whether Linear keeps a `<!-- -->` marker in a comment's body,** and
   whether Jira's document format does, is still unread (step 6 as built,
   Linear): the markers are the comment's last lines there, shown, and the
