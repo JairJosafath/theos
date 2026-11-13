@@ -1523,9 +1523,10 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 
 With actions off (the default) the UI server writes three things: create a
 Brief, append a prompt, pause or resume one, with or without its running
-Tasks (`spec.paused`, `spec.pauseRuns`; see *Pausing runs*). With `ui.actions.enabled`, each
-row below is one allowlisted request in `ui/server.mjs`, refused there for any
-other path, method, content type or field, and by RBAC for anything else:
+Tasks (`spec.paused`, `spec.pauseRuns`; see *Pausing runs*). With
+`ui.actions.enabled`, each row below is one allowlisted request in
+`ui/server.mjs`, refused there for any other path, method, content type or
+field, and by RBAC for anything else:
 
 | Kind | Request | Fields |
 | --- | --- | --- |
