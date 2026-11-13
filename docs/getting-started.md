@@ -1077,8 +1077,11 @@ with no pull request and nothing for you to look at.
   The same two rules hold: while the schedule's last issue is open, or the
   Crew is paused, the run waits and the page says which.
 - **Take one your Standard proposes.** A Standard can propose schedules
-  (`spec.schedules`, such as its language's weekly dependency update). None
-  runs by itself. The Crew's page lists the ones the Crew doesn't have; with
+  (`spec.schedules`, such as its language's weekly dependency update). An
+  install from the chart proposes `dependencies`, Mondays at 06:00 UTC, from
+  `go-standard`, `go-operator-standard`, `ts-standard` and `python-standard`
+  (`aws-standard` and `factory-self` propose none); a chart value changes the
+  words or the day, or drops it. None runs by itself. The Crew's page lists the ones the Crew doesn't have; with
   the UI's actions on, type the time zone and press *Take*, and the Crew has
   it as its own, to change like any other. For a name the Crew already uses,
   the page shows where the Crew's schedule differs from the proposal.

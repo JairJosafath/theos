@@ -826,6 +826,15 @@ catalog:
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
         # Renders a light check per change and the full one on release-check/** (the Container's checks).
         checksBeforeRelease: true
+        # Upkeep proposed to the Crews of its Containers (docs/design.md, "Schedules").
+        # Nothing runs: a Crew takes it by adding it to its own spec.schedules.
+        schedules:
+          - name: dependencies
+            cron: "0 6 * * 1"            # Mondays at 06:00, UTC
+            goal: >-
+              Update the Go modules in go.mod that have a new minor or patch
+              version with go get -u ./... and go mod tidy. One pull request. Say
+              what you updated, and what you left and why.
     - kind: Standard
       name: go-operator-standard
       ref: v1.6.0
@@ -836,6 +845,15 @@ catalog:
         supportedFrameworks: [go-kubebuilder]
         protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
         checksBeforeRelease: true
+        # Upkeep proposed to the Crews of its Containers (docs/design.md, "Schedules").
+        # Nothing runs: a Crew takes it by adding it to its own spec.schedules.
+        schedules:
+          - name: dependencies
+            cron: "0 6 * * 1"            # Mondays at 06:00, UTC
+            goal: >-
+              Update the Go modules in go.mod that have a new minor or patch
+              version with go get -u ./... and go mod tidy. One pull request. Say
+              what you updated, and what you left and why.
     - kind: Standard
       name: factory-self
       ref: v1.0.0
@@ -857,6 +875,15 @@ catalog:
         supportedFrameworks: [vscode-extension, react-vite, node-cli]
         protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
         checksBeforeRelease: true
+        # Upkeep proposed to the Crews of its Containers (docs/design.md, "Schedules").
+        # Nothing runs: a Crew takes it by adding it to its own spec.schedules.
+        schedules:
+          - name: dependencies
+            cron: "0 6 * * 1"            # Mondays at 06:00, UTC
+            goal: >-
+              Update the dependencies in package.json that have a new minor or
+              patch version within the ranges it allows, and the lock file with
+              them. One pull request. Say what you updated, and what you left and why.
     - kind: Standard
       name: aws-standard
       ref: v1.24.0
@@ -878,6 +905,15 @@ catalog:
         supportedFrameworks: [python-fastapi, python-cli]
         protectedPaths: [AGENTS.md, Makefile, ruff.toml, mypy.ini, .editorconfig, docs/style/, docs/agents/]
         checksBeforeRelease: true
+        # Upkeep proposed to the Crews of its Containers (docs/design.md, "Schedules").
+        # Nothing runs: a Crew takes it by adding it to its own spec.schedules.
+        schedules:
+          - name: dependencies
+            cron: "0 6 * * 1"            # Mondays at 06:00, UTC
+            goal: >-
+              Update the dependencies in pyproject.toml that have a new minor or
+              patch version, and uv.lock with them. One pull request. Say what you
+              updated, and what you left and why.
     - kind: Compute
       name: small
       ref: v1.1.0
