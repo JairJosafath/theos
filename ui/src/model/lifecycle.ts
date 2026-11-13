@@ -19,6 +19,7 @@ import type {
 import { briefTarget } from '../k8s/crews'
 import { findCondition } from '../k8s/types'
 import { describeBriefPhase } from './brief'
+import { choicesOf } from './choices'
 import {
   describeContainerPhase,
   describeCrewPhase,
@@ -376,11 +377,64 @@ export interface NextStep {
   page?: { kind: string; name: string; label: string }
 }
 
+/** The StandardUpdated reasons of a Standard that waits to come into an adopted repository (#97). */
+export const STANDARD_WAITS_REASONS = [
+  'PullRequestOpen',
+  'StandardFilesDiffer',
+  'UpdateClosed',
+  'UnsupportedFramework',
+] as const
+
+export type StandardWaitsReason = (typeof STANDARD_WAITS_REASONS)[number]
+
+/** A Standard that waits to come into the repository its Container adopted. */
+export interface StandardWaits {
+  /** The Standard the Container names. */
+  standard: string
+  reason: StandardWaitsReason
+  /** StandardUpdated, False: why it waits, in the operator's words. */
+  condition: Condition
+  /** The pull request that brings it, while that is open. */
+  pullRequest?: { href: string; number?: number }
+}
+
+/**
+ * The pull request that brings a Standard into an adopted repository, while it
+ * is open: status.standardAdoption has one and didn't stop.
+ */
+export function standardAdoptionPullRequest(container: Container): { href: string; number?: number } | undefined {
+  const adoption = container.status?.standardAdoption
+  return adoption?.pullRequestURL && !adoption.stopped
+    ? { href: adoption.pullRequestURL, number: adoption.pullRequest }
+    : undefined
+}
+
+/**
+ * "Its Standard waits to come in" (#172): the Container adopted its
+ * repository, is Ready, names a Standard that status doesn't record (the
+ * operator's awaitsStandard), and StandardUpdated is False with one of the
+ * four reasons that wait on a person. Until a person acts no agent works on
+ * the repository. The Container's page, its next step and Needs you all read
+ * this one rule. An ordinary update that a person closed says UpdateClosed
+ * too, on a Container whose Standard is recorded: that one is not this.
+ */
+export function standardWaits(container: Container): StandardWaits | undefined {
+  const status = container.status
+  const standard = choicesOf(container).standard
+  if (!container.spec.adopt || !standard || status?.phase !== 'Ready' || status.standard) return undefined
+  const condition = findCondition(status.conditions, 'StandardUpdated')
+  const reason = STANDARD_WAITS_REASONS.find((r) => r === condition?.reason)
+  if (condition?.status !== 'False' || !reason) return undefined
+  return { standard, reason, condition, pullRequest: standardAdoptionPullRequest(container) }
+}
+
 /**
  * What a person does next on this Container: on Failed, fix the cause and
- * retry; on a Standard update that waits (failed checks, refused), its pull
- * request; after one that left files out, those files. Undefined when nothing
- * waits on a person.
+ * retry; while its Standard waits to come into the repository it adopted
+ * (standardWaits), what that takes, with no retry line: the operator reads
+ * main again when it moves; on a Standard update that waits (failed checks,
+ * refused), its pull request; after one that left files out, those files.
+ * Undefined when nothing waits on a person.
  */
 export function containerNextStep(container: Container): NextStep | undefined {
   const status = container.status
@@ -409,12 +463,6 @@ export function containerNextStep(container: Container): NextStep | undefined {
       case 'IdentityMismatch':
         return {
           text: 'Make main’s .theos.yaml name this project and container, then retry.',
-          command,
-          link: repo,
-        }
-      case 'StandardFilesDiffer':
-        return {
-          text: 'Bring the paths the condition names to what the Standard renders, then retry.',
           command,
           link: repo,
         }
@@ -448,6 +496,48 @@ export function containerNextStep(container: Container): NextStep | undefined {
         }
       default:
         return { text: 'Fix what the failed condition names, then retry the scaffold.', command, link: repo }
+    }
+  }
+  const waits = standardWaits(container)
+  if (waits) {
+    const repo = status?.repositoryURL ? { href: status.repositoryURL, label: 'Open the repository' } : undefined
+    switch (waits.reason) {
+      case 'PullRequestOpen':
+        return {
+          text: `Its Standard ${waits.standard} arrives as a pull request. Read it like any change, push to it what the repository must keep, and merge it, or close it to stay without the Standard’s files. The factory never merges it, and no agent works on the repository until it is merged.`,
+          link: waits.pullRequest
+            ? {
+                href: waits.pullRequest.href,
+                label: `Open pull request${waits.pullRequest.number ? ` #${waits.pullRequest.number}` : ''}`,
+              }
+            : undefined,
+        }
+      case 'StandardFilesDiffer':
+        return {
+          text: `The pull request with ${waits.standard}’s files merged, but main holds files the Standard protects with other content. Bring the files the condition names to what the Standard renders; the factory finds them when main moves. No agent works on the repository until then.`,
+          link: repo,
+        }
+      case 'UpdateClosed':
+        return {
+          text: `The pull request was closed without ${waits.standard}’s files, so no agent works on the repository. Bring the files the condition names to main, or name no Standard. A new pull request comes when the Standard’s ref or the Container’s checks change.`,
+          link: repo,
+        }
+      case 'UnsupportedFramework': {
+        const page = { kind: 'Standard', name: waits.standard, label: `Open Standard ${waits.standard}` }
+        // A Container that names a Bundle can name neither a frameworkRef nor another Standard
+        // beside it, and its bundleRef can't change (the API refuses each): it gets here only
+        // when the Standard's list changed under it, and that list is where it is fixed.
+        if (choicesOf(container).bundle) {
+          return {
+            text: `${waits.standard} no longer lists the Framework this Container’s Bundle named, and a Container that names a Bundle can name no other Framework or Standard. Fix it in the Standard’s supportedFrameworks. No pull request opens and no agent works on the repository until then.`,
+            page,
+          }
+        }
+        return {
+          text: `${waits.standard} fits only the Frameworks it lists. Name one of them as the Container’s frameworkRef (nothing is scaffolded from it), or name another Standard. No pull request opens and no agent works on the repository until then.`,
+          page,
+        }
+      }
     }
   }
   const standard = status?.standard
@@ -533,6 +623,38 @@ export function describeStandardUpdate(container: Container): { title: string; t
       : update.pullRequestURL
         ? 'The factory merges its pull request once its checks pass.'
         : 'The factory is preparing its pull request.',
+  }
+}
+
+/**
+ * The pull request that brings a Standard into an adopted repository
+ * (status.standardAdoption), open or stopped, in a heading and a sentence. It
+ * names the Standard the pull request is for: the Container may name another
+ * since, and the operator closes this one once that Standard fits.
+ */
+export function describeStandardAdoption(container: Container): { title: string; text: string } | undefined {
+  const adoption = container.status?.standardAdoption
+  if (!adoption) return undefined
+  const name = adoption.name || choicesOf(container).standard || 'its Standard'
+  const title = `Bringing in ${name} at ${adoption.ref}`
+  switch (adoption.stopped || undefined) {
+    case undefined:
+      return {
+        title,
+        text: 'Its pull request writes the Standard’s files that main lacks or holds with other content. A person merges it, or closes it to leave the repository without them; the factory never merges it, and no agent works on the repository until it is merged.',
+      }
+    case 'UpdateClosed':
+      return {
+        title,
+        text: 'Its pull request was closed without merging, so no agent works on the repository. Files brought to main by hand are found; a new pull request comes when the Standard’s ref or the Container’s checks change.',
+      }
+    case 'StandardFilesDiffer':
+      return {
+        title,
+        text: 'Its pull request merged, but main holds a file the Standard protects with other content, so no agent works on the repository. The factory compares again when main moves; a new pull request comes when the Standard’s ref or the Container’s checks change.',
+      }
+    default:
+      return { title, text: `Stopped (${adoption.stopped}).` }
   }
 }
 
