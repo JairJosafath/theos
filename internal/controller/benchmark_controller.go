@@ -218,12 +218,18 @@ func benchmarkState(bench *c4v1beta1.Benchmark, status *c4v1beta1.BenchmarkStatu
 	case active > 0:
 		return model.BenchmarkRunning, fmt.Sprintf("%d of %d runs made, %d running", made, len(runs), active)
 	case overBudget && made < len(runs):
-		return model.BenchmarkOverBudget, fmt.Sprintf("Its runs cost $%.2f, its budgetUSD of $%d: %d of %d "+
-			"runs made", float64(status.CostMilliUSD)/1000, bench.Spec.BudgetUSD, made, len(runs))
+		return model.BenchmarkOverBudget, benchmarkOverBudgetMessage(status.CostMilliUSD, int(bench.Spec.BudgetUSD), made, len(runs))
 	case made < len(runs) || len(status.Cleaned) < listed:
 		return model.BenchmarkRunning, fmt.Sprintf("%d of %d runs made; cleaning up", made, len(runs))
 	}
 	return model.BenchmarkFinished, status.Comparison
+}
+
+// benchmarkOverBudgetMessage writes the budget as it writes the cost, in dollars
+// and cents (#180).
+func benchmarkOverBudgetMessage(costMilliUSD int64, budgetUSD, made, runs int) string {
+	return fmt.Sprintf("Its runs cost $%.2f, its budgetUSD of $%.2f: %d of %d runs made",
+		float64(costMilliUSD)/1000, float64(budgetUSD), made, runs)
 }
 
 // makeTask makes the Task of run, owned by the Benchmark.

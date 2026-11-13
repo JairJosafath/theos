@@ -189,6 +189,10 @@ func TestTallyScoresAndLimits(t *testing.T) {
 	if r, m := ScorerLimit(3, 50, 5000, 5); r != ScorerBudgetReached || !strings.Contains(m, "$5.00") {
 		t.Errorf("at the budget: %q %q", r, m)
 	}
+	// #180: the budget is written as the cost is, in dollars and cents.
+	if _, m := ScorerLimit(3, 50, 30120, 30); !strings.Contains(m, "cost $30.12 today, its budgetUSD of $30.00;") {
+		t.Errorf("#180 the budget beside the cost: %q", m)
+	}
 	if r, _ := ScorerLimit(3, 50, 4999, 5); r != "" {
 		t.Errorf("under the budget: %s", r)
 	}

@@ -306,8 +306,8 @@ func ScorerLimit(startedToday, maxPerDay int, costTodayMilliUSD int64, budgetUSD
 		return ScorerDailyCapReached, fmt.Sprintf("Started %d judge runs today, its maxPerDay; it goes on tomorrow (UTC)",
 			startedToday)
 	case budgetUSD > 0 && costTodayMilliUSD >= int64(budgetUSD)*1000:
-		return ScorerBudgetReached, fmt.Sprintf("Its judge runs cost $%.2f today, its budgetUSD of $%d; it goes on "+
-			"tomorrow (UTC), or when the budget is raised", float64(costTodayMilliUSD)/1000, budgetUSD)
+		return ScorerBudgetReached, fmt.Sprintf("Its judge runs cost $%.2f today, its budgetUSD of $%.2f; it goes on "+
+			"tomorrow (UTC), or when the budget is raised", float64(costTodayMilliUSD)/1000, float64(budgetUSD))
 	}
 	return "", ""
 }
