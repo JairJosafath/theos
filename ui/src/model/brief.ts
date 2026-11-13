@@ -690,11 +690,12 @@ export function formatCost(milliUSD: number): string {
   return `$${(milliUSD / 1000).toFixed(2)}`
 }
 
-/** Newest first, then by name. */
+/** Newest first, then by namespace and name (#190). */
 export function sortBriefs(briefs: Brief[]): Brief[] {
   return [...briefs].sort(
     (a, b) =>
       compareText(b.metadata.creationTimestamp ?? '', a.metadata.creationTimestamp ?? '') ||
+      compareText(a.metadata.namespace ?? '', b.metadata.namespace ?? '') ||
       compareText(a.metadata.name, b.metadata.name),
   )
 }
