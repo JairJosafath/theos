@@ -1126,8 +1126,19 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   drops it and proposes another, and a Crew that took it under the old name
   keeps its schedule. A changed or removed proposal changes no Crew. What
   only the operator can tell is wrong in a proposal (a time zone it can't
-  load) is said by the Crew that takes it, in `Scheduled`. Not yet: the UI
-  offering a Crew the proposals of its Container's Standard.
+  load) is said by the Crew that takes it, in `Scheduled`. The Crew's page
+  in the UI lists the proposals of its Container's Standard
+  (`ui/src/model/schedules.ts`). One whose name is none of the Crew's
+  schedules is offered: with actions on a person takes it, which appends it
+  to the Crew's `spec.schedules`, its cron and goal as written, in the time
+  zone the person gives. The zone is asked for and never filled in: a
+  proposal's own reads UTC whether or not its Standard chose that, so a copy
+  as written would run at UTC unasked. One whose name the Crew uses is shown
+  as in use, with where the Crew's schedule differs in cron, time zone or
+  goal. The page says nothing of where a schedule came from: the name is all
+  that links the two. The write is the UI's own: made as the person signed
+  in where the UI signs people in with OIDC, and as the UI's ServiceAccount
+  over a port-forward. The operator still reads no proposal.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
@@ -1210,6 +1221,34 @@ be judged by numbers the factory keeps itself.
   `internal/model`, so they are gauges, a restart counts nothing twice, and
   keeping history is the Prometheus's job (#59). The chart installs a
   Grafana dashboard and alert rules on them, each behind a value.
+- **A release publishes the numbers** (#66, [plans/results-report.md](plans/results-report.md)).
+  `theos-session report --name <tag> [--from <time>] [--to <time>]` reads
+  the Tasks and Containers of the cluster its kubeconfig names, changes
+  nothing there, and writes one page and one JSON document,
+  `docs/results/<tag>.md` and `<tag>.json` (`--dir` for a repository that
+  keeps its pages elsewhere, `--namespace` for one project's Tasks): the
+  Tasks that finished after `--from`, up to and including `--to`, so the
+  next report begins where this one ends and no Task is counted twice.
+  Without `--from` it runs from the first Task, and without `--to` up to
+  now; a `--to` after now is refused, since a Task that finishes between
+  now and that end would be in no report. They hold the Tasks merged,
+  failed by reason and ended with no change, the shares merged with no person's commit, on a person's approval
+  and in the first round, the median and 90th percentile of the lead times
+  and of each stage, cost per merged Task by size and by harness, model and
+  Agent, and each Scorer's pass rates. The rules are `internal/model`'s
+  (`FactoryReport`), the UI's written again in Go and held to them by one
+  fixture both sides' tests read; the command only maps a Task to what the
+  rules read, and the same fixture, decoded as the API's typed Tasks, holds
+  that mapping. The JSON names every merged Task with its pull request's
+  number and its Container's repository, so a number can be checked against
+  the pull requests; the page and the JSON say what the numbers don't show
+  (what people decided, why a Task failed, what failures cost, what is no
+  longer recorded, that it is one project). A name that is no name, a time
+  that is none, or a directory that can't be one fails before the cluster is
+  read and before a file is written. A person runs it before tagging the
+  release and commits both files; `hack/release-notes.sh` links the page
+  from the release's notes when the tag's tree has it (`RESULTS` names the
+  directory there).
 - **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent
   (`judgeRef`), what it selects (kinds, Containers, outcomes; by default
   merged Implement Tasks), a sample picked by a hash of the Scorer and the
@@ -1456,7 +1495,10 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 - **Versions** of the UI, operator, chart and CRD API at the foot of the
   sidebar; a UI and an operator of different versions get a warning.
 - **The factory's health** comes from the UI server (`GET /factory/health`,
-  sampled every 15 seconds, an hour kept). No Prometheus or Grafana.
+  sampled every 15 seconds, an hour kept). The last hour's CPU and memory
+  are the cluster's: every node's usage added up, against what the nodes
+  can allocate together; each node's own usage and trouble show beside it.
+  No Prometheus or Grafana.
 - **The project's Chat** (*Chat*, below) on About and in Settings, read
   only: its homeserver, each room by name with a `https://matrix.to/#/` link
   to its alias (else its ID), and `Ready` with its message; nothing when the
@@ -1476,6 +1518,7 @@ other path, method, content type or field, and by RBAC for anything else:
 | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.pauseRuns`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` |
 | Crew | `PATCH`, merge patch | annotation `theos.factory.io/run-schedule` |
+| Crew | `PATCH`, JSON patch | one schedule appended to `spec.schedules`, a Standard's proposal taken; none set, changed or removed |
 | Container | `PATCH`, merge patch | annotations `theos.factory.io/retry`, `theos.factory.io/standard-take`, `theos.factory.io/standard-keep` |
 | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` and a `test` of the approval the page showed: its old `approved`, or, when it had none, the whole entry as read (JSON Patch can't test a missing member), so a stale page fails, and says it is out of date, rather than overwrite a newer approval, a first one too |
 | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
@@ -1917,8 +1960,7 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
   still assumes one node: the Go build caches are hostPath directories, one
   per node, and refused where Pod Security is enforced (#120); the chart's
   Gitea has no address outside the cluster, so nodes can't pull the images
-  it holds (#121); the UI's health history reads the first node (#122); the
-  chart's defaults are the rig's, and an Agent's sandboxes can't be placed
-  on nodes (#123); the chart's Gitea is one pod on a ReadWriteOnce volume,
-  so its node's loss stops the factory (#124); no release check runs on
-  more than one node (#125).
+  it holds (#121); the chart's defaults are the rig's, and an Agent's
+  sandboxes can't be placed on nodes (#123); the chart's Gitea is one pod
+  on a ReadWriteOnce volume, so its node's loss stops the factory (#124);
+  no release check runs on more than one node (#125).

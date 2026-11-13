@@ -50,6 +50,7 @@ for name in $images; do
 done
 has "the install command names the version" "helm install theos oci://ghcr.io/o/theos/charts/theos --version 1.2.0 \\"
 has "the guide link names the tag" "[docs/getting-started.md](https://github.com/o/theos/blob/v1.2.0/docs/getting-started.md)"
+hasnt "no report in the release's tree: no link to one (#66)" "The factory's numbers for this release"
 
 # The install snippet is the guide's install without the pull secret: the
 # bash blocks of its section 1 up to the helm install's, but the registry
@@ -106,12 +107,16 @@ commit README.md init && git tag v0.1.0
 merge 1 feat/1-old "feat(1): before the range" api/a.go
 git tag v0.2.0
 merge 2 feat/2-new "feat(2): a new kind" api/b.go
+# v0.2.0's report is committed after its tag, v0.3.0's before (#66).
+commit docs/results/v0.2.0.md "the numbers of v0.2.0, late"
 merge 3 fix/3-esc "fix(3): escape names" internal/scaffold/n.go
 merge 4 refactor/4-api "refactor(4): the API" api/c.go "refactor: the API
 
 BREAKING CHANGE: fields renamed"
 merge 5 feat/5-relay "feat(5): the relay" hack/relay.sh
 commit direct.txt "a commit straight to main"
+commit docs/results/v0.3.0.md "the numbers of v0.3.0"
+commit site/numbers/v0.3.0.md "and where another project keeps its pages"
 git tag v0.3.0
 merge 6 fix/6-after "fix(6): after the tag" api/d.go
 
@@ -128,6 +133,26 @@ hasnt "  not before the previous tag" "(#1)"
 hasnt "  not after the tag" "(#6)"
 has "  the version comes from the tag" "helm install theos oci://ghcr.io/jairjosafath/theos/charts/theos --version 0.3.0 \\"
 
+# The factory's numbers (#66): the notes link the release's report when its
+# tree has the page, between the changes and the images.
+numbers="The factory's numbers for this release, from what its own Tasks recorded since the release before:"
+has "  links the release's report, at the tag" \
+  "$numbers [docs/results/v0.3.0.md](https://github.com/JairJosafath/theos/blob/v0.3.0/docs/results/v0.3.0.md)."
+check "  after the changes and before the images" \
+  "$(grep -nE '^(- escape names|The factory.s numbers|Images:)' "$T/out" | cut -d: -f2 | cut -c1-11 | tr '\n' ',')" \
+  "- escape na,The factory,Images,"
+PATH="$T/bin:$PATH" REPO=o/theos RESULTS=site/numbers/ "$NOTES" v0.3.0 >"$T/out" 2>&1
+has "  in the directory RESULTS names, in the repository REPO names" \
+  "$numbers [site/numbers/v0.3.0.md](https://github.com/o/theos/blob/v0.3.0/site/numbers/v0.3.0.md)."
+check "  once" "$(grep -c "The factory's numbers for this release" "$T/out")" 1
+PATH="$T/bin:$PATH" RESULTS=docs/none "$NOTES" v0.3.0 >"$T/out" 2>&1
+hasnt "  no page in that directory: no link" "The factory's numbers for this release"
+PATH="$T/bin:$PATH" "$NOTES" v0.2.0 >"$T/out" 2>&1
+check "a report committed after its tag: drafts" $? 0
+hasnt "  it is not in the release's tree: no link" "The factory's numbers for this release"
+PATH="$T/bin:$PATH" "$NOTES" >"$T/out" 2>&1
+hasnt "  HEAD is no release: no link" "The factory's numbers for this release"
+
 # The Release workflow passes the previous published release as FROM: v0.2.0's
 # release failed, so v0.3.0's notes run from v0.1.0.
 PATH="$T/bin:$PATH" "$NOTES" v0.3.0 v0.1.0 >"$T/out" 2>&1
@@ -140,5 +165,24 @@ check "from git, FROM empty (no release before): drafts" $? 0
 has "  lists the whole history" "- before the range (#1)"
 has "  up to the tag" "- a new kind (#2)"
 hasnt "  not after it" "(#6)"
+
+# A report is named after the tag as it is written (#66): a release
+# candidate's and one with build metadata, whose - and + the path and the
+# link carry as they are.
+commit docs/results/v0.4.0-rc.1.md "the numbers of the release candidate"
+git tag v0.4.0-rc.1
+commit docs/results/v0.4.0+build.5.md "the numbers of a build"
+git tag v0.4.0+build.5
+for tag in v0.4.0-rc.1 v0.4.0+build.5; do
+  PATH="$T/bin:$PATH" "$NOTES" "$tag" >"$T/out" 2>&1
+  check "a tag that is more than vX.Y.Z, $tag: drafts" $? 0
+  has "  links the report of that name, at the tag" \
+    "$numbers [docs/results/$tag.md](https://github.com/JairJosafath/theos/blob/$tag/docs/results/$tag.md)."
+  check "  once" "$(grep -c "The factory's numbers for this release" "$T/out")" 1
+  has "  the version is the tag's, whole" \
+    "helm install theos oci://ghcr.io/jairjosafath/theos/charts/theos --version ${tag#v} \\"
+done
+PATH="$T/bin:$PATH" "$NOTES" v0.4.0-rc.1 >"$T/out" 2>&1
+hasnt "  the candidate's notes don't link the build's report" "v0.4.0+build.5"
 
 exit $fail

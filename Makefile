@@ -161,8 +161,8 @@ TEST_CACHE_HOME ?= $(HOME)/.cache/theos/test-cache
 .PHONY: test
 # make test tests only the packages the change since origin/main can affect,
 # as digitalocean/gta selects them (hack/gta, #127), on the branch main too,
-# and every package only after a change to go.mod or go.sum, or with
-# TEST_ALL=1 (or FORCE=1), which a release sets; hack/test-packages.sh says
+# and every package only with TEST_ALL=1 (or FORCE=1), which a release sets;
+# go.mod and go.sum test none, as gta has it. hack/test-packages.sh says
 # which and why.
 # TEST_PACKAGES names them instead: make check passes the selection its last
 # block reports. Go's test cache still answers the unchanged ones among them.

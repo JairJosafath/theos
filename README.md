@@ -58,9 +58,8 @@ One install is one cluster and one trust domain: no multi-cluster, and no
 high availability of the Git host the chart brings. The test rig has one
 node, so parts of the factory still assume one; each is an issue: the Go
 build caches (#120), the chart's Gitea as a registry and an address (#121),
-the UI's health history (#122), the chart's defaults and where agents are
-placed (#123), what one node's loss stops (#124), and a release check on
-more than one node (#125).
+the chart's defaults and where agents are placed (#123), what one node's
+loss stops (#124), and a release check on more than one node (#125).
 
 ## Quickstart
 

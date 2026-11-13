@@ -787,7 +787,7 @@ export function FactoryArea({
         <div>
           <h1 className="area-title">Factory</h1>
           <p className="area-caption">
-            Whether each part of the factory is healthy, the node’s usage over the last hour, and the agent slots.
+            Whether each part of the factory is healthy, the nodes’ usage over the last hour, and the agent slots.
           </p>
         </div>
       </header>

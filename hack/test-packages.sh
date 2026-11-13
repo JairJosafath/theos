@@ -37,8 +37,13 @@
 # is tested only when:
 #   - TEST_ALL or FORCE is set (FORCE=1 make check, which a release runs),
 #   - no merge base with TEST_BASE is found: the change can't be known,
-#   - go.mod, go.sum or go.work changed: every package is built from them,
 #   - gta fails: when in doubt, more is tested.
+# No file tests every package. go.mod, go.sum and go.work test none, as gta
+# has it and as schubergphilis/mcvs-golang-action runs it: a change to them
+# alone is in no package, so a bump of a module or of the toolchain is tested
+# at the next release, not on the pull request
+# (docs/plans/done/go-mod-tests-nothing.md). They tested every package, and
+# the controller suite alone is a quarter of an hour.
 # A change to a file no Go test reads tests nothing: docs/, .claude/,
 # .vscode/, ui/, the other .github/ files, the top-level *.md, the Makefile,
 # the rest of hack/ outside its packages, and any file the table doesn't
@@ -76,7 +81,8 @@ say() { echo "make test: $*" >&2; }
 # tests of test/chart read the Release and Verify Release workflows, the
 # guide and the UI's Dockerfile; those of internal/model the CloudFormation
 # adapter's testdata and the report fixture the UI's tests share with them
-# (#66), and test/e2e/standin the e2e fixtures.
+# (#66), which cmd/theos-session's read too, for theos-session report's
+# mapping, and test/e2e/standin the e2e fixtures.
 declare -A readers=(
   [templates]="hack/template-go-kubebuilder internal/controller internal/adapters/gitea internal/model internal/scaffold test/chart"
   [config]="internal/controller internal/model internal/sessionclient test/chart test/compat"
@@ -85,7 +91,7 @@ declare -A readers=(
   [test/crds]="internal/controller internal/adapters/argocd"
   [test/e2e/testdata]="test/e2e/standin"
   [internal/adapters/cloudformation/testdata]="internal/model"
-  [ui/src/model/testdata]="internal/model"
+  [ui/src/model/testdata]="internal/model cmd/theos-session"
   ['*.go']="internal/ports"
   [Dockerfile]="cmd"
   ['*/Dockerfile']="cmd"
@@ -155,11 +161,6 @@ declare -A read=() readpaths=()
 owned=()
 guard=
 for f in "${files[@]}"; do
-  case "$f" in
-    go.mod | go.sum | go.work | go.work.sum)
-      full "$f changed, which every package is built from"
-      ;;
-  esac
   # The paths of the readers table the file matches: their readers, and
   # nothing more unless the file lies in a package.
   for k in "${!readers[@]}"; do
