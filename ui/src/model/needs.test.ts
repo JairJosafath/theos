@@ -661,9 +661,10 @@ describe('needs', () => {
       expect(items[0].command).toBe(undefined)
     })
 
-    it('links a pull request that stays open while the Standard doesn’t fit', () => {
+    it('links no pull request that stays open while the Standard doesn’t fit: merging it unblocks nothing', () => {
       const [item] = needs(input({ containers: [adopting('UnsupportedFramework', 'fits no Framework', open)] }))
-      expect(item.links).toEqual([{ label: 'The Standard’s pull request #12', url: pullRequestURL }])
+      expect(item.reason).toBe('UnsupportedFramework')
+      expect(item.links).toEqual([])
     })
 
     it('leaves an ordinary update’s UpdateClosed out, as before', () => {

@@ -340,6 +340,13 @@ describe('a Standard that waits to come into an adopted repository (#172)', () =
     expect(
       standardWaits({ ...c, status: { ...c.status, conditions: [cond('StandardUpdated', 'True', 'UpToDate')] } }),
     ).toBe(undefined)
+    // One of the four reasons on a condition that isn't False waits on nobody either.
+    expect(
+      standardWaits({
+        ...c,
+        status: { ...c.status, conditions: [cond('StandardUpdated', 'True', 'PullRequestOpen')] },
+      }),
+    ).toBe(undefined)
   })
 
   it('reads a bundled Container’s Standard from what its Bundle expanded to', () => {
@@ -390,6 +397,24 @@ describe('a Standard that waits to come into an adopted repository (#172)', () =
       ),
       page: { kind: 'Standard', name: 'go-standard', label: 'Open Standard go-standard' },
     })
+  })
+
+  it('on UnsupportedFramework under a Bundle, says the Standard’s supportedFrameworks is where it is fixed', () => {
+    // The API refuses a frameworkRef or a standardRef beside a bundleRef, and bundleRef can't change.
+    const c = adopting('UnsupportedFramework')
+    const bundled: Container = {
+      ...c,
+      spec: { ...c.spec, frameworkRef: undefined, standardRef: undefined, bundleRef: { name: 'go-service' } },
+      status: { ...c.status, bundle: { name: 'go-service', framework: 'go-chi', standard: 'go-standard' } },
+    }
+    const step = containerNextStep(bundled)
+    expect(step).toEqual({
+      text: expect.stringMatching(
+        /go-standard no longer lists the Framework this Container’s Bundle named.*Fix it in the Standard’s supportedFrameworks\. No pull request opens/,
+      ),
+      page: { kind: 'Standard', name: 'go-standard', label: 'Open Standard go-standard' },
+    })
+    expect(step?.text).not.toMatch(/frameworkRef|another Standard/)
   })
 
   it.each(['PullRequestOpen', 'StandardFilesDiffer', 'UpdateClosed', 'UnsupportedFramework'])(

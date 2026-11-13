@@ -178,14 +178,18 @@ function containerNeeds(c: Container): Need[] {
   // closes, and no agent works there until main holds its files (lifecycle.ts, standardWaits).
   const waits = standardWaits(c)
   if (waits) {
-    const pr = waits.pullRequest
+    // A pull request still open while the Standard doesn't fit is no way out: nothing is read
+    // or done until it fits, so merging it unblocks nothing. The next step links it only on
+    // PullRequestOpen too (containerNextStep).
+    const pr = waits.reason === 'PullRequestOpen' ? waits.pullRequest : undefined
     const repo = c.status?.repositoryURL
     items.push({
       ...base('Container', c, 'StandardWaits'),
       title: 'has a Standard waiting on you',
       ...why(waits.condition, waits.reason),
       place,
-      // The pull request while it is open; once it stopped, the repository whose main the files go to.
+      // The pull request while it waits to be merged; once it stopped, the repository whose main the
+      // files go to; nothing while the Standard doesn't fit: that is fixed on the Container's page.
       links: pr
         ? [{ label: `The Standard’s pull request${pr.number ? ` #${pr.number}` : ''}`, url: pr.href }]
         : repo && waits.reason !== 'UnsupportedFramework'

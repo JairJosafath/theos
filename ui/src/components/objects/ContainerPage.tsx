@@ -94,7 +94,11 @@ export function ContainerPage({
   const adoption = status?.standardAdoption
   const adopting = describeStandardAdoption(container)
   const adoptionPR = standardAdoptionPullRequest(container)
-  if (adoptionPR) links.push({ href: adoptionPR.href, label: `Standard pull request #${adoptionPR.number ?? ''}` })
+  if (adoptionPR)
+    links.push({
+      href: adoptionPR.href,
+      label: `Standard pull request${adoptionPR.number ? ` #${adoptionPR.number}` : ''}`,
+    })
   // Its spec's refs, or what its Bundle expanded to (status.bundle); the UI enforces nothing.
   const choices = choicesOf(container)
   const framework = frameworks.find((f) => f.metadata.name === choices.framework)
@@ -276,7 +280,7 @@ export function ContainerPage({
                   {adoptionPR ? (
                     <p className="panel-text">
                       <a href={adoptionPR.href} target="_blank" rel="noreferrer">
-                        Pull request #{adoptionPR.number} <ExternalLinkIcon size={12} />
+                        Pull request{adoptionPR.number ? ` #${adoptionPR.number}` : ''} <ExternalLinkIcon size={12} />
                       </a>
                     </p>
                   ) : null}

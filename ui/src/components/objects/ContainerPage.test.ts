@@ -104,6 +104,18 @@ describe('a Container whose Standard waits to come into the repository it adopte
     expect(t).not.toMatch(/then retry/)
   })
 
+  it('names a pull request whose number status doesn’t hold without a bare “#”', () => {
+    const data = adopting('PullRequestOpen', `Pull request ${PR} brings the files of python-standard at v1.2.0`)
+    data.containers.find((c) => c.metadata.name === 'orders-api')!.status!.standardAdoption!.pullRequest = undefined
+    expect(hrefs(containerMarkup('orders-api', data)).filter((h) => h === PR)).toHaveLength(3)
+    const t = containerPage('orders-api', data)
+    // The next step, the page's links and the Status tab's section.
+    expect(t).toMatch(/Open pull request(?! #)/)
+    expect(t).toMatch(/Standard pull request(?! #)/)
+    expect(t).toMatch(/v1\.2\.0 Its pull request writes the Standard’s files.* Pull request(?! #)/)
+    expect(t).not.toMatch(/pull request #/i)
+  })
+
   it.each([
     ['UpdateClosed', /Its pull request was closed without merging, so no agent works on the repository/],
     ['StandardFilesDiffer', /Its pull request merged, but main holds a file the Standard protects/],

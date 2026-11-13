@@ -522,11 +522,22 @@ export function containerNextStep(container: Container): NextStep | undefined {
           text: `The pull request was closed without ${waits.standard}’s files, so no agent works on the repository. Bring the files the condition names to main, or name no Standard. A new pull request comes when the Standard’s ref or the Container’s checks change.`,
           link: repo,
         }
-      case 'UnsupportedFramework':
+      case 'UnsupportedFramework': {
+        const page = { kind: 'Standard', name: waits.standard, label: `Open Standard ${waits.standard}` }
+        // A Container that names a Bundle can name neither a frameworkRef nor another Standard
+        // beside it, and its bundleRef can't change (the API refuses each): it gets here only
+        // when the Standard's list changed under it, and that list is where it is fixed.
+        if (choicesOf(container).bundle) {
+          return {
+            text: `${waits.standard} no longer lists the Framework this Container’s Bundle named, and a Container that names a Bundle can name no other Framework or Standard. Fix it in the Standard’s supportedFrameworks. No pull request opens and no agent works on the repository until then.`,
+            page,
+          }
+        }
         return {
           text: `${waits.standard} fits only the Frameworks it lists. Name one of them as the Container’s frameworkRef (nothing is scaffolded from it), or name another Standard. No pull request opens and no agent works on the repository until then.`,
-          page: { kind: 'Standard', name: waits.standard, label: `Open Standard ${waits.standard}` },
+          page,
         }
+      }
     }
   }
   const standard = status?.standard
