@@ -1,4 +1,4 @@
-# An AlertSource for the webshop (docs/plans/alerts.md): the webshop's
+# An AlertSource for the webshop (docs/plans/done/alerts.md): the webshop's
 # Alertmanager posts its alerts to the operator, and each firing alert becomes
 # one kind/bug, source/monitor issue in the repository of the Container it
 # names by the label theos_container, or else of the one Container that

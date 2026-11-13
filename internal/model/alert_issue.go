@@ -24,7 +24,7 @@ import (
 	"unicode"
 )
 
-// The issue an alert files and the comments it gets (docs/plans/alerts.md,
+// The issue an alert files and the comments it gets (docs/plans/done/alerts.md,
 // decisions 12 and 13). What the operator knows is said in its own words;
 // what the alert says goes, cut, between two marker lines, as a prompt puts
 // an issue's text: it is data from a monitoring tool, and through it from

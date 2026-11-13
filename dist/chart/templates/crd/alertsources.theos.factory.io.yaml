@@ -45,7 +45,7 @@ spec:
           AlertSource names one sender of alerts, as a GitProvider names one Git
           host: an Alertmanager, a Sentry or any tool that posts JSON. Its firing
           alerts become bugs in the repositories of the Containers they concern
-          (docs/plans/alerts.md). It belongs to the namespace, with no parent, and
+          (docs/plans/done/alerts.md). It belongs to the namespace, with no parent, and
           any number of Containers share it.
         properties:
           apiVersion:

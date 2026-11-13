@@ -29,7 +29,8 @@ The receiver of the Git host's deliveries (docs/plans/done/git-events.md, decisi
 The alert receiver's drain deadline, --alert-drain-timeout: alerts.drainTimeout,
 refused here unless it is a Go duration, so the manager doesn't fail to start
 on it, or unless it is under manager.terminationGracePeriodSeconds (30 when
-null; a drain timeout of 0 counts as the receiver's 5s default): the kill at the end of the grace period would cut the drain.
+null; a drain timeout of 0 counts as the receiver's 5s default): the kill at
+the end of the grace period would cut the drain.
 */}}
 {{- define "theos.alertDrainTimeout" -}}
 {{- $d := toString .Values.alerts.drainTimeout }}

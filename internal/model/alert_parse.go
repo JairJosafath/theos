@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-// The parsers of an AlertSource's deliveries (docs/plans/alerts.md, decisions
+// The parsers of an AlertSource's deliveries (docs/plans/done/alerts.md, decisions
 // 5 to 7): each reads its sender's body into alerts and makes no call. A body
 // that isn't the sender's shape is an error, which the receiver answers 400;
 // a delivery that is the sender's but concerns no alert gives none.

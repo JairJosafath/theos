@@ -34,7 +34,7 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// The drain of an AlertSource's inbox (docs/plans/alerts.md, decisions 2, 4
+// The drain of an AlertSource's inbox (docs/plans/done/alerts.md, decisions 2, 4
 // and 8 to 11): what each alert does is model.AlertStep's; this file reads
 // the facts it needs, makes the calls to the Git host it decides, and keeps
 // status, which holds the counts.

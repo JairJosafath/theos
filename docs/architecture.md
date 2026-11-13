@@ -252,7 +252,7 @@ Polling stays the contract; a delivery only shortens the wait
 
 The listener also serves `POST /alerts/<namespace>/<alertsource>`
 (`model.AlertsPath`), so `--git-events-bind-address` turns it on too
-([alerts.md](alerts.md), [plans/alerts.md](plans/alerts.md), #64). An alert
+([alerts.md](alerts.md), [plans/done/alerts.md](plans/done/alerts.md), #64). An alert
 is not a hint: nobody can be asked again what fired, so the delivery is the
 fact.
 

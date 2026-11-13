@@ -41,7 +41,7 @@ import (
 
 // AlertSourceReconciler reports in the condition Ready whether each
 // AlertSource takes deliveries, and files what its Receiver's inbox holds
-// (docs/plans/alerts.md, decisions 1, 2 and 8 to 11): for each alert its
+// (docs/plans/done/alerts.md, decisions 1, 2 and 8 to 11): for each alert its
 // Container, the facts, model.AlertStep, the call to the Git host, then one
 // status write, and only then is the alert dropped from the inbox. It makes
 // the comments its alerts' issues and their Containers' days are owed, and

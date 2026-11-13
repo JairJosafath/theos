@@ -25,7 +25,7 @@ import (
 	"strings"
 )
 
-// The keys of an AlertSource's Secret (docs/plans/alerts.md, decision 3).
+// The keys of an AlertSource's Secret (docs/plans/done/alerts.md, decision 3).
 const (
 	// AlertSecretKeyToken holds a bearer token: Alertmanager's, and a
 	// generic sender's when the Secret has no AlertSecretKeySecret.

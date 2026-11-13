@@ -28,7 +28,7 @@ import (
 	"unicode/utf8"
 )
 
-// The alerts of the tools that watch a running app (docs/plans/alerts.md):
+// The alerts of the tools that watch a running app (docs/plans/done/alerts.md):
 // an AlertSource takes their deliveries, and a firing alert becomes a bug in
 // its Container's repository. This file holds the alert every type's
 // delivery is read into, and how an alert finds its Container.
