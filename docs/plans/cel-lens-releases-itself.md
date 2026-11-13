@@ -43,8 +43,9 @@ closed.
 ## Decisions
 
 1. **A workflow of JairJosafath/cel-lens builds each release from `main`.**
-   `release.yml`, run by hand with the part (`engine` or `vscode`) and the
-   version. It refuses a version the source on `main` does not already name
+   `release.yml`, run by hand with the part (`engine` or `vscode`), the
+   version and, when `main` has moved on since the version was prepared,
+   the commit. It refuses a version the source there does not already name
    (the changelog's heading, and for the extension `package.json`), builds
    with the part's own `make dist`, creates the two tags the repository has
    always had (`engine/vX.Y.Z` and `core-vX.Y.Z`, or `vscode/vX.Y.Z` and
