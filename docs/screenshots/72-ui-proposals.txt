@@ -3,7 +3,10 @@
 # Run again on 2026-11-13 for #146, on main at 841c9e4 with that change. The first
 # record was of 35eeab7, before e327d59 answered the review and added cases.
 # What the commands print, less each case's time, the lines of the cases a -t
-# pattern skips, vitest's start and duration, and TAP's block under each test.
+# pattern skips, and vitest's "RUN v... <path>" line, start and duration. Of
+# node's TAP, also less the "TAP version 13" line, the "# Subtest:" lines, the
+# "1..N" plan lines, the block under each test, the last "# duration_ms" line
+# and the indent of nested tests.
 #
 # The rule: which proposals a Crew is offered, which names it uses, what differs;
 # and the form, in a DOM: the zone is asked for, the patch is one append.
