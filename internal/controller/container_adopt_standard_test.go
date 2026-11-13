@@ -170,7 +170,7 @@ func recordedStandard(ns string) {
 	}).Should(Succeed())
 }
 
-// #97 (docs/plans/adopt-existing.md, step 4): a Standard is something an
+// #97 (docs/plans/done/adopt-existing.md, step 4): a Standard is something an
 // adopted repository grows into.
 var _ = Describe("Container adoption with a Standard the repository doesn't hold", func() {
 	It("opens one pull request with exactly the Standard's files and is Ready; merging it records the "+
