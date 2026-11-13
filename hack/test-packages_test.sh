@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for hack/test-packages.sh: a change to a leaf package tests it alone,
 # one to a package others import tests them too, a docs-only change tests
-# nothing, and go.mod, testdata, no merge base, TEST_ALL and FORCE test every
+# nothing, and no merge base, TEST_ALL and FORCE test every
 # package (#1295), the branch main no longer does (#127: only a release tests
 # everything); a package below test/e2e is tested, a non-Go file or
 # a //go:embed line also tests cmd (#1321); in a throwaway module and clone.
@@ -17,9 +17,9 @@
 # Against this repository, hack/check-readers.sh: every package the readers
 # table names exists, and a _test.go that climbs to a file outside its
 # package or names a hack/ path lies in a package the table lists for it
-# (#1523, #1318, #66). Only go.mod and go.sum test every package: a file no
-# Go test reads tests nothing, a Dockerfile, a workflow and the like the
-# packages that read them (#127).
+# (#1523, #1318, #66). No file tests every package: a file no Go test reads
+# tests nothing, go.mod and go.sum among them, as gta has it; a Dockerfile, a
+# workflow and the like test the packages that read them (#127).
 # Run: hack/test-packages_test.sh
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
@@ -142,11 +142,16 @@ change
 printf 'package top\nimport _ "embed"\n//go:embed top.go\nvar s string\n' >top/new.go
 check "#1321 a new file with //go:embed: its package and cmd" "$(run)" "cmd top"
 
-for f in go.mod go.sum; do
+# #127: go.mod and go.sum test no package, as gta's own command has it: a
+# change to them alone is in none. They tested every package, a quarter of an
+# hour of the controller suite for a bump of one module; a release tests it.
+for f in go.mod go.sum go.work; do
   change "$f"
-  check "$f: every package, each is built from it" "$(run)" "$every"
-  check "$f: says why" "$(grep -c "every package (8): $f changed" "$T/err")" 1
+  check "#127 $f: no package, only a release tests every one" "$(run)" ""
+  check "#127 $f: says no package" "$(grep -c 'testing no package' "$T/err")" 1
 done
+change go.mod leaf/leaf.go
+check "#127 go.mod and a Go file: what gta selects for the Go file" "$(run)" "leaf mid top"
 
 change hack/agent/Dockerfile
 check "#127 a Dockerfile: cmd, whose test reads every one" "$(run)" "cmd"
