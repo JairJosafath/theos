@@ -225,6 +225,18 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
         echo "$f: has no test-hack job running make check CHECK_STEPS=\"test-hack doc-links license-headers readers\"" >&2
         fail=1
       fi
+      # #148: the link check runs in the Shell tests job, so a pull request
+      # (and a push to main) that changes only Markdown or docs/ must start
+      # this workflow, or its dead links are found by someone else's change.
+      for ev in pull_request push; do
+        paths=$(trigger "$f" "$ev")
+        for pat in '**/*.md' 'docs/**'; do
+          if ! grep -qxF "path '$pat'" <<<"$paths"; then
+            echo "$f: its $ev paths lack '$pat', so a change to only documents starts no link check (#148)" >&2
+            fail=1
+          fi
+        done
+      done
       ;;
     ui.yml)
       # #127: ui/src/demo/limits.test.ts reads the CRDs.
