@@ -30,7 +30,7 @@ import (
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
-// #95 (docs/plans/adopt-existing.md, step 2): a repository adopted with no
+// #95 (docs/plans/done/adopt-existing.md, step 2): a repository adopted with no
 // Standard is checked by its own command and its own CI, which the Container
 // names, and agents work on it only once main requires those checks.
 var _ = Describe("Container adoption with the repository's own check", func() {

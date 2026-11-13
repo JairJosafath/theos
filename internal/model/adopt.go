@@ -27,7 +27,7 @@ import (
 )
 
 // Adopting a repository the factory never scaffolded starts with reading it
-// (docs/plans/adopt-existing.md, step 3; #96). DetectRepository says, from a
+// (docs/plans/done/adopt-existing.md, step 3; #96). DetectRepository says, from a
 // repository's file list and the few files it asks for, what the repository
 // is and how it is checked; AdoptionProposal writes that as the model a
 // person applies. The detector guesses nothing it can't read: what it can't
