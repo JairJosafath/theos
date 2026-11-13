@@ -47,13 +47,13 @@ type lagWorld struct {
 	secret  *corev1.Secret
 }
 
-func newLagWorld(t *testing.T, mode string, accepted ...int32) lagWorld {
+func newLagWorld(t *testing.T, mode string) lagWorld {
 	t.Helper()
 	tr := fake.NewIssueTracker()
 	tr.Project(lagTeam)
 	token := tr.Account(trackerLogin, fake.TrackerAccess{Issues: true})
 	src := linearSource("product", lagTeam)
-	src.Mode, src.Accepted = mode, accepted
+	src.Mode = mode
 	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
 		Spec: c4v1beta1.BriefSpec{RequestSources: []c4v1beta1.BriefRequestSource{src}}}
 	return lagWorld{t: t, tracker: tr, port: tr.For(lagTeam, token), brief: brief,
