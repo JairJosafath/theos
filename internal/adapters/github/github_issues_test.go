@@ -279,8 +279,8 @@ func TestGitHubIssuesList(t *testing.T) {
 		t.Fatalf("ListOpenIssues() on no issues = %+v, %v", empty, err)
 	}
 
-	f.open("dark mode", "gray-lenovo", false)
-	f.open("a pull request", "gray-lenovo", true)
+	f.open("dark mode", "ada", false)
+	f.open("a pull request", "ada", true)
 	f.open("export to CSV", "stranger", false)
 	list, err := g.ListOpenIssues(ctx, empty.ETag)
 	if err != nil {
@@ -289,7 +289,7 @@ func TestGitHubIssuesList(t *testing.T) {
 	if list.NotModified || !reflect.DeepEqual(numbers(list.Issues), []int{1, 3}) {
 		t.Fatalf("ListOpenIssues() = %+v; want issues 1 and 3", list)
 	}
-	want := ports.GitHubIssue{Number: 1, Title: "dark mode", Body: "body of dark mode", Author: "gray-lenovo",
+	want := ports.GitHubIssue{Number: 1, Title: "dark mode", Body: "body of dark mode", Author: "ada",
 		URL: "https://github.com/" + fakeGitHubRepo + "/issues/1", Created: time.Date(2026, 10, 9, 0, 0, 1, 0, time.UTC)}
 	if !reflect.DeepEqual(list.Issues[0], want) {
 		t.Errorf("issue 1 = %+v; want %+v", list.Issues[0], want)
@@ -311,7 +311,7 @@ func TestGitHubIssuesList(t *testing.T) {
 	f.mu.Lock()
 	f.issue(1).State = "closed"
 	f.mu.Unlock()
-	f.open("print it", "gray-lenovo", false)
+	f.open("print it", "ada", false)
 	changed, err := g.ListOpenIssues(ctx, list.ETag)
 	if err != nil || changed.NotModified || !reflect.DeepEqual(numbers(changed.Issues), []int{3, 4}) {
 		t.Errorf("ListOpenIssues(changed) = %+v, %v; want issues 3 and 4", changed, err)
@@ -326,7 +326,7 @@ func TestGitHubIssuesListPages(t *testing.T) {
 	var want []int
 	for n := 1; n <= 2*githubPageSize+10; n++ {
 		pull := n%7 == 0
-		f.open("issue "+strconv.Itoa(n), "gray-lenovo", pull)
+		f.open("issue "+strconv.Itoa(n), "ada", pull)
 		if !pull {
 			want = append(want, n)
 		}
@@ -361,7 +361,7 @@ func TestGitHubIssuesListPages(t *testing.T) {
 	}
 
 	for range githubMaxPages*githubPageSize - len(f.issues) + 1 {
-		f.open("more", "gray-lenovo", false)
+		f.open("more", "ada", false)
 	}
 	if _, err := g.ListOpenIssues(ctx, ""); ports.IssuesReason(err) != ports.ReasonGitHubError {
 		t.Errorf("ListOpenIssues() past %d pages error = %v; want reason %s", githubMaxPages, err, ports.ReasonGitHubError)
@@ -413,7 +413,7 @@ func TestGitHubIssuesTeamMember(t *testing.T) {
 func TestGitHubIssuesCommentAndClose(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()
-	n := f.open("dark mode", "gray-lenovo", false)
+	n := f.open("dark mode", "ada", false)
 	const marker = "<!-- theos:request brief=shop stage=planned -->"
 
 	found, err := g.FindComment(ctx, n, marker)
@@ -475,7 +475,7 @@ func TestGitHubIssuesCommentAndClose(t *testing.T) {
 func TestGitHubIssuesFindCommentStranger(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()
-	n := f.open("dark mode", "gray-lenovo", false)
+	n := f.open("dark mode", "ada", false)
 	const marker = "<!-- theos:request brief=shop stage=declined -->"
 	f.mu.Lock()
 	f.comments[n] = []githubComment{{ID: 1, Body: "Declined.\n\n" + marker, User: githubUser{Login: "a-stranger"}}}

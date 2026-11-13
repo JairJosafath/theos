@@ -20,18 +20,18 @@ import { fakeApi, listen } from './fakeApi.mjs'
 
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const NS = 'lens'
-const REPO = 'gray-lenovo/cel-lens'
+const REPO = 'ada/cel-lens'
 
 const lens = {
   container: 'cel-lens',
   github: { repository: REPO, tokenSecretRef: { name: 'cel-lens-github' } },
-  requests: { mode: 'Ask', authors: ['gray-lenovo'] },
+  requests: { mode: 'Ask', authors: ['ada'] },
 }
 
 const request = (number, title, stage, more = {}) => ({
   repository: REPO,
   number,
-  author: 'gray-lenovo',
+  author: 'ada',
   title,
   url: `https://github.com/${REPO}/issues/${number}`,
   stage,
@@ -41,7 +41,7 @@ const request = (number, title, stage, more = {}) => ({
 const waiting = (number, title) => ({
   kind: 'Request',
   name: `${REPO}#${number}`,
-  question: `Request ${REPO}#${number} "${title}" by gray-lenovo waits for you.`,
+  question: `Request ${REPO}#${number} "${title}" by ada waits for you.`,
   recommend: `Add ${number} to the accepted requests of ${REPO} to plan it, or to the declined ones.`,
   since: '2026-10-09T10:00:00Z',
 })
@@ -210,7 +210,7 @@ describe('a Brief’s requests in the browser', () => {
   })
 
   it('sets an entry’s requests in the settings, keeping the numbers answered', async () => {
-    await settings().getByText('requests Ask, from gray-lenovo').waitFor({ timeout: 5000 })
+    await settings().getByText('requests Ask, from ada').waitFor({ timeout: 5000 })
     await settings().getByText('Requests of cel-lens').click()
     const form = settings().getByRole('form', { name: 'Requests of cel-lens' })
     await form.getByLabel(/^Requests from its GitHub issues/).selectOption('On')
@@ -225,7 +225,7 @@ describe('a Brief’s requests in the browser', () => {
             ...lens,
             requests: {
               mode: 'On',
-              authors: ['gray-lenovo'],
+              authors: ['ada'],
               teams: ['gray-org/maintainers'],
               accepted: [12],
               declined: [13],
@@ -234,7 +234,7 @@ describe('a Brief’s requests in the browser', () => {
         ],
       },
     ])
-    await settings().getByText('requests On, from gray-lenovo and gray-org/maintainers').waitFor({ timeout: 5000 })
+    await settings().getByText('requests On, from ada and gray-org/maintainers').waitFor({ timeout: 5000 })
   })
 
   it('shows the API server’s message when it refuses requests', async () => {

@@ -15,12 +15,12 @@ import {
 
 const lens: BriefRelease = {
   container: 'cel-lens',
-  github: { repository: 'gray-lenovo/cel-lens', tokenSecretRef: { name: 'gh' } },
-  requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [3] },
+  github: { repository: 'ada/cel-lens', tokenSecretRef: { name: 'gh' } },
+  requests: { mode: 'Ask', authors: ['ada'], accepted: [3] },
 }
 const cli: BriefRelease = {
   container: 'cli',
-  github: { repository: 'gray-lenovo/cel-lens', tokenSecretRef: { name: 'gh' } },
+  github: { repository: 'ada/cel-lens', tokenSecretRef: { name: 'gh' } },
   tagPrefix: 'cli-',
 }
 
@@ -35,7 +35,7 @@ function brief(status: Brief['status'], releases: BriefRelease[] = [lens]): Brie
 }
 
 describe('describeRequest', () => {
-  const base = { repository: 'gray-lenovo/cel-lens', number: 12, author: 'gray-lenovo', title: 'Dark mode' }
+  const base = { repository: 'ada/cel-lens', number: 12, author: 'ada', title: 'Dark mode' }
   it.each([
     [{ stage: 'Waiting' as const }, 'Waits for you', 'waiting', 'Waits for you to accept or decline it.'],
     [{ stage: 'Accepted' as const }, 'Accepted', 'waiting', 'Accepted; it waits for a round to plan it.'],
@@ -61,7 +61,7 @@ describe('describeRequest', () => {
     ],
   ])('%o reads as its stage', (more, label, tone, detail) => {
     const view = describeRequest({ ...base, ...more })
-    expect(view).toMatchObject({ key: 'gray-lenovo/cel-lens#12', label: 'gray-lenovo/cel-lens #12' })
+    expect(view).toMatchObject({ key: 'ada/cel-lens#12', label: 'ada/cel-lens #12' })
     expect([view.stageLabel, view.tone, view.detail]).toEqual([label, tone, detail])
   })
 })
@@ -70,7 +70,7 @@ describe('describeRequests', () => {
   it('lists the requests, counts the waiting ones and says the condition', () => {
     const view = describeRequests(
       brief({
-        requests: [{ repository: 'gray-lenovo/cel-lens', number: 12, author: 'a', title: 't', stage: 'Waiting' }],
+        requests: [{ repository: 'ada/cel-lens', number: 12, author: 'a', title: 't', stage: 'Waiting' }],
         requestsWaiting: 60,
         conditions: [
           {
@@ -83,7 +83,7 @@ describe('describeRequests', () => {
         ],
       }),
     )
-    expect(view.list.map((r) => r.key)).toEqual(['gray-lenovo/cel-lens#12'])
+    expect(view.list.map((r) => r.key)).toEqual(['ada/cel-lens#12'])
     expect(view.waiting).toBe(60)
     expect(view.taking).toBe(true)
     expect(view.failure).toEqual({
@@ -93,8 +93,8 @@ describe('describeRequests', () => {
   })
 
   it('keeps the settled numbers by repository in lower case', () => {
-    const view = describeRequests(brief({ requestsSettled: [{ repository: 'Gray-Lenovo/CEL-lens', numbers: [1, 2] }] }))
-    expect(view.settled).toEqual({ 'gray-lenovo/cel-lens': [1, 2] })
+    const view = describeRequests(brief({ requestsSettled: [{ repository: 'Ada/CEL-lens', numbers: [1, 2] }] }))
+    expect(view.settled).toEqual({ 'ada/cel-lens': [1, 2] })
     expect(describeRequests(brief({})).settled).toEqual({})
   })
 
@@ -106,58 +106,58 @@ describe('describeRequests', () => {
 
 describe('answerRequest', () => {
   it('adds the number to the accepted or declined of the entry that takes requests', () => {
-    expect(answerRequest([cli, lens], 'Gray-Lenovo/CEL-lens', 12, 'accept')).toEqual([
+    expect(answerRequest([cli, lens], 'Ada/CEL-lens', 12, 'accept')).toEqual([
       cli,
-      { ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [3, 12] } },
+      { ...lens, requests: { mode: 'Ask', authors: ['ada'], accepted: [3, 12] } },
     ])
-    expect(answerRequest([cli, lens], 'gray-lenovo/cel-lens', 12, 'decline')).toEqual([
+    expect(answerRequest([cli, lens], 'ada/cel-lens', 12, 'decline')).toEqual([
       cli,
-      { ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [3], declined: [12] } },
+      { ...lens, requests: { mode: 'Ask', authors: ['ada'], accepted: [3], declined: [12] } },
     ])
   })
 
   it('moves a number from one list to the other, never both', () => {
-    expect(answerRequest([lens], 'gray-lenovo/cel-lens', 3, 'decline')).toEqual([
-      { ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], declined: [3] } },
+    expect(answerRequest([lens], 'ada/cel-lens', 3, 'decline')).toEqual([
+      { ...lens, requests: { mode: 'Ask', authors: ['ada'], declined: [3] } },
     ])
   })
 
   it('drops the settled numbers, those of closed issues, from both lists', () => {
     const full: BriefRelease = {
       ...lens,
-      requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [1, 3], declined: [2, 4] },
+      requests: { mode: 'Ask', authors: ['ada'], accepted: [1, 3], declined: [2, 4] },
     }
-    expect(answerRequest([full], 'gray-lenovo/cel-lens', 12, 'decline', [1, 2, 4])).toEqual([
-      { ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [3], declined: [12] } },
+    expect(answerRequest([full], 'ada/cel-lens', 12, 'decline', [1, 2, 4])).toEqual([
+      { ...lens, requests: { mode: 'Ask', authors: ['ada'], accepted: [3], declined: [12] } },
     ])
   })
 
   it('answers again once an entry answered 200 requests whose issues closed', () => {
     const answered = Array.from({ length: 200 }, (_, i) => i + 1)
-    const full: BriefRelease = { ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], declined: answered } }
-    const releases = answerRequest([full], 'gray-lenovo/cel-lens', 201, 'decline', answered)!
+    const full: BriefRelease = { ...lens, requests: { mode: 'Ask', authors: ['ada'], declined: answered } }
+    const releases = answerRequest([full], 'ada/cel-lens', 201, 'decline', answered)!
     expect(releases[0].requests!.declined).toEqual([201])
   })
 
   it('has nothing to answer with when no entry takes requests from the repository', () => {
-    expect(answerRequest([cli], 'gray-lenovo/cel-lens', 12, 'accept')).toBeUndefined()
+    expect(answerRequest([cli], 'ada/cel-lens', 12, 'accept')).toBeUndefined()
     expect(answerRequest([lens], 'other/repo', 12, 'accept')).toBeUndefined()
   })
 })
 
 describe('requestAnswered', () => {
   it('says what spec.releases answers already', () => {
-    const releases = answerRequest([lens], 'gray-lenovo/cel-lens', 9, 'decline')!
-    expect(requestAnswered(releases, 'gray-lenovo/cel-lens', 3)).toBe('accepted')
-    expect(requestAnswered(releases, 'gray-lenovo/cel-lens', 9)).toBe('declined')
-    expect(requestAnswered(releases, 'gray-lenovo/cel-lens', 12)).toBeUndefined()
+    const releases = answerRequest([lens], 'ada/cel-lens', 9, 'decline')!
+    expect(requestAnswered(releases, 'ada/cel-lens', 3)).toBe('accepted')
+    expect(requestAnswered(releases, 'ada/cel-lens', 9)).toBe('declined')
+    expect(requestAnswered(releases, 'ada/cel-lens', 12)).toBeUndefined()
   })
 })
 
 describe('the settings helpers', () => {
   it('split names on commas and spaces', () => {
-    expect(splitNames(' gray-lenovo, a-colleague  gray-org/maintainers,,gray-lenovo')).toEqual([
-      'gray-lenovo',
+    expect(splitNames(' ada, a-colleague  gray-org/maintainers,,ada')).toEqual([
+      'ada',
       'a-colleague',
       'gray-org/maintainers',
     ])
@@ -197,23 +197,23 @@ describe('a request under Needs you', () => {
     const status = {
       requests: [
         {
-          repository: 'gray-lenovo/cel-lens',
+          repository: 'ada/cel-lens',
           number: 12,
           author: 'a',
           title: 'Dark mode',
-          url: 'https://github.com/gray-lenovo/cel-lens/issues/12',
+          url: 'https://github.com/ada/cel-lens/issues/12',
           stage: 'Waiting' as const,
         },
       ],
     }
     const view = describeNeedsYou(
-      { kind: 'Request', name: 'gray-lenovo/cel-lens#12', question: 'Request waits for you.' },
+      { kind: 'Request', name: 'ada/cel-lens#12', question: 'Request waits for you.' },
       status,
     )
     expect(view).toMatchObject({
-      label: 'gray-lenovo/cel-lens #12',
-      request: { repository: 'gray-lenovo/cel-lens', number: 12 },
-      url: 'https://github.com/gray-lenovo/cel-lens/issues/12',
+      label: 'ada/cel-lens #12',
+      request: { repository: 'ada/cel-lens', number: 12 },
+      url: 'https://github.com/ada/cel-lens/issues/12',
     })
     expect(view.issue).toBeUndefined()
     expect(splitRequest('cel-lens#12')).toBeUndefined()

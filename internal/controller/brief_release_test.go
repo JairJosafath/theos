@@ -751,7 +751,7 @@ var _ = Describe("Brief releases", func() {
 		It("is Off when unset, and takes Ask with authors and teams", func() {
 			brief := newBrief(ns, "ask")
 			brief.Spec.Releases = []c4v1beta1.BriefRelease{requesting("acme/cel-lens", c4v1beta1.BriefRequests{
-				Mode: "Ask", Authors: []string{"gray-lenovo", "a1"}, Teams: []string{"acme/maintainers"},
+				Mode: "Ask", Authors: []string{"ada", "a1"}, Teams: []string{"acme/maintainers"},
 				Accepted: []int32{12}, Declined: []int32{13}})}
 			mustCreate(brief)
 			brief = newBrief(ns, "off")
@@ -775,7 +775,7 @@ var _ = Describe("Brief releases", func() {
 			other.Container = "cli"
 			other.TagPrefix = "cli-"
 			brief.Spec.Releases = []c4v1beta1.BriefRelease{
-				requesting("acme/cel-lens", c4v1beta1.BriefRequests{Mode: "On", Authors: []string{"gray-lenovo"}}), other}
+				requesting("acme/cel-lens", c4v1beta1.BriefRequests{Mode: "On", Authors: []string{"ada"}}), other}
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
 				"at most one releases entry per GitHub repository may take requests")))
 			other.Requests.Mode = "Off"
@@ -786,7 +786,7 @@ var _ = Describe("Brief releases", func() {
 		It("refuses a number both accepted and declined", func() {
 			brief := newBrief(ns, "both")
 			brief.Spec.Releases = []c4v1beta1.BriefRelease{requesting("acme/cel-lens", c4v1beta1.BriefRequests{
-				Mode: "Ask", Authors: []string{"gray-lenovo"}, Accepted: []int32{12, 14}, Declined: []int32{14}})}
+				Mode: "Ask", Authors: []string{"ada"}, Accepted: []int32{12, 14}, Declined: []int32{14}})}
 			Expect(k8sClient.Create(ctx, brief)).To(MatchError(ContainSubstring(
 				"an issue number can't be both accepted and declined")))
 		})
