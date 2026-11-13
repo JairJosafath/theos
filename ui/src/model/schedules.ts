@@ -1,5 +1,5 @@
 // What a Crew's page says of the schedules its Container's Standard proposes
-// (design.md, "Schedules"; docs/plans/crew-schedules.md, step 6): which the
+// (design.md, "Schedules"; docs/plans/done/crew-schedules.md, step 6): which the
 // Crew is offered, which names it already uses, and where its schedule of a
 // name differs from the proposal. The only link between the two is the name,
 // so this says "in use", never where a schedule came from: one of a

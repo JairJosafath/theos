@@ -1041,7 +1041,7 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   jobs, once per value. While a failed full check holds the next release, the
   value re-runs that check first: its issue holds the release no more, is
   closed if the check passes, and holds it again if it fails (#2028).
-- **Schedules** (`spec.schedules`, [plans/crew-schedules.md](plans/crew-schedules.md), #63).
+- **Schedules** (`spec.schedules`, [plans/done/crew-schedules.md](plans/done/crew-schedules.md), #63).
   Work that starts from the clock: up to eight named goals, each with a
   five-field `cron` and a `timeZone` (UTC unset). When one comes due the
   Crew files an issue in the Container's repository, titled with the

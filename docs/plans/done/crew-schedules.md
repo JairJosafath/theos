@@ -1,6 +1,6 @@
 # A Crew works on a timer
 
-GitHub issue #63, a step of [open-source-launch.md](open-source-launch.md)
+GitHub issue #63, a step of [open-source-launch.md](../open-source-launch.md)
 (#46). Written 2026-11-09 in a session the owner ran.
 
 ## Goal
@@ -45,7 +45,7 @@ runs on a schedule, through the same loop as everything else.
 
 | Step | Issue | Done when |
 | --- | --- | --- |
-| 1. The rule, the field, the Crew files the issue | #63 | `model.NextScheduleStep` and `ParseCron` table-tested; `spec.schedules` with its CEL; envtest: due, held while open, one for many missed, paused, invalid, refused by the CRD; the sample and the guide |
+| 1. The rule, the field, the Crew files the issue (done) | #63 | `model.NextScheduleStep` and `ParseCron` table-tested; `spec.schedules` with its CEL; envtest: due, held while open, one for many missed, paused, invalid, refused by the CRD; the sample and the guide |
 | 2. "Nothing to do" is a result (done) | #72 | an implementer that finds nothing to change ends with `Nothing to do: <why>`; the Task closes the issue as done instead of failing. It touches `internal/agentrunner/`, a protected path |
 | 3. Run one now (done) | #72 | an annotation on the Crew, and a button in the UI, file a schedule's issue at once |
 | 4. The UI shows schedules (done) | #72 | the Crew's page lists each schedule, its next time and its last issue |
@@ -265,4 +265,4 @@ no chart change. It closes #72.
   sends (`TakeProposal.test.ts`); the writer (`crews.test.ts`); the server's
   entry, what it sends upstream and what it refuses (`ui/test/server.test.mjs`).
   The UI's browser tests don't run in an agent's container; CI runs them.
-  Evidence: [72-ui-proposals.txt](../screenshots/72-ui-proposals.txt).
+  Evidence: [72-ui-proposals.txt](../../screenshots/72-ui-proposals.txt).
