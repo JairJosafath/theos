@@ -143,6 +143,28 @@ type ChatHosts func(cfg ChatConfig) (ChatHost, error)
 // ErrChatCredentialRefused is a token the host doesn't take.
 var ErrChatCredentialRefused = errors.New("the chat host refused the bot's token")
 
+// ErrChatScopeMissing is a token the host takes but that lacks a permission
+// (a scope) the call needs. A Chat's Ready condition names it ScopeMissing
+// (docs/plans/requests-and-chat.md, decision 9).
+var ErrChatScopeMissing = errors.New("the bot's token lacks a scope the call needs")
+
+// ChatScopeMissingError is ErrChatScopeMissing naming the scope.
+type ChatScopeMissingError struct {
+	// Scope is the scope the host says the call needs, as the host spells
+	// it; "" when the host named none.
+	Scope string
+}
+
+func (e *ChatScopeMissingError) Error() string {
+	if e.Scope == "" {
+		return ErrChatScopeMissing.Error()
+	}
+	return ErrChatScopeMissing.Error() + ": " + e.Scope
+}
+
+// Is makes the error ErrChatScopeMissing.
+func (e *ChatScopeMissingError) Is(target error) bool { return target == ErrChatScopeMissing }
+
 // ErrChatAliasTaken is an alias held by a room the bot is not in.
 var ErrChatAliasTaken = errors.New("the alias belongs to a room the bot is not in")
 

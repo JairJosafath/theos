@@ -84,6 +84,7 @@ linters:
             - "**/internal/adapters/gitlab/**"
             - "**/internal/adapters/matrix/**"
             - "**/internal/adapters/packages/**"
+            - "**/internal/adapters/slack/**"
           deny:
             - pkg: k8s.io
               desc: adapters must not import Kubernetes (docs/architecture.md)

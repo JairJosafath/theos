@@ -152,6 +152,48 @@ func TestChatPostHTML(t *testing.T) {
 	}
 }
 
+// TestChatPostMrkdwn covers #155: a post for Slack is mrkdwn with &, < and >
+// escaped in every field, so text that looks like a link, a mention or an
+// entity is shown as written, and only an http or https link is a link.
+func TestChatPostMrkdwn(t *testing.T) {
+	tests := []struct {
+		name string
+		post ChatPost
+		want string
+	}{
+		{"title and status", ChatPost{Title: "Spec: dark mode", Status: "Waiting for approval"},
+			"*Spec: dark mode*\nWaiting for approval"},
+		{"status alone", ChatPost{Status: "Merged"}, "Merged"},
+		{"a title on one line, bold", ChatPost{Title: " Spec:\ndark  mode "}, "*Spec: dark mode*"},
+		{"escapes the three characters and keeps line breaks",
+			ChatPost{Title: "a < b", Body: []string{"<@U012AB3CD> & <!here>\n<https://evil.example|x> &amp; > y"}},
+			"*a &lt; b*\n\n&lt;@U012AB3CD&gt; &amp; &lt;!here&gt;\n&lt;https://evil.example|x&gt; &amp;amp; &gt; y"},
+		{"paragraphs apart", ChatPost{Body: []string{"one", " ", "two"}}, "one\n\ntwo"},
+		{"links, the address escaped and a | in it encoded",
+			ChatPost{Links: []ChatLink{{"Pull request #4", "https://git.example/acme/shop/pulls/4?a=1&b=2|3"},
+				{"", "http://ui.example/?ns=shop"}, {"a > b\nc", "https://ui.example/"}}},
+			"<https://git.example/acme/shop/pulls/4?a=1&amp;b=2%7C3|Pull request #4> · " +
+				"<http://ui.example/?ns=shop|http://ui.example/?ns=shop> · <https://ui.example/|a &gt; b c>"},
+		{"drops a link that isn't http or https",
+			ChatPost{Links: []ChatLink{{"click", "javascript:alert(1)"}, {"relative", "/k8s"},
+				{"spaced", "https://a.example/x y"}, {"userinfo", "https://u:p@a.example/"}}},
+			""},
+		{"a code block, escaped",
+			ChatPost{Code: []string{"kubectl get containers", "echo '<b>' && true"}},
+			"```\nkubectl get containers\necho '&lt;b&gt;' &amp;&amp; true\n```"},
+		{"every part, in order",
+			ChatPost{Title: "Deploy", Body: []string{"why"}, Links: []ChatLink{{"UI", "https://ui.example/"}},
+				Code: []string{"kubectl"}},
+			"*Deploy*\n\nwhy\n\n<https://ui.example/|UI>\n\n```\nkubectl\n```"},
+		{"blank fields leave nothing", ChatPost{Body: []string{" ", ""}, Code: []string{""}}, ""},
+	}
+	for _, tt := range tests {
+		if got := tt.post.Mrkdwn(); got != tt.want {
+			t.Errorf("%s: Mrkdwn() =\n%s\nwant\n%s", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestChatPostText(t *testing.T) {
 	post := ChatPost{Title: "Deploy waiting", Status: "api v1.2.0 to production",
 		Body:  []string{"<b>not markup</b>"},
