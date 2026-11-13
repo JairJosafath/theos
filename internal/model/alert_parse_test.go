@@ -487,6 +487,31 @@ func TestParseSentryShapes(t *testing.T) {
 		}
 	})
 
+	// #186: a Sentry alert names no namespace, whatever its tags say: its
+	// project leads to its Container. Alertmanager and generic alerts read the
+	// namespace label; Sentry must not.
+	t.Run("a Sentry alert names no namespace (#186)", func(t *testing.T) {
+		for name, tc := range map[string]struct {
+			tag    string
+			labels AlertLabels
+		}{
+			"a namespace tag, default labels":        {"namespace", AlertLabels{}},
+			"a namespace tag, namespace label named": {"namespace", AlertLabels{Namespace: "namespace"}},
+			"a tag of a non-default namespace label": {"k8s_ns", AlertLabels{Namespace: "k8s_ns"}},
+		} {
+			body := sentryAlertBody(`"issue_id":"1","tags":[["` + tc.tag + `","payments"],["level","error"]],
+				"url":"https://sentry.io/api/0/projects/test-org/orders-web/events/e1/"`)
+			alerts, err := ParseSentry(SentryResourceIssueAlert, body, tc.labels)
+			if err != nil || len(alerts) != 1 {
+				t.Fatalf("%s: alerts %+v, err %v", name, alerts, err)
+			}
+			if a := alerts[0]; a.Namespace != "" || a.Project != "orders-web" || a.Labels[tc.tag] != "payments" {
+				t.Errorf("%s: namespace %q, project %q, labels %v; want no namespace, project orders-web, the tag kept as a label",
+					name, a.Namespace, a.Project, a.Labels)
+			}
+		}
+	})
+
 	t.Run("fields of the wrong type are missing fields", func(t *testing.T) {
 		a := one(SentryResourceIssueAlert, sentryAlertBody(`"issue_id":{"a":1},"title":["x"],"tags":"none",
 			"url":7,"web_url":null,"datetime":true,"timestamp":"1e400","project":{"slug":"p"},"culprit":false`))
