@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tests for hack/test-packages.sh: a change to a leaf package tests it alone,
 # one to a package others import tests them too, a docs-only change tests
-# nothing, and the go line of go.mod, no merge base, TEST_ALL and FORCE test
-# every package (#1295), the branch main no longer does (#127: only a release tests
+# nothing, and no merge base, TEST_ALL and FORCE test every
+# package (#1295), the branch main no longer does (#127: only a release tests
 # everything); a package below test/e2e is tested, a non-Go file or
 # a //go:embed line also tests cmd (#1321); in a throwaway module and clone.
 # digitalocean/gta selects the packages (hack/gta, built here once): a test
@@ -17,11 +17,9 @@
 # Against this repository, hack/check-readers.sh: every package the readers
 # table names exists, and a _test.go that climbs to a file outside its
 # package or names a hack/ path lies in a package the table lists for it
-# (#1523, #1318, #66). No file tests every package but go.work and the lines
-# of go.mod each is built by (go, toolchain): a file no Go test reads tests
-# nothing, a Dockerfile, a workflow and the like the packages that read them,
-# and a module whose version changed in go.mod or go.sum the packages built
-# from it (#127).
+# (#1523, #1318, #66). No file tests every package: a file no Go test reads
+# tests nothing, go.mod and go.sum among them, as gta has it; a Dockerfile, a
+# workflow and the like test the packages that read them (#127).
 # Run: hack/test-packages_test.sh
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
@@ -40,34 +38,14 @@ export THEOS_GTA=$T/gta
 # A module: leaf (no imports), mid imports leaf, top imports mid, other alone,
 # api/v1 imported by the tests of hack/tool alone, a package under hack/, cmd
 # alone (it guards embeds), test/e2e, which make test never runs, and
-# test/e2e/standin, which it does. It builds on two modules, which lie below
-# it and are replaced, so that no proxy is asked: other imports dep, and the
-# tests of api/v1 alone import testdep.
+# test/e2e/standin, which it does.
 src=$T/src
 git init -q -b main "$src"
 cd "$src" || exit 1
 mkdir -p hack/tool hack/lib leaf mid top other api/v1 cmd config docs leaf/testdata leaf/assets test/e2e/standin
 cp "$HERE/test-packages.sh" hack/
 cp "$HERE/lib/change.sh" hack/lib/
-cat >go.mod <<'MOD'
-module example.com/m
-
-go 1.22
-
-require (
-	example.com/dep v0.1.0
-	example.com/testdep v0.1.0 // indirect
-)
-
-replace example.com/dep => ./third_party/dep
-
-replace example.com/testdep => ./third_party/testdep
-MOD
-for d in dep testdep; do
-  mkdir -p third_party/$d
-  printf 'module example.com/%s\n\ngo 1.22\n' $d >third_party/$d/go.mod
-  echo "package $d" >third_party/$d/$d.go
-done
+printf 'module example.com/m\n\ngo 1.22\n' >go.mod
 pkg() { # pkg DIR NAME [IMPORT]
   { echo "package $2"
     [ -z "${3:-}" ] || echo "import _ \"example.com/m/$3\""; } >"$1/$2.go"
@@ -84,8 +62,6 @@ pkg test/e2e/standin standin
 pkg cmd main
 printf 'package tool\nimport (\n\t"testing"\n\t_ "example.com/m/api/v1"\n)\nfunc TestX(t *testing.T) {}\n' >hack/tool/tool_test.go
 printf 'package other\nimport _ "embed"\n//go:embed o.txt\nvar o string\n' >other/embed.go
-printf 'package other\nimport _ "example.com/dep"\n' >other/dep.go
-printf 'package v1\nimport (\n\t"testing"\n\t_ "example.com/testdep"\n)\nfunc TestX(t *testing.T) {}\n' >api/v1/v1_test.go
 echo x >other/o.txt
 echo x >config/crd.yaml
 echo x >docs/guide.md
@@ -166,36 +142,16 @@ change
 printf 'package top\nimport _ "embed"\n//go:embed top.go\nvar s string\n' >top/new.go
 check "#1321 a new file with //go:embed: its package and cmd" "$(run)" "cmd top"
 
-# #127: go.mod and go.sum test the packages built from a module whose version
-# changed, not every package: gta's own command tests none for such a change,
-# and every package was tested here.
-change
-sed -i 's|example.com/dep v0.1.0|example.com/dep v0.2.0|' go.mod
-check "#127 go.mod, a version: the packages built from that module" "$(run)" "other"
-check "#127 go.mod, a version: says which module" \
-  "$(grep -c 'testing 1 of 8 packages.*built from the changed modules: example.com/dep$' "$T/err")" 1
-change
-sed -i 's|example.com/testdep v0.1.0|example.com/testdep v0.2.0|' go.mod
-check "#127 go.mod, a module tests alone import: their package, not what imports it" "$(run)" "api/v1"
-change leaf/leaf.go
-sed -i 's|example.com/dep v0.1.0|example.com/dep v0.2.0|' go.mod
-check "#127 go.mod and a Go file: the module's users, and what gta selects" "$(run)" "leaf mid other top"
-change
-echo 'example.com/dep v0.1.0 h1:x=' >go.sum
-check "#127 go.sum, a module's files: the packages built from that module" "$(run)" "other"
-change
-echo 'example.com/dep v0.1.0/go.mod h1:x=' >go.sum
-check "#127 go.sum, a module's go.mod alone: no package" "$(run)" ""
-change go.mod
-check "#127 go.mod, a comment: no package" "$(run)" ""
-check "#127 go.mod, a comment: says why" "$(grep -c 'testing no package: none is built from a module go.mod changed' "$T/err")" 1
-change
-sed -i 's|^go 1.22$|go 1.23|' go.mod
-check "go.mod, the go line: every package, each is built by it" "$(run)" "$every"
-check "go.mod, the go line: says why" "$(grep -c "every package (8): the go line of go.mod changed" "$T/err")" 1
-change go.work
-check "go.work: every package" "$(run)" "$every"
-check "go.work: says why" "$(grep -c "every package (8): go.work changed" "$T/err")" 1
+# #127: go.mod and go.sum test no package, as gta's own command has it: a
+# change to them alone is in none. They tested every package, a quarter of an
+# hour of the controller suite for a bump of one module; a release tests it.
+for f in go.mod go.sum go.work; do
+  change "$f"
+  check "#127 $f: no package, only a release tests every one" "$(run)" ""
+  check "#127 $f: says no package" "$(grep -c 'testing no package' "$T/err")" 1
+done
+change go.mod leaf/leaf.go
+check "#127 go.mod and a Go file: what gta selects for the Go file" "$(run)" "leaf mid top"
 
 change hack/agent/Dockerfile
 check "#127 a Dockerfile: cmd, whose test reads every one" "$(run)" "cmd"

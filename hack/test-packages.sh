@@ -15,14 +15,6 @@
 # TestDockerContextHasEmbeddedFiles checks the embeds of every package a
 # Dockerfile builds without linking them (#1321).
 #
-# go.mod and go.sum test the packages built from a module whose version
-# changed, through their tests too, and not every package: a package is built
-# from the modules it imports and no others. gta knows nothing of the two
-# files, and its own command tests no package for a change to them alone;
-# hack/gta compares them with the merge base's (hack/gta/modules.go,
-# docs/plans/done/module-selection.md). Only a line every package is built
-# by, as go and toolchain, tests them all.
-#
 # gta knows the Go files and what they embed, nothing else. A file some tests
 # read without importing it (templates/, config/, dist/, test/crds, the
 # workflows, a Dockerfile, a few hack/ files) tests the packages whose tests
@@ -45,10 +37,13 @@
 # is tested only when:
 #   - TEST_ALL or FORCE is set (FORCE=1 make check, which a release runs),
 #   - no merge base with TEST_BASE is found: the change can't be known,
-#   - a line of go.mod that every package is built by changed (go,
-#     toolchain, godebug, module), or go.work did,
-#   - gta fails, or go.mod can't be compared with the merge base's: when in
-#     doubt, more is tested.
+#   - gta fails: when in doubt, more is tested.
+# No file tests every package. go.mod, go.sum and go.work test none, as gta
+# has it and as schubergphilis/mcvs-golang-action runs it: a change to them
+# alone is in no package, so a bump of a module or of the toolchain is tested
+# at the next release, not on the pull request
+# (docs/plans/done/go-mod-tests-nothing.md). They tested every package, and
+# the controller suite alone is a quarter of an hour.
 # A change to a file no Go test reads tests nothing: docs/, .claude/,
 # .vscode/, ui/, the other .github/ files, the top-level *.md, the Makefile,
 # the rest of hack/ outside its packages, and any file the table doesn't
@@ -161,23 +156,11 @@ embeds() {
 }
 
 # owned: the changed files that lie in a package, for gta to say which
-# packages they affect. guard: one of them makes cmd check the embeds. mods:
-# go.mod and go.sum, for hack/gta to say which modules changed and which
-# packages are built from them.
+# packages they affect. guard: one of them makes cmd check the embeds.
 declare -A read=() readpaths=()
 owned=()
-mods=()
 guard=
 for f in "${files[@]}"; do
-  case "$f" in
-    go.mod | go.sum)
-      mods+=("$f")
-      continue
-      ;;
-    go.work | go.work.sum)
-      full "$f changed, which every package is built from"
-      ;;
-  esac
   # The paths of the readers table the file matches: their readers, and
   # nothing more unless the file lies in a package.
   for k in "${!readers[@]}"; do
@@ -205,32 +188,22 @@ for f in "${files[@]}"; do
   # A file in no package and in no path of the table: no Go test reads it.
 done
 
-if [ ${#owned[@]} -eq 0 ] && [ ${#read[@]} -eq 0 ] && [ ${#mods[@]} -eq 0 ]; then
+if [ ${#owned[@]} -eq 0 ] && [ ${#read[@]} -eq 0 ]; then
   say "testing no package: no Go package changed since $BASE (${base:0:12})"
   exit 0
 fi
 
 # The readers of the changed paths, and what gta selects for the files in
 # packages: the packages they lie in ("changed") and the packages that depend
-# on those ("dependent"). For go.mod and go.sum, the packages built from a
-# module they changed ("module"), those modules ("modules"), or the reason
-# every package is ("all"). The e2e suite is not among the packages tested.
+# on those ("dependent"). The e2e suite is not among the packages tested.
 declare -A known=() changed=() picked=()
-modules=
 for p in "${all[@]}"; do known[$p]=1; done
 for p in "${!read[@]}"; do picked[$p]=1; done
-if [ ${#owned[@]} -gt 0 ] || [ ${#mods[@]} -gt 0 ]; then
+if [ ${#owned[@]} -gt 0 ]; then
   # shellcheck disable=SC2086 # THEOS_GTA is a command with its arguments.
-  selected=$(printf '%s\n' "${owned[@]}" "${mods[@]}" | ${THEOS_GTA:-go run ./hack/gta} -base "$base") ||
+  selected=$(printf '%s\n' "${owned[@]}" | ${THEOS_GTA:-go run ./hack/gta}) ||
     full "gta could not select the packages"
   while read -r kind p; do
-    case $kind in
-      all) full "$p" ;;
-      modules)
-        modules=$p
-        continue
-        ;;
-    esac
     [ -n "$p" ] && [ -n "${known[$p]:-}" ] || continue
     picked[$p]=1
     [ "$kind" != changed ] || changed[$p]=1
@@ -242,23 +215,11 @@ if [ ${#owned[@]} -gt 0 ] || [ ${#mods[@]} -gt 0 ]; then
 fi
 
 short() { printf '%s\n' "$@" | sort | sed "s|^$module/||" | paste -sd' '; }
-# some WORD...: the first three, and how many more there are.
-some() {
-  local first="${*:1:3}"
-  [ $# -le 3 ] || first+=" and $(($# - 3)) more"
-  echo "$first"
-}
 why=()
 [ ${#changed[@]} -eq 0 ] || why+=("changed: $(short "${!changed[@]}")")
-# shellcheck disable=SC2086 # modules is a list of module paths.
-[ -z "$modules" ] || why+=("built from the changed modules: $(some $modules)")
 [ ${#read[@]} -eq 0 ] || why+=("read by their tests: $(short "${!readpaths[@]}")")
 if [ ${#picked[@]} -eq 0 ]; then
-  if [ ${#owned[@]} -eq 0 ] && [ ${#read[@]} -eq 0 ]; then
-    say "testing no package: none is built from a module ${mods[*]} changed since $BASE (${base:0:12})"
-  else
-    say "testing no package: the files changed since $BASE (${base:0:12}) are in no package that is left"
-  fi
+  say "testing no package: the files changed since $BASE (${base:0:12}) are in no package that is left"
   exit 0
 fi
 say "testing ${#picked[@]} of ${#all[@]} packages, those the change since $BASE (${base:0:12}) affects; $(printf '%s; ' "${why[@]}" | sed 's/; $//')"

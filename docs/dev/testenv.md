@@ -91,7 +91,7 @@ template needs a row there. In tests, write with merge patches
 | Step | Runs when |
 | --- | --- |
 | `manifests`, `generate` | a Go file under `api/`, `cmd/` or `internal/` changed, `go.mod`, `go.sum`, a file they write (`config/crd`, `config/rbac`, the chart's copies) or a script they run |
-| `fmt`, `vet`, `lint` | on the packages [gta](https://github.com/digitalocean/gta) says the change affects: those a changed file lies in and those that depend on them. After a change to `go.mod` or `go.sum`, on the packages built from a module whose version changed; on every package only when a line each is built by changed (`go`, `toolchain`). `lint` on every package after a change to `.golangci.yml` or `.custom-gcl.yml` |
+| `fmt`, `vet`, `lint` | on the packages [gta](https://github.com/digitalocean/gta) says the change affects: those a changed file lies in and those that depend on them. On none after a change to `go.mod` or `go.sum` alone, which lie in no package. `lint` on every package after a change to `.golangci.yml` or `.custom-gcl.yml` |
 | `validate-yaml`, `test-hack`, `ui-test` | a file among the tier's inputs changed ([devices.md](devices.md#memory-on-the-cluster-device) lists them), unless those inputs already passed on this device |
 | `doc-links`, `license-headers`, `readers` | three scans of the whole repository that the shell tests make, each by itself when a file it reads changed and the shell tests don't run: a Markdown file, or a file that is gone, which a link may name (`hack/check-doc-links.sh`); a Go file (`hack/check-license-headers.sh`); a Go test or the readers table (`hack/check-readers.sh`). They take seconds |
 | `test` | on the packages `make test` selects, below |
@@ -123,10 +123,9 @@ whose inputs list it, and no Go test: none reads it. A `*.mk` selects `vet`
 and `lint` on every package too. A `*.mk` and
 `hack/check-cache.sh` select the tiers; the other scripts that select the
 steps (`hack/check.sh`, `hack/test-packages.sh`, `hack/lib/change.sh`) the
-shell tests, which test them; `hack/gta/` its own package besides. Only
-the `go` and `toolchain` lines of `go.mod` reach every Go package, since
-each is built by them; a module whose version changed reaches the packages
-built from it.
+shell tests, which test them; `hack/gta/` its own package besides.
+`go.mod` and `go.sum` select `manifests` and `generate` and the two tiers
+whose inputs list them, and no Go package.
 
 `CHECK_STEPS` takes a part of the check, by the steps' names: `generate`
 (`manifests` and `generate`), `fmt`, `vet`, `lint`, `validate-yaml`,
@@ -175,21 +174,18 @@ Dockerfile builds without linking them (#1321). A file directly under
 that package. A file below a package's `testdata` tests that package alone.
 On the branch `main` it selects as anywhere else, against
 `origin/main` (#127; it used to test every package there). It tests every
-package only without a merge base, with `TEST_ALL=1` or `FORCE=1`, and after
-a change to a line of `go.mod` that every package is built by.
+package only without a merge base, with `TEST_ALL=1` or `FORCE=1`.
 
-A change to `go.mod` or `go.sum` tests the packages built from a module whose
-version changed, through their tests too, and no others
-([the plan](../plans/done/module-selection.md)): a bump of one dependency
-tests the packages that import it, directly or through others. `hack/gta`
-compares the two files with the merge base's. A changed `require`, `replace`
-or `exclude` line names its module, and so does a changed checksum of a
-module's files in `go.sum`; a comment (`// indirect`), a `retract` or `tool`
-line and a checksum of a module's `go.mod` alone build no package and test
-none. The `go`, `toolchain`, `godebug` and `module` lines, and a line
-`hack/gta` doesn't know, test every package: the toolchain holds the compiler
-and the standard library. `make test` says which modules: `...; built from
-the changed modules: github.com/moby/patternmatcher`.
+A change to `go.mod` or `go.sum` alone tests no package
+([the plan](../plans/done/go-mod-tests-nothing.md)): gta places the two files
+in none, and that is how
+[mcvs-golang-action](https://github.com/schubergphilis/mcvs-golang-action)
+runs gta for its partial testing. They used to test every package, which
+made a run of twenty minutes of a bump of one module or of the toolchain,
+the controller suite alone being a quarter of an hour. What such a bump
+breaks shows at the next release, whose full check tests every package;
+before that, the *Vulnerabilities* and *CodeQL* workflows, which start for
+`go.mod` and build the module, show a bump it no longer compiles with.
 
 A file some Go tests read without importing it tests the packages whose
 tests read it, the readers table in `hack/test-packages.sh`: `templates/`,
@@ -250,13 +246,10 @@ the build list (`...`), which this module's `go.mod` can't (`go: updates to
 go.mod needed`), and its git differ reads commits only. `hack/gta` uses its
 library on this module's packages alone, with the changed files the scripts
 list (`hack/lib/change.sh`), and adds what gta v0.2.0 leaves out: a package
-owns every file in its directory and below, down to the next package, a
+owns every file in its directory and below, down to the next package, and a
 package of tests alone (`test/chart`) that imports an affected package is
-selected too, and a change to `go.mod` or `go.sum`, for which gta selects no
-package at all, selects the users of the changed modules
-(`hack/gta/modules.go`). `hack/gta/main_test.go` and
-`hack/gta/modules_test.go` hold it to that. When gta fails, or `go.mod`
-can't be compared with the merge base's, every package is tested.
+selected too. `hack/gta/main_test.go` holds it to that. When gta fails, every
+package is tested.
 
 `make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why;
 the *Tests* workflow gives its loaded self-hosted runners 60m, #1504). The

@@ -154,8 +154,8 @@ func TestRunSelectsWhatAChangeAffects(t *testing.T) {
 			changed: []string{"gone/gone.go"},
 		},
 		{
-			name:    "a file in no package, and the go.mod of a nested module",
-			changed: []string{"docs/readme.md", "nested/go.mod"},
+			name:    "a file in no package",
+			changed: []string{"docs/readme.md", "go.mod"},
 		},
 		{
 			name: "no file",
@@ -165,7 +165,7 @@ func TestRunSelectsWhatAChangeAffects(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var out bytes.Buffer
 			in := strings.NewReader(strings.Join(tt.changed, "\n") + "\n\n")
-			if err := run("-", "", in, &out); err != nil {
+			if err := run("-", in, &out); err != nil {
 				t.Fatalf("run: %v", err)
 			}
 			var want string
@@ -194,7 +194,7 @@ func TestRunReadsTheListFromAFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := run(list, "", strings.NewReader("leaf/leaf.go\n"), &out); err != nil {
+	if err := run(list, strings.NewReader("leaf/leaf.go\n"), &out); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	want := "dependent example.com/m/chart\nchanged example.com/m/embed\nchanged example.com/m/top\n"
@@ -202,7 +202,7 @@ func TestRunReadsTheListFromAFile(t *testing.T) {
 		t.Errorf("got:\n%swant:\n%s", got, want)
 	}
 
-	if err := run(filepath.Join(root, "missing"), "", strings.NewReader(""), &out); err == nil {
+	if err := run(filepath.Join(root, "missing"), strings.NewReader(""), &out); err == nil {
 		t.Error("a list that is not there: want an error")
 	}
 }
