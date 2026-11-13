@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Container, Crew, CrewSchedule, Standard } from '../k8s/types'
-import { scheduleDifferences, scheduleProposals, writtenZone } from './schedules'
+import { proposalUse, scheduleDifferences, scheduleProposals, writtenZone } from './schedules'
 
 const DEPS: CrewSchedule = {
   name: 'dependencies',
@@ -208,6 +208,102 @@ describe('scheduleProposals', () => {
     const [use] = scheduleProposals(crew([mine]), [PY], [standard('python-standard', [DEPS])]).inUse
     expect(use.schedule).toEqual(mine)
     expect(use.proposal).toEqual(DEPS)
+  })
+})
+
+// #144: what a Standard's page says of its proposals, and which Crews use each name.
+describe('proposalUse', () => {
+  /** A Container of this name and its Crew of the same name, with these schedules. */
+  const pair = (
+    name: string,
+    spec: Partial<Container['spec']>,
+    schedules?: CrewSchedule[],
+    namespace = 'webshop',
+  ): [Container, Crew] => {
+    const c = container(spec, undefined, namespace)
+    const k = crew(schedules, namespace)
+    return [
+      { ...c, metadata: { ...c.metadata, name } },
+      { ...k, metadata: { ...k.metadata, name }, spec: { ...k.spec, containerRef: { name } } },
+    ]
+  }
+  const PYTHON = { standardRef: { name: 'python-standard' } }
+  const cases: {
+    name: string
+    proposed?: CrewSchedule[]
+    pairs: [Container, Crew][]
+    want: [string, [string, string[]][]][]
+  }[] = [
+    { name: 'a Standard that proposes none has none', pairs: [pair('orders-api', PYTHON, [DEPS])], want: [] },
+    {
+      name: 'a proposal no Crew has a schedule of is listed with no Crew',
+      proposed: [DEPS],
+      pairs: [pair('orders-api', PYTHON)],
+      want: [['dependencies', []]],
+    },
+    {
+      name: 'the Crews with a schedule of the name, by name, each with what differs',
+      proposed: [DEPS],
+      pairs: [
+        pair('storefront', PYTHON, [{ ...DEPS }]),
+        pair('orders-api', PYTHON, [{ ...DEPS, timeZone: 'Europe/Amsterdam' }, FLAKES]),
+        pair('catalog-api', PYTHON, [FLAKES]),
+      ],
+      want: [
+        [
+          'dependencies',
+          [
+            ['orders-api', ['timeZone']],
+            ['storefront', []],
+          ],
+        ],
+      ],
+    },
+    {
+      name: 'the proposals are by name in code-point order, whatever the Standard’s order',
+      proposed: [FLAKES, README, DEPS],
+      pairs: [pair('orders-api', PYTHON, [FLAKES])],
+      want: [
+        ['Zreadme', []],
+        ['dependencies', []],
+        ['flakes', [['orders-api', []]]],
+      ],
+    },
+    {
+      name: 'a Crew of another Standard’s Container is not listed, whatever its schedules are named',
+      proposed: [DEPS],
+      pairs: [
+        pair('orders-api', { standardRef: { name: 'go-standard' } }, [DEPS]),
+        pair('adopted', { adopt: true }, [DEPS]),
+      ],
+      want: [['dependencies', []]],
+    },
+    {
+      name: 'a Crew of the same names in another namespace is not listed',
+      proposed: [DEPS],
+      pairs: [pair('orders-api', PYTHON, [DEPS], 'other')],
+      want: [['dependencies', []]],
+    },
+  ]
+  for (const c of cases) {
+    it(c.name, () => {
+      const got = proposalUse(
+        standard('python-standard', c.proposed),
+        c.pairs.map(([container]) => container),
+        c.pairs.map(([, crew]) => crew),
+      )
+      expect(got.map((u) => [u.proposal.name, u.users.map((x) => [x.crew, x.differs.map((d) => d.field)])])).toEqual(
+        c.want,
+      )
+    })
+  }
+
+  it('counts the Crew of a bundled Container, by the Standard its Bundle expanded to', () => {
+    const [c, k] = pair('inventory-api', { bundleRef: { name: 'py' } }, [DEPS])
+    c.status = { bundle: { name: 'py', framework: 'fastapi', standard: 'python-standard' } }
+    expect(proposalUse(standard('python-standard', [DEPS]), [c], [k])[0].users).toEqual([
+      { crew: 'inventory-api', differs: [] },
+    ])
   })
 })
 

@@ -22,6 +22,8 @@ const WRITER = {} as BriefWriter
 const CONTAINER_WRITER = {} as ContainerWriter
 const CREW_WRITER = {} as CrewWriter
 const STANDARD_WRITER = {} as StandardWriter
+/** The UI server acts, as over a port-forward: the pages show their forms. */
+const ACTING: UiSession = { actions: true, mode: 'service-account', user: null }
 
 beforeAll(() => {
   // The pages link to each other through the URL the shell is on.
@@ -165,6 +167,141 @@ describe('the read-only object pages', () => {
     expect(text(html)).toContain('Standard files left out')
     expect(html).toContain('<details class="left-out-change"><summary>What the Standard changed')
     expect(html).toContain('+line-length = 120')
+  })
+})
+
+// #144: a Standard's own page lists what it proposes, read-only.
+describe('the Standard page’s proposals', () => {
+  /** The panel alone: from its title to the end of its section. */
+  const panel = (html: string) => {
+    const from = html.indexOf('<section class="panel" aria-labelledby="standard-schedules">')
+    return from < 0 ? '' : html.slice(from, html.indexOf('</section>', from))
+  }
+  const python = (data: StoryData) => data.standards.find((s) => s.metadata.name === 'python-standard')!
+
+  it('lists each proposal by name with its cron and goal, and the Crews that have a schedule of that name', () => {
+    const html = panel(page('Standard', 'python-standard'))
+    expect(html).toContain('Schedules it proposes')
+    expect(html).toContain(
+      '<span class="mono">dependencies</span><span class="muted"> · </span><span class="mono">0 6 * * 1</span><div>Update the dependencies in pyproject.toml',
+    )
+    expect(html).toContain(
+      '<span class="mono">flaky-tests</span><span class="muted"> · </span><span class="mono">0 3 * * 6</span><div>Find the tests that failed',
+    )
+    expect(html.indexOf('>dependencies<')).toBeLessThan(html.indexOf('>flaky-tests<'))
+    // The orders-api Crew has dependencies in another zone; no Crew has flaky-tests.
+    const [dependencies, flaky] = html.split('<li>').slice(1)
+    expect(dependencies).toContain('Crews with a schedule of this name:')
+    expect(dependencies).toContain(
+      '<a class="mono" href="/?ns=webshop&amp;kind=Crew&amp;name=orders-api">orders-api</a> (differs from the proposal)',
+    )
+    expect(flaky).toContain('No Crew of its Containers has a schedule of this name.')
+    expect(flaky).not.toContain('kind=Crew')
+  })
+
+  it('shows no panel for a Standard that proposes none', () => {
+    for (const none of [undefined, []]) {
+      const data = demoStory(NOW)
+      python(data).spec.schedules = none
+      const html = page('Standard', 'python-standard', data)
+      expect(html).not.toContain('Schedules it proposes')
+      expect(html).toContain('Frameworks it checks')
+    }
+  })
+
+  it('words a proposal as the Crew’s page does, and is read-only: a proposal is taken on a Crew’s page', () => {
+    const html = panel(page('Standard', 'python-standard', demoStory(NOW), LIVE, ACTING))
+    const crewPage = page('Crew', 'orders-api', demoStory(NOW), LIVE, ACTING)
+    const row = /<span class="mono">flaky-tests<\/span>.*?<\/div>/.exec(crewPage)![0]
+    expect(row).toContain('Find the tests that failed')
+    expect(html).toContain(row)
+    // The Crew's page offers it with the form; this one has no control at all.
+    expect(crewPage).toContain('Time zone for flaky-tests')
+    expect(html).not.toMatch(/<(form|button|input)\b/)
+    expect(html).toContain('A proposal is taken on a Crew’s page.')
+  })
+
+  it('shows a time zone only where the Standard wrote one, never the UTC the API server stores', () => {
+    expect(panel(page('Standard', 'python-standard'))).not.toContain('UTC')
+    const data = demoStory(NOW)
+    python(data).spec.schedules![0].timeZone = 'America/New_York'
+    const html = panel(page('Standard', 'python-standard', data))
+    expect(html).toContain(
+      'Written for the time zone <span class="mono">America/New_York</span>. A Crew that takes it gives the zone it reads it in.',
+    )
+    expect(html.match(/Written for the time zone/g)).toHaveLength(1)
+  })
+
+  it('says a Crew has the proposal as written without calling it different, and lists the Crews by name', () => {
+    const data = demoStory(NOW)
+    const [proposal] = python(data).spec.schedules!
+    // inventory-api is a bundled Container of this Standard: give it a Crew that has the proposal as it is.
+    const orders = data.crews.find((c) => c.metadata.name === 'orders-api')!
+    data.crews.unshift({
+      ...orders,
+      metadata: { ...orders.metadata, name: 'inventory-api' },
+      spec: { ...orders.spec, containerRef: { name: 'inventory-api' }, schedules: [{ ...proposal }] },
+    })
+    const [dependencies] = panel(page('Standard', 'python-standard', data))
+      .split('<li>')
+      .slice(1)
+    expect(text(dependencies)).toContain(
+      'Crews with a schedule of this name: inventory-api , orders-api (differs from the proposal)',
+    )
+  })
+
+  it('says a refused read of the Crews instead of claiming no Crew uses a proposal', () => {
+    const data = demoStory(NOW)
+    data.crews = []
+    const html = panel(
+      page('Standard', 'python-standard', data, {
+        ...LIVE,
+        unread: [{ what: 'crews', message: 'crews is forbidden', code: 403, resource: 'crews' }],
+      }),
+    )
+    expect(text(html)).toContain('Could not read crews (403): crews is forbidden')
+    expect(html).toContain('>flaky-tests<')
+    expect(html).not.toContain('No Crew of its Containers')
+  })
+})
+
+// #144: the demo shows what #72 built: a Crew's schedules, an offered proposal and one in use with a difference.
+describe('the demo’s schedules', () => {
+  it('shows the orders-api Crew’s schedules, each next due at its cron’s time in its zone, and the last issue', () => {
+    const data = demoStory(NOW)
+    const crew = data.crews.find((c) => c.metadata.name === 'orders-api')!
+    // NOW is Monday 21:00 in Tokyo: Monday 06:00 there is next week's, Friday 09:00 this week's.
+    expect(crew.status?.schedules?.map((s) => [s.name, s.next])).toEqual([
+      ['dependencies', '2026-06-07T21:00:00Z'],
+      ['docs', '2026-06-05T00:00:00Z'],
+    ])
+    expect(crew.status?.conditions?.find((c) => c.type === 'Scheduled')?.message).toBe(
+      '2 schedules, the next due at 2026-06-05T00:00:00Z',
+    )
+    const t = text(page('Crew', 'orders-api', data))
+    expect(t).toContain('Work on a timer')
+    expect(t).toMatch(/dependencies · 0 6 \* \* 1 \(Asia\/Tokyo\)/)
+    expect(t).toMatch(/docs · 0 9 \* \* 5 \(Asia\/Tokyo\)/)
+    expect(t).toContain('last filed issue #13')
+  })
+
+  it('shows the proposals panel on the Crew’s page: one offered, one in use whose time zone differs', () => {
+    const html = page('Crew', 'orders-api')
+    const from = html.indexOf('<section class="panel" aria-labelledby="crew-proposals">')
+    const t = text(html.slice(from, html.indexOf('</section>', from)))
+    expect(t).toContain('Schedules its Standard proposes')
+    expect(t).toMatch(/Not in use by this Crew .* flaky-tests · 0 3 \* \* 6 /)
+    expect(t).toMatch(
+      /Names this Crew uses dependencies · the Crew’s schedule of this name differs from the proposal: Time zone The Crew’s: Asia\/Tokyo The proposal: UTC/,
+    )
+    // Only the zone differs: the cron and the goal are the proposal's.
+    expect(t).not.toMatch(/Cron The Crew’s|Goal The Crew’s/)
+  })
+
+  it('shows neither panel for a Crew with no schedule whose Container has no Standard', () => {
+    const t = text(page('Crew', 'storefront'))
+    expect(t).not.toContain('Work on a timer')
+    expect(t).not.toContain('Schedules its Standard proposes')
   })
 })
 
