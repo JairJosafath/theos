@@ -32,6 +32,7 @@ import {
   containerNextStep,
   describeStandardAdoption,
   describeStandardUpdate,
+  STANDARD_FIX_REASONS,
   standardAdoptionPullRequest,
   standardWaits,
 } from '../../model/lifecycle'
@@ -94,10 +95,12 @@ export function ContainerPage({
   // #172: the pull request that brings its Standard into the repository it adopted, while it is open.
   const adoption = status?.standardAdoption
   const adopting = describeStandardAdoption(container)
-  // #183: linked on the next step's terms, only while its reason is PullRequestOpen: under any other
-  // reason merging it unblocks nothing (UnsupportedFramework keeps one open as it is).
+  // #183: not linked while the Standard waits on a fix (UnsupportedFramework keeps one open as it
+  // is): merging it unblocks nothing. Under any other condition, a transient GitError included,
+  // an open pull request is still the one a person merges.
+  const waits = standardWaits(container)
   const adoptionPR =
-    standardWaits(container)?.reason === 'PullRequestOpen' ? standardAdoptionPullRequest(container) : undefined
+    waits && STANDARD_FIX_REASONS.some((r) => r === waits.reason) ? undefined : standardAdoptionPullRequest(container)
   if (adoptionPR)
     links.push({
       href: adoptionPR.href,

@@ -554,12 +554,19 @@ export function containerNextStep(container: Container): NextStep | undefined {
       }
       // #183: a Standard a person fixes. The operator reads it again when it changes.
       case 'NotFound':
+        // A Container that names a Bundle can name no other Standard (its bundleRef can't change),
+        // so only creating this one fixes it. The Standard's own page does not exist to link.
+        if (choicesOf(container).bundle) {
+          return {
+            text: `The Standard ${waits.standard}, which this Container’s Bundle names, does not exist, and a Container that names a Bundle can name no other Standard. Create it. No pull request opens and no agent works on the repository until then.`,
+          }
+        }
         return {
-          text: `The Container names the Standard ${waits.standard}, but something it needs is missing: the condition names it. Create it, or name another Standard. No pull request opens and no agent works on the repository until then.`,
+          text: `The Container names the Standard ${waits.standard}, which does not exist. Create it, or name another Standard. No pull request opens and no agent works on the repository until then.`,
         }
       case 'UnpinnedRef':
         return {
-          text: `${waits.standard}’s template is pinned to a branch. Pin its ref to a tag or commit on the Standard. No pull request opens and no agent works on the repository until then.`,
+          text: `${waits.standard}’s template’s ref is a branch, or a tag or commit its repository does not have. Pin its ref to a tag or commit the repository has, on the Standard. No pull request opens and no agent works on the repository until then.`,
           page: { kind: 'Standard', name: waits.standard, label: `Open Standard ${waits.standard}` },
         }
       case 'TemplatePathNotFound':

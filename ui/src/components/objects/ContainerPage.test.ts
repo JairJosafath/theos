@@ -125,6 +125,15 @@ describe('a Container whose Standard waits to come into the repository it adopte
     expect(t).not.toMatch(/Standard pull request #12|Open pull request #12|Pull request #12|The files it writes/)
   })
 
+  it('still links an open pull request under a transient GitError (#183)', () => {
+    const data = adopting('GitError', 'could not read the pull request; retrying')
+    const markup = containerMarkup('orders-api', data)
+    expect(hrefs(markup).filter((h) => h === PR)).toHaveLength(2)
+    const t = containerPage('orders-api', data)
+    expect(t).toMatch(/Standard pull request #12/)
+    expect(t).toMatch(/The files it writes: AGENTS\.md, \.gitea\/workflows\/check\.yaml/)
+  })
+
   it.each([
     ['UpdateClosed', /Its pull request was closed without merging, so no agent works on the repository/],
     ['StandardFilesDiffer', /Its pull request merged, but main holds a file the Standard protects/],
