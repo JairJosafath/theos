@@ -778,6 +778,34 @@ describe('needs', () => {
     expect(needs(input({ tasks: [failed, retry] }))).toEqual([])
   })
 
+  // #175: the last tie broke on the joined key, where "|" is above every character a name can hold,
+  // so "orders2" and "orders-api" came before "orders".
+  it.each([
+    ['orders', 'orders2', 'orders-api'],
+    ['orders', 'orders-api', 'orders2'],
+    ['orders2', 'orders', 'orders-api'],
+    ['orders2', 'orders-api', 'orders'],
+    ['orders-api', 'orders', 'orders2'],
+    ['orders-api', 'orders2', 'orders'],
+  ])('orders names of one namespace, kind and time as every list does, from %s, %s, %s (#175)', (...names) => {
+    // One issue each, or a later Task of the issue answers the failure.
+    const failed = (name: string, issue: number) =>
+      task(
+        name,
+        {
+          phase: 'Failed',
+          completedAt: T,
+          conditions: [cond('Succeeded', 'False', 'ReviewRejected', 'The reviewer rejected it 3 times')],
+        },
+        issue,
+      )
+    expect(needs(input({ tasks: names.map((n, i) => failed(n, i + 1)) })).map((i) => i.name)).toEqual([
+      'orders',
+      'orders-api',
+      'orders2',
+    ])
+  })
+
   it('groups items by project, with its display name', () => {
     const items = needs(
       input({

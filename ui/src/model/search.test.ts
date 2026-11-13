@@ -102,6 +102,20 @@ describe('matching a query', () => {
     expect(labels('work')[0]).toBe('Work')
   })
 
+  it('orders two objects with one label the same from either input order (#175)', () => {
+    const both = paletteItems({
+      projects: [],
+      factory: {
+        ...emptyFactory(),
+        tasks: [obj('orders-api-21', 'webshop'), obj('orders-api-21', 'lens')],
+      } as unknown as ReturnType<typeof emptyFactory>,
+      area: 'work',
+    })
+    const keys = (list: typeof both) => matchPalette('orders-api-21', list).map((i) => i.key)
+    expect(keys(both)).toEqual(['object/Task/lens/orders-api-21', 'object/Task/webshop/orders-api-21'])
+    expect(keys([...both].reverse())).toEqual(keys(both))
+  })
+
   it('finds a query’s letters in order, fuzzily, after the substring matches', () => {
     expect(labels('oapi21')).toEqual(['Task orders-api-21'])
     expect(labels('stfr')).toEqual(['Container storefront'])
