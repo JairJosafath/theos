@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-// An alert's rule needs when its issue was closed (#64, docs/plans/alerts.md,
+// An alert's rule needs when its issue was closed (#64, docs/plans/done/alerts.md,
 // decision 8): Gitea says it in closed_at, null while the issue is open.
 func TestIssueClosedAt(t *testing.T) {
 	for _, tc := range []struct {
