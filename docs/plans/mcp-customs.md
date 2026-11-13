@@ -32,7 +32,7 @@ is the whole input theos gets; this section is what it means.
 | Sandbox | Lambda MicroVM | Runs the server under test with canary values and records its network and file activity |
 | Planner | Amazon Bedrock, through a JSON Schema tool | Writes the plan as data; a decide step may change it after each observation |
 | Store | DynamoDB, S3 | Checks, verdicts and tool-list snapshots; reports |
-| Web | S3 + CloudFront | Submit, watch the run, read the report, Approve or Block |
+| Web | Go Lambda behind API Gateway, html/template | Submit, watch the run, read the report, Approve or Block |
 
 Routing comes from
 [Runtime-Planned Workflows on Lambda Durable Functions](https://claude.ai/artifact/Cvj9v5JXuReeW2pK5XokgS):
@@ -56,10 +56,18 @@ Choices made, and why:
 - **us-east-2.** Durable functions launched there and MicroVMs launched
   there; the Go SDK runs on provided.al2023, which `aws-lambda-go` already
   uses.
-- **Go**, so the Checker starts from `aws-lambda-go` and the reference
-  module in the doc above.
-- **npm, PyPI and remote URLs only.** Container images inside a MicroVM are
-  left out of the weekend.
+- **Go for all application code**, the owner's choice: the Checker, the
+  sandbox harness, the web page (server-rendered with html/template, no
+  TypeScript app) and the demo server. Every Container starts from
+  `aws-lambda-go` and the reference module in the doc above; only the CDK
+  app stays TypeScript, as the template has it.
+- **Readable by lint, not by review.** go-standard v1.7.0 and aws-standard
+  v1.25.0 limit function size and complexity and file length (see
+  [templates.md](../templates.md), go-standard), so the Crew's Go stays in small
+  files and short functions. The chart pins those versions; they need
+  their tags pushed before the install.
+- **Go modules, npm, PyPI and remote URLs.** Container images inside a
+  MicroVM are left out of the weekend.
 - **Deployed by hand with `cdk deploy`.** theos can't deploy to AWS yet
   ([aws-deploy.md](aws-deploy.md)); for this challenge that fits its
   theme rather than hurting it.
@@ -101,4 +109,5 @@ One row per thing that went wrong or needed a person. Newest last.
 | --- | --- | --- | --- | --- | --- |
 | 1 | Fri | Known before starting: no AWS deploy | `aws-deploy.md`, not built | no (deploy by hand) | existing plan |
 | 2 | Fri | Known before starting: no template knows durable functions or MicroVMs; the Crew must add both to a CDK app | `templates/aws-lambda-go` | to be seen | |
+| 4 | Fri | No Standard limited Go function size, complexity or file length; agents' Go grows long | `templates/go-standard/.golangci.yml` | no | go-standard v1.7.0, aws-standard v1.25.0, aws-lambda-go v1.5.2 on this branch |
 | 3 | Fri | Known before starting: the repositories live in the in-cluster Gitea; the entry needs them public | [github-host.md](github-host.md) | no (mirror by hand) | |
