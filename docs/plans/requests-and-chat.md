@@ -955,6 +955,82 @@ What the step chose where the plan says nothing:
   unchanged), `brief.md`'s words for a tracker's request and the
   `Requests` condition's message.
 
+## Step 10 as built (#161)
+
+Checked before building, as decision 16 asks: the issues a round filed for
+a GitHub request did not link the request. `model.BriefIssueBodyUsing`
+wrote the planner's text, the `Builds on` and `Uses` lines and the marker,
+and nothing of the request; a planner may have named it in its own words,
+which no rule held. The line is now the operator's, for every source.
+
+What the step chose where the plan says nothing:
+
+- **The adapter's own settings ride on `ports.TrackerSource`,** in words
+  that name no product: `Label`, `Site` (where people open the pages),
+  `Instance` (the site's ID at the tracker: Jira's cloud ID) and `Close`, a
+  map from a close reason to its `CloseOutcome{Status, Resolution}`. Each
+  adapter is a `ports.TrackerAdapter` through `Tracker`: Linear reads the
+  Secret's `token`, Jira its `email` and `token`, and a source the adapter
+  refuses is `TrackerError` with the adapter's words. The operator's
+  `--linear-api-url` and `--jira-api-url` are the `linear.Client`'s
+  `APIURL` and the `jira.Client`'s `Address`; `TrackerSource.Address` stays
+  empty for a source, since no entry names one.
+- **One loop reads both kinds.** A repository and a source are each a
+  `requestOrigin` in the controller: what was read, the ETag, the answers
+  said and the shipped checks are kept in memory by an ID, `owner/name` or
+  `source:<name>`, which never equal each other. `model.RequestsRead` gains
+  `Source`; a source's listed item is a request whoever made it, with or
+  without an author (the label is the door, #160), and a GitHub issue is
+  one by `IsRequest`, as before. A source's mode defaults to `Ask` when the
+  API server didn't fill it.
+- **The markers go last on a tracker.** `model.MarkersLast` moves the stage
+  marker a comment starts with to its end, after the round's or the
+  release's marker, for a source's item: Linear's and Jira's comments show
+  `<!-- -->` as text (decision 17). A GitHub comment is as before.
+- **Each issue's link, and each merged pull request.** The planned comment
+  names each issue by its title and its page, as `status.issues` recorded
+  it, for every source, GitHub included. The released comment adds
+  `Merged in <pull request> for <issue>` for each issue whose Task merged
+  its work (`mergedItsIssue`, the rule a release waits on), read from the
+  namespace's Tasks when the comment is said; an issue no Task merged, one
+  closed by hand, is named in no such line. It is read when said, not kept
+  in status: a Task deleted before then leaves its line out.
+- **The link back is `Requested in <name>: <page>`,** one line per request
+  an answer `take`s the issue for, after the `Uses` lines and before the
+  marker, the request's name and page with no `<!--` in them. A pinned
+  `uses:` issue's body, edited when its packages publish, keeps it.
+- **`brief.md` counts a round's requests by kind:** those from GitHub
+  issues, from a user the person lets ask, and those from a request
+  source, by `source:key` alone. The display name is in
+  `model/requests.yaml` and nowhere else; a spec holds that the
+  description's words reach no other workspace file.
+- **`CannotClose`** needs no code of its own: it is a port reason, the
+  comment comes before the close in every stage, and a request whose close
+  failed stays in `status.requests`, so the next read finds its comment by
+  the marker, posts none again and tries the close again. The fake tracker
+  gained `CannotClose(project, why)`, and `Unlabel` and `Label`, an open
+  item no list shows, for the specs.
+- **The condition names a source as `request source <name>`,** in
+  `Reading the issues of …` and before a failure's message.
+
+Left as it is, and why:
+
+- **Jira's lagging list** (step 6 as built, Jira) can list an item the
+  factory just closed once more. A declined item is commented on once,
+  by its marker, and Jira leaves a closed item closed. A skipped one could
+  come back for minutes as a new request, `Waiting`, or `Accepted` while its
+  number is still in `accepted`, and so be taken by a later round. Only a
+  real site shows how long the lag is; until then the number dropped from
+  `accepted` (`status.requestSourcesSettled` lists it) closes the gap.
+- **Whether Linear keeps a `<!-- -->` marker in a comment's body,** and
+  whether Jira's document format does, is still unread (step 6 as built,
+  Linear): the markers are the comment's last lines there, shown, and the
+  adapters find them as text. A workspace that strips them would see the
+  Brief answer twice; the guide (step 13) says so.
+- **No chart value** sets the two flags; that is step 13's, as is the
+  guide's page for each tracker. The UI (step 12) still reads a source's
+  request as `undefined #412`: steps 9, 10 and 12 ship in one release.
+
 ## How we will know #61 is done
 
 The issue's done-when, by step:
