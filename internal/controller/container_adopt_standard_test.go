@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -655,7 +656,122 @@ var _ = Describe("Container adoption with a Standard the repository doesn't hold
 			g.Expect(gitFake.BranchExists(ns, "orders-api", adoption.Branch)).To(BeFalse())
 		}).Should(Succeed())
 	})
+
+	// #184: between two passes of a stopped adoption, another writer can
+	// replace its condition: a Git error, its Standard not found, or one that
+	// doesn't fit the Container's Framework. Once the cause is gone, with
+	// main still at the commit the adoption stopped at, the condition says
+	// again why it stopped, as the stop wrote it.
+	DescribeTable("says again why a stopped adoption stopped once another writer's cause is gone (#184)",
+		func(stop func(ns string) (reason, message string), replaced string, replace func(ns string) (restore func())) {
+			ns := newProjectNamespace()
+			gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", ownRepository(ns))
+			reason, message := stop(ns)
+			stopped := *getContainer(Default, ns).Status.StandardAdoption
+			commits := gitFake.CommitCount(ns, "orders-api")
+
+			restore := replace(ns)
+			Eventually(func(g Gomega) {
+				g.Expect(standardCondition(g, getContainer(g, ns)).Reason).To(Equal(replaced))
+			}).Should(Succeed())
+			restore()
+
+			Eventually(func(g Gomega) {
+				container := getContainer(g, ns)
+				g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+				g.Expect(container.Status.Standard).To(BeNil())
+				g.Expect(container.Status.StandardAdoption).To(PointTo(Equal(stopped)))
+				cond := standardCondition(g, container)
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(cond.Reason).To(Equal(reason))
+				g.Expect(cond.Message).To(Equal(message))
+			}).Should(Succeed())
+			// It stays so: no churn, nothing rendered a second time.
+			Consistently(func(g Gomega) {
+				cond := standardCondition(g, getContainer(g, ns))
+				g.Expect(cond.Reason).To(Equal(reason))
+				g.Expect(cond.Message).To(Equal(message))
+			}).WithTimeout(3 * time.Second).Should(Succeed())
+			Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1))
+			Expect(gitFake.CommitCount(ns, "orders-api")).To(Equal(commits), "main is as the adoption stopped at")
+			Expect(gitFake.ProtectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
+		},
+		Entry("UpdateClosed, replaced by GitError", stopByClosing, c4v1beta1.ReasonGitError, dropCredentials),
+		Entry("UpdateClosed, replaced by NotFound", stopByClosing, c4v1beta1.ReasonNotFound, recreateStandard),
+		Entry("UpdateClosed, replaced by UnsupportedFramework", stopByClosing, c4v1beta1.ReasonUnsupportedFramework,
+			unlistFramework),
+		Entry("StandardFilesDiffer, replaced by GitError", stopByDiffering, c4v1beta1.ReasonGitError, dropCredentials),
+		Entry("StandardFilesDiffer, replaced by NotFound", stopByDiffering, c4v1beta1.ReasonNotFound,
+			recreateStandard),
+		Entry("StandardFilesDiffer, replaced by UnsupportedFramework", stopByDiffering,
+			c4v1beta1.ReasonUnsupportedFramework, unlistFramework),
+	)
 })
+
+// stopByClosing has orders-api adopt its repository with python-strict and a
+// person close the pull request, and returns the stop's reason and message.
+func stopByClosing(ns string) (string, string) {
+	GinkgoHelper()
+	adoptWithStandard(ns)
+	adoption := openedAdoption(ns)
+	gitFake.ClosePull(ns, "orders-api", int(adoption.PullRequest))
+	return c4v1beta1.ReasonUpdateClosed, stoppedAdoption(ns, c4v1beta1.ReasonUpdateClosed)
+}
+
+// stopByDiffering has orders-api adopt its repository with python-strict,
+// which protects the Makefile, and a person merge the pull request without
+// it, and returns the stop's reason and message.
+func stopByDiffering(ns string) (string, string) {
+	GinkgoHelper()
+	adoptWithStandard(ns, "Makefile")
+	adoption := openedAdoption(ns)
+	pushToAdoption(ns, adoption, scaffold.Tree{"AGENTS.md": {Data: []byte(strictGuide)}})
+	mergeByHand(ns, adoption.PullRequest)
+	return c4v1beta1.ReasonStandardFilesDiffer, stoppedAdoption(ns, c4v1beta1.ReasonStandardFilesDiffer)
+}
+
+// dropCredentials deletes the GitProvider's credentials, so the operator
+// can't reach the Git host, and returns what puts them back.
+func dropCredentials(ns string) func() {
+	GinkgoHelper()
+	var provider c4v1beta1.GitProvider
+	Expect(k8sClient.Get(ctx, key(ns, getContainer(Default, ns).Spec.GitProviderRef.Name), &provider)).To(Succeed())
+	name := provider.Spec.CredentialsSecretRef.Name
+	var secret corev1.Secret
+	Expect(k8sClient.Get(ctx, key(ns, name), &secret)).To(Succeed())
+	Expect(k8sClient.Delete(ctx, &secret)).To(Succeed())
+	return func() {
+		GinkgoHelper()
+		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, name), Data: secret.Data})
+	}
+}
+
+// recreateStandard deletes python-strict, and returns what creates it again
+// with the same spec.
+func recreateStandard(ns string) func() {
+	GinkgoHelper()
+	var standard c4v1beta1.Standard
+	Expect(k8sClient.Get(ctx, key(ns, "python-strict"), &standard)).To(Succeed())
+	Expect(k8sClient.Delete(ctx, &standard)).To(Succeed())
+	return func() {
+		GinkgoHelper()
+		mustCreate(&c4v1beta1.Standard{ObjectMeta: objectMeta(ns, "python-strict"), Spec: standard.Spec})
+	}
+}
+
+// unlistFramework has orders-api name a Framework python-strict doesn't
+// list, and returns what names python-fastapi again.
+func unlistFramework(ns string) func() {
+	GinkgoHelper()
+	name := func(framework string) {
+		GinkgoHelper()
+		container := getContainer(Default, ns)
+		Expect(patch(container, func() { container.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: framework} })).
+			To(Succeed())
+	}
+	name("go-cli")
+	return func() { name("python-fastapi") }
+}
 
 // #97: no agent works on an adopted repository whose Standard isn't on main:
 // main has none of the Standard's checks to be protected by.
