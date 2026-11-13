@@ -397,6 +397,72 @@ var _ = Describe("Crew spec", func() {
 		Expect(botPosts(specs, bot)).To(HaveLen(1))
 	})
 
+	// #153: theos-chat pairs every message ID with its room, as a host whose
+	// IDs are unique in a room alone needs (a Slack ts is its channel's). On
+	// the ports' fake chat host, the first message of each room has one ID.
+	It("keeps a message to its room when two rooms hold a message of one ID (#153)", func() {
+		n, name := specOne("")
+		head := pushSpec(name, 1, scaffold.Tree{"docs/specs/1.md": {Data: []byte(testSpec)}})
+		reviewed(name, head)
+		awaiting(name)
+
+		By("making the project's Chat on the ports' fake chat host")
+		adaID, _ := chatPortFake.NewUser("ada-" + ns)
+		ada := "ada-" + ns + "@example.com"
+		grant(ada, roleChatPeople, roleTaskWord)
+		chat, bot := portFakeChat(ns, c4v1beta1.ChatPerson{MatrixID: adaID, User: ada})
+		Expect(asUser(ada).Create(ctx, chat)).To(Succeed())
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		specs, reviews := chatRoom(chat, model.ChatSpecs), chatRoom(chat, model.ChatReviews)
+		for _, room := range []string{specs, reviews} {
+			Expect(chatPortFake.Join(room, adaID)).To(Succeed())
+		}
+
+		By("posting the spec's thread in specs, and ada saying something in reviews under the same ID")
+		theosChat := newTheosChat()
+		chatPass(theosChat, chat)
+		posts := portFakePosts(specs)
+		Expect(posts).To(ConsistOf(And(HaveField("Sender", bot), HaveField("Text", ContainSubstring(
+			"Spec of issue #1")))))
+		root := posts[0].ID
+		said, err := chatPortFake.Post(reviews, adaID, "Looks fine to me", "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(said).To(Equal(root), "the first message of reviews has the ID of the spec's thread in specs")
+
+		By("taking an approve in the thread of ada's message in reviews as that thread's, which waits for nothing")
+		_, err = chatPortFake.Post(reviews, adaID, "approve", said)
+		Expect(err).NotTo(HaveOccurred())
+		chatPass(theosChat, chat)
+		Expect(portFakePosts(reviews)).To(ContainElement(And(HaveField("Sender", bot), HaveField("ThreadRoot", said),
+			HaveField("Text", HavePrefix("Nothing done")))))
+		Expect(portFakePosts(specs)).To(HaveLen(1), "nothing said in the spec's thread")
+		task := &c4v1beta1.Task{}
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(task.Annotations).NotTo(HaveKey(model.ChatAnnotationApproveSpec))
+
+		By("approving the spec from its thread in specs, and answering there alone")
+		_, err = chatPortFake.Post(specs, adaID, "approve", root)
+		Expect(err).NotTo(HaveOccurred())
+		answers := len(portFakePosts(reviews))
+		chatPass(theosChat, chat)
+		Expect(portFakePosts(specs)).To(ContainElement(And(HaveField("Sender", bot), HaveField("ThreadRoot", root),
+			HaveField("Text", "Done as "+ada+": approved the spec at "+head[:7]+"; the operator merges it."))))
+		Expect(portFakePosts(reviews)).To(HaveLen(answers))
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, name)
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			g.Expect(task.Status.Spec).To(And(HaveField("ApprovedBy", ada), HaveField("ApprovedInChat", true)))
+			readyFromSpec(g, n)
+		}).Should(Succeed())
+
+		By("editing and marking done the root in specs, and leaving ada's message in reviews as she said it")
+		chatPass(theosChat, chat)
+		Expect(portFakePosts(specs)[0]).To(And(HaveField("ID", root), HaveField("Text", ContainSubstring(
+			"Merged: "+ada+" approved it in chat.")), HaveField("Reactions", Equal([]string{model.ChatDoneReaction}))))
+		Expect(portFakePosts(reviews)[0]).To(And(HaveField("ID", said), HaveField("Sender", adaID),
+			HaveField("Text", "Looks fine to me"), HaveField("Reactions", BeEmpty())))
+	})
+
 	It("merges on the reviewer's approval alone with specApproval Reviewer", func() {
 		n, name := specOne(c4v1beta1.SpecApprovalReviewer)
 		head := pushSpec(name, 1, scaffold.Tree{"docs/specs/1.md": {Data: []byte(testSpec)}})

@@ -18,6 +18,7 @@ package fake_test
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"testing"
 
@@ -92,4 +93,188 @@ func TestRegistryContract(t *testing.T) {
 			g.SetGoMod(repo.Owner, repo.Name, path)
 		},
 	})
+}
+
+// must is v, failing t on err.
+func must[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		noErr(t, err)
+		return v
+	}
+}
+
+// noErr fails t on err.
+func noErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// chatServer is a fresh h as the ChatHost suite reaches it, with its bot.
+func chatServer(t *testing.T, h *fake.ChatHost) contract.ChatServer {
+	t.Helper()
+	bot, token := h.NewUser("bot")
+	host := must(h.Hosts()(ports.ChatConfig{Address: h.Address(), Token: token}))(t)
+	return contract.ChatServer{
+		Host:    host,
+		Refused: h.For(ports.ChatConfig{Address: h.Address(), Token: rand.Text()}),
+		Person: func(_ *testing.T, name string) string {
+			user, _ := h.NewUser(name)
+			return user
+		},
+		Join: func(t *testing.T, room, user string) { noErr(t, h.Join(room, user)) },
+		Post: func(t *testing.T, room, user, text, threadRoot string) string {
+			return must(h.Post(room, user, text, threadRoot))(t)
+		},
+		Amend: func(t *testing.T, room, user, message, text string) string {
+			return must(h.Amend(room, user, message, text))(t)
+		},
+		Squat:  func(t *testing.T, alias string) { must(h.Squat(alias))(t) },
+		Remove: func(t *testing.T, room string) { noErr(t, h.Remove(room, bot)) },
+		Room: func(t *testing.T, room string) contract.ChatRoomView {
+			t.Helper()
+			r, ok := h.Room(room)
+			if !ok {
+				t.Fatalf("the chat host has no room %s", room)
+			}
+			view := contract.ChatRoomView{Name: r.Name, Topic: r.Topic, Private: r.Private, Members: r.Members}
+			for _, p := range r.Posts {
+				view.Posts = append(view.Posts, contract.ChatPosted{ID: p.ID, Sender: p.Sender, Text: p.Text,
+					ThreadRoot: p.ThreadRoot, Reactions: p.Reactions})
+			}
+			return view
+		},
+	}
+}
+
+// TestChatHostContract covers #153: the fake chat host passes the ChatHost
+// suite shaped as a host with Spaces and a display name per room, as
+// Matrix is, and doesn't need to skip anything.
+func TestChatHostContract(t *testing.T) {
+	contract.ChatHost(t, contract.ChatHostEnv{
+		New:    func(t *testing.T) contract.ChatServer { return chatServer(t, fake.NewChatHost()) },
+		Cannot: map[string]string{},
+	})
+}
+
+// TestChatHostContractWithoutSpaces covers #153: shaped as Slack is, with
+// no Space and a channel's one name, the fake skips the two subtests of
+// decision 22 in docs/plans/requests-and-chat.md and runs the rest.
+func TestChatHostContractWithoutSpaces(t *testing.T) {
+	contract.ChatHost(t, contract.ChatHostEnv{
+		New: func(t *testing.T) contract.ChatServer {
+			return chatServer(t, fake.NewChatHost(fake.WithoutSpaces(), fake.OneNamePerRoom()))
+		},
+		Cannot: map[string]string{
+			"makes a Space and the rooms in it, each a room of its own": "the host has no Spaces: the " +
+				"workspace is the Space (decision 5)",
+			"brings a room's name to the one asked for": "a room's one name is its alias, as a channel's " +
+				"(decision 4)",
+		},
+	})
+}
+
+// trackerProject is the project the IssueTracker suites read.
+const trackerProject = "acme/shop"
+
+// TestIssueTrackerContract covers #153: the fake tracker passes the
+// IssueTracker suite, each subtest on a tracker of its own, and skips
+// nothing.
+func TestIssueTrackerContract(t *testing.T) {
+	contract.IssueTracker(t, contract.IssueTrackerEnv{
+		New: func(*testing.T) contract.TrackerHost {
+			tr := fake.NewIssueTracker()
+			tr.Project(trackerProject)
+			const account = "theos-bot"
+			token := tr.Account(account, fake.TrackerAccess{Issues: true})
+			return contract.TrackerHost{
+				Tracker:     tr.For(trackerProject, token),
+				Account:     account,
+				Refused:     tr.For(trackerProject, rand.Text()),
+				LacksIssues: tr.For(trackerProject, tr.Account("reader", fake.TrackerAccess{Members: true})),
+				Elsewhere:   tr.For("acme/nowhere", token),
+				// A person's login is their name.
+				Person: func(_ *testing.T, name string) string { return name },
+				File: func(t *testing.T, author, title, body string) int {
+					return must(tr.File(trackerProject, author, title, body))(t)
+				},
+				PullRequest: func(t *testing.T, author, title string) int {
+					return must(tr.PullRequest(trackerProject, author, title))(t)
+				},
+				Edit: func(t *testing.T, number int, body string) {
+					noErr(t, tr.Edit(trackerProject, number, body))
+				},
+				Close: func(t *testing.T, number int) { noErr(t, tr.Close(trackerProject, number)) },
+				Say: func(t *testing.T, number int, author, body string) {
+					noErr(t, tr.Say(trackerProject, number, author, body))
+				},
+				Disable: func(*testing.T) { tr.Disable(trackerProject) },
+				Down:    func(*testing.T) { tr.Down(true) },
+				Issue: func(t *testing.T, number int) contract.TrackedIssue {
+					t.Helper()
+					i, ok := tr.Issue(trackerProject, number)
+					if !ok {
+						t.Fatalf("the tracker has no issue %d", number)
+					}
+					got := contract.TrackedIssue{Title: i.Title, Body: i.Body, Author: i.Author, Created: i.Created,
+						Closed: i.Closed, Reason: i.Reason}
+					for _, c := range i.Comments {
+						got.Comments = append(got.Comments, contract.TrackedComment{Body: c.Body, Own: c.Author == account})
+					}
+					return got
+				},
+			}
+		},
+		Cannot: map[string]string{},
+	})
+}
+
+// TestTeamMembersContract covers #153: the fake tracker has teams, so its
+// port is a ports.TeamMembers and passes that capability's suite.
+func TestTeamMembersContract(t *testing.T) {
+	contract.TeamMembers(t, contract.TeamMembersEnv{
+		New: func(t *testing.T) contract.TeamsHost {
+			t.Helper()
+			tr := fake.NewIssueTracker()
+			tr.Project(trackerProject)
+			tr.Team("acme/maintainers")
+			members := func(token string) ports.TeamMembers {
+				m, ok := tr.For(trackerProject, token).(ports.TeamMembers)
+				if !ok {
+					t.Fatal("the port of a tracker with teams is no ports.TeamMembers")
+				}
+				return m
+			}
+			return contract.TeamsHost{
+				Members:      members(tr.Account("theos-bot", fake.TrackerAccess{Issues: true, Members: true})),
+				Refused:      members(rand.Text()),
+				LacksMembers: members(tr.Account("issues-only", fake.TrackerAccess{Issues: true})),
+				Team:         "acme/maintainers",
+				NoTeam:       "acme/nobody",
+				// A person's login is their name.
+				Person: func(_ *testing.T, name string) string { return name },
+				Join:   func(t *testing.T, team, login string) { noErr(t, tr.Join(team, login)) },
+				Invite: func(t *testing.T, team, login string) { noErr(t, tr.Invite(team, login)) },
+				Down:   func(*testing.T) { tr.Down(true) },
+			}
+		},
+		Cannot: map[string]string{},
+	})
+}
+
+// TestTrackerWithoutTeams covers #153: a tracker without teams gives a port
+// that is no ports.TeamMembers, as the Brief finds the capability by a type
+// assertion and fails an entry that names teams there.
+func TestTrackerWithoutTeams(t *testing.T) {
+	tr := fake.NewIssueTracker(fake.WithoutTeams())
+	tr.Project(trackerProject)
+	port := tr.For(trackerProject, tr.Account("theos-bot", fake.TrackerAccess{Issues: true, Members: true}))
+	if _, ok := port.(ports.TeamMembers); ok {
+		t.Error("the port of a tracker without teams is a ports.TeamMembers")
+	}
+	if _, err := port.ListOpenIssues(context.Background(), ""); err != nil {
+		t.Errorf("ListOpenIssues() of a tracker without teams = %v", err)
+	}
 }
