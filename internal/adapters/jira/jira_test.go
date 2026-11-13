@@ -18,6 +18,7 @@ package jira
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -142,9 +143,12 @@ func TestDefaultAddress(t *testing.T) {
 		"":                           "https://api.atlassian.com/ex/jira/" + cloud + "/rest/api/3",
 		"https://gateway.example/":   "https://gateway.example/ex/jira/" + cloud + "/rest/api/3",
 		"http://127.0.0.1:8080/jira": "http://127.0.0.1:8080/jira/ex/jira/" + cloud + "/rest/api/3",
+		"http://localhost:8080":      "http://localhost:8080/ex/jira/" + cloud + "/rest/api/3",
+		"http://127.1.2.3":           "http://127.1.2.3/ex/jira/" + cloud + "/rest/api/3",
+		"http://[::1]:8080":          "http://[::1]:8080/ex/jira/" + cloud + "/rest/api/3",
 	} {
 		tr, err := Client{}.Issues(Config{Site: jiratest.SiteURL, CloudID: cloud, Project: "shop", Label: testLabel,
-			Email: "a@b.test", Token: "t", Address: address})
+			Email: "a@b.test", Token: rand.Text(), Address: address})
 		if err != nil {
 			t.Fatalf("Issues(Address %q) = %v", address, err)
 		}
@@ -160,22 +164,24 @@ func TestDefaultAddress(t *testing.T) {
 // call is made.
 func TestConfigRefused(t *testing.T) {
 	good := Config{Site: jiratest.SiteURL, CloudID: "abc-123", Project: testProject, Label: testLabel,
-		Email: "a@b.test", Token: "token"}
+		Email: "a@b.test", Token: rand.Text()}
 	for name, change := range map[string]func(*Config){
-		"a site that is not https":   func(c *Config) { c.Site = "http://acme.atlassian.net" },
-		"no site":                    func(c *Config) { c.Site = "" },
-		"no cloud ID":                func(c *Config) { c.CloudID = "" },
-		"a cloud ID with a slash":    func(c *Config) { c.CloudID = "a/b" },
-		"no project":                 func(c *Config) { c.Project = "" },
-		"a project that is no key":   func(c *Config) { c.Project = "SHOP 1" },
-		"no label":                   func(c *Config) { c.Label = "" },
-		"a label with a space":       func(c *Config) { c.Label = "two words" },
-		"no e-mail address":          func(c *Config) { c.Email = "" },
-		"an e-mail address with a :": func(c *Config) { c.Email = "a:b@c.test" },
-		"no token":                   func(c *Config) { c.Token = "" },
-		"a token on two lines":       func(c *Config) { c.Token = "a\nb" },
-		"an address with no host":    func(c *Config) { c.Address = "https://" },
-		"an address that is no URL":  func(c *Config) { c.Address = "ftp://x.test" },
+		"a site that is not https":        func(c *Config) { c.Site = "http://acme.atlassian.net" },
+		"no site":                         func(c *Config) { c.Site = "" },
+		"no cloud ID":                     func(c *Config) { c.CloudID = "" },
+		"a cloud ID with a slash":         func(c *Config) { c.CloudID = "a/b" },
+		"no project":                      func(c *Config) { c.Project = "" },
+		"a project that is no key":        func(c *Config) { c.Project = "SHOP 1" },
+		"no label":                        func(c *Config) { c.Label = "" },
+		"a label with a space":            func(c *Config) { c.Label = "two words" },
+		"no e-mail address":               func(c *Config) { c.Email = "" },
+		"an e-mail address with a :":      func(c *Config) { c.Email = "a:b@c.test" },
+		"no token":                        func(c *Config) { c.Token = "" },
+		"a token on two lines":            func(c *Config) { c.Token = "a\nb" },
+		"an address with no host":         func(c *Config) { c.Address = "https://" },
+		"an address that is no URL":       func(c *Config) { c.Address = "ftp://x.test" },
+		"an http address off the machine": func(c *Config) { c.Address = "http://jira-gateway.example" },
+		"an http address that only starts like localhost": func(c *Config) { c.Address = "http://localhost.example" },
 	} {
 		cfg := good
 		change(&cfg)
@@ -487,6 +493,26 @@ func TestComments(t *testing.T) {
 	// text is, and a part of it is not the marker.
 	if found, err := s.tr.FindComment(ctx, n, "<!-- theos:request stage=released -->"); err != nil || found != nil {
 		t.Errorf("FindComment() of another marker = %+v, %v; want none", found, err)
+	}
+}
+
+// TestFindCommentTakesTheEarliest covers #157: with two own comments that
+// hold the marker, the earlier one is the one found, since the comments are
+// read oldest first.
+func TestFindCommentTakesTheEarliest(t *testing.T) {
+	ctx := context.Background()
+	s := newSite(t)
+	n := s.file(titleDarkMode, "")
+	first, err := s.tr.Comment(ctx, n, answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.tr.Comment(ctx, n, "Planned again\n\n"+marker); err != nil {
+		t.Fatal(err)
+	}
+	found, err := s.tr.FindComment(ctx, n, marker)
+	if err != nil || found == nil || found.ID != first.ID {
+		t.Errorf("FindComment() of two comments with the marker = %+v, %v; want the first, %+v", found, err, first)
 	}
 }
 

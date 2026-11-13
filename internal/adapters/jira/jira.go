@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"slices"
@@ -166,8 +167,14 @@ func (c Client) Issues(cfg Config) (ports.IssueTracker, error) {
 	if address == "" {
 		address = APIURL
 	}
-	if u, err := url.Parse(address); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+	u, err := url.Parse(address)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return nil, fmt.Errorf("jira: invalid address %q", address)
+	}
+	// Basic auth over http would send the token in clear text: only a
+	// loopback address, which never leaves the machine, may use it.
+	if u.Scheme == "http" && !loopback(u.Hostname()) {
+		return nil, fmt.Errorf("jira: the address %q is http; the credential is sent only over https or to a loopback address", address)
 	}
 	client := c.HTTP
 	if client == nil {
@@ -361,6 +368,15 @@ func (j *jira) author(n issueNode) string {
 		}
 	}
 	return ""
+}
+
+// loopback is whether host is localhost or a loopback IP address.
+func loopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
 }
 
 // parseTime reads a time as Jira writes it: RFC 3339, or with an offset

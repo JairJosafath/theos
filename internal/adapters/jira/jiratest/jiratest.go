@@ -528,7 +528,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request, a *account, path 
 		case m[2] == "/comment" && r.Method == http.MethodPost:
 			s.addComment(w, r, a, it)
 		case m[2] == "/transitions" && r.Method == http.MethodGet:
-			s.transitions(w, it)
+			s.transitions(w, r, it)
 		case m[2] == "/transitions" && r.Method == http.MethodPost:
 			s.transit(w, r, it)
 		default:
@@ -673,11 +673,16 @@ func (s *Server) listComments(w http.ResponseWriter, r *http.Request, it *item) 
 		refuse(w, http.StatusBadRequest, "orderBy must be created.")
 		return
 	}
+	// Jira's order is oldest first, or newest first with a minus sign.
+	all := slices.Clone(it.comments)
+	if q.Get("orderBy") == "-created" {
+		slices.Reverse(all)
+	}
 	start, _ := strconv.Atoi(q.Get("startAt"))
-	start = max(0, min(start, len(it.comments)))
-	end := min(start+s.capped(q.Get("maxResults")), len(it.comments))
+	start = max(0, min(start, len(all)))
+	end := min(start+s.capped(q.Get("maxResults")), len(all))
 	page := make([]any, 0, end-start)
-	for _, c := range it.comments[start:end] {
+	for _, c := range all[start:end] {
 		page = append(page, s.commentJSON(c))
 	}
 	reply(w, http.StatusOK, map[string]any{"startAt": start, "maxResults": s.capped(q.Get("maxResults")),
@@ -702,7 +707,9 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request, a *account, 
 	reply(w, http.StatusCreated, s.commentJSON(c))
 }
 
-func (s *Server) transitions(w http.ResponseWriter, it *item) {
+func (s *Server) transitions(w http.ResponseWriter, r *http.Request, it *item) {
+	// Jira leaves a transition's fields out unless the call expands them.
+	expanded := slices.Contains(strings.Split(r.URL.Query().Get("expand"), ","), "transitions.fields")
 	wf := s.projects[it.project].workflow
 	offered := wf.offered(it.status)
 	out := make([]any, 0, len(offered))
@@ -720,8 +727,12 @@ func (s *Server) transitions(w http.ResponseWriter, it *item) {
 		for _, name := range t.Asks {
 			fields[strings.ToLower(name)] = map[string]any{keyName: name, "required": true, "hasDefaultValue": false}
 		}
-		out = append(out, map[string]any{"id": t.ID, keyName: t.Name, "to": to, "hasScreen": len(fields) > 0,
-			"isAvailable": true, "fields": fields})
+		entry := map[string]any{"id": t.ID, keyName: t.Name, "to": to, "hasScreen": len(fields) > 0,
+			"isAvailable": true}
+		if expanded {
+			entry["fields"] = fields
+		}
+		out = append(out, entry)
 	}
 	reply(w, http.StatusOK, map[string]any{"transitions": out})
 }
