@@ -1142,9 +1142,16 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   as written would run at UTC unasked. One whose name the Crew uses is shown
   as in use, with where the Crew's schedule differs in cron, time zone or
   goal. The page says nothing of where a schedule came from: the name is all
-  that links the two. The write is the UI's own: made as the person signed
-  in where the UI signs people in with OIDC, and as the UI's ServiceAccount
-  over a port-forward. The operator still reads no proposal.
+  that links the two. The Standard's own page lists each proposal the same
+  way, read-only, beside the Crews that have a schedule of its name and, for
+  each, in which of cron, time zone and goal it differs; only Crews whose
+  Container chose that Standard count (its `standardRef`, or what its Bundle
+  expanded to), and while the Crews or Containers are still being read or
+  were refused, the page says so instead of a count. A proposal is taken on a
+  Crew's page, where the zone is asked. The write is the UI's own: made as
+  the person signed in where the UI signs people in with OIDC, and as the
+  UI's ServiceAccount over a port-forward. The operator still reads no
+  proposal.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.

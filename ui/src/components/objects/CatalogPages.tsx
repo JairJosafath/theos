@@ -1,19 +1,21 @@
 // The pages of the catalog and the Git hosts: a Standard, Compute or
 // Deployment (its template, what it supports, the Containers that name it;
-// with UI actions on, a Standard's ref bump, StandardActions), a Bundle (its
+// with UI actions on, a Standard's ref bump, StandardActions; the schedules a
+// Standard proposes and the Crews that use each name, read-only), a Bundle (its
 // four entries, the types they share, the Containers that name it), a Domain
 // (its template, the systems that name it and how many of their Containers
 // were scaffolded with it), a GitProvider (where repositories go, and its Secret's name: the UI never
 // reads Secrets), and the Project page's list of them, where a refused read
 // of any of these kinds says so.
 
-import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
+import { problemsOf, readOf, unreadOf, type Connection, type StoryData } from '../../k8s/sources'
 import type { ReactNode } from 'react'
 import {
   RESOURCES,
   type Bundle,
   type CatalogEntry,
   type Container,
+  type Crew,
   type Domain,
   type GitProvider,
   type SoftwareSystem,
@@ -21,7 +23,9 @@ import {
 } from '../../k8s/types'
 import { bundleEntries, bundleTypes, choicesOf, type BundleSide, type Catalog } from '../../model/choices'
 import { describeContainerType } from '../../model/describe'
+import { proposalUse } from '../../model/schedules'
 import { ObjectHeader, type ChildRef } from '../ObjectHeader'
+import { FIELD_NAME, ProposalFacts } from './CrewPage'
 import { pageHref, projectCrumb } from './links'
 import { ReadProblem } from './ReadProblem'
 
@@ -52,11 +56,17 @@ export function CatalogPage({
   kind,
   entry,
   containers,
+  crews = [],
+  connection,
   actions,
 }: {
   kind: CatalogKind
   entry: CatalogEntry | Standard
   containers: Container[]
+  /** The namespace's Crews: a Standard's page says which of them use a proposal's name. */
+  crews?: Crew[]
+  /** Says a refused read of the Crews, in the panel that would list them. */
+  connection?: Connection
   /** What a person may do on it, under the header. */
   actions?: ReactNode
 }) {
@@ -113,11 +123,88 @@ export function CatalogPage({
                   ) : null}
                 </dl>
               </section>
+
+              {standard?.spec.schedules?.length ? (
+                <StandardSchedules standard={standard} containers={containers} crews={crews} connection={connection} />
+              ) : null}
             </>
           ),
         }}
       />
     </div>
+  )
+}
+
+/** "cron", "cron and goal", "cron, time zone and goal". */
+function inWords(names: string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : (names[0] ?? '')
+}
+
+/**
+ * The schedules a Standard proposes, each as the Crew's page words it
+ * (ProposalFacts), with the Crews of its Containers that have a schedule of
+ * that name. Read-only: a proposal is taken on a Crew's page, where the
+ * time zone is asked. The name is all that links a Crew's schedule to a
+ * proposal, so a row says a Crew has a schedule of the name and whether it
+ * differs, never that it was taken from here.
+ */
+function StandardSchedules({
+  standard,
+  containers,
+  crews,
+  connection,
+}: {
+  standard: Standard
+  containers: Container[]
+  crews: Crew[]
+  connection?: Connection
+}) {
+  const ns = standard.metadata.namespace ?? ''
+  // Which Crews use a name needs both the Crews and the Containers (whose Standard a Crew follows): a read
+  // still under way or refused would show every proposal as used by none, so say that instead of a count.
+  const needed = [RESOURCES.crews, RESOURCES.containers]
+  const problems = connection ? problemsOf(connection, ...needed) : []
+  const reading = connection ? !readOf(connection, ...needed) : false
+  return (
+    <section className="panel" aria-labelledby="standard-schedules">
+      <h2 className="panel-title small-title" id="standard-schedules">
+        Schedules it proposes
+      </h2>
+      <p className="panel-text">
+        It proposes these to the Crews of its Containers. A proposal files nothing: a Crew works one once it has a
+        schedule of that name, which is then the Crew’s own to change. A proposal is taken on a Crew’s page.
+      </p>
+      {problems.map((p) => (
+        <ReadProblem key={p.what} problem={p} />
+      ))}
+      <ol className="routes">
+        {proposalUse(standard, containers, crews).map(({ proposal, users }) => (
+          <li key={proposal.name}>
+            <ProposalFacts proposal={proposal} zoneNote="A Crew that takes it gives the zone it reads it in." />
+            {problems.length ? null : reading ? (
+              <div className="muted">Reading the Crews and Containers.</div>
+            ) : users.length ? (
+              <div className="muted">
+                Crews with a schedule of this name:{' '}
+                {users.map((u, i) => (
+                  <span key={u.crew}>
+                    {i ? ', ' : null}
+                    <a className="mono" href={pageHref(ns, 'Crew', u.crew)}>
+                      {u.crew}
+                    </a>
+                    {u.differs.length
+                      ? ` (differs from the proposal in ${inWords(u.differs.map((d) => FIELD_NAME[d.field].toLowerCase()))})`
+                      : null}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="muted">No Crew of its Containers has a schedule of this name.</div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
   )
 }
 

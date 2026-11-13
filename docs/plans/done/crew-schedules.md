@@ -259,6 +259,29 @@ no chart change. It closes #72.
   form, as the header does for a step the UI can't take.
 - **Not done:** the Standard's own page doesn't list its proposals, and the
   demo's data has none, so the demo shows no proposals panel.
+  **Done since, in #144:**
+  - The Standard's page has a panel, "Schedules it proposes": each proposal
+    by name, its cron and goal, and the Crews of its Containers that have a
+    schedule of that name, each said to differ where it does. It is
+    read-only, because a proposal is taken on a Crew's page, where the zone
+    is asked. A proposal is worded by one piece of code on both pages
+    (`ProposalFacts`), and the rule is `proposalUse`, beside
+    `scheduleProposals`. The Crews counted are those whose Container chose
+    the Standard, the ones whose pages offer the proposals; a Crew of
+    another Standard's Container with a schedule of the same name is not
+    listed. A refused read of the Crews is said in the panel, which then
+    claims nothing about who uses a name.
+  - The demo's Python Standard proposes `dependencies` and `flaky-tests`.
+    Its orders-api Crew has `dependencies` in Asia/Tokyo and a schedule of
+    its own with a last issue, so the demo shows the schedules panel, an
+    offered proposal and one in use whose time zone differs. Tokyo, because
+    it has no daylight saving: the fixture says when each is next due
+    without zone data.
+  - `ui/test/crew.e2e.mjs` walks Take and *Run now* from the button through
+    `ui/server.mjs` to the fake API: a proposal taken, the first schedule of
+    a Crew that has none with the `409 Conflict` on the way, and *Run now*
+    setting the annotation. They are browser tests, so CI's UI job runs
+    them.
 - **Tested:** the rule's table (`ui/src/model/schedules.test.ts`); the
   page's panel, rendered (`CrewPage.test.ts`, "the Crew page's Standard
   proposals"); the form in a DOM, typing the zone and reading the patch it

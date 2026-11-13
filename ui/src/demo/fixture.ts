@@ -21,6 +21,7 @@ import type {
   Condition,
   Container,
   Crew,
+  CrewSchedule,
   DataStore,
   DeployTarget,
   Domain,
@@ -83,7 +84,21 @@ export function demoStory(now: number): StoryData {
     if (cut.getTime() <= now) cut.setUTCDate(cut.getUTCDate() + 1)
     return cut.toISOString()
   }
+  // The first hour:00 on weekday (0 is Sunday) after now, on a clock `ahead`
+  // hours ahead of UTC all year: when a weekly schedule is next due there, in
+  // UTC and without a fraction, as the operator writes a time.
+  const nextWeekly = (weekday: number, hour: number, ahead: number) => {
+    const shift = ahead * 3600 * 1000
+    // Its UTC fields read as that clock's.
+    const local = new Date(now + shift)
+    local.setUTCHours(hour, 0, 0, 0)
+    local.setUTCDate(local.getUTCDate() + ((weekday - local.getUTCDay() + 7) % 7))
+    if (local.getTime() - shift <= now) local.setUTCDate(local.getUTCDate() + 7)
+    return new Date(local.getTime() - shift).toISOString().replace('.000Z', 'Z')
+  }
   const created = ago(3 * 3600)
+  // A time as the operator writes it, without a fraction.
+  const whole = (iso: string) => iso.replace(/\.\d+Z$/, 'Z')
 
   const project: Project = {
     apiVersion: API_VERSION,
@@ -988,6 +1003,38 @@ export function demoStory(now: number): StoryData {
     ]),
   )
 
+  // What the Python Standard proposes to the Crews of its Containers (#144), as
+  // the API server stores it: UTC written into a proposal that names no zone.
+  const proposals: CrewSchedule[] = [
+    {
+      name: 'dependencies',
+      cron: '0 6 * * 1',
+      timeZone: 'UTC',
+      goal: 'Update the dependencies in pyproject.toml that have a new minor or patch version, and uv.lock with them. One pull request. Say what you updated, and what you left and why.',
+    },
+    {
+      name: 'flaky-tests',
+      cron: '0 3 * * 6',
+      timeZone: 'UTC',
+      goal: 'Find the tests that failed in some of this week’s CI runs and passed in others on the same commit. Fix one, in one pull request, and say what made it fail.',
+    },
+  ]
+  // The orders-api Crew's own: the Standard's dependencies under its name, read
+  // in the team's zone, and a schedule no Standard proposes. Tokyo has no
+  // daylight saving, so nextWeekly says when each is next due without zone data.
+  const TOKYO = { timeZone: 'Asia/Tokyo', ahead: 9 }
+  const ordersSchedules: CrewSchedule[] = [
+    { ...proposals[0], timeZone: TOKYO.timeZone },
+    {
+      name: 'docs',
+      cron: '0 9 * * 5',
+      timeZone: TOKYO.timeZone,
+      goal: 'Read README.md and docs/ against the code. Fix what no longer holds, in one pull request.',
+    },
+  ]
+  const dependenciesNext = nextWeekly(1, 6, TOKYO.ahead)
+  const docsNext = nextWeekly(5, 9, TOKYO.ahead)
+
   const crew = (
     name: string,
     displayName: string,
@@ -1066,6 +1113,20 @@ export function demoStory(now: number): StoryData {
               'Brief webshop sets this in spec.releases; change it there',
               ago(2 * 86400),
             ),
+            cond(
+              'Scheduled',
+              'True',
+              'Scheduled',
+              `2 schedules, the next due at ${dependenciesNext < docsNext ? dependenciesNext : docsNext}`,
+              ago(2 * 3600),
+            ),
+          ],
+          // As the operator writes them: times without a fraction, a schedule first seen soon after the
+          // Crew was made (dependencies, nothing filed yet), and a Run now that filed issue #9, an issue
+          // no other Task of the demo uses, and moved since to that time (docs).
+          schedules: [
+            { name: 'dependencies', since: whole(at(178)), next: dependenciesNext },
+            { name: 'docs', since: whole(at(150)), lastFiled: whole(at(150)), lastIssue: 9, next: docsNext },
           ],
           // The release its Brief's app shows.
           lastRelease: {
@@ -1091,6 +1152,7 @@ export function demoStory(now: number): StoryData {
         {
           tagReleases: true,
           publishReleases: ordersPublish,
+          schedules: ordersSchedules,
         },
       ),
     ),
@@ -1135,6 +1197,7 @@ export function demoStory(now: number): StoryData {
         template: { url: `${GITEA}/templates/python-standard`, ref: 'v1.2.0' },
         supportedFrameworks: ['python-fastapi'],
         protectedPaths: ['ruff.toml', '.c4/checks/'],
+        schedules: proposals,
       },
     },
   ]

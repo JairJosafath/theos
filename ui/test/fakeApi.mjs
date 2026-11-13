@@ -6,6 +6,9 @@
 // remove, replace and test ops, refusing what a CRD rule of REFUSE would, or
 // what refuseNextWrite() asks, with the API server's message; everything
 // else is 404. A kind it is told to refuse answers 403, as RBAC would.
+// changeBeforeNextWrite() moves an object on just before the next write is
+// judged, as an operator's status write does between a client's read and its
+// patch: a patch that tests the resourceVersion it read then fails.
 
 import http from 'node:http'
 // The UI's own list of kinds, so the fake API serves every one.
@@ -142,10 +145,19 @@ export function fakeApi(namespace) {
   let suffix = 0
   // The message the next write is refused with, set by refuseNextWrite().
   let refusal
+  // The object that changes before the next write is judged, set by changeBeforeNextWrite().
+  let moving
   const write = async (req, res, plural, ns, name) => {
     const body = await readJson(req)
     const contentType = req.headers['content-type']
     writes.push({ method: req.method, path: new URL(req.url, 'http://x').pathname, contentType, body })
+    if (moving) {
+      const { plural: kind, name: which } = moving
+      moving = undefined
+      const old = store.get(kind).get(`${namespace}/${which}`)
+      // Nothing of it changes but its resourceVersion, and the watches hear of it as of any change.
+      if (old) send(kind, 'MODIFIED', put(kind, structuredClone(old)))
+    }
     if (refusal) {
       const message = refusal
       refusal = undefined
@@ -239,6 +251,14 @@ export function fakeApi(namespace) {
     /** Refuses the next write with 422 and `message`, as the API server does when the CRD refuses a value. */
     refuseNextWrite(message) {
       refusal = message
+    },
+    /**
+     * Changes the object once, just before the next write of any object is
+     * judged: its resourceVersion moves, as when an operator's status write
+     * lands between a client's read and its patch.
+     */
+    changeBeforeNextWrite(plural, name) {
+      moving = { plural, name }
     },
     /** How many watches of a kind are open. */
     watching(plural) {
