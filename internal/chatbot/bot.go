@@ -93,10 +93,17 @@ func (b *Bot) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, err
 	if err := b.Client.Get(ctx, req.NamespacedName, &chat); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	// A Chat on a host theos-chat runs no adapter for is left alone, its
+	// Secret unread and nothing posted: the operator reports it
+	// HostNotSupported, and spec.host never changes, so it is not polled.
+	system, hosts, ok := b.system(&chat)
+	if !ok {
+		return ctrl.Result{}, nil
+	}
 	if !chatReady(&chat) {
 		return ctrl.Result{RequeueAfter: b.interval()}, nil
 	}
-	host, err := b.host(ctx, &chat)
+	host, err := b.host(ctx, &chat, system, hosts)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -153,19 +160,22 @@ type hostKey struct {
 	ports.ChatConfig
 }
 
-// host is the ChatHost of chat's host as its bot, built once per host,
-// address and tokens. Every Chat is on model.ChatSystemDefault until a Chat
-// can name its host: step 8 of docs/plans/requests-and-chat.md reads
-// spec.host here.
-func (b *Bot) host(ctx context.Context, chat *c4v1beta1.Chat) (chatHost, error) {
-	system, err := model.ChatSystemByName(model.ChatSystemDefault)
+// system is the row of the host chat's spec.host names and theos-chat's
+// adapter for it; false when the factory knows no such host or theos-chat
+// has no adapter for it.
+func (b *Bot) system(chat *c4v1beta1.Chat) (model.ChatSystem, ports.ChatHosts, bool) {
+	system, err := model.ChatSystemByName(model.ChatHostName(string(chat.Spec.Host)))
 	if err != nil {
-		return chatHost{}, err
+		return model.ChatSystem{}, nil, false
 	}
 	hosts, ok := b.ChatHosts[system.Name]
-	if !ok {
-		return chatHost{}, fmt.Errorf("theos-chat has no adapter for the chat host %s", system.Name)
-	}
+	return system, hosts, ok
+}
+
+// host is the ChatHost of chat's host, system, as its bot, built by hosts
+// once per host, address and tokens.
+func (b *Bot) host(ctx context.Context, chat *c4v1beta1.Chat, system model.ChatSystem,
+	hosts ports.ChatHosts) (chatHost, error) {
 	var secret corev1.Secret
 	name := chat.Spec.CredentialsSecretRef.Name
 	if err := b.APIReader.Get(ctx, client.ObjectKey{Namespace: chat.Namespace, Name: name}, &secret); err != nil {

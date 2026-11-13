@@ -1,0 +1,11 @@
+# expect: a Chat with host: slack keeps each room's name its purpose
+apiVersion: theos.factory.io/v1beta1
+kind: Chat
+metadata:
+  name: webshop
+  namespace: webshop
+spec:
+  host: slack
+  credentialsSecretRef: {name: slack-bot}
+  rooms:
+    general: lobby

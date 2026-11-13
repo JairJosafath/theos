@@ -904,6 +904,35 @@ What the step chose where the plan says nothing:
   a pull request among the items, issues turned off, and closing a closed item
   again. `TestClosedItemStaysClosed` holds what Jira does instead.
 
+## Step 7 as built (#158)
+
+- **`host` defaults to `matrix` in the CRD,** so a Chat stored before the
+  field reads back `matrix`, and one written without it is on Matrix. Its
+  immutability is `self == oldSelf` on the field: unsetting it on update
+  defaults it to `matrix` again, which a Slack Chat's rule refuses. Each rule
+  of decision 3 is a rule of its own on the spec, with its own message, and
+  each starts with `!has(self.host) || self.host != 'slack'`, so it passes
+  every Chat valid before.
+- **The prefix rule says what Slack refuses, and the old pattern still
+  holds.** The rule takes Slack's characters (lowercase letters, digits, `-`
+  and `_`, at most 70); `aliasPrefix`'s own pattern
+  (`^[a-z0-9][a-z0-9._=-]*$`) stays on every Chat and has no `_`, so a
+  Slack prefix is in effect lowercase letters, digits and `-`, no `.` or
+  `=`, and the message says that. Loosening the pattern for Slack alone
+  would move it into CEL; nobody has asked for an underscore.
+- **`HostNotSupported`, as the issue's review found:** the controller looks
+  the host up in `internal/model`'s rows and its adapters before anything
+  else but `Duplicate`, and a Chat on a host it has no row or no adapter
+  for gets `Ready=False`, that reason, a message naming the host, and no
+  requeue, since `host` never changes. A missing adapter for a known host
+  is the same reason, where it was an error before. `theos-chat` checks
+  the same before `Ready` and reads no Secret for such a Chat, even one
+  whose status reads Ready (an operator that ran Slack). envtest holds both
+  (`chat_controller_test.go`, `chatbot_test.go`, `#158`); each failed on the
+  code before the change, run with `go test -overlay`.
+- **`model.ChatSlack` names the host,** with no row: step 8 adds the row and
+  the adapter, and `ChatHostName` maps an empty `host` to the default.
+
 ## Step 9 as built (#160)
 
 Atlassian's reference was not read again: step 6 as built, Jira, records

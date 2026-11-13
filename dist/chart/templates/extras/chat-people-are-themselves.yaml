@@ -22,6 +22,11 @@ spec:
       + '', and groups the writer is in; each person adds themselves: '' + variables.foreign.map(p,
       p.matrixID + '' as '' + p.user).join('', '')'
     reason: Forbidden
+  - expression: size(variables.foreignSlack) == 0
+    messageExpression: '''spec.slack.people may name only the writer, '' + request.userInfo.username
+      + '', and groups the writer is in; each person adds themselves: '' + variables.foreignSlack.map(p,
+      p.slackID + '' as '' + p.user).join('', '')'
+    reason: Forbidden
   variables:
   - expression: 'oldObject != null && has(oldObject.spec.people) ? oldObject.spec.people
       : []'
@@ -31,3 +36,12 @@ spec:
       == (has(p.groups) ? p.groups : [])) && !(p.user == request.userInfo.username &&
       (!has(p.groups) || p.groups.all(g, g in request.userInfo.groups))))'
     name: foreign
+  - expression: 'oldObject != null && has(oldObject.spec.slack) && has(oldObject.spec.slack.people)
+      ? oldObject.spec.slack.people : []'
+    name: oldSlack
+  - expression: '(has(object.spec.slack) && has(object.spec.slack.people) ? object.spec.slack.people
+      : []).filter(p, !variables.oldSlack.exists(o, o.slackID == p.slackID && o.user ==
+      p.user && (has(o.groups) ? o.groups : []) == (has(p.groups) ? p.groups : [])) &&
+      !(p.user == request.userInfo.username && (!has(p.groups) || p.groups.all(g, g in
+      request.userInfo.groups))))'
+    name: foreignSlack
