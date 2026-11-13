@@ -732,7 +732,11 @@ func (r *BriefReconciler) recordIssue(ctx context.Context, run *roundApply, repo
 		Repository: repository, Number: int32(issue.Number), URL: issue.URL, Title: model.Clip(issue.Title, 255),
 		Round: status.Round, N: int32(n),
 	}), 500)
-	if err := r.Status().Patch(ctx, run.brief, client.MergeFrom(run.orig)); err != nil {
+	// Locked, as every status write: a stale copy's patch would carry the rest
+	// of what this reconcile computed over a newer status, and hand on a
+	// version that holds changes it never saw (#199). A refused record files
+	// nothing twice: the retry finds the issue by its marker.
+	if err := r.patchStatusLocked(ctx, run.brief, run.orig); err != nil {
 		return err
 	}
 	*run.orig = *run.brief.DeepCopy()

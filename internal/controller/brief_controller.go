@@ -298,8 +298,16 @@ func (r *BriefReconciler) writeStatus(ctx context.Context, brief, orig *c4v1beta
 	if equality.Semantic.DeepEqual(brief.Status, orig.Status) {
 		return nil
 	}
-	// The lock holds the version this reconcile last read or wrote: putting
-	// the finalizer on (holdForBot) moves brief's on, not orig's.
+	return r.patchStatusLocked(ctx, brief, orig)
+}
+
+// patchStatusLocked patches the Brief's status from orig under the
+// optimistic lock, as every status write of a reconcile is (writeStatus,
+// startRound, recordIssue): one that read a stale copy writes nothing, and
+// its conflict is errStaleBrief, for finishReconcile to read the Brief again.
+// The lock holds the version this reconcile last read or wrote: putting the
+// finalizer on (holdForBot) moves brief's on, not orig's.
+func (r *BriefReconciler) patchStatusLocked(ctx context.Context, brief, orig *c4v1beta1.Brief) error {
 	base := orig.DeepCopy()
 	base.ResourceVersion = brief.ResourceVersion
 	err := r.Status().Patch(ctx, brief, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))
