@@ -1326,8 +1326,8 @@ func NextTaskStep(f TaskFacts) TaskStep {
 	// A resumed run spends like a new one: what the run cost so far counts.
 	if (starts || step.Action == ActionResumeRun) && f.BudgetMilliUSD > 0 && f.CostMilliUSD >= f.BudgetMilliUSD {
 		return TaskStep{Action: ActionWait, Reason: ReasonOverBudget, Pause: step.Pause, Message: fmt.Sprintf(
-			"The Task's runs cost $%.2f, at its Crew's cap of $%d; raise the Crew's taskBudgetUSD to go on",
-			float64(f.CostMilliUSD)/1000, f.BudgetMilliUSD/1000)}
+			"The Task's runs cost $%.2f, at its Crew's cap of $%.2f; raise the Crew's taskBudgetUSD to go on",
+			float64(f.CostMilliUSD)/1000, float64(f.BudgetMilliUSD)/1000)}
 	}
 	if starts && f.AgentBackIn > 0 {
 		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("The agent is unavailable; trying again in %s",
