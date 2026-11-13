@@ -26,6 +26,19 @@ The receiver of the Git host's deliveries (docs/plans/done/git-events.md, decisi
 {{- end }}
 
 {{/*
+Where senders outside the cluster deliver alerts, --alerts-url (#240):
+alerts.url, else https://<alerts.ingress.host> with the alert Ingress on,
+else empty, and AlertSource status.url shows the in-cluster address.
+*/}}
+{{- define "theos.alertsURL" -}}
+{{- if .Values.alerts.url }}
+{{- .Values.alerts.url | trimSuffix "/" }}
+{{- else if and .Values.alerts.ingress.enabled .Values.alerts.ingress.host }}
+{{- printf "https://%s" .Values.alerts.ingress.host }}
+{{- end }}
+{{- end }}
+
+{{/*
 The alert receiver's drain deadline, --alert-drain-timeout: alerts.drainTimeout,
 refused here unless it is a Go duration, so the manager doesn't fail to start
 on it, or unless it is under manager.terminationGracePeriodSeconds (30 when

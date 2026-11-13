@@ -334,6 +334,20 @@ if [ "$off" != 2 ]; then
 fi
 echo "The chart installs Chat only with chat.enabled: theos-chat, the pinned homeserver and the operator's --chat-homeserver"
 
+# The alert Ingress's address (#240): chart-alerts.yaml, with
+# alerts.ingress.enabled and host alerts.example.com, tells the operator
+# --alerts-url=https://alerts.example.com, which AlertSource status.url starts
+# with; chart-gitea.yaml, without the Ingress, no --alerts-url, so status.url
+# stays the in-cluster address. hack/chart-alerts_test.sh checks alerts.url.
+want "the operator isn't told the alert Ingress's address" \
+	"$(doc "$OUT/chart-alerts.yaml" Deployment theos-controller-manager)" \
+	'^        - --alerts-url=https://alerts\.example\.com$'
+if grep -qF -- '--alerts-url' <<<"$(doc "$OUT/chart-gitea.yaml" Deployment theos-controller-manager)"; then
+	echo "The chart: the operator has an --alerts-url without the alert Ingress or alerts.url" >&2
+	exit 1
+fi
+echo "The chart tells the operator the alert Ingress's address only with alerts.ingress.enabled"
+
 # The test environment shares the Claude token (make claude-secret): the
 # manager names it and its own namespace, and the namespaces make seed and the
 # samples make opt in.

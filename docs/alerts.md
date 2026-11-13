@@ -27,8 +27,8 @@ POST /alerts/<namespace>/<alertsource>
 
 on Service `theos-git-events`, port 8082:
 `http://theos-git-events.theos-system.svc:8082/alerts/webshop/alertmanager`
-from inside the cluster. The AlertSource's `status.url` says the same.
-Without an AlertSource of that name every path answers 404.
+from inside the cluster. Without an AlertSource of that name every path
+answers 404.
 
 By default a NetworkPolicy lets only the Git host reach that port, so a
 sender needs one of two chart values
@@ -70,6 +70,21 @@ alerts:
 A NetworkPolicy fences a port, not a path, so a peer in `alerts.from` can
 reach `/git-events/` too; every delivery there is signed with its
 GitProvider's own Secret. The Ingress serves `/alerts/` alone.
+
+The AlertSource's `status.url` shows the address a sender outside the
+cluster delivers to when there is one, else the in-cluster one:
+
+- With `alerts.ingress.enabled`, the Ingress's:
+  `https://alerts.example.com/alerts/webshop/alertmanager`. The chart passes
+  `https://<alerts.ingress.host>` to the operator as `--alerts-url`.
+- With `alerts.url` set, that address instead, for a receiver behind a
+  proxy of your own: `alerts.url: https://hooks.example.com` gives
+  `https://hooks.example.com/alerts/webshop/alertmanager`.
+- Otherwise the in-cluster address above, under `gitEvents.url`.
+
+The in-cluster address stays valid for senders inside the cluster, such as
+Alertmanager, whichever address `status.url` shows: give them
+`http://theos-git-events.theos-system.svc:8082/alerts/<namespace>/<alertsource>`.
 
 Alerts the operator took and has not filed when it is stopped are filed
 for `alerts.drainTimeout` (default `5s`) before it exits; keep it under
@@ -132,7 +147,8 @@ counted in `status.unmatched`, with why.
 goes: `Ready` is `Receiving` once the Secret holds the key its type reads,
 `SecretMissing` while it doesn't (an empty value included), and
 `ReceiverOff` when the chart's `gitEvents.enabled` is off. `status.url` is
-where to deliver, and `deliveries`, `unmatched` and `unread` count what
+where to deliver from outside the cluster, or from inside it when nothing
+outside reaches the receiver ([above](#where-alerts-are-delivered)), and `deliveries`, `unmatched` and `unread` count what
 came. A delivery that fails the check writes nothing to the AlertSource;
 the operator's metric `theos_alert_deliveries_total` counts it, by `result`.
 

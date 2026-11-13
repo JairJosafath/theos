@@ -143,6 +143,11 @@ spec:
         # The same listener takes alerts; stopped by a signal, the operator
         # files what it took for this long (alerts.drainTimeout, docs/alerts.md).
         - --alert-drain-timeout={{ include "theos.alertDrainTimeout" . }}
+        {{- with include "theos.alertsURL" . }}
+        # Where senders outside the cluster deliver alerts, which each
+        # AlertSource's status.url shows (alerts.url, else the alert Ingress).
+        - --alerts-url={{ . }}
+        {{- end }}
         {{- end }}
         command:
         - /manager

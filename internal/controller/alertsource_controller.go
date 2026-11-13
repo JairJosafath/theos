@@ -60,8 +60,13 @@ type AlertSourceReconciler struct {
 	// and every source is ReceiverOff.
 	Receiver *AlertReceiver
 	// EventsURL is the operator's --git-events-url, which status.url starts
-	// with.
+	// with unless AlertsURL is set: the in-cluster address, which stays
+	// valid for in-cluster senders.
 	EventsURL string
+	// AlertsURL is the operator's --alerts-url, the address senders outside
+	// the cluster reach the receiver at, such as the chart's alert Ingress
+	// (#240); when set, status.url starts with it instead of EventsURL.
+	AlertsURL string
 	// PollInterval is how often the Secret is read; 0 means a minute.
 	PollInterval time.Duration
 	// Now is the clock; nil means time.Now.
@@ -123,12 +128,11 @@ func (r *AlertSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				"The operator's alert receiver is off: it listens with --git-events-bind-address")
 		} else {
 			r.setReady(ctx, &src, status, metav1.ConditionTrue, c4v1beta1.ReasonAlertSourceReceiving,
-				"The operator takes this source's deliveries at "+model.AlertsURL(r.EventsURL, src.Namespace,
-					src.Name))
+				"The operator takes this source's deliveries at "+r.deliveryURL(&src))
 		}
 	}
 	if r.Receiver != nil {
-		status.URL = model.AlertsURL(r.EventsURL, src.Namespace, src.Name)
+		status.URL = r.deliveryURL(&src)
 	} else {
 		status.URL = ""
 	}
@@ -146,6 +150,16 @@ func (r *AlertSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		poll.RequeueAfter = wait
 	}
 	return poll, nil
+}
+
+// deliveryURL is where src's sender delivers, status.url: under
+// --alerts-url when that is set, else under --git-events-url (#240).
+func (r *AlertSourceReconciler) deliveryURL(src *c4v1beta1.AlertSource) string {
+	base := r.EventsURL
+	if r.AlertsURL != "" {
+		base = r.AlertsURL
+	}
+	return model.AlertsURL(base, src.Namespace, src.Name)
 }
 
 // retry is the result of a reconcile that failed with err: a stale source
