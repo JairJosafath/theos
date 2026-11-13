@@ -676,8 +676,15 @@ export function formatTokens(n: number): string {
   return `${shown}${unit}`
 }
 
-/** Thousandths of a US dollar as dollars and cents; under a cent shows as "<$0.01". */
+/**
+ * Thousandths of a US dollar as dollars and cents; under a cent shows as
+ * "<$0.01". A cost under zero, or one that is no number (NaN, an infinity),
+ * is no cost and shows as none, "–", as the report's page writes it
+ * (reportMoney in internal/model/report_page.go): "$-1.50" and "$NaN" would
+ * pass for a price. Both sides are held to testdata/report/money.json.
+ */
 export function formatCost(milliUSD: number): string {
+  if (!Number.isFinite(milliUSD) || milliUSD < 0) return '–'
   if (milliUSD > 0 && milliUSD < 10) return '<$0.01'
   return `$${(milliUSD / 1000).toFixed(2)}`
 }
