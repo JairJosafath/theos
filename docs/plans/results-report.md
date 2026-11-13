@@ -146,7 +146,7 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
 
 ## Steps
 
-1. **The rules and the fixture** (this change). `model.FactoryReport` turns
+1. **The rules and the fixture** (done). `model.FactoryReport` turns
    a period and Tasks into a `Report`; `Report.JSON` and `Report.Markdown`
    write it. Done when the table tests pass, the fixture gives its report
    and page byte for byte, and the UI's test agrees with the report.
