@@ -1647,8 +1647,11 @@ controllers call, not by one product's API;
   plain Go with no Kubernetes in `internal/ports`; each adapter is its own
   package under `internal/adapters`, and only `cmd/main.go` imports adapters
   (`make lint` enforces it). The Deployer and the Git host's five ports are
-  there today, with Gitea in `internal/adapters/gitea`, and ChatHost, with
-  Matrix in `internal/adapters/matrix`.
+  there today, with Gitea in `internal/adapters/gitea`; ChatHost, with
+  Matrix in `internal/adapters/matrix`; and request intake (`IssueTracker`),
+  with GitHub in `internal/adapters/github`. Each has its fake in
+  `internal/ports/fake`, which passes its suite: ChatHost's in two shapes,
+  with Spaces and without, and request intake's with teams and without.
 - **What a host lacks** its adapter emulates, or the port makes an optional
   capability (a second small interface, a condition reason when missing):
   Go modules, npm and PyPI, a project's own runners, webhooks.

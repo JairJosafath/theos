@@ -30,6 +30,7 @@ import (
 	"github.com/JairJosafath/theos/internal/chatbot"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 // newTheosChat is theos-chat as cmd/theos-chat runs it, on chatFake, as its
@@ -43,10 +44,42 @@ func newTheosChat() *chatbot.Bot {
 	return &chatbot.Bot{Client: cl, APIReader: cl, Config: c, ChatHosts: chatHosts()}
 }
 
+// chatPortFake is the ports' fake chat host (#153), at an address of its
+// own: a Chat that names it is on the fake, every other on chatFake. Its
+// message IDs are unique in a room alone, as Slack's are.
+var chatPortFake = fake.NewChatHost()
+
 // chatHosts are the chat adapters of the suite's operator and theos-chat, as
-// cmd/main.go gives them: Matrix's, which reaches chatFake.
+// cmd/main.go gives them: Matrix's, which reaches chatFake, and for a Chat at
+// chatPortFake's address, the fake's.
 func chatHosts() map[string]ports.ChatHosts {
-	return map[string]ports.ChatHosts{model.ChatMatrix: matrix.Hosts(nil)}
+	matrixHosts, onFake := matrix.Hosts(nil), chatPortFake.Hosts()
+	return map[string]ports.ChatHosts{model.ChatMatrix: func(cfg ports.ChatConfig) (ports.ChatHost, error) {
+		if cfg.Address == chatPortFake.Address() {
+			return onFake(cfg)
+		}
+		return matrixHosts(cfg)
+	}}
+}
+
+// portFakeChat is a Chat on chatPortFake with its bot, whose token is in
+// Secret chat-bot in ns, and the bot's user ID.
+func portFakeChat(ns string, people ...c4v1beta1.ChatPerson) (*c4v1beta1.Chat, string) {
+	GinkgoHelper()
+	bot, token := chatPortFake.NewUser("bot-" + ns)
+	mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "chat-bot"),
+		Data: map[string][]byte{model.ChatTokenKey: []byte(token)}})
+	return &c4v1beta1.Chat{ObjectMeta: objectMeta(ns, "chat"), Spec: c4v1beta1.ChatSpec{
+		Homeserver: chatPortFake.Address(), CredentialsSecretRef: c4v1beta1.LocalRef{Name: "chat-bot"},
+		People: people}}, bot
+}
+
+// portFakePosts are room's messages on chatPortFake.
+func portFakePosts(room string) []fake.ChatPost {
+	GinkgoHelper()
+	r, ok := chatPortFake.Room(room)
+	Expect(ok).To(BeTrue(), "room %s", room)
+	return r.Posts
 }
 
 // chatPass runs one of bot's passes over chat.
