@@ -29,8 +29,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -108,30 +106,14 @@ func serveGoProxy(job agentrunner.Job) (func(), error) {
 	return func() { _ = server.Close() }, nil
 }
 
-// agentFor picks the agent: the stand-in for the stand-in harness (or when
-// THEOS_AGENT_FAKE is set), else Claude Code with the job's model, session
-// limit and session IDs, or the command in THEOS_AGENT_COMMAND, whose one session
-// runs to its end.
+// agentFor picks the job's agent by its harness (agentrunner.AgentFor), with
+// theos-agent itself as the guard of a harness that guards its sessions.
 func agentFor(job agentrunner.Job) agentrunner.Agent {
-	if job.Harness == agentrunner.HarnessStandIn || os.Getenv("THEOS_AGENT_FAKE") != "" {
-		changesFirst, _ := strconv.ParseBool(os.Getenv("THEOS_AGENT_FAKE_CHANGES_FIRST"))
-		followUp, _ := strconv.ParseBool(os.Getenv("THEOS_AGENT_FAKE_FOLLOW_UP"))
-		return agentrunner.FakeAgent{Role: job.Role, Round: job.Round, Goal: job.Goal, Issue: job.Issue,
-			Criteria: job.Criteria, Spec: job.SpecPath, ChangesFirst: changesFirst, FollowUp: followUp}
-	}
-	agent := agentrunner.ClaudeAgent{Model: job.Model}
-	if command := strings.Fields(os.Getenv("THEOS_AGENT_COMMAND")); len(command) > 0 {
-		agent.Command = command
-		return agent
-	}
-	// Claude Code's own command takes a --session-id, which a checkpoint
-	// records, and a --resume of a session the pause ended.
-	agent.SessionIDs = true
-	if self, err := os.Executable(); err == nil {
-		agent.SessionTokenLimit, agent.Guard = job.SessionTokenLimit, self
-	} else {
+	self, err := os.Executable()
+	if err != nil {
 		slog.Error("Running sessions unguarded, and paused only between steps: theos-agent can't find itself",
 			"error", err)
+		self = ""
 	}
-	return agent
+	return agentrunner.AgentFor(job, os.Getenv, self)
 }

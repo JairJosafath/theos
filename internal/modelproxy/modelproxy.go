@@ -14,10 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package modelproxy is the reverse proxy that keeps the factory's Claude
-// token out of agent sandboxes. It forwards every request to one upstream,
-// drops the credential the client sent and adds the factory's, which it reads
-// from a mounted Secret directory. It reads the key file again whenever the
+// Package modelproxy is the reverse proxy that keeps the factory's model
+// keys out of agent sandboxes. It forwards a request to its upstream, drops
+// every credential the client sent and adds the factory's, which it reads
+// from a mounted Secret directory. A path under /upstreams/<name>/ goes to
+// the upstream of that name, with that upstream's key; every other path
+// goes to the default one, Claude's. It reads a key file again whenever the
 // file changes, so a rotated Secret reaches the next request without a
 // restart. It never logs a header.
 package modelproxy
@@ -25,6 +27,7 @@ package modelproxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -32,6 +35,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -50,14 +54,106 @@ const (
 // OAuthBeta is the anthropic-beta value the API wants with an OAuth token.
 const OAuthBeta = "oauth-2025-04-20"
 
+// NamedPrefix starts the path of a request for a named upstream:
+// /upstreams/<name>/<the upstream's own path>. A prefix of its own, and not
+// the path's first segment: /v1/... is Claude's API, and a mistyped name
+// must never send one vendor's request to another with that vendor's key.
+const NamedPrefix = "/upstreams/"
+
+// How a named upstream takes its key.
+const (
+	// AuthBearer sends "Authorization: Bearer <key>".
+	AuthBearer = "bearer"
+	// AuthNone sends no key: a server that asks for none.
+	AuthNone = "none"
+	// AuthHeaderPrefix starts an Auth that names the header the key goes in
+	// as it is: "header:X-Goog-Api-Key".
+	AuthHeaderPrefix = "header:"
+)
+
+// Upstream is a named upstream: where the requests under
+// /upstreams/<Name>/ go, and the key they get.
+type Upstream struct {
+	// Name is the path segment after NamedPrefix.
+	Name string
+	URL  *url.URL
+	// Auth is AuthBearer, AuthNone, or AuthHeaderPrefix and a header's name.
+	Auth string
+	// Key is the key's file in the credentials directory; empty with AuthNone.
+	Key string
+}
+
+var (
+	upstreamName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$`)
+	keyFileName  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,252}$`)
+)
+
+// ParseUpstream reads a named upstream as the flag gives it:
+// "<name>=<url>[,auth=bearer|header:<Header>|none][,key=<key file>]". With a
+// key and no auth it is a bearer key; with neither, the upstream takes none.
+func ParseUpstream(spec string) (Upstream, error) {
+	parts := strings.Split(spec, ",")
+	name, raw, ok := strings.Cut(parts[0], "=")
+	if !ok || !upstreamName.MatchString(name) {
+		return Upstream{}, fmt.Errorf("%q: want <name>=<url>, the name of lower-case letters, digits and dashes", spec)
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return Upstream{}, fmt.Errorf("upstream %s: %q is not an http or https URL", name, raw)
+	}
+	if u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return Upstream{}, fmt.Errorf("upstream %s: its URL carries a query, a fragment or a user, and takes none", name)
+	}
+	up := Upstream{Name: name, URL: u}
+	for _, part := range parts[1:] {
+		key, value, _ := strings.Cut(part, "=")
+		switch key {
+		case "auth":
+			up.Auth = value
+		case "key":
+			up.Key = value
+		default:
+			return Upstream{}, fmt.Errorf("upstream %s: %q is neither an auth=<how> nor a key=<file>", name, part)
+		}
+	}
+	if up.Auth == "" {
+		up.Auth = AuthNone
+		if up.Key != "" {
+			up.Auth = AuthBearer
+		}
+	}
+	header, named := strings.CutPrefix(up.Auth, AuthHeaderPrefix)
+	switch {
+	case named && !httpguts.ValidHeaderFieldName(header):
+		return Upstream{}, fmt.Errorf("upstream %s: %q is not a header's name", name, header)
+	case !named && up.Auth != AuthBearer && up.Auth != AuthNone:
+		return Upstream{}, fmt.Errorf("upstream %s: auth=%s: want %s, %s<Header> or %s", name, up.Auth,
+			AuthBearer, AuthHeaderPrefix, AuthNone)
+	case up.Auth == AuthNone && up.Key != "":
+		return Upstream{}, fmt.Errorf("upstream %s: auth=%s takes no key", name, AuthNone)
+	case up.Auth != AuthNone && !keyFileName.MatchString(up.Key):
+		return Upstream{}, fmt.Errorf("upstream %s: auth=%s needs key=<key file>, a file's name in the credentials directory",
+			name, up.Auth)
+	}
+	return up, nil
+}
+
+// credentialHeaders are the headers a client's key can come in, whatever
+// the vendor. The proxy drops them all on every request, so the key it adds
+// is the only one that leaves.
+var credentialHeaders = []string{"Authorization", "X-Api-Key", "X-Goog-Api-Key", "Api-Key"}
+
 // Proxy is the model proxy's http.Handler. It answers /healthz (always 200)
 // and /readyz (200 until Drain, else 503) itself, and forwards every other
-// path to its upstream, or answers 503 while it has no credential. Readiness
+// path to its upstream, or answers 503 while it has no credential. A path
+// under NamedPrefix goes to the named upstream, or answers 404 when no
+// upstream has that name. Readiness
 // doesn't wait for the credential: the Secret arrives after the chart (the
 // guide's step 2), and a pod that takes connections and answers 503 says
 // more to a sandbox than one with no endpoints (#1627).
 type Proxy struct {
 	upstream *url.URL
+	named    map[string]Upstream
 	dir      string
 	log      *slog.Logger
 	proxy    *httputil.ReverseProxy
@@ -67,14 +163,19 @@ type Proxy struct {
 	files   map[string]keyFile // by key name
 	using   string             // the key name in use, "" for none, to log a change once
 	checked bool               // whether using has been set yet
+	keyed   map[string]bool    // by named upstream: whether its key was there, to log a change once
 }
 
 // credentialKey is the context key ServeHTTP hands the credential to rewrite
 // under, as a keyValue.
 type credentialKey struct{}
 
-// keyValue is a credential: the key file it came from and what it holds.
-type keyValue struct{ key, value string }
+// keyValue is a credential: the key file it came from and what it holds,
+// and for a named upstream, the upstream.
+type keyValue struct {
+	key, value string
+	named      *Upstream
+}
 
 // keyFile is what a key file held when it was last read.
 type keyFile struct {
@@ -86,10 +187,24 @@ type keyFile struct {
 // New returns a Proxy to upstream that reads its credential from the key
 // files in credentialsDir. A nil log is slog.Default().
 func New(upstream *url.URL, credentialsDir string, log *slog.Logger) *Proxy {
+	p, _ := NewWithUpstreams(upstream, nil, credentialsDir, log)
+	return p
+}
+
+// NewWithUpstreams returns a Proxy to upstream, and to each of named under
+// NamedPrefix and its name. Two upstreams of one name are an error.
+func NewWithUpstreams(upstream *url.URL, named []Upstream, credentialsDir string, log *slog.Logger) (*Proxy, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	p := &Proxy{upstream: upstream, dir: credentialsDir, log: log, files: map[string]keyFile{}}
+	p := &Proxy{upstream: upstream, named: map[string]Upstream{}, dir: credentialsDir, log: log,
+		files: map[string]keyFile{}, keyed: map[string]bool{}}
+	for _, up := range named {
+		if _, twice := p.named[up.Name]; twice {
+			return nil, fmt.Errorf("two upstreams are named %s", up.Name)
+		}
+		p.named[up.Name] = up
+	}
 	p.proxy = &httputil.ReverseProxy{
 		Rewrite: p.rewrite,
 		// The API streams server-sent events; every write goes out at once.
@@ -97,7 +212,7 @@ func New(upstream *url.URL, credentialsDir string, log *slog.Logger) *Proxy {
 		ErrorHandler:  p.upstreamFailed,
 		ErrorLog:      slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
-	return p
+	return p, nil
 }
 
 // ServeHTTP answers the probes and forwards the rest with the credential.
@@ -118,12 +233,33 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "ok\n")
 		return
 	}
-	name, value := p.credential()
-	if name == "" {
-		http.Error(w, "The model proxy has no credential yet.", http.StatusServiceUnavailable)
-		return
+	var credential keyValue
+	if rest, named := strings.CutPrefix(r.URL.Path, NamedPrefix); named {
+		name, _, _ := strings.Cut(rest, "/")
+		up, ok := p.named[name]
+		if !ok {
+			// Nothing is forwarded: not to the default upstream either, which
+			// would get another vendor's request.
+			http.Error(w, fmt.Sprintf("The model proxy has no upstream named %q.", name), http.StatusNotFound)
+			return
+		}
+		credential = keyValue{named: &up}
+		if up.Auth != AuthNone {
+			if credential.key, credential.value = up.Key, p.namedKey(up); credential.value == "" {
+				http.Error(w, fmt.Sprintf("The model proxy has no credential for upstream %s yet.", up.Name),
+					http.StatusServiceUnavailable)
+				return
+			}
+		}
+	} else {
+		name, value := p.credential()
+		if name == "" {
+			http.Error(w, "The model proxy has no credential yet.", http.StatusServiceUnavailable)
+			return
+		}
+		credential = keyValue{key: name, value: value}
 	}
-	ctx := context.WithValue(r.Context(), credentialKey{}, keyValue{key: name, value: value})
+	ctx := context.WithValue(r.Context(), credentialKey{}, credential)
 	// The upstream may answer while the request's body is still on its way
 	// to it (the transport copies it in another goroutine). Without full
 	// duplex the server consumes and closes the unread body as the answer's
@@ -145,12 +281,30 @@ func (p *Proxy) Drain() { p.draining.Store(true) }
 // credential for the one ServeHTTP read. ReverseProxy calls it after it has
 // removed the hop-by-hop headers, so a client's Connection header can't name
 // the credential away.
+//
+// A named upstream's request loses NamedPrefix and the name from its path,
+// and gets that upstream's key the way the upstream takes it, or none.
 func (p *Proxy) rewrite(pr *httputil.ProxyRequest) {
-	pr.SetURL(p.upstream)
 	c, _ := pr.In.Context().Value(credentialKey{}).(keyValue)
 	h := pr.Out.Header
-	h.Del("Authorization")
-	h.Del("X-Api-Key")
+	for _, name := range credentialHeaders {
+		h.Del(name)
+	}
+	if up := c.named; up != nil {
+		// The name holds nothing a URL escapes, so the prefix reads the same
+		// in the escaped path.
+		prefix := NamedPrefix + up.Name
+		pr.Out.URL.Path = strings.TrimPrefix(pr.Out.URL.Path, prefix)
+		pr.Out.URL.RawPath = strings.TrimPrefix(pr.Out.URL.RawPath, prefix)
+		pr.SetURL(up.URL)
+		if header, named := strings.CutPrefix(up.Auth, AuthHeaderPrefix); named {
+			h.Set(header, c.value)
+		} else if up.Auth == AuthBearer {
+			h.Set("Authorization", "Bearer "+c.value)
+		}
+		return
+	}
+	pr.SetURL(p.upstream)
 	if c.key == OAuthTokenKey {
 		h.Set("Authorization", "Bearer "+c.value)
 		h.Set("Anthropic-Beta", withOAuthBeta(h.Values("Anthropic-Beta")))
@@ -191,6 +345,25 @@ func (p *Proxy) credential() (name, value string) {
 		}
 	}
 	return name, value
+}
+
+// namedKey returns the key of a named upstream, "" while its file holds
+// none. It logs once when the key arrives and once when it goes, naming the
+// upstream and the file, never what the file holds.
+func (p *Proxy) namedKey(up Upstream) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	value := p.read(up.Key)
+	if had, checked := p.keyed[up.Name]; !checked || had != (value != "") {
+		p.keyed[up.Name] = value != ""
+		if value == "" {
+			p.log.Warn("No credential for the upstream in the credentials directory", "upstream", up.Name,
+				"key", up.Key, "dir", p.dir)
+		} else {
+			p.log.Info("Using the credential for the upstream", "upstream", up.Name, "key", up.Key, "dir", p.dir)
+		}
+	}
+	return value
 }
 
 // read returns the trimmed contents of key file name, "" when it is missing,

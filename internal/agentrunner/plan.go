@@ -51,7 +51,7 @@ func plan(ctx context.Context, job Job, agent Agent, r *repo, prog *runProgress,
 	summary, err := prog.session(ctx, agent, r.dir, PlanPrompt(job, guide, brief))
 	result.Summary = shorten(summary, maxPlanSummary)
 	if err != nil {
-		return agentFailed(result, err)
+		return agentFailed(job, result, err)
 	}
 	message := fmt.Sprintf("Plan round %d of brief %s\n\nTask %s.", job.Round, job.Brief, job.Task)
 	if err := r.commitAll(ctx, message); err != nil {

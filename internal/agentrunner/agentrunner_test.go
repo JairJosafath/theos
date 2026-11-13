@@ -1191,8 +1191,8 @@ func TestClaudeAgentKeepsWhyAFailedStreamFailed(t *testing.T) {
 	if err == nil || !strings.HasSuffix(err.Error(), "API Error: 529 overloaded_error") {
 		t.Errorf("RunReportingUsage() error = %v, want it to end with what stderr said", err)
 	}
-	if down, _ := unavailable(err.Error(), time.Now()); !down {
-		t.Errorf("unavailable(%q) = false, want the overload seen", err)
+	if down, _ := claudeUnavailable(err.Error(), time.Now()); !down {
+		t.Errorf("claudeUnavailable(%q) = false, want the overload seen", err)
 	}
 }
 
@@ -1224,9 +1224,9 @@ func TestUnavailable(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, retryAt := unavailable(tt.output, now)
+			got, retryAt := claudeUnavailable(tt.output, now)
 			if got != tt.want || !retryAt.Equal(tt.retryAt) {
-				t.Errorf("unavailable() = %v, %v; want %v, %v", got, retryAt, tt.want, tt.retryAt)
+				t.Errorf("claudeUnavailable() = %v, %v; want %v, %v", got, retryAt, tt.want, tt.retryAt)
 			}
 		})
 	}
@@ -1322,8 +1322,8 @@ func (a failingAgent) Run(context.Context, string, string) (string, error) { ret
 
 func TestUnavailableResetInThePast(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
-	if down, back := unavailable("usage limit reached|1759417200", now); !down || !back.IsZero() {
-		t.Errorf("unavailable() = %v, %v; want unavailable, back now", down, back)
+	if down, back := claudeUnavailable("usage limit reached|1759417200", now); !down || !back.IsZero() {
+		t.Errorf("claudeUnavailable() = %v, %v; want unavailable, back now", down, back)
 	}
 }
 
