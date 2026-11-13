@@ -370,7 +370,8 @@ export function factoryStats(all: Task[], now: number): FactoryStats {
   }
   return {
     total: tasks.length,
-    active: tasks.length - finished.length,
+    // Not yet ended: a Merged Plan, Triage or NothingToDo Task has ended without being a merged change.
+    active: tasks.filter((t) => t.status?.phase !== 'Merged' && t.status?.phase !== 'Failed').length,
     merged: merged.length,
     failed: failed.length,
     successRate: finished.length ? merged.length / finished.length : undefined,

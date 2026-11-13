@@ -236,6 +236,8 @@ describe('factoryStats', () => {
     ]
     const stats = factoryStats(tasks, T0)
     expect(stats.merged).toBe(2)
+    // Every Task here has ended, the Plan, Triage and NothingToDo ones included.
+    expect(stats.active).toBe(0)
     expect(stats.merged).toBe(factoryMetrics(tasks, T0 + 180 * 60_000, 7).all.merged)
   })
 
