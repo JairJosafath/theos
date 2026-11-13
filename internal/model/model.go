@@ -134,6 +134,10 @@ type FitError struct {
 }
 
 func (e *FitError) Error() string {
+	if e.Framework == "" {
+		// Only a Container that adopts its repository names none (#60, #97).
+		return fmt.Sprintf("%s supports only the Frameworks it lists, and the Container names no frameworkRef", e.Standard)
+	}
 	return fmt.Sprintf("%s does not support %s", e.Standard, e.Framework)
 }
 

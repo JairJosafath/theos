@@ -218,12 +218,39 @@ Choices the issue left open, and why:
   with `ContainerNotProtected`, as on a bare adoption. The helpers sit
   beside the adoption, not in `protection.go`, which is the owner's; it
   would be their natural home. `pendingStep` alone was not enough: a
-  Triage, a plan and a judge run skip it, and so does a Task past Pending
-  when a bare adoption names a Standard. `protectRepository`, which still
-  reads "names a Standard" as "has checks", would put the Standard's rule
-  on main before such a run, and under it the person could no longer merge
-  the pull request. So `runInputs`, the one door to every run, asks
-  `standardNotOnMain` first, protects nothing and waits.
+  Triage and a judge run skip it, and so does a Task past Pending when a
+  bare adoption names a Standard. `protectRepository`, which still reads
+  "names a Standard" as "has checks", would put the Standard's rule on
+  main before such a run, and under it the person could no longer merge
+  the pull request. So `runInputs`, the door to every run on the
+  Container's repository, a triage's, a judge's or a later round's as the
+  first one's, asks `standardNotOnMain` first, protects nothing and waits.
+  A plan run never reaches it and needs no wait: its sandbox is built on
+  the Brief's repository and protects nothing.
+- **They are woken when the Standard is recorded.** Recording it changes
+  no phase, and the Task's and the Crew's watch of their Container passed
+  phase changes only, so they went on at their timed recheck, up to ten
+  minutes while the host's deliveries arrive. Their watch now passes
+  `status.standard` going from unset to set too
+  (`containerPhaseOrStandardRecorded`); the Project's roll-up keeps
+  `containerPhaseChanges`.
+- **A Standard fits the Frameworks it lists, at an adoption as at
+  creation.** A `standardRef` can be set on a Ready Container, where the
+  check before the scaffold (`model.CheckStandard`) never runs again, so a
+  bare adoption with no `frameworkRef` got the pull request of a Standard
+  written for one Framework. The pass that starts the adoption now asks
+  the same rule (`standardFits`), every pass until the Standard is
+  recorded: `StandardUpdated=False` with the reason and message
+  `ChoicesValid` has at creation, `UnsupportedFramework`, on a Container
+  that stays `Ready`, since losing Ready would adopt it again. Nothing of
+  the adoption is read or done meanwhile: no pull request opens, one
+  already open (the Standard's list or the `frameworkRef` changed under
+  it) stays as it is and is read again once the Standard fits, and no
+  agent works there. A bare adoption can hold the rule: `frameworkRef` is
+  free to set on it, renders nothing, and is what the Standard's templates
+  are written for. A Container with no Framework reads "supports only the
+  Frameworks it lists, and the Container names no frameworkRef" where the
+  message ended in an empty name.
 - **An adoption is for one Standard.** `spec.standardRef` can change, and
   two Standards of one catalog repository are pinned at the same ref, so
   ref and checks don't tell them apart: `status.standardAdoption.name`
@@ -233,7 +260,13 @@ Choices the issue left open, and why:
   closes it the same way. A status kept before the name reads as the named
   Standard's.
 - **A pull request gone from the host is a closed one:** it brings nothing
-  any more, and `GitError; retrying` had no way out.
+  any more, and `GitError; retrying` had no way out. A host that doesn't
+  answer is not: the pull request stays, `GitError`, and is read again.
+  When the Container names no Standard any more and the host refuses the
+  close, the condition stays, `GitError`, until the retry closes it. One
+  case is accepted: a token that lost its access reads the pull request
+  as gone (both hosts answer 404), so that close forgets the adoption and
+  leaves the pull request open for a person to close.
 
 Left as it is:
 

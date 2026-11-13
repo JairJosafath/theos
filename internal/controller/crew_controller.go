@@ -732,7 +732,7 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1beta1.Container{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				return crewsOf(ctx, obj.GetNamespace(), obj.GetName())
-			}), containerPhaseChanges()).
+			}), containerPhaseOrStandardRecorded()).
 		Watches(&c4v1beta1.Task{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				task, ok := obj.(*c4v1beta1.Task)

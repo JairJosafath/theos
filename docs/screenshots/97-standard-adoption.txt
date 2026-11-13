@@ -111,3 +111,27 @@ the Crew without standardNotOnMain     has the Crew start no Task, its triager's
 the model without the Standard's name  closes the pull request of a Standard the Container names no more, and plans the one it names
 no Standard: status cleared, no close  closes the pull request when the Container names no Standard any more
 a pull request not found: GitError     reads a pull request gone from the host as closed, not as a Git error for ever
+
+The re-review's fixes, 2026-11-13
+---------------------------------
+
+Three specs more in container_adopt_standard_test.go, a table case of
+TestCheckStandard and TestPhaseOrStandardRecorded. With the two fixes taken
+out (the check of the Standard's Frameworks not called, StandardUpdated
+removed whether or not the close failed, as at 52b6204), the two specs of a
+fix fail and the third, which the review asked for and no fix, passes:
+
+$ go test ./internal/controller -count=1 -run '^TestControllers$' -ginkgo.focus "holds a Standard named after the adoption|an unreachable host is not|keeps saying GitError"
+  [FAIL] Container adoption with a Standard the repository doesn't hold [It] holds a Standard named after the adoption to the Frameworks it lists, as at creation, and opens no pull request until the Container names one of them (#97)
+  [FAIL] Container adoption with a Standard the repository doesn't hold [It] keeps saying GitError while the host refuses to close the pull request of a Standard the Container names no more, and closes it at the retry (#97)
+Ran 3 of 800 Specs in 73.444 seconds
+FAIL! -- 1 Passed | 2 Failed | 0 Pending | 797 Skipped
+
+With the fixes, the three and the spec beside them that closes without an
+error:
+
+$ go test -v ./internal/controller -count=1 -run '^(TestControllers|TestPhaseOrStandardRecorded)$' -ginkgo.focus "holds a Standard named after the adoption|an unreachable host is not|keeps saying GitError|closes the pull request when the Container names no Standard"
+--- PASS: TestPhaseOrStandardRecorded (0.00s)
+Ran 4 of 800 Specs in 22.317 seconds
+SUCCESS! -- 4 Passed | 0 Failed | 0 Pending | 796 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	22.366s

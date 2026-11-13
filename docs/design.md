@@ -286,7 +286,9 @@ the same way. A person reads it like any change, pushes to it what the
 repository must keep, and merges or closes it; the operator never merges
 it, since it may replace files the repository's people wrote. Until the
 Standard is on main it isn't recorded (`status.standard` is unset, and
-`ChecksApplied` with it), main isn't protected, and no agent works there:
+`ChecksApplied` with it), main isn't protected by the Standard's checks (a
+rule a bare adoption put there for its own checks stays on the Git host),
+and no agent works there:
 a Crew starts no Task and a Task made by hand waits, `ContainerNotProtected`,
 with the condition's words. The pull request stays at the ref it was
 opened at; once it merges, an ordinary Standard update brings a newer one.

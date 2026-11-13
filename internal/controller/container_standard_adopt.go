@@ -73,6 +73,29 @@ func standardOnMain(container *c4v1beta1.Container) bool {
 	return container.Choices().Standard != "" && !awaitsStandard(container, &container.Status)
 }
 
+// standardFits holds an adoption to the rule a Container is held to before
+// its scaffold or adoption (model.CheckStandard, #97): a Standard fits only
+// the Frameworks it lists. The Container is Ready by then and stays so, and a
+// standardRef can be set on it at any time, so the answer is the condition
+// StandardUpdated, with the reason and the message ChoicesValid has at
+// creation. Nothing of the adoption is read or done until the Standard fits:
+// no pull request is opened, one that is open stays as it is, and no Standard
+// is recorded.
+func (r *ContainerReconciler) standardFits(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus, standard *c4v1beta1.Standard) bool {
+	choices := container.Choices()
+	entry := catalogEntry(model.SideStandard, standard)
+	err := model.InBundle(choices.Bundle, model.CheckStandard(choices.Framework, &entry))
+	if err == nil {
+		return true
+	}
+	r.condition(container, status, c4v1beta1.ConditionStandardUpdated, metav1.ConditionFalse,
+		c4v1beta1.ReasonUnsupportedFramework, err.Error())
+	logf.FromContext(ctx).Info("Rejected the Standard of an adopted repository", "standard", standard.Name,
+		"reason", err.Error())
+	return false
+}
+
 // adoptionInFlight is the adoption in status as the model sees it, or nil.
 func adoptionInFlight(a *c4v1beta1.StandardAdoptionStatus) *model.StandardAdoptionInFlight {
 	if a == nil {
@@ -321,6 +344,10 @@ func (u *standardUpdate) closeAdoption(ctx, gitCtx context.Context) bool {
 		pr, err := git.provider.GetPullRequest(gitCtx, repo, int(a.PullRequest))
 		switch {
 		case errors.Is(err, ports.ErrPullRequestNotFound):
+			// Gone, so nothing to close. A token that lost its access reads the
+			// same (the hosts answer 404), and the adoption is then forgotten
+			// with its pull request open: accepted, since the Container asks for
+			// it no more, the operator never merges it, and a person can close it.
 		case err != nil:
 			u.gitError(ctx, err)
 			return false
@@ -342,20 +369,22 @@ func (u *standardUpdate) closeAdoption(ctx, gitCtx context.Context) bool {
 }
 
 // dropStandardAdoption ends the adoption of a Container that names no Standard
-// any more (closeAdoption). live says whether the Container is the one on the
-// API server. Its result says when to look again: at the next recheck when the
-// Git host didn't answer, since nothing else reconciles a Container without a
-// Standard.
+// any more (closeAdoption), and removes the condition StandardUpdated, which
+// such a Container has none of. live says whether the Container is the one on
+// the API server. Its result says when to look again: at the next recheck when
+// the Git host didn't answer, since nothing else reconciles a Container
+// without a Standard; the condition then stays and says so, GitError, until
+// the retry closes the pull request.
 func (r *ContainerReconciler) dropStandardAdoption(ctx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus, live func() bool) ctrl.Result {
-	if status.StandardAdoption == nil || !live() {
-		return ctrl.Result{}
+	if status.StandardAdoption != nil && live() {
+		gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
+		defer cancel()
+		u := &standardUpdate{r: r, container: container, status: status}
+		if !u.closeAdoption(ctx, gitCtx) {
+			return ctrl.Result{RequeueAfter: r.checksRecheck()}
+		}
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
-	defer cancel()
-	u := &standardUpdate{r: r, container: container, status: status}
-	if !u.closeAdoption(ctx, gitCtx) {
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}
-	}
+	apimeta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionStandardUpdated)
 	return ctrl.Result{}
 }

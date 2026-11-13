@@ -126,6 +126,10 @@ func (r *ContainerReconciler) updateStandard(ctx context.Context, container *c4v
 		return false
 	}
 
+	if adopting && !r.standardFits(ctx, container, status, &standard) {
+		return false
+	}
+
 	if !live() {
 		return false
 	}

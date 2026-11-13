@@ -199,7 +199,8 @@ and remove `checkCommand` and `checkContexts`: a Standard brings its own
 check, and the API refuses both together. A Standard fits only the
 Frameworks it lists (`kubectl -n webshop get standards`), so the Container
 names one of those as its `frameworkRef` too; nothing is scaffolded from
-it.
+it. Until it does, the condition below says `UnsupportedFramework`, no
+pull request opens and no agent works on the repository.
 
 The Container stays `Ready`, and nothing is written to `main`. The operator
 opens **one pull request**, "Bring in the Standard *name* at *ref*", from

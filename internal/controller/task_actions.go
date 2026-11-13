@@ -396,7 +396,7 @@ type runInput struct {
 func (r *TaskReconciler) runInputs(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, role string) (*runInput, ctrl.Result, error) {
 	// #97: no run starts while the Standard's files wait in a pull request,
-	// a triage's, a plan's or a later round's either, and main doesn't get the
+	// a triage's, a judge's or a later round's either, and main doesn't get the
 	// Standard's rule, under which the person could no longer merge it.
 	if why := standardNotOnMain(container); why != "" {
 		return nil, r.wait(ctx, task, status, model.WaitForProtection(container.Name, why)), nil

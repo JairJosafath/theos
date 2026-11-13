@@ -493,6 +493,114 @@ var _ = Describe("Container adoption with a Standard the repository doesn't hold
 			"AGENTS.md": {Data: []byte(strictGuide)}, "Makefile": {Data: []byte(strictMakefile)}})
 		recordedStandard(ns)
 	})
+
+	It("holds a Standard named after the adoption to the Frameworks it lists, as at creation, and opens "+
+		"no pull request until the Container names one of them (#97)", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", ownRepository(ns))
+		mustCreate(newStandard(ns, "python-strict", "python-fastapi"), newSystem(ns, "webshop-core"),
+			createBareAdoption(ns, nil))
+		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+		// unfit holds that the Standard is refused with message, the Container
+		// still Ready and nothing opened, recorded or protected.
+		unfit := func(message string) {
+			GinkgoHelper()
+			refused := func(g Gomega) {
+				container := getContainer(g, ns)
+				g.Expect(container.Status.ObservedGeneration).To(Equal(container.Generation))
+				g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+				g.Expect(container.Status.Standard).To(BeNil())
+				g.Expect(container.Status.StandardAdoption).To(BeNil())
+				cond := standardCondition(g, container)
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonUnsupportedFramework))
+				g.Expect(cond.Message).To(Equal(message))
+				g.Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty())
+				g.Expect(gitFake.ProtectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
+			}
+			Eventually(refused).Should(Succeed())
+			Consistently(refused).WithTimeout(2 * time.Second).Should(Succeed())
+		}
+		nameFramework := func(name string) {
+			GinkgoHelper()
+			container := getContainer(Default, ns)
+			Expect(patch(container, func() { container.Spec.FrameworkRef = c4v1beta1.LocalRef{Name: name} })).To(Succeed())
+		}
+
+		By("naming the Standard on a Container that names no Framework")
+		nameStandard(ns, "python-strict")
+		unfit("python-strict supports only the Frameworks it lists, and the Container names no frameworkRef")
+
+		By("naming a Framework the Standard doesn't list")
+		nameFramework("go-cli")
+		unfit("python-strict does not support go-cli")
+
+		By("naming one it lists: the pull request opens")
+		nameFramework("python-fastapi")
+		adoption := openedAdoption(ns)
+		Expect(adoption.Paths).To(Equal([]string{"AGENTS.md", "Makefile"}))
+		Expect(gitFake.CommitCount(ns, "orders-api")).To(Equal(1), "nothing is written to main")
+	})
+
+	It("keeps the pull request while the host doesn't answer: an unreachable host is not a closed pull "+
+		"request (#97)", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", ownRepository(ns))
+		adoptWithStandard(ns)
+		adoption := openedAdoption(ns)
+
+		gitFake.FailPullReads(ns, "orders-api", int(adoption.PullRequest), 1000)
+		retrying := func(g Gomega) {
+			container := getContainer(g, ns)
+			g.Expect(standardCondition(g, container)).To(And(
+				HaveField("Reason", c4v1beta1.ReasonGitError), HaveField("Message", HaveSuffix("; retrying"))))
+			g.Expect(container.Status.Standard).To(BeNil())
+			g.Expect(container.Status.StandardAdoption).To(PointTo(And(
+				HaveField("PullRequest", adoption.PullRequest), HaveField("Stopped", ""))))
+			g.Expect(pullState(ns, adoption.PullRequest)).To(Equal("open"))
+			g.Expect(gitFake.BranchExists(ns, "orders-api", adoption.Branch)).To(BeTrue())
+		}
+		Eventually(retrying).Should(Succeed())
+		Consistently(retrying).WithTimeout(2 * time.Second).Should(Succeed())
+
+		By("answering again: the same pull request is open, and no second one")
+		gitFake.FailPullReads(ns, "orders-api", int(adoption.PullRequest), 0)
+		Expect(openedAdoption(ns)).To(And(
+			HaveField("PullRequest", adoption.PullRequest), HaveField("Branch", adoption.Branch)))
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1))
+		Expect(gitFake.CommitCount(ns, "orders-api")).To(Equal(1))
+	})
+
+	It("keeps saying GitError while the host refuses to close the pull request of a Standard the "+
+		"Container names no more, and closes it at the retry (#97)", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", ownRepository(ns))
+		adoptWithStandard(ns)
+		adoption := openedAdoption(ns)
+
+		gitFake.FailPullReads(ns, "orders-api", int(adoption.PullRequest), 1000)
+		nameStandard(ns, "")
+		retrying := func(g Gomega) {
+			container := getContainer(g, ns)
+			g.Expect(container.Status.ObservedGeneration).To(Equal(container.Generation),
+				"the pass that saw the Standard gone")
+			g.Expect(standardCondition(g, container)).To(And(
+				HaveField("Reason", c4v1beta1.ReasonGitError), HaveField("Message", HaveSuffix("; retrying"))))
+			g.Expect(container.Status.StandardAdoption).To(PointTo(HaveField("PullRequest", adoption.PullRequest)))
+			g.Expect(pullState(ns, adoption.PullRequest)).To(Equal("open"))
+		}
+		Eventually(retrying).Should(Succeed())
+		Consistently(retrying).WithTimeout(2 * time.Second).Should(Succeed())
+
+		gitFake.FailPullReads(ns, "orders-api", int(adoption.PullRequest), 0)
+		Eventually(func(g Gomega) {
+			container := getContainer(g, ns)
+			g.Expect(container.Status.StandardAdoption).To(BeNil())
+			g.Expect(condition(container.Status.Conditions, c4v1beta1.ConditionStandardUpdated)).To(BeNil())
+			g.Expect(pullState(ns, adoption.PullRequest)).To(Equal("closed"))
+			g.Expect(gitFake.BranchExists(ns, "orders-api", adoption.Branch)).To(BeFalse())
+		}).Should(Succeed())
+	})
 })
 
 // #97: no agent works on an adopted repository whose Standard isn't on main:

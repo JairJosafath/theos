@@ -949,7 +949,7 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&c4v1beta1.Task{}).
 		Owns(newSandbox()).
 		Watches(&corev1.Pod{}, podTask, podFinished()).
-		Watches(&c4v1beta1.Container{}, fromContainer, containerPhaseChanges()).
+		Watches(&c4v1beta1.Container{}, fromContainer, containerPhaseOrStandardRecorded()).
 		Watches(&c4v1beta1.Task{}, fromTask, taskPhaseChanges()).
 		Watches(&c4v1beta1.Crew{}, fromCrew, crewBudgetOrPauseChanges()).
 		Watches(&c4v1beta1.Brief{}, fromBrief, briefPauseChanges()).
