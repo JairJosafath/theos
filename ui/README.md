@@ -5,7 +5,7 @@ Milestone 6 in [the MVP plan](../docs/plans/done/mvp-v1.md): someone who has
 never used kubectl can read the story in a browser. It reads everything and,
 with actions off, changes only three things: it creates a Brief from an app
 idea, adds a follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)),
-and pauses or resumes one ([docs/plans/done/upgrade-in-place.md](../docs/plans/done/upgrade-in-place.md)).
+and pauses or resumes one or its running Tasks ([docs/plans/done/upgrade-in-place.md](../docs/plans/done/upgrade-in-place.md)).
 With actions on it takes a few more (_Actions_ below). design.md's _The UI:
 areas and object pages_ says what it shows and why.
 
@@ -195,8 +195,8 @@ rewrites the address to the area's.
 
 The UI enforces nothing; the rules live in the CRDs and the operator. It reads
 every theos kind and writes only three things: it creates a Brief, it
-appends a prompt to one, and it pauses or resumes one. Three layers keep it
-that way:
+appends a prompt to one, and it pauses or resumes one or its running Tasks.
+Three layers keep it that way:
 
 1. The browser sends GET requests to `/k8s/...` and `/k8s-watch`, plus the three
    writes ([src/k8s/briefs.ts](src/k8s/briefs.ts)).
@@ -211,8 +211,11 @@ application/json-patch+json`: a patch whose one operation is `add` at
      equivalent `add /spec/prompts`, guarded by a `test` of the
      resourceVersion it read; a Brief that changed in between is answered
      with `409 Conflict`, and the same request again goes through.
-   - the same `PATCH`, whose one operation is `add` of `true` or `false` at
-     `/spec/paused`: Pause and Resume.
+   - the same `PATCH`, an `add` of `true` or `false` at `/spec/paused`, at
+     `/spec/pauseRuns`, or both in one patch: pause or resume a Brief or its
+     running Tasks. The page sends both when it pauses the running Tasks, as the
+     CRD takes `pauseRuns` only with `paused`, and when it resumes a Brief whose
+     running Tasks are paused.
 
    A write whose `Origin` names another host is refused. Everything else is
    answered with 405 (other methods), 403 (other paths or bodies) or 415
@@ -370,7 +373,7 @@ src/k8s/watch.ts        list-then-watch: NDJSON events, reconnect with backoff, 
 src/k8s/mux.ts          many watches over one connection
 src/k8s/sources.ts      one watcher per kind, combined into a story snapshot
 src/k8s/health.ts       polls /factory/health while Work or Factory is open
-src/k8s/briefs.ts       the three writes: create a Brief, add a prompt, pause or resume; a name from the idea
+src/k8s/briefs.ts       the three writes: create a Brief, add a prompt, pause or resume it or its running Tasks; a name from the idea
 src/model/story.ts      resources -> diagram model (boxes, arrows, roll-ups)
 src/model/layout.ts     a small layered layout and edge routing
 src/model/describe.ts   plain-language wording for phases, conditions and times
