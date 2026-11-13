@@ -115,6 +115,10 @@ All four come from [docs/design.md](docs/design.md):
 - short-lived Session tokens;
 - a webhook that refuses an incompatible Container up front.
 
+Chat on Slack and requests from Linear and Jira are not among them: they are
+planned in [docs/plans/requests-and-chat.md](docs/plans/requests-and-chat.md)
+(#61), under the milestone *The open alternative to Warp's factory*.
+
 ## No project board
 
 There is no GitHub Project board. The relay keeps each issue's state in its
