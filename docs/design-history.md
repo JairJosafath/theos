@@ -986,7 +986,8 @@ follow-up prompts; a planner Agent does the rest and says what it chose.
   Anything can write it: the UI's box, kubectl or GitOps. With actions off, the UI server
   writes nothing but this: creating a Brief, appending a prompt (retiring
   planned ones when the list is full), and setting
-  `spec.paused` from the card's Pause and Resume buttons. With them on, it
+  `spec.paused`, with or without `spec.pauseRuns`, from the card's Pause and
+  Resume buttons. With them on, it
   takes the actions under *UI actions* below.
 - **A planner Agent plans each round** (the idea, then each batch of new
   prompts) as a Task with `spec.kind: Plan` owned by the Brief, in an agent
@@ -1344,7 +1345,7 @@ only when `status` carries the effective one. The plan behind it is
   together; two `dev` builds don't, and no Project reporting one yet shows
   "unknown".
 - **The writes.** With actions off, three: create a Brief, append a prompt
-  to one, and pause or resume one, each from the Brief's card or page. With
+  to one, and pause or resume one, with or without its running Tasks, each from the Brief's card or page. With
   `ui.actions.enabled`, those under *UI actions* below, each offered on the
   page of the object it changes. Nothing else: no deletes, no Secrets,
   nothing in the Git host.
