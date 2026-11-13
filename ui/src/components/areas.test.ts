@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { demoFactory, demoHealth } from '../demo/factoryFixture'
 import { demoStory } from '../demo/fixture'
 import type { ContainerWriter } from '../k8s/containers'
+import type { FactoryHealth } from '../k8s/health'
 import type { Connection } from '../k8s/sources'
 import { FixedNow, UrlContext, type SetUrl, type UrlState } from '../lib/hooks'
 import { resetPrefsForTest, STORED_KEYS, useStoredFlag } from '../lib/prefs'
@@ -254,7 +255,7 @@ describe('Story', () => {
 })
 
 describe('Factory', () => {
-  it('lays out the health cards, the node, the last hour and the agent slots as a dashboard', async () => {
+  it('lays out the health cards, the nodes, the last hour and the agent slots as a dashboard', async () => {
     const { host } = await render(
       createElement(FactoryArea, {
         data: demoFactory(NOW),
@@ -299,5 +300,34 @@ describe('Factory', () => {
     expect(charts[2]).toContain('of 32.0 GiB')
     expect(host.querySelector('#dash-node')!.textContent).toBe('Nodes')
     expect(host.querySelectorAll('.dash-node .node-usage').length).toBe(2)
+  })
+
+  // Nothing to divide by: the charts against what the nodes can allocate are
+  // left out, so no NaN reaches the page (#122).
+  it.each([
+    ['no node is listed', (health: FactoryHealth) => (health.nodes = [])],
+    [
+      'the nodes allocate nothing',
+      (health: FactoryHealth) =>
+        (health.nodes = health.nodes.map((n) => ({ ...n, cpuAllocatableMilli: 0, memoryAllocatableBytes: 0 }))),
+    ],
+  ])('hides the last hour of CPU and memory when %s, and renders no NaN (#122)', async (_, change) => {
+    const health = demoHealth(NOW)
+    change(health)
+    const { host } = await render(
+      createElement(FactoryArea, {
+        data: demoFactory(NOW),
+        connection: live,
+        health,
+        healthLoaded: true,
+        healthProblems: [],
+        onSelectTask: () => {},
+      }),
+    )
+    const titles = [...host.querySelectorAll('.dash-charts .spark figcaption span:first-child')].map(
+      (t) => t.textContent,
+    )
+    expect(titles).toEqual(['API server response'])
+    expect(host.innerHTML).not.toContain('NaN')
   })
 })
