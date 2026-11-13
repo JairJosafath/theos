@@ -1,17 +1,20 @@
 name: UI
 
-# The UI is self-contained in ui/. It runs on pull requests to main too, with
-# the same paths (hack/check-workflows.sh).
+# The UI is self-contained in ui/, but for the CRDs, which
+# ui/src/demo/limits.test.ts reads (#127). It runs on pull requests to main
+# too, with the same paths (hack/check-workflows.sh).
 on:
   push:
     branches: [main]
     paths:
       - 'ui/**'
+      - config/crd/bases/**
       - .github/workflows/ui.yml
   pull_request:
     branches: [main]
     paths:
       - 'ui/**'
+      - config/crd/bases/**
       - .github/workflows/ui.yml
   workflow_dispatch:
 
@@ -30,19 +33,19 @@ jobs:
     permissions:
       contents: read
     name: UI
-    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 20
     defaults:
       run:
         working-directory: ui
     steps:
       - name: Clone the code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
           # A self-hosted runner keeps its npm cache on a volume (make gh-runner).
@@ -57,5 +60,16 @@ jobs:
       - name: Check
         run: npm run check
 
-      - name: Build
-        run: npm run build
+      # The end-to-end tests drive the built UI in Chromium against a fake API
+      # (ui/README.md, Tests); make check leaves them out, as a device may
+      # have no Chromium (theos#31). They launch the headless shell alone.
+      # --with-deps installs its system libraries with sudo: the self-hosted
+      # runner's image has neither them nor apt's lists, which
+      # scripts/browser.mjs needs to fetch them without root. A self-hosted
+      # runner keeps the browser in ~/.cache/ms-playwright, on the caches'
+      # volume (make gh-runner), so only its first job downloads it.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium-headless-shell
+
+      - name: Build and run the end-to-end tests
+        run: npm run test:e2e

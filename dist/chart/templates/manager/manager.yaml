@@ -113,6 +113,19 @@ spec:
         {{- range .Values.global.imagePullSecrets }}
         - --shared-pull-secret={{ .name }}
         {{- end }}
+        {{- with .Values.testEnvironments.toolsImage }}
+        # A local TestEnvironment's lease pods copy theos-env in from it.
+        - --test-environment-tools-image={{ .repository }}:{{ .tag | default $.Chart.AppVersion }}
+        {{- end }}
+        {{- with .Values.testEnvironments.toolsURL }}
+        # A remote TestEnvironment's machines download theos-env from it.
+        - --test-environment-tools-url={{ tpl . $ }}
+        {{- end }}
+        {{- with .Values.testEnvironments.runnerURL }}
+        # A remote TestEnvironment's machine that runs a CI job downloads the
+        # CI runner from it.
+        - --test-environment-runner-url={{ tpl . $ }}
+        {{- end }}
         {{- if .Values.ui.enabled }}
         - --ui-service-account={{ .Release.Namespace }}/{{ include "theos.uiName" . }}
         {{- end }}
@@ -120,6 +133,13 @@ spec:
         # The homeserver of a Chat that names none (chat.homeserverURL, else
         # the in-cluster one).
         - --chat-homeserver={{ . }}
+        {{- end }}
+        {{- if .Values.gitEvents.enabled }}
+        # The receiver of the Git host's deliveries, and where each
+        # GitProvider's hook delivers: Service <release>-git-events, unless
+        # gitEvents.url says otherwise (docs/plans/done/git-events.md, decision 10).
+        - --git-events-bind-address=:{{ .Values.gitEvents.port }}
+        - --git-events-url={{ include "theos.gitEventsURL" . }}
         {{- end }}
         command:
         - /manager
@@ -155,6 +175,11 @@ spec:
         {{- if .Values.webhook.enabled }}
         - containerPort: {{ .Values.webhook.port }}
           name: webhook-server
+          protocol: TCP
+        {{- end }}
+        {{- if .Values.gitEvents.enabled }}
+        - containerPort: {{ .Values.gitEvents.port }}
+          name: git-events
           protocol: TCP
         {{- end }}
         readinessProbe:

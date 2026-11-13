@@ -1,16 +1,25 @@
 name: Release
 
-# A pushed vX.Y.Z tag publishes theos, so a device installs it without
+# A pushed vX.Y.Z tag publishes theos, so a user installs it on a cluster without
 # building anything: the operator, UI, seed, toolchain, agent and runner images to
 # ghcr.io/<owner>/theos/<name>:X.Y.Z, and the Helm chart, versioned X.Y.Z,
 # to oci://ghcr.io/<owner>/theos/charts and to a GitHub release for the tag,
-# with the theos-session binaries and their SHA256SUMS for a chart whose UI is off
-# (#1079, #1175); with the UI on, a scaffolded devcontainer downloads its
+# with hack/quickstart.sh, which installs that release in one command (#53),
+# the theos-session binaries, theos-env's for Linux and macOS, the Gitea
+# runner a remote test environment's CI machine runs, their SHA256SUMS and its keyless cosign
+# signature, SHA256SUMS.sigstore.json, for a chart whose UI is off
+# (#1079, #1175, #1706); with the UI on, a scaffolded devcontainer downloads its
 # Session client from the UI image, which carries the same files under
 # /downloads/ (#1151).
-# One job builds the images in order with the local Docker daemon, so the agent
-# and runner images build on the toolchains just built. It runs no tests:
-# releases are cut from main. The release's notes are hack/release-notes.sh's
+# A release is the one place every step of make check runs (#127): every
+# other check, on a device, on a pull request and on main, is partial, against
+# main. The first job, Full check, runs make check FORCE=1, every step
+# whatever changed and past every cache, and the Gitea integration tests;
+# nothing is built or published unless it passes. A tag whose full check
+# fails is not a release: fix main and tag the next patch.
+# Then one job builds the images in order with the local Docker daemon, so the
+# agent and runner images build on the toolchains just built. The release's
+# notes are hack/release-notes.sh's
 # draft from the pull requests merged since the previous release, the newest
 # published one below the tag (hack/previous-release.sh): a tag whose release
 # failed is not a release. The maintainer edits them on the release.
@@ -28,10 +37,76 @@ on:
 permissions: {}
 
 jobs:
+  # Every step of make check, on every package: what the partial checks since
+  # the last release could have missed shows here, before anything ships.
+  check:
+    permissions:
+      contents: read
+    name: Full check
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    # The Tests workflow's 60 minutes for the Go tests on a loaded device, and
+    # as long again for the linter on every package, the YAML, the shell tests
+    # and the UI's check, all from cold caches.
+    timeout-minutes: 120
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A tag the chart and the guide don't name is refused before the hour of
+      # checks, as Build and publish refuses it before it builds (#370).
+      - name: The tag is the version the chart and the guide name
+        run: hack/release.sh --check "$GITHUB_REF_NAME"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # The UI's check needs npm, and the Gitea integration tests install the
+      # packages they publish with the real npm and uv (#1702).
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+          # A release takes nothing from a cache an earlier run could have filled.
+          package-manager-cache: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+
+      # FORCE=1: every step, every package, past the device's caches and Go's
+      # test cache. TEST_TIMEOUT as the Tests workflow sets it (#1504).
+      - name: Run every step of make check
+        env:
+          # hack/k8s-openapi.sh lists the Kubernetes schemas through the GitHub API.
+          GITHUB_TOKEN: ${{ github.token }}
+          TEST_TIMEOUT: 60m
+        run: make check FORCE=1
+
+      # make manifests and make generate just ran: a stale committed file
+      # shows as a change here (#1689).
+      - name: Generated files are committed
+        run: make check-generated
+
+      - name: Gitea integration tests
+        run: make test-gitea
+
+      - name: Stop the local Gitea
+        if: always()
+        run: hack/gitea-local.sh stop
+
   release:
+    needs: check
     permissions:
       actions: write
       contents: write
+      # The OIDC token cosign signs SHA256SUMS with, keyless (#1706).
+      id-token: write
       packages: write
     name: Build and publish
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
@@ -39,10 +114,10 @@ jobs:
     env:
       PUBLISH: ${{ github.event_name == 'push' }}
       # What the build tags, pushed and then removed in that order.
-      IMAGES: operator ui seed base go agent-base agent-go gitea-runner-base gitea-runner-go gitea-runner-image
+      IMAGES: operator ui seed base go agent-base agent-go gitea-runner-base gitea-runner-go gitea-runner-image env-browser env-android env-godot
     steps:
       - name: Clone the code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # The whole history and its tags: the release notes list the pull
@@ -83,10 +158,13 @@ jobs:
             docker build -t "$REGISTRY/gitea-runner-$tc:$VERSION" --build-arg BASE="$REGISTRY/$tc:$VERSION" -f hack/runner/Dockerfile .
           done
           docker build -t "$REGISTRY/gitea-runner-image:$VERSION" -f hack/runner/Dockerfile.image .
+          docker build -t "$REGISTRY/env-browser:$VERSION" hack/env-browser
+          docker build -t "$REGISTRY/env-android:$VERSION" hack/env-android
+          docker build -t "$REGISTRY/env-godot:$VERSION" hack/env-godot
           docker images "$REGISTRY/*"
 
       - name: Set up Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
@@ -94,14 +172,53 @@ jobs:
       # The names are the chart's sessionBinaryURL with ${arch} filled in.
       # SHA256SUMS goes with them: the theos-session feature downloads it from next
       # to the binary and refuses a binary it doesn't match (#1175).
-      - name: Build the Session client
+      # theos-env goes with them: a remote TestEnvironment's machine downloads
+      # it, the chart's testEnvironments.toolsURL, and checks it against the
+      # same SHA256SUMS (docs/plans/done/test-environments.md, step 7); an EC2
+      # Mac's, darwin's (step 9). So does the Gitea runner one that runs a CI
+      # job downloads, testEnvironments.runnerURL (step 8): the version
+      # hack/runner/Dockerfile pins, checked against the sums pinned there
+      # before it is attached.
+      - name: Build the Session client and theos-env, and fetch the Gitea runner
         run: |
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags=-s -o "theos-session-linux-$arch" ./cmd/theos-session
+            for os in linux darwin; do
+              CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags=-s -o "theos-env-$os-$arch" ./cmd/theos-env
+            done
           done
-          sha256sum theos-session-linux-amd64 theos-session-linux-arm64 >SHA256SUMS
-          ls -l theos-session-linux-*
+          runner=$(sed -n 's/^ARG RUNNER_VERSION=//p' hack/runner/Dockerfile)
+          for arch in amd64 arm64; do
+            curl -fsSL --retry 5 --retry-all-errors -o "gitea-runner-linux-$arch" \
+              "https://gitea.com/gitea/runner/releases/download/v$runner/gitea-runner-$runner-linux-$arch"
+          done
+          printf '%s  gitea-runner-linux-amd64\n%s  gitea-runner-linux-arm64\n' \
+            "$(sed -n 's/^ARG RUNNER_SHA256=//p' hack/runner/Dockerfile)" \
+            "$(sed -n 's/^ARG RUNNER_SHA256_ARM64=//p' hack/runner/Dockerfile)" | sha256sum -c -
+          chmod 0755 gitea-runner-linux-*
+          sha256sum theos-session-linux-amd64 theos-session-linux-arm64 theos-env-linux-amd64 theos-env-linux-arm64 theos-env-darwin-amd64 theos-env-darwin-arm64 gitea-runner-linux-amd64 gitea-runner-linux-arm64 >SHA256SUMS
+          ls -l theos-session-linux-* theos-env-* gitea-runner-linux-*
           cat SHA256SUMS
+
+      # SHA256SUMS comes from the same origin as the binaries, so it guards the
+      # transport only. Signed here, keyless: cosign gets a short-lived
+      # certificate for this workflow's identity on this tag from Sigstore's
+      # Fulcio and logs the signature in Rekor, so no key is held anywhere.
+      # SHA256SUMS.sigstore.json holds the signature and its certificate; the
+      # theos-session feature verifies it when cosign is on PATH (#1706).
+      - name: Install cosign
+        if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      - name: Sign SHA256SUMS
+        if: env.PUBLISH == 'true'
+        env:
+          IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+          cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
 
       - name: Install Helm
         run: |
@@ -141,7 +258,10 @@ jobs:
           echo "The notes list what merged since ${prev:-the start of history}."
           REPO=$GITHUB_REPOSITORY hack/release-notes.sh "$GITHUB_REF_NAME" "$prev" >notes.md
           cat notes.md
-          gh release create "$GITHUB_REF_NAME" "theos-$VERSION.tgz" theos-session-linux-amd64 theos-session-linux-arm64 SHA256SUMS \
+          gh release create "$GITHUB_REF_NAME" "theos-$VERSION.tgz" theos-session-linux-amd64 theos-session-linux-arm64 \
+            theos-env-linux-amd64 theos-env-linux-arm64 theos-env-darwin-amd64 theos-env-darwin-arm64 \
+            gitea-runner-linux-amd64 gitea-runner-linux-arm64 \
+            SHA256SUMS SHA256SUMS.sigstore.json hack/quickstart.sh \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
 
       # A dispatch made with GITHUB_TOKEN starts a run, unlike its other events.

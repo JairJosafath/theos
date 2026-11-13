@@ -1,5 +1,5 @@
 // The factory's health, for GET /factory/health: its components' pods, the
-// node, live CPU and memory from metrics-server, and the agent sandboxes.
+// nodes, live CPU and memory from metrics-server, and the agent sandboxes.
 //
 // The server reads pods, nodes and metrics itself and sends the browser only a
 // summary (names, states, restarts, usage), never pod specs: those carry
@@ -338,25 +338,28 @@ export const SAMPLE_GAP_MS = 14_000
 /**
  * One point of the factory's recent history: how long the API server took to
  * answer (a stalling API server is what restarts controllers on a small
- * cluster), the node's CPU and memory, and what CI and the agents used.
+ * cluster), the cluster's CPU and memory, and what CI and the agents used.
+ *
+ * The cluster's figures are every node's, added up (#122): CI's and the
+ * agents' pods run on any node, so only the nodes' total belongs on one scale
+ * with them. A node without figures (not ready, or new to metrics-server)
+ * adds nothing; the sample has no figure only when no node has one.
  */
 export function sampleOf(health, apiMs, apiFailed) {
-  const node = health.nodes[0]
   const runner = health.components.find((c) => c.key === 'runner')
-  const sum = (pods, field) => {
-    const values = pods.map((p) => p[field]).filter((v) => v !== undefined)
-    return values.length ? values.reduce((a, b) => a + b, 0) : undefined
-  }
+  const total = (items, field) => sum(items.map((item) => item[field]))
+  const cpuMilli = total(health.nodes, 'cpuMilli')
+  const memoryBytes = total(health.nodes, 'memoryBytes')
+  const ciCpuMilli = runner ? total(runner.pods, 'cpuMilli') : undefined
+  const agentCpuMilli = total(health.agents.sandboxes, 'cpuMilli')
   return {
     at: health.generatedAt,
     apiMs: Math.round(apiMs),
     ...(apiFailed ? { apiFailed: true } : {}),
-    ...(node?.cpuMilli !== undefined ? { cpuMilli: node.cpuMilli } : {}),
-    ...(node?.memoryBytes !== undefined ? { memoryBytes: node.memoryBytes } : {}),
-    ...(runner && sum(runner.pods, 'cpuMilli') !== undefined ? { ciCpuMilli: sum(runner.pods, 'cpuMilli') } : {}),
-    ...(sum(health.agents.sandboxes, 'cpuMilli') !== undefined
-      ? { agentCpuMilli: sum(health.agents.sandboxes, 'cpuMilli') }
-      : {}),
+    ...(cpuMilli !== undefined ? { cpuMilli } : {}),
+    ...(memoryBytes !== undefined ? { memoryBytes } : {}),
+    ...(ciCpuMilli !== undefined ? { ciCpuMilli } : {}),
+    ...(agentCpuMilli !== undefined ? { agentCpuMilli } : {}),
   }
 }
 

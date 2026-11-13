@@ -1,7 +1,7 @@
 name: Test Chart
 
-# Installs the Helm chart (dist/chart) into a fresh Kind cluster, as a device
-# would: Agent Sandbox, then `helm install` with Gitea and project webshop, on
+# Installs the Helm chart (dist/chart) into a fresh Kind cluster, the way a
+# user does: Agent Sandbox, then `helm install` with Gitea and project webshop, on
 # images built here, since the code isn't published yet. Checks
 # that the seed made its organizations and webshop's credentials, the chart made
 # GitProvider webshop/gitea, the three runners registered, the manager and UI are
@@ -40,12 +40,12 @@ jobs:
       AGENT_SANDBOX: https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.4/sandbox.yaml
     steps:
       - name: Clone the code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           # A self-hosted runner keeps its Go caches on a volume (make gh-runner).
@@ -159,7 +159,7 @@ jobs:
         run: |
           kubectl -n theos-system logs deployment/theos-controller-manager --tail=100 || true
           kubectl -n gitea get events --sort-by=.lastTimestamp | tail -30 || true
-          kubectl -n gitea logs job/seed --tail=50 || true
+          kubectl -n gitea logs -l app.kubernetes.io/name=seed --tail=50 || true
           kubectl -n gitea logs deployment/gitea-runner-base --tail=30 || true
 
       - name: Delete kind cluster

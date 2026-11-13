@@ -8,7 +8,7 @@ metadata:
     {{- include "theos.uiLabels" . | nindent 4 }}
 ---
 # The same access as config/ui/rbac.yaml: reading the story, the Sessions, the
-# catalog, the factory's work and the Chats in every namespace, and for the health view
+# catalog, the factory's work, the Chats and the test environments in every namespace, and for the health view
 # nodes and their metrics, and pods and theirs where the factory runs. The
 # writes are below, by ui.actions.enabled. No status subresources, no Secrets.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -40,6 +40,8 @@ rules:
   - crews
   - briefs
   - chats
+  - benchmarks
+  - testenvironments
   verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

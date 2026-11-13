@@ -1,9 +1,66 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
+
+// #2037: a blocked note that says the agent can't see its issue is the
+// runner's fault, not a blocker; a note on what the issue waits on is not one.
+func TestIssueUnseen(t *testing.T) {
+	tests := []struct {
+		note string
+		want bool
+	}{
+		{"the issue text for cel-lens-core-106 isn't available to me, so I can't tell what to build.", true},
+		{"The issue text for cel-lens-core-106 isn’t available to me.", true},
+		{"I can't see the issue: the prompt names cel-lens-core-106 but not what it asks.", true},
+		{"I don't have access to the issue's description.", true},
+		{"The task description was not provided in this session.", true},
+		{"Issue #106 isn't available to me in this sandbox.", true},
+		{"No issue text was provided, only that I stopped with a Blocked: line.", true},
+		{"I cannot read the issue itself; only the send-back message reached me.", true},
+		{"cel-lens#10 must be merged and released first.", false},
+		{"the issue needs the engine's release, which isn't available yet.", false},
+		{"The engine's 2.0 release isn't available to me: it is not published.", false},
+		{"I can't find the issue it depends on, cel-lens#10, in the tracker.", false},
+		{"I can't access the issue tracker of the engine to check its release.", false},
+		{"needs network access to npm, which isn't provided in the sandbox.", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := IssueUnseen(tt.note); got != tt.want {
+			t.Errorf("IssueUnseen(%q) = %v, want %v", tt.note, got, tt.want)
+		}
+	}
+}
+
+// #2037: the first Task on an issue whose agent couldn't see it costs no try;
+// any more do, so a runner that never shows the issue can't loop.
+func TestTryCounter(t *testing.T) {
+	var c TryCounter
+	got := []bool{c.Costs(true, false), c.Costs(false, true), c.Costs(false, true), c.Costs(false, false)}
+	if want := []bool{false, false, true, true}; !slices.Equal(got, want) {
+		t.Errorf("Costs = %v, want %v", got, want)
+	}
+}
 
 func TestBlockedNote(t *testing.T) {
 	long := strings.Repeat("waiting on engine ", 100)
@@ -85,14 +142,53 @@ func TestClipWordsFromEnd(t *testing.T) {
 	}
 }
 
+// #72: "nothing to do" is a result an agent states with its reason; a
+// summary that only says so, with no reason, is not one.
+func TestNothingNote(t *testing.T) {
+	tests := []struct {
+		name, summary, want string
+	}{
+		{"absent", "Updated two modules and ran the tests.", ""},
+		{"empty summary", "", ""},
+		{"present", "I ran go list -m -u all.\nNothing to do: every module is at its newest version.",
+			"every module is at its newest version."},
+		{"runs to the end", "Nothing to do: the endpoint rejects empty orders already.\nTestRejectsEmpty covers it.\n",
+			"the endpoint rejects empty orders already.\nTestRejectsEmpty covers it."},
+		{"markdown emphasis", "**Nothing to do:** the lockfile is current", "the lockfile is current"},
+		{"no reason", "Nothing to do:   \n", ""},
+		{"a full stop is no reason", "Nothing to do: .", ""},
+		{"without the colon it is no note", "Nothing to do.", ""},
+		{"only at line start", "There is Nothing to do: about it.", ""},
+		{"a line with no reason is passed over for one with", "Nothing to do:\nNothing to do: all is current",
+			"all is current"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NothingNote(tt.summary); got != tt.want {
+				t.Errorf("NothingNote() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+	if got := NothingNote("Nothing to do: " + strings.Repeat("all current. ", 200)); len(got) > MaxBlockedNote {
+		t.Errorf("a long note is %d bytes, more than %d", len(got), MaxBlockedNote)
+	}
+	want := "Task `orders-api-7` found nothing to do and changed nothing:\n\n> every module is current.\n" +
+		"> go list shows none behind.\n\nIf that is wrong, reopen this issue, say what is missing, and label it " +
+		"status/ready."
+	if got := NothingComment("orders-api-7", "every module is current.\ngo list shows none behind."); got != want {
+		t.Errorf("NothingComment() =\n%q\nwant\n%q", got, want)
+	}
+}
+
 func TestNoChangeError(t *testing.T) {
 	if got := NoChangeError(" \n "); got != NoChangeNoReason {
 		t.Errorf("empty summary: %q, want NoChangeNoReason", got)
 	}
 	got := NoChangeError("Wrote the integration test.\n\nIt can't run here:\nthe test needs xvfb-run or a display.")
-	want := `the agent made no changes and wrote no "Blocked:" line; its summary ends: ` +
+	want := `the agent made no changes and wrote no "Blocked:" or "Nothing to do:" line; its summary ends: ` +
 		`"Wrote the integration test. It can't run here: the test needs xvfb-run or a display."; ` +
-		`if the issue can't be done yet, say why in a line "Blocked: ..."`
+		`if the issue can't be done yet, say why in a line "Blocked: ..."; ` +
+		`if it needs no change, in a line "Nothing to do: ..."`
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}

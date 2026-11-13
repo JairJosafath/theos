@@ -1,7 +1,8 @@
 // The Work area: is the factory healthy, what is it doing, where does the time
 // go, and what needs a look. Across all projects; read-only. The headline
 // numbers, then a one-line Needs a look strip, then tabs (docs/plans/done/ui-shell.md,
-// step 2): Board, Crews, Releases, Time & tokens; the health and the agent
+// step 2): Board, Crews, Releases, Time & tokens (with How well it works,
+// docs/plans/done/measure-and-improve.md); the health and the agent
 // slots are the Factory area's.
 
 import { useMemo } from 'react'
@@ -17,6 +18,8 @@ import { AttentionPanel } from './factory/Attention'
 import { TaskCard } from './factory/TaskBoard'
 import { CrewsPanel } from './factory/Crews'
 import { ReleasesPanel } from './factory/Releases'
+import { MetricsPanel } from './factory/MetricsPanel'
+import { ScoresPanel } from './factory/ScoresPanel'
 import { TimePanel } from './factory/TimePanel'
 import { TokensPanel } from './factory/TokensPanel'
 import { PanelState } from './PanelState'
@@ -190,6 +193,13 @@ export function FactoryPage({ data, connection, health, healthLoaded, onSelectTa
               label: 'Time & tokens',
               panel: (
                 <div className="work-time">
+                  <MetricsPanel
+                    tasks={data.tasks}
+                    now={now}
+                    loaded={read(RESOURCES.tasks)}
+                    problems={problems(RESOURCES.tasks)}
+                  />
+                  <ScoresPanel tasks={data.tasks} loaded={read(RESOURCES.tasks)} problems={problems(RESOURCES.tasks)} />
                   <TimePanel stats={stats} />
                   <TokensPanel
                     tasks={data.tasks}

@@ -1,10 +1,19 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
+
 package v1beta1
 
 import (
@@ -139,9 +148,24 @@ type GiteaActionsSpec struct {
 	// +kubebuilder:validation:MaxItems=8
 	// +required
 	Runners []CIRunnerSpec `json:"runners"`
+
+	// publicURL is the Git host's address from outside the cluster, such as
+	// https://git.example.com: a remote TestEnvironment's machines, which run
+	// the jobs labelled env-<name> (docs/plans/done/test-environments.md, step 8),
+	// register their runners there, so it is https:// on port 443, the one
+	// port their fence lets out, at a public host. The jobs clone from the
+	// address the host gives them, its root URL, which must reach it from
+	// there too. Unset, it is url when url is such an address; the chart's
+	// in-cluster host is none, so no remote environment runs a job until it
+	// is set.
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[^/:?#@]+(:443)?([/?#].*)?$')",message="publicURL must be https:// on port 443, the one port a remote test environment's machine reaches"
+	// +optional
+	PublicURL string `json:"publicURL,omitempty"`
 }
 
 // CIRunnerSpec is one label's runners in a project's pool.
+// +kubebuilder:validation:XValidation:rule="!(has(self.goCache) && self.goCache && has(self.freshGoCache) && self.freshGoCache)",message="goCache and freshGoCache exclude each other: a label's pods mount the project's Go cache or start from a fresh one"
 type CIRunnerSpec struct {
 	// label is the job label the runners take, as the workflows' runs-on names it.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
@@ -171,14 +195,55 @@ type CIRunnerSpec struct {
 	// an image with the Go toolchain.
 	// +optional
 	GoCache bool `json:"goCache,omitempty"`
+
+	// freshGoCache gives each pod a Go build cache of its own: an emptyDir
+	// seeded from the image's warm cache, which nothing shares and the pod
+	// takes with it. For the label releases run on (go-release): a release
+	// builds signed artifacts, so it must not link a build result a pull
+	// request's job left in the project's cache. Excludes goCache. Only for
+	// an image with the Go toolchain.
+	// +optional
+	FreshGoCache bool `json:"freshGoCache,omitempty"`
+}
+
+// ConditionGitProviderEvents on a GitProvider says whether the Git host's
+// deliveries reach the operator (docs/plans/done/git-events.md, decision 8). Its
+// reasons are Disabled (the operator has no --git-events-url), Unsupported
+// (the host's adapter has no events), RegisterFailed (the hook could not be
+// registered; the message says why, in the host's words when it refused),
+// Registered (the hook was made or its URL changed, and no verified delivery
+// came since), Receiving (True: a verified delivery came after it was
+// registered) and DeliveryRefused (a delivery failed its signature after the
+// last verified one).
+const ConditionGitProviderEvents = "Events"
+
+// The reasons of the Events condition.
+const (
+	ReasonEventsDisabled       = "Disabled"
+	ReasonEventsUnsupported    = "Unsupported"
+	ReasonEventsRegisterFailed = "RegisterFailed"
+	ReasonEventsRegistered     = "Registered"
+	ReasonEventsReceiving      = "Receiving"
+	ReasonEventsRefused        = "DeliveryRefused"
+)
+
+// GitProviderStatus is what the operator last found of the Git host.
+type GitProviderStatus struct {
+	// conditions: Events, whether the host's deliveries reach the operator.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,categories=theos
+// +kubebuilder:subresource:status
 // +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=".spec.provider"
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=".spec.url"
 // +kubebuilder:printcolumn:name="Owner",type=string,JSONPath=".spec.owner"
+// +kubebuilder:printcolumn:name="Events",type=string,JSONPath=".status.conditions[?(@.type==\"Events\")].reason"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // GitProvider is where repositories are created, with credentials. Owned by the Project.
@@ -192,6 +257,10 @@ type GitProvider struct {
 	// spec defines the desired state of GitProvider
 	// +required
 	Spec GitProviderSpec `json:"spec"`
+
+	// status defines the observed state of GitProvider
+	// +optional
+	Status GitProviderStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true

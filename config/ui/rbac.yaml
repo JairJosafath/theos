@@ -7,7 +7,8 @@ metadata:
 ---
 # Read-only access to the story, the Sessions, the catalog and the factory's
 # work (Agents, Tasks, Crews), in every namespace (one Project per namespace, so
-# the project picker needs them all), the Briefs and the Chats included.
+# the project picker needs them all), the Briefs, the Chats and the test
+# environments included.
 # No status subresources, no Secrets, no verbs that write: the Brief writes
 # are their own ClusterRole below.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -39,6 +40,8 @@ rules:
   - crews
   - briefs
   - chats
+  - benchmarks
+  - testenvironments
   verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -56,7 +59,7 @@ subjects:
   name: theos-ui
   namespace: theos-ui
 ---
-# For GET /factory/health, read by server.mjs itself: the node, and its CPU
+# For GET /factory/health, read by server.mjs itself: the nodes, and their CPU
 # and memory from metrics-server. The server sends the browser only a summary
 # (names, states, restarts, usage), never pod specs, and the browser can't
 # reach these paths through /k8s. Still no Secrets, no writes.

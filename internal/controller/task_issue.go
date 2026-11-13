@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -236,6 +244,13 @@ func (r *TaskReconciler) closeIssue(ctx context.Context, provider interface {
 		}
 	}
 	comment := fmt.Sprintf("Merged in %s after %d %s.", status.PullRequestURL, status.Round, plural(int(status.Round), "round", "rounds"))
+	if a := status.Approval; a != nil {
+		// Who let it in, where the Crew's approval rules decided that (#62).
+		if note := model.ApprovalNote(approvalNeed(a), a.ApprovedBy,
+			a.ApprovedInChat, status.Review != nil); note != "" {
+			comment += " " + note
+		}
+	}
 	if status.ByHand != "" {
 		comment += "\n\n" + openBy + " accepted criteria that need a person as open; they wait in " + status.ByHand +
 			", " + model.LabelByHand + "."
@@ -278,7 +293,7 @@ func (r *TaskReconciler) fileByHand(ctx context.Context, provider ports.Issues, 
 		}
 	}
 	title, body := model.ByHandIssue(status.IssueTitle, int(task.Spec.Issue), status.PullRequestURL, task.Name,
-		by, open)
+		by, open, status.LeasedEnvironments)
 	var issue ports.Issue
 	err := r.gitCall(ctx, func(ctx context.Context) (err error) {
 		issue, err = provider.CreateIssue(ctx, repo, title, body, []string{model.LabelByHand, model.LabelNeedsHuman},
@@ -357,7 +372,7 @@ func (r *TaskReconciler) gitCall(ctx context.Context, call func(context.Context)
 
 // issueLabels are the factory's issue labels, for the Git host.
 func issueLabels() []ports.Label {
-	labels := append(model.StatusLabels(), model.UrgentLabel())
+	labels := append(model.StatusLabels(), model.UrgentLabel(), model.RiskLabel())
 	out := make([]ports.Label, 0, len(labels))
 	for _, l := range labels {
 		out = append(out, ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})

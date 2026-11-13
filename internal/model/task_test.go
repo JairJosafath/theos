@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -41,6 +57,14 @@ func TestNextTaskStep(t *testing.T) {
 			want: ActionStartImplement},
 		{name: "fails on a Container without protection", facts: TaskFacts{Phase: TaskPending, ContainerReady: true,
 			Container: "photo-editor", MaxRounds: 3}, want: ActionFail, message: "photo-editor has no Standard"},
+		{name: "waits for an adopted Container's main to be protected (#95)", facts: TaskFacts{Phase: TaskPending,
+			ContainerReady: true, Container: "photo-editor", MaxRounds: 3,
+			Unprotected: "main's head reports no check matching check*"}, want: ActionWait,
+			message: "Waiting for the main of Container photo-editor to be protected; agents work only on " +
+				"protected repositories: main's head reports no check matching check*"},
+		{name: "starts on an adopted Container whose main is protected (#95)", facts: TaskFacts{Phase: TaskPending,
+			ContainerReady: true, Container: "photo-editor", MaxRounds: 3, Protected: true},
+			want: ActionStartImplement},
 
 		{name: "restarts a lost implement sandbox", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3},
 			want: ActionStartImplement},
@@ -61,6 +85,24 @@ func TestNextTaskStep(t *testing.T) {
 		{name: "a blocked note outweighs an error", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
 			Run: done(RunResult{Blocked: "waits on the engine", Error: "boom"})},
 			want: ActionFail, message: "waits on the engine"},
+		// #72: "nothing to do" is a result. The Task ends done with the
+		// agent's reason and no reviewer; only an issue's own build takes it.
+		{name: "nothing to do ends the Task with the agent's reason (#72)", facts: TaskFacts{Phase: TaskImplementing,
+			Round: 1, MaxRounds: 3, Run: done(RunResult{Nothing: "every module is at its newest version"})},
+			want: ActionNothingToDo, feedback: "every module is at its newest version",
+			message: "The agent found the issue needs no change, and it is closed: every module is at its newest version"},
+		{name: "also in a later round, after a round that failed (#72)", facts: TaskFacts{Phase: TaskImplementing,
+			Round: 2, MaxRounds: 3, Feedback: "make check failed", Run: done(RunResult{Nothing: "it was fixed on main"})},
+			want: ActionNothingToDo, feedback: "it was fixed on main"},
+		{name: "a blocked note outweighs nothing to do (#72)", facts: TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Run: done(RunResult{Blocked: "waits on the engine", Nothing: "all current"})},
+			want: ActionFail, message: "waits on the engine"},
+		{name: "a spec never ends on nothing to do (#72)", facts: TaskFacts{Phase: TaskImplementing, Round: 1,
+			MaxRounds: 3, Spec: true, Run: done(RunResult{Nothing: "the spec is there"})},
+			want: ActionRetry, feedback: "gave no reason"},
+		{name: "nor a Standard change (#72)", facts: TaskFacts{Phase: TaskImplementing, Round: 1, MaxRounds: 3,
+			AllowedPaths: []string{"Makefile"}, Run: done(RunResult{Nothing: "the Makefile has it"})},
+			want: ActionRetry, feedback: "gave no reason"},
 		{name: "the next round says why, in short", facts: TaskFacts{Phase: TaskReviewing, Round: 1, MaxRounds: 3,
 			Run: done(RunResult{Verdict: "changes", Summary: "\nTest an empty image.\nAnd more."})},
 			want: ActionRetry, message: "(The reviewer asked for changes: Test an empty image.)"},
@@ -189,6 +231,18 @@ func TestNextTaskStep(t *testing.T) {
 				t.Errorf("Reason = %q for a run blocked %v", got.Reason, blocked)
 			}
 		})
+	}
+}
+
+// #2037: an agent whose blocked note says it can't see the issue fails its
+// Task reason ReasonIssueUnseen, which costs the issue no try once, not
+// ReasonBlocked, which waits on a blocker.
+func TestNextTaskStepIssueUnseen(t *testing.T) {
+	note := "the issue text for cel-lens-core-106 isn't available to me."
+	got := NextTaskStep(TaskFacts{Phase: TaskImplementing, Container: "photo-editor", Round: 1, MaxRounds: 3,
+		Run: RunState{Started: true, Done: true, Result: &RunResult{Blocked: note}}})
+	if got.Action != ActionFail || got.Reason != ReasonIssueUnseen || !strings.Contains(got.Message, note) {
+		t.Errorf("NextTaskStep() = %+v, want it failed %s with the note", got, ReasonIssueUnseen)
 	}
 }
 

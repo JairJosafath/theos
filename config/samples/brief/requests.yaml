@@ -1,9 +1,9 @@
 # cel-lens with its linter's releases published to GitHub, taking requests
 # from that repository's issues (docs/plans/done/brief-requests.md): an issue
-# opened by gray-lenovo or a member of team gray-org/maintainers waits under
+# opened by ada or a member of team acme/maintainers waits under
 # status.needsYou until its number is added to accepted, or to declined.
 # Needs Secret cel-lens-github, with the key token: a fine-grained token for
-# gray-lenovo/cel-lens with Contents and Issues read and write, and
+# acme/cel-lens with Contents and Issues read and write, and
 # Organization members read for the team. You create it yourself.
 # Apply with: kubectl apply -f config/samples/brief/requests.yaml
 apiVersion: theos.factory.io/v1beta1
@@ -19,12 +19,12 @@ spec:
   releases:
   - container: linter
     github:
-      repository: gray-lenovo/cel-lens
+      repository: acme/cel-lens
       tokenSecretRef:
         name: cel-lens-github
     requests:
       mode: Ask
-      authors: [gray-lenovo]
-      teams: [gray-org/maintainers]
+      authors: [ada]
+      teams: [acme/maintainers]
       accepted: [12]
       declined: [13]

@@ -1,0 +1,27 @@
+name: Feature or improvement
+description: Something theos should do, or do better
+labels: [kind/feature]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Say what you want and why. You don't need to say how to build it: designing is our job.
+  - type: textarea
+    id: want
+    attributes:
+      label: What you want
+      description: What you are trying to get done, and what stands in the way today
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters to you
+      description: Who needs it and how often; what you do instead today
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: How you would know it works
+      description: What you would see or run once it exists

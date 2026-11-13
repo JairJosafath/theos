@@ -4,8 +4,9 @@
 #   - curl has --retry N and --retry-all-errors (a cut-off transfer is not a
 #     "transient" error to plain --retry), and writes to a file (-o): a retried
 #     transfer piped to tar would send the bytes twice;
-#   - go install, go get, go mod download, setup-envtest use (without -i) and
-#     apk add run under retry, a shell function the same RUN defines;
+#   - go install, go get, go mod download, setup-envtest use (without -i),
+#     apk add and the Android SDK's sdkmanager run under retry, a shell
+#     function the same RUN defines;
 #   - apt-get update and install set Acquire::Retries;
 #   - npm ci and npm install set --fetch-retries;
 #   - wget sets --tries.
@@ -61,7 +62,7 @@ check_run() {
           ;;
       esac
       if { [ "$name" = go ] && [[ " ${words[*]} " =~ ^\ go\ (install|get|mod\ download)\  ]]; } ||
-        { [ "$name" = apk ] && [ "${words[1]:-}" = add ]; } ||
+        { [ "$name" = apk ] && [ "${words[1]:-}" = add ]; } || [ "$name" = sdkmanager ] ||
         { [ "$name" = setup-envtest ] && [ "${words[1]:-}" = use ] &&
           ! [[ " ${words[*]} " =~ [[:space:]](-i|--installed-only)[[:space:]] ]]; }; then
         if ! [[ $seg =~ ^[[:space:]]*retry[[:space:]] ]]; then

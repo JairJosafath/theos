@@ -380,7 +380,7 @@ describe('history', () => {
     )
   })
 
-  it('samples the node, CI and the agents', () => {
+  it('samples the nodes, CI and the agents', () => {
     const health = summarizeHealth({
       components: DEFAULT_COMPONENTS.filter((c) => c.key === 'runner'),
       pods: [
@@ -404,6 +404,30 @@ describe('history', () => {
       ciCpuMilli: 4000,
       agentCpuMilli: 2500,
     })
+  })
+
+  it('samples every node together, not the first one listed (#122)', () => {
+    const worker = (name) => ({ ...node, metadata: { name } })
+    const health = summarizeHealth({
+      components: [],
+      pods: [],
+      podMetrics: [],
+      nodes: [worker('worker-a'), worker('worker-b'), worker('worker-c')],
+      nodeMetrics: [
+        { metadata: { name: 'worker-a' }, usage: { cpu: '1', memory: '2Gi' } },
+        { metadata: { name: 'worker-b' }, usage: { cpu: '7500m', memory: '11Gi' } },
+        // worker-c has no figures yet: it adds nothing, and does not blank the sample.
+      ],
+      now: NOW,
+    })
+    const sample = sampleOf(health, 5, false)
+    assert.equal(sample.cpuMilli, 8500)
+    assert.equal(sample.memoryBytes, 13 * 2 ** 30)
+  })
+
+  it('samples no CPU or memory when no node has figures', () => {
+    const health = summarizeHealth({ components: [], pods: [], nodes: [node, node], now: NOW })
+    assert.deepEqual(sampleOf(health, 5, false), { at: '2026-10-01T12:00:00.000Z', apiMs: 5 })
   })
 
   it('comes with every answer and grows with time', async () => {

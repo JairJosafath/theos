@@ -98,7 +98,7 @@ fi
 # no Docker, Kind or Helm), warns when git has no committer identity, in the
 # project environment (XDG_CONFIG_HOME in .dev/, empty), with the commands
 # that set one, and still finishes (#1362). The global config says
-# useConfigOnly, as hack/relay_test.sh's #1289 case does: git would guess an
+# useConfigOnly, as the retired relay's test of #1289 did: git would guess an
 # identity from the account and the host otherwise, on some devices.
 touch "$T/main/.dev/lite"
 mkdir -p "$T/main/.dev/tools/go/bin" "$T/main/.dev/tools/node/bin" "$T/main/.dev/npm/bin" \

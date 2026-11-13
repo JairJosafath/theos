@@ -10,42 +10,57 @@ a Crew for each of its four Containers and files their first issues. Nothing
 is built from this repository;
 every image and the chart come from GHCR.
 
+In a hurry? [hack/quickstart.sh](../hack/quickstart.sh) does section 1 and
+[Without a token](#without-a-token) in one command, on a Kind cluster of its
+own, and `--down` removes it again. The rest of this guide says what it did
+and goes on from there.
+
+A Kind cluster on one machine is how theos is tested and the quickest way to
+try it; it is not what theos is for. theos runs on Kubernetes because agentic
+work is distributed work: an agent's run is a sandboxed pod, and so are a
+project's CI jobs and its local test environments, and the scheduler places
+each on any node with room. [design.md](design.md#why-kubernetes) says why,
+and which parts of the factory still assume one node (#120 to #125).
+
 You need:
 
-- a Kubernetes 1.30 or later cluster (Kind v0.23 or later) with about 4 CPUs
-  and 8 GiB of memory free for the factory and two agents (a Kind cluster on
-  your machine works), with `kubectl` and `helm` 3.8 or later pointing at it;
+- a Kubernetes 1.30 or later cluster with about 4 CPUs and 8 GiB of memory
+  free for the factory and two agents, with `kubectl` and `helm` 3.8 or later
+  pointing at it (a Kind cluster on your machine, Kind v0.23 or later, is
+  enough to try it);
 - `jq` and `curl`, for the Gitea step;
 - a Claude subscription or API account and the `claude` CLI, for the agents'
   token;
-- the GitHub CLI (`gh`), logged in, while this repository, the chart and the
-  images on GHCR are private.
+- the GitHub CLI (`gh`), logged in as an account that may read them, while
+  the chart and the images on GHCR are private. Nobody else can install a
+  release until they are public; `hack/quickstart.sh` says which it is
+  before it makes anything.
 
-The commands use the release `0.30.0`; for a later one, change `VERSION`. Run
+The commands use the release `0.32.0`; for a later one, change `VERSION`. Run
 them from a clone of this repository at that release's tag, so the sample files
-match the release (`gh` clones it while the repository is private). From the
+match the release. From the
 release after `0.3.0`, the chart brings the catalog and the Agents, pinned to
 its own template tags and agent image, and the samples make neither; `0.3.0`'s
 samples still hold their own `catalog.yaml` and `agents.yaml`.
 
 ```bash
-VERSION=0.30.0
-gh repo clone JairJosafath/theos && cd theos && git checkout "v$VERSION"
+VERSION=0.32.0
+git clone https://github.com/JairJosafath/theos && cd theos && git checkout "v$VERSION"
 ```
 
 ## What the factory trusts
 
-One install is one trust domain: run it on a device you own, for people you
+One install is one trust domain: run it on a cluster you own, for people you
 would hand the Claude token to, and never on a shared or production cluster.
 Anyone who can create a Project or a Brief in the cluster, the UI's users
 included, can have the factory run code: in an agent's sandbox, and in a CI
 job, on a runner pod of the project's own. The sandbox holds no Claude token:
 the model proxy in the release namespace adds it to the agent's requests, so
 the agent's code never sees it
-([#1075](https://github.com/JairJosafath/c4factory/issues/1075) closed that
+(c4factory #1075 closed that
 gap). What the runners still share:
 
-- **The Gitea CI runners share the node.** A project's checks run on its own
+- **The Gitea CI runners share a node.** A project's checks run on its own
   pool of single-job runner pods in its namespace, each registered to the
   project's organization for one job and replaced after it, under a
   NetworkPolicy that keeps a job to DNS, Gitea and public HTTPS (on a network
@@ -55,7 +70,7 @@ gap). What the runners still share:
   checks only. The chart's GitProviders carry that pool (a `base` and a
   `go` runner, the labels the templates' checks run on), so a fresh install
   needs nothing added for a project's checks to run. What the pods still
-  share is the node: its
+  share is a node: its
   kernel, and the cache directories on its disk, which only the kubelet's
   mounts keep apart.
 
@@ -211,9 +226,9 @@ kubectl apply -n webshop -f config/samples/webshop/brief.yaml
 
 Two parts of the webshop wait on the factory: `payments-worker` fails with
 reason `UnsupportedType` until a Framework runs a worker on Kubernetes
-([#1468](https://github.com/JairJosafath/c4factory/issues/1468)), and no
+(c4factory #1468), and no
 DeployTarget ships to a cluster yet, so the manifests stay in the
-repositories ([#1072](https://github.com/JairJosafath/c4factory/issues/1072)).
+repositories (c4factory #1072).
 
 For an app of your own, write only the idea, and the planner writes the model
 too; on `0.28.1`, whose tag has no `brief.yaml`, take this way. For a project
@@ -232,15 +247,18 @@ scaffolded devcontainer's build fetches it from there, by default
 `http://localhost:8080/downloads/theos-session-linux-${arch}` (the port-forward
 above) or `https://<ui.allowedHosts[0]>/downloads/...` behind an Ingress,
 with no GitHub login, and checks it against the `SHA256SUMS` served next to
-it. The build must reach that address: a port-forward's localhost is the
-laptop's, not a container's, so a laptop devcontainer needs the chart's
-`sessionBinaryURL` set to an address it reaches, or it starts without
-becoming a Session.
+it. The GitHub release's `SHA256SUMS` is also signed, keyless with cosign
+(`SHA256SUMS.sigstore.json`), which the feature verifies when `cosign` is on
+the devcontainer's `PATH`; the UI's `/downloads/` serves no signature, so
+from there the checksum alone decides (#1706). The build must reach that address: a port-forward's localhost is the
+machine's that runs the port-forward, not a container's, so a devcontainer
+outside the cluster needs the chart's `sessionBinaryURL` set to an address it
+reaches, or it starts without becoming a Session.
 
 Open *Briefs* in the top bar, pick project `cel-lens`, write the idea in the
 box under *Describe an app*, and create the Brief. Or, the same without the UI,
 [config/samples/brief/cel-lens.yaml](../config/samples/brief/cel-lens.yaml)
-holds the idea from [#240](https://github.com/JairJosafath/c4factory/issues/240):
+holds the idea from c4factory #240:
 
 ```bash
 kubectl apply -f config/samples/brief/cel-lens.yaml
@@ -434,7 +452,8 @@ issue `status/needs-human` with the reason in a comment; label it
 | --- | --- |
 | A pod in `ImagePullBackOff` in `theos-system` or `gitea` | The images are private and that namespace has no `ghcr` Secret, or the install lacks the `imagePullSecrets` settings. |
 | A sandbox pod in `ImagePullBackOff` in `webshop` | Secret `theos-system/ghcr` is missing, the install lacks `global.imagePullSecrets`, or namespace `webshop` lacks the label `theos.factory.io/shared-secrets=true`; `kubectl -n webshop get project webshop -o jsonpath='{.status.conditions[?(@.type=="SecretsShared")].message}'` says which. Fix it, then delete the pod. |
-| `helm install` times out | Gitea's image is still pulling; `kubectl -n gitea get pods`, then `helm upgrade` with the same settings. |
+| `helm install` times out | Gitea's image is still pulling, or the seed failed and the runners wait for its Secret `gitea-runner`; `kubectl -n gitea get pods` and `kubectl -n gitea logs -l app.kubernetes.io/name=seed` say which. Then `helm upgrade` with the same settings. |
+| GitProvider `gitea`'s `Events` condition stays `Registered`, not `Receiving`, after a Task's first push | Gitea's deliveries don't reach the operator, which keeps polling, so the factory works, only slower to react. With the release's Gitea, `kubectl -n gitea get configmap gitea-env -o jsonpath='{.data.GITEA__webhook__ALLOWED_HOST_LIST}'` must print the host of the manager's `--git-events-url`. A Gitea of your own needs `gitEvents.url`, its own allowed host list and `gitEvents.from` ([the chart's README](../dist/chart/README.md#git-events)). |
 | Container `orders-cli` not `Ready` | `kubectl -n webshop describe container orders-cli`: the condition's message says which template or GitProvider is missing. |
 | The issue is labelled `status/needs-human` before any Task | The Crew rejected it and said why in a comment, such as a missing checklist; fix the body and label it `status/ready` again. |
 | The Crew stays `Waiting` | `kubectl -n webshop get crew orders-cli -o yaml`: `status.conditions` says what it waits for, such as the Container. |
@@ -453,7 +472,7 @@ same tag, notes and files, give the Crew that repository and a token for it.
 
 > The Crew's `publishReleases` is deprecated: a `github` DeployTarget does the
 > same and more (*Publish a service on GitHub* below). It keeps working in
-> `v1alpha1` and `v1beta1`; [docs/design.md](design.md#publishing-a-release) says how to
+> `v1beta1`; [docs/design.md](design.md#publishing-a-release) says how to
 > move over, and the Crew's page in the UI links it.
 The factory only adds releases there, and, when you ask for the app's source
 too, one commit per release inside the folder you name: it never touches
@@ -742,25 +761,26 @@ message. Nothing is written to the repository at deploy; a rollback pins
 `version` in the entry.
 
 The cluster's nodes pull the image from the registry the Container's Git
-provider serves. In the Kind test environment that is the Gitea in the
+provider serves. In the Kind test rig that is the Gitea in the
 cluster, which the node can't resolve by its Service name, so `make cluster`
 maps it for containerd (`hack/kind.sh registry-hosts`) to the Service's fixed
-ClusterIP, over plain HTTP. That is the test environment's shortcut: a real
-cluster pulls from a registry with a real name and TLS, and the organization
-is public, so the pull and the clone need no credential.
+ClusterIP, over plain HTTP. That is the test rig's shortcut: a real
+cluster pulls from a registry with a real name and TLS (#121), and the
+organization is public, so the pull and the clone need no credential.
 
 ## Release a Brief's app
 
 A Brief's app is released when its plan says so: the planner names the
 Containers that ship releases in `plan/releases.yaml`, and the Crew the Brief
 made for each then tags and prepares releases (`tagReleases` and
-`prepareReleases`). Each round files that Container's issues in a release
+`prepareReleases`), once a day by default (*How often a Brief's apps release*,
+below). With `every: Release`, each round files that Container's issues in a release
 milestone of its own, the next minor version (`v0.1.0`, then `v0.2.0`, ...),
 due a week later, so once the round's issues are merged the Crew prepares the
 release (version files and a changelog), tags it and its release run makes the
 Gitea release. Nothing on the Crew needs editing by hand.
 
-The prepare step waits for the Tasks at work to end, so the changelog lists
+With `every: Release`, the prepare step waits for the Tasks at work to end, so the changelog lists
 what the tag carries. Until they do, the Crew's `Released` condition is
 `False`, reason `PrepareWaitsForTasks`, and the Crew's message adds "N ready
 issues wait for a release to be prepared": it starts no new ready issue but an
@@ -817,6 +837,38 @@ kubectl -n cel-lens get brief cel-lens -o jsonpath='{range .status.apps[*]}{.con
 
 Why a release run or a publish failed is as in *Publish releases to GitHub*,
 on the Crew named after the Container.
+
+### How often a Brief's apps release
+
+A Brief's apps release once a day by default, at 18:00 UTC: every round,
+fixes and features alike, files a released app's issues in the release in
+progress, and at the cut the Crew ships what is merged by then and moves the
+rest to the next release. A day of fixes alone goes out as the next patch
+(`v0.14.1` after `v0.14.0`). Agents keep starting and merging Tasks all day;
+only while the cut release's prepare issue runs does a Task ready to merge
+wait (`WaitingForRelease`), so the changelog holds all the tag carries.
+Choose your own in `spec.releaseCadence`, which the Brief writes onto the
+Crews it made:
+
+```yaml
+spec:
+  releaseCadence:
+    every: Day                 # Day, Week, or Release: each release as soon as it is done
+    at: "09:00"                # HH:MM, 24-hour; default 18:00
+    timeZone: Europe/Amsterdam # an IANA name; default UTC
+    # weekday: Monday          # only with every: Week; default Friday
+```
+
+`every: Release` keeps a release per round, as before this setting: fixes in
+the patch release right after the release in progress, other work in the
+next minor. A Brief made before it reads `every: Day`, so set `Release` to
+keep that. Something that can't wait, such as a fix of a crash users hit in
+the latest release, ships at once: ask for it in a prompt ("ship the login
+fix today") and the planner marks it, or add the `release/now` label to the
+issue in Gitea yourself; once merged, its release goes out with the day's
+work so far. The Brief's app line and `status.apps[].nextRelease` say what
+the next release holds and when it goes out; a time zone the operator can't
+load stops the Crews (`Ready=False`, `InvalidTimeZone`).
 
 ### Take requests from its GitHub issues
 
@@ -895,6 +947,148 @@ kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type
 
 Releases still publish while requests can't be read.
 
+## Start small: let the factory merge only what you are sure of
+
+Out of the box a Crew merges every change its checks and its reviewer pass.
+On a repository that matters you may not want that on the first day. Give
+the Crew `approval` rules, and it merges what you are sure of and holds the
+rest for you:
+
+```yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: orders-cli
+spec:
+  containerRef: {name: orders-cli}
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  approval:
+    - paths: ["docs/", "*.md"]
+      require: None              # documentation merges once CI passes
+    - require: Person            # everything else waits for you
+```
+
+Each rule says what it `require`s: `Person` (you approve the pull request),
+`Reviewer` (the reviewer Agent's approval merges it, which is what happens
+without rules) or `None` (CI alone; no reviewer runs). And it says what it is
+for:
+
+- `paths`: a file, a folder ending in `/`, or a pattern with `*` (`*.md`).
+- `labels`: the issue has one of these labels.
+- `changedLinesOver`: the pull request adds and deletes more lines than this.
+
+**Each changed file takes the first rule that matches it, and the change
+needs the strictest of what its files need.** With the rules above, a pull
+request that changes `docs/usage.md` merges on CI; one that changes
+`docs/usage.md` and `main.go` waits for you, because `main.go` falls to the
+second rule. A rule can only loosen the files it names, so you can't let
+something through by accident.
+
+A change that waits for you has passed CI and the reviewer (and the
+verifier, when the Crew has one); their approvals are on the pull request.
+You find it under *Needs you* in the UI, and in the Task:
+
+```console
+$ kubectl -n webshop get task orders-cli-7 -o jsonpath='{.status.approval.reason}'
+approval rule 2 (every change) asks for a person
+```
+
+On the Git host, **approve** the pull request and the Crew merges it;
+**request changes** and the implementer gets another round with your words;
+close it and the Task ends. With a Chat, the change has a thread in its
+`reviews` room: say `approve` there, or `changes: <what to change>`. While it waits it holds nothing up: the Crew
+goes on with the next issue.
+
+Widen as you gain trust. A common second step is the other way round, with
+the Crew merging by itself except where it hurts:
+
+```yaml
+  approval:
+    - paths: ["migrations/", "internal/auth/"]
+      require: Person
+    - labels: ["risk/high"]
+      require: Person
+    - changedLinesOver: 400
+      require: Person
+    - paths: ["docs/", "*.md"]
+      require: None
+```
+
+`risk/high` is one of the factory's own labels. A Crew with a triager has it
+put on an issue whose change, done wrong, would be costly or hard to undo (a
+data migration, who may sign in, money), and you can put it on any issue
+yourself. It does nothing until a rule names it.
+
+The reviewer can ask for you too. When it approves a change that no rule
+holds and finds it high-risk all the same, the change waits for you with the
+reviewer's reason, as if a rule had asked. It never works the other way: no
+agent lets a change past a rule of yours. A Crew with no `approval` at all
+merges on its reviewer's word, as before.
+
+[config/samples/first-app/crew-approval.yaml](../config/samples/first-app/crew-approval.yaml)
+is a Crew with such rules. Changing the rules takes effect at once, also for
+changes under way: take a rule away and what waited for it merges. Specs have
+their own setting, `specApproval`, and a Standard change is always reviewed.
+
+## Work on a timer
+
+A Crew can start work from the clock: update the dependencies every Monday,
+look for flaky tests every night, check each month that the README still
+matches the code. Give it `schedules`, each a name, a five-field cron
+expression, a time zone and the goal in plain words:
+
+```yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: orders-cli
+spec:
+  containerRef: {name: orders-cli}
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  schedules:
+    - name: dependencies
+      cron: "0 6 * * 1"            # Mondays at 06:00
+      timeZone: Europe/Amsterdam
+      goal: >-
+        Update the dependencies that have a new minor or patch version. One
+        pull request. Say what you updated, and what you left and why.
+```
+
+[config/samples/first-app/crew-schedule.yaml](../config/samples/first-app/crew-schedule.yaml)
+is that Crew. When a schedule comes due, the Crew files an issue in the
+repository, `dependencies, 2026-11-09`, labelled `kind/schedule` and
+`status/ready`, and works it like any other: a Task, CI, the reviewer, a
+merge. A week with nothing to update is no failure: the agent says
+`Nothing to do:` and why, and the Crew closes the issue with those words,
+with no pull request and nothing for you to look at.
+
+- **One at a time.** While the issue a schedule filed is open, its next time
+  is passed over. A schedule that is slower than its interval never piles up.
+- **Nothing is made up for.** A new schedule waits for its next time, and
+  after an outage one issue is filed, not one per time missed.
+- **Paused means paused.** A paused Crew files nothing.
+- **Run one now.** *Run now* beside a schedule on the Crew's page files its
+  issue at once; so does
+  `kubectl annotate crew orders-cli theos.factory.io/run-schedule=dependencies`.
+  The same two rules hold: while the schedule's last issue is open, or the
+  Crew is paused, the run waits and the page says which.
+- **Take one your Standard proposes.** A Standard can propose schedules
+  (`spec.schedules`, such as its language's weekly dependency update). None
+  runs by itself. The Crew's page lists the ones the Crew doesn't have; with
+  the UI's actions on, type the time zone and press *Take*, and the Crew has
+  it as its own, to change like any other. For a name the Crew already uses,
+  the page shows where the Crew's schedule differs from the proposal.
+- **Where it stands:** `kubectl get crew orders-cli -o jsonpath='{.status.schedules}'`
+  shows each schedule's next time and the last issue it filed, and the
+  `Scheduled` condition says why a schedule can't be used: `InvalidSchedule`
+  for a cron expression or a time zone the operator can't read.
+
+The cron fields are minute, hour, day of month, month and day of week (0 or 7
+is Sunday): numbers, ranges (`1-5`), steps (`*/15`) and lists (`8,17`).
+Names such as `MON` and macros such as `@daily` are refused.
+
 ## When CI runs the full check
 
 Each Container chooses when its CI runs the app's full `make check`, in
@@ -958,6 +1152,220 @@ hand-edited `.gitea/workflows/check.yaml`. No pull request opens; the
 Container's `StandardUpdated` and `ChecksApplied` are False, reason
 `ChecksLeftOut`, naming the file, and CI keeps its mode until the Container's
 checks or the Standard's `ref` change again.
+
+## Give agents a browser
+
+An agent's sandbox has the repository's toolchain and nothing else: no
+browser's system libraries, no display, no emulator. A test or a picture
+script that needs one runs in a **test environment**, a place with those
+tools that the factory leases to the run that needs it
+([plans/done/test-environments.md](plans/done/test-environments.md)). The chart makes
+one in each project, `browser`: Playwright's Chromium, Firefox and WebKit,
+and `xvfb-run` for headed programs such as VS Code or an Electron app.
+
+```bash
+kubectl -n webshop get testenvironments
+# NAME      MAX   READY   REASON   AGE
+# browser   2     True    Ready    3m
+```
+
+An issue asks for it with the label `env/browser`. The planner and the
+triager set it where an issue's criteria need a browser, instead of handing
+the work to a person as `kind/by-hand`; you can set it yourself on the Git
+host. Each implementer's and verifier's run of that issue leases a pod of
+its own, fenced like the sandbox, and runs commands there:
+
+```bash
+theos-env run browser -- npx playwright test
+theos-env run browser -- xvfb-run -a node scripts/pictures.mjs
+```
+
+`theos-env` sends the working tree, runs the command in the same folder
+there, shows its output and exits with its code, and writes the files the
+command made, such as the pictures, back into the sandbox, where the agent
+commits them. An issue that needs an environment the project lacks waits,
+`WaitingForEnvironment`, at no cost, until you add one. A Standard or a
+Framework can list environments in `spec.testEnvironments` for all its
+Containers' runs; one the project lacks shows on the Container as
+`TestEnvironments` False.
+
+CI can run the same checks on it. Give the TestEnvironment a pool and have
+the workflow name its label:
+
+```bash
+kubectl -n webshop patch testenvironment browser --type merge -p '{"spec":{"ci":{"size":1}}}'
+```
+
+```yaml
+jobs:
+  pictures:
+    runs-on: env-browser
+```
+
+`limits.maxLeases` (2) caps the leases at once, and `limits.maxLeaseMinutes`
+(180) how long one lasts. Turn the chart's off with
+`testEnvironments.browser.enabled=false`; another environment is a
+TestEnvironment of your own, on an image with its tools
+(`config/samples/webshop/testenvironment.yaml`). A device on a node comes
+through the cluster's device plugin: the release's `env-android` image runs
+an Android emulator on KVM (`devices.kubevirt.io/kvm`, in
+`testenvironment-android.yaml`; a run boots it with `theos-env run android
+-- android-emulator start`), and `env-godot` runs Godot on an NVIDIA GPU
+(`nvidia.com/gpu` under RuntimeClass `nvidia`, in
+`testenvironment-godot.yaml`). `local.devices`, `runtimeClassName`,
+`nodeSelector` and `tolerations` are the cluster's own names. `kind/by-hand`
+stays for what no environment has: an account, a purchase, a person's own
+device.
+
+### Lease a GPU machine on AWS
+
+A tool no cluster node has, such as a GPU for a game engine, comes from an
+EC2 machine in your AWS account: a TestEnvironment with the `aws` member
+(`config/samples/webshop/testenvironment-gpu.yaml`) leases one machine per
+run, from an AMI with the tools, in a subnet that routes to the internet.
+The machine gets no instance role and no SSH key, a security group the
+operator makes in the subnet's VPC (`theos-env-<namespace>-<name>-<uid>`:
+HTTPS in, where `theos-env` serves, and only DNS and public HTTPS out), and
+its metadata service turned off before a run gets it. The run reaches it
+over HTTPS with its certificate pinned, as it reaches a local one, and the
+operator terminates it when the run ends; it shuts itself down, which
+terminates it, at `limits.maxLeaseMinutes`.
+
+Its credential is a Secret only the operator reads, with the keys a
+`cloudFormation` DeployTarget's has:
+
+```bash
+kubectl -n webshop create secret generic gpu-aws \
+  --from-literal=accessKeyId=... --from-literal=secretAccessKey=...
+kubectl -n webshop apply -f config/samples/webshop/testenvironment-gpu.yaml
+kubectl -n webshop get testenvironment gpu \
+  -o jsonpath='{.status.conditions[?(@.type=="CredentialsValid")]}{"\n"}'
+```
+
+The key needs `ec2:RunInstances`, `ec2:CreateTags`, `ec2:DescribeInstances`,
+`ec2:TerminateInstances`, `ec2:ModifyInstanceMetadataOptions`,
+`ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`,
+`ec2:CreateSecurityGroup`, `ec2:DeleteSecurityGroup`,
+`ec2:AuthorizeSecurityGroupIngress`, `ec2:RevokeSecurityGroupIngress`,
+`ec2:AuthorizeSecurityGroupEgress`, `ec2:RevokeSecurityGroupEgress` and
+`pricing:GetProducts`, and no `iam:PassRole`: the machines get no role.
+`CredentialsValid` is False, and a run that needs the environment waits
+(`WaitingForEnvironment`, `CredentialRefused`), while the Secret is missing,
+lacks a key, or holds a key AWS refuses or of another account than
+`aws.account`.
+
+Each lease costs the instance type's on-demand Linux price, which the
+operator reads from the AWS Price List, for the time it is held (a minute
+at least); the TestEnvironment's status shows what today's leases cost.
+`limits.budgetUSDPerDay` is required: past it no lease starts that UTC day
+(`OverBudget`, a Needs-you item) and the leases held finish their run.
+
+The machine downloads `theos-env` from the chart's
+`testEnvironments.toolsURL`, the binaries attached to the release on GitHub,
+and checks it against the `SHA256SUMS` next to it; a subnet that can't reach
+GitHub needs an address of your own there. The AMI needs a Linux with
+`curl`, `sha256sum` and cloud-init. Deleting the TestEnvironment terminates
+its machines and deletes its security group.
+
+### Lease a Mac on AWS
+
+macOS, for an iOS app's tests in the Simulator, comes from an EC2 Mac: the
+same `aws` member with a Mac instance type, such as `mac2.metal`, and an EC2
+macOS AMI with Xcode (`config/samples/webshop/testenvironment-ios.yaml`). A
+Mac runs on a dedicated host, which EC2 bills for 24 hours at least from its
+allocation and scrubs after each machine, so the operator keeps its hosts:
+it allocates one in the subnet's zone when every host it keeps is busy,
+places each lease's machine on a free one, and keeps each for
+`aws.mac.keepHostHours` from its allocation (24 by default, at least 24),
+then releases it once no machine is on it. A lease waits while the host it
+would take is scrubbed (about an hour) rather than allocating another for a
+day more.
+
+The lease whose machine is the first on a host counts the host's on-demand
+price for `keepHostHours` against `limits.budgetUSDPerDay` at once (a `mac2`
+host's 24 hours are about 16 US dollars), so the budget must cover them; a
+lease on a host kept costs nothing until the host's kept time is over. The
+key needs `ec2:AllocateHosts`, `ec2:DescribeHosts` and `ec2:ReleaseHosts`
+beside the calls above. The machine downloads `theos-env`'s darwin build,
+so `testEnvironments.toolsURL` must name `${os}`, as its default does.
+Deleting the TestEnvironment releases its hosts, which EC2 refuses within a
+host's 24 hours: the TestEnvironment stays, terminating, until they are
+released, a day at most.
+
+### Run an app's tests on real phones
+
+An Android or iOS app's tests on real phones come from AWS Device Farm: a
+TestEnvironment with the `deviceFarm` member names a Device Farm project and
+a device pool in `us-west-2`, Device Farm's one region
+(`config/samples/webshop/testenvironment-devices.yaml`). It runs test
+packages rather than commands: Espresso or UI Automator instrumentation
+tests (`--type instrumentation`, an `.apk` and its test `.apk`), XCTest
+(`xctest`, an `.ipa` and a `.zip`) or XCUITest (`xctest-ui`, two `.ipa`s).
+A run whose issue is labelled `env/devices` builds the app and its tests,
+commits what they were built from, and runs:
+
+```bash
+theos-env test devices --type instrumentation \
+  --app app/build/outputs/apk/debug/app-debug.apk \
+  --tests app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+```
+
+The run never holds the credential and can't reach the operator, so the
+request goes over the Git host: `theos-env test` pushes it, signed with the
+lease's token, to the lease's branch `theos-env/<lease>`. The operator reads
+it on its poll, runs it on the pool's devices, pushes the report, each
+device's result, the tests that didn't pass and their screenshots and logs
+back to the branch, which `theos-env test` writes into `test-runs/devices/`
+for the run to commit, and comments the outcome on the Task's pull request.
+The TestEnvironment's status lists each run (`status.testRuns`). The branch
+is deleted once the lease is returned; no CI runs on it.
+
+A run costs its metered device minutes, at Device Farm's list price of 0.17
+US dollars a minute, against the required `limits.budgetUSDPerDay`; past it
+a request is answered with nothing run. The credential is a Secret with an
+`aws` member's keys, read by the operator alone; its key needs
+`devicefarm:GetDevicePool`, `devicefarm:ListTagsForResource`,
+`devicefarm:TagResource`, `devicefarm:UntagResource`,
+`devicefarm:CreateUpload`, `devicefarm:GetUpload`,
+`devicefarm:ListUploads`, `devicefarm:DeleteUpload`,
+`devicefarm:ScheduleRun`, `devicefarm:ListRuns`, `devicefarm:StopRun`,
+`devicefarm:ListJobs`, `devicefarm:ListUniqueProblems` and
+`devicefarm:ListArtifacts`. A lease is a tag on the project, so a project
+takes 50 leases at most, of every environment that names it.
+
+#### Run CI jobs on it
+
+With `ci: {}` (as the sample has it), the environment runs the project's CI
+jobs that name `runs-on: env-gpu` too: for each such job that waits, the
+operator registers a Gitea runner for that one job to the GitProvider's
+organization and leases a machine that runs it, within `limits.maxLeases`
+and the day's budget, which it shares with the agents' runs. The machine
+shuts down, which terminates it, when its job ends, and the operator deletes
+its runner. The organization's registration token never leaves the
+operator: the machine gets the runner's own credential, which takes that
+one job.
+
+The machines reach Gitea from the internet, so the GitProvider's
+`ci.giteaActions.publicURL` gives Gitea's public address, `https://` on port
+443, the one port their fence lets out; the chart's in-cluster Gitea has
+none, so remote CI is off until you set it:
+
+```bash
+kubectl -n webshop patch gitprovider gitea --type merge \
+  -p '{"spec":{"ci":{"giteaActions":{"publicURL":"https://git.example.com"}}}}'
+kubectl -n webshop get testenvironment gpu \
+  -o jsonpath='{.status.conditions[?(@.type=="CI")]}{"\n"}'
+```
+
+Gitea's own `ROOT_URL` must reach it from there too: the jobs clone from
+it. The machine downloads the runner from the chart's
+`testEnvironments.runnerURL`, the build of the runner image's version
+attached to the release, checked against the same `SHA256SUMS`; the AMI
+needs what the jobs' steps run on the machine, such as `git` and `node` for
+`actions/checkout`. The `CI` condition says `Serving` once jobs run there,
+and why not otherwise: `NoPublicAddress`, `LabelClash` (the GitProvider's
+`ci` block names `env-gpu` itself), `Unsupported` (no `runnerURL`), or
+`OverBudget`.
 
 ## What an app promises: operations
 
@@ -1023,7 +1431,7 @@ wait for a quiet moment. Use the new `VERSION` and the same values as the
 install (`--reuse-values` keeps them):
 
 ```bash
-VERSION=0.30.0
+VERSION=0.32.0
 helm upgrade theos oci://ghcr.io/jairjosafath/theos/charts/theos --version "$VERSION" \
   -n theos-system --reuse-values --wait --timeout 10m
 ```
@@ -1061,14 +1469,11 @@ README](../dist/chart/README.md#values)), or turn `agents.enabled` or
 `catalog.enabled` off and keep your own. An object the chart stops rendering
 stays until you delete it.
 
-**Your objects keep working.** Write them at `theos.factory.io/v1beta1`. An
-object at `v1alpha1` still works: the version is deprecated, the API server
-warns on every request at it (kubectl prints the warning), and a release 90
-or more days after v0.30.0 may drop it (#1963). Within a served
-version a release never removes, renames or retypes a field, never adds a
-required one and never tightens a rule so that an object you applied before
-is refused after; a change that must break waits for a new version that
-converts your objects. See [Compatibility](design.md#compatibility).
+**Your objects keep working.** Write them at `theos.factory.io/v1beta1`, the
+one version served. Within a served version a release never removes, renames
+or retypes a field, never adds a required one and never tightens a rule so
+that an object you applied before is refused after; a change that must break
+waits for a new version that converts your objects. See [Compatibility](design.md#compatibility).
 
 **A quiet moment anyway.** Pause a Brief, and with it every Crew it made, in
 one step: the Pause button on its card in the UI sets its `spec.paused` to
@@ -1155,6 +1560,8 @@ restart of the UI, or the ID token's expiry, signs everyone out.
 
 ## Next
 
+- A repository you already have: [adopt.md](adopt.md) puts a Crew on it as
+  it is, with its own check command and CI.
 - Your own project: add it to `gitea.projects` and `helm upgrade` with the
   same values ([Upgrading](#upgrading)).
 - [docs/design.md](design.md) explains the model, the catalog, Crews and

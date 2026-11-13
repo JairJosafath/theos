@@ -17,7 +17,9 @@ import { CrewPage } from './CrewPage'
 import { ProjectPage, RelationshipPage, SessionPage, SystemPage } from './ModelPages'
 import { ReadProblems } from '../Status'
 import { StandardActions } from './StandardActions'
+import { BenchmarkPage } from './BenchmarkPage'
 import { TaskPage } from './TaskPage'
+import { TestEnvironmentPage } from './TestEnvironmentPages'
 import '../objects.css'
 
 /** Where each kind's objects are in the story data, and the plural its read is reported under. */
@@ -37,6 +39,8 @@ const WHERE: Record<LifecycleKind, { list: (d: StoryData) => K8sObject[]; resour
   Domain: { list: (d) => d.domains, resource: RESOURCES.domains },
   GitProvider: { list: (d) => d.gitProviders, resource: RESOURCES.gitProviders },
   DeployTarget: { list: (d) => d.deployTargets, resource: RESOURCES.deployTargets },
+  Benchmark: { list: (d) => d.benchmarks, resource: RESOURCES.benchmarks },
+  TestEnvironment: { list: (d) => d.testEnvironments, resource: RESOURCES.testEnvironments },
 }
 
 export function ObjectPage({
@@ -129,6 +133,7 @@ function pageFor(
             agents={data.agents}
             tasks={data.tasks}
             containers={data.containers}
+            standards={data.standards}
             briefs={data.briefs}
             writer={crewWriter}
             briefWriter={writer}
@@ -138,7 +143,7 @@ function pageFor(
     }
     case 'Task': {
       const task = named(data.tasks)
-      return task && <TaskPage task={task} agents={data.agents} />
+      return task && <TaskPage task={task} agents={data.agents} tasks={data.tasks} />
     }
     case 'Project': {
       const project = data.project?.metadata.name === name ? data.project : undefined
@@ -194,6 +199,14 @@ function pageFor(
     case 'DeployTarget': {
       const target = named(data.deployTargets)
       return target && <DeployTargetPage target={target} containers={data.containers} />
+    }
+    case 'Benchmark': {
+      const bench = named(data.benchmarks)
+      return bench && <BenchmarkPage bench={bench} tasks={data.tasks} />
+    }
+    case 'TestEnvironment': {
+      const env = named(data.testEnvironments)
+      return env && <TestEnvironmentPage env={env} />
     }
   }
 }

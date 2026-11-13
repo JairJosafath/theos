@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -33,7 +49,50 @@ const (
 	FullCheckWait  = "Wait"
 	FullCheckFile  = "File"
 	FullCheckLeave = "Leave"
+	// FullCheckRerun: run the check's failed runs again, as they were cut off.
+	FullCheckRerun = "Rerun"
 )
+
+// MaxFullCheckReruns is how often a release's full check that was cut off at
+// a commit runs again before the Crew files its issue (#2028): a runner's
+// time limit or a lost runner is the runner's fault, not the release's, but
+// a check that is always cut off needs a person.
+const MaxFullCheckReruns = 1
+
+// FullCheckJob is a job of a failed full check run, as the Crew read it: how
+// it ended, and its log, or NoLog when the CI keeps none.
+type FullCheckJob struct {
+	Conclusion string
+	NoLog      bool
+	Log        string
+}
+
+// FullCheckCutOff reports whether a failed full check run was cut off rather
+// than failed by the release's code (#2028): it ended cancelled, as the
+// runner's time limit or a runner told to stop leaves it (a person's cancel
+// reads the same and costs one re-run), or a job of it failed because its
+// runner went away (RunnerAbandoned): no log, or one that stops before the
+// runner said how the job ended.
+func FullCheckCutOff(run ReleaseRun, jobs []FullCheckJob) bool {
+	if run.Conclusion == checkCancelled {
+		return true
+	}
+	return slices.ContainsFunc(jobs, func(j FullCheckJob) bool {
+		return j.Conclusion != checkSuccess && j.Conclusion != checkSkipped &&
+			RunnerAbandoned(j.Conclusion == checkCancelled, j.NoLog, j.Log)
+	})
+}
+
+// FullCheckFailure is what a Crew does about a release's failed full check
+// that ran again reruns times at its commit: a check cut off runs again up to
+// MaxFullCheckReruns times; any other failure, or one cut off again, files
+// its issue.
+func FullCheckFailure(cutOff bool, reruns int) string {
+	if cutOff && reruns < MaxFullCheckReruns {
+		return FullCheckRerun
+	}
+	return FullCheckFile
+}
 
 // FullCheckGate decides what a Crew does about a release whose full check it
 // started at started (it pushed the branch, or found it there), from runs, the
@@ -92,19 +151,44 @@ func FullCheckCommit(tag, body string) (string, bool) {
 }
 
 // FullCheckIssue renders the issue a Crew files in release tag when its full
-// check fails at commit; run is the failed run.
-func FullCheckIssue(tag, commit string, run ReleaseRun) (title, body string) {
+// check fails at commit; run is the failed run, cutOff whether it was cut off
+// (FullCheckCutOff) and reruns how often it ran again first.
+func FullCheckIssue(tag, commit string, run ReleaseRun, cutOff bool, reruns int) (title, body string) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "The full check of release %s failed at %s, so %s is not tagged: %s ended %s, %s\n\n",
-		tag, commit, tag, run.Workflow, run.Conclusion, run.URL)
+	if cutOff {
+		fmt.Fprintf(&b, "The full check of release %s was cut off at %s, so %s is not tagged: %s ended %s, %s\n\n"+
+			"The run did not fail a check: it was stopped at the runner's time limit, or its runner was lost. ",
+			tag, commit, tag, run.Workflow, run.Conclusion, run.URL)
+		if reruns > 0 {
+			fmt.Fprintf(&b, "It ran again %s and was cut off again. ", plural(reruns, "once", fmt.Sprintf("%d times", reruns)))
+		}
+		b.WriteString("Make `make check` end well within the time limit, or a person re-runs it with the " +
+			"Crew's `theos.factory.io/rerun-release` annotation.\n\n")
+	} else {
+		fmt.Fprintf(&b, "The full check of release %s failed at %s, so %s is not tagged: %s ended %s, %s\n\n",
+			tag, commit, tag, run.Workflow, run.Conclusion, run.URL)
+	}
 	fmt.Fprintf(&b, "The full check is `make check`, run on the branch `%s` at the commit the tag will name. "+
 		"Once this issue merges, %s is done again and its full check runs at the new merge.\n\n",
 		FullCheckBranch(tag), tag)
 	b.WriteString("## Acceptance criteria\n\n")
-	b.WriteString("- [ ] `make check` passes: what made the run above fail is fixed\n")
+	if cutOff {
+		b.WriteString("- [ ] `make check` passes and ends within the runner's time limit\n")
+	} else {
+		b.WriteString("- [ ] `make check` passes: what made the run above fail is fixed\n")
+	}
 	b.WriteString("- [ ] The changelog doesn't change: it is the release's prepare issue's\n")
 	fmt.Fprintf(&b, "\n<!-- c4-full-check %s %s -->\n", tag, commit)
 	return "Full check fails for " + tag, b.String()
+}
+
+// FullCheckRerunPassed is the comment on the issue of release tag's full
+// check, which the Crew closes when a re-run a person asked for passed at
+// commit, so the tag goes there without a fix.
+func FullCheckRerunPassed(tag, commit string) string {
+	return fmt.Sprintf("The full check of %s ran again at %s, as a person asked with the Crew's "+
+		"`theos.factory.io/rerun-release` annotation, and passed, so %s is tagged there without a fix.",
+		tag, commit, tag)
 }
 
 // FullCheckMessage says what release tag's full check at commit is doing, for

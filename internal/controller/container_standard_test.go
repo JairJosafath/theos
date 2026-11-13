@@ -1,14 +1,23 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
 
 import (
+	"errors"
 	"maps"
 	"slices"
 	"time"
@@ -24,6 +33,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/ports/fake"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
@@ -447,7 +457,7 @@ var _ = Describe("Container Standard update", func() {
 
 		By("moving the Framework to a version with infra/operations.ts, which the Container doesn't have")
 		url := templatesURL + "python-fastapi"
-		newer, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", nil)
+		newer, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", "", nil)
 		Expect(err).NotTo(HaveOccurred())
 		newer = maps.Clone(newer)
 		newer["infra/operations.ts"] = scaffold.File{Data: []byte("export const operations = {};\n")}
@@ -511,7 +521,7 @@ var _ = Describe("Container Standard update", func() {
 		ns := newProjectNamespace()
 		url := templatesURL + "python-fastapi"
 		const ref = "v1.6.0-1443"
-		files, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", nil)
+		files, err := gitFake.FetchTemplate(ctx, url, "v1.6.0", "", nil)
 		Expect(err).NotTo(HaveOccurred())
 		gitFake.AddTemplate(url, ref, files)
 		createFactoryAt(ns, ref)
@@ -645,6 +655,48 @@ var _ = Describe("Container Standard update", func() {
 		eventuallyAt(ns, "v1.1.0")
 		Expect(gitFake.ForcedMerges(ns, "orders-api")).To(Equal([]int{int(second.PullRequest)}))
 		Expect(mainFile(ns, "src/app.py")).To(Equal("fixed = True\n"))
+	})
+
+	It("opens the update again from the new main when a pass stops right after its own close (#2035)", func() {
+		ns := newProjectNamespace()
+		updatableContainer(ns)
+		bumpStandard(ns, "v1.1.0")
+		first := openedUpdate(ns, "v1.1.0")
+		gitFake.SetChecks(ns, "orders-api", first.Commit, "failure")
+		Eventually(func(g Gomega) {
+			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).To(Equal(c4v1beta1.ReasonChecksFailed))
+		}).Should(Succeed())
+
+		// The pass that drops the update stops right after it closes the pull
+		// request: the branch can't be deleted, so the update isn't forgotten.
+		gitFake.FailBranchDeletes(ns, "orders-api", errors.New("gitea: no answer"))
+		gitFake.CommitToMain(ns, "orders-api", scaffold.Tree{"src/app.py": {Data: []byte("fixed = True\n")}})
+		closedFirst := MatchFields(IgnoreExtras, Fields{
+			"Number": BeEquivalentTo(first.PullRequest), "State": Equal("closed"), "Merged": BeFalse()})
+		Eventually(func() []ports.PullRequest { return gitFake.PullRequests(ns, "orders-api") }).
+			Should(ContainElement(closedFirst))
+		Eventually(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Update).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"PullRequest": Equal(first.PullRequest),
+				"Dropping":    Equal("Closed a Standard update whose CI failed, to plan it again from main's new head"),
+			})), "the status names the closed pull request and records the operator's own close")
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Update).To(PointTo(HaveField("Stopped", BeEmpty())))
+			g.Expect(standardCondition(g, getContainer(g, ns)).Reason).NotTo(Equal(c4v1beta1.ReasonUpdateClosed))
+		}).WithTimeout(2*time.Second).Should(Succeed(), "the operator's own close is never read as a person's")
+
+		// The next pass that reaches the host opens the update again from the new main.
+		gitFake.FailBranchDeletes(ns, "orders-api", nil)
+		fixed := gitFake.MainHead(ns, "orders-api").Hash
+		Eventually(func(g Gomega) {
+			g.Expect(getContainer(g, ns).Status.Standard.Update).
+				To(PointTo(HaveField("PullRequest", Not(Equal(first.PullRequest)))))
+		}).Should(Succeed())
+		second := openedUpdate(ns, "v1.1.0")
+		Expect(second.Base).To(Equal(fixed))
+		Expect(second.Dropping).To(BeEmpty())
+		Expect(second.Commit).NotTo(Equal(first.Commit))
 	})
 
 	It("files one issue for the Crew per target ref whose update's CI failed (#1491)", func() {

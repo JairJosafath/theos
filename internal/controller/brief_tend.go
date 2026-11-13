@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -67,6 +75,10 @@ func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1beta1.B
 	for _, c := range containers.Items {
 		made[c.Name] = true
 		watched := model.WatchedContainer{Name: c.Name, Phase: string(c.Status.Phase), Since: c.CreationTimestamp.Time}
+		if cond := meta.FindStatusCondition(c.Status.Conditions, c4v1beta1.ConditionTestEnvironments); cond != nil &&
+			cond.Status == metav1.ConditionFalse {
+			watched.Environments, watched.EnvironmentsSince = cond.Message, cond.LastTransitionTime.Time
+		}
 		for _, cond := range c.Status.Conditions {
 			if cond.Status == metav1.ConditionFalse {
 				watched.Message, watched.Since = cond.Message, cond.LastTransitionTime.Time
@@ -115,7 +127,7 @@ func (r *BriefReconciler) attentionFacts(ctx context.Context, brief *c4v1beta1.B
 // watchedTask is a Task that is not final as model.BriefAttention sees it:
 // its stage and since when, as the Factory view shows them.
 func watchedTask(t *c4v1beta1.Task) model.WatchedTask {
-	w := model.WatchedTask{Name: t.Name, Container: t.Spec.ContainerRef.Name}
+	w := model.WatchedTask{Name: t.Name, Container: t.Spec.ContainerRef.Name, Spec: isSpec(t)}
 	if cond := meta.FindStatusCondition(t.Status.Conditions, "Progressing"); cond != nil {
 		w.Reason, w.Message = cond.Reason, cond.Message
 	}

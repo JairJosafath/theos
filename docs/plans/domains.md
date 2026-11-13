@@ -16,7 +16,7 @@ and the reviewer to read them before they plan or review a change.
 ## Where things stand
 
 - A catalog kind (Framework, Standard, Compute, Deployment, Connector) embeds
-  `CatalogEntrySpec` (`api/v1alpha1/shared_types.go`): a template at a pinned
+  `CatalogEntrySpec` (`api/v1beta1/shared_types.go`): a template at a pinned
   ref plus a required `supportedTypes`. None has a reconciler. The chart
   installs them from `catalog.entries` (`dist/chart/templates/gitea/_catalog.tpl`),
   and `make validate-yaml` pairs each with `templates/versions.txt`.

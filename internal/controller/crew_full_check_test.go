@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -206,6 +214,85 @@ var _ = Describe("Crew release full checks", func() {
 		Expect(fullCheckIssues(ns)).To(HaveLen(1))
 	})
 
+	It("runs a full check cut off at the time limit again once, then files an issue saying it was cut off (#2028)", func() {
+		ns := newProjectNamespace()
+		beforeReleaseContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		gitFake.SetCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "completed", "cancelled"))
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.Reruns(ns, "orders-api", 7)).To(Equal(1))
+			check := getCrew(g, ns).Status.FullCheck
+			g.Expect(check).NotTo(BeNil())
+			g.Expect(check.Reruns).To(Equal(int32(1)))
+			releasedCondition(g, ns, model.FullCheckRunning)
+		}).Should(Succeed())
+		Expect(fullCheckIssues(ns)).To(BeEmpty())
+
+		By("filing the issue, saying so, once the re-run is cut off too")
+		gitFake.SetCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "completed", "cancelled"))
+		Eventually(func(g Gomega) {
+			issues := fullCheckIssues(ns)
+			g.Expect(issues).To(HaveLen(1))
+			g.Expect(issues[0].Body).To(ContainSubstring("was cut off at 5a-merge"))
+			g.Expect(issues[0].Body).To(ContainSubstring("It ran again once and was cut off again"))
+			releasedCondition(g, ns, model.FullCheckFailed)
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(gitFake.Reruns(ns, "orders-api", 7)).To(Equal(1))
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
+		}, 2*time.Second).Should(Succeed())
+	})
+
+	It("re-runs a held release's failed full check for rerun-release, and tags it once it passes (#2028)", func() {
+		ns := newProjectNamespace()
+		beforeReleaseContainer(ns)
+		crewAgents(ns, 1)
+		mergedIssue(ns)
+		gitFake.SetCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "completed", "failure"))
+		crew := newCrew(ns)
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		var filed fake.Issue
+		Eventually(func(g Gomega) {
+			issues := fullCheckIssues(ns)
+			g.Expect(issues).To(HaveLen(1))
+			filed = issues[0]
+			g.Expect(filed.Body).NotTo(ContainSubstring("cut off"), "a check that failed, not cut off")
+			g.Expect(getCrew(g, ns).Status.FullCheck.Run).To(Equal(model.RunFailed))
+			releasedCondition(g, ns, model.FullCheckFailed)
+		}).Should(Succeed())
+		Expect(gitFake.Reruns(ns, "orders-api", 7)).To(BeZero(), "a failure is not re-run on its own")
+
+		setRerunRelease(ns, "1")
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.Reruns(ns, "orders-api", 7)).To(Equal(1))
+			crew := getCrew(g, ns)
+			g.Expect(crew.Status.RerunRelease).To(Equal("1"))
+			g.Expect(crew.Status.FullCheck.Rerun).To(BeTrue())
+			releasedCondition(g, ns, model.FullCheckRunning)
+			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
+				HaveField("Reason", reasonReleaseRerun), HaveField("Note", ContainSubstring("full check of v0.1.0")))))
+		}).Should(Succeed())
+		Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
+
+		gitFake.SetCommitRuns(ns, "orders-api", "5a-merge", fullCheckRun(ns, 7, "completed", "success"))
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(Equal("5a-merge"))
+			g.Expect(gitFake.MilestoneClosed(ns, "orders-api", "v0.1.0")).To(BeTrue())
+			issue := gitFake.Issue(ns, "orders-api", filed.Number)
+			g.Expect(issue.State).To(Equal("closed"))
+			g.Expect(issue.Comments).To(ContainElement(ContainSubstring("ran again at 5a-merge")))
+			g.Expect(getCrew(g, ns).Status.FullCheck).To(BeNil())
+		}).Should(Succeed())
+		Expect(gitFake.Reruns(ns, "orders-api", 7)).To(Equal(1), "re-run once per value")
+	})
+
 	It("tags the fix's merge without holding it as merged after the prepare issue", func() {
 		ns := newProjectNamespace()
 		beforeReleaseContainer(ns)
@@ -214,7 +301,7 @@ var _ = Describe("Crew release full checks", func() {
 		gitFake.SetIssueRelease(ns, "orders-api", prepare, "v0.1.0", releaseDue)
 		Expect(gitFake.CloseIssueByHand(ns, "orders-api", prepare)).To(Succeed())
 		mergedTask(ns, "orders-api-prepare", prepare, "5a-prepare", time.Now().Add(-time.Hour))
-		_, body := model.FullCheckIssue("v0.1.0", "5a-prepare", model.ReleaseRun{URL: "http://gitea/runs/7"})
+		_, body := model.FullCheckIssue("v0.1.0", "5a-prepare", model.ReleaseRun{URL: "http://gitea/runs/7"}, false, 0)
 		fix := gitFake.AddIssue(ns, "orders-api", "Full check fails for v0.1.0", body, []string{model.LabelBug})
 		gitFake.SetIssueRelease(ns, "orders-api", fix, "v0.1.0", releaseDue)
 		Expect(gitFake.CloseIssueByHand(ns, "orders-api", fix)).To(Succeed())

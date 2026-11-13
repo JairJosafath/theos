@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -206,6 +214,13 @@ var _ = Describe("Task", func() {
 			"the reviewer's verdict is a review in the Git host")
 
 		By("merging the approved second round")
+		agentEmail := model.AgentEmail(model.AgentUsername(ns, "orders-api"))
+		gitFake.SetPullCommits(ns, "orders-api", 1,
+			ports.PullCommit{SHA: "sha-r1", AuthorEmail: agentEmail, Parents: 1},
+			ports.PullCommit{SHA: "sha-ada", AuthorEmail: "ada@example.com", Parents: 1},
+			ports.PullCommit{SHA: "sha-main", AuthorEmail: "theos@example.com", Parents: 2},
+			ports.PullCommit{SHA: "sha-r2", AuthorEmail: agentEmail, Parents: 1})
+		gitFake.SetPullSize(ns, "orders-api", 1, 120, 30, 4)
 		gitFake.PushBranchHead(ns, "orders-api", "task/add-crop", "sha-r2")
 		finishSandbox(ns, "add-crop-r2-implement", "add-crop",
 			&agentrunner.Result{Role: "implement", Commit: "sha-r2", Summary: "Tested it."}, "")
@@ -229,6 +244,39 @@ var _ = Describe("Task", func() {
 		}).Should(Succeed())
 		Expect(gitFake.PullRequests(ns, "orders-api")[0].Merged).To(BeTrue())
 		expectSandboxGone(ns, "add-crop-r2-review-a1") // #1293
+
+		By("keeping the merged pull request's size and its one person commit (measure-and-improve, decisions 3 and 4)")
+		merged := getTask(Default, ns, "add-crop")
+		Expect(merged.Status.PullRequestSize).To(Equal(c4v1beta1.TaskPullRequestSize{Additions: 120, Deletions: 30,
+			Files: 4}))
+		Expect(merged.Status.PersonCommits).To(Equal(new(int32(1))),
+			"Ada's commit is a person's; the agent's and main's merge are not")
+
+		By("serving the merged Task on the manager's metrics, as one a person wrote code for (#59)")
+		Eventually(func(g Gomega) {
+			g.Expect(factoryMetricValue(g, managerClient, model.MetricTasksMerged, map[string]string{
+				"namespace": ns, "container": "orders-api", "kind": "Implement", "code": model.CodePerson,
+				"approved": model.ApprovedReviewer})).To(Equal(1.0))
+			g.Expect(factoryMetricValue(g, managerClient, model.MetricTasks, map[string]string{
+				"namespace": ns, "container": "orders-api", "kind": "Implement", "phase": "Merged"})).To(Equal(1.0))
+			g.Expect(factoryMetricValue(g, managerClient, model.MetricAgentRuns, map[string]string{
+				"namespace": ns, "agent": "claude", "harness": "claude-code", "model": model.MetricNone, "role": "review"})).
+				To(Equal(2.0), "round 1's review and round 2's")
+		}).Should(Succeed())
+
+		By("reading them again for a Task merged before they were kept")
+		// The size changes on the host before the status forgets it: the
+		// operator reads it once, at the first reconcile that finds none kept,
+		// which the status update starts.
+		gitFake.SetPullSize(ns, "orders-api", 1, 121, 30, 4)
+		merged.Status.PullRequestSize, merged.Status.PersonCommits = c4v1beta1.TaskPullRequestSize{}, nil
+		Expect(k8sClient.Status().Update(ctx, merged)).To(Succeed())
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, "add-crop")
+			g.Expect(task.Status.PullRequestSize).To(Equal(c4v1beta1.TaskPullRequestSize{Additions: 121, Deletions: 30,
+				Files: 4}))
+			g.Expect(task.Status.PersonCommits).To(Equal(new(int32(1))))
+		}).Should(Succeed())
 
 		By("keeping its timeline")
 		var steps []string
@@ -401,6 +449,24 @@ var _ = Describe("Task", func() {
 				CacheWrite: 30000, LargestSession: 140000}))
 		}).Should(Succeed())
 
+		By("changing the Agent's model while the checks run: the next runs are on it, the ended one keeps its own")
+		var agent c4v1beta1.Agent
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "claude"}, &agent)).To(Succeed())
+		// A merge patch, not an Update of the read: the operator writes the
+		// Agent too, and a stale resourceVersion would conflict (theos#27).
+		before := agent.DeepCopy()
+		agent.Spec.Model = "claude-sonnet-5-5"
+		Expect(k8sClient.Patch(ctx, &agent, client.MergeFrom(before))).To(Succeed())
+		// The review's sandbox records the Agent as the operator's cache has it
+		// when it makes the sandbox. Passing the checks before the cache saw
+		// the patch started the review on the Agent without a model, and the
+		// spec then failed on main (#70): wait for the operator to see it.
+		Eventually(func(g Gomega) {
+			var seen c4v1beta1.Agent
+			g.Expect(managerClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "claude"}, &seen)).To(Succeed())
+			g.Expect(seen.Spec.Model).To(Equal("claude-sonnet-5-5"))
+		}).Should(Succeed())
+
 		By("counting a review whose agent didn't report its cost")
 		gitFake.SetChecks(ns, "orders-api", "sha-r1", "success")
 		Eventually(func(g Gomega) { sandboxExists(g, ns, "add-crop-r1-review-a1") }).Should(Succeed())
@@ -441,18 +507,22 @@ var _ = Describe("Task", func() {
 			g.Expect(notes).To(Equal([]string{"Round 2's implement run handed off 2 times, at 134k and 141k tokens."}))
 		}).Should(Succeed())
 
-		By("recording each run: its round, role, cost, tokens and handoff sizes")
+		By("recording each run: its round, role, Agent configuration, cost, tokens and handoff sizes")
 		task := getTask(Default, ns, "add-crop")
 		runs := task.Status.Runs
 		for i := range runs {
 			Expect(runs[i].EndedAt.IsZero()).To(BeFalse())
 			runs[i].EndedAt = metav1.Time{}
 		}
+		const sonnet = "claude-sonnet-5-5"
 		Expect(runs).To(Equal([]c4v1beta1.TaskAgentRun{
-			{Round: 1, Role: "implement", Sandbox: "add-crop-r1-implement", CostMilliUSD: new(int64(312)),
-				Tokens: &c4v1beta1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000, CacheWrite: 30000, LargestSession: 140000}},
-			{Round: 1, Role: "review", Sandbox: "add-crop-r1-review-a1", Tokens: &c4v1beta1.TokenUsage{RunsWithout: 1}},
-			{Round: 2, Role: "implement", Sandbox: "add-crop-r2-implement", CostMilliUSD: new(int64(100)),
+			{Round: 1, Role: "implement", Sandbox: "add-crop-r1-implement", Agent: "claude", Harness: "claude-code",
+				CostMilliUSD: new(int64(312)),
+				Tokens:       &c4v1beta1.TokenUsage{Input: 10, Output: 2000, CacheRead: 90000, CacheWrite: 30000, LargestSession: 140000}},
+			{Round: 1, Role: "review", Sandbox: "add-crop-r1-review-a1", Agent: "claude", Harness: "claude-code",
+				Model: sonnet, Tokens: &c4v1beta1.TokenUsage{RunsWithout: 1}},
+			{Round: 2, Role: "implement", Sandbox: "add-crop-r2-implement", Agent: "claude", Harness: "claude-code",
+				Model: sonnet, CostMilliUSD: new(int64(100)),
 				Tokens: &c4v1beta1.TokenUsage{Input: 5, Output: 1000, CacheRead: 40000, CacheWrite: 8000,
 					LargestSession: 60000, SessionHandoffs: 2},
 				SessionHandoffs: []int64{134000, 141200}},

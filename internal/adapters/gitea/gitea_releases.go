@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package gitea
 
 import (
@@ -145,6 +161,58 @@ func (g *gitea) CloseMilestone(ctx context.Context, repo ports.Repository, id in
 	}
 	if status != http.StatusOK {
 		return fmt.Errorf("gitea: closing milestone %d of %s failed (HTTP %d): %s", id, repoPath(repo), status, apiMessage(data))
+	}
+	return nil
+}
+
+// DescribeMilestone replaces milestone id's description, keeping its due date,
+// which Gitea would clear otherwise (CloseMilestone), and its title and state.
+func (g *gitea) DescribeMilestone(ctx context.Context, repo ports.Repository, id int64, description string) error {
+	status, data, err := g.do(ctx, http.MethodGet, milestonePath(repo, id), nil)
+	if err != nil {
+		return err
+	}
+	var current giteaMilestone
+	if status != http.StatusOK || json.Unmarshal(data, &current) != nil {
+		return fmt.Errorf("gitea: reading milestone %d of %s failed (HTTP %d): %s", id, repoPath(repo), status, apiMessage(data))
+	}
+	payload, _ := json.Marshal(struct {
+		Description string     `json:"description"`
+		DueOn       *time.Time `json:"due_on,omitempty"`
+	}{description, current.DueOn})
+	status, data, err = g.do(ctx, http.MethodPatch, milestonePath(repo, id), payload)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("gitea: describing milestone %d of %s failed (HTTP %d): %s", id, repoPath(repo), status,
+			apiMessage(data))
+	}
+	return nil
+}
+
+// EditMilestoneTitle retitles milestone id, keeping its due date, which Gitea
+// would clear otherwise (CloseMilestone), and its description and state.
+func (g *gitea) EditMilestoneTitle(ctx context.Context, repo ports.Repository, id int64, title string) error {
+	status, data, err := g.do(ctx, http.MethodGet, milestonePath(repo, id), nil)
+	if err != nil {
+		return err
+	}
+	var current giteaMilestone
+	if status != http.StatusOK || json.Unmarshal(data, &current) != nil {
+		return fmt.Errorf("gitea: reading milestone %d of %s failed (HTTP %d): %s", id, repoPath(repo), status, apiMessage(data))
+	}
+	payload, _ := json.Marshal(struct {
+		Title string     `json:"title"`
+		DueOn *time.Time `json:"due_on,omitempty"`
+	}{title, current.DueOn})
+	status, data, err = g.do(ctx, http.MethodPatch, milestonePath(repo, id), payload)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("gitea: retitling milestone %d of %s as %s failed (HTTP %d): %s", id, repoPath(repo), title,
+			status, apiMessage(data))
 	}
 	return nil
 }

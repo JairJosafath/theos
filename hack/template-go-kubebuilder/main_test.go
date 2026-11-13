@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package main
 
 import (
@@ -88,6 +104,12 @@ var data = map[string]any{
 	"Project": "webshop", "SoftwareSystem": "shop", "Container": "backup-op",
 	"DisplayName": "Backup Operator", "Description": "Backs up the shop's databases nightly.",
 	"Standard": "go-operator-standard", "Compute": "",
+	"License": map[string]any{"ID": ""},
+}
+
+// licensed returns data for a repository scaffolded with the license id.
+func licensed(id string) map[string]any {
+	return with("License", map[string]any{"ID": id})
 }
 
 // with returns data with the given keys changed.
@@ -182,6 +204,61 @@ func TestTransform(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// #83: a header says what the repository's LICENSE says. kubebuilder's Apache
+// grant renders only for a repository scaffolded as Apache-2.0, another
+// license is named by its SPDX id, and with none the copyright line stands
+// alone; a header kubebuilder words otherwise fails the regeneration.
+func TestTransformRendersTheLicenseGrantFromTheScaffoldsLicense(t *testing.T) {
+	boilerplate := "/*\nCopyright YEAR." + apacheGrant + "*/"
+	source := "/*\nCopyright 2031." + apacheGrant + "*/\n\npackage utils\n"
+	cases := []struct {
+		name, path, in, wantPath string
+		want                     map[string]string // the rendered file by license id
+	}{
+		{
+			name: "hack/boilerplate.go.txt", path: "hack/boilerplate.go.txt", in: boilerplate,
+			wantPath: "hack/boilerplate.go.txt.tmpl",
+			want: map[string]string{
+				"Apache-2.0": boilerplate,
+				"MIT":        "/*\nCopyright YEAR.\n\nSPDX-License-Identifier: MIT\n*/",
+				"":           "/*\nCopyright YEAR.\n*/",
+			},
+		},
+		{
+			name: "a go file", path: "test/utils/utils.go", in: source,
+			wantPath: "test/utils/utils.go.tmpl",
+			want: map[string]string{
+				"Apache-2.0":   "/*\nCopyright 2026." + apacheGrant + "*/\n\npackage utils\n",
+				"GPL-3.0-only": "/*\nCopyright 2026.\n\nSPDX-License-Identifier: GPL-3.0-only\n*/\n\npackage utils\n",
+				"":             "/*\nCopyright 2026.\n*/\n\npackage utils\n",
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p, src, err := transform(c.path, []byte(c.in))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p != c.wantPath {
+				t.Errorf("path = %q, want %q", p, c.wantPath)
+			}
+			for id, want := range c.want {
+				if got := render(t, p, src, licensed(id)); got != want {
+					t.Errorf("license %q: rendered = %q, want %q", id, got, want)
+				}
+			}
+		})
+	}
+
+	reworded := strings.Replace(boilerplate, "you may not use this file", "you may not use this work", 1)
+	for _, p := range []string{"hack/boilerplate.go.txt", "cmd/main.go"} {
+		if _, _, err := transform(p, []byte(reworded)); err == nil || !strings.Contains(err.Error(), "update apacheGrant") {
+			t.Errorf("%s with a reworded Apache header: error = %v, want one saying to update apacheGrant", p, err)
+		}
 	}
 }
 
@@ -354,7 +431,7 @@ func TestCommittedTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen, readmes := 0, 0
+	seen, readmes, grants := 0, 0, 0
 	err = filepath.WalkDir(root, func(full string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -385,8 +462,17 @@ func TestCommittedTemplate(t *testing.T) {
 		if bytes.Contains(src, []byte("placeholder")) {
 			t.Errorf("%s: still says \"placeholder\"", p)
 		}
+		// #83: the Apache grant is in a file only as licenseGrant renders it.
+		if n := bytes.Count(src, []byte(licenseGrant)); n > 0 {
+			grants++
+		} else if n != bytes.Count(src, []byte(apacheMark)) {
+			t.Errorf("%s: grants the Apache license outside licenseGrant", p)
+		}
 		if p != name {
 			out := render(t, p, src, data)
+			if strings.Contains(out, apacheMark) {
+				t.Errorf("%s: rendered with no license, it still grants the Apache license (#83)", p)
+			}
 			if name == readme {
 				readmes++
 				checkReadme(t, p, out, committedGo, nil)
@@ -399,6 +485,9 @@ func TestCommittedTemplate(t *testing.T) {
 	}
 	if seen == 0 {
 		t.Fatalf("%s has no files; run make template-go-kubebuilder", root)
+	}
+	if grants < 2 {
+		t.Errorf("%s: %d files carry licenseGrant, want hack/boilerplate.go.txt.tmpl and the Go files (#83)", root, grants)
 	}
 	if readmes != 1 {
 		t.Errorf("%s has %d %s.tmpl, want 1", root, readmes, readme)

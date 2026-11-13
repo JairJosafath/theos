@@ -2,7 +2,7 @@
 // cylinder, everything else as a card, following the usual C4 shapes and colours.
 
 import type { KeyboardEvent, MouseEvent } from 'react'
-import { KIND_LABEL, plural, splitTemplateRef } from '../model/describe'
+import { plural, splitTemplateRef } from '../model/describe'
 import type { Rect } from '../model/layout'
 import { MAX_LIST_ITEMS } from '../model/sizes'
 import type { ContainerNode, DataStoreNode, DiagramNode, PersonNode, SystemNode } from '../model/story'
@@ -40,7 +40,7 @@ export function NodeCard({ node, rect, selected, dimmed, onSelect, onHover, onOp
       role={href ? 'link' : 'button'}
       tabIndex={0}
       aria-pressed={href ? undefined : selected}
-      aria-label={`${KIND_LABEL[node.role]}: ${node.title}`}
+      // Its text names it, the title and then the kind, which every body shows (WCAG 2.5.3, label in name).
       data-node-id={node.id}
       onClick={(e) => {
         // With a modifier, a page opens in a new tab, as a link's would.

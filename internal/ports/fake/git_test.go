@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package fake_test
 
 import (
@@ -46,5 +62,41 @@ func TestGitReadsAPlanBranch(t *testing.T) {
 	}
 	if _, _, err := p.ReadFiles(ctx, repo, "plan/3", []string{"plan/"}); err == nil {
 		t.Error("ReadFiles() of a branch the fake doesn't have succeeded")
+	}
+}
+
+// A branch pushed from a seeded repository's commit updates with main as it
+// is, and a pull request on a branch of a repository the fake has none for
+// updates too, without a panic (#1170).
+func TestGitUpdatesPullRequestsOnSeededAndMissingRepositories(t *testing.T) {
+	g := fake.New()
+	p := g.For(ports.Config{URL: "http://gitea", Owner: "apps"})
+	ctx := context.Background()
+	g.SeedRepoFiles("apps", "adopted", "Import", scaffold.Tree{"AGENTS.md": {Data: []byte("# theirs\n")}})
+	repo := ports.Repository{Owner: "apps", Name: "adopted"}
+	base, err := p.BranchCommit(ctx, repo, ports.DefaultBranch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.PushBranch(ctx, repo, base, "standard/v2", scaffold.Tree{"AGENTS.md": {Data: []byte("# ours\n")}},
+		nil, "Bump the Standard", ports.Signature{}); err != nil {
+		t.Fatal(err)
+	}
+	pr, err := p.OpenPullRequest(ctx, repo, "standard/v2", ports.DefaultBranch, "Bump", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.UpdatePullRequest(ctx, repo, pr.Number); err != nil {
+		t.Errorf("UpdatePullRequest() of a branch on the seeded commit = %v, want no conflict", err)
+	}
+
+	missing := ports.Repository{Owner: "apps", Name: "missing"}
+	g.PushBranchHead("apps", "missing", "task/a", "abc123")
+	pr, err = p.OpenPullRequest(ctx, missing, "task/a", ports.DefaultBranch, "A", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.UpdatePullRequest(ctx, missing, pr.Number); err != nil {
+		t.Errorf("UpdatePullRequest() in a repository the fake has none for = %v", err)
 	}
 }

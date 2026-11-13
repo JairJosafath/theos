@@ -55,6 +55,10 @@ describe('accessibility of the UI', () => {
       obj('Task', story.tasks[0].metadata.name),
       obj('Project', ns),
       obj('Standard', 'python-standard'),
+      obj('TestEnvironment', 'browser'),
+      // A remote one's credential, budget and CI, and Device Farm's test runs (test-environments, steps 7 to 10).
+      obj('TestEnvironment', 'gpu'),
+      obj('TestEnvironment', 'devices'),
     ]
     ui = createServer({
       distDir: dist,

@@ -6,12 +6,19 @@ type: application
 # The newest release. hack/release.sh bumps it, and docs/getting-started.md's
 # VERSION with it, before the tag: Release refuses a tag that differs, and
 # test/chart/guide_version_test.go a guide that does (#370).
-version: 0.30.0
+version: 0.32.0
 appVersion: "dev"
 
 keywords:
   - kubernetes
   - operator
+  - software-factory
+  - agents
+
+home: https://github.com/JairJosafath/theos
+sources:
+  - https://github.com/JairJosafath/theos
 
 annotations:
   kubebuilder.io/generated-by: kubebuilder
+  artifacthub.io/license: Apache-2.0

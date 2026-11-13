@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -26,10 +42,12 @@ const (
 const PlanAPIVersion = "theos.factory.io/v1beta1"
 
 // planAPIVersions are the apiVersions a plan may carry: every served version,
-// since a plan a person wrote by hand, or one written before the upgrade, may
-// still say v1alpha1. Nothing is converted: the operator reads a plan's fields
-// the same at either version and applies them as v1beta1 objects.
-var planAPIVersions = []string{PlanAPIVersion, "theos.factory.io/v1alpha1"}
+// since a plan a person wrote by hand, or one written before an upgrade, may
+// still say an older one. Every kind serves v1beta1 alone (#1963); a version
+// served beside it joins the list while it shares v1beta1's plan fields, as
+// the operator reads a plan's fields the same at either and applies them as
+// objects at the storage version.
+var planAPIVersions = []string{PlanAPIVersion}
 
 // LabelDesign marks an issue that is a design idea for a Crew's designer.
 const LabelDesign = "status/design"
@@ -132,6 +150,9 @@ type PlanIssue struct {
 	// Uses are the Containers whose released Go module this one builds on:
 	// it is readied once each has published one (docs/plans/done/app-modules.md).
 	Uses []string
+	// ReleaseNow says the front matter's release: now marks it bigger: once
+	// merged, its release goes out at once (docs/plans/done/release-cadence.md, C9).
+	ReleaseNow bool
 }
 
 // Plan is what a planner pushed for one round.
@@ -571,10 +592,11 @@ func parsePlanIssue(path, s string) (PlanIssue, error) {
 		}
 	}
 	var meta struct {
-		Title  string   `yaml:"title"`
-		Labels []string `yaml:"labels"`
-		After  []string `yaml:"after"`
-		Uses   []string `yaml:"uses"`
+		Title   string   `yaml:"title"`
+		Labels  []string `yaml:"labels"`
+		After   []string `yaml:"after"`
+		Uses    []string `yaml:"uses"`
+		Release string   `yaml:"release"`
 	}
 	dec := yaml.NewDecoder(strings.NewReader(front))
 	dec.KnownFields(true)
@@ -593,6 +615,14 @@ func parsePlanIssue(path, s string) (PlanIssue, error) {
 	}
 	for _, u := range meta.Uses {
 		issue.Uses = append(issue.Uses, strings.TrimSpace(u))
+	}
+	switch strings.TrimSpace(meta.Release) {
+	case "":
+	case ReleaseNowValue:
+		issue.ReleaseNow = true
+	default:
+		return PlanIssue{}, fmt.Errorf("release: has %q; the only value is %s, for work that ships at once",
+			meta.Release, ReleaseNowValue)
 	}
 	if issue.Title == "" {
 		return PlanIssue{}, errors.New("the front matter has no title")

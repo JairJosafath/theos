@@ -40,6 +40,11 @@ can't apply it.
   when its last try `stopped` and the issues `merged` into it, each with
   `mergedAt` and `afterStop: true` when its last try didn't see it.
 
+- `model/test-environments.yaml`: the project's test environments, the
+  tools an agent's sandbox lacks (a browser, an emulator), each with its
+  name, what it has (`description`), the label an issue asks for it with
+  (`label`, `env/<name>`) and the label a CI workflow runs on it with
+  (`runsOn`, `env-<name>`). Empty when the project has none.
 - `model/requests.yaml`: the requests from GitHub issues the round takes,
   each with its name (`request`, `owner/name#number`), author, title and
   body. `brief.md` has a *Requests* section when there are any.
@@ -53,8 +58,9 @@ Push the branch `plan/<round>` with these files:
 - `plan/issues/<nn>-<container>.md`: one file per issue, `nn` its number in the
   round (`01`, `02`, ...), `container` the Container it is for. It starts with
   front matter: a `---` line, `title:`, `labels:` and, when it needs another
-  issue's work merged first, `after:`, and when it builds on another
-  Container's released code, `uses:`, then another `---` line. Then the body.
+  issue's work merged first, `after:`, when it builds on another
+  Container's released code, `uses:`, and when it ships at once,
+  `release: now` (rule 9), then another `---` line. Then the body.
 - `plan/choices.md`: one line per choice you made, in plain words.
 - `plan/summary.md`: what this round does for the person's app, in one or two
   plain sentences, such as "Planned Sprout, a garden-themed todo CLI: one
@@ -184,8 +190,13 @@ Push the branch `plan/<round>` with these files:
    **Give agents only criteria they can meet.** An agent works in a sandbox
    with the repository and a terminal, and the reviewer checks its work in the
    repository: each criterion is one an agent can meet there and a reviewer
-   can check there. A screenshot of a desktop app, a recording, a run on a
-   phone or other device, or anything that needs a person's account goes in
+   can check there. What needs a tool one of `model/test-environments.yaml`'s
+   environments has (a browser, a screenshot of a page or of VS Code, an
+   emulator) is an agent's: label its issue with that environment's
+   `label`, such as `env/browser`, and the agent runs it there with
+   `theos-env run`, then commits what it made. A screenshot of a desktop app
+   no listed environment has, a recording, a run on a phone or other device
+   no environment has, or anything that needs a person's account goes in
    its own issue labelled `kind/by-hand`, for the person, with its own
    acceptance criteria, never in an agent's issue. No Crew picks it up: it
    waits for the person in the Later milestone, and it may be `after:` the
@@ -198,7 +209,9 @@ Push the branch `plan/<round>` with these files:
    browser window or another desktop app can't run in `make check`, and no
    criterion asks for one. An extension's tests run without a VS Code window,
    against the `vscode` stand-in; trying it in a real editor is a
-   `kind/by-hand` issue for the person.
+   `kind/by-hand` issue for the person, unless the project has a test
+   environment with a display, such as `browser`: then an issue labelled
+   `env/browser` runs it there, under `xvfb-run -a`, outside `make check`.
    **Say the order the work needs.** When an issue builds on another issue's
    work, of the same Container or another, list that issue's number in its
    `after:` (`after: [2]`), so it starts only once that work is merged: a
@@ -244,12 +257,23 @@ Push the branch `plan/<round>` with these files:
    say ships a release (a CLI people download, a library, an app with
    versions), each one `brief.md`'s *Releases* section names, and each one a
    prompt asks to release. Each name is a Container of `plan/model.yaml`. Its
-   Crew then tags and prepares releases, and each of the round's issues for
-   it goes into a release of its own kind: a fix into the patch release right
-   after the release in progress (`v0.13.1` after `v0.13.0`, ahead of a
-   planned `v0.14.0`), any other work into the next minor release. So label
-   each issue that fixes a bug `kind/bug`, and each that adds or fixes a test
-   `kind/test`. Releases only turn on: a Container `released`
+   Crew then tags and prepares releases. When `brief.md` has a *Release
+   cadence* section, the apps release on it, once a day by default: each of
+   the round's issues for a released Container goes into the release in
+   progress with the rest of the day's work, and the factory gives a day of
+   fixes the next patch version. Without one, each issue goes into a release
+   of its own kind: a fix into the patch release right after the release in
+   progress (`v0.13.1` after `v0.13.0`, ahead of a planned `v0.14.0`), any
+   other work into the next minor release. Either way, label each issue that
+   fixes a bug `kind/bug`, and each that adds or fixes a test `kind/test`.
+
+   **Mark only what is bigger `release: now`** in an issue's front matter: a
+   fix of something broken in the latest release that users hit (a
+   regression, a crash, wrong output, a security hole), or a feature a prompt
+   asks to ship now ("ship the login fix today"). Once merged, its release
+   goes out at once, with the day's work merged so far, instead of at the
+   day's cut. A fix of work not yet released, a test, docs or a refactor is
+   never bigger. Releases only turn on: a Container `released`
    already stays released, so you needn't list it again, and leaving it out
    doesn't stop them. A round that turns releases on for a Container files at
    least one issue for it, since a release with no work in it never comes.
@@ -276,13 +300,15 @@ Push the branch `plan/<round>` with these files:
       issue: 5
       answer: take        # or skip, or missing
       fix: true           # take only: it fixes a bug or adds or fixes a test
+      now: true           # take only: bigger, it ships at once (rule 9)
       why: The prompt asks to take the input-safety suggestions.
     ```
 
     `why` says in plain words which prompt asked for it. Mark a suggestion you
     take `fix: true` when it fixes a bug or adds or fixes a test, so it ships
     in the patch release right after the release in progress; leave `fix` out
-    for any other work and on a skip, which refuses it. Only a suggestion with
+    for any other work and on a skip, which refuses it. Mark one `now: true`
+    only as rule 9 says an issue is `release: now`, and never on a skip. Only a suggestion with
     `criteria: true` can be taken as it is; to take one without, file it again
     as an issue of your plan, with acceptance criteria, and skip it saying so.
     Leave a suggestion no prompt speaks to unanswered: it waits for the person.
@@ -340,6 +366,7 @@ Push the branch `plan/<round>` with these files:
     `plan/summary.md` and, to split an issue you close, new issues in
     `plan/issues/`; a tending round has no say on the story, so any other
     file, `plan/model.yaml` and `plan/needs-input.md` too, refuses the plan.
+    With no person's word, nothing is bigger: mark no issue `release: now`.
     Answer each issue with what you learned from its `reason`, its body and
     the other issues, as above, or with one of two more answers:
 
@@ -397,10 +424,10 @@ Push the branch `plan/<round>` with these files:
     `model/requests.yaml` in `plan/requests.yaml`, one entry each:
 
     ```yaml
-    - request: gray-lenovo/cel-lens#12
+    - request: acme/cel-lens#12
       answer: take        # or skip
       issues: [2, 3]      # take: the plan's issues it became, their nn
-    - request: gray-lenovo/cel-lens#13
+    - request: acme/cel-lens#13
       answer: skip
       why: Already there; the linter reports it since v0.2.0.
     ```

@@ -55,6 +55,20 @@ check "  the CRDs become the baseline" "$(ls "$T/bump/test/compat/baseline")" th
 check "  bump empties dropped.txt's entries" "$(grep -vc '^#' "$T/bump/test/compat/dropped.txt")" 0
 check "  and keeps its comments" "$(grep -c '^#' "$T/bump/test/compat/dropped.txt")" 3
 
+# #53: the quickstart installs the release it shipped with, so --check holds
+# it to the tag and --bump moves it; a tree without one is as before.
+tree "$T/quick" 1.2.0
+mkdir -p "$T/quick/hack"
+printf '#!/usr/bin/env bash\nVERSION=${THEOS_VERSION:-1.1.0}\nVERSION_OF_SOMETHING_ELSE=9\n' >"$T/quick/hack/quickstart.sh"
+ROOT=$T/quick "$RELEASE" --check v1.2.0 2>"$T/err"
+check "--check: a quickstart that installs another release is refused (#53)" $? 1
+check "  and named" "$(grep -c 'hack/quickstart.sh installs 1.1.0, not 1.2.0' "$T/err")" 1
+ROOT=$T/quick "$RELEASE" --bump 1.3.0
+check "--bump: moves the quickstart with the chart (#53)" "$(sed -n 2p "$T/quick/hack/quickstart.sh")" 'VERSION=${THEOS_VERSION:-1.3.0}'
+check "  and leaves its other lines" "$(sed -n 3p "$T/quick/hack/quickstart.sh")" 'VERSION_OF_SOMETHING_ELSE=9'
+ROOT=$T/quick "$RELEASE" --check v1.3.0
+check "  and --check agrees" $? 0
+
 # The release command: a bare origin with main at 1.2.0, a clone, and a fake gh
 # whose pr merge merges the branch into origin's main with a merge commit.
 git init --quiet --bare -b main "$T/origin.git"
@@ -92,6 +106,8 @@ check "patch: bumps, merges and tags" $? 0
 check "  the tag is origin's main, the merge commit" "$(git -C "$T/origin.git" rev-parse v1.2.1^{commit})" "$(git -C "$T/origin.git" rev-parse main)"
 check "  main names the release" "$(git -C "$T/origin.git" show main:dist/chart/Chart.yaml | grep -c '^version: 1.2.1$')" 1
 check "  main's baseline is its CRDs" "$(git -C "$T/origin.git" ls-tree --name-only main test/compat/baseline/)" test/compat/baseline/things.yaml
+check "  main's dropped.txt has no entries" "$(git -C "$T/origin.git" show main:test/compat/dropped.txt | grep -vc '^#')" 0
+check "  and keeps its comments" "$(git -C "$T/origin.git" show main:test/compat/dropped.txt | grep -c '^#')" 3
 check "  merged with a merge commit" "$(grep -c 'pr merge https://github.com/o/theos/pull/7 --merge' "$T/gh.log")" 1
 check "  the bump branch is gone" "$(git -C "$T/origin.git" branch --list 'chore/*' | wc -l)" 0
 check "  the clone's checkout is untouched" "$(sed -n 's/^version: //p' "$T/clone/dist/chart/Chart.yaml")" 1.2.0

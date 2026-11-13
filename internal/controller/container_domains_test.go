@@ -1,8 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -203,6 +212,52 @@ var _ = Describe("Container domains", func() {
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonDomainNoReadme))
 		Expect(cond.Message).To(Equal("Domain bare renders no README.md"))
+	})
+
+	It("scaffolds a Domain from a subdirectory of a repository that holds other files (#35)", func() {
+		ns := newProjectNamespace()
+		domain := newDomain(ns, "ops")
+		domain.Spec.Template.Path = "domains/ops"
+		// The product's own repository: its model, a CLAUDE.md and the
+		// Domain beside them. Only the subtree is the Domain.
+		gitFake.AddTemplate(domain.Spec.Template.URL, domain.Spec.Template.Ref, scaffold.Tree{
+			"CLAUDE.md":              {Data: []byte("# church-ops\n")},
+			"model/system.yaml":      {Data: []byte("kind: SoftwareSystem\n")},
+			"domains/ops/README.md":  {Data: []byte("# Ops\n")},
+			"domains/ops/members.md": {Data: []byte("# Members\n")},
+		})
+		mustCreate(domain)
+		webshopOnDomains(ns, "ops")
+
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+		from := container.Status.ScaffoldedFrom
+		Expect(from[len(from)-1]).To(Equal("ops@v1.0.0"), "scaffoldedFrom still reads name@ref")
+		files := gitFake.MainFiles(ns, "orders-api")
+		Expect(files).To(HaveKeyWithValue("docs/agents/domain/ops/README.md",
+			HaveField("Data", BeEquivalentTo("# Ops\n"))))
+		Expect(files).To(HaveKey("docs/agents/domain/ops/members.md"))
+		for p := range files {
+			Expect(p).NotTo(HavePrefix("docs/agents/domain/ops/domains/"), "paths are relative to the subtree")
+			Expect(p).NotTo(Equal("docs/agents/domain/ops/CLAUDE.md"), "files outside the subtree stay out")
+		}
+	})
+
+	It("fails a Domain whose template.path the ref doesn't have, naming the path and the ref (#35)", func() {
+		ns := newProjectNamespace()
+		domain := newDomain(ns, "ops")
+		domain.Spec.Template.Path = "domains/billing"
+		gitFake.AddTemplate(domain.Spec.Template.URL, domain.Spec.Template.Ref, scaffold.Tree{
+			"domains/ops/README.md": {Data: []byte("# Ops\n")},
+		})
+		mustCreate(domain)
+		webshopOnDomains(ns, "ops")
+
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal(c4v1beta1.ReasonTemplatePathNotFound))
+		Expect(cond.Message).To(And(ContainSubstring("domains/billing"), ContainSubstring("v1.0.0")))
 	})
 
 	It("stays Pending until every Domain the system names exists (#1757)", func() {

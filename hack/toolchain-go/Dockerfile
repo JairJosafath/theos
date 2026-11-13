@@ -16,7 +16,7 @@ FROM ${UV_IMAGE} AS uv
 # PROJECT, Makefile and go.mod); hack/toolchain-go/operator-tools_test.sh
 # (make check) fails when they differ. Built in their own stage, so their
 # module and build caches stay out of the image.
-FROM golang:1.26.10-bookworm@sha256:fe3da92a5cb2881e4aa75e625cb0b7c50571632fb4cf340cbe53e6ccdcffdd51 AS operator-tools
+FROM golang:1.26.11-bookworm@sha256:dc40a13b61304647ed7e5d581d246b86413dfc29d63c6d018310feb93cd98fc0 AS operator-tools
 
 ARG KUBEBUILDER_VERSION=4.16.0
 ARG CONTROLLER_TOOLS_VERSION=0.22.0
@@ -44,7 +44,7 @@ RUN retry() { for i in 1 2 3 4 5; do "$@" && return; [ "$i" = 5 ] || sleep $((i 
  && /out/bin/kubebuilder version && /out/bin/controller-gen --version \
  && /out/bin/kustomize version && ls /out/kubebuilder/bin
 
-FROM golang:1.26.10-bookworm@sha256:fe3da92a5cb2881e4aa75e625cb0b7c50571632fb4cf340cbe53e6ccdcffdd51
+FROM golang:1.26.11-bookworm@sha256:dc40a13b61304647ed7e5d581d246b86413dfc29d63c6d018310feb93cd98fc0
 
 ARG NODE_VERSION=24.21.0
 ARG GOLANGCI_LINT_VERSION=2.14.0

@@ -1,5 +1,8 @@
 # Tests, the Kind cluster and deploying
 
+"The test environment" here is the Kind cluster a human tests the factory in, not a
+`TestEnvironment`, the tools agents lease ([plans/done/test-environments.md](../plans/done/test-environments.md)).
+
 How to test and run the factory. Go tests are the gate: `make check` for
 every change. A Kind cluster exists only when a human asks to run tests in it;
 agents never create, lease or deploy to one, and never run `make e2e`. The
@@ -48,7 +51,9 @@ network.
 ```bash
 make test                # Unit and envtest tests of the packages the change affects (real K8s API + etcd, no cluster needed)
 make test TEST_ALL=1     # The same, every package
-make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack, ui-test and test
+make check               # manifests, generate, fmt, vet, lint, validate-yaml, test-hack, ui-test and test, each only when the change can have broken it
+make check FORCE=1       # The same, every step, past every cache: what a release runs, and nothing else does
+make check CHECK_STEPS="lint validate-yaml"  # A part of the steps, selected the same way: what a workflow's job runs
 make validate-yaml       # The YAML against the built-in schemas and our CRDs, offline
 make test-hack           # The shell tests of hack/ (hack/**/*_test.sh), all at once, about a minute
 make test-templates-operator  # The operator combo's make check before and after kubebuilder create api, then its make dist; not in make check
@@ -79,52 +84,172 @@ fails on a render error, a path two layers write, or YAML that doesn't parse. A 
 template needs a row there. In tests, write with merge patches
 (`patch(obj, func(){...})`), not `Update`: the operator may adopt the object meanwhile.
 
+`make check` runs each of its steps only when the change since `origin/main`
+(its merge base, with uncommitted and untracked files) can have broken it
+(`hack/check.sh`, #127; [the plan](../plans/done/selective-check.md)):
+
+| Step | Runs when |
+| --- | --- |
+| `manifests`, `generate` | a Go file under `api/`, `cmd/` or `internal/` changed, `go.mod`, `go.sum`, a file they write (`config/crd`, `config/rbac`, the chart's copies) or a script they run |
+| `fmt`, `vet`, `lint` | on the packages [gta](https://github.com/digitalocean/gta) says the change affects: those a changed file lies in and those that depend on them. On none after a change to `go.mod` or `go.sum` alone, which lie in no package. `lint` on every package after a change to `.golangci.yml` or `.custom-gcl.yml` |
+| `validate-yaml`, `test-hack`, `ui-test` | a file among the tier's inputs changed ([devices.md](devices.md#memory-on-the-cluster-device) lists them), unless those inputs already passed on this device |
+| `doc-links`, `license-headers`, `readers` | three scans of the whole repository that the shell tests make, each by itself when a file it reads changed and the shell tests don't run: a Markdown file, or a file that is gone, which a link may name (`hack/check-doc-links.sh`); a Go file (`hack/check-license-headers.sh`); a Go test or the readers table (`hack/check-readers.sh`). They take seconds |
+| `test` | on the packages `make test` selects, below |
+
+So a docs-only change runs the link check and nothing else, in two seconds,
+on a device that never ran `make
+check` too, and takes no heavy-job slot; a UI-only change runs the UI's check
+and nothing of Go; a change to one Go package runs `vet`, `lint` and the tests
+on that package and its dependents. The shell tests' own inputs leave out the
+Go and docs trees, which those three scans read: without the scans a docs-only
+change with a dead link, or a Go file with no license header, passed. What `make
+manifests` writes counts for the steps after it: a regenerated CRD selects
+`validate-yaml` and the tests that load it.
+
+**Every check is partial, against main; only a release runs every step**
+(#127). That holds on a device, on the branch `main` too (there the change is
+what main holds that `origin/main` doesn't), on a pull request and on a push
+to main ([the workflows](#deployment-workflow) below). A release is the one
+place everything runs: the *Release* workflow's first job is `make check
+FORCE=1`, and nothing is built or published unless it passes. Apart from
+that, every step runs only when someone asks by hand (`TEST_ALL=1` selects
+every step; `FORCE=1` also passes by every cache) or when the change can't
+be known (no merge base: a shallow clone, a base that was never fetched).
+
+No file selects every step. The Makefile selects the steps whose tools it
+pins or whose flags it holds (`manifests`, `generate`, and `vet` and `lint`
+on every package) and the three tiers,
+whose inputs list it, and no Go test: none reads it. A `*.mk` selects `vet`
+and `lint` on every package too. A `*.mk` and
+`hack/check-cache.sh` select the tiers; the other scripts that select the
+steps (`hack/check.sh`, `hack/test-packages.sh`, `hack/lib/change.sh`) the
+shell tests, which test them; `hack/gta/` its own package besides.
+`go.mod` and `go.sum` select `manifests` and `generate` and the two tiers
+whose inputs list them, and no Go package.
+
+`CHECK_STEPS` takes a part of the check, by the steps' names: `generate`
+(`manifests` and `generate`), `fmt`, `vet`, `lint`, `validate-yaml`,
+`test-hack`, `doc-links`, `license-headers`, `readers`, `ui-test`, `test`,
+and `test-gitea`, which runs only when named:
+the Gitea adapter against a local Gitea, when `make test` tests
+`internal/adapters/gitea` or `hack/seed/` or `hack/gitea-local.sh` changed.
+A workflow's job runs its part that way; such a run records no pass of the
+tree. The run ends with one block, which is what a pull request pastes:
+
+```
+make check: passed. 1 file changed since origin/main (fc9adcb1d2e3); the steps that change selects:
+  manifests generate  skipped  no Go file under api/, cmd/ or internal/ changed, nor go.mod, go.sum or a generated file
+  fmt                 skipped  no changed file lies in a Go package
+  vet                 skipped  no changed file lies in a Go package
+  lint                skipped  no changed file lies in a Go package, and no linter configuration changed
+  validate-yaml       skipped  none of its inputs changed: the YAML, api/, templates/ and hack/render
+  test-hack           skipped  none of its inputs changed: hack/ and the rest outside the Go, UI and docs trees
+  doc-links           skipped  none of its inputs changed: the Markdown
+  license-headers     skipped  none of its inputs changed: the Go files
+  readers             skipped  none of its inputs changed: the Go tests and the readers table
+  ui-test             ran      42s; ui/src/model/loop.ts changed
+  test                skipped  no Go package changed since origin/main (fc9adcb1d2e3)
+```
+
+A step is `ran`, `skipped`, `cached` (selected, and answered from this
+device's cache), `FAILED` or `not run` (a step before it failed, which ends
+the check). `make vet`, `make lint` and `make fmt` by themselves read every
+package; `make check` names the affected ones (`GO_PACKAGES`,
+`LINT_PACKAGES`). `hack/check_test.sh` tests the selection on a throwaway
+module.
+
 `make test` tests only the packages the change since `origin/main` (its merge
-base, with uncommitted and untracked files) can affect: a package with a changed
-file (its directory or one below it, so embedded files count) and every package
-whose test binary links one, transitively (`hack/test-packages.sh`, #1295). It
+base, with uncommitted and untracked files) can affect, as gta selects them
+(`hack/gta`, our command on its library): a package with a changed file (its
+directory or one below it, so embedded files and fixtures count) and every
+package that depends on one, through its tests too (`hack/test-packages.sh`,
+#1295, #127). A package whose `_test.go` files alone changed is tested alone,
+since no other package links them. It
 prints which ran and why: `make test: testing 2 of 21 packages, ...; changed:
 internal/model`, or `testing every package (21): <reason>`. A changed non-Go
 file in a package, or a changed `//go:embed` line, also tests `cmd`: its
 `TestDockerContextHasEmbeddedFiles` checks the embeds of every package a
 Dockerfile builds without linking them (#1321). A file directly under
 `test/e2e/` (the e2e suite) tests nothing; one in `test/e2e/standin/` tests
-that package. It tests every package on the branch `main` (a detached HEAD at
-main's commit is no branch: it diffs against `origin/main` and tests no
-package), without a merge base, with `TEST_ALL=1` or `FORCE=1`, and
-after a change to a file a Go test may read without importing it: `go.mod`,
-`go.sum`, the `Makefile`, the `hack/` files Go tests read (`hack/seed/`,
-`hack/boilerplate.go.txt`, `hack/setup.sh`, `hack/release.sh`, `hack/new.sh`,
-`hack/go-test.sh`), `config/` (the CRDs and RBAC envtest loads), `api/`,
-`dist/`, `templates/`, `test/crds/`, any `testdata/`, the workflows, a
-Dockerfile, `README.md`, `docs/getting-started.md` or a file in no listed path.
-A change only to `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest of
-`.github/`, a top-level `*.md` or the rest of `hack/` outside its Go packages
-tests no package; `make test-hack` gates the shell scripts (#1318). A Go test
-that names a new `hack/` path fails `hack/test-packages_test.sh` until the
-path joins that list. In the factory's own CI (`.gitea/workflows/check.yaml`,
+that package. A file below a package's `testdata` tests that package alone.
+On the branch `main` it selects as anywhere else, against
+`origin/main` (#127; it used to test every package there). It tests every
+package only without a merge base, with `TEST_ALL=1` or `FORCE=1`.
+
+A change to `go.mod` or `go.sum` alone tests no package
+([the plan](../plans/done/go-mod-tests-nothing.md)): gta places the two files
+in none, and that is how
+[mcvs-golang-action](https://github.com/schubergphilis/mcvs-golang-action)
+runs gta for its partial testing. They used to test every package, which
+made a run of twenty minutes of a bump of one module or of the toolchain,
+the controller suite alone being a quarter of an hour. What such a bump
+breaks shows at the next release, whose full check tests every package;
+before that, the *Vulnerabilities* and *CodeQL* workflows, which start for
+`go.mod` and build the module, show a bump it no longer compiles with.
+
+A file some Go tests read without importing it tests the packages whose
+tests read it, the readers table in `hack/test-packages.sh`: `templates/`,
+`config/` (the CRDs and RBAC envtest loads), `api/`, `dist/`, `test/crds/`,
+`test/e2e/testdata/`, the CloudFormation adapter's `testdata/`, the report
+fixture the UI's tests share with `internal/model`'s
+(`ui/src/model/testdata/`, #66), the workflows
+and `docs/getting-started.md` (`test/chart`), every Dockerfile and
+`.dockerignore` (`cmd`), every Go file (`internal/ports`, whose
+`TestHostNeutral` reads them all), and the `hack/` files Go tests read
+(`hack/seed/`, `hack/boilerplate.go.txt`, `hack/setup.sh`, `hack/release.sh`,
+`hack/new.sh`, `hack/go-test.sh`). The table is what the tests really open:
+it was checked against Go's own test log of every package (#127; the
+[plan](../plans/done/selective-check.md) says how). A change to a file no Go
+test reads tests no package: `docs/`, `.claude/`, `.vscode/`, `ui/`, the rest
+of `.github/`, a top-level `*.md`, the Makefile, the rest of `hack/` outside
+its Go packages, and a file in no listed path. Before #127 the Makefile, a
+workflow, a Dockerfile, `README.md`, any `testdata/` and a file in no listed
+path tested every package, in case a test read them; `make test-hack` gates
+the shell scripts (#1318). A Go test
+that names a new `hack/` path, or climbs to a path of the table from a
+package the table doesn't list for it, fails `hack/test-packages_test.sh`
+until the table has it. In the factory's own CI (`.gitea/workflows/check.yaml`,
 #2058) the checkout has `origin/main` and the commit's history without blobs, so
 a pull request selects against `origin/main` as on a device; a push to main
 sets `TEST_BASE` to main's previous head (`TEST_ALL=1` when that head is zeros
 or can't be fetched), since its detached HEAD is no branch. The workflow also
-sets `LINT_CHANGED_ONLY=1`, which makes `make check` lint only when
-`hack/go-changed.sh` finds a `*.go`, `go.mod`, `go.sum`, `.golangci.yml` or
-`.custom-gcl.yml` changed since the same base. `land`'s `make check` selects
-the same way, and so does the *Tests* workflow on a pull request (against
-its base branch); its `paths` filter skips a pull request that changes only
-`*.md`, `docs/`, `ui/`, `config/ui/`, `config/samples/`, `test/e2e/`, the
-linter configs, `hack/` (but the four files it names), `dev`, `.vscode/` or
-`.github/` (but its own workflow) files. *Tests* runs on pushes to main
-too, with the same `paths`, and on a pushed `vX.Y.Z` tag: there and on a
-manual run it sets `TEST_ALL=1` and tests every package, and that run
-catches what a selection missed (#1522). Main's run is the one that shows a
-red main while yolo mode merges a pull request unchecked (#1556). With `COVER=1`,
+sets `LINT_CHANGED_ONLY=1`, which nothing reads any more: every `make check`
+now selects `lint`, and each other step, by the change since the same base
+(#127). `land`'s `make check` selects
+the same way, and so do the workflows on GitHub, each job with its part of
+`make check`: *Tests* runs `CHECK_STEPS="generate fmt vet test"` and then
+`CHECK_STEPS=test-gitea`, *Lint* `CHECK_STEPS="generate lint validate-yaml"`
+and, in its *Shell tests* job, `CHECK_STEPS="test-hack doc-links
+license-headers readers"`. They set `TEST_BASE`:
+a pull request is compared with its base branch, a push to main with main's
+head before the push (`github.event.before`), a manual run with main. Each
+push to main gets its own run, none cancelled or dropped for a newer one,
+since a run now covers only its own push (`hack/check-workflows.sh` holds
+the workflows to all of this). *Tests*' `paths` filter skips a pull request
+that changes only
+`*.md`, `docs/`, `ui/` (but `ui/src/model/testdata/`, the fixtures the UI's
+tests share with Go's, #66), `config/ui/`, `config/samples/`, `test/e2e/`, the
+linter configs, `hack/` (but the files it names: what Go tests read, and the
+scripts that select and run them), `dev`, `.vscode/` or
+`.github/` (but its own workflow) files. Main's run is the one that shows a
+red main while yolo mode merges a pull request unchecked (#1556). No workflow
+tests every package but *Release*: its first job runs every step, and what a
+selection missed since the last release shows there, before anything ships
+(it replaces the run of every package *Tests* made on a tag, #1522). With `COVER=1`,
 `cover.out` covers the packages that ran (`mode: set` and nothing else when none
-did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage. DigitalOcean's `gta`
-selects the same way, but it loads every package of every module in the build
-list (`go list ...`), which this module's `go.mod` can't (`go mod tidy` wants
-more requirements) and which takes a minute where `go list -test ./...` takes
-half a second.
+did); run `make test TEST_ALL=1 COVER=1` for the whole module's coverage.
+`make test TEST_PACKAGES=./internal/model` tests the packages it names
+instead; `make check` passes the selection its last block reports.
+
+gta's own command can't run here: it loads every package of every module in
+the build list (`...`), which this module's `go.mod` can't (`go: updates to
+go.mod needed`), and its git differ reads commits only. `hack/gta` uses its
+library on this module's packages alone, with the changed files the scripts
+list (`hack/lib/change.sh`), and adds what gta v0.2.0 leaves out: a package
+owns every file in its directory and below, down to the next package, and a
+package of tests alone (`test/chart`) that imports an affected package is
+selected too. `hack/gta/main_test.go` holds it to that. When gta fails, every
+package is tested.
 
 `make test` bounds each package at `TEST_TIMEOUT` (20m; the Makefile says why;
 the *Tests* workflow gives its loaded self-hosted runners 60m, #1504). The
@@ -261,7 +386,11 @@ and `hack/chart-manager.sh` fails `make validate-yaml` when the render lacks the
 fresh Kind cluster on GitHub. Don't `helm install` it into the shared
 `theos` cluster: `make deploy` owns the CRDs there.
 
-A pushed `vX.Y.Z` tag runs the *Release* workflow, which builds the operator,
+A pushed `vX.Y.Z` tag runs the *Release* workflow. Its first job, *Full
+check*, runs `make check FORCE=1` (every step, on every package, past every
+cache), `make check-generated` and `make test-gitea`: a release is the one
+place the whole check runs (#127), and a tag whose full check fails is not a
+release. Then it builds the operator,
 UI, toolchain, agent and runner images, pushes them and the chart to GHCR and
 creates the GitHub release ([plan](../plans/done/release-workflow.md)), its
 notes drafted by `hack/release-notes.sh` from the pull requests merged since
@@ -296,15 +425,22 @@ merge to main, each only when its paths change, or on demand; the jobs a pull
 request waits for are listed in `.github/required-checks`. No
 workflow starts a Kind cluster on its own: *Test Chart* and *E2E Tests* run
 only when a human dispatches them, and *Verify Release* when a human does or
-*Release* has published a minor. A pushed tag runs *Release*, which builds and
-publishes and tests nothing. `make check` is the gate before a merge; it runs
+*Release* has published a minor. A pushed tag runs *Release*, which runs
+every step of `make check` and then builds and publishes. Lint and Tests are
+partial, each run its part of `make check` against main; `make check` on a
+device is the gate before a merge; it runs
 `make ui-test` (the UI workflow's `npm run check`: typecheck, eslint, Prettier
 and its tests) too, so a UI change can't merge with what would turn *UI* red
-(#1006).
+(#1006). *UI* then runs `npm run test:e2e` as well, the built UI in Chromium
+against a fake API, which `make check` leaves out as a device may have no
+Chromium (theos#31): run `cd ui && npm run test:e2e` for a change to the UI's
+pages, its fixture or its server, and for an update of its packages: the
+accessibility rules the pages are held to come with axe-core, so a bump can
+turn *UI* red with no page changed (#109).
 
 ## Work on the factory: GitHub issues by hand
 
-The relay (`hack/relay.sh`, `hack/relay-watch.sh`) is retired: the factory works
+The relay is retired, and its scripts are gone: the factory works
 its own issues in Gitea, through the Crew `theos`. How that runs is in
 [docs/plans/self-hosting.md](../plans/self-hosting.md).
 
@@ -390,9 +526,11 @@ guide names another version; `hack/release_test.sh` holds both to that, and
 
 A release that deprecates a version gives its drop issue the date: once the
 release is published, the maintainer writes the earliest drop date (the
-release's date plus 90 days) into that issue's body (#1963 for `v1alpha1`).
-The CRDs' warnings, the guide and the chart's README name the rule ("a
-release 90 or more days after v0.30.0"), never the date (#1983).
+release's date plus 90 days) into that issue's body. The CRDs' warnings,
+the guide and the chart's README name the rule ("a release 90 or more days
+after vX.Y.Z"), never the date (#1983). No version is deprecated today:
+every kind is served at `v1beta1` alone, `v1alpha1` dropped before theos's
+first release (#1963).
 
 No agent can pull a release (the GHCR packages are private and no device's
 gh token has `read:packages`), so a workflow does. Once *Release* has

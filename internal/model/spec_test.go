@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -220,8 +236,8 @@ func TestSpecSteps(t *testing.T) {
 		}
 		return f
 	}
-	awaiting := func(approval string, pull SpecPullFacts) TaskFacts {
-		return spec(TaskFacts{Phase: TaskAwaitingApproval, SpecApproval: approval, SpecPull: pull})
+	awaiting := func(approval string, pull WaitingPullFacts) TaskFacts {
+		return spec(TaskFacts{Phase: TaskAwaitingApproval, SpecApproval: approval, WaitingPull: pull})
 	}
 	stray := SpecScopeRefusal("docs/specs/4.md", []string{"app.py"})
 	tests := []struct {
@@ -239,39 +255,39 @@ func TestSpecSteps(t *testing.T) {
 			SpecApproval: SpecApprovalReviewer}), ActionMerge, "Approved; merging", ""},
 		{"an Implement Task merges on approval as ever", TaskFacts{Phase: TaskReviewing, Run: approved, Round: 1,
 			MaxRounds: 3}, ActionMerge, "Approved; merging", ""},
-		{"no merge before a person's approval", awaiting("", SpecPullFacts{}), ActionWait,
+		{"no merge before a person's approval", awaiting("", WaitingPullFacts{}), ActionWait,
 			"waits for a person to approve", ReasonAwaitingApproval},
-		{"the factory's own approval is no person's", awaiting(SpecApprovalPerson, SpecPullFacts{}), ActionWait, "",
+		{"the factory's own approval is no person's", awaiting(SpecApprovalPerson, WaitingPullFacts{}), ActionWait, "",
 			ReasonAwaitingApproval},
-		{"a person's approval merges it", awaiting("", SpecPullFacts{People: PersonVerdict{ApprovedBy: "ada"}}),
+		{"a person's approval merges it", awaiting("", WaitingPullFacts{People: PersonVerdict{ApprovedBy: "ada"}}),
 			ActionMerge, "ada approved the spec; merging", ""},
 		{"approved, but main moved", func() TaskFacts {
-			f := awaiting("", SpecPullFacts{People: PersonVerdict{ApprovedBy: "ada"}})
+			f := awaiting("", WaitingPullFacts{People: PersonVerdict{ApprovedBy: "ada"}})
 			f.Behind = true
 			return f
 		}(), ActionUpdateBranch, "main moved", ""},
-		{"Reviewer set while it waits merges it", awaiting(SpecApprovalReviewer, SpecPullFacts{}), ActionMerge,
+		{"Reviewer set while it waits merges it", awaiting(SpecApprovalReviewer, WaitingPullFacts{}), ActionMerge,
 			"The reviewer's approval is enough", ""},
-		{"a person merged it", awaiting("", SpecPullFacts{Merged: true}), ActionMerge, "A person merged", ""},
-		{"a person closed it: declined", awaiting("", SpecPullFacts{Closed: true,
+		{"a person merged it", awaiting("", WaitingPullFacts{Merged: true}), ActionMerge, "A person merged", ""},
+		{"a person closed it: declined", awaiting("", WaitingPullFacts{Closed: true,
 			People: PersonVerdict{ApprovedBy: "ada"}}), ActionSpecDeclined, "declined", ReasonSpecDeclined},
-		{"its branch moved: checked again", awaiting("", SpecPullFacts{HeadMoved: true,
+		{"its branch moved: checked again", awaiting("", WaitingPullFacts{HeadMoved: true,
 			People: PersonVerdict{ApprovedBy: "ada"}}), ActionMerge, "checking it again", ""},
-		{"a person's changes start the next round", awaiting("", SpecPullFacts{
+		{"a person's changes start the next round", awaiting("", WaitingPullFacts{
 			People: PersonVerdict{ChangesBy: "ada", Changes: "Say how errors look."}}), ActionRetry,
 			"Round 1 was not accepted", ""},
-		{"an approval from chat merges it, said so", awaiting("", SpecPullFacts{
+		{"an approval from chat merges it, said so", awaiting("", WaitingPullFacts{
 			People: PersonVerdict{ApprovedBy: "ada@example.com", ApprovedInChat: true}}),
 			ActionMerge, "ada@example.com approved the spec in chat; merging", ""},
-		{"changes from chat start the next round with them", awaiting("", SpecPullFacts{
+		{"changes from chat start the next round with them", awaiting("", WaitingPullFacts{
 			People: PersonVerdict{ChangesBy: "ada@example.com", Changes: "Name the tokens.", ChangesInChat: true}}),
 			ActionRetry, "", ""},
-		{"a word from chat that didn't count is said in the wait", awaiting("", SpecPullFacts{
+		{"a word from chat that didn't count is said in the wait", awaiting("", WaitingPullFacts{
 			Ignored: []string{"ada's approval from chat is of commit abc1234, not the head def5678, so it doesn't count"}}),
 			ActionWait, "waits for a person to approve its pull request; ada's approval from chat is of commit abc1234",
 			ReasonAwaitingApproval},
 		{"a person's changes in the last round fail it", spec(TaskFacts{Phase: TaskAwaitingApproval, Round: 3,
-			MaxRounds: 3, SpecPull: SpecPullFacts{People: PersonVerdict{ChangesBy: "ada", Changes: "No."}}}),
+			MaxRounds: 3, WaitingPull: WaitingPullFacts{People: PersonVerdict{ChangesBy: "ada", Changes: "No."}}}),
 			ActionFail, "", ""},
 		{"a spec beside other files goes back", spec(TaskFacts{Phase: TaskChecking, Checks: checkSuccess,
 			SpecRefusal: stray}), ActionRetry, "", ""},
@@ -290,11 +306,11 @@ func TestSpecSteps(t *testing.T) {
 			}
 		})
 	}
-	changes := NextTaskStep(awaiting("", SpecPullFacts{People: PersonVerdict{ChangesBy: "ada", Changes: "Say how."}}))
+	changes := NextTaskStep(awaiting("", WaitingPullFacts{People: PersonVerdict{ChangesBy: "ada", Changes: "Say how."}}))
 	if !strings.Contains(changes.Feedback, "ada asked for changes to the spec on its pull request:\nSay how.") {
 		t.Errorf("feedback = %q, want the person's review", changes.Feedback)
 	}
-	chat := NextTaskStep(awaiting("", SpecPullFacts{People: PersonVerdict{ChangesBy: "ada@example.com",
+	chat := NextTaskStep(awaiting("", WaitingPullFacts{People: PersonVerdict{ChangesBy: "ada@example.com",
 		Changes: "Name the tokens.", ChangesInChat: true}}))
 	if !strings.Contains(chat.Feedback, "ada@example.com asked for changes to the spec in chat:\nName the tokens.") {
 		t.Errorf("feedback = %q, want the person's changes from chat", chat.Feedback)

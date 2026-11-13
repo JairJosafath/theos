@@ -1,0 +1,41 @@
+#92, part 1: a change that waits for a person has a thread in the Chat's
+reviews room
+========================================================================
+
+2026-11-10. Test output is the evidence; no cluster and no homeserver were
+used: theos-chat ran on the chat fake, beside the operator on envtest.
+
+$ go test -v ./internal/controller -run '^TestControllers$' -ginkgo.focus "waiting change up in chat|asked for in the change's thread" -ginkgo.v
+Crew approval rules puts a waiting change up in chat, once, and merges it when a person approves it there, as them
+Crew approval rules starts the next round with the changes a person asked for in the change's thread
+Ran 2 of 773 Specs in 11.211 seconds
+SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 771 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	11.257s
+
+What the thread says, from the first spec:
+
+  Change for issue #1: Export orders
+  Passed CI and the factory's review, and waits for your approval of commit <head> (approval rule 1
+  (paths migrations/) asks for a person for migrations/001.sql): say approve in this thread, or
+  changes: <what to change>.
+
+  mallory: approve   ->  @mallory... is not one of Chat chat's people, so nothing was done
+  ada:     approve   ->  Done as ada-...@example.com: approved the change at <head>; the operator merges it.
+  (root, edited)     ->  Merged: ada-...@example.com approved it in chat.   ✅
+
+Every spec that names chat, the deploys' approve <version> in the same room
+among them:
+
+$ go test -v ./internal/controller -run '^TestControllers$' -ginkgo.focus "in chat|Chat |chat"
+SUCCESS! -- 24 Passed | 0 Failed | 0 Pending | 749 Skipped
+
+$ go test ./internal/model -run 'TestChatRouteFor|TestParseChatCommand|TestChatCommandRequest|TestChatTaskNews' -v
+--- PASS: TestChatTaskNewsSpec (0.00s)
+--- PASS: TestChatTaskNewsChange (0.00s)
+--- PASS: TestChatTaskNewsTriage (0.00s)
+--- PASS: TestChatRouteFor (0.00s)
+--- PASS: TestParseChatCommand (0.00s)
+--- PASS: TestChatCommandRequest (0.00s)
+--- PASS: TestChatCommandRequestRefuses (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.020s

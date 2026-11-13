@@ -288,7 +288,7 @@ ensure_credentials() {
 # runners (config/runner, the chart's runners.yaml). Registered to that
 # organization, they serve the templates' checks and nothing else: a
 # project's checks run on the operator's per-project pool of single-job
-# runners (docs/plans/ci-runner-isolation.md). Gitea hands out the token it
+# runners (docs/plans/done/ci-runner-isolation.md). Gitea hands out the token it
 # has until it is reset, so a Secret holding it is kept (the upgrade check
 # sees it unchanged); the annotation theos.factory.io/token-owner says whose
 # token it is, and a Secret without it, an instance token an older seed or

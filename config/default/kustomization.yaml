@@ -31,6 +31,9 @@ resources:
 # [METRICS] Expose the controller manager metrics service.
 - metrics_service.yaml
 - webhook_service.yaml
+# The receiver of Gitea's deliveries and the fence on its port.
+- git_events_service.yaml
+- git_events_network_policy.yaml
 # [NETWORK POLICY] Control ingress to metrics and webhook ports.
 # Allow metrics traffic from pods in namespaces labeled 'metrics: enabled'.
 # Allow webhook traffic from all sources.
@@ -40,9 +43,12 @@ resources:
 patches:
 # [METRICS] The following patch will enable the metrics endpoint using HTTPS and the port :8443.
 # More info: https://book.kubebuilder.io/reference/metrics
+# Only the manager: config/default also deploys the model proxy, whose binary
+# has no --metrics-bind-address and exits on it.
 - path: manager_metrics_patch.yaml
   target:
     kind: Deployment
+    labelSelector: control-plane=controller-manager
 
 # Uncomment the patches line if you enable Metrics and CertManager
 # [METRICS-WITH-CERTS] To enable metrics protected with certManager, uncomment the following line.

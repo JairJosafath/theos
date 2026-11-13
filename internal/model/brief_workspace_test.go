@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -30,6 +46,25 @@ func TestBriefWorkspaceFilesPaths(t *testing.T) {
 	}
 	if files[PlannerGuide] != plannerGuideText || plannerGuideText == "" {
 		t.Fatalf("PLANNER.md is not the embedded guide")
+	}
+}
+
+// model/test-environments.yaml lists the project's test environments, by
+// name, each with the label an issue asks for it with and the one a
+// workflow runs on it with (docs/plans/done/test-environments.md, T13).
+func TestBriefWorkspaceEnvironments(t *testing.T) {
+	files := workspaceFiles(t, BriefWorkspace{Brief: "ext", Environments: []WorkspaceEnvironment{
+		{Name: "godot", Description: "Godot 4 on a GPU"},
+		{Name: "browser", Description: "Chromium with Playwright;\nrun headed programs under xvfb-run -a."},
+	}})
+	want := "- name: browser\n  description: Chromium with Playwright; run headed programs under xvfb-run -a.\n" +
+		"  label: env/browser\n  runsOn: env-browser\n- name: godot\n  description: Godot 4 on a GPU\n" +
+		"  label: env/godot\n  runsOn: env-godot\n"
+	if got := files[WorkspaceEnvironmentsFile]; got != want {
+		t.Errorf("%s =\n%s\nwant\n%s", WorkspaceEnvironmentsFile, got, want)
+	}
+	if got := workspaceFiles(t, BriefWorkspace{Brief: "ext"})[WorkspaceEnvironmentsFile]; got != "[]\n" {
+		t.Errorf("%s without environments = %q, want an empty list", WorkspaceEnvironmentsFile, got)
 	}
 }
 
@@ -409,5 +444,29 @@ func TestPlannerGuideWritesPlanAPIVersion(t *testing.T) {
 	}
 	if found == 0 {
 		t.Fatal("planner.md shows no apiVersion")
+	}
+}
+
+func TestRenderCadence(t *testing.T) {
+	for _, tc := range []struct {
+		cadence ReleaseCadence
+		want    string
+	}{
+		{ReleaseCadence{}, ""},
+		{ReleaseCadence{Every: CadenceRelease}, ""},
+		{ReleaseCadence{Every: CadenceDay}, "Released apps release every day at 18:00 UTC: "},
+		{ReleaseCadence{Every: CadenceWeek, At: "09:30", TimeZone: "Europe/Amsterdam"},
+			"Released apps release every Friday at 09:30 Europe/Amsterdam: "},
+	} {
+		got := renderBrief(BriefWorkspace{Brief: "b", Idea: "Idea.", GitProvider: "host", Cadence: tc.cadence})
+		if tc.want == "" {
+			if strings.Contains(got, "## Release cadence") {
+				t.Errorf("brief.md for %+v says a cadence:\n%s", tc.cadence, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, "## Release cadence\n\n"+tc.want) || !strings.Contains(got, "`release: now`") {
+			t.Errorf("brief.md for %+v lacks %q and release: now:\n%s", tc.cadence, tc.want, got)
+		}
 	}
 }

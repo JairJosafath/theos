@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -11,6 +19,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -43,6 +52,9 @@ import (
 type ContainerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads Secrets without caching them.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
@@ -51,6 +63,10 @@ type ContainerReconciler struct {
 	ScaffoldOptions scaffold.Options
 	// ScaffoldTimeout bounds the Git calls of one scaffold attempt; zero means two minutes.
 	ScaffoldTimeout time.Duration
+	// ScaffoldSettle is how long a new Container waits after its creation
+	// before it is scaffolded, so a model applied in one go has its
+	// Relationships there (#43); nil or zero waits not at all.
+	ScaffoldSettle func() time.Duration
 	// ChecksRecheck is how often a Ready Container reads its checks; zero means a minute.
 	ChecksRecheck time.Duration
 	// SecretRecheck is how often a Container waiting for its credentials Secret
@@ -179,6 +195,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 	r.remember(req.NamespacedName, container.UID)
+	// The waits for the host's checks stretch while its deliveries arrive (#1222).
+	ctx = withHostEvents(ctx, r.Client, container.Namespace, container.Spec.GitProviderRef.Name)
 
 	active, err := r.countSessions(ctx, &container)
 	if err != nil {
@@ -230,6 +248,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		r.reportBundleCurrent(ctx, &container, status)
 		reportDomainsApplied(&container, status, &system)
+		r.reportTestEnvironments(ctx, &container, status)
 		failed := r.updateOperations(ctx, &container, status, live)
 		// A failed Crew list leaves status.image and status.deploys as they
 		// were: the pass would act on a newest release it couldn't read (#1570, #1576).
@@ -242,8 +261,11 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// A Git error is retried, and a pull request in flight read again, at
 		// each recheck, with or without a Standard: the status write doesn't
 		// reconcile the Container again.
-		if (failed || operationsInFlight(status)) && result.RequeueAfter == 0 {
+		if failed && result.RequeueAfter == 0 {
 			result.RequeueAfter = r.checksRecheck()
+		}
+		if operationsInFlight(status) && result.RequeueAfter == 0 {
+			result.RequeueAfter = hostRecheck(ctx, r.checksRecheck())
 		}
 		// After the updates' steps, so it reads what the repository runs now.
 		r.reportChecksApplied(ctx, &container, status)
@@ -293,8 +315,8 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		err = model.CheckWiring(choices.Framework, res.entries)
 	}
 	if err == nil {
-		// Resolved, so entries start with the Framework.
-		err = model.CheckDeploysItself(res.entries[0], string(container.Spec.Type), choices.Compute, choices.Deployment)
+		err = model.CheckDeploysItself(frameworkEntry(res.entries), string(container.Spec.Type), choices.Compute,
+			choices.Deployment)
 	}
 	err = model.InBundle(choices.Bundle, err)
 	if err != nil {
@@ -317,7 +339,25 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionChoicesValid,
 		metav1.ConditionTrue, c4v1beta1.ReasonValid, "")
 
+	// #43: the Relationships applied with the Container may come after it,
+	// and the scaffold reads its Connectors from them once. Resolving again
+	// after the window counts every one created by then.
+	if left := r.settleLeft(&container); left > 0 {
+		status.Phase = c4v1beta1.ContainerPending
+		r.condition(&container, status, c4v1beta1.ConditionScaffolded, metav1.ConditionFalse, c4v1beta1.ReasonSettling,
+			fmt.Sprintf("Waiting %s after the Container's creation for the Relationships applied with it",
+				left.Round(time.Second)))
+		return ctrl.Result{RequeueAfter: left}, r.writeStatus(ctx, &container, status)
+	}
 	return r.scaffold(ctx, &container, res, status)
+}
+
+// settleLeft is how much longer the Container waits before its scaffold.
+func (r *ContainerReconciler) settleLeft(container *c4v1beta1.Container) time.Duration {
+	if r.ScaffoldSettle == nil {
+		return 0
+	}
+	return model.SettleLeft(container.CreationTimestamp.Time, time.Now(), r.ScaffoldSettle())
 }
 
 func (r *ContainerReconciler) countSessions(ctx context.Context, container *c4v1beta1.Container) (int, error) {
@@ -466,6 +506,11 @@ func (r *ContainerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1beta1.Domain{}, waitingContainers, specChanged()).
 		Watches(&c4v1beta1.Bundle{}, bundleContainers, specChanged()).
 		Watches(&c4v1beta1.DataStore{}, waitingContainers, specChanged()).
+		Watches(&c4v1beta1.TestEnvironment{}, handler.EnqueueRequestsFromMapFunc(namespaceContainers(mgr.GetClient())),
+			createOrDelete()).
+		// A delivery of the Git host reconciles the Container whose repository a delivery names at once
+		// (docs/plans/done/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventContainerRequest(mgr.GetClient()))).
 		Named("container").
 		Complete(r)
 }

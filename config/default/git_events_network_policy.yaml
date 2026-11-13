@@ -1,0 +1,34 @@
+# Only config/gitea's Gitea, in namespace gitea, reaches the receiver's port
+# (docs/plans/done/git-events.md, decision 10). A policy that selects the manager
+# isolates it, so its other ports (health, metrics, webhook) stay open to all,
+# as they are without one; ../network-policy narrows those when included.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: theos
+    app.kubernetes.io/managed-by: kustomize
+  name: git-events
+  namespace: system
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+      app.kubernetes.io/name: theos
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gitea
+      ports:
+        - port: 8082
+          protocol: TCP
+    - ports:
+        - port: 8081
+          protocol: TCP
+        - port: 8443
+          protocol: TCP
+        - port: 9443
+          protocol: TCP

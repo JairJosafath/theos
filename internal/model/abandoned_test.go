@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -34,6 +50,9 @@ func TestAbandonedPull(t *testing.T) {
 		{"no-CI failures don't use tries up", open(AbandonedPullFacts{Issue: 52, Tries: []IssueTry{first,
 			{Name: "core-2", Created: 2, Final: true, Failed: true, NoCI: true},
 			{Name: "core-3", Created: 3, Final: true, Failed: true}}}), false, "", ""},
+		{"#2037: a try whose agent couldn't see the issue doesn't use one up", open(AbandonedPullFacts{Issue: 52,
+			Tries: []IssueTry{first, {Name: "core-2", Created: 2, Final: true, Failed: true, Unseen: true},
+				{Name: "core-3", Created: 3, Final: true, Failed: true}}}), false, "", ""},
 		{"superseded by a newer try's own pull request", open(AbandonedPullFacts{Issue: 139, Tries: []IssueTry{first,
 			{Name: "core-2", Created: 2, PullRequest: 155, PullRequestURL: "https://git/pulls/155"}}}), true,
 			"superseded by Task core-2", "Task `core-2`, a newer try at #139, works on https://git/pulls/155"},

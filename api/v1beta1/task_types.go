@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package v1beta1
@@ -14,8 +22,9 @@ import (
 )
 
 // TaskKind is what a Task does: implement a goal in a Container's repository,
-// plan a round of a Brief, triage an issue, or write an issue's spec.
-// +kubebuilder:validation:Enum=Implement;Plan;Triage;Spec
+// plan a round of a Brief, triage an issue, write an issue's spec, or judge
+// another Task's finished change for a Scorer.
+// +kubebuilder:validation:Enum=Implement;Plan;Triage;Spec;Score
 type TaskKind string
 
 // Task kinds.
@@ -30,6 +39,11 @@ const (
 	// then copies its acceptance criteria into the issue (docs/design.md,
 	// "Spec").
 	TaskKindSpec TaskKind = "Spec"
+	// TaskScore judges another Task's finished change against a Scorer's
+	// criteria: one read-only run of the Scorer's judge, whose verdicts are
+	// its status.score (docs/plans/done/measure-and-improve.md). Its Scorer makes
+	// it and owns it.
+	TaskScore TaskKind = "Score"
 )
 
 // TaskSpec is a goal for one Container, done by an Agent: written here, or in an
@@ -51,13 +65,19 @@ const (
 // +kubebuilder:validation:XValidation:rule="!has(self.verifierRef) || ((!has(self.kind) || self.kind == 'Implement') && !has(self.allowedProtectedPaths))",message="only an Implement Task without allowedProtectedPaths has a verifierRef: a spec, a plan, a triage and a Standard change are not verified"
 // +kubebuilder:validation:XValidation:rule="!has(self.allowedProtectedPaths) || has(self.issue)",message="allowedProtectedPaths needs an issue"
 // +kubebuilder:validation:XValidation:rule="has(self.allowedProtectedPaths) == has(oldSelf.allowedProtectedPaths)",message="allowedProtectedPaths is immutable"
+// +kubebuilder:validation:XValidation:rule="(has(self.kind) && self.kind == 'Score') == has(self.score)",message="a Score Task needs score, and only a Score Task has one"
+// +kubebuilder:validation:XValidation:rule="!has(self.kind) || self.kind != 'Score' || (has(self.goal) && has(self.containerRef) && !has(self.reviewerRef) && !has(self.verifierRef) && !has(self.allowedProtectedPaths))",message="a Score Task has a goal and a containerRef, and no reviewerRef, verifierRef or allowedProtectedPaths"
+// +kubebuilder:validation:XValidation:rule="has(self.score) == has(oldSelf.score)",message="score is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(self.benchmark) || ((!has(self.kind) || self.kind == 'Implement') && has(self.goal) && !has(self.allowedProtectedPaths))",message="a Benchmark's Task is an Implement Task with a goal and no allowedProtectedPaths"
+// +kubebuilder:validation:XValidation:rule="has(self.benchmark) == has(oldSelf.benchmark)",message="benchmark is immutable"
 type TaskSpec struct {
 	// kind is Implement (the default): implement the goal in the Container's
 	// repository; Plan: plan a round of the Brief named by briefRef; Triage:
 	// decide what the issue needs next, which the operator then applies to the
-	// issue; or Spec: write the issue's spec, docs/specs/<issue>.md, which
+	// issue; Spec: write the issue's spec, docs/specs/<issue>.md, which
 	// merges after its review point and gives the issue its acceptance
-	// criteria. It can't change.
+	// criteria; or Score: judge another Task's finished change for the
+	// Scorer named in score. It can't change.
 	// +kubebuilder:default=Implement
 	// +optional
 	Kind TaskKind `json:"kind,omitempty"`
@@ -122,10 +142,126 @@ type TaskSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="allowedProtectedPaths is immutable"
 	// +optional
 	AllowedProtectedPaths []string `json:"allowedProtectedPaths,omitempty"`
+
+	// score is what a Score Task judges: the Scorer that made it, the Task it
+	// judges and the criteria, copied from the Scorer when it was made. It
+	// can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="score is immutable"
+	// +optional
+	Score *TaskScoreSpec `json:"score,omitempty"`
+
+	// benchmark makes the Task one of a Benchmark's runs: it branches from
+	// the Benchmark's base commit, never takes in main, and ends Approved
+	// instead of merging. It can't change.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="benchmark is immutable"
+	// +optional
+	Benchmark *TaskBenchmarkSpec `json:"benchmark,omitempty"`
+}
+
+// TaskBenchmarkSpec is which Benchmark run a Task is.
+type TaskBenchmarkSpec struct {
+	// benchmarkRef names the Benchmark.
+	// +required
+	BenchmarkRef LocalRef `json:"benchmarkRef"`
+	// variant, goal and repetition say which run: the variant's name, the
+	// goal's place (from 0) and the repetition (from 1).
+	// +kubebuilder:validation:MaxLength=16
+	// +required
+	Variant string `json:"variant"`
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Goal int32 `json:"goal,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Repetition int32 `json:"repetition"`
+	// base is the commit the Task branches from.
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{40}$`
+	// +required
+	Base string `json:"base"`
+}
+
+// TaskScoreSpec is what a Score Task judges.
+type TaskScoreSpec struct {
+	// scorerRef names the Scorer that made the Task.
+	// +required
+	ScorerRef LocalRef `json:"scorerRef"`
+
+	// scorerGeneration is the Scorer's generation the criteria are of.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	ScorerGeneration int64 `json:"scorerGeneration"`
+
+	// taskRef names the finished Task it judges.
+	// +required
+	TaskRef LocalRef `json:"taskRef"`
+
+	// criteria are the Scorer's criteria, as they were.
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MaxLength=500
+	// +required
+	Criteria []string `json:"criteria"`
+
+	// config is the Agent configuration the judged Task's implementer ran on,
+	// copied from its runs, so Scores compare configurations.
+	// +optional
+	Config TaskRunConfig `json:"config,omitzero"`
+}
+
+// TaskRunConfig is the Agent configuration an agent run ran on.
+type TaskRunConfig struct {
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	Agent string `json:"agent,omitempty"`
+	// +kubebuilder:validation:MaxLength=32
+	// +optional
+	Harness string `json:"harness,omitempty"`
+	// +kubebuilder:validation:MaxLength=100
+	// +optional
+	Model string `json:"model,omitempty"`
+}
+
+// ScoreVerdict is a judge's verdict on a criterion.
+// +kubebuilder:validation:Enum=Pass;Fail;Unclear
+type ScoreVerdict string
+
+// Score verdicts.
+const (
+	ScorePass    ScoreVerdict = "Pass"
+	ScoreFail    ScoreVerdict = "Fail"
+	ScoreUnclear ScoreVerdict = "Unclear"
+)
+
+// TaskScoreCriterion is the judge's verdict on one criterion, and why.
+type TaskScoreCriterion struct {
+	// criterion is the criterion's text.
+	// +kubebuilder:validation:MaxLength=500
+	// +required
+	Criterion string `json:"criterion"`
+
+	// verdict is Pass, Fail, or Unclear when the judge couldn't tell or said
+	// nothing of it.
+	// +required
+	Verdict ScoreVerdict `json:"verdict"`
+
+	// reason is the judge's why, in a sentence or two.
+	// +kubebuilder:validation:MaxLength=1000
+	// +optional
+	Reason string `json:"reason,omitempty"`
+}
+
+// TaskScoreStatus is what a Score Task's judge found.
+type TaskScoreStatus struct {
+	// criteria are the verdicts, one per criterion of spec.score, in its order.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	// +optional
+	Criteria []TaskScoreCriterion `json:"criteria,omitempty"`
 }
 
 // TaskPhase is where a Task is in its rounds.
-// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;Verifying;AwaitingApproval;Blocked;Merged;Failed
+// +kubebuilder:validation:Enum=Pending;Implementing;Checking;Reviewing;Verifying;AwaitingApproval;Blocked;Merged;Failed;Approved
 type TaskPhase string
 
 // Task phases.
@@ -138,12 +274,17 @@ const (
 	// verifier builds, starts and checks against its acceptance criteria
 	// before it merges.
 	TaskVerifying TaskPhase = "Verifying"
-	// TaskAwaitingApproval is a Spec Task whose spec passed CI and the
-	// reviewer: it waits for a person to approve its pull request.
+	// TaskAwaitingApproval is a spec, or a change its Crew's approval rules
+	// hold for a person, that passed CI and the factory's review: it waits
+	// for a person to approve its pull request.
 	TaskAwaitingApproval TaskPhase = "AwaitingApproval"
 	TaskBlocked          TaskPhase = "Blocked"
 	TaskMerged           TaskPhase = "Merged"
 	TaskFailed           TaskPhase = "Failed"
+	// TaskApproved ends a Benchmark's Task whose change passed its checks and
+	// its review: it would have merged, and never does
+	// (docs/plans/done/measure-and-improve.md, step 6).
+	TaskApproved TaskPhase = "Approved"
 )
 
 // TaskReview is the reviewer's verdict on a round.
@@ -259,6 +400,24 @@ type TaskTransition struct {
 	Message string `json:"message,omitempty"`
 }
 
+// TaskPullRequestSize is the size of a pull request's change.
+type TaskPullRequestSize struct {
+	// additions are the lines it adds.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Additions int32 `json:"additions,omitempty"`
+
+	// deletions are the lines it removes.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Deletions int32 `json:"deletions,omitempty"`
+
+	// files are the files it changes.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Files int32 `json:"files,omitempty"`
+}
+
 // TaskAgentRun is what a Task keeps of one agent run once it ended.
 type TaskAgentRun struct {
 	// round is the implement round the run belonged to.
@@ -275,6 +434,26 @@ type TaskAgentRun struct {
 	// +kubebuilder:validation:MaxLength=63
 	// +optional
 	Sandbox string `json:"sandbox,omitempty"`
+
+	// agent names the Agent the run ran as, copied when its sandbox was made
+	// or last resumed, so a later change to the Agent doesn't rewrite it
+	// (docs/plans/done/measure-and-improve.md, decision 2); empty for runs from
+	// before it was recorded.
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	Agent string `json:"agent,omitempty"`
+
+	// harness is the Agent's harness the run ran on, copied as agent is.
+	// +kubebuilder:validation:MaxLength=32
+	// +optional
+	Harness string `json:"harness,omitempty"`
+
+	// model is the Agent's model the run ran on, copied as agent is; empty
+	// when the Agent named none (the harness's default) or it wasn't
+	// recorded.
+	// +kubebuilder:validation:MaxLength=100
+	// +optional
+	Model string `json:"model,omitempty"`
 
 	// endedAt is when the Task saw the run end.
 	// +required
@@ -336,6 +515,22 @@ type TriageDecision struct {
 	// duplicate is the issue a duplicate decision names.
 	// +optional
 	Duplicate int32 `json:"duplicate,omitempty"`
+
+	// environments are the test environments a ready decision named, which
+	// the operator labelled the issue env/<name> for when the project has
+	// them (docs/plans/done/test-environments.md, T13).
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=8
+	// +kubebuilder:validation:items:MaxLength=32
+	// +optional
+	Environments []string `json:"environments,omitempty"`
+
+	// risk is "high" when the triager called the issue's change costly or
+	// hard to undo if done wrong. The operator labelled the issue risk/high
+	// for it, which the Crew's approval rules can name.
+	// +kubebuilder:validation:Enum=high
+	// +optional
+	Risk string `json:"risk,omitempty"`
 
 	// applied says what the operator did to the issue, or why it did nothing:
 	// a person closed or triaged the issue meanwhile.
@@ -408,6 +603,59 @@ type TaskSpecResult struct {
 	// +kubebuilder:validation:MaxLength=1024
 	// +optional
 	Applied string `json:"applied,omitempty"`
+}
+
+// TaskApproval is what a Crew's approval rules (its spec.approval) ask of a
+// Task's change, and who met it.
+type TaskApproval struct {
+	// require is what the change needs before it merges: Person, a person's
+	// approval of its pull request after the agents'; Reviewer, the agents'
+	// alone; or None, CI alone.
+	// +required
+	Require ApprovalRequirement `json:"require"`
+
+	// rule is the number, from 1, of the rule in the Crew's approval that
+	// decided; unset when a file no rule matches did.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Rule int32 `json:"rule,omitempty"`
+
+	// reason says which rule asks it, and for which file.
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// commit is the head the answer is of; a later head is asked again once
+	// its checks pass.
+	// +kubebuilder:validation:MaxLength=64
+	// +optional
+	Commit string `json:"commit,omitempty"`
+
+	// rules names the Crew's rules the answer came from, by what they say:
+	// when the Crew's rules change, the answer is worked out again.
+	// +kubebuilder:validation:MaxLength=64
+	// +optional
+	Rules string `json:"rules,omitempty"`
+
+	// approvedBy is who approved the change, once a person did: the Git host
+	// user who approved the pull request, or the Kubernetes user who approved
+	// it from chat (the theos.factory.io/approve-spec annotation; then
+	// approvedInChat).
+	// +kubebuilder:validation:MaxLength=256
+	// +optional
+	ApprovedBy string `json:"approvedBy,omitempty"`
+
+	// approvedInChat says approvedBy approved the change from chat, not on
+	// the Git host.
+	// +optional
+	ApprovedInChat bool `json:"approvedInChat,omitempty"`
+
+	// raisedByReviewer says the reviewer, and no rule, asked for the person:
+	// it approved the change and called it high-risk, and reason has its
+	// words. The rules left the change to the reviewer; a reviewer may raise
+	// what a change needs, never lower it.
+	// +optional
+	RaisedByReviewer bool `json:"raisedByReviewer,omitempty"`
 }
 
 // TaskStandardChange is the Standard change a Task proposed: the protected files
@@ -548,6 +796,22 @@ type TaskStatus struct {
 	// +optional
 	PullRequestEnded string `json:"pullRequestEnded,omitempty"`
 
+	// pullRequestSize is the size of the merged pull request's change, read
+	// once when it merged with personCommits (docs/plans/done/measure-and-improve.md,
+	// decision 4); unset before then, or when the Git host couldn't be read.
+	// A value, not a pointer: a version that lacks the field carries it in an
+	// annotation, which keeps no empty object.
+	// +optional
+	PullRequestSize TaskPullRequestSize `json:"pullRequestSize,omitzero"`
+
+	// personCommits counts the merged pull request's commits a person wrote:
+	// any not by an agent and not a merge (decision 3), read with
+	// pullRequestSize. Zero means the factory alone wrote the change; unset,
+	// that it wasn't read.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	PersonCommits *int32 `json:"personCommits,omitempty"`
+
 	// continues names the earlier try, a Failed Task on the same issue, whose
 	// open pull request this Task took over: its branch, pull request and
 	// feedback became this Task's when its first run started.
@@ -588,10 +852,21 @@ type TaskStatus struct {
 	// +optional
 	Triage *TriageDecision `json:"triage,omitempty"`
 
+	// score is a Score Task's verdicts, once its judge ran; a run that failed
+	// leaves each criterion Unclear with why. A value, as pullRequestSize is.
+	// +optional
+	Score TaskScoreStatus `json:"score,omitzero"`
+
 	// spec is a Spec Task's spec: its file, who approved it, and what the
 	// operator did to the issue once it merged.
 	// +optional
 	Spec *TaskSpecResult `json:"spec,omitempty"`
+
+	// approval is what the Crew's approval rules ask of the Task's change,
+	// once its checks passed, and who approved it when they ask for a
+	// person. Unset for a Task whose Crew has no rules.
+	// +optional
+	Approval *TaskApproval `json:"approval,omitempty"`
 
 	// standardChange is the Standard change the Task filed last: the one it
 	// waits for while Blocked. It stays after the Task resumes: it counts the
@@ -642,6 +917,20 @@ type TaskStatus struct {
 	// longest waiter gets the next one.
 	// +optional
 	SlotWaitSince *metav1.Time `json:"slotWaitSince,omitempty"`
+
+	// environments are the test environments the current run holds, one
+	// lease each, taken before its sandbox and returned when it ends or is
+	// suspended (docs/plans/done/test-environments.md, T3).
+	// +kubebuilder:validation:MaxItems=16
+	// +optional
+	Environments []TaskEnvironmentLease `json:"environments,omitempty"`
+
+	// leasedEnvironments are the test environments any run of the Task
+	// leased, by name: a by-hand issue its merge files names them.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=16
+	// +optional
+	LeasedEnvironments []string `json:"leasedEnvironments,omitempty"`
 
 	// phaseChangedAt is when the Task entered its current phase.
 	// +optional
@@ -694,7 +983,6 @@ type TaskStatus struct {
 // +kubebuilder:printcolumn:name="Brief",type=string,JSONPath=".spec.briefRef.name",priority=1
 // +kubebuilder:printcolumn:name="Decision",type=string,JSONPath=".status.triage.decision",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"
 
 // Task is a goal for a Container. The operator runs an Agent in a sandbox to
 // implement it on a branch, opens a pull request, waits for CI, runs the Agent
@@ -733,4 +1021,20 @@ func init() {
 		s.AddKnownTypes(SchemeGroupVersion, &Task{}, &TaskList{})
 		return nil
 	})
+}
+
+// TaskEnvironmentLease is a lease of a test environment a Task's run holds.
+type TaskEnvironmentLease struct {
+	// name is the TestEnvironment's.
+	// +required
+	Name string `json:"name"`
+	// lease is the lease's ID, which the environment's provider names it by.
+	// +required
+	Lease string `json:"lease"`
+	// sandbox is the run that holds it.
+	// +required
+	Sandbox string `json:"sandbox"`
+	// since is when it was leased.
+	// +optional
+	Since *metav1.Time `json:"since,omitempty"`
 }

@@ -26,282 +26,8 @@ spec:
     - jsonPath: .spec.owner
       name: Owner
       type: string
-    - jsonPath: .metadata.creationTimestamp
-      name: Age
-      type: date
-    deprecated: true
-    deprecationWarning: theos.factory.io/v1alpha1 is deprecated since v0.30.0; use
-      theos.factory.io/v1beta1. A release 90 or more days after v0.30.0 may drop it
-      (#1963).
-    name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: GitProvider is where repositories are created, with credentials.
-          Owned by the Project.
-        properties:
-          apiVersion:
-            description: |-
-              APIVersion defines the versioned schema of this representation of an object.
-              Servers should convert recognized schemas to the latest internal value, and
-              may reject unrecognized values.
-              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
-            type: string
-          kind:
-            description: |-
-              Kind is a string value representing the REST resource this object represents.
-              Servers may infer this from the endpoint the client submits requests to.
-              Cannot be updated.
-              In CamelCase.
-              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-            type: string
-          metadata:
-            type: object
-          spec:
-            description: spec defines the desired state of GitProvider
-            properties:
-              ci:
-                description: |-
-                  ci picks the CI system and how its runners are kept. Without it, the
-                  Git host's own CI serves the project's repositories, but no runner takes
-                  their jobs: the install's shared runners serve the templates organization
-                  only, so a project's checks wait until a ci block gives it a pool
-                  (#1698).
-                properties:
-                  giteaActions:
-                    description: |-
-                      giteaActions is Gitea Actions on a pool of single-job runner pods the
-                      operator keeps in the project's namespace, registered to the GitProvider's
-                      owner organization.
-                    properties:
-                      runners:
-                        description: |-
-                          runners has one entry per job label. Each keeps size idle pods waiting
-                          for a job; a pod takes one job and is replaced.
-                        items:
-                          description: CIRunnerSpec is one label's runners in a project's
-                            pool.
-                          properties:
-                            goCache:
-                              description: |-
-                                goCache mounts the project's Go build cache from the node, under the
-                                operator's --ci-go-cache, so a job compiles only what changed. Only for
-                                an image with the Go toolchain.
-                              type: boolean
-                            image:
-                              description: |-
-                                image is the runner image, such as theos/gitea-runner-go:dev; it
-                                registers in an init container and runs the jobs.
-                              minLength: 1
-                              type: string
-                            label:
-                              description: label is the job label the runners take,
-                                as the workflows' runs-on names it.
-                              maxLength: 32
-                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
-                              type: string
-                            resources:
-                              description: resources for the runner container, where
-                                the jobs run.
-                              properties:
-                                claims:
-                                  description: |-
-                                    Claims lists the names of resources, defined in spec.resourceClaims,
-                                    that are used by this container.
-
-                                    This field depends on the
-                                    DynamicResourceAllocation feature gate.
-
-                                    This field is immutable. It can only be set for containers.
-                                  items:
-                                    description: ResourceClaim references one entry
-                                      in PodSpec.ResourceClaims.
-                                    properties:
-                                      name:
-                                        description: |-
-                                          Name must match the name of one entry in pod.spec.resourceClaims of
-                                          the Pod where this field is used. It makes that resource available
-                                          inside a container.
-                                        type: string
-                                      request:
-                                        description: |-
-                                          Request is the name chosen for a request in the referenced claim.
-                                          If empty, everything from the claim is made available, otherwise
-                                          only the result of this request.
-                                        type: string
-                                    required:
-                                    - name
-                                    type: object
-                                  type: array
-                                  x-kubernetes-list-map-keys:
-                                  - name
-                                  x-kubernetes-list-type: map
-                                limits:
-                                  additionalProperties:
-                                    anyOf:
-                                    - type: integer
-                                    - type: string
-                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                                    x-kubernetes-int-or-string: true
-                                  description: |-
-                                    Limits describes the maximum amount of compute resources allowed.
-                                    More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                                  type: object
-                                requests:
-                                  additionalProperties:
-                                    anyOf:
-                                    - type: integer
-                                    - type: string
-                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                                    x-kubernetes-int-or-string: true
-                                  description: |-
-                                    Requests describes the minimum amount of compute resources required.
-                                    If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
-                                    otherwise to an implementation-defined value. Requests cannot exceed Limits.
-                                    More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                                  type: object
-                              type: object
-                            size:
-                              default: 1
-                              description: size is how many idle pods wait for a job.
-                              format: int32
-                              maximum: 8
-                              minimum: 1
-                              type: integer
-                          required:
-                          - image
-                          - label
-                          type: object
-                        maxItems: 8
-                        minItems: 1
-                        type: array
-                        x-kubernetes-list-map-keys:
-                        - label
-                        x-kubernetes-list-type: map
-                    required:
-                    - runners
-                    type: object
-                type: object
-              credentialsSecretRef:
-                description: credentialsSecretRef names a Secret with keys "username"
-                  and "token".
-                properties:
-                  name:
-                    description: name of the referenced object.
-                    maxLength: 253
-                    minLength: 1
-                    type: string
-                required:
-                - name
-                type: object
-              owner:
-                description: owner is the organization that holds Container repositories.
-                maxLength: 100
-                minLength: 1
-                type: string
-              packages:
-                description: |-
-                  packages names the npm and PyPI registries the owner's packages are
-                  published to and installed from. Without it, and for each registry
-                  left out, the Git host's own registries under the owner, with the
-                  scope @theos: the operator publishes with the GitProvider's
-                  credentials and the agents install with the agent bot's.
-                properties:
-                  npm:
-                    description: npm is the registry the owner's npm packages go to.
-                    properties:
-                      credentialsSecretRef:
-                        description: |-
-                          credentialsSecretRef names a Secret with the key "token", which
-                          publishes (only the operator reads it), and may have "readToken",
-                          which the agents and the owner's CI install with. Without it,
-                          installs from another host send no credential.
-                        properties:
-                          name:
-                            description: name of the referenced object.
-                            maxLength: 253
-                            minLength: 1
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      registry:
-                        description: registry is the registry's URL, such as https://registry.example.com/npm/.
-                        maxLength: 2048
-                        pattern: ^https?://
-                        type: string
-                      scope:
-                        description: |-
-                          scope is the scope the owner's packages are named under, such as
-                          @theos; the registry serves it.
-                        maxLength: 214
-                        pattern: ^@[a-z0-9][a-z0-9._-]*$
-                        type: string
-                    type: object
-                  pypi:
-                    description: pypi is the index the owner's Python packages go
-                      to.
-                    properties:
-                      credentialsSecretRef:
-                        description: |-
-                          credentialsSecretRef names a Secret with the key "token", which
-                          publishes (only the operator reads it), and may have "readToken",
-                          which the agents and the owner's CI install with. Without it,
-                          installs from another host send no credential.
-                        properties:
-                          name:
-                            description: name of the referenced object.
-                            maxLength: 253
-                            minLength: 1
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      index:
-                        description: |-
-                          index is the simple index's URL, where packages are installed from,
-                          such as https://pypi.example.com/simple.
-                        maxLength: 2048
-                        pattern: ^https?://
-                        type: string
-                      upload:
-                        description: |-
-                          upload is the URL packages are published to, such as
-                          https://pypi.example.com/legacy/.
-                        maxLength: 2048
-                        pattern: ^https?://
-                        type: string
-                    type: object
-                type: object
-              provider:
-                default: gitea
-                description: provider is the kind of Git hosting.
-                enum:
-                - gitea
-                type: string
-              url:
-                description: url is the base address of the Git host, such as http://gitea.gitea.svc.cluster.local:3000.
-                pattern: ^https?://
-                type: string
-            required:
-            - credentialsSecretRef
-            - owner
-            - url
-            type: object
-        required:
-        - spec
-        type: object
-    served: true
-    storage: false
-    subresources: {}
-  - additionalPrinterColumns:
-    - jsonPath: .spec.provider
-      name: Provider
-      type: string
-    - jsonPath: .spec.url
-      name: URL
-      type: string
-    - jsonPath: .spec.owner
-      name: Owner
+    - jsonPath: .status.conditions[?(@.type=="Events")].reason
+      name: Events
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -346,6 +72,23 @@ spec:
                       operator keeps in the project's namespace, registered to the GitProvider's
                       owner organization.
                     properties:
+                      publicURL:
+                        description: |-
+                          publicURL is the Git host's address from outside the cluster, such as
+                          https://git.example.com: a remote TestEnvironment's machines, which run
+                          the jobs labelled env-<name> (docs/plans/done/test-environments.md, step 8),
+                          register their runners there, so it is https:// on port 443, the one
+                          port their fence lets out, at a public host. The jobs clone from the
+                          address the host gives them, its root URL, which must reach it from
+                          there too. Unset, it is url when url is such an address; the chart's
+                          in-cluster host is none, so no remote environment runs a job until it
+                          is set.
+                        maxLength: 2048
+                        type: string
+                        x-kubernetes-validations:
+                        - message: publicURL must be https:// on port 443, the one
+                            port a remote test environment's machine reaches
+                          rule: self.matches('^https://[^/:?#@]+(:443)?([/?#].*)?$')
                       runners:
                         description: |-
                           runners has one entry per job label. Each keeps size idle pods waiting
@@ -354,6 +97,15 @@ spec:
                           description: CIRunnerSpec is one label's runners in a project's
                             pool.
                           properties:
+                            freshGoCache:
+                              description: |-
+                                freshGoCache gives each pod a Go build cache of its own: an emptyDir
+                                seeded from the image's warm cache, which nothing shares and the pod
+                                takes with it. For the label releases run on (go-release): a release
+                                builds signed artifacts, so it must not link a build result a pull
+                                request's job left in the project's cache. Excludes goCache. Only for
+                                an image with the Go toolchain.
+                              type: boolean
                             goCache:
                               description: |-
                                 goCache mounts the project's Go build cache from the node, under the
@@ -444,6 +196,12 @@ spec:
                           - image
                           - label
                           type: object
+                          x-kubernetes-validations:
+                          - message: 'goCache and freshGoCache exclude each other:
+                              a label''s pods mount the project''s Go cache or start
+                              from a fresh one'
+                            rule: '!(has(self.goCache) && self.goCache && has(self.freshGoCache)
+                              && self.freshGoCache)'
                         maxItems: 8
                         minItems: 1
                         type: array
@@ -560,9 +318,75 @@ spec:
             - owner
             - url
             type: object
+          status:
+            description: status defines the observed state of GitProvider
+            properties:
+              conditions:
+                description: 'conditions: Events, whether the host''s deliveries reach
+                  the operator.'
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+            type: object
         required:
         - spec
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}

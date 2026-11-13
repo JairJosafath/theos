@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -340,5 +356,89 @@ func TestPatchMilestoneMarker(t *testing.T) {
 				t.Errorf("HasReleaseMilestoneMarker = %v, want %v", got, tc.release)
 			}
 		})
+	}
+}
+
+func TestEmptyReleaseToJoin(t *testing.T) {
+	due := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	m := func(id int64, title string, closed bool, issues ...int) ReleaseMilestone {
+		return ReleaseMilestone{ID: id, Release: Release{Title: title, Due: due}, MilestoneClosed: closed, Open: issues}
+	}
+	undated := m(3, "v0.22.0", false)
+	undated.Due = time.Time{}
+	tests := []struct {
+		name       string
+		milestones []ReleaseMilestone
+		made       []int64
+		want       int64
+	}{
+		{"#2025: the empty next minor release an earlier round made is joined",
+			[]ReleaseMilestone{m(1, "v0.21.0", true, 5), m(2, "v0.22.0", false)}, []int64{1, 2}, 2},
+		{"#2025: so is one after an open release with work",
+			[]ReleaseMilestone{m(1, "v0.21.0", false, 5), m(2, "v0.22.0", false), m(4, "Later", false, 9)},
+			[]int64{2}, 2},
+		{"#2025: after an empty release a person made, which stays theirs",
+			[]ReleaseMilestone{m(1, "v0.21.0", true, 5), m(2, "v0.22.0", false), m(3, "v0.23.0", false)},
+			[]int64{3}, 3},
+		{"an empty release a person made is not joined",
+			[]ReleaseMilestone{m(1, "v0.21.0", true, 5), m(2, "v0.22.0", false)}, nil, 0},
+		{"a next minor release with work is not empty",
+			[]ReleaseMilestone{m(1, "v0.21.0", true, 5), m(2, "v0.22.0", false, 6)}, []int64{2}, 0},
+		{"a closed one is not joined",
+			[]ReleaseMilestone{m(1, "v0.21.0", true, 5), m(2, "v0.22.0", true)}, []int64{2}, 0},
+		{"an undated one is no release",
+			[]ReleaseMilestone{m(1, "v0.21.0", true, 5), undated}, []int64{3}, 0},
+		{"an empty patch release is not the next minor",
+			[]ReleaseMilestone{m(1, "v0.21.0", true, 5), m(2, "v0.21.1", false)}, []int64{2}, 0},
+		{"an empty release past the next minor is not it",
+			[]ReleaseMilestone{m(1, "v0.21.0", true, 5), m(2, "v0.23.0", false)}, []int64{2}, 0},
+		{"with no release at all, an empty v0.1.0 a round made is joined",
+			[]ReleaseMilestone{m(1, "v0.1.0", false), m(2, "Later", false)}, []int64{1}, 1},
+		{"nothing to join", nil, nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got int64
+			if join := EmptyReleaseToJoin(tt.milestones, tt.made); join != nil {
+				got = join.ID
+			}
+			if got != tt.want {
+				t.Errorf("EmptyReleaseToJoin() = milestone %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasAnyReleaseMilestoneMarker(t *testing.T) {
+	for description, want := range map[string]bool{
+		ReleaseMilestoneDescription("b", 3):                          true,
+		ReleaseMilestoneDescription("other", 3):                      false,
+		PatchMilestoneDescription("b", 3):                            false,
+		"<!-- c4-brief: b/x -->":                                     false,
+		"Made by hand":                                               false,
+		"text <!-- c4-brief: b/3 --> inline":                         false,
+		"by hand\n  " + ReleaseMilestoneMarker("b", 12) + "  \nmore": true,
+	} {
+		if got := HasAnyReleaseMilestoneMarker(description, "b"); got != want {
+			t.Errorf("HasAnyReleaseMilestoneMarker(%q) = %v, want %v", description, got, want)
+		}
+	}
+}
+
+func TestAddMarker(t *testing.T) {
+	marker := ReleaseMilestoneMarker("b", 4)
+	for _, tt := range []struct{ in, want string }{
+		{"", marker + "\n"},
+		{ReleaseMilestoneDescription("b", 3), ReleaseMilestoneDescription("b", 3) + "\n" + marker + "\n"},
+		{"Made by hand", "Made by hand\n\n" + marker + "\n"},
+		{"x\n" + marker + "\n", "x\n" + marker + "\n"},
+	} {
+		got := AddMarker(tt.in, marker)
+		if got != tt.want {
+			t.Errorf("AddMarker(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+		if !HasReleaseMilestoneMarker(got, "b", 4) {
+			t.Errorf("AddMarker(%q) = %q has no round 4 marker", tt.in, got)
+		}
 	}
 }

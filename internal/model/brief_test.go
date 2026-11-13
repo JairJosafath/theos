@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -368,10 +384,11 @@ func TestCheckPlan(t *testing.T) {
 		{"a story kind of another group", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").APIVersion = "example.com/v1"
 		}, "Container/web", PlanAPIVersion},
-		// #1617: a plan at a served older version applies through conversion.
-		{"a story kind at the served v1alpha1", func(p *Plan, _ *CurrentModel) {
+		// #1617 let a plan at a served older version apply; #1963 dropped
+		// v1alpha1, so a plan at it is refused like any version not served.
+		{"a story kind at the dropped v1alpha1", func(p *Plan, _ *CurrentModel) {
 			object(p, "Container/web").APIVersion = "theos.factory.io/v1alpha1"
-		}, "", ""},
+		}, "Container/web", PlanAPIVersion},
 		{"a name that isn't a DNS label", func(p *Plan, _ *CurrentModel) {
 			p.Objects = append(p.Objects, PlanObject{APIVersion: PlanAPIVersion, Kind: KindPerson, Name: "Ann_B"})
 		}, "Person/Ann_B", "not a DNS label"},
@@ -1047,8 +1064,10 @@ func TestSpecLimitsMatchTheCRDs(t *testing.T) {
 				t.Fatal(err)
 			}
 			// Fields a plan never writes: a Brief names no deploy target
-			// (docs/plans/done/deploy.md, decision 2).
-			unplanned := map[string]bool{"deploy": kind == KindContainer}
+			// (docs/plans/done/deploy.md, decision 2), and adopts no repository,
+			// which checkCommand and checkContexts are for (#95).
+			unplanned := map[string]bool{"deploy": kind == KindContainer, "checkCommand": kind == KindContainer,
+				"checkContexts": kind == KindContainer}
 			want := map[string]string{}
 			for field, schema := range crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties.Spec.Properties {
 				switch {

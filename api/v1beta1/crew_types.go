@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package v1beta1
@@ -129,6 +137,41 @@ type CrewSpec struct {
 	// +optional
 	PrepareReleases bool `json:"prepareReleases,omitempty"`
 
+	// releaseCadence is how often the Crew's releases go out, with
+	// tagReleases (docs/design.md, "Cadence"). Unset, or every: Release, tags
+	// each release as soon as it is done. Day or Week holds the release in
+	// progress until its cut: the Crew then marks it cut, moves its open
+	// issues to the next release, gives a release of fixes alone the next
+	// patch title, and tags it as with every Release; meanwhile it keeps
+	// starting Tasks. A Brief writes its own value onto the Crews it made.
+	// +optional
+	ReleaseCadence *ReleaseCadence `json:"releaseCadence,omitempty"`
+
+	// schedules are the Crew's recurring goals: work that starts from the
+	// clock (docs/design.md, "Schedules"). When one comes due the Crew files
+	// an issue with its goal, labelled kind/schedule and status/ready, and
+	// works it as any other. While that issue is open the schedule files no
+	// other, and a paused Crew files none.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=8
+	// +optional
+	Schedules []CrewSchedule `json:"schedules,omitempty"`
+
+	// approval says which of the Crew's changes wait for a person, and which
+	// merge on CI alone (docs/design.md, "Approval rules"). Each file a pull
+	// request changes takes the first rule in the list that matches it, and
+	// the change needs the strictest of what its files need: Person over
+	// Reviewer over None. A file no rule matches needs Reviewer, which is
+	// what every change needs without rules. The rules are read when a
+	// change's checks pass and again when they change, so they hold for the
+	// Tasks under way too. They are for the Crew's Implement Tasks: a spec
+	// has specApproval, and a Standard change is always reviewed.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=16
+	// +optional
+	Approval []ApprovalRule `json:"approval,omitempty"`
+
 	// publishReleases copies each release the Crew tags to another repository
 	// once its release runs succeed: the same tag, notes and files. It only adds
 	// releases there, never a commit. It needs tagReleases. Removing it stops
@@ -172,6 +215,64 @@ type CrewRoute struct {
 	// issues. Its issues are verified even when the Crew has no verifier.
 	// +optional
 	Verifier *LocalRef `json:"verifier,omitempty"`
+}
+
+// What a change needs before it merges, as an ApprovalRule asks.
+const (
+	// ApprovalPerson waits, once the reviewer and any verifier approved, for
+	// a person other than the factory's own accounts to approve the pull
+	// request, on the Git host or from chat.
+	ApprovalPerson ApprovalRequirement = "Person"
+	// ApprovalReviewer merges on the reviewer's approval, and the verifier's
+	// where the Task has one: what a Crew without rules does.
+	ApprovalReviewer ApprovalRequirement = "Reviewer"
+	// ApprovalNone merges once CI passes: no reviewer and no verifier runs.
+	ApprovalNone ApprovalRequirement = "None"
+)
+
+// ApprovalRequirement is what a change needs before it merges.
+// +kubebuilder:validation:Enum=Person;Reviewer;None
+type ApprovalRequirement string
+
+// ApprovalRule is one rule of a Crew's approval: the changes it is for, the
+// files of those it matches, and what it asks of them. A rule with labels is
+// for a change whose issue has one of them; one with changedLinesOver, for a
+// pull request that adds and deletes more lines than that; with both, for a
+// change that is both; with neither, for every change. It matches the files
+// under one of its paths, or every file when it has none.
+type ApprovalRule struct {
+	// paths are the files the rule matches: a file, a folder ending in "/"
+	// for everything in it, as a Standard's protectedPaths are, or a pattern
+	// in which * stands for any run of characters, slashes included (*.md,
+	// docs/*). Unset, the rule matches every file.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.all(p, !p.startsWith('/'))",message="paths are relative to the repository's root: no leading /"
+	// +optional
+	Paths []string `json:"paths,omitempty"`
+
+	// labels are issue labels, matched exactly: the rule is for a change
+	// whose issue has one of them. Unset, the issue's labels don't matter.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=100
+	// +optional
+	Labels []string `json:"labels,omitempty"`
+
+	// changedLinesOver makes the rule for a pull request that adds and
+	// deletes more lines than this, counted together. Unset, the size
+	// doesn't matter.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	ChangedLinesOver int32 `json:"changedLinesOver,omitempty"`
+
+	// require is what the files the rule matches need before the change
+	// merges: Person, Reviewer or None.
+	// +required
+	Require ApprovalRequirement `json:"require"`
 }
 
 // CrewPublishReleases is where a Crew publishes its releases.
@@ -274,6 +375,36 @@ type CrewFullCheck struct {
 	// issue is the issue the Crew filed when the check failed at commit.
 	// +optional
 	Issue int32 `json:"issue,omitempty"`
+
+	// reruns counts the times the Crew ran the check's failed runs again at
+	// commit because they were cut off (cancelled, or their runner lost),
+	// before it files an issue (#2028).
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Reruns int32 `json:"reruns,omitempty"`
+
+	// rerun says a person asked with theos.factory.io/rerun-release to run
+	// the check's failed runs again: its issue holds the release no more, and
+	// is closed if the check passes; a failure holds it again.
+	// +optional
+	Rerun bool `json:"rerun,omitempty"`
+}
+
+// CrewNextCut is a Crew's next cut under its release cadence.
+type CrewNextCut struct {
+	// time is when the cut is.
+	// +required
+	Time metav1.Time `json:"time"`
+
+	// release is the release it cuts, the first open one that isn't cut;
+	// empty while none holds work.
+	// +optional
+	Release string `json:"release,omitempty"`
+
+	// merged is how many of the release's issues a Task merged so far.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Merged int32 `json:"merged,omitempty"`
 }
 
 // CrewRelease is a release a Crew tagged.
@@ -492,6 +623,75 @@ type CrewPublishTarget struct {
 	ID int64 `json:"id"`
 }
 
+// CrewSchedule is one recurring goal, held by a Crew (CrewSpec.Schedules) or
+// proposed by a Standard (StandardSpec.Schedules) in the same shape, so a
+// Crew takes a proposal as it is written. A Crew that has the schedule files
+// an issue with the goal when its time comes; a Standard's proposal files
+// nothing.
+type CrewSchedule struct {
+	// name names the schedule: a Crew that has it uses the name in its
+	// issues' titles and in its status, and a Crew takes a Standard's
+	// proposal under its name.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +required
+	Name string `json:"name"`
+
+	// cron is when the schedule is due, as five fields: minute, hour, day of
+	// month, month and day of week (0 or 7 is Sunday), each a number, a range
+	// a-b, a step */n or a-b/n, a comma-separated list of those, or *. An
+	// expression the operator can't use (minute 60, the 30th of February)
+	// leaves the Scheduled condition of a Crew that has the schedule False,
+	// reason InvalidSchedule.
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:Pattern=`^[0-9*/,-]+( [0-9*/,-]+){4}$`
+	// +required
+	Cron string `json:"cron"`
+
+	// timeZone is the IANA time zone cron is in, such as Europe/Amsterdam;
+	// daylight saving follows it. Unset is UTC. A name the operator can't
+	// load leaves the Scheduled condition of a Crew that has the schedule
+	// False, reason InvalidSchedule.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:default=UTC
+	// +optional
+	TimeZone string `json:"timeZone,omitempty"`
+
+	// goal is what the schedule's issue asks for, in plain words: what to do,
+	// and what to leave. It becomes the Goal section of the issue a Crew
+	// that has the schedule files.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=4000
+	// +required
+	Goal string `json:"goal"`
+}
+
+// CrewScheduleStatus is where one of a Crew's schedules stands.
+type CrewScheduleStatus struct {
+	// name is the schedule's.
+	// +required
+	Name string `json:"name"`
+
+	// since is when the schedule last filed an issue, last passed a due time
+	// over because its issue was still open, or was first seen: it is due at
+	// its first time after since.
+	// +required
+	Since metav1.Time `json:"since"`
+
+	// lastFiled is when it last filed an issue, and lastIssue that issue's
+	// number.
+	// +optional
+	LastFiled *metav1.Time `json:"lastFiled,omitempty"`
+	// +optional
+	LastIssue int32 `json:"lastIssue,omitempty"`
+
+	// next is its next time, unset when the schedule can't be used.
+	// +optional
+	Next *metav1.Time `json:"next,omitempty"`
+}
+
 // CrewStatus is what the Crew saw on its last look at the issues.
 type CrewStatus struct {
 	// phase is Waiting, Idle, Working or Paused.
@@ -527,6 +727,24 @@ type CrewStatus struct {
 	// +optional
 	FullCheck *CrewFullCheck `json:"fullCheck,omitempty"`
 
+	// nextCut is the next cut of spec.releaseCadence, while it is Day or
+	// Week and the Crew tags releases: when, and the release it cuts with
+	// how many merged issues it holds so far.
+	// +optional
+	NextCut *CrewNextCut `json:"nextCut,omitempty"`
+
+	// lastCut is when the Crew last cut a release, or went on its cadence;
+	// the next cut is the first after it.
+	// +optional
+	LastCut *metav1.Time `json:"lastCut,omitempty"`
+
+	// cutRelease is the release the Crew cut that waits for its tag, when it
+	// prepares releases: until it is tagged, a Task of an issue outside it
+	// waits at its merge (WaitingForRelease), so the changelog holds all the
+	// tag carries.
+	// +optional
+	CutRelease string `json:"cutRelease,omitempty"`
+
 	// publishTarget is the GitHub repository the Crew published its releases
 	// to, by GitHub's id: set at the first publish that succeeds, or when
 	// theos.factory.io/accept-repository accepts another, and reset when
@@ -554,10 +772,38 @@ type CrewStatus struct {
 	// set, says how publishing the last release went, and why it failed.
 	// ModulePublished, when spec.tagReleases is set and a release was tagged,
 	// says whether the last release's Go module is in the registry, and why not.
+	// Scheduled, when spec.schedules is set, says whether every schedule can
+	// be used and its last due issue was filed, and why not.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// schedules is where each of spec.schedules stands.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=8
+	// +optional
+	Schedules []CrewScheduleStatus `json:"schedules,omitempty"`
+
+	// onboarding is the issue the Crew filed, once, on a repository its
+	// Container adopted with no Standard: write AGENTS.md and say what it
+	// found (docs/design.md, "Adopting a repository"). Unset on any other
+	// Crew, and until it is filed.
+	// +optional
+	Onboarding *CrewOnboardingStatus `json:"onboarding,omitempty"`
+}
+
+// CrewOnboardingStatus is the onboarding issue a Crew filed.
+type CrewOnboardingStatus struct {
+	// issue is the issue's number.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Issue int32 `json:"issue"`
+
+	// filed is when the Crew filed it, or found the one it had filed.
+	// +required
+	Filed metav1.Time `json:"filed"`
 }
 
 // +kubebuilder:object:root=true
@@ -571,7 +817,6 @@ type CrewStatus struct {
 // +kubebuilder:printcolumn:name="Parallel",type=integer,JSONPath=".spec.parallel"
 // +kubebuilder:printcolumn:name="Tasks",type=string,JSONPath=".status.activeTasks"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:metadata:annotations="theos.factory.io/conversion=webhook"
 
 // Crew is the team of Agents that works on a Container's issues: it picks up
 // issues labelled ready, in order and once their dependencies are closed, and

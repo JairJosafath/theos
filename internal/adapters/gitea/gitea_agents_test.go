@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package gitea
 
 import (
@@ -14,7 +30,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/ports"
 )
@@ -427,8 +445,44 @@ func TestPullRequests(t *testing.T) {
 	if _, err := p.GetPullRequest(ctx, repo, 3); !errors.Is(err, ports.ErrPullRequestNotFound) {
 		t.Errorf("GetPullRequest() of a missing pull request error = %v, want ErrPullRequestNotFound", err)
 	}
-	if err := p.MergePullRequest(ctx, repo, 2, "def456", "x", "y"); err == nil || !strings.Contains(err.Error(), "HTTP 405") {
+	// Gitea's "Please try again later" is tried again until the time is up;
+	// a short context ends that wait here, with Gitea's answer in the error.
+	short, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if err := p.MergePullRequest(short, repo, 2, "def456", "x", "y"); err == nil || !strings.Contains(err.Error(), "HTTP 405") {
 		t.Errorf("MergePullRequest() of an unmergeable PR error = %v", err)
+	}
+}
+
+// A context that ends while a merge's retry waits on Gitea keeps Gitea's last
+// answer in the error, as one that ends in the pause does: under load,
+// TestPullRequests' one-second context ran out mid-request and the error said
+// only "context deadline exceeded" (theos#29).
+func TestMergeKeepsGiteasAnswerWhenTheContextEndsInARetry(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body) // so the server sees the client hang up
+		if calls.Add(1) > 1 {
+			<-r.Context().Done() // the retry hangs until the client gives up
+			return
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = io.WriteString(w, `{"message":"Please try again later"}`)
+	}))
+	defer srv.Close()
+	p, err := Client{}.Provider(ports.Config{URL: srv.URL, Owner: "apps",
+		Credentials: ports.Credentials{Username: "c4admin", Token: rand.Text()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err = p.MergePullRequest(ctx, p.Repository("photo-editor"), 2, "def456", "x", "y")
+	if err == nil || !strings.Contains(err.Error(), "HTTP 405") || !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("MergePullRequest() error = %v, want Gitea's HTTP 405 and the deadline", err)
+	}
+	if calls.Load() < 2 {
+		t.Errorf("Gitea was called %d times, want the retry", calls.Load())
 	}
 }
 

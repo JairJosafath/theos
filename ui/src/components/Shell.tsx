@@ -290,12 +290,13 @@ export function Shell({
               className="search-button"
               onClick={() => setPaletteOpen(true)}
               aria-keyshortcuts="Meta+K Control+K /"
-              aria-label="Search or jump"
+              // The name holds all the button shows, its shortcut too (WCAG 2.5.3, label in name).
+              aria-label={`Search or jump ${onMac() ? '⌘K' : 'Ctrl K'}`}
             >
               <SearchIcon size={16} />
               <span className="search-label" aria-hidden="true">
                 Search or jump
-              </span>
+              </span>{' '}
               <kbd className="kbd search-kbd" aria-hidden="true">
                 {onMac() ? '⌘K' : 'Ctrl K'}
               </kbd>
@@ -433,14 +434,12 @@ function ProjectSwitcher({
         align="start"
         button={
           <>
-            <span className="project-avatar" aria-hidden="true">
-              {title.slice(0, 1).toUpperCase()}
-            </span>
+            {/* The initial is drawn by CSS: decoration, and no part of the button's text. */}
+            <span className="project-avatar" aria-hidden="true" data-initial={title.slice(0, 1).toUpperCase()} />
             {collapsed ? null : (
               <>
                 <span className="project-text">
-                  <span className="project-eyebrow">Project</span>
-                  <span className="project-title">{title}</span>
+                  <span className="project-eyebrow">Project</span> <span className="project-title">{title}</span>
                 </span>
                 <ChevronDownIcon size={16} />
               </>
@@ -788,7 +787,7 @@ export function FactoryArea({
         <div>
           <h1 className="area-title">Factory</h1>
           <p className="area-caption">
-            Whether each part of the factory is healthy, the node’s usage over the last hour, and the agent slots.
+            Whether each part of the factory is healthy, the nodes’ usage over the last hour, and the agent slots.
           </p>
         </div>
       </header>

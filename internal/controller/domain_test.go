@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -37,6 +45,30 @@ var _ = Describe("Domain", func() {
 		domain.Spec.Template = c4v1beta1.TemplateSource{URL: "gitea/templates/webshop-domain", Ref: "v1.0.0"}
 		Expect(k8sClient.Create(ctx, domain)).To(MatchError(ContainSubstring("spec.template.url")))
 		mustCreate(newDomain(ns, "webshop"))
+	})
+})
+
+var _ = Describe("TemplateSource path", func() {
+	// #35: a relative directory of the repository, written one way only.
+	DescribeTable("refuses a path that isn't a clean relative directory",
+		func(path, message string) {
+			domain := newDomain(newProjectNamespace(), "ops")
+			domain.Spec.Template.Path = path
+			Expect(k8sClient.Create(ctx, domain)).To(MatchError(ContainSubstring(message)))
+		},
+		Entry("absolute", "/domains/ops", "path is relative to the repository's root, not absolute"),
+		Entry("a trailing /", "domains/ops/", "path has no trailing or doubled /"),
+		Entry("a doubled /", "domains//ops", "path has no trailing or doubled /"),
+		Entry("a .. segment", "domains/../ops", "path has no . or .. segments"),
+		Entry("a leading ..", "../ops", "path has no . or .. segments"),
+		Entry("a . segment", "./domains/ops", "path has no . or .. segments"),
+	)
+
+	It("takes a relative directory, names with dots included", func() {
+		ns := newProjectNamespace()
+		domain := newDomain(ns, "ops")
+		domain.Spec.Template.Path = "domains/ops.v2/..hidden"
+		mustCreate(domain)
 	})
 })
 

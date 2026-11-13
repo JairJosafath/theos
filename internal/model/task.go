@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -20,8 +36,9 @@ const (
 	// TaskVerifying is a change the reviewer approved, which the Task's
 	// verifier builds, starts and checks against its criteria before it merges.
 	TaskVerifying = "Verifying"
-	// TaskAwaitingApproval is a Spec Task whose spec passed CI and the
-	// reviewer, waiting for a person to approve its pull request.
+	// TaskAwaitingApproval is a spec, or a change its Crew's approval rules
+	// hold for a person, that passed CI and the factory's review and waits
+	// for a person to approve its pull request.
 	TaskAwaitingApproval = "AwaitingApproval"
 	// TaskBlocked waits for a Standard change that the Task's change needs.
 	TaskBlocked = "Blocked"
@@ -80,13 +97,21 @@ type RunResult struct {
 	// Blocked is the agent's blocked note (BlockedNote): it can't start the
 	// issue, and says why. The Task fails at once.
 	Blocked string
+	// Nothing is why the agent found the issue needs no change (NothingNote),
+	// with no change made. The Task ends done and its issue closes.
+	Nothing string
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []FollowUp
 	// Open are the criteria an approved review accepted as left open: they need
 	// what no agent's sandbox has, so a person does them.
 	Open []OpenCriterion
+	// Risk is why the reviewer calls the change it approves high-risk; empty
+	// when it doesn't (RaisedByReviewer).
+	Risk string
 	// Triage is a triager's decision; nil when it gave none.
 	Triage *Triage
+	// Score is a judge's verdicts; nil when it gave none.
+	Score []ScoreCriterion
 	// Unavailable means the agent's service couldn't work: a usage limit, an
 	// overload, a temporary server error or bad credentials. It is not the agent's fault and costs no round.
 	Unavailable bool
@@ -202,6 +227,19 @@ type RunState struct {
 	// was unavailable: it resumes in place once the agent is back
 	// (TaskFacts.AgentBackIn), with no resume counted.
 	AgentWait bool
+	// Config is the Agent configuration the run ran on, as its sandbox
+	// records it; zero for a sandbox made before it was recorded.
+	Config RunConfig
+}
+
+// RunConfig is the Agent configuration an agent run ran on: the Agent's name,
+// harness and model, copied when its sandbox is made or resumed, so a later
+// change to the Agent doesn't rewrite the run's record
+// (docs/plans/done/measure-and-improve.md, decision 2).
+type RunConfig struct {
+	Agent   string
+	Harness string
+	Model   string
 }
 
 // Cost is what a run adds to its Task's cost: what its agent reported, or one
@@ -350,7 +388,11 @@ type TaskFacts struct {
 	ContainerReady bool
 	// Protected means the Container's default branch is protected (see Protected):
 	// agents work only where the Git host enforces checks and review.
-	Protected bool
+	// Unprotected says why a Container that adopts its repository with no
+	// Standard isn't yet (its Protected condition's message): the Task waits
+	// for it, where one on any other unprotected Container fails.
+	Protected   bool
+	Unprotected string
 	// BlockedBy names an earlier Task on the same Container that is still active.
 	BlockedBy string
 	// Base is the CI state of main's head for the Container's check contexts
@@ -451,6 +493,10 @@ type TaskFacts struct {
 	// the operator applies. It has no protection, queue, CI or review, and no
 	// second round: a failed run fails the Task, and its Crew tries again.
 	Triage bool
+	// Score means a Score Task: one judge run on a finished change, whose
+	// verdicts are its record. Like a triage, it has no protection, queue, CI,
+	// review or second round.
+	Score bool
 	// Spec means a Spec Task: the implement flow writes the issue's spec, and
 	// an approved spec waits for its review point (AwaitingApproval) before it
 	// merges. SpecApproval is who approves it: SpecApprovalPerson (also when
@@ -460,21 +506,26 @@ type TaskFacts struct {
 	// SpecRefusal says why the round's spec can't go to review (SpecRefusal),
 	// read once its checks passed; empty when it can.
 	SpecRefusal string
-	// SpecPull is the spec's pull request and what people said of it, read
-	// while the Task is AwaitingApproval.
-	SpecPull SpecPullFacts
+	// WaitingPull is the pull request of a spec, or of a change its Crew's
+	// rules hold for a person, and what people said of it, read while the
+	// Task is AwaitingApproval.
+	WaitingPull WaitingPullFacts
 	// Verify means the Task has a verifier: a change its reviewer approved is
 	// built, started and checked against its criteria (Verifying) before it
 	// merges. A spec and a Standard change are never verified (Verifies).
 	Verify bool
+	// Approval is what the Crew's approval rules ask of the Task's change
+	// (ApprovalFor), read once its checks passed; zero when the Crew has no
+	// rules, which is the reviewer's approval, as before the rules.
+	Approval ApprovalNeed
 }
 
-// SpecPullFacts is a spec's pull request while it waits for its approval:
+// WaitingPullFacts is a pull request while it waits for a person's approval:
 // merged or closed on the Git host, moved past the reviewed commit, and what
 // people other than the factory's accounts said of that commit, there and
 // from chat (CombineVerdicts). Ignored says why a word from chat counted for
 // nothing (ChatSpecVerdict), for the wait's message.
-type SpecPullFacts struct {
+type WaitingPullFacts struct {
 	Merged    bool
 	Closed    bool
 	HeadMoved bool
@@ -1086,6 +1137,11 @@ func ChecksBound(message string) string {
 	return fmt.Sprintf("The operator fails it if no CI run starts within %s.", spellDuration(ChecksStartLimit))
 }
 
+// ReasonNotProtected is the reason of a Task waiting for the default branch
+// of a Container that adopts its repository to be protected, and of a Crew
+// that starts no Task for it.
+const ReasonNotProtected = "ContainerNotProtected"
+
 // TaskAction is what the operator does next.
 type TaskAction string
 
@@ -1106,6 +1162,10 @@ const (
 	// ActionDoneByStandardChange ends a resumed Task whose branch has nothing
 	// beyond main: the Standard change did the whole issue.
 	ActionDoneByStandardChange TaskAction = "DoneByStandardChange"
+	// ActionNothingToDo ends a Task whose agent found its issue needs no
+	// change: the operator closes the issue with the agent's reason, which is
+	// the step's Feedback, and no reviewer runs.
+	ActionNothingToDo TaskAction = "NothingToDo"
 	// ActionResolveConflicts sends an approved change back to the implementer, in
 	// the same round, to merge main and resolve the conflicts.
 	ActionResolveConflicts TaskAction = "ResolveConflicts"
@@ -1157,8 +1217,11 @@ const (
 	// ActionTriaged applies a triager's decision to its issue and ends the
 	// Triage Task.
 	ActionTriaged TaskAction = "Triaged"
-	// ActionAwaitApproval posts the reviewer's approval of a spec and has it
-	// wait for a person's (AwaitingApproval).
+	// ActionScored records a judge's verdicts and ends the Score Task.
+	ActionScored TaskAction = "Scored"
+	// ActionAwaitApproval posts the agents' approval of a spec, or of a change
+	// its Crew's approval rules hold for a person, and has it wait for a
+	// person's (AwaitingApproval).
 	ActionAwaitApproval TaskAction = "AwaitApproval"
 	// ActionSpecDeclined fails a Spec Task whose pull request a person closed
 	// unmerged, and hands its issue back.
@@ -1195,6 +1258,10 @@ type TaskStep struct {
 	// Pause is where the Task is in a pause of its runs; PauseNone when the
 	// factory doesn't pause them.
 	Pause PauseState
+	// Unreviewed means the step merges, or takes main in to merge, a change
+	// no agent reviewed in this round: its Crew's approval rules ask for no
+	// review (MergesUnreviewed). An earlier round's verdict is not its own.
+	Unreviewed bool
 }
 
 // PauseState is where a Task is in a pause of its runs (its Crew's or Brief's
@@ -1276,28 +1343,12 @@ func nextTaskStep(f TaskFacts) TaskStep {
 	if f.Plan {
 		return planStep(f)
 	}
-	if f.Triage {
+	if f.Triage || f.Score {
 		return triageStep(f)
 	}
 	switch f.Phase {
 	case "", TaskPending:
-		switch {
-		case !f.Protected:
-			return TaskStep{Action: ActionFail, Message: fmt.Sprintf("Container %s has no Standard, so its default "+
-				"branch has no checks to protect it; agents work only on protected repositories", f.Container)}
-		case !f.ContainerReady:
-			return TaskStep{Action: ActionWait, Message: fmt.Sprintf("Waiting for Container %s to be Ready", f.Container)}
-		case f.BlockedBy != "":
-			return TaskStep{Action: ActionWait,
-				Message: fmt.Sprintf("Waiting for Task %s: one Task works on a Container at a time", f.BlockedBy)}
-		case checksFailed(f.Base):
-			return TaskStep{Action: ActionWait, Reason: ReasonBaseRed, Recheck: true,
-				Message: fmt.Sprintf("Main's checks failed (%s): round 1 starts only on a green base; "+
-					"fix main's checks", orUnknown(f.BaseURL))}
-		case f.Base == checkPending:
-			return TaskStep{Action: ActionWait, Recheck: true, Message: "Waiting for main's checks to end before round 1"}
-		}
-		return TaskStep{Action: ActionStartImplement, Message: "Starting round 1"}
+		return pendingStep(f)
 
 	case TaskImplementing:
 		return implementingStep(f)
@@ -1364,6 +1415,33 @@ func nextTaskStep(f TaskFacts) TaskStep {
 		return awaitingApprovalStep(f)
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// pendingStep decides what follows for a Task that has not started: round 1
+// starts on a Ready Container whose default branch is protected, at the
+// Task's turn, on a green base.
+func pendingStep(f TaskFacts) TaskStep {
+	switch {
+	case !f.Protected && f.Unprotected != "":
+		return TaskStep{Action: ActionWait, Recheck: true, Reason: ReasonNotProtected, Message: fmt.Sprintf(
+			"Waiting for the main of Container %s to be protected; agents work only on protected repositories: %s",
+			f.Container, f.Unprotected)}
+	case !f.Protected:
+		return TaskStep{Action: ActionFail, Message: fmt.Sprintf("Container %s has no Standard, so its default "+
+			"branch has no checks to protect it; agents work only on protected repositories", f.Container)}
+	case !f.ContainerReady:
+		return TaskStep{Action: ActionWait, Message: fmt.Sprintf("Waiting for Container %s to be Ready", f.Container)}
+	case f.BlockedBy != "":
+		return TaskStep{Action: ActionWait,
+			Message: fmt.Sprintf("Waiting for Task %s: one Task works on a Container at a time", f.BlockedBy)}
+	case checksFailed(f.Base):
+		return TaskStep{Action: ActionWait, Reason: ReasonBaseRed, Recheck: true,
+			Message: fmt.Sprintf("Main's checks failed (%s): round 1 starts only on a green base; "+
+				"fix main's checks", orUnknown(f.BaseURL))}
+	case f.Base == checkPending:
+		return TaskStep{Action: ActionWait, Recheck: true, Message: "Waiting for main's checks to end before round 1"}
+	}
+	return TaskStep{Action: ActionStartImplement, Message: "Starting round 1"}
 }
 
 // rerunStep runs again the checks that failed through the runner's fault, as
@@ -1514,21 +1592,36 @@ func planStep(f TaskFacts) TaskStep {
 // fails the Task at once, with no second round: its Crew starts another
 // Triage Task for the issue (NextTriage).
 func triageStep(f TaskFacts) TaskStep {
+	what := "triage"
+	if f.Score {
+		what = "judge run"
+	}
 	switch f.Phase {
 	case "", TaskPending:
-		return TaskStep{Action: ActionStartImplement, Message: "Starting the triage"}
+		return TaskStep{Action: ActionStartImplement, Message: "Starting the " + what}
 	case TaskImplementing:
 		step := implementingStep(f)
 		if step.Action == ActionRetry || step.Action == ActionFail {
 			return TaskStep{Action: ActionFail, Feedback: step.Feedback,
-				Message: "The triage failed: " + gist(step.Feedback)}
+				Message: "The " + what + " failed: " + gist(step.Feedback)}
 		}
 		if step.Action == ActionStartImplement {
-			step.Message = "Starting the triage"
+			step.Message = "Starting the " + what
 		}
 		return step
 	}
 	return TaskStep{Action: ActionNone}
+}
+
+// scoredStep decides what follows a finished judge run that reported neither
+// an error nor an outage: its verdicts are recorded, or the Task fails when it
+// gave none.
+func scoredStep(f TaskFacts) TaskStep {
+	if f.Run.Result.Score == nil {
+		return TaskStep{Action: ActionFail, Feedback: "the judge reported no verdicts",
+			Message: "The judge run failed: the judge reported no verdicts"}
+	}
+	return TaskStep{Action: ActionScored, Message: "The judge gave its verdicts"}
 }
 
 // triagedStep decides what follows a finished triager run that reported
@@ -1573,9 +1666,21 @@ func implementingStep(f TaskFacts) TaskStep {
 		return roundFailed(f, "The agent's sandbox ended without a result: "+orUnknown(f.Run.Failure))
 	case f.Run.Result.Unavailable:
 		return agentUnavailable(f)
-	case f.Run.Result.Blocked != "" && !f.Plan && !f.Triage:
+	case f.Run.Result.Blocked != "" && !f.Plan && !f.Triage && !f.Score && IssueUnseen(f.Run.Result.Blocked):
+		// The agent wasn't given the issue (#2037): the runner's fault, not a
+		// blocker, so the try is free once (TryCounter).
+		return TaskStep{Action: ActionFail, Reason: ReasonIssueUnseen,
+			Message: IssueUnseenMessage(f.Run.Result.Blocked)}
+	case f.Run.Result.Blocked != "" && !f.Plan && !f.Triage && !f.Score:
 		// The agent says the issue can't start yet: more rounds won't change that.
 		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Message: BlockedMessage(f.Run.Result.Blocked)}
+	case f.Run.Result.Nothing != "" && !takesNothing(f):
+		// Only an issue's own build ends on "nothing to do": the runner says it
+		// of no other, and a round that changed nothing has failed.
+		return roundFailed(f, NoChangeNoReason)
+	case f.Run.Result.Nothing != "":
+		return TaskStep{Action: ActionNothingToDo, Feedback: f.Run.Result.Nothing,
+			Message: NothingMessage(f.Run.Result.Nothing)}
 	case IsScopeRefusal(f.Run.Result.Error) && IsScopeRefusal(f.Feedback):
 		// Turned back for scope twice in a row: the change can't be made here.
 		return TaskStep{Action: ActionFail, Reason: ReasonBlocked, Feedback: f.Run.Result.Error,
@@ -1586,8 +1691,17 @@ func implementingStep(f TaskFacts) TaskStep {
 		return planPushedStep(f)
 	case f.Triage:
 		return triagedStep(f)
+	case f.Score:
+		return scoredStep(f)
 	}
 	return implementedStep(f)
+}
+
+// takesNothing reports whether the Task may end on its agent's "nothing to
+// do" (#72): an Implement Task, no spec and no Standard change, whose
+// approved change has something to merge or whose issue was wrong.
+func takesNothing(f TaskFacts) bool {
+	return !f.Plan && !f.Triage && !f.Score && !f.Spec && len(f.AllowedPaths) == 0
 }
 
 // reviewingStep decides what follows in the Reviewing phase.
@@ -1618,14 +1732,26 @@ func reviewingStep(f TaskFacts) TaskStep {
 			return TaskStep{Action: ActionVerify, Message: fmt.Sprintf(
 				"The reviewer approved; the verifier runs the change before it merges, in round %d", f.Round)}
 		}
-		return approvedStep(f, "Approved; merging")
+		return acceptedStep(f, "The reviewer approved", "Approved; merging")
 	}
 	return roundFailed(f, "The reviewer asked for changes:\n"+f.Run.Result.Summary)
 }
 
+// acceptedStep decides what follows the last of the agents' approvals, by
+// whom: the change waits for a person when its Crew's approval rules ask
+// for one (WaitsForPerson), and merges otherwise (approvedStep).
+func acceptedStep(f TaskFacts, by, merging string) TaskStep {
+	if WaitsForPerson(f) {
+		return TaskStep{Action: ActionAwaitApproval, Message: fmt.Sprintf(
+			"%s; %s, so the change waits for a person to approve its pull request", by, orUnknown(f.Approval.Why))}
+	}
+	return approvedStep(f, merging)
+}
+
 // checksPassedStep decides what follows a round's passed checks: the merge
 // of an approved change whose branch took in main (or its review again, when
-// the approval ran out), a spec's refusal, else the review.
+// the approval ran out), a spec's refusal, the merge of a change its Crew's
+// approval rules ask no review of, else the review.
 func checksPassedStep(f TaskFacts) TaskStep {
 	switch {
 	case f.MergeWhenChecksPass && f.ApprovalEnded:
@@ -1634,6 +1760,11 @@ func checksPassedStep(f TaskFacts) TaskStep {
 		return approvedStep(f, "Checks passed on the branch with main merged in; merging")
 	case f.Spec && f.SpecRefusal != "":
 		return specRefusedStep(f)
+	case MergesUnreviewed(f):
+		step := mergeStep(f, "Checks passed and no review is asked for", fmt.Sprintf(
+			"Checks passed; %s, so it merges with no review", orUnknown(f.Approval.Why)))
+		step.Unreviewed = true
+		return step
 	}
 	return TaskStep{Action: ActionStartReview, Message: "Checks passed; starting the review"}
 }
@@ -1649,36 +1780,55 @@ func specRefusedStep(f TaskFacts) TaskStep {
 	return roundFailed(f, f.SpecRefusal)
 }
 
-// awaitingApprovalStep decides what follows for a spec waiting for its
-// review point: a pull request a person merged ends the Task as merged, one
-// closed unmerged declines the spec, and a branch that moved is checked and
-// reviewed again (ActionMerge reads all three on the Git host). Otherwise a
-// person's request for changes starts the next round with it, and a person's
-// approval, or the reviewer's when the Crew says it is enough, merges it.
+// awaitingApprovalStep decides what follows for a pull request waiting for a
+// person, a spec's at its review point or a change's its Crew's approval
+// rules hold: one a person merged ends the Task as merged, one closed
+// unmerged declines the spec or drops the change, and a branch that moved is
+// checked and reviewed again (ActionMerge reads all three on the Git host).
+// Otherwise a person's request for changes starts the next round with it,
+// and a person's approval merges it; so does the agents' alone once the Crew
+// no longer asks for a person (specApproval Reviewer, or rules that changed).
 func awaitingApprovalStep(f TaskFacts) TaskStep {
-	pull := f.SpecPull
+	pull := f.WaitingPull
+	the, approved := "The change", "%s approved the change%s; merging"
+	if f.Spec {
+		the, approved = "The spec", "%s approved the spec%s; merging"
+	}
 	switch {
-	case pull.Merged:
+	case pull.Merged && f.Spec:
 		return TaskStep{Action: ActionMerge, Message: "A person merged the spec's pull request"}
-	case pull.Closed:
+	case pull.Merged:
+		return TaskStep{Action: ActionMerge, Message: "A person merged the pull request"}
+	case pull.Closed && f.Spec:
 		return TaskStep{Action: ActionSpecDeclined, Reason: ReasonSpecDeclined, Message: "The spec was declined"}
+	case pull.Closed:
+		return TaskStep{Action: ActionMerge, Message: "A person closed the pull request"}
 	case pull.HeadMoved:
-		return TaskStep{Action: ActionMerge, Message: "The spec's branch moved after the review; checking it again"}
-	case f.SpecApproval == SpecApprovalReviewer:
+		return TaskStep{Action: ActionMerge, Message: the + "'s branch moved after the review; checking it again"}
+	case f.Spec && f.SpecApproval == SpecApprovalReviewer:
 		return approvedStep(f, "The reviewer's approval is enough for the spec; merging")
+	case !f.Spec && !WaitsForPerson(f):
+		return approvedStep(f, "The Crew's approval rules no longer ask for a person; merging")
 	case pull.People.ChangesBy != "":
 		where := "on its pull request"
 		if pull.People.ChangesInChat {
 			where = "in chat"
 		}
-		return roundFailed(f, fmt.Sprintf("%s asked for changes to the spec %s:\n%s",
-			pull.People.ChangesBy, where, orUnknown(pull.People.Changes)))
+		to := ""
+		if f.Spec {
+			to = " to the spec"
+		}
+		return roundFailed(f, fmt.Sprintf("%s asked for changes%s %s:\n%s",
+			pull.People.ChangesBy, to, where, orUnknown(pull.People.Changes)))
 	case pull.People.ApprovedBy != "" && pull.People.ApprovedInChat:
-		return approvedStep(f, pull.People.ApprovedBy+" approved the spec in chat; merging")
+		return approvedStep(f, fmt.Sprintf(approved, pull.People.ApprovedBy, " in chat"))
 	case pull.People.ApprovedBy != "":
-		return approvedStep(f, pull.People.ApprovedBy+" approved the spec; merging")
+		return approvedStep(f, fmt.Sprintf(approved, pull.People.ApprovedBy, ""))
 	}
-	message := "The spec waits for a person to approve its pull request"
+	message := the + " waits for a person to approve its pull request"
+	if !f.Spec && f.Approval.Why != "" {
+		message += ": " + f.Approval.Why
+	}
 	if len(pull.Ignored) > 0 {
 		message += "; " + strings.Join(pull.Ignored, "; ")
 	}
@@ -1699,14 +1849,20 @@ func ConflictStep(round int) TaskStep {
 // merged first. Neither costs a round. A branch that has main's head can't
 // conflict with it: while the Git host doesn't yet say it merges, it waits.
 func approvedStep(f TaskFacts, merging string) TaskStep {
+	return mergeStep(f, "Approved", merging)
+}
+
+// mergeStep is approvedStep for a change that is accepted as passed says: a
+// change no agent reviewed is not "Approved".
+func mergeStep(f TaskFacts, passed, merging string) TaskStep {
 	switch {
 	case f.Behind:
 		return TaskStep{Action: ActionUpdateBranch, Message: fmt.Sprintf(
-			"Approved, but main moved since the checks ran; merging main into the branch and checking it again "+
-				"in round %d", f.Round)}
+			"%s, but main moved since the checks ran; merging main into the branch and checking it again "+
+				"in round %d", passed, f.Round)}
 	case f.Unmergeable:
 		return TaskStep{Action: ActionWait, Recheck: true,
-			Message: "Approved; waiting for the Git host to find that the pull request merges"}
+			Message: passed + "; waiting for the Git host to find that the pull request merges"}
 	}
 	return TaskStep{Action: ActionMerge, Message: merging}
 }

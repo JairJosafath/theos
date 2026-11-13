@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 // Package chatbot is theos-chat's logic (docs/plans/done/chat-matrix.md): for each
@@ -59,6 +67,9 @@ type Bot struct {
 	Interval time.Duration
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// UIURL is the UI's address (model.ChatUIURL), so a post links to its
+	// object's page; "" links to the Git host alone.
+	UIURL string
 
 	mu    sync.Mutex
 	hosts map[ports.ChatConfig]ports.ChatHost
@@ -283,10 +294,14 @@ func (b *Bot) news(ctx context.Context, namespace string) ([]model.ChatNews, err
 	})
 	var news []model.ChatNews
 	for i := range tasks.Items {
-		news = append(news, model.ChatTaskNews(taskView(&tasks.Items[i]))...)
+		v := taskView(&tasks.Items[i])
+		v.PageURL = model.ChatPageURL(b.UIURL, namespace, "Task", v.Name)
+		news = append(news, model.ChatTaskNews(v)...)
 	}
 	for i := range containers.Items {
-		news = append(news, model.ChatContainerNews(containerView(&containers.Items[i]))...)
+		v := containerView(&containers.Items[i])
+		v.PageURL = model.ChatPageURL(b.UIURL, namespace, "Container", v.Name)
+		news = append(news, model.ChatContainerNews(v)...)
 	}
 	for _, br := range briefs.Items {
 		news = append(news, model.ChatBriefNews(model.ChatBriefRound{Name: br.Name, Round: int(br.Status.Round),
@@ -318,12 +333,17 @@ func taskView(t *c4v1beta1.Task) model.ChatTaskView {
 	s := t.Status
 	v := model.ChatTaskView{Name: t.Name, Kind: string(t.Spec.Kind), Phase: string(s.Phase), Round: int(s.Round),
 		Issue: int(t.Spec.Issue), IssueTitle: s.IssueTitle, IssueURL: s.IssueURL, PullRequest: int(s.PullRequest),
-		PullURL: s.PullRequestURL, Commit: s.Commit, Message: conditionMessage(s.Conditions, conditionProgressing)}
+		PullURL: s.PullRequestURL, Commit: s.Commit, Message: conditionMessage(s.Conditions, conditionProgressing),
+		Benchmark: t.Spec.Benchmark != nil}
 	if s.Phase == c4v1beta1.TaskFailed {
 		v.Message = conditionMessage(s.Conditions, conditionSucceeded)
 	}
 	if s.Spec != nil {
 		v.SpecApproval, v.ApprovedBy, v.ApprovedInChat = string(s.Spec.Approval), s.Spec.ApprovedBy, s.Spec.ApprovedInChat
+	}
+	if a := s.Approval; a != nil && a.Require == c4v1beta1.ApprovalPerson {
+		// A change its Crew's approval rules hold for a person (#92).
+		v.ApprovalReason, v.ApprovedBy, v.ApprovedInChat = a.Reason, a.ApprovedBy, a.ApprovedInChat
 	}
 	if d := s.Triage; d != nil {
 		v.Triage = &model.ChatTriageView{Decision: d.Decision, Reason: d.Reason, Question: d.Question,

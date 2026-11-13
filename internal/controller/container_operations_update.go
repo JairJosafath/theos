@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -224,9 +232,13 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 	// #1909: an adopted repository was never scaffolded, so nothing says
 	// whether the operations file on its main is one the Framework renders.
 	if u.container.Spec.Adopt {
+		framework := "the Framework " + name
+		if name == "" {
+			framework = "a Framework"
+		}
 		stopped(c4v1beta1.ReasonAdoptedRepository, fmt.Sprintf("spec.operations changed after the adoption of "+
-			"the repository, which the factory never scaffolded, so it can't know whether the Framework %s "+
-			"renders the %s there; change it by a Task", name, model.OperationsFile))
+			"the repository, which the factory never scaffolded, so it can't know whether %s "+
+			"renders the %s there; change it by a Task", framework, model.OperationsFile))
 		log.Info("Did not carry a changed spec.operations to an adopted repository", "framework", name)
 		return
 	}
@@ -255,7 +267,12 @@ func (u *operationsUpdate) plan(ctx, gitCtx context.Context) {
 	if ports.SameHost(git.gitProvider.Spec.URL, framework.Spec.Template.URL) {
 		creds = &git.creds
 	}
-	files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, creds)
+	files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, framework.Spec.Template.Path, creds)
+	if errors.Is(err, ports.ErrTemplatePathNotFound) {
+		// #35: no retry makes the directory appear at the scaffolded ref.
+		stopped(c4v1beta1.ReasonTemplatePathNotFound, fmt.Sprintf("Framework %s: %v", name, err))
+		return
+	}
 	if err != nil {
 		u.gitError(ctx, err)
 		return

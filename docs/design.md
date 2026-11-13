@@ -12,7 +12,9 @@ and reasons, is [design-history.md](design-history.md); the plans in
 theos turns an idea into working repositories by first telling its story
 as a C4-inspired model. The model lives in Kubernetes custom resources, a
 kubebuilder operator acts on it, agents build the apps from issues, and a UI
-draws the story on top.
+draws the story on top. It runs on Kubernetes to be a distributed solution
+for agentic work: many agents, each in a sandbox of its own, building at
+once ([Why Kubernetes](#why-kubernetes)).
 
 - **The CRDs are the truth.** Anything can write them: kubectl, GitOps, a
   Brief's planner or the UI. The UI and the Session client enforce nothing;
@@ -38,11 +40,49 @@ draws the story on top.
 | Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools. |
+| Where it runs | One Kubernetes cluster per install, of any number of nodes. Kind on one machine is the test rig and a way to try it, never the purpose ([Why Kubernetes](#why-kubernetes)). |
+
+### Why Kubernetes
+
+theos runs on Kubernetes because agentic work is distributed work: many
+agents, each in a sandbox of its own, building at once. The cluster already
+does what that needs.
+
+- **Every run is a pod.** An agent's run is a sandboxed pod, and so are a
+  project's CI jobs and its local test environments. The scheduler places
+  each on any node with room; the operator never picks a node.
+- **One truth.** The model is custom resources in the cluster's API. Every
+  client reads and writes the same objects, and the operator reconciles
+  them.
+- **The cluster enforces the fence.** NetworkPolicies, on a network plugin
+  that enforces them, and pods that hold no ServiceAccount token keep an
+  agent in ([The fence](#the-fence)).
+- **A run outlives its pod.** A run that a node shutdown or an eviction
+  interrupts resumes in place from its checkpoint, where the checkpoint's
+  volume can attach: the volume is the sandbox's own, of the cluster's
+  default StorageClass unless set, so on node-local storage a run whose node
+  is gone can't resume on another ([Agents and Tasks](#agents-and-tasks), "A run
+  continues from a checkpoint"). Not yet tested on more than one node (#125).
+- **Capacity is a setting.** How many agents work at once is one setting
+  (the operator's `--max-agent-sandboxes`: 1 by default, 4 in the chart),
+  and the cluster's nodes are where that many agents find room. Adding nodes
+  adds no agent until the setting is raised (#123).
+- **It installs from a chart,** on a Kubernetes 1.30 or later cluster
+  ([Distribution and issues](#distribution-and-issues)).
+
+A Kind cluster on one machine is how theos is tested ([Test tiers](#test-tiers))
+and the quickest way to try it. It is not what theos is for.
+
+One install is one cluster and one trust domain. The design claims no
+multi-cluster and no high availability of the Git host the chart brings.
+The test rig has one node, and parts of the factory still assume one; they
+are open points, each with its issue
+([Out of scope and open points](#out-of-scope-and-open-points)).
 
 ## The model
 
-Twenty namespaced kinds in `theos.factory.io/v1beta1`, the version users write
-(`v1alpha1` is deprecated; Compatibility). Every child names its parent in
+Every kind is namespaced and served at `theos.factory.io/v1beta1` alone, the
+version users write (Compatibility). Every child names its parent in
 `spec`; the operator turns that into the ownerReference, so deletion
 follows the tree. `metadata.name` is the stable id; `displayName` and
 `description` are on every story kind.
@@ -65,6 +105,8 @@ follows the tree. `metadata.name` is the stable id; `displayName` and
 | Bundle | Project | none | A catalog entry with no template: a Framework and, optionally, a Standard, Compute and Deployment a team picked together; it supports the types all its entries support |
 | Agent | Project | none | Who does Tasks: a harness, a model, a toolchain image, credentials and limits |
 | DeployTarget | Project | none | A place releases ship to, with its credential |
+| Scorer | Project | none | Plain-words criteria a judge Agent checks finished Tasks against; each judge run is a Task of kind `Score` it owns |
+| Benchmark | Container | `spec.containerRef` | The same goals from one pinned commit under two or more Agent variants, repeated; its Tasks end `Approved` and never merge |
 
 ```yaml
 kind: Container                    # the other kinds are in config/samples/
@@ -102,6 +144,22 @@ a Container not yet scaffolded `Pending`, reason `NotFound`; the checks
 below run on the expanded entries, and their message starts with
 `bundle <name>: `.
 
+**A catalog entry's template** is `template.url`, a Git repository,
+`template.ref`, a tag or a full commit SHA and never a branch (`UnpinnedRef`
+otherwise), and optionally `template.path`, a directory of that repository,
+relative to its root (#35). With a path the operator reads only that subtree,
+at the same pinned ref, with paths relative to it, so a template can live in a
+product's own repository beside its model and its `CLAUDE.md`; files outside
+it are no part of the template, and the checks on a template, a Domain's
+included, see only the subtree. Unset is the repository's root. CEL refuses
+an absolute path, a `.` or `..` segment, and a trailing or doubled `/`. A path
+the ref doesn't have fails what fetches it with reason `TemplatePathNotFound`,
+naming the path and the ref, as permanent as `UnpinnedRef`: the scaffold
+(`Scaffolded=False`), a Standard update (`StandardUpdated=False`) and an
+operations update (`OperationsApplied=False`). `scaffoldedFrom` and a
+Container's `status.standard` still read `name@ref`, and the UI's catalog
+pages show the path when it is set.
+
 A SoftwareSystem's `location` is `Internal` (the default: the factory builds
 it) or `External` (the story only names it, such as a payment provider). An
 External system holds no Containers or DataStores: one naming it stays
@@ -118,7 +176,8 @@ the factory builds nothing there). Every Container of the system is
 scaffolded with each Domain's Markdown under `docs/agents/domain/<name>/`,
 the last layer, after the Connectors, sorted by name; the Standard's agent
 guide tells the implementer and the reviewer to read it. A Domain's template
-renders Markdown only and a `README.md`: another file fails the scaffold
+(its `template.path` when it has one, so files beside it in the repository
+don't count) renders Markdown only and a `README.md`: another file fails the scaffold
 with `Scaffolded=False`, reason `DomainNotMarkdown`, naming the file; no
 `README.md` fails it with `DomainNoReadme`. Each Domain's `name@ref` ends
 `status.scaffoldedFrom` and its name joins `status.scaffoldedDomains`. A
@@ -126,8 +185,8 @@ Domain is written once, at the scaffold: a later
 bump of its `ref` does not reach a scaffolded Container, and a Ready
 Container reports `DomainsApplied=True` while its system still names the
 Domains it was scaffolded with, `False` with reason `AddedAfterScaffold`
-naming what was added or removed since (an adopted Container, scaffolded
-with none, names them all). The Standard's update renders with the Domains
+naming what was added or removed since (an adopted Container counts the
+Domains its Standard's files were found rendered with, below). The Standard's update renders with the Domains
 the scaffold used. The planner names the installed Domains an idea is about
 on each new Internal system. [plans/domains.md](plans/domains.md) (#1512)
 has the decisions; all its steps are built: the kind, `domainRefs`, the
@@ -176,7 +235,15 @@ Domains catalog page, a system's Domains and a Container's `DomainsApplied`.
    the holder the Project's `displayName`, else its name. The factory never
    picks a license: with none set, no file. It is an operator path like
    `.theos.yaml`, which records the id; a layer writing `LICENSE` is the
-   two-layers collision below. Read at scaffold only: changing the setting
+   two-layers collision below. A template's manifest that names a license
+   names the same id (`{{ .License.ID }}`): the Node templates'
+   `package.json` and `package-lock.json` say it, and `UNLICENSED`, npm's
+   word for no license granted, with none set (#73). So does a source
+   header that grants one: go-kubebuilder's Go files and its
+   `hack/boilerplate.go.txt` keep kubebuilder's Apache grant only for
+   `Apache-2.0`, name another license by `SPDX-License-Identifier`, and with
+   none carry the copyright line alone, so no header grants a license nobody
+   chose (#83). Read at scaffold only: changing the setting
    later rewrites nothing, and a Container already scaffolded gets its
    license by a commit ([plans/license.md](plans/license.md)).
 8. **Push one commit,** protect `main` with the Standard's required checks,
@@ -192,16 +259,77 @@ tries again when something it depends on changes, or when its
 creation, immutable) takes over a repository that already has commits and
 is never scaffolded: the operator writes nothing. It checks main for two
 things. `.theos.yaml` carries the identity file's fields, naming this
-project and Container, with `scaffoldedFrom` empty since nothing was
-scaffolded; a missing file or another identity fails `IdentityMismatch`,
+project and Container (`scaffoldedFrom` is what another factory scaffolded
+it from, or empty); a missing file or another identity fails `IdentityMismatch`,
 saying what the file holds. Every file the Container's Standard renders for
 it at its ref is there with that content; else it fails
-`StandardFilesDiffer`, naming the paths. When both hold, it protects `main`
-and goes `Ready`, recording the Standard at its ref. An empty repository
+`StandardFilesDiffer`, naming the paths of the closest render. The Standard
+renders its agent guides with the system's Domains, so the check tries, in
+order, the Domains `.theos.yaml`'s `scaffoldedFrom` records (its entries
+that name a Domain of the project's catalog), the Domains the system names
+now, and none, and the first that renders main's files wins (#42): a
+repository theos scaffolded with Domains can be adopted by another factory
+with the same catalog. When both hold, it protects `main` and goes `Ready`,
+recording the Standard at its ref and those Domains in
+`status.scaffoldedDomains`, which `DomainsApplied` and later Standard
+updates read. An empty repository
 fails `NothingToAdopt`; one with commits but no `main` branch fails
 `NoDefaultBranch`, telling the user to rename its default branch to `main`
 first (#1908). A Container without a Standard adopts on the
 identity alone ([plans/self-hosting.md](plans/self-hosting.md), #1888).
+An adopting Container may name nothing from the catalog at all, no
+Framework, Standard, Compute or Deployment: the rule "name a bundleRef or a
+frameworkRef" is for a Container the factory scaffolds, and a repository it
+never scaffolded, a Rust service, has no Framework to name
+([plans/adopt-existing.md](plans/adopt-existing.md), #60). The factory
+wires no Connector into it, whatever its Relationships say.
+
+**An adopted repository's own check** (#95). A Container that adopts with
+no Standard is checked by the repository's own means, which it names:
+`spec.checkCommand` (default `make check`), what the agent's workspace runs
+after the agent and the agent is told to run, and `spec.checkContexts`
+(default the CI system's, `check*`), the status checks main requires, as
+patterns (`ci / test*` is the job `test` of the workflow `ci` on every
+event). CEL refuses both beside a Standard, which brings its Makefile and
+its workflow. Agents work only on protected repositories, so the operator
+reads main's head. Once it reports a check for each of the Container's
+contexts, the operator protects main with them, the platform's paths and
+the CI system's workflow paths wherever the host reads them (Gitea Actions
+reads `.github/workflows/` when a repository has no `.gitea/workflows/`,
+so both), and the Container gets `Protected=True`. While the head reports
+none for one of them the operator protects nothing, since a pattern nothing
+reports would block every merge, the people's too, and says
+`Protected=False`, reason `NoMatchingCheck`, with the checks the head does
+report, so a person can name theirs. Meanwhile a Crew on the Container
+starts no Task (`Ready=False`, `ContainerNotProtected`), and a Task made by
+hand waits with that reason. A Container that neither adopts nor has a
+Standard has no checks to require: its Tasks fail, as before. The operator
+follows a change of `checkContexts` and never takes a rule away.
+
+**Proposing the model** (#96). `theos-session adopt --project <ns>
+--git-provider <name>` reads a clone and prints the model that adopts it:
+a SoftwareSystem, the Container with `adopt: true` and the check command
+and contexts it found, and a Crew whose approval rules hold every change
+for a person. It applies nothing and talks to no cluster. It reads the
+build files at the root (`go.mod`, `Cargo.toml`, `package.json`,
+`pyproject.toml`, `Makefile`) and the workflows the host runs, and what it
+can't tell (the language, the kind of application, a check, a workflow
+that runs on a pull request) is a note in the proposal, never a guess. It
+also prints the `.theos.yaml` to commit to main, which stays the person's
+to commit: that file is how a repository's owner says the project may work
+there.
+
+**The Crew's first issue** (#98). A repository the factory scaffolded has
+its Standard's guides for agents; one it adopted with no Standard has what
+its people wrote. So the Crew's first issue there is its own: once main is
+protected and the Crew isn't paused, it files "Write AGENTS.md for this
+repository, and say what you found" (or "Check and complete AGENTS.md",
+when the repository has one), labelled `kind/onboarding` and
+`status/ready`, with criteria a reviewer checks, and builds it as any
+issue; the Crew's approval rules hold its pull request like any other. It
+is filed once: `status.onboarding` records it, and an open issue with its
+marker, which a lost status write leaves, is recorded instead of a second
+one filed.
 Adoption checks the Standard's files and nothing of the Framework's: the
 block `spec.operations` names at adoption is recorded as the one the
 repository holds, when the Framework reads it, and a later change is
@@ -218,6 +346,19 @@ ships a release of the target ([Crews](#crews-and-releases)). Every other link
 is story only. One added after the scaffold shows `Applied=False`,
 `AddedAfterScaffold`. A Relationship's ends and a DataStore's Connector can't
 change, so `Applied` keeps meaning what the scaffold holds.
+
+A model applied in one go creates a Container's Relationships after it as
+often as before: `kubectl apply -f dir/` goes file by file, kustomize doesn't
+order custom resources, and a Container deleted and applied again loses its
+Relationships with it. So a new Container waits out a settle window after its
+creation before it is scaffolded, `Pending` with `Scaffolded=False`, reason
+`Settling`, and resolves again once it closes; the scaffold reads the
+Relationships whose `spec.source` names the Container, from the API server,
+so one created inside the window counts though the operator hasn't set its
+ownerReference yet (#43). The window is the operator's `--scaffold-settle`,
+10 seconds by default; 0 scaffolds at once. The alternative, holding the
+scaffold while a Relationship naming the Container is unresolved, can't see
+a Relationship not created yet, which is this case.
 
 **Status.** A Container is `Pending`, `Scaffolding`, then `Ready` or `Failed`,
 with conditions `ReferencesResolved`, `ChoicesValid`, `RepositoryCreated`,
@@ -240,7 +381,8 @@ squash-merges on approval. Failed checks, requested changes or a failed run
 start the next round with that feedback, up to the Agent's `maxRounds`.
 Phases: `Pending`, `Implementing`, `Checking`, `Reviewing`, `Verifying` (a
 verifier runs the approved change), `Blocked` (waiting on a Standard change),
-`AwaitingApproval` (a spec waiting for a person), then `Merged` or `Failed`. A
+`AwaitingApproval` (a spec, or a change its Crew's approval rules hold,
+waiting for a person), then `Merged` or `Failed`. A
 Triage Task (`kind: Triage`) runs one triager on an issue instead and applies
 its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
 *Triage*, *Spec* and *Verify* under Crews and releases.
@@ -283,8 +425,26 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
   on the base in the sandbox only is the workspace's, which the prompts say.
 - **Blocked is said, not guessed.** An implementer that can't do the issue
   yet, or not in the sandbox, changes nothing and ends with `Blocked: <why>`;
-  the Task fails at once, reason `Blocked`, with those words on the issue. A round
-  with no change and no such line fails with the end of the agent's summary.
+  the Task fails at once, reason `Blocked`, with those words on the issue.
+- **"Nothing to do" is a result.** An implementer that finds its issue
+  needs no change (what it asks for is already so, or a scheduled update
+  found nothing to update) changes nothing and ends with
+  `Nothing to do: <why>`. The Task ends done, phase `Merged` with reason
+  `NothingToDo`, with no pull request, no review and no merge; the operator
+  closes the issue with the agent's words and how to reopen it. Nobody
+  reviews those words, which the prompt says. Only the build of an issue
+  ends this way: not a spec, a Standard change, a Benchmark's Task, or a
+  Task that has a pull request, whose branch the reviewer judges as it is.
+  Such a Task merged nothing: no release waits for its merge commit,
+  `theos_tasks_merged` doesn't count it, and no Scorer judges it. A round
+  with no change and neither line fails with the end of the agent's summary.
+  When the check fails on the base too, the implementer is sent back once
+  first, in a fresh session whose prompt is the round's own, the issue
+  included, then its first answer and the base's failure (#2037). A note
+  that says the agent can't see the issue (`model.IssueUnseen`: the issue or
+  its text, not given, available or seen) fails reason `IssueUnseen`
+  instead: the factory gave it the issue, so the first such Task on an issue
+  costs no try, and any more do.
 - **The infrastructure's failures cost the issue no try:**
 
   | Reason | What happened | The Task |
@@ -295,6 +455,7 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
   | `RunnerOutOfSpace` | `no space left on device` in a job log | fails; no round |
   | `RunnerOutOfMemory`, `RunnerLost` | a job killed for memory, or abandoned by its runner | reruns the jobs twice a round, then fails |
   | `ApprovalRanOut` | CI outlived a Standard change's approval four times | fails |
+  | `IssueUnseen` | the agent's blocked note says it can't see the issue | fails; free once per issue |
   | `OverBudget` | the runs' summed cost reached the Crew's `taskBudgetUSD` | waits for the cap to be raised; a needs-you item; no round |
 
   An agent killed for memory or past its deadline fails its own round. A job
@@ -377,7 +538,8 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
 - **A Task keeps its record:** `status.history`, `status.runs` per agent run,
   the cost (`status.costMilliUSD`) and tokens (`status.tokens`, with
   `largestSession`) its agents reported. `WaitingForSlot` says it waits for
-  an agent slot, and `BaseRed` that it waits for `main`'s checks to pass. The Work area charts the runs against their Agent's
+  an agent slot, `WaitingForEnvironment` for a test environment (*Test
+  environments*), and `BaseRed` that it waits for `main`'s checks to pass. The Work area charts the runs against their Agent's
   `sessionTokenLimit` ([plan](plans/done/token-chart.md)): the line and the
   "Past the limit" counts use the Agent's current limit and the Task's current
   Agent, since a run records neither, so changing either rejudges past runs.
@@ -402,7 +564,32 @@ lets it reach the proxy alone
 place is that Secret in the release namespace; the operator never copies it
 into a project namespace, and deletes the copies an earlier release made. An
 Agent naming a Secret of its own gets that Secret's keys as the sandbox's
-environment, readable inside it.
+environment, readable inside it. A test environment a run leases runs the
+agents' code too and is fenced the same way (*Test environments*); the
+sandbox fence lets out one more port, `theos-env`'s, to the project's own
+environment pods.
+
+On GitHub the Git host's part of the fence is made of other pieces
+([plans/github-host.md](plans/github-host.md); no GitProvider reaches GitHub
+before that plan's step 8). There is no bot user: an agent's credential is
+an installation token of a GitHub App, minted for the one repository with
+the permissions to write its contents, open its pull request and read its
+issues, and no other. The operator acts with the GitProvider's own token,
+of an account that administers the owner's repositories, never as that App:
+GitHub tells accounts apart, not tokens, so the rulesets that keep `main`
+and `v*` tags to the operator let the administrators past and nobody else,
+and the pull request the App opened is one the operator's account may
+review. GitHub itself refuses a push that changes a workflow from a token
+without the `workflows` permission, which an agent's token never has. The
+Standard's protected paths and its checks are no setting of a branch there:
+the operator's merge checks the pull request's files and its checks itself,
+against a rule only an administrator of the repository can change. What
+differs from Gitea: a credential lives an hour and is minted again for a
+longer run; one minted before the operator restarted can't be revoked and
+runs out within that hour; and a person who administers the repository is
+held by nothing of this, on GitHub as on any host. A GitProvider whose
+Secret holds a token and no App scaffolds and reads issues, and its agent
+access says `NeedsGitHubApp`: a person's token never reaches a sandbox.
 
 ### The CI fence
 
@@ -411,7 +598,7 @@ in an environment made for it and thrown away; holds only its job token and its
 repository's secrets; shares nothing writable with another project's jobs or a
 release; and reaches only DNS, the Git host (and its registries) and public
 HTTPS. Every CI adapter meets this or says which part it can't
-([plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)).
+([plans/done/ci-runner-isolation.md](plans/done/ci-runner-isolation.md)).
 
 The Gitea runners meet the network and the token: a NetworkPolicy on their pods
 (`app.kubernetes.io/component: ci-runner`) lets nothing in and only cluster
@@ -448,16 +635,175 @@ answers (#1699). The pods
 sit under the project's own CI NetworkPolicy (no ingress; DNS, the Git host's
 namespace and public HTTPS out), hold no ServiceAccount token, get the
 registration token only in an init container, and the `go` label's pods
-mount a Go build cache of the project's own on the node. The shared runners
+mount a Go build cache of the project's own on the node. Releases get no
+cache a job wrote: a release builds signed artifacts, so gitea-release's
+release job runs on `go-release`, whose pods (`freshGoCache`) start from the
+image's warm Go cache copied into an emptyDir of their own, mount nothing
+from the node and keep nothing (#1141). The shared runners
 Helm installs register to the templates organization and serve the
 templates' checks only; the GitProviders the chart renders carry a pool of a
-`base` and a `go` runner, the labels the templates' checks run on, so an
-install needs nothing added for a project's checks to run. Who cancelled a job is read from its pod: a pod that
+`base`, a `go` and a `go-release` runner, the labels the templates' checks
+and releases run on, so an install needs nothing added for a project's
+checks and releases to run. Who cancelled a job is read from its pod: a pod that
 ended its one job on its own after the cancel was a person's; one deleted,
 evicted or killed before its job ended was the runner's, and the Task reruns
 the checks at no cost to a round (`model.Canceller`). The isolation left is
-the node's: the pods share it with everything else
+a node's: the pods share it with everything else on it
 ([getting-started](getting-started.md#what-the-factory-trusts)).
+
+### Test environments
+
+Work that needs a tool the agent sandbox lacks (a browser and its system
+libraries, a phone emulator, a GPU, macOS) gets it from a
+**TestEnvironment**, not from a person
+([plans/done/test-environments.md](plans/done/test-environments.md)). A
+TestEnvironment is a named set of tools in a project's namespace, such as
+`browser`, `android` or `godot` (`v1beta1`, as every kind): a one-line
+`description` for people and agents, exactly one provider member (`local`,
+`aws` or `deviceFarm`; CEL), and `limits`. Its status lists the live leases (holder,
+since, state, cost so far), what they cost today, and `Ready`: a local
+member's image is pinned and the project's fence for its pods exists; a
+remote member's `CredentialsValid` is True.
+
+- **Who asks.** A Standard or a Framework lists names in
+  `spec.testEnvironments`, and its Containers' runs get each one the project
+  has; one the project lacks gives the Container `TestEnvironments=False`,
+  reason `NotInProject`, a Needs-you item, and the runs go on without it. An
+  issue asks with a label `env/<name>`, which the triager or planner sets;
+  that ask is required: a Task whose issue needs an environment the project
+  lacks waits, reason `WaitingForEnvironment`, message `NotInProject`,
+  costing no try, until a person adds it.
+- **When a lease is held.** One lease per agent run that needs it: the
+  implementer's and the verifier's runs; the reviewer, triager, spec writer
+  and planner get none. The operator leases before it makes the run's
+  sandbox and returns the lease when the run ends, fails or is suspended
+  (paused, agent unavailable, interrupted); a resumed run leases again.
+  Waiting for a lease costs no round. An environment keeps no state between
+  leases, so letting one go loses nothing.
+- **How the sandbox uses it.** The sandbox gets `THEOS_ENV_<NAME>_URL` and
+  `_TOKEN` (and `_CA`, the certificate an environment over public HTTPS is
+  pinned to) per lease, and runs `theos-env run <name> -- <command>`. That
+  sends the working tree's tracked and untracked, not ignored, files (512 MiB
+  at most), runs the command in the same folder of a fresh `/work`, streams
+  its output and exit code back, and writes the files it changed or added,
+  the ignored ones left out, into the sandbox's tree, where the agent commits
+  them. The environment runs `theos-env serve`, a static binary an init
+  container copies in from the theos-agent image, so any image with the tools
+  works; within a lease its own background processes (an emulator booted
+  once) keep running.
+- **The fence.** An environment runs the agents' code, so it is fenced like
+  a sandbox. A local lease is one pod, from the environment's image, with no
+  ServiceAccount token, no user Secret, not privileged, its devices only
+  through the cluster's device plugins (`local.devices`, a setting), and the
+  lease's deadline as its own. The project's NetworkPolicy
+  `theos-test-environment` selects `app.kubernetes.io/component:
+  test-environment` and lets in only the project's agent sandboxes, on
+  `theos-env`'s port, and out only cluster DNS and public HTTPS: no Git host,
+  no model proxy, no private range. Each lease has a token of its own, which
+  the operator makes and gives only to the run that holds the lease, so one
+  Task can't use another's environment. A remote environment is reached over
+  public HTTPS on port 443, which the sandbox fence lets out already, with
+  its certificate pinned: the certificate itself, which the lease's token
+  makes on both sides, not a host name. An `aws` machine gets no instance
+  role and no SSH key, its metadata service is turned off before a run gets
+  it (on at boot only to hand the machine its user data, IMDSv2, one hop),
+  and its security group, the operator's own and its only one, lets in only
+  `theos-env`'s port and lets out only DNS and HTTPS to public addresses.
+- **The chart's browser.** The seed makes a local `browser` in each
+  project it sets up (`testEnvironments.browser.enabled`, on by default),
+  on the release's `env-browser` image, with no CI pool: a fresh install
+  handles a picture script with nothing added, and a lease costs nothing
+  until a run asks for one.
+- **The port and its providers.** `ports.TestEnvironments` leases, reads,
+  returns and lists leases (*Factory components*); `cmd/main.go` maps each
+  member to its provider. The local provider makes a pod per lease (never a
+  Deployment: no lease sees the last one's leftovers) and costs nothing. A
+  remote provider's credential is a Secret only the operator reads
+  (`aws.credentialsSecretRef`, a `cloudFormation` DeployTarget's keys, and
+  `aws.account`, which a key of another account is refused against:
+  `CredentialsValid` False, and a run that needs it waits,
+  `CredentialRefused`). The aws provider launches an EC2 machine per lease
+  from the environment's AMI in its subnet, tagged with the lease, its
+  holder and the environment, so a restarted operator finds it; its user
+  data downloads `theos-env` (the chart's `testEnvironments.toolsURL`,
+  checked against `SHA256SUMS`), serves it with TLS, and shuts the machine
+  down, which terminates it, at the lease's deadline; `Return` terminates
+  it, and deleting the environment terminates its machines and deletes its
+  security group. A lease costs the instance type's on-demand price, read
+  from the AWS Price List, for the time it is held. An EC2 Mac runs on a
+  dedicated host, which EC2 bills for 24 hours at least: the provider
+  allocates one only when every host it keeps for the environment is busy,
+  keeps each for `aws.mac.keepHostHours` from its allocation (at least 24),
+  waits for one being scrubbed rather than allocating another, and releases
+  a host past its kept time once no machine is on it; the lease whose
+  machine is the first on a host counts the host's price for its kept hours
+  at once, and a lease on a host kept costs nothing until they are over.
+- **Test packages on real devices.** A `deviceFarm` environment runs an
+  app's test packages on AWS Device Farm's phones, not commands. The run
+  can't reach the operator, which holds the credential, and the credential
+  never reaches the run, so the run asks over its Git host: `theos-env test
+  <name> --type <type> --app <file> --tests <file>` pushes a request commit,
+  the request signed with the lease's token, the app and the test package,
+  its parent the run's commit, to the lease's branch `theos-env/<lease>`,
+  which is the lease's endpoint (`git:theos-env/<lease>`). The operator
+  reads it on its poll, as it reads CI's checks, starts the run on the
+  environment's device pool when the token signed it and the day's budget
+  allows, pushes the report (each device's result, the tests that didn't
+  pass) and the screenshots and logs to the same branch, where theos-env
+  writes them into the run's working tree to commit, and comments the
+  outcome on the Task's pull request, where the reviewer and people see it.
+  A lease holds no device: it is a tag on the Device Farm project, and costs
+  its runs' metered device minutes; returning it stops its runs. It runs no
+  CI jobs, nor does an EC2 Mac: CEL refuses their `ci`.
+- **Limits.** `limits.maxLeases` (default 2, at most 16) bounds the live
+  leases; a run past it waits, `WaitingForEnvironment`, `AllLeased`.
+  `limits.maxLeaseMinutes` (default 180, the agent run's own deadline) ends a
+  lease that outlives it. A remote member needs `limits.budgetUSDPerDay`;
+  past the day's budget no lease starts (`OverBudget`, a Needs-you item) and
+  leases held finish their run. The operator returns any lease whose holder
+  no longer lists it.
+- **CI on the same tools.** An environment with `ci.size` adds a runner pool
+  for the label `env-<name>` to the project's Gitea Actions pool, built from
+  the environment's image and devices under the CI fence, so a Standard's
+  workflow runs on `env-browser` what the agent ran with `theos-env run`.
+  Each pod registers, and gets its runner copied in, from `ci.runnerImage`,
+  else the image of the GitProvider's first runner; the jobs run on the
+  environment's image. A `ci` block that names `env-<name>` itself makes
+  the Project's `CIRunners` False, reason `LabelClash`. A remote
+  environment's `ci: {}` keeps no idle runner: for each `env-<name>` job of
+  the GitProvider's owner organization that waits, within the environment's
+  limits and the budget it shares with the runs, the operator registers an
+  ephemeral runner for one job and leases a machine that runs it. The
+  registration token never leaves the operator; the machine gets the
+  runner's own credential, which takes that one job and goes with the
+  runner when the job ends, and the operator deletes the runner when it
+  returns the lease. The machine serves `theos-env` only until its metadata
+  service is off, then starts the runner, and shuts down, which terminates
+  it, when the runner exits. The lease's holder is the runner
+  (`ci/<GitProvider>/<id>`), held while it runs its job, or waits to take
+  one while one waits, or starts (20 minutes); the operator returns it once
+  its job ended or none is left for it. The machines reach the Git host at
+  the GitProvider's `ci.giteaActions.publicURL`, else its `url`, when that
+  is `https://` on port 443 at a public host, the one port their fence lets
+  out; the chart's in-cluster Gitea has neither, so remote CI is off until
+  a person gives it. The environment's `CI` condition says whether it runs
+  jobs (`Serving`) and why not (`NoGitProvider`, `NoPublicAddress`,
+  `LabelClash`, `Unsupported`, `Unreachable`, `OverBudget`).
+- **By hand only for a person.** The implementer's and verifier's prompts
+  list the run's environments, with each one's description and how to use
+  it, and the guides say that a criterion a listed environment can check is
+  never one "no sandbox can" meet. The planner's and triager's workspaces list
+  the project's TestEnvironments, and they label `env/<name>` where they
+  would have filed `kind/by-hand` for missing tools. `kind/by-hand` stays for
+  accounts, settings, hardware no environment has, and other people's work.
+- **In the UI.** The Project page lists the project's TestEnvironments, each
+  with `Ready`, its live leases against its limits and who holds each,
+  today's spend against its budget, a remote one's `CredentialsValid` and
+  `CI` in words when False, and a `deviceFarm` one's test runs; each has a
+  page of its own, read only, which names a remote one's credential by its
+  Secret only. A Task's page shows
+  the leases its run holds, the environments its runs leased, and why its
+  run waits for one.
 
 ## Crews and releases
 
@@ -510,6 +856,14 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   reason and acts: `ready` writes the checklist into a body that has none and
   labels `status/ready`; `spec` labels `status/needs-spec`; `park` labels
   `status/needs-human` and asks the question; `duplicate` closes the issue.
+  Whatever it decides, the triager may call the issue's change high-risk
+  (`"risk": "high"`): done wrong it would be costly or hard to undo, as a
+  change that migrates or deletes data, changes who may do what, handles
+  money or breaks an interface others build on. The operator labels such an
+  issue `risk/high` when it stays open, says so in its comment, and never
+  takes the label off; a person may set it too. The label decides nothing:
+  the Crew's approval rule that names it says what the change needs
+  (*Approval rules*).
   An issue a person closed or relabelled meanwhile keeps that. The Task ends
   `Merged`, as a Plan Task does, with the decision, its reason and what was
   done in `status.triage`. A person can answer a parked issue's question
@@ -587,6 +941,46 @@ run (`OverBudget`) until the cap is raised, and unset means no cap.
   its own review point, and a Standard change's gated merge needs the
   approval of a review run that still lasts. Without a verifier, the
   reviewer's approval merges.
+- **Approval rules** (`spec.approval`,
+  [plans/done/approval-rules.md](plans/done/approval-rules.md)). An ordered
+  list of up to 16 rules says which changes wait for a person and which
+  merge on CI alone. A rule has `require` (`Person`, `Reviewer` or `None`), and what it
+  is for: `labels` (the issue has one of them), `changedLinesOver` (the pull
+  request adds and deletes more lines than that) and `paths` (a file, a
+  folder ending in `/`, or a pattern in which `*` is any run of characters:
+  `*.md`). Each changed file takes the first rule that is for the change and
+  matches the file, a rule without `paths` matching every file; a file no
+  rule matches needs `Reviewer`. The change needs the strictest of what its
+  files need, `Person` over `Reviewer` over `None`, so a rule can only
+  loosen the files it names. A pull request with more files than the Git
+  host lists never gets `None`.
+  The Task asks the rules once its round's checks passed, and again when the
+  Crew's rules change, and keeps the answer in `status.approval` with the
+  rule and the file that decided. `None` merges then, with no reviewer and
+  no verifier run and no approval posted. `Person` comes last: once the
+  reviewer and any verifier approved, their approvals go on the pull
+  request, what the review left for the merge stays in `status.review`, and
+  the Task waits in `AwaitingApproval` with `NeedsYou`, taking no place from
+  `parallel`, as a spec does at its review point and by the same rules: a
+  person, not the operator's user or an agent bot, approves the reviewed
+  commit on the Git host or from chat, in the change's thread in `reviews`
+  (the Task's `theos.factory.io/approve-spec` annotation); a request for
+  changes, there or from chat, starts the next round with their words;
+  a push is checked and reviewed again; closing the pull request ends the
+  Task. A main that moved while it waited is merged in and the change merges
+  on green checks with no second approval. The reviewer may raise what the
+  rules ask, never lower it: when it approves a change the rules left to it
+  and calls it high-risk (`"risk": "high"` with a reason, in its verdict), the
+  change needs `Person` for that reason (`status.approval.raisedByReviewer`),
+  for this head only, and through a verification. A change a rule holds
+  keeps its rule, one that needs `None` has no reviewer, and a Crew without
+  rules has no person in its loop whatever its reviewer says. Rules that no
+  longer ask for a person let a waiting Task merge. `status.approval.approvedBy` records who
+  approved, and the issue's closing comment says who let the change in: the
+  person, or no agent's review, with the rule. The rules are for Implement
+  Tasks: a spec has `specApproval`, a Standard change always has its lasting
+  review run, and a Crew without rules reviews and merges everything, as
+  before them.
 
 A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
 
@@ -594,25 +988,116 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   at work is done: the Crew tags it at its newest merged issue's merge commit
   and closes the milestone. Tags go out in due-date order, never move, and
   never go behind the previous release (`BehindPreviousRelease`).
+  A release with no issue at all is not done and holds no later one; one
+  before the release tagged closes untagged with it (#2025).
   `status.lastRelease` records it; `Released` says why one waits on a person.
+- **Cadence** (`spec.releaseCadence`,
+  [plans/release-cadence.md](plans/done/release-cadence.md)). `every: Release`,
+  the default, tags each release once it is done, as above. `Day` or
+  `Week` releases on a schedule: `at` (`HH:MM`, default `18:00`) in
+  `timeZone` (an IANA name, default `UTC`), on `weekday` (only with
+  `Week`, default `Friday`). Until the cut the first open release waits
+  (`Released=False`, `WaitingForCut`: "v0.15.0 holds 4 merged issues and
+  goes out at 18:00 UTC"; `status.nextCut`). At the cut, the first `at`
+  after the last cut (daylight saving as the time zone has it), the Crew
+  cuts that release: it marks the milestone cut, so no more work goes in;
+  a release whose merged work is all fixes (`kind/bug`, `kind/test`) takes
+  the next patch title after the last release; its open issues move, each
+  with a comment, to the next open release that can still take work, one
+  the Crew makes when there is none (the next minor, due at the next cut,
+  marked `<!-- theos-crew: <crew>/carry <title> -->`). Then it goes out
+  as above: prepare, full check, tag. With no merged work in any open
+  release a cut cuts nothing; a release with none of its own ahead of one
+  with some is carried on and closed untagged. A merged issue labelled
+  `release/now` (a fix of what
+  users hit in the latest release, or a feature a person wants out now)
+  cuts its release at once, and those before it, with the work merged so
+  far. Under a cadence the prepare issue waits for no other Task and the
+  Crew keeps starting them; a Task ready to merge outside the cut release
+  waits (`WaitingForRelease`, no round spent, no place taken from
+  `parallel`) until it is tagged, so the changelog holds what the tag
+  carries. A time zone the operator can't load stops the Crew
+  (`Ready=False`, `InvalidTimeZone`) until it is fixed.
 - **Preparing** (`spec.prepareReleases`). A done release with work a Task
   merged gets `Prepare vX.Y.Z`, `kind/release`, listing what the tag carries;
   its agents set the version files (`make release-version`) and the
-  changelog. It starts once no other Task works and runs alone
-  (`PrepareWaitsForTasks`). Work merged after it leaves the release to a
+  changelog. With `every: Release` it starts once no other Task works and
+  runs alone (`PrepareWaitsForTasks`). Work merged after it leaves the release to a
   person (`MergedAfterPrepare`).
 - **The full check.** `Container.spec.checks` is `EveryChange` (the default:
   CI runs `make check` on every change) or `BeforeRelease`: changes run the
   Standard's `make check-light` and the full check runs on
   `release-check/vX.Y.Z` before the tag (`FullCheckRunning`,
   `status.fullCheck`); a failure files `Full check fails for vX.Y.Z` and tags
-  nothing. It applies only where the Standard sets `checksBeforeRelease` and
-  the Makefile has `check-light`; `ChecksApplied` says why not.
+  nothing. A check cut off (cancelled at the runner's time limit, or its
+  runner lost) runs again once first (`status.fullCheck.reruns`), and an
+  issue filed after says it was cut off (#2028). It applies only where the
+  Standard sets `checksBeforeRelease` and the Makefile has `check-light`;
+  `ChecksApplied` says why not.
 - **The release run.** `status.lastRelease.run` sums the runs the tag started
   (`Waiting`, `Running`, `Failed`, `Succeeded`), with Events
   `ReleaseRunFailed` and, past an hour, `ReleaseRunOverdue`. Setting or
   changing `theos.factory.io/rerun-release` on a `Failed` run re-runs its failed
-  jobs, once per value.
+  jobs, once per value. While a failed full check holds the next release, the
+  value re-runs that check first: its issue holds the release no more, is
+  closed if the check passes, and holds it again if it fails (#2028).
+- **Schedules** (`spec.schedules`, [plans/crew-schedules.md](plans/crew-schedules.md), #63).
+  Work that starts from the clock: up to eight named goals, each with a
+  five-field `cron` and a `timeZone` (UTC unset). When one comes due the
+  Crew files an issue in the Container's repository, titled with the
+  schedule's name and the date, with the goal as its Goal, two acceptance
+  criteria (the goal is met or the pull request says what was left;
+  `make check` passes) and a marker line naming the schedule, labelled
+  `kind/schedule` and `status/ready`, in the release that takes work; the
+  normal loop takes it from there, triage skipped. A schedule is due at its
+  first time after `status.schedules[].since`: when it last filed, last
+  passed a time over, or was first seen, so a new schedule waits for its
+  next time and however many times passed while the operator or the host
+  was down, one issue is filed, for the first of them. While the issue it
+  filed is open a due time is passed over, so a schedule never piles up; a
+  paused Crew files nothing and passes nothing over. The rule is
+  `model.NextScheduleStep`; `model.ParseCron` reads numbers, ranges, steps
+  and lists (no names, no macros), a day matches either days field when
+  both are set, a wall-clock time the zone skips doesn't come that day and
+  one it repeats comes twice. A schedule the operator can't use (a time
+  zone it can't load, the 30th of February) leaves the Crew's `Scheduled`
+  condition False, reason `InvalidSchedule`, naming it; the other schedules
+  and the Crew's issues go on. The Crew is requeued for its next due time,
+  whatever the host's events stretch its poll to. A run that finds nothing
+  to do closes its issue as done (*Agents and Tasks*, "Nothing to do" is a
+  result), so a quiet week asks nobody anything. A person runs a schedule
+  now with the Crew's `theos.factory.io/run-schedule` annotation, set to the
+  schedule's name: its issue is filed at once, dated today, its next time
+  stays, and the operator takes the annotation off. The two rules hold for
+  a run asked for as for a due one: while an issue of the schedule is open,
+  or the Crew is paused, the run waits, the annotation stays, and the
+  `Scheduled` condition's message says which. A name that is none of the
+  Crew's schedules leaves `Scheduled` False, reason `UnknownSchedule`,
+  naming the ones it has.
+  A Standard proposes schedules (`Standard.spec.schedules`, #72): up to
+  eight, each in the shape of a Crew's schedule and held by the CRD to the
+  same patterns, such as its language's weekly dependency update. A proposal
+  turns nothing on: the operator copies none into a Crew unasked and files
+  nothing for it. A Crew takes one when a person adds it to the Crew's own
+  `spec.schedules` under the proposal's name, where its time and its words
+  may be changed; a Crew with a schedule of that name has taken it, and one
+  without has left it. The name is the proposal's identity: renaming one
+  drops it and proposes another, and a Crew that took it under the old name
+  keeps its schedule. A changed or removed proposal changes no Crew. What
+  only the operator can tell is wrong in a proposal (a time zone it can't
+  load) is said by the Crew that takes it, in `Scheduled`. The Crew's page
+  in the UI lists the proposals of its Container's Standard
+  (`ui/src/model/schedules.ts`). One whose name is none of the Crew's
+  schedules is offered: with actions on a person takes it, which appends it
+  to the Crew's `spec.schedules`, its cron and goal as written, in the time
+  zone the person gives. The zone is asked for and never filled in: a
+  proposal's own reads UTC whether or not its Standard chose that, so a copy
+  as written would run at UTC unasked. One whose name the Crew uses is shown
+  as in use, with where the Crew's schedule differs in cron, time zone or
+  goal. The page says nothing of where a schedule came from: the name is all
+  that links the two. The write is the UI's own: made as the person signed
+  in where the UI signs people in with OIDC, and as the UI's ServiceAccount
+  over a port-forward. The operator still reads no proposal.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
@@ -652,8 +1137,8 @@ The operator moves bytes with credentials it holds; it builds nothing.
   it. The same copy is a `github` DeployTarget's (the Deploys section), and
   the Crew's field ships through the same code path, its `Published`
   condition and reasons kept. The field stays valid and working in
-  `v1alpha1` and in `v1beta1` (Compatibility); the version after `v1beta1`
-  drops it, once nothing writes it (#1082). To move
+  `v1beta1` (Compatibility); the version after `v1beta1` drops it, once
+  nothing writes it (#1082). To move
   over by hand: a DeployTarget with the same repository and the same Secret
   (key `token`, unchanged), a `spec.deploy` entry on the Container, then the
   field removed. Both may exist at once: each finds the release the other
@@ -668,12 +1153,114 @@ The operator moves bytes with credentials it holds; it builds nothing.
   `Published` with `LicenseMissing`, `ReadmeMissing` or `SecretFound`. It
   moves over with the copy, as the target's `source`.
 
+## Measuring the factory
+
+Built as [plans/done/measure-and-improve.md](plans/done/measure-and-improve.md). A change to how the factory works (an Agent's
+model, a route, a Standard's agent guide, `docs/project-notes.md`) should
+be judged by numbers the factory keeps itself.
+
+- **The record is on the Task.** Each run records the Agent, harness and
+  model that ran it (`status.runs[].agent`, `harness`, `model`, copied onto
+  its Sandbox as `theos.factory.io/run-*` annotations when it is made or
+  resumes); a merged Task records how many of its pull request's commits a
+  person wrote (`status.personCommits`: any not by an agent's
+  `@agents.theos.factory.io` email and not a merge) and its size
+  (`status.pullRequestSize`), read from the Git host when it merges, and
+  later for a Task merged before. The UI computes the
+  metrics from Tasks: merged, autonomy (merged with no person's commit;
+  approving a spec or a deploy is a decision, not code), the share a
+  person approved (a spec, or a change the Crew's approval rules held:
+  what a Crew that starts small could hand over next, #92), cycle time per
+  stage, and cost per merged Task by size, per period and per
+  configuration: *How well it works*, in the Work area. No metrics store:
+  the manager serves the same numbers as Prometheus series on `/metrics`
+  (`theos_tasks`, `theos_tasks_merged`, `theos_task_seconds`,
+  `theos_agent_runs_cost_usd` and the rest, [monitoring.md](monitoring.md)),
+  computed from the Tasks that exist at each scrape by one rule in
+  `internal/model`, so they are gauges, a restart counts nothing twice, and
+  keeping history is the Prometheus's job (#59). The chart installs a
+  Grafana dashboard and alert rules on them, each behind a value.
+- **A release publishes the numbers** (#66, [plans/results-report.md](plans/results-report.md)).
+  `theos-session report --name <tag> [--from <time>] [--to <time>]` reads
+  the Tasks and Containers of the cluster its kubeconfig names, changes
+  nothing there, and writes one page and one JSON document,
+  `docs/results/<tag>.md` and `<tag>.json` (`--dir` for a repository that
+  keeps its pages elsewhere, `--namespace` for one project's Tasks): the
+  Tasks that finished after `--from`, up to and including `--to`, so the
+  next report begins where this one ends and no Task is counted twice.
+  Without `--from` it runs from the first Task, and without `--to` up to
+  now; a `--to` after now is refused, since a Task that finishes between
+  now and that end would be in no report. They hold the Tasks merged,
+  failed by reason and ended with no change, the shares merged with no person's commit, on a person's approval
+  and in the first round, the median and 90th percentile of the lead times
+  and of each stage, cost per merged Task by size and by harness, model and
+  Agent, and each Scorer's pass rates. The rules are `internal/model`'s
+  (`FactoryReport`), the UI's written again in Go and held to them by one
+  fixture both sides' tests read; the command only maps a Task to what the
+  rules read, and the same fixture, decoded as the API's typed Tasks, holds
+  that mapping. The JSON names every merged Task with its pull request's
+  number and its Container's repository, so a number can be checked against
+  the pull requests; the page and the JSON say what the numbers don't show
+  (what people decided, why a Task failed, what failures cost, what is no
+  longer recorded, that it is one project). A name that is no name, a time
+  that is none, or a directory that can't be one fails before the cluster is
+  read and before a file is written. A person runs it before tagging the
+  release and commits both files; `hack/release-notes.sh` links the page
+  from the release's notes when the tag's tree has it (`RESULTS` names the
+  directory there).
+- **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent
+  (`judgeRef`), what it selects (kinds, Containers, outcomes; by default
+  merged Implement Tasks), a sample picked by a hash of the Scorer and the
+  Task (`samplePercent`), and a daily cap (`maxPerDay`) and budget
+  (`budgetUSD`); it judges only Tasks that finish after it was made. For each,
+  the operator makes a Task of kind `Score`, owned by the Scorer and named
+  after the pair, so none is judged twice: one `score` run of the judge on a
+  clone that pushes nothing, told the criteria (`THEOS_CRITERIA`) apart from
+  the evidence in its goal (the outcome, the issue's title, the summary, the
+  review, the merge commit to `git show`), which it reads as data. Its
+  verdicts, `Pass`, `Fail` or `Unclear` per criterion with the judge's why,
+  are its `status.score`; a failed run leaves each `Unclear`. The Scorer's
+  status counts the verdicts of its current generation. Score Tasks take an
+  agent slot but hold no other Task on their Container up, and no Container
+  adopts them. Scores advise; the reviewer, the checks and the fence still
+  decide what merges. A Task's page shows its Scores, and the Work area each
+  Scorer's pass rates by configuration (*What the Scorers found*).
+- **A Benchmark compares configurations on the same work.** The same goals
+  (text, or an issue read once), from one pinned commit (`base`, 40 hex),
+  under two to four variants (an implementer, reviewer and verifier Agent
+  each), repeated (`repetitions`), `parallel` at a time, within a required
+  `budgetUSD`; it can't change once made. Its Tasks are Implement Tasks with
+  `spec.benchmark`, owned by the Benchmark and adopted by no Container,
+  made repetition by repetition so an early stop compared the same goals.
+  Each branches from `base` (the operator makes `task/<name>` there), opens
+  a pull request titled as one that never merges, never takes in main, and
+  ends in the phase `Approved` where it would have merged; it touches no
+  issue, takes no Crew slot and holds no other Task up. The Scorers it
+  names (`scorerRefs`) judge every finished run, whatever their sample and
+  selection, on `git diff <base> <head>`; once they have, the Benchmark
+  closes the run's pull request and deletes its branch. Its status gives
+  each variant's approval rate, mean rounds, median minutes and cost, and
+  each Scorer criterion's pass rate, each rate with its 95% Wilson
+  interval, and says "no clear difference" rather than pick a winner while
+  the intervals overlap, which its page in the UI shows. Neither its runs
+  nor the judge runs alarm anyone: the Chat and the Needs-you list leave
+  them out.
+- **Self-improvement files an issue, never a change.** With
+  `spec.improve`, a criterion that failed `failures` times among a
+  configuration's newest `window` Scores files one `status/proposed`,
+  `kind/improvement` issue in the newest failing Task's Container's
+  repository: what fails, the judge's whys and the proposal (a line in
+  `docs/project-notes.md`, or the Standard's agent guides). It files no other
+  while that one is open, and the normal loop decides.
+
 ## Standards and the catalog
 
 **A Standard** is the rules as a layer: lint and format config, `AGENTS.md`
 and the role guides, the `make check` contract and its CI workflow. A change
 touching only the changelog, `docs/` or images passes CI without `make check`.
-`status.checks` reports CI on `main`.
+`status.checks` reports CI on `main`. A Standard may also propose its
+language's upkeep to the Crews of its Containers, as `spec.schedules`
+(*Schedules*, above); a proposal is a Crew's to take or leave.
 
 **A Standard's fixes reach its Containers.** Bumping its pinned `ref` updates
 every Ready Container on it: the operator renders the Standard at the old and
@@ -686,21 +1273,33 @@ operator merges the Standard's version) or `theos.factory.io/standard-keep`
 naming the ref. No agent takes part. `scaffoldedFrom` keeps the scaffold's
 refs, `status.standard` the current. A Container that got its Standard from a
 Bundle keeps following the Standard itself; a changed Bundle is only reported
-(`BundleCurrent`, above), never applied.
+(`BundleCurrent`, above), never applied. The update reads every ref, the old
+one and those of files behind included, at the Standard's current
+`template.path` (#35): a path is part of where a template lives, not of a
+version, so a Standard whose template moved within its repository is a new
+Standard, not a bump, or its old ref stops the update with
+`TemplatePathNotFound`.
 
 An update whose CI fails (`ChecksFailed`) is the Crew's to fix
 ([plans/standard-update-fails.md](plans/standard-update-fails.md), #1447).
 The fix lands on main in the Crew's own pull request; once main is no longer
 at the head the update was planned from (`status.standard.update.base`), the
 operator closes the update's pull request and plans it again from the new
-main (#1489). The operator files `Standard <name> <ref> fails this
+main (#1489). Before it closes a pull request it drops, here or when main
+conflicts with it, the operator records why in
+`status.standard.update.dropping`: a pass cut short after the close, by a
+restart or a Git error, finishes the drop and plans again, and never reads
+the operator's own close as a person's `UpdateClosed` (#2035). The operator files `Standard <name> <ref> fails this
 repository's check`, `kind/bug` and `status/ready`, in the repository's next
 unprepared release, once per target ref (`status.standard.failureIssue`),
 linking the pull request and the run (#1491). A check a Standard tightens
 says in its message what to write.
 
 **The templates** live in `templates/`; [templates.md](templates.md) scores
-each. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
+each. They are the catalog the chart seeds, not all there can be: any Git
+repository at a pinned ref is a template, and a project installs one with a
+catalog object; [template-authoring.md](template-authoring.md) says how to
+write, test and install one. The toolchain images (`base`, and `go` with Go, Node, the kubebuilder
 tools and envtest) run every check without a cluster.
 
 - **`operator`:** Framework `go-kubebuilder`, Standard
@@ -775,10 +1374,21 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   in `NeedsInput`. The Crews' `parallel` (`spec.parallel`, else a prompt's
   number, else 3) and a Container's `checks` change only when the person asks.
 - **Releases when the plan says so** (`plan/releases.yaml`, or `spec.releases`
-  naming a Container with a GitHub repository and token Secret). Fixes go
-  into the next patch release, other work into the next minor. A Crew whose
-  target was edited away from the Brief's publishes nothing until they agree
-  (`ReleaseTarget=False`, `DiffersFromBrief`).
+  naming a Container with a GitHub repository and token Secret), on the
+  cadence `spec.releaseCadence` says (default `every: Day`, `at: 18:00`,
+  `timeZone: UTC`), which the Brief writes onto the Crews it made; a Crew
+  it didn't make keeps its own. Under a cadence every issue and taken
+  suggestion of a round, a tending round's too, goes into the release in
+  progress, the first open release that can still take work, made only
+  when none is open, so a day's work is one release. The planner marks
+  what is bigger, `release: now` on an issue or `now: true` on a taken
+  suggestion (refused on a skip), and the operator labels it
+  `release/now`; a tending round marks nothing. With `every: Release`,
+  fixes go into the next patch release, other work into the next minor:
+  an empty one an earlier round made is joined, not passed over (#2025). A
+  Crew whose target was edited away from the Brief's publishes nothing
+  until they agree (`ReleaseTarget=False`, `DiffersFromBrief`).
+  `status.apps[].nextRelease` copies the Crew's next cut.
 - **Requests from GitHub.** An entry that takes requests plans the allowed
   authors' GitHub issues like prompts, answers each, and closes it once
   shipped.
@@ -844,7 +1454,10 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 - **Versions** of the UI, operator, chart and CRD API at the foot of the
   sidebar; a UI and an operator of different versions get a warning.
 - **The factory's health** comes from the UI server (`GET /factory/health`,
-  sampled every 15 seconds, an hour kept). No Prometheus or Grafana.
+  sampled every 15 seconds, an hour kept). The last hour's CPU and memory
+  are the cluster's: every node's usage added up, against what the nodes
+  can allocate together; each node's own usage and trouble show beside it.
+  No Prometheus or Grafana.
 - **The project's Chat** (*Chat*, below) on About and in Settings, read
   only: its homeserver, each room by name with a `https://matrix.to/#/` link
   to its alias (else its ID), and `Ready` with its message; nothing when the
@@ -863,6 +1476,8 @@ other path, method, content type or field, and by RBAC for anything else:
 | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.pauseRuns`, `spec.autopilot`, `spec.parallel`, `spec.releases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.pauseRuns`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` |
+| Crew | `PATCH`, merge patch | annotation `theos.factory.io/run-schedule` |
+| Crew | `PATCH`, JSON patch | one schedule appended to `spec.schedules`, a Standard's proposal taken; none set, changed or removed |
 | Container | `PATCH`, merge patch | annotations `theos.factory.io/retry`, `theos.factory.io/standard-take`, `theos.factory.io/standard-keep` |
 | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` and a `test` of the approval the page showed: its old `approved`, or, when it had none, the whole entry as read (JSON Patch can't test a missing member), so a stale page fails, and says it is out of date, rather than overwrite a newer approval, a first one too |
 | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
@@ -902,12 +1517,17 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
   each with its companion `<annotation>-by` naming the writer's Kubernetes
   user. `theos-chat` sends it as the person, by impersonation, and posts the
   API server's refusal, or what was done, back in the thread. The operator
-  acts on the three as *Spec* and *Triage* say.
+  acts on the three as *Spec* and *Triage* say. A change its Crew's approval
+  rules hold for a person takes the first two as a spec does (*Approval
+  rules*): its thread is in `reviews`, where `approve` and `changes: <text>`
+  are said, beside a deploy's `approve <version>`; the thread's item says
+  which of the two an `approve` is for (#92).
 - **`theos-chat` posts and listens.** A separate binary
   (`cmd/theos-chat`, `internal/chatbot`) with its own ServiceAccount
   (`config/chat`), for each Ready Chat: a thread per item that needs a
-  decision (a spec waiting for a person, a parked issue's question, a deploy
-  waiting for approval, a failed scaffold), its root edited as the item moves
+  decision (a spec waiting for a person, a change its Crew's approval rules
+  hold for one, a parked issue's question, a deploy waiting for approval, a
+  failed scaffold), its root edited as the item moves
   and marked ✅ once done; plain posts for the rest; merges, releases,
   deploys and Brief rounds batched into one `updates` message per
   `digestMinutes`. Its first pass tells no history: only live threads. What
@@ -916,6 +1536,10 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
   restart says nothing twice and runs no command twice; a homeserver or room
   error is retried with backoff and keeps the other rooms going. Only a
   Chat's `people` are obeyed; anyone else gets a one-line refusal.
+  Each post about a Task or a Container links to its page in the UI under
+  `theos-chat`'s `--ui-url` (the chart's `chat.uiURL`, by default the UI's
+  own address), next to the Git host's links; without it, it links to the
+  Git host alone.
 - **Nobody acts in someone else's name.** `theos-chat` may impersonate users
   and groups, so two admission policies (`config/policy`) bound it: a Chat's
   `people` entry names only its writer's own user and groups
@@ -941,7 +1565,7 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
 
 ## Factory components: ports and adapters
 
-The factory is built from parts a device can swap: another Git host, its own
+The factory is built from parts an install can swap: another Git host, its own
 Argo CD, later another CI or agent runtime. A port is cut by what the
 controllers call, not by one product's API;
 [architecture.md](architecture.md#ports) keeps one row per port.
@@ -950,12 +1574,13 @@ controllers call, not by one product's API;
 | --- | --- | --- |
 | GitHost | repositories, files, branches, tags, branch rules, pull requests, merges, commit statuses | Gitea |
 | Issues | issues, comments, labels, milestones, dependencies | Gitea; request intake on GitHub |
-| CI | runs of a commit or tag, reruns, job logs, runners | Gitea Actions |
+| CI | runs of a commit or tag, reruns, job logs, runners; the jobs that wait for a label's runner, and a runner registered for one job | Gitea Actions |
 | AgentAccess | a credential for one repository, and revoking it | Gitea bot users |
 | Registry | Go modules and the proxy; npm, PyPI and images to come | Gitea packages |
 | AgentRuntime | start a run, read its state and result, stop it | Agent Sandbox |
 | Deployer | ship a release to a target, read its state back | the GitHub release copy |
 | ChatHost | a Space and its rooms, invites, messages, thread replies, edits, reactions, sync | Matrix |
+| TestEnvironments | lease a place to run commands with tools the sandbox lacks, read it back, return it, list the leases held; a remote one may lease a machine that runs one CI job; run a test package where the environment runs those (`TestRuns`) | a pod per lease on the cluster (`local`); an EC2 machine per lease in the user's AWS account, a Mac's on a kept host (`aws`); AWS Device Farm's phones (`deviceFarm`) |
 
 - **A port is a narrow Go interface** with one fake and one contract suite,
   plain Go with no Kubernetes in `internal/ports`; each adapter is its own
@@ -969,8 +1594,13 @@ controllers call, not by one product's API;
 - **What a CI system writes is a business rule:** one row per CI system in
   `model.CI` (workflow paths, required checks, protected paths); a
   Container's is its host's own (`model.HostCI`).
-- **Polling is the contract.** Webhooks (#1084, decided, not built) would
-  only shorten waits ([plans/git-events.md](plans/git-events.md)).
+- **Polling is the contract.** Webhooks (#1084) only shorten waits: the
+  operator registers a hook and reconciles what a signed delivery concerns
+  at once. While the GitProvider's `Events` is True (`Receiving`), the
+  polls that wait for the host (the Crew's issues, a Task's checks and
+  Standard change, a Container's checks) stretch to 10 minutes; error
+  retries and waits on the cluster keep their intervals. The chart's
+  install is still to come ([plans/done/git-events.md](plans/done/git-events.md)).
 - **Helm decides what is installed, custom resources what is used:**
   `GitProvider.spec.provider` names the host (`gitea`), CI and registry
   default to the host's own (`spec.packages` names another npm registry or
@@ -1175,17 +1805,17 @@ its images on GHCR. The release installs:
 | Shared Secrets | copied from the release namespace | the pull Secrets; a project's own Secret of that name wins. The Agents' token is read by the model proxy there and never copied |
 | GitProviders | named namespaces | `gitProviders`, for a Gitea the release doesn't run |
 
-A device installs Agent Sandbox first and gives the Agents' token once. An
-upgrade leaves running work alone
-([plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md)). A device
-reports issues through the form *Report from a device*.
+An install is one cluster: whoever runs it installs Agent Sandbox first and
+gives the Agents' token once. An upgrade leaves running work alone
+([plans/done/upgrade-in-place.md](plans/done/upgrade-in-place.md)). An
+install reports issues through the form *Report from an install*, under a name
+of its own.
 
 ## Compatibility
 
 **An object a client stored keeps validating across upgrades.** `theos.factory.io`
-serves `v1beta1`, the version users write and every kind stores, and
-`v1alpha1`, deprecated since v0.30.0 and converted (below; its drop is #1963).
-A release keeps every object of the one before valid and meaning what it
+serves every kind at `v1beta1` alone, the version users write and every kind
+stores. A release keeps every object of the one before valid and meaning what it
 meant. Within a served version a release never:
 
 - removes or renames a field, or changes its type;
@@ -1199,10 +1829,18 @@ is fine. A change these rules forbid is a new version, never a change to a
 served one. The status is held to them as the spec is; what the operator does
 with an object may change, as the release notes say.
 
-**Across versions** ([plans/done/api-versions.md](plans/done/api-versions.md), #1082):
+**Across versions** ([plans/done/api-versions.md](plans/done/api-versions.md), #1082).
+`v1alpha1` was dropped before theos's first release without the 90 days
+below ([plans/done/drop-v1alpha1.md](plans/done/drop-v1alpha1.md), #1963):
+`theos.factory.io` is a new group, installed fresh with no upgrade path from
+c4factory ([plans/done/theos-rename.md](plans/done/theos-rename.md)), and no
+release ever served `theos.factory.io/v1alpha1` (c4factory's v0.30.0
+deprecated `c4.factory.io/v1alpha1`, another group), so no install stores an
+object at it and the promise covered no theos user. The next version comes
+beside `v1beta1` under these rules:
 
 - **A served version keeps these rules** from the first release that serves
-  it, as `v1alpha1` did and `v1beta1` does.
+  it, as `v1beta1` does.
 - **Every served version converts to and from the storage version** without
   failing and without loss. A field with no home in the target version rides
   in the annotation `theos.factory.io/<version>-fields` as JSON, so a round trip
@@ -1218,9 +1856,10 @@ with an object may change, as the release notes say.
   in the notes, by its own issue, filed when the version is deprecated with
   the earliest date in its body.
 - **The operator rewrites what etcd holds at an older version.** `v1beta1`
-  is the storage version of every kind. At start, once the conversion
-  webhook serves, the leader lists each kind whose CRD's `storedVersions`
-  names another version, patches every object back at the storage version,
+  is the storage version of every kind until the next version takes over.
+  At start, the leader lists each kind whose CRD's `storedVersions` names
+  another version (one that converts by the webhook once the webhook
+  serves), patches every object back at the storage version,
   and brings that CRD's `storedVersions` down to it; a start after the pass
   does nothing, and a pass that fails is tried again until it succeeds,
   with the operator serving meanwhile.
@@ -1229,16 +1868,21 @@ with an object may change, as the release notes say.
 version of the CRDs with the last release's, in `test/compat/baseline/`
 (`hack/release.sh` copies them), a default's value included, and refuses a
 version the baseline served that is missing, unless `test/compat/dropped.txt`
-names it with the release notes' line. CEL rules, a default added to a field
-that had none, and what the operator reads into an unset field are left to
-review.
+names it with the release notes' line. Until theos's first release the
+baseline is c4factory's v0.30.0, renamed, so `dropped.txt` names `v1alpha1`.
+CEL rules, a default added to a field that had none, and what the operator
+reads into an unset field are left to review.
 
 ## Test tiers
 
 Each rule is verified at the lowest tier that can see it; `make check` runs
-the table, offline YAML and envtest tiers before every merge. A Kind cluster exists only when a
+the table, offline YAML and envtest tiers before every merge, each for the
+part of the factory the change can have broken, and a release runs all of
+them in full before anything ships. Kind is the test rig: a cluster of one
+node on one machine, which exists only when a
 human asks; agents never create, lease or deploy to one. What only a real
-node would catch is not tested before release.
+node would catch is not tested before release, and nothing runs the factory
+on more than one node (#125).
 
 | Tier | Verifies |
 | --- | --- |
@@ -1270,3 +1914,12 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
   briefly; a webhook could reject it up front.
 - **Trust.** Until the gaps in [The fence](#the-fence) and
   [The CI fence](#the-ci-fence) close, one install is one trust domain.
+- **One node assumed.** The factory is meant for a cluster of many nodes
+  ([Why Kubernetes](#why-kubernetes)) and was built on a rig of one. What
+  still assumes one node: the Go build caches are hostPath directories, one
+  per node, and refused where Pod Security is enforced (#120); the chart's
+  Gitea has no address outside the cluster, so nodes can't pull the images
+  it holds (#121); the chart's defaults are the rig's, and an Agent's
+  sandboxes can't be placed on nodes (#123); the chart's Gitea is one pod
+  on a ReadWriteOnce volume, so its node's loss stops the factory (#124);
+  no release check runs on more than one node (#125).

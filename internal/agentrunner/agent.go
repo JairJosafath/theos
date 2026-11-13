@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package agentrunner
 
 import (
@@ -392,12 +408,26 @@ type FakeAgent struct {
 	FollowUp bool
 	// Open makes the approval accept one criterion as left open, for a person.
 	Open bool
+	// Criteria are a judge run's criteria: the stand-in judge passes each.
+	Criteria []string
 }
+
+// standInRisk in an issue's text has the stand-in reviewer call its change
+// high-risk, as it has the stand-in triager label the issue
+// (model.StandInTriage).
+const standInRisk = "stand-in: risk high"
+
+// standInNothing in an issue's text has the stand-in implementer find
+// nothing to do: it changes nothing and says so (#72).
+const standInNothing = "stand-in: nothing to do"
 
 // Run does the scripted work.
 func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 	if a.Role == RolePlan {
 		return a.plan(dir)
+	}
+	if a.Role == RoleScore {
+		return "Read the change.\n" + model.StandInScore(a.Criteria), nil
 	}
 	if a.Role == RoleTriage {
 		decision, err := json.Marshal(model.StandInTriage(a.Goal))
@@ -420,10 +450,17 @@ func (a FakeAgent) Run(_ context.Context, dir, _ string) (string, error) {
 			return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine, one criterion open.", ` +
 				`"open": [{"criterion": "A screenshot of the editor", "why": "no desktop in the sandbox"}]}`, nil
 		}
+		if strings.Contains(strings.ToLower(a.Goal), standInRisk) {
+			return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine.", ` +
+				`"risk": "high", "riskReason": "Stand-in review: the issue asks to be called high-risk."}`, nil
+		}
 		return `Looked at it.` + "\n" + `{"verdict": "approve", "summary": "Stand-in review: fine."}`, nil
 	}
 	if a.NoChange {
 		return "Nothing to do.", nil
+	}
+	if a.Role == RoleImplement && a.Spec == "" && strings.Contains(strings.ToLower(a.Goal), standInNothing) {
+		return "Looked at it.\n" + model.NothingPrefix + " the stand-in was asked to find nothing.", nil
 	}
 	if a.Spec != "" {
 		return a.writeSpec(dir)

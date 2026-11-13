@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package controller
 
 import (
@@ -631,6 +647,61 @@ func TestBuildSandboxGoProxy(t *testing.T) {
 	}
 }
 
+// TestBuildSandboxGoModules covers #80: the environment a run gets for the
+// owner's Go modules, by where the host keeps them. A host with a module
+// proxy has the loopback proxy and no GOPRIVATE, which would fetch the
+// factory's paths from a host that doesn't exist. A host that serves a
+// module from its repository has GOPRIVATE for the owner's paths and no
+// proxy of ours, so go fetches them with the Git credential in ~/.netrc. A
+// host with neither gets nothing.
+func TestBuildSandboxGoModules(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	const registry, owners = "https://git.example.com/api/packages/apps/go", "github.com/apps"
+	loopback := []corev1.EnvVar{
+		{Name: "THEOS_GO_REGISTRY", Value: registry},
+		{Name: "GOPROXY", Value: "http://127.0.0.1:3127,direct"},
+		{Name: "GONOSUMDB", Value: "theos.local"},
+	}
+	for _, tt := range []struct {
+		name               string
+		goProxy, goPrivate string
+		want               []corev1.EnvVar
+	}{
+		{name: "a module proxy of the host's", goProxy: registry, want: loopback},
+		{name: "modules served from their repositories", goPrivate: owners,
+			want: []corev1.EnvVar{{Name: "GOPRIVATE", Value: owners}}},
+		{name: "a host that names both has its proxy asked", goProxy: registry, goPrivate: owners, want: loopback},
+		{name: "a host with neither"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sandbox, err := buildSandbox(sandboxRun{
+				task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+				status:    &c4v1beta1.TaskStatus{Round: 1, Branch: "task/add-crop"},
+				container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+				agent:     &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+				name:      "add-crop-r1-implement", role: model.RoleImplementer,
+				repoURL: "https://github.com/apps/image-shrink.git", gitSecret: "image-shrink-agent-git",
+				goProxy: tt.goProxy, goPrivate: tt.goPrivate,
+			}, scheme, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []corev1.EnvVar
+			for _, e := range podOf(t, sandbox).Containers[0].Env {
+				if strings.HasPrefix(e.Name, "GO") || e.Name == "THEOS_GO_REGISTRY" {
+					got = append(got, e)
+				}
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Go env %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // The npm scope and registry and the PyPI index come from the GitProvider's
 // URL and owner by default, in cluster or not, with no token env: the pod
 // installs with the agent bot's Git token. A spec.packages of its own sends
@@ -920,5 +991,64 @@ func TestBuildSandboxModelProxy(t *testing.T) {
 					wantURL, wantToken)
 			}
 		})
+	}
+}
+
+// A run's leases reach its sandbox as THEOS_ENV_<NAME>_URL, the token by a
+// key of the Task's token Secret, the pinned certificate when the lease has
+// one, and their names and descriptions for the prompt
+// (docs/plans/done/test-environments.md, T4 and T13); a run with none gets none.
+func TestBuildSandboxTestEnvironments(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := c4v1beta1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	run := sandboxRun{
+		task:      &c4v1beta1.Task{ObjectMeta: objectMeta("apps", "add-crop")},
+		status:    &c4v1beta1.TaskStatus{Round: 1, Branch: "task/add-crop"},
+		container: &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "image-shrink")},
+		agent:     &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "claude")},
+		name:      "add-crop-r1-implement", role: model.RoleImplementer, gitSecret: "image-shrink-agent-git",
+	}
+	envOf := func(t *testing.T, run sandboxRun) []corev1.EnvVar {
+		t.Helper()
+		sandbox, err := buildSandbox(run, scheme, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return podOf(t, sandbox).Containers[0].Env
+	}
+	for _, e := range envOf(t, run) {
+		if strings.HasPrefix(e.Name, "THEOS_ENV") {
+			t.Errorf("a run without leases has %s", e.Name)
+		}
+	}
+
+	run.environments = []runEnvironment{
+		{name: "browser", description: "Chromium with Playwright", tokenSecret: "add-crop-test-environments",
+			lease: ports.Lease{ID: "browser-0123456789", Endpoint: "http://10.244.0.7:7070"}},
+		{name: "android-34", tokenSecret: "add-crop-test-environments",
+			lease: ports.Lease{ID: "android-34-0123456789", Endpoint: "https://203.0.113.7:7070", CA: "PEM"}},
+	}
+	got := map[string]corev1.EnvVar{}
+	for _, e := range envOf(t, run) {
+		got[e.Name] = e
+	}
+	if got["THEOS_ENV_BROWSER_URL"].Value != "http://10.244.0.7:7070" ||
+		got["THEOS_ENV_ANDROID_34_URL"].Value != "https://203.0.113.7:7070" {
+		t.Errorf("endpoints %v and %v, want the leases'", got["THEOS_ENV_BROWSER_URL"], got["THEOS_ENV_ANDROID_34_URL"])
+	}
+	token := got["THEOS_ENV_BROWSER_TOKEN"]
+	if token.Value != "" || token.ValueFrom == nil || token.ValueFrom.SecretKeyRef.Name != "add-crop-test-environments" ||
+		token.ValueFrom.SecretKeyRef.Key != "browser-0123456789" {
+		t.Errorf("token %+v, want its lease's key of the Task's token Secret, never a value", token)
+	}
+	if _, ok := got["THEOS_ENV_BROWSER_CA"]; ok || got["THEOS_ENV_ANDROID_34_CA"].Value != "PEM" {
+		t.Errorf("certificates %v and %v, want only the remote lease's", got["THEOS_ENV_BROWSER_CA"],
+			got["THEOS_ENV_ANDROID_34_CA"])
+	}
+	want := `[{"name":"browser","description":"Chromium with Playwright"},{"name":"android-34"}]`
+	if listed := got[agentrunner.EnvEnvironments].Value; listed != want {
+		t.Errorf("%s = %s, want %s", agentrunner.EnvEnvironments, listed, want)
 	}
 }

@@ -70,6 +70,27 @@ the `make check` contract CI runs.
   `.editorconfig`, `docs/style/` and `docs/agents/` in the catalog entry's
   `protectedPaths`; `.gitea/` is always protected.
 
+## CI systems
+
+`.theos/ci/` keeps the files of each CI system, and a Container gets its own
+host's: `giteaActions/` writes `.gitea/`, `githubActions/` writes `.github/`
+(the same `make check`, the same issue and pull request templates). On GitHub
+Actions the job is named `check` (and `check (full)` with checks before a
+release), which is the check main requires; it runs on the runner the
+organization's Actions variable `THEOS_CI_RUNS_ON` names (`ubuntu-latest`
+without one) and in the toolchain image `THEOS_CI_IMAGE_BASE` names, which the operator
+sets: GitHub's own runners carry none of the factory's toolchain. `.github/`
+is always protected there, as `.gitea/` is on Gitea.
+
+Before `make check`, the job on GitHub Actions says where the owner's own
+packages are. GitHub serves a Go module from its repository, so `GOPRIVATE`
+is the owner's module paths and the job's token is Git's credential in
+`~/.netrc`. `~/.npmrc` sends the owner's npm scope to GitHub's npm registry,
+and `~/.netrc` logs in to a Python index only when the GitProvider's
+`spec.packages` names one: GitHub has none. The job's token reads this
+repository and the packages this repository may read, and goes to GitHub
+alone.
+
 ## How a template works
 
 Everything in this repository is copied into the new Container repository at the

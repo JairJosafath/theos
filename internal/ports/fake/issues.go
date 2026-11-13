@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package fake
 
 import (
@@ -44,7 +60,10 @@ type issueStore struct {
 	labels     map[string][]string // owner/name
 	exclusive  map[string]bool     // owner/name label, for the labels that are exclusive
 	milestones map[string][]string // owner/name, titles by ID - 1
-	reviews    map[string][]Review // owner/name#number
+	// descriptions are the descriptions EnsureMilestone gave the milestones
+	// it made, by owner/name#ID.
+	descriptions map[string]string
+	reviews      map[string][]Review // owner/name#number
 	// late makes CreateIssue file the issue but answer only once the caller has
 	// given up, as a host under load does.
 	late bool
@@ -113,7 +132,7 @@ func (s *state) issueState() *issueStore {
 	if s.issues == nil {
 		s.issues = &issueStore{issues: map[string][]*Issue{}, labels: map[string][]string{},
 			exclusive:  map[string]bool{},
-			milestones: map[string][]string{}, reviews: map[string][]Review{}}
+			milestones: map[string][]string{}, descriptions: map[string]string{}, reviews: map[string][]Review{}}
 	}
 	return s.issues
 }
@@ -127,6 +146,7 @@ func (g *Git) AddIssue(owner, name, title, body string, labels []string, blocker
 	n := len(s.issues[key]) + 1
 	s.issues[key] = append(s.issues[key], &Issue{Issue: ports.Issue{Number: n, Title: title, Body: body,
 		State: stateOpen, Labels: labels, URL: fmt.Sprintf("http://gitea/%s/issues/%d", key, n)}, Blockers: blockers})
+	g.s.deliver(ports.Repository{Owner: owner, Name: name}, EventIssue, n)
 	return n
 }
 
@@ -204,6 +224,7 @@ func (g *Git) ReviewPullRequest(_ context.Context, repo ports.Repository, number
 	s := g.s.issueState()
 	s.reviews[key] = append(s.reviews[key], Review{Event: event, Body: body, Commit: commit,
 		User: g.cfg.Credentials.Username})
+	g.s.deliver(repo, EventPullRequest, number)
 	return nil
 }
 
@@ -215,6 +236,7 @@ func (g *Git) AddReview(owner, name string, number int, review Review) {
 	key := fmt.Sprintf("%s/%s#%d", owner, name, number)
 	s := g.s.issueState()
 	s.reviews[key] = append(s.reviews[key], review)
+	g.s.deliver(ports.Repository{Owner: owner, Name: name}, EventPullRequest, number)
 }
 
 // PullRequestReviews lists the reviews submitted on a pull request, oldest first.
@@ -250,7 +272,7 @@ func (g *Git) EnsureLabels(_ context.Context, repo ports.Repository, labels []po
 	return nil
 }
 
-func (g *Git) EnsureMilestone(_ context.Context, repo ports.Repository, title, _ string) (int64, error) {
+func (g *Git) EnsureMilestone(_ context.Context, repo ports.Repository, title, description string) (int64, error) {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()
 	s := g.s.issueState()
@@ -259,7 +281,9 @@ func (g *Git) EnsureMilestone(_ context.Context, repo ports.Repository, title, _
 		return int64(i + 1), nil
 	}
 	s.milestones[key] = append(s.milestones[key], title)
-	return int64(len(s.milestones[key])), nil
+	id := int64(len(s.milestones[key]))
+	s.descriptions[fmt.Sprintf("%s#%d", key, id)] = description
+	return id, nil
 }
 
 func (g *Git) ListIssues(_ context.Context, repo ports.Repository, label string) ([]ports.Issue, error) {
@@ -322,6 +346,7 @@ func (g *Git) AddIssueDependency(_ context.Context, repo ports.Repository, numbe
 	if !slices.Contains(i.Blockers, ref) {
 		i.Blockers = append(i.Blockers, ref)
 	}
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -391,6 +416,7 @@ func (g *Git) AddIssueLabel(_ context.Context, repo ports.Repository, number int
 		return l == label || exclusive && strings.HasPrefix(l, scope+"/")
 	})
 	i.Labels = append(i.Labels, label)
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -405,6 +431,7 @@ func (g *Git) RemoveIssueLabel(ctx context.Context, repo ports.Repository, numbe
 		return err
 	}
 	i.Labels = slices.DeleteFunc(i.Labels, func(l string) bool { return l == label })
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -419,6 +446,7 @@ func (g *Git) CommentIssue(ctx context.Context, repo ports.Repository, number in
 		return err
 	}
 	i.Comments = append(i.Comments, body)
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -443,6 +471,7 @@ func (g *Git) CloseIssue(ctx context.Context, repo ports.Repository, number int)
 			blockers, ports.ErrOpenDependencies)
 	}
 	i.State = stateClosed
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -457,6 +486,7 @@ func (g *Git) EditIssueBody(ctx context.Context, repo ports.Repository, number i
 		return err
 	}
 	i.Body = body
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -484,6 +514,7 @@ func (g *Git) SetIssueMilestone(_ context.Context, repo ports.Repository, number
 	default:
 		return fmt.Errorf("no milestone %d", milestone)
 	}
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 
@@ -495,6 +526,7 @@ func (g *Git) AssignIssue(_ context.Context, repo ports.Repository, number int, 
 		return err
 	}
 	i.Assignees = slices.Clone(users)
+	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
 

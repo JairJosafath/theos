@@ -154,7 +154,7 @@ container asset that synth only stages.
   Framework takes no Compute and no Deployment layer; `k8s-manifests` would
   add Kubernetes manifests for an image it doesn't build.
 - **Package:** `name` is the Container, version `0.0.1`, private and
-  `UNLICENSED`, an ES module, `engines.node` `>=22`. The SDK clients and
+  licensed as the repository is scaffolded (`UNLICENSED` with no license, #73), an ES module, `engines.node` `>=22`. The SDK clients and
   OpenTelemetry's `api` 1.9.1, `sdk-trace-node` 2.12.0, `resources` 2.12.0,
   `exporter-trace-otlp-http` 0.223.0 and `instrumentation-http` 0.223.0 (one
   release of opentelemetry-js) are `dependencies`, which esbuild bundles

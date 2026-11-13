@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package agentrunner
 
 import (
@@ -48,13 +64,21 @@ type Result struct {
 	// Blocked is the implementer's blocked note (model.BlockedNote): it can't
 	// start the issue, and says why.
 	Blocked string `json:"blocked,omitempty"`
+	// Nothing is why the implementer found the issue needs no change
+	// (model.NothingNote), with no change made: the Task ends done.
+	Nothing string `json:"nothing,omitempty"`
 	// FollowUps are the reviewer's suggestions for later work.
 	FollowUps []model.FollowUp `json:"followUps,omitempty"`
 	// Open are the acceptance criteria an approving reviewer accepted as left
 	// open, for a person.
 	Open []model.OpenCriterion `json:"open,omitempty"`
+	// Risk is why the reviewer calls the change it approves high-risk; empty
+	// when it doesn't.
+	Risk string `json:"risk,omitempty"`
 	// Triage is a triager's decision about its issue.
 	Triage *model.Triage `json:"triage,omitempty"`
+	// Score is a judge run's verdicts, one per criterion.
+	Score []model.ScoreCriterion `json:"score,omitempty"`
 	// Unavailable means the agent's service couldn't work (a limit, an overload,
 	// bad credentials); RetryAt is when it said it is back.
 	Unavailable bool       `json:"unavailable,omitempty"`
@@ -86,6 +110,18 @@ type Result struct {
 	// hard or clean; empty when it saved none. An unavailable agent's run
 	// that saved one is suspended until the agent is back, and resumes.
 	Checkpoint string `json:"checkpoint,omitempty"`
+}
+
+// noChange is the result of an implement round that left the branch as it
+// was: the agent's "nothing to do" where the job's Task may end on it (#72),
+// else the round's failure, with the end of what the agent did say.
+func noChange(job Job, summary string, result Result) Result {
+	if note := model.NothingNote(summary); note != "" && takesNothing(job) {
+		result.Nothing = note
+		return result
+	}
+	result.Error = model.NoChangeError(summary)
+	return result
 }
 
 // MaxResultBytes fits a Kubernetes termination message (4096 bytes).
@@ -122,6 +158,7 @@ func (r Result) Encode() []byte {
 		r.Open[i].Criterion = shortenWords(r.Open[i].Criterion, maxFollowUpCriterion)
 		r.Open[i].Why = shortenWords(r.Open[i].Why, maxFollowUpCriterion)
 	}
+	r.Risk = shortenWords(r.Risk, maxFollowUpCriterion)
 	if r.Proposal != nil {
 		p := *r.Proposal
 		r.Proposal = &p
@@ -153,6 +190,8 @@ func (r Result) Encode() []byte {
 			r.CheckFailsOnBase = shortenHead(r.CheckFailsOnBase, len(r.CheckFailsOnBase)-(len(data)-MaxResultBytes)-16)
 		case len(r.Blocked) > 200:
 			r.Blocked = shortenWords(r.Blocked, len(r.Blocked)-(len(data)-MaxResultBytes)-16)
+		case len(r.Nothing) > 200:
+			r.Nothing = shortenWords(r.Nothing, len(r.Nothing)-(len(data)-MaxResultBytes)-16)
 		case r.Proposal != nil && len(r.Proposal.Reason) > 200:
 			r.Proposal.Reason = shorten(r.Proposal.Reason, len(r.Proposal.Reason)-(len(data)-MaxResultBytes)-16)
 		case len(r.FollowUps) > 0:
@@ -294,7 +333,7 @@ func Run(ctx context.Context, job Job, agent Agent, dir string) Result {
 		}
 		result.Paused, result.PauseReason = true, reason
 		result.Error, result.Interrupted, result.Unavailable, result.RetryAt = "", false, false, nil
-		result.Commit, result.Blocked = "", ""
+		result.Commit, result.Blocked, result.Nothing = "", "", ""
 		return result
 	}
 	// A run theos-agent was told to stop (a SIGTERM, or the run's deadline) is
@@ -372,6 +411,9 @@ func run(ctx context.Context, job Job, agent Agent, dir string, prog *runProgres
 	if job.Role == RoleTriage {
 		return triage(ctx, job, agent, r, ws, prog, result)
 	}
+	if job.Role == RoleScore {
+		return score(ctx, job, agent, r, ws, prog, result)
+	}
 	return implement(ctx, job, agent, r, ws, prog, result)
 }
 
@@ -381,17 +423,21 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	check := strings.Join(job.CheckCommand, " ")
 	base := baseCheck{job: job, r: r}
 	var summary string
+	// Every session of the round starts fresh, so each carries the round's
+	// prompt, the issue included (#2037, #25).
+	prompt := implementPrompt(job, ws)
 	if prog.resumesAt(StepCheck) {
 		// The agent's session had ended: the run goes on at its check.
 		summary = prog.from.Summary
 	} else {
 		var err error
-		if summary, err = prog.session(ctx, agent, r.dir, implementPrompt(job, ws)); err != nil {
+		if summary, err = prog.session(ctx, agent, r.dir, prompt); err != nil {
 			result.Summary = summary
 			return agentFailed(result, err)
 		}
 		if model.BlockedNote(summary) != "" {
-			if summary, err = sendBackBlocked(ctx, prog.checksContext(ctx), job, agent, r.dir, &base, summary); err != nil {
+			if summary, err = sendBackBlocked(ctx, prog.checksContext(ctx), job, agent, r.dir, &base, prompt,
+				summary); err != nil {
 				result.Summary = summary
 				return agentFailed(result, err)
 			}
@@ -406,7 +452,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	prog.step, prog.summary = StepCheck, summary
 
 	checkOutput, baseOutput, checkErr, err := checkAndFix(ctx, prog.checksContext(ctx), job, agent, r.dir, &base,
-		prog.checkNote())
+		prompt, prog.checkNote())
 	if err != nil {
 		return agentFailed(result, err)
 	}
@@ -427,8 +473,7 @@ func implement(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace,
 	if head == start && !job.Resumed && job.PullRequest == 0 {
 		// With a pull request, the round may have changed only it: the
 		// reviewer reviews the branch as it is.
-		result.Error = model.NoChangeError(summary)
-		return result
+		return noChange(job, summary, result)
 	}
 	changed, empty, err := roundChange(ctx, job, r)
 	if err != nil {
@@ -519,8 +564,13 @@ func roundChange(ctx context.Context, job Job, r *repo) (changed []string, empty
 // sendBackBlocked sends an agent that wrote a blocked note back once when the
 // check fails on the base: that is the workspace's, not a reason to block. It
 // returns the agent's newest summary.
+//
+// The send-back is a fresh session, so its prompt is the round's own prompt,
+// the issue included, then what the agent answered the first time and why it
+// is sent back: a session told only that it stopped never saw the issue
+// (#2037).
 func sendBackBlocked(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck,
-	summary string) (string, error) {
+	prompt, summary string) (string, error) {
 	baseOutput := base.fails(checks)
 	if checks.Err() != nil && ctx.Err() == nil {
 		// The pause killed the base's check (#1995): it runs again on resume.
@@ -529,11 +579,37 @@ func sendBackBlocked(ctx, checks context.Context, job Job, agent Agent, dir stri
 	if baseOutput == "" {
 		return summary, nil
 	}
-	prompt := fmt.Sprintf("You stopped with a %q line. %q fails on %s in this workspace too, before any change:\n%s\n"+
-		"It was green in CI when this Task started, so that is not a reason to block the issue: CI runs the check and decides it. Do the issue now, "+
+	return agent.Run(ctx, dir, sendBackPrompt(job, prompt, summary, baseOutput))
+}
+
+// maxSendBackAnswer is how much of the agent's first answer a send-back
+// prompt quotes.
+const maxSendBackAnswer = 4000
+
+// sendBackPrompt is the prompt of an agent sent back after a blocked note:
+// the round's prompt, the agent's first answer, and the base's failure.
+func sendBackPrompt(job Job, prompt, summary, baseOutput string) string {
+	return laterSessionPrompt(prompt, fmt.Sprintf("An earlier session in this workspace worked on the task above and "+
+		"stopped with a %q line. Its answer:\n%s\n\n%q fails on %s in this workspace too, before any change:\n%s\n"+
+		"It was green in CI when this Task started, so that is not a reason to block the issue: CI runs the "+
+		"check and decides it. Do the issue above now, going on from what the working tree holds, "+
 		"and end your summary with a %q line again only if something else blocks it.",
-		model.BlockedPrefix, strings.Join(job.CheckCommand, " "), job.Base, tail(baseOutput, 3000), model.BlockedPrefix)
-	return agent.Run(ctx, dir, prompt)
+		model.BlockedPrefix, tail(summary, maxSendBackAnswer),
+		strings.Join(job.CheckCommand, " "), job.Base, tail(baseOutput, 3000), model.BlockedPrefix))
+}
+
+// laterSessionPrompt is the prompt of a fresh session that goes on from an
+// earlier one in the round: the round's prompt, the issue and its rules
+// included, then what this session is for. A session told only that a check
+// fails never saw the issue (#2037, #25).
+func laterSessionPrompt(prompt, body string) string {
+	return strings.TrimRight(prompt, "\n") + "\n\n---\n\n" + body
+}
+
+// fixPrompt is the prompt of an agent sent back because the check fails on
+// its branch: the round's prompt, then the failure.
+func fixPrompt(prompt, failure string) string {
+	return laterSessionPrompt(prompt, "An earlier session in this workspace worked on the task above. "+failure)
 }
 
 // checkAndFix runs the check, and while it fails sends the agent back up to
@@ -542,10 +618,12 @@ func sendBackBlocked(ctx, checks context.Context, job Job, agent Agent, dir stri
 // the check's error, and the agent's. The checks run in checks, which the
 // pause ends: a check it killed is errPaused, and runs again on resume.
 //
-// note, when set, starts the first fix prompt: it tells a run that went on
-// from a checkpoint at its check why the earlier one stopped.
+// Each fix prompt is a fresh session's, so it starts with roundPrompt, the
+// round's own prompt (#25). note, when set, starts the first fix prompt's
+// failure: it tells a run that went on from a checkpoint at its check why the
+// earlier one stopped.
 func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, base *baseCheck,
-	note string) (string, string, error, error) {
+	roundPrompt, note string) (string, string, error, error) {
 	check := strings.Join(job.CheckCommand, " ")
 	paused := func() bool { return checks.Err() != nil && ctx.Err() == nil }
 	checkOutput, checkErr := runCheck(checks, job, dir)
@@ -571,7 +649,7 @@ func checkAndFix(ctx, checks context.Context, job Job, agent Agent, dir string, 
 		if note != "" {
 			prompt, note = note+"\n\n"+prompt, ""
 		}
-		if _, err := agent.Run(ctx, dir, prompt); err != nil {
+		if _, err := agent.Run(ctx, dir, fixPrompt(roundPrompt, prompt)); err != nil {
 			return checkOutput, baseOutput, checkErr, err
 		}
 		checkOutput, checkErr = runCheck(checks, job, dir)
@@ -678,7 +756,7 @@ func review(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 		return result
 	}
 	result.Verdict, result.Summary, result.FollowUps = verdict.Verdict, verdict.Summary, verdict.FollowUps
-	result.Open = verdict.Open
+	result.Open, result.Risk = verdict.Open, verdict.Risk
 	return result
 }
 

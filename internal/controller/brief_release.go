@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -220,15 +228,20 @@ func (r *BriefReconciler) releasedContainers(ctx context.Context, brief *c4v1bet
 // issue of a released Container in, in repo (plans/done/fixes-patch-next.md, F6,
 // F7). Any other work goes into the round's release milestone: the one whose
 // description carries the round's marker, open or closed, so a restart makes
-// no second one, or a new one titled the next minor version, due after every
-// open release (R6). A fix goes into the patch slot right after the release in
+// no second one, or else an open release milestone an earlier round left with
+// no issue, titled the next minor version (joinEmptyRelease, #2025), or else a
+// new one titled the next minor version, due after every open release (R6). A fix goes into the patch slot right after the release in
 // progress (patchMilestone), and into the round's release milestone while the
-// repository has no release yet.
+// repository has no release yet. Under a cadence that cuts, every issue goes
+// into the release in progress instead (cadenceMilestone).
 func releaseMilestone(ctx context.Context, provider ports.Issues, repo ports.Repository, brief string,
-	round int, fix bool) (int64, error) {
+	round int, fix bool, cadence model.ReleaseCadence) (int64, error) {
 	milestones, err := provider.ListAllMilestones(ctx, repo)
 	if err != nil {
 		return 0, err
+	}
+	if cadence.Cuts() {
+		return cadenceMilestone(ctx, provider, repo, brief, round, cadence, milestones)
 	}
 	var minor *ports.Milestone
 	var others []ports.Milestone
@@ -253,6 +266,9 @@ func releaseMilestone(ctx context.Context, provider ports.Issues, repo ports.Rep
 	if minor != nil {
 		return minor.ID, nil
 	}
+	if joined, err := joinEmptyRelease(ctx, provider, repo, brief, round, milestones); err != nil || joined != 0 {
+		return joined, err
+	}
 	titles := make([]string, 0, len(milestones))
 	var open []model.Release
 	for _, m := range milestones {
@@ -270,6 +286,45 @@ func releaseMilestone(ctx context.Context, provider ports.Issues, repo ports.Rep
 	logf.FromContext(ctx).Info("Made the round's release milestone", "repository", repo.Owner+"/"+repo.Name,
 		"milestone", title, "round", round)
 	return m.ID, nil
+}
+
+// joinEmptyRelease makes the open release milestone an earlier round of the
+// Brief made and left with no issue the round's release milestone, by adding the round's
+// marker to its description, and returns its ID; 0 when there is none to join
+// (model.EmptyReleaseToJoin, #2025). The round's work then goes into the next
+// minor release the planner names, not one after it.
+func joinEmptyRelease(ctx context.Context, provider ports.Issues, repo ports.Repository, brief string,
+	round int, milestones []ports.Milestone) (int64, error) {
+	var releases []model.ReleaseMilestone
+	var made []int64
+	for _, m := range milestones {
+		release := model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID,
+			MilestoneClosed: m.Closed}
+		if !m.Closed && !m.Due.IsZero() && model.IsReleaseTitle(m.Title) &&
+			model.HasAnyReleaseMilestoneMarker(m.Description, brief) {
+			made = append(made, m.ID)
+			issues, err := provider.MilestoneIssues(ctx, repo, m.ID)
+			if err != nil {
+				return 0, err
+			}
+			for _, i := range issues {
+				release.Open = append(release.Open, i.Number)
+			}
+		}
+		releases = append(releases, release)
+	}
+	join := model.EmptyReleaseToJoin(releases, made)
+	if join == nil {
+		return 0, nil
+	}
+	i := slices.IndexFunc(milestones, func(m ports.Milestone) bool { return m.ID == join.ID })
+	description := model.AddMarker(milestones[i].Description, model.ReleaseMilestoneMarker(brief, round))
+	if err := provider.DescribeMilestone(ctx, repo, join.ID, description); err != nil {
+		return 0, err
+	}
+	logf.FromContext(ctx).Info("Took an empty release milestone for the round's", "repository",
+		repo.Owner+"/"+repo.Name, "milestone", join.Title, "round", round)
+	return join.ID, nil
 }
 
 // patchMilestone returns the ID of the patch slot of the Brief's round among

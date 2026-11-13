@@ -4,9 +4,12 @@ How the code is split, and which way dependencies may point. Read this before ad
 code. [design.md](design.md) says *what* theos does; this file says *where* the
 code for it goes.
 
-[![theos's architecture: what runs where in the Kind cluster, the code layers, and where state lives](images/architecture.png)](images/architecture.svg)
+[![theos's architecture: what runs where in the test rig's Kind cluster, the code layers, and where state lives](images/architecture.png)](images/architecture.svg)
 
 The board's source is [images/architecture.excalidraw](images/architecture.excalidraw).
+It draws the test rig, a Kind cluster of one node. An install is a cluster
+of any number of nodes, where the same parts run as pods the scheduler
+places ([design.md](design.md#why-kubernetes)).
 
 ## Layers
 
@@ -33,12 +36,13 @@ every scaffolded repository.
 
 | Layer | Packages | May import | Must not import |
 | --- | --- | --- | --- |
-| API types | `api/v1beta1` (the hub the operator imports), `api/v1alpha1` (converts to it) | apimachinery | anything under `internal/` |
+| API types | `api/v1beta1`, the one version served and stored | apimachinery | anything under `internal/` |
 | Business rules | `internal/model`, `internal/scaffold` | the standard library, `text/template`, YAML; `scaffold` may use `model` | Kubernetes, controller-runtime, `net/http`, `api/`, other `internal/` layers |
 | Ports | `internal/ports` and its `fake`, `contract` (the Deployer from #1161; the Git host's from #1094) | the standard library, business rules | Kubernetes, `net/http`, `api/`, adapters, `internal/controller` |
-| Adapters | `internal/adapters/*`: `gitea`, `git`, `github`, `gitlab`, `argocd`, `cloudformation`, `matrix` | ports, business rules; host adapters `net/http` and go-git, the chat adapter `net/http`; runtime and deploy adapters client-go | `api/`, `internal/controller`; host and chat adapters also Kubernetes |
+| Adapters | `internal/adapters/*`: `gitea`, `git`, `github`, `gitlab`, `packages`, `argocd`, `cloudformation`, `matrix`, `localenv` | ports, business rules; host adapters `net/http` and go-git, the chat adapter `net/http`; runtime, deploy and test environment adapters client-go | `api/`, `internal/controller`; host and chat adapters also Kubernetes |
 | OCI images | `internal/oci` | the standard library, `net/http`, go-containerregistry; host adapters use it | Kubernetes, controller-runtime, `api/`, any other `internal/` package |
 | Sandbox runner | `internal/agentrunner`, `cmd/theos-agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
+| Test environment tool | `cmd/theos-env`: `run` in a sandbox, `serve` in a leased environment ([plans/done/test-environments.md](plans/done/test-environments.md), T4) | the standard library, `internal/model`, go-git's gitignore matcher | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
 | Model proxy | `internal/modelproxy`, `cmd/model-proxy` | the standard library; `cmd/model-proxy` also `internal/modelproxy` and `internal/buildinfo` | Kubernetes, controller-runtime, `api/`, `internal/controller`, `internal/adapters`; `internal/modelproxy` any other `internal/` package |
 | Clients of the API | `internal/controller`, `internal/sessionclient`, `internal/chatbot` (theos-chat) | everything above but adapters; their tests wire adapters onto fakes | `cmd/`, `internal/adapters/*` |
 | Build info | `internal/buildinfo` | nothing | everything; only `cmd/*` reads it |
@@ -97,11 +101,14 @@ it against this table. Where the code lives:
 - **Adapters** are in `internal/adapters/<implementation>`, one package each:
   `gitea` implements GitHost, Issues, CI, AgentAccess and Registry,
   `agentsandbox` implements AgentRuntime, `github`, `argocd` and
-  `cloudformation` implement the Deployer, `gitlab` follows, and `matrix`
-  implements ChatHost. Plain Git over HTTPS (go-git: template fetches and pushes) is
-  shared in `internal/adapters/git`. A host adapter imports no Kubernetes;
-  the runtime and deploy adapters may use client-go, never `api/` or
-  `internal/controller`.
+  `cloudformation` implement the Deployer, `gitlab` follows, `matrix`
+  implements ChatHost, and `localenv` and `awsenv` implement TestEnvironments. Plain Git over HTTPS (go-git: template fetches and pushes) is
+  shared in `internal/adapters/git`, and so is the reader of a host's
+  archive of a tag (`ReadArchive`). What the host adapters share of
+  publishing a release's npm and Python packages is in
+  `internal/adapters/packages`. A host adapter imports no Kubernetes;
+  the runtime, deploy and test environment adapters may use client-go,
+  never `api/` or `internal/controller`.
 - **Controllers take ports.** Only `cmd/main.go` imports adapters: it builds
   the adapters a GitProvider names and gives each reconciler the ports it
   calls (and `cmd/theos-chat` the Matrix adapter for `internal/chatbot`). A
@@ -116,9 +123,13 @@ it against this table. Where the code lives:
 - **The per-CI table** (`model.CI`: its name, which names the templates'
   `.theos/ci/<name>/` folder, check contexts, protected paths) is in
   `internal/model`, so `internal/scaffold` reads it without an adapter.
-- **The host-neutral guard** is a Go test beside the ports
-  (`internal/ports/hostneutral_test.go`, from #1094) with its allowlist of
-  today's `gitea` and `.gitea/` hits, file and count, which may only shrink.
+- **The host-neutral guard** is a Go test beside the ports,
+  [`internal/ports/hostneutral_test.go`](../internal/ports/hostneutral_test.go):
+  it walks the Go files outside `internal/adapters/gitea` and counts
+  case-insensitive `gitea` (which `.gitea/` matches) per file. Its allowlist
+  holds today's files and counts and may only shrink: a file not in it, or
+  with more hits than its entry, fails the test, and so does an entry above
+  its file's count, so a change that removes hits lowers the entry.
 
 `internal/ports` holds the Deployer (#1161) and the Git host's five ports
 (#1166): GitHost, Issues, CI, AgentAccess and Registry, one file each with
@@ -132,14 +143,15 @@ The column *Today* says where each port is now.
 
 | Port | Interface | Picked by | Implementations | Contract test | Credential path | Today |
 | --- | --- | --- | --- | --- | --- | --- |
-| GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: Events, a hook on the owner and signed deliveries (#1084, [plans/git-events.md](plans/git-events.md)) | `GitProvider.spec.provider` | Gitea | to write (#1094): fake in `make test`, Gitea in `make test-gitea` | GitProvider Secret, operator only; Events: the delivery Secret the operator makes | `ports.GitHost` (`internal/ports/githost.go`); Gitea in `internal/adapters/gitea` |
-| Issues | issues, comments, labels (exclusive by scope), assignment, milestones, dependencies; intake uses list, comment, find comment, close, membership | `GitProvider.spec.provider`; intake by the Brief's `releases[].requests` | Gitea; GitHub for intake only | to write (#1094) | GitProvider Secret; intake by the Brief's token Secret; operator only | `ports.Issues` (`internal/ports/issues.go`) and `IssueTracker` |
-| CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model`; optional: OwnerRunners, the owner organization's runner registration token, its runners and their state, deleting one (#1139, [plans/ci-runner-isolation.md](plans/ci-runner-isolation.md)) | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions | to write (#1094); OwnerRunners: Gitea in `make test-gitea`, its fake beside the controllers' | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs, and an owner's runner registration token, with the GitProvider Secret | `ports.CI` (`internal/ports/ci.go`); `OwnerRunners` (`internal/ports/ci.go`); the per-CI table `model.CI` (`internal/model/ci.go`); the per-project runner pool `project_ci_runners.go` and its pod spec `ci_runner_pod.go` in `internal/controller` |
-| AgentAccess | mint a credential that writes to one repository, with its expiry; revoke old ones; remove | `GitProvider.spec.provider` | Gitea (a bot user per Container or Brief) | to write (#1094): writes its repository, not another, cannot merge to `main`, revoked means refused | minted from the GitProvider Secret into the Container's agent Git Secret, passed to its sandboxes | `ports.AgentAccess` (`internal/ports/agentaccess.go`) |
-| Registry | Go modules (optional), Go proxy address, a release's image archive pushed by digest (#1069, [plan](plans/images.md)), a release's npm tarballs and Python wheels and sdists published to the npm and PyPI registries, with the scope, registry and index addresses a repository's apps install from (#1229, [plan](plans/done/app-packages.md)) | the host's own, else `GitProvider.spec.registry.<member>`; npm scope and registry, PyPI index and upload by `GitProvider.spec.packages` | Gitea packages | to write (#1094); packages: a fake registry in `make test`, Gitea with npm and uv installs in `make test-gitea` | GitProvider Secret for the operator; CI only attaches release files with its job token | `ports.Registry` (`internal/ports/registry.go`), `Repository.GoProxy`, `Repository.NpmScope`, `NpmRegistry`, `PyPIIndex`, `PyPIUpload`; `PublishReleasePackages` (`internal/adapters/gitea/gitea_packages.go`) |
+| GitHost | repositories, files, pushes, branches, tags, branch rules, pull requests, merges (with bypass), commit statuses, source at a tag; optional: Events, a hook on the owner and signed deliveries (#1084, [plans/done/git-events.md](plans/done/git-events.md)) | `GitProvider.spec.provider` | Gitea; GitHub (`internal/adapters/github/github_host*.go`, #74, #75 and #79, no GitProvider reaches it yet), whose Events is the organization's webhook, or, for a user's account, the webhook of each repository the operator names | `contract.GitHost(t, env)` (`internal/ports/contract/githost.go`, #1170) and `contract.Events(t, env)` (`internal/ports/contract/events.go`): the fake (`internal/ports/fake`) in `make test`, Gitea (`TestGitHostContractIntegration`, `TestEventsContractIntegration`) in `make test-gitea`, and the GitHub adapter on its fake GitHub (`TestGitHostContract`, `TestEventsContract`) in `make test` | GitProvider Secret, operator only; Events: the delivery Secret the operator makes | `ports.GitHost` (`internal/ports/githost.go`); Gitea in `internal/adapters/gitea` |
+| Issues | issues, comments, labels (exclusive by scope), assignment, milestones, dependencies; intake uses list, comment, find comment, close, membership | `GitProvider.spec.provider`; intake by the Brief's `releases[].requests` | Gitea; GitHub for intake only | `contract.Issues(t, env)` (`internal/ports/contract/issues.go`, #1171): the fake in `make test`, Gitea (`TestIssuesContractIntegration`) in `make test-gitea`; intake has its own, `contract.IssueTracker(t, env)` (`internal/ports/contract/intake.go`, #61): the open issues, oldest first, each with when it was filed, with no closed one and no pull request, a list that is not modified until an issue is filed, edited or closed, a team's active members, a comment returned with its ID, author and page and found by its marker when the factory's account wrote it (the first of two, none by an empty marker), the two reasons to close, a closed issue closed again with the new reason, an issue's text never changed, and the reason of seven failures (`IssueNotFound`, `Unauthorized`, `TokenLacksIssues`, `TokenLacksMembers`, `RepositoryNotFound`, `IssuesDisabled`, `GitHubUnavailable`; not `GitHubError`, which no subtest reads); the GitHub client on its `httptest` fake GitHub (`TestIssueTrackerContract`) in `make test`, where its paging, its ETag over pages and what a moved or locked issue answers stay in its own tests | GitProvider Secret; intake by the Brief's token Secret; operator only | `ports.Issues` (`internal/ports/issues.go`) and `IssueTracker` |
+| CI | runs of a commit or tag, rerun failed jobs, a job's log, runners online (may be unknown); the per-CI table in `internal/model`; optional: OwnerRunners, the owner organization's runner registration token, its runners and their state, deleting one (#1139, [plans/done/ci-runner-isolation.md](plans/done/ci-runner-isolation.md)); JobRunners, the owner's jobs that wait for a runner of some labels, and an ephemeral runner registered for one job whose files a machine outside the cluster runs it with, the registration token kept in the operator ([plans/done/test-environments.md](plans/done/test-environments.md), step 8) | the host's own, else `GitProvider.spec.ci.<member>` | Gitea Actions; GitHub Actions (`internal/adapters/github/github_host_ci.go`, #78, no GitProvider reaches it yet), with neither optional part: GitHub's hosted runners take the jobs | `contract.CI(t, env)` (`internal/ports/contract/ci.go`, #1171), what needs no runner to see (no runs without a workflow, runners online or unknown, `ErrNoCILog`): the fake in `make test`, Gitea (`TestCIContractIntegration`, a job taken by a runner registered over the runner protocol that sends nothing) in `make test-gitea`; OwnerRunners: Gitea in `make test-gitea`, its fake beside the controllers'; JobRunners: subtests of `contract.CI` (a queued job listed by its label alone, a registered runner's files without the registration token), on the fake and on Gitea (a workflow pushed for a label no runner takes); the GitHub adapter on its fake GitHub (`TestCIContract`, the JobRunners subtests in `Cannot`) in `make test` | jobs: none of the user's, the host's job token scoped to the repository; the operator reads runs, and an owner's runner registration token, with the GitProvider Secret | `ports.CI` (`internal/ports/ci.go`); `OwnerRunners` (`internal/ports/ci.go`); `JobRunners` (`internal/ports/ci_jobs.go`); the per-CI table `model.CI` (`internal/model/ci.go`); the per-project runner pool `project_ci_runners.go` and its pod spec `ci_runner_pod.go` in `internal/controller` |
+| AgentAccess | mint a credential that writes to one repository, with its expiry; revoke old ones; remove | `GitProvider.spec.provider` | Gitea (a bot user per Container or Brief); GitHub (`internal/adapters/github/github_host_agents.go`, #77, no GitProvider reaches it yet): an installation token of the GitHub App the provider's Secret names, for the one repository | `contract.AgentAccess(t, env)` (`internal/ports/contract/agentaccess.go`, #1171): writes its repository, not another, cannot push to a protected `main`, removed means refused, `RevokeOldAgentTokens` keeps the current one; the fake (its `PushAs`) in `make test`, Gitea (`TestAgentAccessContractIntegration`, pushing with git as the bot) in `make test-gitea`, and the GitHub adapter on its fake GitHub (`TestAgentAccessContract`) in `make test`; `ports.AgentAccessState` says what a provider's condition says of it, by what the adapter's `CheckAgentAccess` finds missing | minted from the GitProvider Secret into the Container's agent Git Secret, passed to its sandboxes | `ports.AgentAccess` (`internal/ports/agentaccess.go`) |
+| Registry | Go modules (optional), Go proxy address, a release's image archive pushed by digest (#1069, [plan](plans/images.md)), a release's npm tarballs and Python wheels and sdists published to the npm and PyPI registries, with the scope, registry and index addresses a repository's apps install from (#1229, [plan](plans/done/app-packages.md)) | the host's own, else `GitProvider.spec.registry.<member>`; npm scope and registry, PyPI index and upload by `GitProvider.spec.packages` | Gitea packages; GitHub (`internal/adapters/github/github_host_registry.go`, #80, no GitProvider reaches it yet): images in its container registry, npm packages in its npm registry under the owner's scope, Python packages only where `spec.packages` names an index, and Go modules served from their repositories, with nothing to upload | `contract.Registry(t, env)` (`internal/ports/contract/registry.go`, #1171), Go modules: no `go.mod` is an outcome, a repeat publishes nothing, and a host with nothing to upload says the module exists; the fake in `make test`, Gitea (`TestRegistryContractIntegration`) in `make test-gitea`, the GitHub adapter on its fake GitHub (`TestRegistryContract`) in `make test`; packages: a fake registry in `make test`, Gitea with npm and uv installs in `make test-gitea`, the fake GitHub's npm and container registries in `make test` | GitProvider Secret for the operator; CI only attaches release files with its job token | `ports.Registry` (`internal/ports/registry.go`), `Repository.GoProxy`, or `Repository.GoPrivate` on a host that serves modules from repositories, `Repository.NpmScope`, `NpmRegistry`, `PyPIIndex`, `PyPIUpload`; `PublishReleasePackages`, whose reading of the files and whose npm and PyPI protocols both adapters share (`internal/adapters/packages`) |
 | AgentRuntime | start a run, its state and result, stop it, list held runs; the fence is the adapter's | Helm installs one; no field until a second | Agent Sandbox | to write; the sandbox's pod spec and fence tests in `make test` | operator ServiceAccount; the sandbox gets no Kubernetes token | `SandboxGVK`, `buildSandbox`, `runState` in `internal/controller` |
 | Deployer | check a target's credential, ship a built release to it (one write per call where the adapter is the tool, as for GitHub releases), read its state back; a Deployment template writes the tool's files | the `DeployTarget`'s member, by a map from member name to adapter in `cmd/main.go` (`github`; `argoCD` #1072 ([plans/k8s-deploy.md](plans/k8s-deploy.md)), `cloudFormation` #1071 ([plans/aws-deploy.md](plans/aws-deploy.md)), `gitlab` #1606 ([plans/gitlab-deploy.md](plans/gitlab-deploy.md)), `flux` later); the member requirement table is `model.DeployMember` (`internal/model/deploy.go`) | GitHub releases (`internal/adapters/github`), which the Crew's `publishReleases` copy calls too; Argo CD (`internal/adapters/argocd`, #1586): one `Application` per Container by server-side apply, wired to the `argoCD` member (#1588); AWS CloudFormation (`internal/adapters/cloudformation`, #1608): a release's cloud assembly published to the CDK bootstrap's bucket and deployed as change sets through the bootstrap's roles, wired to the `cloudFormation` member (#1609); GitLab releases (`internal/adapters/gitlab`, #1803): a release's files in the project's generic package registry, the release made last and linking them, the image copied by digest to the project's container registry (#1806), wired to the `gitlab` member (#1804) | `contract.Deployer(t, env)` ([plans/done/deploy.md](plans/done/deploy.md)): the fake (`internal/ports/fake`), the GitHub adapter on the publish tests' fake GitHub, and the Argo CD adapter on envtest with Argo CD's CRDs (`test/crds/argocd`) and a fake Argo CD that syncs each Application, and the CloudFormation adapter on a fake AWS API, and the GitLab adapter on a fake GitLab (`internal/adapters/gitlab/gitlabtest`), in `make test`; the state rule is `model.ArgoCDDeployState`, table-tested | the DeployTarget's `credentialsSecretRef` (and a Crew's `publishReleases.github.tokenSecretRef`, which the Crew hands the adapter as the target's Secret), operator only; CI never holds it | `ports.Deployer` (`internal/ports/deployer.go`); the GitHub adapter calls `ports.ReleaseTarget`, built by `internal/adapters/github/github.go`, the only GitHub writer |
-| ChatHost | the bot's user, a Space and its rooms found by ID or alias or made (private, invite only, unencrypted, linked both ways), invites, messages with Matrix HTML, thread replies, edits, reactions, `/sync` from a since token; a 429 waited out ([plans/done/chat-matrix.md](plans/done/chat-matrix.md)) | `Chat.spec.homeserver`, else the operator's `--chat-homeserver`; Matrix the only adapter, by `matrix.Hosts` in `cmd/main.go` and `cmd/theos-chat` | Matrix (`internal/adapters/matrix`) | the adapter's tests on the fake homeserver `internal/adapters/matrix/matrixtest`, which the `Chat` controller's and theos-chat's envtest share, and theos-chat's posting tests on it with a fake API server, in `make test` | the Chat's `credentialsSecretRef`, key `accessToken`: the operator, and `theos-chat` (`get` on Secrets, `config/chat/rbac.yaml`) | `ports.ChatHost` (`internal/ports/chathost.go`); the rooms' rules, what is posted where, the commands and their allowlist in `internal/model/chat*.go`; the `Chat` controller in `internal/controller/chat_controller.go`; theos-chat in `internal/chatbot` |
+| ChatHost | the bot's user, a Space and its rooms found by ID or alias or made (private, invite only, unencrypted, linked both ways), invites, messages with Matrix HTML, thread replies, edits, reactions, `/sync` from a since token; a 429 waited out ([plans/done/chat-matrix.md](plans/done/chat-matrix.md)) | `Chat.spec.homeserver`, else the operator's `--chat-homeserver`; Matrix the only adapter, by `matrix.Hosts` in `cmd/main.go` and `cmd/theos-chat` | Matrix (`internal/adapters/matrix`) | `contract.ChatHost(t, env)` (`internal/ports/contract/chathost.go`, #61): the bot's user and a refused credential, a private room made once and found by its ID, then its alias, a room's name brought to the one asked for, a room made with its topic, a Space and the rooms in it each a room of their own (the three in subtests of their own, so a host without names, topics or Spaces skips only that one), a taken alias, invites, messages as the bot, thread replies, edits, reactions, a sync from a token with each message once and none of the bot's own, and a sync with a wait of 0 that returns at once when nothing is new; the Matrix adapter on the fake homeserver `internal/adapters/matrix/matrixtest` (`TestChatHostContract`) in `make test`. What Matrix does its own way (the Space's links, the events written, a 429 waited out, an idle sync's wait) is in the adapter's tests on that fake, which the `Chat` controller's and theos-chat's envtest share, and theos-chat's posting tests on it with a fake API server, in `make test` | the Chat's `credentialsSecretRef`, key `accessToken`: the operator, and `theos-chat` (`get` on Secrets, `config/chat/rbac.yaml`) | `ports.ChatHost` (`internal/ports/chathost.go`); the rooms' rules, what is posted where, the commands and their allowlist in `internal/model/chat*.go`; the `Chat` controller in `internal/controller/chat_controller.go`; theos-chat in `internal/chatbot` |
+| TestEnvironments | lease a place to run commands with tools the sandbox lacks (a browser, an emulator, a GPU), read it back (Pending, Ready with its endpoint and pinned certificate, Failed, Ended), return it, and list the leases held for an environment, lost ones included ([plans/done/test-environments.md](plans/done/test-environments.md), T6) | the `TestEnvironment`'s member, by a map from member name to provider in `cmd/main.go` (`local`, `aws`, `deviceFarm`); a remote provider may check a credential (`TestEnvironmentCredentials`), release what it keeps beside its leases (`TestEnvironmentReleaser`) and lease a machine that runs one CI job (`TestEnvironmentRunners`, step 8), and one whose environment runs test packages rather than commands has `TestRuns` (`internal/ports/testruns.go`), which the operator calls for the requests a run pushes to its lease's branch | the local provider (`internal/adapters/localenv`): a pod per lease in the project's namespace, from the environment's image, with `theos-env` copied in from `--test-environment-tools-image` and the lease's token in a Secret of its own; the aws provider (`internal/adapters/awsenv`, the AWS SDK): an EC2 machine per lease, fenced in its RunInstances call, that downloads `theos-env` from `--test-environment-tools-url` and serves it over HTTPS with a certificate its token makes, a Mac's on a dedicated host it keeps, or, for a CI job, also the CI runner from `--test-environment-runner-url`, which it starts once its metadata service is off (`internal/adapters/awsenv/ci.go`); the deviceFarm provider (`internal/adapters/awsenv/devicefarm.go`): a lease recorded on the Device Farm project, and the test runs its run asks for | `contract.TestEnvironments(t, env)` (`internal/ports/contract/testenv.go`): the fake (`internal/ports/fake`), `localenv` on envtest and `awsenv` on a fake EC2 and a fake Device Farm, in `make test` | none for local; the `aws` and `deviceFarm` members' `credentialsSecretRef`, operator only; each lease's token goes to the run that holds it alone | `ports.TestEnvironments` (`internal/ports/testenv.go`); the rules in `internal/model/testenv.go`; the `TestEnvironment` controller in `internal/controller/testenvironment_controller.go`, its CI leases in `testenvironment_ci.go` and its test runs in `testenvironment_testruns.go`; the lease pods' fence `project_testenv_network.go` |
 
 No port is swappable yet: none has two real adapters passing a full contract (Issues on GitHub covers intake only). A port is called
 swappable here once its fake and two real adapters pass its contract.
@@ -164,6 +176,35 @@ A Ready Container with a Standard follows its Standard's `spec.template.ref`, on
 step per reconcile (`internal/controller/container_standard.go`); the minute
 recheck polls the pull request, and a Standard's spec change enqueues its
 Containers at once.
+
+## Flow of a Git host's delivery
+
+Polling stays the contract; a delivery only shortens the wait
+([plans/done/git-events.md](plans/done/git-events.md), #1084).
+
+1. The GitProvider reconciler (`internal/controller/gitprovider_controller.go`)
+   makes the delivery Secret `<gitprovider>-git-events` and registers the
+   owner's hook to `<--git-events-url>/git-events/<namespace>/<gitprovider>`
+   through `ports.Events`.
+2. The host posts a delivery there. The receiver
+   (`internal/controller/git_events.go`, a Runnable on the leader, listening on
+   `--git-events-bind-address`, off by default) reads at most 5 MiB (413 past
+   it), finds the GitProvider in the cache (404 when there is none or its
+   adapter has no Events), reads its Secret live, and has the adapter's
+   `ParseEvent` check the signature (401 when it fails) and say what the
+   delivery concerns: a repository, an issue or pull request, a branch.
+3. It sends the Event, without blocking, to one buffered `source.Channel` per
+   controller and answers 202; it writes nothing. The Container controller
+   enqueues the Container named after the repository, the Crew controller its
+   Crews, the Task controller its Tasks whose issue, Standard-change issue,
+   pull request or branch the delivery names (the `indexTaskRepository`
+   index), or every unfinished one when it names neither, and the Brief
+   controller the Brief whose repository is `brief-<name>`, whose Plan Tasks
+   the Task controller enqueues the same way. Only objects on that
+   GitProvider are enqueued; each reconcile reads the host as a poll would.
+4. The receiver remembers each GitProvider's last verified and last refused
+   delivery, and enqueues the GitProvider when the later of the two changes;
+   its reconciler writes `Events` `Receiving` (True) or `DeliveryRefused`.
 
 1. `internal/controller` takes the ref the Container's Standard files are at from
    `status.standard`, or before the first update from `scaffoldedFrom`
@@ -353,14 +394,16 @@ release.
 
 A Go Task runs `make check` three or four times a round: the agent while it
 works, `internal/agentrunner` after it, CI on the `go` runner and the reviewer.
-Two caches on the Kind node's disk keep compiled packages between pods, so
-each run compiles only what changed:
+Two caches on a node's disk keep compiled packages between pods, so
+each run compiles only what changed. They were built for the test rig's one
+node: on a cluster of several, each node holds its own (#120).
 
 | Cache | Node directory | Mounted by | Set up by |
 | --- | --- | --- | --- |
 | sandboxes | `/var/cache/theos/go/sandbox`, the operator's `--sandbox-go-cache` | every agent sandbox, at `/cache/go`, with `GOCACHE` and `GOLANGCI_LINT_CACHE` pointing into it | an init container in the agent's image |
 | CI, shared | `/var/cache/theos/go/ci` | only the shared `go` runner (`config/runner/go.yaml`), which serves the templates organization; jobs get the variables from the runner's `env_file` | an init container, and a sidecar hourly |
 | CI, per project | `/var/cache/theos/go/projects/<namespace>`, under the operator's `--ci-go-cache` | the project's `go` pool pods, at `/cache/go`; the variables come from ConfigMap `c4-ci-runner-env` in the namespace, the pod's `env_file` | an init container of each pod |
+| CI, releases | none: an emptyDir per pod | each `go-release` pool pod (`freshGoCache`), at `/cache/go`, with the same `env_file`; gitea-release's release job runs there, so the signed release files link nothing a pull request's job wrote (#1141) | an init container of each pod, copying the image's warm cache |
 
 - **CI's cache is its own.** Go doesn't check what it reads from a cache, so a
   sandbox that could write CI's cache could plant a compiled package that CI,
@@ -372,14 +415,16 @@ each run compiles only what changed:
   day, then all of them, and seeds again. It deletes entry files only, under a
   lock, so a build running at the same time sees a miss, not an error. An agent
   image without Go has no `c4-go-cache`, and its init container exits at once.
-- hostPath, not a PVC: one node, one directory per cache, and no project
-  namespace enforces Pod Security. Remove the flag, or the runner's volume, to
+- hostPath, not a PVC: it assumes one node, one directory per cache, and
+  that no project namespace enforces Pod Security. That holds on the rig and
+  not on every cluster (#120). Remove the flag, or the runner's volume, to
   go back to cold builds.
 
 ## Flow of one Crew
 
-1. Every minute, and when a Task on its Container changes phase or the Container
-   turns Ready, `internal/controller` reads the Crew, adopts it under its
+1. Every minute, when a Task on its Container changes phase or the Container
+   turns Ready, and when a delivery of the Git host names the Container's
+   repository, `internal/controller` reads the Crew, adopts it under its
    Container, checks its Agents exist, and lists the Container's Tasks live.
 2. Through the Issues port it makes sure the status labels exist, lists the open
    issues labelled `status/ready`, and reads each one's open dependencies.
@@ -411,7 +456,7 @@ lives in the catalog's templates.
    (`DEFAULT_COMPONENTS`, overridable with `FACTORY_COMPONENTS`), finds the agent
    sandboxes by their label, and reads the operator's `--max-agent-sandboxes`.
 3. It returns states, restarts, usage and the last hour of samples, never a pod
-   spec.
+   spec. A sample holds the cluster's CPU and memory, every node's added up.
 4. The browser combines that with the Tasks, Agents, Containers, Sessions,
    Crews and Briefs it watches (`src/model/factory.ts`): the board, each Task's timeline
    from `status.history`, the Crews, the time per stage and the "Needs a look"

@@ -22,6 +22,15 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the theos itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- testenvironment_admin_role.yaml
+- testenvironment_editor_role.yaml
+- testenvironment_viewer_role.yaml
+- benchmark_admin_role.yaml
+- benchmark_editor_role.yaml
+- benchmark_viewer_role.yaml
+- scorer_admin_role.yaml
+- scorer_editor_role.yaml
+- scorer_viewer_role.yaml
 - chat_admin_role.yaml
 - chat_editor_role.yaml
 - chat_viewer_role.yaml

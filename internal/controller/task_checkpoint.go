@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -79,6 +87,30 @@ const annotationPausedRun = "theos.factory.io/paused-run"
 // due back, in RFC 3339 (the Task's status.agentBackAt). Such a run resumes
 // then, counting no resume (step 13 of docs/plans/self-hosting.md).
 const annotationAgentBack = "theos.factory.io/agent-back-at"
+
+// annotationRunAgent, annotationRunHarness and annotationRunModel on a
+// Sandbox are the Agent configuration its run runs on: set when it is made
+// and again when it resumes on the current Agent, and copied into the run's
+// record when it ends (docs/plans/done/measure-and-improve.md, decision 2).
+const (
+	annotationRunAgent   = "theos.factory.io/run-agent"
+	annotationRunHarness = "theos.factory.io/run-harness"
+	annotationRunModel   = "theos.factory.io/run-model"
+)
+
+// runConfigAnnotations are the annotations that record agent's configuration
+// on a run's sandbox.
+func runConfigAnnotations(agent *c4v1beta1.Agent) map[string]string {
+	return map[string]string{annotationRunAgent: agent.Name, annotationRunHarness: harness(agent),
+		annotationRunModel: agent.Spec.Model}
+}
+
+// runConfigOf is the Agent configuration sandbox records; zero for one made
+// before it was recorded.
+func runConfigOf(sandbox *unstructured.Unstructured) model.RunConfig {
+	a := sandbox.GetAnnotations()
+	return model.RunConfig{Agent: a[annotationRunAgent], Harness: a[annotationRunHarness], Model: a[annotationRunModel]}
+}
 
 // suspension is why a run's sandbox is suspended, when its run was not
 // interrupted: it paused at the factory's ask (pause, the pause's reason),
@@ -256,7 +288,9 @@ func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, s
 		}
 		r.progress(task, status, metav1.ConditionTrue, reason, message)
 	}
-	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result, suspend: true}
+	// A suspended run holds no test environment: its resume leases again (T3).
+	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result, suspend: true,
+		leases: takeLeases(status, status.Sandbox)}
 	log := logf.FromContext(ctx)
 	switch kind {
 	case suspendPaused:
@@ -375,7 +409,15 @@ func (r *TaskReconciler) resumeRun(ctx context.Context, task *c4v1beta1.Task, st
 	if in == nil {
 		return result, err
 	}
-	fresh, err := r.runSandbox(ctx, task, status, container, agents, role, status.Sandbox, in)
+	envs, wait, err := r.leaseEnvironments(ctx, task, status, container, role, status.Sandbox, in.labels)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if wait != nil {
+		r.waitForEnvironment(task, status, wait)
+		return ctrl.Result{RequeueAfter: r.environmentRecheck()}, nil
+	}
+	fresh, err := r.runSandbox(ctx, task, status, container, agents, role, status.Sandbox, in, envs)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -406,13 +448,15 @@ func (r *TaskReconciler) resumeWith(ctx context.Context, task *c4v1beta1.Task, s
 	logf.FromContext(ctx).Info("Resuming a run in place", "sandbox", status.Sandbox, "paused", paused,
 		"waitedForAgent", waited, "round", status.Round, "resumes", status.Resumes, "deadline", deadline)
 	return r.afterStatusWrite(ctx, task, endedRun{sandbox: status.Sandbox, round: status.Round,
-		resume: &sandboxResume{podTemplate: template, deadline: deadline}})
+		resume: &sandboxResume{podTemplate: template, deadline: deadline, config: runConfigAnnotations(agent)}})
 }
 
-// sandboxResume is the pod template and time a suspended sandbox resumes with.
+// sandboxResume is the pod template and time a suspended sandbox resumes
+// with, and the annotations of the Agent configuration it resumes on.
 type sandboxResume struct {
 	podTemplate map[string]any
 	deadline    time.Duration
+	config      map[string]string
 }
 
 // resumeSandbox writes the resume's pod template and a shutdown time past
@@ -432,6 +476,10 @@ func (r *TaskReconciler) resumeSandbox(ctx context.Context, ns, name string, res
 	delete(annotations, annotationSuspendedAt)
 	delete(annotations, annotationPausedRun)
 	delete(annotations, annotationAgentBack)
+	if annotations == nil && len(resume.config) > 0 {
+		annotations = map[string]string{}
+	}
+	maps.Copy(annotations, resume.config)
 	sandbox.SetAnnotations(annotations)
 	for _, field := range []struct {
 		value any

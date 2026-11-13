@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -300,7 +308,7 @@ var _ = Describe("Container images", func() {
 			Spec: newFrameworkSpec(templatesURL+model.FrameworkAWSFargate, "v1.3.0", c4v1beta1.ContainerTypeService)}
 		fargate.Spec.DeploysItself = true
 		giteaRelease := &c4v1beta1.Deployment{ObjectMeta: objectMeta(ns, model.DeploymentGiteaRelease),
-			Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.8.0", c4v1beta1.ContainerTypeService)}
+			Spec: newCatalogSpec(templatesURL+model.DeploymentGiteaRelease, "v1.9.0", c4v1beta1.ContainerTypeService)}
 		container := newContainer(ns, "orders-api", "webshop-core", c4v1beta1.ContainerTypeService)
 		container.Spec.FrameworkRef.Name = model.FrameworkAWSFargate
 		container.Spec.ComputeRef = nil

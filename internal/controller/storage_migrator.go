@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -37,8 +45,8 @@ const StorageMigratorRetry = 30 * time.Second
 // pass.
 const StorageMigratorReadyPoll = time.Second
 
-// +kubebuilder:rbac:groups=theos.factory.io,resources=agents;briefs;bundles;computes;connectors;containers;crews;datastores;deployments;deploytargets;domains;frameworks;gitproviders;people;projects;relationships;sessions;softwaresystems;standards;tasks,verbs=list;patch
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions/status,verbs=patch,resourceNames=agents.theos.factory.io;briefs.theos.factory.io;bundles.theos.factory.io;computes.theos.factory.io;connectors.theos.factory.io;containers.theos.factory.io;crews.theos.factory.io;datastores.theos.factory.io;deployments.theos.factory.io;deploytargets.theos.factory.io;domains.theos.factory.io;frameworks.theos.factory.io;gitproviders.theos.factory.io;people.theos.factory.io;projects.theos.factory.io;relationships.theos.factory.io;sessions.theos.factory.io;softwaresystems.theos.factory.io;standards.theos.factory.io;tasks.theos.factory.io
+// +kubebuilder:rbac:groups=theos.factory.io,resources=agents;benchmarks;briefs;bundles;chats;computes;connectors;containers;crews;datastores;deployments;deploytargets;domains;frameworks;gitproviders;people;projects;relationships;scorers;sessions;softwaresystems;standards;tasks;testenvironments,verbs=list;patch
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions/status,verbs=patch,resourceNames=agents.theos.factory.io;benchmarks.theos.factory.io;briefs.theos.factory.io;bundles.theos.factory.io;chats.theos.factory.io;computes.theos.factory.io;connectors.theos.factory.io;containers.theos.factory.io;crews.theos.factory.io;datastores.theos.factory.io;deployments.theos.factory.io;deploytargets.theos.factory.io;domains.theos.factory.io;frameworks.theos.factory.io;gitproviders.theos.factory.io;people.theos.factory.io;projects.theos.factory.io;relationships.theos.factory.io;scorers.theos.factory.io;sessions.theos.factory.io;softwaresystems.theos.factory.io;standards.theos.factory.io;tasks.theos.factory.io;testenvironments.theos.factory.io
 
 // StorageMigrator rewrites what etcd holds at a version other than the
 // storage one (docs/plans/done/api-versions.md, decision 4). For each CRD in CRDs

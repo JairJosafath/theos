@@ -1,0 +1,115 @@
+#96, step 3 of docs/plans/adopt-existing.md: theos-session adopt reads a
+repository and proposes its model
+========================================================================
+
+2026-11-10. Test output is the evidence; no cluster was used.
+
+The detector as tables (internal/model/adopt_test.go). The proposals are
+the files under config/samples/adopt/proposed/, which make validate-yaml
+holds to the CRDs:
+
+$ go test ./internal/model -run 'TestAdoptionReads|TestDetectRepository|TestAdoptionProposal' -v
+--- PASS: TestAdoptionReads (0.00s)
+--- PASS: TestDetectRepository (0.00s)
+    --- PASS: TestDetectRepository/go-service (0.00s)
+    --- PASS: TestDetectRepository/go-cli (0.00s)
+    --- PASS: TestDetectRepository/typescript-site (0.00s)
+    --- PASS: TestDetectRepository/node-service (0.00s)
+    --- PASS: TestDetectRepository/python-cli (0.00s)
+    --- PASS: TestDetectRepository/python-service (0.00s)
+    --- PASS: TestDetectRepository/go-released-only (0.00s)
+    --- PASS: TestDetectRepository/unknown (0.00s)
+--- PASS: TestDetectRepositoryEdges (0.00s)
+    --- PASS: TestDetectRepositoryEdges/two_languages:_the_first_decides,_the_other_is_said (0.00s)
+    --- PASS: TestDetectRepositoryEdges/more_checks_than_a_Container_names (0.00s)
+    --- PASS: TestDetectRepositoryEdges/a_Makefile_without_a_check_target_is_no_check (0.00s)
+--- PASS: TestAdoptionProposal (0.00s)
+    --- PASS: TestAdoptionProposal/go-cli (0.00s)
+    --- PASS: TestAdoptionProposal/go-released-only (0.00s)
+    --- PASS: TestAdoptionProposal/go-service (0.00s)
+    --- PASS: TestAdoptionProposal/node-service (0.00s)
+    --- PASS: TestAdoptionProposal/python-cli (0.00s)
+    --- PASS: TestAdoptionProposal/python-service (0.00s)
+    --- PASS: TestAdoptionProposal/typescript-site (0.00s)
+    --- PASS: TestAdoptionProposal/unknown (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.015s
+
+The command on temporary clones (cmd/theos-session/adopt_test.go):
+
+$ go test ./cmd/theos-session -v
+--- PASS: TestAdopt (0.01s)
+--- PASS: TestAdoptWritesTheIdentityWhenAsked (0.00s)
+--- PASS: TestAdoptRefusesWhatTheClusterWould (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/cmd/theos-session	0.035s
+
+And on a real repository, this one's clone (2,510 files; it finds Go, a
+Makefile with a check target, so no checkCommand, and the checks of the
+workflows the host runs first):
+
+$ theos-session adopt --dir . --project factory --git-provider git --name theos > model.yaml
+Read 2511 files of <the clone>.
+
+Next:
+1. Commit this as .theos.yaml on the repository's main (or run again with --write-identity):
+
+     project: factory
+     softwareSystem: factory
+     container: theos
+     type: service
+     scaffoldedFrom: []
+
+2. Have the repository in the organization GitProvider git names, as theos.
+3. Read the model above, change what is wrong, and apply it: kubectl apply -f model.yaml
+4. kubectl -n factory get container theos -o jsonpath='{.status.conditions[?(@.type=="Protected")].message}'
+   says whether main reports the checks the model names, or which it reports instead. When it reports
+   none, the repository's workflows don't run on this Git host: each job's runs-on must be a label of
+   the project's CI runners, which GitProvider git lists in its spec.ci.
+
+$ cat model.yaml
+# theos, a repository the factory adopts as it is: nothing is scaffolded or rewritten.
+# Read from the repository: Go.
+apiVersion: theos.factory.io/v1beta1
+kind: SoftwareSystem
+metadata:
+  name: factory
+  namespace: factory
+spec:
+  displayName: factory
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: theos
+  namespace: factory
+spec:
+  softwareSystemRef:
+    name: factory
+  displayName: theos
+  type: service
+  gitProviderRef:
+    name: git
+  adopt: true
+  checkContexts:
+  - "check / check*"
+---
+# Start small: the Crew holds every change for a person. Loosen it rule by
+# rule (docs/getting-started.md, "Start small").
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: theos
+  namespace: factory
+spec:
+  containerRef:
+    name: theos
+  implementer:
+    name: implementer
+  reviewer:
+    name: reviewer
+  approval:
+  - require: Person
+
+Not run here: make validate-yaml, whose download of the Kubernetes schemas
+this session's network refuses; CI's Lint job runs it on the proposals.

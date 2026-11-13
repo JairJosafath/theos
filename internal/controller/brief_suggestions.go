@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -210,11 +218,15 @@ func (r *BriefReconciler) answerSuggestions(ctx context.Context, run *roundApply
 		var milestone int64
 		if a.Answer == model.AnswerTake && run.released[a.Container] {
 			if milestone, err = releaseMilestone(gitCtx, provider, repo, brief.Name, int(status.Round),
-				a.Fix); err != nil {
+				a.Fix, briefModelCadence(brief)); err != nil {
 				return took, skipped, fmt.Errorf("making the release milestone of %s: %w", a.Container, err)
 			}
 		}
-		if err := answerSuggestion(gitCtx, provider, repo, issue, a, milestone,
+		var labels []string
+		if a.Answer == model.AnswerTake && run.released[a.Container] {
+			labels = cadenceLabels(briefModelCadence(brief), tending(status), a.Now, a.Fix, issue.Labels)
+		}
+		if err := answerSuggestion(gitCtx, provider, repo, issue, a, milestone, labels,
 			model.SuggestionComment(a, brief.Name, int(status.Round), prompts)); err != nil {
 			return took, skipped, fmt.Errorf("answering %s#%d: %w", a.Container, a.Issue, err)
 		}
@@ -259,20 +271,26 @@ func (r *BriefReconciler) foundMissing(ctx context.Context, brief *c4v1beta1.Bri
 	return model.FoundIssue(true, issue.State == stateOpen, issue.Labels, issue.Body), nil
 }
 
-// answerSuggestion takes one suggestion into milestone, 0 for none, or closes
-// it. A take's ready label, what marks it answered, comes last, so a try
-// that stops part way is done again whole. A skip closes first, so a try that
-// stops after it leaves the issue closed without its comment.
+// answerSuggestion takes one suggestion into milestone, 0 for none, with
+// labels too, or closes it. A take's ready label, what marks it answered,
+// comes last, so a try that stops part way is done again whole. A skip closes
+// first, so a try that stops after it leaves the issue closed without its
+// comment.
 func answerSuggestion(ctx context.Context, provider ports.Issues, repo ports.Repository,
-	issue ports.Issue, a model.SuggestionAnswer, milestone int64, comment string) error {
+	issue ports.Issue, a model.SuggestionAnswer, milestone int64, labels []string, comment string) error {
 	if a.Answer == model.AnswerTake {
 		if issue.Milestone != milestone {
 			if err := provider.SetIssueMilestone(ctx, repo, issue.Number, milestone); err != nil {
 				return err
 			}
 		}
-		if err := provider.EnsureLabels(ctx, repo, issueLabels()); err != nil {
+		if err := provider.EnsureLabels(ctx, repo, append(issueLabels(), cadenceIssueLabels()...)); err != nil {
 			return err
+		}
+		for _, l := range labels {
+			if err := provider.AddIssueLabel(ctx, repo, issue.Number, l); err != nil {
+				return err
+			}
 		}
 		if err := provider.CommentIssue(ctx, repo, issue.Number, comment); err != nil {
 			return err

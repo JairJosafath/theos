@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Package scaffold turns pinned template layers into the file tree of a new
 // Container repository. It renders the layers in a fixed order, fails when two
 // layers write the same path, assembles .devcontainer/ and writes the identity file.
@@ -32,6 +48,23 @@ type Tree map[string]File
 // Paths returns the paths in the tree, sorted.
 func (t Tree) Paths() []string {
 	return slices.Sorted(maps.Keys(t))
+}
+
+// Sub returns the files below directory dir, by their paths relative to it:
+// the template a catalog entry's template.path names in its repository (#35).
+// An empty dir is the whole tree. It reports false when no file is below dir,
+// as for a dir that is missing or a file: Git holds no empty directory.
+func (t Tree) Sub(dir string) (Tree, bool) {
+	if dir == "" {
+		return t, true
+	}
+	sub := Tree{}
+	for p, f := range t {
+		if rel, ok := strings.CutPrefix(p, dir+"/"); ok {
+			sub[rel] = f
+		}
+	}
+	return sub, len(sub) > 0
 }
 
 // ReadTree reads every file under fsys into a Tree, such as a template folder

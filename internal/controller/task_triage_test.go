@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -20,6 +28,8 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/agentrunner"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // newTriageTask is a triage of issue 4 of orders-api.
@@ -196,6 +206,75 @@ var _ = Describe("Crew triage", func() {
 		By("picking the issue up as ready: the triage was no try at it")
 		Eventually(func(g Gomega) {
 			g.Expect(getTask(g, ns, fmt.Sprintf("orders-api-%d", n)).Spec.Kind).To(Equal(c4v1beta1.TaskImplement))
+		}).Should(Succeed())
+	})
+
+	// docs/plans/done/test-environments.md, T13: the triager reads the project's
+	// test environments and names the ones an issue needs; the operator
+	// labels it env/<name>, and the issue's run leases it.
+	It("labels a ready issue env/<name> for the test environment the triager names, and its run leases it", func() {
+		mustCreate(newBrowserEnvironment(ns))
+		n, name := triageOne(clearIssue)
+		pod := sandboxPodSpec(Default, sandboxExists(Default, ns, name+"-r1-triage"))
+		Expect(envVar(pod, agentrunner.EnvEnvironments)).To(HaveField("Value", ContainSubstring(`"name":"browser"`)))
+		Expect(envVar(pod, "THEOS_ENV_BROWSER_URL")).To(BeNil(), "the triager leases nothing")
+		finishSandbox(ns, name+"-r1-triage", name, triageResult(model.Triage{Decision: model.TriageReady,
+			Reason: "Its pictures need a browser.", Environments: []string{"browser", "android"}}), "")
+		Eventually(func(g Gomega) {
+			task := triaged(g, name, model.TriageReady)
+			g.Expect(task.Status.Triage.Environments).To(Equal([]string{"android", "browser"}))
+			g.Expect(task.Status.Triage.Applied).To(Equal("Labelled status/ready and env/browser"))
+			g.Expect(gitFake.Issue(ns, "orders-api", n).Labels).To(ContainElement("env/browser"))
+		}).Should(Succeed())
+
+		By("leasing the browser for the issue's run")
+		Eventually(func(g Gomega) {
+			pod := sandboxPodSpec(g, sandboxExists(g, ns, fmt.Sprintf("orders-api-%d-r1-implement", n)))
+			g.Expect(envVar(pod, "THEOS_ENV_BROWSER_URL")).NotTo(BeNil())
+		}, "20s").Should(Succeed())
+	})
+
+	// #92: the triager's guide to risk. The operator labels the issue
+	// risk/high, and the Crew's approval rule that names the label holds the
+	// issue's change for a person.
+	It("labels an issue the triager calls high-risk, and the Crew's rule for the label holds its change", func() {
+		crew := triagingCrew(ns)
+		crew.Spec.Approval = []c4v1beta1.ApprovalRule{{Labels: []string{model.LabelRiskHigh},
+			Require: c4v1beta1.ApprovalPerson}}
+		mustCreate(crew)
+		n := gitFake.AddIssue(ns, "orders-api", "Drop the legacy column", clearIssue, []string{model.LabelProposed})
+		name := fmt.Sprintf("orders-api-%d-triage", n)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, name+"-r1-triage") }).Should(Succeed())
+		finishSandbox(ns, name+"-r1-triage", name, triageResult(model.Triage{Decision: model.TriageReady,
+			Reason: "It drops a column that holds data.", Risk: " High "}), "")
+		Eventually(func(g Gomega) {
+			task := triaged(g, name, model.TriageReady)
+			g.Expect(task.Status.Triage.Risk).To(Equal(model.RiskHigh))
+			g.Expect(task.Status.Triage.Applied).To(Equal("Labelled status/ready and risk/high"))
+			issue := gitFake.Issue(ns, "orders-api", n)
+			g.Expect(issue.Labels).To(ContainElement(model.LabelRiskHigh))
+			g.Expect(issue.Comments).To(ContainElement(ContainSubstring("Labelled risk/high: a mistake in this change")))
+		}).Should(Succeed())
+
+		By("building the issue: the Crew's rule for the label asks for a person")
+		task := fmt.Sprintf("orders-api-%d", n)
+		Eventually(func(g Gomega) { sandboxExists(g, ns, task+"-r1-implement") }).Should(Succeed())
+		head, err := gitFake.PushBranch(ctx, ports.Repository{Owner: ns, Name: "orders-api"},
+			gitFake.MainHead(ns, "orders-api").Hash, "task/"+task,
+			scaffold.Tree{"internal/orders/schema.go": scaffold.File{Data: []byte("package orders\n")}}, nil, "",
+			ports.Signature{})
+		Expect(err).NotTo(HaveOccurred())
+		finishSandbox(ns, task+"-r1-implement", task,
+			&agentrunner.Result{Role: "implement", Commit: head, Summary: "Dropped the column."}, "")
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, task).Status.Phase).To(Equal(c4v1beta1.TaskChecking))
+		}).Should(Succeed())
+		gitFake.SetChecks(ns, "orders-api", head, "success")
+		Eventually(func(g Gomega) {
+			approval := getTask(g, ns, task).Status.Approval
+			g.Expect(approval).NotTo(BeNil())
+			g.Expect(approval.Require).To(Equal(c4v1beta1.ApprovalPerson))
+			g.Expect(approval.Reason).To(Equal("approval rule 1 (labels risk/high) asks for a person"))
 		}).Should(Succeed())
 	})
 

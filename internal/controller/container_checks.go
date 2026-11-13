@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -37,25 +45,35 @@ func (r *ContainerReconciler) checksRecheck() time.Duration {
 
 // refreshChecks reads the latest CI result on the default branch into status.
 // A Git error keeps the last known result: checks are a report, not a step.
+// For a Container that adopts its repository with no Standard the checks
+// main's head reports also decide whether main is protected (protectAdopted).
 func (r *ContainerReconciler) refreshChecks(ctx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus) ctrl.Result {
-	if !model.Protected(container.Choices().Standard != "") {
+	bare := adoptsBare(container)
+	if !bare {
+		meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionProtected)
+	}
+	if !bare && !model.Protected(container.Choices().Standard != "", false) {
 		return ctrl.Result{}
 	}
 	provider, err := providerFor(ctx, r.Client, r.APIReader, r.Git, container.Namespace, container.Spec.GitProviderRef.Name)
 	if err == nil {
 		var checks ports.CheckStatus
 		gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		checks, err = provider.CombinedStatus(gitCtx, provider.Repository(container.Name), ports.DefaultBranch)
-		cancel()
+		repo := provider.Repository(container.Name)
+		checks, err = provider.CombinedStatus(gitCtx, repo, ports.DefaultBranch)
 		if err == nil {
 			status.Checks = &c4v1beta1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
+			if bare {
+				err = protectAdopted(gitCtx, r.Client, provider, repo, container, status, checks.Contexts)
+			}
 		}
+		cancel()
 	}
 	if err != nil {
 		logf.FromContext(ctx).Info("Could not read checks", "error", err.Error())
 	}
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}
 }
 
 // providerFor returns the Provider for a GitProvider in namespace ns, with its

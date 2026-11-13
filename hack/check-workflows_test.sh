@@ -5,13 +5,18 @@
 # without the concurrency group, or one that cancels the run in progress; and
 # Lint and UI off pull requests or with other paths there, Lint without its
 # test-hack job (#1101), and Tests off pull requests or off pushes to main
-# (#1556), off the release tags (#1525), grouped by commit, not cancelling a
-# superseded head of main, or without cancel-in-progress on pull requests
-# fail, and so does a job on pull
+# (#1556) or without cancel-in-progress on pull requests fail. Every check
+# but a release's is partial (#127): Lint or Tests asking for every step, on a
+# shallow clone, without main's head before a push to compare with, grouped
+# so that a push to main can lose its run or cancelling one, and Tests on a
+# pushed tag fail, and so does a release.yml without a job that runs make
+# check FORCE=1 or whose publishing job doesn't need it. So does a job on pull
 # requests missing from .github/required-checks, a line there naming no job,
 # or two checks with one name (#1380);
 # and so does a release.yml that doesn't dispatch Verify Release for minors
-# only (#1105).
+# only (#1105); and so does a job on pull requests whose runs-on would let a
+# fork's pull request run on a self-hosted runner, or a workflow on
+# pull_request_target (#49).
 # Run: hack/check-workflows_test.sh
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -125,12 +130,12 @@ rm -rf "$T/wf" && mkdir "$T/wf" && printf 'name: x\non:\n  issues:\n    types: [
 "$CHECK" "$T/wf" 2>/dev/null
 check "issues and tag pushes need no group" "$?" 0
 
-# real NAME SED: the repository's Lint, UI, Tests and Vulnerabilities
-# workflows and its required checks, alone in a directory, NAME.yml (or
+# real NAME SED: the repository's Lint, UI, Tests, Vulnerabilities, Secrets
+# and CodeQL workflows and its required checks, alone in a directory, NAME.yml (or
 # required-checks for NAME list) edited with the sed script SED.
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 real() {
-  rm -rf "$T/r" && mkdir -p "$T/r/wf" && cp "$REPO"/.github/workflows/{lint,ui,test,vulncheck}.yml "$T/r/wf/"
+  rm -rf "$T/r" && mkdir -p "$T/r/wf" && cp "$REPO"/.github/workflows/{lint,ui,test,vulncheck,secrets,codeql}.yml "$T/r/wf/"
   cp "$REPO"/.github/required-checks "$T/r/"
   local f="$T/r/wf/$1.yml"
   [ "$1" = list ] && f=$T/r/required-checks
@@ -139,8 +144,9 @@ real() {
 
 real lint ''
 "$CHECK" "$T/r/wf" 2>/dev/null
-check "Lint, UI, Tests and Vulnerabilities as they are pass" "$?" 0
-for c in 'test.yml Tests' 'lint.yml Lint' 'lint.yml Shell tests' 'ui.yml UI'; do
+check "Lint, UI, Tests, Vulnerabilities, Secrets and CodeQL as they are pass" "$?" 0
+for c in 'test.yml Tests' 'lint.yml Lint' 'lint.yml Shell tests' 'ui.yml UI' 'codeql.yml CodeQL Go' \
+  'codeql.yml CodeQL TypeScript'; do
   check "the required checks list $c" "$(grep -cx "$c" "$REPO/.github/required-checks")" 1
 done
 
@@ -159,10 +165,24 @@ out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Lint with fewer paths on pull requests fails" "$?" 1
 check "Lint with fewer paths says so" "$(grep -c 'lint.yml: runs on pull requests with other paths' <<<"$out")" 1
 
-real lint 's/run: make test-hack/run: make help/'
+real lint 's/run: make check CHECK_STEPS="test-hack .*/run: make help/'
 out=$("$CHECK" "$T/r/wf" 2>&1)
-check "Lint without make test-hack fails" "$?" 1
-check "Lint without make test-hack says so" "$(grep -c 'lint.yml: has no test-hack job' <<<"$out")" 1
+check "Lint without the shell tests' part of make check fails" "$?" 1
+check "Lint without the shell tests says so" "$(grep -c 'lint.yml: has no test-hack job' <<<"$out")" 1
+
+# #127: the shell tests' own inputs leave out the Go and docs trees, which
+# three of them scan; without the scans a Go file with no license header
+# passed the Shell tests job.
+real lint 's/run: make check CHECK_STEPS="test-hack doc-links license-headers readers"/run: make check CHECK_STEPS=test-hack/'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Lint's shell tests without the scans fail (#127)" "$?" 1
+check "Lint's shell tests without the scans say so" "$(grep -c 'lint.yml: has no test-hack job running make check CHECK_STEPS="test-hack doc-links license-headers readers"' <<<"$out")" 1
+
+# #127: a test of the UI reads the CRDs.
+real ui '/config\/crd\/bases/d'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "UI off the CRDs fails (#127)" "$?" 1
+check "UI off the CRDs says so" "$(grep -c "ui.yml: doesn't run for a change to config/crd/bases" <<<"$out")" 1
 
 real test '/^  pull_request:/,/^  workflow_dispatch:/{/^  workflow_dispatch:/!d;}'
 out=$("$CHECK" "$T/r/wf" 2>&1)
@@ -175,27 +195,72 @@ out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Tests off pushes to main fails (#1556)" "$?" 1
 check "Tests off pushes to main says so" "$(grep -c "test.yml: doesn't run on pushes to main" <<<"$out")" 1
 
-# #1525: Tests must run on the release tags Release runs on, every package.
-real test '/^  push:/,/^  pull_request:/{/^    tags: /d;}'
+# #127: every check but a release's is partial, against main. A release's run
+# of every step is Release's own job, so Tests leaves the tags alone (it ran
+# every package on them, #1525).
+real test "/^  push:/,/^  pull_request:/s/^    branches: \[main\]$/    branches: [main]\n    tags: ['v[0-9]+.[0-9]+.[0-9]+']/"
 out=$("$CHECK" "$T/r/wf" 2>&1)
-check "Tests off the release tags fails (#1525)" "$?" 1
-check "Tests off the release tags says so" "$(grep -c "test.yml: doesn't run on a pushed release tag" <<<"$out")" 1
+check "Tests on a pushed tag fails (#127)" "$?" 1
+check "Tests on a pushed tag says so" "$(grep -c 'test.yml: runs on a pushed tag' <<<"$out")" 1
 
-real test "/^  push:/,/^  pull_request:/s/^    tags: .*/    tags: ['v*']/"
-out=$("$CHECK" "$T/r/wf" 2>&1)
-check "Tests on other tags than Release fails (#1525)" "$?" 1
-check "Tests on other tags than Release says so" "$(grep -c "test.yml: doesn't run on a pushed release tag" <<<"$out")" 1
+for w in test lint; do
+  real $w 's/^  TEST_BASE: .*/&\n  TEST_ALL: "1"/'
+  out=$("$CHECK" "$T/r/wf" 2>&1)
+  check "$w.yml asking for every step fails (#127)" "$?" 1
+  check "$w.yml asking for every step says so" "$(grep -c "$w.yml: asks for every step (TEST_ALL or FORCE)" <<<"$out")" 1
 
-real test 's/^  group: .*/  group: ${{ github.workflow }}-${{ github.sha }}/'
-out=$("$CHECK" "$T/r/wf" 2>&1)
-check "Tests grouped by commit fails" "$?" 1
-check "Tests grouped by commit says so" "$(grep -c 'test.yml: groups runs by' <<<"$out")" 1
+  real $w 's/run: make check CHECK_STEPS=\(.*\)$/run: make check FORCE=1 CHECK_STEPS=\1/'
+  out=$("$CHECK" "$T/r/wf" 2>&1)
+  check "$w.yml forcing its part of the check fails (#127)" "$(grep -c "$w.yml: asks for every step (TEST_ALL or FORCE)" <<<"$out")" 1
 
-onpr="\${{ github.event_name == 'pull_request' }}"
-real test "s/^  cancel-in-progress: .*/  cancel-in-progress: $onpr/"
+  # A push to main is compared with the head before it: on a shallow clone
+  # there is no merge base, and without that head it is compared with itself.
+  real $w '0,/^          fetch-depth: 0$/{/^          fetch-depth: 0$/d;}'
+  out=$("$CHECK" "$T/r/wf" 2>&1)
+  check "$w.yml on a shallow clone fails (#127)" "$?" 1
+  check "$w.yml on a shallow clone says so" "$(grep -c "$w.yml: a job clones without fetch-depth: 0" <<<"$out")" 1
+
+  real $w 's/github\.event\.before/github.sha/'
+  out=$("$CHECK" "$T/r/wf" 2>&1)
+  check "$w.yml without main's head before a push fails (#127)" "$?" 1
+  check "$w.yml without main's head before a push says so" "$(grep -c "$w.yml: doesn't compare a push with main's head before it" <<<"$out")" 1
+
+  # Each push to main needs its own run: grouped by ref, GitHub drops a
+  # pending run for a newer push, and its change is then never checked.
+  real $w 's/^  group: .*/  group: ${{ github.workflow }}-${{ github.ref }}/'
+  out=$("$CHECK" "$T/r/wf" 2>&1)
+  check "$w.yml grouped by ref fails (#127)" "$?" 1
+  check "$w.yml grouped by ref says so" "$(grep -c "$w.yml: groups runs by" <<<"$out")" 1
+
+  # Grouped by commit alone, a new push to a pull request replaces no run.
+  real $w 's/^  group: .*/  group: ${{ github.workflow }}-${{ github.sha }}/'
+  out=$("$CHECK" "$T/r/wf" 2>&1)
+  check "$w.yml grouped by commit fails" "$?" 1
+  check "$w.yml grouped by commit says so" "$(grep -c "$w.yml: groups runs by" <<<"$out")" 1
+done
+
+# Tests cancelled a superseded head of main while each run tested every
+# package (#1556); a partial run that is cancelled leaves its change untested.
+real test "s/^  cancel-in-progress: .*/  cancel-in-progress: \${{ github.event_name == 'pull_request' || github.ref == 'refs\/heads\/main' }}/"
 out=$("$CHECK" "$T/r/wf" 2>&1)
-check "Tests keeping a superseded head of main fails" "$?" 1
-check "Tests keeping a superseded head says so" "$(grep -c 'test.yml: cancel-in-progress:' <<<"$out")" 1
+check "Tests cancelling a run on main fails (#127)" "$?" 1
+check "Tests cancelling a run on main says so" "$(grep -c 'test.yml: cancels the run in progress' <<<"$out")" 1
+
+# #66: Tests left out all of ui/, where the Go tests read the fixtures the
+# UI's tests share with them, so a pull request that changed a UI rule and
+# the fixture's report ran no Go test.
+real test '/^      - ui\/src\/model\/testdata\/\*\*$/d'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests without the fixtures under ui/ fails (#66)" "$?" 1
+check "Tests without the fixtures under ui/ says so" "$(grep -c "test.yml: leaves out ui/\*\* without taking ui/src/model/testdata/\*\* back in after it" <<<"$out")" 1
+
+# A later pattern wins: taken back in before the exclusion, they are left out.
+real test "/^      - ui\/src\/model\/testdata\/\*\*$/d; s|^      - '!docs/\*\*'$|      - ui/src/model/testdata/**\n&|"
+check "the edit takes the fixtures in before the exclusion, on pushes and pull requests" \
+  "$(grep -A1 '^      - ui/src/model/testdata/\*\*$' "$T/r/wf/test.yml" | grep -c "^      - '!docs/\*\*'$")" 2
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Tests taking the fixtures in before leaving ui/ out fails (#66)" "$?" 1
+check "Tests taking the fixtures in before leaving ui/ out says so" "$(grep -c "test.yml: leaves out ui/\*\* without taking" <<<"$out")" 1
 
 real ui '/^  cancel-in-progress:/d'
 out=$("$CHECK" "$T/r/wf" 2>&1)
@@ -230,13 +295,14 @@ out=$("$CHECK" "$T/r/wf" 2>&1)
 check "a pull-request job without a name fails" "$?" 1
 check "a pull-request job without a name says so" "$(grep -c 'job test-hack runs on pull requests without a name' <<<"$out")" 1
 
-# relwf PERMS IF [RM]: release.yml whose job grants PERMS, pushes the images
-# and, under IF, dispatches Verify Release, then removes the images under RM
-# (default if: always(), #1636).
+# relwf PERMS IF [RM]: release.yml whose first job runs every step of make
+# check (#127) and whose second, which needs it, grants PERMS, pushes the
+# images and, under IF, dispatches Verify Release, then removes the images
+# under RM (default if: always(), #1636).
 relwf() {
   rm -rf "$T/wf" && mkdir "$T/wf"
-  printf 'name: Release\non:\n  push:\n    tags: [v1]\n\njobs:\n  release:\n    permissions:\n%s\n%s\n    steps:\n      - run: true\n      - name: Push\n        run: docker push x\n      - name: Dispatch\n%s\n        run: gh workflow run verify-release.yml -f tag=x\n      - name: Remove\n%s\n        run: docker rmi -f x\n' \
-    "$1" "$good" "$2" "${3:-        if: always()}" >"$T/wf/release.yml"
+  printf 'name: Release\non:\n  push:\n    tags: [v1]\n\njobs:\n  check:\n%s\n    steps:\n      - name: Every step\n        run: make check FORCE=1\n  release:\n    needs: check\n    permissions:\n%s\n%s\n    steps:\n      - run: true\n      - name: Push\n        run: docker push x\n      - name: Dispatch\n%s\n        run: gh workflow run verify-release.yml -f tag=x\n      - name: Remove\n%s\n        run: docker rmi -f x\n' \
+    "$good" "$1" "$good" "$2" "${3:-        if: always()}" >"$T/wf/release.yml"
 }
 minor="        if: env.PUBLISH == 'true' && endsWith(github.ref_name, '.0')"
 
@@ -244,6 +310,26 @@ relwf "      actions: write
       contents: write" "$minor"
 "$CHECK" "$T/wf" 2>/dev/null
 check "release dispatching for minors passes" "$?" 0
+
+# #127: a release is the one place every step runs, and nothing ships unless
+# they pass.
+check "the repository's Release runs every step first" \
+  "$(grep -c '^        run: make check FORCE=1$' "$REPO/.github/workflows/release.yml")" 1
+relwf "      actions: write" "$minor"
+sed -i 's/run: make check FORCE=1/run: make check/' "$T/wf/release.yml"
+out=$("$CHECK" "$T/wf" 2>&1)
+check "release without a run of every step fails (#127)" "$?" 1
+check "release without a run of every step says so" "$(grep -c 'release.yml: no job runs make check FORCE=1' <<<"$out")" 1
+relwf "      actions: write" "$minor"
+sed -i '/^    needs: check$/d' "$T/wf/release.yml"
+out=$("$CHECK" "$T/wf" 2>&1)
+check "release that publishes without waiting for it fails (#127)" "$?" 1
+check "release that publishes without waiting says so" \
+  "$(grep -c "release.yml: the job that pushes the images doesn't need the job that runs make check FORCE=1 (needs: check)" <<<"$out")" 1
+relwf "      actions: write" "$minor"
+sed -i 's/^    needs: check$/    needs: [other, check]/' "$T/wf/release.yml"
+"$CHECK" "$T/wf" 2>/dev/null
+check "release needing it among others passes" "$?" 0
 
 relwf "      contents: write" "$minor"
 out=$("$CHECK" "$T/wf" 2>&1)
@@ -294,5 +380,36 @@ verwf "        if: failure()"
 out=$("$CHECK" "$T/wf" 2>&1)
 check "verify-release removing the images only on failure fails (#1636)" "$?" 1
 check "verify-release removing the images only on failure says so" "$(grep -c 'verify-release.yml: no step under if: always() removes the images it pulled' <<<"$out")" 1
+
+# #49: once the repository is public anyone's fork opens pull requests, and
+# with RUNS_ON=self-hosted its make targets and tests would run on the owner's
+# devices. A fork's pull request gets the hosted runner whatever RUNS_ON says.
+real ui "s/^    runs-on: .*/    runs-on: \${{ vars.RUNS_ON || 'ubuntu-latest' }}/"
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "a pull request job that a fork could run on a device fails (#49)" "$?" 1
+check "it names the job and the rule (#49)" \
+  "$(grep -c "ui.yml: job check runs on pull requests, so its runs-on must start \${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' ||" <<<"$out")" 1
+for w in lint ui test vulncheck; do
+  check "$w.yml sends a fork's pull request to the hosted runner (#49)" \
+    "$(grep -c "^    runs-on: \${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNS_ON || 'ubuntu-latest' }}$" "$REPO/.github/workflows/$w.yml")" \
+    "$(grep -c '^    runs-on:' "$REPO/.github/workflows/$w.yml")"
+done
+real ui 's/^  pull_request:/  pull_request_target:/'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "a workflow on pull_request_target fails (#49)" "$?" 1
+check "it says why (#49)" "$(grep -c "ui.yml: runs on pull_request_target, which gives a fork's pull request the repository's token" <<<"$out")" 1
+
+# #52: Secrets scans every pull request and push to main, from a full clone.
+real secrets '/^  pull_request:/,/^  workflow_dispatch:/s/^    branches: \[main\]$/    branches: [main]\n    paths:\n      - "**\/*.go"/'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Secrets with paths on pull requests fails (#52)" "$?" 1
+check "it says a commit can reach main unscanned (#52)" "$(grep -c 'secrets.yml: .*reach main unscanned (#52)' <<<"$out")" 1
+real secrets '/fetch-depth: 0/d'
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Secrets on a shallow clone fails (#52)" "$?" 1
+check "it says it scans one commit (#52)" "$(grep -c 'secrets.yml: .*scans one commit, not the history (#52)' <<<"$out")" 1
+real secrets 's/run: make secrets-scan/run: make help/'
+"$CHECK" "$T/r/wf" 2>/dev/null
+check "Secrets without make secrets-scan fails (#52)" "$?" 1
 
 exit $fail

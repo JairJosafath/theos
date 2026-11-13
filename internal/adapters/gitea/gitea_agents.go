@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package gitea
 
 import (
@@ -12,7 +28,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
@@ -172,7 +190,7 @@ func (g *gitea) EnsureAgentAccess(ctx context.Context, repo ports.Repository, us
 	account := map[string]any{
 		"login_name":           user,
 		"source_id":            0,
-		"email":                user + "@agents.theos.factory.io",
+		"email":                model.AgentEmail(user),
 		"password":             password,
 		"must_change_password": false,
 		"restricted":           true,
@@ -325,12 +343,16 @@ type giteaPull struct {
 	Base struct {
 		SHA string `json:"sha"`
 	} `json:"base"`
+	Additions    int `json:"additions"`
+	Deletions    int `json:"deletions"`
+	ChangedFiles int `json:"changed_files"`
 }
 
 func (p giteaPull) pullRequest() ports.PullRequest {
 	out := ports.PullRequest{Number: p.Number, URL: p.HTMLURL, Head: p.Head.Ref, HeadSHA: p.Head.SHA, State: p.State,
-		Merged: p.Merged, Mergeable: p.Mergeable,
-		Behind: p.State == "open" && !p.Merged && p.MergeBase != "" && p.Base.SHA != "" && p.MergeBase != p.Base.SHA}
+		Merged: p.Merged, Mergeable: p.Mergeable, Additions: p.Additions, Deletions: p.Deletions,
+		ChangedFiles: p.ChangedFiles,
+		Behind:       p.State == "open" && !p.Merged && p.MergeBase != "" && p.Base.SHA != "" && p.MergeBase != p.Base.SHA}
 	if p.MergeCommit != nil {
 		out.MergeCommit = *p.MergeCommit
 	}
@@ -416,15 +438,35 @@ func (g *gitea) merge(ctx context.Context, repo ports.Repository, number int, he
 		body["force_merge"] = true
 	}
 	payload, _ := json.Marshal(body)
-	status, data, err := g.do(ctx, http.MethodPost,
-		"/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number)+"/merge", payload)
-	if err != nil {
-		return err
+	// While Gitea checks the pull request again, as it does after a refused
+	// merge, it answers HTTP 405 "Please try again later": try again, for up
+	// to branchSettleTimeout. It answers the same for a conflicted pull
+	// request, which fails once the time is up, with Gitea's message.
+	deadline := time.Now().Add(branchSettleTimeout)
+	var failed error
+	for {
+		status, data, err := g.do(ctx, http.MethodPost,
+			"/api/v1/repos/"+repoPath(repo)+"/pulls/"+strconv.Itoa(number)+"/merge", payload)
+		if err != nil {
+			// A context that ends during a retry keeps Gitea's last answer in
+			// the error, as one that ends during the pause does.
+			if failed != nil && ctx.Err() != nil {
+				return fmt.Errorf("%w (%w)", failed, err)
+			}
+			return err
+		}
+		if status == http.StatusOK {
+			return nil
+		}
+		failed = fmt.Errorf("gitea: merging pull request %d failed (HTTP %d): %s", number, status, apiMessage(data))
+		if status != http.StatusMethodNotAllowed || apiMessage(data) != "Please try again later" ||
+			time.Now().After(deadline) {
+			return failed
+		}
+		if err := pause(ctx); err != nil {
+			return fmt.Errorf("%w (%w)", failed, err)
+		}
 	}
-	if status != http.StatusOK {
-		return fmt.Errorf("gitea: merging pull request %d failed (HTTP %d): %s", number, status, apiMessage(data))
-	}
-	return nil
 }
 
 // UpdatePullRequest merges the base into the pull request's branch, as Gitea's
@@ -475,6 +517,48 @@ func (g *gitea) PullRequestFiles(ctx context.Context, repo ports.Repository, num
 			}
 		}
 		if len(files) < issuePageSize {
+			return out, nil
+		}
+	}
+}
+
+// PullRequestCommits returns a pull request's commits, oldest first, with
+// their authors' emails and parent counts, without their files.
+func (g *gitea) PullRequestCommits(ctx context.Context, repo ports.Repository, number int) ([]ports.PullCommit, error) {
+	var out []ports.PullCommit
+	for page := 1; ; page++ {
+		if page > maxIssuePages {
+			return nil, fmt.Errorf("gitea: pull request %d of %s has %d commits or more", number, repoPath(repo),
+				maxIssuePages*issuePageSize)
+		}
+		status, data, err := g.do(ctx, http.MethodGet, fmt.Sprintf(
+			"/api/v1/repos/%s/pulls/%d/commits?page=%d&limit=%d&verification=false&files=false",
+			repoPath(repo), number, page, issuePageSize), nil)
+		if err != nil {
+			return nil, err
+		}
+		if status == http.StatusNotFound {
+			return nil, fmt.Errorf("gitea: pull request %d of %s: %w", number, repoPath(repo), ports.ErrPullRequestNotFound)
+		}
+		var commits []struct {
+			SHA    string `json:"sha"`
+			Commit struct {
+				Author struct {
+					Email string `json:"email"`
+				} `json:"author"`
+			} `json:"commit"`
+			Parents []struct {
+				SHA string `json:"sha"`
+			} `json:"parents"`
+		}
+		if status != http.StatusOK || json.Unmarshal(data, &commits) != nil {
+			return nil, fmt.Errorf("gitea: listing the commits of pull request %d of %s failed (HTTP %d): %s",
+				number, repoPath(repo), status, apiMessage(data))
+		}
+		for _, c := range commits {
+			out = append(out, ports.PullCommit{SHA: c.SHA, AuthorEmail: c.Commit.Author.Email, Parents: len(c.Parents)})
+		}
+		if len(commits) < issuePageSize {
 			return out, nil
 		}
 	}

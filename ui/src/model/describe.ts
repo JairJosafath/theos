@@ -95,14 +95,24 @@ export function describeTaskPhase(phase: TaskPhase | undefined): PhaseInfo {
       return {
         label: 'Awaiting approval',
         tone: 'waiting',
-        explanation: 'Its spec passed CI and the reviewer; a person approves its pull request.',
+        explanation: 'It passed CI and the factory’s review; a person approves its pull request.',
       }
     case 'Merged':
-      return { label: 'Merged', tone: 'ok', explanation: 'The pull request is merged.' }
+      return {
+        label: 'Merged',
+        tone: 'ok',
+        explanation: 'The pull request is merged; or the agent found the issue needs no change, and it is closed.',
+      }
     case 'Blocked':
       return { label: 'Blocked', tone: 'waiting', explanation: 'Waits for the Standard change it filed to merge.' }
     case 'Failed':
       return { label: 'Failed', tone: 'error', explanation: 'It stopped without merging; its conditions say why.' }
+    case 'Approved':
+      return {
+        label: 'Approved',
+        tone: 'ok',
+        explanation: 'A Benchmark’s run: its change passed its checks and review, and never merges.',
+      }
     default:
       return { label: 'No status yet', tone: 'unknown', explanation: 'The factory has not reported on this Task yet.' }
   }
@@ -199,13 +209,18 @@ const REASON_WORDING: Record<string, string> = {
   BundleChanged: 'Its Bundle changed or is gone since the scaffold; the repository keeps what it was scaffolded from',
   WaitingForScaffold: 'Will be built in when the container is scaffolded',
   Scaffolding: 'Being scaffolded right now',
+  Settling: 'Waiting a few seconds after its creation, so the relationships applied with it are counted',
   ForeignCommits: 'The repository already had commits the factory did not make, so it stopped',
   LayerConflict: 'Two templates wanted to write the same file',
   NothingToAdopt: 'The repository to adopt has no commits',
   IdentityMismatch: 'The adopted repository’s .theos.yaml does not name this container',
   StandardFilesDiffer: 'The adopted repository’s files differ from what its Standard renders',
+  NoMatchingCheck:
+    'Main reports none of the checks this container names, so main isn’t protected and no agent works on the repository',
+  ContainerNotProtected: 'Its container’s main isn’t protected yet, and agents work only on protected repositories',
   UnsupportedCI: 'A template has CI files, but none for the Git host’s CI system',
   UnpinnedRef: 'A template points to a branch instead of a fixed version',
+  TemplatePathNotFound: 'A template’s directory is not in its repository at the pinned version',
   GitError: 'Talking to Git failed',
 }
 
@@ -213,6 +228,7 @@ const REASON_WORDING: Record<string, string> = {
 const WAITING_REASONS = new Set([
   'WaitingForScaffold',
   'Scaffolding',
+  'Settling',
   'NotFound',
   // A Container's Deployed while a deploy is on its way or held (docs/plans/done/deploy.md, decision 6).
   'WaitingForApproval',
@@ -247,9 +263,14 @@ export function describeCondition(condition: Condition): ConditionInfo {
   return { title: wording?.unknown ?? `${splitWords(condition.type)}: not known yet`, tone: 'unknown', detail }
 }
 
-/** "ReferencesResolved" becomes "References resolved". */
+/** "ReferencesResolved" becomes "References resolved"; an acronym keeps its capitals: "CIRunners" is "CI runners". */
 export function splitWords(identifier: string): string {
-  const words = identifier.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+  const words = identifier
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(' ')
+    .map((w) => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase()))
+    .join(' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 

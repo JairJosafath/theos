@@ -26,6 +26,12 @@ A Kubernetes operator in Go 1.26: what `kubebuilder init --plugins go/v4` (kubeb
   `<container>.<project>.theos.local`. The license header,
   `hack/boilerplate.go.txt`, says `Copyright YEAR.`; the generated Go files say
   `Copyright 2026.`
+- **License:** under the copyright line, the header says what the
+  repository's `LICENSE` says (`{{ .License.ID }}`, #83): kubebuilder's Apache
+  grant when it is scaffolded as `Apache-2.0`, `SPDX-License-Identifier: <id>`
+  for another license, and nothing with none. kubebuilder and controller-gen
+  copy `hack/boilerplate.go.txt` into every file they write later, so those
+  say the same.
 - **Compute:** `config/manager/kustomization.yaml` lists `compute.yaml` under
   `patches` when a Compute is chosen. That Compute writes
   `config/manager/compute.yaml`, a strategic-merge patch on the Deployment

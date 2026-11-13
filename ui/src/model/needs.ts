@@ -161,6 +161,18 @@ function containerNeeds(c: Container): Need[] {
       command: `kubectl -n ${ns} annotate container ${c.metadata.name} theos.factory.io/retry=$(date +%s) --overwrite`,
     })
   }
+  // #95: a repository adopted with no Standard is protected by its own checks,
+  // and only a person can name them when main reports none the Container asks for.
+  const protection = findCondition(c.status?.conditions, 'Protected')
+  if (protection?.status === 'False') {
+    items.push({
+      ...base('Container', c, 'Unprotected'),
+      title: 'needs its checks named before agents can work on it',
+      ...why(protection, 'NoMatchingCheck'),
+      place,
+      links: c.status?.repositoryURL ? [{ label: 'Its repository', url: c.status.repositoryURL }] : [],
+    })
+  }
   const updated = findCondition(c.status?.conditions, 'StandardUpdated')
   if (updated?.status === 'False' && STANDARD_UPDATE_HELD.includes(updated.reason ?? '')) {
     const url = c.status?.standard?.update?.pullRequestURL
@@ -304,14 +316,16 @@ function taskNeeds(task: Task, input: NeedsInput): Need[] {
     ]
   }
   if (s?.phase === 'AwaitingApproval' && findCondition(s.conditions, 'NeedsYou')?.status === 'True') {
+    const spec = task.spec.kind === 'Spec'
     return [
       {
         ...base('Task', task, 'AwaitingApproval'),
-        title: 'waits for you to approve its spec',
+        // A spec at its review point, or a change its Crew's approval rules hold (#62).
+        title: spec ? 'waits for you to approve its spec' : 'waits for you to approve its change',
         ...why(findCondition(s.conditions, 'NeedsYou'), 'WaitingForApproval'),
         place,
         links: s.pullRequestURL
-          ? [{ label: `The spec's pull request #${s.pullRequest ?? ''}`, url: s.pullRequestURL }]
+          ? [{ label: `${spec ? 'The spec’s' : 'Its'} pull request #${s.pullRequest ?? ''}`, url: s.pullRequestURL }]
           : [],
       },
     ]

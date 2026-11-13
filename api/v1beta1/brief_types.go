@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package v1beta1
@@ -104,6 +112,18 @@ type BriefSpec struct {
 	// run. Unset, each paused run resumes where it stopped.
 	// +optional
 	PauseRuns bool `json:"pauseRuns,omitempty"`
+
+	// releaseCadence is how often the apps' releases go out
+	// (docs/plans/done/release-cadence.md): the Brief writes it onto every Crew it
+	// made, every reconcile (a Crew it didn't make keeps its own), and under
+	// Day or Week its rounds file every issue and taken suggestion of a
+	// released app into the release in progress, so a day's work is one
+	// release. every: Release keeps a release per round: fixes in the patch
+	// release after the release in progress, other work in the next minor.
+	// Unset is every: Day at 18:00 UTC.
+	// +kubebuilder:default={every: Day}
+	// +optional
+	ReleaseCadence *ReleaseCadence `json:"releaseCadence,omitempty"`
 }
 
 // BriefRelease is where a Container's releases are published: the fields of a
@@ -620,10 +640,37 @@ type BriefApp struct {
 	// +optional
 	LastRelease *BriefAppRelease `json:"lastRelease,omitempty"`
 
+	// nextRelease is the release the Crew's next cut ships, under a cadence
+	// of Day or Week, from its status.nextCut; unset while no release holds
+	// work, or with every: Release.
+	// +optional
+	NextRelease *BriefAppNextRelease `json:"nextRelease,omitempty"`
+
 	// message says in one plain sentence how the app's releases go.
 	// +kubebuilder:validation:MaxLength=1000
 	// +optional
 	Message string `json:"message,omitempty"`
+}
+
+// BriefAppNextRelease is an app's next release under its Crew's cadence.
+type BriefAppNextRelease struct {
+	// tag is the release the cut ships.
+	// +required
+	Tag string `json:"tag"`
+
+	// time is when the cut is.
+	// +required
+	Time metav1.Time `json:"time"`
+
+	// timeZone is the cadence's time zone, to say the time as the person set
+	// it.
+	// +optional
+	TimeZone string `json:"timeZone,omitempty"`
+
+	// merged is how many of its issues a Task merged so far.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Merged int32 `json:"merged,omitempty"`
 }
 
 // BriefAppRelease is an app's latest release, from its Crew's status.lastRelease.

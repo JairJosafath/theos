@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -70,20 +78,21 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 	log := logf.FromContext(ctx)
 	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	facts, titles, err := releaseFacts(gitCtx, provider, repo, tasks)
+	facts, titles, milestones, err := releaseFacts(gitCtx, provider, repo, tasks)
 	facts.Prepare = crew.Spec.PrepareReleases
+	if check := status.FullCheck; check != nil && check.Rerun {
+		facts.FullCheckRerun = &model.FullCheckAt{Tag: check.Tag, Commit: check.Commit}
+	}
+	cutFacts(&facts, crewCadence(crew), status, milestones, r.now())
 	var step model.ReleaseStep
 	var filed ports.Issue
+	var carriedInto string
 	if err == nil {
 		step = model.NextRelease(facts)
-		switch {
-		case step.File:
-			filed, err = filePrepareIssue(gitCtx, provider, repo, step, titles)
-		case crew.Spec.TagReleases:
-			step, err = r.takeReleaseStep(gitCtx, crew, container, status, provider, repo, step,
-				milestoneOf(facts, step.Milestone))
-		}
+		step, filed, carriedInto, err = r.takeStep(gitCtx, crew, container, status, provider, repo, step, facts,
+			titles, milestones)
 	}
+	cadenceStatus(status, facts, step, err == nil)
 	if step.File && err == nil {
 		message := fmt.Sprintf("Filed #%d to prepare %s", filed.Number, step.Tag)
 		log.Info("Filed release preparation", "tag", step.Tag, "issue", filed.Number)
@@ -109,6 +118,13 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 		log.Error(err, "Failed to tag a release", "container", crew.Spec.ContainerRef.Name, "tag", step.Tag)
 		r.setReleased(crew, status, metav1.ConditionFalse, reasonReleaseGitFailure,
 			"Could not tag the next release: "+err.Error())
+	case step.Cut != nil:
+		message := model.CutMessage(step, carriedInto)
+		log.Info("Cut the release", "tag", step.Tag, "retitle", step.Cut.Retitle, "carried", len(step.Cut.Carry),
+			"into", carriedInto, "untagged", step.Cut.Untagged)
+		r.event(crew, corev1.EventTypeNormal, reasonReleaseCut, "CutRelease", message)
+		r.releaseSaid.Store(crew.UID, reasonReleaseCut+"\n"+message)
+		r.setReleased(crew, status, metav1.ConditionTrue, reasonReleaseCut, message)
 	case step.Commit != "":
 		message := model.ReleasedMessage(step)
 		for _, m := range step.Moved {
@@ -130,7 +146,8 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 		last, _ := r.releaseSaid.Load(crew.UID)
 		// A full check that runs is no warning: its start had a Normal Event.
 		if (prev == nil || prev.Reason != step.Reason || prev.Message != step.Held) && last != said &&
-			step.Reason != model.FullCheckRunning && step.Reason != model.ReleasePrepareWaits {
+			step.Reason != model.FullCheckRunning && step.Reason != model.ReleasePrepareWaits &&
+			step.Reason != model.ReleaseWaitingForCut {
 			log.Info("Left a release to a person", "tag", step.Tag, "reason", step.Reason)
 			r.event(crew, corev1.EventTypeWarning, step.Reason, "TagRelease", step.Held)
 		}
@@ -150,6 +167,32 @@ func (r *CrewReconciler) tagRelease(ctx context.Context, crew *c4v1beta1.Crew, c
 		}
 	}
 	return nil, preparing
+}
+
+// takeStep does what step says: it files the prepare issue, cuts the release
+// (cutRelease), or, with tagReleases, tags it (takeReleaseStep). It returns
+// the step as it went, the prepare issue filed and the release a cut
+// carried open issues into.
+func (r *CrewReconciler) takeStep(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
+	status *c4v1beta1.CrewStatus, provider interface {
+		ports.GitHost
+		ports.Issues
+		ports.CI
+	}, repo ports.Repository, step model.ReleaseStep, facts model.ReleaseFacts, titles map[int]string,
+	milestones []ports.Milestone) (model.ReleaseStep, ports.Issue, string, error) {
+	switch {
+	case step.File:
+		filed, err := filePrepareIssue(ctx, provider, repo, step, titles)
+		return step, filed, "", err
+	case step.Cut != nil:
+		into, err := cutRelease(ctx, crew, provider, repo, step, milestones)
+		return step, ports.Issue{}, into, err
+	case crew.Spec.TagReleases:
+		step, err := r.takeReleaseStep(ctx, crew, container, status, provider, repo, step,
+			milestoneOf(facts, step.Milestone))
+		return step, ports.Issue{}, "", err
+	}
+	return step, ports.Issue{}, "", nil
 }
 
 // takeReleaseStep tags release step's commit when step says so, after its full
@@ -177,6 +220,16 @@ func (r *CrewReconciler) takeReleaseStep(ctx context.Context, crew *c4v1beta1.Cr
 	if step.Commit == "" {
 		return step, nil
 	}
+	// The full check's issues a person's re-run passed over: the comment goes
+	// first, so a failed close is commented again.
+	for _, n := range step.Closes {
+		if err := provider.CommentIssue(ctx, repo, n, model.FullCheckRerunPassed(step.Tag, step.Commit)); err != nil {
+			return step, fmt.Errorf("commenting on #%d: %w", n, err)
+		}
+		if err := provider.CloseIssue(ctx, repo, n); err != nil {
+			return step, fmt.Errorf("closing #%d: %w", n, err)
+		}
+	}
 	if err := endFullCheck(ctx, status, provider, repo, step.Tag); err != nil {
 		return step, err
 	}
@@ -199,7 +252,8 @@ func endFullCheck(ctx context.Context, status *c4v1beta1.CrewStatus, provider po
 
 // settleMilestones moves the later releases' issues the tag carries into its
 // milestone, each with a comment, closes each later milestone left empty right
-// after its last move, and last the tagged release's own. The tag is made
+// after its last move, then the earlier releases with no issue at all (#2025),
+// and last the tagged release's own. The tag is made
 // first, so a poll that fails half way finds it and moves the rest. A comment
 // goes before its move, so a failed one is made again; a failure between a
 // release's last move and closing it leaves that release empty, to a person.
@@ -222,6 +276,11 @@ func settleMilestones(ctx context.Context, provider ports.Issues, repo ports.Rep
 			if err := provider.CloseMilestone(ctx, repo, e.ID); err != nil {
 				return fmt.Errorf("closing %s: %w", e.Title, err)
 			}
+		}
+	}
+	for _, e := range step.Skipped {
+		if err := provider.CloseMilestone(ctx, repo, e.ID); err != nil {
+			return fmt.Errorf("closing %s: %w", e.Title, err)
 		}
 	}
 	return provider.CloseMilestone(ctx, repo, step.Milestone)
@@ -265,20 +324,24 @@ const maxPreviousTags = 5
 
 // releaseFacts reads the open releases, their issues and tags, the newest
 // tagged closed release before them, and the Tasks' merges, and the titles of
-// the releases' issues.
+// the releases' issues, and returns the repository's milestones, open and
+// closed. Under a cadence, a release marked cut is Cut, and an issue
+// labelled release/now or a fix is among ReleaseNow or Fixes
+// (docs/plans/done/release-cadence.md).
 func releaseFacts(ctx context.Context, provider interface {
 	ports.GitHost
 	ports.Issues
 }, repo ports.Repository,
-	tasks []c4v1beta1.Task) (model.ReleaseFacts, map[int]string, error) {
+	tasks []c4v1beta1.Task) (model.ReleaseFacts, map[int]string, []ports.Milestone, error) {
 	var facts model.ReleaseFacts
 	titles := map[int]string{}
 	milestones, err := provider.ListAllMilestones(ctx, repo)
 	if err != nil {
-		return facts, nil, fmt.Errorf("milestones: %w", err)
+		return facts, nil, nil, fmt.Errorf("milestones: %w", err)
 	}
 	var closed []model.Release
 	for _, m := range milestones {
+		facts.Titles = append(facts.Titles, m.Title)
 		if !model.IsReleaseTitle(m.Title) || m.Due.IsZero() {
 			continue
 		}
@@ -288,10 +351,17 @@ func releaseFacts(ctx context.Context, provider interface {
 		}
 		issues, err := provider.MilestoneIssues(ctx, repo, m.ID)
 		if err != nil {
-			return facts, nil, fmt.Errorf("issues of milestone %s: %w", m.Title, err)
+			return facts, nil, nil, fmt.Errorf("issues of milestone %s: %w", m.Title, err)
 		}
-		release := model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID}
+		_, cut := model.CutMarkTime(m.Description)
+		release := model.ReleaseMilestone{Release: model.Release{Title: m.Title, Due: m.Due}, ID: m.ID, Cut: cut}
 		for _, i := range issues {
+			if model.IsReleaseNow(i.Labels) {
+				facts.ReleaseNow = append(facts.ReleaseNow, i.Number)
+			}
+			if model.IsFix(i.Labels) {
+				facts.Fixes = append(facts.Fixes, i.Number)
+			}
 			if i.State == stateClosed {
 				release.Closed = append(release.Closed, i.Number)
 			} else {
@@ -308,7 +378,7 @@ func releaseFacts(ctx context.Context, provider interface {
 		facts.Milestones = append(facts.Milestones, release)
 		commit, err := provider.GetTag(ctx, repo, m.Title)
 		if err != nil {
-			return facts, nil, fmt.Errorf("tag %s: %w", m.Title, err)
+			return facts, nil, nil, fmt.Errorf("tag %s: %w", m.Title, err)
 		}
 		if commit != "" {
 			if facts.Tags == nil {
@@ -320,7 +390,7 @@ func releaseFacts(ctx context.Context, provider interface {
 	for _, r := range model.PreviousReleases(closed, facts.Milestones, maxPreviousTags) {
 		commit, err := provider.GetTag(ctx, repo, r.Title)
 		if err != nil {
-			return facts, nil, fmt.Errorf("tag %s: %w", r.Title, err)
+			return facts, nil, nil, fmt.Errorf("tag %s: %w", r.Title, err)
 		}
 		if commit != "" {
 			facts.Previous = &model.ReleasedTag{Release: r, Commit: commit}
@@ -335,8 +405,7 @@ func releaseFacts(ctx context.Context, provider interface {
 		case t.Spec.Issue == 0:
 		case !isFinal(t.Status.Phase):
 			facts.Active = append(facts.Active, int(t.Spec.Issue))
-		case t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(&t):
-			// A spec's merge leaves its issue open; the build's merge is the issue's.
+		case mergedItsIssue(&t):
 			merged := model.MergedTask{Name: t.Name, Issue: int(t.Spec.Issue), Commit: t.Status.MergeCommit}
 			if t.Status.CompletedAt != nil {
 				merged.At = t.Status.CompletedAt.Time
@@ -348,7 +417,16 @@ func releaseFacts(ctx context.Context, provider interface {
 			facts.Merged = append(facts.Merged, merged)
 		}
 	}
-	return facts, titles, nil
+	return facts, titles, milestones, nil
+}
+
+// mergedItsIssue reports whether the Task's merge is its issue's, for a
+// release. A spec's merge leaves its issue open; the build's merge is the
+// issue's. A Task that found nothing to do merged nothing: its issue closed
+// with no change, and no release waits for a merge commit there never was
+// (#72).
+func mergedItsIssue(t *c4v1beta1.Task) bool {
+	return t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(t) && !endedWithNoChange(t)
 }
 
 func (r *CrewReconciler) setReleased(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
@@ -363,7 +441,8 @@ func (r *CrewReconciler) event(crew *c4v1beta1.Crew, eventType, reason, action, 
 }
 
 // rerunRelease answers the Crew's theos.factory.io/rerun-release annotation, once
-// per value: while its last release's run Failed, it re-runs the failed jobs of
+// per value: while a failed full check holds the next release, it re-runs
+// that (rerunHeldFullCheck); while its last release's run Failed, it re-runs the failed jobs of
 // that release's failed runs, and the watch follows their new attempts;
 // otherwise it says with a Normal Event that there is nothing to re-run. It
 // runs with spec.tagReleases, as the watch does. A
@@ -381,13 +460,21 @@ func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1beta1.Crew,
 	if said, _ := r.rerunSaid.Load(crew.UID); value != "" && said == value {
 		status.RerunRelease = value
 	}
-	step := model.ReleaseRerun(value, status.RerunRelease, run)
+	fullCheck := ""
+	if status.FullCheck != nil {
+		fullCheck = status.FullCheck.Run
+	}
+	step := model.ReleaseRerun(value, status.RerunRelease, run, fullCheck)
 	if step == model.RerunNone {
 		return
 	}
 	status.RerunRelease = value
 	r.rerunSaid.Store(crew.UID, value)
 	log := logf.FromContext(ctx)
+	if step == model.RerunFullCheck {
+		r.rerunHeldFullCheck(ctx, crew, status.FullCheck, provider, repo)
+		return
+	}
 	if step == model.RerunNothingFailed {
 		note := "No release run failed, so there is nothing to re-run"
 		if release != nil {
@@ -448,6 +535,43 @@ func (r *CrewReconciler) rerunRelease(ctx context.Context, crew *c4v1beta1.Crew,
 	log.Info("Re-ran the release runs", "tag", release.Tag, "workflows", rerun)
 	r.event(crew, corev1.EventTypeNormal, reasonReleaseRerun, "RerunRelease",
 		fmt.Sprintf("Re-ran the failed runs of %s: %s", release.Tag, strings.Join(rerun, ", ")))
+}
+
+// rerunHeldFullCheck answers a rerun-release value while a failed full check
+// holds the next release (#2028): it re-runs the check's failed runs and marks
+// the check Rerun, so its issue holds the release no more until it fails
+// again, and is closed if it passes. A re-run the Git host refuses is a
+// Warning Event, and a new value tries again.
+func (r *CrewReconciler) rerunHeldFullCheck(ctx context.Context, crew *c4v1beta1.Crew,
+	check *c4v1beta1.CrewFullCheck, provider ports.CI, repo ports.Repository) {
+	log := logf.FromContext(ctx)
+	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	runs, err := fullCheckRuns(gitCtx, provider, repo, check.Tag, check.Commit)
+	var rerun []string
+	if err == nil {
+		rerun, err = rerunFullCheck(gitCtx, provider, repo, runs)
+	}
+	if len(rerun) > 0 {
+		check.Rerun, check.Run = true, model.RunRunning
+	}
+	if err != nil {
+		log.Error(err, "Failed to re-run the full check", "tag", check.Tag, "rerun", rerun)
+		r.event(crew, corev1.EventTypeWarning, reasonReleaseRerunFailed, "RerunRelease",
+			fmt.Sprintf("Could not re-run the failed full check of %s at %s: %v; set a new %s value to try again",
+				check.Tag, check.Commit, err, c4v1beta1.AnnotationRerunRelease))
+		return
+	}
+	if len(rerun) == 0 {
+		log.Info("Skipped the full check re-run", "tag", check.Tag)
+		r.event(crew, corev1.EventTypeNormal, reasonReleaseNothingRerun, "RerunRelease",
+			fmt.Sprintf("No run of the full check of %s failed any more, so there is nothing to re-run", check.Tag))
+		return
+	}
+	log.Info("Re-ran the full check", "tag", check.Tag, "commit", check.Commit, "workflows", rerun)
+	r.event(crew, corev1.EventTypeNormal, reasonReleaseRerun, "RerunRelease",
+		fmt.Sprintf("Re-ran the failed full check of %s at %s: %s; its issue holds the release no more unless "+
+			"it fails again", check.Tag, check.Commit, strings.Join(rerun, ", ")))
 }
 
 // watchReleaseRun reads how the CI workflow runs on the Crew's last release

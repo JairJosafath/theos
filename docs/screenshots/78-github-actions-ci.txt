@@ -1,0 +1,92 @@
+# #78: CI on GitHub Actions, the table's githubActions row, and the Standards' workflows for it. 2026-11-10, on 38c22006 (main at 9da688dd plus the step).
+# 1. The CI contract on the fake GitHub (the two JobRunners subtests are in Cannot: GitHub's hosted runners take the jobs) and what GitHub does its own way:
+#    go test ./internal/adapters/github -v -run 'TestCIContract|TestActionsOnGitHub'
+--- PASS: TestCIContract (0.08s)
+    --- PASS: TestCIContract/has_no_runs_of_a_repository_with_no_workflow (0.04s)
+    --- PASS: TestCIContract/says_how_many_runners_are_online,_or_that_it_doesn't_know (0.00s)
+    --- PASS: TestCIContract/has_no_log_of_a_job_that_sent_none (0.03s)
+    --- SKIP: TestCIContract/lists_the_jobs_that_wait_for_a_runner_of_their_labels (0.00s)
+    --- SKIP: TestCIContract/registers_a_runner_for_one_job,_whose_files_hold_its_own_credential_alone (0.00s)
+--- PASS: TestActionsOnGitHub (0.17s)
+    --- PASS: TestActionsOnGitHub/the_runs_of_a_commit_and_of_a_tag,_newest_first,_each_with_its_workflow_and_ref (0.09s)
+    --- PASS: TestActionsOnGitHub/a_run's_jobs,_and_its_failed_ones_run_again_as_a_new_attempt (0.00s)
+    --- PASS: TestActionsOnGitHub/the_log_of_the_job_a_check_links_to (0.05s)
+ok  	github.com/JairJosafath/theos/internal/adapters/github	0.265s
+# 2. The row: go test ./internal/model -v -run 'TestHostCI|TestGitHubActionsRow|TestCINames|TestCIForAdopted'
+--- PASS: TestHostCI (0.00s)
+    --- PASS: TestHostCI/gitea (0.00s)
+    --- PASS: TestHostCI/github (0.00s)
+    --- PASS: TestHostCI/gitlab (0.00s)
+    --- PASS: TestHostCI/#00 (0.00s)
+--- PASS: TestCINames (0.00s)
+--- PASS: TestGitHubActionsRow (0.00s)
+    --- PASS: TestGitHubActionsRow/the_check_job_passed (0.00s)
+    --- PASS: TestGitHubActionsRow/the_check_job_and_the_full_one_passed (0.00s)
+    --- PASS: TestGitHubActionsRow/the_check_job_failed (0.00s)
+    --- PASS: TestGitHubActionsRow/only_another_job_passed (0.00s)
+    --- PASS: TestGitHubActionsRow/nothing_reported (0.00s)
+--- PASS: TestCIForAdopted (0.00s)
+ok  	github.com/JairJosafath/theos/internal/model	0.013s
+# 3. Every Standard for both CI systems and both choices of checks:
+#    go test ./internal/scaffold -v -run 'TestStandardsRenderForEveryCISystem|TestTemplatesRenderTheirCIFilesForGiteaActions|TestTemplatesRefuseACISystemTheyDontSupport|TestStandardsRenderEveryChangeAsBefore'
+--- PASS: TestStandardsRenderEveryChangeAsBefore (0.02s)
+--- PASS: TestTemplatesRenderTheirCIFilesForGiteaActions (0.47s)
+--- PASS: TestTemplatesRefuseACISystemTheyDontSupport (0.07s)
+--- PASS: TestStandardsRenderForEveryCISystem (0.09s)
+    --- PASS: TestStandardsRenderForEveryCISystem/aws-standard_on_giteaActions_with_EveryChange (0.01s)
+    --- PASS: TestStandardsRenderForEveryCISystem/aws-standard_on_giteaActions_with_BeforeRelease (0.01s)
+    --- PASS: TestStandardsRenderForEveryCISystem/aws-standard_on_githubActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/aws-standard_on_githubActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/go-operator-standard_on_giteaActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/go-operator-standard_on_giteaActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/go-operator-standard_on_githubActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/go-operator-standard_on_githubActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/go-standard_on_giteaActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/go-standard_on_giteaActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/go-standard_on_githubActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/go-standard_on_githubActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/hello-standard_on_giteaActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/hello-standard_on_giteaActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/hello-standard_on_githubActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/hello-standard_on_githubActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/python-standard_on_giteaActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/python-standard_on_giteaActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/python-standard_on_githubActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/python-standard_on_githubActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/ts-standard_on_giteaActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/ts-standard_on_giteaActions_with_BeforeRelease (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/ts-standard_on_githubActions_with_EveryChange (0.00s)
+    --- PASS: TestStandardsRenderForEveryCISystem/ts-standard_on_githubActions_with_BeforeRelease (0.00s)
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.664s
+# 4. On Gitea Actions the Standards render what main's templates render: go-standard, python-standard, ts-standard,
+#    go-operator-standard and hello-standard, each with EveryChange and BeforeRelease, rendered from origin/main's
+#    templates and from the branch's with hack/render, then: diff -r <main's> <the branch's>
+IDENTICAL on Gitea Actions (10 repositories, no difference)
+# 5. A Go CLI rendered for GitHub Actions (hack/render -ci githubActions Framework=go-cli Standard=go-standard) passes its own make check:
+golangci-lint fmt --diff
+go vet ./...
+golangci-lint run
+0 issues.
+go test -race -count=1 ./...
+ok  	theos.local/webshop/sample-app	1.012s
+?   	theos.local/webshop/sample-app/internal	[no test files]
+exit 0
+# 6. FORCE=1 make check (nothing cached)
+0 issues.
+Validating 69 files
+All valid
+All 29 invalid files rejected
+test-hack: all 49 shell tests passed
+ Test Files  69 passed (69)
+      Tests  995 passed (995)
+make check: passed on tree 457eb1afc968cff0ab4a8e97331f80b57e117cf9; recorded
+ok  	github.com/JairJosafath/theos/internal/adapters/github	11.452s
+ok  	github.com/JairJosafath/theos/internal/model	0.489s
+ok  	github.com/JairJosafath/theos/internal/ports	0.054s
+ok  	github.com/JairJosafath/theos/internal/ports/fake	0.009s
+ok  	github.com/JairJosafath/theos/internal/scaffold	7.695s
+ok  	github.com/JairJosafath/theos/internal/controller	516.450s
+ok  	github.com/JairJosafath/theos/internal/controller	836.725s
+packages that passed: 99
+packages that failed: 0
+exit 0

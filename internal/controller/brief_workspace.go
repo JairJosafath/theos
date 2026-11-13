@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -292,6 +300,7 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1beta1.
 		Tended:              modelTended(status.Tended),
 		Tending:             roundRuns && tending(status),
 		SpecParallel:        brief.Spec.Parallel,
+		Cadence:             briefModelCadence(brief),
 		PromptParallel:      status.Parallel,
 		PromptParallelRound: status.ParallelRound,
 	}
@@ -310,6 +319,9 @@ func (r *BriefReconciler) gatherWorkspace(ctx context.Context, brief *c4v1beta1.
 		return ws, err
 	}
 	if ws.Bundles, err = installedBundles(ctx, r.Client, brief.Namespace); err != nil {
+		return ws, err
+	}
+	if ws.Environments, err = projectEnvironments(ctx, r.Client, brief.Namespace); err != nil {
 		return ws, err
 	}
 	ws.Containers, ws.Suggestions, ws.Failed, err = r.containerIssues(ctx, brief)

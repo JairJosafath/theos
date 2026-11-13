@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -70,35 +86,35 @@ func TestCheckAnswers(t *testing.T) {
 		want    []string // substrings, one per refusal
 	}{
 		{"take and skip", []SuggestionAnswer{
-			{"todo", 5, AnswerTake, "The prompt takes input safety.", false},
-			{"todo", 6, AnswerSkip, "The prompt skips the rest.", false}}, nil},
+			{"todo", 5, AnswerTake, "The prompt takes input safety.", false, false},
+			{"todo", 6, AnswerSkip, "The prompt skips the rest.", false, false}}, nil},
 		{"none", nil, nil},
-		{"not waiting", []SuggestionAnswer{{"todo", 7, AnswerSkip, "why", false}}, []string{"todo#7, which is not a waiting"}},
-		{"another Container's number", []SuggestionAnswer{{"web", 5, AnswerSkip, "why", false}},
+		{"not waiting", []SuggestionAnswer{{"todo", 7, AnswerSkip, "why", false, false}}, []string{"todo#7, which is not a waiting"}},
+		{"another Container's number", []SuggestionAnswer{{"web", 5, AnswerSkip, "why", false, false}},
 			[]string{"web#5, which is not a waiting suggestion; answer only those model/suggestions.yaml lists " +
 				"(#5 waits in Container todo: a suggestion is its Container and number)"}},
-		{"a number that waits nowhere names no Container", []SuggestionAnswer{{"web", 7, AnswerSkip, "why", false}},
+		{"a number that waits nowhere names no Container", []SuggestionAnswer{{"web", 7, AnswerSkip, "why", false, false}},
 			[]string{"lists"}},
 		{"too many", manyAnswers(MaxSuggestionAnswers + 1), []string{"answers 101 suggestions; answer at most 100"}},
-		{"twice", []SuggestionAnswer{{"todo", 5, AnswerSkip, "why", false}, {"todo", 5, AnswerTake, "why", false}},
+		{"twice", []SuggestionAnswer{{"todo", 5, AnswerSkip, "why", false, false}, {"todo", 5, AnswerTake, "why", false, false}},
 			[]string{"twice"}},
-		{"no criteria", []SuggestionAnswer{{"todo", 6, AnswerTake, "why", false}}, []string{"no acceptance criteria"}},
-		{"a fix taken", []SuggestionAnswer{{"todo", 5, AnswerTake, "It adds a test.", true}}, nil},
-		{"a fix skipped", []SuggestionAnswer{{"todo", 6, AnswerSkip, "The prompt skips it.", true}},
+		{"no criteria", []SuggestionAnswer{{"todo", 6, AnswerTake, "why", false, false}}, []string{"no acceptance criteria"}},
+		{"a fix taken", []SuggestionAnswer{{"todo", 5, AnswerTake, "It adds a test.", true, false}}, nil},
+		{"a fix skipped", []SuggestionAnswer{{"todo", 6, AnswerSkip, "The prompt skips it.", true, false}},
 			[]string{"skips todo#6 as a fix"}},
-		{"unknown answer", []SuggestionAnswer{{"todo", 5, "maybe", "why", false}}, []string{`"maybe"`}},
-		{"no why", []SuggestionAnswer{{"todo", 5, AnswerTake, " ", false}}, []string{"no why"}},
-		{"long why", []SuggestionAnswer{{"todo", 5, AnswerTake, strings.Repeat("a", MaxAnswerWhy+1), false}},
+		{"unknown answer", []SuggestionAnswer{{"todo", 5, "maybe", "why", false, false}}, []string{`"maybe"`}},
+		{"no why", []SuggestionAnswer{{"todo", 5, AnswerTake, " ", false, false}}, []string{"no why"}},
+		{"long why", []SuggestionAnswer{{"todo", 5, AnswerTake, strings.Repeat("a", MaxAnswerWhy+1), false, false}},
 			[]string{"keep it under"}},
 		{"missing one that doesn't wait", []SuggestionAnswer{
-			{"todo", 7, AnswerMissing, "The prompt names todo #7.", false}}, nil},
-		{"missing one that waits", []SuggestionAnswer{{"todo", 5, AnswerMissing, "The prompt names it.", false}},
+			{"todo", 7, AnswerMissing, "The prompt names todo #7.", false, false}}, nil},
+		{"missing one that waits", []SuggestionAnswer{{"todo", 5, AnswerMissing, "The prompt names it.", false, false}},
 			[]string{"answers todo#5 missing, but it waits for an answer: take or skip it"}},
-		{"missing with no why", []SuggestionAnswer{{"todo", 7, AnswerMissing, "", false}}, []string{"no why"}},
-		{"missing as a fix", []SuggestionAnswer{{"todo", 7, AnswerMissing, "The prompt names it.", true}},
+		{"missing with no why", []SuggestionAnswer{{"todo", 7, AnswerMissing, "", false, false}}, []string{"no why"}},
+		{"missing as a fix", []SuggestionAnswer{{"todo", 7, AnswerMissing, "The prompt names it.", true, false}},
 			[]string{"answers todo#7 missing as a fix"}},
-		{"missing twice", []SuggestionAnswer{{"todo", 7, AnswerMissing, "why", false},
-			{"todo", 7, AnswerMissing, "why", false}}, []string{"twice"}},
+		{"missing twice", []SuggestionAnswer{{"todo", 7, AnswerMissing, "why", false, false},
+			{"todo", 7, AnswerMissing, "why", false, false}}, []string{"twice"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -119,21 +135,21 @@ func TestCheckAnswers(t *testing.T) {
 func manyAnswers(n int) []SuggestionAnswer {
 	out := make([]SuggestionAnswer, n)
 	for i := range out {
-		out[i] = SuggestionAnswer{"todo", 5, AnswerSkip, "why", false}
+		out[i] = SuggestionAnswer{"todo", 5, AnswerSkip, "why", false, false}
 	}
 	return out
 }
 
 func TestSuggestionComment(t *testing.T) {
 	prompts := []string{"Take the reviewer's suggestions about input safety,\nskip the rest."}
-	take := SuggestionComment(SuggestionAnswer{"todo", 5, AnswerTake, "The prompt takes input safety.", false}, "todo", 2, prompts)
+	take := SuggestionComment(SuggestionAnswer{"todo", 5, AnswerTake, "The prompt takes input safety.", false, false}, "todo", 2, prompts)
 	for _, want := range []string{"Taken for Brief `todo` in round 2", LabelReady, "The planner: The prompt takes input safety.",
 		"> Take the reviewer's suggestions about input safety, skip the rest."} {
 		if !strings.Contains(take, want) {
 			t.Errorf("take comment %q lacks %q", take, want)
 		}
 	}
-	skip := SuggestionComment(SuggestionAnswer{"todo", 6, AnswerSkip, "Skipped: the rest.", false}, "todo", 2, prompts)
+	skip := SuggestionComment(SuggestionAnswer{"todo", 6, AnswerSkip, "Skipped: the rest.", false, false}, "todo", 2, prompts)
 	if !strings.HasPrefix(skip, "Closed for Brief `todo` in round 2: not taken.") || strings.Contains(skip, LabelReady) {
 		t.Errorf("skip comment = %q", skip)
 	}

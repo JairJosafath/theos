@@ -86,6 +86,10 @@ spec:
           # through the model proxy of config/model-proxy (namePrefix
           # theos-), which adds it (docs/plans/done/model-proxy.md).
           - --model-proxy-url=http://theos-model-proxy.theos-system.svc:8080
+          # A local TestEnvironment's lease pods copy theos-env in from the
+          # agent image make agent-image-base loads into Kind
+          # (docs/plans/done/test-environments.md).
+          - --test-environment-tools-image=theos/agent-base:dev
           # The UI of config/ui reads the agent sandboxes' pods in each project
           # namespace; nowhere else but the factory's own (#1080).
           - --ui-service-account=theos-ui/theos-ui
@@ -94,6 +98,12 @@ spec:
           # patches its CA into the CRDs (docs/plans/done/api-versions.md).
           - --webhook-service=theos-webhook-service
           - --webhook-cert-secret=theos-webhook-cert
+          # The receiver of Gitea's deliveries, and where each GitProvider's
+          # hook delivers: config/default's Service (namePrefix theos-), which
+          # config/gitea's Gitea is allowed to reach (docs/plans/done/git-events.md,
+          # decision 10).
+          - --git-events-bind-address=:8082
+          - --git-events-url=http://theos-git-events.theos-system.svc:8082
         env:
           - name: POD_NAMESPACE
             valueFrom:
@@ -107,6 +117,9 @@ spec:
           protocol: TCP
         - containerPort: 9443
           name: webhook-server
+          protocol: TCP
+        - containerPort: 8082
+          name: git-events
           protocol: TCP
         securityContext:
           readOnlyRootFilesystem: true

@@ -1,0 +1,68 @@
+A change to go.mod tests no package (#127, docs/plans/done/go-mod-tests-nothing.md).
+2026-11-13, on this repository, at the commit that makes the change.
+
+== Before: the Tests run of pull request #138, whose last commit moved the toolchain line
+   (https://github.com/JairJosafath/theos/actions/runs/43351385215)
+make check: passed. 17 files changed since origin/main (3a0494ace027); of the steps asked for (CHECK_STEPS), the steps that change selects:
+  manifests generate  ran      39s; cmd/theos-session/main.go changed
+  fmt                 ran      1s; every package: go.mod changed
+  vet                 ran      3m10s; every package: go.mod changed
+  test                ran      15m26s; every package (42): go.mod changed, which every package is built from
+
+== The same pull request one commit earlier, go.mod unchanged: gta's selection, which this change leaves as it is
+   (https://github.com/JairJosafath/theos/actions/runs/43347838979)
+ok  	github.com/JairJosafath/theos/internal/controller	516.733s	coverage: 66.5% of statements
+ok  	github.com/JairJosafath/theos/internal/controller	826.921s	coverage: 71.6% of statements
+make check: passed. 11 files changed since origin/main (3a0494ace027); of the steps asked for (CHECK_STEPS), the steps that change selects:
+  manifests generate  ran      26s; cmd/theos-session/main.go changed
+  fmt                 ran      1s; the 29 packages gta selects; changed: cmd/theos-session internal/model
+  vet                 ran      2m24s; the 29 packages gta selects; changed: cmd/theos-session internal/model
+  test                ran      14m58s; 29 of 42 packages, those the change since origin/main (3a0494ace027) affects; changed: cmd/theos-session internal/model; read by their tests: *.go
+
+== After: the toolchain line of go.mod alone (go1.26.11 -> go1.26.10)
+$ git diff --stat
+ go.mod | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ TEST_BASE=HEAD hack/test-packages.sh
+make test: testing no package: no Go package changed since HEAD (78f3b8596f91)
+$ TEST_BASE=HEAD CHECK_STEPS="generate fmt vet test" hack/check.sh   # the Tests job's part; make only logged (CHECK_MAKE=true)
+make check: passed. 1 file changed since HEAD (78f3b8596f91); of the steps asked for (CHECK_STEPS), the steps that change selects:
+  manifests generate  ran      0s; go.mod changed
+  fmt                 skipped  no changed file lies in a Go package
+  vet                 skipped  no changed file lies in a Go package
+  test                skipped  no Go package changed since HEAD (78f3b8596f91)
+
+== After: a module's version alone (go get github.com/moby/patternmatcher@v0.6.0)
+$ git diff --stat
+ go.mod | 2 +-
+ go.sum | 2 ++
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+$ TEST_BASE=HEAD hack/test-packages.sh
+make test: testing no package: no Go package changed since HEAD (78f3b8596f91)
+
+== After: the same bump with a Go file (internal/buildinfo/buildinfo.go): gta selects for the Go file
+$ TEST_BASE=HEAD hack/test-packages.sh
+make test: testing 5 of 42 packages, those the change since HEAD (78f3b8596f91) affects; changed: internal/buildinfo; read by their tests: *.go
+github.com/JairJosafath/theos/cmd
+github.com/JairJosafath/theos/cmd/model-proxy
+github.com/JairJosafath/theos/cmd/theos-chat
+github.com/JairJosafath/theos/internal/buildinfo
+github.com/JairJosafath/theos/internal/ports
+
+== The shell tests of the selection
+$ hack/test-packages_test.sh | grep "#127 go"
+ok   #127 go.mod: no package, only a release tests every one
+ok   #127 go.mod: says no package
+ok   #127 go.sum: no package, only a release tests every one
+ok   #127 go.sum: says no package
+ok   #127 go.work: no package, only a release tests every one
+ok   #127 go.work: says no package
+ok   #127 go.mod and a Go file: what gta selects for the Go file
+67 ok, 0 FAIL
+$ hack/check_test.sh | grep "#127 go"
+ok   #127 go.mod: generate, the YAML and the shell tests, and no package
+ok   #127 go.mod: make is asked for no package
+ok   #127 go.mod: says why
+ok   #127 go.mod and a Go file: the packages gta selects for the Go file
+ok   #127 go.mod and a Go file: vet on that package, not on every one
+116 ok, 0 FAIL

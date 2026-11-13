@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package gitea
 
 import (
@@ -10,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/adapters/git"
 	"github.com/JairJosafath/theos/internal/ports"
@@ -128,9 +145,52 @@ func (g *gitea) History(ctx context.Context, repo ports.Repository, limit int) (
 	return git.History(ctx, repo.CloneURL, &g.creds, limit)
 }
 
-// PushInitialCommit pushes files as the single commit on the default branch.
+// PushInitialCommit pushes files as the single commit on the default branch,
+// and returns once Gitea's API sees the branch: just after the push its branch
+// API still takes the repository for empty (HTTP 404 "Git Repository is
+// empty", or HTTP 500), so a caller's next HasBranch or CreateBranch would fail.
 func (g *gitea) PushInitialCommit(ctx context.Context, repo ports.Repository, files scaffold.Tree, message string, author ports.Signature) (string, error) {
-	return git.PushInitialCommit(ctx, repo.CloneURL, &g.creds, files, message, author)
+	commit, err := git.PushInitialCommit(ctx, repo.CloneURL, &g.creds, files, message, author)
+	if err != nil {
+		return "", err
+	}
+	return commit, g.awaitBranch(ctx, repo, ports.DefaultBranch)
+}
+
+// awaitBranch polls branch's API until Gitea serves it, for up to
+// branchSettleTimeout.
+func (g *gitea) awaitBranch(ctx context.Context, repo ports.Repository, branch string) error {
+	deadline := time.Now().Add(branchSettleTimeout)
+	for {
+		status, data, err := g.do(ctx, http.MethodGet, branchPath(repo, branch), nil)
+		if err != nil {
+			return err
+		}
+		if status == http.StatusOK {
+			return nil
+		}
+		if status != http.StatusNotFound && status != http.StatusInternalServerError || time.Now().After(deadline) {
+			return fmt.Errorf("gitea: reading branch %s of %s after the push failed (HTTP %d): %s",
+				branch, repoPath(repo), status, apiMessage(data))
+		}
+		if err := pause(ctx); err != nil {
+			return err
+		}
+	}
+}
+
+// branchSettleTimeout is how long the provider waits for Gitea to catch up
+// with a push or a pull request's check.
+const branchSettleTimeout = 30 * time.Second
+
+// pause waits a moment before the next try, or until ctx ends.
+func pause(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(200 * time.Millisecond):
+		return nil
+	}
 }
 
 // ReadFiles reads paths from branch over Git, at the commit it is at now.

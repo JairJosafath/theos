@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -93,9 +101,15 @@ type sandboxRun struct {
 	// goCache, when set, is the directory on the node of the Go build cache the
 	// sandboxes share.
 	goCache string
+	// checkCommand, when set, is the check of a repository the Container
+	// adopted with no Standard (its spec.checkCommand, #95); theos-agent runs
+	// make check without it.
+	checkCommand string
 	// goProxy, when set, is the Git host's Go module proxy for the owner's
 	// released modules, the only one theos-agent asks for the factory's modules.
-	goProxy string
+	// goPrivate, on a host without one, is the prefix of the owner's module
+	// paths, which the host serves from their repositories.
+	goProxy, goPrivate string
 	// npmScope, npmRegistry and pypiIndex, when set, are the owner's npm
 	// scope, the registry that serves it and the simple index of the
 	// owner's Python packages. npmSecret and pypiSecret name the Secrets
@@ -113,6 +127,9 @@ type sandboxRun struct {
 	// (onSharedToken): the pod gets no credentials Secret, and reaches Claude
 	// through the model proxy at this URL.
 	modelProxyURL string
+	// environments are the Ready leases of the test environments the run
+	// needs (docs/plans/done/test-environments.md, T4).
+	environments []runEnvironment
 }
 
 // What a sandbox on the shared token gets instead of the token: Claude Code
@@ -194,6 +211,9 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	if run.status.Feedback != "" {
 		env = append(env, corev1.EnvVar{Name: agentrunner.EnvFeedback, Value: run.status.Feedback})
 	}
+	if run.checkCommand != "" {
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvCheckCommand, Value: run.checkCommand})
+	}
 	if run.goCache != "" {
 		env = append(env,
 			corev1.EnvVar{Name: "GOCACHE", Value: goCacheMount + "/build"},
@@ -210,6 +230,13 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			corev1.EnvVar{Name: agentrunner.EnvGoRegistry, Value: run.goProxy},
 			corev1.EnvVar{Name: "GOPROXY", Value: agentrunner.GoProxyURL},
 			corev1.EnvVar{Name: "GONOSUMDB", Value: agentrunner.FactoryModules})
+	} else if run.goPrivate != "" {
+		// A host with no module proxy serves the owner's modules from their
+		// repositories. The go command fetches those paths directly, with the
+		// Git credential theos-agent writes to ~/.netrc, and asks no proxy and
+		// no checksum database about them; every other path goes where Go
+		// sends it.
+		env = append(env, corev1.EnvVar{Name: "GOPRIVATE", Value: run.goPrivate})
 	}
 	// npm sends the scope, and uv each package, to its own registry, so no
 	// proxy: theos-agent writes ~/.npmrc and ~/.netrc from these. A Secret
@@ -228,6 +255,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 			env = append(env, readTokenEnv(agentrunner.EnvPyPIToken, run.pypiSecret))
 		}
 	}
+	env = append(env, environmentEnv(run.environments)...)
 	env = append(env, agent.Spec.Env...)
 	var envFrom []corev1.EnvFromSource
 	switch ref := agent.Spec.CredentialsSecretRef; {
@@ -330,6 +358,7 @@ func buildSandbox(run sandboxRun, scheme *runtime.Scheme, now time.Time) (*unstr
 	sandbox.SetNamespace(task.Namespace)
 	sandbox.SetName(run.name)
 	sandbox.SetLabels(labels)
+	sandbox.SetAnnotations(runConfigAnnotations(agent))
 	shutdown := metav1.NewTime(now.Add(timeout + sandboxGrace)).UTC().Format(time.RFC3339)
 	sandbox.Object["spec"] = map[string]any{
 		"podTemplate": map[string]any{
@@ -383,7 +412,7 @@ func runEnv(run sandboxRun) []corev1.EnvVar {
 			secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
 		)
 	}
-	return []corev1.EnvVar{
+	env := []corev1.EnvVar{
 		{Name: agentrunner.EnvRole, Value: run.role},
 		{Name: agentrunner.EnvRepoURL, Value: run.repoURL},
 		{Name: agentrunner.EnvBranch, Value: run.status.Branch},
@@ -400,6 +429,12 @@ func runEnv(run sandboxRun) []corev1.EnvVar {
 		secretEnv(agentrunner.EnvGitUsername, run.gitSecret, "username"),
 		secretEnv(agentrunner.EnvGitToken, run.gitSecret, "token"),
 	}
+	if score := task.Spec.Score; score != nil {
+		// A judge's criteria go apart from the evidence in its goal.
+		criteria, _ := json.Marshal(score.Criteria)
+		env = append(env, corev1.EnvVar{Name: agentrunner.EnvCriteria, Value: string(criteria)})
+	}
+	return env
 }
 
 func secretEnv(name, secret, key string) corev1.EnvVar {
@@ -443,6 +478,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 		return state, err
 	}
 	state.Started = true
+	state.Config = runConfigOf(sandbox)
 	expired, missed := sandboxExpiry(sandbox)
 	state.Checkpoint = resumable(sandbox, expired)
 	if sandboxSuspended(sandbox) {
@@ -504,6 +540,7 @@ func runState(ctx context.Context, c client.Client, ns, name, startedOn string) 
 				CheckFailsOnBase: result.CheckFailsOnBase,
 				Proposal:         result.Proposal, Extra: result.Extra, Empty: result.Empty, Blocked: result.Blocked,
 				FollowUps: result.FollowUps, Open: result.Open, Unavailable: result.Unavailable, Triage: result.Triage,
+				Score: result.Score, Risk: result.Risk, Nothing: result.Nothing,
 			}
 			// A result theos-agent wrote before an outage stands.
 			state.Interrupted = (podDisrupted(&pod) || result.Interrupted) && !ownLimit

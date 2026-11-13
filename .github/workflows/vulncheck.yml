@@ -5,8 +5,7 @@ name: Vulnerabilities
 # docs/openssf.md). It runs on pushes to main and pull requests to main that
 # change them, so a bump that brings one back answers before
 # hack/lib/github.sh land, and every Monday, so a new advisory shows up without
-# a change: two failed runs on main in a row file a "main is red" issue
-# (hack/relay-watch.sh).
+# a change.
 on:
   push:
     branches: [main]
@@ -42,16 +41,16 @@ jobs:
     permissions:
       contents: read
     name: Vulnerabilities
-    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - name: Clone the code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           # A self-hosted runner keeps its Go caches on a volume (make gh-runner).

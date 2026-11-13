@@ -58,6 +58,10 @@ describe('describeCondition', () => {
     expect(describeCondition({ type: 'Applied', status: 'False', reason: 'WaitingForScaffold' }).title).toMatch(
       /when the container is scaffolded/,
     )
+    // #43: a new Container waits out the settle window, which is no error.
+    const settling = describeCondition({ type: 'Scaffolded', status: 'False', reason: 'Settling' })
+    expect(settling.tone).toBe('waiting')
+    expect(settling.title).toMatch(/relationships applied with it/)
   })
 
   it('says plainly when a relationship was added after scaffolding', () => {
@@ -110,6 +114,10 @@ describe('small helpers', () => {
 
   it('splits identifiers and template refs', () => {
     expect(splitWords('ReferencesResolved')).toBe('References resolved')
+    // An acronym keeps its capitals, such as a TestEnvironment's CI condition (test-environments, step 8).
+    expect(splitWords('CI')).toBe('CI')
+    expect(splitWords('CIRunners')).toBe('CI runners')
+    expect(splitWords('NoGitProvider')).toBe('No git provider')
     expect(splitTemplateRef('python-fastapi@v1.2.0')).toEqual({ name: 'python-fastapi', version: 'v1.2.0' })
     expect(splitTemplateRef('plain')).toEqual({ name: 'plain' })
   })

@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -53,13 +69,14 @@ func BundlersToBump(released time.Time, bundlers []Bundler, filed []string) []Bu
 
 // ReleaseTakingWork returns the ID of the release due first among milestones,
 // the dated vMAJOR.MINOR.PATCH ones, that can still take work: one with no
-// prepare issue, open or closed. Work put in a release whose prepare issue is
-// filed would merge after it and hold the release as MergedAfterPrepare (#834).
-// It returns 0 when there is none.
+// prepare issue, open or closed, and not cut under a cadence. Work put in a
+// release whose prepare issue is filed would merge after it and hold the
+// release as MergedAfterPrepare (#834); a cut release ships what it holds
+// (docs/plans/done/release-cadence.md, C4). It returns 0 when there is none.
 func ReleaseTakingWork(milestones []ReleaseMilestone) int64 {
 	var first *ReleaseMilestone
 	for i, m := range milestones {
-		if !IsReleaseTitle(m.Title) || m.Due.IsZero() || len(m.Prepared) > 0 {
+		if !IsReleaseTitle(m.Title) || m.Due.IsZero() || len(m.Prepared) > 0 || m.Cut {
 			continue
 		}
 		if first == nil || compareReleases(&m.Release, &first.Release) < 0 {

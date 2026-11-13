@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package chart
@@ -197,6 +205,50 @@ func TestChatChartRunsTheosChatWithConfigChatsRBAC(t *testing.T) {
 	}
 }
 
+// chatArg is theos-chat's argument with prefix, "" for none.
+func chatArg(t *testing.T, where string, manifests []byte, prefix string) string {
+	t.Helper()
+	d, ok := objects(t, manifests)["Deployment/"+releaseNS+"/"+chatName].(*appsv1.Deployment)
+	if !ok {
+		t.Fatalf("%s renders no Deployment %s", where, chatName)
+	}
+	for _, a := range d.Spec.Template.Spec.Containers[0].Args {
+		if strings.HasPrefix(a, prefix) {
+			return a
+		}
+	}
+	return ""
+}
+
+// TestChatChartLinksToTheUI: theos-chat's --ui-url, which its posts link the
+// UI's object pages under, is chat.uiURL, else the UI's own address: behind
+// an Ingress its first allowed host, else the port-forward's localhost; with
+// the UI off, none.
+func TestChatChartLinksToTheUI(t *testing.T) {
+	helm := helmBinary(t)
+	const uiURLArg = "--ui-url="
+	for _, tt := range []struct {
+		name string
+		sets []string
+		want string
+	}{
+		{"the port-forward", nil, uiURLArg + "http://localhost:8080"},
+		{"an Ingress", []string{"ui.allowedHosts={factory.example.com}"}, uiURLArg + "https://factory.example.com"},
+		{"an Ingress without TLS", []string{"ui.allowedHosts={factory.example.com}", "ui.sessionBinaryScheme=http"},
+			uiURLArg + "http://factory.example.com"},
+		{"chat.uiURL", []string{"ui.allowedHosts={factory.example.com}", "chat.uiURL=https://theos.example.com/"},
+			uiURLArg + "https://theos.example.com"},
+		{"chat.uiURL without the UI", []string{"ui.enabled=false", "chat.uiURL=https://theos.example.com/ui"},
+			uiURLArg + "https://theos.example.com/ui"},
+		{"no UI", []string{"ui.enabled=false"}, ""},
+	} {
+		out := mustRender(t, helm, append([]string{chatOn}, tt.sets...)...)
+		if got := chatArg(t, tt.name, out, uiURLArg); got != tt.want {
+			t.Errorf("%s: theos-chat has %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 var pinned = regexp.MustCompile(`^[^@]+:[^@]+@sha256:[0-9a-f]{64}$`)
 
 // TestChatChartHomeserver: chat.homeserver.enabled installs Tuwunel, pinned
@@ -323,6 +375,9 @@ func TestChatChartRefuses(t *testing.T) {
 	for _, sets := range [][]string{
 		{homeserverOn},
 		{chatOn, "chat.homeserverURL=matrix.example.com"},
+		{chatOn, "chat.uiURL=theos.example.com"},
+		{chatOn, "chat.uiURL=https://theos.example.com/?area=work"},
+		{chatOn, "chat.uiURL=https://ada:secret@theos.example.com"},
 		{chatOn, homeserverOn, "chat.homeserver.accounts={Ada}"},
 		{chatOn, homeserverOn, "chat.homeserver.image.digest=latest"},
 		{chatOn, homeserverOn, "chat.homeserver.bot.localpart=The Bot"},

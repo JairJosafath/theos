@@ -6,6 +6,7 @@ import {
   RESOURCES,
   resourcePath,
   type Agent,
+  type Benchmark,
   type Brief,
   type Bundle,
   type Chat,
@@ -25,6 +26,7 @@ import {
   type SoftwareSystem,
   type Standard,
   type Task,
+  type TestEnvironment,
 } from './types'
 import type { WatchMux } from './mux'
 import { ApiError, ResourceWatcher, type WatchState } from './watch'
@@ -59,6 +61,10 @@ export interface StoryData {
   tasks: Task[]
   /** App ideas and what the factory planned from them. Optional: may stay empty. */
   briefs: Brief[]
+  /** Comparisons of Agent variants on the same goals, for their pages. Optional: may stay empty. */
+  benchmarks: Benchmark[]
+  /** The tools the agents' runs and CI lease, for the Project page and theirs. Optional: may stay empty. */
+  testEnvironments: TestEnvironment[]
 }
 
 export interface Problem {
@@ -147,6 +153,8 @@ export function emptyStory(namespace: string): StoryData {
     agents: [],
     tasks: [],
     briefs: [],
+    benchmarks: [],
+    testEnvironments: [],
   }
 }
 
@@ -285,6 +293,8 @@ const READ_NAMES = {
   domains: 'domains',
   gitProviders: 'Git providers',
   deployTargets: 'deploy targets',
+  benchmarks: 'benchmarks',
+  testEnvironments: 'test environments',
 } as const
 
 /** Watches every story kind in one project namespace. */
@@ -338,7 +348,17 @@ export class LiveStorySource extends WatchingSource<StoryData> {
         },
         // Only their pages read them; a refused read shows there.
         ...(
-          ['standards', 'computes', 'deployments', 'gitProviders', 'deployTargets', 'bundles', 'domains'] as const
+          [
+            'standards',
+            'computes',
+            'deployments',
+            'gitProviders',
+            'deployTargets',
+            'bundles',
+            'domains',
+            'benchmarks',
+            'testEnvironments',
+          ] as const
         ).map((k) => ({
           what: READ_NAMES[k],
           watcher: watcher(api, RESOURCES[k], namespace),
@@ -376,6 +396,8 @@ export class LiveStorySource extends WatchingSource<StoryData> {
       deployTargets: this.items<DeployTarget>(17),
       bundles: this.items<Bundle>(18),
       domains: this.items<Domain>(19),
+      benchmarks: this.items<Benchmark>(20),
+      testEnvironments: this.items<TestEnvironment>(21),
     }
   }
 }

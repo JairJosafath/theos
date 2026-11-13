@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package gitea
 
 import (
@@ -161,7 +177,9 @@ func TestGiteaPackagesIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Contains(lock, []byte("name = \""+normalizeProjectName(pyName)+"\"\nversion = \"0.1.0\"")) ||
+		// uv.lock names the package as PEP 503 spells it, which pyName is
+		// already: lower case, its words joined by single dashes.
+		if !bytes.Contains(lock, []byte("name = \""+pyName+"\"\nversion = \"0.1.0\"")) ||
 			!bytes.Contains(lock, []byte(repo.PyPIIndex)) {
 			t.Errorf("uv.lock does not pin %s 0.1.0 to %s:\n%s", pyName, repo.PyPIIndex, lock)
 		}

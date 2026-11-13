@@ -16,8 +16,10 @@ import { CommandLine, ObjectHeader, type ChildRef, type OutLink } from '../Objec
 import { pageHref, storyHref } from './links'
 import { agentRuns, taskTimeline } from './rows'
 import { describeHandoffs } from '../../model/tokens'
+import { ScoreTaskVerdicts, TaskScores } from './Scores'
+import { TaskEnvironments } from './TestEnvironmentPages'
 
-export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
+export function TaskPage({ task, agents, tasks = [] }: { task: Task; agents: Agent[]; tasks?: Task[] }) {
   const ns = task.metadata.namespace ?? ''
   const name = task.metadata.name
   const status = task.status
@@ -51,7 +53,12 @@ export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
     ),
   }))
   const rounds = (
-    <TaskOverview task={task} implementer={implementer} roles={roles} usage={usage} limit={limit} all={all} />
+    <>
+      <ScoreTaskVerdicts task={task} />
+      <TaskOverview task={task} implementer={implementer} roles={roles} usage={usage} limit={limit} all={all} />
+      <TaskEnvironments task={task} />
+      <TaskScores task={task} tasks={tasks} />
+    </>
   )
 
   return (
@@ -66,6 +73,22 @@ export function TaskPage({ task, agents }: { task: Task; agents: Agent[] }) {
           ...(container ? [{ label: `Container ${container}`, href: pageHref(ns, 'Container', container) }] : []),
           ...(brief ? [{ label: `Brief ${brief}`, href: pageHref(ns, 'Brief', brief) }] : []),
           ...(crew ? [{ label: `Crew ${crew}`, href: pageHref(ns, 'Crew', crew) }] : []),
+          ...(task.spec.benchmark
+            ? [
+                {
+                  label: `Benchmark ${task.spec.benchmark.benchmarkRef.name}`,
+                  href: pageHref(ns, 'Benchmark', task.spec.benchmark.benchmarkRef.name),
+                },
+              ]
+            : []),
+          ...(task.spec.score
+            ? [
+                {
+                  label: `Task ${task.spec.score.taskRef.name}`,
+                  href: pageHref(ns, 'Task', task.spec.score.taskRef.name),
+                },
+              ]
+            : []),
         ]}
         phase={status?.phase}
         conditions={status?.conditions ?? []}

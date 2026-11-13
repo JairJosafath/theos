@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -157,7 +165,7 @@ var _ = Describe("Brief failed issues", func() {
 		}).Should(Succeed())
 
 		title, body := model.ByHandIssue("Lint rule 1", 1, "http://gitea/pulls/2", "linter-1", "Agent `reviewer`",
-			[]model.OpenCriterion{{Criterion: "The README has a screenshot of the editor", Why: "No desktop editor."}})
+			[]model.OpenCriterion{{Criterion: "The README has a screenshot of the editor", Why: "No desktop editor."}}, nil)
 		n := gitFake.AddIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman})
 		Eventually(func(g Gomega) {
 			b := getBrief(g, ns)
@@ -212,7 +220,7 @@ var _ = Describe("Brief failed issues", func() {
 		}
 		byHand := func(rule int, blocker int) int {
 			title, body := model.ByHandIssue(fmt.Sprintf("Lint rule %d", rule), rule, "http://gitea/pulls/2",
-				"linter-1", "Agent `reviewer`", []model.OpenCriterion{{Criterion: "A screenshot", Why: "No editor."}})
+				"linter-1", "Agent `reviewer`", []model.OpenCriterion{{Criterion: "A screenshot", Why: "No editor."}}, nil)
 			return gitFake.AddIssue(ns, "linter", title, body, []string{model.LabelByHand, model.LabelNeedsHuman},
 				fmt.Sprintf("#%d", blocker))
 		}

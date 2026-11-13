@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package chatbot
@@ -212,5 +220,38 @@ func TestChatNotReadyWaits(t *testing.T) {
 	var cm corev1.ConfigMap
 	if err := w.kube.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: StateConfigMap}, &cm); err == nil {
 		t.Fatal("state kept for a Chat without rooms")
+	}
+}
+
+// With the UI's address, a post links to its object's page in the UI, in the
+// Chat's namespace; the formatted body carries it as a link.
+func TestPostsLinkToTheUI(t *testing.T) {
+	failed := &c4v1beta1.Task{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "api-6"},
+		Spec:   c4v1beta1.TaskSpec{Kind: c4v1beta1.TaskImplement, Issue: 6},
+		Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskFailed}}
+	w := newWorld(t)
+	bot := w.theosChat()
+	bot.UIURL = "https://theos.example.com"
+	if err := w.pass(bot); err != nil {
+		t.Fatal(err)
+	}
+	w.create(failed)
+	if err := w.pass(bot); err != nil {
+		t.Fatal(err)
+	}
+	page := "https://theos.example.com/?kind=Task&name=api-6&ns=" + ns
+	got := w.posts(model.ChatAlerts)
+	if len(got) != 1 || !strings.HasSuffix(got[0], "Task in theos: "+page) {
+		t.Fatalf("the alert links to the Task's page: %q", got)
+	}
+	room, _ := w.hs.Room(w.rooms[model.ChatAlerts])
+	for _, e := range room.Events {
+		if e.Type != "m.room.message" || e.Sender != w.bot {
+			continue
+		}
+		if html, _ := e.Content["formatted_body"].(string); !strings.Contains(html,
+			`<a href="https://theos.example.com/?kind=Task&amp;name=api-6&amp;ns=shop">Task in theos</a>`) {
+			t.Errorf("the alert's formatted body has no link to the page: %s", html)
+		}
 	}
 }

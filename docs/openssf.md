@@ -19,16 +19,16 @@ because the form asks for them.
 | Criterion | Level | State | Evidence |
 | --- | --- | --- | --- |
 | description_good | MUST | Met | [README.md](../README.md), its opening and *How it works* |
-| interact | MUST | Met | [README.md](../README.md) *Try it*, *Report an issue*, *Contributing* |
+| interact | MUST | Met | [README.md](../README.md) *Quickstart*, *Develop the factory*, *Report an issue*, *Contributing* |
 | contribution | MUST | Met | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | contribution_requirements | SHOULD | Met | [CONTRIBUTING.md](../CONTRIBUTING.md): the commit format, tests and lint required, `make check` |
-| floss_license | MUST | **Owner** | [LICENSE](../LICENSE) is proprietary, all rights reserved. The badge needs a FLOSS licence |
-| floss_license_osi | SUGGESTED | **Owner** | as above, an OSI-approved licence |
+| floss_license | MUST | Met | [LICENSE](../LICENSE) is the Apache License 2.0 (#47); `hack/check-license-headers.sh` keeps every Go file's header |
+| floss_license_osi | SUGGESTED | Met | Apache-2.0 is OSI-approved |
 | license_location | MUST | Met | `LICENSE` at the root |
 | documentation_basics | MUST | Met | [docs/getting-started.md](getting-started.md), [docs/design.md](design.md), [docs/architecture.md](architecture.md) |
 | documentation_interface | MUST | Met | the CRDs' field descriptions (`config/crd/bases/`, `kubectl explain`), the model in [docs/design.md](design.md), the chart's `values.yaml` |
 | sites_https | MUST | Met | GitHub, `ghcr.io`, all over HTTPS |
-| discussion | MUST | **Owner** | GitHub issues are searchable, addressable and need no proprietary client, but they are open to new people only once the repository is public |
+| discussion | MUST | Met | GitHub issues are searchable, addressable and need no proprietary client, and the repository is public |
 | english | MUST | Met | every document, issue and pull request is in English |
 | maintained | MUST | Met | the relay and the maintainer ([GOVERNANCE.md](../GOVERNANCE.md)); releases every few days (v0.23.0, 2026-10-13) |
 
@@ -36,7 +36,7 @@ because the form asks for them.
 
 | Criterion | Level | State | Evidence |
 | --- | --- | --- | --- |
-| repo_public | MUST | **Owner** | the repository is private |
+| repo_public | MUST | Met | <https://github.com/JairJosafath/theos>, public since 2026-11-10 |
 | repo_track | MUST | Met | Git: who changed what and when, pull requests with `Closes #N` |
 | repo_interim | MUST | Met | every pull request merges to main between releases |
 | repo_distributed | SUGGESTED | Met | Git |
@@ -54,7 +54,7 @@ because the form asks for them.
 | report_tracker | SHOULD | Met | GitHub issues |
 | report_responses | MUST | Met | the maintainer answers each report ([GOVERNANCE.md](../GOVERNANCE.md)); triage runs on every relay pass |
 | enhancement_responses | SHOULD | Met | as above; triage readies or answers every `status/proposed` issue |
-| report_archive | MUST | **Owner** | the GitHub issues are the archive; public once the repository is |
+| report_archive | MUST | Met | the GitHub issues are the archive, public with the repository |
 | vulnerability_report_process | MUST | Met | [SECURITY.md](../SECURITY.md), linked from [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | vulnerability_report_private | MUST | **Owner** | [SECURITY.md](../SECURITY.md) names GitHub private vulnerability reporting; the owner turns it on in the repository's settings when it goes public |
 | vulnerability_report_response | MUST | Met | [SECURITY.md](../SECURITY.md): an answer within 3 business days, never later than 14. No report yet |
@@ -96,13 +96,13 @@ because the form asks for them.
 | delivery_unsigned | MUST | Met | downloaded tools are checked against pinned SHA-256 sums (`hack/testenv.mk`, the Helm download in the `Makefile`), never fetched over HTTP |
 | vulnerabilities_fixed_60_days | MUST | Met | `govulncheck ./...` on 2026-10-16 finds no vulnerability the code reaches ([docs/screenshots/1147-govulncheck.txt](screenshots/1147-govulncheck.txt)). #1147 fixed the 16 it found on 2026-10-15: Go 1.26.9 (`go.mod`'s `toolchain`, which CI's `setup-go` follows, and the images' builders), `golang.org/x/net`, `golang.org/x/crypto`, `google.golang.org/grpc`, `go.opentelemetry.io/otel` and `golang.org/x/image`. Two remain that the code doesn't reach: `github.com/google/cel-go` (fixed in v0.30.0; `k8s.io/apiserver` holds v0.29.2) and `golang.org/x/crypto/openpgp` (unmaintained, no fix; nothing imports it) |
 | vulnerabilities_critical_fixed | SHOULD | Met | the *Vulnerabilities* workflow runs `govulncheck ./...` (`make vulncheck`) on every change to the Go code or the modules and every Monday, and fails on a vulnerability the code reaches; two failed runs on main file an urgent "main is red" issue the relay takes first (#1148, [docs/screenshots/1148-vulncheck-gosec.txt](screenshots/1148-vulncheck-gosec.txt)) |
-| no_leaked_credentials | MUST | Met | the [`secrets` skill](../.claude/skills/secrets/SKILL.md), `make helm-lint` fails on a rendered Secret, GitGuardian on pull requests |
+| no_leaked_credentials | MUST | Met | the [`secrets` skill](../.claude/skills/secrets/SKILL.md), `make helm-lint` fails on a rendered Secret, GitGuardian on pull requests, and the *Secrets* workflow: gitleaks (`make secrets-scan`) over every ref's whole history on every pull request and push to main, with the checked false positives in `.gitleaks.toml` (#52, [docs/screenshots/52-gitleaks.txt](screenshots/52-gitleaks.txt)) |
 
 ## Analysis
 
 | Criterion | Level | State | Evidence |
 | --- | --- | --- | --- |
-| static_analysis | MUST | Met | golangci-lint (staticcheck, govet, revive and more) in `make check` and the *Lint* workflow, before every release |
+| static_analysis | MUST | Met | golangci-lint (staticcheck, govet, revive and more) in `make check` and the *Lint* workflow, before every release; CodeQL on the Go code and the UI's TypeScript (the *CodeQL* workflow), on every pull request that changes them and every Monday |
 | static_analysis_common_vulnerabilities | SUGGESTED | Met | `gosec` runs in golangci-lint (`make check`, the *Lint* workflow). `.golangci.yml` turns off G115 (int to the API's int32 fields) and gosec in tests; each other finding is fixed or carries a `//nolint:gosec // why` (#1148) |
 | static_analysis_fixed | MUST | Met | `make check` fails on a finding, so none merges |
 | static_analysis_often | SUGGESTED | Met | on every pull request |
@@ -116,10 +116,10 @@ because the form asks for them.
 Only the owner can close these. Nothing else stands between the repository and
 the passing badge.
 
-1. **Choose a FLOSS licence** (floss_license, floss_license_osi). The
-   contributors already agreed to relicensing ([CONTRIBUTING.md](../CONTRIBUTING.md),
-   *License*). Whether 1.0 is public is the owner's decision ([ROADMAP.md](../ROADMAP.md)).
-2. **Make the repository public** (repo_public, discussion, report_archive).
+1. ~~Choose a FLOSS licence~~: done, Apache-2.0 (#47), by the owner's word of
+   2026-11-09.
+2. ~~Make the repository public~~: done 2026-11-10 (repo_public, discussion,
+   report_archive).
 3. **Turn on private vulnerability reporting** in *Settings → Code security*
    (vulnerability_report_private), then drop the "while the repository is
    private" sentence from [SECURITY.md](../SECURITY.md).

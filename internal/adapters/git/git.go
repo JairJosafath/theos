@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package git
 
 import (
@@ -48,8 +64,12 @@ func auth(creds *ports.Credentials) transport.AuthMethod {
 }
 
 // FetchTemplate returns the files of a template repository at a pinned ref: a
-// tag, or a full commit SHA. A branch name fails with ErrUnpinnedRef.
-func (c Client) FetchTemplate(ctx context.Context, repoURL, ref string, creds *ports.Credentials) (scaffold.Tree, error) {
+// tag, or a full commit SHA. A branch name fails with ErrUnpinnedRef. A
+// non-empty dir reads only that directory of the repository, by paths
+// relative to it (#35); one the ref doesn't have fails with
+// ErrTemplatePathNotFound.
+func (c Client) FetchTemplate(ctx context.Context, repoURL, ref, dir string,
+	creds *ports.Credentials) (scaffold.Tree, error) {
 	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{Name: remoteName, URLs: []string{repoURL}})
 	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: auth(creds)})
 	if err != nil {
@@ -91,7 +111,15 @@ func (c Client) FetchTemplate(ctx context.Context, repoURL, ref string, creds *p
 			return nil, checkoutError(err, ref, repoURL)
 		}
 	}
-	return readTree(worktree)
+	tree, err := readTree(worktree)
+	if err != nil {
+		return nil, err
+	}
+	sub, ok := tree.Sub(dir)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s has no directory %s at %s", ports.ErrTemplatePathNotFound, repoURL, dir, ref)
+	}
+	return sub, nil
 }
 
 // checkoutError reports a missing commit as ErrUnpinnedRef, which is permanent,
@@ -278,8 +306,8 @@ func PushInitialCommit(ctx context.Context, repoURL string, creds *ports.Credent
 // readFiles returns branch's copy of those of paths it has, and the commit it
 // read them at. A path that is no regular file there, missing or a directory,
 // is left out. A path ending in "/" reads every regular file below that
-// directory, at any depth. A branch the repository doesn't have is
-// ErrBranchNotFound.
+// directory, at any depth. A branch the repository doesn't have, an empty
+// repository's included, is ErrBranchNotFound.
 func ReadFiles(ctx context.Context, repoURL string, creds *ports.Credentials, branch string,
 	paths []string) (scaffold.Tree, string, error) {
 	repo, err := git.CloneContext(ctx, memory.NewStorage(), nil, &git.CloneOptions{
@@ -291,7 +319,7 @@ func ReadFiles(ctx context.Context, repoURL string, creds *ports.Credentials, br
 		NoCheckout:    true,
 		Tags:          git.NoTags,
 	})
-	if _, ok := errors.AsType[git.NoMatchingRefSpecError](err); ok {
+	if _, ok := errors.AsType[git.NoMatchingRefSpecError](err); ok || errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		return nil, "", fmt.Errorf("clone %s at %s: %w", repoURL, branch, ports.ErrBranchNotFound)
 	}
 	if err != nil {

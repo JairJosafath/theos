@@ -6,3 +6,4 @@
 # the entries with its baseline copy, so none stays stale after the release.
 #
 #   v1alpha1  Removed the v1alpha1 API versions; v1beta1 has served since 0.9.0.
+

@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -15,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
@@ -142,16 +151,25 @@ var _ = Describe("Agent network fence", func() {
 		var policy networkingv1.NetworkPolicy
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key(ns, AgentNetworkPolicyName), &policy)).To(Succeed())
-			g.Expect(policy.Spec.Egress).To(HaveLen(4))
+			g.Expect(policy.Spec.Egress).To(HaveLen(5))
 		}).Should(Succeed())
 		Expect(policy.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue(LabelAgentSandbox, "true"))
 		Expect(policy.Spec.Ingress).To(BeEmpty())
 		Expect(policy.Spec.Egress[1].To[0].IPBlock.Except).To(ContainElement("10.0.0.0/8"))
 		Expect(policy.Spec.Egress[2].To[0].NamespaceSelector.MatchLabels).
 			To(HaveKeyWithValue("kubernetes.io/metadata.name", "gitea"))
+		// The project's own test environment pods, on theos-env's port
+		// (docs/plans/done/test-environments.md, T5).
+		envs := policy.Spec.Egress[3]
+		Expect(envs.To).To(HaveLen(1))
+		Expect(envs.To[0].NamespaceSelector).To(BeNil())
+		Expect(envs.To[0].PodSelector.MatchLabels).To(Equal(map[string]string{
+			"app.kubernetes.io/component": model.TestEnvComponent}))
+		Expect(envs.Ports).To(HaveLen(1))
+		Expect(envs.Ports[0].Port.IntValue()).To(Equal(model.TestEnvPort))
 		// The model proxy (#1136): the sandboxes reach it, and nothing else in
 		// the release namespace.
-		proxy := policy.Spec.Egress[3]
+		proxy := policy.Spec.Egress[4]
 		Expect(proxy.To).To(HaveLen(1))
 		Expect(proxy.To[0].NamespaceSelector.MatchLabels).
 			To(Equal(map[string]string{"kubernetes.io/metadata.name": operatorNamespace}))

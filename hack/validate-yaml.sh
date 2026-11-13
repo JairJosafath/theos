@@ -181,6 +181,19 @@ if grep -A1 '^apiVersion: theos.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml
 	exit 1
 fi
 echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog, bundles or Agents"
+# The seed's browser in each project (docs/plans/done/test-environments.md, T14):
+# on by default, on the release's env-browser image; off, none.
+browser=$(awk '/^kind: TestEnvironment$/ { te = 1 } te && /^  namespace: / { print $2; te = 0 }' \
+	"$OUT/chart-gitea-catalog.yaml")
+if [ "$browser" != apps ] || ! grep -qE '^    image: "ghcr\.io/jairjosafath/theos/env-browser:[^"]+"$' "$OUT/chart-gitea-catalog.yaml"; then
+	echo "The chart renders no browser TestEnvironment on the env-browser image in project apps (got: ${browser:-none})" >&2
+	exit 1
+fi
+if grep -q '^kind: TestEnvironment$' "$OUT/chart-gitea-bare-catalog.yaml"; then
+	echo "The chart renders a TestEnvironment with testEnvironments.browser.enabled=false" >&2
+	exit 1
+fi
+echo "The chart's seed makes a browser TestEnvironment per project; off, none"
 
 # Shared credentials (docs/plans/done/shared-project-credentials.md): the chart makes
 # each project's Namespace, labeled to receive the shared Secrets and kept on
@@ -214,7 +227,7 @@ for f in chart-gitea chart-gitea-bare; do
 	want "$f: the seed's ClusterRole doesn't grant get and patch" "$role" '^    verbs: \[get, patch\]$'
 	want "$f: the seed's ClusterRole isn't bound" "$(doc "$OUT/$f.yaml" ClusterRoleBinding theos-seed-namespaces)" \
 		'^    name: seed$'
-	want "$f: the seed doesn't label the project namespaces" "$(doc "$OUT/$f.yaml" Job seed)" '^            - name: SHARE_SECRETS$'
+	want "$f: the seed doesn't label the project namespaces" "$(doc "$OUT/$f.yaml" Job seed-1)" '^            - name: SHARE_SECRETS$'
 	want "$f: the operator lacks POD_NAMESPACE" "$(doc "$OUT/$f.yaml" Deployment theos-controller-manager)" \
 		'^        - name: POD_NAMESPACE$'
 done
@@ -312,6 +325,21 @@ for f in config/samples/webshop/namespace.yaml config/samples/prorivals/namespac
 	fi
 done
 echo "The manager shares claude-credentials into the labeled sample namespaces"
+
+# #41: config/default's metrics patch adds --metrics-bind-address to the manager
+# alone: the model proxy it deploys too has no such flag and crash-loops on it.
+manager=$(doc "$OUT/kustomize-default.yaml" Deployment theos-controller-manager)
+proxy=$(doc "$OUT/kustomize-default.yaml" Deployment theos-model-proxy)
+want "config/default's manager has no --metrics-bind-address" "$manager" '^ *- --metrics-bind-address=:8443$'
+if [ -z "$proxy" ]; then
+	echo "config/default renders no Deployment theos-model-proxy" >&2
+	exit 1
+fi
+if grep -qF -- '--metrics-bind-address' <<<"$proxy"; then
+	echo "config/default: the model proxy gets --metrics-bind-address, which it doesn't define, and crash-loops (#41)" >&2
+	exit 1
+fi
+echo "config/default gives --metrics-bind-address to the manager and not to the model proxy"
 
 # The CI fence (docs/design.md): the chart's runners and config/runner's take
 # no traffic in, reach only DNS, Gitea and public HTTPS, and only the init

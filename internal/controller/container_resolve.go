@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -121,9 +129,12 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1beta1.
 	}
 
 	// Connectors come through Relationships from this Container to DataStores.
+	// They are read from the API server, not the cache: the Relationship
+	// informer may not yet hold one created just before the Container, and a
+	// scaffold missing it is never redone (#1992). A missing DataStore or
+	// Connector only delays the scaffold, so those stay cached.
 	var rels c4v1beta1.RelationshipList
-	if err := r.List(ctx, &rels, client.InNamespace(ns),
-		client.MatchingFields{indexSource: elementKey(c4v1beta1.ElementContainer, container.Name)}); err != nil {
+	if err := r.APIReader.List(ctx, &rels, client.InNamespace(ns)); err != nil {
 		return res, nil, err
 	}
 	var stores c4v1beta1.DataStoreList
@@ -136,7 +147,8 @@ func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1beta1.
 	}
 	modelRels := make([]model.Relationship, 0, len(rels.Items))
 	for _, rel := range rels.Items {
-		if rel.DeletionTimestamp.IsZero() {
+		source := rel.Spec.Source
+		if rel.DeletionTimestamp.IsZero() && source.Kind == c4v1beta1.ElementContainer && source.Name == container.Name {
 			modelRels = append(modelRels, toModel(rel))
 		}
 	}
@@ -251,10 +263,23 @@ func catalogEntry(side string, obj client.Object) model.CatalogEntry {
 		SupportedTypes:      supported,
 		TemplateURL:         spec.Template.URL,
 		TemplateRef:         spec.Template.Ref,
+		TemplatePath:        spec.Template.Path,
 		SupportedFrameworks: frameworks,
 		WiredBy:             wiredBy,
 		ChecksBeforeRelease: checksBeforeRelease,
 		DeploysItself:       deploysItself,
 		ReadsOperations:     readsOperations,
 	}
+}
+
+// frameworkEntry is the Framework's entry among a Container's resolved
+// entries, which start with it. A Container that adopts its repository may
+// name no Framework (#60): its entries then start with another side, or are
+// none, and the entry is the zero one, a Framework that deploys nothing
+// itself and reads no operations.
+func frameworkEntry(entries []model.CatalogEntry) model.CatalogEntry {
+	if len(entries) == 0 || entries[0].Side != model.SideFramework {
+		return model.CatalogEntry{}
+	}
+	return entries[0]
 }

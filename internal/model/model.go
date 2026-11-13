@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Package model holds the business rules of the C4 story as plain functions over
 // plain values: which catalog choices fit a Container, which Connectors a Container
 // picks up through its Relationships, and how status rolls up.
@@ -46,6 +62,9 @@ type CatalogEntry struct {
 	SupportedTypes []string
 	TemplateURL    string
 	TemplateRef    string
+	// TemplatePath is the directory of the repository the template is in,
+	// empty for its root (#35).
+	TemplatePath string
 	// SupportedFrameworks lists the Frameworks a Standard fits; empty for other sides.
 	SupportedFrameworks []string
 	// WiredBy lists the Frameworks whose templates call a Connector's files;
@@ -141,8 +160,13 @@ func (e *WiringError) Error() string {
 
 // CheckWiring returns a *WiringError for the first Connector among entries
 // whose WiredBy is set and doesn't list the Container's Framework. A Connector
-// with no WiredBy takes any Framework.
+// with no WiredBy takes any Framework. A Container with no Framework, which
+// only one that adopts its repository may be (#60), is wired by nothing: the
+// factory renders no Connector into a repository it never scaffolded.
 func CheckWiring(framework string, entries []CatalogEntry) error {
+	if framework == "" {
+		return nil
+	}
 	for _, entry := range entries {
 		if entry.Side != SideConnector || len(entry.WiredBy) == 0 || slices.Contains(entry.WiredBy, framework) {
 			continue
@@ -539,10 +563,13 @@ func matchGlob(pattern, s string) bool {
 	return strings.HasSuffix(s, parts[len(parts)-1])
 }
 
-// Protected reports whether a Container's default branch is protected by required
-// checks: only a Standard brings CI, so only a Container with one has checks to
-// require.
-func Protected(hasStandard bool) bool { return hasStandard }
+// Protected reports whether a Container's default branch is protected by
+// required checks, which is where agents may work. A Standard brings CI, so a
+// Container with one has checks to require. A Container that adopts its
+// repository with no Standard brings its own: it is protected once main's
+// head reports the checks it names (adoptedChecks: its Protected condition,
+// from AdoptedChecks). Any other Container has no checks to require.
+func Protected(hasStandard, adoptedChecks bool) bool { return hasStandard || adoptedChecks }
 
 // ProjectNotesPath is the project's own word to its agents about its workspace
 // and ways, read after AGENTS.md when the repository has it. No Standard

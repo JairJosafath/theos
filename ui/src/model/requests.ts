@@ -228,7 +228,7 @@ export function entryWithRequests(release: BriefRelease, requests: BriefRequests
   return next
 }
 
-/** An entry's requests in one line, for the settings: "Ask, from gray-lenovo and gray-org/maintainers". */
+/** An entry's requests in one line, for the settings: "Ask, from ada and acme/maintainers". */
 export function requestsSummary(requests: BriefRequests | undefined): string {
   if (!takesRequests(requests)) return 'takes no requests'
   const who = [...(requests!.authors ?? []), ...(requests!.teams ?? [])]

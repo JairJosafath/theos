@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -24,7 +32,7 @@ import (
 	"github.com/JairJosafath/theos/internal/model"
 )
 
-// The per-project CI runner pool (docs/plans/ci-runner-isolation.md, step 3).
+// The per-project CI runner pool (docs/plans/done/ci-runner-isolation.md, step 3).
 const (
 	// LabelCIRunner marks the pool's pods; the project's CI NetworkPolicy selects it.
 	LabelCIRunner = "theos.factory.io/ci-runner"
@@ -77,11 +85,18 @@ const CIJobEnv = "GOCACHE=" + ciGoCacheMount + "/build\nGOLANGCI_LINT_CACHE=" + 
 // runnerPodInput is what buildRunnerPod needs: the project's namespace, the
 // GitProvider's name and URL, the Secret holding its runner registration token,
 // the label's spec and the node directory under which projects' Go caches
-// live (the operator's --ci-go-cache), empty for none.
+// live (the operator's --ci-go-cache), empty for none, and the shared pull
+// Secrets the Project reconciler copies into the namespace
+// (--shared-pull-secret), listed as the sandbox pods list them (#2032).
 type runnerPodInput struct {
 	namespace, provider, gitURL, tokenSecret string
 	runner                                   c4v1beta1.CIRunnerSpec
 	goCacheRoot                              string
+	pullSecrets                              []string
+	// env, when set, makes the pod one of a test environment's pool
+	// (buildEnvRunnerPod): runner.Image registers it, and the jobs run on
+	// the environment's image.
+	env *envRunnerInput
 }
 
 // ciRunnerTokenSecret names the Secret with a GitProvider's runner registration token.
@@ -92,8 +107,13 @@ func ciRunnerTokenSecret(provider string) string { return "c4-ci-runner-" + prov
 // alone holds the registration token; the runner container, where the job runs,
 // has no ServiceAccount token and never restarts: it exits when its job ends and
 // the pool replaces the pod. Checkouts and /tmp are in memory; the Go cache,
-// when the label has one, is the project's own directory on the node.
+// when the label has one, is the project's own directory on the node, or,
+// with freshGoCache, the pod's own emptyDir seeded from the image, so a
+// release links nothing an earlier job wrote (#1141).
 func buildRunnerPod(in runnerPodInput) *corev1.Pod {
+	if in.env != nil {
+		return buildEnvRunnerPod(in)
+	}
 	goCache := in.runner.GoCache && in.goCacheRoot != ""
 	registerEnv := []corev1.EnvVar{
 		{Name: "GITEA_INSTANCE", Value: in.gitURL},
@@ -124,7 +144,8 @@ func buildRunnerPod(in runnerPodInput) *corev1.Pod {
 		{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{
 			Medium: corev1.StorageMediumMemory, SizeLimit: new(resource.MustParse("1Gi"))}}},
 	}
-	if goCache {
+	fresh := in.runner.FreshGoCache && !goCache
+	if goCache || fresh {
 		cache := corev1.VolumeMount{Name: goCacheVolume, MountPath: ciGoCacheMount}
 		inits = append(inits, corev1.Container{
 			Name: goCacheVolume, Image: in.runner.Image, Command: []string{"c4-go-cache", ciGoCacheMount},
@@ -132,12 +153,27 @@ func buildRunnerPod(in runnerPodInput) *corev1.Pod {
 		})
 		mounts = append(mounts, cache,
 			corev1.VolumeMount{Name: "job-env", MountPath: "/etc/gitea-runner/job.env", SubPath: "job.env"})
-		hostPathDir := corev1.HostPathDirectoryOrCreate
+		// The project's cache on the node, or, for a release label, an
+		// emptyDir on the node's disk that c4-go-cache seeds from the image's
+		// warm cache (about 3 GB) and the pod takes with it (#1141).
+		source := corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{
+			SizeLimit: new(resource.MustParse("16Gi"))}}
+		if goCache {
+			hostPathDir := corev1.HostPathDirectoryOrCreate
+			source = corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{
+				Path: path.Join(in.goCacheRoot, in.namespace), Type: &hostPathDir}}
+		}
 		volumes = append(volumes,
-			corev1.Volume{Name: goCacheVolume, VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{
-				Path: path.Join(in.goCacheRoot, in.namespace), Type: &hostPathDir}}},
+			corev1.Volume{Name: goCacheVolume, VolumeSource: source},
 			corev1.Volume{Name: "job-env", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{Name: CIJobEnvConfigMap}}}})
+	}
+	// The pod runs as the namespace's default ServiceAccount, which names no
+	// pull Secret, and a kubelet won't hand a pod without credentials an
+	// image pulled with them, so the pod lists the shared ones (#2032).
+	pullSecrets := make([]corev1.LocalObjectReference, 0, len(in.pullSecrets))
+	for _, name := range in.pullSecrets {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
 	}
 	labels := projectLabels(in.namespace)
 	labels[LabelCIRunner] = ciRunnerValue
@@ -153,6 +189,7 @@ func buildRunnerPod(in runnerPodInput) *corev1.Pod {
 		Spec: corev1.PodSpec{
 			RestartPolicy:                corev1.RestartPolicyNever,
 			AutomountServiceAccountToken: new(false),
+			ImagePullSecrets:             pullSecrets,
 			InitContainers:               inits,
 			Containers: []corev1.Container{{
 				Name: ciRunnerContainer, Image: in.runner.Image, Resources: in.runner.Resources, VolumeMounts: mounts,

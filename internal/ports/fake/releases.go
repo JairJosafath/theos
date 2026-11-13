@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package fake
 
 import (
@@ -5,11 +21,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // The fake host's releases. A milestone's due date is the one its issues were
@@ -147,7 +165,8 @@ func (s *state) milestones(key string, all bool) []ports.Milestone {
 		}
 		m, made := s.releaseState().created[fmt.Sprintf("%s#%d", key, i+1)]
 		if !made {
-			m = ports.Milestone{ID: int64(i + 1), Title: title}
+			m = ports.Milestone{ID: int64(i + 1), Title: title,
+				Description: is.descriptions[fmt.Sprintf("%s#%d", key, i+1)]}
 			for _, issue := range is.issues[key] {
 				if issue.InMilestone == title && !issue.MilestoneDue.IsZero() {
 					m.Due = issue.MilestoneDue
@@ -178,6 +197,60 @@ func (g *Git) MilestoneIssues(_ context.Context, repo ports.Repository,
 		}
 	}
 	return out, nil
+}
+
+func (g *Git) DescribeMilestone(_ context.Context, repo ports.Repository, id int64, description string) error {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	key := repo.Owner + "/" + repo.Name
+	if _, err := g.s.milestoneTitle(key, id); err != nil {
+		return err
+	}
+	// A milestone made by hand takes its due date from its issues, as listed.
+	made := fmt.Sprintf("%s#%d", key, id)
+	m, ok := g.s.releaseState().created[made]
+	if !ok {
+		for _, listed := range g.s.milestones(key, true) {
+			if listed.ID == id {
+				m = listed
+			}
+		}
+		m.Closed = false
+	}
+	m.Description = description
+	g.s.releaseState().created[made] = m
+	return nil
+}
+
+// EditMilestoneTitle retitles milestone id. The fake keeps a milestone's
+// issues and state by its title, so they follow it to the new one.
+func (g *Git) EditMilestoneTitle(_ context.Context, repo ports.Repository, id int64, title string) error {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	key := repo.Owner + "/" + repo.Name
+	old, err := g.s.milestoneTitle(key, id)
+	if err != nil || old == title {
+		return err
+	}
+	is, rs := g.s.issueState(), g.s.releaseState()
+	is.milestones[key][id-1] = title
+	for _, issue := range is.issues[key] {
+		if issue.InMilestone == old {
+			issue.InMilestone = title
+			if issue.MilestoneTitle == old {
+				issue.MilestoneTitle = title
+			}
+		}
+	}
+	if i := slices.Index(rs.closed[key], old); i >= 0 {
+		rs.closed[key][i] = title
+	}
+	made := fmt.Sprintf("%s#%d", key, id)
+	if m, ok := rs.created[made]; ok {
+		m.Title = title
+		rs.created[made] = m
+	}
+	return nil
 }
 
 func (g *Git) CloseMilestone(_ context.Context, repo ports.Repository, id int64) error {
@@ -254,12 +327,27 @@ func (g *Git) SetReleaseBody(_ context.Context, repo ports.Repository, id int64,
 	return fmt.Errorf("no release %d in %s/%s", id, repo.Owner, repo.Name)
 }
 
-// ReadSource hands on the files SetSource gave the repository at tag.
+// ReadSource hands on the files SetSource gave the repository at tag, else
+// those of the commit the tag names, by path.
 func (g *Git) ReadSource(_ context.Context, repo ports.Repository, tag string,
 	fn func(ports.SourceFile, io.Reader) error) error {
 	g.s.mu.Lock()
 	key := repo.Owner + "/" + repo.Name + "@" + tag
-	files, ok := g.s.releaseState().sources[key]
+	rs := g.s.releaseState()
+	files, ok := rs.sources[key]
+	if !ok {
+		var tree scaffold.Tree
+		if commit, tagged := rs.tags[key]; tagged {
+			tree, ok = g.s.commitTrees[repo.Owner+"/"+repo.Name+"@"+commit]
+		}
+		for _, filePath := range slices.Sorted(maps.Keys(tree)) {
+			mode := ports.SourcePlain
+			if tree[filePath].Executable {
+				mode = ports.SourceExecutable
+			}
+			files = append(files, SourceFile{Path: filePath, Mode: mode, Data: string(tree[filePath].Data)})
+		}
+	}
 	g.s.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("gitea has no archive of %s", key)

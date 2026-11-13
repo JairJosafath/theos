@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { LiveCrewWriter, RERUN_RELEASE, releasePatch, releaseSettings, settledEdits, sourceTagPrefix } from './crews'
+import {
+  LiveCrewWriter,
+  RERUN_RELEASE,
+  RUN_SCHEDULE,
+  addSchedulePatch,
+  releasePatch,
+  releaseSettings,
+  settledEdits,
+  sourceTagPrefix,
+  takenSchedule,
+} from './crews'
 import type { Crew } from './types'
 
 const base: Crew = {
@@ -64,6 +74,33 @@ describe('a Crew’s release settings as a patch', () => {
     expect(releasePatch(publishing, next)).toEqual([
       { op: 'add', path: '/spec/tagReleases', value: false },
       { op: 'remove', path: '/spec/publishReleases' },
+    ])
+  })
+
+  it('starts with the test of the resourceVersion, also when a switch changed too (theos#31)', () => {
+    // server.mjs looks for the test first, and refused the save with the switch's op before it.
+    const read: Crew = { ...publishing, metadata: { ...publishing.metadata, resourceVersion: '41' } }
+    const test = { op: 'test', path: '/metadata/resourceVersion', value: '41' }
+    const off = { ...releaseSettings(read), tagReleases: false, publish: undefined }
+    expect(releasePatch(read, off)).toEqual([
+      test,
+      { op: 'add', path: '/spec/tagReleases', value: false },
+      { op: 'remove', path: '/spec/publishReleases' },
+    ])
+    const now = releaseSettings(read)
+    const token = { ...now, prepareReleases: true, publish: { ...now.publish!, tokenSecret: 'gh-2' } }
+    expect(releasePatch(read, token, '40')).toEqual([
+      { ...test, value: '40' },
+      { op: 'add', path: '/spec/prepareReleases', value: true },
+      {
+        op: 'add',
+        path: '/spec/publishReleases',
+        value: { github: { repository: 'webshop-co/orders-api', tokenSecretRef: { name: 'gh-2' } } },
+      },
+    ])
+    // A switch alone tests nothing.
+    expect(releasePatch(read, { ...now, prepareReleases: true })).toEqual([
+      { op: 'add', path: '/spec/prepareReleases', value: true },
     ])
   })
 })
@@ -222,9 +259,58 @@ describe('the Crew writer', () => {
     expect(JSON.parse(sent[0].init.body as string)).toEqual({ metadata: { annotations: { [RERUN_RELEASE]: 'v1' } } })
   })
 
+  // #72: running a schedule now is the annotation with the schedule's name.
+  it('asks to run a schedule now with a merge patch of the annotation', async () => {
+    const { sent, w } = writer()
+    await w.runSchedule('webshop', 'orders-api', 'dependencies')
+    expect(sent[0].init.method).toBe('PATCH')
+    expect((sent[0].init.headers as Record<string, string>)['Content-Type']).toBe('application/merge-patch+json')
+    expect(JSON.parse(sent[0].init.body as string)).toEqual({
+      metadata: { annotations: { [RUN_SCHEDULE]: 'dependencies' } },
+    })
+  })
+
+  // #72, step 6: a proposal taken is one schedule appended, whatever the Crew has.
+  it('adds a schedule with a JSON patch that appends it, sent as given', async () => {
+    const { sent, w } = writer()
+    const schedule = { name: 'dependencies', cron: '0 6 * * 1', timeZone: 'Mars/Olympus', goal: 'Update them.' }
+    await w.addSchedule('webshop', 'orders-api', schedule)
+    expect(sent[0].url).toBe('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/crews/orders-api')
+    expect(sent[0].init.method).toBe('PATCH')
+    expect((sent[0].init.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json')
+    expect(JSON.parse(sent[0].init.body as string)).toEqual([{ op: 'add', path: '/spec/schedules/-', value: schedule }])
+    expect(addSchedulePatch(schedule)).toEqual([{ op: 'add', path: '/spec/schedules/-', value: schedule }])
+  })
+
   it('rejects with the API server’s message', async () => {
     const message = 'spec.parallel: Invalid value: 9: should be less than or equal to 5'
     const { w } = writer(422, JSON.stringify({ kind: 'Status', code: 422, message }))
     await expect(w.setParallel('webshop', 'orders-api', 9)).rejects.toThrow(message)
+  })
+})
+
+// #72, step 6: a Standard's proposal becomes a Crew's schedule in the zone the person gave.
+describe('takenSchedule', () => {
+  const proposal = { name: 'dependencies', cron: '0 6 * * 1', timeZone: 'UTC', goal: 'Update the dependencies.\n' }
+  const cases: [string, string, string][] = [
+    ['the zone given, not the proposal’s', 'Europe/Amsterdam', 'Europe/Amsterdam'],
+    ['UTC when the person says UTC', 'UTC', 'UTC'],
+    ['the zone without the white space around it', '  Asia/Tokyo ', 'Asia/Tokyo'],
+    ['a zone it can’t judge, as typed', 'Mars/Olympus', 'Mars/Olympus'],
+  ]
+  for (const [name, zone, want] of cases) {
+    it(`has ${name}`, () => {
+      expect(takenSchedule(proposal, zone)).toEqual({
+        name: 'dependencies',
+        cron: '0 6 * * 1',
+        timeZone: want,
+        goal: 'Update the dependencies.\n',
+      })
+    })
+  }
+
+  it('copies only a schedule’s four fields', () => {
+    const more = { ...proposal, since: '2026-11-09T05:00:00Z' }
+    expect(Object.keys(takenSchedule(more, 'UTC')).sort()).toEqual(['cron', 'goal', 'name', 'timeZone'])
   })
 })

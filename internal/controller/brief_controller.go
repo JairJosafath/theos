@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -37,6 +45,9 @@ import (
 type BriefReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads Secrets without caching them.
 	APIReader client.Reader
 	Git       GitClient
@@ -330,6 +341,9 @@ func (r *BriefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// edit of its parallel) or its latest release changes the Brief's apps;
 		// one it didn't make is read again with the suggestions.
 		Watches(&c4v1beta1.Crew{}, fromBriefLabel, crewReleaseChanges()).
+		// A delivery of the Git host reconciles the Brief whose repository a delivery names at once
+		// (docs/plans/done/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventBriefRequest(mgr.GetClient()))).
 		Named("brief").
 		Complete(r)
 }

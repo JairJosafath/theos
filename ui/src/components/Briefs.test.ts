@@ -68,6 +68,14 @@ describe('the Brief card', () => {
     expect(html).toContain('has no tag v0.2.0 yet: Published is Unauthorized')
   })
 
+  it('shows the release an app waits to cut, when, and how much it holds (release cadence, C12)', () => {
+    expect(html).toContain(
+      '<span class="brief-app-next" title="What the next cut of the app&#x27;s release cadence ships, and when">' +
+        'next release v0.3.0 at 18:00 UTC, 4 merged</span>',
+    )
+    expect(html.match(/brief-app-next/g)).toHaveLength(1)
+  })
+
   it("shows how many issues each app's crew works on at once", () => {
     expect(html).toContain(
       '<span class="brief-app-parallel" title="How many issues its crew works on at once">3 at a time</span>',
@@ -233,7 +241,7 @@ describe('the Briefs area', () => {
   )
   /** The card of the Brief `name`. */
   const card = (name: string) => {
-    const from = html.indexOf(`aria-label="Brief ${name}:`)
+    const from = html.indexOf(`class="brief-card-name mono">${name}</span>`)
     return html.slice(html.lastIndexOf('<li', from), html.indexOf('</li>', from))
   }
 
@@ -245,8 +253,10 @@ describe('the Briefs area', () => {
   it('makes each card a link to the Brief’s page, with its name and phase', () => {
     const c = card('webshop')
     expect(c).toContain(`href="${pageHref('webshop').replace('&', '&amp;')}"`)
-    expect(c).toMatch(/aria-label="Brief webshop: Planned"/)
-    expect(c).toContain('class="brief-card-name mono">webshop</span>')
+    // #109: the card's own text names the link, with "Brief" said before it for a screen reader.
+    expect(c).not.toContain('aria-label="Brief')
+    expect(c).toContain('<span class="visually-hidden">Brief </span><span class="brief-card-name mono">webshop</span>')
+    expect(c).toMatch(/<span class="badge-dot" aria-hidden="true"><\/span>Planned<\/span>/)
   })
 
   it('says what a Brief waits for, its round and cost, and its latest round cut short', () => {

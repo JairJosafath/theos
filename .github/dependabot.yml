@@ -1,0 +1,88 @@
+# Dependency updates (#51): one grouped pull request a week per ecosystem,
+# so the runners aren't flooded; a security update comes alone, when its
+# advisory does. Nothing merges them: each is a proposal that the checks and
+# a reviewer judge like any other pull request. The manifests under
+# templates/ are Go templates, which Dependabot can't read; a template's
+# pins move with its own release.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+    groups:
+      go:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    # The Kubernetes libraries and controller-runtime move by hand, with the
+    # toolchain image. envtest must have binaries for go.mod's Kubernetes
+    # version (hack/toolchain-go/operator-tools_test.sh), and those come
+    # later than a patch release of the libraries, or not at all: #90 moved
+    # them to 0.37.2 when envtest had only 1.37.0.
+    ignore:
+      - dependency-name: "k8s.io/*"
+      - dependency-name: "sigs.k8s.io/controller-runtime"
+
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: weekly
+      day: tuesday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+    groups:
+      ui:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Base images are pinned by digest (hack/check-pinned-images.sh); an update
+  # moves the tag and the digest together.
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /ui
+      - /hack/agent
+      - /hack/env-android
+      - /hack/env-browser
+      - /hack/env-godot
+      - /hack/gh-runner
+      - /hack/runner
+      - /hack/seed
+      - /hack/session
+      - /hack/toolchain-base
+      - /hack/toolchain-go
+    schedule:
+      interval: weekly
+      day: tuesday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+    groups:
+      images:
+        patterns: ["*"]
+    # Which Go and which Node the factory builds with, and gives its agents,
+    # is decided with go.mod and the templates, not by a weekly bump: #85
+    # moved golang 1.26 to 1.27 and node 24 to 26 in images no pull request's
+    # checks build. Their patch releases still come.
+    ignore:
+      - dependency-name: "golang"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

@@ -1,6 +1,24 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
+	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -32,20 +50,70 @@ const MaxBlockedNote = 1000
 // reason says nothing blocks the issue ("Blocked: none") is not a blocked
 // note: it is skipped as if it weren't there.
 func BlockedNote(summary string) string {
+	return noteAfter(summary, BlockedPrefix, saysNotBlocked)
+}
+
+// noteAfter takes from an agent's summary everything after its first line
+// starting with prefix (Markdown emphasis around the prefix allowed) whose
+// rest skip doesn't refuse, trimmed and at most MaxBlockedNote bytes.
+func noteAfter(summary, prefix string, skip func(rest string) bool) string {
 	lines := strings.Split(summary, "\n")
 	for i, l := range lines {
-		rest, ok := strings.CutPrefix(strings.TrimLeft(l, " \t*_>"), BlockedPrefix)
+		rest, ok := strings.CutPrefix(strings.TrimLeft(l, " \t*_>"), prefix)
 		if !ok {
 			continue
 		}
 		rest = strings.TrimLeft(rest, "*_")
-		if saysNotBlocked(rest) {
+		if skip(rest) {
 			continue
 		}
 		note := strings.TrimSpace(strings.Join(append([]string{rest}, lines[i+1:]...), "\n"))
 		return ClipSentences(note, MaxBlockedNote)
 	}
 	return ""
+}
+
+// An implementer that finds its issue needs no change (what it asks for is
+// already so, or a scheduled update found nothing to update) says so on
+// purpose: it changes nothing and ends its summary with a line starting
+// NothingPrefix that says why (#72). The Task then ends done, reason
+// ReasonNothingToDo, and its issue closes with the agent's words; no reviewer
+// is asked, since there is no change to review.
+
+// NothingPrefix starts the line of an agent's summary that says its issue
+// needs no change.
+const NothingPrefix = "Nothing to do:"
+
+// ReasonNothingToDo is the reason of a Task that ended done with no change:
+// its agent found the issue needs none.
+const ReasonNothingToDo = "NothingToDo"
+
+// NothingNote takes the reason from an agent's summary that says its issue
+// needs no change: everything after the first line starting "Nothing to do:"
+// that gives a reason, trimmed and at most MaxBlockedNote bytes. It is empty
+// when the summary has no such line: an agent that changed nothing and says
+// nothing of why has not done its issue.
+func NothingNote(summary string) string {
+	return noteAfter(summary, NothingPrefix, func(rest string) bool {
+		return strings.Trim(rest, " \t.,!?;:*_`'\"()-") == ""
+	})
+}
+
+// NothingMessage is the status of a Task whose agent found nothing to do.
+func NothingMessage(note string) string {
+	return "The agent found the issue needs no change, and it is closed: " + note
+}
+
+// NothingComment says on an issue that Task task closed it with no change,
+// in the agent's words.
+func NothingComment(task, note string) string {
+	return fmt.Sprintf("Task `%s` found nothing to do and changed nothing:\n\n%s\n\nIf that is wrong, reopen this "+
+		"issue, say what is missing, and label it %s.", task, quoteLines(note), LabelReady)
+}
+
+// quoteLines is text as a Markdown quote.
+func quoteLines(text string) string {
+	return "> " + strings.ReplaceAll(strings.TrimSpace(text), "\n", "\n> ")
 }
 
 // notBlocked are the first words, in lower case, of a reason that says
@@ -89,7 +157,8 @@ func saysNotBlocked(reason string) bool {
 const NoChangeNoReason = "the agent made no changes and gave no reason; " + blockedHint
 
 // blockedHint tells the next round how to stop on purpose.
-const blockedHint = "if the issue can't be done yet, say why in a line \"" + BlockedPrefix + " ...\""
+const blockedHint = "if the issue can't be done yet, say why in a line \"" + BlockedPrefix + " ...\"; if it needs " +
+	"no change, in a line \"" + NothingPrefix + " ...\""
 
 // MaxSummaryEnd is the longest end of an agent's summary, in bytes, a
 // no-change round's error carries.
@@ -104,7 +173,8 @@ func NoChangeError(summary string) string {
 	if end == "" {
 		return NoChangeNoReason
 	}
-	return "the agent made no changes and wrote no \"" + BlockedPrefix + "\" line; its summary ends: " +
+	return "the agent made no changes and wrote no \"" + BlockedPrefix + "\" or \"" + NothingPrefix +
+		"\" line; its summary ends: " +
 		strconv.Quote(end) + "; " + blockedHint
 }
 
@@ -140,4 +210,88 @@ func ClipWordsFromEnd(s string, n int) string {
 // BlockedMessage is a blocked Task's message: the agent's own words.
 func BlockedMessage(note string) string {
 	return "The agent can't start the issue: " + note
+}
+
+// An agent that says, in its blocked note, that it can't see its issue was
+// not given what the factory owes it: the issue's text is in its prompt and
+// in THEOS_GOAL (#2037). That is the runner's fault, not the issue's, so
+// the Task fails reason ReasonIssueUnseen, not ReasonBlocked, and the first
+// MaxFreeUnseen such Tasks on an issue cost it no try (TryCounter).
+
+// ReasonIssueUnseen is the reason of a Task whose agent's blocked note says
+// it can't see the issue.
+const ReasonIssueUnseen = "IssueUnseen"
+
+// MaxFreeUnseen is how many Tasks on one issue whose agent couldn't see the
+// issue cost it no try. More is no passing fault, so they count: a runner
+// that never shows the issue can't start Tasks on it without end.
+const MaxFreeUnseen = 1
+
+// issueUnseenSigns are what a blocked note says when the agent can't see its
+// issue, in lower case with straight apostrophes. They are narrow on purpose:
+// the subject is the issue (or task, ticket, goal) itself or its text, and the
+// words say the agent can't see, read or have it, or that it isn't given or
+// available to the agent. A note on something the issue waits on ("the issue
+// needs the engine's release, which isn't available yet") is no such sign.
+var issueUnseenSigns = func() []*regexp.Regexp {
+	const (
+		thing = `(?:issue|task|ticket|goal)`
+		text  = `(?:text|body|description|contents?|details|statement)`
+		subj  = `(?:the |this |its |your |my )?` + thing + `(?:'s)?(?: ` + text + `)?`
+		// what may follow the subject: the end of a clause, or what it is of
+		after   = `(?:\s+(?:for|of|itself|here)\b|\s+in (?:the|this|my) (?:prompt|sandbox|environment|context|workspace)|\s*[#.,;:)!]|$)`
+		cannot  = `(?:can't|cannot|can not|couldn't|could not|don't|do not|didn't|did not|am unable to|was unable to|wasn't able to|have no way to)`
+		see     = `(?:see|access|read|view|have|get|receive|find)`
+		isnt    = `(?:is|was|are|were)(?:n't| not)`
+		given   = `(?:available|provided|included|given|visible|shown|present|accessible|passed|attached)`
+		between = `[^.;]{0,80}?`
+	)
+	return []*regexp.Regexp{
+		// "I can't see the issue", "I don't have access to the issue's text"
+		regexp.MustCompile(`\b` + cannot + ` ` + see + `(?: access to| any)? ` + subj + after),
+		// "the issue text for cel-lens-core-106 isn't available"
+		regexp.MustCompile(`\b` + thing + `(?:'s)? ` + text + `\b` + between + `\b` + isnt + ` ` + given + `\b`),
+		// "issue #106 isn't available to me"
+		regexp.MustCompile(`\b` + thing + `\b` + between + `\b` + isnt + ` ` + given + ` to (?:me|the agent|this session)\b`),
+		// "no issue text was provided"
+		regexp.MustCompile(`\bno ` + thing + `(?: ` + text + `)? (?:was |is |has been )?` + given + `\b`),
+	}
+}()
+
+// IssueUnseen reports whether a blocked note says the agent can't see its
+// issue (issueUnseenSigns).
+func IssueUnseen(note string) bool {
+	s := strings.Join(strings.Fields(strings.ToLower(strings.ReplaceAll(note, "’", "'"))), " ")
+	for _, sign := range issueUnseenSigns {
+		if sign.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// IssueUnseenMessage is the message of a Task whose agent couldn't see the
+// issue: the agent's own words.
+func IssueUnseenMessage(note string) string {
+	return "The agent says it can't see the issue, which the factory gave it: " + note
+}
+
+// TryCounter decides which of an issue's failed Tasks, oldest first, cost the
+// issue a try: not one that failed through its CI runner's fault
+// (RunnerFault), nor the first MaxFreeUnseen whose agent couldn't see the
+// issue (ReasonIssueUnseen). Its zero value is ready for one issue.
+type TryCounter struct{ unseen int }
+
+// Costs reports whether a failed Task costs the issue a try: noCI when it
+// failed through its CI runner's fault, unseen when its agent couldn't see
+// the issue.
+func (c *TryCounter) Costs(noCI, unseen bool) bool {
+	switch {
+	case noCI:
+		return false
+	case unseen && c.unseen < MaxFreeUnseen:
+		c.unseen++
+		return false
+	}
+	return true
 }

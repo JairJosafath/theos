@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -158,6 +174,34 @@ func TestNextStandardStep(t *testing.T) {
 		{name: "#1447: a failed update is dropped once main moved",
 			facts: planned("m1", StandardUpdateFacts{Checks: "error", Main: "m2"}), want: StandardDrop,
 			message: "Closed a Standard update whose CI failed, to plan it again from main's new head"},
+		{name: "#2035: an update the operator closed to plan again from main's new head is dropped, not stopped",
+			facts: func() StandardUpdateFacts {
+				f := planned("m1", StandardUpdateFacts{PR: &UpdatePullRequest{Closed: true, HeadSHA: "abc"}})
+				f.Update.Dropping = "Closed a Standard update whose CI failed, to plan it again from main's new head"
+				return f
+			}(),
+			want: StandardDrop, message: "to plan it again from main's new head"},
+		{name: "#2035: an update the operator is dropping is dropped before its checks are read",
+			facts: func() StandardUpdateFacts {
+				f := following(StandardUpdateFacts{})
+				f.Update.Dropping = "Closed a Standard update that conflicts with main"
+				return f
+			}(),
+			want: StandardDrop, message: "conflicts with main"},
+		{name: "#2035: a merged update the operator was dropping is recorded as merged",
+			facts: func() StandardUpdateFacts {
+				f := following(StandardUpdateFacts{PR: &UpdatePullRequest{Merged: true, Closed: true}})
+				f.Update.Dropping = "Closed a Standard update that conflicts with main"
+				return f
+			}(),
+			want: StandardRecordMerge},
+		{name: "#2035: a take the operator is dropping is dropped, not forgotten as closed",
+			facts: func() StandardUpdateFacts {
+				f := following(StandardUpdateFacts{PR: &UpdatePullRequest{Closed: true}})
+				f.Update.Take, f.Update.Dropping = true, "Closed a Standard update that conflicts with main"
+				return f
+			}(),
+			want: StandardDrop},
 		{name: "#1447: a pending update doesn't read main",
 			facts: planned("m1", StandardUpdateFacts{Checks: "pending"}), want: StandardWaitForChecks},
 

@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -19,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // AgentNetworkPolicyName is the NetworkPolicy that fences agent sandboxes.
@@ -41,13 +50,23 @@ func (r *ProjectReconciler) ensureAgentNetwork(ctx context.Context, project *c4v
 	}
 	gitNamespaces := gitNamespacesOf(providers.Items)
 	egress := fenceEgress(r.ClusterDNS, gitNamespaces)
+	// The project's own test environment pods, on theos-env's port: a run
+	// reaches the one it leased with its lease's token
+	// (docs/plans/done/test-environments.md, T5). The CI runners' policy has no
+	// such rule: CI runs on an environment's image itself.
+	tcp := corev1.ProtocolTCP
+	envPort := intstr.FromInt32(model.TestEnvPort)
+	egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+		To: []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{labelComponent: model.TestEnvComponent}}}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envPort}},
+	})
 	if r.ModelProxyURL != "" {
 		// A sandbox on the shared token holds no token: the proxy's pods in the
 		// release namespace are its only way to Claude with one (decision 6 of
 		// docs/plans/done/model-proxy.md). The proxy's own policy admits only
 		// sandboxes of namespaces opted in to the shared Secrets. The CI runners'
 		// policy has no such rule: a job never talks to Claude.
-		tcp := corev1.ProtocolTCP
 		proxy := intstr.FromInt32(ModelProxyPort)
 		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
 			To: []networkingv1.NetworkPolicyPeer{{

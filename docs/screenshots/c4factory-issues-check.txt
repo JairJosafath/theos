@@ -1,0 +1,27 @@
+# make check on 3101448 (c4factory's open issues ported to theos #2-#26; the Git events, Git host ports and CI runner isolation plans done): exit 0.
+# make test-gitea ran against a local Gitea started as a non-root user: every Integration test passed but TestGiteaNpmIntegration, which fails on this container's TLS proxy (SELF_SIGNED_CERT_IN_CHAIN from registry.npmjs.org).
+0 issues.
+All valid
+All 16 invalid files rejected
+test-hack: all 43 shell tests passed
+ok  	github.com/JairJosafath/theos/api/v1alpha1	3.118s
+ok  	github.com/JairJosafath/theos/features	(cached)
+ok  	github.com/JairJosafath/theos/internal/adapters/gitea	(cached)
+ok  	github.com/JairJosafath/theos/internal/agentrunner	(cached)
+ok  	github.com/JairJosafath/theos/internal/model	1.250s
+ok  	github.com/JairJosafath/theos/internal/ports	0.119s
+ok  	github.com/JairJosafath/theos/internal/ports/fake	(cached)
+ok  	github.com/JairJosafath/theos/test/chart	56.117s
+ok  	github.com/JairJosafath/theos/internal/controller	543.807s
+ok  	github.com/JairJosafath/theos/internal/controller	689.181s
+ui-test: cached (ui/ unchanged since it last passed)
+make check: passed on tree 2776ecb4d50be320ab6eb0ae88a6222c769b4aeb; recorded
+--- PASS: TestGitHostContractIntegration
+--- PASS: TestEventsContractIntegration
+--- PASS: TestGiteaEventsIntegration
+--- PASS: TestIssuesContractIntegration
+--- PASS: TestCIContractIntegration
+--- PASS: TestAgentAccessContractIntegration
+--- PASS: TestRegistryContractIntegration
+--- PASS: TestGiteaTemplatesIntegration
+exit 0

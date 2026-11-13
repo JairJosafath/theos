@@ -17,6 +17,11 @@ spec:
   # organization only (#1698).
   ci:
     giteaActions:
+      # Where a remote TestEnvironment's machines reach this host to run a
+      # job labelled env-<name> (docs/plans/done/test-environments.md, step 8):
+      # https:// on port 443 at a public host. The in-cluster url above is
+      # none, so remote CI is off until it is set.
+      # publicURL: https://git.example.com
       runners:
         - label: base
           image: theos/gitea-runner-base:dev
@@ -25,6 +30,11 @@ spec:
           image: theos/gitea-runner-go:dev
           size: 1
           goCache: true
+        # gitea-release's release job: a Go cache of the pod's own (#1141).
+        - label: go-release
+          image: theos/gitea-runner-go:dev
+          size: 1
+          freshGoCache: true
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: Framework
@@ -92,6 +102,16 @@ spec:
   template:
     url: http://gitea.gitea.svc.cluster.local:3000/templates/python-standard
     ref: v1.7.0
+  # Upkeep the Standard proposes to the Crews of its Containers (docs/design.md,
+  # "Schedules"). Nothing here runs: a Crew takes a proposal by adding it to
+  # its own spec.schedules, and may change the time and the words there.
+  schedules:
+    - name: dependencies
+      cron: "0 6 * * 1"            # Mondays at 06:00, UTC
+      goal: >-
+        Update the dependencies in pyproject.toml that have a new minor or
+        patch version, and uv.lock with them. One pull request. Say what you
+        updated, and what you left and why.
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: Compute

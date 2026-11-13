@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -93,7 +101,8 @@ func issueTasks(tasks []c4v1beta1.Task) map[string][]model.IssueTask {
 			continue
 		}
 		it := model.IssueTask{Name: t.Name, Issue: int(t.Spec.Issue), Merged: t.Status.Phase == c4v1beta1.TaskMerged,
-			Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status), Created: t.CreationTimestamp.Time}
+			Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
+			Unseen: failedUnseen(&t.Status), Created: t.CreationTimestamp.Time}
 		if t.Status.CompletedAt != nil {
 			it.Completed = t.Status.CompletedAt.Time
 		}

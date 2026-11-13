@@ -1,10 +1,19 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
+
 package v1beta1
 
 import (
@@ -53,6 +62,18 @@ type FrameworkSpec struct {
 	// refuses operations on such a Container.
 	// +optional
 	ReadsOperations bool `json:"readsOperations,omitempty"`
+
+	// testEnvironments names the TestEnvironments, such as browser, that
+	// the runs of its Containers' Tasks get when the project has them
+	// (docs/plans/done/test-environments.md, T2). One the project lacks gives the
+	// Container TestEnvironments=False, NotInProject, and the runs go on
+	// without it; an issue labelled env/<name> asks for one it can't do
+	// without.
+	// +kubebuilder:validation:MaxItems=8
+	// +kubebuilder:validation:items:Pattern=`^[a-z]([-a-z0-9]{0,30}[a-z0-9])?$`
+	// +listType=set
+	// +optional
+	TestEnvironments []string `json:"testEnvironments,omitempty"`
 }
 
 // +kubebuilder:object:root=true

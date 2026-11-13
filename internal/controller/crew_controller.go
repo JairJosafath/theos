@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -59,6 +67,9 @@ const defaultCrewPoll = time.Minute
 type CrewReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// GitEvents is the receiver of the Git host's deliveries; nil when it is
+	// off, and the reconciler polls alone.
+	GitEvents *GitEventsReceiver
 	// APIReader reads the Crew, Secrets and Tasks without the cache.
 	APIReader client.Reader
 	// Git reaches the Git hosts.
@@ -179,8 +190,17 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 	}
 
+	// A cadence whose time zone the operator can't load stops the Crew, as
+	// a missing Agent does: CEL can't check it (docs/plans/done/release-cadence.md, C1).
+	cadence := crewCadence(&crew)
+	if err := model.CheckCadence(cadence); err != nil {
+		r.wait(&crew, status, model.ReasonInvalidTimeZone, "spec.releaseCadence: "+err.Error())
+		return ctrl.Result{}, r.writeStatus(ctx, &crew, status)
+	}
+
 	facts := model.CrewFacts{Paused: crew.Spec.Paused, Parallel: int(crew.Spec.Parallel),
-		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady, Routes: crewRoutes(&crew.Spec)}
+		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady, Routes: crewRoutes(&crew.Spec),
+		Cadence: cadence.Cuts(), Unprotected: unprotected(&container)}
 	// Read live: a Task created a moment ago must count, or the Crew starts two.
 	var tasks c4v1beta1.TaskList
 	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(crew.Namespace)); err != nil {
@@ -194,8 +214,10 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	// A Triage Task is no try at its issue, takes no place from parallel and
 	// merges nothing a release could hold: the Crew reads them apart.
+	// On a repository whose main isn't protected yet no agent runs, the
+	// triager included: it pushes nothing, but its clone's token could (#95).
 	triage := model.TriageFacts{On: crew.Spec.Triager != nil, Paused: crew.Spec.Paused,
-		ContainerReady: facts.ContainerReady}
+		ContainerReady: facts.ContainerReady && facts.Unprotected == ""}
 	triage.Tasks, containerTasks = triageTasks(containerTasks)
 	for i := range containerTasks {
 		facts.Tasks = append(facts.Tasks, crewTask(&containerTasks[i]))
@@ -208,6 +230,9 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		ports.Registry
 	}
 	var repo ports.Repository
+	// untilSchedule is how long until the Crew's next schedule is due, 0 with
+	// none.
+	var untilSchedule time.Duration
 	if facts.ContainerReady {
 		provider, err = providerFor(ctx, r.Client, r.APIReader, r.Git, crew.Namespace, container.Spec.GitProviderRef.Name)
 		if err != nil {
@@ -217,7 +242,8 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 		repo = provider.Repository(container.Name)
 		gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-		err = readIssues(gitCtx, provider, repo, crew.Spec.SpecWriter != nil, &facts, &triage)
+		err = readIssues(gitCtx, provider, repo, crewIssueLabels(cadence), crew.Spec.SpecWriter != nil, &facts,
+			&triage)
 		cancel()
 		if err != nil {
 			log.Error(err, "Failed to read the ready issues", "container", container.Name)
@@ -232,6 +258,12 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			facts.Issues = append(facts.Issues, *filed)
 		}
 		facts.Preparing = preparing
+		// A schedule that came due files its issue (#63); the next poll reads
+		// it among the ready ones.
+		untilSchedule = r.schedule(ctx, &crew, status, provider, repo)
+		// A repository adopted with no Standard gets its guide for agents
+		// first (#98); the next poll reads the issue among the ready ones.
+		r.onboard(ctx, &crew, status, &container, provider, repo)
 	}
 
 	step := model.NextCrewStep(container.Name, facts)
@@ -259,18 +291,42 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		now := metav1.NewTime(r.now())
 		status.LastPolled = &now
 	}
-	ready := metav1.ConditionTrue
-	reason := step.Phase
-	if step.Phase == model.CrewWaiting {
-		ready, reason = metav1.ConditionFalse, "ContainerNotReady"
-	}
+	ready, reason := crewReady(step)
 	setCondition(&status.Conditions, crew.Generation, ConditionReady, ready, reason, step.Message)
 	setCrewPaused(&crew, status, tasks.Items)
 	if !crew.Spec.TagReleases {
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionReleased)
 		apimeta.RemoveStatusCondition(&status.Conditions, ConditionModulePublished)
 	}
-	return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
+	poll := r.poll()
+	if facts.ContainerReady {
+		// The poll of the ready issues waits for the host (#1222); a Crew
+		// waiting for its Container is woken by the Container's watch.
+		poll = hostRecheck(withHostEvents(ctx, r.Client, crew.Namespace, container.Spec.GitProviderRef.Name), poll)
+	}
+	after := r.cutPoll(cadence, status, poll)
+	if untilSchedule > 0 && untilSchedule < after {
+		// A schedule is on time whatever the host's events stretch the poll to.
+		after = untilSchedule
+	}
+	return ctrl.Result{RequeueAfter: after}, r.writeStatus(ctx, &crew, status)
+}
+
+// cutPoll is poll, or less when the Crew's next cut comes sooner, so a cut is
+// on time whatever the host's events stretch the poll to. Off a cadence, it
+// clears what the status says of cuts.
+func (r *CrewReconciler) cutPoll(cadence model.ReleaseCadence, status *c4v1beta1.CrewStatus,
+	poll time.Duration) time.Duration {
+	if !cadence.Cuts() {
+		status.NextCut, status.LastCut, status.CutRelease = nil, nil, ""
+		return poll
+	}
+	if next := status.NextCut; next != nil {
+		if wait := next.Time.Sub(r.now()) + time.Second; wait > 0 && wait < poll {
+			return wait
+		}
+	}
+	return poll
 }
 
 // handBackIssues gives the issues agents must not take back to a person,
@@ -426,10 +482,13 @@ func crewRoutes(spec *c4v1beta1.CrewSpec) []model.AgentRoute {
 func crewTask(t *c4v1beta1.Task) model.CrewTask {
 	out := model.CrewTask{Name: t.Name, Issue: int(t.Spec.Issue), Final: isFinal(t.Status.Phase),
 		Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
+		Unseen: failedUnseen(&t.Status),
 		// A spec waiting for a person runs no agent: like a Task waiting on a
-		// Standard change, it takes no place from parallel.
-		Blocked: t.Status.Phase == c4v1beta1.TaskBlocked || t.Status.Phase == c4v1beta1.TaskAwaitingApproval,
-		Spec:    isSpec(t)}
+		// Standard change, it takes no place from parallel; nor does a Task
+		// ready to merge that waits for its Crew's cut release to be tagged.
+		Blocked: t.Status.Phase == c4v1beta1.TaskBlocked || t.Status.Phase == c4v1beta1.TaskAwaitingApproval ||
+			waitsForRelease(t),
+		Spec: isSpec(t)}
 	if change := t.Status.StandardChange; change != nil {
 		out.StandardChange = &model.IssueChange{Issue: int(change.Issue), Paths: slices.Clone(change.Paths)}
 	}
@@ -437,9 +496,10 @@ func crewTask(t *c4v1beta1.Task) model.CrewTask {
 }
 
 // readyIssues reads the open issues labelled ready, what blocks each, and which
-// are Standard changes.
-func readyIssues(ctx context.Context, provider ports.Issues, repo ports.Repository) ([]model.Issue, error) {
-	if err := provider.EnsureLabels(ctx, repo, issueLabels()); err != nil {
+// are Standard changes, once the repository has the labels the Crew keeps.
+func readyIssues(ctx context.Context, provider ports.Issues, repo ports.Repository,
+	labels []ports.Label) ([]model.Issue, error) {
+	if err := provider.EnsureLabels(ctx, repo, labels); err != nil {
 		return nil, err
 	}
 	return labelledIssues(ctx, provider, repo, model.LabelReady)
@@ -479,10 +539,10 @@ func labelledIssues(ctx context.Context, provider ports.Issues, repo ports.Repos
 // readIssues reads what a Crew picks from: the ready issues, with a spec
 // writer those that need a spec, the releases of its Tasks' issues, and, with
 // a triager, the proposed issues.
-func readIssues(ctx context.Context, provider ports.Issues, repo ports.Repository, specs bool,
+func readIssues(ctx context.Context, provider ports.Issues, repo ports.Repository, labels []ports.Label, specs bool,
 	facts *model.CrewFacts, triage *model.TriageFacts) error {
 	var err error
-	if facts.Issues, err = readyIssues(ctx, provider, repo); err != nil {
+	if facts.Issues, err = readyIssues(ctx, provider, repo, labels); err != nil {
 		return err
 	}
 	if specs {
@@ -603,6 +663,19 @@ func (r *CrewReconciler) observe(ctx context.Context, crew *c4v1beta1.Crew) *c4v
 	return status
 }
 
+// crewReady is a step's Ready condition: True with the step's phase as its
+// reason, and False while the Crew waits for its Container to be Ready, or
+// for what the step says instead (model.ReasonNotProtected).
+func crewReady(step model.CrewStep) (metav1.ConditionStatus, string) {
+	switch {
+	case step.Phase != model.CrewWaiting:
+		return metav1.ConditionTrue, step.Phase
+	case step.Reason != "":
+		return metav1.ConditionFalse, step.Reason
+	}
+	return metav1.ConditionFalse, "ContainerNotReady"
+}
+
 func (r *CrewReconciler) writeStatus(ctx context.Context, crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus) error {
 	if equality.Semantic.DeepEqual(&crew.Status, status) {
 		return nil
@@ -685,6 +758,9 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}), createOrDelete()).
 		// A Crew uploading a release file can take minutes; the others go on.
 		WithOptions(controller.Options{MaxConcurrentReconciles: crewWorkers}).
+		// A delivery of the Git host reconciles the Crews of the Container whose repository a delivery names at once
+		// (docs/plans/done/git-events.md, decision 7).
+		WatchesRawSource(r.GitEvents.Source(gitEventCrewRequests(mgr.GetClient()))).
 		Named("crew").
 		Complete(r)
 }

@@ -215,7 +215,7 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
     autopilot,
     suggestions,
     suggestionsWaiting,
-    apps: (status.apps ?? []).map(describeBriefApp),
+    apps: (status.apps ?? []).map((a) => describeBriefApp(a)),
     requests: describeRequests(brief),
     releases: brief.spec.releases ?? [],
     resourceVersion: brief.metadata.resourceVersion,
@@ -516,12 +516,15 @@ export interface BriefAppView {
   parallel?: string
   /** The latest release's Go module, toned by whether Go can fetch it; unset for an app that isn't Go. */
   module?: { state: string; path?: string; message?: string; tone: Tone }
+  /** What the next cut ships, and when (describeNextRelease); unset without a cadence. */
+  nextRelease?: NonNullable<BriefApp['nextRelease']>
 }
 
 export function describeBriefApp(app: BriefApp): BriefAppView {
   const releasesOn = app.releases === 'On'
   const last = app.lastRelease
   return {
+    ...(app.nextRelease ? { nextRelease: app.nextRelease } : {}),
     container: app.container,
     releasesOn,
     label: releasesOn ? 'Releases on' : 'Releases off',
@@ -541,6 +544,44 @@ export function describeBriefApp(app: BriefApp): BriefAppView {
           }
         : undefined,
   }
+}
+
+/**
+ * "next release v0.15.0 at 18:00 UTC, 4 merged": the cut's time in the
+ * cadence's time zone, as the person set it, with its weekday when it isn't
+ * today there, as the operator says it.
+ */
+export function describeNextRelease(next: NonNullable<BriefApp['nextRelease']>, now: Date = new Date()): string {
+  const zone = next.timeZone || 'UTC'
+  const at = new Date(next.time)
+  let time: string
+  let day: (d: Date) => string
+  try {
+    time = new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(at)
+    const days = new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    })
+    day = (d) => days.format(d)
+  } catch {
+    // A time zone this browser doesn't know: say the time in UTC.
+    return describeNextRelease({ ...next, timeZone: 'UTC' }, now)
+  }
+  const when = day(at) === day(now) ? `${time} ${zone}` : `${time} ${zone} on ${weekdayIn(at, zone)}`
+  const merged = next.merged ? `${next.merged} merged` : 'none merged yet'
+  return `next release ${next.tag} at ${when}, ${merged}`
+}
+
+function weekdayIn(at: Date, zone: string): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: zone, weekday: 'long' }).format(at)
 }
 
 /** A module nobody can fetch is an error, one on its way is progress. */

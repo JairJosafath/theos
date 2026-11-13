@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -13,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,6 +57,7 @@ func (r *TaskReconciler) reconcileTriage(ctx context.Context, task *c4v1beta1.Ta
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	ctx = withHostEvents(ctx, r.Client, task.Namespace, container.Spec.GitProviderRef.Name)
 	labels := projectLabels(task.Namespace)
 	labels[c4v1beta1.LabelContainer] = container.Name
 	if err := adopt(ctx, r.Client, r.Scheme, &container, task, labels); err != nil {
@@ -122,7 +132,7 @@ func (r *TaskReconciler) triageFacts(ctx context.Context, task *c4v1beta1.Task,
 		}
 		facts.NoFreeSlot = noSlot
 	}
-	if err := r.crewFacts(ctx, task, status, &facts); err != nil {
+	if _, err := r.crewFacts(ctx, task, status, &facts); err != nil {
 		return facts, err
 	}
 	if status.Phase == c4v1beta1.TaskImplementing {
@@ -149,7 +159,7 @@ func (r *TaskReconciler) applyTriage(ctx context.Context, task *c4v1beta1.Task, 
 	agents := taskAgents{implementer: agent, reviewer: agent}
 	switch step.Action {
 	case model.ActionWait:
-		return r.wait(task, status, step), nil
+		return r.wait(ctx, task, status, step), nil
 
 	case model.ActionStartImplement:
 		return r.startTriage(ctx, task, status, container, agents, step.Message)
@@ -164,7 +174,11 @@ func (r *TaskReconciler) applyTriage(ctx context.Context, task *c4v1beta1.Task, 
 		if in == nil {
 			return result, err
 		}
-		fresh, err := r.runSandbox(ctx, task, status, container, agents, model.RoleTriager, status.Sandbox, in)
+		listed, err := listedEnvironments(ctx, r.Client, task.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		fresh, err := r.runSandbox(ctx, task, status, container, agents, model.RoleTriager, status.Sandbox, in, listed)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -187,9 +201,15 @@ func (r *TaskReconciler) startTriage(ctx context.Context, task *c4v1beta1.Task, 
 	if in == nil {
 		return result, err
 	}
+	// The triager reads the project's test environments, which it may
+	// name for the issue (docs/plans/done/test-environments.md, T13).
+	listed, err := listedEnvironments(ctx, r.Client, task.Namespace)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	setProgress(status, model.StartRun(progressOf(status), model.RoleTriager))
 	name := sandboxName(task, status, model.RoleTriager)
-	sandbox, err := r.runSandbox(ctx, task, status, container, agents, model.RoleTriager, name, in)
+	sandbox, err := r.runSandbox(ctx, task, status, container, agents, model.RoleTriager, name, in, listed)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -225,8 +245,16 @@ func (r *TaskReconciler) applyDecision(ctx context.Context, task *c4v1beta1.Task
 	if err != nil {
 		return err
 	}
+	envs, err := projectEnvironments(ctx, r.Client, task.Namespace)
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(envs))
+	for _, e := range envs {
+		names = append(names, e.Name)
+	}
 	actions := model.PlanTriage(task.Name, model.TriageIssue{Number: issue.Number, Body: issue.Body,
-		Labels: issue.Labels, Closed: issue.State == stateClosed}, decision)
+		Labels: issue.Labels, Closed: issue.State == stateClosed, Environments: names}, decision)
 	if actions.Problem != "" {
 		return r.failTriage(ctx, task, status, container, model.TaskStep{Action: model.ActionFail,
 			Feedback: actions.Problem, Message: "The triage failed: " + actions.Problem})
@@ -234,7 +262,12 @@ func (r *TaskReconciler) applyDecision(ctx context.Context, task *c4v1beta1.Task
 	applied := actions.Skip
 	if applied == "" {
 		// A Crew keeps the labels; a Triage Task made by hand may come first.
-		if err := provider.EnsureLabels(gitCtx, repo, issueLabels()); err != nil {
+		labels := issueLabels()
+		for _, l := range actions.EnvLabels {
+			env := model.EnvLabel(strings.TrimPrefix(l, model.LabelEnvPrefix))
+			labels = append(labels, ports.Label{Name: env.Name, Color: env.Color, Description: env.Description})
+		}
+		if err := provider.EnsureLabels(gitCtx, repo, labels); err != nil {
 			return err
 		}
 		if applied, err = r.applyTriageActions(gitCtx, provider, repo, issue.Number, actions); err != nil {
@@ -242,7 +275,8 @@ func (r *TaskReconciler) applyDecision(ctx context.Context, task *c4v1beta1.Task
 		}
 	}
 	status.Triage = &c4v1beta1.TriageDecision{Decision: decision.Decision, Reason: decision.Reason,
-		Criteria: decision.Criteria, Question: decision.Question, Duplicate: int32(decision.Duplicate), Applied: applied}
+		Criteria: decision.Criteria, Question: decision.Question, Duplicate: int32(decision.Duplicate), Applied: applied,
+		Environments: decision.Environments, Risk: decision.Risk}
 	status.Summary = decision.Reason
 	if err := r.endRun(ctx, task, status); err != nil {
 		return err
@@ -254,7 +288,8 @@ func (r *TaskReconciler) applyDecision(ctx context.Context, task *c4v1beta1.Task
 }
 
 // applyTriageActions writes a decision's actions to the issue and says what
-// it did: the body, the comment, the close, then the status label. A host
+// it did: the body, the comment, the close, the environments' and the risk's
+// labels, then the status label. A host
 // that won't close an issue with open dependencies leaves it open, said.
 func (r *TaskReconciler) applyTriageActions(ctx context.Context, provider ports.Issues, repo ports.Repository,
 	number int, actions model.TriageActions) (string, error) {
@@ -273,6 +308,16 @@ func (r *TaskReconciler) applyTriageActions(ctx context.Context, provider ports.
 			applied = fmt.Sprintf("Left issue #%d open: the Git host won't close it while an issue it depends on is open",
 				number)
 		case err != nil:
+			return "", err
+		}
+	}
+	for _, l := range actions.EnvLabels {
+		if err := provider.AddIssueLabel(ctx, repo, number, l); err != nil {
+			return "", err
+		}
+	}
+	if actions.RiskLabel != "" {
+		if err := provider.AddIssueLabel(ctx, repo, number, actions.RiskLabel); err != nil {
 			return "", err
 		}
 	}

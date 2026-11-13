@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package v1beta1
@@ -68,6 +76,45 @@ const (
 	ContainerTypeFunction   ContainerType = "function"
 )
 
+// ReleaseCadence is how often a Crew's releases go out
+// (docs/plans/done/release-cadence.md): each once it is done, or at a cut once a
+// day or a week, which ships the work merged by then and carries the rest
+// into the next release.
+// +kubebuilder:validation:XValidation:rule="!has(self.weekday) || self.every == 'Week'",message="weekday needs every: Week"
+type ReleaseCadence struct {
+	// every is Release, to tag each release as soon as it is done; Day, to
+	// cut the release in progress once a day at at; or Week, once a week on
+	// weekday at at. A cut ships the work merged so far and moves the rest
+	// to the next release. A merged issue labelled release/now cuts its
+	// release at once.
+	// +kubebuilder:validation:Enum=Release;Day;Week
+	// +required
+	Every string `json:"every"`
+
+	// at is the time of day of the cut, HH:MM on a 24-hour clock, in
+	// timeZone. Unset is 18:00.
+	// +kubebuilder:validation:Pattern=`^([01][0-9]|2[0-3]):[0-5][0-9]$`
+	// +kubebuilder:default="18:00"
+	// +optional
+	At string `json:"at,omitempty"`
+
+	// timeZone is the IANA time zone at is in, such as Europe/Amsterdam;
+	// daylight saving follows it. Unset is UTC. A name the operator can't
+	// load leaves the Crew Ready=False, reason InvalidTimeZone, until it is
+	// fixed.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:default=UTC
+	// +optional
+	TimeZone string `json:"timeZone,omitempty"`
+
+	// weekday is the day of a weekly cut, only with every: Week. Unset is
+	// Friday.
+	// +kubebuilder:validation:Enum=Monday;Tuesday;Wednesday;Thursday;Friday;Saturday;Sunday
+	// +optional
+	Weekday string `json:"weekday,omitempty"`
+}
+
 // TemplateSource points to a platform-managed template repository at a pinned ref.
 type TemplateSource struct {
 	// url of the template's Git repository.
@@ -80,6 +127,18 @@ type TemplateSource struct {
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	Ref string `json:"ref"`
+
+	// path is a directory of the repository that holds the template, relative
+	// to its root, such as domains/billing. The operator reads only that
+	// subtree, at ref, with paths relative to it; files outside it are not
+	// part of the template. Unset is the repository's root (#35).
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:XValidation:rule="!self.startsWith('/')",message="path is relative to the repository's root, not absolute"
+	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/') && !self.contains('//')",message="path has no trailing or doubled /"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('(^|/)[.][.]?(/|$)')",message="path has no . or .. segments"
+	// +optional
+	Path string `json:"path,omitempty"`
 }
 
 // CatalogEntrySpec is shared by the four catalog kinds: Framework, Compute,
@@ -127,6 +186,13 @@ const (
 	// listing the sides that differ, or saying the Bundle is gone. A changed
 	// Bundle is reported, never applied. Absent on a Container naming its sides.
 	ConditionBundleCurrent = "BundleCurrent"
+	// ConditionProtected, on a Container that adopts its repository with no
+	// Standard, is True when the default branch requires the Container's
+	// check contexts, and False, reason NoMatchingCheck, while its head
+	// reports no check for one of them: no agent works on the repository
+	// until it does (docs/design.md, "Adopting a repository").
+	ConditionProtected = "Protected"
+
 	// ConditionChecksApplied is True when a Container's Standard runs its CI's
 	// full check when the Container's spec.checks asks, and its repository's CI
 	// already does; False with the update in flight or its stop while not.
@@ -150,6 +216,11 @@ const (
 	// image when its newest release's image is pushed to the owner's
 	// registry; False with status.image's state as the reason.
 	ConditionImagePublished = "ImagePublished"
+	// ConditionTestEnvironments is True when the project has every
+	// TestEnvironment a Container's Standard and Framework ask for; False
+	// with reason NotInProject naming the ones it lacks, whose runs go on
+	// without them. Absent when neither asks for one.
+	ConditionTestEnvironments = "TestEnvironments"
 )
 
 // Condition reasons.
@@ -164,10 +235,13 @@ const (
 	ReasonNotWired             = "NotWired"
 	ReasonCreated              = "Created"
 	ReasonScaffolding          = "Scaffolding"
-	ReasonScaffolded           = "Scaffolded"
-	ReasonFailed               = "Failed"
-	ReasonGitError             = "GitError"
-	ReasonForeignCommits       = "ForeignCommits"
+	// ReasonSettling: a new Container waits out the scaffold's settle window,
+	// so the Relationships applied with it are there when it scaffolds (#43).
+	ReasonSettling       = "Settling"
+	ReasonScaffolded     = "Scaffolded"
+	ReasonFailed         = "Failed"
+	ReasonGitError       = "GitError"
+	ReasonForeignCommits = "ForeignCommits"
 	// ReasonNothingToAdopt: the Container has spec.adopt set but its
 	// repository has no commits; there is nothing to take over.
 	ReasonNothingToAdopt = "NothingToAdopt"
@@ -191,17 +265,21 @@ const (
 	ReasonDomainNotMarkdown = "DomainNotMarkdown"
 	// ReasonDomainNoReadme: a Domain's template renders no README.md, the
 	// index the Standards' guides point at.
-	ReasonDomainNoReadme     = "DomainNoReadme"
-	ReasonUnpinnedRef        = "UnpinnedRef"
-	ReasonWaiting            = "WaitingForScaffold"
-	ReasonAppliedAtScaffold  = "AppliedAtScaffold"
-	ReasonAddedAfterScaffold = "AddedAfterScaffold"
-	ReasonUpToDate           = "UpToDate"
-	ReasonUpdating           = "Updating"
-	ReasonChecksFailed       = "ChecksFailed"
-	ReasonUpdateClosed       = "UpdateClosed"
-	ReasonUpdateRefused      = "UpdateRefused"
-	ReasonFilesBehind        = "FilesBehind"
+	ReasonDomainNoReadme = "DomainNoReadme"
+	ReasonUnpinnedRef    = "UnpinnedRef"
+	// ReasonTemplatePathNotFound: a catalog entry's template.path is no
+	// directory of its repository at the pinned ref; the message names the
+	// path and the ref (#35).
+	ReasonTemplatePathNotFound = "TemplatePathNotFound"
+	ReasonWaiting              = "WaitingForScaffold"
+	ReasonAppliedAtScaffold    = "AppliedAtScaffold"
+	ReasonAddedAfterScaffold   = "AddedAfterScaffold"
+	ReasonUpToDate             = "UpToDate"
+	ReasonUpdating             = "Updating"
+	ReasonChecksFailed         = "ChecksFailed"
+	ReasonUpdateClosed         = "UpdateClosed"
+	ReasonUpdateRefused        = "UpdateRefused"
+	ReasonFilesBehind          = "FilesBehind"
 	// ReasonExternalSystem: the Container or DataStore names an External
 	// SoftwareSystem, which the factory never builds.
 	ReasonExternalSystem = "ExternalSystem"
@@ -336,8 +414,16 @@ const (
 
 // AnnotationRerunRelease, set or changed on a Crew whose last release's run
 // Failed, makes the operator re-run that release's failed workflow runs, once
-// per value.
+// per value; on a Crew whose next release its failed full check holds, it
+// re-runs that check's failed runs first (#2028).
 const AnnotationRerunRelease = "theos.factory.io/rerun-release"
+
+// AnnotationRunSchedule, set on a Crew to the name of one of its schedules,
+// has that schedule file its issue now instead of at its next time (#72).
+// The operator removes it once the issue is filed. While an issue of the
+// schedule is still open, or the Crew is paused, the run waits and the
+// annotation stays: the Crew's Scheduled condition says why.
+const AnnotationRunSchedule = "theos.factory.io/run-schedule"
 
 // AnnotationAcceptRepository, set on a Crew to the GitHub id of its publish
 // target, accepts that repository in place of the one the Crew published to

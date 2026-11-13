@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package gitea
 
 import (
@@ -163,6 +179,45 @@ func TestCloseMilestone(t *testing.T) {
 	}
 	if err := p.CloseMilestone(ctx, repo, 7); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
 		t.Errorf("CloseMilestone() of a missing milestone error = %v, want HTTP 404", err)
+	}
+}
+
+func TestDescribeMilestone(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	due := time.Date(2026, 10, 14, 9, 30, 0, 0, time.UTC)
+	h.milestones = []hostMilestone{{ID: 1, Title: "v0.22.0", Description: "Round 3's", State: "open", DueOn: &due}}
+	if err := p.DescribeMilestone(ctx, repo, 1, "Round 4's"); err != nil {
+		t.Fatalf("DescribeMilestone() error = %v", err)
+	}
+	m := h.milestones[0]
+	if m.Description != "Round 4's" || m.Title != "v0.22.0" || m.State != "open" || m.DueOn == nil || !m.DueOn.Equal(due) {
+		t.Errorf("milestone after DescribeMilestone = %+v, want the new description, open, due %v kept", m, due)
+	}
+	if err := p.DescribeMilestone(ctx, repo, 7, "x"); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("DescribeMilestone() of a missing milestone error = %v, want HTTP 404", err)
+	}
+}
+
+func TestEditMilestoneTitle(t *testing.T) {
+	h, p := newIssueHost(t)
+	ctx := context.Background()
+	repo := p.Repository("orders-api")
+	due := time.Date(2026, 11, 6, 18, 0, 0, 0, time.UTC)
+	h.milestones = []hostMilestone{{ID: 1, Title: "v0.15.0", Description: "Round 3's", State: "open", DueOn: &due}}
+	for range 2 {
+		if err := p.EditMilestoneTitle(ctx, repo, 1, "v0.14.1"); err != nil {
+			t.Fatalf("EditMilestoneTitle() error = %v", err)
+		}
+	}
+	m := h.milestones[0]
+	if m.Title != "v0.14.1" || m.Description != "Round 3's" || m.State != "open" || m.DueOn == nil ||
+		!m.DueOn.Equal(due) {
+		t.Errorf("milestone after EditMilestoneTitle = %+v, want v0.14.1, its description, open, due %v kept", m, due)
+	}
+	if err := p.EditMilestoneTitle(ctx, repo, 7, "x"); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("EditMilestoneTitle() of a missing milestone error = %v, want HTTP 404", err)
 	}
 }
 

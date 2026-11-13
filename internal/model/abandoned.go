@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -18,8 +34,10 @@ type IssueTry struct {
 	// Created orders the tries; Name breaks a tie.
 	Created int64
 	// Final is a try that ended; Failed one that failed; NoCI one that failed
-	// through its CI runner's fault (RunnerFault), which costs no try.
-	Final, Failed, NoCI bool
+	// through its CI runner's fault (RunnerFault), which costs no try; Unseen
+	// one whose agent couldn't see the issue (ReasonIssueUnseen), the first
+	// of which costs no try (TryCounter).
+	Final, Failed, NoCI, Unseen bool
 	// PullRequest is the number of the try's pull request, 0 before it has one.
 	PullRequest    int
 	PullRequestURL string
@@ -76,8 +94,9 @@ func AbandonedPull(f AbandonedPullFacts) PullEnd {
 		}
 	}
 	failed := 0
+	var counter TryCounter
 	for _, t := range f.Tries {
-		if t.Failed && !t.NoCI {
+		if t.Failed && counter.Costs(t.NoCI, t.Unseen) {
 			failed++
 		}
 	}

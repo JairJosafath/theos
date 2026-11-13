@@ -3,9 +3,12 @@
 # with no relay session (#523). The guide at a tag installs that tag's release
 # (#370), so the tag's commit must name its version in two places:
 # dist/chart/Chart.yaml's version, and docs/getting-started.md's VERSION and
-# the release its prose names. This bumps both in a pull request of their own,
+# the release its prose names, and hack/quickstart.sh's default VERSION (#53).
+# This bumps them in a pull request of their own,
 # merges it with a merge commit, and tags that commit; the pushed tag starts
-# Release, which checks the same thing (--check) before it builds anything.
+# Release, which checks the same thing (--check) and then runs every step of
+# make check (FORCE=1) before it builds anything: a release is the one place
+# the whole check runs (#127).
 # The same pull request copies config/crd/bases to test/compat/baseline, the
 # CRDs make check holds the next release to (docs/design.md, "Compatibility"),
 # and empties test/compat/dropped.txt's entries, done with once the baseline
@@ -31,6 +34,9 @@ ROOT=${ROOT:-$(dirname "$HACK")}
 REMOTE=${REMOTE:-origin}
 CHART=dist/chart/Chart.yaml
 GUIDE=docs/getting-started.md
+# The quickstart installs the release it shipped with (#53); a tree from
+# before it has none, and is checked and bumped without it.
+QUICKSTART=hack/quickstart.sh
 CRDS=config/crd/bases
 BASELINE=test/compat/baseline
 DROPPED=test/compat/dropped.txt
@@ -60,6 +66,13 @@ check() {
     echo "$GUIDE says its commands use the release ${got:-nothing}, not $want" >&2
     bad=1
   fi
+  if [ -f "$dir/$QUICKSTART" ]; then
+    got=$(sed -n 's/^VERSION=${THEOS_VERSION:-\(.*\)}$/\1/p' "$dir/$QUICKSTART")
+    if [ "$got" != "$want" ]; then
+      echo "$QUICKSTART installs ${got:-nothing}, not $want" >&2
+      bad=1
+    fi
+  fi
   return $bad
 }
 
@@ -79,6 +92,9 @@ bump() {
   sed -i "s/^version: .*/version: $to/" "$dir/$CHART"
   sed -i -e "s/^VERSION=.*/VERSION=$to/" \
     -e "s/The commands use the release \`[^\`]*\`/The commands use the release \`$to\`/" "$dir/$GUIDE"
+  if [ -f "$dir/$QUICKSTART" ]; then
+    sed -i "s/^VERSION=\${THEOS_VERSION:-.*}$/VERSION=\${THEOS_VERSION:-$to}/" "$dir/$QUICKSTART"
+  fi
   check "$dir" "$to"
 }
 
@@ -130,8 +146,13 @@ fi
 
 branch=chore/release-$tag
 bump "$WT" "$to"
-git -C "$WT" add -A "$BASELINE"
-git -C "$WT" commit --quiet -m "chore: release $tag" -- "$CHART" "$GUIDE" "$BASELINE"
+# dropped.txt goes in the same commit: bump emptied its entries, and a commit
+# naming only the chart, the guide and the baseline left that behind.
+paths=("$CHART" "$GUIDE" "$BASELINE")
+[ ! -f "$WT/$DROPPED" ] || paths+=("$DROPPED")
+[ ! -f "$WT/$QUICKSTART" ] || paths+=("$QUICKSTART")
+git -C "$WT" add -A -- "${paths[@]}"
+git -C "$WT" commit --quiet -m "chore: release $tag" -- "${paths[@]}"
 git -C "$WT" push --quiet "$REMOTE" "HEAD:refs/heads/$branch"
 url=$(cd "$WT" && gh pr create --base main --head "$branch" --title "chore: release $tag" \
   --body "Names $tag in \`$CHART\` and \`$GUIDE\`, so the guide at the tag installs that release (#370), and copies \`$CRDS\` to \`$BASELINE\`, the CRDs the next release keeps (#1097). Made by \`hack/release.sh\`.")

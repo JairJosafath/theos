@@ -1,0 +1,30 @@
+# #52: gitleaks v8.21.2 (go install, make gitleaks) over every ref of JairJosafath/theos, after a full fetch (git fetch --unshallow), 2026-11-09, main at d2bfe048.
+# 1. Default rules only (a config with [extend] useDefault = true and nothing else):
+10:27PM INF 1991 commits scanned.
+10:27PM INF scan completed in 3.43s
+10:27PM WRN leaks found: 14
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-ec2-ts/development.search-development.assets.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-ec2-ts/production.search.assets.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-go/development.stock-fn-development.assets.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-go/development.stock-fn-development.template.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-go/production.stock-fn.assets.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-go/production.stock-fn.template.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-py/development.tax-fn-development.assets.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-py/development.tax-fn-development.template.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-py/production.tax-fn.assets.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-py/production.tax-fn.template.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-ts/development.price-fn-development.assets.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-ts/development.price-fn-development.template.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-ts/production.price-fn.assets.json
+   1 x generic-api-key  internal/adapters/cloudformation/testdata/aws-lambda-ts/production.price-fn.template.json
+# 2. make secrets-scan, with .gitleaks.toml (the same rules, those fixture paths allowlisted):
+10:27PM INF 1991 commits scanned.
+10:27PM INF scan completed in 3.22s
+10:27PM INF no leaks found
+# 3. hack/check-workflows_test.sh, the #52 cases:
+ok   Secrets with paths on pull requests fails (#52)
+ok   it says a commit can reach main unscanned (#52)
+ok   Secrets on a shallow clone fails (#52)
+ok   it says it scans one commit (#52)
+ok   Secrets without make secrets-scan fails (#52)
+fails: 0

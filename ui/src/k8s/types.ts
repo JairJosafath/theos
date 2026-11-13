@@ -180,6 +180,12 @@ export interface Container extends K8sObject {
     deploymentRef?: LocalRef
     /** When CI runs the full check; the API server defaults it to EveryChange. */
     checks?: ChecksMode
+    /** It takes over a repository that already has commits; nothing is scaffolded, and it needs nothing from the catalog. */
+    adopt?: boolean
+    /** The check of a repository adopted with no Standard: what the agent's workspace runs; make check when unset. */
+    checkCommand?: string
+    /** The status checks main requires on a repository adopted with no Standard, as patterns; check* when unset. */
+    checkContexts?: string[]
     /** Backups, recovery and alerts; any field left out takes its default. */
     operations?: Operations
     /** The DeployTargets each release ships to, in order (docs/plans/done/deploy.md). */
@@ -373,6 +379,133 @@ export interface DeployTarget extends K8sObject {
   }
 }
 
+/** A Kubernetes toleration, as a test environment's local member lists it. */
+export interface Toleration {
+  key?: string
+  operator?: 'Exists' | 'Equal'
+  value?: string
+  effect?: string
+  tolerationSeconds?: number
+}
+
+/** One live lease of a test environment, as its provider reports it. */
+export interface TestEnvironmentLease {
+  /** The provider's name for it: for local, the pod's; for aws, the machine's lease tag. */
+  id: string
+  /** The Task whose run holds it, or, for a remote machine that runs a CI job, ci/<GitProvider>/<runner id>. */
+  holder?: string
+  state?: 'Pending' | 'Ready' | 'Failed' | 'Ended'
+  since?: string
+  /** Why a lease is Pending or Failed. */
+  message?: string
+  /** What it cost so far, in thousandths of a US dollar; 0 for local. */
+  costMilliUSD?: number
+}
+
+/**
+ * A test package run a deviceFarm environment's lease asked for, over its Git
+ * host, with theos-env test (docs/plans/done/test-environments.md, step 10).
+ */
+export interface TestEnvironmentTestRun {
+  /** The run's ID on the provider: its lease and its request. */
+  id: string
+  /** The lease whose branch the request is on. */
+  lease: string
+  /** The Task whose run holds the lease. */
+  holder?: string
+  /** The Container on whose repository the lease's branch is. */
+  container?: string
+  /** The request commit on the lease's branch, and the run's commit the app and tests were built from. */
+  request: string
+  commit?: string
+  /** The test package's type, such as instrumentation or xctest. */
+  type?: string
+  /** Pending or Running on the provider, Reported once its result is on the branch, Rejected when nothing ran. */
+  state?: 'Pending' | 'Running' | 'Reported' | 'Rejected'
+  /** Once there is one: Passed, Warned, Failed, Skipped, Errored, Stopped or Rejected. */
+  result?: 'Passed' | 'Warned' | 'Failed' | 'Skipped' | 'Errored' | 'Stopped' | 'Rejected'
+  /** The result's one line, such as "passed: 12 passed of 12 tests on 2 devices". */
+  outcome?: string
+  /** The run on the provider's console. */
+  url?: string
+  /** What it cost, in thousandths of a US dollar. */
+  costMilliUSD?: number
+  since?: string
+  /** The operator's result commit on the lease's branch. */
+  answer?: string
+  /** The pull request comment still to post once the holder has a pull request; empty once posted. */
+  comment?: string
+}
+
+/**
+ * A named set of tools the agents' runs and CI lease, such as a browser, an
+ * Android emulator or a game engine on a GPU (docs/plans/done/test-environments.md):
+ * exactly one provider member, its limits and its CI.
+ */
+export interface TestEnvironment extends K8sObject {
+  spec: {
+    /** One line for people and the agents that choose it. */
+    description?: string
+    /** A pod per lease on the cluster, from image, fenced like an agent sandbox. */
+    local?: {
+      image: string
+      resources?: { requests?: Record<string, string>; limits?: Record<string, string> }
+      /** Extended resources the cluster's device plugins name, such as devices.kubevirt.io/kvm. */
+      devices?: Record<string, string>
+      runtimeClassName?: string
+      nodeSelector?: Record<string, string>
+      tolerations?: Toleration[]
+    }
+    /**
+     * An EC2 machine per lease in the user's AWS account, from imageId in
+     * subnetId; an EC2 Mac (a mac* instanceType) on a dedicated host the
+     * operator keeps for mac.keepHostHours (default 24). Only the operator
+     * reads the Secret credentialsSecretRef names.
+     */
+    aws?: {
+      region: string
+      /** The twelve-digit account the credential must be in. */
+      account?: string
+      instanceType: string
+      mac?: { keepHostHours?: number }
+      imageId: string
+      subnetId: string
+      credentialsSecretRef: LocalRef
+    }
+    /** AWS Device Farm's real phones, which run the test packages a lease's run asks for. */
+    deviceFarm?: {
+      projectArn: string
+      devicePoolArn: string
+      account?: string
+      credentialsSecretRef: LocalRef
+    }
+    /**
+     * maxLeases (default 2) at once, each lasting maxLeaseMinutes (default
+     * 180) at most, costing budgetUSDPerDay a UTC day at most (required for a
+     * remote member).
+     */
+    limits?: { maxLeases?: number; maxLeaseMinutes?: number; budgetUSDPerDay?: number }
+    /**
+     * A local member's pool of size (default 0) CI runner pods for jobs that
+     * run on env-<name>; an aws member's {} leases a machine for each such job.
+     */
+    ci?: { size?: number; runnerImage?: string }
+  }
+  status?: {
+    leases?: TestEnvironmentLease[]
+    /** What the leases cost on day (UTC, such as 2026-11-06), the ended ones' included. */
+    spentToday?: { day: string; milliUSD?: number }
+    /** A deviceFarm environment's test runs, the last ones of each lease. */
+    testRuns?: TestEnvironmentTestRun[]
+    /**
+     * Ready: a local member's image is pinned and the project's fence for its
+     * pods exists, a remote member's credential is valid; CredentialsValid,
+     * for a remote member; CI, for an aws member with a ci block.
+     */
+    conditions?: Condition[]
+  }
+}
+
 export interface DataStore extends K8sObject {
   spec: {
     softwareSystemRef: LocalRef
@@ -411,7 +544,7 @@ export interface CatalogEntry extends K8sObject {
     displayName?: string
     description?: string
     supportedTypes: ContainerType[]
-    template: { url: string; ref: string }
+    template: { url: string; ref: string; path?: string }
     /** A Framework only: its template is its Container's deployment, so it takes no Compute or Deployment. */
     deploysItself?: boolean
     /** A Framework only: its template renders infra/operations.ts from a Container's spec.operations. */
@@ -434,6 +567,12 @@ export interface Standard extends K8sObject {
     supportedFrameworks: string[]
     /** Files agents must not change: a path, or a directory ending in "/". */
     protectedPaths?: string[]
+    /**
+     * Recurring goals it proposes to the Crews of its Containers, each in the
+     * shape of a Crew's schedule. None runs: a Crew has one once its own
+     * spec.schedules holds a schedule of that name.
+     */
+    schedules?: CrewSchedule[]
   }
 }
 
@@ -463,7 +602,7 @@ export interface Domain extends K8sObject {
   spec: {
     displayName?: string
     description?: string
-    template: { url: string; ref: string }
+    template: { url: string; ref: string; path?: string }
   }
 }
 
@@ -528,6 +667,8 @@ export const RESOURCES = {
   crews: 'crews',
   briefs: 'briefs',
   chats: 'chats',
+  benchmarks: 'benchmarks',
+  testEnvironments: 'testenvironments',
 } as const
 
 /** API path of a theos.factory.io resource, in one namespace or across all of them. */
@@ -551,6 +692,8 @@ export type TaskPhase =
   | 'Blocked'
   | 'Merged'
   | 'Failed'
+  /** A Benchmark's run whose change passed its checks and review: it would have merged, and never does. */
+  | 'Approved'
 
 /** One step in a Task's timeline: from `at` on, the Task was in phase and round, for reason. */
 export interface TaskTransition {
@@ -567,6 +710,10 @@ export interface TaskAgentRun {
   /** implement, review, verify or plan; omitted when neither theos-agent nor the sandbox's name said. */
   role?: string
   sandbox?: string
+  /** The Agent, harness and model the run ran on, as they were then; omitted for runs from before they were recorded. */
+  agent?: string
+  harness?: string
+  model?: string
   /** When the Task saw the run end. */
   endedAt: string
   /** What the run cost, in thousandths of a US dollar; omitted when the agent didn't say. */
@@ -590,14 +737,88 @@ export const LABEL_ISSUE = 'theos.factory.io/issue'
 /** Who approves a spec's pull request: a person on the Git host, or the reviewer Agent alone. */
 export type SpecApproval = 'Person' | 'Reviewer'
 
+/** A share with its 95% Wilson interval, in whole percent. */
+export interface BenchmarkRate {
+  of?: number
+  percent?: number
+  low?: number
+  high?: number
+}
+
+/** The same goals from one pinned commit under two or more Agent variants (docs/plans/done/measure-and-improve.md). */
+export interface Benchmark extends K8sObject {
+  spec: {
+    containerRef: LocalRef
+    base: string
+    goals: { goal?: string; issue?: number }[]
+    variants: { name: string; implementerRef: LocalRef; reviewerRef?: LocalRef; verifierRef?: LocalRef }[]
+    repetitions?: number
+    scorerRefs?: LocalRef[]
+    parallel?: number
+    budgetUSD: number
+  }
+  status?: {
+    goals?: string[]
+    costMilliUSD?: number
+    variants?: {
+      name: string
+      tasks?: number
+      finished?: number
+      approval?: BenchmarkRate
+      meanRounds?: string
+      medianMinutes?: number
+      medianCostMilliUSD?: number
+      criteria?: { scorer: string; criterion: string; rate?: BenchmarkRate; unclear?: number }[]
+    }[]
+    comparison?: string
+    cleaned?: string[]
+    conditions?: Condition[]
+  }
+}
+
+/** A lease of a test environment a Task's run holds: the TestEnvironment, the lease's ID, the run and since when. */
+export interface TaskEnvironmentLease {
+  name: string
+  lease: string
+  sandbox: string
+  since?: string
+}
+
+/** The Agent configuration an agent run ran on. */
+export interface RunConfig {
+  agent?: string
+  harness?: string
+  model?: string
+}
+
+/** What a Score Task judges (docs/plans/done/measure-and-improve.md). */
+export interface TaskScoreSpec {
+  scorerRef: LocalRef
+  scorerGeneration: number
+  taskRef: LocalRef
+  criteria: string[]
+  /** The judged Task's implementer's configuration. */
+  config?: RunConfig
+}
+
+export type ScoreVerdict = 'Pass' | 'Fail' | 'Unclear'
+
+/** A judge's verdict on one criterion, and why. */
+export interface ScoreCriterion {
+  criterion: string
+  verdict: ScoreVerdict
+  reason?: string
+}
+
 export interface Task extends K8sObject {
   spec: {
     /**
      * Implement (the default), Plan: a planning round of a Brief, Triage: a
-     * triager's decision on a proposed issue, or Spec: an issue's spec, written
-     * in a pull request a person approves.
+     * triager's decision on a proposed issue, Spec: an issue's spec, written
+     * in a pull request a person approves, or Score: a Scorer's judge run on
+     * another Task's finished change.
      */
-    kind?: 'Implement' | 'Plan' | 'Triage' | 'Spec'
+    kind?: 'Implement' | 'Plan' | 'Triage' | 'Spec' | 'Score'
     /** Every Task but a Plan Task names its Container. */
     containerRef?: LocalRef
     /** A Plan Task names its Brief in place of a Container. */
@@ -612,6 +833,10 @@ export interface Task extends K8sObject {
     issue?: number
     /** The protected paths a gated Task may change. */
     allowedProtectedPaths?: string[]
+    /** A Score Task's Scorer, the Task it judges and the criteria, as they were. */
+    score?: TaskScoreSpec
+    /** A Benchmark's run: which Benchmark, variant, goal (from 0) and repetition, and the base it branches from. */
+    benchmark?: { benchmarkRef: LocalRef; variant: string; goal?: number; repetition: number; base: string }
   }
   status?: {
     phase?: TaskPhase
@@ -623,6 +848,8 @@ export interface Task extends K8sObject {
     /** The issues filed from the reviewer's suggestions on merge, as URLs. */
     followUps?: string[]
     /** A Triage Task's decision, its reason, and what the operator did with it. */
+    /** A Score Task's verdicts, one per criterion; a failed run leaves each Unclear. */
+    score?: { criteria?: ScoreCriterion[] }
     triage?: {
       decision: 'ready' | 'spec' | 'park' | 'duplicate'
       reason?: string
@@ -639,6 +866,17 @@ export interface Task extends K8sObject {
       criteria?: string[]
       applied?: string
     }
+    /** What the Crew's approval rules ask of the change, which rule and why, and who approved it. */
+    approval?: {
+      require: ApprovalRequirement
+      rule?: number
+      reason?: string
+      commit?: string
+      approvedBy?: string
+      approvedInChat?: boolean
+      /** The reviewer, and no rule, asked for the person: it called the change high-risk. */
+      raisedByReviewer?: boolean
+    }
     /** The Standard change the Task waits for while Blocked. */
     standardChange?: {
       issue: number
@@ -652,6 +890,10 @@ export interface Task extends K8sObject {
     commit?: string
     pullRequest?: number
     pullRequestURL?: string
+    /** The merged pull request's size, read once it merged; omitted before, or when it couldn't be read. */
+    pullRequestSize?: { additions?: number; deletions?: number; files?: number }
+    /** How many of the merged pull request's commits a person wrote; 0 means the factory alone. Omitted when not read. */
+    personCommits?: number
     checks?: CheckStatus
     review?: {
       verdict?: string
@@ -675,6 +917,13 @@ export interface Task extends K8sObject {
     /** When an unavailable agent is tried again; Progressing's reason is then AgentUnavailable. */
     agentBackAt?: string
     slotWaitSince?: string
+    /**
+     * The test environments the current run holds, a lease each, taken before
+     * its sandbox and returned when it ends or is suspended.
+     */
+    environments?: TaskEnvironmentLease[]
+    /** The test environments any run of the Task leased, by name. */
+    leasedEnvironments?: string[]
     phaseChangedAt?: string
     completedAt?: string
     /** The Task's agent runs as each ended, oldest first; the newest 64. */
@@ -743,6 +992,14 @@ export interface Crew extends K8sObject {
     specApproval?: SpecApproval
     /** The Agent that builds, starts and checks each approved change before it merges; unset, the review merges it. */
     verifier?: LocalRef
+    /** Recurring goals: when one comes due, the Crew files an issue with its goal and works it. */
+    schedules?: CrewSchedule[]
+    /**
+     * Which changes wait for a person and which merge on CI alone: each changed
+     * file takes the first rule that matches it, and the change needs the
+     * strictest of what its files need. Unset, the reviewer's approval merges.
+     */
+    approval?: ApprovalRule[]
   }
   status?: {
     phase?: CrewPhase
@@ -762,7 +1019,43 @@ export interface Crew extends K8sObject {
     observedGeneration?: number
     /** Ready: whether the Crew can pick up issues, and why not; Released: whether its next release went out, and why not. */
     conditions?: Condition[]
+    /** Where each of spec.schedules stands. */
+    schedules?: CrewScheduleStatus[]
+    /** The issue the Crew filed, once, on a repository it adopted: write AGENTS.md and say what it found. */
+    onboarding?: { issue: number; filed: string }
   }
+}
+
+/** What a change needs before it merges: a person's approval, the reviewer's, or CI alone. */
+export type ApprovalRequirement = 'Person' | 'Reviewer' | 'None'
+
+/**
+ * One rule of a Crew's approval: for the changes whose issue has one of labels
+ * and that change more than changedLinesOver lines (either unset is any), it
+ * matches the files under paths (unset is every file) and asks require of them.
+ */
+export interface ApprovalRule {
+  paths?: string[]
+  labels?: string[]
+  changedLinesOver?: number
+  require: ApprovalRequirement
+}
+
+/** One recurring goal of a Crew: a five-field cron expression in timeZone (UTC unset), and what its issue asks for. */
+export interface CrewSchedule {
+  name: string
+  cron: string
+  timeZone?: string
+  goal: string
+}
+
+/** A schedule's next time, and the issue it filed last. */
+export interface CrewScheduleStatus {
+  name: string
+  since: string
+  lastFiled?: string
+  lastIssue?: number
+  next?: string
 }
 
 /**
@@ -852,6 +1145,16 @@ export interface BriefApp {
     modulePath?: string
     /** Why the module isn't published, from the Crew. */
     moduleMessage?: string
+  }
+  /** The release the Crew's next cut ships, under a cadence of Day or Week; unset while none holds work. */
+  nextRelease?: {
+    tag: string
+    /** When the cut is. */
+    time: string
+    /** The cadence's time zone, an IANA name, to say the time as the person set it. */
+    timeZone?: string
+    /** How many of its issues a Task merged so far. */
+    merged?: number
   }
   /** One plain sentence on how the app's releases go. */
   message?: string

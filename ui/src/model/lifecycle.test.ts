@@ -167,6 +167,7 @@ describe('containerNextStep', () => {
     ['IdentityMismatch', 'Scaffolded', /name this project and container, then retry/],
     ['StandardFilesDiffer', 'Scaffolded', /what the Standard renders, then retry/],
     ['UnpinnedRef', 'Scaffolded', /Pin the template’s ref/],
+    ['TemplatePathNotFound', 'Scaffolded', /a directory its repository has at the pinned ref/], // #35
     ['UnsupportedCI', 'Scaffolded', /Pick a template that supports it, or one without CI files, then retry/],
     ['UnsupportedType', 'ChoicesValid', /support this Container’s type/],
     ['UnsupportedFramework', 'ChoicesValid', /support this Container’s type/],
@@ -291,71 +292,79 @@ describe('the Crew and Task lifecycles', () => {
       'Task',
       undefined,
       'Pending:next Implementing:next Checking:next Reviewing:next Verifying:next Merged:next',
-      'AwaitingApproval:off Blocked:off Failed:off',
+      'AwaitingApproval:off Blocked:off Failed:off Approved:off',
       undefined,
     ],
     [
       'Task',
       'Pending',
       'Pending:current Implementing:next Checking:next Reviewing:next Verifying:next Merged:next',
-      'AwaitingApproval:off Blocked:off Failed:off',
+      'AwaitingApproval:off Blocked:off Failed:off Approved:off',
       'Pending',
     ],
     [
       'Task',
       'Implementing',
       'Pending:done Implementing:current Checking:next Reviewing:next Verifying:next Merged:next',
-      'AwaitingApproval:off Blocked:off Failed:off',
+      'AwaitingApproval:off Blocked:off Failed:off Approved:off',
       'Implementing',
     ],
     [
       'Task',
       'Checking',
       'Pending:done Implementing:done Checking:current Reviewing:next Verifying:next Merged:next',
-      'AwaitingApproval:off Blocked:off Failed:off',
+      'AwaitingApproval:off Blocked:off Failed:off Approved:off',
       'Checking',
     ],
     [
       'Task',
       'Reviewing',
       'Pending:done Implementing:done Checking:done Reviewing:current Verifying:next Merged:next',
-      'AwaitingApproval:off Blocked:off Failed:off',
+      'AwaitingApproval:off Blocked:off Failed:off Approved:off',
       'Reviewing',
     ],
     [
       'Task',
       'Verifying',
       'Pending:done Implementing:done Checking:done Reviewing:done Verifying:current Merged:next',
-      'AwaitingApproval:off Blocked:off Failed:off',
+      'AwaitingApproval:off Blocked:off Failed:off Approved:off',
       'Verifying',
     ],
     [
       'Task',
       'AwaitingApproval',
       'Pending:off Implementing:off Checking:off Reviewing:off Verifying:off Merged:off',
-      'AwaitingApproval:current Blocked:off Failed:off',
+      'AwaitingApproval:current Blocked:off Failed:off Approved:off',
       'AwaitingApproval',
     ],
     [
       'Task',
       'Merged',
       'Pending:done Implementing:done Checking:done Reviewing:done Verifying:done Merged:current',
-      'AwaitingApproval:off Blocked:off Failed:off',
+      'AwaitingApproval:off Blocked:off Failed:off Approved:off',
       'Merged',
     ],
     [
       'Task',
       'Blocked',
       'Pending:off Implementing:off Checking:off Reviewing:off Verifying:off Merged:off',
-      'AwaitingApproval:off Blocked:current Failed:off',
+      'AwaitingApproval:off Blocked:current Failed:off Approved:off',
       'Blocked',
     ],
     [
       'Task',
       'Failed',
       'Pending:off Implementing:off Checking:off Reviewing:off Verifying:off Merged:off',
-      'AwaitingApproval:off Blocked:off Failed:current',
+      'AwaitingApproval:off Blocked:off Failed:current Approved:off',
       'Failed',
+    ],
+    // A Benchmark's run ends Approved instead of merging (measure-and-improve, step 6).
+    [
+      'Task',
+      'Approved',
+      'Pending:off Implementing:off Checking:off Reviewing:off Verifying:off Merged:off',
+      'AwaitingApproval:off Blocked:off Failed:off Approved:current',
+      'Approved',
     ],
   ] as const)('%s in %s', (kind, phase, path, exits, current) => {
     expect(states(kind, phase)).toEqual({ path, exits, current })
@@ -531,10 +540,29 @@ describe('taskNextStep', () => {
   })
 
   it('asks a person to approve a spec waiting for approval', () => {
-    const t = task({ phase: 'AwaitingApproval', pullRequest: 9, pullRequestURL: 'http://gitea/api/pulls/9' })
+    const t = task(
+      { phase: 'AwaitingApproval', pullRequest: 9, pullRequestURL: 'http://gitea/api/pulls/9' },
+      { kind: 'Spec' },
+    )
     expect(taskNextStep(t)).toEqual({
       text: expect.stringMatching(/^Its spec waits for you in pull request #9: read it and approve/),
       link: { href: 'http://gitea/api/pulls/9', label: 'Open the spec #9' },
+    })
+  })
+
+  // #62: a change its Crew's approval rules hold for a person.
+  it('asks a person to approve a change its Crew’s approval rules hold, with the rule', () => {
+    const t = task({
+      phase: 'AwaitingApproval',
+      pullRequest: 12,
+      pullRequestURL: 'http://gitea/api/pulls/12',
+      approval: { require: 'Person', rule: 1, reason: 'approval rule 1 (paths migrations/) asks for a person' },
+    })
+    expect(taskNextStep(t)).toEqual({
+      text: expect.stringMatching(
+        /^Its change passed CI and the factory’s review and waits for you in pull request #12, as the Crew’s approval rules ask \(approval rule 1 \(paths migrations\/\) asks for a person\): approve the pull request/,
+      ),
+      link: { href: 'http://gitea/api/pulls/12', label: 'Open the pull request #12' },
     })
   })
 

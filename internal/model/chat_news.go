@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -178,10 +194,13 @@ type ChatTaskView struct {
 	// Commit is the round's head.
 	Commit string
 	// SpecApproval is a Spec Task's Person or Reviewer; ApprovedBy and
-	// ApprovedInChat who approved its spec.
+	// ApprovedInChat who approved its spec, or its change.
 	SpecApproval   string
 	ApprovedBy     string
 	ApprovedInChat bool
+	// ApprovalReason is why the Crew's approval rules hold the Task's change
+	// for a person (status.approval's reason); empty when they don't.
+	ApprovalReason string
 	// Triage is a Triage Task's decision, nil before it has one.
 	Triage *ChatTriageView
 	// ReviewVerdict and ReviewSummary are the round's review.
@@ -189,6 +208,10 @@ type ChatTaskView struct {
 	ReviewSummary string
 	// Message says why the Task waits, or why it failed.
 	Message string
+	// Benchmark means a Benchmark's run, which never merges.
+	Benchmark bool
+	// PageURL is the Task's page in the UI (ChatPageURL), "" for none.
+	PageURL string
 }
 
 // ChatTriageView is a Triage Task's decision and what came of it.
@@ -205,8 +228,8 @@ func TriageAsked(applied string) bool {
 	return strings.HasPrefix(applied, "Labelled "+LabelNeedsHuman)
 }
 
-// chatLinks are the links of a Task's posts: its pull request and its
-// issue, where it has them.
+// chatLinks are the links of a Task's posts: its pull request, its issue
+// and its page in the UI, where it has them.
 func (t ChatTaskView) chatLinks() []ChatLink {
 	var links []ChatLink
 	if t.PullURL != "" {
@@ -215,7 +238,7 @@ func (t ChatTaskView) chatLinks() []ChatLink {
 	if t.IssueURL != "" {
 		links = append(links, ChatLink{Text: fmt.Sprintf("Issue #%d", t.Issue), URL: t.IssueURL})
 	}
-	return links
+	return append(links, chatPageLink("Task", t.PageURL)...)
 }
 
 // issue is "issue #N: title", or the Task's name without an issue.
@@ -235,10 +258,21 @@ func (t ChatTaskView) issue() string {
 // decision, a review's verdict and a failure are plain posts; a merge is in
 // the updates digest.
 func ChatTaskNews(t ChatTaskView) []ChatNews {
+	if t.Kind == "Score" || t.Benchmark {
+		// A judge run for a Scorer, or a Benchmark's run, is the factory
+		// measuring itself: what it found is theirs to show, and a failure no
+		// alert.
+		return nil
+	}
 	var news []ChatNews
 	final := t.Phase == chatPhaseMerged || t.Phase == chatPhaseFailed
 	if t.Kind == chatKindSpec && t.SpecApproval != "Reviewer" {
 		news = append(news, chatSpecNews(t, final))
+	}
+	if (t.Kind == chatKindImplement || t.Kind == "") && t.PullRequest != 0 {
+		// A thread only once the change waits for a person (Open); the news
+		// is there for every change so a thread follows its Task to the end.
+		news = append(news, chatChangeNews(t, final))
 	}
 	if t.Kind == chatKindTriage && t.Triage != nil && t.Phase == chatPhaseMerged {
 		news = append(news, chatTriageNews(t))
@@ -269,6 +303,44 @@ func ChatTaskNews(t ChatTaskView) []ChatNews {
 	return news
 }
 
+// chatChangeNews is the thread in reviews of a change its Crew's approval
+// rules hold for a person (#92): it opens when the change waits, takes
+// approve and changes as a spec's does, and follows the Task until it ends.
+func chatChangeNews(t ChatTaskView, final bool) ChatNews {
+	n := ChatNews{Key: ChatItemKey(ChatEventChangeWaiting, t.Name), Event: ChatEventChangeWaiting,
+		Open: t.Phase == chatPhaseWaiting, Done: final, Item: ChatItem{Event: ChatEventChangeWaiting, Name: t.Name}}
+	status := fmt.Sprintf("Round %d: %s.", max(t.Round, 1), t.Phase)
+	switch t.Phase {
+	case chatPhaseWaiting:
+		n.Item.Commit = t.Commit
+		why := ""
+		if t.ApprovalReason != "" {
+			why = " (" + t.ApprovalReason + ")"
+		}
+		status = fmt.Sprintf("Passed CI and the factory's review, and waits for your approval of commit %s%s: say "+
+			"approve in this thread, or changes: <what to change>.", shortCommit(t.Commit), why)
+	case chatPhaseMerged:
+		status = chatMergedStatus(t)
+	case chatPhaseFailed:
+		status = "Failed: " + orUnknown(t.Message)
+	}
+	n.Post = ChatPost{Title: "Change for " + t.issue(), Status: status, Links: t.chatLinks()}
+	return n
+}
+
+// chatMergedStatus says a waiting pull request merged, and who approved it
+// when a person did.
+func chatMergedStatus(t ChatTaskView) string {
+	if t.ApprovedBy == "" {
+		return "Merged."
+	}
+	where := ""
+	if t.ApprovedInChat {
+		where = " in chat"
+	}
+	return fmt.Sprintf("Merged: %s approved it%s.", t.ApprovedBy, where)
+}
+
 // chatSpecNews is a Spec Task's thread in specs.
 func chatSpecNews(t ChatTaskView, final bool) ChatNews {
 	n := ChatNews{Key: ChatItemKey(ChatEventSpecWaiting, t.Name), Event: ChatEventSpecWaiting,
@@ -280,14 +352,7 @@ func chatSpecNews(t ChatTaskView, final bool) ChatNews {
 		status = fmt.Sprintf("Waits for your approval of commit %s: say approve in this thread, or changes: "+
 			"<what to change>.", shortCommit(t.Commit))
 	case chatPhaseMerged:
-		status = "Merged."
-		if t.ApprovedBy != "" {
-			where := ""
-			if t.ApprovedInChat {
-				where = " in chat"
-			}
-			status = fmt.Sprintf("Merged: %s approved it%s.", t.ApprovedBy, where)
-		}
+		status = chatMergedStatus(t)
 	case chatPhaseFailed:
 		status = "Failed: " + orUnknown(t.Message)
 	}
@@ -330,6 +395,8 @@ type ChatContainerView struct {
 	RepositoryURL string
 	NewestRelease string
 	Deploys       []ChatDeployState
+	// PageURL is the Container's page in the UI (ChatPageURL), "" for none.
+	PageURL string
 }
 
 // ChatDeployState is one of a Container's status.deploys.
@@ -341,12 +408,14 @@ type ChatDeployState struct {
 // scaffold opens a thread in alerts, where retry scaffolds it again, done
 // once it is Ready; a deploy waiting for a person opens one in reviews,
 // done once the version runs; a failed deploy is a post in alerts; a
-// release and a deploy are in the updates digest.
+// release and a deploy are in the updates digest. Each links to the
+// Container's page in the UI, when it has one.
 func ChatContainerNews(c ChatContainerView) []ChatNews {
 	var links []ChatLink
 	if c.RepositoryURL != "" {
 		links = append(links, ChatLink{Text: "Repository", URL: c.RepositoryURL})
 	}
+	links = append(links, chatPageLink("Container", c.PageURL)...)
 	failed := ChatNews{Key: ChatItemKey(ChatEventContainerFailed, c.Name), Event: ChatEventContainerFailed,
 		Open: c.Phase == chatPhaseFailed, Done: c.Phase == "Ready",
 		Item: ChatItem{Event: ChatEventContainerFailed, Name: c.Name}}
@@ -369,17 +438,19 @@ func ChatContainerNews(c ChatContainerView) []ChatNews {
 			Event: ChatEventReleased, Line: line, Post: ChatPost{Title: line, Links: links}})
 	}
 	for _, d := range c.Deploys {
-		news = append(news, chatDeployNews(c.Name, d)...)
+		news = append(news, chatDeployNews(c.Name, c.PageURL, d)...)
 	}
 	return news
 }
 
-// chatDeployNews is what theos-chat says of one of Container name's deploys.
-func chatDeployNews(name string, d ChatDeployState) []ChatNews {
+// chatDeployNews is what theos-chat says of one of Container name's deploys,
+// with links to the deploy's address and the Container's page in the UI.
+func chatDeployNews(name, pageURL string, d ChatDeployState) []ChatNews {
 	var links []ChatLink
 	if d.URL != "" {
 		links = append(links, ChatLink{Text: d.Target, URL: d.URL})
 	}
+	links = append(links, chatPageLink("Container", pageURL)...)
 	var news []ChatNews
 	if d.WantedVersion != "" {
 		n := ChatNews{Key: ChatItemKey(ChatEventDeployWaiting, name, d.Target, d.WantedVersion),

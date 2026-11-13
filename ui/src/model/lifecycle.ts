@@ -43,6 +43,8 @@ export type LifecycleKind =
   | 'Deployment'
   | 'GitProvider'
   | 'DeployTarget'
+  | 'Benchmark'
+  | 'TestEnvironment'
 
 interface StepDef {
   phase: string
@@ -184,7 +186,7 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
       {
         phase: 'AwaitingApproval',
         person:
-          'A spec only: read it and approve its pull request on the Git host; then it merges and its issue is built.',
+          'A spec, or a change the Crew’s approval rules hold for a person: read it and approve its pull request on the Git host; then it merges.',
       },
       {
         phase: 'Blocked',
@@ -193,6 +195,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
       {
         phase: 'Failed',
         person: 'Read why it failed. To try again, give the work a new Task, or do it by hand.',
+      },
+      {
+        phase: 'Approved',
+        person: 'Nothing: a Benchmark’s run ends here instead of merging; its Benchmark compares it with the others.',
       },
     ],
     moves: 'The agent, CI and the reviewer, round by round, up to its implementer’s maxRounds.',
@@ -240,6 +246,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
       tone: SESSION_TONES[phase as SessionPhase] ?? 'unknown',
     }),
   },
+  Benchmark: phaseless(
+    'It makes its runs in turn, has its Scorers judge each, cleans up after them and compares its variants; Done says when every run finished.',
+    'Nothing: read what it found. It can’t change: to compare again, make a new one.',
+  ),
   Standard: phaseless(
     'A catalog entry. A new template ref opens an update pull request on each Ready Container that names it; the factory merges it once its checks pass.',
     'Nothing: its Containers’ update pull requests carry a new ref; open a Container to see its own.',
@@ -261,6 +271,10 @@ const LIFECYCLES: Record<LifecycleKind, LifecycleDef> = {
   DeployTarget: phaseless(
     'A place Containers ship to. The factory checks the credential of the Secret it names, and ships each release of the Containers that name it, through the tool that owns the place.',
     'Nothing while it is Ready. Otherwise its Ready condition says what to fix: the Secret it names, in the cluster, or what the target refused.',
+  ),
+  TestEnvironment: phaseless(
+    'Tools the agents’ runs and CI lease. A run of an issue labelled env/<name>, or of a Container whose Standard or Framework names it, takes a lease before its sandbox and returns it when it ends or is suspended; the provider ends a lease past its time.',
+    'Nothing while it is Ready. Otherwise its Ready condition says what to fix: an image that isn’t pinned, the project’s fence for its pods, or a remote one’s credential, whose CredentialsValid condition says what is wrong with the Secret it names; past the day’s budget, raise limits.budgetUSDPerDay or wait for tomorrow.',
   ),
 }
 
@@ -406,6 +420,11 @@ export function containerNextStep(container: Container): NextStep | undefined {
         }
       case 'UnpinnedRef':
         return { text: 'Pin the template’s ref to a tag or commit, never a branch, then retry.', command }
+      case 'TemplatePathNotFound':
+        return {
+          text: 'Point the template’s path at a directory its repository has at the pinned ref, or pin a ref that has it, then retry.',
+          command,
+        }
       case 'UnsupportedCI':
         return {
           text: 'A template has CI files, but none for the Git host’s CI system. Pick a template that supports it, or one without CI files, then retry.',
@@ -603,8 +622,8 @@ export function crewNextStep(crew: Crew, briefs: Brief[]): NextStep | undefined 
 
 /**
  * What a person does next on this Task: a Blocked one waits on the Standard
- * change it filed; a Spec awaiting approval waits for a person to approve its
- * pull request; a Failed one handed its issue back. Undefined while the
+ * change it filed; a spec, or a change its Crew's approval rules hold, waits
+ * for a person to approve its pull request; a Failed one handed its issue back. Undefined while the
  * loop needs nobody.
  */
 export function taskNextStep(task: Task): NextStep | undefined {
@@ -614,6 +633,17 @@ export function taskNextStep(task: Task): NextStep | undefined {
     return {
       text: `It waits for the Standard change it filed, #${change.issue}, for ${change.paths.join(', ')}. Review and merge it; the Task goes on when it merges.`,
       link: change.issueURL ? { href: change.issueURL, label: `Open the Standard change #${change.issue}` } : undefined,
+    }
+  }
+  if (status?.phase === 'AwaitingApproval' && task.spec.kind !== 'Spec') {
+    // A change its Crew's approval rules hold for a person (#62).
+    const pr = status.pullRequest
+    const why = status.approval?.reason ? ` (${status.approval.reason})` : ''
+    return {
+      text: `Its change passed CI and the factory’s review and waits for you${pr ? ` in pull request #${pr}` : ''}, as the Crew’s approval rules ask${why}: approve the pull request on the Git host and the operator merges it; request changes there for another round, or close it to drop the change.`,
+      link: status.pullRequestURL
+        ? { href: status.pullRequestURL, label: `Open the pull request${pr ? ` #${pr}` : ''}` }
+        : undefined,
     }
   }
   if (status?.phase === 'AwaitingApproval') {

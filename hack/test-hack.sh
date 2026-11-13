@@ -9,7 +9,9 @@
 #   hack/test-hack.sh [DIR]   the tests under DIR (default this hack/)
 #
 # The tests run with make's own variables cleared, so a test that runs make
-# sees a make started from a shell, not a sub-make of make check; and with the
+# sees a make started from a shell, not a sub-make of make check, nor what
+# selected that check's steps (TEST_BASE, TEST_ALL, FORCE, CHECK_STEPS, #127);
+# and with the
 # relay's variables cleared, so a test run from a relay session (hack/relay.sh
 # exports THEOS_HEADLESS, THEOS_RELAY_WORKER and, to its children, THEOS_RELAY_CHILD,
 # THEOS_RELAY_TRIAGE and THEOS_RELAY_MAINTAIN) sees the same environment as one run
@@ -34,6 +36,7 @@ fi
 run() {
   local start=$SECONDS rc
   env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL -u MAKEOVERRIDES -u THEOS_HEAVY_SLOT \
+    -u TEST_BASE -u TEST_ALL -u FORCE -u CHECK_STEPS \
     -u THEOS_HEADLESS -u THEOS_RELAY_WORKER -u THEOS_RELAY_CHILD -u THEOS_RELAY_TRIAGE -u THEOS_RELAY_MAINTAIN -u IS_SANDBOX \
     bash "$1" >"$LOGS/$2.log" 2>&1 </dev/null
   rc=$?

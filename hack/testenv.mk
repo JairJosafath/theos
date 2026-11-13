@@ -229,6 +229,22 @@ runner-image: ## Build the image-building CI runner (label image, rootless Build
 	$(TESTENV_KUBECTL) -n gitea rollout restart deployment/gitea-runner-image
 	$(TESTENV_KUBECTL) -n gitea rollout status deployment/gitea-runner-image --timeout=600s
 
+ENV_BROWSER_IMG ?= theos/env-browser:dev
+ENV_ANDROID_IMG ?= theos/env-android:dev
+ENV_GODOT_IMG ?= theos/env-godot:dev
+
+.PHONY: env-image-browser
+env-image-browser: ## Build the browser test environment's image (hack/env-browser) and load it into Kind.
+	$(call build-load,$(ENV_BROWSER_IMG),hack/env-browser)
+
+.PHONY: env-image-android
+env-image-android: ## Build the android test environment's image (hack/env-android) and load it into Kind; its emulator needs KVM.
+	$(call build-load,$(ENV_ANDROID_IMG),hack/env-android)
+
+.PHONY: env-image-godot
+env-image-godot: ## Build the godot test environment's image (hack/env-godot) and load it into Kind.
+	$(call build-load,$(ENV_GODOT_IMG),hack/env-godot)
+
 .PHONY: agent-image-base
 agent-image-base: ## Build the agent image on the minimal toolchain and load it into Kind.
 	$(call build-load,$(AGENT_BASE_IMG),--build-arg BASE=$(BASE_TOOLCHAIN_IMG) -f hack/agent/Dockerfile .)

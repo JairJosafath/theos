@@ -1,6 +1,25 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package ports
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // AgentTokenScopes are what an agent bot's token may do, comma-separated: push
 // to its repository, and read the owner's packages, where the go command
@@ -25,4 +44,48 @@ type AgentAccess interface {
 	// before an upgrade changed their scopes, and keeps the current one. A user
 	// that doesn't exist is no error.
 	RevokeOldAgentTokens(ctx context.Context, user string) error
+}
+
+// AgentAccessUnavailable is the error of an AgentAccess that can't mint a
+// credential as its provider is configured, which no retry changes. Reason
+// is the reason of the provider's condition, CamelCase, and Message says
+// what is missing and where to add it.
+type AgentAccessUnavailable struct {
+	Reason  string
+	Message string
+}
+
+func (e *AgentAccessUnavailable) Error() string { return e.Message }
+
+// AgentAccessChecker is an AgentAccess that can say whether it mints as it
+// is configured, without minting and without calling its host: nil, or an
+// *AgentAccessUnavailable.
+type AgentAccessChecker interface {
+	CheckAgentAccess() error
+}
+
+// The reasons of a provider's agent access that every host shares; a host
+// that lacks something of its own names it in an AgentAccessUnavailable.
+const (
+	ReasonAgentAccessAvailable   = "Available"
+	ReasonAgentAccessCheckFailed = "CheckFailed"
+)
+
+// AgentAccessState says what a provider's condition says of its agent
+// access: whether agents get credentials there, the reason and a message.
+// An AgentAccess that is no AgentAccessChecker always mints. Where they get
+// none, the provider still scaffolds and reads issues, and no Task starts.
+func AgentAccessState(access AgentAccess) (available bool, reason, message string) {
+	checker, ok := access.(AgentAccessChecker)
+	if !ok {
+		return true, ReasonAgentAccessAvailable, "Agents get a credential of their own for each repository."
+	}
+	err := checker.CheckAgentAccess()
+	if err == nil {
+		return true, ReasonAgentAccessAvailable, "Agents get a credential of their own for each repository."
+	}
+	if unavailable, ok := errors.AsType[*AgentAccessUnavailable](err); ok {
+		return false, unavailable.Reason, unavailable.Message
+	}
+	return false, ReasonAgentAccessCheckFailed, err.Error()
 }

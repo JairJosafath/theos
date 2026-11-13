@@ -1,22 +1,29 @@
 // A Crew's page: the object header (its state, its Ready condition, its Tasks,
 // and what a person does: re-run a failed release, resume it, or fix what
 // keeps it waiting), then who works and how many at once, its issues, and its
-// routes by label, and its last release with its runs, Go module, publishing
-// and bump issues. With the UI server's actions on, the person pauses or
-// resumes it or its running Tasks, sets those and its release settings, and
-// re-runs a failed release's runs (CrewActions). Where
+// routes by label, its schedules (work on a timer: when each is next due and
+// the issue it filed last), the schedules its Container's Standard proposes
+// (those it may take, and those whose name it uses with where its own
+// differs), and its last release with its runs, Go module,
+// publishing and bump issues. With the UI server's actions on, the person pauses or
+// resumes it or its running Tasks, sets those and its release settings,
+// re-runs a failed release's runs, runs a schedule now and takes a proposal
+// (CrewActions). Where
 // it publishes says so when its Brief sets that, and the form changes it on
 // the Brief. Its tabs: Overview (who works, routes), Status, Activity (the last
 // release and its runs) and Related (its Tasks, links).
 
 import type { BriefWriter } from '../../k8s/briefs'
-import { briefTarget, type CrewWriter } from '../../k8s/crews'
-import type { Agent, Brief, Container, Crew, CrewRelease, Task } from '../../k8s/types'
+import { RUN_SCHEDULE, briefTarget, type CrewWriter } from '../../k8s/crews'
+import type { Agent, ApprovalRule, Brief, Container, Crew, CrewRelease, Standard, Task } from '../../k8s/types'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useActs } from '../../lib/hooks'
-import { crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
+import { approvalAsks, approvalRuleFor, crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
 import { PUBLISH_MIGRATION_URL, RELEASE_RUN, publishFailure } from '../../model/releases'
 import type { AgentRole } from '../../model/factory'
+import { absoluteTime } from '../../model/format'
 import { crewNextStep } from '../../model/lifecycle'
+import { scheduleProposals, writtenZone, type ScheduleField, type ScheduleProposals } from '../../model/schedules'
 import { AgentName, When } from '../bits'
 import { ExternalLinkIcon } from '../icons'
 import { ObjectHeader, type OutLink } from '../ObjectHeader'
@@ -26,7 +33,10 @@ import {
   ParallelForm,
   ReleaseForm,
   RerunButton,
+  RunScheduleButton,
   SignInToAct,
+  TakeProposalForm,
+  TimeZoneList,
 } from './CrewActions'
 import { pageHref, storyHref } from './links'
 import { crewTasks } from './rows'
@@ -36,6 +46,7 @@ export function CrewPage({
   agents,
   tasks,
   containers,
+  standards,
   briefs,
   writer,
   briefWriter,
@@ -44,6 +55,7 @@ export function CrewPage({
   agents: Agent[]
   tasks: Task[]
   containers: Container[]
+  standards: Standard[]
   briefs: Brief[]
   writer: CrewWriter
   briefWriter?: BriefWriter
@@ -52,6 +64,7 @@ export function CrewPage({
   const ns = crew.metadata.namespace ?? ''
   const name = crew.metadata.name
   const summary = crewSummary(crew, agents, tasks)
+  const proposals = scheduleProposals(crew, containers, standards)
   const containerName = crew.spec.containerRef.name
   const container = containers.find((c) => c.metadata.name === containerName)
   const system = container?.spec.softwareSystemRef.name
@@ -60,7 +73,7 @@ export function CrewPage({
   const links: OutLink[] = []
   if (container?.status?.repositoryURL) links.push({ href: container.status.repositoryURL, label: 'Its repository' })
   if (release?.runURL) links.push({ href: release.runURL, label: `Release ${release.tag}’s CI run` })
-  const overview = <CrewOverview crew={crew} writer={writer} summary={summary} />
+  const overview = <CrewOverview crew={crew} writer={writer} summary={summary} proposals={proposals} />
   const activity = <CrewReleasePanel crew={crew} writer={writer} briefs={briefs} briefWriter={briefWriter} />
   return (
     <div className="shell-page object-page">
@@ -101,10 +114,12 @@ function CrewOverview({
   crew,
   writer,
   summary,
+  proposals,
 }: {
   crew: Crew
   writer: CrewWriter
   summary: ReturnType<typeof crewSummary>
+  proposals: ScheduleProposals
 }) {
   const acts = useActs()
   const ns = crew.metadata.namespace ?? ''
@@ -169,7 +184,239 @@ function CrewOverview({
       </section>
 
       {summary.routes.length ? <RoutesPanel routes={summary.routes} /> : null}
+      {crew.spec.approval?.length ? <ApprovalPanel rules={crew.spec.approval} /> : null}
+      {crew.spec.schedules?.length ? <SchedulesPanel crew={crew} writer={acts === 'act' ? writer : undefined} /> : null}
+      {proposals.offered.length || proposals.inUse.length ? (
+        <ProposalsPanel crew={crew} proposals={proposals} writer={acts === 'act' ? writer : undefined} />
+      ) : null}
     </>
+  )
+}
+
+/** Which of the Crew's changes wait for a person, and which merge on CI alone. */
+function ApprovalPanel({ rules }: { rules: ApprovalRule[] }) {
+  return (
+    <section className="panel" aria-labelledby="crew-approval">
+      <h2 className="panel-title small-title" id="crew-approval">
+        Who approves a change
+      </h2>
+      <p className="panel-text">
+        Each file a pull request changes takes the first rule that matches it, and the change needs the strictest of
+        what its files need. A file no rule matches merges on the reviewer’s approval.
+      </p>
+      <ol className="routes">
+        {rules.map((rule, i) => (
+          <li key={i}>
+            <span className="mono">{approvalRuleFor(rule)}</span>
+            <span className="muted"> · </span>
+            {approvalAsks(rule.require)}
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+/** The Crew's recurring goals: when each is next due, and the issue it filed last. */
+function SchedulesPanel({ crew, writer }: { crew: Crew; writer?: CrewWriter }) {
+  const scheduled = crew.status?.conditions?.find((c) => c.type === 'Scheduled')
+  // The schedule a person asked to run now, while the operator has not filed its issue.
+  const asked = crew.metadata.annotations?.[RUN_SCHEDULE]
+  return (
+    <section className="panel" aria-labelledby="crew-schedules">
+      <h2 className="panel-title small-title" id="crew-schedules">
+        Work on a timer
+      </h2>
+      <p className="panel-text">
+        When a schedule comes due the Crew files an issue with its goal and works it like any other. While that issue is
+        open, the schedule’s next time is passed over{crew.spec.paused ? '; a paused Crew files none' : ''}. Run now
+        files a schedule’s issue at once, under the same two rules.
+      </p>
+      {asked && scheduled?.status === 'True' ? (
+        <p className="panel-text" role="status">
+          {scheduled.message}
+        </p>
+      ) : null}
+      {scheduled && scheduled.status !== 'True' ? (
+        <p className="panel-text" role="alert">
+          {scheduled.message}
+        </p>
+      ) : null}
+      <ol className="routes">
+        {(crew.spec.schedules ?? []).map((s) => {
+          const st = crew.status?.schedules?.find((x) => x.name === s.name)
+          return (
+            <li key={s.name}>
+              <span className="mono">{s.name}</span>
+              <span className="muted"> · </span>
+              <span className="mono">{s.cron}</span>
+              <span className="muted"> ({s.timeZone ?? 'UTC'})</span>
+              <div>{s.goal}</div>
+              <div className="muted">
+                {st?.next ? (
+                  <>
+                    Next due <time dateTime={st.next}>{absoluteTime(st.next)}</time>
+                  </>
+                ) : (
+                  'No next time'
+                )}
+                {st?.lastIssue ? (
+                  <>
+                    {' · last filed issue #'}
+                    {st.lastIssue} <When at={st.lastFiled} />
+                  </>
+                ) : (
+                  ' · nothing filed yet'
+                )}
+              </div>
+              {writer ? (
+                // A new button once the request is answered: the operator took the annotation off.
+                <RunScheduleButton
+                  key={`${s.name}|${asked === s.name ? 'asked' : (st?.lastFiled ?? '')}`}
+                  crew={crew}
+                  schedule={s.name}
+                  asked={asked === s.name}
+                  writer={writer}
+                />
+              ) : null}
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
+const FIELD_NAME: Record<ScheduleField, string> = { cron: 'Cron', timeZone: 'Time zone', goal: 'Goal' }
+
+/**
+ * The schedules the Standard of the Crew's Container proposes. Those whose
+ * name the Crew doesn't use are offered: with a writer a person takes one,
+ * giving the time zone. Those whose name it uses are listed with where the
+ * Crew's schedule differs. The name is all that links a schedule to a
+ * proposal, so the panel says "in use" and "differs", never that a schedule
+ * was taken from here or changed since. Nor does it call UTC a proposal's
+ * own zone: the API server writes UTC into one that names none, so only
+ * another zone is shown as written (writtenZone).
+ *
+ * A taken proposal's row, form and all, goes from the offered list when the
+ * watch brings the Crew's new schedule. So the panel says the result, in a
+ * live region that stays, and focus the row took with it moves there.
+ */
+export function ProposalsPanel({
+  crew,
+  proposals,
+  writer,
+}: {
+  crew: Crew
+  proposals: ScheduleProposals
+  writer?: CrewWriter
+}) {
+  const zones = useId()
+  const ns = crew.metadata.namespace ?? ''
+  const { standard = '', offered, inUse } = proposals
+  const [taken, setTaken] = useState<string>()
+  const result = useRef<HTMLParagraphElement>(null)
+  const listed = taken !== undefined && inUse.some((u) => u.proposal.name === taken)
+  useEffect(() => {
+    if (!listed) return
+    // Only focus that went with the row: a person who moved on meanwhile stays where they are.
+    const active = document.activeElement
+    if (!active || active === document.body || !active.isConnected) result.current?.focus()
+  }, [listed])
+  return (
+    <section className="panel" aria-labelledby="crew-proposals">
+      <h2 className="panel-title small-title" id="crew-proposals">
+        Schedules its Standard proposes
+      </h2>
+      <p className="panel-text">
+        <a href={pageHref(ns, 'Standard', standard)}>Standard {standard}</a> proposes these to the Crews of its
+        Containers. A proposal files nothing: the Crew works one once it has a schedule of that name, which is then the
+        Crew’s own to change.
+      </p>
+      {writer ? (
+        // Always there, so what it comes to say is announced.
+        <p className="form-done proposals-result" role="status" tabIndex={-1} ref={result}>
+          {taken ? `Added ${taken} to the Crew’s schedules.` : null}
+        </p>
+      ) : null}
+      {offered.length ? (
+        <>
+          <h3 className="object-section">Not in use by this Crew</h3>
+          <p className="panel-text">
+            {writer
+              ? 'Taking one adds it to the Crew’s schedules as it is written here. A proposal is written for no one place, so you say which time zone its cron is read in.'
+              : `To take one, add it to this Crew’s spec.schedules under its name, with the time zone its cron is read in (kubectl edit crew ${crew.metadata.name} -n ${ns}).`}
+          </p>
+          {writer ? <TimeZoneList id={zones} /> : null}
+          <ol className="routes">
+            {offered.map((p) => (
+              <li key={p.name}>
+                <span className="mono">{p.name}</span>
+                <span className="muted"> · </span>
+                <span className="mono">{p.cron}</span>
+                <div>{p.goal}</div>
+                {writtenZone(p) ? (
+                  <div className="muted">
+                    Written for the time zone <span className="mono">{writtenZone(p)}</span>. The zone this Crew reads
+                    it in is still the one you give.
+                  </div>
+                ) : null}
+                {writer ? (
+                  <TakeProposalForm crew={crew} proposal={p} zones={zones} writer={writer} onTaken={setTaken} />
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : null}
+      {inUse.length ? (
+        <>
+          <h3 className="object-section">Names this Crew uses</h3>
+          <ol className="routes">
+            {inUse.map(({ proposal, differs }) => (
+              <li key={proposal.name}>
+                <span className="mono">{proposal.name}</span>
+                <span className="muted">
+                  {differs.length
+                    ? ' · the Crew’s schedule of this name differs from the proposal:'
+                    : writtenZone(proposal)
+                      ? ' · the Crew’s schedule of this name has the proposal’s cron, time zone and goal'
+                      : ' · the Crew’s schedule of this name has the proposal’s cron and goal, and is in UTC, which a proposal that names no time zone also reads as'}
+                </span>
+                {differs.length ? (
+                  <dl className="facts">
+                    {differs.map((d) => (
+                      <div key={d.field} className="facts-row">
+                        <dt>{FIELD_NAME[d.field]}</dt>
+                        <dd>
+                          <div>
+                            <span className="muted">The Crew’s: </span>
+                            <span className={d.field === 'goal' ? undefined : 'mono'}>{d.crew}</span>
+                          </div>
+                          {d.field === 'timeZone' && !writtenZone(proposal) ? (
+                            <div>
+                              <span className="muted">The proposal: </span>
+                              <span className="mono">{d.proposal}</span>
+                              <span className="muted">, which one that names no time zone also reads as</span>
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="muted">The proposal’s: </span>
+                              <span className={d.field === 'goal' ? undefined : 'mono'}>{d.proposal}</span>
+                            </div>
+                          )}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : null}
+    </section>
   )
 }
 

@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package gitea
 
 import (
@@ -40,7 +56,7 @@ func TestGiteaIntegration(t *testing.T) {
 	t.Run("fetches a seeded template at its tag", func(t *testing.T) {
 		// The tag comes from templates/versions.txt, the one the seed pushes: a
 		// pinned tag went stale on a bump and reddened main (#1651).
-		tree, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/python-fastapi", pinnedTemplateTag(t, "python-fastapi"), nil)
+		tree, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/python-fastapi", pinnedTemplateTag(t, "python-fastapi"), "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,7 +65,7 @@ func TestGiteaIntegration(t *testing.T) {
 				t.Errorf("template misses %s", p)
 			}
 		}
-		if _, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/python-fastapi", "main", nil); err == nil {
+		if _, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/python-fastapi", "main", "", nil); err == nil {
 			t.Error("a branch ref was accepted")
 		}
 	})
@@ -171,7 +187,7 @@ func TestGiteaTemplatesIntegration(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if tree, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/"+name, tag, nil); err != nil || len(tree) == 0 {
+		if tree, err := (git.Client{}).FetchTemplate(ctx, base+"/templates/"+name, tag, "", nil); err != nil || len(tree) == 0 {
 			t.Errorf("templates/%s@%s: %d files, %v", name, tag, len(tree), err)
 		}
 	}
@@ -383,6 +399,33 @@ func TestGiteaPullRequestUpdateIntegration(t *testing.T) {
 		t.Errorf("updating left the head at %s", pr.HeadSHA)
 	}
 	eventually(a.Number, "caught up", func(pr ports.PullRequest) bool { return !pr.Behind && pr.Mergeable })
+
+	// The pull request's commits and size, for the factory's metrics
+	// (docs/plans/done/measure-and-improve.md): the branch's commit by its author,
+	// and main's merge with two parents.
+	commits, err := p.PullRequestCommits(ctx, repo, a.Number)
+	if err != nil {
+		t.Fatalf("PullRequestCommits(): %v", err)
+	}
+	var merges, written int
+	for _, c := range commits {
+		switch {
+		case c.Parents > 1:
+			merges++
+		case c.SHA == a.HeadSHA:
+			written++
+			if c.AuthorEmail == "" {
+				t.Errorf("the branch's commit has no author email: %+v", c)
+			}
+		}
+	}
+	if merges != 1 || written != 1 {
+		t.Errorf("PullRequestCommits() = %+v; want the branch's commit and one merge of main", commits)
+	}
+	if pr := pull(a.Number); pr.Additions != 1 || pr.ChangedFiles != 1 {
+		t.Errorf("the pull request's size: %d added, %d removed, %d files; want 1 line added in 1 file",
+			pr.Additions, pr.Deletions, pr.ChangedFiles)
+	}
 
 	eventually(c.Number, "behind", func(pr ports.PullRequest) bool { return pr.Behind })
 	if err := p.UpdatePullRequest(ctx, repo, c.Number); !errors.Is(err, ports.ErrConflict) {
@@ -680,6 +723,7 @@ func TestGiteaMilestonesIntegration(t *testing.T) {
 		t.Fatalf("CreateMilestone() = %+v, want v0.1.0, open, due %v", made, due)
 	}
 
+	title := "v0.1.0"
 	find := func() ports.Milestone {
 		t.Helper()
 		all, err := p.ListAllMilestones(ctx, repo)
@@ -692,14 +736,23 @@ func TestGiteaMilestonesIntegration(t *testing.T) {
 				found = append(found, m)
 			}
 		}
-		if len(all) != 2 || len(found) != 1 || found[0].ID != made.ID || found[0].Title != "v0.1.0" ||
+		if len(all) != 2 || len(found) != 1 || found[0].ID != made.ID || found[0].Title != title ||
 			!sameDay(found[0].Due, due) {
-			t.Fatalf("ListAllMilestones() = %+v, want Later and v0.1.0 found by its description", all)
+			t.Fatalf("ListAllMilestones() = %+v, want Later and %s found by its description", all, title)
 		}
 		return found[0]
 	}
 	if m := find(); m.Closed {
 		t.Errorf("milestone %+v closed before CloseMilestone", m)
+	}
+	// A cut retitles a release of fixes (docs/plans/done/release-cadence.md, C7);
+	// Gitea would clear its due date unless the edit sends it back.
+	title = "v0.0.1"
+	if err := p.EditMilestoneTitle(ctx, repo, made.ID, title); err != nil {
+		t.Fatal(err)
+	}
+	if m := find(); m.Closed {
+		t.Errorf("milestone %+v closed by EditMilestoneTitle", m)
 	}
 	if err := p.CloseMilestone(ctx, repo, made.ID); err != nil {
 		t.Fatal(err)

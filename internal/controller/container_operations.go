@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -113,10 +121,15 @@ func (r *ContainerReconciler) reportOperationsApplied(container *c4v1beta1.Conta
 			meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionOperationsApplied)
 			return true
 		}
+		message := fmt.Sprintf("Framework %s doesn't read spec.operations (readsOperations is not set), so its "+
+			"repository has none of it; change the repository by a Task", container.Choices().Framework)
+		if container.Choices().Framework == "" {
+			// An adopted repository with no Framework (#60).
+			message = "The Container names no Framework to read spec.operations, so its repository has none of " +
+				"it; change the repository by a Task"
+		}
 		r.condition(container, status, c4v1beta1.ConditionOperationsApplied, metav1.ConditionFalse,
-			c4v1beta1.ReasonNotReadByFramework, fmt.Sprintf("Framework %s doesn't read spec.operations "+
-				"(readsOperations is not set), so its repository has none of it; change the repository by a Task",
-				container.Choices().Framework))
+			c4v1beta1.ReasonNotReadByFramework, message)
 		return true
 	}
 	if model.NextOperationsStep(operationsFacts(container, status)).Action != model.OperationsUpToDate {

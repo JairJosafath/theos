@@ -51,7 +51,8 @@ people download the files from the release page.
 {{ $watch }}. Watch the run under the repository's **Actions** tab; when it is green,
    the release page lists the files.
 
-The workflow runs on a runner labelled `go`, the one the checks use, with the
+The workflow runs on a runner labelled `go-release`, the checks' Go and Node
+toolchain with a Go build cache of its own that no other job wrote, with the
 workflow's own token: no secrets to set.{{ if $image }} The `image` job runs on the
 runner labelled `image`; the factory pushes the image it attaches to the Git
 host's registry under the tag, once: a tag's image is never replaced.{{ end }}

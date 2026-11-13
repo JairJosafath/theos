@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -18,8 +26,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -49,9 +59,15 @@ func (a taskAgents) forRole(role string) *c4v1beta1.Agent {
 func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+	if step.Unreviewed {
+		// No agent judged this round's change (its Crew's approval rules ask
+		// for no review): an earlier round's verdict is not its own, and
+		// must not go on the pull request as an approval of it.
+		status.Review, status.Verification = nil, nil
+	}
 	switch step.Action {
 	case model.ActionWait:
-		return r.wait(task, status, step), nil
+		return r.wait(ctx, task, status, step), nil
 
 	case model.ActionStartImplement, model.ActionStartReview, model.ActionStartVerify:
 		return r.startRun(ctx, task, status, container, agents, startRole(step.Action), step.Message)
@@ -71,6 +87,9 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 
 	case model.ActionDoneByStandardChange:
 		return ctrl.Result{}, r.doneByStandardChange(ctx, task, status, container, step)
+
+	case model.ActionNothingToDo:
+		return ctrl.Result{}, r.nothingToDo(ctx, task, status, container, step)
 
 	case model.ActionRetryReview:
 		r.progress(task, status, metav1.ConditionTrue, "ReviewerFailed", step.Message)
@@ -190,12 +209,12 @@ func (r *TaskReconciler) nextRound(ctx context.Context, task *c4v1beta1.Task, st
 const reasonAgentUnavailable = "AgentUnavailable"
 
 // wait records what the Task waits for, and when to look again.
-func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, step model.TaskStep) ctrl.Result {
+func (r *TaskReconciler) wait(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, step model.TaskStep) ctrl.Result {
 	if status.Phase == c4v1beta1.TaskBlocked {
 		// The Task also wakes when one on its Container changes phase, as the
 		// change's Task does when it ends.
 		r.progress(task, status, metav1.ConditionTrue, "WaitingForStandardChange", step.Message)
-		return ctrl.Result{RequeueAfter: r.standardChangeRecheck()}
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.standardChangeRecheck())}
 	}
 	reason := "Waiting"
 	if step.SlotWait {
@@ -211,7 +230,7 @@ func (r *TaskReconciler) wait(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus
 	}
 	r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
 	if status.Phase == c4v1beta1.TaskChecking || step.Recheck {
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}
 	}
 	if status.AgentBackAt != nil && step.Reason == "" && !step.SlotWait {
 		// Looked at again when the agent is back, also when that came while
@@ -280,7 +299,7 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, statu
 				model.CheckFailsOnBaseEvent(int(status.Round), failed))
 		}
 	}
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.dropRun(ctx, task, ended)
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.dropRun(ctx, task, ended)
 }
 
 // startRun creates the sandbox for this round's role, after making sure the
@@ -304,12 +323,32 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, sta
 		}
 	}
 
+	// The run's environments are leased before its sandbox, under the name
+	// the sandbox will have: a run waiting for one starts nothing.
+	next := status.DeepCopy()
+	setProgress(next, model.StartRun(progressOf(next), role))
+	envs, wait, err := r.leaseEnvironments(ctx, task, status, container, role, sandboxName(task, next, role), in.labels)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if wait != nil {
+		r.waitForEnvironment(task, status, wait)
+		return ctrl.Result{RequeueAfter: r.environmentRecheck()}, nil
+	}
+
 	setProgress(status, model.StartRun(progressOf(status), role))
 	if status.Branch == "" {
 		status.Branch = model.TaskBranch(task.Name)
 	}
+	if b := task.Spec.Benchmark; b != nil && role == model.RoleImplementer {
+		// A Benchmark's Task branches from its pinned base: the implementer
+		// works on the branch it finds.
+		if err := ensureBranchAt(gitCtx, in.provider, in.repo, status.Branch, b.Base); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	name := sandboxName(task, status, role)
-	sandbox, err := r.runSandbox(ctx, task, status, container, agents, role, name, in)
+	sandbox, err := r.runSandbox(ctx, task, status, container, agents, role, name, in, envs)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -345,6 +384,8 @@ type runInput struct {
 	protected []string
 	gitSecret string
 	goal      string
+	// labels are the issue's, which may ask for test environments.
+	labels []string
 }
 
 // runInputs makes sure the Agent's credentials and the Container's agent Git
@@ -391,13 +432,15 @@ func (r *TaskReconciler) runInputs(ctx context.Context, task *c4v1beta1.Task, st
 		}
 		status.IssueTitle, status.IssueURL = issue.Title, issue.URL
 		in.goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
+		in.labels = issue.Labels
 	}
 	return in, ctrl.Result{}, nil
 }
 
 // runSandbox builds the Sandbox named name for a run of role on the Container.
 func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	container *c4v1beta1.Container, agents taskAgents, role, name string, in *runInput) (*unstructured.Unstructured, error) {
+	container *c4v1beta1.Container, agents taskAgents, role, name string, in *runInput,
+	envs []runEnvironment) (*unstructured.Unstructured, error) {
 	agent := agents.forRole(role)
 	story := c4Context(ctx, r.Client, container)
 	npmSecret, pypiSecret, err := r.packagesSecrets(ctx, container)
@@ -411,10 +454,11 @@ func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, s
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
 		protectedPaths: in.protected, allowedPaths: task.Spec.AllowedProtectedPaths, resumed: resumedRun(status),
 		workspaceMemory: r.WorkspaceMemory, checkpointClass: r.CheckpointClass,
-		goCache: r.SandboxGoCache, goProxy: repo.GoProxy,
+		goCache: r.SandboxGoCache, goProxy: repo.GoProxy, goPrivate: repo.GoPrivate, checkCommand: container.Spec.CheckCommand,
 		npmScope: repo.NpmScope, npmRegistry: repo.NpmRegistry, pypiIndex: repo.PyPIIndex,
 		npmSecret: npmSecret, pypiSecret: pypiSecret,
 		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),
+		environments: envs,
 	}, r.Scheme, r.now())
 }
 
@@ -580,9 +624,24 @@ func (r *TaskReconciler) revokeOldAgentTokensOnce(ctx context.Context, namespace
 // merge squashes the approved pull request into main.
 func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
+	if task.Spec.Benchmark != nil {
+		// A Benchmark's Task never merges: approved, it ends Approved, and its
+		// Benchmark closes its pull request once its Scorers judged it.
+		status.Review = r.reviewFrom(ctx, task, status)
+		if err := r.endRun(ctx, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.finish(task, status, c4v1beta1.TaskApproved, metav1.ConditionTrue, model.TaskApproved,
+			"Approved with green checks; a Benchmark's Task never merges")
+		logf.FromContext(ctx).Info("Approved Benchmark Task", "url", status.PullRequestURL, "round", status.Round)
+		return ctrl.Result{}, nil
+	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if wait, err := r.waitForRelease(ctx, task, status, provider, repo); err != nil || wait {
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, err
 	}
 	reviewRun := r.reviewRun(ctx, task, status)
 	if len(task.Spec.AllowedProtectedPaths) > 0 && status.MergeWhenChecksPass && reviewRun == nil {
@@ -617,7 +676,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 		setProgress(status, model.Recheck(progressOf(status), pr.HeadSHA))
 		r.progress(task, status, metav1.ConditionTrue, "BranchMoved",
 			"The branch moved after the review; checking "+pr.HeadSHA)
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.endRun(ctx, task, status)
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.endRun(ctx, task, status)
 	case model.MergeSquash:
 		var refusal string
 		refusal, skip, err = r.mergeReviewed(ctx, provider, repo, task, status, container, agents, pr.Behind)
@@ -630,7 +689,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 			// Waits while the review run lasts; if it ends first, the merge is refused.
 			r.progress(task, status, metav1.ConditionTrue, "WaitingForChecks",
 				"Approved; CI runs again on "+status.Commit+", merging once it passes")
-			return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+			return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 		case model.SquashRefused:
 			return ctrl.Result{}, r.failWith(ctx, task, status, container, model.GatedMergeRefused(refusal))
 		}
@@ -643,6 +702,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 		status.MergeCommit = r.mergeCommit(ctx, provider, repo, status)
 		r.carryChecks(ctx, provider, repo, status, skip)
 	}
+	r.recordPull(ctx, provider, repo, status)
 	if isSpec(task) {
 		if err := r.specMerged(ctx, provider, repo, task, status); err != nil {
 			return ctrl.Result{}, err
@@ -654,6 +714,52 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 	r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, "Merged", step.Message)
 	logf.FromContext(ctx).Info("Merged Task", "url", status.PullRequestURL, "round", status.Round)
 	return ctrl.Result{}, nil
+}
+
+// waitForRelease holds a Crew's Task at its merge while the Crew's cut
+// release waits for its tag, unless the Task's issue is in that release
+// (docs/plans/done/release-cadence.md, C10): merged now, its work would land under
+// the tag and miss the changelog the prepare issue writes. It costs no round,
+// and the Task merges on a later reconcile, once the tag is made. A Standard
+// change merges as usual: its gated merge needs a review run that still
+// lasts. It reports whether the Task waits.
+func (r *TaskReconciler) waitForRelease(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	provider ports.Issues, repo ports.Repository) (bool, error) {
+	name := task.Labels[LabelCrew]
+	if name == "" || task.Spec.Issue == 0 || len(task.Spec.AllowedProtectedPaths) > 0 {
+		return false, nil
+	}
+	var crew c4v1beta1.Crew
+	if err := r.Get(ctx, types.NamespacedName{Namespace: task.Namespace, Name: name}, &crew); err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	cut := crew.Status.CutRelease
+	if cut == "" {
+		return false, nil
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	issue, err := provider.GetIssue(gitCtx, repo, int(task.Spec.Issue))
+	if err != nil && !errors.Is(err, ports.ErrIssueNotFound) {
+		return false, err
+	}
+	if !model.MergeWaitsForRelease(cut, issue.MilestoneTitle) {
+		return false, nil
+	}
+	if cond := apimeta.FindStatusCondition(status.Conditions, ConditionProgressing); cond == nil ||
+		cond.Reason != model.ReasonWaitingForRelease {
+		logf.FromContext(ctx).Info("Holding a merge for the cut release's tag", "release", cut,
+			"url", status.PullRequestURL)
+	}
+	r.progress(task, status, metav1.ConditionTrue, model.ReasonWaitingForRelease, model.WaitingForReleaseMessage(cut))
+	return true, nil
+}
+
+// waitsForRelease reports whether a Task waits at its merge for its Crew's
+// cut release to be tagged (waitForRelease).
+func waitsForRelease(t *c4v1beta1.Task) bool {
+	cond := apimeta.FindStatusCondition(t.Status.Conditions, ConditionProgressing)
+	return !isFinal(t.Status.Phase) && cond != nil && cond.Reason == model.ReasonWaitingForRelease
 }
 
 // updateBranch merges main into an approved change's branch, as main moved since
@@ -683,7 +789,7 @@ func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1beta1.Task,
 	if pr.HeadSHA == status.Commit {
 		// Nothing merged: the branch had main already, and the Git host had not
 		// yet seen it. Look again once it has.
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 	}
 	status.Review = r.reviewFrom(ctx, task, status)
 	r.comment(ctx, task, status, container, step.Message+".")
@@ -695,7 +801,7 @@ func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1beta1.Task,
 	r.progress(task, status, metav1.ConditionTrue, "UpdatingBranch", step.Message)
 	logf.FromContext(ctx).Info("Merged main into an approved Task's branch", "round", status.Round,
 		"commit", pr.HeadSHA)
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 }
 
 // mergeCommit reads the commit the pull request's merge made on the default
@@ -712,6 +818,39 @@ func (r *TaskReconciler) mergeCommit(ctx context.Context, provider ports.GitHost
 	return pr.MergeCommit
 }
 
+// recordPull keeps the merged pull request's size and how many of its
+// commits a person wrote (docs/plans/done/measure-and-improve.md, decisions 3 and
+// 4), once. A read that fails leaves them unset, for the merged Task to read
+// again.
+func (r *TaskReconciler) recordPull(ctx context.Context, provider ports.GitHost, repo ports.Repository,
+	status *c4v1beta1.TaskStatus) {
+	if status.PullRequest == 0 || status.PersonCommits != nil {
+		return
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
+	defer cancel()
+	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read the merged pull request's size; trying again later",
+			"url", status.PullRequestURL, "error", err.Error())
+		return
+	}
+	commits, err := provider.PullRequestCommits(gitCtx, repo, int(status.PullRequest))
+	if err != nil {
+		logf.FromContext(ctx).Info("Could not read the merged pull request's commits; trying again later",
+			"url", status.PullRequestURL, "error", err.Error())
+		return
+	}
+	read := make([]model.PullCommit, 0, len(commits))
+	for _, c := range commits {
+		read = append(read, model.PullCommit{AuthorEmail: c.AuthorEmail, Parents: c.Parents})
+	}
+	person := int32(model.PersonCommits(read))
+	status.PersonCommits = &person
+	status.PullRequestSize = c4v1beta1.TaskPullRequestSize{Additions: int32(pr.Additions),
+		Deletions: int32(pr.Deletions), Files: int32(pr.ChangedFiles)}
+}
+
 // mergeReviewed squashes the reviewed commit into main, posting the reviewer's
 // approval; a push since the review makes the merge fail. A Standard change goes
 // through gatedMerge, which may refuse it or wait for CI. A merge that skips
@@ -724,12 +863,14 @@ func (r *TaskReconciler) mergeReviewed(ctx context.Context, provider ports.GitHo
 		return refusal, nil, err
 	}
 	switch {
+	case status.Phase == c4v1beta1.TaskAwaitingApproval:
+		// The agents' approvals went on the pull request as it began to wait
+		// for a person's, a spec's or a change's.
 	case verifies(task):
 		// The reviewer's approval went on the pull request as the verification
 		// began; the verifier's goes with the merge.
 		r.postVerification(ctx, task, status, container, agents.verifier, ports.ReviewApprove)
-	case !isSpec(task) || status.Phase != c4v1beta1.TaskAwaitingApproval:
-		// A waiting spec's approval went on its pull request as it began to wait.
+	default:
 		r.approve(ctx, task, status, container, agents.reviewer)
 	}
 	skip = r.planSkip(ctx, provider, repo, status, container, behind)
@@ -837,6 +978,8 @@ type endedRun struct {
 	why     suspension
 	// resume, when set, resumes the suspended sandbox with it.
 	resume *sandboxResume
+	// leases are the test environments the run held, returned with it.
+	leases []c4v1beta1.TaskEnvironmentLease
 }
 
 // recordRun adds what the current run cost to the Task's, records the run,
@@ -856,7 +999,8 @@ func (r *TaskReconciler) recordRun(ctx context.Context, task *c4v1beta1.Task,
 	if !runCounted(status, run) {
 		r.countRun(status, run)
 	}
-	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result}
+	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result,
+		leases: takeLeases(status, status.Sandbox)}
 	status.Sandbox, status.SandboxPod, status.CountedPod = "", "", ""
 	return ended, nil
 }
@@ -876,6 +1020,7 @@ func (r *TaskReconciler) countRun(status *c4v1beta1.TaskStatus, run model.RunSta
 // dropRun deletes the sandbox of a run recordRun ended, or suspends or
 // resumes it, and posts when the ended pod's sessions handed off.
 func (r *TaskReconciler) dropRun(ctx context.Context, task *c4v1beta1.Task, ended endedRun) error {
+	r.returnLeases(ctx, task, ended.leases)
 	switch {
 	case ended.sandbox == "":
 		return nil
@@ -907,6 +1052,7 @@ func (r *TaskReconciler) dropRun(ctx context.Context, task *c4v1beta1.Task, ende
 // runRecord is rec as Task status keeps it.
 func runRecord(rec model.RunRecord) c4v1beta1.TaskAgentRun {
 	out := c4v1beta1.TaskAgentRun{Round: int32(rec.Round), Role: rec.Role, Sandbox: rec.Sandbox,
+		Agent: rec.Config.Agent, Harness: rec.Config.Harness, Model: rec.Config.Model,
 		EndedAt: metav1.NewTime(rec.EndedAt), SessionHandoffs: rec.SessionHandoffs,
 		Tokens: addTokens(nil, rec.Tokens)}
 	if rec.CostReported {
@@ -1016,7 +1162,7 @@ func (r *TaskReconciler) rerunChecks(ctx context.Context, task *c4v1beta1.Task, 
 	if !model.RunsEnded(runs) {
 		r.progress(task, status, metav1.ConditionTrue, "Waiting",
 			step.Message+"; waiting for the CI runs at the commit to end first")
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 	}
 	failed := model.FailedCommitRuns(runs)
 	if len(failed) == 0 && status.ChecksRerunDue {
@@ -1079,6 +1225,9 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1beta1.Task, status 
 	case model.ReasonApprovalRanOut:
 		why += "\n\nCI kept taking longer than a review run lasts, so this try doesn't count towards the limit; " +
 			"free or speed up the runner first."
+	case model.ReasonIssueUnseen:
+		why += fmt.Sprintf("\n\nThe factory gives the agent the issue's text, so the first such try on an issue "+
+			"doesn't count towards the limit; after %d, each one counts.", model.MaxFreeUnseen)
 	}
 	r.handBack(ctx, task, container, why)
 	logf.FromContext(ctx).Info("Failed Task", "reason", reason, "message", message)
@@ -1110,6 +1259,10 @@ func (r *TaskReconciler) comment(ctx context.Context, task *c4v1beta1.Task, stat
 }
 
 func pullTitle(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) string {
+	if b := task.Spec.Benchmark; b != nil {
+		return model.BenchmarkPullTitle(b.BenchmarkRef.Name, b.Variant, int(b.Goal), int(b.Repetition),
+			firstLine(task.Spec.Goal))
+	}
 	if isSpec(task) {
 		return firstLine(model.SpecTitle(status.IssueTitle))
 	}
@@ -1117,6 +1270,15 @@ func pullTitle(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) string {
 		return firstLine(status.IssueTitle)
 	}
 	return firstLine(task.Spec.Goal)
+}
+
+// ensureBranchAt makes branch at commit, unless the Git host has it already.
+func ensureBranchAt(ctx context.Context, provider ports.GitHost, repo ports.Repository, branch, commit string) error {
+	has, err := provider.HasBranch(ctx, repo, branch)
+	if err != nil || has {
+		return err
+	}
+	return provider.CreateBranch(ctx, repo, branch, commit)
 }
 
 // pullBody is a pull request's description; extra are the unprotected files a
@@ -1162,8 +1324,8 @@ func firstLine(s string) string {
 // authored by the operator's Git user, who only merged.
 func mergeMessage(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, container *c4v1beta1.Container) string {
 	bot := model.AgentUsername(container.Namespace, container.Name)
-	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s@agents.theos.factory.io>",
-		task.Name, status.Round, bot, bot)
+	return fmt.Sprintf("Task %s, round %d.\n\nCo-authored-by: %s <%s>",
+		task.Name, status.Round, bot, model.AgentEmail(bot))
 }
 
 // agentGitRepo is the Container's repository as its agent bot sees it. The

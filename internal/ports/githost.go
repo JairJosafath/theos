@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package ports
 
 import (
@@ -19,6 +35,9 @@ const DefaultBranch = "main"
 type Credentials struct {
 	Username string
 	Token    string
+	// Expires is when the host stops taking Token; zero for a token that
+	// lives until it is revoked.
+	Expires time.Time
 }
 
 // Kinds of Git hosting. Gitea is the only one in v1.
@@ -34,6 +53,10 @@ type Config struct {
 	// installed from, the GitProvider's spec.packages. A field left "" takes
 	// its default: the scope @theos, and the host's own registries.
 	Packages Packages
+	// Secret is what the provider's Secret holds beside the user and the
+	// token, by key. An adapter reads the keys its host needs, such as the
+	// App that mints a host's agent credentials, and no other.
+	Secret map[string][]byte
 }
 
 // DefaultNpmScope is the npm scope the factory's packages share when the
@@ -70,6 +93,12 @@ type Repository struct {
 	// GoProxy is the Go module proxy of the owner's package registry, where the
 	// owner's released Go modules are fetched from; empty when the host has none.
 	GoProxy string
+	// GoPrivate is the prefix of the module paths of the owner's Go modules
+	// on a host that serves a module from its repository, such as
+	// "github.com/acme": a run and a CI job set GOPRIVATE to it, and fetch
+	// those modules with their Git credential. Empty on a host with a
+	// GoProxy.
+	GoPrivate string
 	// ImageRegistry is the owner's container registry, <host>/<owner>, where
 	// the images of the owner's releases are pushed; empty when the host has
 	// none.
@@ -164,6 +193,17 @@ type PullRequest struct {
 	Behind bool
 	// MergeCommit is the commit the merge made on the base; empty until merged.
 	MergeCommit string
+	// Additions, Deletions and ChangedFiles are the size of its change: lines
+	// added and removed, and files changed.
+	Additions, Deletions, ChangedFiles int
+}
+
+// PullCommit is one commit of a pull request: its SHA, its author's email and
+// how many parents it has (a merge has two or more).
+type PullCommit struct {
+	SHA         string
+	AuthorEmail string
+	Parents     int
 }
 
 // Review events of ReviewPullRequest, with the wire values of the first host
@@ -259,9 +299,14 @@ var ErrPullRequestNotFound = errors.New("no such pull request")
 
 // ErrUnpinnedRef means a template ref is a branch or doesn't exist. Templates
 // must be pinned to a tag or a full commit SHA. Fetching templates is plain
-// Git and no port (docs/plans/git-host-ports.md, decision 6); the error is
+// Git and no port (docs/plans/done/git-host-ports.md, decision 6); the error is
 // here so the fetcher and the controllers' fake share it.
 var ErrUnpinnedRef = errors.New("template ref is not a tag or commit")
+
+// ErrTemplatePathNotFound means a template's path is no directory of its
+// repository at the pinned ref (#35). Like ErrUnpinnedRef it is permanent: no
+// retry makes the directory appear at a tag or commit.
+var ErrTemplatePathNotFound = errors.New("template path is not a directory at the ref")
 
 // GitHost is the Git host port (docs/architecture.md, "Ports"): repositories,
 // files, pushes, branches, tags, branch rules, pull requests, merges, commit
@@ -336,6 +381,9 @@ type GitHost interface {
 	// file's old path too, or an error when it can't read them all:
 	// ErrTooManyFiles when there are too many.
 	PullRequestFiles(ctx context.Context, repo Repository, number int) ([]string, error)
+	// PullRequestCommits returns a pull request's commits, oldest first, also
+	// once it is merged and its branch deleted.
+	PullRequestCommits(ctx context.Context, repo Repository, number int) ([]PullCommit, error)
 	// ClosePullRequest closes a pull request without merging it.
 	ClosePullRequest(ctx context.Context, repo Repository, number int) error
 	// ReviewPullRequest posts a review of commit: ReviewApprove,

@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -53,11 +69,17 @@ func TestBriefAttentionHealWindows(t *testing.T) {
 			hours(0.1), want{needs: []string{"Task `cli-1` reached its Crew's cost cap: The Task's runs cost $1.20",
 				"Raise the Crew's taskBudgetUSD"}}},
 		{"a spec waiting for a person's approval, at once (sdlc-loop step 3)",
-			AttentionFacts{Tasks: []WatchedTask{{Name: "cli-4-spec", Stage: StageApproval, Since: t0,
+			AttentionFacts{Tasks: []WatchedTask{{Name: "cli-4-spec", Stage: StageApproval, Since: t0, Spec: true,
 				Reason: "WaitingForApproval", Message: "The spec of issue #4 passed CI and the reviewer; approve " +
 					"pull request http://gitea/x/cli/pulls/5 on the Git host to merge it"}}},
 			hours(0.1), want{needs: []string{"Task `cli-4-spec` waits for you to approve its spec: The spec of issue #4",
 				"Approve the spec's pull request on the Git host"}}},
+		{"a change its Crew's approval rules hold for a person, at once (#62)",
+			AttentionFacts{Tasks: []WatchedTask{{Name: "cli-9", Stage: StageApproval, Since: t0,
+				Reason: "WaitingForApproval", Message: ChangeWaitMessage(9, "http://git.example/x/cli/pulls/12",
+					"approval rule 1 (paths migrations/) asks for a person for migrations/001.sql")}}},
+			hours(0.1), want{needs: []string{"Task `cli-9` waits for you to approve its change: The change for issue #9",
+				"Approve the pull request on the Git host"}}},
 		{"paused by a person, however long (step 12 of the self-hosting plan)",
 			AttentionFacts{Tasks: []WatchedTask{{Name: "cli-1", Stage: StageImplement, Since: t0, Reason: "Paused",
 				Message: "Paused by the factory (Brief cel-lens paused its runs); no agent runs until the pause ends"}}},
@@ -65,6 +87,37 @@ func TestBriefAttentionHealWindows(t *testing.T) {
 		{"waiting for a slot, past 4h",
 			AttentionFacts{Tasks: []WatchedTask{{Name: "cli-1", Stage: StageSlot, Since: t0, Reason: "WaitingForSlot"}}},
 			hours(4), want{needs: []string{"waited 4h for an agent slot", "more agent slots"}}},
+		{"waiting for a test environment the project lacks, at once (test-environments T2)",
+			AttentionFacts{Tasks: []WatchedTask{{Name: "ext-3", Stage: StageQueued, Since: t0,
+				Reason:  ReasonWaitingForEnvironment,
+				Message: EnvironmentWaitMessage(EnvNotInProject, []string{"browser"}, "")}}},
+			hours(0.1), want{needs: []string{"Task `ext-3` has waited", "a test environment the project lacks",
+				"Add the TestEnvironment"}}},
+		{"waiting for a test environment past its budget, at once (test-environments T10)",
+			AttentionFacts{Tasks: []WatchedTask{{Name: "ext-3", Stage: StageQueued, Since: t0,
+				Reason:  ReasonWaitingForEnvironment,
+				Message: EnvironmentWaitMessage(EnvOverBudget, []string{"ios"}, "")}}},
+			hours(0.1), want{needs: []string{"spent today's budget", "budgetUSDPerDay"}}},
+		{"waiting for a test environment whose credential is refused, at once (test-environments T9)",
+			AttentionFacts{Tasks: []WatchedTask{{Name: "ext-3", Stage: StageQueued, Since: t0,
+				Reason:  ReasonWaitingForEnvironment,
+				Message: EnvironmentWaitMessage(EnvCredentialRefused, []string{"gpu"}, "")}}},
+			hours(0.1), want{needs: []string{"refuses the credential", "credentialsSecretRef"}}},
+		{"waiting for a lease of a test environment, inside 4h",
+			AttentionFacts{Tasks: []WatchedTask{{Name: "ext-3", Stage: StageQueued, Since: t0,
+				Reason:  ReasonWaitingForEnvironment,
+				Message: EnvironmentWaitMessage(EnvAllLeased, []string{"browser"}, "")}}},
+			hours(3.9), want{healing: true, actsAt: hours(4)}},
+		{"waiting for a lease of a test environment, past 4h",
+			AttentionFacts{Tasks: []WatchedTask{{Name: "ext-3", Stage: StageQueued, Since: t0,
+				Reason:  ReasonWaitingForEnvironment,
+				Message: EnvironmentWaitMessage(EnvPending, []string{"browser"}, "the pod is not scheduled")}}},
+			hours(4), want{needs: []string{"waited 4h for a test environment", "limits.maxLeases"}}},
+		{"a Container asking for a test environment the project lacks, at once (test-environments T2)",
+			AttentionFacts{Containers: []WatchedContainer{{Name: "ext", Phase: "Ready", Since: t0,
+				Environments: MissingEnvironmentsMessage([]string{"browser"}), EnvironmentsSince: t0}}},
+			hours(0.1), want{needs: []string{"Container `ext` asks for test environments the project lacks",
+				"no TestEnvironment browser", "take them off its Standard or Framework"}}},
 		{"blocked on a Standard change in review",
 			AttentionFacts{Tasks: []WatchedTask{{Name: "core-8", Stage: StageBlocked, Since: t0,
 				Reason: "WaitingForStandardChange", StandardChange: 27}}},

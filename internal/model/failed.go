@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -96,6 +112,9 @@ type IssueTask struct {
 	Blocked bool
 	// NoCI means it failed through its CI runner's fault (model.RunnerFault); it costs no try.
 	NoCI bool
+	// Unseen means it failed because its agent couldn't see the issue
+	// (ReasonIssueUnseen); the first such Task costs no try (TryCounter).
+	Unseen bool
 	// Message is the Task's status message.
 	Message string
 	Created time.Time
@@ -107,7 +126,7 @@ type IssueTask struct {
 // back, from its Container's Tasks, the first that holds: labelled kind/by-hand
 // (byHand, with the whys its body gives); no acceptance criteria (unclear); a
 // Task merged it (merged); MaxIssueAttempts Tasks failed, not counting those
-// CI never reported on (exhausted); its
+// TryCounter calls free (exhausted); its
 // newest failed Task's message (blocked, when its agent said it can't start
 // the issue; else failed); else a person (person). Tries counts the issue's
 // Tasks.
@@ -127,11 +146,12 @@ func FailedReason(number int, labels []string, body string, tasks []IssueTask) (
 	tries = len(mine)
 	var failed []string
 	merged := ""
+	var counter TryCounter
 	for _, t := range mine {
 		switch {
 		case t.Merged:
 			merged = t.Name
-		case t.Failed && !t.NoCI:
+		case t.Failed && counter.Costs(t.NoCI, t.Unseen):
 			failed = append(failed, t.Name)
 		}
 	}

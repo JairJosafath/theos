@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: A vulnerability
+    url: https://github.com/JairJosafath/theos/blob/main/SECURITY.md
+    about: Never in an issue. SECURITY.md says how to report one privately.
+  - name: Getting started
+    url: https://github.com/JairJosafath/theos/blob/main/docs/getting-started.md
+    about: The install, your first app, and what to do when a step fails.
+  - name: theos next to other software factories
+    url: https://github.com/JairJosafath/theos/blob/main/docs/comparison.md
+    about: What theos does and doesn't do yet, with the issue for each gap.

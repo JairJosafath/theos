@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package gitea
 
 import (
@@ -336,13 +352,25 @@ func (h *issueHost) handleReleases(mux *http.ServeMux, repo string, reply func(h
 			reply(w, http.StatusNotFound, map[string]string{"message": "no milestone"})
 			return
 		}
-		// As in Gitea, an edit that gives no due date clears it.
+		// As in Gitea, an edit that gives no due date clears it; one that gives
+		// no title, state or description keeps it.
 		var body struct {
-			State string     `json:"state"`
-			DueOn *time.Time `json:"due_on"`
+			Title       *string    `json:"title"`
+			State       *string    `json:"state"`
+			Description *string    `json:"description"`
+			DueOn       *time.Time `json:"due_on"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		h.milestones[idx].State, h.milestones[idx].DueOn = body.State, body.DueOn
+		if body.Title != nil {
+			h.milestones[idx].Title = *body.Title
+		}
+		if body.State != nil {
+			h.milestones[idx].State = *body.State
+		}
+		if body.Description != nil {
+			h.milestones[idx].Description = *body.Description
+		}
+		h.milestones[idx].DueOn = body.DueOn
 		reply(w, http.StatusOK, h.milestones[idx])
 	})
 	mux.HandleFunc("GET "+repo+"/milestones/{id}", func(w http.ResponseWriter, r *http.Request) {

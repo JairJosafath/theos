@@ -1,6 +1,6 @@
 # A Standard update, live on the e2e hello Container
 
-Issue [#80](https://github.com/JairJosafath/c4factory/issues/80), 2026-10-05, Kind
+Issue c4factory #80, 2026-10-05, Kind
 cluster `theos`, the operator built from branch
 `chore/80-verify-a-standard-update-live-on-the-e2e` (`make deploy`). Agent: otter-80.
 

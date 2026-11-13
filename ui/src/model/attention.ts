@@ -27,7 +27,7 @@ export const STUCK_AFTER_MS: Record<Stage, number> = {
 /** Failed Tasks stay on the attention list this long. */
 const RECENT_FAILURE_MS = 24 * 60 * 60_000
 
-/** Above this share of the node's memory, the laptop is in trouble. */
+/** Above this share of a node's memory, that node is in trouble. */
 const MEMORY_WARN = 0.85
 
 export interface Attention {
@@ -152,7 +152,7 @@ export function attention(input: {
         if (share > MEMORY_WARN) {
           items.push({
             level: 'warning',
-            title: `Node memory at ${Math.round(share * 100)}%`,
+            title: `Node ${node.name} memory at ${Math.round(share * 100)}%`,
             detail: 'Agents and CI are heavy; the next sandbox may not fit.',
           })
         }
@@ -215,7 +215,8 @@ export function attention(input: {
   for (const task of tasks) {
     const key = taskKey(task)
     const brief = briefOn(briefs, 'Task', task.metadata.namespace, task.metadata.name, now)
-    if (task.status?.phase === 'Failed') {
+    // A Scorer's judge run or a Benchmark's run that failed measures the factory: no alarm.
+    if (task.status?.phase === 'Failed' && task.spec.kind !== 'Score' && !task.spec.benchmark) {
       const done = time(task.status.completedAt)
       if (done !== undefined && now - done < RECENT_FAILURE_MS && !failureAnswered(task, done, tasks, briefs)) {
         items.push({

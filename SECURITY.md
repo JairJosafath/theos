@@ -2,10 +2,11 @@
 
 ## Reporting a vulnerability
 
-Don't open an issue. While the repository is private, report to the owner,
-@JairJosafath ([MAINTAINERS.md](MAINTAINERS.md)), privately. Once it is public,
-use GitHub's private vulnerability reporting (*Security* → *Report a
-vulnerability*).
+Don't open an issue. Use GitHub's private vulnerability reporting
+(*Security* → *Report a vulnerability* on the repository). If that button
+isn't there, report to the owner, @JairJosafath
+([MAINTAINERS.md](MAINTAINERS.md)), privately, through the contact on their
+GitHub profile.
 
 Include the version (`vX.Y.Z`, or the commit), what an attacker gains, and how
 to reproduce it.
@@ -20,8 +21,8 @@ to reproduce it.
   security advisory, and a CVE when one is warranted.
 
 Security reports are reserved to the owner ([GOVERNANCE.md](GOVERNANCE.md)).
-When the maintainer finds one in an issue, it takes the details out of the
-issue and sends the issue to the owner.
+Whoever finds one in an issue, a person or an agent, takes the details out of
+the issue and sends it to the owner.
 
 ## Supported versions
 

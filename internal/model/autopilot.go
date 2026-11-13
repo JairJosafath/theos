@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -111,6 +127,9 @@ type WatchedTask struct {
 	// Reason and Message are its Progressing condition's.
 	Reason  string
 	Message string
+	// Spec means a Spec Task: what waits for a person's approval is its
+	// spec, not a change its Crew's approval rules hold.
+	Spec bool
 	// AgentBackAt is when its agent is back, while it waits for one.
 	AgentBackAt time.Time
 	// StandardChange is the issue of the Standard change it waits on, and
@@ -135,6 +154,11 @@ type WatchedContainer struct {
 	Phase   string
 	Message string
 	Since   time.Time
+	// Environments is its TestEnvironments condition's message while the
+	// project lacks one its Standard or Framework asks for, and
+	// EnvironmentsSince since when.
+	Environments      string
+	EnvironmentsSince time.Time
 }
 
 // TendedIssue is a failed issue a round answered, as the Brief remembers it
@@ -247,13 +271,20 @@ func BriefAttention(f AttentionFacts, now time.Time) Attention {
 		a.add(h, entry)
 	}
 	for _, c := range f.Containers {
-		if c.Phase != containerFailed {
-			continue
+		switch {
+		case c.Phase == containerFailed:
+			a.NeedsYou = append(a.NeedsYou, NeedsYou{AttentionContainer, c.Name,
+				fmt.Sprintf("Container `%s` failed: %s", c.Name, sentence(c.Message, "see the Container")),
+				"Fix what it says, or delete it and plan it again in a prompt.",
+				"A failed Container doesn't heal by itself.", c.Since})
+		case c.Environments != "":
+			// docs/plans/done/test-environments.md, T2: only a person adds one.
+			a.NeedsYou = append(a.NeedsYou, NeedsYou{AttentionContainer, c.Name,
+				fmt.Sprintf("Container `%s` asks for test environments the project lacks: %s", c.Name,
+					sentence(c.Environments, "see the Container")),
+				"Add the TestEnvironments to the project, or take them off its Standard or Framework.",
+				"Its runs go on without them, so what needs them stays open.", c.EnvironmentsSince})
 		}
-		a.NeedsYou = append(a.NeedsYou, NeedsYou{AttentionContainer, c.Name,
-			fmt.Sprintf("Container `%s` failed: %s", c.Name, sentence(c.Message, "see the Container")),
-			"Fix what it says, or delete it and plan it again in a prompt.",
-			"A failed Container doesn't heal by itself.", c.Since})
 	}
 	slices.SortStableFunc(a.NeedsYou, func(x, y NeedsYou) int { return x.Since.Compare(y.Since) })
 	a.Waiting = len(a.NeedsYou)
@@ -339,6 +370,13 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 			fmt.Sprintf("Task `%s` has waited %s for main to turn green.", t.Name, waited),
 			"Fix main's checks, or revert the change that broke them.",
 			sentence(t.Message, "round 1 starts only on a green base"), t.Since}
+	case t.Reason == ReasonAwaitingApproval && !t.Spec:
+		// A change its Crew's approval rules hold: only a person lets it in (#62).
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` waits for you to approve its change: %s", t.Name, sentence(t.Message,
+				"its pull request passed CI and the factory's review")),
+			"Approve the pull request on the Git host, ask for changes there, or close it to drop the change.",
+			"The Crew's approval rules hold this change until a person approved it.", t.Since}
 	case t.Reason == ReasonAwaitingApproval:
 		// A spec's review point: only a person approves it (docs/plans/done/sdlc-loop.md).
 		return nil, &NeedsYou{AttentionTask, t.Name,
@@ -352,6 +390,8 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 			fmt.Sprintf("Task `%s` reached its Crew's cost cap: %s.", t.Name, strings.TrimSuffix(t.Message, ".")),
 			"Raise the Crew's taskBudgetUSD, or delete the Task.",
 			"It starts no run until the cap is raised.", t.Since}
+	case t.Reason == ReasonWaitingForEnvironment:
+		return environmentAttention(t, now, waited)
 	case t.Stage == StageChecks:
 		return &Healing{AttentionTask, t.Name, ChecksBound(t.Message),
 			time.Time{}}, nil
@@ -375,6 +415,38 @@ func taskAttention(t WatchedTask, now time.Time) (*Healing, *NeedsYou) {
 		sentence(t.Message, "it stayed in one stage twice as long as it should"))
 }
 
+// environmentAttention classifies a Task waiting for a test environment
+// (docs/plans/done/test-environments.md, T2, T9, T10): one the project lacks,
+// whose budget is spent or whose credential is refused, only a person
+// mends; a lease taken or starting frees inside the slot's window.
+func environmentAttention(t WatchedTask, now time.Time, waited string) (*Healing, *NeedsYou) {
+	switch {
+	case strings.HasPrefix(t.Message, EnvNotInProject):
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` has waited %s for a test environment the project lacks.", t.Name, waited),
+			"Add the TestEnvironment to the project (docs/getting-started.md, Give agents a browser), or take the env/ label off its issue.",
+			sentence(t.Message, "its issue asks for an environment the project has no TestEnvironment for"), t.Since}
+	case strings.HasPrefix(t.Message, EnvOverBudget):
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` waits: its test environment spent today's budget.", t.Name),
+			"Raise the TestEnvironment's limits.budgetUSDPerDay, or let it wait for tomorrow.",
+			"No lease starts past the day's budget.", t.Since}
+	case strings.HasPrefix(t.Message, EnvCredentialRefused):
+		return nil, &NeedsYou{AttentionTask, t.Name,
+			fmt.Sprintf("Task `%s` waits: its test environment's provider refuses the credential.", t.Name),
+			"Fix the Secret the TestEnvironment's credentialsSecretRef names; its CredentialsValid condition says what is wrong.",
+			sentence(t.Message, "no lease starts without a credential the provider takes"), t.Since}
+	}
+	if now.Before(t.Since.Add(SlotWindow)) {
+		return &Healing{AttentionTask, t.Name, "A lease of its test environment frees or starts.",
+			t.Since.Add(SlotWindow)}, nil
+	}
+	return nil, &NeedsYou{AttentionTask, t.Name,
+		fmt.Sprintf("Task `%s` has waited %s for a test environment.", t.Name, waited),
+		"Raise the TestEnvironment's limits.maxLeases, or see why its lease pods don't start.",
+		sentence(t.Message, "its environment's leases stayed taken or never started"), t.Since}
+}
+
 // crewAttention classifies a Crew that is not Ready: a missing object doesn't
 // heal; anything else may, inside CrewWindow.
 func crewAttention(c WatchedCrew, now time.Time) (*Healing, *NeedsYou) {
@@ -388,7 +460,7 @@ func crewAttention(c WatchedCrew, now time.Time) (*Healing, *NeedsYou) {
 		return &Healing{AttentionCrew, c.Name, "Its Git host or Container may come back.", acts}, nil
 	}
 	recommend := "Check the GitProvider, its Secret and the Git host."
-	if c.Reason == "ContainerNotReady" {
+	if c.Reason == "ContainerNotReady" || c.Reason == ReasonNotProtected {
 		recommend = "See its Container."
 	}
 	return nil, &NeedsYou{AttentionCrew, c.Name,

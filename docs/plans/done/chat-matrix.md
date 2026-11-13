@@ -250,9 +250,9 @@ bot edits as the item moves, so a room reads as a list of live items.
      UI's reader role, the chart's and `config/ui`'s, gains `chats`. With
      `chat.enabled` the UI's health view lists theos-chat and the
      homeserver.
-   - **Left for later:** links from `theos-chat`'s posts to the UI's object
-     pages, which need the UI's address as a setting; and narrowing
-     `theos-chat`'s `impersonate` to the Chats' people.
+   - **Left for later:** narrowing `theos-chat`'s `impersonate` to the
+     Chats' people. Links from `theos-chat`'s posts to the UI's object pages
+     came after, in [chat-ui-links.md](chat-ui-links.md).
 
 ## Done when
 

@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Drop the issue's status labels
         run: hack/lib/github.sh closed "$ISSUE"
         env:

@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 // Command theos-agent runs inside an agent's sandbox. It reads its job from the
@@ -109,7 +117,7 @@ func agentFor(job agentrunner.Job) agentrunner.Agent {
 		changesFirst, _ := strconv.ParseBool(os.Getenv("THEOS_AGENT_FAKE_CHANGES_FIRST"))
 		followUp, _ := strconv.ParseBool(os.Getenv("THEOS_AGENT_FAKE_FOLLOW_UP"))
 		return agentrunner.FakeAgent{Role: job.Role, Round: job.Round, Goal: job.Goal, Issue: job.Issue,
-			Spec: job.SpecPath, ChangesFirst: changesFirst, FollowUp: followUp}
+			Criteria: job.Criteria, Spec: job.SpecPath, ChangesFirst: changesFirst, FollowUp: followUp}
 	}
 	agent := agentrunner.ClaudeAgent{Model: job.Model}
 	if command := strings.Fields(os.Getenv("THEOS_AGENT_COMMAND")); len(command) > 0 {

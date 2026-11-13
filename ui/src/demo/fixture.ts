@@ -3,13 +3,18 @@
 // Relationship added after scaffolding, and Crews working, paused and waiting
 // for their Container: the working one with a Sonnet implementer, an Opus
 // reviewer and Tasks made from issues; Briefs planned, needing input,
-// paused and planning; and a Container shipped to staging, waiting for a
-// person's approval of the same release for prod. Used by demo mode (?demo=1), so the whole
-// UI can be seen and screenshotted without writing to a cluster.
+// paused and planning; a Container shipped to staging, waiting for a
+// person's approval of the same release for prod; and test environments: a
+// browser and Device Farm's phones, which one Task's run leases (its first
+// test run failed, its second runs), an Android emulator on KVM, an EC2 GPU
+// running a CI job within its day's budget, and an EC2 Mac whose credential
+// AWS refuses. Used by demo mode (?demo=1), so the whole UI can be seen and
+// screenshotted without writing to a cluster.
 
 import type { StoryData } from '../k8s/sources'
 import type {
   Agent,
+  Benchmark,
   Brief,
   Bundle,
   CatalogEntry,
@@ -29,6 +34,7 @@ import type {
   Task,
   TaskPhase,
   TaskTransition,
+  TestEnvironment,
 } from '../k8s/types'
 
 export const DEMO_NAMESPACE = 'webshop'
@@ -70,6 +76,13 @@ function catalog(
 /** The demo story, with times relative to `now` so ages read naturally. */
 export function demoStory(now: number): StoryData {
   const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString()
+  // The first cut at hour:00 UTC after now, as a daily release cadence has it.
+  const nextCut = (hour: number) => {
+    const cut = new Date(now)
+    cut.setUTCHours(hour, 0, 0, 0)
+    if (cut.getTime() <= now) cut.setUTCDate(cut.getUTCDate() + 1)
+    return cut.toISOString()
+  }
   const created = ago(3 * 3600)
 
   const project: Project = {
@@ -615,11 +628,16 @@ export function demoStory(now: number): StoryData {
       costMilliUSD: 1_380,
       tokens: { input: 8_400, output: 41_000, cacheRead: 1_910_000, cacheWrite: 176_000, largestSession: 88_000 },
       ...pr('orders-api', 3),
+      pullRequestSize: { additions: 182, deletions: 21, files: 6 },
+      personCommits: 0,
       runs: [
         {
           round: 1,
           role: 'implement',
           sandbox: 'orders-api-10-r1-implement',
+          agent: 'claude-implementer',
+          harness: 'claude-code',
+          model: 'claude-sonnet-5-5',
           endedAt: at(126),
           costMilliUSD: 1_090,
           tokens: { input: 6_100, output: 33_000, cacheRead: 1_520_000, cacheWrite: 141_000, largestSession: 88_000 },
@@ -649,11 +667,17 @@ export function demoStory(now: number): StoryData {
       tokens: { input: 15_200, output: 83_000, cacheRead: 4_120_000, cacheWrite: 352_000, largestSession: 117_000 },
       followUps: [issueURL('orders-api', 16), issueURL('orders-api', 17)],
       ...pr('orders-api', 4),
+      pullRequestSize: { additions: 64, deletions: 12, files: 3 },
+      // A person pushed a fix of the prices to its branch between the rounds.
+      personCommits: 1,
       runs: [
         {
           round: 1,
           role: 'implement',
           sandbox: 'orders-api-11-r1-implement',
+          agent: 'claude-implementer',
+          harness: 'claude-code',
+          model: 'claude-sonnet-5-5',
           endedAt: at(104),
           costMilliUSD: 1_020,
           tokens: { input: 5_000, output: 31_000, cacheRead: 1_500_000, cacheWrite: 130_000, largestSession: 96_000 },
@@ -670,6 +694,9 @@ export function demoStory(now: number): StoryData {
           round: 2,
           role: 'implement',
           sandbox: 'orders-api-11-r2-implement',
+          agent: 'claude-implementer',
+          harness: 'claude-code',
+          model: 'claude-sonnet-5-5',
           endedAt: at(91),
           costMilliUSD: 1_240,
           tokens: { input: 6_000, output: 34_000, cacheRead: 1_750_000, cacheWrite: 150_000, largestSession: 117_000 },
@@ -780,6 +807,9 @@ export function demoStory(now: number): StoryData {
         summary: 'Refunds send an idempotency key, so a retry never pays out twice.',
         followUps: [issueURL('orders-api', 18)],
         ...pr('orders-api', 6),
+        costMilliUSD: 2_210,
+        pullRequestSize: { additions: 431, deletions: 88, files: 9 },
+        personCommits: 0,
         history: [
           step(45, 'Implementing', 1, 'Running', 'Starting round 1'),
           step(36, 'Checking', 1, 'Checking', 'The agent pushed 0c9d3be; waiting for checks'),
@@ -861,6 +891,35 @@ export function demoStory(now: number): StoryData {
       ...pr('orders-api', 11),
       conditions: [cond('Progressing', 'True', 'Verifying', 'Merged; verifying the change before it ships', at(3))],
     }),
+    // An issue labelled env/browser and env/devices: its implementer's run
+    // holds a lease of the browser test environment, to picture the email it
+    // renders, and of Device Farm's phones, to test it in their mail apps.
+    issueTask('orders-api', 24, 'Show a picture of the shipping email in the pull request', 12, {
+      phase: 'Implementing',
+      round: 1,
+      sandbox: 'orders-api-24-r1-implement',
+      environments: [
+        {
+          name: 'browser',
+          lease: 'browser-5f0c3a9e21',
+          sandbox: 'orders-api-24-r1-implement',
+          since: at(11),
+        },
+        {
+          name: 'devices',
+          lease: 'devices-3b9f0e2a71',
+          sandbox: 'orders-api-24-r1-implement',
+          since: at(11),
+        },
+      ],
+      leasedEnvironments: ['browser', 'devices'],
+      conditions: [cond('Progressing', 'True', 'Waiting', 'The agent is working on round 1', at(10))],
+      history: [
+        step(12, 'Implementing', 1, 'WaitingForEnvironment', 'Pending: waiting for the lease of browser to be ready'),
+        step(10, 'Implementing', 1, 'Running', 'Starting round 1'),
+        step(10, 'Implementing', 1, 'Waiting', 'The agent is working on round 1'),
+      ],
+    }),
     issueTask('orders-api', 15, 'Email the customer when an order ships', 25, {
       phase: 'Checking',
       round: 1,
@@ -876,6 +935,58 @@ export function demoStory(now: number): StoryData {
       ],
     }),
   ]
+
+  // Scorer tests-and-why (config/samples/webshop/scorer.yaml) judged two of the
+  // merged Tasks: a Score Task each, its verdicts in status.score
+  // (docs/plans/done/measure-and-improve.md, steps 4 and 5).
+  const scoreCriteria = [
+    'The change has a test that fails without it.',
+    'The pull request’s description says why the change is made, not only what it does.',
+  ]
+  const scoreTask = (
+    judged: string,
+    endedMinutesAgo: number,
+    verdicts: { verdict: 'Pass' | 'Fail' | 'Unclear'; reason: string }[],
+  ): Task => ({
+    apiVersion: API_VERSION,
+    kind: 'Task',
+    metadata: {
+      ...meta(`tests-and-why-${judged}`, at(endedMinutesAgo + 4)),
+      labels: { 'theos.factory.io/scorer': 'tests-and-why', 'theos.factory.io/container': 'orders-api' },
+    },
+    spec: {
+      kind: 'Score',
+      containerRef: { name: 'orders-api' },
+      agentRef: { name: 'claude-reviewer' },
+      goal: `Task ${judged} (Implement) on Container orders-api ended Merged.`,
+      score: {
+        scorerRef: { name: 'tests-and-why' },
+        scorerGeneration: 1,
+        taskRef: { name: judged },
+        criteria: scoreCriteria,
+        config: { agent: 'claude-implementer', harness: 'claude-code', model: 'claude-sonnet-5-5' },
+      },
+    },
+    status: {
+      phase: 'Merged',
+      round: 1,
+      completedAt: at(endedMinutesAgo),
+      summary: `Judged ${judged}`,
+      costMilliUSD: 210,
+      score: { criteria: verdicts.map((v, i) => ({ criterion: scoreCriteria[i], ...v })) },
+      conditions: [cond('Succeeded', 'True', 'Scored', `Judged ${judged}`, at(endedMinutesAgo))],
+    },
+  })
+  tasks.push(
+    scoreTask('orders-api-10', 112, [
+      { verdict: 'Pass', reason: 'orders_test.go’s empty-history case fails without the new query.' },
+      { verdict: 'Pass', reason: 'It says customers asked to see their orders without calling support.' },
+    ]),
+    scoreTask('orders-api-11', 80, [
+      { verdict: 'Pass', reason: 'reorder_test.go covers a sold-out line.' },
+      { verdict: 'Fail', reason: 'The description lists the endpoint and its fields, but not why.' },
+    ]),
+  )
 
   const crew = (
     name: string,
@@ -1103,6 +1214,196 @@ export function demoStory(now: number): StoryData {
     },
   ]
 
+  // The project's test environments (docs/plans/done/test-environments.md): the
+  // chart's browser, whose lease orders-api-24's run holds, with a CI pool of
+  // one pod; an Android emulator on the cluster's KVM device, leased by none;
+  // an EC2 GPU whose one lease runs a CI job, within the day's budget;
+  // Device Farm's phones, whose lease orders-api-24's run holds too, with a
+  // test run that failed and waits for the pull request to be commented on,
+  // and the one asked for since, running; and an EC2 Mac whose credential
+  // is of another account than it names.
+  const today = new Date(now).toISOString().slice(0, 10)
+  const devicesProject = '0b6f3c1e-1d2a-4c5b-9e8f-7a6b5c4d3e2f'
+  const testEnvironments: TestEnvironment[] = [
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('browser', created),
+      spec: {
+        description:
+          'Chromium, Firefox and WebKit with Playwright; run headed programs (VS Code, Electron) under xvfb-run -a.',
+        local: {
+          image: 'ghcr.io/jairjosafath/theos/env-browser:0.30.0',
+          resources: { requests: { cpu: '500m', memory: '1Gi' }, limits: { cpu: '2', memory: '4Gi' } },
+        },
+        limits: { maxLeases: 2, maxLeaseMinutes: 180 },
+        ci: { size: 1 },
+      },
+      status: {
+        leases: [{ id: 'browser-5f0c3a9e21', holder: 'orders-api-24', state: 'Ready', since: at(11) }],
+        spentToday: { day: today },
+        conditions: [cond('Ready', 'True', 'Ready', '', ago(3 * 3600))],
+      },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('android', created),
+      spec: {
+        description:
+          'An Android 16 emulator (API 36, Google APIs, x86_64) with the SDK and JDK 17; boot it with android-emulator start, then run Gradle or adb.',
+        local: {
+          image: 'ghcr.io/jairjosafath/theos/env-android:0.30.0',
+          resources: { requests: { cpu: '2', memory: '4Gi' }, limits: { cpu: '4', memory: '8Gi' } },
+          devices: { 'devices.kubevirt.io/kvm': '1' },
+        },
+        limits: { maxLeases: 1, maxLeaseMinutes: 180 },
+      },
+      status: { conditions: [cond('Ready', 'True', 'Ready', '', ago(3 * 3600))] },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('gpu', created),
+      spec: {
+        description:
+          'An NVIDIA A10G GPU on an AWS Deep Learning AMI with CUDA 12 and PyTorch; run the image search model’s tests there.',
+        aws: {
+          region: 'eu-west-1',
+          account: '123456789012',
+          instanceType: 'g5.xlarge',
+          imageId: 'ami-0123456789abcdef0',
+          subnetId: 'subnet-0123456789abcdef0',
+          credentialsSecretRef: { name: 'gpu-aws' },
+        },
+        limits: { maxLeases: 1, maxLeaseMinutes: 120, budgetUSDPerDay: 10 },
+        ci: {},
+      },
+      status: {
+        leases: [{ id: 'gpu-ci-7c2e91d4a0', holder: 'ci/gitea/118', state: 'Ready', since: at(6), costMilliUSD: 112 }],
+        spentToday: { day: today, milliUSD: 3_420 },
+        conditions: [
+          cond('Ready', 'True', 'Ready', '', ago(3 * 3600)),
+          cond(
+            'CredentialsValid',
+            'True',
+            'Valid',
+            'the provider takes the credential in Secret gpu-aws',
+            ago(3 * 3600),
+          ),
+          cond(
+            'CI',
+            'True',
+            'Serving',
+            'a machine is leased for each job labelled env-gpu of GitProvider gitea that waits',
+            ago(2 * 3600),
+          ),
+        ],
+      },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('devices', created),
+      spec: {
+        description: 'A Pixel 8 and a Galaxy S24 on AWS Device Farm; run instrumentation tests with theos-env test.',
+        deviceFarm: {
+          projectArn: `arn:aws:devicefarm:us-west-2:123456789012:project:${devicesProject}`,
+          devicePoolArn: `arn:aws:devicefarm:us-west-2:123456789012:devicepool:${devicesProject}/5e1f0a9d-8c7b-4a6e-9d5c-4b3a2f1e0d9c`,
+          account: '123456789012',
+          credentialsSecretRef: { name: 'devices-aws' },
+        },
+        limits: { maxLeases: 2, maxLeaseMinutes: 120, budgetUSDPerDay: 20 },
+      },
+      status: {
+        leases: [
+          { id: 'devices-3b9f0e2a71', holder: 'orders-api-24', state: 'Ready', since: at(11), costMilliUSD: 680 },
+        ],
+        spentToday: { day: today, milliUSD: 4_080 },
+        testRuns: [
+          {
+            id: 'devices-3b9f0e2a71-4c1d2e9a7b3f',
+            lease: 'devices-3b9f0e2a71',
+            holder: 'orders-api-24',
+            container: 'orders-api',
+            request: '4c1d2e9a7b3f0a8e6d5c4b3a29180f7e6d5c4b3a',
+            commit: 'a81f3c09d2e47b6a5f4e3d2c1b0a998877665544',
+            type: 'instrumentation',
+            state: 'Reported',
+            result: 'Failed',
+            outcome: 'failed: 11 passed, 1 failed of 12 tests on 2 devices',
+            url: `https://us-west-2.console.aws.amazon.com/devicefarm/home?region=us-west-2#/mobile/projects/${devicesProject}/runs/9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a`,
+            costMilliUSD: 680,
+            since: at(9),
+            answer: '1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6e5',
+            comment:
+              'The operator ran a test package of this change on test environment `devices`, which a run of it asked for:\n\nTest run instrumentation of a81f3c09d2e4 on devices: failed: 11 passed, 1 failed of 12 tests on 2 devices.\n',
+          },
+          {
+            id: 'devices-3b9f0e2a71-e7a2c4b19d03',
+            lease: 'devices-3b9f0e2a71',
+            holder: 'orders-api-24',
+            container: 'orders-api',
+            request: 'e7a2c4b19d03f5e6a7b8c9d0e1f2a3b4c5d6e7f8',
+            commit: '5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c',
+            type: 'instrumentation',
+            state: 'Running',
+            url: `https://us-west-2.console.aws.amazon.com/devicefarm/home?region=us-west-2#/mobile/projects/${devicesProject}/runs/2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d`,
+            since: at(3),
+          },
+        ],
+        conditions: [
+          cond('Ready', 'True', 'Ready', '', ago(3 * 3600)),
+          cond(
+            'CredentialsValid',
+            'True',
+            'Valid',
+            'the provider takes the credential in Secret devices-aws',
+            ago(3 * 3600),
+          ),
+        ],
+      },
+    },
+    {
+      apiVersion: API_VERSION,
+      kind: 'TestEnvironment',
+      metadata: meta('ios', created),
+      spec: {
+        description:
+          "macOS 15 on Apple silicon with Xcode 16 and the iOS Simulator; run xcodebuild test -destination 'platform=iOS Simulator,name=iPhone 16'.",
+        aws: {
+          region: 'us-east-1',
+          account: '123456789012',
+          instanceType: 'mac2.metal',
+          mac: { keepHostHours: 48 },
+          imageId: 'ami-0fedcba9876543210',
+          subnetId: 'subnet-0fedcba9876543210',
+          credentialsSecretRef: { name: 'ios-aws' },
+        },
+        limits: { maxLeases: 1, maxLeaseMinutes: 120, budgetUSDPerDay: 25 },
+      },
+      status: {
+        spentToday: { day: today },
+        conditions: [
+          cond(
+            'Ready',
+            'False',
+            'CredentialsInvalid',
+            'its CredentialsValid condition is False: CredentialRefused',
+            ago(40 * 60),
+          ),
+          cond(
+            'CredentialsValid',
+            'False',
+            'CredentialRefused',
+            'the provider refuses the credential in Secret ios-aws: the credential of test environment webshop/ios is of AWS account 210987654321, the environment names account 123456789012',
+            ago(40 * 60),
+          ),
+        ],
+      },
+    },
+  ]
+
   const briefs: Brief[] = [
     // Two rounds applied; a third prompt came in since and waits for the next.
     {
@@ -1204,6 +1505,8 @@ export function demoStory(now: number): StoryData {
               moduleMessage:
                 'Uploaded github.com/webshop-co/orders-api v0.2.0 to the registry, which go get reads only for theos.local/ paths; go get reads it from GitHub, where webshop-co/orders-api has no tag v0.2.0 yet: Published is Unauthorized, GitHub refused the token in Secret orders-api-github: 401 Bad credentials',
             },
+            // The next release waits for the day's cut, 18:00 UTC.
+            nextRelease: { tag: 'v0.3.0', time: nextCut(18), timeZone: 'UTC', merged: 4 },
             message:
               'Release v0.2.0 could not be published to webshop-co/orders-api; the Crew says why and tries again.',
           },
@@ -1371,6 +1674,81 @@ export function demoStory(now: number): StoryData {
     },
   ]
 
+  // A finished Benchmark of orders-api's implementer models
+  // (config/samples/webshop/benchmark.yaml, docs/plans/done/measure-and-improve.md).
+  const benchmarks: Benchmark[] = [
+    {
+      apiVersion: API_VERSION,
+      kind: 'Benchmark',
+      metadata: meta('implementer-models', at(600)),
+      spec: {
+        containerRef: { name: 'orders-api' },
+        base: '3e1f0a2c9d7b4e6f8a1b2c3d4e5f6a7b8c9d0e1f',
+        goals: [{ goal: 'Add GET /orders/{id}/receipt, with a test for an order that does not exist.' }, { issue: 12 }],
+        variants: [
+          {
+            name: 'implementer',
+            implementerRef: { name: 'claude-implementer' },
+            reviewerRef: { name: 'claude-reviewer' },
+          },
+          {
+            name: 'reviewer-model',
+            implementerRef: { name: 'claude-reviewer' },
+            reviewerRef: { name: 'claude-reviewer' },
+          },
+        ],
+        repetitions: 3,
+        scorerRefs: [{ name: 'tests-and-why' }],
+        parallel: 2,
+        budgetUSD: 30,
+      },
+      status: {
+        goals: [
+          'Add GET /orders/{id}/receipt, with a test for an order that does not exist.',
+          'Issue #12: Show the delivery estimate on an order',
+        ],
+        costMilliUSD: 21_480,
+        variants: [
+          {
+            name: 'implementer',
+            tasks: 6,
+            finished: 6,
+            approval: { of: 6, percent: 67, low: 30, high: 90 },
+            meanRounds: '1.8',
+            medianMinutes: 31,
+            medianCostMilliUSD: 1_420,
+            criteria: [
+              {
+                scorer: 'tests-and-why',
+                criterion: 'The change has a test that fails without it.',
+                rate: { of: 6, percent: 83, low: 44, high: 97 },
+              },
+            ],
+          },
+          {
+            name: 'reviewer-model',
+            tasks: 6,
+            finished: 6,
+            approval: { of: 6, percent: 83, low: 44, high: 97 },
+            meanRounds: '1.3',
+            medianMinutes: 26,
+            medianCostMilliUSD: 2_310,
+            criteria: [
+              {
+                scorer: 'tests-and-why',
+                criterion: 'The change has a test that fails without it.',
+                rate: { of: 5, percent: 100, low: 57, high: 100 },
+                unclear: 1,
+              },
+            ],
+          },
+        ],
+        comparison: 'No clear difference at 12 finished runs: the approval rates’ 95% intervals overlap.',
+        conditions: [cond('Done', 'True', 'Finished', 'No clear difference at 12 finished runs', at(300))],
+      },
+    },
+  ]
+
   return {
     namespace: DEMO_NAMESPACE,
     project,
@@ -1393,5 +1771,7 @@ export function demoStory(now: number): StoryData {
     agents,
     tasks,
     briefs,
+    benchmarks,
+    testEnvironments,
   }
 }

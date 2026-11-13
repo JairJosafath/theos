@@ -20,175 +20,6 @@ resources:
   domain: factory.io
   group: theos
   kind: Project
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: factory.io
-  group: theos
-  kind: SoftwareSystem
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: factory.io
-  group: theos
-  kind: Container
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: factory.io
-  group: theos
-  kind: DataStore
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: factory.io
-  group: theos
-  kind: Relationship
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: factory.io
-  group: theos
-  kind: Session
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Person
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: GitProvider
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Framework
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Compute
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Deployment
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Connector
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Standard
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Agent
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: factory.io
-  group: theos
-  kind: Task
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: factory.io
-  group: theos
-  kind: Crew
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: factory.io
-  group: theos
-  kind: Brief
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: factory.io
-  group: theos
-  kind: DeployTarget
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Bundle
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Domain
-  path: github.com/JairJosafath/theos/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: factory.io
-  group: theos
-  kind: Project
   path: github.com/JairJosafath/theos/api/v1beta1
   version: v1beta1
 - api:
@@ -202,6 +33,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: Brief
@@ -234,6 +66,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: Container
@@ -242,6 +75,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: Crew
@@ -250,6 +84,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: DataStore
@@ -258,6 +93,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: DeployTarget
@@ -282,6 +118,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: GitProvider
@@ -298,6 +135,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: Relationship
@@ -306,6 +144,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: Session
@@ -314,6 +153,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: SoftwareSystem
@@ -330,6 +170,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: factory.io
   group: theos
   kind: Task
@@ -350,6 +191,33 @@ resources:
   domain: factory.io
   group: theos
   kind: Chat
+  path: github.com/JairJosafath/theos/api/v1beta1
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: factory.io
+  group: theos
+  kind: Scorer
+  path: github.com/JairJosafath/theos/api/v1beta1
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: factory.io
+  group: theos
+  kind: Benchmark
+  path: github.com/JairJosafath/theos/api/v1beta1
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: factory.io
+  group: theos
+  kind: TestEnvironment
   path: github.com/JairJosafath/theos/api/v1beta1
   version: v1beta1
 version: "3"

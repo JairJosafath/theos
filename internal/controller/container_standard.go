@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -164,7 +172,7 @@ func (u *standardUpdate) run(ctx, gitCtx context.Context, standard *c4v1beta1.St
 			u.merged(ctx)
 		case model.StandardDrop:
 			take := s.Update.Take
-			if !u.drop(ctx, gitCtx, step.Message) {
+			if !u.drop(ctx, gitCtx, step.Message, f.PR != nil && f.PR.Closed) {
 				return
 			}
 			// A take that conflicts with main is the person's answer still: take
@@ -256,6 +264,7 @@ func inFlight(update *c4v1beta1.StandardUpdateStatus) *model.StandardUpdateInFli
 		Ref: update.Ref, Mode: string(update.Checks), Stopped: update.Stopped, PullRequest: int(update.PullRequest),
 		PullRequestURL: update.PullRequestURL, Branch: update.Branch, Commit: update.Commit, Base: update.Base,
 		Paths: update.Paths, Take: update.Take, Held: update.Stopped == c4v1beta1.ReasonNoLightCheck,
+		Dropping: update.Dropping,
 	}
 }
 
@@ -278,17 +287,17 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	if ports.SameHost(git.gitProvider.Spec.URL, standard.Spec.Template.URL) {
 		creds = &git.creds
 	}
-	oldFiles, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, from.Ref, creds)
+	oldFiles, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, from.Ref, standard.Spec.Template.Path, creds)
 	var nextFiles scaffold.Tree
 	if err == nil {
-		nextFiles, err = u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, to.Ref, creds)
+		nextFiles, err = u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, to.Ref, standard.Spec.Template.Path, creds)
 	}
 	stopped := func(reason string) *c4v1beta1.StandardUpdateStatus {
 		return &c4v1beta1.StandardUpdateStatus{Ref: to.Ref, Checks: c4v1beta1.ChecksMode(to.Checks), Stopped: reason}
 	}
-	if errors.Is(err, ports.ErrUnpinnedRef) {
-		s.Update = stopped(c4v1beta1.ReasonUnpinnedRef)
-		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", name, err))
+	if reason, ok := templateFailure(err); ok {
+		s.Update = stopped(reason)
+		u.condition(metav1.ConditionFalse, reason, fmt.Sprintf("Standard %s: %v", name, err))
 		return
 	}
 	if err != nil {
@@ -348,7 +357,11 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	bases := map[string]scaffold.Tree{}
 	for _, b := range behind {
 		if _, ok := renders[b.Ref]; !ok {
-			files, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, b.Ref, creds)
+			files, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, b.Ref, standard.Spec.Template.Path, creds)
+			if reason, ok := templateFailure(err); ok {
+				u.condition(metav1.ConditionFalse, reason, fmt.Sprintf("Standard %s: %v", name, err))
+				return
+			}
 			if err != nil {
 				u.gitError(ctx, err)
 				return
@@ -533,7 +546,7 @@ func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 	in.FrameworkFiles = paths
 	return &standardRenders{
 		fetch: func(ctx context.Context, ref string) (scaffold.Tree, error) {
-			return u.r.Git.FetchTemplate(ctx, standard.Spec.Template.URL, ref, creds)
+			return u.r.Git.FetchTemplate(ctx, standard.Spec.Template.URL, ref, standard.Spec.Template.Path, creds)
 		},
 		in:       in,
 		standard: standard.Name,
@@ -583,7 +596,7 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 		if ports.SameHost(git.gitProvider.Spec.URL, framework.Spec.Template.URL) {
 			creds = &git.creds
 		}
-		files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, creds)
+		files, err := u.r.Git.FetchTemplate(gitCtx, framework.Spec.Template.URL, ref, framework.Spec.Template.Path, creds)
 		if err != nil {
 			return nil, err
 		}
@@ -658,6 +671,8 @@ func (u *standardUpdate) renderFailed(ctx context.Context, err error) {
 	switch {
 	case errors.Is(err, ports.ErrUnpinnedRef):
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonUnpinnedRef, fmt.Sprintf("Standard %s: %v", s.Name, err))
+	case errors.Is(err, ports.ErrTemplatePathNotFound):
+		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonTemplatePathNotFound, fmt.Sprintf("Standard %s: %v", s.Name, err))
 	case errors.As(err, new(*renderError)):
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonFailed,
 			fmt.Sprintf("Could not render the Standard %s %v", s.Name, err))
@@ -960,18 +975,35 @@ func (u *standardUpdate) forceMerge(ctx, gitCtx context.Context, changed []strin
 	return true
 }
 
-// drop closes the update's pull request and deletes its branch, then forgets
-// the update. It reports false on a Git error.
-func (u *standardUpdate) drop(ctx, gitCtx context.Context, why string) bool {
+// drop closes the update's pull request unless closed, deletes its branch,
+// then forgets the update. It writes why into status.standard.update.dropping
+// before it closes the pull request: a pass cut short after the close, by a
+// restart or a Git error, then finishes the drop and plans the update again,
+// instead of reading the operator's own close as a person's (#2035). It
+// reports false when it could not record that, or on a Git error.
+func (u *standardUpdate) drop(ctx, gitCtx context.Context, why string, closed bool) bool {
 	update := u.status.Standard.Update
 	git, ok := u.access(ctx)
 	if !ok {
 		return false
 	}
+	if update.Dropping == "" {
+		update.Dropping = why
+		// A copy, so the pass's own status write still sees what it changes after.
+		if err := u.r.writeStatus(ctx, u.container, u.status.DeepCopy()); err != nil {
+			// Nothing is closed yet: the pass's status write, or the next pass,
+			// records the drop before anything closes the pull request.
+			logf.FromContext(ctx).Info("Could not record the drop of a Standard update",
+				"url", update.PullRequestURL, "error", err.Error())
+			return false
+		}
+	}
 	repo := git.provider.Repository(u.container.Name)
-	if err := git.provider.ClosePullRequest(gitCtx, repo, int(update.PullRequest)); err != nil {
-		u.gitError(ctx, err)
-		return false
+	if !closed {
+		if err := git.provider.ClosePullRequest(gitCtx, repo, int(update.PullRequest)); err != nil {
+			u.gitError(ctx, err)
+			return false
+		}
 	}
 	if err := git.provider.DeleteBranch(gitCtx, repo, update.Branch); err != nil {
 		u.gitError(ctx, err)

@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -21,7 +29,6 @@ import (
 	"testing"
 	"time"
 
-	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -237,7 +244,11 @@ func TestWebhookCertPatchesTheCAIntoWebhookCRDs(t *testing.T) {
 // theos.factory.io/conversion: webhook on the base, from a +kubebuilder:metadata
 // marker on the kind's hub type. A kind whose versions' schemas match carries
 // no mark, and one whose schemas differ carries it: the change that first
-// makes a shape differ switches the kind to the webhook.
+// makes a shape differ switches the kind to the webhook. A kind served at one
+// version, as every kind is at v1beta1 alone (#1963), converts nothing and
+// carries no mark. The next version's spoke package brings back its
+// conversion hooks and their check here: a hooked kind needs the mark too,
+// since strategy None runs no hook.
 func TestConversionMarkFollowsTheShapes(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "theos.factory.io_*.yaml"))
 	if err != nil {
@@ -252,12 +263,10 @@ func TestConversionMarkFollowsTheShapes(t *testing.T) {
 		if err := yaml.Unmarshal(raw, &crd); err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
+		marked := crd.Annotations["theos.factory.io/conversion"] == "webhook"
 		if len(crd.Spec.Versions) < 2 {
-			if !bornAtV1beta1[crd.Spec.Names.Kind] {
-				t.Errorf("%s: serves %d version(s), want v1alpha1 and v1beta1", crd.Name, len(crd.Spec.Versions))
-			}
-			if crd.Annotations["theos.factory.io/conversion"] == "webhook" {
-				t.Errorf("%s: serves one version, so it converts nothing: drop its webhook marker", crd.Name)
+			if marked {
+				t.Errorf("%s: serves one version, so it converts nothing: drop its webhook marker (#1963)", crd.Name)
 			}
 			continue
 		}
@@ -267,17 +276,12 @@ func TestConversionMarkFollowsTheShapes(t *testing.T) {
 				differs = true
 			}
 		}
-		hooked := slices.Contains(c4v1alpha1.HookedKinds(), crd.Spec.Names.Kind)
-		marked := crd.Annotations["theos.factory.io/conversion"] == "webhook"
 		switch {
 		case differs && !marked:
 			t.Errorf("%s: its versions differ in shape but its hub type lacks the marker "+
 				"+kubebuilder:metadata:annotations=\"theos.factory.io/conversion=webhook\" (#1830)", crd.Name)
-		case hooked && !marked:
-			t.Errorf("%s: has a conversion hook, which strategy None never runs, but its hub type lacks the marker "+
-				"+kubebuilder:metadata:annotations=\"theos.factory.io/conversion=webhook\" (#1830)", crd.Name)
-		case marked && !differs && !hooked:
-			t.Errorf("%s: marked theos.factory.io/conversion: webhook, but its versions share a shape and no hook: "+
+		case marked && !differs:
+			t.Errorf("%s: marked theos.factory.io/conversion: webhook, but its versions share a shape: "+
 				"drop the marker, strategy None serves them (#1830)", crd.Name)
 		}
 	}
@@ -341,8 +345,9 @@ func TestShapeOfKeepsAFieldNamedDescription(t *testing.T) {
 }
 
 // #1614: WebhookCRDs and the RBAC marker that lets the operator patch them
-// name every CRD in config/crd/bases but those of the kinds born at v1beta1,
-// which serve one version.
+// name every CRD in config/crd/bases, so the next version's conversion and
+// storage migration cover every kind; a kind served at one version, as every
+// kind is today (#1963), is read, found at strategy None and left alone.
 func TestWebhookCRDsAreEveryCRD(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "config", "crd", "bases", "theos.factory.io_*.yaml"))
 	if err != nil {
@@ -351,13 +356,11 @@ func TestWebhookCRDsAreEveryCRD(t *testing.T) {
 	want := make([]string, 0, len(files))
 	for _, f := range files {
 		plural := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), "theos.factory.io_"), ".yaml")
-		if bornAtV1beta1Plurals[plural] {
-			continue
-		}
 		want = append(want, plural+".theos.factory.io")
 	}
 	if !slices.Equal(want, slices.Sorted(slices.Values(WebhookCRDs))) {
-		t.Errorf("WebhookCRDs = %v, want %v", WebhookCRDs, want)
+		t.Errorf("WebhookCRDs = %v, want %v: a new kind joins WebhookCRDs in webhook_cert.go and the RBAC markers "+
+			"there and in storage_migrator.go", WebhookCRDs, want)
 	}
 	src, err := os.ReadFile("webhook_cert.go")
 	if err != nil {

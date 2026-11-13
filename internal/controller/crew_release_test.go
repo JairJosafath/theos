@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -864,6 +872,30 @@ var _ = Describe("Crew release preparation", func() {
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Message).To(Equal(fmt.Sprintf("Released v0.1.3 at c-own, carrying #%d of v0.2.0; "+
 				"v0.2.0 had nothing left and closed untagged", fix)))
+		}).Should(Succeed())
+	})
+
+	It("closes an empty open release before one with merged work, untagged, and ships the later one (#2025)", func() {
+		ns := newProjectNamespace()
+		readyContainer(ns)
+		crewAgents(ns, 1)
+		// An earlier round made v0.1.0 and nothing went in; the work went into v0.2.0.
+		gitFake.AddMilestone(ns, "orders-api", "v0.1.0", "An earlier round's", releaseDue)
+		mergedIssueIn(ns, "v0.2.0", "c-later")
+		crew := newCrew(ns)
+		crew.Spec.Paused = true
+		crew.Spec.TagReleases = true
+		mustCreate(crew)
+
+		Eventually(func(g Gomega) {
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.2.0")).To(Equal("c-later"))
+			g.Expect(gitFake.MilestoneClosed(ns, "orders-api", "v0.2.0")).To(BeTrue())
+			g.Expect(gitFake.MilestoneClosed(ns, "orders-api", "v0.1.0")).To(BeTrue())
+			g.Expect(gitFake.Tag(ns, "orders-api", "v0.1.0")).To(BeEmpty())
+			cond := condition(getCrew(g, ns).Status.Conditions, ConditionReleased)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Message).To(Equal("Released v0.2.0 at c-later; v0.1.0 had no issues and closed untagged"))
 		}).Should(Succeed())
 	})
 

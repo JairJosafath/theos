@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -139,6 +147,9 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 	if err := r.ensureAgentNetwork(ctx, &project); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.ensureTestEnvironmentNetwork(ctx, &project); err != nil {
 		return ctrl.Result{}, err
 	}
 	ci, err := r.ensureCIRunners(ctx, &project, status)
@@ -303,6 +314,8 @@ func (r *ProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1beta1.Bundle{}, toProject, createOrDelete()).
 		Watches(&c4v1beta1.Standard{}, toProject, createOrDelete()).
 		Watches(&c4v1beta1.Agent{}, toProject, createOrDelete()).
+		// A local TestEnvironment's ci block keeps a CI runner pool.
+		Watches(&c4v1beta1.TestEnvironment{}, toProject, specChanged()).
 		Watches(&c4v1beta1.Container{}, toProject, containerPhaseChanges()).
 		Watches(&c4v1beta1.Session{}, toProject, sessionPhaseChanges()).
 		WatchesMetadata(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(

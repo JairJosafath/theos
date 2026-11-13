@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -15,10 +23,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,7 +54,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
-	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/features"
 	"github.com/JairJosafath/theos/internal/adapters/argocd"
@@ -85,6 +95,10 @@ const testUIAccount = "theos-ui"
 // testScaffoldTimeout bounds a scaffold attempt in tests; the fake Git host answers at once.
 const testScaffoldTimeout = 3 * time.Second
 
+// scaffoldSettle is the scaffold's settle window in tests (#43): none, so a
+// Container scaffolds at once, unless a spec sets one for its duration.
+var scaffoldSettle atomic.Int64
+
 // testBotDeleteTimeout is how long a deleted Brief tries to delete its bot in tests.
 const testBotDeleteTimeout = 5 * time.Second
 
@@ -111,6 +125,15 @@ var (
 	// deployFake is the Deployer of every DeployTarget's member, but for a
 	// target whose repository the fake GitHub has (routedDeployer).
 	deployFake *fake.Deployer
+	// envFake is the provider of every TestEnvironment's local member: its
+	// leases are Ready at once unless it holds them.
+	envFake *fake.TestEnvironments
+	// envAWSFake is the provider of every TestEnvironment's aws member: it
+	// takes the access keys a spec adds, in their account (AddAccount).
+	envAWSFake *fake.TestEnvironments
+	// envDeviceFarmFake stands in for the deviceFarm member's provider, whose
+	// adapter is tested on a fake Device Farm in internal/adapters/awsenv.
+	envDeviceFarmFake *fake.TestRuns
 	// goProxyFake is the Go proxy every Crew asks about its released modules.
 	goProxyFake *fakeGoProxy
 	ctx         context.Context
@@ -124,6 +147,12 @@ var (
 	// managerClient is the manager's cached client, the reconcilers' view: a
 	// spec waits on it when a reconcile must not see an object it deleted (#1300).
 	managerClient client.Client
+	// managerAPIReader is the manager's uncached reader, under the generated
+	// role too.
+	managerAPIReader client.Reader
+	// gitEvents is the suite operator's receiver of the Git host's
+	// deliveries; a spec serves its Handler with httptest.
+	gitEvents *GitEventsReceiver
 )
 
 // The operator's namespace in the suite, and the Secrets it shares from there.
@@ -134,6 +163,12 @@ const (
 	// testModelProxyURL is the chart's real configuration: the model proxy's
 	// Service in the release namespace (dist/chart/templates/model-proxy).
 	testModelProxyURL = "http://c4-model-proxy.theos-system.svc:8080"
+	// testGitEventsURL is the suite operator's --git-events-url, the chart's
+	// receiver Service (docs/plans/done/git-events.md, decision 10).
+	testGitEventsURL = "http://theos-git-events.theos-system.svc:8082"
+	// noEventsOwnerPrefix starts the owner of a GitProvider whose adapter
+	// has no events in the suite (fakeGitClient).
+	noEventsOwnerPrefix = "no-events-"
 )
 
 // managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
@@ -277,10 +312,10 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
-	err = c4v1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	// With v1beta1 every kind is convertible, so envtest points every CRD's
-	// conversion at the manager's webhook server (#1615).
+	// Every kind serves v1beta1 alone (#1963), so envtest finds none
+	// convertible and installs every CRD at strategy None; a kind served at
+	// more than one version would have its conversion pointed at the
+	// manager's webhook server (#1615).
 	err = c4v1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	// The webhook certificate patches the CRDs (#1614).
@@ -303,6 +338,17 @@ var _ = BeforeSuite(func() {
 	if getFirstFoundEnvTestBinaryDir() != "" {
 		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
 	}
+
+	// The webhook server's port is bound here and held until the suite ends,
+	// so envtest writes into the CRDs' conversion config a port no other
+	// process can take before the manager serves it (#2002).
+	webhookListener, err := net.Listen("tcp", "127.0.0.1:0")
+	Expect(err).NotTo(HaveOccurred())
+	// The webhook server closes it on shutdown; this closes it when the suite
+	// fails before the manager starts.
+	DeferCleanup(func() { _ = webhookListener.Close() })
+	testEnv.WebhookInstallOptions.LocalServingHost = "127.0.0.1"
+	testEnv.WebhookInstallOptions.LocalServingPort = webhookListener.Addr().(*net.TCPAddr).Port
 
 	// cfg is defined in this file globally.
 	cfg, err = testEnv.Start()
@@ -333,18 +379,19 @@ var _ = BeforeSuite(func() {
 	Expect(applyManifests(ctx, filepath.Join("..", "..", "config", "chat", "rbac.yaml"))).To(Succeed())
 
 	By("starting the manager with every reconciler, as that ServiceAccount")
-	webhookOptions := &testEnv.WebhookInstallOptions
+	webhookServer := &heldWebhookServer{Server: webhook.NewServer(webhook.Options{}),
+		listener: webhookListener, certDir: testEnv.WebhookInstallOptions.LocalServingCertDir}
 	mgr, err := ctrl.NewManager(managerCfg, ctrl.Options{
-		Scheme:  scheme.Scheme,
-		Metrics: metricsserver.Options{BindAddress: "0"},
-		WebhookServer: webhook.NewServer(webhook.Options{Host: webhookOptions.LocalServingHost,
-			Port: webhookOptions.LocalServingPort, CertDir: webhookOptions.LocalServingCertDir}),
+		Scheme:        scheme.Scheme,
+		Metrics:       metricsserver.Options{BindAddress: "0"},
+		WebhookServer: webhookServer,
 	})
 	Expect(err).NotTo(HaveOccurred())
 	// As cmd/main.go does when the webhook server runs.
 	mgr.GetWebhookServer().Register("/convert",
 		conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
 	managerClient = mgr.GetClient()
+	managerAPIReader = mgr.GetAPIReader()
 	gitFake, err = fake.NewGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
 	gitFake.SetImageCopier(copySuiteImage)
@@ -362,19 +409,36 @@ var _ = BeforeSuite(func() {
 	DeferCleanup(registryFake.server.Close)
 	DeferCleanup(gitlabRegistryFake.server.Close)
 	deployFake = &fake.Deployer{}
+	envFake = &fake.TestEnvironments{}
+	envAWSFake = &fake.TestEnvironments{}
+	envDeviceFarmFake = &fake.TestRuns{}
 	goProxyFake = newFakeGoProxy()
 	DeferCleanup(goProxyFake.server.Close)
 	Expect(SetupIndexes(ctx, mgr)).To(Succeed())
 	Expect(setupReconcilers(mgr)).To(Succeed())
+	started := make(chan error, 1)
 	go func() {
 		defer GinkgoRecover()
-		Expect(mgr.Start(ctx)).To(Succeed())
+		err := mgr.Start(ctx)
+		started <- err
+		Expect(err).To(Succeed())
 	}()
+	// A manager that fails to start fails the suite here, with its error,
+	// not every spec after it through a timeout (#2002).
+	Eventually(func() error {
+		select {
+		case err := <-started:
+			return StopTrying("the manager did not start").Wrap(err)
+		default:
+			return webhookServer.StartedChecker()(nil)
+		}
+	}).WithTimeout(time.Minute).Should(Succeed())
 })
 
 // setupReconcilers registers every reconciler the way cmd/main.go does.
 func setupReconcilers(mgr ctrl.Manager) error {
 	c, s := mgr.GetClient(), mgr.GetScheme()
+	gitEvents = &GitEventsReceiver{Client: c, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}}
 	sessionFeature, err := features.ScaffoldOptions(features.SessionFeatureLocal, "")
 	if err != nil {
 		return err
@@ -406,30 +470,47 @@ func setupReconcilers(mgr ctrl.Manager) error {
 		&SoftwareSystemReconciler{Client: c, Scheme: s},
 		&ContainerReconciler{Client: crewListFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			ScaffoldOptions: sessionFeature, ScaffoldTimeout: testScaffoldTimeout, Recorder: mgr.GetEventRecorder("container"),
-			Deployers: deployers, DeployMembers: testDeployMember,
-			DeployPoll: time.Second},
+			ScaffoldSettle: func() time.Duration { return time.Duration(scaffoldSettle.Load()) },
+			Deployers:      deployers, DeployMembers: testDeployMember,
+			DeployPoll: time.Second, GitEvents: gitEvents},
 		&DataStoreReconciler{Client: c, Scheme: s},
 		&RelationshipReconciler{Client: c, Scheme: s},
 		&SessionReconciler{Client: c, Scheme: s, StaleAfter: testStaleAfter},
 		&TaskReconciler{Client: taskStatusFaults.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}, ChecksRecheck: time.Second, SecretRecheck: time.Second,
 			StandardChangeRecheck: time.Second, PullRequestRecheck: time.Second, Recorder: mgr.GetEventRecorder("task"),
 			SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace, ModelProxyURL: testModelProxyURL,
-			Now: taskNow},
+			Now: taskNow, GitEvents: gitEvents,
+			TestEnvironments: ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake,
+				model.TestEnvMemberAWS: envAWSFake, model.TestEnvMemberDeviceFarm: envDeviceFarmFake},
+			EnvironmentRecheck: time.Second},
 		&BriefReconciler{Client: planBriefs.wrap(c), Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
 			ModelProxyURL: testModelProxyURL,
-			Issues:        githubFake, Now: briefNow},
+			Issues:        githubFake, Now: briefNow, GitEvents: gitEvents},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: fakeGitClient{gitFake}, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow,
 			GoProxy:   goProxyFake.server.URL,
-			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)}},
+			Deployers: ports.Deployers{model.DeployMemberGitHub: githubdeploy.New(githubFake)},
+			GitEvents: gitEvents},
 		&DeployTargetReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second,
 			Deployers: deployers},
 		// Every Chat names chatFake; the suite's operator has no homeserver of
 		// its own, so one that names none is HomeserverUnset.
 		&ChatReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), ChatHosts: matrix.Hosts(nil),
 			PollInterval: time.Second, CheckInterval: time.Second},
+		&ScorerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}},
+		&BenchmarkReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
+			PollInterval: time.Second},
+		&GitProviderReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
+			GitEventsURL: testGitEventsURL, GitEvents: gitEvents},
+		// The local member's adapter is tested on envtest in
+		// internal/adapters/localenv; the suite stands envFake in.
+		&TestEnvironmentReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(),
+			Providers: ports.TestEnvironmentProviders{model.TestEnvMemberLocal: envFake,
+				model.TestEnvMemberAWS: envAWSFake, model.TestEnvMemberDeviceFarm: envDeviceFarmFake},
+			Git:               fakeGitClient{gitFake},
+			SharedPullSecrets: []string{sharedPullSecret}, PollInterval: time.Second, OrphanGrace: time.Second},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err
@@ -531,8 +612,15 @@ func (r routedDeployer) State(ctx context.Context, t ports.Target, app, version 
 type fakeGitClient struct{ *fake.Git }
 
 func (c fakeGitClient) Provider(cfg ports.Config) (ports.Provider, error) {
+	if strings.HasPrefix(cfg.Owner, noEventsOwnerPrefix) {
+		return withoutEvents{c.For(cfg)}, nil
+	}
 	return c.For(cfg), nil
 }
+
+// withoutEvents is a Provider whose adapter lacks ports.Events, as a host
+// with no event hooks.
+type withoutEvents struct{ ports.Provider }
 
 // copySuiteImage copies an image for the fake Git host's CopyImage, from
 // owner/name in registryFake. Only the suite's registries take a real copy:

@@ -1,0 +1,26 @@
+# Who is asked to review a pull request. One owner today (MAINTAINERS.md).
+*       @JairJosafath
+
+# The fence, and what decides what agents may do: the factory-self Standard's
+# protectedPaths (dist/chart/values.yaml). A change here is the owner's to
+# approve, whoever else reviews (GOVERNANCE.md, "Reserved to the owner").
+/internal/agentrunner/                              @JairJosafath
+/internal/modelproxy/                               @JairJosafath
+/internal/model/fence.go                            @JairJosafath
+/internal/controller/task_sandbox.go                @JairJosafath
+/internal/controller/project_agent_network.go       @JairJosafath
+/internal/controller/ci_runner_pod.go               @JairJosafath
+/internal/controller/protection.go                  @JairJosafath
+/internal/adapters/gitea/gitea_agents.go            @JairJosafath
+/internal/adapters/github/github_host_agents.go     @JairJosafath
+/internal/adapters/github/github_host_rules.go      @JairJosafath
+/dist/chart/                                        @JairJosafath
+/hack/                                              @JairJosafath
+/Makefile                                           @JairJosafath
+/.golangci.yml                                      @JairJosafath
+/.custom-gcl.yml                                    @JairJosafath
+/.claude/                                           @JairJosafath
+/CLAUDE.md                                          @JairJosafath
+/GOVERNANCE.md                                      @JairJosafath
+/LICENSE                                            @JairJosafath
+/.github/                                           @JairJosafath

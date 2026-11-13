@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -125,6 +141,24 @@ func TestNextCrewStep(t *testing.T) {
 				{Name: "cel-ls-3-3", Issue: 3, Final: true, Failed: true},
 			}},
 			want: CrewStep{Phase: CrewWorking, Start: start(3, "cel-ls-3-4", 4), Message: "Starting Task cel-ls-3-4 for issue #3"}},
+		{name: "#2037: a Task whose agent couldn't see the issue costs no try", facts: CrewFacts{ContainerReady: true,
+			Issues: []Issue{ready(3)}, Tasks: []CrewTask{
+				{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true, Unseen: true},
+				{Name: "cel-ls-3-2", Issue: 3, Final: true, Failed: true},
+				{Name: "cel-ls-3-3", Issue: 3, Final: true, Failed: true},
+			}},
+			want: CrewStep{Phase: CrewWorking, Start: start(3, "cel-ls-3-4", 4), Message: "Starting Task cel-ls-3-4 for issue #3"}},
+		{name: "#2037: only the first such Task is free", facts: CrewFacts{ContainerReady: true, Issues: []Issue{ready(3)},
+			Tasks: []CrewTask{
+				{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true, Unseen: true},
+				{Name: "cel-ls-3-2", Issue: 3, Final: true, Failed: true, Unseen: true},
+				{Name: "cel-ls-3-3", Issue: 3, Final: true, Failed: true, Unseen: true},
+				{Name: "cel-ls-3-4", Issue: 3, Final: true, Failed: true},
+			}},
+			want: CrewStep{Phase: CrewIdle, NotReady: []IssueRejection{{Issue: 3,
+				Reason: "Agents tried this issue 3 times (Tasks cel-ls-3-2, cel-ls-3-3, cel-ls-3-4) and failed each time; " +
+					"it needs a person: split it, clarify it, or do it by hand"}},
+				Message: "No ready issues"}},
 		{name: "gives up after three tries", facts: CrewFacts{ContainerReady: true, Issues: []Issue{ready(3)},
 			Tasks: []CrewTask{
 				{Name: "cel-ls-3", Issue: 3, Final: true, Failed: true},
@@ -303,6 +337,19 @@ func TestNextCrewStep(t *testing.T) {
 			Tasks: []CrewTask{{Name: "cel-ls-380", Issue: 380, Release: v011, Prepare: true}}},
 			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-380"}, Ready: []int{381},
 				Message: "Task cel-ls-380 is working on issue #380; 1 ready issue waits for a release to be prepared"}},
+		{name: "under a cadence a prepare issue starts while other Tasks work, and holds nothing (C10)",
+			facts: CrewFacts{Cadence: true, ContainerReady: true, Parallel: 3,
+				Issues: []Issue{in(v011, prepare(ready(380))), in(v020, ready(5))},
+				Tasks:  []CrewTask{{Name: "cel-ls-332-2", Issue: 332, Release: v020}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-332-2"},
+				Start:   []IssueStart{{Issue: 380, Task: "cel-ls-380", Attempt: 1}, {Issue: 5, Task: "cel-ls-5", Attempt: 1}},
+				Message: "Starting Task cel-ls-380 for issue #380 and Task cel-ls-5 for issue #5"}},
+		{name: "under a cadence a Task waiting at its merge for the release leaves its place to the prepare issue",
+			facts: CrewFacts{Cadence: true, ContainerReady: true, Parallel: 1,
+				Issues: []Issue{in(v011, prepare(ready(380)))},
+				Tasks:  []CrewTask{{Name: "cel-ls-332-2", Issue: 332, Release: v020, Blocked: true}}},
+			want: CrewStep{Phase: CrewWorking, Active: []string{"cel-ls-332-2"},
+				Start: start(380, "cel-ls-380", 1), Message: "Starting Task cel-ls-380 for issue #380"}},
 		{name: "a paused Crew starts no urgent issue", facts: CrewFacts{Paused: true, ContainerReady: true,
 			Issues: []Issue{urgent(ready(9))}},
 			want: CrewStep{Phase: CrewPaused, Ready: []int{9}, Message: "Paused; not picking up issues"}},

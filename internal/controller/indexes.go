@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -25,6 +33,12 @@ const (
 	indexContainer = ".spec.containerRef.name"
 	// indexTaskContainer indexes Tasks by their Container.
 	indexTaskContainer = indexContainer
+	// indexTaskRepository indexes Tasks by the repository they work in (a
+	// Container's, or a Plan Task's Brief's), and by their issue,
+	// Standard-change issue and pull request as <repository>#<number> and
+	// their branches as <repository>@<branch>, for the host's deliveries
+	// (docs/plans/done/git-events.md, decision 7).
+	indexTaskRepository = ".taskRepository"
 	// indexElement indexes Relationships by both ends, as "Kind/name".
 	indexElement = ".spec.elements"
 	// indexSource indexes Relationships by their source, as "Kind/name".
@@ -71,6 +85,10 @@ func SetupIndexes(ctx context.Context, mgr manager.Manager) error {
 			}
 			return nil
 		}); err != nil {
+		return err
+	}
+	if err := indexer.IndexField(ctx, &c4v1beta1.Task{}, indexTaskRepository,
+		func(o client.Object) []string { return taskRepositoryKeys(o.(*c4v1beta1.Task)) }); err != nil {
 		return err
 	}
 	if err := indexer.IndexField(ctx, &c4v1beta1.Relationship{}, indexSource,

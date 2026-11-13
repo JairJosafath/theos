@@ -76,9 +76,13 @@ check-generated: ## Fail when a generated file differs from what is committed, a
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	hack/keep-mtime.sh $(GENERATED_GO) -- "$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="$(CONTROLLER_GEN_PATHS)"
 
+# The packages go fmt and go vet read: every one, unless make check names
+# those its change affects (hack/check.sh, #127).
+GO_PACKAGES ?= ./...
+
 .PHONY: fmt
 fmt: ## Run go fmt against code.
-	go fmt ./...
+	go fmt $(GO_PACKAGES)
 
 # -trimpath keeps each checkout's absolute directory out of Go's cache keys, so
 # worktrees on the same code share compiled packages and test results in the
@@ -87,7 +91,7 @@ GO_TRIM = -trimpath
 
 .PHONY: vet
 vet: ## Run go vet against code.
-	go vet $(GO_TRIM) ./...
+	go vet $(GO_TRIM) $(GO_PACKAGES)
 
 # Heavy goals queue device-wide for one of HEAVY_JOBS slots (default 2), shared
 # by every checkout, before anything builds (hack/heavy-slot.sh). The slot is
@@ -96,13 +100,18 @@ vet: ## Run go vet against code.
 # the next free slot ahead of the waiters; the recipes don't inherit it.
 # A plain `make check` on a tree that already passed on this device, in any
 # checkout, is answered from the cache (hack/check-cache.sh) without a slot;
-# FORCE=1 runs it anyway.
+# FORCE=1 runs it anyway. Nor does one whose change selects no step take a
+# slot, a docs-only change's (hack/check.sh --idle, #127): it runs nothing.
+# Before GNU make 4.4 a variable of the command line (make check FORCE=1)
+# doesn't reach $(shell), so the ones the two scripts read are passed by name.
+CHECK_ENV = FORCE='$(FORCE)' TEST_ALL='$(TEST_ALL)' TEST_BASE='$(TEST_BASE)' CHECK_STEPS='$(CHECK_STEPS)'
 ifeq ($(MAKECMDGOALS)$(THEOS_HEAVY_SLOT),check)
-CHECK_CACHED := $(shell hack/check-cache.sh lookup)
+CHECK_CACHED := $(shell $(CHECK_ENV) hack/check-cache.sh lookup)
+CHECK_IDLE := $(if $(CHECK_CACHED),,$(shell $(CHECK_ENV) hack/check.sh --idle 2>/dev/null))
 endif
 HEAVY_GOALS = check test lint lint-fix vulncheck docker-build deploy e2e test-e2e test-templates-operator test-templates
 ifneq ($(filter $(HEAVY_GOALS),$(MAKECMDGOALS)),)
-ifeq ($(THEOS_HEAVY_SLOT)$(CHECK_CACHED),)
+ifeq ($(THEOS_HEAVY_SLOT)$(CHECK_CACHED)$(CHECK_IDLE),)
 $(shell hack/heavy-slot.sh acquire $(if $(THEOS_HEAVY_FIRST),--first )$$PPID "make $(MAKECMDGOALS)" >&2)
 export THEOS_HEAVY_SLOT := 1
 endif
@@ -151,14 +160,18 @@ TEST_CACHE_HOME ?= $(HOME)/.cache/theos/test-cache
 
 .PHONY: test
 # make test tests only the packages the change since origin/main can affect,
-# and every package on main, after a change to go.mod, hack/, config/, api/ and
-# the like, or with TEST_ALL=1 (or FORCE=1); hack/test-packages.sh says which
-# and why. Go's test cache still answers the unchanged ones among them. With
-# COVER=1, cover.out covers the packages that ran, and is empty when none did.
-# The controller envtest suite runs in THEOS_TEST_PROCS processes at once (default
-# 2, 1 when memory is short), each a go test of part of it (hack/go-test.sh).
-test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package; FORCE=1 reruns cached ones, COVER=1 writes cover.out).
-	@pkgs="$$(hack/test-packages.sh)" || exit; \
+# as digitalocean/gta selects them (hack/gta, #127), on the branch main too,
+# and every package only with TEST_ALL=1 (or FORCE=1), which a release sets;
+# go.mod and go.sum test none, as gta has it. hack/test-packages.sh says
+# which and why.
+# TEST_PACKAGES names them instead: make check passes the selection its last
+# block reports. Go's test cache still answers the unchanged ones among them.
+# With COVER=1, cover.out covers the packages that ran, and is empty when none
+# did. The controller envtest suite runs in THEOS_TEST_PROCS processes at once
+# (default 2, 1 when memory is short), each a go test of part of it
+# (hack/go-test.sh).
+test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of the packages the change affects (TEST_ALL=1: every package; TEST_PACKAGES=...: those; FORCE=1 reruns cached ones, COVER=1 writes cover.out).
+	@pkgs="$(TEST_PACKAGES)"; [ -n "$$pkgs" ] || pkgs="$$(hack/test-packages.sh)" || exit; \
 	if [ -z "$$pkgs" ]; then $(if $(COVER),echo 'mode: set' >cover.out;) exit 0; fi; \
 	set -x; \
 	$(ENVTEST_ENV) XDG_CACHE_HOME="$(TEST_CACHE_HOME)" GOCACHE="$(shell go env GOCACHE)" HELM="$(HELM)" KUBEBUILDER_ASSETS="$(shell $(ENVTEST_LOCKED) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" hack/go-test.sh $(GO_TRIM) $(TEST_FLAGS) -- $$pkgs
@@ -168,6 +181,23 @@ test: manifests generate fmt vet setup-envtest install-helm ## Run the tests of 
 .PHONY: test-hack
 test-hack: install-helm ## Run the shell tests of the scripts in hack/.
 	@hack/test-hack.sh
+
+# Three of the shell tests scan the whole repository: every Markdown link,
+# every Go file's license header, and every Go test against the table of the
+# files tests read. make check runs a scan by itself, in seconds, when a file
+# it reads changed and the shell tests don't run (hack/check.sh, #127): a
+# docs-only change runs the link check and no shell test.
+.PHONY: doc-links
+doc-links: ## Check that every relative link in the Markdown names a file that exists.
+	@hack/check-doc-links.sh
+
+.PHONY: license-headers
+license-headers: ## Check that every Go file starts with the license header.
+	@hack/check-license-headers.sh
+
+.PHONY: readers
+readers: ## Check the table of the files Go tests read (hack/test-packages.sh) against the tests.
+	@hack/check-readers.sh
 
 # Renders the operator combo (go-kubebuilder, go-operator-standard, small) and
 # runs its make check before and after kubebuilder create api, with this
@@ -216,42 +246,49 @@ e2e: cluster metrics-server argocd gitea seed deploy session-image sample toolch
 .PHONY: test-e2e
 test-e2e: e2e ## Same as e2e.
 
-# A pass is recorded under the tree as the check left it, after manifests,
-# generate and fmt, so a tree with stale generated files never hits the cache.
+# make check runs each of its steps only when the change since origin/main can
+# have broken it (hack/check.sh, #127; docs/dev/testenv.md says what selects
+# each): manifests and generate, fmt, vet, lint, validate-yaml, test-hack,
+# ui-test and test, in that order. A docs-only change runs none of them.
+# digitalocean/gta selects the packages fmt, vet, lint and test read
+# (hack/gta). validate-yaml, test-hack and ui-test run when one of their inputs
+# changed, unless those inputs already passed on this device
+# (hack/check-cache.sh, #1285). The run ends with one block that says what ran,
+# what was skipped and why.
+# Every check is partial, against main, on a device as in a workflow and on
+# the branch main too: no file selects every step, this Makefile neither (it
+# selects the steps whose tools it pins and the tiers that read it). Only a
+# release runs every step: the Release workflow's first job is make check
+# FORCE=1, and nothing is published unless it passes. By hand, TEST_ALL=1
+# selects every step and FORCE=1 runs every step, past every cache.
+# CHECK_STEPS takes a part of the check, by the steps' names (generate fmt vet
+# lint validate-yaml test-hack doc-links license-headers readers ui-test test,
+# and test-gitea, which only runs when named): a workflow's job runs its part,
+# selected the same way.
 # The UI's own check (make ui-test: typecheck, eslint, prettier, its tests) is
 # part of it: the UI workflow runs only after a merge to main, so nothing else
 # before a merge would see a UI change break it (#1006). ./dev setup installs
 # Node on every device, a lite one too.
-# validate-yaml, test-hack and ui-test each run only when their own inputs
-# changed since they last passed on this device (hack/check-cache.sh run, #1285;
-# docs/dev/testenv.md says what each key covers); FORCE=1 runs them anyway. The
-# key is taken after manifests, generate and fmt, so the tier's sub-make skips
-# manifests. A dry run (make -n) still runs a recipe line with $(MAKE) in it,
-# so it goes straight to the tier and records nothing.
-CHECK_UI := $(if $(wildcard ui/package.json),ui-test)
-CHECK_TIERS := validate-yaml test-hack $(CHECK_UI)
-check-tier-%: manifests generate fmt
-	@$(if $(findstring n,$(firstword -$(MAKEFLAGS))),,hack/check-cache.sh run $* )$(MAKE) --no-print-directory -o manifests $*
-# LINT_CHANGED_ONLY=1 (the factory's own CI sets it) lints only when Go can have
-# changed since TEST_BASE (hack/go-changed.sh, #2058).
-CHECK_LINT := $(if $(LINT_CHANGED_ONLY),lint-if-go-changed,lint)
-.PHONY: lint-if-go-changed
-lint-if-go-changed:
-	@if hack/go-changed.sh; then $(MAKE) --no-print-directory lint; else echo "make lint: skipped, no Go file or its config changed since the base"; fi
+# A pass is recorded under the tree as the check left it, after manifests,
+# generate and fmt, so a tree with stale generated files never hits the cache.
+# The recipe names $(MAKE) through another variable: make runs a recipe line
+# that names it even in a dry run (make -n), which then would run the steps'
+# sub-makes dry and record them as passed.
+CHECK_MAKE = $(MAKE)
 .PHONY: check
 ifeq ($(CHECK_CACHED),)
-check: manifests generate fmt vet $(CHECK_LINT) $(addprefix check-tier-,$(CHECK_TIERS)) test ## Everything to run before finishing a change: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too.
-	@dirty=$$($(GENERATED_DIRTY)); [ -z "$$dirty" ] || \
-		{ echo "Generated files changed; commit them with your change:"; echo "$$dirty"; }
-	@hack/check-cache.sh record
+check: ## Everything to run before finishing a change, each step only when the change can have broken it: generate, format, vet, lint, validate the YAML and test, the shell tests and the UI's check too (FORCE=1: every step, as a release runs; CHECK_STEPS=...: a part of them).
+	@CHECK_MAKE="$(CHECK_MAKE)" GENERATED_PATHS="$(GENERATED_PATHS)" CHECK_STEPS="$(CHECK_STEPS)" hack/check.sh
 else
 check:
 	@echo "$(CHECK_CACHED)"
 endif
 
+# LINT_PACKAGES: the directories golangci-lint reads; none means every
+# package. make check names those of the packages its change affects.
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
-	"$(GOLANGCI_LINT)" run
+	"$(GOLANGCI_LINT)" run $(LINT_PACKAGES)
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
@@ -268,6 +305,16 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 .PHONY: vulncheck
 vulncheck: govulncheck ## Check the modules and the Go toolchain for known vulnerabilities the code reaches (needs the network, not in make check).
 	"$(GOVULNCHECK)" ./...
+
+# gitleaks over every commit of every ref the clone holds (#52), with the
+# false positives .gitleaks.toml allowlists. The Secrets workflow runs it on
+# each pull request and push to main from a full clone, so a credential in any
+# commit of a pull request fails it before the merge, and the public history
+# doesn't rest on a third party's app alone. Offline once installed; it reads
+# only the clone.
+.PHONY: secrets-scan
+secrets-scan: gitleaks ## Scan the whole Git history of every ref for secrets with gitleaks (#52).
+	"$(GITLEAKS)" git --log-opts="--all" --config .gitleaks.toml --redact --no-banner --exit-code 1 .
 
 # The YAML checks of make check run offline, without a cluster
 # (hack/validate-yaml.sh): samples, e2e fixtures, the kustomize builds, the chart
@@ -393,6 +440,7 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
 
 GOLANGCI_LINT_VERSION ?= v2.13.1
 GOVULNCHECK_VERSION ?= v1.9.0
+GITLEAKS_VERSION ?= v8.21.2
 # The kubebuilder that make template-go-kubebuilder runs.
 KUBEBUILDER_VERSION ?= v4.16.0
 
@@ -409,6 +457,7 @@ GOLANGCI_LINT_PLUGINS := $(shell [ -f .custom-gcl.yml ] && cksum < .custom-gcl.y
 KUBECTL_VALIDATE ?= $(LOCALBIN)/kubectl-validate-$(KUBECTL_VALIDATE_VERSION)
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder-$(KUBEBUILDER_VERSION)
 GOVULNCHECK ?= $(LOCALBIN)/govulncheck-$(GOVULNCHECK_VERSION)
+GITLEAKS ?= $(LOCALBIN)/gitleaks-$(GITLEAKS_VERSION)
 GOLANGCI_LINT = $(GOLANGCI_LINT_BASE)$(if $(GOLANGCI_LINT_PLUGINS),-custom-$(GOLANGCI_LINT_PLUGINS))
 
 # setup-envtest under a lock, so worktrees don't download the same Kubernetes
@@ -475,6 +524,11 @@ endif
 govulncheck: $(GOVULNCHECK) ## Download govulncheck locally if necessary.
 $(GOVULNCHECK):
 	$(call go-install-tool,$@,golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+
+.PHONY: gitleaks
+gitleaks: $(GITLEAKS) ## Download gitleaks locally if necessary.
+$(GITLEAKS):
+	$(call go-install-tool,$@,github.com/zricethezav/gitleaks/v8,$(GITLEAKS_VERSION))
 
 # install-tool makes the binary $(1) unless it exists: the shell commands $(2)
 # write it alone into the directory $$tmp, and it moves under its final name
@@ -574,7 +628,7 @@ chart: ## Regenerate the Helm chart in dist/chart from the kustomize output, kee
 		echo "make chart kept $(CHART_MANAGER); what the plugin would change is in $(CHART_OUT)/manager.plugin.diff, port what applies by hand"; fi
 
 ## Every option of the chart on, for the check that it renders no Secret.
-HELM_ALL_ON ?= gitea.projects={apps},chat.enabled=true,chat.homeserver.enabled=true,chat.homeserver.accounts={ada},gitea.admin.existingSecret=gitea-admin,global.imagePullSecrets[0].name=ghcr,manager.imagePullSecrets[0].name=ghcr,gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].existingSecret=git-credentials,rbac.helpers.enabled=true,certManager.enabled=true,webhook.enabled=true,prometheus.enabled=true,networkPolicy.enabled=true,ui.allowedHosts={factory.example.com}
+HELM_ALL_ON ?= gitea.projects={apps},chat.enabled=true,chat.homeserver.enabled=true,chat.homeserver.accounts={ada},gitea.admin.existingSecret=gitea-admin,global.imagePullSecrets[0].name=ghcr,manager.imagePullSecrets[0].name=ghcr,gitProviders[0].namespace=default,gitProviders[0].url=http://git.example:3000,gitProviders[0].owner=apps,gitProviders[0].existingSecret=git-credentials,rbac.helpers.enabled=true,certManager.enabled=true,webhook.enabled=true,prometheus.enabled=true,prometheus.dashboard.enabled=true,prometheus.rules.enabled=true,networkPolicy.enabled=true,ui.allowedHosts={factory.example.com}
 ## Secrets the chart may render: none; a pod makes each in the cluster.
 HELM_SECRETS_ALLOWED ?=
 
@@ -588,7 +642,7 @@ helm-lint: install-helm ## Lint the Helm chart, render it without Gitea, with it
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
 		--set 'gitea.projects={apps},global.imagePullSecrets[0].name=ghcr' >"$(YAML_OUT)/chart-gitea.yaml"
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
-		--set 'gitea.projects={apps},catalog.enabled=false,agents.enabled=false,projectNamespaces.create=false,ui.enabled=false' >"$(YAML_OUT)/chart-gitea-bare.yaml"
+		--set 'gitea.projects={apps},catalog.enabled=false,agents.enabled=false,testEnvironments.browser.enabled=false,projectNamespaces.create=false,ui.enabled=false' >"$(YAML_OUT)/chart-gitea-bare.yaml"
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \
 		--set 'gitea.projects={apps},clusterDNS={169.254.20.10/32,openshift-dns/dns.operator.openshift.io/daemonset-dns=default}' >"$(YAML_OUT)/chart-gitea-dns.yaml"
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART_DIR) --namespace $(HELM_NAMESPACE) \

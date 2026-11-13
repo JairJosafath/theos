@@ -1,0 +1,19 @@
+# expect: set exactly one provider member: local, aws or deviceFarm
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: browser
+  namespace: webshop
+spec:
+  description: A browser leased from two providers at once.
+  local:
+    image: ghcr.io/jairjosafath/theos/env-browser:0.31.0
+  aws:
+    region: eu-west-1
+    instanceType: c7i.large
+    imageId: ami-0123456789abcdef0
+    subnetId: subnet-0123456789abcdef0
+    credentialsSecretRef:
+      name: browser-aws
+  limits:
+    budgetUSDPerDay: 5

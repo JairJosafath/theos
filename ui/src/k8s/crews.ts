@@ -1,5 +1,7 @@
 // A Crew's writes from its page (design.md, UI actions): pause or resume it or
-// its running Tasks, its parallel and release settings, and a re-run of its failed release runs.
+// its running Tasks, its parallel and release settings, a re-run of its failed release runs,
+// a run of one of its schedules now, and one more schedule: a proposal of its
+// Container's Standard, taken.
 // server.mjs passes on only these requests; the CRD's rules decide whether they
 // are accepted, so this file copies none of them: a refused write shows the API
 // server's message.
@@ -12,12 +14,16 @@ import {
   type Brief,
   type BriefRelease,
   type Crew,
+  type CrewSchedule,
   type PublishSource,
 } from './types'
 import { errorFromResponse } from './watch'
 
 /** The annotation that asks the operator to re-run a failed release's runs, once per value. */
 export const RERUN_RELEASE = 'theos.factory.io/rerun-release'
+
+/** The annotation that asks the operator to run one of the Crew's schedules now; its value is the schedule's name. */
+export const RUN_SCHEDULE = 'theos.factory.io/run-schedule'
 
 /** The label naming the Brief that made a Crew. */
 export const LABEL_BRIEF = 'theos.factory.io/brief'
@@ -144,8 +150,12 @@ export function releasePatch(crew: Crew, next: CrewReleaseSettings, from?: strin
     next.publish?.latest === now.publish?.latest &&
     next.publish?.source?.path === now.publish?.source?.path &&
     next.publish?.source?.tagPrefix === now.publish?.source?.tagPrefix
-  if (!same) ops.push(...publishPatch(crew, publishValue(next.publish), from))
-  return ops
+  if (same) return ops
+  // The test leads the whole patch, where server.mjs looks for it, also when a
+  // switch changed in the same save (theos#31).
+  const publish = publishPatch(crew, publishValue(next.publish), from)
+  const test = publish[0].op === 'test' ? publish.slice(0, 1) : []
+  return [...test, ...ops, ...publish.slice(test.length)]
 }
 
 /** The settings form's publish fields as a Crew's spec.publishReleases. */
@@ -173,6 +183,25 @@ export function publishPatch(crew: Crew, value: PublishReleases | undefined, fro
   return ops
 }
 
+/**
+ * A Standard's proposal as the schedule a Crew takes it as: its name, cron and
+ * goal as they are written, in the time zone the person gave. The proposal's
+ * own zone is not copied: a Standard can't know where its Crews are, and the
+ * API server writes UTC into a proposal that names none.
+ */
+export function takenSchedule(proposal: CrewSchedule, timeZone: string): CrewSchedule {
+  return { name: proposal.name, cron: proposal.cron, timeZone: timeZone.trim(), goal: proposal.goal }
+}
+
+/**
+ * The JSON patch that adds one schedule to a Crew: an append, so it changes
+ * and drops none of the schedules the Crew has. server.mjs makes the list for
+ * a Crew without one; a name the Crew already uses is the API server's to refuse.
+ */
+export function addSchedulePatch(schedule: CrewSchedule): Op[] {
+  return [{ op: 'add', path: '/spec/schedules/-', value: schedule }]
+}
+
 /** Pauses, sets and re-runs a Crew; each rejects with the API's message when it refuses. */
 export interface CrewWriter {
   /**
@@ -188,6 +217,10 @@ export interface CrewWriter {
   setReleases(namespace: string, name: string, ops: Op[]): Promise<void>
   /** Sets the re-run annotation to `value`, new on each click. */
   rerunRelease(namespace: string, name: string, value: string): Promise<void>
+  /** Asks the operator to run the Crew's schedule `schedule` now: sets the run-schedule annotation to its name. */
+  runSchedule(namespace: string, name: string, schedule: string): Promise<void>
+  /** Adds `schedule` to the Crew's spec.schedules, sent as given so the API server judges it. */
+  addSchedule(namespace: string, name: string, schedule: CrewSchedule): Promise<void>
 }
 
 /** Writes through the /k8s proxy, relative to the page like the watches. */
@@ -222,6 +255,16 @@ export class LiveCrewWriter implements CrewWriter {
     return this.patch(namespace, name, 'application/merge-patch+json', {
       metadata: { annotations: { [RERUN_RELEASE]: value } },
     })
+  }
+
+  runSchedule(namespace: string, name: string, schedule: string): Promise<void> {
+    return this.patch(namespace, name, 'application/merge-patch+json', {
+      metadata: { annotations: { [RUN_SCHEDULE]: schedule } },
+    })
+  }
+
+  addSchedule(namespace: string, name: string, schedule: CrewSchedule): Promise<void> {
+    return this.patch(namespace, name, 'application/json-patch+json', addSchedulePatch(schedule))
   }
 
   private async patch(namespace: string, name: string, type: string, body: unknown): Promise<void> {

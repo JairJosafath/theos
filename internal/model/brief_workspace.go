@@ -1,6 +1,23 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
+	"cmp"
 	_ "embed"
 	"fmt"
 	"slices"
@@ -20,7 +37,7 @@ const (
 // WorkspaceFiles are every file BriefWorkspaceFiles writes, so the operator can
 // read them back to see whether main is already up to date.
 var WorkspaceFiles = []string{BriefFile, PlannerGuide, WorkspaceModelFile, WorkspaceCatalogFile, WorkspaceContainersFile,
-	WorkspaceSuggestionsFile, WorkspaceFailedFile, WorkspaceTendedFile, WorkspaceRequestsFile}
+	WorkspaceSuggestionsFile, WorkspaceFailedFile, WorkspaceTendedFile, WorkspaceRequestsFile, WorkspaceEnvironmentsFile}
 
 // MaxWorkspaceIssues is how many open issue titles model/containers.yaml lists
 // per Container; the rest are counted, not listed.
@@ -74,6 +91,8 @@ type BriefWorkspace struct {
 	Tending bool
 	// Releases are the Brief's spec.releases entries (plans/done/brief-releases.md, R5).
 	Releases []WorkspaceRelease
+	// Cadence is the Brief's spec.releaseCadence (plans/done/release-cadence.md).
+	Cadence ReleaseCadence
 	// Requests are the requests from GitHub issues the round plans like new
 	// prompts (WorkspaceRequests; docs/plans/done/brief-requests.md, decision 7).
 	Requests []Request
@@ -83,6 +102,9 @@ type BriefWorkspace struct {
 	SpecParallel        int32
 	PromptParallel      int32
 	PromptParallelRound int32
+	// Environments are the namespace's TestEnvironments, which an issue asks
+	// for with env/<name> (docs/plans/done/test-environments.md, T13).
+	Environments []WorkspaceEnvironment
 }
 
 // WorkspaceRelease is a spec.releases entry: the person asks for the
@@ -145,16 +167,21 @@ func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceRequestsFile, err)
 	}
+	environments, err := marshalDocument(workspaceEnvironments(ws.Environments))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceEnvironmentsFile, err)
+	}
 	return map[string]string{
-		BriefFile:                renderBrief(ws),
-		PlannerGuide:             plannerGuideText,
-		WorkspaceModelFile:       story,
-		WorkspaceCatalogFile:     catalog,
-		WorkspaceContainersFile:  containers,
-		WorkspaceSuggestionsFile: suggestions,
-		WorkspaceFailedFile:      failed,
-		WorkspaceTendedFile:      tended,
-		WorkspaceRequestsFile:    requests,
+		BriefFile:                 renderBrief(ws),
+		PlannerGuide:              plannerGuideText,
+		WorkspaceModelFile:        story,
+		WorkspaceCatalogFile:      catalog,
+		WorkspaceContainersFile:   containers,
+		WorkspaceSuggestionsFile:  suggestions,
+		WorkspaceFailedFile:       failed,
+		WorkspaceTendedFile:       tended,
+		WorkspaceRequestsFile:     requests,
+		WorkspaceEnvironmentsFile: environments,
 	}, nil
 }
 
@@ -226,6 +253,7 @@ func renderBrief(ws BriefWorkspace) string {
 	}
 	fmt.Fprintf(&b, "\n## Git provider\n\nEvery new Container names `gitProviderRef: {name: %s}`.\n", ws.GitProvider)
 	b.WriteString(renderParallel(ws))
+	b.WriteString(renderCadence(ws))
 	b.WriteString(renderNeverPaths())
 	if len(ws.Releases) > 0 {
 		b.WriteString("\n## Releases\n\nThe person asked for these Containers' releases. Name each in " +
@@ -243,6 +271,24 @@ func renderBrief(ws BriefWorkspace) string {
 		}
 	}
 	return b.String()
+}
+
+// renderCadence says how often the released apps release, for the planner
+// (plans/done/release-cadence.md, C5, C9); nothing with every: Release, where a
+// round's fixes and features go to releases of their own.
+func renderCadence(ws BriefWorkspace) string {
+	c := ws.Cadence
+	if !c.Cuts() {
+		return ""
+	}
+	at := cmp.Or(c.At, DefaultCutAt) + " " + c.Zone()
+	when := "every day at " + at
+	if c.Every == CadenceWeek {
+		when = "every " + cmp.Or(c.Weekday, DefaultCutWeekday) + " at " + at
+	}
+	return fmt.Sprintf("\n## Release cadence\n\nReleased apps release %s: each release holds the work merged by "+
+		"then, fixes and features alike, and the factory picks its version. Mark an issue `release: now` only "+
+		"when a prompt asks to ship it at once, or it fixes what users hit in the latest release.\n", when)
 }
 
 // renderParallel says how many issues the Brief's Crews build at once now,

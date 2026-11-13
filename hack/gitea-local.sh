@@ -15,7 +15,8 @@
 #
 # It runs the same Gitea version as config/gitea, with SQLite under .gitea-local/
 # (gitignored), on 127.0.0.1 only, with mail, SSH and LFS off. Actions is on with
-# no runner, so a pushed workflow makes a run that stays queued. The first
+# no runner, so a pushed workflow makes a run that stays queued, and hooks may
+# deliver to loopback, where make test-gitea listens. The first
 # start picks a free port near one derived from the checkout's path, so worktrees
 # don't collide, and keeps it in app.ini.
 #
@@ -130,6 +131,9 @@ ISSUE_INDEXER_TYPE = db
 [actions]
 ENABLED = true
 
+[webhook]
+ALLOWED_HOST_LIST = loopback
+
 [mailer]
 ENABLED = false
 
@@ -195,10 +199,25 @@ enable_actions() {
   if running; then stop; fi
 }
 
+# allow_loopback_hooks: lets hooks deliver to 127.0.0.1 in an app.ini written
+# before they could, so make test-gitea's listener gets them, and stops a
+# Gitea that runs without it so start runs it again.
+allow_loopback_hooks() {
+  local config
+  [[ -f $CONFIG ]] || return 0
+  # Read whole, not piped into grep -q (see create_admin).
+  config=$(cat "$CONFIG")
+  grep -q '^\[webhook\]' <<<"$config" && return 0
+  printf '\n[webhook]\nALLOWED_HOST_LIST = loopback\n' >>"$CONFIG"
+  log "Allowed hooks to loopback in ${CONFIG#"$TOP"/}"
+  if running; then stop; fi
+}
+
 start() {
   command -v "$GITEA" >/dev/null || die "no Gitea binary at $GITEA; run make gitea-local"
   mkdir -p "$DIR/log" "$DIR/data"
   enable_actions
+  allow_loopback_hooks
   if [[ -f $CONFIG ]] && running && healthy; then
     credentials_current || create_admin
     log "Gitea already runs at $(url) (pid $(cat "$PIDFILE"))"

@@ -4,7 +4,7 @@
 it gets an issue asking to move to that release, so the next release down the
 chain doesn't wait on a person to file it. The extension's `server.json` after a
 server release is the case (extension #72 at tag `archive/product-coupled`).
-GitHub issue #118, a follow-up of #78 ([release-tags.md](../release-tags.md)).
+GitHub issue #118, a follow-up of #78 ([release-tags.md](release-tags.md)).
 
 ## The rule
 

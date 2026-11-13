@@ -3,26 +3,44 @@
 # runners (hack/gh-runner, docs/dev/devices.md): its runs-on uses vars.RUNS_ON,
 # and a job that makes a Kind cluster (kind create cluster, the e2e target)
 # asks for the label theos-kind, which only runner 1 of a device carries,
-# so a device runs one of them at a time. A workflow that runs on pushes to a
+# so a device runs one of them at a time. A job of a workflow that runs on
+# pull requests starts its runs-on with github.event.pull_request.head.repo.fork
+# && 'ubuntu-latest' ||, so a fork's pull request runs on GitHub's hosted
+# runner and never on a device (#49), and no workflow runs on
+# pull_request_target. A workflow that runs on pushes to a
 # branch carries the concurrency group ${{ github.workflow }}-${{ github.ref }}
-# (one pending run per branch; GitHub drops the superseded pending runs) or
-# ${{ github.workflow }}-${{ github.sha }} (one run per commit), without
-# cancel-in-progress, so a running job on main finishes. The pull requests
-# (#1380): a workflow that runs on pull requests to main does so with the
-# same paths as on pushes, and carries cancel-in-progress
+# (one pending run per branch; GitHub drops the superseded pending runs),
+# ${{ github.workflow }}-${{ github.sha }} (one run per commit) or
+# ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref
+# || github.sha }} (one per pull request, one per commit elsewhere), without
+# cancel-in-progress on a branch, so a running job on main finishes. The pull
+# requests (#1380): a workflow that runs on pull requests to main does so with
+# the same paths as on pushes, and carries cancel-in-progress
 # ${{ github.event_name == 'pull_request' }}, so a new push to a pull request
 # replaces its run and main's runs still finish. Lint (lint.yml), UI (ui.yml)
 # and Tests (test.yml) run on pull requests to main, and Lint has a test-hack
-# job running make test-hack. Tests is the one workflow that runs on pushes
-# to main with cancel-in-progress there: it groups by ref with
-# cancel-in-progress ${{ github.event_name == 'pull_request' || github.ref ==
-# 'refs/heads/main' }}, so only the newest head of main is tested (the
-# runners are the owner's devices), and it must run on pushes to main, since
-# yolo mode merges a pull request unchecked and main's run is what shows a
-# red main (#1556). Tests also runs on a pushed release tag, the
-# 'v[0-9]+.[0-9]+.[0-9]+' tags Release (release.yml) runs on, and on a manual
-# run; the tag's run tests every package before the release ships (#1522),
-# so test.yml must keep that trigger (#1525).
+# job running the shell tests' part of make check, with the three scans of
+# the whole repository the shell tests make (the Markdown's links, the Go
+# files' license headers, the readers table), each of which runs by itself
+# when the shell tests don't. UI runs for a change to the CRDs too, which a
+# test of its reads. Secrets (secrets.yml) runs
+# make secrets-scan from a full clone on every pull request and push to main,
+# without paths (#52). Tests must run on pushes to main, since yolo mode
+# merges a pull request unchecked and main's run is what shows a red main
+# (#1556). Tests leaves ui/ out of its paths and takes ui/src/model/testdata/
+# back in after it: the Go tests read the fixtures there, which the UI's
+# tests share with them (#66).
+# Every check is partial, against main, and only a release runs every step
+# (#127). So Lint and Tests clone the whole history (fetch-depth: 0, or there
+# is no merge base and everything runs), name what a run is compared with
+# (TEST_BASE: main's head before a push, github.event.before), and carry the
+# third group above: a push to main is compared with the head before it, so
+# each push needs its own run, and one GitHub dropped or cancelled for a
+# newer push would leave its change unchecked until a release. No workflow
+# but Release asks for every step (TEST_ALL, FORCE), and Tests no longer runs
+# on a pushed tag: Release (release.yml) has a job that runs make check
+# FORCE=1, and the job that pushes the images needs it, so nothing ships
+# unless every step passed (it replaces the tag's run of Tests, #1522, #1525).
 # Every job of a workflow that runs on pull requests is listed, by its
 # workflow file and its name:, in .github/required-checks (the checks
 # hack/lib/github.sh land waits for), the names are distinct, and every line
@@ -49,10 +67,10 @@ set -euo pipefail
 BY_REF='${{ github.workflow }}-${{ github.ref }}' BY_SHA='${{ github.workflow }}-${{ github.sha }}'
 # shellcheck disable=SC2016
 ON_PR='${{ github.event_name == '"'pull_request'"' }}'
+# One group per pull request and one per commit elsewhere: what a workflow
+# carries whose run on main is compared with the head before the push (#127).
 # shellcheck disable=SC2016
-ON_PR_OR_MAIN='${{ github.event_name == '"'pull_request'"' || github.ref == '"'refs/heads/main'"' }}'
-# The tags Release runs on; Tests runs on them too (#1525).
-RELEASE_TAGS="['v[0-9]+.[0-9]+.[0-9]+']"
+BY_PR_OR_SHA='${{ github.workflow }}-${{ github.event_name == '"'pull_request'"' && github.ref || github.sha }}'
 
 # trigger FILE EVENT: the EVENT trigger of the workflow FILE, one line per
 # setting: "branches <list>", "tags <list>" and "path <pattern>" for each
@@ -71,6 +89,11 @@ trigger() {
   ' "$1"
 }
 
+# What the runs-on of a job that runs on pull requests starts with: a pull
+# request from a fork gets GitHub's hosted runner whatever vars.RUNS_ON says,
+# so nobody's fork runs code on the owner's devices (#49).
+FORK_HOSTED="github.event.pull_request.head.repo.fork && 'ubuntu-latest' ||"
+
 DIR=${1:-$(cd "$(dirname "$0")/.." && pwd)/.github/workflows}
 LIST=$(dirname "$DIR")/required-checks
 # The required checks, "FILE<TAB>NAME" per line, and the jobs of the workflows
@@ -81,6 +104,12 @@ fail=0
 for f in "$DIR"/*.yml "$DIR"/*.yaml; do
   [ -e "$f" ] || continue
   pr=$(trigger "$f" pull_request)
+  # pull_request_target runs the base's workflow with the repository's token
+  # and secrets on a stranger's pull request; no workflow here needs it (#49).
+  if [ "$(trigger "$f" pull_request_target)" != none ]; then
+    echo "$f: runs on pull_request_target, which gives a fork's pull request the repository's token (#49)" >&2
+    fail=1
+  fi
   # One line per job: its id, its runs-on (or -), kind when it makes a Kind
   # cluster, its name: (or -) and its timeout-minutes (or -). A job that
   # calls a reusable workflow (uses:) has no runs-on and no timeout.
@@ -100,6 +129,9 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       fail=1
     elif [ "$runs_on" != uses ] && [[ $runs_on != *vars.RUNS_ON* ]]; then
       echo "$f: job $job runs on $runs_on, not \${{ vars.RUNS_ON || ... }}" >&2
+      fail=1
+    elif [ "$pr" != none ] && [[ $runs_on != *"$FORK_HOSTED"* ]]; then
+      echo "$f: job $job runs on pull requests, so its runs-on must start \${{ $FORK_HOSTED ... }}: a fork's code never runs on a self-hosted runner (#49)" >&2
       fail=1
     elif [ "$kind" = kind ] && [[ $runs_on != *theos-kind* ]]; then
       echo "$f: job $job makes a Kind cluster but doesn't ask for the label theos-kind" >&2
@@ -134,15 +166,19 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
     END { print (push ? "push" : "-") "\t" (group != "" ? group : "-") "\t" (cancel != "" ? cancel : "-") }
   ' "$f")
   group=${group#[\'\"]} group=${group%[\'\"]} cancel=${cancel#[\'\"]} cancel=${cancel%[\'\"]}
-  # Tests alone may cancel a run on main (its case below says what it must).
   if [ "$push" = push ]; then
-    if [ "$group" != "$BY_REF" ] && [ "$group" != "$BY_SHA" ]; then
-      echo "$f: runs on pushes to a branch without the concurrency group $BY_REF or $BY_SHA" >&2
+    if [ "$group" != "$BY_REF" ] && [ "$group" != "$BY_SHA" ] && [ "$group" != "$BY_PR_OR_SHA" ]; then
+      echo "$f: runs on pushes to a branch without the concurrency group $BY_REF, $BY_SHA or $BY_PR_OR_SHA" >&2
       fail=1
-    elif [ "${f##*/}" != test.yml ] && [ "$cancel" != - ] && [ "$cancel" != false ] && [ "$cancel" != "$ON_PR" ]; then
+    elif [ "$cancel" != - ] && [ "$cancel" != false ] && [ "$cancel" != "$ON_PR" ]; then
       echo "$f: cancels the run in progress (cancel-in-progress: $cancel); a running job on main must finish" >&2
       fail=1
     fi
+  fi
+  # #127: only a release runs every step, and Release is the one to ask.
+  if [ "${f##*/}" != release.yml ] && grep -v '^[[:space:]]*#' "$f" | grep -E '(^|[^A-Z_])(TEST_ALL|FORCE)[=:]' >/dev/null; then
+    echo "$f: asks for every step (TEST_ALL or FORCE); every check but a release's is partial, against main (#127)" >&2
+    fail=1
   fi
   if [ "$pr" != none ]; then
     if ! grep -qx 'branches \[main\]' <<<"$pr"; then
@@ -152,7 +188,7 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
       echo "$f: runs on pull requests with other paths than on pushes" >&2
       fail=1
     fi
-    if [ "$cancel" != "$ON_PR" ] && [ "$cancel" != "$ON_PR_OR_MAIN" ]; then
+    if [ "$cancel" != "$ON_PR" ]; then
       echo "$f: runs on pull requests without cancel-in-progress: $ON_PR, so a new push doesn't replace the old run" >&2
       fail=1
     fi
@@ -165,27 +201,72 @@ for f in "$DIR"/*.yml "$DIR"/*.yaml; do
         fail=1
       fi
       ;;&
+    lint.yml | test.yml)
+      # #127: their runs are partial, a push to main against the head before it.
+      if [ "$group" != "$BY_PR_OR_SHA" ]; then
+        echo "$f: groups runs by $group, not $BY_PR_OR_SHA: a push to main is compared with the head before it, so each push needs its own run (#127)" >&2
+        fail=1
+      fi
+      if ! grep -q '^  TEST_BASE: .*github\.event\.before' "$f"; then
+        echo "$f: doesn't compare a push with main's head before it (env: TEST_BASE: ... github.event.before ...), so a push to main is compared with itself and nothing runs (#127)" >&2
+        fail=1
+      fi
+      if [ "$(grep -c 'uses: actions/checkout@' "$f")" != "$(grep -c '^          fetch-depth: 0$' "$f")" ]; then
+        echo "$f: a job clones without fetch-depth: 0, so there is no merge base and every step runs (#127)" >&2
+        fail=1
+      fi
+      ;;&
     lint.yml)
-      if ! grep -q '^  test-hack:' "$f" || ! grep -q 'run: make test-hack$' "$f"; then
-        echo "$f: has no test-hack job running make test-hack" >&2
+      # The scans read the Go and docs trees, which the shell tests' own
+      # inputs leave out: without them a pull request that changes only a Go
+      # file runs no license check here (#127).
+      if ! grep -q '^  test-hack:' "$f" ||
+        ! grep -q 'run: make check CHECK_STEPS="test-hack doc-links license-headers readers"$' "$f"; then
+        echo "$f: has no test-hack job running make check CHECK_STEPS=\"test-hack doc-links license-headers readers\"" >&2
+        fail=1
+      fi
+      ;;
+    ui.yml)
+      # #127: ui/src/demo/limits.test.ts reads the CRDs.
+      if ! grep -qx 'path config/crd/bases/\*\*' <<<"$pr"; then
+        echo "$f: doesn't run for a change to config/crd/bases/**, which a test of the UI reads (#127)" >&2
         fail=1
       fi
       ;;
     test.yml)
       if ! grep -qx 'branches \[main\]' <<<"$(trigger "$f" push)"; then
-        echo "$f: doesn't run on pushes to main, so nothing tests main until a tag (#1556)" >&2
+        echo "$f: doesn't run on pushes to main, so nothing tests main until a release (#1556)" >&2
         fail=1
       fi
-      if ! grep -qxF "tags $RELEASE_TAGS" <<<"$(trigger "$f" push)"; then
-        echo "$f: doesn't run on a pushed release tag, push: tags: $RELEASE_TAGS as Release does, so a release ships without a run of every package (#1525)" >&2
+      if grep -q '^tags ' <<<"$(trigger "$f" push)"; then
+        echo "$f: runs on a pushed tag; a release's run of every step is Release's own job, which gates the release (#127)" >&2
         fail=1
       fi
-      if [ "$group" != "$BY_REF" ]; then
-        echo "$f: groups runs by $group, not $BY_REF, so a push to main doesn't replace the run of the head it supersedes (#1556)" >&2
+      # #66: internal/model's TestFactoryReportFixture reads the fixture the
+      # UI's tests share with it, ui/src/model/testdata/report. With ui/**
+      # left out and that path not taken back in, a pull request that changed
+      # a UI rule and the fixture's report never ran the Go test that reads
+      # it. A later pattern wins, so the path comes after the exclusion. The
+      # pushes have the same paths (above).
+      if ! awk '
+        { gsub(/['"'"'"]/, "") }
+        $0 == "path !ui/**" { out = NR }
+        $0 == "path ui/src/model/testdata/**" { back = NR }
+        END { exit !(out == 0 || back > out) }
+      ' <<<"$pr"; then
+        echo "$f: leaves out ui/** without taking ui/src/model/testdata/** back in after it, so a pull request that changes the fixtures the UI's tests share with Go's never runs the Go tests that read them (#66)" >&2
         fail=1
       fi
-      if [ "$cancel" != "$ON_PR_OR_MAIN" ]; then
-        echo "$f: cancel-in-progress: $cancel, not $ON_PR_OR_MAIN, so a superseded head of main keeps its runner (#1556)" >&2
+      ;;
+    secrets.yml)
+      # #52: every pull request and every push to main, whatever it changes,
+      # scanned from a full clone, so no commit reaches main unscanned.
+      if [ "$pr" != 'branches [main]' ] || [ "$(trigger "$f" push)" != 'branches [main]' ]; then
+        echo "$f: doesn't run on every pull request and push to main, without paths, so a commit can reach main unscanned (#52)" >&2
+        fail=1
+      fi
+      if ! grep -q '^          fetch-depth: 0$' "$f" || ! grep -q 'run: make secrets-scan$' "$f"; then
+        echo "$f: doesn't run make secrets-scan on a full clone (fetch-depth: 0), so it scans one commit, not the history (#52)" >&2
         fail=1
       fi
       ;;
@@ -232,6 +313,30 @@ if [ -e "$rel" ]; then
     fail=1
   elif [ "$actions" != yes ]; then
     echo "$rel: the job that dispatches verify-release.yml has no permission actions: write" >&2
+    fail=1
+  fi
+fi
+
+# Release's full check (#127): the job with a step that runs make check
+# FORCE=1, and whether the job that pushes the images needs it.
+if [ -e "$rel" ]; then
+  IFS=$'\t' read -r full needed < <(awk '
+    /^jobs:/ { injobs = 1; next }
+    injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
+    job != "" && /run: make check FORCE=1[[:space:]]*$/ { full = job }
+    job != "" && /^    needs:/ { n = $0; sub(/^    needs:[[:space:]]*/, "", n); gsub(/[\[\],]/, " ", n); needs[job] = n }
+    job != "" && /docker push / { pusher = job }
+    END {
+      ok = 0
+      if (full != "" && pusher != "") { c = split(needs[pusher], a, " "); for (i = 1; i <= c; i++) if (a[i] == full) ok = 1 }
+      print (full != "" ? full : "-") "\t" (ok ? "yes" : "-")
+    }
+  ' "$rel")
+  if [ "$full" = - ]; then
+    echo "$rel: no job runs make check FORCE=1, so a release ships without a run of every step, and every other check is partial (#127)" >&2
+    fail=1
+  elif [ "$needed" != yes ]; then
+    echo "$rel: the job that pushes the images doesn't need the job that runs make check FORCE=1 (needs: $full), so a release ships whatever the full check says (#127)" >&2
     fail=1
   fi
 fi

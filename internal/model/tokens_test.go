@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -93,6 +109,13 @@ func TestRunRecord(t *testing.T) {
 	got, _ = RunState{Started: true, Done: true, Result: &RunResult{Role: strings.Repeat("x", 40)}}.Record(1, "add-crop", at)
 	if got.Role != "" {
 		t.Errorf("an unknown role on a sandbox without one: recorded %q, want none", got.Role)
+	}
+	// The configuration the sandbox recorded is the run's, so a later change to
+	// the Agent doesn't rewrite it (measure-and-improve, decision 2).
+	config := RunConfig{Agent: "implementer", Harness: "claude-code", Model: "claude-opus-5-5"}
+	got, _ = RunState{Started: true, Done: true, Config: config}.Record(1, "add-crop-r1-implement", at)
+	if got.Config != config {
+		t.Errorf("a run's configuration: recorded %+v, want %+v", got.Config, config)
 	}
 }
 

@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package agentrunner
 
 import (
@@ -6,6 +22,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -39,6 +56,12 @@ func TestMain(m *testing.M) {
 	}
 	// Failed runs wait this long for a stop that never comes.
 	stopGrace = 200 * time.Millisecond
+	// No git in the tests' throwaway repositories starts its automatic gc or
+	// maintenance: newer git runs them detached, and one still writing
+	// .git/objects/pack when a test ends fails its TempDir cleanup ("directory
+	// not empty", TestPauseGuardSavesAHardCheckpointEveryTenMinutes on CI's git
+	// 2.56). The variables reach every git the tests start, the stand-ins' too.
+	noAutoGit()
 	os.Exit(m.Run())
 }
 
@@ -76,6 +99,7 @@ func TestJobFromEnv(t *testing.T) {
 		{"branch is the base", map[string]string{EnvBranch: "main"}, "must not be the base"},
 		{"bad resumed", map[string]string{EnvResumed: "maybe"}, "THEOS_RESUMED"},
 		{"bad session limit", map[string]string{EnvSessionTokenLimit: "lots"}, "not a number of tokens"},
+		{"bad test environments", map[string]string{EnvEnvironments: "browser"}, "THEOS_ENVIRONMENTS"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -105,6 +129,136 @@ func TestJobFromEnvStandardChange(t *testing.T) {
 	got, err = JobFromEnv(env(nil))
 	if err != nil || got.AllowedPaths != nil || got.Resumed {
 		t.Errorf("defaults = %v, %v, %v", got.AllowedPaths, got.Resumed, err)
+	}
+}
+
+// The implementer's and verifier's prompts list the run's test environments,
+// each with its description and how to run a command there; the reviewer's,
+// and a run that leased none, list nothing (docs/plans/done/test-environments.md,
+// T13).
+func TestPromptsListTestEnvironments(t *testing.T) {
+	job, err := JobFromEnv(env(map[string]string{EnvEnvironments: `[{"name":"browser",` +
+		`"description":"Chromium with Playwright; run headed programs under xvfb-run -a."}]`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(job.Environments) != 1 || job.Environments[0].Name != "browser" {
+		t.Fatalf("Environments = %+v, want browser", job.Environments)
+	}
+	for name, prompt := range map[string]string{"implement": ImplementPrompt(job, Workspace{}),
+		"verify": VerifyPrompt(job, Workspace{})} {
+		for _, want := range []string{"Test environments this run leased", "- `browser`: Chromium with Playwright",
+			"`theos-env run browser -- <command>`", "writes the files the command\nchanged or added back here"} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("%s prompt lacks %q", name, want)
+			}
+		}
+	}
+	if strings.Contains(ReviewPrompt(job, Workspace{}), "theos-env") {
+		t.Error("the review prompt lists test environments")
+	}
+	none, _ := JobFromEnv(env(nil))
+	if strings.Contains(ImplementPrompt(none, Workspace{}), "theos-env") {
+		t.Error("a run that leased no environment is told of theos-env")
+	}
+}
+
+// What a run's test environment can check is never left open for a person
+// (docs/plans/done/test-environments.md, T13): the implementer's and verifier's
+// prompts say so, and the triager names an issue's environments, so the
+// operator labels it env/<name> instead of a person getting it.
+func TestPromptsNeverLeaveAnEnvironmentsCriterionOpen(t *testing.T) {
+	job, err := JobFromEnv(env(map[string]string{EnvIssue: "4", EnvEnvironments: `[{"name":"browser"}]`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := "never leave it open for a person"
+	for name, prompt := range map[string]string{"implement": ImplementPrompt(job, Workspace{}),
+		"verify": VerifyPrompt(job, Workspace{})} {
+		if !strings.Contains(strings.Join(strings.Fields(prompt), " "), rule) {
+			t.Errorf("%s prompt doesn't say %q", name, rule)
+		}
+	}
+	none, _ := JobFromEnv(env(map[string]string{EnvIssue: "4"}))
+	if strings.Contains(strings.Join(strings.Fields(ImplementPrompt(none, Workspace{})), " "), rule) {
+		t.Error("a run with no environment is told of one")
+	}
+	triage := TriagePrompt(job, Workspace{})
+	for _, want := range []string{"Test environments the project has", "- `browser`", `name them in "environments"`,
+		`"environments": ["..."]`} {
+		if !strings.Contains(triage, want) {
+			t.Errorf("triage prompt lacks %q", want)
+		}
+	}
+	d, err := ParseTriage(`{"decision": "ready", "reason": "Clear.", "environments": ["browser"]}`)
+	if err != nil || len(d.Environments) != 1 || d.Environments[0] != "browser" {
+		t.Errorf("ParseTriage = %+v, %v; want the environments", d, err)
+	}
+}
+
+// #92: the triager is told when an issue is high-risk, and its word is kept
+// as "high" or nothing.
+func TestTriageRisk(t *testing.T) {
+	prompt := TriagePrompt(Job{Container: "orders-api", Project: "webshop", Issue: 4, Goal: "Drop the column."},
+		Workspace{})
+	for _, want := range []string{`say "risk": "high" when a mistake`, "migrates or deletes data", "handles money",
+		`"risk": "high" or ""`} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("triage prompt lacks %q", want)
+		}
+	}
+	for reply, want := range map[string]string{
+		`{"decision": "ready", "reason": "It drops a column.", "risk": "High"}`: model.RiskHigh,
+		`{"decision": "spec", "reason": "It moves money.", "risk": "high"}`:     model.RiskHigh,
+		`{"decision": "ready", "reason": "Clear.", "risk": "low"}`:              "",
+		`{"decision": "ready", "reason": "Clear.", "risk": ""}`:                 "",
+		`{"decision": "ready", "reason": "Clear."}`:                             "",
+	} {
+		if d, err := ParseTriage(reply); err != nil || d.Risk != want {
+			t.Errorf("ParseTriage(%s) has risk %q, %v; want %q", reply, d.Risk, err, want)
+		}
+	}
+}
+
+// #92: the reviewer is told when a change it approves is high-risk, and only
+// an approval carries its reason.
+func TestReviewRisk(t *testing.T) {
+	prompt := ReviewPrompt(Job{Container: "orders-api", Project: "webshop", Issue: 4, Goal: "Drop the column.",
+		Base: "main", Branch: "task/orders-api-4"}, Workspace{})
+	for _, want := range []string{`say "risk": "high"`, `in "riskReason" one sentence`,
+		"It replaces no change you require", `"risk": "high" or "", "riskReason": "..."`} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("review prompt lacks %q", want)
+		}
+	}
+	for reply, want := range map[string]string{
+		`{"verdict": "approve", "summary": "Fine.", "risk": "High", "riskReason": " It drops\na column. "}`: "It drops a column.",
+		`{"verdict": "approve", "summary": "Fine.", "risk": "high"}`:                                        noRiskReason,
+		`{"verdict": "approve", "summary": "Fine.", "risk": "low", "riskReason": "A typo."}`:                "",
+		`{"verdict": "approve", "summary": "Fine.", "riskReason": "It drops a column."}`:                    "",
+		`{"verdict": "approve", "summary": "Fine."}`:                                                        "",
+		`{"verdict": "changes", "summary": "Fix it.", "risk": "high", "riskReason": "It drops a column."}`:  "",
+	} {
+		if v, err := ParseVerdict(reply); err != nil || v.Risk != want {
+			t.Errorf("ParseVerdict(%s) has risk %q, %v; want %q", reply, v.Risk, err, want)
+		}
+	}
+	// The verifier reports in the same format, and raises nothing: its run
+	// keeps no risk (verify.go).
+	long := Result{Role: RoleReview, Verdict: VerdictApprove, Risk: strings.Repeat("word ", 200)}
+	var back Result
+	if err := json.Unmarshal(long.Encode(), &back); err != nil || len(back.Risk) > maxFollowUpCriterion || back.Risk == "" {
+		t.Errorf("Encode() keeps a risk of %d bytes, %v; want at most %d", len(back.Risk), err, maxFollowUpCriterion)
+	}
+	// The stand-in reviewer says it for an issue that asks, so the loop is
+	// tested without a model.
+	out, err := FakeAgent{Role: RoleReview, Round: 1, Goal: "Drop it.\n\nStand-in: risk high"}.Run(t.Context(), t.TempDir(), "")
+	if v, perr := ParseVerdict(out); err != nil || perr != nil || v.Verdict != VerdictApprove || v.Risk == "" {
+		t.Errorf("the stand-in reviewer says %q, %v, %v; want an approval that calls the change high-risk", out, err, perr)
+	}
+	out, _ = FakeAgent{Role: RoleReview, Round: 1, Goal: "Drop it."}.Run(t.Context(), t.TempDir(), "")
+	if v, _ := ParseVerdict(out); v.Risk != "" {
+		t.Errorf("the stand-in reviewer calls a plain issue's change high-risk: %q", v.Risk)
 	}
 }
 
@@ -349,6 +503,86 @@ func TestRunImplementWithoutCommitOnAPullRequest(t *testing.T) {
 	}
 }
 
+// noteEditAgent changes a file and ends its summary with a note.
+type noteEditAgent struct{ note string }
+
+func (a noteEditAgent) Run(_ context.Context, dir, _ string) (string, error) {
+	return "Changed the README.\n" + a.note, os.WriteFile(filepath.Join(dir, "README.md"), []byte("changed\n"), 0o644)
+}
+
+// #72: an implementer that changes nothing and says "Nothing to do: <why>"
+// reports that as its result, where a Task may end on it; anywhere else a
+// round with no change fails as before.
+func TestRunImplementNothingToDo(t *testing.T) {
+	ctx := context.Background()
+	const summary = "Ran go list -m -u all.\nNothing to do: every module is at its newest version."
+	issueJob := func(t *testing.T, url string) Job {
+		job := testJob(t, url, RoleImplement, 1)
+		job.Issue = 4
+		return job
+	}
+	t.Run("an issue's build that changed nothing says why, and pushes nothing", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		got := Run(ctx, issueJob(t, url), summaryAgent{summary}, t.TempDir())
+		if got.Error != "" || got.Commit != "" || got.Nothing != "every module is at its newest version." {
+			t.Errorf("result = %+v, want nothing to do and no error", got)
+		}
+		if branchHead(t, url, "task/add-crop") != "" {
+			t.Error("a branch was pushed for no change")
+		}
+	})
+	t.Run("a change wins over the line: the round goes on as any", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		got := Run(ctx, issueJob(t, url), noteEditAgent{"Nothing to do: it was fine already."}, t.TempDir())
+		if got.Error != "" || got.Commit == "" || got.Nothing != "" {
+			t.Errorf("result = %+v, want the change's commit and no note", got)
+		}
+	})
+	t.Run("a round that says only that it did nothing still fails", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		got := Run(ctx, issueJob(t, url), summaryAgent{"Nothing to do."}, t.TempDir())
+		if got.Nothing != "" || got.Error != model.NoChangeError("Nothing to do.") ||
+			!strings.Contains(got.Error, `"Nothing to do: ..."`) {
+			t.Errorf("result = %+v, want the no-change error that names the line", got)
+		}
+	})
+	for name, change := range map[string]func(*Job){
+		"a Task with no issue":            func(j *Job) { j.Issue = 0 },
+		"a Standard change":               func(j *Job) { j.AllowedPaths = []string{"Makefile"} },
+		"a spec":                          func(j *Job) { j.SpecPath = "docs/specs/4.md" },
+		"a Task resumed after its change": func(j *Job) { j.Resumed = true },
+	} {
+		job := issueJob(t, "https://git.example/webshop/orders-api.git")
+		change(&job)
+		if takesNothing(job) {
+			t.Errorf("%s may end on nothing to do", name)
+		}
+		if strings.Contains(ImplementPrompt(job, Workspace{}), model.NothingPrefix) {
+			t.Errorf("%s is told of the %q line", name, model.NothingPrefix)
+		}
+	}
+	prompt := ImplementPrompt(issueJob(t, "https://git.example/webshop/orders-api.git"), Workspace{})
+	for _, want := range []string{`end your summary with a line "Nothing to do:"`, "nobody reviews them",
+		"do the part that is not"} {
+		if !strings.Contains(strings.Join(strings.Fields(prompt), " "), want) {
+			t.Errorf("the implementer's prompt lacks %q", want)
+		}
+	}
+	t.Run("the stand-in finds nothing for an issue that asks", func(t *testing.T) {
+		url := bareRepo(t, map[string]string{"README.md": "hi\n"})
+		got := Run(ctx, issueJob(t, url), FakeAgent{Role: RoleImplement, Round: 1,
+			Goal: "Update the modules\n\nStand-in: nothing to do"}, t.TempDir())
+		if got.Error != "" || got.Nothing != "the stand-in was asked to find nothing." {
+			t.Errorf("result = %+v, want the stand-in's nothing to do", got)
+		}
+	})
+	var back Result
+	long := Result{Role: RoleImplement, Summary: strings.Repeat("s", 3000), Nothing: strings.Repeat("word ", 400)}
+	if data := long.Encode(); len(data) > MaxResultBytes || json.Unmarshal(data, &back) != nil || back.Nothing == "" {
+		t.Errorf("Encode() is %d bytes with note %q; want it to fit and keep a note", len(data), back.Nothing)
+	}
+}
+
 func TestRunImplementFailures(t *testing.T) {
 	ctx := context.Background()
 	t.Run("no change", func(t *testing.T) {
@@ -357,7 +591,7 @@ func TestRunImplementFailures(t *testing.T) {
 		// The handed-back issue says what the agent did say (#602).
 		if got.Error != model.NoChangeError("Nothing to do.") ||
 			!strings.Contains(got.Error, `its summary ends: "Nothing to do."`) ||
-			!strings.Contains(got.Error, `"Blocked: ..."`) {
+			!strings.Contains(got.Error, `"Blocked: ..."`) || got.Nothing != "" {
 			t.Errorf("Error = %q", got.Error)
 		}
 		if branchHead(t, url, "task/add-crop") != "" {
@@ -1695,6 +1929,80 @@ func TestRunImplementBlockedWithAFailingBase(t *testing.T) {
 	})
 }
 
+// #2037: sent back after a blocked note, the agent runs a fresh session; its
+// prompt carries the issue, the round's rules and what it answered the first
+// time, not only that it stopped.
+func TestRunImplementSendBackCarriesTheIssue(t *testing.T) {
+	url := bareRepo(t, map[string]string{"README.md": "hi\n", "BROKEN": "x\n"})
+	job := testJob(t, url, RoleImplement, 1, brokenCheck...)
+	job.Issue = 106
+	job.Goal = "Locate CEL rules\n\n## Acceptance criteria\n- [ ] the lens finds every CEL rule"
+	first := "Looked at the tests.\n" + model.BlockedPrefix + " make check fails before any change."
+	agent := &scriptAgent{replies: []string{first, "Done."}}
+	got := Run(context.Background(), job, agent, t.TempDir())
+	if got.Blocked != "" || got.Commit == "" {
+		t.Fatalf("result = %+v, want the round to go on", got)
+	}
+	if len(agent.prompts) < 2 {
+		t.Fatalf("agent ran %d times, want it sent back", len(agent.prompts))
+	}
+	sentBack := agent.prompts[1]
+	for _, want := range []string{
+		issueBlock(job.Goal), "issue #106", "Acceptance criteria", // the issue itself
+		"Protected files:",                                 // the round's rules
+		"make check fails before any change.",              // its first answer
+		"not a reason to block", "download: 404 Not Found", // why it is sent back
+	} {
+		if !strings.Contains(sentBack, want) {
+			t.Errorf("send-back prompt lacks %q:\n%s", want, sentBack)
+		}
+	}
+	if !strings.HasPrefix(sentBack, strings.TrimRight(agent.prompts[0], "\n")) {
+		t.Error("send-back prompt doesn't start with the round's prompt")
+	}
+}
+
+// #25 (theos): each fix attempt is a fresh session too; its prompt carries the
+// round's prompt, the issue and its rules, ahead of the failure, whether the
+// check fails on the branch alone or on the base too.
+func TestRunImplementFixPromptCarriesTheIssue(t *testing.T) {
+	branchOnly := []string{"sh", "-c", "if [ -e work.txt ]; then echo 'lint: unused variable'; exit 1; fi"}
+	for name, tc := range map[string]struct {
+		files   map[string]string
+		check   []string
+		failure string
+	}{
+		"fails on the branch": {map[string]string{"README.md": "hi\n"}, branchOnly, "lint: unused variable"},
+		"fails on the base too": {map[string]string{"README.md": "hi\n", "BROKEN": "x\n"}, brokenCheck,
+			"download: 404 Not Found"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			job := testJob(t, bareRepo(t, tc.files), RoleImplement, 1, tc.check...)
+			job.Issue = 106
+			job.Goal = "Locate CEL rules\n\n## Acceptance criteria\n- [ ] the lens finds every CEL rule"
+			agent := &scriptAgent{replies: []string{"Done."}}
+			Run(context.Background(), job, agent, t.TempDir())
+			if len(agent.prompts) != 1+checkFixAttempts {
+				t.Fatalf("agent ran %d times, want the work and %d fix attempts", len(agent.prompts), checkFixAttempts)
+			}
+			round := strings.TrimRight(agent.prompts[0], "\n")
+			for _, fix := range agent.prompts[1:] {
+				if !strings.HasPrefix(fix, round) {
+					t.Errorf("fix prompt doesn't start with the round's prompt:\n%s", fix)
+				}
+				for _, want := range []string{issueBlock(job.Goal), "issue #106", "Protected files:", "fails", tc.failure} {
+					if !strings.Contains(fix, want) {
+						t.Errorf("fix prompt lacks %q:\n%s", want, fix)
+					}
+				}
+				if after := strings.TrimPrefix(fix, round); !strings.Contains(after, tc.failure) {
+					t.Errorf("fix prompt doesn't name the failure after the round's prompt:\n%s", after)
+				}
+			}
+		})
+	}
+}
+
 func TestRunImplementProposesAStandardChangeWhenTheBaseFailsToo(t *testing.T) {
 	url := bareRepo(t, map[string]string{"Makefile": "check:\n", "README.md": "hi\n", "BROKEN": "x\n"})
 	agent := filesAgent{files: map[string]string{"Makefile": "check:\n\techo more\n", "src.txt": "x\n"}, summary: "Standard change: needed"}
@@ -1764,5 +2072,29 @@ func TestIssueBlock(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// noAutoGit turns off git's automatic gc and maintenance for every git this
+// test binary starts, keeping any GIT_CONFIG_COUNT entries already set.
+func noAutoGit() {
+	n, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))
+	for _, kv := range [][2]string{{"gc.auto", "0"}, {"maintenance.auto", "false"}} {
+		_ = os.Setenv(fmt.Sprintf("GIT_CONFIG_KEY_%d", n), kv[0])
+		_ = os.Setenv(fmt.Sprintf("GIT_CONFIG_VALUE_%d", n), kv[1])
+		n++
+	}
+	_ = os.Setenv("GIT_CONFIG_COUNT", strconv.Itoa(n))
+}
+
+// The tests' git starts no automatic gc or maintenance, which newer git runs
+// detached past a test's end (TestPauseGuardSavesAHardCheckpointEveryTenMinutes
+// failed its TempDir cleanup on CI).
+func TestTestsGitRunsNoAutoMaintenance(t *testing.T) {
+	for key, want := range map[string]string{"gc.auto": "0", "maintenance.auto": "false"} {
+		out, err := exec.Command("git", "config", "--get", key).Output()
+		if err != nil || strings.TrimSpace(string(out)) != want {
+			t.Errorf("git config --get %s = %q, %v; want %q", key, out, err, want)
+		}
 	}
 }

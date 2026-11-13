@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -220,6 +228,60 @@ var _ = Describe("Brief releases", func() {
 		}).Should(Succeed())
 		Expect(gitFake.AllMilestones(ns, "linter")).To(HaveLen(1))
 		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0", "v0.1.0"}))
+	})
+
+	// #2025: an earlier round's v0.2.0 that nothing went into is the next
+	// minor release, so the round's issue and the suggestion it takes go into
+	// it, not into a v0.3.0 after it.
+	It("files a round's issue and a suggestion it takes in an empty release milestone an earlier round made (#2025)", func() {
+		createFactory(ns)
+		briefAgents(ns, 3)
+		brief := newBrief(ns, "cel-lens")
+		mustCreate(brief)
+		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+		}).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 1)).To(Equal([]string{"v0.1.0"}))
+		gitFake.AddMilestone(ns, "linter", "v0.2.0", model.ReleaseMilestoneDescription("cel-lens", 0),
+			time.Now().Add(2*model.ReleaseMilestoneDue))
+
+		crew := linterCrew(Default, ns)
+		Expect(patch(crew, func() { crew.Spec.Paused = true })).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(linterCrew(g, ns).Status.Phase).To(Equal(c4v1beta1.CrewPaused))
+		}).Should(Succeed())
+		safety := gitFake.AddIssue(ns, "linter", "Reject control characters", model.FollowUpIssue(model.FollowUp{
+			Body: "A rule's text takes them.", Criteria: []string{"A rule with a control character is refused"}},
+			"Agent `reviewer`", "http://gitea/pulls/2", 1, "linter-1"), []string{model.LabelProposed})
+		gitFake.PutInMilestone(ns, "linter", safety, model.FollowUpMilestone)
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.SuggestionsWaiting).To(Equal(int32(1)))
+		}).Should(Succeed())
+		brief = getBrief(Default, ns)
+		Expect(patch(brief, func() {
+			brief.Spec.Prompts = []string{"Lint VAP files too, and take the input-safety suggestion."}
+		})).To(Succeed())
+		plan := linterPlan(ns, 1)
+		plan[model.PlanSuggestionsFile] = scaffold.File{Data: []byte(fmt.Sprintf(
+			"- {container: linter, issue: %d, answer: take, why: The prompt takes it.}\n", safety))}
+		planRound(ns, 2, 1, plan)
+		Eventually(func(g Gomega) {
+			b := getBrief(g, ns)
+			g.Expect(b.Status.Round).To(Equal(int32(2)))
+			g.Expect(b.Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+		}).Should(Succeed())
+		Expect(roundIssueMilestones(Default, ns, 2)).To(Equal([]string{"v0.2.0"}))
+		Expect(gitFake.Issue(ns, "linter", safety).InMilestone).To(Equal("v0.2.0"))
+		milestones := gitFake.AllMilestones(ns, "linter")
+		titles := make([]string, 0, len(milestones))
+		for _, m := range milestones {
+			titles = append(titles, m.Title)
+			if m.Title == "v0.2.0" {
+				Expect(model.HasReleaseMilestoneMarker(m.Description, "cel-lens", 2)).To(BeTrue())
+			}
+		}
+		Expect(titles).To(ConsistOf("v0.1.0", model.FollowUpMilestone, "v0.2.0"), "no v0.3.0")
 	})
 
 	// #601: after the first release, a round of fixes is a patch release, and

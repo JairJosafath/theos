@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -174,8 +190,11 @@ func TestPlannerGuideGivesAgentsOnlyCriteriaTheyCanMeet(t *testing.T) {
 	for _, rule := range []string{
 		"**Give agents only criteria they can meet.**",
 		"each criterion is one an agent can meet there and a reviewer can check there",
-		"A screenshot of a desktop app, a recording, a run on a phone or other device",
+		"A screenshot of a desktop app no listed environment has, a recording, a run on a phone or other device",
 		"labelled `kind/by-hand`",
+		// docs/plans/done/test-environments.md, T13: what an environment has is an agent's.
+		"What needs a tool one of `model/test-environments.yaml`'s environments has",
+		"label its issue with that environment's `label`, such as `env/browser`",
 		"Where a text sample serves, ask the agent for that instead",
 	} {
 		if !strings.Contains(guide, rule) {
@@ -199,6 +218,29 @@ func TestPlannerGuideAsksForNoTestThatStartsADesktopApp(t *testing.T) {
 		"can't run in `make check`, and no criterion asks for one",
 		"An extension's tests run without a VS Code window",
 		"trying it in a real editor is a `kind/by-hand` issue",
+		"unless the project has a test environment with a display",
+	} {
+		if !strings.Contains(guide, rule) {
+			t.Errorf("PLANNER.md doesn't say %q", rule)
+		}
+	}
+}
+
+// TestPlannerGuideSaysWhatIsBigger: the guide says what ships at once under
+// a cadence, how to mark it, and that a tending round marks nothing
+// (docs/plans/done/release-cadence.md, C8, C9).
+func TestPlannerGuideSaysWhatIsBigger(t *testing.T) {
+	guide := strings.Join(strings.Fields(plannerGuideText), " ")
+	for _, rule := range []string{
+		"`release: now` (rule 9)",
+		"**Mark only what is bigger `release: now`**",
+		"a fix of something broken in the latest release that users hit",
+		"or a feature a prompt asks to ship now",
+		"A fix of work not yet released, a test, docs or a refactor is never bigger.",
+		"now: true # take only: bigger, it ships at once (rule 9)",
+		"and never on a skip",
+		"mark no issue `release: now`",
+		"the factory gives a day of fixes the next patch version",
 	} {
 		if !strings.Contains(guide, rule) {
 			t.Errorf("PLANNER.md doesn't say %q", rule)

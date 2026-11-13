@@ -48,7 +48,9 @@ export interface HealthSample {
   apiMs: number
   /** The API server did not answer at all (timeout or error). */
   apiFailed?: boolean
+  /** Every node's CPU, added up; absent when no node has figures. */
   cpuMilli?: number
+  /** Every node's memory, added up. */
   memoryBytes?: number
   ciCpuMilli?: number
   agentCpuMilli?: number

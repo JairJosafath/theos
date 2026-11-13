@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package chart
@@ -84,6 +92,11 @@ func TestSeedAppliesTheCatalogInPlace(t *testing.T) {
 	}
 	if len(uids) < 5 {
 		t.Fatalf("ConfigMap %s holds %d objects, want the GitProvider, catalog and Agents", catalogConfigMap, len(uids))
+	}
+	// The seed's browser (docs/plans/done/test-environments.md, T14), which its
+	// Role lets it apply.
+	if _, ok := uids["TestEnvironment/browser"]; !ok {
+		t.Errorf("ConfigMap %s makes no TestEnvironment browser", catalogConfigMap)
 	}
 
 	// A person adds env to the planner, which the chart doesn't set.

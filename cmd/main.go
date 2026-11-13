@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package main
@@ -17,6 +25,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	// The time zones of release cadences load whatever the image holds
+	// (docs/plans/done/release-cadence.md, C1).
+	_ "time/tzdata"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -32,20 +44,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
-	c4v1alpha1 "github.com/JairJosafath/theos/api/v1alpha1"
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/features"
 	"github.com/JairJosafath/theos/internal/adapters/argocd"
+	"github.com/JairJosafath/theos/internal/adapters/awsenv"
 	"github.com/JairJosafath/theos/internal/adapters/cloudformation"
 	"github.com/JairJosafath/theos/internal/adapters/git"
 	"github.com/JairJosafath/theos/internal/adapters/gitea"
 	"github.com/JairJosafath/theos/internal/adapters/github"
 	"github.com/JairJosafath/theos/internal/adapters/gitlab"
+	"github.com/JairJosafath/theos/internal/adapters/localenv"
 	"github.com/JairJosafath/theos/internal/adapters/matrix"
 	"github.com/JairJosafath/theos/internal/buildinfo"
 	"github.com/JairJosafath/theos/internal/controller"
@@ -63,7 +77,6 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(c4v1alpha1.AddToScheme(scheme))
 	// The webhook certificate's CA is patched into the CRDs.
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	utilruntime.Must(c4v1beta1.AddToScheme(scheme))
@@ -82,6 +95,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var sessionStaleAfter time.Duration
+	var scaffoldSettle time.Duration
 	var maxAgentSandboxes int
 	var leaseDuration time.Duration
 	var workspaceMemory string
@@ -95,6 +109,9 @@ func main() {
 	var uiServiceAccount string
 	var modelProxyURL string
 	var chatHomeserver string
+	var gitEventsURL string
+	var gitEventsAddr string
+	var testEnvToolsImage, testEnvToolsURL, testEnvRunnerURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -156,6 +173,9 @@ func main() {
 		"How long the leader's lease lasts. It renews within two thirds of that, retrying every twelfth. "+
 			"The client default of 15s ends the manager whenever the API server stalls for 10s, which a "+
 			"busy single-node cluster does while agents and CI run.")
+	flag.DurationVar(&scaffoldSettle, "scaffold-settle", model.DefaultScaffoldSettle,
+		"How long a new Container waits after its creation before it is scaffolded, so the Relationships "+
+			"applied with it are there; 0 scaffolds at once (#43).")
 	flag.DurationVar(&sessionStaleAfter, "session-stale-after", model.DefaultStaleAfter,
 		"How long a Session may go without a heartbeat before it is marked Stale.")
 	flag.StringVar(&sessionFeature, "session-feature", features.SessionFeatureLocal,
@@ -180,6 +200,25 @@ func main() {
 	flag.StringVar(&chatHomeserver, "chat-homeserver", "",
 		"The Matrix homeserver of a Chat that names none, such as the chart's in-cluster one. None: each Chat "+
 			"names its homeserver.")
+	flag.StringVar(&gitEventsURL, "git-events-url", "",
+		"The base address the Git host delivers events to, such as http://theos-git-events.<namespace>.svc:8082: "+
+			"each GitProvider's hook delivers to <url>/git-events/<namespace>/<name>. None: no hook, and the "+
+			"operator polls the host.")
+	flag.StringVar(&gitEventsAddr, "git-events-bind-address", "0",
+		"The address the receiver of the Git host's deliveries binds to, such as :8082, on the leader. "+
+			"Leave as 0 to receive none: the operator polls the host.")
+	flag.StringVar(&testEnvToolsImage, "test-environment-tools-image", "",
+		"The image holding theos-env at /usr/local/bin/theos-env, such as the release's theos-agent image: a "+
+			"local TestEnvironment's lease pods copy it in. None: no local environment can be leased.")
+	flag.StringVar(&testEnvToolsURL, "test-environment-tools-url", "",
+		"Where a remote TestEnvironment's machines download theos-env, an https:// address in which ${os} "+
+			"becomes linux or darwin and ${arch} amd64 or arm64, with a SHA256SUMS next to it, such as the "+
+			"release's theos-env-${os}-${arch}. "+
+			"None: no remote environment can be leased.")
+	flag.StringVar(&testEnvRunnerURL, "test-environment-runner-url", "",
+		"Where a remote TestEnvironment's machine that runs a CI job downloads the CI runner, an https:// address "+
+			"in which ${arch} becomes amd64 or arm64, with a SHA256SUMS next to it, such as the CI runner the "+
+			"release attaches beside theos-env. None: no remote environment runs CI jobs.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -353,6 +392,18 @@ func main() {
 		setupLog.Error(err, "Failed to set up field indexes")
 		os.Exit(1)
 	}
+	// The receiver of the Git host's deliveries, nil when off; the Container,
+	// Crew, Task, Brief and GitProvider controllers each read its Events
+	// (docs/plans/done/git-events.md, decisions 5 to 8).
+	var gitEvents *controller.GitEventsReceiver
+	if gitEventsAddr != "0" && gitEventsAddr != "" {
+		gitEvents = &controller.GitEventsReceiver{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(),
+			Git: gitClient{}, BindAddress: gitEventsAddr}
+		if err := mgr.Add(gitEvents); err != nil {
+			setupLog.Error(err, "Failed to add the Git events receiver")
+			os.Exit(1)
+		}
+	}
 
 	if err := (&controller.ProjectReconciler{
 		Client:            mgr.GetClient(),
@@ -397,13 +448,20 @@ func main() {
 		model.DeployMemberGitLab:         gitlab.New(nil),
 		model.DeployMemberArgoCD:         argocd.New(argoClient),
 		model.DeployMemberCloudFormation: cloudformation.New(nil)}
+	// Each TestEnvironment member's provider, by the member's name.
+	testEnvProviders := ports.TestEnvironmentProviders{
+		model.TestEnvMemberLocal:      localenv.New(mgr.GetClient(), testEnvToolsImage),
+		model.TestEnvMemberAWS:        awsenv.New(nil, testEnvToolsURL).WithRunnerURL(testEnvRunnerURL),
+		model.TestEnvMemberDeviceFarm: awsenv.NewDeviceFarm(nil)}
 	if err := (&controller.ContainerReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		APIReader:       mgr.GetAPIReader(),
 		Git:             gitClient{},
 		ScaffoldOptions: scaffoldOptions,
+		ScaffoldSettle:  func() time.Duration { return scaffoldSettle },
 		Recorder:        mgr.GetEventRecorder("container"),
+		GitEvents:       gitEvents,
 		Deployers:       deployers,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "container")
@@ -445,6 +503,8 @@ func main() {
 		SourceNamespace:   podNamespace,
 		ModelProxyURL:     modelProxyURL,
 		Recorder:          mgr.GetEventRecorder("task"),
+		GitEvents:         gitEvents,
+		TestEnvironments:  testEnvProviders,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "task")
 		os.Exit(1)
@@ -457,6 +517,7 @@ func main() {
 		Git:       gitClient{},
 		Publish:   github.Client{},
 		Recorder:  mgr.GetEventRecorder("crew"),
+		GitEvents: gitEvents,
 		GoProxy:   goProxyURL(goProxy),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "crew")
@@ -469,6 +530,7 @@ func main() {
 		Git:             gitClient{},
 		Issues:          github.Client{},
 		Recorder:        mgr.GetEventRecorder("brief"),
+		GitEvents:       gitEvents,
 		SharedSecrets:   sharedSecrets,
 		SourceNamespace: podNamespace,
 		ModelProxyURL:   modelProxyURL,
@@ -495,13 +557,55 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "chat")
 		os.Exit(1)
 	}
+	if err := (&controller.ScorerReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		APIReader: mgr.GetAPIReader(),
+		Git:       gitClient{},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "scorer")
+		os.Exit(1)
+	}
+	if err := (&controller.BenchmarkReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		APIReader: mgr.GetAPIReader(),
+		Git:       gitClient{},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "benchmark")
+		os.Exit(1)
+	}
+	if err := (&controller.GitProviderReconciler{
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		APIReader:    mgr.GetAPIReader(),
+		Git:          gitClient{},
+		GitEventsURL: gitEventsURL,
+		GitEvents:    gitEvents,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "gitprovider")
+		os.Exit(1)
+	}
+	if err := (&controller.TestEnvironmentReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		APIReader:         mgr.GetAPIReader(),
+		Providers:         testEnvProviders,
+		Git:               gitClient{},
+		SharedPullSecrets: sharedPullSecrets,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "testenvironment")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	webhookOn := webhookCert != nil || webhookCertPath != ""
 	if webhookOn {
-		// Every theos.factory.io kind converts between its versions here: each
-		// v1alpha1 type is Convertible to its v1beta1 hub
-		// (docs/plans/done/api-versions.md, decision 3).
+		// A theos.factory.io kind served at more than one version converts
+		// here: each older version's type is Convertible to the storage
+		// version's, its hub (docs/plans/done/api-versions.md, decision 3).
+		// Every kind serves v1beta1 alone (#1963), so no CRD points here yet;
+		// the next version adds its types to the scheme above.
 		mgr.GetWebhookServer().Register("/convert",
 			conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
 	}
@@ -536,6 +640,12 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	// The factory's numbers on /metrics, computed from the cached Tasks at
+	// each scrape (#59).
+	if err := ctrlmetrics.Registry.Register(controller.FactoryMetrics{Reader: mgr.GetClient()}); err != nil {
+		setupLog.Error(err, "Failed to register the factory's metrics")
+		os.Exit(1)
+	}
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "Failed to set up health check")
 		os.Exit(1)
@@ -561,9 +671,9 @@ type gitClient struct {
 
 func (c gitClient) Provider(cfg ports.Config) (ports.Provider, error) { return c.hosts.Provider(cfg) }
 
-func (c gitClient) FetchTemplate(ctx context.Context, url, ref string,
+func (c gitClient) FetchTemplate(ctx context.Context, url, ref, dir string,
 	creds *ports.Credentials) (scaffold.Tree, error) {
-	return c.templates.FetchTemplate(ctx, url, ref, creds)
+	return c.templates.FetchTemplate(ctx, url, ref, dir, creds)
 }
 
 // goProxyURL is the Go proxy the --go-proxy flag names, "" for off.

@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 // Command theos-session registers the work in a devcontainer as a Session on its
@@ -11,6 +19,8 @@ permission. See the LICENSE file.
 //
 //	theos-session run    register a Session and keep it alive until stopped
 //	theos-session start  the same, in the background (for postStartCommand)
+//	theos-session adopt  read a repository you already have and propose its model
+//	theos-session report write the factory's numbers over a period, as a page and a JSON document
 package main
 
 import (
@@ -38,6 +48,10 @@ const usage = `theos-session registers the work in a devcontainer as a Session o
 Usage:
   theos-session run   [flags]   register a Session and keep it alive until stopped
   theos-session start [flags]   the same, in the background; never fails (for postStartCommand)
+  theos-session adopt [flags]   read a repository you already have and propose the model that adopts it
+                                (theos-session adopt -h; it talks to no cluster)
+  theos-session report [flags]  write the factory's numbers over a period as a page and a JSON document
+                                (theos-session report -h; it reads the cluster and changes nothing there)
 
 Flags:
 `
@@ -65,6 +79,14 @@ func main() {
 		os.Exit(2)
 	}
 	cmd := os.Args[1]
+	if cmd == "adopt" {
+		// It talks to no cluster, and has flags of its own.
+		os.Exit(adoptMain(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	if cmd == "report" {
+		// It registers no Session, and has flags of its own.
+		os.Exit(reportMain(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	// flag.CommandLine also carries --kubeconfig, registered by controller-runtime.
 	if err := flag.CommandLine.Parse(os.Args[2:]); err != nil {
 		os.Exit(2)

@@ -4,24 +4,28 @@ name: Tests
 # (make test-gitea). They read the Go code, the generated CRDs, the admission
 # policy, the templates (the fake Git host serves them) and the seed, so only
 # documentation, the UI and the Kind-only parts of the test environment are left out.
-# A pull request to main tests only the packages its change affects
-# (hack/test-packages.sh against the base branch); its run is the check
-# hack/lib/github.sh land waits for (.github/required-checks). A push to main
-# tests every package, with the same paths: while yolo mode merges a pull
-# request unchecked (hack/lib/github.sh yolo), this run is what shows a red
-# main (#1556). A pushed release tag and a manual run test every package too
-# (#1522).
+# Of the UI, the fixtures its tests share with Go's stay in: internal/model's
+# TestFactoryReportFixture reads ui/src/model/testdata/report, and a pull
+# request that changed a UI rule and that report must run it (#66). A later
+# pattern wins, so the path comes after '!ui/**'.
+# Every run is partial, against main (#127): its part of make check
+# (CHECK_STEPS), selected as make check selects on a device, digitalocean/gta
+# for the packages (hack/check.sh). A pull request is compared with its base
+# branch; its run is the check hack/lib/github.sh land waits for
+# (.github/required-checks). A push to main is compared with main's head
+# before the push, with the same paths: while yolo mode merges a pull request
+# unchecked (hack/lib/github.sh yolo), this run is what shows a red main
+# (#1556). A manual run is compared with main. Nothing here tests every
+# package: only a release does, Release's own first job (release.yml).
 on:
   push:
     branches: [main]
-    # The paths filter is not evaluated for a pushed tag (GitHub's rule), so
-    # every release tag runs.
-    tags: ['v[0-9]+.[0-9]+.[0-9]+']
     paths:
       - '**'
       - '!**/*.md'
       - '!docs/**'
       - '!ui/**'
+      - ui/src/model/testdata/**
       - '!config/ui/**'
       - '!config/samples/**'
       - '!test/e2e/**'
@@ -32,6 +36,12 @@ on:
       - hack/gitea-local.sh
       - hack/seed/seed.sh
       - hack/testenv.mk
+      - hack/check.sh
+      - hack/check-cache.sh
+      - hack/test-packages.sh
+      - hack/go-test.sh
+      - hack/lib/change.sh
+      - hack/gta/**
       - '!dev'
       - '!.vscode/**'
       - '!.github/**'
@@ -43,6 +53,7 @@ on:
       - '!**/*.md'
       - '!docs/**'
       - '!ui/**'
+      - ui/src/model/testdata/**
       - '!config/ui/**'
       - '!config/samples/**'
       - '!test/e2e/**'
@@ -53,49 +64,62 @@ on:
       - hack/gitea-local.sh
       - hack/seed/seed.sh
       - hack/testenv.mk
+      - hack/check.sh
+      - hack/check-cache.sh
+      - hack/test-packages.sh
+      - hack/go-test.sh
+      - hack/lib/change.sh
+      - hack/gta/**
       - '!dev'
       - '!.vscode/**'
       - '!.github/**'
       - .github/workflows/test.yml
   workflow_dispatch:
 
-# One group per ref: a pull request, main, or a tag. On a pull request and on
-# main a new push cancels the run in progress, so only the newest head counts;
-# the runners are the owner's devices, and a superseded head of main needs no
-# verdict of its own (#1556). A tag's ref is its own, so no release run is
-# ever dropped (hack/check-workflows.sh, docs/dev/testenv.md).
+# One group per pull request, where a new push cancels the run in progress, and
+# one per commit on main: a push to main is compared with the head before it,
+# so each push needs its own run, and a run that a newer push replaced would
+# leave its change untested until a release (#127; hack/check-workflows.sh,
+# docs/dev/testenv.md). The runs are partial, so each is small.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
+
+env:
+  # What a run is compared with: a pull request with its base branch, a push
+  # to main with main's head before the push, a manual run with main. When
+  # that commit is not in the clone (a forced push), the change can't be
+  # known and every step runs.
+  TEST_BASE: ${{ github.event_name == 'push' && github.event.before || format('origin/{0}', github.base_ref || 'main') }}
 
 jobs:
   test:
     permissions:
       contents: read
     name: Tests
-    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 60
     steps:
       - name: Clone the code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The whole history: hack/test-packages.sh diffs against the merge
-          # base with the base branch.
+          # The whole history: make check diffs against the merge base with
+          # TEST_BASE (hack/lib/change.sh).
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           # A self-hosted runner keeps its Go caches on a volume (make gh-runner).
           cache: ${{ runner.environment == 'github-hosted' }}
 
-      # A pull request tests the packages its change affects, like land's
-      # make check; a push to main, a release tag or a manual run tests every
-      # package (#1522, #1556).
+      # This job's part of make check, each step only when the change since
+      # TEST_BASE can have broken it, like land's make check: manifests and
+      # generate, fmt, vet, and the tests of the packages gta selects (#127).
       # COVER=1: the coverage each package prints stays in the log; a local
       # make test leaves it out (docs/dev/testenv.md).
       # TEST_TIMEOUT: the self-hosted runners share their device with the relay
@@ -108,12 +132,10 @@ jobs:
       - name: Running Tests
         env:
           THEOS_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
-          TEST_ALL: ${{ github.event_name != 'pull_request' && '1' || '' }}
-          TEST_BASE: origin/${{ github.base_ref || 'main' }}
           TEST_TIMEOUT: 60m
         run: |
           go mod tidy
-          COVER=1 make test
+          COVER=1 make check CHECK_STEPS="generate fmt vet test"
 
       - name: Slowest controller specs
         if: always()
@@ -131,16 +153,18 @@ jobs:
           node-version: lts/*
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: false
 
+      # Only when the change reaches the Gitea adapter, the seed or the local
+      # Gitea's script (hack/check.sh): the step says so when it skips them.
       - name: Gitea integration tests
-        run: make test-gitea
+        run: make check CHECK_STEPS=test-gitea
 
       - name: Keep the local Gitea's log
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gitea-local-log
           path: .gitea-local/log/

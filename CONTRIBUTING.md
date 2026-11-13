@@ -1,52 +1,111 @@
 # Contributing
 
-Work on theos runs through GitHub issues. Agents work them through the
-relay, and the maintainer looks after the project
-([GOVERNANCE.md](GOVERNANCE.md)). Everyone follows the
-[Code of Conduct](CODE_OF_CONDUCT.md).
+theos is built by people and by agents, under the same rules. This page takes
+you from an idea or a fork to a merged pull request. Everyone follows the
+[Code of Conduct](CODE_OF_CONDUCT.md); [GOVERNANCE.md](GOVERNANCE.md) says who
+decides what.
 
 ## Ask for something or report a problem
 
-File an issue with the *user report* template
-(`.github/ISSUE_TEMPLATE/user-report.yml`). Say what happened and what you
-expected. You don't need to say how to build it: designing is our job. The
-maintainer answers, asks you to explain only when what you want is unclear,
-and keeps you informed.
+[Open an issue](https://github.com/JairJosafath/theos/issues/new/choose) with
+the form that fits: a bug, a feature or improvement, or a catalog template.
+Say what happened and what you expected, or what you want and why. You don't
+need to say how to build it: designing is our job. You are asked to explain
+only when what you want is unclear, and the issue says what happens to it.
 
 Vulnerabilities go to [SECURITY.md](SECURITY.md), never to an issue.
 
-## Work on an issue
+Not sure whether theos does what you need?
+[docs/comparison.md](docs/comparison.md) says what it does and doesn't do yet.
 
-- [AGENTS.md](AGENTS.md) has the rules. [DEVELOPMENT.md](DEVELOPMENT.md)
-  sets up a device, and [docs/dev/testenv.md](docs/dev/testenv.md) covers
-  tests and the relay.
-- Take the issue with `hack/lib/github.sh take N`, which names you and the
-  branch (`<type>/<N>-<slug>`, from an up-to-date main).
-- Commits follow
-  [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) as
-  `type(N): summary`, with an `Agent: name` trailer.
-- Open one small pull request to main per issue, whose body says `Closes #N`
-  and shows the evidence. Merge it with a merge commit once `make check`
-  passes.
-- Report honestly: a failed check or a skipped step goes in the pull request,
-  with the output.
-- [ROADMAP.md](ROADMAP.md) says how releases go out, which outcomes the
-  milestones track, and what 1.0 means.
+## Change something
+
+1. **Start from an issue.** Pick an open one, or file yours first, so the
+   design is agreed before the code is written. A typo or a broken link
+   needs no issue.
+2. **Fork and set up.** `./dev setup --lite` downloads Go, Node and the other
+   tools into `.dev/` in the checkout and needs no Docker and no cluster
+   ([DEVELOPMENT.md](DEVELOPMENT.md)). Linux and WSL work today; macOS is
+   #54.
+3. **Read the rules.** [AGENTS.md](AGENTS.md) is short and holds for people
+   too: the layering, the files that are generated and never edited, and
+   that [docs/design.md](docs/design.md) is the spec. A change in behaviour
+   changes the design in the same pull request. Work that spans more than
+   one package starts with a short plan in `docs/plans/`.
+4. **Branch** from an up-to-date main: `<type>/<N>-<slug>`, such as
+   `fix/123-crew-stalls`.
+5. **Commit** as [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
+   with the issue: `fix(#123): a Crew with no reviewer says so`. The types
+   are `feat`, `fix`, `docs`, `test`, `chore`, `style` and `refactor`.
+   Before 1.0 a `feat` bumps the minor version and a `fix` the patch
+   ([ROADMAP.md](ROADMAP.md)).
+6. **Run `make check`** before you push. It regenerates the CRDs and the
+   DeepCopy code, formats, vets and lints, runs the unit and envtest suites,
+   validates the YAML and runs the UI's checks, each only when your change
+   can have broken it, and ends by saying what ran, what was skipped and
+   why. The workflows on your pull request run the same, partial against
+   main; only a release runs everything. No cluster is needed, and
+   nobody is asked to run one: `make e2e` is a maintainer's tool.
+7. **Open one small pull request to main per issue.** The template asks for
+   `Closes #N`, what changed, the evidence (the end of `make check`'s
+   output) and what you didn't test. Report honestly: a failed check or a
+   skipped step goes in the pull request, with the output.
+
+## What happens to a pull request
+
+- The checks in [.github/required-checks](.github/required-checks) run. A
+  pull request from a fork waits for a maintainer to let its first run
+  start.
+- [CODEOWNERS](.github/CODEOWNERS) asks the owner for a review. We aim for a first
+  answer within 5 business days: approved, changes asked for with the
+  reason, or declined with the reason.
+- A change to the fence (what agents can reach and change; CODEOWNERS lists
+  the paths) is the owner's to approve, and takes longer.
+- It merges with a merge commit once the checks pass and it is approved.
+  Fixes ship as a patch release soon after ([ROADMAP.md](ROADMAP.md),
+  *Releases are a train*).
+- Its branch is deleted once it is merged (#118):
+  [Branch hygiene](.github/workflows/branch-hygiene.yml) deletes the head
+  branch of a pull request merged to main, and every Monday every branch
+  whose tip main already contains. Run by hand it only lists what that
+  sweep would delete, unless you untick `dry_run`. It keeps the default
+  branch, a protected branch, a fork's branch, the head and the base of an
+  open pull request, a branch with a commit main doesn't have and a branch
+  pushed to while it ran. A branch that matches a glob in the repository
+  variable `KEEP_BRANCHES` (`release/* dev`, empty by default) is never
+  deleted: put a long-lived branch that isn't protected there, or one you
+  pushed back. Its log names each deleted branch with its commit and the
+  `git push origin <sha>:refs/heads/<branch>` that brings it back; a branch
+  pushed before its first commit is in main too, goes with the sweep, and
+  comes back with its next push.
 
 ## Tests and warnings
 
 - New behaviour comes with tests, and a fixed bug with the test that would
-  have caught it. Test each rule at the lowest tier that can see it
-  ([AGENTS.md](AGENTS.md), *Test the rules where they live*).
-- `make check` runs the tests, `go vet`, golangci-lint and the UI's checks. A
-  warning fails it, so fix the warning instead of silencing it; a
-  `//nolint` says why on the same line.
+  have caught it, naming the issue (`#123`) in the spec or table case. Test
+  each rule at the lowest tier that can see it ([AGENTS.md](AGENTS.md),
+  *Test the rules where they live*).
+- `make check` fails on a warning, so fix the warning instead of silencing
+  it; a `//nolint` says why on the same line.
 - [docs/openssf.md](docs/openssf.md) checks the project against the
   OpenSSF Best Practices passing criteria.
 
+## Agents
+
+An agent working an issue, in the factory's own Crew or in a session a person
+starts, follows this page and [AGENTS.md](AGENTS.md). Its commits say which
+agent wrote them, in a trailer. It never merges its own work on its own word,
+never touches a cluster, and never changes the paths CODEOWNERS marks as the
+fence.
+
 ## License
 
-theos is proprietary; all rights are reserved ([LICENSE](LICENSE)). By
-contributing, you agree that the owner may use, license and relicense your
-contribution under any terms, including an open-source license later. Every
-new Go file starts with the header in `hack/boilerplate.go.txt`.
+theos is licensed under the [Apache License 2.0](LICENSE). What you
+contribute is licensed the same way: inbound is outbound, as section 5 of
+the license says, and there is no contributor agreement to sign. Sign your
+commits off (`git commit -s`) to say you have the right to contribute them,
+the [Developer Certificate of Origin](https://developercertificate.org/).
+Every new Go file starts with the header in `hack/boilerplate.go.txt`, with
+the year for `YEAR`; `make check` fails on one without it. The files under
+`templates/` become other people's applications and carry the license their
+Project chooses.

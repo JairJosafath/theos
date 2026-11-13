@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package agentrunner
 
 import (
@@ -9,6 +25,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // repo is a clone the runner works in, driven through the git CLI.
@@ -42,21 +60,21 @@ func clone(ctx context.Context, job Job, dir string) (*repo, error) {
 	}
 	for _, kv := range [][2]string{
 		{"user.name", job.Username},
-		{"user.email", job.Username + "@agents.theos.factory.io"},
+		{"user.email", model.AgentEmail(job.Username)},
 	} {
 		if _, err := r.git(ctx, dir, "config", kv[0], kv[1]); err != nil {
 			return nil, err
 		}
 	}
-	if job.Role == RolePlan || job.Role == RoleTriage {
+	if job.Role == RolePlan || job.Role == RoleTriage || job.Role == RoleScore {
 		// Each run plans afresh from the brief on the base branch; a rerun of the
-		// round replaces the branch. A triage reads the base.
+		// round replaces the branch. A triage and a judge read the base.
 		if _, err := r.git(ctx, dir, "checkout", "--quiet", "-b", job.Branch, "origin/"+job.Base); err != nil {
 			return nil, err
 		}
-		if job.Role == RoleTriage {
-			// The triage pushes nothing: a push from the clone fails.
-			if _, err := r.git(ctx, dir, "remote", "set-url", "--push", "origin", "theos-triage-pushes-nothing"); err != nil {
+		if job.Role == RoleTriage || job.Role == RoleScore {
+			// A triage and a judge push nothing: a push from the clone fails.
+			if _, err := r.git(ctx, dir, "remote", "set-url", "--push", "origin", "theos-"+job.Role+"-pushes-nothing"); err != nil {
 				return nil, err
 			}
 		}

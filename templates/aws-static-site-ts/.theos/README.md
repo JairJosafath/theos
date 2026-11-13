@@ -79,7 +79,7 @@ CloudFormation offline. Version v1.0.0.
   `infra/site_stack.test.ts`, `infra/alarms.ts`, `infra/operations.ts`,
   `README.md`, `CHANGELOG.md`, `.gitignore`
 - **Package:** `name` is the Container, version `0.0.1`, private and
-  `UNLICENSED`, an ES module, `engines.node` `>=22`. Every package is a
+  licensed as the repository is scaffolded (`UNLICENSED` with no license, #73), an ES module, `engines.node` `>=22`. Every package is a
   `devDependency`: the page imports none yet, and Vite bundles what it
   will. Scripts: `dev`, `build`, `preview` (Vite), `typecheck`, `test`,
   `lint`, `format` and `synth`.

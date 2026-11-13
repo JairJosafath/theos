@@ -1,0 +1,27 @@
+# orders-cli's Crew with approval rules (docs/getting-started.md, "Start
+# small"): the Crew merges documentation on CI alone, reviews and merges
+# everything else itself, and holds what changes the dependencies, is
+# labelled risk/high or changes more than 400 lines until a person approves
+# the pull request. Apply it instead of crew.yaml.
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: orders-cli
+spec:
+  containerRef:
+    name: orders-cli
+  displayName: Orders CLI crew
+  description: Builds orders-cli issue by issue; a person approves what is risky.
+  implementer:
+    name: implementer
+  reviewer:
+    name: reviewer
+  approval:
+    - paths: ["go.mod", "go.sum"]
+      require: Person
+    - labels: ["risk/high"]
+      require: Person
+    - changedLinesOver: 400
+      require: Person
+    - paths: ["docs/", "*.md"]
+      require: None

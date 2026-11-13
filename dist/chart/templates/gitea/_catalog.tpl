@@ -72,6 +72,38 @@ spec:
 {{- end }}
 {{- end }}
 {{- end }}
+{{- if and .Values.gitea.enabled .Values.testEnvironments.browser.enabled }}
+{{- $b := .Values.testEnvironments.browser }}
+{{- range $project := include "theos.projectNames" . | fromJsonArray }}
+---
+# Project {{ $project }}'s browser (docs/plans/done/test-environments.md, T14): a
+# pod per lease, which a run of an issue labelled env/browser takes.
+apiVersion: theos.factory.io/v1beta1
+kind: TestEnvironment
+metadata:
+  name: browser
+  namespace: {{ $project }}
+  labels:
+    app.kubernetes.io/managed-by: theos-chart
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+spec:
+  description: {{ $b.description | quote }}
+  local:
+    image: {{ printf "%s:%s" $b.image.repository ($b.image.tag | default $.Chart.AppVersion) | quote }}
+    {{- with $b.resources }}
+    resources:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- with $b.limits }}
+  limits:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $b.ci }}
+  ci:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
 {{- if and .Values.gitea.enabled .Values.agents.enabled }}
 {{- $a := .Values.agents }}
 {{- $image := printf "%s:%s" $a.image.repository ($a.image.tag | default .Chart.AppVersion) }}
@@ -159,6 +191,8 @@ ci:
         size: {{ int $r.pool.size }}
 {{- if $r.goCache }}
         goCache: true
+{{- else if $r.freshGoCache }}
+        freshGoCache: true
 {{- end }}
 {{- with $r.resources }}
         resources:

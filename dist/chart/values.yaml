@@ -24,8 +24,8 @@ manager:
     pullPolicy: IfNotPresent
 
   ## Arguments (go run ./cmd --help lists them). These are the Kind test
-  ## environment's: four agent sandboxes at once, each workspace in memory up to
-  ## 3Gi, and a Go build cache the sandboxes share on the node.
+  ## rig's, one node's (#123): four agent sandboxes at once, each workspace
+  ## in memory up to 3Gi, and a Go build cache the sandboxes share on the node (#120).
   ##
   args:
     - --leader-elect
@@ -184,14 +184,41 @@ certManager:
 ## Webhook server configuration. The operator issues its own certificate
 ## into the Secret <release>-webhook-cert and patches the CA into the CRDs
 ## that convert by webhook; cert-manager is not needed. A CRD converts by
-## webhook only while its kind's versions differ in shape (none today); the
-## rest convert by the API server, and a kind that needs the webhook refuses
-## to render without it.
+## webhook only while its kind's versions differ in shape (none today: every
+## kind is served at v1beta1 alone); the rest convert by the API server, and a
+## kind that needs the webhook refuses to render without it.
 ##
 webhook:
   enabled: true
   # Webhook server port
   port: 9443
+
+## The receiver of the Git host's event deliveries (docs/plans/done/git-events.md,
+## decision 10): the operator listens on port (--git-events-bind-address) and
+## registers a hook on each GitProvider's organization that delivers to url
+## (--git-events-url), so it reconciles when a repository changes instead of
+## waiting for its poll. Each delivery is signed with the GitProvider's own
+## Secret, which the operator makes in the cluster; none is rendered here.
+## Off: no hook, no receiver, and the operator polls the host.
+##
+gitEvents:
+  enabled: true
+  # The receiver's port, on the manager container and on Service
+  # <release>-git-events.
+  port: 8082
+  ## The address the Git host delivers to. Empty: the Service's cluster name,
+  ## http://<release>-git-events.<release namespace>.svc:<port>, which the
+  ## chart's Gitea reaches. The chart's Gitea allows webhooks to this URL's
+  ## host and no other (GITEA__webhook__ALLOWED_HOST_LIST; gitea.config
+  ## overrides it). A Gitea of your own needs an address it reaches, and that
+  ## host in its own [webhook] ALLOWED_HOST_LIST.
+  ##
+  url: ""
+  ## Who may reach the port, as NetworkPolicy peers. Empty: the pods of
+  ## gitea.namespace. A Gitea of your own elsewhere needs its peer here, such
+  ## as an ipBlock.
+  ##
+  from: []
 
 ## Prometheus ServiceMonitor for metrics scraping.
 ## Requires prometheus-operator to be installed in the cluster.
@@ -206,6 +233,29 @@ prometheus:
   ## Custom ServiceMonitor annotations
   ##
   # annotations: {}
+
+  ## The factory's own numbers (docs/monitoring.md): the manager serves them
+  ## on /metrics as theos_* series whatever these say.
+  ##
+  ## dashboard: a ConfigMap with the Grafana dashboard "theos: how well the
+  ## factory works". Grafana's dashboard sidecar loads ConfigMaps with the
+  ## label below; set namespace when the sidecar watches one namespace only.
+  ## It needs no prometheus-operator, and no prometheus.enabled.
+  dashboard:
+    enabled: false
+    # namespace: monitoring
+    labels:
+      grafana_dashboard: "1"
+
+  ## rules: a PrometheusRule (prometheus-operator) with the factory's alerts:
+  ## a project's agents cost over dailyBudgetUSD in a day (0 leaves that
+  ## alert out), more Tasks failed than merged in a day, a spec or a change
+  ## a Crew's approval rules hold waits approvalWaits for a person, most runs
+  ## of an Agent report no cost.
+  rules:
+    enabled: false
+    dailyBudgetUSD: 50
+    approvalWaits: 1d
 
 ## The Go proxy the operator asks whether go get finds a released Go module
 ## whose path is outside theos.local/ (the operator's --go-proxy). off asks
@@ -245,8 +295,8 @@ clusterDNS:
 ## #1151): http://localhost:<ui.service.port>/... for the port-forward, or
 ## <ui.sessionBinaryScheme>://<ui.allowedHosts[0]>/... behind an Ingress
 ## (https unless set). The devcontainer's build must reach that address; a
-## port-forward's localhost is the laptop's, not a container's, so set an
-## address it reaches when it isn't. With ui.enabled
+## port-forward's localhost is the machine's that runs it, not a container's, so
+## set an address it reaches when it isn't. With ui.enabled
 ## false the default is the binaries attached to this chart's GitHub release.
 ## Either way a SHA256SUMS sits next to the binaries and the feature refuses a
 ## download that doesn't match it (#1175); a URL of your own needs one too.
@@ -528,7 +578,9 @@ gitea:
 ## and gitProviders') a pool per label whose pool.size is above 0, on that
 ## label's image and resources, so a project's checks have a runner on a
 ## fresh install (#1698). The `check` workflows of the Standards run on `go`
-## and `base`; `image` serves releases, which have no pool yet.
+## and `base`, gitea-release's release job on `go-release`, a pool label
+## only (enabled: false: no shared runner); `image` builds release images,
+## which have no pool yet.
 runners:
   ## The minimal toolchain (Node, bash, git, make).
   base:
@@ -559,6 +611,24 @@ runners:
     workSize: 2Gi
     tmpSize: 1Gi
     goCache: /var/cache/theos/go/ci
+    pool:
+      size: 1
+  ## The gitea-release Deployment's release job (runs-on: go-release), on the
+  ## go image, in the projects' pools only: no shared runner. A release
+  ## builds signed artifacts, so it must not link a build result a pull
+  ## request's job left in the project's Go cache: freshGoCache gives each
+  ## pod a cache of its own, an emptyDir seeded from the image's warm cache,
+  ## shared with nothing (#1141).
+  go-release:
+    enabled: false
+    image:
+      repository: ghcr.io/jairjosafath/theos/gitea-runner-go
+      tag: ""
+      pullPolicy: IfNotPresent
+    resources:
+      requests: {cpu: 500m, memory: 1Gi}
+      limits: {cpu: "4", memory: 6Gi}
+    freshGoCache: true
     pool:
       size: 1
   ## Rootless BuildKit, for release runs that build a Container's image:
@@ -612,28 +682,28 @@ catalog:
         supportedTypes: [service]
     - kind: Framework
       name: vscode-extension
-      ref: v1.1.0
+      ref: v1.1.1
       spec:
         displayName: VS Code extension (TypeScript)
         description: A VS Code extension in TypeScript, bundled with esbuild, with a pure module and its unit tests.
         supportedTypes: [extension]
     - kind: Framework
       name: react-vite
-      ref: v1.0.0
+      ref: v1.0.1
       spec:
         displayName: Web app with pages (React, Vite)
         description: A page in the browser in React and TypeScript, built with Vite into a static site, with a pure module and its unit tests.
         supportedTypes: [static-site]
     - kind: Framework
       name: node-cli
-      ref: v1.1.1
+      ref: v1.1.2
       spec:
         displayName: Command-line program (TypeScript, Node)
         description: A command-line program in TypeScript for Node, bundled with esbuild into one file and packed with npm pack, with flags parsed by util.parseArgs and unit tests.
         supportedTypes: [cli]
     - kind: Framework
       name: aws-lambda-ts
-      ref: v1.5.0
+      ref: v1.5.1
       spec:
         displayName: Serverless API on AWS (Lambda, TypeScript)
         description: "A serverless HTTP API on AWS: a TypeScript Lambda behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK v3, Powertools' logs, metrics and idempotency, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -644,7 +714,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-ec2-ts
-      ref: v1.4.0
+      ref: v1.4.1
       spec:
         displayName: Service on AWS EC2 (TypeScript)
         description: "An HTTP service on AWS infrastructure: a TypeScript Node server on EC2 instances in an Auto Scaling group behind an internal Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, rolling updates that stop on an unhealthy instance, and its CDK stack in infra/, which is its deployment, built for production (backups, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector in its own VPC."
@@ -655,7 +725,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-fargate-ts
-      ref: v2.2.0
+      ref: v2.2.1
       spec:
         displayName: Container service on AWS (ECS on Fargate, TypeScript)
         description: "An HTTP service on AWS: a TypeScript Node server in a container on ECS on Fargate behind an Application Load Balancer serving HTTPS, items in DynamoDB through the AWS SDK v3, alarms and a dashboard, deployments that roll back on them, and its CDK stack in infra/, which is its deployment, built for production (backups, OpenTelemetry tracing, a NAT gateway per zone, data kept) or development. Connects the service to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector in its own VPC."
@@ -666,7 +736,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-lambda-go
-      ref: v1.5.0
+      ref: v1.5.1
       spec:
         displayName: Serverless API on AWS (Lambda, Go)
         description: "A serverless HTTP API on AWS: a Go Lambda on provided.al2023, built with go build, behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK for Go v2, slog's JSON logs, alarms and a dashboard, and its CDK stack in TypeScript in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -677,7 +747,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-lambda-py
-      ref: v1.5.0
+      ref: v1.5.1
       spec:
         displayName: Serverless API on AWS (Lambda, Python)
         description: "A serverless HTTP API on AWS: a Python Lambda using boto3 behind an API Gateway HTTP API with IAM auth, items in DynamoDB, managed with uv, Powertools' logs, metrics and idempotency, alarms and a dashboard, and its TypeScript CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -688,7 +758,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-static-site-ts
-      ref: v1.0.0
+      ref: v1.0.1
       spec:
         displayName: Static site on AWS (S3 and CloudFront, TypeScript)
         description: "A static site on AWS: a TypeScript page built with Vite into a private S3 bucket behind a CloudFront distribution with origin access control, access logs, TLS 1.2 on its own domain, a web application firewall and the files versioned in production, alarms and a dashboard, and its CDK stack in infra/, which is its deployment."
@@ -699,7 +769,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-queue-ts
-      ref: v1.3.0
+      ref: v1.3.1
       spec:
         displayName: Queue consumer on AWS (SQS and Lambda, TypeScript)
         description: "A queue consumer on AWS: an SQS queue with a dead-letter queue, consumed in batches by a TypeScript Lambda that reports only the messages that failed, with Powertools' batch processing, logs, metrics and idempotency, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -710,7 +780,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-schedule-ts
-      ref: v1.3.0
+      ref: v1.3.1
       spec:
         displayName: Scheduled job on AWS (EventBridge Scheduler and Lambda, TypeScript)
         description: "A scheduled job on AWS: an EventBridge Scheduler schedule invoking a TypeScript Lambda, with a retry policy and a dead-letter queue and the schedule's role scoped to the one function, with Powertools' logs, metrics and idempotency, a record of each run in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -721,7 +791,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-event-ts
-      ref: v1.3.0
+      ref: v1.3.1
       spec:
         displayName: Event consumer on AWS (EventBridge and Lambda, TypeScript)
         description: "An event consumer on AWS: an EventBridge rule on the default event bus invoking a TypeScript Lambda, with a retry policy and a dead-letter queue on the rule's target and on the function, with Powertools' logs, metrics and idempotency keyed by the event's id, items in DynamoDB, alarms and a dashboard, and its CDK stack in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -739,14 +809,14 @@ catalog:
         supportedTypes: [cli, worker, job]
     - kind: Framework
       name: go-kubebuilder
-      ref: v1.2.0
+      ref: v1.3.0
       spec:
         displayName: Kubernetes operator (Go, kubebuilder)
         description: "An operator that extends Kubernetes: watches and reconciles cluster objects. What kubebuilder init writes, in Go, ready for kubebuilder create api."
         supportedTypes: [operator]
     - kind: Standard
       name: go-standard
-      ref: v1.4.0
+      ref: v1.6.0
       spec:
         displayName: Go quality standard
         description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
@@ -758,7 +828,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: go-operator-standard
-      ref: v1.4.0
+      ref: v1.6.0
       spec:
         displayName: Go operator quality standard
         description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.
@@ -776,10 +846,10 @@ catalog:
         supportedFrameworks: [go-kubebuilder]
         # The fence: the runner and prompt, the model credential, the sandbox and
         # its network, branch protection, the chart, the check and the agents' rules.
-        protectedPaths: [internal/agentrunner/, internal/modelproxy/, internal/model/fence.go, internal/controller/task_sandbox.go, internal/controller/project_agent_network.go, internal/controller/ci_runner_pod.go, internal/controller/protection.go, internal/adapters/gitea/gitea_agents.go, dist/chart/, Makefile, .golangci.yml, .custom-gcl.yml, .claude/, CLAUDE.md, GOVERNANCE.md, hack/]
+        protectedPaths: [internal/agentrunner/, internal/modelproxy/, internal/model/fence.go, internal/controller/task_sandbox.go, internal/controller/project_agent_network.go, internal/controller/ci_runner_pod.go, internal/controller/protection.go, internal/adapters/gitea/gitea_agents.go, internal/adapters/github/github_host_agents.go, internal/adapters/github/github_host_rules.go, dist/chart/, Makefile, .golangci.yml, .custom-gcl.yml, .claude/, CLAUDE.md, GOVERNANCE.md, hack/]
     - kind: Standard
       name: ts-standard
-      ref: v1.7.0
+      ref: v1.9.0
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
@@ -789,7 +859,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.22.0
+      ref: v1.24.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
@@ -800,7 +870,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard
-      ref: v1.7.0
+      ref: v1.9.0
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
@@ -824,7 +894,7 @@ catalog:
         supportedTypes: [service, worker, job, static-site]
     - kind: Deployment
       name: gitea-release
-      ref: v1.8.0
+      ref: v1.9.0
       spec:
         displayName: Gitea release
         description: Ships the release files (binaries, a .vsix, an npm tarball, a Python wheel and sdist, an operator's install.yaml, an AWS Framework's cloud assembly) on a Gitea release for each version tag.
@@ -974,6 +1044,54 @@ agents:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {cpu: "1", memory: 2Gi}
 
+## Test environments (docs/plans/done/test-environments.md): the tools a run leases
+## when the agent sandbox lacks them, such as a browser. A local
+## TestEnvironment's lease pods copy theos-env in from toolsImage, the
+## release's agent image, which holds it (the operator's
+## --test-environment-tools-image). A remote one's machines, such as an aws
+## member's, download it from toolsURL (the operator's
+## --test-environment-tools-url), an https:// address in which ${os}
+## becomes linux or darwin (an EC2 Mac's) and ${arch} amd64 or arm64, with a
+## SHA256SUMS next to it that the machine checks it against: by default the
+## binaries attached to this chart's GitHub release. A machine that can't
+## reach GitHub needs an address of your own; empty leases no remote
+## environment. A remote environment with a ci block leases a machine for
+## each CI job labelled env-<name> that waits, which downloads the CI runner
+## from runnerURL (the operator's --test-environment-runner-url) the same
+## way, by default the Gitea runner attached to the same release, checked
+## against the same SHA256SUMS; empty runs no CI job on a remote
+## environment. The machines reach the Git host at its GitProvider's
+## ci.giteaActions.publicURL, which the chart's in-cluster Gitea has none of,
+## so remote CI is off until you give one.
+##
+testEnvironments:
+  toolsImage:
+    repository: ghcr.io/jairjosafath/theos/agent-base
+    ## Defaults to Chart.appVersion
+    tag: ""
+  toolsURL: 'https://github.com/JairJosafath/theos/releases/download/v{{ .Chart.AppVersion }}/theos-env-${os}-${arch}'
+  runnerURL: 'https://github.com/JairJosafath/theos/releases/download/v{{ .Chart.AppVersion }}/gitea-runner-linux-${arch}'
+  ## The browser the seed makes in each of gitea.projects: a TestEnvironment
+  ## named browser on the release's env-browser image (Playwright's browsers
+  ## and xvfb-run), which a run of an issue labelled env/browser leases. A
+  ## local lease costs nothing until a run asks for one; ci.size 0 keeps no
+  ## CI pod until a project's workflow wants runs-on: env-browser.
+  browser:
+    enabled: true
+    image:
+      repository: ghcr.io/jairjosafath/theos/env-browser
+      ## Defaults to Chart.appVersion
+      tag: ""
+    description: "Chromium, Firefox and WebKit with Playwright; run headed programs (VS Code, Electron) under xvfb-run -a."
+    resources:
+      requests: {cpu: 500m, memory: 1Gi}
+      limits: {cpu: "2", memory: 4Gi}
+    limits:
+      maxLeases: 2
+      maxLeaseMinutes: 180
+    ci:
+      size: 0
+
 ## Chat (docs/design.md, Chat): people follow and steer each project from
 ## Matrix rooms. With enabled, Deployment <release>-chat, the operator image
 ## running /theos-chat with its own ServiceAccount: it reads theos's objects,
@@ -993,6 +1111,13 @@ chat:
   ## How often theos-chat reads each Chat's rooms and posts its news, besides
   ## whenever a Task, Container or Brief in its namespace changes.
   interval: 5s
+  ## The UI's address theos-chat's posts link each Task's and Container's
+  ## page under (--ui-url), http(s)://host[:port][/path]. Empty: the UI's own,
+  ## <ui.sessionBinaryScheme>://<ui.allowedHosts[0]> behind an Ingress, else
+  ## http://localhost:<ui.service.port>, the port-forward's, which opens only
+  ## where that port-forward runs; with ui.enabled false, no links. Set it to
+  ## an address people's phones reach.
+  uiURL: ""
   resources:
     requests: {cpu: 10m, memory: 64Mi}
     limits: {cpu: 500m, memory: 256Mi}

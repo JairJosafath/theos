@@ -1,0 +1,15 @@
+# make -k check on fb1ad99 (measure-and-improve step 6): every tier passed but validate-yaml, which refused
+# config/samples/webshop/benchmark.yaml: YAML read its all-zero base as an integer. Quoted, make validate-yaml passes.
+#   [1mconfig/samples/webshop/benchmark.yaml[0m...[31mERROR[0m
+#   Benchmark.theos.factory.io "implementer-models" is invalid: [spec.base: Invalid value: "integer": spec.base in body must be of type string: "integer", <nil>: Invalid value: null: some validation rules were not checked because the object was invalid; correct the existing errors to complete validation]
+#   Error: validation failed
+test-hack: all 43 shell tests passed
+      Tests  935 passed (935)
+ok  	github.com/JairJosafath/theos/api/v1alpha1	2.520s
+ok  	github.com/JairJosafath/theos/internal/agentrunner	50.712s
+ok  	github.com/JairJosafath/theos/internal/chatbot	0.470s
+ok  	github.com/JairJosafath/theos/internal/model	1.062s
+ok  	github.com/JairJosafath/theos/internal/modelproxy	(cached)
+ok  	github.com/JairJosafath/theos/test/chart	45.748s
+ok  	github.com/JairJosafath/theos/internal/controller	557.166s
+ok  	github.com/JairJosafath/theos/internal/controller	650.282s

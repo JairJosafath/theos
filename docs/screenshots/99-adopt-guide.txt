@@ -1,0 +1,31 @@
+#99, step 6 of docs/plans/adopt-existing.md: "Bring a repository you
+already have" is a page, docs/adopt.md
+=====================================================================
+
+2026-11-10. Test output is the evidence; no cluster was used.
+
+The order the page gives in its step 3 (the model first, the empty
+repository the operator makes, the push, the retry), which no spec held:
+
+$ go test -v ./internal/controller -run '^TestControllers$' -ginkgo.focus "Container adoption without the catalog" -ginkgo.v
+Container adoption without the catalog adopts a repository on its identity alone, naming no Framework, Standard, Compute or Deployment
+Container adoption without the catalog adopts with a Relationship to a DataStore, whose Connector it wires nothing of
+Container adoption without the catalog fails NothingToAdopt while the repository is empty, and adopts it once its history is pushed
+Container adoption without the catalog adopts with a Framework and no Standard on the identity alone
+Container adoption without the catalog still fails IdentityMismatch for a repository that doesn't name the Container
+Container adoption without the catalog keeps a Container that doesn't adopt to a bundleRef or a frameworkRef
+Container adoption without the catalog says the Container names no Framework when its spec.operations has nothing to read it
+Ran 7 of 767 Specs in 8.770 seconds
+SUCCESS! -- 7 Passed | 0 Failed | 0 Pending | 760 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	8.815s
+
+The page's links, and the rest of the docs':
+
+$ hack/check-doc-links.sh
+exit 0
+
+The page's other steps are held by the tests #95 and #96 brought
+(docs/screenshots/95-adopted-repository-checks.txt,
+96-theos-session-adopt.txt). What no test holds, the page says: an
+adoption on a real cluster against a real Git host, and whether a person's
+workflow runs on the factory's runner images.

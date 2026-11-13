@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -100,6 +108,72 @@ func TestBuildRunnerPodGoCache(t *testing.T) {
 	in.runner.GoCache, in.goCacheRoot = true, ""
 	if noRoot := buildRunnerPod(in); hasMount(noRoot.Spec.Containers[0], ciGoCacheMount) {
 		t.Error("with no --ci-go-cache the pod mounts a cache anyway")
+	}
+}
+
+// The pool pod lists the shared pull Secrets as the sandbox pods do, and none
+// without --shared-pull-secret: it runs as the namespace's default
+// ServiceAccount, which names none, so private images never pulled (#2032).
+func TestBuildRunnerPodSharedPullSecrets(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		secrets []string
+		want    []corev1.LocalObjectReference
+	}{
+		{name: "none without --shared-pull-secret"},
+		{name: "lists them (#2032)", secrets: []string{"ghcr", "quay"},
+			want: []corev1.LocalObjectReference{{Name: "ghcr"}, {Name: "quay"}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			in := runnerPodInput{namespace: "cel-lens", provider: "gitea", tokenSecret: ciRunnerTokenSecret("gitea"),
+				runner:      c4v1beta1.CIRunnerSpec{Label: "go", Image: "ghcr.io/jairjosafath/theos/gitea-runner-go:0.30.0"},
+				pullSecrets: tt.secrets}
+			if got := buildRunnerPod(in).Spec.ImagePullSecrets; len(got)+len(tt.want) > 0 && !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("imagePullSecrets %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// The go-release pod (#1141): a release builds signed artifacts, so its pod
+// mounts no node directory, the project's cache least of all; its Go cache is
+// an emptyDir of its own, seeded from the image's warm cache, which the jobs
+// reach through the same job.env as the go pods'.
+func TestBuildRunnerPodGoReleaseMountsNoNodeCache(t *testing.T) {
+	in := runnerPodInput{namespace: "shop", provider: "gitea", tokenSecret: ciRunnerTokenSecret("gitea"),
+		runner:      c4v1beta1.CIRunnerSpec{Label: "go-release", Image: "theos/gitea-runner-go:dev", FreshGoCache: true},
+		goCacheRoot: "/var/cache/theos/go/projects"}
+	pod := buildRunnerPod(in)
+	if pod.GenerateName != "ci-gitea-go-release-" || pod.Labels[LabelCILabel] != "go-release" {
+		t.Errorf("named %q, label %q: want ci-gitea-go-release- and go-release", pod.GenerateName, pod.Labels[LabelCILabel])
+	}
+	var cache *corev1.Volume
+	for i, v := range pod.Spec.Volumes {
+		if v.HostPath != nil {
+			t.Errorf("volume %s mounts %s from the node; a release pod shares nothing", v.Name, v.HostPath.Path)
+		}
+		if v.Name == goCacheVolume {
+			cache = &pod.Spec.Volumes[i]
+		}
+	}
+	if cache == nil || cache.EmptyDir == nil || cache.EmptyDir.Medium != corev1.StorageMediumDefault {
+		t.Fatalf("go-cache volume %+v, want an emptyDir on the node's disk", cache)
+	}
+	runner := pod.Spec.Containers[0]
+	if !hasMount(runner, ciGoCacheMount) || !hasMount(runner, "/etc/gitea-runner/job.env") {
+		t.Errorf("runner mounts %v, want the cache at %s and job.env", runner.VolumeMounts, ciGoCacheMount)
+	}
+	if len(pod.Spec.InitContainers) != 2 || pod.Spec.InitContainers[1].Name != goCacheVolume ||
+		!reflect.DeepEqual(pod.Spec.InitContainers[1].Command, []string{"c4-go-cache", ciGoCacheMount}) {
+		t.Errorf("init containers %v, want register and go-cache seeding %s from the image", pod.Spec.InitContainers,
+			ciGoCacheMount)
+	}
+
+	// Without --ci-go-cache the release pod still gets its fresh cache: it
+	// needs no node directory.
+	in.goCacheRoot = ""
+	if noRoot := buildRunnerPod(in); !hasMount(noRoot.Spec.Containers[0], ciGoCacheMount) {
+		t.Error("with no --ci-go-cache the release pod has no Go cache")
 	}
 }
 

@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -159,10 +175,21 @@ func parseSpecs(inThread bool, word, rest string) (ChatCommand, error) {
 
 func parseReviews(inThread bool, word, rest string) (ChatCommand, error) {
 	switch {
-	case word != chatWordApprove:
+	case word != chatWordApprove && word != string(ChatCommandChanges):
 		return ChatCommand{}, chatUnknown(word, ChatReviews)
 	case !inThread:
-		return ChatCommand{}, fmt.Errorf("%w: approve <version> in the deploy's thread", ErrChatInvalidCommand)
+		return ChatCommand{}, fmt.Errorf("%w: approve <version> in the deploy's thread; approve or changes: <text> "+
+			"in a waiting change's", ErrChatInvalidCommand)
+	case word == string(ChatCommandChanges) && (rest == "" || len(rest) > chatMaxAnswer):
+		return ChatCommand{}, fmt.Errorf("%w: changes: <text>, what to change in 1 to %d characters",
+			ErrChatInvalidCommand, chatMaxAnswer)
+	case word == string(ChatCommandChanges):
+		// Asked of a waiting change, as of a spec (#92).
+		return ChatCommand{Kind: ChatCommandChanges, Text: rest}, nil
+	case rest == "":
+		// A waiting change's approval names nothing; a deploy's names its
+		// version, and the thread's item says which this is (ChatWrite).
+		return ChatCommand{Kind: ChatCommandApproveSpec}, nil
 	case len(rest) > chatMaxVersion || !chatVersion.MatchString(rest):
 		return ChatCommand{}, fmt.Errorf("%w: approve <version>, the release the thread names, such as v1.2.0",
 			ErrChatInvalidCommand)
@@ -233,10 +260,11 @@ var chatHelp = map[ChatPurpose][]string{
 		"prompt <brief>: <text>: add a follow-up to a Brief",
 		"pause <brief>, resume <brief>: stop or restart a Brief's work",
 	},
-	ChatTriage:  {"In a question's thread, your words are your answer: they go to the issue."},
-	ChatSpecs:   {"In a spec's thread: approve, or changes: <text>."},
-	ChatReviews: {"In a deploy's thread: approve <version>."},
-	ChatAlerts:  {"In a failed Container's thread: retry."},
+	ChatTriage: {"In a question's thread, your words are your answer: they go to the issue."},
+	ChatSpecs:  {"In a spec's thread: approve, or changes: <text>."},
+	ChatReviews: {"In a deploy's thread: approve <version>.",
+		"In the thread of a change that waits for you: approve, or changes: <text>."},
+	ChatAlerts: {"In a failed Container's thread: retry."},
 }
 
 // ChatHelp is what help answers in room.

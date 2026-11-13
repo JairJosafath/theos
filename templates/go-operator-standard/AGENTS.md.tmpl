@@ -42,7 +42,7 @@ change here.
    (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`).
 7. `AGENTS.md`, `docs/agents/` and `.theos.yaml` never change. Other protected files
    change only through a Standard change (see your role guide), never in a normal pull
-   request. `.devcontainer/`, `.theos.yaml` and `.gitea/` belong to the platform.
+   request. `.devcontainer/`, `.theos.yaml` and `{{ .CI.Dir }}` belong to the platform.
    `Makefile`, `.golangci.yml`, `.editorconfig`, `AGENTS.md`, `docs/style/` and
    `docs/agents/` belong to the Standard.
 

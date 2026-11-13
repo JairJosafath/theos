@@ -1,0 +1,78 @@
+# #72, part 1: "Nothing to do" is a result (2026-11-10)
+#
+# The model: the note an agent writes, the Task's step, and the merged-changes
+# metric that leaves such a Task out.
+$ go test -v ./internal/model -run "TestNothingNote|TestNoChangeError|TestNextTaskStep|TestFactoryMetrics"
+--- PASS: TestNothingNote (0.00s)
+    --- PASS: TestNothingNote/absent (0.00s)
+    --- PASS: TestNothingNote/empty_summary (0.00s)
+    --- PASS: TestNothingNote/present (0.00s)
+    --- PASS: TestNothingNote/runs_to_the_end (0.00s)
+    --- PASS: TestNothingNote/markdown_emphasis (0.00s)
+    --- PASS: TestNothingNote/no_reason (0.00s)
+    --- PASS: TestNothingNote/a_full_stop_is_no_reason (0.00s)
+    --- PASS: TestNothingNote/without_the_colon_it_is_no_note (0.00s)
+    --- PASS: TestNothingNote/only_at_line_start (0.00s)
+    --- PASS: TestNothingNote/a_line_with_no_reason_is_passed_over_for_one_with (0.00s)
+--- PASS: TestNoChangeError (0.00s)
+--- PASS: TestFactoryMetrics (0.00s)
+--- PASS: TestFactoryMetricsApproved (0.00s)
+--- PASS: TestNextTaskStep (0.00s)
+    --- PASS: TestNextTaskStep/nothing_to_do_ends_the_Task_with_the_agent's_reason_(#72) (0.00s)
+    --- PASS: TestNextTaskStep/also_in_a_later_round,_after_a_round_that_failed_(#72) (0.00s)
+    --- PASS: TestNextTaskStep/a_blocked_note_outweighs_nothing_to_do_(#72) (0.00s)
+    --- PASS: TestNextTaskStep/a_spec_never_ends_on_nothing_to_do_(#72) (0.00s)
+    --- PASS: TestNextTaskStep/nor_a_Standard_change_(#72) (0.00s)
+--- PASS: TestNextTaskStepIssueUnseen (0.00s)
+--- PASS: TestNextTaskStepOverBudget (0.00s)
+--- PASS: TestNextTaskStepBaseRed (0.00s)
+--- PASS: TestNextTaskStepChecksWait (0.00s)
+--- PASS: TestNextTaskStepScope (0.00s)
+--- PASS: TestNextTaskStepPlan (0.00s)
+--- PASS: TestNextTaskStepQueuesOnlyForSlots (0.00s)
+--- PASS: TestNextTaskStepInterrupted (0.00s)
+--- PASS: TestNextTaskStepResumesFromACheckpoint (0.00s)
+--- PASS: TestNextTaskStepPausesRuns (0.00s)
+--- PASS: TestNextTaskStepAgentUnavailable (0.00s)
+--- PASS: TestNextTaskStepSuspendsAnUnavailableRun (0.00s)
+--- PASS: TestNextTaskStepConflicts (0.00s)
+--- PASS: TestNextTaskStepBehindMain (0.00s)
+--- PASS: TestNextTaskStepBlockedSlotWait (0.00s)
+--- PASS: TestNextTaskStepEmptiedStandardChange (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.026s
+
+# The runner: the result of a round with no change, the prompt, the stand-in.
+$ go test -v ./internal/agentrunner -run "TestRunImplementNothingToDo|TestRunImplementFailures"
+--- PASS: TestRunImplementNothingToDo (0.87s)
+    --- PASS: TestRunImplementNothingToDo/an_issue's_build_that_changed_nothing_says_why,_and_pushes_nothing (0.15s)
+    --- PASS: TestRunImplementNothingToDo/a_change_wins_over_the_line:_the_round_goes_on_as_any (0.23s)
+    --- PASS: TestRunImplementNothingToDo/a_round_that_says_only_that_it_did_nothing_still_fails (0.35s)
+    --- PASS: TestRunImplementNothingToDo/the_stand-in_finds_nothing_for_an_issue_that_asks (0.14s)
+--- PASS: TestRunImplementFailures (2.35s)
+    --- PASS: TestRunImplementFailures/no_change (0.34s)
+    --- PASS: TestRunImplementFailures/no_change_with_a_long_summary (0.34s)
+    --- PASS: TestRunImplementFailures/blocked (0.17s)
+    --- PASS: TestRunImplementFailures/protected_path (0.41s)
+    --- PASS: TestRunImplementFailures/path_the_Standard_protects (0.42s)
+    --- PASS: TestRunImplementFailures/check_keeps_failing (0.45s)
+    --- PASS: TestRunImplementFailures/clone_fails (0.21s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/agentrunner	3.224s
+
+# The operator: where the result is not taken, and which Tasks merged nothing.
+$ go test -v ./internal/controller -run TestWithoutNothing
+--- PASS: TestWithoutNothing (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/controller	0.027s
+
+# envtest: the issue closes with the agent's reason, no pull request and no
+# reviewer; and a release whose last issue needed no change goes out.
+$ go test -v ./internal/controller -run "^TestControllers$" -ginkgo.focus "nothing to do" -ginkgo.v
+Task with nothing to do closes its issue with the agent's reason and ends done, with no pull request and no reviewer
+Task with nothing to do lets its release go out at the newest merge: no release waits for a merge there never was
+Ran 2 of 779 Specs in 8.805 seconds
+SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 777 Skipped
+--- PASS: TestControllers (8.81s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/controller	8.848s

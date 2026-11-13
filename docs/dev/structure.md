@@ -7,17 +7,21 @@ dependencies may point.
 cmd/main.go                        Manager entry (registers controllers, Session feature flags)
 cmd/theos-session/                     Session client CLI, run in devcontainers
 cmd/theos-agent/                       Task runner, run in agent sandboxes
+cmd/theos-env/                     theos-env: runs an agent's commands in a leased test environment (run), and serves them there (serve); in the agent image
 cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
 cmd/theos-chat/                    theos-chat: posts in each Chat's Matrix rooms and runs its people's commands as them, a third binary in the operator image
-api/v1beta1/*_types.go             CRD schemas for all twenty-one kinds (+kubebuilder markers); the hub and storage version the operator imports
+api/v1beta1/*_types.go             CRD schemas for every kind (+kubebuilder markers), the one version served and stored; the operator imports it
 api/v1beta1/shared_types.go        Refs, Container types, condition names and labels
-api/v1alpha1/                      The deprecated older version, still served: the same shapes, converting to the hub (conversion.go); Chat, born after, is v1beta1 only
 api/*/zz_generated.*               Auto-generated (DO NOT EDIT)
 internal/controller/*              Reconcilers: read resources, call rules, write status
 internal/model/                    Pure business rules: choices, bundles, relationships, roll-up, staleness
 internal/scaffold/                 Pure rendering: layers, conflicts, devcontainer, identity, commit trailers
 internal/adapters/gitea/           The Gitea adapter: the Git host ports over REST (+ go-git through adapters/git)
+internal/adapters/packages/        What the host adapters share of publishing a release's packages: npm tarballs, wheels and sdists read and sent to an npm registry and a Python index
 internal/adapters/matrix/          The Matrix adapter: the ChatHost port over the client-server API; matrixtest/ is its fake homeserver
+internal/adapters/github/          The GitHub adapter: the release copy, a Brief's requests, a GitHub App's tokens, and the Git host ports as docs/plans/github-host.md adds them (GitHost, Issues, AgentAccess, CI, Events and the Registry, so far); githubtest/ is its fake GitHub, REST and Git over HTTP
+internal/adapters/localenv/        The local TestEnvironment provider: a fenced pod per lease, with client-go
+internal/adapters/awsenv/          The aws TestEnvironment provider: a fenced EC2 machine per lease (a Mac's on a kept host; one that runs a CI job in ci.go), and the deviceFarm one's test runs, with the AWS SDK
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
 internal/chatbot/                  theos-chat's logic: news to threads, posts and the updates digest; commands sent impersonating the person; its state ConfigMap
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
@@ -46,10 +50,15 @@ hack/session/                      The Session client image and the test Session
 hack/toolchain-base/               The minimal toolchain (Node, uv, bash, git, make) for the e2e hello-world Container and Python
 hack/toolchain-go/                 The Go, Node and uv toolchain, with a warm Go build cache and the kubebuilder operator tools, for Go, TypeScript and Python Containers
 hack/runner/, hack/agent/          The CI runner and agent images, built on the toolchain
+hack/env-browser/                  The browser test environment's image: Playwright's, with a virtual display
+hack/env-android/                  The android test environment's image: the Android SDK, an emulator and its AVD, JDK 17, and android-emulator, which boots it
+hack/env-godot/                    The godot test environment's image: the Godot engine, its renderers' libraries and a virtual display
 hack/gh-runner/                    Self-hosted GitHub Actions runners for this repository (make gh-runner RUNNERS=N)
 hack/render/                       Renders templates locally, the way the operator scaffolds
+hack/gta/                          The Go packages a change affects, selected by digitalocean/gta: what make test and make check test, vet and lint
+hack/check.sh                      make check's steps, each run only when the change can have broken it, and the block that says what ran
 test/chart/                        The chart against envtest: its upgrade-only hooks (make test)
-test/compat/                       The v1alpha1 compatibility guard and its baseline CRDs (make test)
+test/compat/                       The compatibility guard: each served version against the last release's CRDs in baseline/ (make test)
 test/crds/                         Pinned third-party CRDs for envtest (Agent Sandbox, Argo CD)
 test/e2e/                          End-to-end tests against the Kind cluster (make e2e)
 test/e2e/testdata/apps/            The e2e fixture project: one hello-world Container, Agents and Tasks

@@ -7,6 +7,12 @@ memory, disk and CPU numbers behind the relay's and the heavy jobs' limits.
 How to test, deploy and run the relay is in [testenv.md](testenv.md); how to
 set a device up is in [DEVELOPMENT.md](../../DEVELOPMENT.md).
 
+The relay is retired (GOVERNANCE.md) and its scripts, `hack/relay.sh` and
+`hack/relay-watch.sh`, are gone with their tests: what this file says about
+the relay's workers, its admission by memory and disk, and its watch is
+history, kept for the numbers. The heavy-job slots, the guards and the
+cluster leases are still in use.
+
 ## Caches every checkout shares
 
 Every checkout on a device shares one Go build cache. `make test`, `vet` and
@@ -162,51 +168,25 @@ hold none.
 and `down` while another checkout holds the cluster the command targets
 (`KIND_CLUSTER=` in the command, else the checkout's lease, else
 `theos`). The memory gates below stay as they are.
-`hack/lib/github_test.sh`, `hack/relay_test.sh` and `hack/heavy-guard_test.sh`
-test the leases.
+`hack/lib/github_test.sh` and `hack/heavy-guard_test.sh` test the leases.
 
 Raise `THEOS_CLUSTERS` only after measuring: each idle cluster takes about 1.1
 GiB, and up to 4.5 GiB with a Crew running.
 
-## The relay watch as a service
+## Removing an installed relay watch
 
-Install the watch once on each device that runs the relay overnight, from the
-main checkout: `hack/relay-watch.sh --install --workers N`. It writes the
-systemd user unit `theos-relay-watch.service` (from
-`hack/relay-watch.service`, with this checkout, N and your `PATH`), enables and
-starts it, and turns on `loginctl enable-linger`, so the watch starts at boot
-without a login. A crash, an OOM kill or `kill <pid>` brings the watch back
-within a minute; a watch you started by hand keeps running, and the unit's
-watch waits for its lock and takes over when it ends. On a device without
-systemd, `--install` adds two crontab lines instead, at boot and every 5
-minutes, which start the watch unless one runs. `touch .relay/stop` still stops
-it for good: the unit doesn't restart a watch that exits for the stop file, and
-cron doesn't start one while the file is there. `hack/relay-watch.sh` starts
-the unit again (with the unit's worker count); on a cron install, `rm -f
-.relay/stop` alone, and cron's next tick starts the watch under its own
-login ([testenv.md](testenv.md), "The restore depends on the install").
-`--uninstall` removes the unit or the crontab lines. Install from the main checkout, not a worktree; the unit and
-cron get your `PATH` and `RELAY_*`, `WATCH_*`, `HEAVY_JOBS` and `THEOS_CLUSTER*`
-settings, and the GitHub token from the git credential helper, not `GH_TOKEN`.
-They also get the Claude Code login of the shell you install from
-(`CLAUDE_CONFIG_DIR`, or `~/.claude` when unset), set after `./dev run`, which
-would otherwise point every session at `.dev/claude` (#1435); `--install`
-refuses a login without `.credentials.json`, so install from a logged-in
-shell: `CLAUDE_CONFIG_DIR=$HOME/.claude hack/relay-watch.sh --install` uses
-the VS Code login. `systemctl --user status theos-relay-watch` shows the
-unit.
+`hack/relay-watch.sh --uninstall` went with the script. A device that still
+has the watch installed runs a script that is no longer there; remove it by
+hand. With systemd:
 
-On the device with the Kind cluster, the systemd user manager must have the
-`docker` group: the watch, its workers and their sessions inherit the
-manager's groups, and a process keeps the groups it started with, so a manager
-that started before you joined `docker` can't reach Docker however
-`/etc/group` reads now. Check it with
-`grep Groups /proc/$(pgrep -u "$USER" -x systemd)/status`: the list must hold
-the gid of `docker` (`getent group docker`). If it doesn't, restart the user
-manager: log out and in again, or on WSL run `wsl --shutdown` from Windows.
-`--install` warns when the manager lacks one of your groups, and the watch logs
-it when it starts. Until then its sessions can't reach Docker, so
-`make test-gitea` fails in them; they never need a cluster.
+```bash
+systemctl --user disable --now theos-relay-watch
+rm -f ~/.config/systemd/user/theos-relay-watch.service
+systemctl --user daemon-reload
+```
+
+Without systemd, delete the two `hack/relay-watch.sh` lines from `crontab -e`.
+`.relay/` in a checkout can go too.
 
 ## Memory on the cluster device
 
@@ -252,7 +232,9 @@ queue:
   the turn across every device, so the other waiters can't starve. The check
   `land` runs before it queues for the turn waits its turn like any other. A
   job that ends, fails or is killed frees its slot within a second; its
-  sub-makes don't take another. `hack/heavy-slot.sh status` shows the slots
+  sub-makes don't take another. A plain `make check` takes none when the tree
+  already passed on this device, or when its change selects no step, as a
+  docs-only change does (`hack/check.sh --idle`, #127). `hack/heavy-slot.sh status` shows the slots
   and the waiters, the one going first marked `goes first` and the slot it
   took `went first`.
 - The controller suite runs in `THEOS_TEST_PROCS` processes (default 2), each
@@ -294,9 +276,19 @@ queue:
   cached pass counts as a pass. A failure records nothing; `FORCE=1 make
   check` always runs the whole check and records it. Tool versions,
   `go.mod`/`go.sum` and the Makefile are in the tree, so bumping them misses.
-  On a miss, Go's test cache (above) still answers each unchanged package,
+  On a miss, `make check` runs only the steps the change since `origin/main`
+  selects (`hack/check.sh`, #127; [testenv.md](testenv.md#testing--development)
+  says what selects each), so a docs-only change runs nothing and takes no
+  heavy-job slot, on a device that never ran `make check` too. Every check is
+  partial like that, on the branch `main` and in the workflows too; only a
+  release runs every step (`make check FORCE=1`, the *Release* workflow's
+  first job). A run of a part of the steps (`CHECK_STEPS`, what a workflow's
+  job runs) records no pass of the tree. Go's test
+  cache (above) still answers each unchanged package it does test,
   and three tiers answer from their own cache (#1285): `validate-yaml`,
-  `test-hack` and `ui-test` each run through `hack/check-cache.sh run TIER`,
+  `test-hack` and `ui-test`, when a file among their inputs changed since the
+  merge base (`hack/check-cache.sh changed TIER BASE`), each run through
+  `hack/check-cache.sh run TIER`,
   which skips a tier whose key passed on this device, in any checkout, and
   says so in one line (`ui-test: cached (ui/ unchanged since <time>, passed
   in <checkout>); FORCE=1 to rerun`). A key is the hash of `git ls-files -s`
@@ -304,7 +296,8 @@ queue:
   `generate` and `fmt`, and the versions of the tools the Makefile doesn't
   pin; every key covers the Makefile, `hack/*.mk` and `hack/check-cache.sh`,
   whose pins and rules the tier runs by:
-  - `ui-test`: `ui/`, `node --version` and `npm --version`.
+  - `ui-test`: `ui/`, `config/crd/bases/` (a test of the UI reads the
+    CRDs), `node --version` and `npm --version`.
   - `test-hack`: everything but `api/`, `cmd/`, `internal/`, `templates/`,
     `test/`, `features/`, `docs/` and `ui/`, since the shell tests read the
     Makefile, the chart, `config/`, `.claude/` and `.github/` as well as
@@ -318,7 +311,9 @@ queue:
     `go run ./hack/render` and `./hack/runner-fence` build (`go list -deps`),
     and `go version`.
 
-  `lint` keeps golangci-lint's own cache. Tier passes live in
+  The same lists of files select a tier and key its cache. `lint` keeps
+  golangci-lint's own cache, and reads only the packages the change affects.
+  Tier passes live in
   `.dev/cache/theos/checks/tiers/<tier>-<key>`; a failing tier records
   nothing, `FORCE=1` runs every tier, and a dry run (`make -n check`)
   records nothing. So a `hack/`-only change runs the shell tests and skips
@@ -339,8 +334,7 @@ queue:
   tells the session a `make` job will wait, and that the wait is not a hang.
   Other commands cost one `bash` and nothing more.
 
-`hack/relay_test.sh` tests the defaults, the cap and the wait against a faked
-`/proc/meminfo` (`RELAY_MEMINFO`), `hack/heavy-guard_test.sh` the hook,
+`hack/heavy-guard_test.sh` tests the hook,
 with `ps` and `docker` faked too, and `hack/heavy-slot_test.sh` the slots: two
 jobs running while a third waits, a slot freed by a job that ends or is killed,
 the oldest waiter taking the next free slot and a dead waiter skipped, a
@@ -352,7 +346,9 @@ check cache: a pass, then a hit on the same tree from another worktree, a miss
 on one changed byte (tracked or untracked), and `FORCE=1` queueing again; and
 the tiers: which keys a change under `ui/`, `hack/`, `config/`, `docs/` or a
 package `hack/render` builds moves, a hit that doesn't run the tier, `FORCE=1`
-and a failure that do, and the Makefile's cached and dry-run paths.
+and a failure that do, which of a tier's inputs differ from a commit, and the
+Makefile's cached path. `hack/check_test.sh` tests the steps `make check`
+selects, the block it ends with, its dry run and the check that takes no slot.
 
 ## Disk space on WSL
 
@@ -406,10 +402,7 @@ the disk). So what the disks hold has to stay under the peak they already
 reached: the release images are deleted once pushed (#1636), and the floor is
 15 GB, down from 30 once C: no longer got back there (#1635).
 
-`hack/relay_test.sh` tests the guard with a stub `df`: no session below the
-minimum on any watched path and the path in the log, sessions above it, the
-settings, one line an hour; and the `.vhdx` lookup with stub `reg.exe` and
-`wslpath`, the `/mnt/c` fallback included.
+The relay's disk guard went with `hack/relay.sh`.
 
 ## CPU on the cluster device
 
@@ -530,14 +523,17 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   main held its concurrency group, so every later run on main waited behind
   it and nothing said whether main was green (#1655); the check fails a job
   without one.
-- **Lint, Tests, UI and Vulnerabilities run on pull requests; Tests tests
+- **Lint, Tests, UI, Vulnerabilities and Secrets run on pull requests; Tests tests
   the newest head of main.**
   *Lint* (with its `test-hack` job, `make test-hack`), *Tests* (the unit and
   envtest suites and `make test-gitea`), *UI* and *Vulnerabilities* run on
   pushes to main and on pull requests to main, with the same path filters, so
   a pull request's own runs answer before `hack/lib/github.sh land` (#1380).
+  *Secrets* (`make secrets-scan`, gitleaks over every ref's whole history
+  from a full clone) runs on every pull request and push to main, with no
+  path filter (#52).
   Each job a pull request runs has a distinct `name:` (*Tests*, *Lint*,
-  *Shell tests*, *UI*, *Vulnerabilities*), listed in `.github/required-checks`
+  *Shell tests*, *UI*, *Vulnerabilities*, *Secrets*), listed in `.github/required-checks`
   as `<workflow file> <job name>`: the checks `land` waits for and a main
   ruleset can require. A pull request whose changes miss a workflow's paths
   gets no run of it. On a pull request, the `concurrency` group is one per
@@ -575,6 +571,12 @@ hack/gh-runner/gh-runner.sh install         # the keeper: starts the ones that a
   vulnerability the code reaches, in a module or in the standard library of
   `go.mod`'s toolchain; two failed runs on main file "main is red:
   Vulnerabilities", which a bump of the toolchain or the module fixes.
+- **CodeQL scans the code.** *CodeQL* (`codeql.yml`) runs GitHub's code
+  scanning in two jobs, the Go code and the UI's TypeScript, on pushes to
+  main and pull requests to main that change either, and every Monday at
+  03:41 UTC, so a new query finds what is already there (#51). Its alerts
+  are under the repository's *Security* tab. It needs the network for
+  CodeQL's bundle, so it stays out of `make check`.
 - Jobs use the device's Docker through its socket, on the host's network, so
   `docker build` and Kind work and a Kind cluster a job makes answers on
   127.0.0.1. The socket is root on the device, which is acceptable for a

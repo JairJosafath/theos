@@ -7,20 +7,21 @@
 # labels to receive the Secrets the operator shares; and Secret gitea-runner,
 # the templates organization's runner registration token, which the shared
 # runners register with (runners.yaml). Last, it applies ConfigMap theos-catalog's
-# GitProviders, catalog and Agents in place. A hook after every install and
+# GitProviders, catalog and Agents in place. It runs on every install and
 # upgrade: it changes nothing already in place but the fields the chart sets,
-# and a new chart version brings new template tags. A failed Job stays for its
-# log until the next upgrade replaces it.
+# and a new chart version brings new template tags. Not a hook: the runners
+# wait for its Secret, and `helm install --wait` waits for the release's
+# resources before it runs a post-install hook, so it would wait forever
+# (#2030). A release resource instead, named for the revision because a Job's
+# template cannot change: each upgrade makes a new Job and helm deletes the
+# last one. A failed Job stays for its log until the next upgrade replaces it.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: seed
+  name: seed-{{ .Release.Revision }}
   namespace: {{ $ns }}
   labels:
     {{- include "theos.giteaLabels" (dict "name" "seed" "context" .) | nindent 4 }}
-  annotations:
-    helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 1
   activeDeadlineSeconds: {{ add $seed.waitSeconds 300 }}
@@ -182,7 +183,7 @@ rules:
     resources: [projects]
     verbs: [get, create]
   - apiGroups: [theos.factory.io]
-    resources: [gitproviders, agents, frameworks, standards, computes, deployments, connectors, bundles, domains]
+    resources: [gitproviders, agents, frameworks, standards, computes, deployments, connectors, bundles, domains, testenvironments]
     verbs: [get, list, create, patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

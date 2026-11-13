@@ -67,7 +67,9 @@ data:
 # test environment). Its init container registers with the token in Secret
 # gitea-runner, the templates organization's, which the seed makes once Gitea
 # answers: on a first install the pod waits in CreateContainerConfigError until
-# then, and the kubelet retries. The runner container, where jobs run, never
+# then, and the kubelet retries. So its progress deadline outlasts the seed's
+# (seed.yaml), or `helm install --wait` calls it failed while the seed still
+# runs (#2030). The runner container, where jobs run, never
 # gets the token. Registered to that organization, the runner serves the
 # templates' checks only; a project's run on the operator's per-project pool
 # of single-job runners (docs/design.md, "CI").
@@ -80,6 +82,7 @@ metadata:
     {{- include "theos.giteaLabels" (dict "name" $name "context" $) | nindent 4 }}
 spec:
   replicas: {{ hasKey $r "replicas" | ternary $r.replicas 1 }}
+  progressDeadlineSeconds: {{ add $.Values.gitea.seed.waitSeconds 600 }}
   strategy:
     type: Recreate
   selector:

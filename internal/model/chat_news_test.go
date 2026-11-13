@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -161,6 +177,77 @@ func TestChatTaskNewsSpec(t *testing.T) {
 	}
 }
 
+// #92: a change its Crew's approval rules hold for a person gets a thread in
+// reviews when it waits, which follows the Task until it ends; a change that
+// never waits gets none.
+func TestChatTaskNewsChange(t *testing.T) {
+	change := ChatTaskView{Name: "api-9", Kind: "Implement", Phase: "Reviewing", Round: 1, Issue: 9,
+		IssueTitle: "Add the invoices table", PullRequest: 12, PullURL: "http://git/api/pulls/12", Commit: "def5678abc",
+		ApprovalReason: "approval rule 1 (paths migrations/) asks for a person for migrations/001.sql"}
+	n := newsByEvent(ChatTaskNews(change))[ChatEventChangeWaiting]
+	if n.Key != "ChangeWaiting.api-9" || n.Open || n.Done {
+		t.Errorf("in review, no thread opens yet: %+v", n)
+	}
+	if step, err := ChatNextPost(nil, n, false); err != nil || step.New {
+		t.Errorf("ChatNextPost() = %+v, %v: a change that doesn't wait starts no thread", step, err)
+	}
+
+	change.Phase = "AwaitingApproval"
+	n = newsByEvent(ChatTaskNews(change))[ChatEventChangeWaiting]
+	if !n.Open || n.Done || n.Item != (ChatItem{Event: ChatEventChangeWaiting, Name: "api-9", Commit: "def5678abc"}) {
+		t.Errorf("waiting: %+v", n)
+	}
+	if route, err := ChatRouteFor(n.Event); err != nil || route != (ChatRoute{Room: ChatReviews, Thread: true}) {
+		t.Errorf("ChatRouteFor() = %+v, %v, want a thread in reviews", route, err)
+	}
+	for _, want := range []string{"Change for issue #9: Add the invoices table",
+		"waits for your approval of commit def5678 (approval rule 1 (paths migrations/) asks for a person for " +
+			"migrations/001.sql): say approve in this thread, or changes: <what to change>.",
+		"Pull request #12: http://git/api/pulls/12"} {
+		if text := n.Post.Text(); !strings.Contains(text, want) {
+			t.Errorf("the waiting text lacks %q:\n%s", want, text)
+		}
+	}
+
+	change.Phase, change.Round = "Implementing", 2
+	n = newsByEvent(ChatTaskNews(change))[ChatEventChangeWaiting]
+	if n.Open || n.Done || n.Item.Commit != "" || n.Post.Status != "Round 2: Implementing." {
+		t.Errorf("a new round after a person's changes: %+v", n)
+	}
+	change.Phase, change.ApprovedBy, change.ApprovedInChat = "Merged", "ada@example.com", true
+	if n := newsByEvent(ChatTaskNews(change))[ChatEventChangeWaiting]; !n.Done ||
+		n.Post.Status != "Merged: ada@example.com approved it in chat." {
+		t.Errorf("merged: %+v", n)
+	}
+	change.Phase, change.Message = "Failed", "A person closed the pull request"
+	if n := newsByEvent(ChatTaskNews(change))[ChatEventChangeWaiting]; !n.Done ||
+		n.Post.Status != "Failed: A person closed the pull request" {
+		t.Errorf("failed: %+v", n)
+	}
+
+	for name, other := range map[string]ChatTaskView{
+		"a spec":                      {Name: "api-4-spec", Kind: "Spec", Phase: "AwaitingApproval", PullRequest: 3},
+		"a Task with no pull request": {Name: "api-9", Kind: "Implement", Phase: "Implementing"},
+		"a triage":                    {Name: "api-9-triage", Kind: "Triage", Phase: "Merged", PullRequest: 3},
+	} {
+		if _, ok := newsByEvent(ChatTaskNews(other))[ChatEventChangeWaiting]; ok {
+			t.Errorf("%s has a change's thread", name)
+		}
+	}
+	for item, want := range map[ChatItem]string{
+		{Event: ChatEventChangeWaiting, Name: "api-9", Commit: "def5678abc"}:    "Done as ada: approved the change at def5678; the operator merges it.",
+		{Event: ChatEventSpecWaiting, Name: "api-4-spec", Commit: "def5678abc"}: "Done as ada: approved the spec at def5678; the operator merges it.",
+	} {
+		if got := ChatDone(ChatCommand{Kind: ChatCommandApproveSpec}, item, "ada", ""); got != want {
+			t.Errorf("ChatDone() = %q, want %q", got, want)
+		}
+	}
+	if got := ChatDone(ChatCommand{Kind: ChatCommandChanges}, ChatItem{Event: ChatEventChangeWaiting, Commit: "def5678abc"},
+		"ada", ""); got != "Done as ada: asked for changes at def5678; the next round takes them." {
+		t.Errorf("ChatDone(changes) = %q", got)
+	}
+}
+
 // A Triage Task: a parked issue's question is a thread until answered; any
 // other decision a post.
 func TestChatTaskNewsTriage(t *testing.T) {
@@ -189,6 +276,15 @@ func TestChatTaskNewsTriage(t *testing.T) {
 	failed := ChatTaskView{Name: "api-6", Kind: "Implement", Phase: "Failed", Issue: 6, Message: "Out of rounds"}
 	if n := newsByEvent(ChatTaskNews(failed))[ChatEventTaskFailed]; n.Post.Status != "Out of rounds" {
 		t.Errorf("failed: %+v", n)
+	}
+	judge := ChatTaskView{Name: "tests-api-6", Kind: "Score", Phase: "Failed", Message: "no verdicts"}
+	if news := ChatTaskNews(judge); len(news) != 0 {
+		t.Errorf("a Score Task's failure is news: %+v", news)
+	}
+	run := ChatTaskView{Name: "cmp-fast-g1-r1", Kind: "Implement", Phase: "Failed", Benchmark: true,
+		ReviewVerdict: "changes"}
+	if news := ChatTaskNews(run); len(news) != 0 {
+		t.Errorf("a Benchmark's run is news: %+v", news)
 	}
 }
 

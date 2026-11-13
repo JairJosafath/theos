@@ -1,9 +1,17 @@
 /*
-Copyright 2026 JairJosafath. All rights reserved.
+Copyright 2026 The theos Authors.
 
-This file is part of theos, which is proprietary. No license is granted
-to use, copy, modify or distribute it without the copyright holder's written
-permission. See the LICENSE file.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package controller
@@ -12,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,7 +40,22 @@ import (
 // from the Gitea and Git adapters; tests use a fake.
 type GitClient interface {
 	Provider(cfg ports.Config) (ports.Provider, error)
-	FetchTemplate(ctx context.Context, url, ref string, creds *ports.Credentials) (scaffold.Tree, error)
+	// FetchTemplate reads the template at url and ref; a non-empty dir reads
+	// only that directory of the repository (template.path, #35).
+	FetchTemplate(ctx context.Context, url, ref, dir string, creds *ports.Credentials) (scaffold.Tree, error)
+}
+
+// templateFailure is the permanent reason a template fetch failed with, an
+// unpinned ref or a path the ref doesn't have; false for an error a retry
+// may clear.
+func templateFailure(err error) (string, bool) {
+	switch {
+	case errors.Is(err, ports.ErrUnpinnedRef):
+		return c4v1beta1.ReasonUnpinnedRef, true
+	case errors.Is(err, ports.ErrTemplatePathNotFound):
+		return c4v1beta1.ReasonTemplatePathNotFound, true
+	}
+	return "", false
 }
 
 // defaultScaffoldTimeout bounds one attempt at creating and filling a repository.
@@ -62,7 +87,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if live.Status.Phase == c4v1beta1.ContainerReady {
-		return ctrl.Result{RequeueAfter: r.checksRecheck()}, nil
+		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 	}
 
 	// Show progress before the slow part.
@@ -130,7 +155,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 			standard = b.Standard
 		}
 		return r.ready(ctx, container, status, standard, model.ScaffoldedRef(info.ScaffoldedFrom, standard),
-			info.ScaffoldedFrom, info.Domains, info.Relationships, info.Checks, res.entries[0].ReadsOperations,
+			info.ScaffoldedFrom, info.Domains, info.Relationships, info.Checks, frameworkEntry(res.entries).ReadsOperations,
 			"Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonForeignCommits,
@@ -139,8 +164,8 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	}
 
 	layers, err := r.fetchLayers(gitCtx, res)
-	if errors.Is(err, ports.ErrUnpinnedRef) {
-		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonUnpinnedRef, err.Error())
+	if reason, ok := templateFailure(err); ok {
+		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, reason, err.Error())
 	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
@@ -186,7 +211,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
 		"scaffoldedFrom", result.ScaffoldedFrom)
 	return r.ready(ctx, container, status, res.choices.Standard, model.ScaffoldedRef(result.ScaffoldedFrom, res.choices.Standard),
-		result.ScaffoldedFrom, in.Domains, res.use.Relationships, in.Checks, res.entries[0].ReadsOperations,
+		result.ScaffoldedFrom, in.Domains, res.use.Relationships, in.Checks, frameworkEntry(res.entries).ReadsOperations,
 		fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
 }
 
@@ -212,8 +237,8 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		}
 	}
 	layers, err := r.fetchLayers(gitCtx, standardOnly)
-	if errors.Is(err, ports.ErrUnpinnedRef) {
-		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonUnpinnedRef, err.Error())
+	if reason, ok := templateFailure(err); ok {
+		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, reason, err.Error())
 	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
@@ -259,35 +284,85 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		}
 		license.ID = id.License
 	}
-	in := scaffoldInput(view, ci, nil, nil,
-		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
-		specOperations(container), repo.NpmScope, license)
-	rendered := scaffold.Tree{}
-	var standardRef string
-	for _, layer := range layers {
-		tree, err := scaffold.RenderLayer(in, layer)
-		if err != nil {
-			return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonFailed, err.Error())
-		}
-		rendered, standardRef = tree, layer.Ref
-	}
-	onMain, _, err = provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, rendered.Paths())
+	// #42: the Standard renders its agent guides with the system's Domains,
+	// so the check tries the Domains the repository was scaffolded with,
+	// then the system's, then none, and the first that renders main's files
+	// is recorded as the ones it holds.
+	domainSets, err := r.adoptionDomains(ctx, container.Namespace, id.ScaffoldedFrom, res.domains)
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	if differ := scaffold.ChangedPaths(rendered, onMain); len(differ) > 0 {
+	checks := model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease)
+	renders := make([]scaffold.Tree, len(domainSets))
+	paths := map[string]bool{}
+	var standardRef string
+	for i, domains := range domainSets {
+		in := scaffoldInput(view, ci, nil, domains, checks, specOperations(container), repo.NpmScope, license)
+		renders[i] = scaffold.Tree{}
+		for _, layer := range layers {
+			tree, err := scaffold.RenderLayer(in, layer)
+			if err != nil {
+				return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonFailed, err.Error())
+			}
+			renders[i], standardRef = tree, layer.Ref
+		}
+		for _, p := range renders[i].Paths() {
+			paths[p] = true
+		}
+	}
+	onMain, _, err = provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, slices.Sorted(maps.Keys(paths)))
+	if err != nil {
+		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
+	}
+	// The closest render names the paths when none matches: the fewest
+	// paths that differ, the earlier set on a tie.
+	var differ []string
+	adopted := -1
+	for i, rendered := range renders {
+		changed := scaffold.ChangedPaths(rendered, onMain)
+		if len(changed) == 0 {
+			adopted = i
+			break
+		}
+		if differ == nil || len(changed) < len(differ) {
+			differ = changed
+		}
+	}
+	if adopted < 0 {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonStandardFilesDiffer,
 			fmt.Sprintf("Repository %s: %s differs from Standard %s at %s in %s; an adopted repository carries the "+
 				"Standard's files as it renders them", repo.WebURL, ports.DefaultBranch, res.choices.Standard,
 				standardRef, strings.Join(differ, ", ")))
 	}
+	domains := domainSets[adopted]
 
 	if err := protectRepository(gitCtx, r.Client, provider, repo, view); err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.choices.Standard, "ref", standardRef)
-	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, nil, nil, in.Checks,
-		res.entries[0].ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
+	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.choices.Standard, "ref", standardRef,
+		"domains", domains)
+	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, domains, nil, checks,
+		frameworkEntry(res.entries).ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
+}
+
+// adoptionDomains are the sets of Domains an adoption tries the Standard
+// with (model.AdoptionDomains): a name in the identity's scaffoldedFrom is a
+// Domain when the project's catalog has a Domain by that name.
+func (r *ContainerReconciler) adoptionDomains(ctx context.Context, ns string, scaffoldedFrom,
+	systemDomains []string) ([][]string, error) {
+	domains := map[string]bool{}
+	for _, pinned := range scaffoldedFrom {
+		name, _, _ := strings.Cut(pinned, "@")
+		if _, seen := domains[name]; seen {
+			continue
+		}
+		found, err := r.lookup(ctx, ns, name, &c4v1beta1.Domain{})
+		if err != nil {
+			return nil, err
+		}
+		domains[name] = found
+	}
+	return model.AdoptionDomains(scaffoldedFrom, func(name string) bool { return domains[name] }, systemDomains), nil
 }
 
 // fetchLayers fetches every catalog entry's template at its pinned ref, in layer
@@ -299,7 +374,7 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 		if ports.SameHost(res.provider.Spec.URL, entry.TemplateURL) {
 			creds = &res.creds
 		}
-		files, err := r.Git.FetchTemplate(ctx, entry.TemplateURL, entry.TemplateRef, creds)
+		files, err := r.Git.FetchTemplate(ctx, entry.TemplateURL, entry.TemplateRef, entry.TemplatePath, creds)
 		if err != nil {
 			return nil, fmt.Errorf("%s %s: %w", entry.Side, entry.Name, err)
 		}
@@ -338,7 +413,7 @@ func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1beta1.Co
 		c4v1beta1.ReasonScaffolded, message)
 	// The scaffold's push starts CI; read its result like every later reconcile
 	// does. A status write alone doesn't reconcile the Container again.
-	return ctrl.Result{RequeueAfter: r.checksRecheck()}, r.writeStatus(ctx, container, status)
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.writeStatus(ctx, container, status)
 }
 
 // fail stops the Container with a reason a person has to act on.

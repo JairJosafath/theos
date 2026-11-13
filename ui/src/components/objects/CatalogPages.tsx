@@ -87,6 +87,12 @@ export function CatalogPage({
                 <dl className="facts">
                   <dt>Template</dt>
                   <dd className="mono">{entry.spec.template.url}</dd>
+                  {entry.spec.template.path ? (
+                    <>
+                      <dt>In directory</dt>
+                      <dd className="mono">{entry.spec.template.path}/</dd>
+                    </>
+                  ) : null}
                   <dt>Pinned at</dt>
                   <dd className="mono">{entry.spec.template.ref}</dd>
                   <dt>Container types</dt>
@@ -264,6 +270,12 @@ export function DomainPage({
                 <dl className="facts">
                   <dt>Template</dt>
                   <dd className="mono">{domain.spec.template.url}</dd>
+                  {domain.spec.template.path ? (
+                    <>
+                      <dt>In directory</dt>
+                      <dd className="mono">{domain.spec.template.path}/</dd>
+                    </>
+                  ) : null}
                   <dt>Pinned at</dt>
                   <dd className="mono">{domain.spec.template.ref}</dd>
                   <dt>Lands under</dt>

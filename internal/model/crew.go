@@ -1,3 +1,19 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package model
 
 import (
@@ -65,7 +81,8 @@ const (
 
 // MaxIssueAttempts is how many Tasks a Crew starts for one issue before it asks a
 // person: an issue that failed three times needs splitting or clarifying. A
-// Task that failed because CI never reported (NoCI) costs no try.
+// Task that failed because CI never reported (NoCI) costs no try, nor does the
+// first whose agent couldn't see the issue (TryCounter).
 const MaxIssueAttempts = 3
 
 // Issue is an open issue labelled ready, as a Crew sees it.
@@ -110,6 +127,9 @@ type CrewTask struct {
 	// NoCI means it failed through its CI runner's fault (RunnerFault: CI
 	// never reported, or the runner ran out of room), so it costs the issue no try.
 	NoCI bool
+	// Unseen means it failed because its agent couldn't see the issue
+	// (ReasonIssueUnseen); the first such Task costs the issue no try.
+	Unseen bool
 	// Blocked means the Task waits on a Standard change; it keeps its issue but
 	// takes no place from Parallel.
 	Blocked bool
@@ -135,6 +155,11 @@ type IssueChange struct {
 type CrewFacts struct {
 	Paused         bool
 	ContainerReady bool
+	// Unprotected says why the default branch of a Container that adopts
+	// its repository with no Standard isn't protected yet (#95); empty for
+	// a protected one and for any other Container. The Crew starts no Task
+	// while it isn't: agents work only on protected repositories.
+	Unprotected string
 	// Parallel is how many Tasks the Crew may run at once; less than 1 means 1.
 	Parallel int
 	// Tasks are all Tasks on the Container.
@@ -144,6 +169,9 @@ type CrewFacts struct {
 	// Preparing is the release whose prepare issue waits for the Tasks at work
 	// to end before it is filed (ReleasePrepareWaits); empty when none.
 	Preparing string
+	// Cadence says the Crew releases at cuts (Day or Week): it keeps starting
+	// issues while a release is prepared, the prepare issue among them.
+	Cadence bool
 	// Routes send issues with a label to other Agents, in the Crew's order.
 	Routes []AgentRoute
 }
@@ -236,6 +264,9 @@ type CrewStep struct {
 	// NotReady are issues to hand back to a person.
 	NotReady []IssueRejection
 	Message  string
+	// Reason is why a waiting Crew waits, when not for its Container to be
+	// Ready: ReasonNotProtected.
+	Reason string
 }
 
 // NextCrewStep decides what a Crew does: it keeps up to Parallel Tasks working,
@@ -312,6 +343,12 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 		step.Phase, step.Ready, step.NotReady = CrewWaiting, candidates, nil
 		step.Message = fmt.Sprintf("Waiting for Container %s to be Ready", container)
 		return step
+	case f.Unprotected != "":
+		step.Phase, step.Ready, step.NotReady = CrewWaiting, candidates, nil
+		step.Reason = ReasonNotProtected
+		step.Message = fmt.Sprintf("Waiting for the main of Container %s to be protected; agents work only on "+
+			"protected repositories: %s", container, f.Unprotected)
+		return step
 	}
 
 	free := max(f.Parallel, 1) - (len(step.Active) - blockedTasks(f.Tasks))
@@ -346,7 +383,7 @@ func NextCrewStep(container string, f CrewFacts) CrewStep {
 // rejectIssue says why agents must not take issue, from the Crew's ended
 // Tasks on it, or returns nil: a ready issue has no acceptance criteria, a
 // Task merged it (or its spec) already, or MaxIssueAttempts Tasks failed at it,
-// not counting those CI never reported on. A spec's tries and merge count
+// not counting those TryCounter calls free. A spec's tries and merge count
 // apart from the build's.
 func rejectIssue(tasks []CrewTask, issue Issue) *IssueRejection {
 	if reason := MissingAcceptanceCriteria(issue.Body); reason != "" && !issue.Spec {
@@ -354,6 +391,7 @@ func rejectIssue(tasks []CrewTask, issue Issue) *IssueRejection {
 	}
 	var tried []string
 	merged := ""
+	var counter TryCounter
 	for _, t := range tasks {
 		if t.Issue != issue.Number || !t.Final || t.Spec != issue.Spec {
 			continue
@@ -361,7 +399,7 @@ func rejectIssue(tasks []CrewTask, issue Issue) *IssueRejection {
 		switch {
 		case !t.Failed:
 			merged = t.Name
-		case t.NoCI:
+		case !counter.Costs(t.NoCI, t.Unseen):
 			continue
 		}
 		tried = append(tried, t.Name)
@@ -435,8 +473,13 @@ func crewProgress(step CrewStep, started []string, activeIssues []int, held, onD
 
 // preparingRelease reports whether a release is being prepared, its prepare
 // issue waiting or at work, and whether a Task is at work, a Blocked one
-// aside: a prepare issue starts only when none is.
+// aside: a prepare issue starts only when none is. Under a cadence no release
+// is prepared alone: the other Tasks' merges wait for its tag instead
+// (docs/plans/done/release-cadence.md, C10).
 func preparingRelease(f CrewFacts, candidates []int, prepare map[int]bool) (preparing, others bool) {
+	if f.Cadence {
+		return false, false
+	}
 	preparing = f.Preparing != "" || slices.ContainsFunc(candidates, func(n int) bool { return prepare[n] })
 	for _, t := range f.Tasks {
 		if !t.Final {
