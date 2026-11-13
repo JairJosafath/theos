@@ -179,6 +179,27 @@ type TrackerSource struct {
 	// Project is the repository, team or project whose issues are read, as
 	// the tracker names it.
 	Project string
+	// Label, where set, is the label that makes an issue of Project a
+	// request: the tracker lists only the open issues that carry it.
+	Label string
+	// Site is the address people open the tracker's pages at, where it is
+	// not Address; the issues' links point to it.
+	Site string
+	// Instance is the tracker's own ID of the site, where its API's address
+	// names one.
+	Instance string
+	// Close says how an issue is closed for each reason, where the
+	// tracker's workflow takes names: an absent reason takes the adapter's
+	// default.
+	Close map[CloseReason]CloseOutcome
+}
+
+// CloseOutcome is how an issue is closed for one reason, as the tracker
+// names its states: the status it is moved to and the resolution it is
+// given, each optional.
+type CloseOutcome struct {
+	Status     string
+	Resolution string
 }
 
 // CredentialMissingError is a Secret whose data holds no whole credential

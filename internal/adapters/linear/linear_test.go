@@ -19,6 +19,7 @@ package linear
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -618,5 +619,33 @@ func TestLowerCaseTeam(t *testing.T) {
 	}
 	if c, err := tr.FindComment(context.Background(), n, marker); err != nil || c != nil {
 		t.Errorf("FindComment(%d) = %v, %v, want none and no error", n, c, err)
+	}
+}
+
+// TestTrackerFromASource covers #161: the operator builds the adapter from a
+// Brief's source, the Secret's key token and its own address for Linear.
+func TestTrackerFromASource(t *testing.T) {
+	s := lineartest.New(t)
+	s.Team(testTeam)
+	token := s.Account(testAccount)
+	source := ports.TrackerSource{Tracker: "linear", Project: testTeam, Label: testLabel}
+	tr, err := Client{APIURL: s.URL()}.Tracker(context.Background(), source,
+		map[string][]byte{SecretToken: []byte(token + "\n")})
+	if err != nil {
+		t.Fatalf("Tracker() = %v", err)
+	}
+	w := world{Server: s, token: token, tracker: tr}
+	n := w.request("Dark mode")
+	if got := w.listed(t); !slices.Equal(got, []int{n}) {
+		t.Errorf("listed %v, want [%d]", got, n)
+	}
+	_, err = Client{APIURL: s.URL()}.Tracker(context.Background(), source, nil)
+	if missing, ok := errors.AsType[*ports.CredentialMissingError](err); !ok || missing.Keys != "the key token" {
+		t.Errorf("Tracker() with no Secret = %v, want the key token missing", err)
+	}
+	source.Project = "E NG"
+	if _, err := (Client{APIURL: s.URL()}).Tracker(context.Background(), source,
+		map[string][]byte{SecretToken: []byte(token)}); ports.IssuesReason(err) != ports.ReasonTrackerError {
+		t.Errorf("Tracker() with a team that isn't a key = %v, want %s", err, ports.ReasonTrackerError)
 	}
 }

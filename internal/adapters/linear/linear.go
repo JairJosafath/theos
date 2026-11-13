@@ -18,11 +18,12 @@ limitations under the License.
 // Linear's GraphQL API: the open items of one team that carry one label are
 // the requests (docs/plans/requests-and-chat.md, decisions 13, 14 and 17 to
 // 20). Linear has no teams to ask about members of, so it is no
-// ports.TeamMembers. Nothing builds one yet: no Brief can name Linear until
-// the plan's steps 9 and 10.
+// ports.TeamMembers. A Brief's spec.requestSources entry builds one through
+// Client.Tracker (step 10).
 package linear
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -83,9 +84,37 @@ type Config struct {
 }
 
 // Client builds the issue tracker. HTTP is the client it calls Linear with,
-// a default one when nil.
+// a default one when nil. APIURL is where Linear is for every source that
+// names no address of its own, the package's APIURL when empty: the
+// operator's --linear-api-url.
 type Client struct {
-	HTTP *http.Client
+	HTTP   *http.Client
+	APIURL string
+}
+
+// SecretToken is the key of a source's Secret that holds the API key.
+const SecretToken = "token"
+
+var _ ports.TrackerAdapter = Client{}
+
+// Tracker is the adapter as a ports.TrackerAdapter: the tracker of
+// source.Project, the team's key, and source.Label, with the API key the
+// Secret's SecretToken holds. source.Address, else the Client's APIURL, is
+// where Linear is. A Secret without the key is a
+// ports.CredentialMissingError; a source the adapter can't read
+// ReasonTrackerError.
+func (c Client) Tracker(_ context.Context, source ports.TrackerSource,
+	secret map[string][]byte) (ports.IssueTracker, error) {
+	token := strings.TrimSpace(string(secret[SecretToken]))
+	if token == "" {
+		return nil, &ports.CredentialMissingError{Keys: "the key " + SecretToken}
+	}
+	tr, err := c.Issues(Config{Team: source.Project, Label: source.Label, Token: token,
+		APIURL: cmp.Or(source.Address, c.APIURL)})
+	if err != nil {
+		return nil, &ports.IssuesError{Reason: ports.ReasonTrackerError, Message: err.Error()}
+	}
+	return tr, nil
 }
 
 // Issues returns an IssueTracker on the items of cfg's team with cfg's
