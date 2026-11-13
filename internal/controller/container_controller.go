@@ -245,6 +245,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			answered = r.updateStandard(ctx, &container, status, live)
 		} else {
 			meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionStandardUpdated)
+			status.StandardAdoption = nil
 		}
 		r.reportBundleCurrent(ctx, &container, status)
 		reportDomainsApplied(&container, status, &system)

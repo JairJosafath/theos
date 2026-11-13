@@ -1,0 +1,88 @@
+#97, step 4 of docs/plans/adopt-existing.md: a Standard whose files differ
+arrives as a pull request, not as a failed adoption
+=======================================================================
+
+2026-11-13. Test output is the evidence; no cluster was used.
+
+The repository, the Container, the pull request a person merges or closes,
+and a Task that waits, on the fake Git host (envtest,
+internal/controller/container_adopt_standard_test.go, and the two specs of
+container_adopt_test.go and container_adopt_domains_test.go that used to
+fail StandardFilesDiffer). Every adoption spec ran, the ones of a repository
+that carries its Standard's files unchanged:
+
+$ go test -v ./internal/controller -count=1 -run '^(TestControllers|TestNoAgentWorksUntilTheStandardIsOnMain)$' -ginkgo.focus "Container adoption" -ginkgo.v
+Container adoption adopts a repository carrying its identity and its Standard's files, and protects main
+Container adoption fails IdentityMismatch when .theos.yaml names another project, saying what it holds
+Container adoption fails IdentityMismatch when main has no .theos.yaml
+Container adoption fails NoDefaultBranch when the repository's only branch is not main (#1908)
+Container adoption fails NothingToAdopt on an empty repository
+Container adoption is Ready, with a pull request for the one Standard file that is changed, where it failed StandardFilesDiffer (#97)
+Container adoption refuses a change of spec.adopt either way
+Container adoption refuses a change to spec.operations after the adoption, AdoptedRepository, until it is undone
+Container adoption with Domains adopts a repository scaffolded with a Domain, and records it, DomainsApplied (#42)
+Container adoption with Domains brings only the changed guide, rendered with the repository's Domains, when its domain section differs (#42, #97)
+Container adoption with Domains finds the Domains in .theos.yaml's scaffoldedFrom when the system names none now (#42)
+Container adoption with a Standard the repository doesn't hold has a Task wait while the pull request is open: no agent works where the Standard's checks aren't on main (#97)
+Container adoption with a Standard the repository doesn't hold opens one pull request with exactly the Standard's files and is Ready; merging it records the Standard and protects main (#97)
+Container adoption with a Standard the repository doesn't hold records the Standard when the pull request merged with a file it doesn't protect changed: the file is the repository's own (#97)
+Container adoption with a Standard the repository doesn't hold says StandardFilesDiffer when the pull request merged with a file the Standard protects changed, until main holds it as rendered (#97)
+Container adoption with a Standard the repository doesn't hold stays Ready without the Standard when a person closes the pull request, and says so; the files brought by hand are found (#97)
+Container adoption with the repository's own check has a Task made by hand wait for the protection, where one on a Container that adopts nothing fails
+Container adoption with the repository's own check has no Protected condition on a Container with a Standard
+Container adoption with the repository's own check protects main with the Container's contexts once its head reports them, and never before
+Container adoption with the repository's own check starts no Task while main isn't protected, and then builds an issue with the Container's command
+Container adoption with the repository's own check takes checkCommand and checkContexts only on a Container that adopts with no Standard
+Container adoption without the catalog adopts a repository on its identity alone, naming no Framework, Standard, Compute or Deployment
+Container adoption without the catalog adopts with a Framework and no Standard on the identity alone
+Container adoption without the catalog adopts with a Relationship to a DataStore, whose Connector it wires nothing of
+Container adoption without the catalog fails NothingToAdopt while the repository is empty, and adopts it once its history is pushed
+Container adoption without the catalog keeps a Container that doesn't adopt to a bundleRef or a frameworkRef
+Container adoption without the catalog says the Container names no Framework when its spec.operations has nothing to read it
+Container adoption without the catalog still fails IdentityMismatch for a repository that doesn't name the Container
+--- PASS: TestNoAgentWorksUntilTheStandardIsOnMain (0.00s)
+Ran 28 of 790 Specs in 51.684 seconds
+SUCCESS! -- 28 Passed | 0 Failed | 0 Pending | 762 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	51.717s
+
+The rules as tables (internal/model/standardadoption_test.go, internal/scaffold/update_test.go):
+
+$ go test ./internal/model ./internal/scaffold -run 'TestNextAdoptionStep|TestClosestRender|TestStandardAdoptionPullRequest|TestAdoptionMessage' -v
+--- PASS: TestNextAdoptionStep (0.00s)
+    --- PASS: TestNextAdoptionStep/no_adoption_yet:_compare_main_with_the_Standard_at_its_ref (0.00s)
+    --- PASS: TestNextAdoptionStep/main_holds_every_file:_record_the_Standard,_no_pull_request (0.00s)
+    --- PASS: TestNextAdoptionStep/a_file_differs:_open_the_pull_request (0.00s)
+    --- PASS: TestNextAdoptionStep/only_a_file_the_Standard_doesn't_protect_differs:_still_a_pull_request,_at_adoption (0.00s)
+    --- PASS: TestNextAdoptionStep/a_pull_request_in_flight_is_read (0.00s)
+    --- PASS: TestNextAdoptionStep/an_open_pull_request_waits_on_a_person (0.00s)
+    --- PASS: TestNextAdoptionStep/an_open_pull_request_stays_at_its_version_when_the_Standard's_ref_moves (0.00s)
+    --- PASS: TestNextAdoptionStep/a_merged_pull_request_is_compared_with_main_at_its_own_version (0.00s)
+    --- PASS: TestNextAdoptionStep/merged,_and_main_holds_the_files:_record_at_the_pull_request's_version (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_with_a_file_the_Standard_doesn't_protect_edited:_record (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_with_a_protected_file_differing:_StandardFilesDiffer (0.00s)
+    --- PASS: TestNextAdoptionStep/a_closed_pull_request_is_compared_with_main (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_and_main_is_without_its_files:_the_repository_stays_without_the_Standard (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_and_only_a_file_the_Standard_doesn't_protect_differs:_still_closed,_a_person_took_none (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_reads_main's_head (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_waits_while_main_is_as_it_was_compared (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_is_compared_again_once_main_moved (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_then_a_person_brought_every_file_by_hand:_record (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_and_a_person_brought_only_the_protected_files:_still_closed (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_and_differing,_then_a_person_fixed_the_protected_files:_record (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_and_main_moved_without_them:_still_closed (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_and_differing,_then_main_fixed:_record (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_and_differing,_and_main_moved_without_a_fix:_still_StandardFilesDiffer (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_is_forgotten_when_the_Standard's_ref_moves (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_is_forgotten_when_the_Container's_checks_change (0.00s)
+--- PASS: TestClosestRender (0.00s)
+    --- PASS: TestClosestRender/only_the_render_with_no_Domains (0.00s)
+    --- PASS: TestClosestRender/a_repository_with_none_of_the_files_gets_them_without_Domains (0.00s)
+    --- PASS: TestClosestRender/the_recorded_Domains_render_closer (0.00s)
+    --- PASS: TestClosestRender/the_system's_Domains_render_closer (0.00s)
+    --- PASS: TestClosestRender/two_sets_as_close_as_each_other:_the_earlier (0.00s)
+    --- PASS: TestClosestRender/no_Domains_renders_closest (0.00s)
+    --- PASS: TestClosestRender/a_set_as_close_as_none_loses_to_none (0.00s)
+--- PASS: TestStandardAdoptionPullRequest (0.00s)
+ok  	github.com/JairJosafath/theos/internal/model	0.028s
+--- PASS: TestAdoptionMessage (0.00s)
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.006s

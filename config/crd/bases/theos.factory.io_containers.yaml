@@ -1138,6 +1138,60 @@ spec:
                 - name
                 - ref
                 type: object
+              standardAdoption:
+                description: |-
+                  standardAdoption is the pull request that brings the Standard's files
+                  into a repository the Container adopted without them, open or stopped.
+                  Only a Container that adopts its repository has it, until main holds
+                  the files and standard records them.
+                properties:
+                  base:
+                    description: |-
+                      base is the head of main the pull request was planned from; once the
+                      adoption stopped, the head main's files were last compared at.
+                    type: string
+                  branch:
+                    description: branch is the pull request's branch.
+                    type: string
+                  checks:
+                    description: |-
+                      checks is when CI runs the full check as the pull request renders the
+                      files. Empty reads as EveryChange.
+                    enum:
+                    - EveryChange
+                    - BeforeRelease
+                    type: string
+                  commit:
+                    description: commit is the commit the operator pushed to the branch.
+                    type: string
+                  paths:
+                    description: |-
+                      paths are the Standard's files the pull request writes: the ones main
+                      didn't hold as the Standard renders them.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  pullRequest:
+                    description: pullRequest is the pull request's number.
+                    format: int32
+                    type: integer
+                  pullRequestURL:
+                    description: pullRequestURL is the pull request's address.
+                    type: string
+                  ref:
+                    description: ref is the Standard's template ref the pull request
+                      brings the files at.
+                    type: string
+                  stopped:
+                    description: |-
+                      stopped is why the adoption stopped, or empty while the pull request is
+                      open: UpdateClosed when a person closed it, StandardFilesDiffer when it
+                      merged and main holds a file the Standard protects with other content.
+                    type: string
+                required:
+                - ref
+                type: object
             type: object
         required:
         - spec

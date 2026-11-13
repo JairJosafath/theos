@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"time"
@@ -312,8 +313,10 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		Round:          int(status.Round),
 		MaxRounds:      int(agent.Spec.MaxRounds),
 		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady,
-		Protected:      model.Protected(container.Choices().Standard != "", adoptedChecks(container)),
-		Unprotected:    unprotected(container),
+		// #97: a Standard an adopted repository hasn't merged yet brings main no
+		// checks: the Task waits for it, as for an adopted repository's own.
+		Protected:      model.Protected(standardOnMain(container), adoptedChecks(container)),
+		Unprotected:    cmp.Or(unprotected(container), standardNotOnMain(container)),
 		ReviewAttempts: int(status.ReviewAttempts),
 		ReviewAgains:   int(status.ReviewAgains),
 		Reruns:         int(status.Reruns),

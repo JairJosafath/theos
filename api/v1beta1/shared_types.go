@@ -252,11 +252,16 @@ const (
 	// ReasonIdentityMismatch: an adopted repository's main has no
 	// .theos.yaml, or one naming another project or Container.
 	ReasonIdentityMismatch = "IdentityMismatch"
-	// ReasonStandardFilesDiffer: an adopted repository's main is missing a
-	// file of the Container's Standard, or holds one with other content than
-	// the Standard renders for this Container at its ref.
+	// ReasonStandardFilesDiffer: the pull request that brought a Standard's
+	// files into an adopted repository merged, and main still holds a file
+	// the Standard protects with other content than the Standard renders for
+	// this Container at its ref (StandardUpdated; #97).
 	ReasonStandardFilesDiffer = "StandardFilesDiffer"
-	ReasonLayerConflict       = "LayerConflict"
+	// ReasonPullRequestOpen: the pull request that brings a Standard's files
+	// into an adopted repository is open, and waits for a person to merge or
+	// close it (StandardUpdated; #97).
+	ReasonPullRequestOpen = "PullRequestOpen"
+	ReasonLayerConflict   = "LayerConflict"
 	// ReasonBundleChanged: the Bundle a Ready Container scaffolded from now
 	// names other entries, or is gone; the Container keeps what it has.
 	ReasonBundleChanged = "BundleChanged"

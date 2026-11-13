@@ -451,6 +451,53 @@ type ContainerStandardStatus struct {
 	FailureIssue *StandardFailureIssue `json:"failureIssue,omitempty"`
 }
 
+// StandardAdoptionStatus is the pull request that brings a Standard's files
+// into a repository a Container adopted without them. A person merges or
+// closes it; the operator never merges it.
+type StandardAdoptionStatus struct {
+	// ref is the Standard's template ref the pull request brings the files at.
+	// +required
+	Ref string `json:"ref"`
+
+	// checks is when CI runs the full check as the pull request renders the
+	// files. Empty reads as EveryChange.
+	// +optional
+	Checks ChecksMode `json:"checks,omitempty"`
+
+	// branch is the pull request's branch.
+	// +optional
+	Branch string `json:"branch,omitempty"`
+
+	// commit is the commit the operator pushed to the branch.
+	// +optional
+	Commit string `json:"commit,omitempty"`
+
+	// base is the head of main the pull request was planned from; once the
+	// adoption stopped, the head main's files were last compared at.
+	// +optional
+	Base string `json:"base,omitempty"`
+
+	// pullRequest is the pull request's number.
+	// +optional
+	PullRequest int32 `json:"pullRequest,omitempty"`
+
+	// pullRequestURL is the pull request's address.
+	// +optional
+	PullRequestURL string `json:"pullRequestURL,omitempty"`
+
+	// paths are the Standard's files the pull request writes: the ones main
+	// didn't hold as the Standard renders them.
+	// +listType=atomic
+	// +optional
+	Paths []string `json:"paths,omitempty"`
+
+	// stopped is why the adoption stopped, or empty while the pull request is
+	// open: UpdateClosed when a person closed it, StandardFilesDiffer when it
+	// merged and main holds a file the Standard protects with other content.
+	// +optional
+	Stopped string `json:"stopped,omitempty"`
+}
+
 // StandardFailureIssue is the issue filed in the Container's repository when
 // the update to a ref of its Standard failed CI.
 type StandardFailureIssue struct {
@@ -687,6 +734,13 @@ type ContainerStatus struct {
 	// was part of its scaffold has it.
 	// +optional
 	Standard *ContainerStandardStatus `json:"standard,omitempty"`
+
+	// standardAdoption is the pull request that brings the Standard's files
+	// into a repository the Container adopted without them, open or stopped.
+	// Only a Container that adopts its repository has it, until main holds
+	// the files and standard records them.
+	// +optional
+	StandardAdoption *StandardAdoptionStatus `json:"standardAdoption,omitempty"`
 
 	// operations is the operations block the repository's
 	// infra/operations.ts was last rendered with, its defaults filled in: at

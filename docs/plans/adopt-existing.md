@@ -105,7 +105,7 @@ Each step is its own issue, names #60 and lands with `make check`.
 | 1. An adopting Container needs nothing from the catalog (done) | #60 | | the CRD takes it; it goes Ready on the identity alone, with and without a Framework, in envtest; a Container that doesn't adopt still needs a Framework |
 | 2. The repository's own check, and the fence on it (done) | #95 | 1 | `checkCommand`, `checkContexts`, the `Protected` condition; envtest: a Task runs the named command on a protected adopted repository; a Crew waits on one that isn't |
 | 3. `theos-session adopt` (done) | #96 | 2 | the detector's table tests; the YAML it prints passes `make validate-yaml` |
-| 4. A Standard that differs arrives as a pull request | #97 | 1 | envtest: adopting with a Standard whose files differ opens the pull request and the Container is Ready |
+| 4. A Standard that differs arrives as a pull request (done) | #97 | 1 | envtest: adopting with a Standard whose files differ opens the pull request and the Container is Ready |
 | 5. The Crew's first issue: AGENTS.md and what it found (done) | #98 | 2 | envtest: one `kind/onboarding` issue per adopted Container, never a second |
 | 6. The guide's second page (done) | #99 | 2, 3 | "Bring a repository you already have" follows the quickstart, and follows what the specs show |
 
@@ -175,6 +175,59 @@ Each step is its own issue, names #60 and lands with `make check`.
 - The proposals of eight repositories are files under
   `config/samples/adopt/proposed/`, which `make validate-yaml` holds to the
   CRDs; the table test fails when the detector's output leaves them.
+
+## What step 4 found
+
+Choices the issue left open, and why:
+
+- **A person merges the pull request; the operator never does.** A bump's
+  pull request changes files the factory wrote, so the operator merges it
+  once CI passes. This one may replace a Makefile and a workflow the
+  repository's people wrote, in a repository whose main has no rule yet,
+  so it waits on them: the reason is `PullRequestOpen`, not `Updating`,
+  whose message promises a merge.
+- **The Ready Container's pass opens it, not `adopt()`.** `adopt()` only
+  finds that no render matches, picks the Domains of the closest one and
+  goes Ready with no Standard recorded. "Adopts its repository, names a
+  Standard, records none" is then the whole trigger
+  (`awaitsStandard`), so a Standard named after a bare adoption arrives
+  the same way, where it used to say `AddedAfterScaffold`.
+- **Its state is `status.standardAdoption`,** a field of its own:
+  `status.standard` means "these files are on main at this ref" to every
+  reader (the checks, the Task's fence, the updates), and stays unset until
+  that is true.
+- **Merged and closed are judged differently.** After a merge only the
+  files the Standard protects must be as rendered: a person may have kept
+  their own README in the pull request, and that file is the repository's
+  from then on, which later updates merge with. A protected file that
+  differs is `StandardFilesDiffer`, the one case the reason stays for.
+  After a close the person took nothing, so only a main that holds every
+  file has the Standard.
+- **A stop is read again when main moves,** one read of main's head a
+  pass, so files brought by hand are found without an annotation; a change
+  of the Standard's ref or the Container's checks plans a new pull request.
+  An open one stays at its ref, and an ordinary update follows its merge.
+- **The closest render gets Domains only when strictly closer than none.**
+  A repository with none of the files ties on every set; rendering it with
+  the system's Domains would point its guides at Domain files adoption
+  never writes, and `DomainsApplied` would say they are there.
+- **No agent works there meanwhile.** `model.Protected` took "names a
+  Standard" for "main has checks"; the Task and the Crew now ask whether
+  the Standard is on main (`standardOnMain`, `standardNotOnMain`) and wait
+  with `ContainerNotProtected`, as on a bare adoption. The helpers sit
+  beside the adoption, not in `protection.go`, which is the owner's; it
+  would be their natural home.
+
+Left as it is:
+
+- The UI shows the condition's reason and message, and nothing of
+  `status.standardAdoption`; `describe.ts` still describes
+  `StandardFilesDiffer` as a failed adoption.
+- A status write lost right after the pull request opened opens a second
+  one on the same branch at the next pass, as a Standard update's does.
+- A bare adoption that main protects by its own checks and then names a
+  Standard keeps the old rule on the host while the pull request is open:
+  a person with the rights merges it over the protected workflow paths.
 
 ## What step 5 found
 
