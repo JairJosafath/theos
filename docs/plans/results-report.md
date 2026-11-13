@@ -109,11 +109,13 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
     harness and model, an Agent's name, a Scorer's name and its criteria are
     what someone typed into a resource, and the page is published. In a
     table cell or a heading each is one line, with a backslash before `\`,
-    `|`, a backtick, `*`, `_`, `~`, `[`, `]` and `$` (GitHub reads what two
-    dollar signs enclose as mathematics), and `&` and `<` as their HTML
-    entities. The backslash comes first so the text's own can't undo an
-    escape (`a\|b`). The backtick is escaped because a code span shows
-    backslashes as they are; once it is, escaping the emphasis and link
+    `|`, a backtick, `*`, `_`, `~`, `[` and `]`, with `&` and `<` as their
+    HTML entities, and with a dollar sign as `<span>$</span>`: GitHub reads
+    what two dollar signs enclose as mathematics, and the span is what its
+    documentation gives for one outside a formula (a backslash is its
+    escape inside one). The backslash comes first so the text's own can't
+    undo an escape (`a\|b`). The backtick is escaped because a code span
+    shows backslashes as they are; once it is, escaping the emphasis and link
     characters is the same rule, and a criterion that says
     `[see here](https://...)` or `<img src=...>` prints as typed, links
     nowhere and loads nothing. A bare address is left alone: GitHub links
@@ -169,17 +171,24 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
 ## What step 2 found
 
 - **The command is `theos-session report --name <tag>`,** with `--from` and
-  `--to` (RFC 3339), `--dir` (`docs/results`), `--namespace` (every
-  namespace the person may list Tasks in) and `--kubeconfig`. `--to` is now
+  `--to` (RFC 3339), `--dir` (`docs/results`), `--namespace` and
+  `--kubeconfig`. With `--namespace` it lists the Tasks and the Containers
+  of that namespace; without, it makes one list of each over the whole
+  cluster, so the person must be allowed to list both in every namespace:
+  one who may list them in some namespaces only is refused, and names one
+  with `--namespace`. The list of Containers is asked for either way,
+  though a merged Task's `repository` may be absent. `--to` is now
   when it isn't given and `--from` the first Task, so the first report needs
   only its name; each later one takes the report before's `to` as its
   `--from`. It reads and never writes to the cluster: it registers no
-  Session, so it needs no `.theos.yaml`.
+  Session, so it needs no `.theos.yaml`. A word left after the flags
+  (`report v0.5.0`) is refused, with the word.
 - **Checked before the cluster is opened, in this order:** the name
   (`model.ReportPaths`), the two times and that the period ends after it
-  begins, and the directory: it, or the nearest of its parents that exists,
-  must be a directory. Nothing is made to find that out; the directory is
-  made after the cluster was read, and both files are rendered before
+  begins and no later than now, and the directory: it, or the nearest of
+  its parents that exists, must be a directory, and no directory may have
+  the name of either file. Nothing is made to find that out; the directory
+  is made after the cluster was read, and both files are rendered before
   either is written. `TestReportChecksBeforeItReadsOrWrites` holds each to a
   cluster never opened and a folder with nothing new in it.
 - **The mapping is the command's, and is the operator's written again.**
@@ -220,8 +229,33 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
   and `$NaN`, which no Task can give it, so `money.json` has no such case
   and the rule is Go's alone, in `TestReportPage`); a dollar sign in a
   cell or a heading takes a backslash, since GitHub reads what lies between
-  two as mathematics (decision 12's list, one more); and the directory is
-  checked first, as above.
+  two as mathematics (decision 12's list, one more; the review of step 2
+  made it a span); and the directory is checked first, as above.
+- **From the review of step 2:**
+  - *A failed write leaves the report that was there.* The two files were
+    written in a map's order, so a page that couldn't be written left the
+    new document beside the old page in most runs. Each is now written
+    whole under another name in the directory (`.<name>.json.tmp`,
+    `.<name>.md.tmp`), and only when both are, and no directory has taken
+    either's name since the first check, is each moved to its place, the
+    document first and the page last, since the page is what a release
+    links. What is left to fail is the second move after the first, which
+    two files can't rule out; its error names the file that is new and the
+    one that is not (`TestReportLeavesNoHalfAReport`).
+  - *A period can't end after now.* A `--to` in the future was taken, and
+    a Task that finished between the run and that end was after no
+    report's beginning: in none. It is refused. The same gap is there,
+    smaller, when `--to` isn't given and the person's clock runs ahead of
+    the cluster's, whose clock `completedAt` is; the command doesn't ask
+    the cluster the time, so a person who doubts their clock gives `--to`.
+  - *A dollar sign in a cell is `<span>$</span>`,* which is what GitHub's
+    documentation gives for a dollar sign outside a formula, where the
+    backslash of step 1 is its escape inside one. The page is read on
+    GitHub, where the release notes link it; the repository has no site
+    that renders its Markdown another way, and the UI never reads the
+    page, so nothing of ours prints the span as text. The table test holds
+    the string; the rendering itself has not been looked at by a person, on
+    GitHub or on another project's Git host.
 
 ## What the fixture holds
 

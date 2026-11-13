@@ -166,4 +166,23 @@ has "  lists the whole history" "- before the range (#1)"
 has "  up to the tag" "- a new kind (#2)"
 hasnt "  not after it" "(#6)"
 
+# A report is named after the tag as it is written (#66): a release
+# candidate's and one with build metadata, whose - and + the path and the
+# link carry as they are.
+commit docs/results/v0.4.0-rc.1.md "the numbers of the release candidate"
+git tag v0.4.0-rc.1
+commit docs/results/v0.4.0+build.5.md "the numbers of a build"
+git tag v0.4.0+build.5
+for tag in v0.4.0-rc.1 v0.4.0+build.5; do
+  PATH="$T/bin:$PATH" "$NOTES" "$tag" >"$T/out" 2>&1
+  check "a tag that is more than vX.Y.Z, $tag: drafts" $? 0
+  has "  links the report of that name, at the tag" \
+    "$numbers [docs/results/$tag.md](https://github.com/JairJosafath/theos/blob/$tag/docs/results/$tag.md)."
+  check "  once" "$(grep -c "The factory's numbers for this release" "$T/out")" 1
+  has "  the version is the tag's, whole" \
+    "helm install theos oci://ghcr.io/jairjosafath/theos/charts/theos --version ${tag#v} \\"
+done
+PATH="$T/bin:$PATH" "$NOTES" v0.4.0-rc.1 >"$T/out" 2>&1
+hasnt "  the candidate's notes don't link the build's report" "v0.4.0+build.5"
+
 exit $fail

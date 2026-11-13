@@ -202,8 +202,8 @@ func TestReportAddsEachContainersRepository(t *testing.T) {
 
 // #66: the name, the period and the directory are checked before anything
 // is read or written. A name that is none, a time that is none, a period
-// that ends before it begins and a directory that can't be one each fail
-// with the cluster unopened and no file made.
+// that ends before it begins or after now, and a directory that can't be one
+// each fail with the cluster unopened and no file made.
 func TestReportChecksBeforeItReadsOrWrites(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "a-file")
@@ -227,6 +227,12 @@ func TestReportChecksBeforeItReadsOrWrites(t *testing.T) {
 			"the period ends at 2026-10-06T12:00:00Z, which is not after its beginning, 2026-11-05T12:00:00Z"},
 		"begins after now": {reportFlags{name: "v1", dir: fresh, from: "2027-01-01T00:00:00Z"},
 			"which is not after its beginning"},
+		// A Task that finishes between now and such an end would be in no
+		// report: the next one begins at this one's end.
+		"ends after now": {reportFlags{name: "v1", dir: fresh, to: "2026-11-13T09:00:01Z"},
+			"the period can't end after now: --to is 2026-11-13T09:00:01Z and it is 2026-11-13T09:00:00Z"},
+		"ends after now, in another zone": {reportFlags{name: "v1", dir: fresh, to: "2026-11-13T11:30:00+02:00"},
+			"the period can't end after now: --to is 2026-11-13T09:30:00Z"},
 		"a file for a directory": {reportFlags{name: "v1", dir: file}, file + " is no directory"},
 		"a directory in a file": {reportFlags{name: "v1", dir: filepath.Join(file, "results", "deep")},
 			"can't hold a report"},
@@ -319,11 +325,73 @@ func TestReportWritesOverTheReportBefore(t *testing.T) {
 	}
 }
 
+// #66: a report that can't be written whole leaves the one that was there.
+// The page's place is a directory, so the page can't be written: the command
+// says so before it reads the cluster, and when the directory appears only
+// after that check (here, as the cluster is opened), the document that could
+// be written is not, and nothing else is left in the folder. The two files
+// were written in a map's order, so the new document stood beside the old
+// page in most runs.
+func TestReportLeavesNoHalfAReport(t *testing.T) {
+	for name, c := range map[string]struct {
+		late   bool
+		opened int
+	}{
+		"a directory has the page's name":                        {false, 0},
+		"a directory takes the page's name after it was checked": {true, 1},
+	} {
+		dir := t.TempDir()
+		page, document := filepath.Join(dir, "report.md"), filepath.Join(dir, "report.json")
+		if err := os.WriteFile(document, []byte("the report before"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inTheWay := func() {
+			if err := os.Mkdir(page, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cluster := newCluster(t, fixtureTasks(t))
+		open := cluster.open
+		if c.late {
+			open = func() (client.Reader, error) {
+				inTheWay()
+				return cluster.open()
+			}
+		} else {
+			inTheWay()
+		}
+		var stdout bytes.Buffer
+		f := reportFlags{name: "report", dir: dir, from: reportFixtureFrom, to: reportFixtureTo}
+		err := report(context.Background(), f, open, time.Now(), &stdout)
+		if want := "can't write " + page + ": a directory has that name"; err == nil || err.Error() != want {
+			t.Errorf("%s: error %v, want %q", name, err, want)
+		}
+		if cluster.opened != c.opened {
+			t.Errorf("%s: the cluster was opened %d times, want %d", name, cluster.opened, c.opened)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("%s: it said %q", name, stdout.String())
+		}
+		if got, err := os.ReadFile(document); err != nil || string(got) != "the report before" {
+			t.Errorf("%s: the document is %q (%v), want the report before's: half a report was written", name, got, err)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 2 {
+			t.Errorf("%s: the folder holds more than the document before and the directory: %v", name, entries)
+		}
+	}
+}
+
 // The command's flags: help exits 0 and says what it does, a flag it doesn't
-// have exits 2, and a name that is none exits 1 before any cluster is asked
-// for (this test has none to give).
+// have and a word after the flags exit 2, a name that is none exits 1 before
+// any cluster is asked for, and a good name exits 1 where the cluster is
+// asked for (this test has none to give).
 func TestReportMain(t *testing.T) {
 	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "none"))
+	dir := t.TempDir()
 	for name, c := range map[string]struct {
 		args []string
 		code int
@@ -334,6 +402,11 @@ func TestReportMain(t *testing.T) {
 		"an unknown one": {[]string{"--period", "x"}, 2, "flag provided but not defined"},
 		"no name":        {nil, 1, "theos-session report: --name is required"},
 		"a bad name":     {[]string{"--name", "../x"}, 1, `theos-session report: a report can't be called "../x"`},
+		"a name with no flag": {[]string{"v0.5.0"}, 2,
+			`theos-session report: "v0.5.0" is not understood: the report takes flags only`},
+		"a word after the flags": {[]string{"--name", "v0.5.0", "--dir", dir, "now"}, 2, `"now" is not understood`},
+		"no cluster": {[]string{"--name", "v0.5.0", "--dir", dir}, 1,
+			"theos-session report: no cluster to read the Tasks of"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := reportMain(c.args, &stdout, &stderr); code != c.code || !strings.Contains(stderr.String(), c.want) {
@@ -342,6 +415,9 @@ func TestReportMain(t *testing.T) {
 		if stdout.Len() != 0 {
 			t.Errorf("%s: it wrote %q to standard output", name, stdout.String())
 		}
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Errorf("with no cluster to read, something was written: %v (%v)", entries, err)
 	}
 }
 

@@ -242,11 +242,14 @@ func reportTime(rfc3339 string) string {
 // [see here](https://...) prints as it was typed and links nowhere. An
 // ampersand and a less-than sign become their HTML entities, which every
 // Markdown renderer prints as the character: no tag and no entity of the
-// text's own reaches the page. A dollar sign takes a backslash too: GitHub
-// reads what lies between two of them as mathematics, and a criterion that
-// names $HOME and $PATH would print as a formula.
+// text's own reaches the page. A dollar sign goes into a span: GitHub reads
+// what lies between two of them as mathematics, so a criterion that names
+// $HOME and $PATH would print as a formula, and the span is what its
+// documentation gives for a dollar sign outside a formula ("Writing
+// mathematical expressions"; a backslash is its escape inside one). The
+// span's own less-than sign is the replacer's and is not escaped again.
 var reportEscapes = strings.NewReplacer(
-	`\`, `\\`, "|", `\|`, "`", "\\`", "*", `\*`, "_", `\_`, "~", `\~`, "[", `\[`, "]", `\]`, "$", `\$`,
+	`\`, `\\`, "|", `\|`, "`", "\\`", "*", `\*`, "_", `\_`, "~", `\~`, "[", `\[`, "]", `\]`, "$", `<span>$</span>`,
 	"&", "&amp;", "<", "&lt;",
 )
 

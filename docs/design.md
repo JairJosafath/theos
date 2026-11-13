@@ -1178,8 +1178,9 @@ be judged by numbers the factory keeps itself.
   Tasks that finished after `--from`, up to and including `--to`, so the
   next report begins where this one ends and no Task is counted twice.
   Without `--from` it runs from the first Task, and without `--to` up to
-  now. They hold the Tasks merged, failed by reason and ended with no
-  change, the shares merged with no person's commit, on a person's approval
+  now; a `--to` after now is refused, since a Task that finishes between
+  now and that end would be in no report. They hold the Tasks merged,
+  failed by reason and ended with no change, the shares merged with no person's commit, on a person's approval
   and in the first round, the median and 90th percentile of the lead times
   and of each stage, cost per merged Task by size and by harness, model and
   Agent, and each Scorer's pass rates. The rules are `internal/model`'s

@@ -41,7 +41,8 @@ const reportUsage = `theos-session report writes the factory's numbers over a pe
 one JSON document (docs/plans/results-report.md): the Tasks that merged and
 failed, who wrote the code, how long a merged Task took and what it cost, and
 what the Scorers found. It reads the Tasks and Containers of the cluster your
-kubeconfig names, and changes nothing there.
+kubeconfig names, and changes nothing there. Without --namespace that is one
+list of each over the whole cluster, which you must be allowed to make.
 
 Usage:
   theos-session report --name <release tag> [--from <time>] [--to <time>] [flags]
@@ -52,8 +53,9 @@ it, so give that report's "to" as --from and no Task is counted twice:
 
   theos-session report --name v0.5.0 --from 2026-10-06T12:00:00Z --to 2026-11-05T12:00:00Z
 
-The name and the directory are checked before the cluster is read: a name
-that is no name, or a directory that can't be one, writes nothing.
+The name, the period and the directory are checked before the cluster is
+read: a name that is no name, a period that ends after now, or a directory
+that can't be one, writes nothing.
 
 Flags:
 `
@@ -76,9 +78,11 @@ func reportMain(args []string, stdout, stderr io.Writer) int {
 	set.StringVar(&f.dir, "dir", model.ReportDir, "The directory the repository keeps its reports in")
 	set.StringVar(&f.from, "from", "",
 		"The period's beginning, RFC 3339: the Tasks that finished after it (default: from the first Task)")
-	set.StringVar(&f.to, "to", "", "The period's end, RFC 3339: the Tasks that finished up to and at it (default: now)")
+	set.StringVar(&f.to, "to", "",
+		"The period's end, RFC 3339, no later than now: the Tasks that finished up to and at it (default: now)")
 	set.StringVar(&f.namespace, "namespace", "",
-		"Read one project's namespace only (default: every namespace you may list Tasks in)")
+		"List the Tasks and Containers of one project's namespace only (default: of the whole cluster, in one "+
+			"list of each, which needs the right to list both in every namespace)")
 	// --kubeconfig, as run and start have it.
 	config.RegisterFlags(set)
 	set.Usage = func() {
@@ -89,6 +93,11 @@ func reportMain(args []string, stdout, stderr io.Writer) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return 2
+	}
+	if set.NArg() > 0 {
+		_, _ = fmt.Fprintf(stderr, "theos-session report: %q is not understood: the report takes flags only, and its "+
+			"name is --name's\n", set.Arg(0))
 		return 2
 	}
 	if err := report(context.Background(), f, clusterReader, time.Now(), stdout); err != nil {
@@ -114,7 +123,8 @@ func clusterReader() (client.Reader, error) {
 // report writes the report f asks for. It asks for the paths, the period and
 // the directory first, and opens the cluster only once all three hold, so a
 // name that is no name fails before anything is read or written; and it
-// writes only once both files are made, so a failure leaves no half a report.
+// writes only once both files are rendered, through writeReport, which says
+// what a failure leaves.
 func report(ctx context.Context, f reportFlags, open func() (client.Reader, error), now time.Time,
 	stdout io.Writer) error {
 	if f.name == "" {
@@ -130,6 +140,11 @@ func report(ctx context.Context, f reportFlags, open func() (client.Reader, erro
 	}
 	dir := filepath.Dir(filepath.FromSlash(pagePath))
 	if err := checkReportDir(dir); err != nil {
+		return err
+	}
+	// The document first and the page last: the page is what a release links.
+	files := []reportFile{{path: filepath.FromSlash(documentPath)}, {path: filepath.FromSlash(pagePath)}}
+	if err := checkReportFiles(files); err != nil {
 		return err
 	}
 
@@ -158,19 +173,77 @@ func report(ctx context.Context, f reportFlags, open func() (client.Reader, erro
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // a directory of the repository's pages
 		return err
 	}
-	for path, content := range map[string][]byte{documentPath: document, pagePath: []byte(page)} {
-		//nolint:gosec // a published page and its document, in the person's own repository
-		if err := os.WriteFile(filepath.FromSlash(path), content, 0o644); err != nil {
-			return err
-		}
+	files[0].content, files[1].content = document, []byte(page)
+	if err := writeReport(files); err != nil {
+		return err
 	}
 	_, err = fmt.Fprintf(stdout, "Wrote %s and %s: of %d Tasks read, %d merged, %d failed and %d ended with no change "+
 		"in the period.\n", pagePath, documentPath, len(tasks.Items), r.Merged, r.Failed, r.NoChange)
 	return err
 }
 
+// reportFile is one of a report's two files: where it goes and what it holds.
+type reportFile struct {
+	path    string
+	content []byte
+}
+
+// checkReportFiles is the error of a report's file that can't be written
+// over: a directory has its name.
+func checkReportFiles(files []reportFile) error {
+	for _, f := range files {
+		if info, err := os.Lstat(f.path); err == nil && info.IsDir() {
+			return fmt.Errorf("can't write %s: a directory has that name", f.path)
+		}
+	}
+	return nil
+}
+
+// writeReport writes files, in their order, so that a failure leaves the
+// report that was there, or none: each is written whole beside its place
+// under another name, and only when all are, and no place has become a
+// directory since report asked, is each moved to its place. What that leaves
+// to fail is a move after the first, which no check here can rule out; its
+// error names the file that is new and the one that is not.
+func writeReport(files []reportFile) error {
+	temporary := make([]string, len(files))
+	defer func() {
+		for _, t := range temporary {
+			if t != "" {
+				_ = os.Remove(t)
+			}
+		}
+	}()
+	for i, f := range files {
+		// A report's name begins with no dot (model.CheckReportName), so this is no report's file.
+		t := filepath.Join(filepath.Dir(f.path), "."+filepath.Base(f.path)+".tmp")
+		temporary[i] = t
+		//nolint:gosec // a published page and its document, in the person's own repository
+		if err := os.WriteFile(t, f.content, 0o644); err != nil {
+			return err
+		}
+	}
+	if err := checkReportFiles(files); err != nil {
+		return err
+	}
+	moved := ""
+	for i, f := range files {
+		if err := os.Rename(temporary[i], f.path); err != nil {
+			if moved != "" {
+				return fmt.Errorf("%s is new and %s is not, so the two are of different reports: %w", moved, f.path, err)
+			}
+			return err
+		}
+		temporary[i], moved = "", f.path
+	}
+	return nil
+}
+
 // reportPeriod is the period f names: after --from, up to and including
-// --to, which is now when it isn't given.
+// --to, which is now when it isn't given and is never after it. A report
+// that ended later would say it holds a time that hasn't been: the next
+// report begins at this one's end, so a Task that finishes between now and
+// that end would be in neither.
 func reportPeriod(f reportFlags, now time.Time) (model.ReportPeriod, error) {
 	period := model.ReportPeriod{Name: f.name, To: now.UTC().Truncate(time.Second)}
 	for _, at := range []struct {
@@ -185,6 +258,11 @@ func reportPeriod(f reportFlags, now time.Time) (model.ReportPeriod, error) {
 			return period, fmt.Errorf("%s %q is no time: write it as 2026-11-05T12:00:00Z", at.flag, at.value)
 		}
 		*at.into = t
+	}
+	if period.To.After(now) {
+		return period, fmt.Errorf("the period can't end after now: --to is %s and it is %s; a Task that finishes "+
+			"between the two would be in no report", period.To.UTC().Format(time.RFC3339),
+			now.UTC().Format(time.RFC3339))
 	}
 	if !period.From.IsZero() && !period.From.Before(period.To) {
 		return period, fmt.Errorf("the period ends at %s, which is not after its beginning, %s",
