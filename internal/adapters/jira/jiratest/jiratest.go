@@ -241,6 +241,18 @@ func (s *Server) Project(key string) {
 	}
 }
 
+// NumberFrom makes the next item of project the number n, as a project whose
+// items were moved or deleted has numbers far above its count.
+func (s *Server) NumberFrom(project string, n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.projects[project]
+	if p == nil {
+		panic("jiratest: no project " + project)
+	}
+	p.next = n
+}
+
 // SetWorkflow gives a project a workflow of its own.
 func (s *Server) SetWorkflow(key string, w Workflow) {
 	s.mu.Lock()

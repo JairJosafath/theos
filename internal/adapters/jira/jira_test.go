@@ -225,6 +225,44 @@ func TestNumbersAreTheKeysDigits(t *testing.T) {
 	}
 }
 
+// TestKeyNumberMustFitInt32 covers CodeQL #228
+// (go/incorrect-integer-conversion): the API stores a request's number as an
+// int32 (decision 14), so a key whose digits do not fit one is no number. Like
+// a key that does not parse, it fails the list with the key in the message,
+// and never reaches the API as a number that wrapped.
+func TestKeyNumberMustFitInt32(t *testing.T) {
+	for _, tc := range []struct {
+		key  string
+		want int
+		ok   bool
+	}{
+		{"SHOP-1", 1, true},
+		{"SHOP-2147483647", 2147483647, true},
+		{"SHOP-2147483648", 0, false},
+		{"SHOP-4294967297", 0, false},
+		{"SHOP-99999999999999999999", 0, false},
+		{"SHOP-0", 0, false},
+		{"SHOP-x", 0, false},
+		{"SHOP", 0, false},
+	} {
+		got, ok := number(tc.key)
+		if ok != tc.ok || (ok && got != tc.want) {
+			t.Errorf("number(%q) = %d, %t, want %d, %t", tc.key, got, ok, tc.want, tc.ok)
+		}
+	}
+
+	// In a list: the last number an int32 holds is listed, the next is refused.
+	s := newSite(t)
+	s.NumberFrom(testProject, 2147483647)
+	s.file(titleDarkMode, "")
+	if got := listed(t, s.tr); len(got) != 1 || got[0] != 2147483647 {
+		t.Fatalf("listed %v, want [2147483647]", got)
+	}
+	s.file(titleExport, "")
+	_, err := s.tr.ListOpenIssues(context.Background(), "")
+	wantReason(t, err, ports.ReasonTrackerError, "SHOP-2147483648")
+}
+
 // TestETag covers #157 (decision 18): Jira has no conditional list, so the
 // ETag is the adapter's own, a hash of the open items' IDs and update times.
 func TestETag(t *testing.T) {

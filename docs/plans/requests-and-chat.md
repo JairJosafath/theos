@@ -767,6 +767,10 @@ What the step chose where the plan says nothing:
   any write. Where the screen has no resolution, none is sent, even when one
   is named. A reason that is neither completed nor not planned is refused
   before any call.
+- **A key whose number does not fit an int32 is no key.** The number is parsed
+  with a bit size of 32, and one that is larger fails the list like a key that
+  does not parse (`TrackerError`, with the key), since `number` is int32 in the
+  API (decision 14) and a wrapped number would name another request (CodeQL #228).
 - **The ETag costs the IDs and update times alone.** Given one, the adapter
   reads `fields=updated` first and the items with their text only when the
   hash differs. The ETag is the hash of what the full read returned.

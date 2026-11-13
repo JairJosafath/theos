@@ -259,14 +259,17 @@ type (
 	}
 )
 
-// number is the digits of key, the number the port's calls take.
+// number is the digits of key, the number the port's calls take. The API
+// stores a request's number as an int32 (decision 14), so a number that does
+// not fit one, like one that is not digits, is no number (CodeQL #228,
+// go/incorrect-integer-conversion).
 func number(key string) (int, bool) {
 	i := strings.LastIndex(key, "-")
 	if i < 0 {
 		return 0, false
 	}
-	n, err := strconv.Atoi(key[i+1:])
-	return n, err == nil && n > 0
+	n, err := strconv.ParseInt(key[i+1:], 10, 32)
+	return int(n), err == nil && n > 0
 }
 
 // jql is the search for the project's open items that carry the label:
