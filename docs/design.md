@@ -1739,7 +1739,7 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   second. A new version or another state files again; recovering to `Healthy`
   files nothing. A failure to reach the Git host is not filed.
   (`model.DeployMonitorDue`.)
-- **Alerts** ([plans/alerts.md](plans/alerts.md), #64; built, set up as
+- **Alerts** ([plans/done/alerts.md](plans/done/alerts.md), #64; built, set up as
   [alerts.md](alerts.md) shows): the operator
   monitors no app, it listens to the tools that do. An `AlertSource` in the
   Project's namespace names one sender (`alertmanager`, `sentry` or

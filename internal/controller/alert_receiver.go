@@ -42,7 +42,7 @@ import (
 	"github.com/JairJosafath/theos/internal/model"
 )
 
-// The receiver of alerts (docs/plans/alerts.md, decisions 2 and 3): it
+// The receiver of alerts (docs/plans/done/alerts.md, decisions 2 and 3): it
 // serves POST /alerts/{namespace}/{name} on the Git events listener, checks
 // each delivery against its AlertSource's Secret, reads it with the
 // source's parser and puts its alerts in the source's inbox, in memory. It

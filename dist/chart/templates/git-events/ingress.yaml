@@ -3,7 +3,7 @@
 # Alerts from senders outside the cluster (docs/alerts.md): https://<host>/alerts/
 # to the Git events listener, with TLS, and no other path: /git-events/ stays
 # inside the cluster. A bearer token over plain HTTP would be readable on the
-# way (docs/plans/alerts.md, decision 3).
+# way (docs/plans/done/alerts.md, decision 3).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

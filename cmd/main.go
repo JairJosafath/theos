@@ -410,7 +410,7 @@ func main() {
 		}
 	}
 	// The receiver of alerts, on the same listener; nil when it is off
-	// (docs/plans/alerts.md, decision 2). Only a signal ends signalCtx, so
+	// (docs/plans/done/alerts.md, decision 2). Only a signal ends signalCtx, so
 	// the receiver drains on SIGTERM and not when leadership is lost.
 	signalCtx := ctrl.SetupSignalHandler()
 	var alerts *controller.AlertReceiver

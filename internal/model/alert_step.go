@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-// What an alert's delivery does (docs/plans/alerts.md, decisions 8 to 11): it
+// What an alert's delivery does (docs/plans/done/alerts.md, decisions 8 to 11): it
 // files an issue, is folded into the day's "and N more" (or only counted
 // there, past what status remembers), says the alert resolved, or is only
 // noted. A delivery never comments on a count; what an issue is owed about
@@ -342,7 +342,7 @@ func AlertRecordsFull(records []AlertRecord, now time.Time) bool {
 // alert's next delivery is an AlertOverflow, never a second fold. That holds
 // while status stays full: a caller that drops records during the day (those
 // of a Container that is gone) makes room, and such an alert is then folded
-// once more (docs/plans/alerts.md, decision 10).
+// once more (docs/plans/done/alerts.md, decision 10).
 func PutAlertRecord(records []AlertRecord, rec AlertRecord) []AlertRecord {
 	out := slices.Clone(records)
 	if i := slices.IndexFunc(out, func(r AlertRecord) bool { return r.Key == rec.Key }); i >= 0 {

@@ -107,7 +107,7 @@ func fileDeployBug(ctx context.Context, provider ports.Issues, repo ports.Reposi
 
 // monitorIssueLabels are the labels the monitor's bugs need in their
 // repository: the status labels, kind/bug and source/monitor
-// (docs/plans/alerts.md, decision 12).
+// (docs/plans/done/alerts.md, decision 12).
 func monitorIssueLabels() []ports.Label {
 	labels := issueLabels()
 	for _, l := range []model.IssueLabel{model.BugLabel(), model.MonitorLabel()} {

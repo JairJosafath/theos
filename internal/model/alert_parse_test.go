@@ -28,7 +28,7 @@ import (
 	"unicode/utf8"
 )
 
-// alertFixture reads a recorded delivery (docs/plans/alerts.md says where
+// alertFixture reads a recorded delivery (docs/plans/done/alerts.md says where
 // each shape comes from).
 func alertFixture(t *testing.T, name string) []byte {
 	t.Helper()

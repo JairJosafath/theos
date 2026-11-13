@@ -9,7 +9,7 @@ is counted on that issue, at most once a `commentInterval`; past
 `dailyLimit` issues a day for a Container the rest are folded into one
 "and N more" on the day's last issue; a resolved alert is said once and
 closes nothing. Why each rule is as it is:
-[plans/alerts.md](plans/alerts.md).
+[plans/done/alerts.md](plans/done/alerts.md).
 
 This page sets up one sender of each type. It assumes the chart is
 installed as release `theos` in namespace `theos-system`

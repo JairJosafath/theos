@@ -22,7 +22,7 @@ import (
 )
 
 // AlertSourceType is whose deliveries an AlertSource takes; it decides what
-// makes two deliveries the same alert (docs/plans/alerts.md, decisions 5 to 7).
+// makes two deliveries the same alert (docs/plans/done/alerts.md, decisions 5 to 7).
 // +kubebuilder:validation:Enum=alertmanager;sentry;generic
 type AlertSourceType string
 
@@ -34,7 +34,7 @@ const (
 )
 
 // AlertSourceSpec names one sender of alerts and how its alerts are read
-// (docs/plans/alerts.md, decision 1). The label rule below is #187.
+// (docs/plans/done/alerts.md, decision 1). The label rule below is #187.
 // +kubebuilder:validation:XValidation:rule="(has(self.containerLabel) ? self.containerLabel : 'theos_container') != (has(self.namespaceLabel) ? self.namespaceLabel : 'namespace')",message="containerLabel and namespaceLabel must differ, their defaults theos_container and namespace included: one label can't name both an alert's Container and its namespace"
 type AlertSourceSpec struct {
 	// type is the sender: alertmanager, sentry or generic. Immutable, since
@@ -322,7 +322,7 @@ type AlertSourceContainerDay struct {
 // AlertSource names one sender of alerts, as a GitProvider names one Git
 // host: an Alertmanager, a Sentry or any tool that posts JSON. Its firing
 // alerts become bugs in the repositories of the Containers they concern
-// (docs/plans/alerts.md). It belongs to the namespace, with no parent, and
+// (docs/plans/done/alerts.md). It belongs to the namespace, with no parent, and
 // any number of Containers share it.
 type AlertSource struct {
 	metav1.TypeMeta `json:",inline"`

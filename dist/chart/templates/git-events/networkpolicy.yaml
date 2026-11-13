@@ -35,7 +35,7 @@ spec:
     {{- with .Values.alerts.from }}
     # The senders of alerts, and the alert Ingress's controller: alerts.from
     # alone. Rendered only when it names a peer, since a rule with no from
-    # admits everyone (docs/plans/alerts.md, "Step 4 as built").
+    # admits everyone (docs/plans/done/alerts.md, "Step 4 as built").
     - from:
         {{- toYaml . | nindent 8 }}
       ports:

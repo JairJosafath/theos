@@ -1,6 +1,6 @@
 # An alert from a running app files a bug
 
-GitHub issue #64, a step of [open-source-launch.md](open-source-launch.md)
+GitHub issue #64, a step of [open-source-launch.md](../open-source-launch.md)
 (#46). Written 2026-11-13 in a session the owner ran, and changed the same
 day after step 1's two reviews: where a decision below says "the review" or
 "the second review", that is what changed and why.
@@ -15,7 +15,7 @@ The same alert firing again is counted on that issue, a storm becomes a
 handful of issues and one "and 40 more", and nothing is fixed outside the
 normal loop.
 
-theos still monitors nothing itself ([design.md](../design.md), "Out of
+theos still monitors nothing itself ([design.md](../../design.md), "Out of
 scope"): it scrapes no app and holds no alert rules. It takes deliveries.
 
 ## Where we stand
@@ -28,7 +28,7 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
   the operator (`internal/controller/git_events.go`,
   `--git-events-bind-address`, off by default), `POST
   /git-events/{namespace}/{name}`, each delivery checked against a Secret
-  ([done/git-events.md](done/git-events.md)). A delivery there is a hint:
+  ([done/git-events.md](git-events.md)). A delivery there is a hint:
   the reconcile reads the host again. An alert is not a hint. Nobody can be
   asked again what fired, so the delivery is the fact.
 - **Issue text is data.** A prompt puts an issue's text between two marker
@@ -592,7 +592,7 @@ Where the decisions above said nothing, these are the choices.
 - **`status.url` is the in-cluster address** even with the Ingress on: it
   is `--git-events-url`'s, where the Git host delivers. The guide gives
   the Ingress's address for Sentry.
-- **The guide** is [../alerts.md](../alerts.md). `docs/architecture.md`
+- **The guide** is [../../alerts.md](../../alerts.md). `docs/architecture.md`
   names the route and `controller.AlertReceiver` under the Git events
   listener's flow (#236).
 
