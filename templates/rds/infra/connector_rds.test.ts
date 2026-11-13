@@ -246,5 +246,5 @@ function grantedActions(template: Template, role: RegExp): string[] {
   return statements
     .flatMap((s) => [s.Action].flat())
     .map(String)
-    .sort((a, b) => a.localeCompare(b));
+    .sort();
 }

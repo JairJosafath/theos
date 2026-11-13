@@ -588,7 +588,7 @@ driver with the secret) (#1927).
   and `make dist` only writes the assembly the `cloudFormation` DeployTarget
   ships.
 
-### dynamodb (v1.3.0)
+### dynamodb (v1.3.1)
 
 A Connector: a CDK construct (`infra/connector_dynamodb.ts`) making one
 on-demand, encrypted table for a function Container. Since v1.1.0
@@ -628,7 +628,7 @@ aws-event-ts and aws-schedule-ts (#1741).
 - Auth: `table.grant(fn, ...)` grants the item calls on that table only.
 - README, Logging: n/a: it writes no README and has no runtime code.
 
-### rds (v1.0.0)
+### rds (v1.0.1)
 
 A Connector: a CDK construct (`infra/connector_rds.ts`) making one Aurora
 Serverless v2 PostgreSQL 16 cluster for a function, service, worker or job
