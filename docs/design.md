@@ -1415,7 +1415,10 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 - **Versions** of the UI, operator, chart and CRD API at the foot of the
   sidebar; a UI and an operator of different versions get a warning.
 - **The factory's health** comes from the UI server (`GET /factory/health`,
-  sampled every 15 seconds, an hour kept). No Prometheus or Grafana.
+  sampled every 15 seconds, an hour kept). The last hour's CPU and memory
+  are the cluster's: every node's usage added up, against what the nodes
+  can allocate together; each node's own usage and trouble show beside it.
+  No Prometheus or Grafana.
 - **The project's Chat** (*Chat*, below) on About and in Settings, read
   only: its homeserver, each room by name with a `https://matrix.to/#/` link
   to its alias (else its ID), and `Ready` with its message; nothing when the
@@ -1876,8 +1879,7 @@ The Kind environment, the `config/samples/webshop/` story and the e2e fixture
   still assumes one node: the Go build caches are hostPath directories, one
   per node, and refused where Pod Security is enforced (#120); the chart's
   Gitea has no address outside the cluster, so nodes can't pull the images
-  it holds (#121); the UI's health history reads the first node (#122); the
-  chart's defaults are the rig's, and an Agent's sandboxes can't be placed
-  on nodes (#123); the chart's Gitea is one pod on a ReadWriteOnce volume,
-  so its node's loss stops the factory (#124); no release check runs on
-  more than one node (#125).
+  it holds (#121); the chart's defaults are the rig's, and an Agent's
+  sandboxes can't be placed on nodes (#123); the chart's Gitea is one pod
+  on a ReadWriteOnce volume, so its node's loss stops the factory (#124);
+  no release check runs on more than one node (#125).
