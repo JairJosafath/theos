@@ -142,3 +142,14 @@ Each is an issue in the session's Gitea (bodies in
   admission policies follow. Follow-ups filed: #10 (a request landing as
   a check starts), #11 (a changed rule re-checks every example), #18
   (off per workspace folder).
+- **13 November, 14:30 UTC.** Step 4 is built (cel-lens-core#22 in Gitea,
+  issue #19) and in review. Decision on its one open question: the
+  engine uses the API server's own admission dispatcher and matcher
+  (`validating.NewDispatcher`, `generic.NewPolicyMatcher`), not a
+  rewrite of them, although they pull in client-go's clientset types:
+  +367 packages and +7.1 MB on a 52.6 MB binary (13%), against +1.7 MB
+  for the evaluator alone. Decision 4 is why: a rewrite of how bindings,
+  params and `validationActions` combine would be a second opinion that
+  drifts from the API server, and the oracle could only hold it to the
+  cases it has. A bigger download is the price of results a person can
+  trust.
