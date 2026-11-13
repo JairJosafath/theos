@@ -15,7 +15,7 @@ The same alert firing again is counted on that issue, a storm becomes a
 handful of issues and one "and 40 more", and nothing is fixed outside the
 normal loop.
 
-theos still monitors nothing itself ([design.md](../design.md), "Out of
+theos still monitors nothing itself ([design.md](../../design.md), "Out of
 scope"): it scrapes no app and holds no alert rules. It takes deliveries.
 
 ## Where we stand
@@ -592,7 +592,7 @@ Where the decisions above said nothing, these are the choices.
 - **`status.url` is the in-cluster address** even with the Ingress on: it
   is `--git-events-url`'s, where the Git host delivers. The guide gives
   the Ingress's address for Sentry.
-- **The guide** is [../alerts.md](../alerts.md). `docs/architecture.md`
+- **The guide** is [../../alerts.md](../../alerts.md). `docs/architecture.md`
   names the route and `controller.AlertReceiver` under the Git events
   listener's flow (#236).
 
