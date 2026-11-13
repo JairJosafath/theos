@@ -37,8 +37,9 @@ const (
 	// ReasonTrackerUnavailable: a rate limit, a failure of the tracker's own
 	// or the network; the next try may work.
 	ReasonTrackerUnavailable = "TrackerUnavailable"
-	// ReasonTrackerError: anything else the tracker answers, or an answer
-	// that can't be read.
+	// ReasonTrackerError: anything else the tracker answers, an answer that
+	// can't be read, or a call the tracker cannot make (a team's members on
+	// a tracker with no teams).
 	ReasonTrackerError = "TrackerError"
 	// ReasonTrackerNotFound: no such repository, team or project to read
 	// issues from, or one the credential can't see.

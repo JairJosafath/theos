@@ -269,7 +269,8 @@ func numbers(issues []ports.TrackerIssue) []int {
 }
 
 // TestGitHubIssuesList lists issues with pull requests left out, asks again
-// with the ETag and gets a 304, then sees a new issue and a closed one.
+// with the ETag and gets a 304, then sees a new issue and a closed one. Each
+// issue's Key is GitHub's "#number" (#151).
 func TestGitHubIssuesList(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()
@@ -420,7 +421,9 @@ func TestGitHubIssuesTeamMember(t *testing.T) {
 }
 
 // TestGitHubIssuesCommentAndClose finds no marked comment, comments, finds it
-// on the second page of comments, and closes the issue with each reason.
+// on the second page of comments, and closes the issue with each reason. The
+// comment's ID is a string, the number its page's URL ends in, in decimal
+// (#151).
 func TestGitHubIssuesCommentAndClose(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()

@@ -143,14 +143,14 @@ func IssueTracker(t *testing.T, env IssueTrackerEnv) {
 	ctx, cancel := suiteContext()
 	defer cancel()
 	runSubtests(t, trackerSuite{ctx: ctx, env: env}, env.Cannot, []subtest[trackerSuite]{
-		{"lists the open issues, oldest first, with who wrote each", trackerSuite.lists},
+		{"lists the open issues, oldest first, with who wrote each and a Key of its own (#151)", trackerSuite.lists},
 		{"lists each issue with when it was filed", trackerSuite.listsCreated},
 		{"lists no closed issue", trackerSuite.listsNoClosed},
 		{"never lists a pull request", trackerSuite.listsNoPulls},
 		{"says an unchanged list is not modified, with the ETag to ask with again", trackerSuite.notModified},
 		{"reads the list again once an issue is filed, edited or closed", trackerSuite.modified},
 		{"comments as the factory's account, and finds its comment by its marker", trackerSuite.comments},
-		{"returns the comment it posted, with its ID, author and page", trackerSuite.posted},
+		{"returns the comment it posted, with its ID (a string), author and page (#151)", trackerSuite.posted},
 		{"finds the first of its comments with a marker", trackerSuite.firstComment},
 		{"finds no comment by an empty marker", trackerSuite.emptyMarker},
 		{"ignores a marker in a comment someone else wrote", trackerSuite.strangers},
@@ -161,7 +161,7 @@ func IssueTracker(t *testing.T, env IssueTrackerEnv) {
 		{"says an issue that isn't there is not found", trackerSuite.issueNotFound},
 		{"says a credential the tracker doesn't know is unauthorized", trackerSuite.refused},
 		{"says a credential that may not use the issues lacks them", trackerSuite.lacksIssues},
-		{"says a repository that isn't there is not found", trackerSuite.trackerNotFound},
+		{"says a repository, team or project that isn't there is not found", trackerSuite.trackerNotFound},
 		{"says issues that are turned off are disabled", trackerSuite.disabled},
 		{"says a tracker that doesn't answer is unavailable", trackerSuite.unavailable},
 	})
@@ -538,7 +538,7 @@ func (s trackerSuite) lacksIssues(t *testing.T) {
 func (s trackerSuite) trackerNotFound(t *testing.T) {
 	x := s.filed(t)
 	list, err := x.Elsewhere.ListOpenIssues(s.ctx, "")
-	wantReason(t, "ListOpenIssues() of a repository that isn't there", err, ports.ReasonTrackerNotFound)
+	wantReason(t, "ListOpenIssues() of a repository, team or project that isn't there", err, ports.ReasonTrackerNotFound)
 	if len(list.Issues) != 0 || list.NotModified {
 		t.Errorf("ListOpenIssues() that failed returned %+v", list)
 	}

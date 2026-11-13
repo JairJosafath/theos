@@ -1900,8 +1900,8 @@ is fine. A change these rules forbid is a new version, never a change to a
 served one. The status is held to them as the spec is; what the operator does
 with an object may change, as the release notes say. A condition's reason is
 not in the schema: a reason may be renamed or removed, and the release that
-does it says so under *Changed*, marked Breaking, with the old and the new
-value.
+does it lists the pull request under *Changed*, marked Breaking, by its title,
+so the title of such a pull request names the old and the new reason.
 
 **Across versions** ([plans/done/api-versions.md](plans/done/api-versions.md), #1082).
 `v1alpha1` was dropped before theos's first release without the 90 days
