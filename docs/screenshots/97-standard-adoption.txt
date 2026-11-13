@@ -1,0 +1,177 @@
+#97, step 4 of docs/plans/adopt-existing.md: a Standard whose files differ
+arrives as a pull request, not as a failed adoption
+=======================================================================
+
+2026-11-13. Test output is the evidence; no cluster was used.
+
+The repository, the Container, the pull request a person merges or closes,
+a Task and a Crew that wait, a Standard named later or changed, and the
+ordinary update after the merge, on the fake Git host (envtest,
+internal/controller/container_adopt_standard_test.go, and the two specs of
+container_adopt_test.go and container_adopt_domains_test.go that used to
+fail StandardFilesDiffer). Every adoption spec ran, the ones of a repository
+that carries its Standard's files unchanged:
+
+$ go test -v ./internal/controller -count=1 -run '^(TestControllers|TestNoAgentWorksUntilTheStandardIsOnMain)$' -ginkgo.focus "Container adoption" -ginkgo.v
+Container adoption adopts a repository carrying its identity and its Standard's files, and protects main
+Container adoption fails IdentityMismatch when .theos.yaml names another project, saying what it holds
+Container adoption fails IdentityMismatch when main has no .theos.yaml
+Container adoption fails NoDefaultBranch when the repository's only branch is not main (#1908)
+Container adoption fails NothingToAdopt on an empty repository
+Container adoption is Ready, with a pull request for the one Standard file that is changed, where it failed StandardFilesDiffer (#97)
+Container adoption refuses a change of spec.adopt either way
+Container adoption refuses a change to spec.operations after the adoption, AdoptedRepository, until it is undone
+Container adoption with Domains adopts a repository scaffolded with a Domain, and records it, DomainsApplied (#42)
+Container adoption with Domains brings only the changed guide, rendered with the repository's Domains, when its domain section differs (#42, #97)
+Container adoption with Domains finds the Domains in .theos.yaml's scaffoldedFrom when the system names none now (#42)
+Container adoption with a Standard the repository doesn't hold closes the pull request of a Standard the Container names no more, and plans the one it names: an adoption is for one Standard (#97)
+Container adoption with a Standard the repository doesn't hold closes the pull request when the Container names no Standard any more (#97)
+Container adoption with a Standard the repository doesn't hold has a Task wait while the pull request is open: no agent works where the Standard's checks aren't on main (#97)
+Container adoption with a Standard the repository doesn't hold has a Triage Task made by hand wait too, and leaves main for the person to merge into (#97)
+Container adoption with a Standard the repository doesn't hold has the Crew start no Task, its triager's included, while the pull request is open (#97)
+Container adoption with a Standard the repository doesn't hold keeps the pull request at its ref when the Standard's ref moves, and brings the new ref as an ordinary update once it merged (#97)
+Container adoption with a Standard the repository doesn't hold opens one pull request with exactly the Standard's files and is Ready; merging it records the Standard and protects main (#97)
+Container adoption with a Standard the repository doesn't hold opens the pull request for a Standard named after a bare adoption, where a scaffolded Container says AddedAfterScaffold (#97)
+Container adoption with a Standard the repository doesn't hold reads a pull request gone from the host as closed, not as a Git error for ever (#97)
+Container adoption with a Standard the repository doesn't hold records the Standard when the pull request merged with a file it doesn't protect changed: the file is the repository's own (#97)
+Container adoption with a Standard the repository doesn't hold says StandardFilesDiffer when the pull request merged with a file the Standard protects changed, until main holds it as rendered (#97)
+Container adoption with a Standard the repository doesn't hold stays Ready without the Standard when a person closes the pull request, and says so; the files brought by hand are found (#97)
+Container adoption with the repository's own check has a Task made by hand wait for the protection, where one on a Container that adopts nothing fails
+Container adoption with the repository's own check has no Protected condition on a Container with a Standard
+Container adoption with the repository's own check protects main with the Container's contexts once its head reports them, and never before
+Container adoption with the repository's own check starts no Task while main isn't protected, and then builds an issue with the Container's command
+Container adoption with the repository's own check takes checkCommand and checkContexts only on a Container that adopts with no Standard
+Container adoption without the catalog adopts a repository on its identity alone, naming no Framework, Standard, Compute or Deployment
+Container adoption without the catalog adopts with a Framework and no Standard on the identity alone
+Container adoption without the catalog adopts with a Relationship to a DataStore, whose Connector it wires nothing of
+Container adoption without the catalog fails NothingToAdopt while the repository is empty, and adopts it once its history is pushed
+Container adoption without the catalog keeps a Container that doesn't adopt to a bundleRef or a frameworkRef
+Container adoption without the catalog says the Container names no Framework when its spec.operations has nothing to read it
+Container adoption without the catalog still fails IdentityMismatch for a repository that doesn't name the Container
+--- PASS: TestNoAgentWorksUntilTheStandardIsOnMain (0.00s)
+Ran 35 of 797 Specs in 81.870 seconds
+SUCCESS! -- 35 Passed | 0 Failed | 0 Pending | 762 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	81.931s
+
+The rules as tables (internal/model/standardadoption_test.go, internal/scaffold/update_test.go):
+
+$ go test ./internal/model ./internal/scaffold -run 'TestNextAdoptionStep|TestClosestRender|TestStandardAdoptionPullRequest|TestAdoptionMessage' -v
+--- PASS: TestNextAdoptionStep (0.00s)
+    --- PASS: TestNextAdoptionStep/no_adoption_yet:_compare_main_with_the_Standard_at_its_ref (0.00s)
+    --- PASS: TestNextAdoptionStep/main_holds_every_file:_record_the_Standard,_no_pull_request (0.00s)
+    --- PASS: TestNextAdoptionStep/a_file_differs:_open_the_pull_request (0.00s)
+    --- PASS: TestNextAdoptionStep/only_a_file_the_Standard_doesn't_protect_differs:_still_a_pull_request,_at_adoption (0.00s)
+    --- PASS: TestNextAdoptionStep/a_pull_request_in_flight_is_read (0.00s)
+    --- PASS: TestNextAdoptionStep/an_open_pull_request_waits_on_a_person (0.00s)
+    --- PASS: TestNextAdoptionStep/an_open_pull_request_stays_at_its_version_when_the_Standard's_ref_moves (0.00s)
+    --- PASS: TestNextAdoptionStep/a_merged_pull_request_is_compared_with_main_at_its_own_version (0.00s)
+    --- PASS: TestNextAdoptionStep/merged,_and_main_holds_the_files:_record_at_the_pull_request's_version (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_with_a_file_the_Standard_doesn't_protect_edited:_record (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_with_a_protected_file_differing:_StandardFilesDiffer (0.00s)
+    --- PASS: TestNextAdoptionStep/a_closed_pull_request_is_compared_with_main (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_and_main_is_without_its_files:_the_repository_stays_without_the_Standard (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_and_only_a_file_the_Standard_doesn't_protect_differs:_still_closed,_a_person_took_none (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_reads_main's_head (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_waits_while_main_is_as_it_was_compared (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_is_compared_again_once_main_moved (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_then_a_person_brought_every_file_by_hand:_record (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_and_a_person_brought_only_the_protected_files:_still_closed (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_and_differing,_then_a_person_fixed_the_protected_files:_record (0.00s)
+    --- PASS: TestNextAdoptionStep/closed,_and_main_moved_without_them:_still_closed (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_and_differing,_then_main_fixed:_record (0.00s)
+    --- PASS: TestNextAdoptionStep/merged_and_differing,_and_main_moved_without_a_fix:_still_StandardFilesDiffer (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_is_forgotten_when_the_Standard's_ref_moves (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_is_forgotten_when_the_Container's_checks_change (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_another_Standard's_pull_request_was_closed,_the_named_one_at_the_same_ref:_forgotten,_though_main_is_as_it_was_compared (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_another_Standard's_merged_and_differing_adoption_is_forgotten (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_another_Standard's_pull_request_is_open,_the_named_one_at_the_same_ref:_closed,_never_waited_for (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_another_Standard's_open_pull_request_is_closed_whatever_was_read_of_it (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_once_the_other_Standard's_adoption_is_gone,_the_named_one_is_planned_from_main (0.00s)
+    --- PASS: TestNextAdoptionStep/an_adoption_kept_before_its_Standard's_name_was_recorded_is_the_named_Standard's (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_without_a_name_is_the_named_Standard's_too (0.00s)
+--- PASS: TestClosestRender (0.00s)
+    --- PASS: TestClosestRender/only_the_render_with_no_Domains (0.00s)
+    --- PASS: TestClosestRender/a_repository_with_none_of_the_files_gets_them_without_Domains (0.00s)
+    --- PASS: TestClosestRender/the_recorded_Domains_render_closer (0.00s)
+    --- PASS: TestClosestRender/the_system's_Domains_render_closer (0.00s)
+    --- PASS: TestClosestRender/two_sets_as_close_as_each_other:_the_earlier (0.00s)
+    --- PASS: TestClosestRender/no_Domains_renders_closest (0.00s)
+    --- PASS: TestClosestRender/a_set_as_close_as_none_loses_to_none (0.00s)
+--- PASS: TestStandardAdoptionPullRequest (0.00s)
+ok  	github.com/JairJosafath/theos/internal/model	0.014s
+--- PASS: TestAdoptionMessage (0.00s)
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.006s
+
+The specs of the review's findings fail without their fix. Each line is one
+fix taken out through go test -overlay, no file in the tree touched, and the
+one spec that then fails (1 Failed of 1 focused):
+
+runInputs without the wait             has a Triage Task made by hand wait too, and leaves main for the person to merge into
+the Crew without standardNotOnMain     has the Crew start no Task, its triager's included, while the pull request is open
+the model without the Standard's name  closes the pull request of a Standard the Container names no more, and plans the one it names
+no Standard: status cleared, no close  closes the pull request when the Container names no Standard any more
+a pull request not found: GitError     reads a pull request gone from the host as closed, not as a Git error for ever
+
+The re-review's fixes, 2026-11-13
+---------------------------------
+
+Three specs more in container_adopt_standard_test.go, a table case of
+TestCheckStandard and TestPhaseOrStandardRecorded. With the two fixes taken
+out (the check of the Standard's Frameworks not called, StandardUpdated
+removed whether or not the close failed, as at 52b6204), the two specs of a
+fix fail and the third, which the review asked for and no fix, passes:
+
+$ go test ./internal/controller -count=1 -run '^TestControllers$' -ginkgo.focus "holds a Standard named after the adoption|an unreachable host is not|keeps saying GitError"
+  [FAIL] Container adoption with a Standard the repository doesn't hold [It] holds a Standard named after the adoption to the Frameworks it lists, as at creation, and opens no pull request until the Container names one of them (#97)
+  [FAIL] Container adoption with a Standard the repository doesn't hold [It] keeps saying GitError while the host refuses to close the pull request of a Standard the Container names no more, and closes it at the retry (#97)
+Ran 3 of 800 Specs in 73.444 seconds
+FAIL! -- 1 Passed | 2 Failed | 0 Pending | 797 Skipped
+
+With the fixes, the three and the spec beside them that closes without an
+error:
+
+$ go test -v ./internal/controller -count=1 -run '^(TestControllers|TestPhaseOrStandardRecorded)$' -ginkgo.focus "holds a Standard named after the adoption|an unreachable host is not|keeps saying GitError|closes the pull request when the Container names no Standard"
+--- PASS: TestPhaseOrStandardRecorded (0.00s)
+Ran 4 of 800 Specs in 22.317 seconds
+SUCCESS! -- 4 Passed | 0 Failed | 0 Pending | 796 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	22.366s
+
+The third review's nits, 2026-11-13
+-----------------------------------
+
+Two Go tests more in container_adopt_standard_test.go, one spec, and `#97`
+in a case name of TestPhaseOrStandardRecorded. The two tests before their
+fix (dropStandardAdoption returned zero and removed the condition when the
+Container read was not the live one; standardFits logged every pass):
+
+$ go test ./internal/controller -count=1 -run '^(TestDropStandardAdoption|TestStandardFitsLogsARefusalOnce)$'
+--- FAIL: TestDropStandardAdoption (0.00s)
+    --- FAIL: TestDropStandardAdoption/#97:_the_adoption_in_status,_the_cached_Container_not_the_live_one (0.00s)
+        container_adopt_standard_test.go:744: RequeueAfter = 0s, want 1m0s
+        container_adopt_standard_test.go:748: StandardUpdated is nil, kept = false, want true
+--- FAIL: TestStandardFitsLogsARefusalOnce (0.00s)
+    --- FAIL: TestStandardFitsLogsARefusalOnce/#97:_a_pass_after_it,_the_condition_saying_so_already (0.00s)
+        container_adopt_standard_test.go:803: logged 1 lines, want 0: ["\"level\"=0 \"msg\"=\"Rejected the Standard of an adopted repository\" \"standard\"=\"python-strict\" \"reason\"=\"python-strict does not support go-cli\""]
+FAIL	github.com/JairJosafath/theos/internal/controller	0.022s
+
+The spec "keeps the pull request of the Standard named before while the one
+named now doesn't fit or doesn't exist, and closes it once a Standard that
+fits is named" holds what the code did already and the docs now say, so no
+fix came with it and it passed when written. It fails when the first
+Standard's adoption is forgotten before the named one is looked up (go test
+-overlay, no file in the tree touched):
+
+  [FAIL] Container adoption with a Standard the repository doesn't hold [It] keeps the pull request of the Standard named before while the one named now doesn't fit or doesn't exist, and closes it once a Standard that fits is named (#97)
+Ran 1 of 801 Specs in 39.107 seconds
+FAIL! -- 0 Passed | 1 Failed | 0 Pending | 800 Skipped
+
+With the fixes, the tests, the spec and the one beside it that closes for
+another Standard that fits:
+
+$ go test -v ./internal/controller -count=1 -run '^(TestControllers|TestDropStandardAdoption|TestStandardFitsLogsARefusalOnce|TestPhaseOrStandardRecorded)$' -ginkgo.focus "keeps the pull request of the Standard named before|closes the pull request of a Standard the Container names no more"
+--- PASS: TestDropStandardAdoption (0.00s)
+--- PASS: TestStandardFitsLogsARefusalOnce (0.00s)
+--- PASS: TestPhaseOrStandardRecorded (0.00s)
+Ran 2 of 801 Specs in 15.985 seconds
+SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 799 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	16.036s

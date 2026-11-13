@@ -257,22 +257,69 @@ tries again when something it depends on changes, or when its
 
 **Adopting a repository.** A Container with `spec.adopt: true` (set at
 creation, immutable) takes over a repository that already has commits and
-is never scaffolded: the operator writes nothing. It checks main for two
-things. `.theos.yaml` carries the identity file's fields, naming this
-project and Container (`scaffoldedFrom` is what another factory scaffolded
-it from, or empty); a missing file or another identity fails `IdentityMismatch`,
-saying what the file holds. Every file the Container's Standard renders for
-it at its ref is there with that content; else it fails
-`StandardFilesDiffer`, naming the paths of the closest render. The Standard
-renders its agent guides with the system's Domains, so the check tries, in
-order, the Domains `.theos.yaml`'s `scaffoldedFrom` records (its entries
-that name a Domain of the project's catalog), the Domains the system names
-now, and none, and the first that renders main's files wins (#42): a
-repository theos scaffolded with Domains can be adopted by another factory
-with the same catalog. When both hold, it protects `main` and goes `Ready`,
-recording the Standard at its ref and those Domains in
+is never scaffolded: the operator writes nothing to its main. It checks
+main for two things. `.theos.yaml` carries the identity file's fields,
+naming this project and Container (`scaffoldedFrom` is what another factory
+scaffolded it from, or empty); a missing file or another identity fails
+`IdentityMismatch`, saying what the file holds. And every file the
+Container's Standard renders for it at its ref, with that content. The
+Standard renders its agent guides with the system's Domains, so the check
+tries, in order, the Domains `.theos.yaml`'s `scaffoldedFrom` records (its
+entries that name a Domain of the project's catalog), the Domains the
+system names now, and none, and the first that renders main's files wins
+(#42): a repository theos scaffolded with Domains can be adopted by another
+factory with the same catalog. When both hold, it protects `main` and goes
+`Ready`, recording the Standard at its ref and those Domains in
 `status.scaffoldedDomains`, which `DomainsApplied` and later Standard
-updates read. An empty repository
+updates read.
+
+**A Standard is something an adopted repository grows into** (#97). When
+the identity holds and the Standard's files don't, the Container is `Ready`
+on its identity all the same, with the Domains of the render main is
+closest to (a set of Domains only when it renders strictly closer than
+none), and the Standard arrives as a pull request: the operator pushes the
+files that differ, as the Standard renders them, to
+`standard-adopt/<name>-<ref>` and opens one pull request, recorded in
+`status.standardAdoption`; `StandardUpdated=False`, reason
+`PullRequestOpen`, names it. A Standard named after the adoption arrives
+the same way. Until it is recorded, the Standard is held to the Frameworks
+it lists, as at creation: while the Container's Framework isn't one of
+them, or the Container names none, `StandardUpdated=False`, reason
+`UnsupportedFramework`, no pull request opens, one already open stays as it
+is, and no agent works there. A person reads the pull request like any
+change, pushes to it what the repository must keep, and merges or closes
+it; the operator never merges it, since it may replace files the
+repository's people wrote. Until the Standard is on main it isn't recorded
+(`status.standard` is unset, and `ChecksApplied` with it), main isn't
+protected by the Standard's checks (a rule a bare adoption put there for
+its own checks stays on the Git host), and no agent works there: a Crew
+starts no Task and a Task made by hand waits, `ContainerNotProtected`, with
+the condition's words. The pull request stays at the ref it was opened at;
+once it merges, an ordinary Standard update brings a newer one.
+
+- **Merged:** when main holds every file the Standard protects (its
+  `protectedPaths` and the platform's) as rendered, the operator records
+  the Standard in `status.standard` at that ref and protects main. A file
+  it doesn't protect that the person changed in the pull request is the
+  repository's own from then on, and later updates merge with it. When a
+  protected file differs, `StandardUpdated=False`, reason
+  `StandardFilesDiffer`, names it: the Standard's checks would not be the
+  ones it renders.
+- **Closed:** `StandardUpdated=False`, reason `UpdateClosed`, says which
+  files the repository is without; the Container stays `Ready`, without the
+  Standard.
+
+Either stop is read again when main moves, so files a person brings by
+hand are found (after a close, all of them), and the Standard's ref or the
+Container's checks changing opens a new pull request. The pull request is
+for one Standard, named in `status.standardAdoption.name`: when the
+Container names none, or names another, once the Standard named now fits,
+the operator closes it if it is open, deletes its branch and forgets it,
+and the Standard named now is compared with main afresh. While the one
+named now doesn't fit or doesn't exist, the pull request stays as it is.
+A pull request gone from the host reads as closed. Every
+run asks whether the Standard is on main before it starts, a triage's and a
+later round's too, and puts no rule on main while it waits. An empty repository
 fails `NothingToAdopt`; one with commits but no `main` branch fails
 `NoDefaultBranch`, telling the user to rename its default branch to `main`
 first (#1908). A Container without a Standard adopts on the

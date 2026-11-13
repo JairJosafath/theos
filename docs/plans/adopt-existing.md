@@ -83,8 +83,9 @@ Read from the code, with what was run on #60:
 7. **A Standard is something an adopted repository grows into.** Naming one
    whose files differ opens the operator's pull request with the
    difference, as a bump of the Standard's ref does, instead of failing
-   `StandardFilesDiffer`: the person reviews the files, and the repository
-   keeps working meanwhile.
+   `StandardFilesDiffer`: the person reviews the files, and the Container
+   stays `Ready` meanwhile. No agent works on the repository until the
+   Standard is on main (step 4 found why).
 8. **The first issue on an adopted repository is the Crew's own:** "Write
    AGENTS.md for this repository, and say what you found", filed once,
    labelled `kind/onboarding`. Its pull request adds the guide every later
@@ -105,7 +106,7 @@ Each step is its own issue, names #60 and lands with `make check`.
 | 1. An adopting Container needs nothing from the catalog (done) | #60 | | the CRD takes it; it goes Ready on the identity alone, with and without a Framework, in envtest; a Container that doesn't adopt still needs a Framework |
 | 2. The repository's own check, and the fence on it (done) | #95 | 1 | `checkCommand`, `checkContexts`, the `Protected` condition; envtest: a Task runs the named command on a protected adopted repository; a Crew waits on one that isn't |
 | 3. `theos-session adopt` (done) | #96 | 2 | the detector's table tests; the YAML it prints passes `make validate-yaml` |
-| 4. A Standard that differs arrives as a pull request | #97 | 1 | envtest: adopting with a Standard whose files differ opens the pull request and the Container is Ready |
+| 4. A Standard that differs arrives as a pull request (done) | #97 | 1 | envtest: adopting with a Standard whose files differ opens the pull request and the Container is Ready |
 | 5. The Crew's first issue: AGENTS.md and what it found (done) | #98 | 2 | envtest: one `kind/onboarding` issue per adopted Container, never a second |
 | 6. The guide's second page (done) | #99 | 2, 3 | "Bring a repository you already have" follows the quickstart, and follows what the specs show |
 
@@ -175,6 +176,128 @@ Each step is its own issue, names #60 and lands with `make check`.
 - The proposals of eight repositories are files under
   `config/samples/adopt/proposed/`, which `make validate-yaml` holds to the
   CRDs; the table test fails when the detector's output leaves them.
+
+## What step 4 found
+
+Choices the issue left open, and why:
+
+- **A person merges the pull request; the operator never does.** A bump's
+  pull request changes files the factory wrote, so the operator merges it
+  once CI passes. This one may replace a Makefile and a workflow the
+  repository's people wrote, in a repository whose main has no rule yet,
+  so it waits on them: the reason is `PullRequestOpen`, not `Updating`,
+  whose message promises a merge.
+- **The Ready Container's pass opens it, not `adopt()`.** `adopt()` only
+  finds that no render matches, picks the Domains of the closest one and
+  goes Ready with no Standard recorded. "Adopts its repository, names a
+  Standard, records none" is then the whole trigger
+  (`awaitsStandard`), so a Standard named after a bare adoption arrives
+  the same way, where it used to say `AddedAfterScaffold`.
+- **Its state is `status.standardAdoption`,** a field of its own:
+  `status.standard` means "these files are on main at this ref" to every
+  reader (the checks, the Task's fence, the updates), and stays unset until
+  that is true.
+- **Merged and closed are judged differently.** After a merge only the
+  files the Standard protects must be as rendered: a person may have kept
+  their own README in the pull request, and that file is the repository's
+  from then on, which later updates merge with. A protected file that
+  differs is `StandardFilesDiffer`, the one case the reason stays for.
+  After a close the person took nothing, so only a main that holds every
+  file has the Standard.
+- **A stop is read again when main moves,** one read of main's head a
+  pass, so files brought by hand are found without an annotation; a change
+  of the Standard's ref or the Container's checks plans a new pull request.
+  An open one stays at its ref, and an ordinary update follows its merge.
+- **The closest render gets Domains only when strictly closer than none.**
+  A repository with none of the files ties on every set; rendering it with
+  the system's Domains would point its guides at Domain files adoption
+  never writes, and `DomainsApplied` would say they are there.
+- **No agent works there meanwhile.** `model.Protected` took "names a
+  Standard" for "main has checks"; the Task and the Crew now ask whether
+  the Standard is on main (`standardOnMain`, `standardNotOnMain`) and wait
+  with `ContainerNotProtected`, as on a bare adoption. The helpers sit
+  beside the adoption, not in `protection.go`, which is the owner's; it
+  would be their natural home. `pendingStep` alone was not enough: a
+  Triage and a judge run skip it, and so does a Task past Pending when a
+  bare adoption names a Standard. `protectRepository`, which still reads
+  "names a Standard" as "has checks", would put the Standard's rule on
+  main before such a run, and under it the person could no longer merge
+  the pull request. So `runInputs`, the door to every run on the
+  Container's repository, a triage's, a judge's or a later round's as the
+  first one's, asks `standardNotOnMain` first, protects nothing and waits.
+  A plan run never reaches it and needs no wait: its sandbox is built on
+  the Brief's repository and protects nothing.
+- **They are woken when the Standard is recorded.** Recording it changes
+  no phase, and the Task's and the Crew's watch of their Container passed
+  phase changes only, so they went on at their timed recheck, up to ten
+  minutes while the host's deliveries arrive. Their watch now passes
+  `status.standard` going from unset to set too
+  (`containerPhaseOrStandardRecorded`); the Project's roll-up keeps
+  `containerPhaseChanges`.
+- **A Standard fits the Frameworks it lists, at an adoption as at
+  creation.** A `standardRef` can be set on a Ready Container, where the
+  check before the scaffold (`model.CheckStandard`) never runs again, so a
+  bare adoption with no `frameworkRef` got the pull request of a Standard
+  written for one Framework. The pass that starts the adoption now asks
+  the same rule (`standardFits`), every pass until the Standard is
+  recorded: `StandardUpdated=False` with the reason and message
+  `ChoicesValid` has at creation, `UnsupportedFramework`, on a Container
+  that stays `Ready`, since losing Ready would adopt it again. Nothing of
+  the adoption is read or done meanwhile: no pull request opens, one
+  already open (the Standard's list, the `frameworkRef` or the
+  `standardRef` changed under it) stays as it is and is read again once
+  the Standard fits, and no agent works there. A bare adoption can hold the rule: `frameworkRef` is
+  free to set on it, renders nothing, and is what the Standard's templates
+  are written for. A Container with no Framework reads "supports only the
+  Frameworks it lists, and the Container names no frameworkRef" where the
+  message ended in an empty name.
+- **An adoption is for one Standard.** `spec.standardRef` can change, and
+  two Standards of one catalog repository are pinned at the same ref, so
+  ref and checks don't tell them apart: `status.standardAdoption.name`
+  does. When the Container names another Standard, a stopped adoption is
+  forgotten and an open one closed (the pull request is the operator's
+  own), and the named Standard is compared with main afresh: once that
+  Standard exists and fits, and not before (`NotFound` and `standardFits`
+  return first, so the first one's pull request stays open meanwhile).
+  Naming none closes it the same way, at once. A status kept before the name reads as the named
+  Standard's.
+- **A pull request gone from the host is a closed one:** it brings nothing
+  any more, and `GitError; retrying` had no way out. A host that doesn't
+  answer is not: the pull request stays, `GitError`, and is read again.
+  When the Container names no Standard any more and the host refuses the
+  close, the condition stays, `GitError`, until the retry closes it. One
+  case is accepted: a token that lost its access reads the pull request
+  as gone (both hosts answer 404), so that close forgets the adoption and
+  leaves the pull request open for a person to close.
+
+Left as it is:
+
+- The UI shows the condition's reason and message, and nothing of
+  `status.standardAdoption`; `describe.ts` still describes
+  `StandardFilesDiffer` as a failed adoption.
+- A status write lost right after the pull request opened opens no second
+  one: `OpenPullRequest` returns the open one for the head, on every
+  adapter. The next pass pushes the branch again, a new commit with the
+  same files, and records that pull request. A commit a person pushed to
+  the branch between the two is replaced.
+- A bare adoption that main protects by its own checks and then names a
+  Standard keeps that rule on the host while the pull request is open: no
+  run replaces it with the Standard's any more, and nothing lifts it. The
+  rule requires the old checks, protects the workflow paths and keeps the
+  merge to the operator, so the pull request takes a person the host lets
+  merge past it. Whether the operator should lift the rule while it waits
+  is `protection.go`'s to answer, and not tested on a real host.
+- An adopted Container whose Standard is recorded and then named anew
+  still says `AddedAfterScaffold`: the files on main are the first one's.
+- The Brief's "needs you" and the Chat don't list a waiting adoption
+  (`standardBehind` reads `FilesBehind` only).
+- After the adoption only the pair of Standard and Framework is held
+  (`standardFits`). The Standard's `supportedTypes` (`CheckChoices`,
+  `UnsupportedType`) and the Framework existing (`NotFound`), both held at
+  creation, are not: the Framework renders nothing on an adopted
+  repository, so its name is only what the Standard's list is read
+  against, and a Standard written for another type arrives as the same
+  pull request, which a person reads and merges, never the operator.
 
 ## What step 5 found
 
