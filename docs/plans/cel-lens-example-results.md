@@ -125,4 +125,20 @@ Each is an issue in the session's Gitea (bodies in
 
 ## Status
 
-- **13 November.** Planned. Nothing built.
+- **13 November, morning.** Planned. Nothing built.
+- **13 November, 13:50 UTC.** Steps 1 to 3 and 6 are on JairJosafath/cel-lens
+  `main` (#21): cel-lens-core#7, #9, #16 and #17 (the lock in `pkg/check`
+  that made the editor wait, found in review and fixed: checks of one
+  Kubernetes version now run at once) and cel-lens-vscode#12 and #14, over
+  thirteen review rounds. The engine stack had been built on a Gitea
+  `main` without the released v0.28.0, and was merged with it before
+  publishing, so nothing released changed. Step 4 (admission policies,
+  cel-lens-core#19) is being built.
+
+  Decision: the CRD part is released now, as engine v0.29.0 and the
+  extension pinning it, rather than after steps 4 and 5. It is what most
+  operator authors write, it is complete and reviewed, and #1 asked for
+  the results at the rule, not for every kind at once. The README says
+  admission policies follow. Follow-ups filed: #10 (a request landing as
+  a check starts), #11 (a changed rule re-checks every example), #18
+  (off per workspace folder).
