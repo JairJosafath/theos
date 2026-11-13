@@ -16,7 +16,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 ~/.cache/theos/tmp/relay-2/tmp.Yeqlc9JFzV/app
+ RUN  v5.0.3 $TMPDIR/<scratch>/app
 
  ✓ src/job.test.ts (8 tests) 27ms
  ✓ src/runs.test.ts (21 tests) 31ms

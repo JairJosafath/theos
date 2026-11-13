@@ -20,7 +20,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 ~/.cache/theos/tmp/relay-3/tmp.NYXnNrtwzg/queue-rds
+ RUN  v5.0.3 $TMPDIR/<scratch>/queue-rds
 
  ✓ src/batch.test.ts (3 tests) 39ms
  ✓ src/consume.test.ts (9 tests) 141ms
@@ -86,7 +86,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 ~/.cache/theos/tmp/relay-3/tmp.NYXnNrtwzg/queue-both
+ RUN  v5.0.3 $TMPDIR/<scratch>/queue-both
 
  ✓ src/consume.test.ts (9 tests) 56ms
  ✓ src/items.test.ts (26 tests) 53ms
@@ -151,7 +151,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 ~/.cache/theos/tmp/relay-3/tmp.NYXnNrtwzg/schedule-rds
+ RUN  v5.0.3 $TMPDIR/<scratch>/schedule-rds
 
  ✓ src/job.test.ts (8 tests) 68ms
  ✓ src/runs.test.ts (21 tests) 91ms
@@ -214,7 +214,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 ~/.cache/theos/tmp/relay-3/tmp.NYXnNrtwzg/schedule-both
+ RUN  v5.0.3 $TMPDIR/<scratch>/schedule-both
 
  ✓ src/job.test.ts (8 tests) 30ms
  ✓ src/runs.test.ts (21 tests) 36ms
@@ -274,7 +274,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 ~/.cache/theos/tmp/relay-3/tmp.NYXnNrtwzg/event-rds
+ RUN  v5.0.3 $TMPDIR/<scratch>/event-rds
 
  ✓ src/consume.test.ts (12 tests) 61ms
  ✓ src/items.test.ts (36 tests) 51ms
@@ -330,7 +330,7 @@ node_modules/.bin/eslint --max-warnings 0 .
 node_modules/.bin/tsc --noEmit
 node_modules/.bin/vitest run
 
- RUN  v5.0.3 ~/.cache/theos/tmp/relay-3/tmp.NYXnNrtwzg/event-both
+ RUN  v5.0.3 $TMPDIR/<scratch>/event-both
 
  ✓ src/consume.test.ts (12 tests) 43ms
  ✓ src/items.test.ts (36 tests) 53ms

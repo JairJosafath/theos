@@ -308,8 +308,9 @@ func sudo(t *testing.T, base, token, user, path string, body map[string]string) 
 }
 
 // sshURLLogin is the login of a payload's ssh_url: the OS user Gitea ran as
-// on the machine that recorded it.
-var sshURLLogin = regexp.MustCompile(`("ssh_url":")[^"@]*@`)
+// on the machine that recorded it. The first group keeps what stands before
+// it, the ssh:// of the form Gitea writes when its SSH port is not 22 included.
+var sshURLLogin = regexp.MustCompile(`("ssh_url":"(?:ssh://)?)[^"@/]*@`)
 
 // captureEvents writes the body, compacted, and event header of a delivery of
 // each kind to testdata/events/<kind>.json and .event. The ssh_url's login
