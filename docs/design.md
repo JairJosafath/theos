@@ -1502,9 +1502,11 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
   sidebar; a UI and an operator of different versions get a warning.
 - **The factory's health** comes from the UI server (`GET /factory/health`,
   sampled every 15 seconds, an hour kept). The last hour's CPU and memory
-  are the cluster's: every node's usage added up, against what the nodes
-  can allocate together; each node's own usage and trouble show beside it.
-  No Prometheus or Grafana.
+  are the cluster's: every node's usage added up, against what those nodes
+  could allocate together when sampled, so a node that joins or leaves moves
+  no earlier point, with the fullest node's share of itself as a second
+  line; each node's own usage and trouble, as they are at this moment, show
+  beside it. No Prometheus or Grafana.
 - **The project's Chat** (*Chat*, below) on About and in Settings, read
   only: its homeserver, each room by name with a `https://matrix.to/#/` link
   to its alias (else its ID), and `Ready` with its message; nothing when the
