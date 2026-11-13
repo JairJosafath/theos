@@ -77,9 +77,12 @@ type requestsRead struct {
 // it closed it, or what reading the item on its own said, and when. A source's
 // list is a search, which can lag behind its items for minutes and longer (a
 // search index does): an item the Brief closed may be listed still, and
-// would be read as a new request and planned twice.
+// would be read as a new request and planned twice. err is why the read
+// failed, or why it wasn't made (#245): the item is left out until the
+// recheck, and read again then.
 type itemCheck struct {
 	open bool
+	err  error
 	at   time.Time
 }
 
@@ -306,6 +309,7 @@ func (r *BriefReconciler) readOrigin(ctx context.Context, brief *c4v1beta1.Brief
 		failure = &requestsFailure{ports.IssuesReason(err), err.Error()}
 	}
 	settled[origin.id()] = model.SettledAnswers(in, got)
+	r.releaseHeld(brief, origin, got)
 	return got, failure
 }
 
@@ -380,14 +384,17 @@ func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief
 // (ports.IssueReader), and left out unless it is open and labelled: what the
 // Brief closed is never asked again, whatever the search says, and after a
 // restart too. What a read found is kept for a recheck, so an item is read
-// once per recheck at most. A read that fails leaves its item out of this
-// pass, and is returned.
+// once per recheck at most. A read that fails is kept so too (#245): its item
+// is left out until the recheck, and the failure is returned on each pass
+// until then. One the tracker refused as unavailable (a rate limit, an
+// outage) ends the pass's reads: the items not read yet wait for the recheck
+// with it.
 func (r *BriefReconciler) listedItems(ctx context.Context, origin requestOrigin,
 	tracker ports.IssueTracker, last *requestsRead, same []model.Request, now time.Time) ([]ports.TrackerIssue, error) {
 	reader, reads := tracker.(ports.IssueReader)
 	reads = reads && origin.source != ""
 	var out []ports.TrackerIssue
-	var first error
+	var first, unavailable error
 	for _, i := range last.open {
 		if slices.ContainsFunc(same, func(k model.Request) bool { return k.Number == i.Number }) {
 			out = append(out, i)
@@ -398,6 +405,9 @@ func (r *BriefReconciler) listedItems(ctx context.Context, origin requestOrigin,
 		r.requestsMu.Unlock()
 		switch {
 		case checked && now.Sub(check.at) < r.suggestionsRecheck():
+			if check.err != nil && first == nil {
+				first = check.err
+			}
 			if check.open {
 				out = append(out, i)
 			}
@@ -405,12 +415,19 @@ func (r *BriefReconciler) listedItems(ctx context.Context, origin requestOrigin,
 		case !reads:
 			out = append(out, i)
 			continue
+		case unavailable != nil:
+			r.checkItem(last, i.Number, itemCheck{err: unavailable, at: now})
+			continue
 		}
 		open, err := reader.IssueOpen(ctx, i.Number)
 		if err != nil {
 			if first == nil {
 				first = err
 			}
+			if ports.IssuesReason(err) == ports.ReasonTrackerUnavailable {
+				unavailable = err
+			}
+			r.checkItem(last, i.Number, itemCheck{err: err, at: now})
 			continue
 		}
 		r.checkItem(last, i.Number, itemCheck{open: open, at: now})
@@ -604,6 +621,29 @@ func (r *BriefReconciler) holdClose(brief *c4v1beta1.Brief, req model.Request, e
 		r.requestsHeld = map[string]heldClose{}
 	}
 	r.requestsHeld[key] = heldClose{at: now, err: err}
+}
+
+// releaseHeld forgets the held closes of the origin's requests that are no
+// longer among requests, what the Brief keeps of it in status.requests
+// (#245): a request whose label was taken off while its close was held
+// leaves the list, and when it comes back its close is tried at once, not
+// after what is left of the old refusal's recheck.
+func (r *BriefReconciler) releaseHeld(brief *c4v1beta1.Brief, origin requestOrigin, requests []model.Request) {
+	r.requestsMu.Lock()
+	defer r.requestsMu.Unlock()
+	if len(r.requestsHeld) == 0 {
+		return
+	}
+	kept := map[string]bool{}
+	for _, req := range requests {
+		kept[heldKey(brief, req)] = true
+	}
+	prefix := requestsKey(brief, origin.id()) + "#"
+	for key := range r.requestsHeld {
+		if strings.HasPrefix(key, prefix) && !kept[key] {
+			delete(r.requestsHeld, key)
+		}
+	}
 }
 
 // forgetReads drops what the Brief read of repositories and sources it no
