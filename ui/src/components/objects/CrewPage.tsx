@@ -15,7 +15,17 @@
 
 import type { BriefWriter } from '../../k8s/briefs'
 import { RUN_SCHEDULE, briefTarget, type CrewWriter } from '../../k8s/crews'
-import type { Agent, ApprovalRule, Brief, Container, Crew, CrewRelease, Standard, Task } from '../../k8s/types'
+import type {
+  Agent,
+  ApprovalRule,
+  Brief,
+  Container,
+  Crew,
+  CrewRelease,
+  CrewSchedule,
+  Standard,
+  Task,
+} from '../../k8s/types'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useActs } from '../../lib/hooks'
 import { approvalAsks, approvalRuleFor, crewSummary, issueList, type CrewRouteSummary } from '../../model/crews'
@@ -287,7 +297,31 @@ function SchedulesPanel({ crew, writer }: { crew: Crew; writer?: CrewWriter }) {
   )
 }
 
-const FIELD_NAME: Record<ScheduleField, string> = { cron: 'Cron', timeZone: 'Time zone', goal: 'Goal' }
+export const FIELD_NAME: Record<ScheduleField, string> = { cron: 'Cron', timeZone: 'Time zone', goal: 'Goal' }
+
+/**
+ * A proposal as its Standard wrote it: its name, its cron and its goal. This
+ * is the one wording of a proposal, on the Crew's page and on the Standard's
+ * own (#144). No time zone is shown as the proposal's but one a Standard
+ * wrote (writtenZone), and zoneNote says, after it, whose zone counts for
+ * the reader of that page.
+ */
+export function ProposalFacts({ proposal, zoneNote }: { proposal: CrewSchedule; zoneNote: string }) {
+  const zone = writtenZone(proposal)
+  return (
+    <>
+      <span className="mono">{proposal.name}</span>
+      <span className="muted"> · </span>
+      <span className="mono">{proposal.cron}</span>
+      <div>{proposal.goal}</div>
+      {zone ? (
+        <div className="muted">
+          Written for the time zone <span className="mono">{zone}</span>. {zoneNote}
+        </div>
+      ) : null}
+    </>
+  )
+}
 
 /**
  * The schedules the Standard of the Crew's Container proposes. Those whose
@@ -352,16 +386,7 @@ export function ProposalsPanel({
           <ol className="routes">
             {offered.map((p) => (
               <li key={p.name}>
-                <span className="mono">{p.name}</span>
-                <span className="muted"> · </span>
-                <span className="mono">{p.cron}</span>
-                <div>{p.goal}</div>
-                {writtenZone(p) ? (
-                  <div className="muted">
-                    Written for the time zone <span className="mono">{writtenZone(p)}</span>. The zone this Crew reads
-                    it in is still the one you give.
-                  </div>
-                ) : null}
+                <ProposalFacts proposal={p} zoneNote="The zone this Crew reads it in is still the one you give." />
                 {writer ? (
                   <TakeProposalForm crew={crew} proposal={p} zones={zones} writer={writer} onTaken={setTaken} />
                 ) : null}
