@@ -223,8 +223,9 @@ and, in its *Shell tests* job, `CHECK_STEPS="test-hack doc-links
 license-headers readers"`. *Lint* starts for a push to main or a pull request
 that changes one of its `paths`: Go, the linter's configuration, the YAML,
 the chart, templates, `hack/`, and every Markdown file and `docs/**`, so a
-change to documents alone starts it too: its *Lint* job's steps select
-nothing, and *Shell tests* selects `doc-links` alone and fails on a dead link
+change to documents alone starts it too: its *Lint* job's `make check` steps
+select nothing (its `lint-config` and `check-generated` steps still run), and
+*Shell tests* selects `doc-links` alone and fails on a dead link
 (#148; `hack/check-workflows.sh` requires both patterns). They set `TEST_BASE`:
 a pull request is compared with its base branch, a push to main with main's
 head before the push (`github.event.before`), a manual run with main. Each

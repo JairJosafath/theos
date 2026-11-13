@@ -5,7 +5,8 @@ name: Lint
 # shell tests of hack/ read (make test-hack), and every Markdown file and
 # docs/** (#148: the link check runs in the Shell tests job, and a pull request
 # that changes only documents must still start it; on such a change the Lint
-# job's steps select nothing and Shell tests selects doc-links alone). It runs
+# job's make check steps select nothing, its lint-config and check-generated
+# steps still run, and Shell tests selects doc-links alone). It runs
 # on pull requests to main too, with the same paths, so lint and the shell
 # tests answer before hack/lib/github.sh land (hack/check-workflows.sh).
 # Every run is partial, against main (#127): each job runs its part of make
