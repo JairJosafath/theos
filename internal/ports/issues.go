@@ -37,6 +37,9 @@ type Issue struct {
 	// it has none.
 	MilestoneTitle string
 	MilestoneDue   time.Time
+	// ClosedAt is when a closed issue was closed; zero while it is open, or
+	// when the host doesn't say.
+	ClosedAt time.Time
 }
 
 // Label is a label a repository should have.

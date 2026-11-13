@@ -114,6 +114,7 @@ type ghIssue struct {
 	Labels        []ghLabel        `json:"labels"`
 	Milestone     *ghMilestone     `json:"milestone"`
 	PullRequest   *json.RawMessage `json:"pull_request"`
+	ClosedAt      *time.Time       `json:"closed_at"`
 }
 
 // stateOpen is GitHub's state of an open issue or milestone; stateClosed is
@@ -125,6 +126,9 @@ const (
 
 func (i ghIssue) issue() ports.Issue {
 	out := ports.Issue{Number: i.Number, Title: i.Title, State: i.State, URL: i.HTMLURL}
+	if i.ClosedAt != nil {
+		out.ClosedAt = *i.ClosedAt
+	}
 	if i.Body != nil {
 		out.Body = *i.Body
 	}

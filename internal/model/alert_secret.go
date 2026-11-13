@@ -16,7 +16,14 @@ limitations under the License.
 
 package model
 
-import "fmt"
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"fmt"
+	"strings"
+)
 
 // The keys of an AlertSource's Secret (docs/plans/alerts.md, decision 3).
 const (
@@ -69,4 +76,58 @@ func AlertSecretMissing(typ, secret string, data map[string][]byte) string {
 	}
 	return fmt.Sprintf("Secret %s has no %s, which a %s source checks its deliveries with: until it has, "+
 		"every delivery is refused", secret, want, typ)
+}
+
+// The headers a delivery carries its credential in (decision 3).
+const (
+	// AlertHeaderAuthorization carries "Bearer <token>": Alertmanager's,
+	// and a generic sender's whose Secret has a token alone.
+	AlertHeaderAuthorization = "Authorization"
+	// AlertHeaderSentrySignature carries Sentry's hex HMAC-SHA256 of the
+	// body with the integration's client secret.
+	AlertHeaderSentrySignature = "Sentry-Hook-Signature"
+	// AlertHeaderSignature carries a generic sender's "sha256=<hex
+	// HMAC-SHA256 of the body>".
+	AlertHeaderSignature = "X-Theos-Signature"
+)
+
+// AlertDeliveryAuthentic says whether a delivery to an AlertSource of type
+// typ, whose Secret's data is data, carries what that Secret checks: a
+// bearer token equal to token, or an HMAC-SHA256 of body under secret, in
+// the header its type reads (header reads one by name). The key is
+// AlertSecretKey's, the one the source's Ready condition checks, and a
+// Secret AlertSecretMissing refuses authenticates nothing. Comparisons are
+// constant-time, and a token is compared by its SHA-256 digest, so the
+// comparison doesn't tell its length.
+func AlertDeliveryAuthentic(typ string, data map[string][]byte, header func(string) string, body []byte) bool {
+	key := AlertSecretKey(typ, data)
+	if key == "" || len(data[key]) == 0 {
+		return false
+	}
+	want := data[key]
+	switch {
+	case key == AlertSecretKeyToken:
+		token, ok := strings.CutPrefix(header(AlertHeaderAuthorization), "Bearer ")
+		if !ok {
+			return false
+		}
+		got, expected := sha256.Sum256([]byte(token)), sha256.Sum256(want)
+		return subtle.ConstantTimeCompare(got[:], expected[:]) == 1
+	case typ == AlertTypeSentry:
+		return alertHMACEqual(header(AlertHeaderSentrySignature), want, body)
+	default:
+		sig, ok := strings.CutPrefix(header(AlertHeaderSignature), "sha256=")
+		return ok && alertHMACEqual(sig, want, body)
+	}
+}
+
+// alertHMACEqual says whether sig, hex, is the HMAC-SHA256 of body under key.
+func alertHMACEqual(sig string, key, body []byte) bool {
+	got, err := hex.DecodeString(strings.TrimSpace(sig))
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write(body)
+	return hmac.Equal(got, mac.Sum(nil))
 }

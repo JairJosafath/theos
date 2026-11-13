@@ -93,6 +93,9 @@ type GitEventsReceiver struct {
 	Git GitClient
 	// BindAddress is where Start listens (--git-events-bind-address).
 	BindAddress string
+	// Alerts takes the deliveries of AlertSources on the same listener
+	// (POST /alerts/{namespace}/{name}); nil serves none.
+	Alerts *AlertReceiver
 
 	mu        sync.Mutex
 	sinks     []chan event.TypedGenericEvent[GitEvent]
@@ -159,10 +162,14 @@ func (g *GitEventsReceiver) Start(ctx context.Context) error {
 	return server.Shutdown(shutdown)
 }
 
-// Handler serves POST /git-events/{namespace}/{name}.
+// Handler serves POST /git-events/{namespace}/{name}, and with Alerts
+// POST /alerts/{namespace}/{name}.
 func (g *GitEventsReceiver) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(gitEventsPath, g.serve)
+	if g.Alerts != nil {
+		mux.HandleFunc(alertsRoute, g.Alerts.serve)
+	}
 	return mux
 }
 

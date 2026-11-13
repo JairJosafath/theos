@@ -456,7 +456,7 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
 | --- | --- | --- |
 | 1. The plan and the rules (this one) | #64 | this file; `docs/design.md` and `ROADMAP.md` say what is planned; `internal/model/alert*.go` with table tests on the recorded deliveries in `internal/model/testdata/alerts/`, deduplication, the daily limit and hostile input included |
 | 2. The `AlertSource` kind (done) | #64, #187 | `kubebuilder create api --group theos --version v1beta1 --kind AlertSource --resource --controller`; spec and status as decision 1, field names and integer widths included, with the CRD's patterns and CEL (`type` immutable, a route has exactly one of `namespace` and `project`, `commentInterval` at least `1m`, the two labels' minimum length and pattern, and the two labels differ with their defaults applied, `theos_container` and `namespace` for one left out, at create and at update: #187); a sample in `config/samples`; envtest: each rule's failing case, and for #187 one spec per case (both set and equal; one set to the other's default) that fails without the rule; the reconciler sets `Ready` from the Secret (`SecretMissing`, an empty value included, else `ReceiverOff`); `make validate-yaml` passes. `make manifests` writes the CRD and the role into `dist/chart/` too, a protected path: the owner's session may, and the commit says so |
-| 3. The receiver and the filing | #64 | `model.AlertDeliveryAuthentic` (decision 3) table-tested, an empty `token` and an empty `secret` among its cases; `POST /alerts/{namespace}/{name}` on the Git events listener; the reconciler drains the inbox as decision 2 says, on SIGTERM too, until `--alert-drain-timeout` (default `5s`) and never on leadership lost, and requeues for what is owed, on a clock the specs move (`Now`, as the Crew's reconciler has); it settles a Container's old day (`model.AlertDayOwed`) before the first `model.AlertStep` of a new one, passes `ClosedAt` and `Full` to `model.AlertStep`, gives `Filed` the number of an open issue the marker finds (decision 8) and keeps no record of an `AlertOverflow`; the deploy monitor's bug gets `source/monitor`; the metric, with `result="dropped"`; envtest: a signed delivery files one issue, a second comments once the interval passed, an unsigned one is refused and writes nothing, an alert that names no known Container is counted on `status.unmatched` and files nothing, the limit folds, a lost status write files no second, an alert whose record made room and whose issue is open files no second, a fold of yesterday is said before today's first alert steps, an alert taken while the Git host fails is filed when it answers, one still in the inbox at the drain's deadline is counted as dropped. `make manifests` regenerates the role in `dist/chart/` (protected path, as step 2) |
+| 3. The receiver and the filing (done) | #64 | `model.AlertDeliveryAuthentic` (decision 3) table-tested, an empty `token` and an empty `secret` among its cases; `POST /alerts/{namespace}/{name}` on the Git events listener; the reconciler drains the inbox as decision 2 says, on SIGTERM too, until `--alert-drain-timeout` (default `5s`) and never on leadership lost, and requeues for what is owed, on a clock the specs move (`Now`, as the Crew's reconciler has); it settles a Container's old day (`model.AlertDayOwed`) before the first `model.AlertStep` of a new one, passes `ClosedAt` and `Full` to `model.AlertStep`, gives `Filed` the number of an open issue the marker finds (decision 8) and keeps no record of an `AlertOverflow`; the deploy monitor's bug gets `source/monitor`; the metric, with `result="dropped"`; envtest: a signed delivery files one issue, a second comments once the interval passed, an unsigned one is refused and writes nothing, an alert that names no known Container is counted on `status.unmatched` and files nothing, the limit folds, a lost status write files no second, an alert whose record made room and whose issue is open files no second, a fold of yesterday is said before today's first alert steps, an alert taken while the Git host fails is filed when it answers, one still in the inbox at the drain's deadline is counted as dropped. `make manifests` regenerates the role in `dist/chart/` (protected path, as step 2) |
 | 4. The chart and the guide | #64 | the chart's Service exposes the path and a value gives it an Ingress for senders outside the cluster (`dist/chart` is a protected path); `docs/alerts.md` shows the Alertmanager receiver's YAML, the Sentry integration's settings and a `curl` for the generic type; README, `docs/comparison.md`, `docs/design.md` ("Out of scope", the Alerts rule) and `ROADMAP.md` say it is built |
 
 ## What step 2 found
@@ -485,6 +485,56 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
 - **The chart's helper roles** (`rbac.helpers.enabled`) for the kind were
   written as the TestEnvironment's are, not by `make chart`: the CRD and the
   manager role come from `make manifests`.
+
+## Step 3 as built (#64)
+
+Where the decisions above said nothing, these are the choices.
+
+- **The receiver is on with the listener.** `AlertReceiver`
+  (`internal/controller/alert_receiver.go`) is mounted on the Git events
+  listener (`GitEventsReceiver.Alerts`), so `--git-events-bind-address` turns
+  both on, and a build without the listener makes every source
+  `ReceiverOff`. With it a source whose Secret checks deliveries is
+  `Receiving`, and `status.url` is `model.AlertsURL(--git-events-url, ...)`.
+- **The check** is `model.AlertDeliveryAuthentic`, which reads the key
+  through `model.AlertSecretKey`, the one `Ready` checks. A missing Secret
+  is no data, and is answered 401 as a wrong credential is.
+- **The inbox** holds at most 1000 alerts a source; a delivery whose alerts
+  don't all fit is refused whole (503), so a retry repeats nothing half
+  taken. The inbox also counts the deliveries and `unread`; those counts
+  ride on the next status write and leave the inbox once it succeeded.
+- **One status write an alert,** under `client.MergeFromWithOptimisticLock`;
+  a conflict requeues at once. The source is read live (`APIReader`) at the
+  start of a drain, so the write starts from its latest. The reconcile and
+  the drain on SIGTERM take a lock per source, so they never file one alert
+  side by side.
+- **The drain on SIGTERM** (`AlertReceiver.Start`) tries the inboxes again
+  every 100 ms while the Git host fails, until `--alert-drain-timeout`; a
+  context that ends while the signal handler's hasn't is leadership lost,
+  and nothing is drained. `theos_alert_deliveries_total` counts each
+  delivery by `result` (`accepted`, `unauthorized`, `bad_request`,
+  `not_found`, `too_large`, `unavailable`) and, as `dropped`, the alerts an
+  inbox held when the operator stopped. The chart's `manager.args` taking
+  the flag is step 4's, with the rest of `dist/chart`.
+- **The old day is settled before every step,** not only the first of a new
+  day: a step asks `model.AlertDayOwed` first, and a fold owed by the
+  interval is said a little sooner than the poll would. The envtest spec
+  sees the outcome (yesterday's count on yesterday's last issue, today's
+  first alert filed with today's count) whether the delivery or the poll
+  settles it first.
+- **`ClosedAt` is the host's `closed_at`:** `ports.Issue.ClosedAt`, read by
+  the GitHub and Gitea adapters, and set by the fake when it closes an
+  issue. An issue the host no longer has is taken as closed with no time.
+- **A closed issue is owed nothing.** When a record's count is due and its
+  issue is closed, the record's `reported` takes its `count`: the repeats
+  stay unsaid, and the host is not asked again at every pass.
+- **A record of a Container that is gone** leads nowhere: its alert finds a
+  Container anew (decision 4), and the record is dropped at the end of the
+  pass with the Container's day.
+- **Status times are seconds,** as `metav1.Time` keeps them.
+- **The deploy monitor's bug** is labelled `kind/bug`, `source/monitor` and
+  `status/proposed`; it still looks its marker up among `kind/bug` issues,
+  so one filed before this step is found.
 
 ## Done when
 

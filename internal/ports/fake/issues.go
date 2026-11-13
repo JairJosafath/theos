@@ -470,7 +470,7 @@ func (g *Git) CloseIssue(ctx context.Context, repo ports.Repository, number int)
 		return fmt.Errorf("closing issue %d of %s/%s, which waits on %v: %w", number, repo.Owner, repo.Name,
 			blockers, ports.ErrOpenDependencies)
 	}
-	i.State = stateClosed
+	i.State, i.ClosedAt = stateClosed, time.Now()
 	g.s.deliver(repo, EventIssue, number)
 	return nil
 }
