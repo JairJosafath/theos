@@ -518,11 +518,11 @@ var _ = Describe("Container scaffolding", func() {
 		settledHistoryCount(ns)
 		versions := watchContainer(ns)
 
-		By("the repository being emptied and the Framework's template moved to a branch")
-		gitFake.ClearRepo(ns, "orders-api")
+		By("the Framework's template moved to a branch and the repository emptied")
 		var framework c4v1beta1.Framework
 		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
 		Expect(patch(&framework, func() { framework.Spec.Template.Ref = "main" })).To(Succeed())
+		gitFake.ClearRepo(ns, "orders-api")
 		Expect(patch(container, func() {
 			container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: "1"}
 		})).To(Succeed())
