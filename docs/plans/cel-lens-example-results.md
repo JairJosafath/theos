@@ -172,3 +172,13 @@ Each is an issue in the session's Gitea (bodies in
   next with the YAML 1.1 fix (cel-lens-core#28, three review rounds: the
   issue's premise was wrong, and the fix had to stop dropping Kyverno
   policies silently too). Then #1 closes.
+- **13 November, 19:00 UTC. Step 5 is released.** Engine v0.31.0
+  (JairJosafath/cel-lens#27, merged at fce4150; `release.yml` run
+  43483280895) carries `cel-lens-core examples` and the YAML 1.1 fix.
+  Checked here: `SECURITY.md`'s cosign command verifies `checksums.txt`,
+  the Linux binary's provenance verifies and it matches `checksums.txt`,
+  and the released binary's `examples` exits 0 on a right verdict and 1
+  on a wrong one. The container restarted during the run; the factory
+  was restored (a stale `docker.pid` had to go first). Left: the extension
+  pinning it, with the README's CI section (cel-lens-vscode#22, v0.39.0),
+  then #1 closes.
