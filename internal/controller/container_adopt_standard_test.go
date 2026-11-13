@@ -17,14 +17,18 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
@@ -542,6 +546,56 @@ var _ = Describe("Container adoption with a Standard the repository doesn't hold
 		Expect(gitFake.CommitCount(ns, "orders-api")).To(Equal(1), "nothing is written to main")
 	})
 
+	It("keeps the pull request of the Standard named before while the one named now doesn't fit or "+
+		"doesn't exist, and closes it once a Standard that fits is named (#97)", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", ownRepository(ns))
+		adoptWithStandard(ns)
+		mustCreate(newStandard(ns, "go-strict", "go-cli"), newStandard(ns, "python-loose", "python-fastapi"))
+		strict := openedAdoption(ns)
+		// kept holds that the Standard named now is refused with reason and
+		// message, and that python-strict's pull request is as it was: open,
+		// still the adoption in status, the only one, nothing recorded or
+		// protected.
+		kept := func(reason, message string) {
+			GinkgoHelper()
+			waiting := func(g Gomega) {
+				container := getContainer(g, ns)
+				g.Expect(container.Status.ObservedGeneration).To(Equal(container.Generation))
+				g.Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerReady))
+				g.Expect(container.Status.Standard).To(BeNil())
+				g.Expect(container.Status.StandardAdoption).To(PointTo(Equal(strict)))
+				cond := standardCondition(g, container)
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(cond.Reason).To(Equal(reason))
+				g.Expect(cond.Message).To(Equal(message))
+				g.Expect(pullState(ns, strict.PullRequest)).To(Equal("open"))
+				g.Expect(gitFake.BranchExists(ns, "orders-api", strict.Branch)).To(BeTrue())
+				g.Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1))
+				g.Expect(gitFake.ProtectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
+			}
+			Eventually(waiting).Should(Succeed())
+			Consistently(waiting).WithTimeout(2 * time.Second).Should(Succeed())
+		}
+
+		By("naming a Standard that doesn't list the Container's Framework")
+		nameStandard(ns, "go-strict")
+		kept(c4v1beta1.ReasonUnsupportedFramework, "go-strict does not support python-fastapi")
+
+		By("naming one that doesn't exist")
+		nameStandard(ns, "rust-strict")
+		kept(c4v1beta1.ReasonNotFound, notFoundMessage([]string{"Standard rust-strict"}))
+
+		By("naming one that fits: the first's pull request closes, and the named one's opens")
+		nameStandard(ns, "python-loose")
+		loose := openedAdoptionOf(ns, "python-loose")
+		Expect(loose.PullRequest).NotTo(Equal(strict.PullRequest))
+		Expect(pullState(ns, strict.PullRequest)).To(Equal("closed"))
+		Expect(gitFake.BranchExists(ns, "orders-api", strict.Branch)).To(BeFalse())
+		Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(2))
+		Expect(gitFake.CommitCount(ns, "orders-api")).To(Equal(1), "nothing is written to main")
+	})
+
 	It("keeps the pull request while the host doesn't answer: an unreachable host is not a closed pull "+
 		"request (#97)", func() {
 		ns := newProjectNamespace()
@@ -650,6 +704,103 @@ func TestNoAgentWorksUntilTheStandardIsOnMain(t *testing.T) {
 			}
 			if got := standardNotOnMain(tt.container); got != tt.why {
 				t.Errorf("standardNotOnMain() = %q, want %q", got, tt.why)
+			}
+		})
+	}
+}
+
+// #97: a Container that names no Standard any more, its adoption still in
+// status. Nothing else reconciles such a Container, so a pass that could not
+// close the pull request asks for the next one and leaves the condition.
+func TestDropStandardAdoption(t *testing.T) {
+	const open = "Pull request http://git.example/apps/orders-api/pulls/1 brings the files"
+	adoption := &c4v1beta1.StandardAdoptionStatus{Name: "python-strict", Ref: "v1.0.0", PullRequest: 1}
+	tests := []struct {
+		name     string
+		adoption *c4v1beta1.StandardAdoptionStatus
+		// kept says the condition StandardUpdated stays, and the pass asks for
+		// the next recheck.
+		kept bool
+	}{
+		{name: "#97: the adoption in status, the cached Container not the live one", adoption: adoption, kept: true},
+		{name: "no adoption in status: the condition goes"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &ContainerReconciler{}
+			container := &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "orders-api"),
+				Spec: c4v1beta1.ContainerSpec{Adopt: true}}
+			status := &c4v1beta1.ContainerStatus{Phase: c4v1beta1.ContainerReady, StandardAdoption: tt.adoption}
+			setCondition(&status.Conditions, 1, c4v1beta1.ConditionStandardUpdated, metav1.ConditionFalse,
+				c4v1beta1.ReasonPullRequestOpen, open)
+
+			result := r.dropStandardAdoption(context.Background(), container, status, func() bool { return false })
+
+			want := time.Duration(0)
+			if tt.kept {
+				want = r.checksRecheck()
+			}
+			if result.RequeueAfter != want {
+				t.Errorf("RequeueAfter = %v, want %v", result.RequeueAfter, want)
+			}
+			cond := apimeta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionStandardUpdated)
+			if kept := cond != nil && cond.Message == open; kept != tt.kept {
+				t.Errorf("StandardUpdated is %+v, kept = %v, want %v", cond, kept, tt.kept)
+			}
+			if status.StandardAdoption != tt.adoption {
+				t.Errorf("status.standardAdoption = %+v, want it untouched", status.StandardAdoption)
+			}
+		})
+	}
+}
+
+// #97: a Standard that doesn't fit is refused on every pass, every recheck
+// while the host delivers nothing; the log says so once per message, as the
+// condition does.
+func TestStandardFitsLogsARefusalOnce(t *testing.T) {
+	const refusal = "python-strict does not support go-cli"
+	standard := &c4v1beta1.Standard{ObjectMeta: objectMeta("apps", "python-strict"),
+		Spec: c4v1beta1.StandardSpec{SupportedFrameworks: []string{"python-fastapi"}}}
+	tests := []struct {
+		name string
+		// was is the condition StandardUpdated of the Container as read: its
+		// reason and message, or none.
+		was    [2]string
+		logged int
+	}{
+		{name: "#97: the first pass that refuses it", logged: 1},
+		{name: "#97: a pass after it, the condition saying so already",
+			was: [2]string{c4v1beta1.ReasonUnsupportedFramework, refusal}},
+		{name: "#97: the Framework changed, and the message with it",
+			was: [2]string{c4v1beta1.ReasonUnsupportedFramework, "python-strict does not support rust-cli"}, logged: 1},
+		{name: "#97: its pull request was open before", was: [2]string{c4v1beta1.ReasonPullRequestOpen, refusal},
+			logged: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			container := &c4v1beta1.Container{ObjectMeta: objectMeta("apps", "orders-api"),
+				Spec: c4v1beta1.ContainerSpec{Adopt: true, FrameworkRef: c4v1beta1.LocalRef{Name: "go-cli"},
+					StandardRef: &c4v1beta1.LocalRef{Name: standard.Name}},
+				Status: c4v1beta1.ContainerStatus{Phase: c4v1beta1.ContainerReady}}
+			if tt.was[0] != "" {
+				setCondition(&container.Status.Conditions, 1, c4v1beta1.ConditionStandardUpdated,
+					metav1.ConditionFalse, tt.was[0], tt.was[1])
+			}
+			status := container.Status.DeepCopy()
+			var lines []string
+			ctx := logr.NewContext(context.Background(), funcr.New(func(_, args string) {
+				lines = append(lines, args)
+			}, funcr.Options{}))
+
+			if (&ContainerReconciler{}).standardFits(ctx, container, status, standard) {
+				t.Fatal("standardFits() = true for a Framework the Standard doesn't list")
+			}
+			cond := apimeta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionStandardUpdated)
+			if cond == nil || cond.Reason != c4v1beta1.ReasonUnsupportedFramework || cond.Message != refusal {
+				t.Errorf("StandardUpdated is %+v, want %s: %s", cond, c4v1beta1.ReasonUnsupportedFramework, refusal)
+			}
+			if len(lines) != tt.logged {
+				t.Errorf("logged %d lines, want %d: %q", len(lines), tt.logged, lines)
 			}
 		})
 	}

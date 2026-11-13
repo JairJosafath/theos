@@ -89,8 +89,13 @@ func (r *ContainerReconciler) standardFits(ctx context.Context, container *c4v1b
 	if err == nil {
 		return true
 	}
+	was := apimeta.FindStatusCondition(container.Status.Conditions, c4v1beta1.ConditionStandardUpdated)
 	r.condition(container, status, c4v1beta1.ConditionStandardUpdated, metav1.ConditionFalse,
 		c4v1beta1.ReasonUnsupportedFramework, err.Error())
+	// Asked every pass, so logged when the answer is new, as the condition is.
+	if was != nil && was.Reason == c4v1beta1.ReasonUnsupportedFramework && was.Message == err.Error() {
+		return false
+	}
 	logf.FromContext(ctx).Info("Rejected the Standard of an adopted repository", "standard", standard.Name,
 		"reason", err.Error())
 	return false
@@ -371,13 +376,17 @@ func (u *standardUpdate) closeAdoption(ctx, gitCtx context.Context) bool {
 // dropStandardAdoption ends the adoption of a Container that names no Standard
 // any more (closeAdoption), and removes the condition StandardUpdated, which
 // such a Container has none of. live says whether the Container is the one on
-// the API server. Its result says when to look again: at the next recheck when
-// the Git host didn't answer, since nothing else reconciles a Container
-// without a Standard; the condition then stays and says so, GitError, until
-// the retry closes the pull request.
+// the API server. Its result says when to look again: at the next recheck
+// while the adoption is still in status, because the Git host didn't answer or
+// the Container read is not the live one, since nothing else reconciles a
+// Container without a Standard. The condition then stays: it says GitError
+// when the host didn't answer, until the retry closes the pull request.
 func (r *ContainerReconciler) dropStandardAdoption(ctx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus, live func() bool) ctrl.Result {
-	if status.StandardAdoption != nil && live() {
+	if status.StandardAdoption != nil {
+		if !live() {
+			return ctrl.Result{RequeueAfter: r.checksRecheck()}
+		}
 		gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
 		defer cancel()
 		u := &standardUpdate{r: r, container: container, status: status}

@@ -244,9 +244,9 @@ Choices the issue left open, and why:
   `ChoicesValid` has at creation, `UnsupportedFramework`, on a Container
   that stays `Ready`, since losing Ready would adopt it again. Nothing of
   the adoption is read or done meanwhile: no pull request opens, one
-  already open (the Standard's list or the `frameworkRef` changed under
-  it) stays as it is and is read again once the Standard fits, and no
-  agent works there. A bare adoption can hold the rule: `frameworkRef` is
+  already open (the Standard's list, the `frameworkRef` or the
+  `standardRef` changed under it) stays as it is and is read again once
+  the Standard fits, and no agent works there. A bare adoption can hold the rule: `frameworkRef` is
   free to set on it, renders nothing, and is what the Standard's templates
   are written for. A Container with no Framework reads "supports only the
   Frameworks it lists, and the Container names no frameworkRef" where the
@@ -256,8 +256,10 @@ Choices the issue left open, and why:
   ref and checks don't tell them apart: `status.standardAdoption.name`
   does. When the Container names another Standard, a stopped adoption is
   forgotten and an open one closed (the pull request is the operator's
-  own), and the named Standard is compared with main afresh. Naming none
-  closes it the same way. A status kept before the name reads as the named
+  own), and the named Standard is compared with main afresh: once that
+  Standard exists and fits, and not before (`NotFound` and `standardFits`
+  return first, so the first one's pull request stays open meanwhile).
+  Naming none closes it the same way, at once. A status kept before the name reads as the named
   Standard's.
 - **A pull request gone from the host is a closed one:** it brings nothing
   any more, and `GitError; retrying` had no way out. A host that doesn't
@@ -289,6 +291,13 @@ Left as it is:
   still says `AddedAfterScaffold`: the files on main are the first one's.
 - The Brief's "needs you" and the Chat don't list a waiting adoption
   (`standardBehind` reads `FilesBehind` only).
+- After the adoption only the pair of Standard and Framework is held
+  (`standardFits`). The Standard's `supportedTypes` (`CheckChoices`,
+  `UnsupportedType`) and the Framework existing (`NotFound`), both held at
+  creation, are not: the Framework renders nothing on an adopted
+  repository, so its name is only what the Standard's list is read
+  against, and a Standard written for another type arrives as the same
+  pull request, which a person reads and merges, never the operator.
 
 ## What step 5 found
 

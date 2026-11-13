@@ -135,3 +135,43 @@ $ go test -v ./internal/controller -count=1 -run '^(TestControllers|TestPhaseOrS
 Ran 4 of 800 Specs in 22.317 seconds
 SUCCESS! -- 4 Passed | 0 Failed | 0 Pending | 796 Skipped
 ok  	github.com/JairJosafath/theos/internal/controller	22.366s
+
+The third review's nits, 2026-11-13
+-----------------------------------
+
+Two Go tests more in container_adopt_standard_test.go, one spec, and `#97`
+in a case name of TestPhaseOrStandardRecorded. The two tests before their
+fix (dropStandardAdoption returned zero and removed the condition when the
+Container read was not the live one; standardFits logged every pass):
+
+$ go test ./internal/controller -count=1 -run '^(TestDropStandardAdoption|TestStandardFitsLogsARefusalOnce)$'
+--- FAIL: TestDropStandardAdoption (0.00s)
+    --- FAIL: TestDropStandardAdoption/#97:_the_adoption_in_status,_the_cached_Container_not_the_live_one (0.00s)
+        container_adopt_standard_test.go:744: RequeueAfter = 0s, want 1m0s
+        container_adopt_standard_test.go:748: StandardUpdated is nil, kept = false, want true
+--- FAIL: TestStandardFitsLogsARefusalOnce (0.00s)
+    --- FAIL: TestStandardFitsLogsARefusalOnce/#97:_a_pass_after_it,_the_condition_saying_so_already (0.00s)
+        container_adopt_standard_test.go:803: logged 1 lines, want 0: ["\"level\"=0 \"msg\"=\"Rejected the Standard of an adopted repository\" \"standard\"=\"python-strict\" \"reason\"=\"python-strict does not support go-cli\""]
+FAIL	github.com/JairJosafath/theos/internal/controller	0.022s
+
+The spec "keeps the pull request of the Standard named before while the one
+named now doesn't fit or doesn't exist, and closes it once a Standard that
+fits is named" holds what the code did already and the docs now say, so no
+fix came with it and it passed when written. It fails when the first
+Standard's adoption is forgotten before the named one is looked up (go test
+-overlay, no file in the tree touched):
+
+  [FAIL] Container adoption with a Standard the repository doesn't hold [It] keeps the pull request of the Standard named before while the one named now doesn't fit or doesn't exist, and closes it once a Standard that fits is named (#97)
+Ran 1 of 801 Specs in 39.107 seconds
+FAIL! -- 0 Passed | 1 Failed | 0 Pending | 800 Skipped
+
+With the fixes, the tests, the spec and the one beside it that closes for
+another Standard that fits:
+
+$ go test -v ./internal/controller -count=1 -run '^(TestControllers|TestDropStandardAdoption|TestStandardFitsLogsARefusalOnce|TestPhaseOrStandardRecorded)$' -ginkgo.focus "keeps the pull request of the Standard named before|closes the pull request of a Standard the Container names no more"
+--- PASS: TestDropStandardAdoption (0.00s)
+--- PASS: TestStandardFitsLogsARefusalOnce (0.00s)
+--- PASS: TestPhaseOrStandardRecorded (0.00s)
+Ran 2 of 801 Specs in 15.985 seconds
+SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 799 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	16.036s

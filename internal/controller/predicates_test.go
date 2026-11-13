@@ -46,7 +46,7 @@ func TestPhaseOrStandardRecorded(t *testing.T) {
 		old, new *c4v1beta1.Container
 		want     bool
 	}{
-		{"the Standard recorded", ready(nil), ready(at("v1.0.0")), true},
+		{"#97: the Standard recorded", ready(nil), ready(at("v1.0.0")), true},
 		{"the phase changed", ready(func(s *c4v1beta1.ContainerStatus) { s.Phase = c4v1beta1.ContainerPending }),
 			ready(nil), true},
 		{"nothing of the two changed", ready(nil), ready(nil), false},

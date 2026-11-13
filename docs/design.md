@@ -282,16 +282,20 @@ files that differ, as the Standard renders them, to
 `standard-adopt/<name>-<ref>` and opens one pull request, recorded in
 `status.standardAdoption`; `StandardUpdated=False`, reason
 `PullRequestOpen`, names it. A Standard named after the adoption arrives
-the same way. A person reads it like any change, pushes to it what the
-repository must keep, and merges or closes it; the operator never merges
-it, since it may replace files the repository's people wrote. Until the
-Standard is on main it isn't recorded (`status.standard` is unset, and
-`ChecksApplied` with it), main isn't protected by the Standard's checks (a
-rule a bare adoption put there for its own checks stays on the Git host),
-and no agent works there:
-a Crew starts no Task and a Task made by hand waits, `ContainerNotProtected`,
-with the condition's words. The pull request stays at the ref it was
-opened at; once it merges, an ordinary Standard update brings a newer one.
+the same way. Until it is recorded, the Standard is held to the Frameworks
+it lists, as at creation: while the Container's Framework isn't one of
+them, or the Container names none, `StandardUpdated=False`, reason
+`UnsupportedFramework`, no pull request opens, one already open stays as it
+is, and no agent works there. A person reads the pull request like any
+change, pushes to it what the repository must keep, and merges or closes
+it; the operator never merges it, since it may replace files the
+repository's people wrote. Until the Standard is on main it isn't recorded
+(`status.standard` is unset, and `ChecksApplied` with it), main isn't
+protected by the Standard's checks (a rule a bare adoption put there for
+its own checks stays on the Git host), and no agent works there: a Crew
+starts no Task and a Task made by hand waits, `ContainerNotProtected`, with
+the condition's words. The pull request stays at the ref it was opened at;
+once it merges, an ordinary Standard update brings a newer one.
 
 - **Merged:** when main holds every file the Standard protects (its
   `protectedPaths` and the platform's) as rendered, the operator records
@@ -309,9 +313,11 @@ Either stop is read again when main moves, so files a person brings by
 hand are found (after a close, all of them), and the Standard's ref or the
 Container's checks changing opens a new pull request. The pull request is
 for one Standard, named in `status.standardAdoption.name`: when the
-Container names another, or none, the operator closes it if it is open,
-deletes its branch and forgets it, and the Standard named now is compared
-with main afresh. A pull request gone from the host reads as closed. Every
+Container names none, or names another, once the Standard named now fits,
+the operator closes it if it is open, deletes its branch and forgets it,
+and the Standard named now is compared with main afresh. While the one
+named now doesn't fit or doesn't exist, the pull request stays as it is.
+A pull request gone from the host reads as closed. Every
 run asks whether the Standard is on main before it starts, a triage's and a
 later round's too, and puts no rule on main while it waits. An empty repository
 fails `NothingToAdopt`; one with commits but no `main` branch fails

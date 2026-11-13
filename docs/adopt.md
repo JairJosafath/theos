@@ -200,7 +200,8 @@ check, and the API refuses both together. A Standard fits only the
 Frameworks it lists (`kubectl -n webshop get standards`), so the Container
 names one of those as its `frameworkRef` too; nothing is scaffolded from
 it. Until it does, the condition below says `UnsupportedFramework`, no
-pull request opens and no agent works on the repository.
+pull request opens, one already open stays open, and no agent works on the
+repository.
 
 The Container stays `Ready`, and nothing is written to `main`. The operator
 opens **one pull request**, "Bring in the Standard *name* at *ref*", from
@@ -228,9 +229,11 @@ and its description lists them, the ones the Standard protects marked
   `UpdateClosed` and which files are missing; the Container stays `Ready`.
   A new pull request comes when the Standard's ref or the Container's
   `checks` change, and files you bring to `main` by hand are found.
-- **Change your mind** by naming another Standard, or none: the operator
-  closes the pull request it opened and, for another Standard, opens that
-  one's.
+- **Change your mind** by naming another Standard, or none. Naming none
+  has the operator close the pull request it opened. Naming another has it
+  close that pull request and open the other Standard's, once the Standard
+  named now fits: while it doesn't (`UnsupportedFramework`), or doesn't
+  exist (`NotFound`), the first pull request stays open.
 
 **While the pull request is open, or closed without the files, no agent
 works on the repository.** The Crew starts no Task and a Task made by hand
