@@ -194,7 +194,7 @@ in (`internal/controller/container_standard_adopt.go`, the rule in
 `internal/model/standardadoption.go`). It opens one pull request with the
 files that differ, kept in `status.standardAdoption`, which a person merges
 or closes; the operator never merges it. Once `main` holds the files the
-Standard protects, the Standard is recorded and the updates above take
+Standard protects, the Standard is recorded and the updates below take
 over. Until then the Task and the Crew read `standardNotOnMain` and start
 no run.
 

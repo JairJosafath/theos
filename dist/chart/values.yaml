@@ -233,9 +233,10 @@ gitEvents:
 alerts:
   ## How long the operator, stopped by a signal, files the alerts it took
   ## and has not filed yet (--alert-drain-timeout, a Go duration such as 5s).
-  ## It has to fit manager.terminationGracePeriodSeconds: the kill at the
-  ## end of the grace period cuts the drain, and what the inbox held then is
-  ## lost unsaid.
+  ## 0 means the default, 5s. It has to be under
+  ## manager.terminationGracePeriodSeconds (30 when that is null), or the
+  ## chart refuses to render: the kill at the end of the grace period cuts
+  ## the drain, and what the inbox held then is lost unsaid.
   ##
   drainTimeout: 5s
   ## Who may reach gitEvents.port besides gitEvents.from, as NetworkPolicy

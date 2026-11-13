@@ -61,7 +61,7 @@ want_rules "alerts.from admits its peers to the listener alone" "from gitea port
 from monitoring ports 8082
 from - ports 8081 8443 9443"
 
-render "$PEER,alerts.drainTimeout=1m30s"
+render "$PEER,alerts.drainTimeout=1m30s,manager.terminationGracePeriodSeconds=120"
 grep -q -- '^ *- --alert-drain-timeout=1m30s$' "$T/out" && ok "alerts.drainTimeout reaches the flag" ||
 	bad "alerts.drainTimeout=1m30s is not the flag"
 
@@ -79,9 +79,14 @@ else
 	bad "the Ingress is not /alerts/ alone with TLS to theos-git-events:"
 	echo "$ing" | sed 's/^/     /'
 fi
-render "$PEER,alerts.ingress.enabled=true,alerts.ingress.host=alerts.example.com"
-grep -q '^      secretName:' <<<"$(doc git-events/ingress.yaml)" && bad "a TLS secretName without tlsSecretName" ||
+if ! render "$PEER,alerts.ingress.enabled=true,alerts.ingress.host=alerts.example.com"; then
+	bad "the Ingress without tlsSecretName does not render:"
+	head -3 "$T/out"
+elif grep -q '^      secretName:' <<<"$(doc git-events/ingress.yaml)"; then
+	bad "a TLS secretName without tlsSecretName"
+else
 	ok "without tlsSecretName the Ingress controller's default certificate"
+fi
 
 # refuses WHAT SET: the render fails, and its message holds WHAT.
 refuses() {
@@ -96,8 +101,38 @@ refuses "needs gitEvents.enabled" "$PEER,$INGRESS,gitEvents.enabled=false"
 refuses "is no Go duration" "alerts.drainTimeout=5"
 refuses "is no Go duration" "alerts.drainTimeout=five"
 
-render "gitEvents.enabled=false"
-grep -q -- '--alert-drain-timeout' "$T/out" && bad "the drain flag without the listener" ||
+refuses "is not under manager.terminationGracePeriodSeconds" "alerts.drainTimeout=10s"
+refuses "is not under manager.terminationGracePeriodSeconds" "alerts.drainTimeout=30s"
+refuses "is not under manager.terminationGracePeriodSeconds" "alerts.drainTimeout=1m"
+refuses "is not under manager.terminationGracePeriodSeconds" "alerts.drainTimeout=1m30s,manager.terminationGracePeriodSeconds=90"
+refuses "is not under manager.terminationGracePeriodSeconds" "alerts.drainTimeout=15s,manager.terminationGracePeriodSeconds=15"
+if render "alerts.drainTimeout=9s,manager.terminationGracePeriodSeconds=10" &&
+	grep -q -- '^ *- --alert-drain-timeout=9s$' "$T/out"; then
+	ok "a drain timeout under the grace period renders"
+else
+	bad "alerts.drainTimeout=9s under a 10s grace period does not render:"
+	head -3 "$T/out"
+fi
+if render "alerts.drainTimeout=1m,manager.terminationGracePeriodSeconds=null" ||
+	! grep -q "is not under" "$T/out"; then
+	bad "a null grace period (30s) did not refuse alerts.drainTimeout=1m"
+else
+	ok "a null grace period counts as 30s"
+fi
+if render "alerts.drainTimeout=25s,manager.terminationGracePeriodSeconds=null" &&
+	grep -q -- '^ *- --alert-drain-timeout=25s$' "$T/out"; then
+	ok "25s fits a null grace period"
+else
+	bad "alerts.drainTimeout=25s with a null grace period does not render:"
+	head -3 "$T/out"
+fi
+if ! render "gitEvents.enabled=false"; then
+	bad "the chart without the listener does not render:"
+	head -3 "$T/out"
+elif grep -q -- '--alert-drain-timeout' "$T/out"; then
+	bad "the drain flag without the listener"
+else
 	ok "without the listener no drain flag"
+fi
 
 exit $fail

@@ -191,6 +191,11 @@ spec:
                 key: token
 ```
 
+By default the Prometheus Operator adds a `namespace=<the AlertmanagerConfig's
+namespace>` matcher to every route, so this config only takes alerts labelled
+with its own namespace. For alerts from other namespaces, set
+`alertmanagerConfigMatcherStrategy: None` on the Alertmanager resource.
+
 The route sends theos the alerts that name a Container. To send alerts by
 the namespace their app runs in instead, match on that label (for example
 `namespace="orders"`) and let a route of the AlertSource, or the Container
@@ -311,7 +316,7 @@ machine with `kubectl` and no Ingress,
 | 401 | the check failed, or the Secret is missing |
 | 404 | no AlertSource of that name |
 | 413 | a body over 1 MiB |
-| 503 | the inbox is full or the operator is stopping: send again |
+| 503 | the inbox is full, the operator is stopping, or reading the AlertSource or its Secret failed: send again |
 
 The answer comes before anything is filed, since Sentry gives a webhook one
 second. A 202 for an alert that files no issue means it was counted:

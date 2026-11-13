@@ -28,12 +28,28 @@ The receiver of the Git host's deliveries (docs/plans/done/git-events.md, decisi
 {{/*
 The alert receiver's drain deadline, --alert-drain-timeout: alerts.drainTimeout,
 refused here unless it is a Go duration, so the manager doesn't fail to start
-on it.
+on it, or unless it is under manager.terminationGracePeriodSeconds (30 when
+null): the kill at the end of the grace period would cut the drain.
 */}}
 {{- define "theos.alertDrainTimeout" -}}
 {{- $d := toString .Values.alerts.drainTimeout }}
 {{- if not (regexMatch "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$" $d) }}
 {{- fail (printf "alerts.drainTimeout %q is no Go duration; give one such as 5s" $d) }}
+{{- end }}
+{{- $secs := 0.0 }}
+{{- $nums := regexFindAll "[0-9]+(\\.[0-9]+)?" $d -1 }}
+{{- $units := regexFindAll "ns|us|µs|ms|s|m|h" (regexReplaceAll "[0-9.]+" $d " ") -1 }}
+{{- range $i, $n := $nums }}
+{{- $u := index $units $i }}
+{{- $per := dict "h" 3600.0 "m" 60.0 "s" 1.0 "ms" 0.001 "us" 0.000001 "µs" 0.000001 "ns" 0.000000001 }}
+{{- $secs = addf $secs (mulf (float64 $n) (index $per $u)) }}
+{{- end }}
+{{- $grace := 30.0 }}
+{{- if and (hasKey .Values.manager "terminationGracePeriodSeconds") (ne .Values.manager.terminationGracePeriodSeconds nil) }}
+{{- $grace = float64 .Values.manager.terminationGracePeriodSeconds }}
+{{- end }}
+{{- if ge $secs $grace }}
+{{- fail (printf "alerts.drainTimeout %s is not under manager.terminationGracePeriodSeconds (%v s): the kill would cut the drain; lower it or raise the grace period" $d $grace) }}
 {{- end }}
 {{- $d }}
 {{- end }}
