@@ -42,13 +42,13 @@ const trackerLogin = "theos-bot"
 // repository no spec made a tracker for is ports.ReasonTrackerNotFound.
 type fakeTrackers struct {
 	mu       sync.Mutex
-	projects map[string]*requestsTracker
+	projects map[string]*specTracker
 }
 
 var _ ports.TrackerAdapter = (*fakeTrackers)(nil)
 
 func newFakeTrackers() *fakeTrackers {
-	return &fakeTrackers{projects: map[string]*requestsTracker{}}
+	return &fakeTrackers{projects: map[string]*specTracker{}}
 }
 
 func (f *fakeTrackers) Tracker(ctx context.Context, source ports.TrackerSource,
@@ -70,9 +70,9 @@ func (f *fakeTrackers) Tracker(ctx context.Context, source ports.TrackerSource,
 	return counted, nil
 }
 
-// requestsTracker is the fake tracker of one spec's releases repository,
+// specTracker is the fake tracker of one spec's releases repository,
 // whose project it is, with the factory's account.
-type requestsTracker struct {
+type specTracker struct {
 	*fake.IssueTracker
 	repository string
 	// token is the factory's account's credential, which may use the issues
@@ -84,8 +84,8 @@ type requestsTracker struct {
 
 // newRequestsTracker makes the fake tracker of repository, and keeps it for
 // the Brief's source of that repository.
-func (f *fakeTrackers) newRequestsTracker(repository string) *requestsTracker {
-	tr := &requestsTracker{IssueTracker: fake.NewIssueTracker(), repository: repository}
+func (f *fakeTrackers) newRequestsTracker(repository string) *specTracker {
+	tr := &specTracker{IssueTracker: fake.NewIssueTracker(), repository: repository}
 	tr.Project(repository)
 	tr.token = tr.Account(trackerLogin, fake.TrackerAccess{Issues: true, Members: true})
 	f.mu.Lock()
@@ -95,7 +95,7 @@ func (f *fakeTrackers) newRequestsTracker(repository string) *requestsTracker {
 }
 
 // file files an issue by author and returns its number.
-func (tr *requestsTracker) file(author, title, body string) int {
+func (tr *specTracker) file(author, title, body string) int {
 	GinkgoHelper()
 	n, err := tr.File(tr.repository, author, title, body)
 	Expect(err).NotTo(HaveOccurred())
@@ -103,7 +103,7 @@ func (tr *requestsTracker) file(author, title, body string) int {
 }
 
 // pullRequest opens a pull request by author, among the issues.
-func (tr *requestsTracker) pullRequest(author, title string) int {
+func (tr *specTracker) pullRequest(author, title string) int {
 	GinkgoHelper()
 	n, err := tr.PullRequest(tr.repository, author, title)
 	Expect(err).NotTo(HaveOccurred())
@@ -111,25 +111,25 @@ func (tr *requestsTracker) pullRequest(author, title string) int {
 }
 
 // closeByHand closes issue n as a person does.
-func (tr *requestsTracker) closeByHand(n int) {
+func (tr *specTracker) closeByHand(n int) {
 	GinkgoHelper()
 	Expect(tr.Close(tr.repository, n)).To(Succeed())
 }
 
 // edit changes the body of issue n as its author does.
-func (tr *requestsTracker) edit(n int, body string) {
+func (tr *specTracker) edit(n int, body string) {
 	GinkgoHelper()
 	Expect(tr.Edit(tr.repository, n, body)).To(Succeed())
 }
 
 // say comments body on issue n as author.
-func (tr *requestsTracker) say(n int, author, body string) {
+func (tr *specTracker) say(n int, author, body string) {
 	GinkgoHelper()
 	Expect(tr.Say(tr.repository, n, author, body)).To(Succeed())
 }
 
 // issue returns issue n and the bodies of its comments.
-func (tr *requestsTracker) issue(n int) (fake.TrackedIssue, []string) {
+func (tr *specTracker) issue(n int) (fake.TrackedIssue, []string) {
 	GinkgoHelper()
 	issue, ok := tr.Issue(tr.repository, n)
 	Expect(ok).To(BeTrue(), "issue %d of %s", n, tr.repository)
@@ -142,7 +142,7 @@ func (tr *requestsTracker) issue(n int) (fake.TrackedIssue, []string) {
 
 // lists returns how many issue lists were asked, and how many of them came
 // back unchanged.
-func (tr *requestsTracker) lists() (asked, notModified int) {
+func (tr *specTracker) lists() (asked, notModified int) {
 	return tr.Calls("ListOpenIssues"), int(tr.notModified.Load())
 }
 

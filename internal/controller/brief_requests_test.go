@@ -38,7 +38,7 @@ import (
 // and the Secret with the factory's account's credential, which the fake
 // GitHub takes for the repository too, and returns the tracker.
 func requestsBrief(ns string, requests c4v1beta1.BriefRequests,
-	changes ...func(*c4v1beta1.Brief)) *requestsTracker {
+	changes ...func(*c4v1beta1.Brief)) *specTracker {
 	GinkgoHelper()
 	tr := requestsRepository(ns)
 	setRequestsCredential(ns, tr.token)
@@ -48,7 +48,7 @@ func requestsBrief(ns string, requests c4v1beta1.BriefRequests,
 
 // requestsRepository makes a new repository and its fake tracker, whose
 // factory's account the fake GitHub takes.
-func requestsRepository(ns string) *requestsTracker {
+func requestsRepository(ns string) *specTracker {
 	GinkgoHelper()
 	tr := trackerFakes.newRequestsTracker("ada/" + ns)
 	githubFake.addRepository(tr.repository, tr.token)
@@ -201,6 +201,17 @@ var _ = Describe("Brief requests", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(requestNumbers(g, ns)).To(HaveKeyWithValue(int32(mine), letThrough))
 			g.Expect(requestsCondition(g, ns)).To(HaveField("Status", metav1.ConditionTrue))
+		}).Should(Succeed())
+	})
+
+	It("keeps the reason of a tracker that can't be built (#154)", func() {
+		// No spec made a fake tracker of this repository, so the adapter
+		// says TrackerNotFound as an IssuesError, and the condition keeps it.
+		requestsBriefOnly(ns, "ada/"+ns, c4v1beta1.BriefRequests{Mode: model.RequestsOn,
+			Authors: []string{"ada"}})
+		Eventually(func(g Gomega) {
+			g.Expect(requestsCondition(g, ns)).To(And(HaveField("Status", metav1.ConditionFalse),
+				HaveField("Reason", ports.ReasonTrackerNotFound)))
 		}).Should(Succeed())
 	})
 

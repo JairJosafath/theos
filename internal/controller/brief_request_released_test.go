@@ -34,7 +34,7 @@ import (
 // takeAll accepts every request of Brief cel-lens, waits for round 2 to take
 // them, and applies plan there, then waits for each to be planned with its
 // planned comment on tr. It returns the issues each became, by request number.
-func takeAll(ns string, tr *requestsTracker, numbers []int, plan scaffold.Tree) map[int][]string {
+func takeAll(ns string, tr *specTracker, numbers []int, plan scaffold.Tree) map[int][]string {
 	GinkgoHelper()
 	accepted := make([]int32, 0, len(numbers))
 	for _, n := range numbers {
