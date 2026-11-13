@@ -1,4 +1,4 @@
-# A repository you already have (docs/plans/adopt-existing.md, #60): invoices,
+# A repository you already have (docs/plans/done/adopt-existing.md, #60): invoices,
 # a Rust service the factory never scaffolded and has no Framework for. The
 # Container adopts it and names nothing from the catalog. Its check is the
 # repository's own: the command an agent runs, and the status checks its CI

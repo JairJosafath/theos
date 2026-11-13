@@ -33,7 +33,7 @@ import (
 )
 
 const adoptUsage = `theos-session adopt reads a repository you already have and proposes the model
-that has the factory adopt it (docs/plans/adopt-existing.md). It applies
+that has the factory adopt it (docs/plans/done/adopt-existing.md). It applies
 nothing and talks to no cluster.
 
 Usage:

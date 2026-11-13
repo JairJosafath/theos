@@ -31,7 +31,7 @@ import (
 )
 
 // onboard files the Crew's first issue on a repository its Container adopted
-// with no Standard (docs/plans/adopt-existing.md, step 5; #98): write
+// with no Standard (docs/plans/done/adopt-existing.md, step 5; #98): write
 // AGENTS.md and say what you found. Once: status.onboarding records it, and
 // an open issue with the marker, which a lost status write leaves, is
 // recorded instead of a second one filed. The Crew then picks the issue up

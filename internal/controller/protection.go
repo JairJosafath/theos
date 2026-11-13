@@ -43,7 +43,7 @@ func gitProviderCI(gp *c4v1beta1.GitProvider) (model.CI, error) {
 
 // adoptsBare reports whether the Container adopts its repository with no
 // Standard: its checks are the repository's own, which the Container names
-// (docs/plans/adopt-existing.md, step 2; #95).
+// (docs/plans/done/adopt-existing.md, step 2; #95).
 func adoptsBare(container *c4v1beta1.Container) bool {
 	return container.Spec.Adopt && container.Choices().Standard == ""
 }
