@@ -155,6 +155,9 @@ var (
 	// gitEvents is the suite operator's receiver of the Git host's
 	// deliveries; a spec serves its Handler with httptest.
 	gitEvents *GitEventsReceiver
+	// alertReceiver is the suite operator's receiver of alerts, on
+	// gitEvents' listener.
+	alertReceiver *AlertReceiver
 )
 
 // The operator's namespace in the suite, and the Secrets it shares from there.
@@ -397,6 +400,8 @@ var _ = BeforeSuite(func() {
 	gitFake, err = fake.NewGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
 	gitFake.SetImageCopier(copySuiteImage)
+	// An issue closes on the alerts' clock, which their specs move.
+	gitFake.SetClock(alertNow)
 	githubFake = newFakeGitHub()
 	trackerFakes = newFakeTrackers()
 	DeferCleanup(githubFake.server.Close)
@@ -441,7 +446,13 @@ var _ = BeforeSuite(func() {
 // setupReconcilers registers every reconciler the way cmd/main.go does.
 func setupReconcilers(mgr ctrl.Manager) error {
 	c, s := mgr.GetClient(), mgr.GetScheme()
-	gitEvents = &GitEventsReceiver{Client: c, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}}
+	alertReceiver = &AlertReceiver{Client: c, APIReader: mgr.GetAPIReader(), Now: alertNow}
+	gitEvents = &GitEventsReceiver{Client: c, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},
+		Alerts: alertReceiver}
+	alertSources := &AlertSourceReconciler{Client: alertStatusFaults.wrap(c), Scheme: s,
+		APIReader: mgr.GetAPIReader(), PollInterval: time.Second, Git: fakeGitClient{gitFake},
+		Receiver: alertReceiver, Now: alertNow}
+	alertReceiver.Drainer = alertSources
 	sessionFeature, err := features.ScaffoldOptions(features.SessionFeatureLocal, "")
 	if err != nil {
 		return err
@@ -514,7 +525,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 				model.TestEnvMemberAWS: envAWSFake, model.TestEnvMemberDeviceFarm: envDeviceFarmFake},
 			Git:               fakeGitClient{gitFake},
 			SharedPullSecrets: []string{sharedPullSecret}, PollInterval: time.Second, OrphanGrace: time.Second},
-		&AlertSourceReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second},
+		alertSources,
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

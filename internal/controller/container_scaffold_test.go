@@ -107,6 +107,34 @@ func eventuallyOrdersAPI(ns string, phase c4v1beta1.ContainerPhase) *c4v1beta1.C
 	return &container
 }
 
+// historySettle is how long settledHistoryCount waits without a read. It
+// is far longer than the reconciles a story's own creation queues take
+// (milliseconds), and short enough that a reconciler retrying a Failed
+// Container cannot slip past both it and the 2s the specs then watch the
+// count for: a retry every historySettle or less never settles; a doubling
+// backoff settles on its first pause longer than historySettle, at most twice
+// it, and its next read comes at most four times it (2s) after the last,
+// while the watch runs from historySettle to 2.5s after it.
+const historySettle = 500 * time.Millisecond
+
+// settledHistoryCount waits until ns/repo's history has not been read for
+// historySettle and returns how often it was read. A Failed Container's
+// creation queues more than one reconcile (the Relationship created with it
+// maps to it, then its own Create), and each reads the history once, so the
+// count taken the moment it turns Failed can still move (#64).
+func settledHistoryCount(ns, repo string) int {
+	GinkgoHelper()
+	reads, since := gitFake.HistoryCount(ns, repo), time.Now()
+	Eventually(func() time.Duration {
+		if n := gitFake.HistoryCount(ns, repo); n != reads {
+			reads, since = n, time.Now()
+		}
+		return time.Since(since)
+	}).WithPolling(10*time.Millisecond).Should(BeNumerically(">=", historySettle),
+		"the history is still read again and again")
+	return reads
+}
+
 // kustomizationFiles returns the repository paths that deploy/k8s/kustomization.yaml
 // names as resources and patches.
 func kustomizationFiles(files scaffold.Tree) []string {
@@ -347,7 +375,7 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(cond.Message).To(ContainSubstring("has commits theos didn't make"))
 
 		By("not trying again on its own")
-		reads := gitFake.HistoryCount(ns, "orders-api")
+		reads := settledHistoryCount(ns, "orders-api")
 		Consistently(func() int { return gitFake.HistoryCount(ns, "orders-api") }, "2s").Should(Equal(reads))
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerFailed))

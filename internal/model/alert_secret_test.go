@@ -17,9 +17,85 @@ limitations under the License.
 package model
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 )
+
+func TestAlertDeliveryAuthentic(t *testing.T) {
+	token, key, other := rand.Text(), rand.Text(), rand.Text()
+	body := []byte(`{"title":"disk full"}`)
+	sign := func(k string, b []byte) string {
+		mac := hmac.New(sha256.New, []byte(k))
+		mac.Write(b)
+		return hex.EncodeToString(mac.Sum(nil))
+	}
+	bearer := func(t string) map[string]string { return map[string]string{"Authorization": "Bearer " + t} }
+	tokens := map[string][]byte{"token": []byte(token)}
+	secrets := map[string][]byte{"secret": []byte(key)}
+	both := map[string][]byte{"secret": []byte(key), "token": []byte(token)}
+	for _, tc := range []struct {
+		name, typ string
+		data      map[string][]byte
+		headers   map[string]string
+		body      []byte
+		want      bool
+	}{
+		{"alertmanager with its bearer token", AlertTypeAlertmanager, tokens, bearer(token), body, true},
+		{"alertmanager with another token", AlertTypeAlertmanager, tokens, bearer(other), body, false},
+		{"alertmanager with the token cut short", AlertTypeAlertmanager, tokens, bearer(token[:len(token)-1]),
+			body, false},
+		{"alertmanager with the token but no Bearer", AlertTypeAlertmanager, tokens,
+			map[string]string{"Authorization": token}, body, false},
+		{"alertmanager with no header", AlertTypeAlertmanager, tokens, nil, body, false},
+		// An empty token is no credential: "Bearer " would equal it.
+		{"alertmanager whose token is empty", AlertTypeAlertmanager, map[string][]byte{"token": {}}, bearer(""),
+			body, false},
+		{"alertmanager reads no signature", AlertTypeAlertmanager, secrets,
+			map[string]string{"X-Theos-Signature": "sha256=" + sign(key, body)}, body, false},
+		{"sentry signed with its secret", AlertTypeSentry, secrets,
+			map[string]string{"Sentry-Hook-Signature": sign(key, body)}, body, true},
+		{"sentry signed with another secret", AlertTypeSentry, secrets,
+			map[string]string{"Sentry-Hook-Signature": sign(other, body)}, body, false},
+		{"sentry with the body changed", AlertTypeSentry, secrets,
+			map[string]string{"Sentry-Hook-Signature": sign(key, body)}, []byte(`{"title":"disk ok"}`), false},
+		{"sentry with a signature that is no hex", AlertTypeSentry, secrets,
+			map[string]string{"Sentry-Hook-Signature": "not-hex"}, body, false},
+		{"sentry with no signature", AlertTypeSentry, secrets, nil, body, false},
+		// An HMAC with an empty key is one anyone can compute.
+		{"sentry whose secret is empty", AlertTypeSentry, map[string][]byte{"secret": {}},
+			map[string]string{"Sentry-Hook-Signature": sign("", body)}, body, false},
+		{"sentry takes no bearer token", AlertTypeSentry, both, bearer(token), body, false},
+		{"generic signed with its secret", AlertTypeGeneric, secrets,
+			map[string]string{"X-Theos-Signature": "sha256=" + sign(key, body)}, body, true},
+		{"generic signed without the sha256= prefix", AlertTypeGeneric, secrets,
+			map[string]string{"X-Theos-Signature": sign(key, body)}, body, false},
+		{"generic signed with another secret", AlertTypeGeneric, secrets,
+			map[string]string{"X-Theos-Signature": "sha256=" + sign(other, body)}, body, false},
+		{"generic with a token alone", AlertTypeGeneric, tokens, bearer(token), body, true},
+		{"generic with both takes no token", AlertTypeGeneric, both, bearer(token), body, false},
+		{"generic with both takes the signature", AlertTypeGeneric, both,
+			map[string]string{"X-Theos-Signature": "sha256=" + sign(key, body)}, body, true},
+		// An empty secret beside a token doesn't fall back to the token.
+		{"generic whose secret is empty beside a token", AlertTypeGeneric,
+			map[string][]byte{"secret": {}, "token": []byte(token)},
+			map[string]string{"Authorization": "Bearer " + token, "X-Theos-Signature": "sha256=" + sign("", body)},
+			body, false},
+		{"generic whose token is empty", AlertTypeGeneric, map[string][]byte{"token": {}}, bearer(""), body, false},
+		{"generic with no Secret", AlertTypeGeneric, nil, bearer(token), body, false},
+		{"an unknown type", "nagios", tokens, bearer(token), body, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			header := func(name string) string { return tc.headers[name] }
+			if got := AlertDeliveryAuthentic(tc.typ, tc.data, header, tc.body); got != tc.want {
+				t.Errorf("AlertDeliveryAuthentic = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestAlertSecretMissing(t *testing.T) {
 	val := []byte("v")

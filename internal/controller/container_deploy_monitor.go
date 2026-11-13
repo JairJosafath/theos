@@ -87,9 +87,7 @@ func (r *ContainerReconciler) monitorDeploys(ctx context.Context, container *c4v
 // filed now.
 func fileDeployBug(ctx context.Context, provider ports.Issues, repo ports.Repository, report model.DeployReport,
 	version, state string, at time.Time) (ports.Issue, bool, error) {
-	l := model.BugLabel()
-	labels := append(issueLabels(),
-		ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
+	labels := monitorIssueLabels()
 	if err := provider.EnsureLabels(ctx, repo, labels); err != nil {
 		return ports.Issue{}, false, err
 	}
@@ -103,6 +101,18 @@ func fileDeployBug(ctx context.Context, provider ports.Issues, repo ports.Reposi
 		}
 	}
 	title, body := model.DeployMonitorIssue(report, version, state, at)
-	issue, err := provider.CreateIssue(ctx, repo, title, body, []string{model.LabelBug, model.LabelProposed}, 0)
+	issue, err := provider.CreateIssue(ctx, repo, title, body, model.AlertIssueLabels(), 0)
 	return issue, err == nil, err
+}
+
+// monitorIssueLabels are the labels the monitor's bugs need in their
+// repository: the status labels, kind/bug and source/monitor
+// (docs/plans/alerts.md, decision 12).
+func monitorIssueLabels() []ports.Label {
+	labels := issueLabels()
+	for _, l := range []model.IssueLabel{model.BugLabel(), model.MonitorLabel()} {
+		labels = append(labels, ports.Label{Name: l.Name, Color: l.Color, Description: l.Description,
+			Exclusive: l.Exclusive})
+	}
+	return labels
 }

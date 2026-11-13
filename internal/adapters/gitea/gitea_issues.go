@@ -99,6 +99,7 @@ type giteaIssue struct {
 	HTMLURL    string          `json:"html_url"`
 	Labels     []giteaLabel    `json:"labels"`
 	Milestone  *giteaMilestone `json:"milestone"`
+	ClosedAt   *time.Time      `json:"closed_at"`
 	Repository struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
@@ -110,6 +111,9 @@ func (i giteaIssue) issue() ports.Issue {
 		labels = append(labels, l.Name)
 	}
 	out := ports.Issue{Number: i.Number, Title: i.Title, Body: i.Body, State: i.State, Labels: labels, URL: i.HTMLURL}
+	if i.ClosedAt != nil {
+		out.ClosedAt = *i.ClosedAt
+	}
 	if m := i.Milestone; m != nil {
 		out.Milestone, out.MilestoneTitle = m.ID, m.Title
 		if m.DueOn != nil {
