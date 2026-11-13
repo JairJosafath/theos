@@ -162,19 +162,20 @@ func PlanChatAnswer(decision, answeredBy string, answer ChatWord, issue TriageIs
 	return out
 }
 
-// ChatPerson is one of a Chat's people: their Matrix user ID and the
-// Kubernetes user and groups their commands are made as.
+// ChatPerson is one of a Chat's people: their user ID on the chat host and
+// the Kubernetes user and groups their commands are made as.
 type ChatPerson struct {
-	MatrixID string
-	User     string
-	Groups   []string
+	// ID is the person's user ID as the host names a message's sender.
+	ID     string
+	User   string
+	Groups []string
 }
 
-// ChatPersonFor is the one of people whose Matrix ID is sender, false for a
-// stranger. Matrix IDs compare exactly, as the homeserver sends them; a
-// person who names no Kubernetes user is nobody's.
+// ChatPersonFor is the one of people whose ID is sender, false for a
+// stranger. IDs compare exactly, as the host sends them; a person who names
+// no Kubernetes user is nobody's.
 func ChatPersonFor(people []ChatPerson, sender string) (ChatPerson, bool) {
-	i := slices.IndexFunc(people, func(p ChatPerson) bool { return p.MatrixID == sender })
+	i := slices.IndexFunc(people, func(p ChatPerson) bool { return p.ID == sender })
 	if i < 0 || sender == "" || people[i].User == "" {
 		return ChatPerson{}, false
 	}

@@ -60,7 +60,6 @@ import (
 	githubdeploy "github.com/JairJosafath/theos/internal/adapters/github"
 	"github.com/JairJosafath/theos/internal/adapters/gitlab"
 	"github.com/JairJosafath/theos/internal/adapters/gitlab/gitlabtest"
-	"github.com/JairJosafath/theos/internal/adapters/matrix"
 	"github.com/JairJosafath/theos/internal/adapters/matrix/matrixtest"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/oci"
@@ -497,7 +496,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			Deployers: deployers},
 		// Every Chat names chatFake; the suite's operator has no homeserver of
 		// its own, so one that names none is HomeserverUnset.
-		&ChatReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), ChatHosts: matrix.Hosts(nil),
+		&ChatReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), ChatHosts: chatHosts(),
 			PollInterval: time.Second, CheckInterval: time.Second},
 		&ScorerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}},
 		&BenchmarkReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},

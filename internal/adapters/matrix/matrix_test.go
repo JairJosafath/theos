@@ -33,7 +33,7 @@ func bot(t *testing.T, opts ...Option) (*Client, *matrixtest.Server, string) {
 	t.Helper()
 	hs := matrixtest.New(t)
 	me, token := hs.NewUser("theos")
-	c, err := New(ports.ChatConfig{Homeserver: hs.URL(), Token: token}, opts...)
+	c, err := New(ports.ChatConfig{Address: hs.URL(), Token: token}, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestSendThreadEditReact(t *testing.T) {
 	ctx := context.Background()
 	_, rooms := space(t, c)
 	room := rooms[0].ID
-	msg := ports.ChatMessage{Text: "Spec: dark mode", HTML: "<p><b>Spec: dark mode</b></p>"}
+	msg := ports.ChatMessage{Text: "Spec: dark mode", Formatted: "<p><b>Spec: dark mode</b></p>"}
 	root, err := c.Send(ctx, room, msg)
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +185,7 @@ func TestSendThreadEditReact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edit, err := c.Edit(ctx, room, root, ports.ChatMessage{Text: "Spec: dark mode (merged)", HTML: "<p>merged</p>"})
+	edit, err := c.Edit(ctx, room, root, ports.ChatMessage{Text: "Spec: dark mode (merged)", Formatted: "<p>merged</p>"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestSyncReadsEdits(t *testing.T) {
 	_, rooms := space(t, c)
 	ada, token := hs.NewUser("ada")
 	hs.Join(rooms[0].ID, ada)
-	person, err := New(ports.ChatConfig{Homeserver: hs.URL(), Token: token})
+	person, err := New(ports.ChatConfig{Address: hs.URL(), Token: token})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,21 +342,21 @@ func TestRateLimitRetried(t *testing.T) {
 func TestCredentialRefused(t *testing.T) {
 	hs := matrixtest.New(t)
 	unknown := rand.Text()
-	c, err := New(ports.ChatConfig{Homeserver: hs.URL(), Token: unknown})
+	c, err := New(ports.ChatConfig{Address: hs.URL(), Token: unknown})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.WhoAmI(context.Background()); !errors.Is(err, ports.ErrChatCredentialRefused) {
 		t.Errorf("WhoAmI with an unknown token = %v", err)
 	}
-	for _, cfg := range []ports.ChatConfig{{Homeserver: "ftp://matrix.example", Token: unknown},
-		{Homeserver: "https://", Token: unknown}, {Homeserver: "https://matrix.example?x=1", Token: unknown},
-		{Homeserver: "https://matrix.example"}} {
+	for _, cfg := range []ports.ChatConfig{{Address: "ftp://matrix.example", Token: unknown},
+		{Address: "https://", Token: unknown}, {Address: "https://matrix.example?x=1", Token: unknown},
+		{Address: "https://matrix.example"}} {
 		if _, err := New(cfg); err == nil {
 			t.Errorf("New(%+v) took it", cfg)
 		}
 	}
-	if _, err := Hosts(nil)(ports.ChatConfig{Homeserver: hs.URL(), Token: unknown}); err != nil {
+	if _, err := Hosts(nil)(ports.ChatConfig{Address: hs.URL(), Token: unknown}); err != nil {
 		t.Errorf("Hosts(nil) = %v", err)
 	}
 }

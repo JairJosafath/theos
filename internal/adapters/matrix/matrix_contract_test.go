@@ -36,7 +36,7 @@ func TestChatHostContract(t *testing.T) {
 		New: func(t *testing.T) contract.ChatServer {
 			t.Helper()
 			c, hs, me := bot(t)
-			refused, err := New(ports.ChatConfig{Homeserver: hs.URL(), Token: rand.Text()})
+			refused, err := New(ports.ChatConfig{Address: hs.URL(), Token: rand.Text()})
 			if err != nil {
 				t.Fatal(err)
 			}

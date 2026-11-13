@@ -42,7 +42,7 @@ import (
 // said before theos-chat read them is not run. Each message is read once:
 // the sync token moves on even when an answer couldn't be posted, so a
 // command never runs twice.
-func (b *Bot) commands(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHost, st *state) error {
+func (b *Bot) commands(ctx context.Context, chat *c4v1beta1.Chat, host chatHost, st *state) error {
 	if st.since == "" {
 		sync, err := host.Sync(ctx, "", 0)
 		if err != nil {
@@ -79,7 +79,7 @@ func (b *Bot) commands(ctx context.Context, chat *c4v1beta1.Chat, host ports.Cha
 func people(chat *c4v1beta1.Chat) []model.ChatPerson {
 	out := make([]model.ChatPerson, 0, len(chat.Spec.People))
 	for _, p := range chat.Spec.People {
-		out = append(out, model.ChatPerson{MatrixID: p.MatrixID, User: p.User, Groups: p.Groups})
+		out = append(out, model.ChatPerson{ID: p.MatrixID, User: p.User, Groups: p.Groups})
 	}
 	return out
 }
@@ -89,7 +89,7 @@ func people(chat *c4v1beta1.Chat) []model.ChatPerson {
 // alone; a sender who isn't one of the Chat's people gets a one-line
 // refusal; a person's command becomes its one request (model.ChatCommandRequest),
 // sent as them, and the API server's answer goes back in the thread.
-func (b *Bot) command(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHost, st *state,
+func (b *Bot) command(ctx context.Context, chat *c4v1beta1.Chat, host chatHost, st *state,
 	purpose model.ChatPurpose, ev ports.ChatEvent) error {
 	item, ours := st.thread(purpose, ev.ThreadRoot)
 	cmd, perr := model.ParseChatCommand(purpose, ev.ThreadRoot != "", ev.Text)
@@ -101,7 +101,7 @@ func (b *Bot) command(ctx context.Context, chat *c4v1beta1.Chat, host ports.Chat
 		root = ev.ID
 	}
 	reply := func(p model.ChatPost) error {
-		if _, err := host.Reply(ctx, ev.Room, root, message(p)); err != nil {
+		if _, err := host.Reply(ctx, ev.Room, root, host.message(p)); err != nil {
 			return fmt.Errorf("answering %s in %s: %w", ev.ID, purpose, err)
 		}
 		return nil
