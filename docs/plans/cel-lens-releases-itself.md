@@ -43,9 +43,8 @@ closed.
 ## Decisions
 
 1. **A workflow of JairJosafath/cel-lens builds each release from `main`.**
-   `release.yml`, run by hand with the part (`engine` or `vscode`), the
-   version and, when `main` has moved on since the version was prepared,
-   the commit. It refuses a version the source there does not already name
+   `release.yml`, run by hand with the part (`engine` or `vscode`) and the
+   version, builds the head of `main`. It refuses a version the source there does not already name
    (the changelog's heading, and for the extension `package.json`), builds
    with the part's own `make dist`, creates the two tags the repository has
    always had (`engine/vX.Y.Z` and `core-vX.Y.Z`, or `vscode/vX.Y.Z` and
@@ -120,3 +119,12 @@ plan.
   without review, so step 3 waits for the owner to allow merging, in
   Gitea and on GitHub. Follow-ups: cel-lens-vscode#4 (the review's three
   non-blocking findings).
+- **13 November, evening.** GitHub's first checks of the release
+  (JairJosafath/cel-lens#19) found two things no test here could: a new Go
+  advisory (GO-2026-6859, fixed in Go 1.26.11; cel-lens-core#13) and a
+  CodeQL alert on `release.yml`, whose `build` job checked out the commit
+  named by an input and ran `make` (cache poisoning). The commit input is
+  removed rather than the alert dismissed: a release is built from the head
+  of `main`, right after its *Prepare* change merges. That also takes away
+  the risk that `GITHUB_TOKEN` may not tag an earlier commit, and the
+  provenance now names exactly the commit released.
