@@ -9,7 +9,7 @@ import type { Area } from './areas'
 import { failureAnswered } from './attention'
 import { approveCommand, deploysOf, type DeployRow } from './deploys'
 import { time } from './factory'
-import { hasPage, standardKeepCommand, standardTakeCommand, standardWaits } from './lifecycle'
+import { hasPage, STANDARD_FIX_REASONS, standardKeepCommand, standardTakeCommand, standardWaits } from './lifecycle'
 import { compareText } from './order'
 
 export type NeedKind = 'Brief' | 'Container' | 'Task' | 'Crew'
@@ -187,16 +187,18 @@ function containerNeeds(c: Container): Need[] {
     // PullRequestOpen too (containerNextStep).
     const pr = waits.reason === 'PullRequestOpen' ? waits.pullRequest : undefined
     const repo = c.status?.repositoryURL
+    // #183: a Standard that is missing, doesn't fit or doesn't render is fixed on the Standard.
+    const fixed = STANDARD_FIX_REASONS.some((r) => r === waits.reason)
     items.push({
       ...base('Container', c, 'StandardWaits'),
       title: 'has a Standard waiting on you',
       ...why(waits.condition, waits.reason),
       place,
       // The pull request while it waits to be merged; once it stopped, the repository whose main the
-      // files go to; nothing while the Standard doesn't fit: that is fixed on the Container's page.
+      // files go to; nothing while the Standard doesn't fit or can't be read: that is fixed on the Standard.
       links: pr
         ? [{ label: `The Standard’s pull request${pr.number ? ` #${pr.number}` : ''}`, url: pr.href }]
-        : repo && waits.reason !== 'UnsupportedFramework'
+        : repo && !fixed
           ? [{ label: 'Its repository', url: repo }]
           : [],
     })
