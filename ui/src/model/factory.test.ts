@@ -19,6 +19,7 @@ import {
   timeByStage,
   taskKey,
 } from './factory'
+import { factoryMetrics } from './metrics'
 import { formatClock, formatDuration } from './format'
 
 const T0 = Date.parse('2026-10-01T12:00:00Z')
@@ -77,6 +78,7 @@ const step = (min: number, phase: TaskTransition['phase'], round: number, reason
 /** One merged Task: 5 min for a slot, 20 implementing, 10 CI, 5 review, a second round, then merged at 70. */
 const merged = task('image-shrink-v1', {
   phase: 'Merged',
+  pullRequest: 7,
   round: 2,
   completedAt: at(70),
   history: [
@@ -202,7 +204,7 @@ describe('currentStage and the board', () => {
 
 describe('factoryStats', () => {
   const failed = task('qr-scanner-v1', { phase: 'Failed', round: 4, completedAt: at(240) })
-  const firstRound = task('qr-scanner-v2', { phase: 'Merged', round: 1, completedAt: at(20) })
+  const firstRound = task('qr-scanner-v2', { phase: 'Merged', round: 1, pullRequest: 8, completedAt: at(20) })
   const active = task('bg-eraser-v1', { phase: 'Implementing', round: 1 })
 
   it('counts outcomes, rounds and lead time', () => {
@@ -212,6 +214,29 @@ describe('factoryStats', () => {
     expect(stats.medianLeadMs).toBe(70 * 60_000)
     expect(stats.withTimeline).toBe(1)
     expect(stats.timeByStage.implement).toBe(35 * 60_000)
+  })
+
+  it('#211 counts a merged change by the rule the metrics panel uses', () => {
+    const ended = (name: string, kind: 'Plan' | 'Triage' | 'Implement', reason?: string) => {
+      const t = task(name, {
+        phase: 'Merged',
+        round: 1,
+        completedAt: at(30),
+        conditions: reason ? [{ type: 'Succeeded', status: 'True', reason, lastTransitionTime: at(30) }] : [],
+      })
+      t.spec.kind = kind
+      return t
+    }
+    const tasks = [
+      merged,
+      firstRound,
+      ended('plan-1', 'Plan'),
+      ended('triage-1', 'Triage'),
+      ended('nothing-1', 'Implement', 'NothingToDo'),
+    ]
+    const stats = factoryStats(tasks, T0)
+    expect(stats.merged).toBe(2)
+    expect(stats.merged).toBe(factoryMetrics(tasks, T0 + 180 * 60_000, 7).all.merged)
   })
 
   it('has no rates before anything finished', () => {

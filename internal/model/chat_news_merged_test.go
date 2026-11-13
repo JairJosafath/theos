@@ -33,7 +33,7 @@ func TestChatTaskNewsMergedChange(t *testing.T) {
 			v.DoneByStandardChange, v.StandardChange = true, 41
 		}, "Standard change #41 merged and left issue #9 nothing to do"},
 		"#210 done by a Standard change with no record": {func(v *ChatTaskView) { v.DoneByStandardChange = true }, ""},
-		"#210 nothing to do": {func(v *ChatTaskView) { v.NoChange = true }, ""},
+		"#210 nothing to do":                            {func(v *ChatTaskView) { v.NoChange = true }, ""},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

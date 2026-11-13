@@ -321,10 +321,26 @@ export function median(values: number[]): number | undefined {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
+/**
+ * Whether a Task that ended is a merged change: internal/model's MergedChange (#204), which the
+ * operator's series and theos-session report count by. Its own pull request merged, or, for a Task
+ * that ended DoneByStandardChange, its Standard change's record names the change that merged in its
+ * place (the Task's own pull request, if any, was closed in an earlier round). A Task that ended
+ * with nothing to do, or has no pull request (a Plan or a Triage Task), merged nothing.
+ */
+export function mergedChange(task: Task): boolean {
+  const status = task.status
+  if (status?.phase !== 'Merged') return false
+  const reason = status.conditions?.find((c) => c.type === 'Succeeded')?.reason
+  if (reason === 'NothingToDo') return false
+  if (reason === 'DoneByStandardChange') return Boolean(status.standardChange?.issue)
+  return Boolean(status.pullRequest)
+}
+
 export function factoryStats(all: Task[], now: number): FactoryStats {
   // A Scorer's judge runs and a Benchmark's runs measure the work; they aren't the work.
   const tasks = all.filter((t) => t.spec.kind !== 'Score' && !t.spec.benchmark)
-  const merged = tasks.filter((t) => t.status?.phase === 'Merged')
+  const merged = tasks.filter(mergedChange)
   const failed = tasks.filter((t) => t.status?.phase === 'Failed')
   const finished = [...merged, ...failed]
   const leads = finished
