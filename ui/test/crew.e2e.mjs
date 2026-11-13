@@ -2,8 +2,9 @@
 // fake Kubernetes API serving the demo fixture: pause and resume, parallel,
 // the release settings (where it publishes saved on the Brief that sets it,
 // else on the Crew), the re-run of a failed release run, a write the API
-// refuses showing its message, and with OIDC a signed-out page saying to sign
-// in instead of offering the buttons.
+// refuses showing its message, with OIDC a signed-out page saying to sign
+// in instead of offering the buttons, and its schedules (#144): a proposal of
+// its Standard taken, the first schedule of a Crew that has none, and Run now.
 //
 // Needs a build and Chromium:  npm run test:e2e
 // THEOS_UI_SHOTS=DIR also saves pictures of the page in DIR (docs/screenshots).
@@ -271,6 +272,145 @@ describe('a Crew page’s actions', () => {
     if (process.env.THEOS_UI_SHOTS) {
       await page.screenshot({ path: path.join(process.env.THEOS_UI_SHOTS, 'ui-crew-sign-in.png') })
     }
+    assert.deepEqual(errors, [])
+  })
+
+  // #144: the two writes of #72, from the button through server.mjs to an API
+  // server. The demo's orders-api Crew has two schedules, one of them the
+  // dependencies its Standard proposes; the Standard's flaky-tests is offered.
+  const RUN_SCHEDULE = 'theos.factory.io/run-schedule'
+  const JSON_PATCH = 'application/json-patch+json'
+  const proposalsPanel = () => page.getByRole('region', { name: 'Schedules its Standard proposes' })
+  const schedulesPanel = () => page.getByRole('region', { name: 'Work on a timer' })
+  /** What taking the Standard's proposal `name` in `timeZone` adds: its name, cron and goal as the fake API has them. */
+  const taken = (name, timeZone) => {
+    const proposal = api.get('standards', 'python-standard').spec.schedules.find((s) => s.name === name)
+    return { name: proposal.name, cron: proposal.cron, timeZone, goal: proposal.goal }
+  }
+  const takeButton = (name) => proposalsPanel().getByRole('button', { name: `Take ${name}`, exact: true })
+
+  it('takes a proposal of its Standard in the time zone typed: one append, the row gone and the panel saying so', async () => {
+    await page.goto(crewPage(base))
+    const panel = proposalsPanel()
+    const zone = panel.getByLabel('Time zone for flaky-tests')
+    await zone.waitFor()
+    assert.equal(await zone.inputValue(), '', 'no zone is filled in for the person')
+    assert.equal(await takeButton('flaky-tests').isDisabled(), true, 'nothing to take until a zone is typed')
+    const had = crew().spec.schedules.map((s) => s.name)
+    const count = api.writes.length
+    await zone.fill('Europe/Amsterdam')
+    await takeButton('flaky-tests').click()
+
+    // The one write the fake API received: the append, as the page sent it.
+    const [write] = await writesAfter(count, 1)
+    assert.equal(write.method, 'PATCH')
+    assert.equal(write.path, crewPath())
+    assert.equal(write.contentType, JSON_PATCH)
+    assert.deepEqual(write.body, [
+      { op: 'add', path: '/spec/schedules/-', value: taken('flaky-tests', 'Europe/Amsterdam') },
+    ])
+    await until((c) => c.spec.schedules.length === had.length + 1, 'took the schedule')
+    assert.deepEqual(
+      crew().spec.schedules.map((s) => s.name),
+      [...had, 'flaky-tests'],
+      'the schedules it had are as they were',
+    )
+
+    // The watch brings the Crew's new schedule: the row leaves with its form, and the panel says what happened.
+    await zone.waitFor({ state: 'detached' })
+    await panel.getByText('Added flaky-tests to the Crew’s schedules.').waitFor()
+    assert.equal(await panel.getByRole('heading', { name: 'Not in use by this Crew' }).count(), 0, 'none left to offer')
+    await panel
+      .getByRole('listitem')
+      .filter({ hasText: 'flaky-tests' })
+      .getByText('Europe/Amsterdam', { exact: true })
+      .waitFor()
+    await schedulesPanel().getByText('(Europe/Amsterdam)').waitFor()
+  })
+
+  it('takes the first schedule of a Crew that has none, again after the Crew changed under the first try', async () => {
+    // A Crew nobody gave a schedule: both proposals are offered, and there is no timer panel.
+    const bare = structuredClone(crew())
+    delete bare.spec.schedules
+    delete bare.status.schedules
+    bare.status.conditions = bare.status.conditions.filter((c) => c.type !== 'Scheduled')
+    api.modify('crews', bare)
+    await page.goto(crewPage(base))
+    const panel = proposalsPanel()
+    const zone = panel.getByLabel('Time zone for dependencies')
+    await zone.waitFor()
+    await panel.getByLabel('Time zone for flaky-tests').waitFor()
+    assert.equal(await schedulesPanel().count(), 0, 'no schedules panel yet')
+
+    // The operator's status write lands between the UI server's read of the Crew and its patch.
+    api.changeBeforeNextWrite('crews', CREW)
+    const count = api.writes.length
+    await zone.fill('UTC')
+    await takeButton('dependencies').click()
+    const alert = panel.getByRole('alert')
+    await alert.waitFor()
+    assert.match(
+      await alert.innerText(),
+      /changed while its first schedule was being added, so nothing was saved: adding it again the same way works/,
+    )
+    // A JSON patch can't append to a list that isn't there: the UI server adds the list, guarded by what it read.
+    const first = [{ op: 'add', path: '/spec/schedules', value: [taken('dependencies', 'UTC')] }]
+    const [lost] = await writesAfter(count, 1)
+    assert.deepEqual(tested(lost.body), first)
+    assert.equal(crew().spec.schedules, undefined, 'nothing was saved')
+
+    // Again, the same way.
+    await takeButton('dependencies').click()
+    const [, write] = await writesAfter(count, 2)
+    assert.equal(write.path, crewPath())
+    assert.equal(write.contentType, JSON_PATCH)
+    assert.deepEqual(tested(write.body), first)
+    assert.notEqual(write.body[0].value, lost.body[0].value, 'it tests the resourceVersion it read this time')
+    await until((c) => c.spec.schedules?.length === 1, 'took its first schedule')
+    assert.deepEqual(crew().spec.schedules, [taken('dependencies', 'UTC')])
+
+    await zone.waitFor({ state: 'detached' })
+    await panel.getByText('Added dependencies to the Crew’s schedules.').waitFor()
+    await panel.getByText(/has the proposal’s cron and goal, and is in UTC/).waitFor()
+    // The schedules panel is there now, and the other proposal is still offered.
+    await schedulesPanel().getByText('(UTC)').waitFor()
+    await panel.getByLabel('Time zone for flaky-tests').waitFor()
+  })
+
+  it('asks the operator to run a schedule now, and offers it again once its issue is filed', async () => {
+    const scheduled = structuredClone(crew())
+    scheduled.spec.schedules = [taken('dependencies', 'UTC')]
+    delete scheduled.metadata.annotations?.[RUN_SCHEDULE]
+    api.modify('crews', scheduled)
+    await page.goto(crewPage(base))
+    const row = schedulesPanel()
+      .getByRole('listitem')
+      .filter({ has: page.getByText('dependencies', { exact: true }) })
+    const run = row.getByRole('button', { name: 'Run now', exact: true })
+    await run.waitFor()
+    const count = api.writes.length
+    await run.click()
+
+    const [write] = await writesAfter(count, 1)
+    assert.equal(write.method, 'PATCH')
+    assert.equal(write.path, crewPath())
+    assert.equal(write.contentType, 'application/merge-patch+json')
+    assert.deepEqual(write.body, { metadata: { annotations: { [RUN_SCHEDULE]: 'dependencies' } } })
+    assert.equal(crew().metadata.annotations[RUN_SCHEDULE], 'dependencies')
+    // Asked once: the row waits for the operator.
+    const asked = row.getByRole('button', { name: 'Asked to run now', exact: true })
+    await asked.waitFor()
+    assert.equal(await asked.isDisabled(), true)
+
+    // The operator files the schedule's issue and takes the annotation off. The fake API runs none: this does its part.
+    const filed = structuredClone(crew())
+    delete filed.metadata.annotations[RUN_SCHEDULE]
+    const at = new Date(NOW).toISOString()
+    filed.status.schedules = [{ name: 'dependencies', since: at, lastFiled: at, lastIssue: 19 }]
+    api.modify('crews', filed)
+    await row.getByText(/last filed issue #19/).waitFor()
+    await run.waitFor()
+    assert.equal(await run.isEnabled(), true)
     assert.deepEqual(errors, [])
   })
 })
