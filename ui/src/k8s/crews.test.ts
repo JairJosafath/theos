@@ -3,10 +3,12 @@ import {
   LiveCrewWriter,
   RERUN_RELEASE,
   RUN_SCHEDULE,
+  addSchedulePatch,
   releasePatch,
   releaseSettings,
   settledEdits,
   sourceTagPrefix,
+  takenSchedule,
 } from './crews'
 import type { Crew } from './types'
 
@@ -268,9 +270,47 @@ describe('the Crew writer', () => {
     })
   })
 
+  // #72, step 6: a proposal taken is one schedule appended, whatever the Crew has.
+  it('adds a schedule with a JSON patch that appends it, sent as given', async () => {
+    const { sent, w } = writer()
+    const schedule = { name: 'dependencies', cron: '0 6 * * 1', timeZone: 'Mars/Olympus', goal: 'Update them.' }
+    await w.addSchedule('webshop', 'orders-api', schedule)
+    expect(sent[0].url).toBe('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/crews/orders-api')
+    expect(sent[0].init.method).toBe('PATCH')
+    expect((sent[0].init.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json')
+    expect(JSON.parse(sent[0].init.body as string)).toEqual([{ op: 'add', path: '/spec/schedules/-', value: schedule }])
+    expect(addSchedulePatch(schedule)).toEqual([{ op: 'add', path: '/spec/schedules/-', value: schedule }])
+  })
+
   it('rejects with the API server’s message', async () => {
     const message = 'spec.parallel: Invalid value: 9: should be less than or equal to 5'
     const { w } = writer(422, JSON.stringify({ kind: 'Status', code: 422, message }))
     await expect(w.setParallel('webshop', 'orders-api', 9)).rejects.toThrow(message)
+  })
+})
+
+// #72, step 6: a Standard's proposal becomes a Crew's schedule in the zone the person gave.
+describe('takenSchedule', () => {
+  const proposal = { name: 'dependencies', cron: '0 6 * * 1', timeZone: 'UTC', goal: 'Update the dependencies.\n' }
+  const cases: [string, string, string][] = [
+    ['the zone given, not the proposal’s', 'Europe/Amsterdam', 'Europe/Amsterdam'],
+    ['UTC when the person says UTC', 'UTC', 'UTC'],
+    ['the zone without the white space around it', '  Asia/Tokyo ', 'Asia/Tokyo'],
+    ['a zone it can’t judge, as typed', 'Mars/Olympus', 'Mars/Olympus'],
+  ]
+  for (const [name, zone, want] of cases) {
+    it(`has ${name}`, () => {
+      expect(takenSchedule(proposal, zone)).toEqual({
+        name: 'dependencies',
+        cron: '0 6 * * 1',
+        timeZone: want,
+        goal: 'Update the dependencies.\n',
+      })
+    })
+  }
+
+  it('copies only a schedule’s four fields', () => {
+    const more = { ...proposal, since: '2026-11-09T05:00:00Z' }
+    expect(Object.keys(takenSchedule(more, 'UTC')).sort()).toEqual(['cron', 'goal', 'name', 'timeZone'])
   })
 })

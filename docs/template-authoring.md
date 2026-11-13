@@ -97,7 +97,9 @@ A few kinds carry more than the template:
   recurring goals, such as the language's weekly dependency update, to the
   Crews of its Containers, each with a `name`, a five-field `cron`, a
   `timeZone` (UTC when unset) and a `goal`; a proposal turns nothing on
-  until a person adds it to a Crew's own `spec.schedules`.
+  until a person adds it to a Crew's own `spec.schedules`, by hand or with
+  *Take* on the Crew's page, which asks for the time zone rather than copy
+  the proposal's.
 - A **Connector**'s `wiredBy` lists the Frameworks that wire it into their
   code; a Container on another Framework fails with `ChoicesValid=False`,
   reason `NotWired`. Leave it unset for a Connector whose files stand alone.

@@ -339,6 +339,21 @@
   max-width: 6em;
 }
 
+.crew-zone {
+  max-width: 16em;
+}
+
+/* The result of taking a proposal: in the page before it has anything to say. */
+.proposals-result:empty {
+  margin: 0;
+}
+
+/* Where a Crew's schedule differs from the proposal of its name. */
+.object-page .routes .facts {
+  grid-template-columns: 90px minmax(0, 1fr);
+  margin-top: 6px;
+}
+
 .crew-check {
   display: flex;
   align-items: baseline;

@@ -567,6 +567,12 @@ export interface Standard extends K8sObject {
     supportedFrameworks: string[]
     /** Files agents must not change: a path, or a directory ending in "/". */
     protectedPaths?: string[]
+    /**
+     * Recurring goals it proposes to the Crews of its Containers, each in the
+     * shape of a Crew's schedule. None runs: a Crew has one once its own
+     * spec.schedules holds a schedule of that name.
+     */
+    schedules?: CrewSchedule[]
   }
 }
 
