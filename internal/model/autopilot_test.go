@@ -65,7 +65,7 @@ func TestBriefAttentionHealWindows(t *testing.T) {
 			hours(3.9), want{healing: true, actsAt: hours(4)}},
 		{"at its Crew's cost cap, at once (#1893)",
 			AttentionFacts{Tasks: []WatchedTask{{Name: "cli-1", Stage: StageReview, Since: t0, Reason: "OverBudget",
-				Message: "The Task's runs cost $1.20, at its Crew's cap of $1; raise the Crew's taskBudgetUSD to go on"}}},
+				Message: "The Task's runs cost $1.20, at its Crew's cap of $1.00; raise the Crew's taskBudgetUSD to go on"}}},
 			hours(0.1), want{needs: []string{"Task `cli-1` reached its Crew's cost cap: The Task's runs cost $1.20",
 				"Raise the Crew's taskBudgetUSD"}}},
 		{"a spec waiting for a person's approval, at once (sdlc-loop step 3)",
