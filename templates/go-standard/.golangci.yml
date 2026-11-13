@@ -18,14 +18,20 @@ linters:
   enable:
     - bodyclose # HTTP response bodies are closed
     - copyloopvar # no `v := v` copies; loop variables are per iteration since Go 1.22
+    - cyclop # a function has few paths through it
     - errname # sentinel errors are ErrX, error types XError
     - errorlint # errors.Is/As and %w; never == or a type switch on a wrapped error
     - exhaustive # a switch over an enum names every value
     - forcetypeassert # v, ok := x.(T); never a panicking x.(T)
+    - funlen # a function fits on a screen
+    - gocognit # a function is easy to follow: nesting and breaks in flow cost extra
     - gocritic # bugs and simplifications go vet misses
     - gosec # injection, weak crypto, file permissions, integer overflow
     - intrange # for i := range n
+    - lll # a line fits beside another file
+    - maintidx # a function stays maintainable: size, complexity and volume together
     - misspell # spelling in comments and strings
+    - nestif # no deeply nested if blocks; return early instead
     - nilerr # returning nil while err != nil
     - nolintlint # every //nolint names its linter and says why
     - perfsprint # strconv and errors.New where fmt does the same, slower
@@ -39,6 +45,30 @@ linters:
     - wastedassign # no assignment that is never read
 
   settings:
+    # Readability limits: agents write long, deeply branched functions and
+    # big files unless something stops them. A finding here means split the
+    # function or the file, never raise the limit in a task.
+    cyclop:
+      max-complexity: 10
+
+    funlen:
+      lines: 60
+      statements: 40
+      ignore-comments: true
+
+    gocognit:
+      min-complexity: 15
+
+    lll:
+      line-length: 120
+      tab-width: 4
+
+    maintidx:
+      under: 20
+
+    nestif:
+      min-complexity: 4
+
     errcheck:
       # A command's writes to stdout and stderr have nowhere to report a
       # failure. Files and network streams still get their Close, Flush and
@@ -120,6 +150,8 @@ linters:
         - name: var-declaration
         - name: var-naming
         # Added
+        - name: argument-limit # at most 5 parameters; more is a struct
+          arguments: [5]
         - name: atomic # sync/atomic results are not discarded
         - name: bare-return # no naked returns
         - name: bool-literal-in-expr # no `x == true`
@@ -131,7 +163,14 @@ linters:
         - name: defer # no defer in loops, recover only in defer
         - name: duplicated-imports
         - name: early-return # handle the short case first
+        - name: file-length-limit # a file holds one idea: at most 300 lines of code
+          arguments:
+            - max: 300
+              skipComments: true
+              skipBlankLines: true
         - name: forbidden-call-in-wg-go # no wg.Done or recover inside wg.Go
+        - name: function-result-limit # at most 3 results; more is a struct
+          arguments: [3]
         - name: identical-branches # if and else do the same
         - name: identical-ifelseif-branches
         - name: identical-ifelseif-conditions
@@ -165,6 +204,12 @@ linters:
     # No presets: they hide real findings, such as unchecked Close errors and
     # missing doc comments.
     presets: []
+    rules:
+      # A table test's cases are data, not logic: its length says how many
+      # cases there are. cyclop, gocognit and nestif still apply to tests.
+      - path: _test\.go
+        linters:
+          - funlen
 
 formatters:
   enable:

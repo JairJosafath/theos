@@ -23,8 +23,12 @@ type ItemStore interface {
 // dynamoAPI is the part of DynamoDB's client the store calls, so a test
 // passes a fake without the network.
 type dynamoAPI interface {
-	GetItem(ctx context.Context, in *dynamodb.GetItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
-	PutItem(ctx context.Context, in *dynamodb.PutItemInput, opts ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+	GetItem(
+		ctx context.Context, in *dynamodb.GetItemInput, opts ...func(*dynamodb.Options),
+	) (*dynamodb.GetItemOutput, error)
+	PutItem(
+		ctx context.Context, in *dynamodb.PutItemInput, opts ...func(*dynamodb.Options),
+	) (*dynamodb.PutItemOutput, error)
 }
 
 // DynamoItemStore keeps items in a DynamoDB table whose partition key is the

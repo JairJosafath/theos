@@ -736,7 +736,7 @@ catalog:
         readsOperations: true
     - kind: Framework
       name: aws-lambda-go
-      ref: v1.5.1
+      ref: v1.5.2
       spec:
         displayName: Serverless API on AWS (Lambda, Go)
         description: "A serverless HTTP API on AWS: a Go Lambda on provided.al2023, built with go build, behind an API Gateway HTTP API with IAM auth, items in DynamoDB through the AWS SDK for Go v2, slog's JSON logs, alarms and a dashboard, and its CDK stack in TypeScript in infra/, which is its deployment, built for production (backups, tracing, data kept) or development. Connects the function to the table of a DataStore on the dynamodb Connector, or the Aurora PostgreSQL cluster of one on the rds Connector."
@@ -816,7 +816,7 @@ catalog:
         supportedTypes: [operator]
     - kind: Standard
       name: go-standard
-      ref: v1.6.0
+      ref: v1.7.0
       spec:
         displayName: Go quality standard
         description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
@@ -859,7 +859,7 @@ catalog:
         checksBeforeRelease: true
     - kind: Standard
       name: aws-standard
-      ref: v1.24.0
+      ref: v1.25.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
