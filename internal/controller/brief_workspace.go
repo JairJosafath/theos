@@ -168,10 +168,14 @@ func (r *BriefReconciler) holdForBot(ctx context.Context, brief *c4v1beta1.Brief
 	if controllerutil.ContainsFinalizer(brief, briefBotFinalizer) {
 		return nil
 	}
-	// Patching only the metadata of a copy keeps brief's status for its own patch.
+	// Patching only the metadata of a copy keeps brief's status for its own
+	// patch. The patch is locked: the status patch takes its version (#199).
 	held := brief.DeepCopy()
 	controllerutil.AddFinalizer(held, briefBotFinalizer)
-	if err := r.Patch(ctx, held, client.MergeFrom(brief)); err != nil {
+	if err := r.Patch(ctx, held, client.MergeFromWithOptions(brief, client.MergeFromWithOptimisticLock{})); err != nil {
+		if apierrors.IsConflict(err) {
+			return fmt.Errorf("%w: %w", errStaleBrief, err)
+		}
 		return err
 	}
 	brief.Finalizers, brief.ResourceVersion = held.Finalizers, held.ResourceVersion

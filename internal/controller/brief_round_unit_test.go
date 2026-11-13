@@ -276,6 +276,89 @@ func TestEndingARoundOnAStaleBriefWritesNothing(t *testing.T) {
 	}
 }
 
+// #199: a reconcile that reads requests turned Off on a copy from before an
+// earlier reconcile listed the waiting request in needsYou must not clear
+// status.requests over the newer status and leave the request in needsYou;
+// it writes nothing and reads the Brief again, and that read drops both.
+func TestTurningRequestsOffOnAStaleBriefLeavesNoRequestInNeedsYou(t *testing.T) {
+	scheme := briefScheme(t)
+	const repository = "ada/cel-lens"
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
+		Spec: c4v1beta1.BriefSpec{Idea: "A linter.", Releases: []c4v1beta1.BriefRelease{{Container: "linter",
+			CrewPublishReleases: c4v1beta1.CrewPublishReleases{GitHub: c4v1beta1.CrewPublishGitHub{
+				Repository: repository, TokenSecretRef: c4v1beta1.LocalRef{Name: "cel-lens-github"}}},
+			Requests: &c4v1beta1.BriefRequests{Mode: model.RequestsAsk, Authors: []string{"ada"}}}}}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Brief{}).
+		WithObjects(brief).Build()
+	r := &BriefReconciler{Client: c, Scheme: scheme}
+	ctx := context.Background()
+	key := client.ObjectKeyFromObject(brief)
+	read := func() *c4v1beta1.Brief {
+		t.Helper()
+		var b c4v1beta1.Brief
+		if err := c.Get(ctx, key, &b); err != nil {
+			t.Fatal(err)
+		}
+		return &b
+	}
+	inNeedsYou := func(b *c4v1beta1.Brief) bool {
+		return slices.ContainsFunc(b.Status.NeedsYou, func(n c4v1beta1.BriefNeedsYou) bool {
+			return n.Kind == model.AttentionRequest
+		})
+	}
+
+	// A round's start writes the waiting request; the cache keeps this copy.
+	waiting := read()
+	waiting.Status.Requests = []c4v1beta1.BriefRequest{{Repository: repository, Number: 1, Author: "ada",
+		Title: "Dark theme", Stage: model.RequestWaiting}}
+	if err := c.Status().Update(ctx, waiting); err != nil {
+		t.Fatal(err)
+	}
+	stale := read()
+	// The reconcile then tends the Brief and lists the request in needsYou.
+	current := read()
+	n := model.RequestNeedsYou(modelRequests(current.Status.Requests)[0])
+	current.Status.NeedsYou = []c4v1beta1.BriefNeedsYou{{Kind: n.Kind, Name: n.Name, Question: n.Question,
+		Recommend: n.Recommend}}
+	current.Status.NeedsYouWaiting = 1
+	if err := c.Status().Update(ctx, current); err != nil {
+		t.Fatal(err)
+	}
+	// A person turns requests Off.
+	current = read()
+	current.Spec.Releases[0].Requests.Mode = model.RequestsOff
+	if err := c.Update(ctx, current); err != nil {
+		t.Fatal(err)
+	}
+
+	// The reconcile for that change reads the new spec over the older status.
+	stale.Spec = *current.Spec.DeepCopy()
+	orig := stale.DeepCopy()
+	r.syncRequests(ctx, stale)
+	if len(stale.Status.Requests) != 0 {
+		t.Fatalf("requests = %+v, want none read with requests Off", stale.Status.Requests)
+	}
+	result, err := r.finishReconcile(ctx, stale, orig, ctrl.Result{}, nil)
+	if err != nil || result.RequeueAfter == 0 {
+		t.Errorf("finishReconcile on the stale copy = %+v, %v; want a requeue and no error", result, err)
+	}
+	if got := read(); len(got.Status.Requests) == 0 && inNeedsYou(got) {
+		t.Fatalf("status.requests is empty but needsYou lists %+v: a stale write half applied", got.Status.NeedsYou)
+	}
+
+	// The next reconcile reads the Brief as it is.
+	fresh := read()
+	orig = fresh.DeepCopy()
+	r.syncRequests(ctx, fresh)
+	if _, err := r.finishReconcile(ctx, fresh, orig, ctrl.Result{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); len(got.Status.Requests) != 0 || inNeedsYou(got) {
+		t.Errorf("requests = %+v, needsYou = %+v; want the request in neither", got.Status.Requests,
+			got.Status.NeedsYou)
+	}
+}
+
 // A Brief round takes what its Plan Task used, and the Brief adds its rounds up.
 func TestRecordRoundAddsUpTheTokens(t *testing.T) {
 	status := &c4v1beta1.BriefStatus{Round: 1}
