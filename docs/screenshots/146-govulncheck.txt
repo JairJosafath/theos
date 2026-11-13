@@ -1,0 +1,29 @@
+# govulncheck on main at 841c9e4 for #146, 2026-11-13, go1.26.11 (go.mod's toolchain line).
+# make vulncheck   (govulncheck v1.9.0; the database as updated 2026-11-11 02:51:11 UTC)
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+Your code is affected by 0 vulnerabilities.
+This scan also found 1 vulnerability in packages you import and 1 vulnerability
+in modules you require, but your code doesn't appear to call these
+vulnerabilities.
+Use '-show verbose' for more details.
+
+# The two it finds the code doesn't reach (-show verbose, Package and Module Results):
+=== Package Results ===
+Vulnerability #1: GO-2026-6094
+    JSON private fields exposed via NativeTypes and ParseStructTag in
+    github.com/google/cel-go
+  More info: https://pkg.go.dev/vuln/GO-2026-6094
+  Module: github.com/google/cel-go
+    Found in: github.com/google/cel-go@v0.29.2
+    Fixed in: github.com/google/cel-go@v0.30.0
+=== Module Results ===
+Vulnerability #1: GO-2026-5932
+    The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design,
+    and has known security issues
+  More info: https://pkg.go.dev/vuln/GO-2026-5932
+  Module: golang.org/x/crypto
+    Found in: golang.org/x/crypto@v0.58.0
+    Fixed in: golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2

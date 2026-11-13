@@ -30,7 +30,7 @@ import (
 )
 
 // A Standard proposes schedules to the Crews of its Containers (#72,
-// docs/plans/crew-schedules.md, step 5): spec.schedules, each in the shape of
+// docs/plans/done/crew-schedules.md, step 5): spec.schedules, each in the shape of
 // a Crew's schedule. A proposal turns nothing on: the operator copies none
 // into a Crew, and a Crew files an issue only for a schedule of its own.
 var _ = Describe("Standard schedules (#72)", func() {

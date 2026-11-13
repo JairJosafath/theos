@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-// A Crew's schedules (docs/plans/crew-schedules.md, #63): work that starts
+// A Crew's schedules (docs/plans/done/crew-schedules.md, #63): work that starts
 // from the clock. When a schedule is due the Crew files one issue with its
 // goal, and the normal loop takes it from there.
 
