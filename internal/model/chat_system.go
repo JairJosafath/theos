@@ -49,6 +49,10 @@ type ChatSystem struct {
 // ChatMarkupHTML is a post as HTML (ChatPost.HTML).
 const ChatMarkupHTML = "html"
 
+// ChatMarkupMrkdwn is a post as Slack's mrkdwn (ChatPost.Mrkdwn). No row
+// names it until step 8 of docs/plans/requests-and-chat.md adds Slack's.
+const ChatMarkupMrkdwn = "mrkdwn"
+
 // ChatMatrix names Matrix, the chat host of the chart's homeserver.
 const ChatMatrix = "matrix"
 
@@ -82,8 +86,11 @@ func ChatSystemByName(name string) (ChatSystem, error) {
 // Format is p in the host's markup, "" for a host that reads plain text
 // alone.
 func (s ChatSystem) Format(p ChatPost) string {
-	if s.Markup == ChatMarkupHTML {
+	switch s.Markup {
+	case ChatMarkupHTML:
 		return p.HTML()
+	case ChatMarkupMrkdwn:
+		return p.Mrkdwn()
 	}
 	return ""
 }

@@ -49,6 +49,8 @@ func TestChatSystemFormat(t *testing.T) {
 		markup, want string
 	}{
 		{ChatMarkupHTML, p.HTML()},
+		// #155: Slack's markup, which no row names yet.
+		{ChatMarkupMrkdwn, p.Mrkdwn()},
 		{"", ""},
 		{"unknown", ""},
 	} {

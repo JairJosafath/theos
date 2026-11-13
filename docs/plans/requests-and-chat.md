@@ -582,6 +582,113 @@ What the step chose where the plan says nothing:
   the spec that held the Brief to leaving such an issue alone counts the
   closes it made instead of reading an empty reason.
 
+## Step 5 as built (#155)
+
+**What Slack's reference says, read on 2026-11-13** (docs.slack.dev, the
+method and event pages named):
+
+- **Decision 6 holds.** "Formatting message text" says `&`, `<` and `>`
+  are Slack's control characters, sent as `&amp;`, `&lt;` and `&gt;`, a
+  link is `<address|words>` and a mention `<@U…>`, and that messages read
+  back carry the same forms: a bare address comes back as
+  `<https://x|https://x>`, which the decoder gives as the address alone.
+  The `message` event's page doesn't say what its `text` holds; the
+  formatting page is what decision 6 rests on. Its `message_changed`
+  example names the edited message by `message.ts` and the edit by
+  `message.edited.ts`; it has no `previous_message`.
+- **Decision 9's bot scopes hold:** `conversations.create` (private),
+  `conversations.setTopic` and `conversations.invite` take `groups:write`
+  (the last two also the narrower `groups:write.topic` and
+  `groups:write.invites`); `users.conversations` `groups:read`;
+  `conversations.history`, `conversations.replies` and the
+  `message.groups` event `groups:history`; `chat.postMessage` and
+  `chat.update` `chat:write`; `reactions.add` `reactions:write`;
+  `auth.test` none. `slacktest.Scopes` is that table, and the fake refuses a
+  call whose token lacks its scope, so step 13's guide lists what the tests
+  asked for. A missing scope's answer carries `needed` and `provided` (the
+  `search.all` and `admin.apps.requests.cancel` pages show it; the pages of
+  the methods above don't), and `ScopeMissing` names `needed`.
+- **`connections:write` is the app-level token's scope.** Its page in
+  Slack's scope reference says it is for app-level tokens alone, for
+  `apps.connections.open`; the fake asks for it.
+- **Socket Mode, as decision 7 says,** with what the page adds: the token
+  goes in the `Authorization` header (as a form field it is an error),
+  hello comes first, an envelope is `envelope_id`, `type`, `payload` and
+  `accepts_response_payload`, and `disconnect`'s reasons are `warning`
+  (about ten seconds before), `refresh_requested` and `link_disabled`. The
+  page doesn't name `retry_attempt` or `retry_reason`; the adapter reads
+  neither and drops a repeat by `event_id`. App-level tokens may rotate
+  (`xoxe.xapp-…`, twelve hours each): the adapter doesn't refresh one, so
+  the guide asks for a token without rotation.
+- **Other limits:** a channel's name is lowercase letters, digits, `-` and
+  `_`, at most 80 characters (decision 3's prefix of 70 leaves room for
+  `-<purpose>`); `conversations.invite` invites nobody when one of a batch
+  fails, so the adapter invites one person a call; a reaction already put
+  is `already_reacted`, which is no error. A section block's text takes
+  3000 characters (the section block's page) and a message 50 blocks (the
+  blocks page). A mrkdwn text object is not `verbatim` by default, and then
+  Slack makes mentions and channel links of `@here`, `@channel`,
+  `@everyone` and `#name` in it ("Formatting message text"): the adapter
+  sends each section `verbatim`, and the fake refuses one that is not.
+
+**What the step chose where the plan says nothing:**
+
+- **A post goes out twice in one message.** `text` is the plain text with
+  its three characters escaped, which notifications, search and the
+  history show; the formatted text, mrkdwn on Slack's row
+  (`model.ChatPost.Mrkdwn`, beside `HTML()`, and
+  `model.ChatMarkupMrkdwn`, which no row names until step 8), goes as
+  section blocks, cut at line breaks to fit one. Past 50 blocks the mrkdwn
+  is the text alone. An edit without mrkdwn clears the blocks.
+- **A channel's alias is `#<name>`.** `EnsureRoom` finds the channel by ID,
+  then by name, among those `users.conversations` lists, and applies no
+  name: a channel's one name is its alias. A Space is `ErrNoSpaces`.
+- **A token is `slack1.<buffer>.<position>.<time>`.** The buffer's name is
+  random per Client, so a token from before a restart is known as one.
+  That token's first Sync opens the socket and reads Slack's history after
+  its time into the buffer. A token from before a restart that comes once
+  the buffer started later (another Chat synced first) gets what the
+  buffer holds after its time and what the history holds that the buffer
+  doesn't: what that read finds after the buffer's start goes into the
+  buffer, so its event, if still on its way, is dropped as a repeat, and
+  what is older is this reader's alone, so no other reader is given a
+  message twice. The first Sync (`""`) marks the buffer's end and the cluster's clock.
+  A Sync that comes while a socket's first catch-up is read waits for it,
+  so that its position counts what the catch-up adds.
+- **Clocks:** on a first Sync the buffer's start is the cluster's clock,
+  and Slack's ts are Slack's; with the two apart, a message said near that
+  start may be missed or given twice, so step 13's guide asks for NTP on
+  the cluster's nodes.
+- **Order:** each Sync returns its messages oldest first. Slack promises no
+  order of delivery, so two Syncs may not be in order, even in one
+  channel; the position, not the time, keeps every message once.
+- **Bounds:** the buffer keeps 10000 messages and 10000 event IDs. A
+  position older than the buffer reads from its oldest message.
+- **Redial:** on `disconnect` the adapter dials a new socket, reads from a
+  minute before the newest time heard, never from before the buffer's
+  start (a token of before a restart, or a first Sync, may have read what
+  is older), and then closes the old one; the old socket serves Syncs
+  meanwhile. A socket that drops without a word is opened again by the
+  next Sync, with the same read. An error names the socket's host, never
+  its address, whose `ticket` is a credential. A catch-up that fails closes the new socket, so the next
+  Sync opens one and reads from the same time again.
+- **A reaction has no ID of its own:** `React` returns the message's ts.
+  Its emoji names are a table in the adapter (`✅` is `white_check_mark`).
+- **`Client.Close`** closes the socket; the port has no Close, and
+  `theos-chat` keeps a host as long as it runs.
+- **The fake waits for an acknowledgement.** `slacktest` sends an event to
+  the newest open socket and returns from `Post` once it is acknowledged,
+  as the suite's "returns only once the host would deliver it" asks; a
+  message said with no socket open is only in the history. `PostHeld`,
+  `Redeliver` and `Disconnect` make the late message, the delivery sent
+  twice and Slack's refresh, which leaves the old socket open, as Slack's
+  warning does; `HoldOpens` (`Hold` for any method), `RefuseDials` and
+  `MaxPage` hold a redial or a catch-up, refuse a dial and page every
+  listing.
+- **Lint:** `slack` is added to `adapters-stay-out-of-kubernetes`, and
+  `jira` with it, which Jira's own pull request left out; Linear's added
+  its own.
+
 ## Step 6 as built, Linear (#156)
 
 Read on 2026-11-13: Linear's developer pages for the GraphQL API, paging,
