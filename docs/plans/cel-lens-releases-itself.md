@@ -139,3 +139,15 @@ plan.
   verify, and the binary matches `checksums.txt`. Not run: `gh
   attestation verify`, the command `SECURITY.md` gives for provenance.
   Step 4 is cel-lens-vscode#7.
+- **13 November, 12:05 UTC. Done.** Steps 4 and 5 (cel-lens-vscode#8 and
+  #10, two review rounds each: every README picture retaken from a clean
+  editor with a lossless GIF encoder, and the notes of 0.36.0 naming what
+  the bundled engine brings) merged as JairJosafath/cel-lens#20, and
+  `release.yml` published
+  [cel-lens for VS Code v0.36.0](https://github.com/JairJosafath/cel-lens/releases/tag/vscode-v0.36.0)
+  (run 43421869618): six `.vsix`, each with its signature, and the
+  provenance; latest. Checked here: the Linux `.vsix`'s signature and
+  provenance verify with cosign, and the engine inside it is the pinned
+  v0.28.0. JairJosafath/cel-lens#6 is closed. Gitea is behind GitHub:
+  the approved pull requests there are not merged, since the session may
+  not merge as the operator.
