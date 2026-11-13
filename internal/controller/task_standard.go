@@ -245,7 +245,7 @@ func (r *TaskReconciler) resume(ctx context.Context, task *c4v1beta1.Task, statu
 
 // reasonDoneByStandardChange ends a Task its Standard change finished: it is
 // Merged with no merge of its own, and a release counts the change's merge.
-const reasonDoneByStandardChange = "DoneByStandardChange"
+const reasonDoneByStandardChange = model.ReasonDoneByStandardChange
 
 // doneByStandardChange ends a resumed Task whose branch has nothing beyond main:
 // its Standard change did the whole issue. It closes the Task's pull request from

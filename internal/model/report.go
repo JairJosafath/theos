@@ -41,8 +41,6 @@ type ReportTask struct {
 	TaskMetricFacts
 	// Name is the Task's; the report names each merged Task by it.
 	Name string
-	// PullRequest is the Task's pull request; 0 when it has none.
-	PullRequest int
 	// Repository is the web address of the Task's Container's repository,
 	// which its pull request is in; empty when it wasn't read.
 	Repository string
@@ -150,10 +148,15 @@ type ReportMerged struct {
 	// Repository is the web address of the Container's repository, so a
 	// reader has the pull request's address and not only its number. It is
 	// absent when the Container's wasn't read (a Container deleted since).
-	Repository  string `json:"repository,omitempty"`
-	Task        string `json:"task"`
-	PullRequest int    `json:"pullRequest"`
-	Completed   string `json:"completed"`
+	Repository string `json:"repository,omitempty"`
+	Task       string `json:"task"`
+	// PullRequest is the Task's own pull request that merged; absent for a
+	// Task that ended DoneByStandardChange, which merged none (#204).
+	PullRequest int `json:"pullRequest,omitempty"`
+	// StandardChange is the issue of the Standard change that merged in its
+	// place, for such a Task, and absent otherwise.
+	StandardChange int    `json:"standardChange,omitempty"`
+	Completed      string `json:"completed"`
 }
 
 // ReportCount is how many Tasks share a key.
@@ -354,7 +357,7 @@ func FactoryReport(period ReportPeriod, tasks []ReportTask) Report {
 			if !measures {
 				r.NoChange++
 			}
-		case t.Phase == TaskMerged && t.PullRequest != 0:
+		case MergedChange(t.TaskMetricFacts):
 			merged = append(merged, t)
 		case t.Phase == TaskFailed && !measures:
 			r.Failed++
@@ -364,9 +367,13 @@ func FactoryReport(period ReportPeriod, tasks []ReportTask) Report {
 	r.Merged = len(merged)
 	r.MergedTasks = make([]ReportMerged, 0, len(merged))
 	for _, t := range merged {
-		r.MergedTasks = append(r.MergedTasks, ReportMerged{Namespace: t.Namespace, Container: t.Container,
-			Repository: t.Repository, Task: t.Name, PullRequest: t.PullRequest,
-			Completed: t.Completed.UTC().Format(time.RFC3339)})
+		entry := ReportMerged{Namespace: t.Namespace, Container: t.Container, Repository: t.Repository,
+			Task: t.Name, PullRequest: t.PullRequest, Completed: t.Completed.UTC().Format(time.RFC3339)}
+		if t.DoneByStandardChange {
+			// Its own pull request was closed; the change that merged is the Standard's.
+			entry.PullRequest, entry.StandardChange = 0, t.StandardChange
+		}
+		r.MergedTasks = append(r.MergedTasks, entry)
 	}
 	slices.SortFunc(r.MergedTasks, func(a, b ReportMerged) int {
 		return cmp.Or(cmp.Compare(a.Completed, b.Completed), cmp.Compare(a.Namespace, b.Namespace),

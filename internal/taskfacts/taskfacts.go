@@ -20,10 +20,11 @@ limitations under the License.
 // both call it, so the two read the same facts of a Task: a new fact, or a
 // new way a Task ends, is written here once.
 //
-// What each counts from those facts is internal/model's rule, and the two
-// rules differ for a Task ended DoneByStandardChange: the series count every
-// Merged Task that is not NoChange as a merged change, the report only one
-// whose status.pullRequest is set.
+// What each counts from those facts is one rule of internal/model's,
+// MergedChange (#204): a Task is a merged change when its own pull request
+// merged, or, ended DoneByStandardChange, when its Standard change's record
+// says the change that merged in its place. A Task that ended NothingToDo,
+// or has no pull request, is none.
 //
 // It imports the API's types, apimachinery and internal/model, and nothing
 // else of the module or of controller-runtime (TestImports), so a command in
@@ -54,6 +55,15 @@ func EndedWithNoChange(task *c4v1beta1.Task) bool {
 	return task.Status.Phase == c4v1beta1.TaskMerged && done != nil && done.Reason == model.ReasonNothingToDo
 }
 
+// EndedByStandardChange reports whether the Task ended done because its
+// Standard change merged and left its issue nothing to do (#204): Merged,
+// with the Succeeded condition's reason DoneByStandardChange. Its own pull
+// request, if it opened one in an earlier round, was closed, not merged.
+func EndedByStandardChange(task *c4v1beta1.Task) bool {
+	done := apimeta.FindStatusCondition(task.Status.Conditions, ConditionSucceeded)
+	return task.Status.Phase == c4v1beta1.TaskMerged && done != nil && done.Reason == model.ReasonDoneByStandardChange
+}
+
 // Metric is what the factory's numbers read of task.
 func Metric(task *c4v1beta1.Task) model.TaskMetricFacts {
 	status := &task.Status
@@ -64,8 +74,15 @@ func Metric(task *c4v1beta1.Task) model.TaskMetricFacts {
 		Benchmark:    task.Spec.Benchmark != nil,
 		Phase:        string(status.Phase),
 		Round:        int(status.Round),
+		PullRequest:  int(status.PullRequest),
 		CostMilliUSD: status.CostMilliUSD,
 	}
+	// The Standard change's own record: the issue filed for it, which the
+	// Task keeps once the change merged (#204).
+	if change := status.StandardChange; change != nil {
+		f.StandardChange = int(change.Issue)
+	}
+	f.DoneByStandardChange = EndedByStandardChange(task)
 	if f.Kind == "" {
 		f.Kind = string(c4v1beta1.TaskImplement)
 	}

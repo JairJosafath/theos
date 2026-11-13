@@ -312,7 +312,6 @@ func reportTask(task *c4v1beta1.Task, repository string) model.ReportTask {
 	t := model.ReportTask{
 		TaskMetricFacts: taskfacts.Metric(task),
 		Name:            task.Name,
-		PullRequest:     int(status.PullRequest),
 		Repository:      repository,
 	}
 	if status.CompletedAt != nil {

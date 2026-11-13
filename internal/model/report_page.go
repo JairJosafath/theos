@@ -99,13 +99,13 @@ func (r Report) Markdown() (string, error) {
 	line("## What finished")
 	line("")
 	table("| Outcome | Tasks |", "| --- | ---: |", [][]string{
-		{"Merged a pull request", fmt.Sprint(r.Merged)},
+		{"Merged a change", fmt.Sprint(r.Merged)},
 		{"Failed", fmt.Sprint(r.Failed)},
 		{"Ended with no change needed", fmt.Sprint(r.NoChange)},
 	})
 	if r.Merged > 0 {
-		line("The JSON names each merged Task and its pull request, under `mergedTasks`, so a number here can be " +
-			"held against the pull requests it counts.")
+		line("The JSON names each merged Task and its pull request, or its Standard change, under `mergedTasks`, so a number here can be " +
+			"held against the changes it counts.")
 		line("")
 	}
 	if len(r.FailedByReason) > 0 {
