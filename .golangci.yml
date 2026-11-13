@@ -60,6 +60,20 @@ linters:
           deny:
             - pkg: github.com/JairJosafath/theos/internal/scaffold
               desc: model is the lowest layer; scaffold builds on it (docs/architecture.md)
+        # internal/taskfacts reads the API's Task for the operator and for a
+        # devcontainer's command (#142, #204): the API's types, apimachinery
+        # and internal/model, and nothing of controller-runtime, the
+        # controllers or the adapters, so the command links without the operator.
+        taskfacts-stays-light:
+          files:
+            - "**/internal/taskfacts/**"
+          deny:
+            - pkg: sigs.k8s.io/controller-runtime
+              desc: taskfacts is linked by commands that run without the operator; it must not import controller-runtime (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/controller
+              desc: taskfacts must not depend on controllers (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/adapters
+              desc: taskfacts must not depend on adapters (docs/architecture.md)
         # Argo CD's adapter talks to the cluster; the Git host's, the
         # releases' and the chat's adapters don't.
         adapters-stay-out-of-kubernetes:
