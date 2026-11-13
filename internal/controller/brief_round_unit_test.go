@@ -406,36 +406,46 @@ func TestRecordingAnIssueOnAStaleBriefWritesNothing(t *testing.T) {
 	}
 }
 
-// #199: a record refused on a stale Brief does not file the issue twice: the
-// next reconcile finds the filed issue by its marker and records it.
-func TestARefusedIssueRecordFilesTheIssueOnce(t *testing.T) {
+// issueRound is a Brief in round 1 whose plan files one issue in Container
+// linter, on a fake Git host; funcs intercept the fake client's calls.
+func issueRound(t *testing.T, funcs interceptor.Funcs) (c client.Client, r *BriefReconciler, git *portsfake.Git,
+	key client.ObjectKey, ready map[string]*c4v1beta1.Container, issues []model.PlanIssue) {
+	t.Helper()
 	scheme := briefScheme(t)
 	const ns = "apps"
 	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta(ns, "cel-lens"), Spec: c4v1beta1.BriefSpec{Idea: "A linter."}}
 	linter := &c4v1beta1.Container{ObjectMeta: objectMeta(ns, "linter"),
 		Spec: c4v1beta1.ContainerSpec{GitProviderRef: c4v1beta1.LocalRef{Name: "git"}}}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Brief{}).
+	c = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Brief{}).
 		WithObjects(brief, linter,
 			&corev1.Secret{ObjectMeta: objectMeta(ns, "git-credentials"),
 				Data: map[string][]byte{"username": []byte("theos"), "token": []byte("t")}},
 			&c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "git"), Spec: c4v1beta1.GitProviderSpec{
 				Provider: c4v1beta1.GitProviderGitea, URL: "http://git.example:3000", Owner: ns,
-				CredentialsSecretRef: c4v1beta1.LocalRef{Name: "git-credentials"}}}).Build()
-	git := portsfake.New()
-	r := &BriefReconciler{Client: c, APIReader: c, Scheme: scheme, Git: fakeGitClient{git}}
-	ctx := context.Background()
-	key := client.ObjectKeyFromObject(brief)
+				CredentialsSecretRef: c4v1beta1.LocalRef{Name: "git-credentials"}}}).
+		WithInterceptorFuncs(funcs).Build()
+	git = portsfake.New()
+	r = &BriefReconciler{Client: c, APIReader: c, Scheme: scheme, Git: fakeGitClient{git}}
+	key = client.ObjectKeyFromObject(brief)
 	started := readBrief(t, c, key)
 	started.Status.Round = 1
-	if err := c.Status().Update(ctx, started); err != nil {
+	if err := c.Status().Update(context.Background(), started); err != nil {
 		t.Fatal(err)
 	}
-	issues := []model.PlanIssue{{N: 1, Container: "linter", Title: "Lint rule 1", Body: "Lint rule 1."}}
-	ready := map[string]*c4v1beta1.Container{"linter": linter}
+	return c, r, git, key, map[string]*c4v1beta1.Container{"linter": linter},
+		[]model.PlanIssue{{N: 1, Container: "linter", Title: "Lint rule 1", Body: "Lint rule 1."}}
+}
 
+// #199: a round whose Brief the API server holds newer than the reconcile
+// read files nothing: the newer status may have ended or cancelled the round,
+// and an issue filed from the stale copy could not be recorded, so it would
+// stay open and ready, unrecorded.
+func TestARoundOnAStaleBriefFilesNoIssue(t *testing.T) {
+	c, r, git, key, ready, issues := issueRound(t, interceptor.Funcs{})
+	ctx := context.Background()
 	stale := readBrief(t, c, key)
 	newer := readBrief(t, c, key)
-	newer.Status.NeedsYouWaiting = 1
+	newer.Status.Phase = c4v1beta1.BriefFailed
 	if err := c.Status().Update(ctx, newer); err != nil {
 		t.Fatal(err)
 	}
@@ -443,9 +453,45 @@ func TestARefusedIssueRecordFilesTheIssueOnce(t *testing.T) {
 	if !errors.Is(err, errStaleBrief) {
 		t.Fatalf("fileIssues on a stale Brief = %v, want errStaleBrief", err)
 	}
+	if all := git.AllIssues(key.Namespace, "linter"); len(all) != 0 {
+		t.Errorf("issues on the Git host = %+v, want none filed from the stale copy", all)
+	}
+}
+
+// #199: a record refused because the Brief changed after the round checked
+// it does not file the issue twice: the next reconcile finds the filed issue
+// by its marker and records it.
+func TestARefusedIssueRecordFilesTheIssueOnce(t *testing.T) {
+	changed := false
+	c, r, git, key, ready, issues := issueRound(t, interceptor.Funcs{SubResourcePatch: func(ctx context.Context,
+		c client.Client, sub string, obj client.Object, patch client.Patch,
+		opts ...client.SubResourcePatchOption) error {
+		if !changed {
+			// Another writer, between the check and the record.
+			changed = true
+			newer := &c4v1beta1.Brief{}
+			if err := c.Get(ctx, client.ObjectKeyFromObject(obj), newer); err != nil {
+				return err
+			}
+			newer.Status.NeedsYouWaiting = 1
+			if err := c.Status().Update(ctx, newer); err != nil {
+				return err
+			}
+		}
+		return c.SubResource(sub).Patch(ctx, obj, patch, opts...)
+	}})
+	ctx := context.Background()
+	stale := readBrief(t, c, key)
+	err := r.fileIssues(ctx, &roundApply{brief: stale, orig: stale.DeepCopy(), round: "1"}, ready, issues)
+	if !errors.Is(err, errStaleBrief) {
+		t.Fatalf("fileIssues on a Brief changed meanwhile = %v, want errStaleBrief", err)
+	}
 	if got := readBrief(t, c, key); len(got.Status.Issues) != 0 || got.Status.NeedsYouWaiting != 1 {
 		t.Fatalf("issues = %+v, needsYouWaiting = %d; want none recorded and the newer status kept",
 			got.Status.Issues, got.Status.NeedsYouWaiting)
+	}
+	if open := git.OpenIssues(key.Namespace, "linter"); len(open) != 1 {
+		t.Fatalf("open issues = %+v, want the one filed before the refused record", open)
 	}
 
 	fresh := readBrief(t, c, key)
@@ -453,7 +499,7 @@ func TestARefusedIssueRecordFilesTheIssueOnce(t *testing.T) {
 		issues); err != nil {
 		t.Fatal(err)
 	}
-	open := git.OpenIssues(ns, "linter")
+	open := git.OpenIssues(key.Namespace, "linter")
 	if len(open) != 1 {
 		t.Fatalf("open issues = %+v, want the one filed once", open)
 	}

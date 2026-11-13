@@ -67,8 +67,8 @@ type roundApply struct {
 	uses *usesLookup
 	// usesWaits say which filed issues wait for a used app's module.
 	usesWaits []string
-	// issuesRead says the issues the API server's Brief records were taken
-	// in, as they are once before an issue is filed.
+	// issuesRead says the run's Brief was checked against the API server's,
+	// as it is once before an issue is filed (checkBriefCurrent).
 	issuesRead bool
 	// catalog and bundles are the namespace's installed catalog and Bundles,
 	// for the round's summary.
@@ -590,16 +590,13 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 		filed = ir.open[i]
 	} else {
 		// The cached Brief can lag the status an earlier reconcile wrote, and
-		// a closed issue isn't among the open ones: read what is recorded
-		// from the API server before filing (#501).
+		// a closed issue isn't among the open ones (#501); a newer status may
+		// have ended the round (#199): nothing is filed from a stale copy.
 		if !run.issuesRead {
-			if err := r.takeRecordedIssues(ctx, run); err != nil {
+			if err := r.checkBriefCurrent(ctx, run); err != nil {
 				return err
 			}
 			run.issuesRead = true
-			if run.filed(issue.N) != nil {
-				return nil
-			}
 		}
 		milestone, err := issueMilestone(gitCtx, run, ir, c.Name, issue)
 		if err != nil {
@@ -697,22 +694,23 @@ func briefIssueLabels(issues []model.PlanIssue) []ports.Label {
 	return labels
 }
 
-// takeRecordedIssues adds to the run's Brief, and to the copy its status
-// patches are made from, the issues the API server's Brief records that the
-// cached one doesn't show yet, so none is filed again and the next patch keeps them.
-func (r *BriefReconciler) takeRecordedIssues(ctx context.Context, run *roundApply) error {
+// checkBriefCurrent returns errStaleBrief when the API server's Brief is
+// newer than the run's, before the round files anything from it: an issue
+// filed from a stale copy could not be recorded, and if the newer status
+// ended or cancelled the round, it would stay open and ready, unrecorded
+// (#199). Every write this reconcile made to the Brief (holdForBot,
+// startRound, recordIssue) moved the run's version with it, so only another
+// writer, or a cache that lags, makes them differ; finishReconcile reads the
+// Brief again a second later. With the versions equal the cached status is
+// the API server's, so it holds every recorded issue, closed ones too (#501).
+func (r *BriefReconciler) checkBriefCurrent(ctx context.Context, run *roundApply) error {
 	var current c4v1beta1.Brief
 	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(run.brief), &current); err != nil {
 		return err
 	}
-	for _, status := range []*c4v1beta1.BriefStatus{&run.brief.Status, &run.orig.Status} {
-		for _, i := range current.Status.Issues {
-			if !slices.ContainsFunc(status.Issues, func(o c4v1beta1.BriefIssue) bool {
-				return o.Repository == i.Repository && o.Number == i.Number
-			}) {
-				status.Issues = append(status.Issues, i)
-			}
-		}
+	if current.ResourceVersion != run.brief.ResourceVersion {
+		return fmt.Errorf("%w: version %s, read %s", errStaleBrief, current.ResourceVersion,
+			run.brief.ResourceVersion)
 	}
 	return nil
 }

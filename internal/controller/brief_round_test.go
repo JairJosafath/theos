@@ -741,13 +741,15 @@ spec:
 		By("a reconcile reading a cached Brief that doesn't show the recorded issue yet (#501)")
 		stale := getBrief(Default, ns)
 		recorded := stale.Status.Issues
-		stale.Status.Issues = nil
+		// The cached copy is from before the record, so of an older version
+		// (#199): the round files nothing from it and reads the Brief again.
+		stale.Status.Issues, stale.ResourceVersion = nil, "1"
 		linter := &c4v1beta1.Container{}
 		Expect(k8sClient.Get(ctx, key(ns, "linter"), linter)).To(Succeed())
 		r := &BriefReconciler{Client: k8sClient, APIReader: k8sClient, Git: fakeGitClient{gitFake}}
 		run := &roundApply{brief: stale, orig: stale.DeepCopy(), round: "1"}
 		Expect(r.fileIssues(ctx, run, map[string]*c4v1beta1.Container{"linter": linter}, []model.PlanIssue{
-			{N: 1, Container: "linter", Title: "Lint rule 1", Body: linterIssue(1)}})).To(Succeed())
+			{N: 1, Container: "linter", Title: "Lint rule 1", Body: linterIssue(1)}})).To(MatchError(errStaleBrief))
 		Expect(gitFake.OpenIssues(ns, "linter")).To(BeEmpty(), "the closed issue was filed again")
 		Expect(getBrief(Default, ns).Status.Issues).To(Equal(recorded))
 
