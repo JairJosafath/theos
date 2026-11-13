@@ -15,13 +15,19 @@ export default tseslint.config(
     rules: {
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       // #147: localeCompare with no locale follows the reader's locale, so two
-      // readers saw the same list in different orders.
+      // readers saw the same list in different orders. A collator made with no
+      // locale is the same by another door.
       'no-restricted-syntax': [
         'error',
         {
           selector: "MemberExpression[property.name='localeCompare']",
           message:
             "localeCompare orders by the reader's locale, so two readers see different orders (#147). Pick one of the two helpers of src/model/order.ts: compareText for names, keys and timestamps, compareTitle for titles a person wrote.",
+        },
+        {
+          selector: ":matches(NewExpression, CallExpression)[callee.property.name='Collator'][arguments.length=0]",
+          message:
+            "Intl.Collator with no locale orders by the reader's locale, so two readers see different orders (#147). Pick one of the two helpers of src/model/order.ts: compareText for names, keys and timestamps, compareTitle for titles a person wrote.",
         },
       ],
     },
