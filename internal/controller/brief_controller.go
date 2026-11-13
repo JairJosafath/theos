@@ -36,6 +36,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // BriefReconciler turns a Brief's idea and prompts into the model, a round at
@@ -80,9 +81,10 @@ type BriefReconciler struct {
 	// ModelProxyURL, when set, is the model proxy's URL: an Agent on a shared
 	// Secret then needs it in SourceNamespace only, never in the project's.
 	ModelProxyURL string
-	// Issues reaches the GitHub repositories a Brief takes requests from.
-	// cmd/main.go builds it.
-	Issues IssueTrackers
+	// Issues builds the tracker of each source a Brief takes requests from,
+	// by the tracker's name: a releases entry's is model.TrackerGitHub.
+	// cmd/main.go gives it the adapters.
+	Issues ports.IssueTrackers
 	// requestsReads are what each Brief last read of each repository's issues.
 	requestsMu    sync.Mutex
 	requestsReads map[string]*requestsRead

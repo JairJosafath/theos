@@ -19,7 +19,9 @@ package fake_test
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/JairJosafath/theos/internal/ports"
@@ -276,5 +278,44 @@ func TestTrackerWithoutTeams(t *testing.T) {
 	}
 	if _, err := port.ListOpenIssues(context.Background(), ""); err != nil {
 		t.Errorf("ListOpenIssues() of a tracker without teams = %v", err)
+	}
+}
+
+// TestIssueTrackersBuildForASource covers #154: ports.IssueTrackers builds
+// the tracker of a source with its tracker's adapter, here the fake, which
+// reads the credential out of the Secret's data; a source of a tracker with
+// no adapter, and a Secret without the credential, fail with the port's
+// errors.
+func TestIssueTrackersBuildForASource(t *testing.T) {
+	ctx := context.Background()
+	tr := fake.NewIssueTracker()
+	tr.Project(trackerProject)
+	if _, err := tr.File(trackerProject, "ada", "Dark theme", "Please."); err != nil {
+		t.Fatal(err)
+	}
+	token := tr.Account("theos-bot", fake.TrackerAccess{Issues: true})
+	trackers := ports.IssueTrackers{"fake": tr}
+	source := ports.TrackerSource{Tracker: "fake", Project: trackerProject}
+
+	port, err := trackers.Tracker(ctx, source, map[string][]byte{fake.CredentialKey: []byte(token)})
+	if err != nil {
+		t.Fatalf("Tracker() error = %v", err)
+	}
+	if list, err := port.ListOpenIssues(ctx, ""); err != nil || len(list.Issues) != 1 {
+		t.Errorf("ListOpenIssues() = %+v, %v; want the one issue", list, err)
+	}
+
+	for name, secret := range map[string]map[string][]byte{"no Secret": nil, "no key": {"other": []byte(token)}} {
+		_, err := trackers.Tracker(ctx, source, secret)
+		if missing, ok := errors.AsType[*ports.CredentialMissingError](err); !ok ||
+			missing.Keys != "the key "+fake.CredentialKey {
+			t.Errorf("%s: Tracker() error = %v, want a CredentialMissingError naming the key", name, err)
+		}
+	}
+
+	_, err = trackers.Tracker(ctx, ports.TrackerSource{Tracker: "other", Project: trackerProject},
+		map[string][]byte{fake.CredentialKey: []byte(token)})
+	if ports.IssuesReason(err) != ports.ReasonTrackerError || !strings.Contains(err.Error(), `"other"`) {
+		t.Errorf("Tracker() of a tracker with no adapter = %v, want %s naming it", err, ports.ReasonTrackerError)
 	}
 }

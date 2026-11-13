@@ -41,15 +41,6 @@ import (
 // allows, kept in status.requests. A stranger's issue is never kept, nor
 // commented on.
 
-// IssueTrackers builds the clients of the GitHub repositories a Brief takes
-// requests from.
-type IssueTrackers interface {
-	GitHubIssues(cfg ports.GitHubConfig) (ports.IssueTracker, error)
-	// GitHubToken is a GitHub Secret's token, or its GitHub App's
-	// installation token, as the GitHub adapter's Client.GitHubToken mints it.
-	GitHubToken(ctx context.Context, apiURL, repository string, secret map[string][]byte) (string, error)
-}
-
 const (
 	// reasonRequestsReading is the Requests condition's reason while every
 	// repository is read.
@@ -143,23 +134,10 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1beta1.B
 	now time.Time) ([]model.Request, *requestsFailure) {
 	repository := entry.GitHub.Repository
 	same := slices.DeleteFunc(slices.Clone(known), func(k model.Request) bool { return k.Repository != repository })
-	secret := entry.GitHub.TokenSecretRef.Name
-	token, err := r.requestsToken(ctx, brief.Namespace, secret, repository)
-	var mint *ports.ReleaseError
-	switch {
-	case errors.As(err, &mint):
-		return same, &requestsFailure{mint.Reason, mint.Error()}
-	case err != nil:
-		return same, &requestsFailure{model.PublishSecretUnreadable,
-			fmt.Sprintf("Secret %s can't be read: %s", secret, err.Error())}
-	case token == "":
-		return same, &requestsFailure{model.PublishSecretMissing,
-			fmt.Sprintf("Secret %s with the key token (or a GitHub App's %s) is missing", secret,
-				strings.Join(model.GitHubAppKeys, ", "))}
-	}
-	tracker, err := r.Issues.GitHubIssues(ports.GitHubConfig{Repository: repository, Token: token})
-	if err != nil {
-		return same, &requestsFailure{ports.ReasonTrackerError, err.Error()}
+	source := ports.TrackerSource{Tracker: model.TrackerGitHub, Project: repository}
+	tracker, fail := r.requestsTracker(ctx, brief.Namespace, entry.GitHub.TokenSecretRef.Name, source)
+	if fail != nil {
+		return same, fail
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
@@ -190,7 +168,7 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1beta1.B
 	if last.membersErr != nil {
 		failure = &requestsFailure{ports.IssuesReason(last.membersErr), last.membersErr.Error()}
 	}
-	got, err = r.declineRequests(gitCtx, brief, tracker, got)
+	got, err := r.declineRequests(gitCtx, brief, tracker, got)
 	if err != nil {
 		failure = &requestsFailure{ports.IssuesReason(err), err.Error()}
 	}
@@ -398,22 +376,35 @@ func requestsKey(brief *c4v1beta1.Brief, repository string) string {
 	return brief.Namespace + "/" + brief.Name + " " + repository
 }
 
-// requestsToken reads the token from the Secret named name, live, so a
-// Secret created later is used on the next read, or mints its GitHub App's
-// for repository alone; "" when there is none or it holds neither whole.
-func (r *BriefReconciler) requestsToken(ctx context.Context, ns, name, repository string) (string, error) {
+// requestsTracker builds the tracker of source with the data of the Secret
+// named name, read live, so a Secret created later is used on the next read.
+// Which keys the Secret holds, and minting a token from them, are the
+// tracker's adapter's business: a Secret that is missing, or holds no whole
+// credential, is passed on as it is, and the adapter says which keys it
+// takes.
+func (r *BriefReconciler) requestsTracker(ctx context.Context, ns, name string,
+	source ports.TrackerSource) (ports.IssueTracker, *requestsFailure) {
 	var secret corev1.Secret
 	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &secret)
-	if apierrors.IsNotFound(err) {
-		return "", nil
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, &requestsFailure{model.PublishSecretUnreadable,
+			fmt.Sprintf("Secret %s can't be read: %s", name, err.Error())}
+	}
+	tracker, err := r.Issues.Tracker(ctx, source, secret.Data)
+	if missing, ok := errors.AsType[*ports.CredentialMissingError](err); ok {
+		return nil, &requestsFailure{model.PublishSecretMissing,
+			fmt.Sprintf("Secret %s with %s is missing", name, missing.Keys)}
 	}
 	if err != nil {
-		return "", err
+		// A credential refused while the tracker is built says why, as a
+		// call that fails does; anything else is the tracker's error.
+		reason := ports.ReasonTrackerError
+		if failed, ok := errors.AsType[*ports.IssuesError](err); ok {
+			reason = failed.Reason
+		}
+		return nil, &requestsFailure{reason, err.Error()}
 	}
-	if _, _, ok := model.GitHubCredential(secret.Data); !ok {
-		return "", nil
-	}
-	return r.Issues.GitHubToken(ctx, "", repository, secret.Data)
+	return tracker, nil
 }
 
 // recordRequests sets status.requests to all, oldest first, keeping what a

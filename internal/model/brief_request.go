@@ -36,6 +36,11 @@ const (
 	RequestsOn  = "On"
 )
 
+// TrackerGitHub is the tracker a releases entry's requests come from: its
+// GitHub repository's issues, under the name the operator keys that
+// tracker's adapter by (ports.IssueTrackers).
+const TrackerGitHub = "github"
+
 // The stages of a request, as status.requests shows them.
 const (
 	// RequestWaiting waits for a person to accept or decline it, in Ask.
