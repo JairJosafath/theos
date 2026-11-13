@@ -122,6 +122,7 @@ var _ = Describe("Crew release full checks", func() {
 		Eventually(func(g Gomega) {
 			cond := releasedCondition(g, ns, model.FullCheckRunning)
 			g.Expect(cond.Message).To(HaveSuffix(": " + runURL))
+			g.Expect(getCrew(g, ns).Status.FullCheck).NotTo(BeNil(), "#198")
 			g.Expect(getCrew(g, ns).Status.FullCheck.Run).To(Equal(model.RunRunning))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
@@ -264,6 +265,8 @@ var _ = Describe("Crew release full checks", func() {
 			g.Expect(issues).To(HaveLen(1))
 			filed = issues[0]
 			g.Expect(filed.Body).NotTo(ContainSubstring("cut off"), "a check that failed, not cut off")
+			// #198: the issue is filed before the Crew's status is patched, so the status may trail it.
+			g.Expect(getCrew(g, ns).Status.FullCheck).NotTo(BeNil())
 			g.Expect(getCrew(g, ns).Status.FullCheck.Run).To(Equal(model.RunFailed))
 			releasedCondition(g, ns, model.FullCheckFailed)
 		}).Should(Succeed())
@@ -274,6 +277,7 @@ var _ = Describe("Crew release full checks", func() {
 			g.Expect(gitFake.Reruns(ns, "orders-api", 7)).To(Equal(1))
 			crew := getCrew(g, ns)
 			g.Expect(crew.Status.RerunRelease).To(Equal("1"))
+			g.Expect(crew.Status.FullCheck).NotTo(BeNil(), "#198")
 			g.Expect(crew.Status.FullCheck.Rerun).To(BeTrue())
 			releasedCondition(g, ns, model.FullCheckRunning)
 			g.Expect(crewEvents(g, ns)).To(ContainElement(And(HaveField("Type", "Normal"),
