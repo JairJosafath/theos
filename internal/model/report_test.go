@@ -73,6 +73,7 @@ type fixtureTask struct {
 		CompletedAt     time.Time
 		Spec, Approval  *struct{ ApprovedBy, Require string }
 		Review          *struct{}
+		StandardChange  *struct{ Issue int }
 		Score           struct{ Criteria []ScoreCriterion }
 		Conditions      []struct{ Type, Reason string }
 		History         []struct {
@@ -95,9 +96,9 @@ func (f fixtureTask) reportTask() ReportTask {
 		TaskMetricFacts: TaskMetricFacts{
 			Namespace: f.Metadata.Namespace, Container: f.Spec.ContainerRef.Name, Kind: f.Spec.Kind,
 			Benchmark: f.Spec.Benchmark != nil, Phase: f.Status.Phase, Round: f.Status.Round,
-			PersonCommits: f.Status.PersonCommits, CostMilliUSD: f.Status.CostMilliUSD,
+			PersonCommits: f.Status.PersonCommits, CostMilliUSD: f.Status.CostMilliUSD, PullRequest: f.Status.PullRequest,
 		},
-		Name: f.Metadata.Name, PullRequest: f.Status.PullRequest, Completed: f.Status.CompletedAt,
+		Name: f.Metadata.Name, Completed: f.Status.CompletedAt,
 	}
 	if t.Kind == "" {
 		t.Kind = chatKindImplement
@@ -107,6 +108,11 @@ func (f fixtureTask) reportTask() ReportTask {
 	t.Unreviewed = approval != nil && approval.Require == "None" && f.Status.Review == nil
 	for _, c := range f.Status.Conditions {
 		t.NoChange = t.NoChange || c.Type == "Succeeded" && c.Reason == ReasonNothingToDo && t.Phase == TaskMerged
+		t.DoneByStandardChange = t.DoneByStandardChange ||
+			c.Type == "Succeeded" && c.Reason == ReasonDoneByStandardChange && t.Phase == TaskMerged
+	}
+	if c := f.Status.StandardChange; c != nil {
+		t.StandardChange = c.Issue
 	}
 	for _, s := range f.Status.History {
 		t.History = append(t.History, TaskMetricStep{At: s.At, Phase: s.Phase, Reason: s.Reason})
@@ -180,8 +186,8 @@ func TestFactoryReportFixture(t *testing.T) {
 	if r.PersonApproved.Tasks != 2 {
 		t.Errorf("approved by a person = %d, want 2: a held change and a spec", r.PersonApproved.Tasks)
 	}
-	if r.Merged != 13 || r.Failed != 4 || r.NoChange != 1 {
-		t.Errorf("merged, failed, no change = %d, %d, %d, want 13, 4, 1", r.Merged, r.Failed, r.NoChange)
+	if r.Merged != 14 || r.Failed != 4 || r.NoChange != 1 {
+		t.Errorf("merged, failed, no change = %d, %d, %d, want 14, 4, 1", r.Merged, r.Failed, r.NoChange)
 	}
 	if got := r.NoPersonCommit; got.Tasks != 10 || got.Of != 12 {
 		t.Errorf("no person's commit = %d of %d, want 10 of 12", got.Tasks, got.Of)
@@ -197,11 +203,12 @@ func TestFactoryReportFixture(t *testing.T) {
 			t.Errorf("the fixture's report has no merged Task %s", name)
 		}
 	}
+	checkMergedByTheStandardChange(t, r)
 	if merged["edge-26"] {
 		t.Error("edge-26 finished on the period's first instant and is the report before's, yet it is counted")
 	}
-	if queued := r.StageTimes[0]; queued.Key != StageQueued || queued.Tasks != 11 {
-		t.Errorf("queued = %+v, want 11 Tasks: hotfix-22 was queued for zero seconds, and counts", queued)
+	if queued := r.StageTimes[0]; queued.Key != StageQueued || queued.Tasks != 12 {
+		t.Errorf("queued = %+v, want 12 Tasks: hotfix-22 was queued for zero seconds, and counts", queued)
 	}
 	keys := make([]string, 0, len(r.ByConfig))
 	for _, g := range r.ByConfig {
@@ -212,12 +219,12 @@ func TestFactoryReportFixture(t *testing.T) {
 		t.Errorf("by harness and model = %q, want %q: catalog-17 under its newest run's opus, and the three "+
 			"with one Task each by their code points", keys, want)
 	}
-	if got := r.Cost.Tasks; got != 11 {
-		t.Errorf("%d merged Tasks reported a cost, want 11: checkout-18's cost of 0 is none", got)
+	if got := r.Cost.Tasks; got != 12 {
+		t.Errorf("%d merged Tasks reported a cost, want 12: checkout-18's cost of 0 is none", got)
 	}
 	for _, lead := range r.LeadTimes {
-		if lead.Tasks != 13 || *lead.P90Seconds == slowest(t, lead.Key) {
-			t.Errorf("%s: over %d Tasks, 90th percentile %v: want 13 Tasks and not the slowest of them",
+		if lead.Tasks != 14 || *lead.P90Seconds == slowest(t, lead.Key) {
+			t.Errorf("%s: over %d Tasks, 90th percentile %v: want 14 Tasks and not the slowest of them",
 				lead.Key, lead.Tasks, *lead.P90Seconds)
 		}
 	}
@@ -227,13 +234,34 @@ func TestFactoryReportFixture(t *testing.T) {
 	}
 }
 
+// checkMergedByTheStandardChange holds #204 to the fixture's report: a Task
+// done by its Standard change is a merged change, the Standard change's, and
+// its pull request that an earlier round closed is none; a Plan accepted and
+// a Triage have no pull request, and merged nothing.
+func checkMergedByTheStandardChange(t *testing.T, r Report) {
+	t.Helper()
+	merged := map[string]ReportMerged{}
+	for _, m := range r.MergedTasks {
+		merged[m.Task] = m
+	}
+	if _, ok := merged["plan-51"]; ok {
+		t.Error("plan-51 has no pull request and is counted as a merged change")
+	}
+	if _, ok := merged["triage-52"]; ok {
+		t.Error("triage-52 has no pull request and is counted as a merged change")
+	}
+	if m, ok := merged["std-53"]; !ok || m.PullRequest != 0 || m.StandardChange != 253 {
+		t.Errorf("std-53 is %+v (listed: %v), want listed, with no pull request and Standard change 253", m, ok)
+	}
+}
+
 // slowest is the longest lead time of the fixture's merged Tasks under key,
-// which the 90th percentile of thirteen Tasks is not.
+// which the 90th percentile of fourteen Tasks is not.
 func slowest(t *testing.T, key string) float64 {
 	t.Helper()
 	longest := 0.0
 	for _, task := range readReportFixture(t) {
-		if lead := reportLead(task)[key]; lead != nil && task.Phase == TaskMerged && task.PullRequest != 0 &&
+		if lead := reportLead(task)[key]; lead != nil && MergedChange(task.TaskMetricFacts) &&
 			reportFixturePeriod.holds(task.Completed) {
 			longest = max(longest, *lead)
 		}
@@ -255,7 +283,7 @@ type reportStep struct {
 // period's end, after steps.
 func mergedTask(ago int, steps ...reportStep) ReportTask {
 	t := ReportTask{TaskMetricFacts: TaskMetricFacts{Namespace: "shop", Kind: chatKindImplement, Phase: TaskMerged,
-		Round: 1}, PullRequest: 1, Completed: minutesAgo(ago)}
+		Round: 1, PullRequest: 1}, Completed: minutesAgo(ago)}
 	total := 0
 	for _, s := range steps {
 		total += s.minutes
@@ -504,10 +532,10 @@ func TestFactoryReportNamesTheMergedTasks(t *testing.T) {
 		named(10, "docs", "site", "z", 1), named(48*60, "shop", "api", "before", 2), failed,
 	})
 	want := []ReportMerged{
-		{"shop", "web", "https://git.example.com/shop/web", "late", 3, "2026-11-05T11:30:00Z"},
-		{"docs", "site", "", "z", 1, "2026-11-05T11:50:00Z"},
-		{"shop", "api", "", "a", 8, "2026-11-05T11:50:00Z"},
-		{"shop", "api", "", "b", 7, "2026-11-05T11:50:00Z"},
+		{"shop", "web", "https://git.example.com/shop/web", "late", 3, 0, "2026-11-05T11:30:00Z"},
+		{"docs", "site", "", "z", 1, 0, "2026-11-05T11:50:00Z"},
+		{"shop", "api", "", "a", 8, 0, "2026-11-05T11:50:00Z"},
+		{"shop", "api", "", "b", 7, 0, "2026-11-05T11:50:00Z"},
 	}
 	if !reflect.DeepEqual(r.MergedTasks, want) {
 		t.Errorf("merged Tasks = %+v, want %+v: the period's, the oldest merge first, then by namespace and name",
@@ -729,7 +757,7 @@ func TestReportPage(t *testing.T) {
 	page := reportPage(t, FactoryReport(period(), nil))
 	for _, want := range []string{
 		"# The factory's numbers: v1\n",
-		"| Merged a pull request | 0 |",
+		"| Merged a change | 0 |",
 		"| With no commit by a person | 0 of 0 | – |",
 		"No merged Task has a timeline in this period.",
 		"The median is –, over the merged Tasks whose agents reported a cost: 0 of 0.",

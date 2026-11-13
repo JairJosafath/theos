@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import type { Task } from '../k8s/types'
 import { formatCost } from './brief'
 import { factoryStats, median, STAGES, taskSegments, time, timeByStage } from './factory'
-import { factoryMetrics } from './metrics'
+import { factoryMetrics, mergedChange } from './metrics'
 import { scorerRates } from './scores'
 import moneyJSON from './testdata/report/money.json?raw'
 import reportJSON from './testdata/report/report.json?raw'
@@ -61,7 +61,14 @@ interface Report {
     configs: string[]
     criteria: { criterion: string; byConfig: Verdicts[] }[]
   }[]
-  mergedTasks: { namespace: string; container: string; task: string; pullRequest: number; completed: string }[]
+  mergedTasks: {
+    namespace: string
+    container: string
+    task: string
+    pullRequest?: number
+    standardChange?: number
+    completed: string
+  }[]
 }
 
 const every = (JSON.parse(tasksJSON) as { items: Task[] }).items
@@ -84,7 +91,7 @@ const onTheBeginning = every.filter((t) => finished(t) === FROM)
 const tasks = every.filter((t) => finished(t) !== FROM)
 /** The Tasks that finished in the report's period: after its beginning, up to its end. */
 const inPeriod = tasks.filter((t) => finished(t) > FROM && finished(t) <= NOW)
-const merged = inPeriod.filter((t) => t.status?.phase === 'Merged' && t.status.pullRequest)
+const merged = inPeriod.filter(mergedChange)
 const named = (name: string) => {
   const task = merged.find((t) => t.metadata.name === name)
   if (!task) throw new Error(`the fixture has no merged Task ${name} in the period`)
@@ -113,11 +120,49 @@ describe("The report's numbers are the UI's (#66)", () => {
     expect(factoryStats(inPeriod, NOW).failed).toBe(report.failed)
   })
 
-  it('names the merged Tasks the panel counts, each with its pull request', () => {
-    const key = (namespace: string | undefined, task: string, pull: number | undefined) =>
-      `${namespace ?? ''}/${task} #${pull ?? 0}`
-    expect(report.mergedTasks.map((t) => key(t.namespace, t.task, t.pullRequest)).sort()).toEqual(
-      merged.map((t) => key(t.metadata.namespace, t.metadata.name, t.status?.pullRequest)).sort(),
+  it('counts a Task by what merged: a Standard change’s record, never a closed pull request, a plan or a triage (#204)', () => {
+    const ended = (name: string) => {
+      const task = every.find((t) => t.metadata.name === name)
+      if (!task) throw new Error(`the fixture has no Task ${name}`)
+      return task
+    }
+    const reason = (name: string) => ended(name).status?.conditions?.find((c) => c.type === 'Succeeded')?.reason
+    expect(['plan-51', 'triage-52', 'std-53', 'done-41'].map(reason)).toEqual([
+      'PlanAccepted',
+      'Triaged',
+      'DoneByStandardChange',
+      'NothingToDo',
+    ])
+    // std-53 keeps the pull request an earlier round closed, and its Standard change's record.
+    expect(ended('std-53').status?.pullRequest).toBe(53)
+    expect(mergedChange(ended('std-53'))).toBe(true)
+    expect(merged.map((t) => t.metadata.name)).toContain('std-53')
+    expect(report.mergedTasks.find((t) => t.task === 'std-53')).toMatchObject({ standardChange: 253 })
+    expect(report.mergedTasks.find((t) => t.task === 'std-53')?.pullRequest).toBeUndefined()
+    // A Plan and a Triage Task end Merged with no pull request: nothing merged.
+    for (const name of ['plan-51', 'triage-52', 'done-41']) {
+      expect(mergedChange(ended(name))).toBe(false)
+      expect(report.mergedTasks.map((t) => t.task)).not.toContain(name)
+    }
+    // Without its record, the same Task merged nothing, whatever pull request it still names.
+    const noRecord = structuredClone(ended('std-53'))
+    delete noRecord.status?.standardChange
+    expect(mergedChange(noRecord)).toBe(false)
+  })
+
+  it('names the merged Tasks the panel counts, each with its pull request or its Standard change', () => {
+    const key = (namespace: string | undefined, task: string, pull: number | undefined, change: number | undefined) =>
+      `${namespace ?? ''}/${task} #${pull ?? 0} standard change #${change ?? 0}`
+    // #204: a Task done by its Standard change is named by that change; its own pull request was closed.
+    const byStandardChange = (t: Task) => t.status?.conditions?.some((c) => c.reason === 'DoneByStandardChange')
+    expect(report.mergedTasks.map((t) => key(t.namespace, t.task, t.pullRequest, t.standardChange)).sort()).toEqual(
+      merged
+        .map((t) =>
+          byStandardChange(t)
+            ? key(t.metadata.namespace, t.metadata.name, undefined, t.status?.standardChange?.issue)
+            : key(t.metadata.namespace, t.metadata.name, t.status?.pullRequest, undefined),
+        )
+        .sort(),
     )
     expect(report.mergedTasks.map((t) => Date.parse(t.completed))).toEqual(
       report.mergedTasks.map((t) => finished(named(t.task))),

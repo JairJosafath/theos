@@ -43,7 +43,7 @@ func TestFactoryMetrics(t *testing.T) {
 	zero, two := 0, 2
 	cost := func(milli int64) *int64 { return &milli }
 
-	merged := TaskMetricFacts{Namespace: "webshop", Container: "orders-api", Kind: "Implement", Phase: TaskMerged, Round: 2,
+	merged := TaskMetricFacts{Namespace: "webshop", Container: "orders-api", Kind: "Implement", Phase: TaskMerged, Round: 2, PullRequest: 1,
 		PersonCommits: &zero, CostMilliUSD: 1500,
 		History: []TaskMetricStep{{At: at(0), Phase: TaskPending}, {At: at(1), Phase: TaskImplementing},
 			{At: at(11), Phase: TaskChecking}, {At: at(31), Phase: TaskReviewing}, {At: at(36), Phase: TaskMerged}},
@@ -52,10 +52,10 @@ func TestFactoryMetrics(t *testing.T) {
 				CostMilliUSD: cost(1000), Input: 100, Output: 20, CacheRead: 5000, CacheWrite: 300},
 			{Agent: "reviewer", Harness: "claude-code", Model: "claude-opus-5-5", Role: RoleReviewer, CostMilliUSD: cost(500), Input: 50},
 		}}
-	byPerson := TaskMetricFacts{Namespace: "webshop", Container: "orders-api", Kind: "Implement", Phase: TaskMerged, Round: 1,
+	byPerson := TaskMetricFacts{Namespace: "webshop", Container: "orders-api", Kind: "Implement", Phase: TaskMerged, Round: 1, PullRequest: 2,
 		PersonCommits: &two, CostMilliUSD: 250,
 		History: []TaskMetricStep{{At: at(0), Phase: TaskImplementing}, {At: at(120), Phase: TaskMerged}}}
-	unread := TaskMetricFacts{Namespace: "webshop", Container: "storefront", Kind: "Implement", Phase: TaskMerged, Round: 1}
+	unread := TaskMetricFacts{Namespace: "webshop", Container: "storefront", Kind: "Implement", Phase: TaskMerged, Round: 1, PullRequest: 3}
 	failed := TaskMetricFacts{Namespace: "webshop", Container: "storefront", Kind: "Implement", Phase: TaskFailed, Round: 5,
 		History: []TaskMetricStep{{At: at(0), Phase: TaskImplementing}, {At: at(600), Phase: TaskFailed}},
 		Runs:    []TaskMetricRun{{Role: RoleImplementer, Input: 7}}}
@@ -227,7 +227,7 @@ func TestFactoryMetrics(t *testing.T) {
 // Crew holds changes for a person sees the share it could hand over.
 func TestFactoryMetricsApproved(t *testing.T) {
 	merged := func(kind string, mutate func(*TaskMetricFacts)) TaskMetricFacts {
-		f := TaskMetricFacts{Namespace: "webshop", Container: "orders-api", Kind: kind, Phase: TaskMerged}
+		f := TaskMetricFacts{Namespace: "webshop", Container: "orders-api", Kind: kind, Phase: TaskMerged, PullRequest: 3}
 		if mutate != nil {
 			mutate(&f)
 		}
@@ -240,8 +240,9 @@ func TestFactoryMetricsApproved(t *testing.T) {
 		merged("Implement", func(f *TaskMetricFacts) { f.Unreviewed = true }),
 		merged("Spec", func(f *TaskMetricFacts) { f.ApprovedByPerson = true }),
 		merged("Spec", nil),
-		merged("Triage", nil),
-		merged("Plan", nil),
+		// #204: a Plan, a Triage have no pull request: nothing merged.
+		merged("Triage", func(f *TaskMetricFacts) { f.PullRequest = 0 }),
+		merged("Plan", func(f *TaskMetricFacts) { f.PullRequest = 0 }),
 		merged("", nil),
 		{Namespace: "webshop", Container: "orders-api", Kind: "Implement", Phase: TaskFailed, ApprovedByPerson: true},
 		// #72: a Task that ended done with no change merged nothing.
@@ -257,8 +258,6 @@ func TestFactoryMetricsApproved(t *testing.T) {
 		"Implement/none":     1,
 		"Spec/person":        1,
 		"Spec/reviewer":      1,
-		"Triage/none":        1,
-		"Plan/none":          1,
 	}
 	got := map[string]float64{}
 	for _, s := range merges.Samples {
