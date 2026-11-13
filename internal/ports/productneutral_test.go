@@ -49,19 +49,18 @@ const ownImports = "github.com/JairJosafath/theos/"
 // productNeutralFiles are the ports more than one product sits behind, with
 // their contract suites, by their slash-separated path from the repository's
 // root. None of them names a product: what one product does its own way is
-// its adapter's to say.
-//
-// The ChatHost port, internal/ports/chathost.go, and its suite,
-// internal/ports/contract/chathost.go, join the list when step 2 of
-// docs/plans/requests-and-chat.md (#152) has renamed what they hold.
+// its adapter's to say. The ChatHost port and its suite joined with #152.
 var productNeutralFiles = []string{
 	"internal/ports/intake.go",
 	"internal/ports/contract/intake.go",
 	"internal/ports/contract/teammembers.go",
+	"internal/ports/chathost.go",
+	"internal/ports/contract/chathost.go",
 }
 
-// TestProductNeutral is the guard of #151: the request intake port and its
-// suites name no product, in a type, a reason or a comment.
+// TestProductNeutral is the guard of #151 and #152: the request intake port,
+// the chat port and their suites name no product, in a type, a reason or a
+// comment.
 func TestProductNeutral(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {

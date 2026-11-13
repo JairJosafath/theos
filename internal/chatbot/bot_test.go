@@ -35,6 +35,7 @@ import (
 	"github.com/JairJosafath/theos/internal/adapters/matrix"
 	"github.com/JairJosafath/theos/internal/adapters/matrix/matrixtest"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // The posting tests run theos-chat on the fake homeserver and a fake API
@@ -86,7 +87,8 @@ func newWorld(t *testing.T, objs ...client.Object) *world {
 
 // theosChat is a fresh theos-chat on w, as after a restart.
 func (w *world) theosChat() *Bot {
-	return &Bot{Client: w.kube, APIReader: w.kube, ChatHosts: matrix.Hosts(nil), Now: func() time.Time { return w.now }}
+	return &Bot{Client: w.kube, APIReader: w.kube, ChatHosts: map[string]ports.ChatHosts{model.ChatMatrix: matrix.Hosts(nil)},
+		Now: func() time.Time { return w.now }}
 }
 
 // pass runs one pass of bot; it fails the test on an error unless failing.

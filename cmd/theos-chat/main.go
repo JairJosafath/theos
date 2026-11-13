@@ -45,6 +45,7 @@ import (
 	"github.com/JairJosafath/theos/internal/buildinfo"
 	"github.com/JairJosafath/theos/internal/chatbot"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 func main() {
@@ -89,8 +90,10 @@ func main() {
 		log.Error(err, "Failed to make the manager")
 		os.Exit(1)
 	}
+	// One adapter per chat host, by the name of its model.ChatSystem row.
+	hosts := map[string]ports.ChatHosts{model.ChatMatrix: matrix.Hosts(nil)}
 	bot := &chatbot.Bot{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Config: mgr.GetConfig(),
-		ChatHosts: matrix.Hosts(nil), Interval: interval, UIURL: ui}
+		ChatHosts: hosts, Interval: interval, UIURL: ui}
 	if err := bot.SetupWithManager(mgr); err != nil {
 		log.Error(err, "Failed to set up theos-chat")
 		os.Exit(1)

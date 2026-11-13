@@ -547,11 +547,12 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "deploytarget")
 		os.Exit(1)
 	}
+	// One chat adapter per chat host, by the name of its model.ChatSystem row.
 	if err := (&controller.ChatReconciler{
 		Client:     mgr.GetClient(),
 		Scheme:     mgr.GetScheme(),
 		APIReader:  mgr.GetAPIReader(),
-		ChatHosts:  matrix.Hosts(nil),
+		ChatHosts:  map[string]ports.ChatHosts{model.ChatMatrix: matrix.Hosts(nil)},
 		Homeserver: chatHomeserver,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "chat")

@@ -126,8 +126,8 @@ func TestPlanChatAnswer(t *testing.T) {
 
 // Only a Chat's people are obeyed, matched on their exact Matrix ID.
 func TestChatPersonFor(t *testing.T) {
-	people := []ChatPerson{{MatrixID: "@ada:example.org", User: "ada@example.com", Groups: []string{"shop"}},
-		{MatrixID: "@nobody:example.org"}}
+	people := []ChatPerson{{ID: "@ada:example.org", User: "ada@example.com", Groups: []string{"shop"}},
+		{ID: "@nobody:example.org"}}
 	tests := []struct {
 		sender string
 		want   string

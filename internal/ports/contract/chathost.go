@@ -30,7 +30,7 @@ import (
 
 // ChatHostEnv builds the ChatHost under test.
 type ChatHostEnv struct {
-	// New returns a fresh chat host (a homeserver, a workspace) that holds
+	// New returns a fresh chat host (a server, a workspace) that holds
 	// no room, with the ChatHost that speaks as its bot.
 	New func(t *testing.T) ChatServer
 	// Cannot names the subtests the host can't run, with why; they are
@@ -132,7 +132,7 @@ const (
 // rest.
 //
 // What a host does its own way stays in its adapter's tests: how a Space
-// and its rooms are linked, the HTML and the events written, rate limits,
+// and its rooms are linked, the markup and the events written, rate limits,
 // and how long a Sync with a wait above 0 waits.
 func ChatHost(t *testing.T, env ChatHostEnv) {
 	t.Helper()
@@ -204,7 +204,7 @@ func (s chatSuite) rooms(t *testing.T) chatRooms {
 // send posts text in room as the bot.
 func (s chatSuite) send(t *testing.T, x chatRooms, room, text string) string {
 	t.Helper()
-	id := must(x.Host.Send(s.ctx, room, ports.ChatMessage{Text: text, HTML: "<p>" + text + "</p>"}))(t)
+	id := must(x.Host.Send(s.ctx, room, ports.ChatMessage{Text: text, Formatted: "<p>" + text + "</p>"}))(t)
 	if id == "" {
 		t.Fatalf("Send(%q) returned no ID", text)
 	}
@@ -426,7 +426,7 @@ func (s chatSuite) edits(t *testing.T) {
 	other := s.send(t, x, x.general, textExport)
 	for _, text := range []string{"Spec: dark mode (approved)", "Spec: dark mode (merged)"} {
 		if _, err := x.Host.Edit(s.ctx, x.general, root, ports.ChatMessage{Text: text,
-			HTML: "<p>" + text + "</p>"}); err != nil {
+			Formatted: "<p>" + text + "</p>"}); err != nil {
 			t.Fatalf("Edit() = %v", err)
 		}
 	}
