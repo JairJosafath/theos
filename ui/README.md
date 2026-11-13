@@ -75,7 +75,8 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   latest tag linking to its Gitea release, and where it was published, linking to
   the GitHub release, and how many issues its crew works on at once), its prompts (those not yet planned marked
   _next round_), its repository and cost, a field to add a prompt, and a Pause or Resume
-  button that sets `spec.paused`; while paused, the card shows its `Paused`
+  button that sets `spec.paused` (with `spec.pauseRuns` when its runs are paused
+  too) and a Pause runs or Resume runs button that sets `spec.pauseRuns`; while paused, the card shows its `Paused`
   condition: which Tasks still run, or that nothing does. The forms check none
   of the CRD's rules: submit is enabled for any non-empty input, and the API
   server's message shows as is when it refuses. Only shown in a namespace with a Project.
