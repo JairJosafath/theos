@@ -253,7 +253,11 @@ Every file belongs to exactly one layer: two layers writing a path fail the
 Container, naming it. An empty existing repository gets the commit again; one
 with commits the operator didn't make stops it `Failed`. A `Failed` Container
 tries again when something it depends on changes, or when its
-`theos.factory.io/retry` annotation is set or changed.
+`theos.factory.io/retry` annotation is set or changed. While it tries it
+stays `Failed`, and its condition changes only for another outcome (a
+different failure, or a Git error it retries); it shows `Scaffolding` only
+once the attempt is about to push, so one that fails the same way again
+never seems to move (#237).
 
 **Adopting a repository.** A Container with `spec.adopt: true` (set at
 creation, immutable) takes over a repository that already has commits and
