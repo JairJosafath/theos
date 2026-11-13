@@ -90,12 +90,13 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 	}
 
-	// Show progress before the slow part.
-	if status.Phase != c4v1beta1.ContainerScaffolding {
-		status.Phase = c4v1beta1.ContainerScaffolding
-		r.condition(container, status, c4v1beta1.ConditionScaffolded, metav1.ConditionFalse,
-			c4v1beta1.ReasonScaffolding, "Creating the repository and rendering the templates")
-		if err := r.writeStatus(ctx, container, status); err != nil {
+	// Show progress before the slow part. A Failed Container is read again on
+	// every event that reconciles it (#237): it keeps its phase and condition
+	// until the attempt knows it will push, so one that fails the same way
+	// again never shows Scaffolding in between.
+	failed := live.Status.Phase == c4v1beta1.ContainerFailed
+	if !failed {
+		if err := r.showScaffolding(ctx, container, status); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -200,6 +201,11 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, reason, err.Error())
 	}
 
+	if failed {
+		if err := r.showScaffolding(ctx, container, status); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	message := scaffold.CommitMessage(in, result.ScaffoldedFrom, res.use.Relationships)
 	author := ports.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	if _, err := provider.PushInitialCommit(gitCtx, repo, result.Files, message, author); err != nil {
@@ -419,6 +425,19 @@ func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1beta1.Co
 	// The scaffold's push starts CI; read its result like every later reconcile
 	// does. A status write alone doesn't reconcile the Container again.
 	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.writeStatus(ctx, container, status)
+}
+
+// showScaffolding writes the Scaffolding phase, unless the status already
+// shows it.
+func (r *ContainerReconciler) showScaffolding(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus) error {
+	if status.Phase == c4v1beta1.ContainerScaffolding {
+		return nil
+	}
+	status.Phase = c4v1beta1.ContainerScaffolding
+	r.condition(container, status, c4v1beta1.ConditionScaffolded, metav1.ConditionFalse,
+		c4v1beta1.ReasonScaffolding, "Creating the repository and rendering the templates")
+	return r.writeStatus(ctx, container, status)
 }
 
 // fail stops the Container with a reason a person has to act on.
