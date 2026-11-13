@@ -564,7 +564,8 @@ var _ = Describe("Task", func() {
 				"the round's history keeps the step's message after the checks' wait replaces it")
 		}).Should(Succeed())
 		pr := getTask(Default, ns, "add-crop").Status.PullRequest
-		Expect(gitFake.PullComments(ns, "orders-api", int(pr))).To(ContainElement(And(
+		// #200: the status is written before the comment is posted (#906), so the comment may trail it.
+		Eventually(func() []string { return gitFake.PullComments(ns, "orders-api", int(pr)) }, "20s").Should(ContainElement(And(
 			ContainSubstring("Round 1: `make check` fails in the agent's workspace on main too"),
 			ContainSubstring("curl: (22) 404 Not Found"))))
 		Eventually(func(g Gomega) {

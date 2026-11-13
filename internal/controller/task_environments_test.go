@@ -99,8 +99,11 @@ var _ = Describe("Task with a test environment", func() {
 		Expect(k8sClient.Get(ctx, key(ns, "pictures-1-test-environments"), &secret)).To(Succeed())
 		Expect(string(secret.Data[id])).To(Equal(req.Token))
 		Expect(secret.OwnerReferences).To(ContainElement(HaveField("Kind", "Task")))
-		Expect(getTask(Default, ns, "pictures-1").Status.Environments).To(ConsistOf(
-			HaveField("Lease", id)))
+		// #197: the sandbox is created before the status that records the lease is
+		// patched, so the status may trail the sandbox this spec already saw.
+		Eventually(func(g Gomega) {
+			g.Expect(getTask(g, ns, "pictures-1").Status.Environments).To(ConsistOf(HaveField("Lease", id)))
+		}, "20s").Should(Succeed())
 
 		By("returning it when the run ends")
 		gitFake.PushBranchHead(ns, "orders-api", "task/pictures-1", "sha-r1")
