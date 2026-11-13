@@ -182,3 +182,17 @@ Each is an issue in the session's Gitea (bodies in
   was restored (a stale `docker.pid` had to go first). Left: the extension
   pinning it, with the README's CI section (cel-lens-vscode#22, v0.39.0),
   then #1 closes.
+- **13 November, 19:15 UTC. Done.** Step 7's last part (cel-lens-vscode#23,
+  issue #22, one review round, its three README findings fixed before
+  publishing) merged as JairJosafath/cel-lens#28 (f5bd74f), and
+  `release.yml` published
+  [cel-lens for VS Code v0.39.0](https://github.com/JairJosafath/cel-lens/releases/tag/vscode-v0.39.0),
+  pinning engine v0.31.0; the README says how to run the examples in CI.
+  Checked here: the Linux `.vsix`'s signature and provenance verify with
+  cosign, and its engine is v0.31.0 with the pinned hash. The pins were
+  compared with the verified `checksums.txt` before publishing.
+  JairJosafath/cel-lens#1 is closed, with a comment going through its
+  list. Follow-ups: cel-lens-core#34 (the YAML 1.1 error marks the key,
+  not the word) and those filed before (#8, #10, #11, #18, #29, #30,
+  #33; cel-lens-vscode#2, #4, #21). Not covered yet, and said so in the
+  README: MutatingAdmissionPolicy and Kyverno.
