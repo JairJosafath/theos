@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -46,13 +47,13 @@ type lagWorld struct {
 	secret  *corev1.Secret
 }
 
-func newLagWorld(t *testing.T, mode string, accepted ...int32) lagWorld {
+func newLagWorld(t *testing.T, mode string) lagWorld {
 	t.Helper()
 	tr := fake.NewIssueTracker()
 	tr.Project(lagTeam)
 	token := tr.Account(trackerLogin, fake.TrackerAccess{Issues: true})
 	src := linearSource("product", lagTeam)
-	src.Mode, src.Accepted = mode, accepted
+	src.Mode = mode
 	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
 		Spec: c4v1beta1.BriefSpec{RequestSources: []c4v1beta1.BriefRequestSource{src}}}
 	return lagWorld{t: t, tracker: tr, port: tr.For(lagTeam, token), brief: brief,
@@ -208,5 +209,224 @@ func TestACloseTheWorkflowRefusesWaitsForTheRecheck(t *testing.T) {
 	}
 	if issue, _ := w.tracker.Issue(lagTeam, n); !issue.Closed || len(issue.Comments) != 1 {
 		t.Errorf("the item is %+v, want it closed with its one comment", issue)
+	}
+}
+
+// failingReads is the fake tracker as an adapter whose reads of one item
+// fail, once the fake counted them: fail holds the reason by item number,
+// 0 for every item.
+type failingReads struct {
+	adapter ports.TrackerAdapter
+	fail    map[int]string
+}
+
+func (f failingReads) Tracker(ctx context.Context, source ports.TrackerSource,
+	secret map[string][]byte) (ports.IssueTracker, error) {
+	tracker, err := f.adapter.Tracker(ctx, source, secret)
+	if err != nil {
+		return nil, err
+	}
+	return failingReader{IssueTracker: tracker, reader: tracker.(ports.IssueReader), fail: f.fail}, nil
+}
+
+type failingReader struct {
+	ports.IssueTracker
+	reader ports.IssueReader
+	fail   map[int]string
+}
+
+func (f failingReader) IssueOpen(ctx context.Context, number int) (bool, error) {
+	open, err := f.reader.IssueOpen(ctx, number)
+	reason, failing := f.fail[number]
+	if !failing {
+		reason, failing = f.fail[0]
+	}
+	if err != nil || !failing {
+		return open, err
+	}
+	return false, &ports.IssuesError{Reason: reason, Message: fmt.Sprintf("reading item %d failed", number)}
+}
+
+// TestAFailedReadOfAnItemWaitsForTheRecheck covers #245: a read of one item
+// that fails is kept until the suggestions recheck, as one that worked is,
+// so the item isn't read again on every reconcile (twice in a reconcile that
+// reads requests again after the round), and the Requests condition says
+// why all along. A rate limit ends the pass's reads of items: the rest wait
+// for the recheck with it.
+func TestAFailedReadOfAnItemWaitsForTheRecheck(t *testing.T) {
+	t0 := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name string
+		// failing is the item whose reads fail, by its index; -1 for all.
+		failing int
+		reason  string
+		// first are the reads of items the first pass makes, and listed
+		// the items it lets through, by index.
+		first  int
+		listed []int
+	}{
+		{"a rate limit ends the pass's reads (#245)", -1, ports.ReasonTrackerUnavailable, 1, nil},
+		{"a read of one item that fails waits alone (#245)", 1, ports.ReasonTrackerError, 3, []int{0, 2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newLagWorld(t, model.RequestsOn)
+			items := []int{w.file("One"), w.file("Two"), w.file("Three")}
+			refuse := map[int]string{0: tc.reason}
+			if tc.failing >= 0 {
+				refuse = map[int]string{items[tc.failing]: tc.reason}
+			}
+			r := w.reconciler()
+			r.Issues = ports.IssueTrackers{model.TrackerLinear: failingReads{adapter: w.tracker, fail: refuse}}
+			want := map[int]bool{}
+			for _, i := range tc.listed {
+				want[items[i]] = true
+			}
+			for _, later := range []time.Duration{0, time.Second, lagRecheck / 2} {
+				got, fail := w.read(r, nil, t0.Add(later))
+				if fail == nil || fail.reason != tc.reason {
+					t.Errorf("%s later: the failure is %+v, want %s", later, fail, tc.reason)
+				}
+				if len(got) != len(want) {
+					t.Errorf("%s later: the requests are %v, want %v", later, got, tc.listed)
+				}
+				for n := range want {
+					if _, ok := got[n]; !ok {
+						t.Errorf("%s later: item %d is no request, want it one", later, n)
+					}
+				}
+				if reads := w.tracker.Calls("IssueOpen"); reads != tc.first {
+					t.Errorf("%s later: the items were read on their own %d times, want %d", later, reads, tc.first)
+				}
+			}
+			clear(refuse)
+			got, failure := w.read(r, nil, t0.Add(lagRecheck))
+			if failure != nil || len(got) != len(items) {
+				t.Errorf("a recheck later = %v, %+v; want the three items requests", got, failure)
+			}
+		})
+	}
+}
+
+// TestAHeldCloseGoesWithItsRequest covers #245: a declined request whose
+// close the workflow refused, and whose label is taken off, leaves the list,
+// and its held close goes with it. Labelled again, and declined again, it is
+// closed on the next read, not left until the old refusal's recheck.
+func TestAHeldCloseGoesWithItsRequest(t *testing.T) {
+	t0 := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
+	w := newLagWorld(t, model.RequestsAsk)
+	src := &w.brief.Spec.RequestSources[0]
+	a, b, c := w.file("Unlabelled"), w.file("Declined"), w.file("Declined later")
+	src.Declined = []int32{int32(a)}
+	w.tracker.CannotClose(lagTeam, `the team has no state of type "canceled"`)
+	r := w.reconciler()
+	values := func(got map[int]model.Request) []model.Request {
+		out := make([]model.Request, 0, len(got))
+		for _, req := range got {
+			out = append(out, req)
+		}
+		return out
+	}
+
+	got, fail := w.read(r, nil, t0)
+	if fail == nil || fail.reason != ports.ReasonCannotClose || got[a].Stage != model.RequestDeclined {
+		t.Fatalf("declining %d = %v, %+v; want it kept and CannotClose", a, got, fail)
+	}
+
+	// The label goes while the close is held, and the workflow is fixed;
+	// declining b reads the list again.
+	if err := w.tracker.Unlabel(lagTeam, a); err != nil {
+		t.Fatal(err)
+	}
+	w.tracker.CannotClose(lagTeam, "")
+	src.Declined = []int32{int32(a), int32(b)}
+	got, fail = w.read(r, values(got), t0.Add(10*time.Second))
+	if _, ok := got[a]; ok || fail != nil {
+		t.Fatalf("after the label went = %v, %+v; want %d gone and no failure", got, fail, a)
+	}
+
+	// The label is back, and declining c reads the list again.
+	if err := w.tracker.Label(lagTeam, a); err != nil {
+		t.Fatal(err)
+	}
+	src.Declined = []int32{int32(a), int32(b), int32(c)}
+	got, fail = w.read(r, values(got), t0.Add(20*time.Second))
+	if fail != nil || len(got) != 0 {
+		t.Errorf("declining it again = %v, %+v; want every item closed and gone", got, fail)
+	}
+	if issue, _ := w.tracker.Issue(lagTeam, a); !issue.Closed || len(issue.Comments) != 1 {
+		t.Errorf("item %d is %+v, want it closed with its one comment", a, issue)
+	}
+}
+
+// TestAHeldCloseStaysWithItsOwnSource covers #245: a read of one source
+// forgets only that source's held closes. Two sources hold an item of the
+// same number; the other source's read, with its item listed and with
+// nothing listed, leaves the held close of the first, which is not tried
+// again before its recheck.
+func TestAHeldCloseStaysWithItsOwnSource(t *testing.T) {
+	t0 := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
+	tr := fake.NewIssueTracker()
+	tr.Project("ENG")
+	tr.Project("OPS")
+	token := tr.Account(trackerLogin, fake.TrackerAccess{Issues: true})
+	a, b := linearSource("a", "ENG"), linearSource("b", "OPS")
+	a.Mode, b.Mode = model.RequestsAsk, model.RequestsAsk
+	na, err := tr.File("ENG", "ada", "Declined", "Please.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nb, err := tr.File("OPS", "ada", "Asked", "Please.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if na != nb {
+		t.Fatalf("the items are %d and %d, want the same number", na, nb)
+	}
+	a.Declined = []int32{int32(na)}
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
+		Spec: c4v1beta1.BriefSpec{RequestSources: []c4v1beta1.BriefRequestSource{a, b}}}
+	secret := func(name string) *corev1.Secret {
+		return &corev1.Secret{ObjectMeta: objectMeta("apps", name),
+			Data: map[string][]byte{fake.CredentialKey: []byte(token)}}
+	}
+	c := crfake.NewClientBuilder().WithScheme(briefScheme(t)).
+		WithObjects(secret("a-linear"), secret("b-linear")).Build()
+	r := &BriefReconciler{Client: c, APIReader: c, SuggestionsRecheck: lagRecheck,
+		Issues: ports.IssueTrackers{model.TrackerLinear: tr}}
+	tr.CannotClose("ENG", `the team has no state of type "canceled"`)
+	read := func(i int, known []model.Request, now time.Time) ([]model.Request, *requestsFailure) {
+		r.Now = func() time.Time { return now }
+		return r.readOrigin(context.Background(), brief, requestOrigins(brief)[i], known, map[string][]int32{}, now)
+	}
+
+	gotA, fail := read(0, nil, t0)
+	if fail == nil || fail.reason != ports.ReasonCannotClose {
+		t.Fatalf("declining a's item = %v, %+v; want it kept and CannotClose", gotA, fail)
+	}
+	declined := model.Request{Source: "a", Number: na}
+	gotB, fail := read(1, nil, t0.Add(time.Second))
+	if fail != nil || len(gotB) != 1 {
+		t.Fatalf("reading b = %v, %+v; want its one request", gotB, fail)
+	}
+	if r.heldClose(brief, declined, t0.Add(time.Second)) == nil {
+		t.Error("b's read, its item listed, forgot a's held close")
+	}
+	if err := tr.Unlabel("OPS", nb); err != nil {
+		t.Fatal(err)
+	}
+	brief.Spec.RequestSources[1].Declined = []int32{int32(nb)}
+	if gotB, fail = read(1, gotB, t0.Add(2*time.Second)); fail != nil || len(gotB) != 0 {
+		t.Fatalf("reading b with nothing listed = %v, %+v; want no request", gotB, fail)
+	}
+	if r.heldClose(brief, declined, t0.Add(2*time.Second)) == nil {
+		t.Error("b's read, nothing listed, forgot a's held close")
+	}
+	closes := tr.Calls("CloseIssue")
+	tr.CannotClose("ENG", "")
+	if _, fail = read(0, gotA, t0.Add(3*time.Second)); fail == nil || fail.reason != ports.ReasonCannotClose {
+		t.Errorf("a's read before the recheck = %+v, want the held CannotClose", fail)
+	}
+	if n := tr.Calls("CloseIssue"); n != closes {
+		t.Errorf("a's close was tried %d more times before its recheck, want none", n-closes)
 	}
 }

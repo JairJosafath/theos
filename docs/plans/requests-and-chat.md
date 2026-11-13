@@ -798,6 +798,9 @@ reconcile (developer.atlassian.com). What that settled:
   are not search and are consistent, and `CloseIssue` of an item already in
   category Done does nothing, so a stale list costs one read and no second
   close. The ETag follows the list, so a lagging list is a late change.
+  That a closed item the list still shows is no new request is settled in
+  step 10: see "An item the Brief closed is no new request" and "What the
+  lag still leaves" under "Step 10 as built (#161)" (#245).
 - **Confirmed: a moved item.** "Get issue" says that when the identifier
   matches no issue, "a case-insensitive search and check for moved issues is
   performed"; if one is found "its details are returned, a 302 or other
@@ -1012,7 +1015,10 @@ What the step chose where the plan says nothing:
   (`requestsHeld`) and the close, with the fresh read of the source an owed
   answer forces, waits for the suggestions recheck rather than coming on
   every reconcile; the `Requests` condition says `CannotClose` all along
-  (review of #161, `TestACloseTheWorkflowRefusesWaitsForTheRecheck`). The
+  (review of #161, `TestACloseTheWorkflowRefusesWaitsForTheRecheck`). A
+  held close goes when its request leaves `status.requests`, its label
+  taken off say, so a request that comes back is closed at once (#245,
+  `TestAHeldCloseGoesWithItsRequest`). The
   fake tracker gained `CannotClose(project, why)`, and `Unlabel` and
   `Label`, an open item no list shows, for the specs.
 - **An item the Brief closed is no new request, whatever a lagging search
@@ -1037,8 +1043,11 @@ What the step chose where the plan says nothing:
   keeps what the Brief closed (`forgetIssue`) and what `IssueOpen` said,
   with when, until the list no longer shows the item: within a suggestions
   recheck the item is not read again, so a lagging item costs one read per
-  recheck. A read that fails leaves the item out of that pass and names the
-  `Requests` condition. Both adapters and the fake tracker are
+  recheck. A read that fails is kept so too (#245): it leaves the item out
+  until the recheck, and names the `Requests` condition on each pass until
+  then; one the tracker refuses as unavailable (`TrackerUnavailable`: a
+  rate limit, an outage) ends the pass's reads of items, and those not read
+  yet wait for the recheck with it. Both adapters and the fake tracker are
   `IssueReader`s; the fake gained `Lag(project, on)`, a list that goes on
   showing closed issues, and `jiratest` the same for its search. A
   repository's GitHub list doesn't lag that way and its adapter is no
@@ -1049,6 +1058,18 @@ What the step chose where the plan says nothing:
   and need its own pruning, where the item already holds the answer.
 - **The condition names a source as `request source <name>`,** in
   `Reading the issues of …` and before a failure's message.
+
+Done since:
+
+- **An envtest of `Merged in <PR> for <issue>`** (review of #161, a
+  nit; #245). Beside `TestRequestComments` and `TestMergedPulls`,
+  the spec "names the pull request a Task merged for each issue of a
+  request, and none for an issue closed by hand" sees the line end to end.
+  A merged Task is read by its Crew's release logic too, so the helper
+  `mergedFiledTask` keeps the two apart: it makes the Task only on a Crew
+  that neither tags nor prepares releases (a plan with no releases file),
+  and checks that first; the Task's Agent doesn't exist and it records no
+  merge commit.
 
 Left as it is, and why:
 
@@ -1061,11 +1082,6 @@ Left as it is, and why:
   request as before; GitHub's issue list has not been seen to lag so. The
   envtest specs of the lag run on the fake tracker; how long a real Jira
   site lags is still unread, and no longer matters to the outcome.
-- **Not done: an envtest of `Merged in <PR> for <issue>`** (review of
-  #161, a nit). The line is covered by `TestRequestComments` and
-  `TestMergedPulls`; seeing it end to end needs a merged Task of the
-  linter in the Brief's specs, which the Crew's release logic also reads,
-  and isn't cheap to make without a new helper. A follow-up.
 - **Whether Linear keeps a `<!-- -->` marker in a comment's body,** and
   whether Jira's document format does, is still unread (step 6 as built,
   Linear): the markers are the comment's last lines there, shown, and the

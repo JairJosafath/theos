@@ -78,6 +78,49 @@ func closeFiled(ns string, issues ...string) {
 	}
 }
 
+// mergedFiledTask records the issue named container#number as merged by a
+// Task through a pull request, as the Task's round would, and returns the
+// pull request's page. A merged Task is read by its Crew's release logic
+// too, which would hold, tag or prepare a release on it; a Brief spec keeps
+// the two apart by a Crew that neither tags nor prepares releases (a plan
+// with no releases file), which the helper checks first. The Task's Agent
+// doesn't exist, so it does nothing before it is Merged, and it records no
+// merge commit.
+func mergedFiledTask(ns, issue string) string {
+	GinkgoHelper()
+	container, number, _ := strings.Cut(issue, "#")
+	var n int
+	_, err := fmt.Sscan(number, &n)
+	Expect(err).NotTo(HaveOccurred())
+	Eventually(func(g Gomega) {
+		crew := &c4v1beta1.Crew{}
+		g.Expect(k8sClient.Get(ctx, key(ns, container), crew)).To(Succeed())
+		g.Expect(crew.Spec.TagReleases).To(BeFalse(), "a Crew that tags releases reads the merged Task")
+		g.Expect(crew.Spec.PrepareReleases).To(BeFalse(), "a Crew that prepares releases reads the merged Task")
+	}).Should(Succeed())
+	name := fmt.Sprintf("%s-%d-merged", container, n)
+	task := newTask(ns, name, "")
+	task.Spec.ContainerRef = c4v1beta1.LocalRef{Name: container}
+	task.Spec.AgentRef = c4v1beta1.LocalRef{Name: "nobody"}
+	task.Spec.Issue = int32(n)
+	mustCreate(task)
+	// Once it waits for its Agent, the Task reconciler writes nothing more.
+	Eventually(func(g Gomega) {
+		cond := condition(getTask(g, ns, name).Status.Conditions, ConditionProgressing)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Reason).To(Equal("AgentNotFound"))
+	}).Should(Succeed())
+	pull := 900 + n
+	url := fmt.Sprintf("https://git.test/%s/%s/pulls/%d", ns, container, pull)
+	Eventually(func(g Gomega) {
+		task := getTask(g, ns, name)
+		task.Status.Phase, task.Status.CompletedAt = c4v1beta1.TaskMerged, &metav1.Time{Time: time.Now()}
+		task.Status.PullRequest, task.Status.PullRequestURL = int32(pull), url
+		g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
+	}).Should(Succeed())
+	return url
+}
+
 // publishLinter sets the linter Crew's latest release as tagging and
 // publishing it would, and returns its published page.
 func publishLinter(ns, repository, tag string) string {
@@ -208,6 +251,57 @@ var _ = Describe("Brief requests shipped", func() {
 			g.Expect(comments).To(HaveLen(2))
 			g.Expect(comments[1]).To(HavePrefix(model.RequestMarker("cel-lens", model.CommentReleased) +
 				fmt.Sprintf("\nDone in http://gitea/%s/linter/issues/%s.\n", ns, number)))
+			g.Expect(getBrief(g, ns).Status.Requests).To(BeEmpty())
+		}).Should(Succeed())
+	})
+
+	// #245: the line of the merged pull requests, end to end, at tier 4.
+	It("names the pull request a Task merged for each issue of a request, and none for an issue closed by hand", func() {
+		tr := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
+			Authors: []string{"ada"}})
+		repository := tr.repository
+		Eventually(func(g Gomega) {
+			brief := getBrief(g, ns)
+			g.Expect(patch(brief, func() { brief.Spec.Releases[0].Container = "elsewhere" })).To(Succeed())
+		}).Should(Succeed())
+		planRound(ns, 1, 1, linterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+		}).Should(Succeed())
+
+		theme := tr.file("ada", "Dark theme", "Please.")
+		plan := linterPlan(ns, 2)
+		plan[model.PlanRequestsFile] = scaffold.File{Data: fmt.Appendf(nil,
+			"- {request: %s#%d, answer: take, issues: [1, 2]}\n", repository, theme)}
+		became := takeAll(ns, tr, []int{theme}, plan)
+		Expect(became[theme]).To(HaveLen(2))
+		merged, byHand := became[theme][0], became[theme][1]
+
+		pull := mergedFiledTask(ns, merged)
+		// Tasks are listed from the cache after the live read of closed issues: cache it merged first.
+		Eventually(func(g Gomega) {
+			task := &c4v1beta1.Task{}
+			g.Expect(managerClient.Get(ctx, key(ns, strings.Replace(merged, "#", "-", 1)+"-merged"), task)).To(Succeed())
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			g.Expect(task.Status.PullRequestURL).To(Equal(pull))
+		}).Should(Succeed())
+		closeFiled(ns, merged, byHand)
+		// Each issue's page, as the Brief's status recorded it.
+		pages := map[string]string{}
+		for _, issue := range became[theme] {
+			_, number, _ := strings.Cut(issue, "#")
+			pages[issue] = filedURL(getBrief(Default, ns), issue)
+			Expect(pages[issue]).To(HavePrefix("http://"))
+			Expect(pages[issue]).To(HaveSuffix(fmt.Sprintf("/%s/linter/issues/%s", ns, number)))
+		}
+		Eventually(func(g Gomega) {
+			issue, comments := tr.issue(theme)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(issue.Reason).To(Equal(ports.CloseCompleted))
+			g.Expect(comments).To(HaveLen(2))
+			g.Expect(comments[1]).To(HavePrefix(model.RequestMarker("cel-lens", model.CommentReleased) +
+				fmt.Sprintf("\nDone in %s and %s.\nMerged in %s for %s.\n", pages[merged], pages[byHand], pull,
+					pages[merged])))
 			g.Expect(getBrief(g, ns).Status.Requests).To(BeEmpty())
 		}).Should(Succeed())
 	})
