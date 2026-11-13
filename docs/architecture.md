@@ -54,8 +54,8 @@ Kubernetes API, under `/apis/theos.factory.io/` only. With its actions off (the
 default), it is read-only by construction but for three writes: creating a Brief (`POST` of kind `Brief` into a namespace that
 holds a Project; only its name and spec go upstream), appending a follow-up
 prompt to one (a JSON patch whose only operation is `add` at `/spec/prompts/-`),
-and pausing or resuming one or its running Tasks (a JSON patch that adds a
-boolean at `/spec/paused`, at `/spec/pauseRuns`, or both in one patch).
+and pausing or resuming one or its running Tasks (a JSON patch of nothing but
+`add` of a boolean at `/spec/paused`, at `/spec/pauseRuns`, or one at each).
 The server refuses every other write, and its RBAC grants only `create` and
 `patch` on `briefs` beyond its reads, so what a Brief may say stays the CRD's to
 check. With `ui.actions.enabled`, the server's action table (`ACTIONS` in

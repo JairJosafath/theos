@@ -5,7 +5,7 @@ Milestone 6 in [the MVP plan](../docs/plans/done/mvp-v1.md): someone who has
 never used kubectl can read the story in a browser. It reads everything and,
 with actions off, changes only three things: it creates a Brief from an app
 idea, adds a follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)),
-and pauses or resumes one ([docs/plans/done/upgrade-in-place.md](../docs/plans/done/upgrade-in-place.md)).
+and pauses or resumes one or its running Tasks ([docs/plans/done/upgrade-in-place.md](../docs/plans/done/upgrade-in-place.md)).
 With actions on it takes a few more (_Actions_ below). design.md's _The UI:
 areas and object pages_ says what it shows and why.
 
@@ -212,10 +212,9 @@ application/json-patch+json`: a patch whose one operation is `add` at
      with `409 Conflict`, and the same request again goes through.
    - the same `PATCH`, an `add` of `true` or `false` at `/spec/paused`, at
      `/spec/pauseRuns`, or both in one patch: pause or resume a Brief or its
-     running Tasks. Pause and Resume set `/spec/paused`. Pausing the running
-     Tasks sets both to `true`, as the CRD takes `pauseRuns` only with
-     `paused`; resuming them sets `/spec/pauseRuns` alone, and a Resume while
-     they are paused sets both to `false`.
+     running Tasks. The page sends both when it pauses the running Tasks, as the
+     CRD takes `pauseRuns` only with `paused`, and when it resumes a Brief whose
+     running Tasks are paused.
 
    A write whose `Origin` names another host is refused. Everything else is
    answered with 405 (other methods), 403 (other paths or bodies) or 415
