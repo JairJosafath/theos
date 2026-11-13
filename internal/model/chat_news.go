@@ -210,6 +210,13 @@ type ChatTaskView struct {
 	Message string
 	// Benchmark means a Benchmark's run, which never merges.
 	Benchmark bool
+	// NoChange means the Task ended done with nothing merged (NothingToDo).
+	// DoneByStandardChange means it ended because its Standard change merged
+	// in its place, StandardChange that change's issue (#204): its own pull
+	// request, if it opened one, was closed, not merged.
+	NoChange             bool
+	DoneByStandardChange bool
+	StandardChange       int
 	// PageURL is the Task's page in the UI (ChatPageURL), "" for none.
 	PageURL string
 }
@@ -286,13 +293,17 @@ func ChatTaskNews(t ChatTaskView) []ChatNews {
 			}})
 	}
 	switch {
-	case t.Phase == chatPhaseMerged && t.PullRequest != 0 && (t.Kind == chatKindImplement || t.Kind == chatKindSpec ||
-		t.Kind == ""):
-		what := "Merged pull request #%d for " + t.issue()
-		if t.Kind == chatKindSpec {
-			what = "Merged the spec in pull request #%d for " + t.issue()
+	case t.mergedChange() && (t.Kind == chatKindImplement || t.Kind == chatKindSpec || t.Kind == ""):
+		// One rule decides it, as the metrics and the report do (#210).
+		var line string
+		switch {
+		case t.DoneByStandardChange:
+			line = fmt.Sprintf("Standard change #%d merged and left %s nothing to do", t.StandardChange, t.issue())
+		case t.Kind == chatKindSpec:
+			line = fmt.Sprintf("Merged the spec in pull request #%d for %s", t.PullRequest, t.issue())
+		default:
+			line = fmt.Sprintf("Merged pull request #%d for %s", t.PullRequest, t.issue())
 		}
-		line := fmt.Sprintf(what, t.PullRequest)
 		news = append(news, ChatNews{Key: ChatItemKey(ChatEventMerged, t.Name), Event: ChatEventMerged, Line: line,
 			Post: ChatPost{Title: line, Links: t.chatLinks()}})
 	case t.Phase == chatPhaseFailed:
@@ -301,6 +312,13 @@ func ChatTaskNews(t ChatTaskView) []ChatNews {
 				Links: t.chatLinks()}})
 	}
 	return news
+}
+
+// mergedChange reports whether t merged a change, by the rule the metrics and
+// theos-session report use (#210).
+func (t ChatTaskView) mergedChange() bool {
+	return MergedChange(TaskMetricFacts{Phase: t.Phase, PullRequest: t.PullRequest, NoChange: t.NoChange,
+		DoneByStandardChange: t.DoneByStandardChange, StandardChange: t.StandardChange})
 }
 
 // chatChangeNews is the thread in reviews of a change its Crew's approval
@@ -321,6 +339,10 @@ func chatChangeNews(t ChatTaskView, final bool) ChatNews {
 			"approve in this thread, or changes: <what to change>.", shortCommit(t.Commit), why)
 	case chatPhaseMerged:
 		status = chatMergedStatus(t)
+		if t.DoneByStandardChange {
+			// Its own pull request was closed (#210).
+			status = fmt.Sprintf("Done: Standard change #%d merged and left the issue nothing to do.", t.StandardChange)
+		}
 	case chatPhaseFailed:
 		status = "Failed: " + orUnknown(t.Message)
 	}
