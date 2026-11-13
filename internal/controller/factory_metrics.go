@@ -26,11 +26,13 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/taskfacts"
 )
 
 // FactoryMetrics serves the factory's numbers on the manager's /metrics
 // (#59, docs/design.md, "Measuring the factory"): at each scrape it lists the
-// Tasks from the manager's cache and hands model.FactoryMetrics' families to
+// Tasks from the manager's cache, reads each as theos-session report does
+// (taskfacts.Metric, #142) and hands model.FactoryMetrics' families to
 // Prometheus. It keeps nothing between scrapes, so a restart counts nothing
 // twice.
 type FactoryMetrics struct {
@@ -61,7 +63,7 @@ func (m FactoryMetrics) Collect(ch chan<- prometheus.Metric) {
 	}
 	facts := make([]model.TaskMetricFacts, 0, len(tasks.Items))
 	for i := range tasks.Items {
-		facts = append(facts, taskMetricFacts(&tasks.Items[i]))
+		facts = append(facts, taskfacts.Metric(&tasks.Items[i]))
 	}
 	for _, f := range model.FactoryMetrics(facts) {
 		desc := prometheus.NewDesc(f.Name, f.Help, f.Labels, nil)
@@ -76,43 +78,4 @@ func (m FactoryMetrics) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstHistogram(desc, h.Count, h.Sum, buckets, h.Values...)
 		}
 	}
-}
-
-// taskMetricFacts is what the metrics read of task.
-func taskMetricFacts(task *c4v1beta1.Task) model.TaskMetricFacts {
-	f := model.TaskMetricFacts{
-		Namespace:    task.Namespace,
-		Container:    task.Spec.ContainerRef.Name,
-		Kind:         string(task.Spec.Kind),
-		Benchmark:    task.Spec.Benchmark != nil,
-		Phase:        string(task.Status.Phase),
-		Round:        int(task.Status.Round),
-		CostMilliUSD: task.Status.CostMilliUSD,
-	}
-	if f.Kind == "" {
-		f.Kind = string(c4v1beta1.TaskImplement)
-	}
-	if n := task.Status.PersonCommits; n != nil {
-		commits := int(*n)
-		f.PersonCommits = &commits
-	}
-	// Who let the change in (#92): a person, at a spec's review point or
-	// where the Crew's approval rules held it, or nobody, where they asked
-	// for no review and none was made.
-	spec, approval := task.Status.Spec, task.Status.Approval
-	f.ApprovedByPerson = spec != nil && spec.ApprovedBy != "" || approval != nil && approval.ApprovedBy != ""
-	f.Unreviewed = approval != nil && approval.Require == c4v1beta1.ApprovalNone && task.Status.Review == nil
-	f.NoChange = endedWithNoChange(task)
-	for _, step := range task.Status.History {
-		f.History = append(f.History, model.TaskMetricStep{At: step.At.Time, Phase: string(step.Phase), Reason: step.Reason})
-	}
-	for _, run := range task.Status.Runs {
-		r := model.TaskMetricRun{Agent: run.Agent, Harness: run.Harness, Model: run.Model, Role: run.Role,
-			CostMilliUSD: run.CostMilliUSD}
-		if t := run.Tokens; t != nil {
-			r.Input, r.Output, r.CacheRead, r.CacheWrite = t.Input, t.Output, t.CacheRead, t.CacheWrite
-		}
-		f.Runs = append(f.Runs, r)
-	}
-	return f
 }

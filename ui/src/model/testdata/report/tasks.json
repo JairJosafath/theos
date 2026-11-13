@@ -82,6 +82,15 @@
             "harness": "claude-code",
             "model": "opus"
           }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-11-04T12:00:00Z"
+          }
         ]
       }
     },
@@ -188,6 +197,15 @@
             "harness": "claude-code",
             "model": "opus"
           }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-11-03T12:00:00Z"
+          }
         ]
       }
     },
@@ -273,7 +291,16 @@
           "require": "Person",
           "rule": 1,
           "approvedBy": "ada"
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "ada approved the change; merging",
+            "lastTransitionTime": "2026-11-02T12:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -318,6 +345,15 @@
             "at": "2026-10-31T12:00:00Z",
             "phase": "Merged",
             "round": 1
+          }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-10-31T12:00:00Z"
           }
         ]
       }
@@ -408,6 +444,15 @@
             "harness": "claude-code",
             "model": "opus"
           }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Verified; merging",
+            "lastTransitionTime": "2026-10-26T12:00:00Z"
+          }
         ]
       }
     },
@@ -486,7 +531,16 @@
           "path": "docs/specs/116.md",
           "approval": "Person",
           "approvedBy": "ada"
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "ada approved the spec; merging",
+            "lastTransitionTime": "2026-10-24T12:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -607,6 +661,15 @@
             "harness": "claude-code",
             "model": "opus"
           }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-11-05T12:00:00Z"
+          }
         ]
       }
     },
@@ -681,6 +744,15 @@
             "endedAt": "2026-10-16T12:00:00Z",
             "harness": "claude-code",
             "model": "opus"
+          }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-10-16T12:00:00Z"
           }
         ]
       }
@@ -757,6 +829,15 @@
             "harness": "claude-code",
             "model": "opus"
           }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-10-11T12:00:00Z"
+          }
         ]
       }
     },
@@ -831,6 +912,15 @@
             "endedAt": "2026-11-01T12:00:00Z",
             "harness": "claude-code",
             "model": "opus"
+          }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-11-01T12:00:00Z"
           }
         ]
       }
@@ -907,6 +997,15 @@
             "harness": "claude-code",
             "model": "opus"
           }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-10-30T12:00:00Z"
+          }
         ]
       }
     },
@@ -981,6 +1080,15 @@
             "endedAt": "2026-10-29T12:00:00Z",
             "harness": "claude-code",
             "model": "opus"
+          }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-10-29T12:00:00Z"
           }
         ]
       }
@@ -1063,6 +1171,15 @@
             "harness": "claude-code",
             "model": "opus"
           }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-10-27T12:00:00Z"
+          }
         ]
       }
     },
@@ -1138,6 +1255,15 @@
             "harness": "claude-code",
             "model": "opus"
           }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-10-06T12:00:00Z"
+          }
         ]
       }
     },
@@ -1209,6 +1335,15 @@
             "harness": "claude-code",
             "model": "opus"
           }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-10-05T12:00:00Z"
+          }
         ]
       }
     },
@@ -1279,6 +1414,15 @@
             "endedAt": "2026-11-05T13:00:00Z",
             "harness": "claude-code",
             "model": "opus"
+          }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Merged",
+            "message": "Approved; merging",
+            "lastTransitionTime": "2026-11-05T13:00:00Z"
           }
         ]
       }
@@ -1721,7 +1865,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged checkout-11: 1 passed, 1 failed, 0 unclear",
+            "lastTransitionTime": "2026-11-04T13:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -1799,7 +1952,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged checkout-12: 2 passed, 0 failed, 0 unclear",
+            "lastTransitionTime": "2026-11-03T13:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -1877,7 +2039,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged payments-13: 1 passed, 0 failed, 1 unclear",
+            "lastTransitionTime": "2026-11-02T13:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -1951,7 +2122,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged legacy-14: 1 passed, 1 failed, 0 unclear",
+            "lastTransitionTime": "2026-10-31T13:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -2028,7 +2208,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged search-15: 1 passed, 1 failed, 0 unclear",
+            "lastTransitionTime": "2026-10-26T13:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -2106,7 +2295,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged checkout-18: 0 passed, 2 failed, 0 unclear",
+            "lastTransitionTime": "2026-10-16T13:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -2184,7 +2382,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged pricing-23: 2 passed, 0 failed, 0 unclear",
+            "lastTransitionTime": "2026-10-30T13:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -2256,7 +2463,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged docs-19: 0 passed, 1 failed, 0 unclear",
+            "lastTransitionTime": "2026-10-11T13:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -2334,7 +2550,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged old-20: 0 passed, 2 failed, 0 unclear",
+            "lastTransitionTime": "2026-10-05T13:00:00Z"
+          }
+        ]
       }
     },
     {
@@ -2470,7 +2695,16 @@
               "reason": "As the diff shows."
             }
           ]
-        }
+        },
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Scored",
+            "message": "Judged docs-19: 0 passed, 0 failed, 1 unclear",
+            "lastTransitionTime": "2026-10-11T14:00:00Z"
+          }
+        ]
       }
     }
   ]

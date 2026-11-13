@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -67,12 +66,4 @@ func (r *TaskReconciler) nothingToDo(ctx context.Context, task *c4v1beta1.Task, 
 	r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, model.ReasonNothingToDo, step.Message)
 	logf.FromContext(ctx).Info("Ended Task with nothing to do", "issue", task.Spec.Issue, "why", note)
 	return nil
-}
-
-// endedWithNoChange reports whether the Task ended done with nothing merged:
-// its agent found its issue needs no change. No release, no count of merged
-// changes and no judge takes it for a change.
-func endedWithNoChange(task *c4v1beta1.Task) bool {
-	done := apimeta.FindStatusCondition(task.Status.Conditions, ConditionSucceeded)
-	return task.Status.Phase == c4v1beta1.TaskMerged && done != nil && done.Reason == model.ReasonNothingToDo
 }
