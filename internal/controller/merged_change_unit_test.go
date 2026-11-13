@@ -51,8 +51,12 @@ func TestMergedChangePlacesAgree220(t *testing.T) {
 		{"its own pull request merged", endedTaskOf("a", "", "Merged", 3, nil), true},
 		{"nothing to do, no change (#220)", endedTaskOf("b", "", model.ReasonNothingToDo, 0, nil), false},
 		{"done by a Standard change, which merged", endedTaskOf("d", "", reasonDoneByStandardChange, 5, change), true},
+		// The next two cannot happen in practice; they are defensive.
 		{"done by a Standard change with no record (#220)", endedTaskOf("e", "", reasonDoneByStandardChange, 0, nil), false},
 		{"an Implement Task with no pull request (#220)", endedTaskOf("g", "", "Merged", 0, nil), false},
+		// A Plan and a Score Task carry an issue and no pull request: the kinds whose answer changed.
+		{"a Plan Task with an issue (#220)", endedTaskOf("h", c4v1beta1.TaskPlan, "Merged", 0, nil), false},
+		{"a Score Task with an issue (#220)", endedTaskOf("i", c4v1beta1.TaskScore, "Merged", 0, nil), false},
 	} {
 		if got := mergedItsIssue(&tc.task); got != tc.merged {
 			t.Errorf("%s: mergedItsIssue = %v, want %v", tc.name, got, tc.merged)
