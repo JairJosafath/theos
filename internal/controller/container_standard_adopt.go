@@ -341,6 +341,10 @@ func (u *standardUpdate) stopAdoption(ctx, gitCtx context.Context, reason, messa
 			}
 		}
 		log.Info("Stopped a Standard adoption", "url", a.PullRequestURL, "reason", reason, "ref", a.Ref)
+	} else if cond := apimeta.FindStatusCondition(u.container.Status.Conditions,
+		c4v1beta1.ConditionStandardUpdated); cond == nil || cond.Reason != reason {
+		// Another reason replaced the stop's since the last pass.
+		log.Info("Said again why a Standard adoption stopped", "url", a.PullRequestURL, "reason", reason, "ref", a.Ref)
 	}
 	a.Stopped, a.Base = reason, head
 	u.condition(metav1.ConditionFalse, reason, message)

@@ -686,6 +686,12 @@ var _ = Describe("Container adoption with a Standard the repository doesn't hold
 				g.Expect(cond.Reason).To(Equal(reason))
 				g.Expect(cond.Message).To(Equal(message))
 			}).Should(Succeed())
+			// It stays so: no churn, nothing rendered a second time.
+			Consistently(func(g Gomega) {
+				cond := standardCondition(g, getContainer(g, ns))
+				g.Expect(cond.Reason).To(Equal(reason))
+				g.Expect(cond.Message).To(Equal(message))
+			}).WithTimeout(3 * time.Second).Should(Succeed())
 			Expect(gitFake.PullRequests(ns, "orders-api")).To(HaveLen(1))
 			Expect(gitFake.CommitCount(ns, "orders-api")).To(Equal(commits), "main is as the adoption stopped at")
 			Expect(gitFake.ProtectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
