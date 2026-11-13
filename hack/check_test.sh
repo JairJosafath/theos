@@ -217,12 +217,18 @@ check "a template: validate-yaml and its readers" "$(states)" "skipped skipped s
 check "a template: the tests that read templates/" \
   "$(grep -c "^test TEST_PACKAGES=$m/internal/adapters/gitea $m/internal/scaffold\$" "$T/calls")" 1
 
+# #127: go.mod selects no Go package, as gta has it: no fmt, vet, lint or
+# test. It ran them on every package; only a release does.
 change go.mod
 run
-check "go.mod: all of Go, the YAML and the shell tests" "$(states)" "ran ran ran ran ran ran skipped ran"
-check "go.mod: every package" "$(calls)" \
-  "manifests generate;fmt GO_PACKAGES=./...;vet GO_PACKAGES=./...;lint LINT_PACKAGES=;validate-yaml;test-hack;test TEST_PACKAGES=$all_pkgs;"
-check "go.mod: says why" "$(grep -c '^  vet  *ran  *[0-9]*s; every package: go.mod changed$' "$T/out")" 1
+check "#127 go.mod: generate, the YAML and the shell tests, and no package" "$(states)" "ran skipped skipped skipped ran ran skipped skipped"
+check "#127 go.mod: make is asked for no package" "$(calls)" "manifests generate;validate-yaml;test-hack;"
+check "#127 go.mod: says why" "$(grep -c '^  test  *skipped  no Go package changed since origin/main' "$T/out")" 1
+change go.mod internal/other/other.go
+run
+check "#127 go.mod and a Go file: the packages gta selects for the Go file" \
+  "$(grep -c "^test TEST_PACKAGES=$m/internal/other\$" "$T/calls")" 1
+check "#127 go.mod and a Go file: vet on that package, not on every one" "$(grep -c "^vet GO_PACKAGES=$m/internal/other\$" "$T/calls")" 1
 
 change .golangci.yml
 run

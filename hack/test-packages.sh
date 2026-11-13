@@ -37,8 +37,13 @@
 # is tested only when:
 #   - TEST_ALL or FORCE is set (FORCE=1 make check, which a release runs),
 #   - no merge base with TEST_BASE is found: the change can't be known,
-#   - go.mod, go.sum or go.work changed: every package is built from them,
 #   - gta fails: when in doubt, more is tested.
+# No file tests every package. go.mod, go.sum and go.work test none, as gta
+# has it and as schubergphilis/mcvs-golang-action runs it: a change to them
+# alone is in no package, so a bump of a module or of the toolchain is tested
+# at the next release, not on the pull request
+# (docs/plans/done/go-mod-tests-nothing.md). They tested every package, and
+# the controller suite alone is a quarter of an hour.
 # A change to a file no Go test reads tests nothing: docs/, .claude/,
 # .vscode/, ui/, the other .github/ files, the top-level *.md, the Makefile,
 # the rest of hack/ outside its packages, and any file the table doesn't
@@ -156,11 +161,6 @@ declare -A read=() readpaths=()
 owned=()
 guard=
 for f in "${files[@]}"; do
-  case "$f" in
-    go.mod | go.sum | go.work | go.work.sum)
-      full "$f changed, which every package is built from"
-      ;;
-  esac
   # The paths of the readers table the file matches: their readers, and
   # nothing more unless the file lies in a package.
   for k in "${!readers[@]}"; do

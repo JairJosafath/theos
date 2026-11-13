@@ -225,12 +225,14 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
   is the next report's.
 - **From the last review of step 1:** a cost under zero or one that is no
   number prints as none (`reportMoney` printed `$-1.-49` for the first and
-  panicked on NaN and on an infinity; the UI's `formatCost` prints `$-1.50`
-  and `$NaN`, which no Task can give it, so `money.json` has no such case
-  and the rule is Go's alone, in `TestReportPage`); a dollar sign in a
-  cell or a heading takes a backslash, since GitHub reads what lies between
-  two as mathematics (decision 12's list, one more; the review of step 2
-  made it a span); and the directory is checked first, as above.
+  panicked on NaN and on an infinity; the UI's `formatCost` printed `$-1.50`
+  and `$NaN` until #143 gave it the same rule, so `money.json` holds the
+  cost under zero for both sides, and each side's own table holds NaN and
+  the infinities, which JSON cannot write: `TestReportPage` and
+  `brief.test.ts`); a dollar sign in a cell or a heading takes a backslash,
+  since GitHub reads what lies between two as mathematics (decision 12's
+  list, one more; the review of step 2 made it a span); and the directory
+  is checked first, as above.
 - **From the review of step 2:**
   - *A failed write leaves the report that was there.* The two files were
     written in a map's order, so a page that couldn't be written left the
