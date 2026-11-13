@@ -111,7 +111,7 @@ func mergedFiledTask(ns, issue string) string {
 		g.Expect(cond.Reason).To(Equal("AgentNotFound"))
 	}).Should(Succeed())
 	pull := 900 + n
-	url := fmt.Sprintf("http://gitea/%s/%s/pulls/%d", ns, container, pull)
+	url := fmt.Sprintf("https://git.test/%s/%s/pulls/%d", ns, container, pull)
 	Eventually(func(g Gomega) {
 		task := getTask(g, ns, name)
 		task.Status.Phase, task.Status.CompletedAt = c4v1beta1.TaskMerged, &metav1.Time{Time: time.Now()}
@@ -279,9 +279,13 @@ var _ = Describe("Brief requests shipped", func() {
 
 		pull := mergedFiledTask(ns, merged)
 		closeFiled(ns, merged, byHand)
-		page := func(issue string) string {
+		// Each issue's page, as the Brief's status recorded it.
+		pages := map[string]string{}
+		for _, issue := range became[theme] {
 			_, number, _ := strings.Cut(issue, "#")
-			return fmt.Sprintf("http://gitea/%s/linter/issues/%s", ns, number)
+			pages[issue] = filedURL(getBrief(Default, ns), issue)
+			Expect(pages[issue]).To(HavePrefix("http://"))
+			Expect(pages[issue]).To(HaveSuffix(fmt.Sprintf("/%s/linter/issues/%s", ns, number)))
 		}
 		Eventually(func(g Gomega) {
 			issue, comments := tr.issue(theme)
@@ -289,8 +293,8 @@ var _ = Describe("Brief requests shipped", func() {
 			g.Expect(issue.Reason).To(Equal(ports.CloseCompleted))
 			g.Expect(comments).To(HaveLen(2))
 			g.Expect(comments[1]).To(HavePrefix(model.RequestMarker("cel-lens", model.CommentReleased) +
-				fmt.Sprintf("\nDone in %s and %s.\nMerged in %s for %s.\n", page(merged), page(byHand), pull,
-					page(merged))))
+				fmt.Sprintf("\nDone in %s and %s.\nMerged in %s for %s.\n", pages[merged], pages[byHand], pull,
+					pages[merged])))
 			g.Expect(getBrief(g, ns).Status.Requests).To(BeEmpty())
 		}).Should(Succeed())
 	})
