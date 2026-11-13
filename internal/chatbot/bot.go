@@ -46,6 +46,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/taskfacts"
 )
 
 // Bot is theos-chat: a reconciler of Chats that posts and reads their rooms.
@@ -364,7 +365,11 @@ func taskView(t *c4v1beta1.Task) model.ChatTaskView {
 	v := model.ChatTaskView{Name: t.Name, Kind: string(t.Spec.Kind), Phase: string(s.Phase), Round: int(s.Round),
 		Issue: int(t.Spec.Issue), IssueTitle: s.IssueTitle, IssueURL: s.IssueURL, PullRequest: int(s.PullRequest),
 		PullURL: s.PullRequestURL, Commit: s.Commit, Message: conditionMessage(s.Conditions, conditionProgressing),
-		Benchmark: t.Spec.Benchmark != nil}
+		Benchmark: t.Spec.Benchmark != nil, NoChange: taskfacts.EndedWithNoChange(t),
+		DoneByStandardChange: taskfacts.EndedByStandardChange(t)}
+	if s.StandardChange != nil {
+		v.StandardChange = int(s.StandardChange.Issue)
+	}
 	if s.Phase == c4v1beta1.TaskFailed {
 		v.Message = conditionMessage(s.Conditions, conditionSucceeded)
 	}
