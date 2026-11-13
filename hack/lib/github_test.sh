@@ -2253,7 +2253,7 @@ later"
   cm() { jq -nc --argjson id "$1" --arg c "$(iso "$2")" --arg u "$(iso "$3")" --arg b "$4" \
     '{id: $id, created_at: $c, updated_at: $u, html_url: "u", user: {login: "x"}, body: $b,
       issue_url: "https://api.github.com/repos/o/r/issues/140"}'; }
-  holds() { printf '<!-- c4-claim -->\n**otter-140** works on this issue · host `gray` · branch `feat/140-a`\nHeartbeat: x'; }
+  holds() { printf '<!-- c4-claim -->\n**otter-140** works on this issue · host `devbox` · branch `feat/140-a`\nHeartbeat: x'; }
   gh_api() {
     local url= m=GET in= a
     for a in "$@"; do case $a in repos/*) url=$a ;; POST | DELETE) m=$a ;; esac; done
@@ -2280,10 +2280,10 @@ later"
   setup "$(cm 10 $((3 * H)) 60 "$(holds)")"
   out=$(gh_stale --apply)
   check "stale: a 3h claim with no progress is escalated (#1513)" "$?|$out" \
-    "0|#140: otter-140 on host gray, no progress since $(date -u -d "@$((GH_NOW - 3 * H))" +%Y-%m-%dT%H:%MZ) (the claim's start), heartbeat 1m ago, branch feat/140-a: escalated"
+    "0|#140: otter-140 on host devbox, no progress since $(date -u -d "@$((GH_NOW - 3 * H))" +%Y-%m-%dT%H:%MZ) (the claim's start), heartbeat 1m ago, branch feat/140-a: escalated"
   check "stale: needs-maintainer, one marked comment, the claim not edited (#1513)" \
     "$(calls 'status 140 needs-maintainer') $(calls '^POST ') $(calls 'PATCH') $(jq -r '.[-1].body' "$ST/comments" | head -1)" "1 1 0 <!-- c4-claim-stale -->"
-  grep -q 'otter-140.*`gray`.*heartbeat (1m ago).*no progress for 180m.*Branch `feat/140-a`' <(jq -r '.[-1].body' "$ST/comments")
+  grep -q 'otter-140.*`devbox`.*heartbeat (1m ago).*no progress for 180m.*Branch `feat/140-a`' <(jq -r '.[-1].body' "$ST/comments")
   check "stale: the comment names holder, host, heartbeat, last progress and branch (#1513)" $? 0
   : >"$ST/calls"; out=$(gh_stale --apply)
   check "stale: the same stretch is not flagged twice (#1513)" "$?|$out|$(calls '^POST ')" "0||0"
