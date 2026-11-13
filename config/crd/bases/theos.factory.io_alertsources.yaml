@@ -178,7 +178,7 @@ spec:
             x-kubernetes-validations:
             - message: 'containerLabel and namespaceLabel must differ, their defaults
                 theos_container and namespace included: one label can''t name both
-                an alert''s Container and its namespace (#187)'
+                an alert''s Container and its namespace'
               rule: '(has(self.containerLabel) ? self.containerLabel : ''theos_container'')
                 != (has(self.namespaceLabel) ? self.namespaceLabel : ''namespace'')'
           status:

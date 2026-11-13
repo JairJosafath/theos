@@ -34,8 +34,8 @@ const (
 )
 
 // AlertSourceSpec names one sender of alerts and how its alerts are read
-// (docs/plans/alerts.md, decision 1).
-// +kubebuilder:validation:XValidation:rule="(has(self.containerLabel) ? self.containerLabel : 'theos_container') != (has(self.namespaceLabel) ? self.namespaceLabel : 'namespace')",message="containerLabel and namespaceLabel must differ, their defaults theos_container and namespace included: one label can't name both an alert's Container and its namespace (#187)"
+// (docs/plans/alerts.md, decision 1). The label rule below is #187.
+// +kubebuilder:validation:XValidation:rule="(has(self.containerLabel) ? self.containerLabel : 'theos_container') != (has(self.namespaceLabel) ? self.namespaceLabel : 'namespace')",message="containerLabel and namespaceLabel must differ, their defaults theos_container and namespace included: one label can't name both an alert's Container and its namespace"
 type AlertSourceSpec struct {
 	// type is the sender: alertmanager, sentry or generic. Immutable, since
 	// the type decides what makes two deliveries the same alert.

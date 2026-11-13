@@ -192,6 +192,8 @@ var _ = Describe("AlertSource", func() {
 			"spec.namespaceLabel: Invalid value"),
 		Entry("a comment interval that is no duration", func(spec map[string]any) { spec["commentInterval"] = "soon" },
 			"spec.commentInterval"),
+		Entry("a daily limit of 0 (minimum 1)", func(spec map[string]any) { spec["dailyLimit"] = int64(0) },
+			"spec.dailyLimit: Invalid value: 0"),
 	)
 
 	It("keeps its type", func() {
