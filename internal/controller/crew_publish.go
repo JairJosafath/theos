@@ -428,11 +428,13 @@ func releaseIssues(ctx context.Context, provider ports.Issues, repo ports.Reposi
 	return model.MergedReleaseIssues(closed, merged), nil
 }
 
-// mergedIssues returns the issues of the Merged Tasks among tasks.
+// mergedIssues returns the issues of the Tasks among tasks that merged a change
+// for them, by the rule a release waits on (mergedItsIssue, #220): an issue a
+// Task closed with nothing to do, or a Triage Task closed, is not in the notes.
 func mergedIssues(tasks []c4v1beta1.Task) []int {
 	var out []int
 	for _, t := range tasks {
-		if t.Spec.Issue != 0 && t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(&t) {
+		if t.Spec.Issue != 0 && mergedItsIssue(&t) {
 			out = append(out, int(t.Spec.Issue))
 		}
 	}

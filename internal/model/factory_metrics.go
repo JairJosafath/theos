@@ -57,7 +57,8 @@ const (
 	CodeFactory = "factory"
 	// CodePerson: at least one commit was a person's.
 	CodePerson = "person"
-	// CodeUnknown: the Git host wasn't read when the Task merged.
+	// CodeUnknown: the Git host wasn't read when the Task merged, or the Task
+	// ended DoneByStandardChange (its own pull request closed unmerged).
 	CodeUnknown = "unknown"
 )
 

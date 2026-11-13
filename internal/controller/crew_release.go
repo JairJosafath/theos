@@ -423,11 +423,13 @@ func releaseFacts(ctx context.Context, provider interface {
 
 // mergedItsIssue reports whether the Task's merge is its issue's, for a
 // release. A spec's merge leaves its issue open; the build's merge is the
-// issue's. A Task that found nothing to do merged nothing: its issue closed
-// with no change, and no release waits for a merge commit there never was
-// (#72).
+// issue's. It asks model.MergedChange, as the metrics, the report and the chat
+// do (#220): a Task that found nothing to do merged nothing (its issue closed
+// with no change, and no release waits for a merge commit there never was,
+// #72), nor did a Triage Task, which has no pull request. One a Standard change
+// did counts, by the change's record: the release waits for the change's merge.
 func mergedItsIssue(t *c4v1beta1.Task) bool {
-	return t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(t) && !taskfacts.EndedWithNoChange(t)
+	return !isSpec(t) && model.MergedChange(taskfacts.Metric(t))
 }
 
 func (r *CrewReconciler) setReleased(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,

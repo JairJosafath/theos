@@ -33,6 +33,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/taskfacts"
 )
 
 // A Brief's failed issues (plans/brief-failed-issues.md): the issues of the
@@ -91,7 +92,9 @@ func failedRelease(ctx context.Context, provider interface {
 }
 
 // issueTasks are the namespace's Tasks on an issue, by Container, as
-// model.FailedReason sees them.
+// model.FailedReason sees them. A Task is Merged by the rule the metrics and
+// the report use, model.MergedChange (#220): one that ended with nothing to do
+// merged nothing, so "already merged it" is no answer to its issue.
 func issueTasks(tasks []c4v1beta1.Task) map[string][]model.IssueTask {
 	out := map[string][]model.IssueTask{}
 	for _, t := range tasks {
@@ -100,7 +103,7 @@ func issueTasks(tasks []c4v1beta1.Task) map[string][]model.IssueTask {
 			// A merged spec leaves its issue to be built: it merged no issue.
 			continue
 		}
-		it := model.IssueTask{Name: t.Name, Issue: int(t.Spec.Issue), Merged: t.Status.Phase == c4v1beta1.TaskMerged,
+		it := model.IssueTask{Name: t.Name, Issue: int(t.Spec.Issue), Merged: model.MergedChange(taskfacts.Metric(&t)),
 			Failed: t.Status.Phase == c4v1beta1.TaskFailed, NoCI: failedNoCI(&t.Status),
 			Unseen: failedUnseen(&t.Status), Created: t.CreationTimestamp.Time}
 		if t.Status.CompletedAt != nil {
