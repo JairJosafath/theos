@@ -249,7 +249,7 @@ var _ = Describe("Brief requests", func() {
 		githubFake.closeIssue(repository, n)
 		Eventually(func(g Gomega) {
 			g.Expect(requestsCondition(g, ns)).To(And(HaveField("Status", metav1.ConditionFalse),
-				HaveField("Reason", ports.ReasonGitHubUnavailable)))
+				HaveField("Reason", ports.ReasonTrackerUnavailable)))
 		}).Should(Succeed())
 		Expect(requestNumbers(Default, ns)).To(HaveKey(int32(n)))
 		Expect(getBrief(Default, ns).Status.Phase).NotTo(Equal(c4v1beta1.BriefFailed))

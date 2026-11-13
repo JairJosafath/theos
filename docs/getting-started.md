@@ -941,9 +941,11 @@ kubectl -n cel-lens get brief cel-lens -o jsonpath='{.status.conditions[?(@.type
 | --- | --- |
 | `TokenLacksIssues` | Tick *Issues: Read and write* on the token. |
 | `TokenLacksMembers` | Tick *Organization permissions → Members: Read*, or remove `teams`. |
-| `SecretMissing`, `SecretUnreadable`, `Unauthorized`, `RepositoryNotFound` | As for publishing, above. |
+| `SecretMissing`, `SecretUnreadable`, `Unauthorized` | As for publishing, above. |
+| `TrackerNotFound` | No such repository, or the token can't see it: check `repository` and the token's *Repository access*. |
 | `IssuesDisabled` | Turn issues on in the repository's settings. |
-| `GitHubUnavailable`, `GitHubError` | A rate limit or GitHub unreachable; it reads again on the next ten minutes. |
+| `TrackerUnavailable` | A rate limit, or GitHub failed or couldn't be reached; it reads again on the next ten minutes. |
+| `TrackerError` | GitHub answered something the factory doesn't expect; the message says what. It reads again on the next ten minutes. |
 
 Releases still publish while requests can't be read.
 

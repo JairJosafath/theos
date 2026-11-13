@@ -67,7 +67,7 @@ type requestsRead struct {
 	readAt time.Time
 	err    error
 	etag   string
-	open   []ports.GitHubIssue
+	open   []ports.TrackerIssue
 	// members are the logins found in, or not in, the entry's teams while
 	// the list is the same; unsure the ones that couldn't be read, with why.
 	members    map[string]bool
@@ -159,7 +159,7 @@ func (r *BriefReconciler) readRepository(ctx context.Context, brief *c4v1beta1.B
 	}
 	tracker, err := r.Issues.GitHubIssues(ports.GitHubConfig{Repository: repository, Token: token})
 	if err != nil {
-		return same, &requestsFailure{ports.ReasonGitHubError, err.Error()}
+		return same, &requestsFailure{ports.ReasonTrackerError, err.Error()}
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
@@ -223,7 +223,7 @@ func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief
 	// the ETag, so one its author closed meanwhile is dropped rather than
 	// answered.
 	if last != nil && last.entry == fingerprint && now.Sub(last.readAt) < r.suggestionsRecheck() &&
-		!slices.ContainsFunc(last.open, func(i ports.GitHubIssue) bool {
+		!slices.ContainsFunc(last.open, func(i ports.TrackerIssue) bool {
 			return slices.Contains(spec.Declined, int32(i.Number)) || slices.Contains(owed, i.Number)
 		}) {
 		return last
@@ -293,10 +293,21 @@ func (r *BriefReconciler) readMembers(ctx context.Context, spec *c4v1beta1.Brief
 	read.members = members
 }
 
-// inTeams reports whether login is a member of one of teams.
+// inTeams reports whether login is a member of one of teams. Teams are an
+// optional capability of a tracker (ports.TeamMembers): one without them
+// can't say, which is a failure the Requests condition shows, never a
+// stranger let in.
 func inTeams(ctx context.Context, tracker ports.IssueTracker, teams []string, login string) (bool, error) {
+	if len(teams) == 0 {
+		return false, nil
+	}
+	members, ok := tracker.(ports.TeamMembers)
+	if !ok {
+		return false, &ports.IssuesError{Reason: ports.ReasonTrackerError,
+			Message: "the tracker has no teams whose members it can read"}
+	}
 	for _, team := range teams {
-		member, err := tracker.TeamMember(ctx, team, login)
+		member, err := members.TeamMember(ctx, team, login)
 		if err != nil {
 			return false, err
 		}
@@ -358,7 +369,7 @@ func (r *BriefReconciler) forgetIssue(brief *c4v1beta1.Brief, repository string,
 	r.requestsMu.Lock()
 	defer r.requestsMu.Unlock()
 	if last := r.requestsReads[requestsKey(brief, repository)]; last != nil {
-		last.open = slices.DeleteFunc(slices.Clone(last.open), func(i ports.GitHubIssue) bool {
+		last.open = slices.DeleteFunc(slices.Clone(last.open), func(i ports.TrackerIssue) bool {
 			return i.Number == number
 		})
 	}

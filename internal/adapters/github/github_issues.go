@@ -33,8 +33,11 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// GitHubIssues returns an IssueTracker on cfg's repository. ctx bounds each
-// call; UploadURL is not used.
+// The issues client is a ports.TeamMembers too: GitHub has teams.
+var _ ports.TeamMembers = (*githubIssues)(nil)
+
+// GitHubIssues returns an IssueTracker on cfg's repository, which is a
+// ports.TeamMembers too. ctx bounds each call; UploadURL is not used.
 func (c Client) GitHubIssues(cfg ports.GitHubConfig) (ports.IssueTracker, error) {
 	api, err := c.githubAPI(cfg)
 	if err != nil {
@@ -86,8 +89,14 @@ type githubComment struct {
 	HTMLURL string     `json:"html_url"`
 }
 
-func (c githubComment) comment() ports.GitHubComment {
-	return ports.GitHubComment{ID: c.ID, Body: c.Body, Author: c.User.Login, URL: c.HTMLURL}
+// comment is c as the port names it, its ID in decimal.
+func (c githubComment) comment() ports.TrackerComment {
+	return ports.TrackerComment{ID: strconv.FormatInt(c.ID, 10), Body: c.Body, Author: c.User.Login, URL: c.HTMLURL}
+}
+
+// issueKey is issue number as GitHub writes it for people: #12.
+func issueKey(number int) string {
+	return "#" + strconv.Itoa(number)
 }
 
 // stateClosed is a closed issue's state.
@@ -128,7 +137,7 @@ func (g *githubIssues) ListOpenIssues(ctx context.Context, etag string) (ports.I
 			return ports.IssueList{NotModified: true, ETag: etag}, nil
 		}
 		var batch []githubIssue
-		if err := issuesResult(resp, data, http.StatusOK, "listing issues", ports.ReasonTokenLacksIssues, ports.ReasonRepositoryNotFound, &batch); err != nil {
+		if err := issuesResult(resp, data, http.StatusOK, "listing issues", ports.ReasonTokenLacksIssues, ports.ReasonTrackerNotFound, &batch); err != nil {
 			return ports.IssueList{}, err
 		}
 		if page == 1 {
@@ -138,8 +147,8 @@ func (g *githubIssues) ListOpenIssues(ctx context.Context, etag string) (ports.I
 			if i.PullRequest != nil {
 				continue
 			}
-			list.Issues = append(list.Issues, ports.GitHubIssue{Number: i.Number, Title: i.Title, Body: i.Body,
-				Author: i.User.Login, URL: i.HTMLURL, Created: i.Created})
+			list.Issues = append(list.Issues, ports.TrackerIssue{Number: i.Number, Key: issueKey(i.Number), Title: i.Title,
+				Body: i.Body, Author: i.User.Login, URL: i.HTMLURL, Created: i.Created})
 		}
 		if len(batch) < githubPageSize {
 			if page > 1 {
@@ -148,17 +157,17 @@ func (g *githubIssues) ListOpenIssues(ctx context.Context, etag string) (ports.I
 			return list, nil
 		}
 	}
-	return ports.IssueList{}, &ports.IssuesError{Reason: ports.ReasonGitHubError,
+	return ports.IssueList{}, &ports.IssuesError{Reason: ports.ReasonTrackerError,
 		Message: fmt.Sprintf("github: more than %d open issues and pull requests", githubMaxPages*githubPageSize)}
 }
 
 func (g *githubIssues) TeamMember(ctx context.Context, team, login string) (bool, error) {
 	org, slug, ok := strings.Cut(team, "/")
 	if !ok || !validLogin(org) || !githubSlug.MatchString(slug) {
-		return false, &ports.IssuesError{Reason: ports.ReasonGitHubError, Message: fmt.Sprintf("github: team %q is not org/slug", team)}
+		return false, &ports.IssuesError{Reason: ports.ReasonTrackerError, Message: fmt.Sprintf("github: team %q is not org/slug", team)}
 	}
 	if !validLogin(login) {
-		return false, &ports.IssuesError{Reason: ports.ReasonGitHubError, Message: fmt.Sprintf("github: %q is not a GitHub login", login)}
+		return false, &ports.IssuesError{Reason: ports.ReasonTrackerError, Message: fmt.Sprintf("github: %q is not a GitHub login", login)}
 	}
 	what := "reading " + login + "'s membership of " + team
 	req, err := g.issuesRequest(ctx, http.MethodGet,
@@ -177,13 +186,13 @@ func (g *githubIssues) TeamMember(ctx context.Context, team, login string) (bool
 	var membership struct {
 		State string `json:"state"`
 	}
-	if err := issuesResult(resp, data, http.StatusOK, what, ports.ReasonTokenLacksMembers, ports.ReasonGitHubError, &membership); err != nil {
+	if err := issuesResult(resp, data, http.StatusOK, what, ports.ReasonTokenLacksMembers, ports.ReasonTrackerError, &membership); err != nil {
 		return false, err
 	}
 	return membership.State == "active", nil
 }
 
-func (g *githubIssues) FindComment(ctx context.Context, number int, marker string) (*ports.GitHubComment, error) {
+func (g *githubIssues) FindComment(ctx context.Context, number int, marker string) (*ports.TrackerComment, error) {
 	what := "listing comments of issue " + strconv.Itoa(number)
 	for page := 1; page <= githubMaxPages; page++ {
 		query := fmt.Sprintf("?per_page=%d&page=%d", githubPageSize, page)
@@ -208,7 +217,7 @@ func (g *githubIssues) FindComment(ctx context.Context, number int, marker strin
 			return nil, nil
 		}
 	}
-	return nil, &ports.IssuesError{Reason: ports.ReasonGitHubError,
+	return nil, &ports.IssuesError{Reason: ports.ReasonTrackerError,
 		Message: fmt.Sprintf("github: issue %d has more than %d comments", number, githubMaxPages*githubPageSize)}
 }
 
@@ -225,23 +234,26 @@ func (g *githubIssues) self(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if user.Login == "" {
-		return "", &ports.IssuesError{Reason: ports.ReasonGitHubError, Message: "github: the token's account has no login"}
+		return "", &ports.IssuesError{Reason: ports.ReasonTrackerError, Message: "github: the token's account has no login"}
 	}
 	g.login = user.Login
 	return g.login, nil
 }
 
-func (g *githubIssues) Comment(ctx context.Context, number int, body string) (ports.GitHubComment, error) {
+func (g *githubIssues) Comment(ctx context.Context, number int, body string) (ports.TrackerComment, error) {
 	payload, _ := json.Marshal(map[string]string{"body": body})
 	var c githubComment
 	err := g.call(ctx, http.MethodPost, g.issuePath(number)+"/comments", payload, http.StatusCreated,
 		"commenting on issue "+strconv.Itoa(number), &c)
-	return c.comment(), err
+	if err != nil {
+		return ports.TrackerComment{}, err
+	}
+	return c.comment(), nil
 }
 
 func (g *githubIssues) CloseIssue(ctx context.Context, number int, reason ports.CloseReason) error {
 	if reason != ports.CloseCompleted && reason != ports.CloseNotPlanned {
-		return &ports.IssuesError{Reason: ports.ReasonGitHubError, Message: fmt.Sprintf("github: %q is not a reason to close", reason)}
+		return &ports.IssuesError{Reason: ports.ReasonTrackerError, Message: fmt.Sprintf("github: %q is not a reason to close", reason)}
 	}
 	payload, _ := json.Marshal(struct {
 		State       string `json:"state"`
@@ -271,7 +283,7 @@ func (g *githubIssues) call(ctx context.Context, method, path string, body []byt
 func (g *githubIssues) issuesRequest(ctx context.Context, method, path string, body []byte) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, g.api.String()+path, bytes.NewReader(body))
 	if err != nil {
-		return nil, &ports.IssuesError{Reason: ports.ReasonGitHubError, Message: "github: " + err.Error()}
+		return nil, &ports.IssuesError{Reason: ports.ReasonTrackerError, Message: "github: " + err.Error()}
 	}
 	if body == nil {
 		req.Body, req.ContentLength = http.NoBody, 0
@@ -283,7 +295,7 @@ func (g *githubIssues) issuesRequest(ctx context.Context, method, path string, b
 }
 
 func unavailable(what string, err error) *ports.IssuesError {
-	return &ports.IssuesError{Reason: ports.ReasonGitHubUnavailable, Message: fmt.Sprintf("github: %s: %v", what, err)}
+	return &ports.IssuesError{Reason: ports.ReasonTrackerUnavailable, Message: fmt.Sprintf("github: %s: %v", what, err)}
 }
 
 // issuesResult decodes a want response into out; any other response is an
@@ -292,13 +304,13 @@ func unavailable(what string, err error) *ports.IssuesError {
 func issuesResult(resp *http.Response, data []byte, want int, what, lacks, notFound string, out any) error {
 	if resp.StatusCode == want {
 		if out != nil && json.Unmarshal(data, out) != nil {
-			return &ports.IssuesError{Reason: ports.ReasonGitHubError, Status: resp.StatusCode,
+			return &ports.IssuesError{Reason: ports.ReasonTrackerError, Status: resp.StatusCode,
 				Message: fmt.Sprintf("github: %s: unreadable response", what)}
 		}
 		return nil
 	}
 	_, message := githubMessage(resp, data)
-	e := &ports.IssuesError{Reason: ports.ReasonGitHubError, Status: resp.StatusCode,
+	e := &ports.IssuesError{Reason: ports.ReasonTrackerError, Status: resp.StatusCode,
 		Message: fmt.Sprintf("github: %s failed: %s", what, message)}
 	switch status := resp.StatusCode; {
 	case status == http.StatusUnauthorized:
@@ -308,8 +320,8 @@ func issuesResult(resp *http.Response, data []byte, want int, what, lacks, notFo
 	case status == http.StatusForbidden && !rateLimited(resp, message):
 		e.Reason = lacks
 	case status == http.StatusForbidden, status == http.StatusTooManyRequests, status >= http.StatusInternalServerError:
-		e.Reason = ports.ReasonGitHubUnavailable
-	case status == http.StatusGone && notFound == ports.ReasonRepositoryNotFound:
+		e.Reason = ports.ReasonTrackerUnavailable
+	case status == http.StatusGone && notFound == ports.ReasonTrackerNotFound:
 		e.Reason = ports.ReasonIssuesDisabled
 	case status == http.StatusNotFound, status == http.StatusGone, status == http.StatusMovedPermanently:
 		// On one issue, a 410 is a deleted issue and a 301 a moved one.

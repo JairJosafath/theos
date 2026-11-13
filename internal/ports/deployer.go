@@ -211,7 +211,9 @@ func (e *Error) Unwrap() []error {
 // Reasons a ReleaseTarget call fails, as the Crew's Published condition names them.
 const (
 	// ReasonUnauthorized: the token is refused (401), or not allowed (403 without
-	// rate limiting).
+	// rate limiting). The request intake port (intake.go) shares this value for
+	// its own calls: a Brief's Requests condition shows it too, so changing it
+	// changes both.
 	ReasonUnauthorized = "Unauthorized"
 	// ReasonRepositoryNotFound: no such repository, or one the token can't see (404).
 	ReasonRepositoryNotFound = "RepositoryNotFound"
