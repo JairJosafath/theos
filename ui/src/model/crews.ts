@@ -5,6 +5,7 @@ import type { Agent, ApprovalRequirement, ApprovalRule, Crew, CrewPhase, Task, T
 import { findCondition } from '../k8s/types'
 import { plural, titleOf } from './describe'
 import { agentRole, taskHeadline, taskRoles, type AgentRole } from './factory'
+import { compareText, compareTitle } from './order'
 
 /** A Crew as the views show it: who implements and reviews, and what it is doing. */
 export interface CrewSummary {
@@ -93,7 +94,7 @@ export function crewSummary(crew: Crew, agents: Agent[], tasks: Task[]): CrewSum
 export function crewSummaries(crews: Crew[], agents: Agent[], tasks: Task[]): CrewSummary[] {
   return crews
     .map((c) => crewSummary(c, agents, tasks))
-    .sort((a, b) => a.namespace.localeCompare(b.namespace) || a.title.localeCompare(b.title))
+    .sort((a, b) => compareText(a.namespace, b.namespace) || compareTitle(a.title, b.title))
 }
 
 /** What a Crew is doing, in a few words: "working on #4", "paused", "no ready issues". */
@@ -152,7 +153,7 @@ export function activeCrewTasks(crews: Crew[], tasks: Task[], agents: Agent[], c
       })
     }
   }
-  return found.sort((a, b) => a.container.localeCompare(b.container) || (a.issue ?? 0) - (b.issue ?? 0))
+  return found.sort((a, b) => compareText(a.container, b.container) || (a.issue ?? 0) - (b.issue ?? 0))
 }
 
 /**

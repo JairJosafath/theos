@@ -64,6 +64,7 @@ import {
   type DiagramNode,
   workingNow,
 } from './model/story'
+import { compareText } from './model/order'
 
 /**
  * Where the Kubernetes API is proxied, relative to the page (see server.mjs).
@@ -137,8 +138,8 @@ export default function App() {
     () =>
       [...projects.data].sort(
         (a, b) =>
-          (a.metadata.creationTimestamp ?? '').localeCompare(b.metadata.creationTimestamp ?? '') ||
-          (a.metadata.namespace ?? '').localeCompare(b.metadata.namespace ?? ''),
+          compareText(a.metadata.creationTimestamp ?? '', b.metadata.creationTimestamp ?? '') ||
+          compareText(a.metadata.namespace ?? '', b.metadata.namespace ?? ''),
       ),
     [projects.data],
   )
