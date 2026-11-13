@@ -23,7 +23,7 @@ import (
 )
 
 // ChatConfig is how to reach one chat host as the factory's bot. It is
-// comparable: theos-chat keeps one ChatHost per ChatConfig.
+// comparable: theos-chat keys the hosts it built by it.
 type ChatConfig struct {
 	// Address is the host's address, http(s)://host[:port] with an optional
 	// path.

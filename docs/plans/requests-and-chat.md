@@ -491,8 +491,11 @@ What the step chose where the plan says nothing:
   `model.ChatSystemDefault`, which is `matrix`. The Chat controller's
   `Reconcile` and `theos-chat`'s `Bot.host` look that name up. Step 7 adds
   `spec.host`, and step 8 reads it in those two places. A name that has no
-  adapter is a reconcile error, not a reason: until step 8, no Chat can
-  name such a host.
+  adapter is a plain reconcile error, retried with backoff and shown in no
+  condition: until step 8, no Chat can name such a host. When step 8 reads
+  `spec.host`, it turns that into a `Ready=False` reason a person can read,
+  as a missing deployer shows (`ports.Deployers.For`,
+  `internal/controller/container_deploy.go`).
 - **The operator passes no `AppToken`.** It reads no rooms. `theos-chat`
   reads `AppTokenKey` only when the row names one, and a missing key is
   the same error as a missing `TokenKey`. `theos-chat` keeps one built host
