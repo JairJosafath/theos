@@ -601,6 +601,100 @@ describe('needs', () => {
     ).toEqual([])
   })
 
+  // #172: the Standard of an adopted repository arrives as a pull request a person merges or
+  // closes (#97); until main holds its files no agent works there, so the Container is listed.
+  describe('a Standard that waits to come into an adopted repository (#172)', () => {
+    const pullRequestURL = 'https://git.example/shop/api/pulls/12'
+    const open = { name: 'go-standard', ref: 'v1.2.0', pullRequest: 12, pullRequestURL, paths: ['Makefile'] }
+    const adopting = (
+      reason: string,
+      message: string,
+      standardAdoption?: NonNullable<Container['status']>['standardAdoption'],
+    ): Container => ({
+      ...container({
+        phase: 'Ready',
+        ...repo,
+        standardAdoption,
+        conditions: [cond('StandardUpdated', 'False', reason, message)],
+      }),
+      spec: { ...container(undefined).spec, adopt: true, standardRef: { name: 'go-standard' } },
+    })
+
+    it.each([
+      [
+        'PullRequestOpen',
+        `Pull request ${pullRequestURL} brings the files of go-standard at v1.2.0 into the repository`,
+        open,
+        [{ label: 'The Standard’s pull request #12', url: pullRequestURL }],
+      ],
+      [
+        'StandardFilesDiffer',
+        `Pull request ${pullRequestURL} merged, but main holds Makefile with other content`,
+        { ...open, stopped: 'StandardFilesDiffer' },
+        [{ label: 'Its repository', url: repo.repositoryURL }],
+      ],
+      [
+        'UpdateClosed',
+        `Pull request ${pullRequestURL} was closed without merging`,
+        { ...open, stopped: 'UpdateClosed' },
+        [{ label: 'Its repository', url: repo.repositoryURL }],
+      ],
+      [
+        'UnsupportedFramework',
+        'standard "go-standard" supports only the Frameworks it lists, and the Container names no frameworkRef',
+        undefined,
+        [],
+      ],
+    ])('lists the Container on %s, in the condition’s words', (reason, message, standardAdoption, links) => {
+      const items = needs(input({ containers: [adopting(reason, message, standardAdoption)] }))
+      expect(items).toHaveLength(1)
+      expect(items[0]).toMatchObject({
+        key: 'Container|shop|api|StandardWaits',
+        kind: 'Container',
+        title: 'has a Standard waiting on you',
+        reason,
+        message,
+        since: T,
+        links,
+        place: { to: { page: { ns: 'shop', kind: 'Container', name: 'api' } } },
+      })
+      expect(items[0].command).toBe(undefined)
+    })
+
+    it('links a pull request that stays open while the Standard doesn’t fit', () => {
+      const [item] = needs(input({ containers: [adopting('UnsupportedFramework', 'fits no Framework', open)] }))
+      expect(item.links).toEqual([{ label: 'The Standard’s pull request #12', url: pullRequestURL }])
+    })
+
+    it('leaves an ordinary update’s UpdateClosed out, as before', () => {
+      const closed = container({
+        phase: 'Ready',
+        ...repo,
+        standard: {
+          name: 'go-standard',
+          ref: 'v1',
+          update: {
+            ref: 'v2',
+            pullRequest: 3,
+            pullRequestURL: 'https://git.example/shop/api/pulls/3',
+            stopped: 'UpdateClosed',
+          },
+        },
+        conditions: [cond('StandardUpdated', 'False', 'UpdateClosed', 'Pull request 3 was closed without merging')],
+      })
+      // The same on a Container that adopted its repository and has its Standard recorded since.
+      const adopted: Container = {
+        ...closed,
+        spec: { ...closed.spec, adopt: true, standardRef: { name: 'go-standard' } },
+      }
+      expect(needs(input({ containers: [closed, adopted] }))).toEqual([])
+    })
+
+    it('lists no adoption the factory still works on', () => {
+      expect(needs(input({ containers: [adopting('GitError', 'Talking to Git failed; retrying', open)] }))).toEqual([])
+    })
+  })
+
   it('lists no release or Standard update the factory still works on', () => {
     const items = needs(
       input({

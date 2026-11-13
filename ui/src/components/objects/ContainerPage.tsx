@@ -1,7 +1,8 @@
 // A Container's page: the object header (its scaffold lifecycle and
 // conditions, its Relationships with their Applied reason and its Sessions,
 // the repository, and on Failed the retry kubectl line), then its template
-// refs and its Standard with the update pull request in flight, and when CI
+// refs and its Standard with the update pull request in flight, or the pull
+// request that brings the Standard into a repository it adopted, and when CI
 // runs its full check (ContainerChecks, which sets it with UI actions on);
 // where it ships and what runs there (ContainerDeploys, which approves a
 // version waiting with UI actions on);
@@ -27,7 +28,12 @@ import type {
 } from '../../k8s/types'
 import { choicesOf } from '../../model/choices'
 import { describeContainerType, splitTemplateRef } from '../../model/describe'
-import { containerNextStep, describeStandardUpdate } from '../../model/lifecycle'
+import {
+  containerNextStep,
+  describeStandardAdoption,
+  describeStandardUpdate,
+  standardAdoptionPullRequest,
+} from '../../model/lifecycle'
 import { sessionsOf } from '../../model/story'
 import { SessionContext } from '../../lib/hooks'
 import { LeftOutFiles, SessionRow } from '../bits'
@@ -84,6 +90,11 @@ export function ContainerPage({
       href: update.pullRequestURL,
       label: `Standard ${update.take ? 'take' : 'update'} pull request #${update.pullRequest ?? ''}`,
     })
+  // #172: the pull request that brings its Standard into the repository it adopted, while it is open.
+  const adoption = status?.standardAdoption
+  const adopting = describeStandardAdoption(container)
+  const adoptionPR = standardAdoptionPullRequest(container)
+  if (adoptionPR) links.push({ href: adoptionPR.href, label: `Standard pull request #${adoptionPR.number ?? ''}` })
   // Its spec's refs, or what its Bundle expanded to (status.bundle); the UI enforces nothing.
   const choices = choicesOf(container)
   const framework = frameworks.find((f) => f.metadata.name === choices.framework)
@@ -256,6 +267,27 @@ export function ContainerPage({
             <>
               {choices.standard ? <ContainerChecks container={container} writer={writer} /> : null}
               <ContainerOperations container={container} />
+              {adoption && adopting ? (
+                <section className="panel" aria-labelledby="container-standard-adoption">
+                  <h2 className="panel-title small-title" id="container-standard-adoption">
+                    {adopting.title}
+                  </h2>
+                  <p className="panel-text">{adopting.text}</p>
+                  {adoptionPR ? (
+                    <p className="panel-text">
+                      <a href={adoptionPR.href} target="_blank" rel="noreferrer">
+                        Pull request #{adoptionPR.number} <ExternalLinkIcon size={12} />
+                      </a>
+                    </p>
+                  ) : null}
+                  {/* What the open pull request writes; once it stopped, the condition names what main still lacks. */}
+                  {adoptionPR && adoption.paths?.length ? (
+                    <p className="panel-text">
+                      The files it writes: <span className="mono">{adoption.paths.join(', ')}</span>
+                    </p>
+                  ) : null}
+                </section>
+              ) : null}
               {update && described ? (
                 <section className="panel" aria-labelledby="container-standard">
                   <h2 className="panel-title small-title" id="container-standard">

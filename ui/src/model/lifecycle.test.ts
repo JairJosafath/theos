@@ -3,6 +3,7 @@ import type { Brief, Condition, Container, Crew, Relationship, Task } from '../k
 import {
   appliesConnector,
   containerNextStep,
+  describeStandardAdoption,
   describeStandardUpdate,
   crewNextStep,
   failedCondition,
@@ -14,6 +15,7 @@ import {
   resumeCrewCommand,
   retryCommand,
   standardKeepCommand,
+  standardWaits,
   taskNextStep,
   type LifecycleKind,
 } from './lifecycle'
@@ -165,7 +167,6 @@ describe('containerNextStep', () => {
     ['LayerConflict', 'Scaffolded', /Two templates write the same file/],
     ['NothingToAdopt', 'Scaffolded', /Push its history first, then retry/],
     ['IdentityMismatch', 'Scaffolded', /name this project and container, then retry/],
-    ['StandardFilesDiffer', 'Scaffolded', /what the Standard renders, then retry/],
     ['UnpinnedRef', 'Scaffolded', /Pin the template’s ref/],
     ['TemplatePathNotFound', 'Scaffolded', /a directory its repository has at the pinned ref/], // #35
     ['UnsupportedCI', 'Scaffolded', /Pick a template that supports it, or one without CI files, then retry/],
@@ -278,6 +279,174 @@ describe('containerNextStep', () => {
     ).toBe(undefined)
     expect(containerNextStep(container({ phase: 'Ready' }))).toBe(undefined)
     expect(containerNextStep(container({ phase: 'Scaffolding' }))).toBe(undefined)
+  })
+})
+
+// #172: the Standard of an adopted repository arrives as a pull request a
+// person merges or closes (#97), on a Container that stays Ready.
+describe('a Standard that waits to come into an adopted repository (#172)', () => {
+  const repositoryURL = 'https://git.example/shop/api'
+  const open = {
+    name: 'go-standard',
+    ref: 'v1.2.0',
+    branch: 'standard-adopt/go-standard-v1.2.0',
+    pullRequest: 12,
+    pullRequestURL: 'https://git.example/shop/api/pulls/12',
+    paths: ['AGENTS.md', 'Makefile'],
+  }
+  /** A Ready Container that adopted its repository and names go-standard, which status doesn't record. */
+  const adopting = (
+    reason: string,
+    standardAdoption?: NonNullable<Container['status']>['standardAdoption'],
+    message?: string,
+  ): Container => ({
+    ...container({
+      phase: 'Ready',
+      repositoryURL,
+      standardAdoption,
+      conditions: [cond('StandardUpdated', 'False', reason, message)],
+    }),
+    spec: { ...container(undefined).spec, adopt: true, standardRef: { name: 'go-standard' } },
+  })
+
+  it('is the rule the page, the next step and Needs you read, for each of the four reasons', () => {
+    expect(standardWaits(adopting('PullRequestOpen', open))).toMatchObject({
+      standard: 'go-standard',
+      reason: 'PullRequestOpen',
+      condition: { type: 'StandardUpdated', reason: 'PullRequestOpen' },
+      pullRequest: { href: open.pullRequestURL, number: 12 },
+    })
+    // Once it stopped there is no pull request to open any more.
+    for (const stopped of ['StandardFilesDiffer', 'UpdateClosed']) {
+      const waits = standardWaits(adopting(stopped, { ...open, stopped }))
+      expect(waits?.reason).toBe(stopped)
+      expect(waits?.pullRequest).toBe(undefined)
+    }
+    // No pull request opens while the Standard doesn't fit; one already open stays as it is.
+    expect(standardWaits(adopting('UnsupportedFramework'))).toMatchObject({ reason: 'UnsupportedFramework' })
+    expect(standardWaits(adopting('UnsupportedFramework'))?.pullRequest).toBe(undefined)
+    expect(standardWaits(adopting('UnsupportedFramework', open))?.pullRequest?.number).toBe(12)
+  })
+
+  it('is not a Container that didn’t adopt, names no Standard, isn’t Ready, has its Standard, or waits on nobody', () => {
+    const c = adopting('PullRequestOpen', open)
+    expect(standardWaits({ ...c, spec: { ...c.spec, adopt: false } })).toBe(undefined)
+    expect(standardWaits({ ...c, spec: { ...c.spec, standardRef: undefined } })).toBe(undefined)
+    expect(standardWaits({ ...c, status: { ...c.status, phase: 'Failed' } })).toBe(undefined)
+    expect(standardWaits({ ...c, status: { ...c.status, standard: { name: 'go-standard', ref: 'v1.2.0' } } })).toBe(
+      undefined,
+    )
+    expect(standardWaits(adopting('GitError', open))).toBe(undefined)
+    expect(
+      standardWaits({ ...c, status: { ...c.status, conditions: [cond('StandardUpdated', 'True', 'UpToDate')] } }),
+    ).toBe(undefined)
+  })
+
+  it('reads a bundled Container’s Standard from what its Bundle expanded to', () => {
+    const c = adopting('PullRequestOpen', open)
+    const bundled: Container = {
+      ...c,
+      spec: { ...c.spec, frameworkRef: undefined, standardRef: undefined, bundleRef: { name: 'go-service' } },
+      status: { ...c.status, bundle: { name: 'go-service', framework: 'go-chi', standard: 'go-standard' } },
+    }
+    expect(standardWaits(bundled)?.standard).toBe('go-standard')
+  })
+
+  it('on PullRequestOpen, says to read and merge or close the pull request, and links it', () => {
+    const step = containerNextStep(adopting('PullRequestOpen', open))
+    expect(step).toEqual({
+      text: expect.stringMatching(
+        /go-standard arrives as a pull request\. Read it like any change.*merge it, or close it to stay without the Standard’s files\. The factory never merges it, and no agent works on the repository until it is merged\./,
+      ),
+      link: { href: open.pullRequestURL, label: 'Open pull request #12' },
+    })
+  })
+
+  it('on StandardFilesDiffer, says to bring the files the condition names to what the Standard renders', () => {
+    const step = containerNextStep(adopting('StandardFilesDiffer', { ...open, stopped: 'StandardFilesDiffer' }))
+    expect(step).toEqual({
+      text: expect.stringMatching(
+        /merged, but main holds files the Standard protects with other content\. Bring the files the condition names to what the Standard renders; the factory finds them when main moves/,
+      ),
+      link: { href: repositoryURL, label: 'Open the repository' },
+    })
+  })
+
+  it('on UpdateClosed, says no agent works there, and the two ways out', () => {
+    const step = containerNextStep(adopting('UpdateClosed', { ...open, stopped: 'UpdateClosed' }))
+    expect(step).toEqual({
+      text: expect.stringMatching(
+        /closed without go-standard’s files, so no agent works on the repository\. Bring the files the condition names to main, or name no Standard\. A new pull request comes when the Standard’s ref or the Container’s checks change\./,
+      ),
+      link: { href: repositoryURL, label: 'Open the repository' },
+    })
+  })
+
+  it('on UnsupportedFramework, says to name a Framework the Standard lists, or another Standard', () => {
+    const step = containerNextStep(adopting('UnsupportedFramework'))
+    expect(step).toEqual({
+      text: expect.stringMatching(
+        /fits only the Frameworks it lists\. Name one of them as the Container’s frameworkRef \(nothing is scaffolded from it\), or name another Standard/,
+      ),
+      page: { kind: 'Standard', name: 'go-standard', label: 'Open Standard go-standard' },
+    })
+  })
+
+  it.each(['PullRequestOpen', 'StandardFilesDiffer', 'UpdateClosed', 'UnsupportedFramework'])(
+    'on %s, gives no retry line: the operator reads main again when it moves',
+    (reason) => {
+      const step = containerNextStep(adopting(reason, open))!
+      expect(step.command).toBe(undefined)
+      expect(step.text).not.toMatch(/retry/)
+    },
+  )
+
+  it('leaves an ordinary update’s UpdateClosed as it reads: no next step, and the update’s own words', () => {
+    const c = container({
+      phase: 'Ready',
+      repositoryURL,
+      standard: {
+        name: 'go-standard',
+        ref: 'v1.2.0',
+        update: {
+          ref: 'v1.3.0',
+          pullRequest: 7,
+          pullRequestURL: 'https://git.example/shop/api/pulls/7',
+          stopped: 'UpdateClosed',
+        },
+      },
+      conditions: [cond('StandardUpdated', 'False', 'UpdateClosed')],
+    })
+    const adopted: Container = { ...c, spec: { ...c.spec, adopt: true, standardRef: { name: 'go-standard' } } }
+    for (const ordinary of [c, adopted]) {
+      expect(standardWaits(ordinary)).toBe(undefined)
+      expect(containerNextStep(ordinary)).toBe(undefined)
+      expect(describeStandardUpdate(ordinary)?.text).toBe(
+        'Stopped (UpdateClosed); it waits until the Standard’s ref changes again.',
+      )
+      expect(describeStandardAdoption(ordinary)).toBe(undefined)
+    }
+  })
+
+  it('describes the pull request, open or stopped, by the Standard it is for', () => {
+    expect(describeStandardAdoption(adopting('PullRequestOpen', open))).toEqual({
+      title: 'Bringing in go-standard at v1.2.0',
+      text: expect.stringMatching(/A person merges it, or closes it.*the factory never merges it/),
+    })
+    expect(describeStandardAdoption(adopting('UpdateClosed', { ...open, stopped: 'UpdateClosed' }))?.text).toMatch(
+      /^Its pull request was closed without merging, so no agent works on the repository\./,
+    )
+    expect(
+      describeStandardAdoption(adopting('StandardFilesDiffer', { ...open, stopped: 'StandardFilesDiffer' }))?.text,
+    ).toMatch(/^Its pull request merged, but main holds a file the Standard protects with other content/)
+    // A status kept before the name was: the Standard the Container names.
+    expect(describeStandardAdoption(adopting('PullRequestOpen', { ...open, name: undefined }))?.title).toBe(
+      'Bringing in go-standard at v1.2.0',
+    )
+    // The Container names another Standard since, which doesn't fit yet: the pull request is still the first one's.
+    const renamed = adopting('UnsupportedFramework', { ...open, name: 'python-standard' })
+    expect(describeStandardAdoption(renamed)?.title).toBe('Bringing in python-standard at v1.2.0')
+    expect(describeStandardAdoption(adopting('UnsupportedFramework'))).toBe(undefined)
   })
 })
 

@@ -9,7 +9,7 @@ import type { Area } from './areas'
 import { failureAnswered } from './attention'
 import { approveCommand, deploysOf, type DeployRow } from './deploys'
 import { time } from './factory'
-import { hasPage, standardKeepCommand, standardTakeCommand } from './lifecycle'
+import { hasPage, standardKeepCommand, standardTakeCommand, standardWaits } from './lifecycle'
 import { compareText } from './order'
 
 export type NeedKind = 'Brief' | 'Container' | 'Task' | 'Crew'
@@ -172,6 +172,25 @@ function containerNeeds(c: Container): Need[] {
       ...why(protection, 'NoMatchingCheck'),
       place,
       links: c.status?.repositoryURL ? [{ label: 'Its repository', url: c.status.repositoryURL }] : [],
+    })
+  }
+  // #172: the Standard of an adopted repository arrives as a pull request a person merges or
+  // closes, and no agent works there until main holds its files (lifecycle.ts, standardWaits).
+  const waits = standardWaits(c)
+  if (waits) {
+    const pr = waits.pullRequest
+    const repo = c.status?.repositoryURL
+    items.push({
+      ...base('Container', c, 'StandardWaits'),
+      title: 'has a Standard waiting on you',
+      ...why(waits.condition, waits.reason),
+      place,
+      // The pull request while it is open; once it stopped, the repository whose main the files go to.
+      links: pr
+        ? [{ label: `The Standard’s pull request${pr.number ? ` #${pr.number}` : ''}`, url: pr.href }]
+        : repo && waits.reason !== 'UnsupportedFramework'
+          ? [{ label: 'Its repository', url: repo }]
+          : [],
     })
   }
   const updated = findCondition(c.status?.conditions, 'StandardUpdated')
