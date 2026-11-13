@@ -140,6 +140,9 @@ spec:
         # gitEvents.url says otherwise (docs/plans/done/git-events.md, decision 10).
         - --git-events-bind-address=:{{ .Values.gitEvents.port }}
         - --git-events-url={{ include "theos.gitEventsURL" . }}
+        # The same listener takes alerts; stopped by a signal, the operator
+        # files what it took for this long (alerts.drainTimeout, docs/alerts.md).
+        - --alert-drain-timeout={{ include "theos.alertDrainTimeout" . }}
         {{- end }}
         command:
         - /manager

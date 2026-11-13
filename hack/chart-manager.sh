@@ -5,7 +5,8 @@
 # (internal/gitprovider), the POD_NAMESPACE the shared Secrets are read from,
 # the --shared-secret, --shared-pull-secret and --model-proxy-url flags, the --ui-service-account
 # the UI reads project namespaces' pods as (#1080), the webhook's flags and
-# port (#1614), the Git events receiver's flags and port (#1223), the
+# port (#1614), the Git events receiver's flags and port (#1223) and its
+# alert receiver's --alert-drain-timeout (#64), the
 # --test-environment-tools-image local test environments copy theos-env from,
 # and the --test-environment-tools-url and --test-environment-runner-url
 # remote ones download theos-env and the CI runner from
@@ -48,6 +49,7 @@ need "the webhook-server container port" -Pzo '\n *- containerPort: [0-9]+\n *na
 need "the --git-events-bind-address flag" -E '^ *- --git-events-bind-address=:[0-9]+$'
 need "the --git-events-url flag" -E '^ *- --git-events-url=http://[^ ]+-git-events\.[^ ]+\.svc:[0-9]+$'
 need "the git-events container port" -Pzo '\n *- containerPort: [0-9]+\n *name: git-events\n'
+need "the --alert-drain-timeout flag" -E '^ *- --alert-drain-timeout=[0-9][^ ]*$'
 need "the --test-environment-tools-image flag" -E '^ *- --test-environment-tools-image=[^ ]+/agent-base:[^ ]+$'
 need "the --test-environment-tools-url flag" -E '^ *- --test-environment-tools-url=https://[^ ]+$'
 need "the --test-environment-runner-url flag" -E '^ *- --test-environment-runner-url=https://[^ ]+$'

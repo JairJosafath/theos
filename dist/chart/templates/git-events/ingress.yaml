@@ -1,0 +1,42 @@
+{{- if .Values.alerts.ingress.enabled }}
+{{- include "theos.alertsIngressChecks" . }}
+# Alerts from senders outside the cluster (docs/alerts.md): https://<host>/alerts/
+# to the Git events listener, with TLS, and no other path: /git-events/ stays
+# inside the cluster. A bearer token over plain HTTP would be readable on the
+# way (docs/plans/alerts.md, decision 3).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "theos.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  {{- with .Values.alerts.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  name: {{ include "theos.resourceName" (dict "suffix" "alerts" "context" .) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  {{- with .Values.alerts.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  tls:
+    - hosts:
+        - {{ .Values.alerts.ingress.host | quote }}
+      {{- with .Values.alerts.ingress.tlsSecretName }}
+      secretName: {{ . }}
+      {{- end }}
+  rules:
+    - host: {{ .Values.alerts.ingress.host | quote }}
+      http:
+        paths:
+          - path: /alerts/
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "theos.gitEventsName" . }}
+                port:
+                  name: http
+{{- end }}

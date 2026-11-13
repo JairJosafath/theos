@@ -1,7 +1,9 @@
 {{- if .Values.gitEvents.enabled }}
 # The receiver of the Git host's deliveries: Gitea's organization hooks POST
 # to <gitEvents.url>/git-events/<namespace>/<name>, signed with each
-# GitProvider's own Secret (docs/plans/done/git-events.md, decision 10).
+# GitProvider's own Secret (docs/plans/done/git-events.md, decision 10). The
+# same port takes alerts, POST /alerts/<namespace>/<alertsource>, each checked
+# against its AlertSource's Secret (docs/alerts.md).
 apiVersion: v1
 kind: Service
 metadata:

@@ -199,6 +199,7 @@ webhook:
 ## (--git-events-url), so it reconciles when a repository changes instead of
 ## waiting for its poll. Each delivery is signed with the GitProvider's own
 ## Secret, which the operator makes in the cluster; none is rendered here.
+## The same listener takes alerts (alerts, below).
 ## Off: no hook, no receiver, and the operator polls the host.
 ##
 gitEvents:
@@ -219,6 +220,48 @@ gitEvents:
   ## as an ipBlock.
   ##
   from: []
+
+## The receiver of alerts from the tools that watch a running app
+## (docs/alerts.md): Alertmanager, Sentry, or any tool that posts JSON. It is
+## the same listener and Service as gitEvents, at
+## /alerts/<namespace>/<alertsource>, so it is on with gitEvents.enabled and
+## its port is gitEvents.port. An AlertSource in a project namespace turns
+## its path on; without one every path there answers 404. Each delivery is
+## checked against the AlertSource's Secret, which you make: none is
+## rendered here.
+##
+alerts:
+  ## How long the operator, stopped by a signal, files the alerts it took
+  ## and has not filed yet (--alert-drain-timeout, a Go duration such as 5s).
+  ## It has to fit manager.terminationGracePeriodSeconds: the kill at the
+  ## end of the grace period cuts the drain, and what the inbox held then is
+  ## lost unsaid.
+  ##
+  drainTimeout: 5s
+  ## Who may reach gitEvents.port besides gitEvents.from, as NetworkPolicy
+  ## peers: an in-cluster sender, such as the namespace Alertmanager runs in,
+  ## and with ingress.enabled the Ingress controller's pods. Empty: nobody
+  ## else. A NetworkPolicy fences a port, not a path, so a peer here reaches
+  ## /git-events/ too, where each delivery is signed with its GitProvider's
+  ## own Secret.
+  ##
+  from: []
+  ## An Ingress for senders outside the cluster, such as Sentry's cloud:
+  ## https://<host>/alerts/ to Service <release>-git-events, with TLS, and no
+  ## other path. It needs gitEvents.enabled, a host, and the Ingress
+  ## controller's pods in alerts.from.
+  ##
+  ingress:
+    enabled: false
+    # The IngressClass; empty: the cluster's default class.
+    className: ""
+    # The host senders deliver to, such as alerts.example.com.
+    host: ""
+    # The Ingress's annotations, such as cert-manager.io/cluster-issuer.
+    annotations: {}
+    # The kubernetes.io/tls Secret with the host's certificate, which you or
+    # cert-manager make; empty: the Ingress controller's default certificate.
+    tlsSecretName: ""
 
 ## Prometheus ServiceMonitor for metrics scraping.
 ## Requires prometheus-operator to be installed in the cluster.
