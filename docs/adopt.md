@@ -272,5 +272,5 @@ here doesn't do what it says,
 
 ## What comes next
 
-[plans/done/adopt-existing.md](plans/done/adopt-existing.md) has the plan, what each
+[plans/adopt-existing.md](plans/adopt-existing.md) has the plan, what each
 step found and what it left as it is.

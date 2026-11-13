@@ -32,7 +32,7 @@ import (
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
-// #98 (docs/plans/done/adopt-existing.md, step 5): a Crew's first issue on a
+// #98 (docs/plans/adopt-existing.md, step 5): a Crew's first issue on a
 // repository it adopted with no Standard is its own, filed once: write
 // AGENTS.md and say what you found.
 var _ = Describe("Crew onboarding", func() {

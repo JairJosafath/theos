@@ -46,7 +46,7 @@ type CI struct {
 }
 
 // ForAdopted is the CI system as a Container that adopts its repository
-// with no Standard uses it (docs/plans/done/adopt-existing.md, step 2): the check
+// with no Standard uses it (docs/plans/adopt-existing.md, step 2): the check
 // contexts the Container names, the system's own when it names none, and the
 // system's fallback paths protected beside its own, since the repository's
 // workflows may be there.

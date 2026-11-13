@@ -124,7 +124,7 @@ func createBareAdoption(ns string, mutate func(*c4v1beta1.Container)) *c4v1beta1
 	return container
 }
 
-// #60 (docs/plans/done/adopt-existing.md, step 1): a repository the factory never
+// #60 (docs/plans/adopt-existing.md, step 1): a repository the factory never
 // scaffolded has no Framework to name, and needs none to be adopted.
 var _ = Describe("Container adoption without the catalog", func() {
 	// A Rust service: the catalog has no Framework for it.

@@ -34,7 +34,7 @@ import (
 )
 
 // A Standard is something an adopted repository grows into (#97,
-// docs/plans/done/adopt-existing.md, decision 7). A Container that adopts its
+// docs/plans/adopt-existing.md, decision 7). A Container that adopts its
 // repository and names a Standard main doesn't hold is Ready on its identity;
 // the operator opens one pull request with the Standard's files that differ,
 // and a person merges or closes it: the operator never merges it. Once main

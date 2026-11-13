@@ -168,12 +168,9 @@ Done when:
      operator writes nothing to it.
    - The person proves intent first, by committing a `.theos.yaml` that
      names the project and the Container; else `IdentityMismatch`.
-   - The operator compares the Standard's files on main with what the
-     Standard renders at its ref. A difference fails nothing (#97): the
-     Container is `Ready` on its identity and the Standard arrives as one
-     pull request a person merges (design.md, "A Standard is something an
-     adopted repository grows into", under
-     [Scaffolding a Container](../design.md#scaffolding-a-container)).
+   - The operator compares the Standard's files on main directly with what
+     the Standard renders at its ref; a difference fails
+     `StandardFilesDiffer`, naming the paths.
    - Monorepos stay out of scope.
 
 5. **The factory gets its own Standard, `factory-self`** (step 3).
@@ -301,20 +298,15 @@ Container in `api/v1beta1`, the one version served (#1963 dropped
 - an adopted Container is never scaffolded.
 
 **The controller.** On `HistoryAdopt`, `container_scaffold.go` writes nothing
-and checks one thing on main:
+and checks two things on main:
 - **`.theos.yaml` names this project and Container.** Otherwise the
   Container fails with `IdentityMismatch`, saying what the file holds.
+- **Every file of the Container's Standard is there, with the content the
+  Standard renders for this Container at its ref.** Otherwise it fails with
+  `StandardFilesDiffer`, naming the paths.
 
-The Standard's files are not a condition of adopting (#97). When the identity
-holds, the Container is `Ready` whether or not main has the Standard's files;
-the operator opens one pull request with the files that differ, and
-`StandardFilesDiffer` is a reason of `StandardUpdated` on a Ready Container,
-for a protected file that still differs after a person merges it. What main
-does is in [design.md](../design.md#scaffolding-a-container), "A Standard is
-something an adopted repository grows into".
-
-When the identity holds, it runs `protectRepository`, then `ready()`; the
-Standard is recorded at its ref once main holds its protected files. A `Failed` adopted Container tries again as any other
+When both hold, it runs `protectRepository`, then `ready()`, recording the
+Standard at its ref. A `Failed` adopted Container tries again as any other
 does.
 
 **The docs.**

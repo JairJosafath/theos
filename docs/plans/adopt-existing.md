@@ -1,6 +1,6 @@
 # Bring a repository you already have
 
-GitHub issue #60, a step of [open-source-launch.md](../open-source-launch.md)
+GitHub issue #60, a step of [open-source-launch.md](open-source-launch.md)
 (#46). Written 2026-11-10 in a session the owner ran.
 
 ## Goal
@@ -338,4 +338,4 @@ Left as it is:
 
 Step 6 is closed: a person follows the guide's second page with a
 repository of their own and gets a merged pull request from an issue, and
-[docs/comparison.md](../../comparison.md) has no "poorly guided" for adoption.
+[docs/comparison.md](../comparison.md) has no "poorly guided" for adoption.

@@ -331,7 +331,7 @@ An adopting Container may name nothing from the catalog at all, no
 Framework, Standard, Compute or Deployment: the rule "name a bundleRef or a
 frameworkRef" is for a Container the factory scaffolds, and a repository it
 never scaffolded, a Rust service, has no Framework to name
-([plans/done/adopt-existing.md](plans/done/adopt-existing.md), #60). The factory
+([plans/adopt-existing.md](plans/adopt-existing.md), #60). The factory
 wires no Connector into it, whatever its Relationships say.
 
 **An adopted repository's own check** (#95). A Container that adopts with

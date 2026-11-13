@@ -21,7 +21,7 @@ import (
 )
 
 // A Crew's first issue on a repository it adopted with no Standard is its
-// own (docs/plans/done/adopt-existing.md, step 5; #98): the factory scaffolded
+// own (docs/plans/adopt-existing.md, step 5; #98): the factory scaffolded
 // nothing there, so nothing tells an agent how the repository is built. The
 // Crew files one issue, once, to write AGENTS.md and say what it found, and
 // works it as any other.
