@@ -128,3 +128,14 @@ plan.
   of `main`, right after its *Prepare* change merges. That also takes away
   the risk that `GITHUB_TOKEN` may not tag an earlier commit, and the
   provenance now names exactly the commit released.
+- **13 November, 09:17 UTC. Step 3 is done.** JairJosafath/cel-lens#19
+  merged (80c7315) with all eight checks green, and the first run of
+  `release.yml` (run 43399180197) published
+  [cel-lens core v0.28.0](https://github.com/JairJosafath/cel-lens/releases/tag/core-v0.28.0):
+  both tags at the merge commit, six binaries and `checksums.txt`, each
+  with its `.sigstore.json`, and `provenance.intoto.jsonl`; not marked
+  latest. Checked here with cosign v3.1.4: `SECURITY.md`'s `verify-blob`
+  command on `checksums.txt` and the provenance of the Linux binary both
+  verify, and the binary matches `checksums.txt`. Not run: `gh
+  attestation verify`, the command `SECURITY.md` gives for provenance.
+  Step 4 is cel-lens-vscode#7.
