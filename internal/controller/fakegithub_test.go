@@ -40,7 +40,7 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// fakeGitHub is GitHub's release and issues API over httptest, for the repositories made
+// fakeGitHub is GitHub's release API over httptest, for the repositories made
 // with addRepository; any other repository is a 404, as GitHub answers a token
 // that can't see it.
 type fakeGitHub struct {
@@ -65,7 +65,6 @@ type fakeGitHub struct {
 	ids     map[string]int64
 	renamed map[string]string
 	nextID  int64
-	is      *fakeGitHubIssues
 	// apps is each GitHub App installation's App, by installation id.
 	apps map[string]fakeGitHubApp
 }
@@ -316,22 +315,17 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 	}
 	if req.URL.Path == "/user" && req.Method == http.MethodGet {
 		// Every repository's token is the factory's account.
-		reply(w, http.StatusOK, fakeGitHubUser{"theos-bot"})
+		reply(w, http.StatusOK, map[string]string{"login": "theos-bot"})
 		return
 	}
 	if token, ok := strings.CutPrefix(req.URL.Path, "/app/installations/"); ok {
 		f.serveApp(w, req, strings.TrimSuffix(token, "/access_tokens"))
 		return
 	}
-	if team, ok := strings.CutPrefix(req.URL.Path, "/orgs/"); ok {
-		f.serveTeam(w, req, strings.Split(team, "/"))
-		return
-	}
-	// /repos/{owner}/{name}, or its releases[/...], issues[/...] or git/...
+	// /repos/{owner}/{name}, or its releases[/...] or git/...
 	parts := strings.Split(strings.TrimPrefix(req.URL.Path, "/repos/"), "/")
 	whole := len(parts) == 2 && req.Method == http.MethodGet
-	if !whole && (len(parts) < 3 || (parts[2] != "releases" && parts[2] != "issues" &&
-		(parts[2] != "git" || len(parts) < 4))) {
+	if !whole && (len(parts) < 3 || (parts[2] != "releases" && (parts[2] != "git" || len(parts) < 4))) {
 		reply(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
 	}
@@ -357,10 +351,6 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, req *http.Request) {
 	rest := parts[3:]
 	if parts[2] == "git" {
 		f.git[repository].serveGit(w, req, rest)
-		return
-	}
-	if parts[2] == "issues" {
-		f.serveIssues(w, req, repository, rest)
 		return
 	}
 	f.serveReleases(w, req, repository, rest)

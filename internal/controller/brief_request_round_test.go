@@ -26,6 +26,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
@@ -42,16 +43,17 @@ var _ = Describe("Brief requests in rounds", func() {
 	var ns string
 	BeforeEach(func() { ns = newProjectNamespace() })
 
-	It("takes requests into a round, refuses a plan that answers them wrong, and says on GitHub what each became", func() {
-		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
+	It("takes requests into a round, refuses a plan that answers them wrong, and says on the tracker what each became", func() {
+		tr := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
 			Authors: []string{"ada"}})
+		repository := tr.repository
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
-		theme := githubFake.openIssue(repository, "ada", "Dark theme", "Please add a dark theme.")
-		rules := githubFake.openIssue(repository, "ada", "Lint rules", "Lint my rules.")
+		theme := tr.file("ada", "Dark theme", "Please add a dark theme.")
+		rules := tr.file("ada", "Lint rules", "Lint my rules.")
 		themeName, rulesName := model.RequestName(repository, theme), model.RequestName(repository, rules)
 		Eventually(func(g Gomega) {
 			g.Expect(requestNumbers(g, ns)).To(Equal(map[int32]string{int32(theme): model.RequestWaiting,
@@ -121,27 +123,27 @@ var _ = Describe("Brief requests in rounds", func() {
 		Expect(gitFake.Issue(ns, "linter", int(filed.Number)).Title).To(Equal("Lint rule 1"))
 
 		Eventually(func(g Gomega) {
-			issue, comments := githubFake.gitHubIssue(repository, theme)
-			g.Expect(issue.State).To(Equal("open"), "a planned request stays open until it ships")
+			issue, comments := tr.issue(theme)
+			g.Expect(issue.Closed).To(BeFalse(), "a planned request stays open until it ships")
 			g.Expect(comments).To(ConsistOf(And(
 				HavePrefix(model.RequestMarker("cel-lens", model.CommentPlanned)),
 				ContainSubstring(model.RequestRoundMarker("cel-lens", 2)),
 				ContainSubstring(`Planned as "Lint rule 1", in release v0.2.0.`))))
-			issue, comments = githubFake.gitHubIssue(repository, rules)
-			g.Expect(issue.State).To(Equal("closed"))
-			g.Expect(issue.StateReason).To(Equal("not_planned"))
+			issue, comments = tr.issue(rules)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(issue.Reason).To(Equal(ports.CloseNotPlanned))
 			g.Expect(comments).To(ConsistOf(ContainSubstring("Not planned: The linter lints rules already.")))
 		}).Should(Succeed())
 
 		By("saying it once, read after read")
-		asked, _ := githubFake.issueLists(repository)
+		asked, _ := tr.lists()
 		Eventually(func(g Gomega) {
-			again, _ := githubFake.issueLists(repository)
+			again, _ := tr.lists()
 			g.Expect(again).To(BeNumerically(">", asked))
 		}).Should(Succeed())
 		Consistently(func(g Gomega) {
 			for _, n := range []int{theme, rules} {
-				_, comments := githubFake.gitHubIssue(repository, n)
+				_, comments := tr.issue(n)
 				g.Expect(comments).To(HaveLen(1))
 			}
 			g.Expect(getBrief(g, ns).Status.Round).To(Equal(int32(2)), "no request waits, so no round starts")

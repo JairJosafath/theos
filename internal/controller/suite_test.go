@@ -106,6 +106,9 @@ var (
 	gitFake *fake.Git
 	// githubFake is the GitHub every Crew publishes its releases to.
 	githubFake *fakeGitHub
+	// trackerFakes are the fake trackers a Brief reads requests from, one
+	// per spec's releases repository (#154).
+	trackerFakes *fakeTrackers
 	// gitlabFake is the GitLab a gitlab DeployTarget ships to: a target's
 	// url names it, and the adapter follows the url.
 	gitlabFake *gitlabtest.Server
@@ -395,6 +398,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	gitFake.SetImageCopier(copySuiteImage)
 	githubFake = newFakeGitHub()
+	trackerFakes = newFakeTrackers()
 	DeferCleanup(githubFake.server.Close)
 	DeferCleanup(githubFake.enterprise.Close)
 	gitlabFake = gitlabtest.StartTLS()
@@ -486,7 +490,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			Recorder: mgr.GetEventRecorder("brief"), NeedsInputRecheck: time.Second, SuggestionsRecheck: time.Second, PlanCheckTimeout: 3 * time.Second,
 			BotDeleteTimeout: testBotDeleteTimeout, SharedSecrets: []string{sharedToken}, SourceNamespace: operatorNamespace,
 			ModelProxyURL: testModelProxyURL,
-			Issues:        githubFake, Now: briefNow, GitEvents: gitEvents},
+			Issues:        ports.IssueTrackers{model.TrackerGitHub: trackerFakes}, Now: briefNow, GitEvents: gitEvents},
 		&CrewReconciler{Client: c, Scheme: s, APIReader: secretReader{mgr.GetAPIReader()}, Git: fakeGitClient{gitFake}, PollInterval: time.Second,
 			Recorder: mgr.GetEventRecorder("crew"), Publish: githubFake, Now: crewNow,
 			GoProxy:   goProxyFake.server.URL,

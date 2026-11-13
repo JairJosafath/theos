@@ -27,13 +27,14 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // takeAll accepts every request of Brief cel-lens, waits for round 2 to take
 // them, and applies plan there, then waits for each to be planned with its
-// planned comment. It returns the issues each became, by request number.
-func takeAll(ns, repository string, numbers []int, plan scaffold.Tree) map[int][]string {
+// planned comment on tr. It returns the issues each became, by request number.
+func takeAll(ns string, tr *requestsTracker, numbers []int, plan scaffold.Tree) map[int][]string {
 	GinkgoHelper()
 	accepted := make([]int32, 0, len(numbers))
 	for _, n := range numbers {
@@ -58,7 +59,7 @@ func takeAll(ns, repository string, numbers []int, plan scaffold.Tree) map[int][
 	}).Should(Succeed())
 	for _, n := range numbers {
 		Eventually(func(g Gomega) {
-			_, comments := githubFake.gitHubIssue(repository, n)
+			_, comments := tr.issue(n)
 			g.Expect(comments).To(ConsistOf(HavePrefix(model.RequestMarker("cel-lens", model.CommentPlanned))))
 		}).Should(Succeed())
 	}
@@ -97,17 +98,18 @@ var _ = Describe("Brief requests shipped", func() {
 	BeforeEach(func() { ns = newProjectNamespace() })
 
 	It("says where a planned request shipped once its release is published, once, and closes it as completed", func() {
-		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
+		tr := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
 			Authors: []string{"ada"}})
+		repository := tr.repository
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
-		theme := githubFake.openIssue(repository, "ada", "Dark theme", "Please.")
-		early := githubFake.openIssue(repository, "ada", "Light theme", "Too.")
-		byHand := githubFake.openIssue(repository, "ada", "Sepia theme", "Also.")
-		split := githubFake.openIssue(repository, "ada", "Server rules", "Lint them on the server.")
+		theme := tr.file("ada", "Dark theme", "Please.")
+		early := tr.file("ada", "Light theme", "Too.")
+		byHand := tr.file("ada", "Sepia theme", "Also.")
+		split := tr.file("ada", "Server rules", "Lint them on the server.")
 		plan := linterPlan(ns, 4)
 		plan[model.PlanModelFile] = scaffold.File{Data: append(plan[model.PlanModelFile].Data,
 			[]byte(engineContainer("server", "Server"))...)}
@@ -116,24 +118,20 @@ var _ = Describe("Brief requests shipped", func() {
 			"- {request: %[1]s#%[2]d, answer: take, issues: [1]}\n- {request: %[1]s#%[3]d, answer: take, issues: [2]}\n"+
 				"- {request: %[1]s#%[4]d, answer: take, issues: [3]}\n- {request: %[1]s#%[5]d, answer: take, issues: [4, 5]}\n",
 			repository, theme, early, byHand, split)}
-		became := takeAll(ns, repository, []int{theme, early, byHand, split}, plan)
+		became := takeAll(ns, tr, []int{theme, early, byHand, split}, plan)
 		Expect(became[split]).To(HaveLen(2))
 		Expect(became[split][1]).To(HavePrefix("server#"))
 
 		// The second was said before a restart that came before its close;
-		// the third a person closed on GitHub.
-		githubFake.mu.Lock()
-		githubFake.issueState().issues[repository][early-1].comments = append(
-			githubFake.issueState().issues[repository][early-1].comments,
-			fakeGitHubComment{ID: 999, Body: "Shipped.\n" + model.RequestReleasedMarker("cel-lens", 2),
-				User: fakeGitHubUser{"theos-bot"}})
-		githubFake.mu.Unlock()
-		githubFake.closeIssue(repository, byHand)
+		// the third a person closed on the tracker.
+		tr.say(early, trackerLogin, "Shipped.\n"+model.RequestReleasedMarker("cel-lens", 2))
+		tr.closeByHand(byHand)
+		closes := tr.Calls("CloseIssue")
 
 		By("waiting while the issues are closed but their release isn't published")
 		closeFiled(ns, became[theme][0], became[early][0], became[byHand][0], became[split][0])
 		Consistently(func(g Gomega) {
-			_, comments := githubFake.gitHubIssue(repository, theme)
+			_, comments := tr.issue(theme)
 			g.Expect(comments).To(HaveLen(1))
 			g.Expect(requestNumbers(g, ns)).To(HaveKeyWithValue(int32(theme), model.RequestPlanned))
 		}, "2s").Should(Succeed())
@@ -141,33 +139,34 @@ var _ = Describe("Brief requests shipped", func() {
 		By("saying so once v0.2.0 is published")
 		url := publishLinter(ns, repository, "v0.2.0")
 		Eventually(func(g Gomega) {
-			issue, comments := githubFake.gitHubIssue(repository, theme)
-			g.Expect(issue.State).To(Equal("closed"))
-			g.Expect(issue.StateReason).To(Equal("completed"))
+			issue, comments := tr.issue(theme)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(issue.Reason).To(Equal(ports.CloseCompleted))
 			g.Expect(comments).To(HaveLen(2))
 			g.Expect(comments[1]).To(Equal(model.ReleasedComment("cel-lens", []model.Shipped{{Tag: "v0.2.0", URL: url}}) +
 				model.RequestReleasedMarker("cel-lens", 2) + "\n"))
 			g.Expect(comments[1]).To(ContainSubstring("Shipped in v0.2.0: " + url))
-			issue, comments = githubFake.gitHubIssue(repository, early)
-			g.Expect(issue.State).To(Equal("closed"))
-			g.Expect(issue.StateReason).To(Equal("completed"))
+			issue, comments = tr.issue(early)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(issue.Reason).To(Equal(ports.CloseCompleted))
 			g.Expect(comments).To(HaveLen(2), "said before the restart, not again")
 			g.Expect(requestNumbers(g, ns)).To(Equal(map[int32]string{int32(split): model.RequestPlanned}),
 				"the shipped ones and the one closed by hand leave the list; the split one waits for its server issue")
 		}).Should(Succeed())
-		issue, comments := githubFake.gitHubIssue(repository, byHand)
-		Expect(issue.StateReason).To(BeEmpty(), "closed by a person, and left so")
+		// The theme and the early one: the person's close is the only other.
+		Expect(tr.Calls("CloseIssue")-closes).To(Equal(2), "closed by a person, and left so")
+		_, comments := tr.issue(byHand)
 		Expect(comments).To(HaveLen(1))
-		_, comments = githubFake.gitHubIssue(repository, split)
+		_, comments = tr.issue(split)
 		Expect(comments).To(HaveLen(1))
 
 		By("saying where a request split over two Containers went once both are done")
 		closeFiled(ns, became[split][1])
 		_, server, _ := strings.Cut(became[split][1], "#")
 		Eventually(func(g Gomega) {
-			issue, comments := githubFake.gitHubIssue(repository, split)
-			g.Expect(issue.State).To(Equal("closed"))
-			g.Expect(issue.StateReason).To(Equal("completed"))
+			issue, comments := tr.issue(split)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(issue.Reason).To(Equal(ports.CloseCompleted))
 			g.Expect(comments).To(HaveLen(2))
 			g.Expect(comments[1]).To(ContainSubstring(fmt.Sprintf("Shipped in v0.2.0: %s\nDone in http://gitea/%s/server/issues/%s.\n",
 				url, ns, server)))
@@ -176,15 +175,16 @@ var _ = Describe("Brief requests shipped", func() {
 
 		Consistently(func(g Gomega) {
 			for n, want := range map[int]int{theme: 2, early: 2, byHand: 1, split: 2} {
-				_, comments := githubFake.gitHubIssue(repository, n)
+				_, comments := tr.issue(n)
 				g.Expect(comments).To(HaveLen(want))
 			}
 		}, 2*time.Second).Should(Succeed())
 	})
 
 	It("says a request was done in its issue when its Container publishes nowhere", func() {
-		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
+		tr := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
 			Authors: []string{"ada"}})
+		repository := tr.repository
 		Eventually(func(g Gomega) {
 			brief := getBrief(g, ns)
 			g.Expect(patch(brief, func() { brief.Spec.Releases[0].Container = "elsewhere" })).To(Succeed())
@@ -194,17 +194,17 @@ var _ = Describe("Brief requests shipped", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
-		theme := githubFake.openIssue(repository, "ada", "Dark theme", "Please.")
-		became := takeAll(ns, repository, []int{theme},
+		theme := tr.file("ada", "Dark theme", "Please.")
+		became := takeAll(ns, tr, []int{theme},
 			requestsPlan(ns, fmt.Sprintf("- {request: %s#%d, answer: take, issues: [1]}\n", repository, theme)))
 		Expect(linterCrew(Default, ns).Spec.PublishReleases).To(BeNil())
 
 		closeFiled(ns, became[theme]...)
 		_, number, _ := strings.Cut(became[theme][0], "#")
 		Eventually(func(g Gomega) {
-			issue, comments := githubFake.gitHubIssue(repository, theme)
-			g.Expect(issue.State).To(Equal("closed"))
-			g.Expect(issue.StateReason).To(Equal("completed"))
+			issue, comments := tr.issue(theme)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(issue.Reason).To(Equal(ports.CloseCompleted))
 			g.Expect(comments).To(HaveLen(2))
 			g.Expect(comments[1]).To(HavePrefix(model.RequestMarker("cel-lens", model.CommentReleased) +
 				fmt.Sprintf("\nDone in http://gitea/%s/linter/issues/%s.\n", ns, number)))

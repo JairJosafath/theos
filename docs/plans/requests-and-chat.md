@@ -536,6 +536,50 @@ What the step chose where the plan says nothing:
   from a person's thread in `reviews`. With the room dropped from
   `state.thread` the spec failed; nothing in `internal/chatbot` changed.
 
+## Step 4 as built (#154)
+
+What the step chose where the plan says nothing:
+
+- **The seam is `ports.IssueTrackers`, a map from a tracker's name to its
+  adapter,** as `ports.Deployers` is. Each adapter is a
+  `ports.TrackerAdapter`, whose one method, `Tracker`, takes a
+  `ports.TrackerSource` (`Tracker`, `Address`, `Project`) and the data of
+  the source's Secret. A releases entry's source is `model.TrackerGitHub`
+  and its repository, with no address, as before: requests were never read
+  from a GitHub Enterprise Server. `cmd/main.go` gives the map one entry,
+  `github.Client{}`. Step 10 adds Linear's and Jira's, and whatever a
+  source needs beyond the three fields (Jira's cloud ID) with them.
+- **`GitHubToken` left the Brief's seam, as the issue proposed.** The Brief
+  still reads the Secret live on every read and passes its data on, nil
+  when there is none; reading the keys and minting a GitHub App's token are
+  `github.Client.Tracker`'s. A Secret without a whole credential is a
+  `ports.CredentialMissingError` whose `Keys` says, in the adapter's words,
+  which keys it takes; the Brief writes "Secret X with <Keys> is missing",
+  the same text as before for GitHub. The Crew's publish seam keeps its own
+  `GitHubToken`.
+- **A mint that fails keeps its reason.** The adapter turns the mint's
+  `ReleaseError` into an `IssuesError` with the same reason, status and
+  message, so `Requests` says what it said before (`Unauthorized`, or a
+  release target's reason such as `GitHubError`). Those GitHub-named
+  reasons on `Requests` are left for step 10, which may rename them as
+  step 1 renamed the others.
+- **Each request spec reads a fake tracker of its own.** The suite's adapter
+  (`internal/controller/faketracker_test.go`) builds a source's tracker with
+  the `fake.IssueTracker` made for its repository, so one spec's outage is
+  no other's, and counts the lists that came back unchanged, which the
+  fake doesn't. The factory's account's credential is also the token the
+  fake GitHub takes for the repository's releases. A token that lacks
+  Issues or a team's members is the Secret changed to an account of the
+  fake without that access.
+- **Two specs changed with the fake.** The spec that read with a GitHub
+  App's Secret (#1601) asserted GitHub's HTTP, the mint; it is the
+  client's `TestTrackerReadsWithATokenOrAnApp` now, and in its place the
+  Brief says a missing Secret is missing, in the adapter's words, and reads
+  with one made later. The fake closes an issue a person closes as
+  completed, as GitHub does, where the controller's fake left no reason:
+  the spec that held the Brief to leaving such an issue alone counts the
+  closes it made instead of reading an empty reason.
+
 ## How we will know #61 is done
 
 The issue's done-when, by step:
