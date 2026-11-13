@@ -511,6 +511,31 @@ What the step chose where the plan says nothing:
   Matrix adapter's empty token, and the controller says `SecretIncomplete`
   before it builds an adapter.
 
+## Step 3 as built (#153)
+
+What the step chose where the plan says nothing:
+
+- **The fakes give no more than the ports promise, in every shape.**
+  `fake.ChatHost` numbers a message in its room alone, so the first message
+  of every room has one ID, and a person's edit carries the ID of the
+  message it replaces, as Slack's do; Matrix gives more, and nothing may
+  rely on it. `fake.IssueTracker` keys an issue `REQ-<number>`, never the
+  number alone. The shapes are options: `WithoutSpaces` and
+  `OneNamePerRoom` for the chat host, `WithoutTeams` for the tracker, whose
+  port is then no `ports.TeamMembers`.
+- **The controller suite reaches the chat fake by its address.** Every
+  Chat is on `matrix` until step 8, so the suite's `chatHosts()` gives the
+  `matrix` row an adapter that sends a Chat naming the fake's address to
+  the fake and every other to `matrixtest`. The spec with one message ID in
+  two rooms (`task_spec_test.go`) runs on the fake shaped as Matrix, with
+  Spaces, since the controller still makes one; the Matrix specs stay on
+  `matrixtest`. Step 8 gives the Slack row the fake shaped as Slack.
+- **The spec pins the room, and fails without it.** The ID collides in
+  `specs` and `reviews`, where `approve` is a command in a thread: a
+  `theos-chat` that matched a thread by its ID alone would approve the spec
+  from a person's thread in `reviews`. With the room dropped from
+  `state.thread` the spec failed; nothing in `internal/chatbot` changed.
+
 ## How we will know #61 is done
 
 The issue's done-when, by step:
