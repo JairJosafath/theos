@@ -228,6 +228,8 @@ describe("The report's numbers are the UI's (#66)", () => {
     // internal/model's reportMoney is held to the same file (TestReportMoneyIsTheUIs).
     expect(money.length).toBeGreaterThan(9)
     for (const { milliUSD, shown } of money) expect([milliUSD, formatCost(milliUSD)]).toEqual([milliUSD, shown])
+    // #143: the file holds a cost under zero, which both sides print as none.
+    expect(money.filter((c) => c.milliUSD < 0).map((c) => c.shown)).toEqual(['–', '–'])
     expect(formatCost(125)).toBe('$0.13')
     expect(formatCost(1125)).toBe('$1.13')
   })
