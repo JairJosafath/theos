@@ -47,6 +47,10 @@ type StandardAdoptionFacts struct {
 	// Diff is what main holds differently from the Standard's render, nil
 	// until compared.
 	Diff *AdoptionDiff
+	// Replaced says the condition no longer gives a stopped adoption's
+	// reason: another writer replaced it since the stop, as a Git error, a
+	// Standard not found or one that doesn't fit (#184).
+	Replaced bool
 }
 
 // StandardAdoptionInFlight is an adoption's state in status.
@@ -79,7 +83,7 @@ type AdoptionAction string
 // Standard adoption actions.
 const (
 	// AdoptionNone leaves a stopped adoption as it is: main is as it was last
-	// compared, and the condition keeps saying why it stopped.
+	// compared, and the condition still says why it stopped.
 	AdoptionNone AdoptionAction = "None"
 	// AdoptionReadPR reads the adoption's pull request into PR.
 	AdoptionReadPR AdoptionAction = "ReadPR"
@@ -131,10 +135,12 @@ type AdoptionStep struct {
 // Standard's ref does meanwhile: once it merges the Standard is recorded at
 // that version, and an ordinary Standard update brings it on. A stopped
 // adoption is compared again when main moved, so files a person brings by
-// hand are found, and planned again when the Standard's ref or the
-// Container's checks change. An adoption is for one Standard: when the
-// Container names another, a stopped one is forgotten and an open one closed,
-// and the named Standard is planned from main as it is.
+// hand are found, and when the condition no longer says why it stopped, so
+// the stop writes its reason and message again (#184). It is planned again
+// when the Standard's ref or the Container's checks change. An adoption is
+// for one Standard: when the Container names another, a stopped one is
+// forgotten and an open one closed, and the named Standard is planned from
+// main as it is.
 func NextAdoptionStep(f StandardAdoptionFacts) AdoptionStep {
 	a := f.Adoption
 	target := f.Target.Normal()
@@ -156,7 +162,7 @@ func NextAdoptionStep(f StandardAdoptionFacts) AdoptionStep {
 		return AdoptionStep{Action: AdoptionClose}
 	case a.Stopped && f.Main == "":
 		return AdoptionStep{Action: AdoptionReadMain}
-	case a.Stopped && f.Main == a.Base:
+	case a.Stopped && f.Main == a.Base && !f.Replaced:
 		return AdoptionStep{Action: AdoptionNone}
 	case a.Stopped:
 	case f.PR == nil:

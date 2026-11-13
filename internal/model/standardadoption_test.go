@@ -114,6 +114,24 @@ func TestNextAdoptionStep(t *testing.T) {
 			facts: StandardAdoptionFacts{Adoption: closed()}, want: AdoptionReadMain},
 		{name: "a stopped adoption waits while main is as it was compared",
 			facts: StandardAdoptionFacts{Adoption: closed(), Main: "m1"}, want: AdoptionNone},
+		{name: "#184 a stopped adoption whose condition another writer replaced is compared again, though " +
+			"main is as it was compared",
+			facts: StandardAdoptionFacts{Adoption: closed(), Main: "m1", Replaced: true},
+			want:  AdoptionCompare, version: v1},
+		{name: "#184 closed, its condition replaced, and main as it was: the stop's reason and message again",
+			facts: StandardAdoptionFacts{Adoption: closed(), Main: "m1", Replaced: true, Diff: workflow},
+			want:  AdoptionStopClosed,
+			message: "Pull request " + url + " was closed without merging, so the repository is without " +
+				"ci/check.yaml, AGENTS.md, Makefile as python-strict renders them at v1. No agent works on the " +
+				"repository until main holds them; a change of the Standard's ref or of the Container's checks " +
+				"opens a new pull request"},
+		{name: "#184 merged and differing, its condition replaced, and main as it was: StandardFilesDiffer again",
+			facts: StandardAdoptionFacts{Adoption: differs(), Main: "m1", Replaced: true, Diff: workflow},
+			want:  AdoptionStopDiffer,
+			message: "Pull request " + url + " merged, but main holds ci/check.yaml, Makefile with other " +
+				"content than python-strict renders at v1, and python-strict protects them. No agent works on the " +
+				"repository until main holds them as rendered; a change of the Standard's ref or of the Container's " +
+				"checks opens a new pull request"},
 		{name: "a stopped adoption is compared again once main moved",
 			facts: StandardAdoptionFacts{Adoption: closed(), Main: "m2"}, want: AdoptionCompare, version: v1},
 		{name: "closed, then a person brought every file by hand: record",

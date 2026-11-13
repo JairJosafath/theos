@@ -116,6 +116,19 @@ func adoptionInFlight(a *c4v1beta1.StandardAdoptionStatus) *model.StandardAdopti
 	}
 }
 
+// stopReplaced reports whether the condition StandardUpdated no longer gives
+// the reason a stopped adoption stopped with: a Git error, a Standard not
+// found or one that doesn't fit replaced it since (#184). The adoption is
+// then compared again, and the stop writes its reason and message back.
+func stopReplaced(status *c4v1beta1.ContainerStatus) bool {
+	a := status.StandardAdoption
+	if a == nil || a.Stopped == "" {
+		return false
+	}
+	cond := apimeta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionStandardUpdated)
+	return cond == nil || cond.Reason != a.Stopped
+}
+
 // adoptionCompared is what one comparison of main with the Standard's render
 // read.
 type adoptionCompared struct {
@@ -133,7 +146,7 @@ type adoptionCompared struct {
 func (u *standardUpdate) adoptStandard(ctx, gitCtx context.Context, standard *c4v1beta1.Standard) bool {
 	log := logf.FromContext(ctx)
 	f := model.StandardAdoptionFacts{Name: standard.Name, Target: u.target(standard),
-		Adoption: adoptionInFlight(u.status.StandardAdoption)}
+		Adoption: adoptionInFlight(u.status.StandardAdoption), Replaced: stopReplaced(u.status)}
 	var compared adoptionCompared
 	for {
 		a := u.status.StandardAdoption
@@ -198,7 +211,7 @@ func (u *standardUpdate) adoptStandard(ctx, gitCtx context.Context, standard *c4
 				return false
 			}
 			f.Adoption, f.PR, f.Diff, f.Main = nil, nil, nil, ""
-		default: // model.AdoptionNone
+		default: // model.AdoptionNone: the condition still says why it stopped
 			return false
 		}
 	}

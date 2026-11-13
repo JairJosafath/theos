@@ -310,8 +310,11 @@ once it merges, an ordinary Standard update brings a newer one.
   Standard.
 
 Either stop is read again when main moves, so files a person brings by
-hand are found (after a close, all of them), and the Standard's ref or the
-Container's checks changing opens a new pull request. The pull request is
+hand are found (after a close, all of them), and when the condition no
+longer gives the stop's reason (a Git error, the Standard not found or not
+fitting replaced it meanwhile), so it says again why the adoption stopped
+(#184). The Standard's ref or the Container's checks changing opens a new
+pull request. The pull request is
 for one Standard, named in `status.standardAdoption.name`: when the
 Container names none, or names another, once the Standard named now fits,
 the operator closes it if it is open, deletes its branch and forgets it,
