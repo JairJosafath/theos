@@ -8,6 +8,7 @@ import { isFinal, taskHeadline } from '../../model/factory'
 import { runAgentName, runRole, type RunRole } from '../../model/tokens'
 import type { ChildRef, TimelineEntry } from '../ObjectHeader'
 import { pageHref } from './links'
+import { compareText } from '../../model/order'
 
 /** The sessionTokenLimit of the Brief's planner Agent, when known. */
 export function plannerLimit(agents: Agent[], brief: Brief): number | undefined {
@@ -172,8 +173,8 @@ export function crewTasks(crew: Crew, tasks: Task[]): ChildRef[] {
     .filter((t) => (t.metadata.namespace ?? '') === ns && t.metadata.labels?.[LABEL_CREW] === crew.metadata.name)
     .sort(
       (a, b) =>
-        (b.metadata.creationTimestamp ?? '').localeCompare(a.metadata.creationTimestamp ?? '') ||
-        a.metadata.name.localeCompare(b.metadata.name),
+        compareText(b.metadata.creationTimestamp ?? '', a.metadata.creationTimestamp ?? '') ||
+        compareText(a.metadata.name, b.metadata.name),
     )
     .map((t) => ({
       kind: 'Task',

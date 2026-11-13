@@ -49,6 +49,7 @@ import { CommandLine, ObjectHeader } from '../ObjectHeader'
 import { Badge } from './DeployPages'
 import { pageHref, projectCrumb } from './links'
 import { ReadProblem } from './ReadProblem'
+import { compareText } from '../../model/order'
 
 /** Who holds a lease: the Task whose run holds it, linked, or the CI runner a remote machine runs one job for. */
 function Holder({ ns, holder }: { ns: string; holder: string | undefined }) {
@@ -345,7 +346,7 @@ export function TestEnvironmentPage({ env }: { env: TestEnvironment }) {
     ),
   ]
   const resources = (['requests', 'limits'] as const).flatMap((kind) => {
-    const list = Object.entries(local?.resources?.[kind] ?? {}).sort(([a], [b]) => a.localeCompare(b))
+    const list = Object.entries(local?.resources?.[kind] ?? {}).sort(([a], [b]) => compareText(a, b))
     return list.length ? [`${kind}: ${list.map(([k, v]) => `${k} ${v}`).join(', ')}`] : []
   })
   return (

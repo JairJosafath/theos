@@ -9,6 +9,7 @@ import type { Agent, Task, TaskAgentRun, TokenUsage } from '../k8s/types'
 import { formatTokens } from './brief'
 import { plural } from './describe'
 import { findAgent, median, taskHeadline, taskKey } from './factory'
+import { compareText } from './order'
 
 /** How a run's Task ended: merged, failed, or not yet. */
 export type Outcome = 'merged' | 'failed' | 'active'
@@ -122,8 +123,8 @@ export function agentTokens(tasks: Task[], agents: Agent[]): AgentTokens[] {
   const byKey = new Map<string, AgentTokens>()
   const ordered = [...tasks].sort(
     (a, b) =>
-      (a.metadata.creationTimestamp ?? '').localeCompare(b.metadata.creationTimestamp ?? '') ||
-      taskKey(a).localeCompare(taskKey(b)),
+      compareText(a.metadata.creationTimestamp ?? '', b.metadata.creationTimestamp ?? '') ||
+      compareText(taskKey(a), taskKey(b)),
   )
   for (const task of ordered) {
     const namespace = task.metadata.namespace ?? ''
@@ -164,7 +165,7 @@ export function agentTokens(tasks: Task[], agents: Agent[]): AgentTokens[] {
     maxRound: Math.max(1, ...entry.points.map((p) => p.round)),
     byOutcome: outcomeRows(entry.points, entry.limit),
   }))
-  return result.sort((a, b) => b.points.length - a.points.length || a.key.localeCompare(b.key))
+  return result.sort((a, b) => b.points.length - a.points.length || compareText(a.key, b.key))
 }
 
 function newEntry(agents: Agent[], namespace: string, name: string): AgentTokens {

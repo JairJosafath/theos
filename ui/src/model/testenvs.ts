@@ -18,6 +18,7 @@ import type {
 import { findCondition } from '../k8s/types'
 import { formatCost } from './brief'
 import { plural, splitWords, type Tone } from './describe'
+import { compareText } from './order'
 
 /** The CRD's defaults, which the API server fills in (api/v1beta1/testenvironment_types.go). */
 export const TEST_ENV_DEFAULTS = { maxLeases: 2, maxLeaseMinutes: 180, keepHostHours: 24 } as const
@@ -123,7 +124,7 @@ export function testEnvLimits(env: TestEnvironment): { maxLeases: number; maxLea
 /** The live leases, oldest first. */
 export function testEnvLeases(env: TestEnvironment): TestEnvironmentLease[] {
   return [...(env.status?.leases ?? [])].sort(
-    (a, b) => (a.since ?? '').localeCompare(b.since ?? '') || a.id.localeCompare(b.id),
+    (a, b) => compareText(a.since ?? '', b.since ?? '') || compareText(a.id, b.id),
   )
 }
 
@@ -234,7 +235,7 @@ export function describeMacHosts(env: TestEnvironment): string | undefined {
 /** The extended resources the pod requests, as "devices.kubevirt.io/kvm: 1", sorted. */
 export function describeDevices(env: TestEnvironment): string[] {
   return Object.entries(env.spec.local?.devices ?? {})
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareText(a, b))
     .map(([name, q]) => `${name}: ${q}`)
 }
 
@@ -250,7 +251,7 @@ export function leaseHolders(env: TestEnvironment): string[] {
 /** A deviceFarm environment's test runs, newest first. */
 export function testEnvTestRuns(env: TestEnvironment): TestEnvironmentTestRun[] {
   return [...(env.status?.testRuns ?? [])].sort(
-    (a, b) => (b.since ?? '').localeCompare(a.since ?? '') || a.id.localeCompare(b.id),
+    (a, b) => compareText(b.since ?? '', a.since ?? '') || compareText(a.id, b.id),
   )
 }
 

@@ -2,6 +2,7 @@
 // its runs and its rates as words.
 
 import type { Benchmark, BenchmarkRate, Task } from '../k8s/types'
+import { compareText } from './order'
 
 /** "67% (2 of 3; 21 to 94%)", or "–" with none finished. */
 export function describeBenchmarkRate(r: BenchmarkRate | undefined): string {
@@ -21,6 +22,6 @@ export function benchmarkRuns(bench: Benchmark, tasks: Task[]): Task[] {
       (a, b) =>
         (a.spec.benchmark?.repetition ?? 0) - (b.spec.benchmark?.repetition ?? 0) ||
         (a.spec.benchmark?.goal ?? 0) - (b.spec.benchmark?.goal ?? 0) ||
-        a.metadata.name.localeCompare(b.metadata.name),
+        compareText(a.metadata.name, b.metadata.name),
     )
 }

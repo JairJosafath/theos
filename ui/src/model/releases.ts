@@ -2,6 +2,7 @@
 
 import type { Crew, CrewRelease } from '../k8s/types'
 import { REPO_URL } from './versions'
+import { compareText } from './order'
 
 export interface CrewReleaseRow {
   /** "<namespace>/<crew>". */
@@ -23,7 +24,7 @@ export function crewReleases(crews: Crew[]): CrewReleaseRow[] {
       container: c.spec.containerRef.name,
       release: c.status!.lastRelease!,
     }))
-    .sort((a, b) => b.release.time.localeCompare(a.release.time) || a.key.localeCompare(b.key))
+    .sort((a, b) => compareText(b.release.time, a.release.time) || compareText(a.key, b.key))
 }
 
 /** How the CI runs a release's tag started went, in words. */
