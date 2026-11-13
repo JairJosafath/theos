@@ -510,6 +510,7 @@ func setupReconcilers(mgr ctrl.Manager) error {
 				model.TestEnvMemberAWS: envAWSFake, model.TestEnvMemberDeviceFarm: envDeviceFarmFake},
 			Git:               fakeGitClient{gitFake},
 			SharedPullSecrets: []string{sharedPullSecret}, PollInterval: time.Second, OrphanGrace: time.Second},
+		&AlertSourceReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return err

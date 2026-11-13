@@ -455,9 +455,36 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
 | Step | Issue | Done when |
 | --- | --- | --- |
 | 1. The plan and the rules (this one) | #64 | this file; `docs/design.md` and `ROADMAP.md` say what is planned; `internal/model/alert*.go` with table tests on the recorded deliveries in `internal/model/testdata/alerts/`, deduplication, the daily limit and hostile input included |
-| 2. The `AlertSource` kind | #64 | `kubebuilder create api --group theos --version v1beta1 --kind AlertSource --resource --controller`; spec and status as decision 1, field names and integer widths included, with the CRD's patterns and CEL (`type` immutable, a route has exactly one of `namespace` and `project`, `commentInterval` at least `1m`, the two labels' minimum length and pattern); a sample in `config/samples`; envtest: each rule's failing case; the reconciler sets `Ready` from the Secret (`SecretMissing`, an empty value included, else `ReceiverOff`); `make validate-yaml` passes. `make manifests` writes the CRD and the role into `dist/chart/` too, a protected path: the owner's session may, and the commit says so |
+| 2. The `AlertSource` kind (done) | #64, #187 | `kubebuilder create api --group theos --version v1beta1 --kind AlertSource --resource --controller`; spec and status as decision 1, field names and integer widths included, with the CRD's patterns and CEL (`type` immutable, a route has exactly one of `namespace` and `project`, `commentInterval` at least `1m`, the two labels' minimum length and pattern, and the two labels differ with their defaults applied, `theos_container` and `namespace` for one left out, at create and at update: #187); a sample in `config/samples`; envtest: each rule's failing case, and for #187 one spec per case (both set and equal; one set to the other's default) that fails without the rule; the reconciler sets `Ready` from the Secret (`SecretMissing`, an empty value included, else `ReceiverOff`); `make validate-yaml` passes. `make manifests` writes the CRD and the role into `dist/chart/` too, a protected path: the owner's session may, and the commit says so |
 | 3. The receiver and the filing | #64 | `model.AlertDeliveryAuthentic` (decision 3) table-tested, an empty `token` and an empty `secret` among its cases; `POST /alerts/{namespace}/{name}` on the Git events listener; the reconciler drains the inbox as decision 2 says, on SIGTERM too, until `--alert-drain-timeout` (default `5s`) and never on leadership lost, and requeues for what is owed, on a clock the specs move (`Now`, as the Crew's reconciler has); it settles a Container's old day (`model.AlertDayOwed`) before the first `model.AlertStep` of a new one, passes `ClosedAt` and `Full` to `model.AlertStep`, gives `Filed` the number of an open issue the marker finds (decision 8) and keeps no record of an `AlertOverflow`; the deploy monitor's bug gets `source/monitor`; the metric, with `result="dropped"`; envtest: a signed delivery files one issue, a second comments once the interval passed, an unsigned one is refused and writes nothing, an alert that names no known Container is counted on `status.unmatched` and files nothing, the limit folds, a lost status write files no second, an alert whose record made room and whose issue is open files no second, a fold of yesterday is said before today's first alert steps, an alert taken while the Git host fails is filed when it answers, one still in the inbox at the drain's deadline is counted as dropped. `make manifests` regenerates the role in `dist/chart/` (protected path, as step 2) |
 | 4. The chart and the guide | #64 | the chart's Service exposes the path and a value gives it an Ingress for senders outside the cluster (`dist/chart` is a protected path); `docs/alerts.md` shows the Alertmanager receiver's YAML, the Sentry integration's settings and a `curl` for the generic type; README, `docs/comparison.md`, `docs/design.md` ("Out of scope", the Alerts rule) and `ROADMAP.md` say it is built |
+
+## What step 2 found
+
+- **The Secret's key is a rule of `internal/model`:** `model.AlertSecretKey`
+  says which key a type checks deliveries with, and
+  `model.AlertSecretMissing` why a Secret can't (table-tested in
+  `TestAlertSecretMissing`). For `generic`, `secret` is the key whenever the
+  Secret has it, an empty one included: an empty `secret` beside a valid
+  `token` is `SecretMissing`, not a fall back to the token, so the Secret
+  never means an HMAC anyone can compute. Step 3's
+  `model.AlertDeliveryAuthentic` reads the key through `AlertSecretKey`, so
+  the condition and the check can't disagree.
+- **The Secret is polled, not watched:** the operator caches no Secrets, so
+  the reconciler reads it every minute, as the DeployTarget's does; a Secret
+  made or fixed after the AlertSource turns it from `SecretMissing` within a
+  minute.
+- **Status times are pointers** (`*metav1.Time`, left out when unset):
+  `model.AlertRecord`'s and `model.AlertDay`'s zero times are `nil` in
+  status, which step 3's conversion keeps.
+- **#187 is the CRD's:** the spec's CEL rule compares the two labels with
+  their defaults applied. The API server applies the defaults before it
+  validates, so a label left out is compared as its default on update too.
+  `docs/screenshots/187-labels-differ-without-the-rule.txt` shows the six
+  specs that name #187 failing with the rule dropped.
+- **The chart's helper roles** (`rbac.helpers.enabled`) for the kind were
+  written as the TestEnvironment's are, not by `make chart`: the CRD and the
+  manager role come from `make manifests`.
 
 ## Done when
 

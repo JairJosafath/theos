@@ -1717,12 +1717,12 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   second. A new version or another state files again; recovering to `Healthy`
   files nothing. A failure to reach the Git host is not filed.
   (`model.DeployMonitorDue`.)
-- **Alerts** ([plans/alerts.md](plans/alerts.md), #64; the rules are built,
-  the kind and the receiver are still to come): the operator monitors no
-  app, it listens to the tools that do. An `AlertSource` in the Project's
-  namespace names one sender (`alertmanager`, `sentry` or `generic`), the
-  Secret that checks its deliveries, and how an alert finds its Container:
-  the label `theos_container`, else a route, the namespace an `argoCD`
+- **Alerts** ([plans/alerts.md](plans/alerts.md), #64; the rules and the
+  `AlertSource` kind are built, the receiver is still to come): the operator
+  monitors no app, it listens to the tools that do. An `AlertSource` in the
+  Project's namespace names one sender (`alertmanager`, `sentry` or
+  `generic`), the Secret that checks its deliveries, and how an alert finds
+  its Container: the label `theos_container`, else a route, the namespace an `argoCD`
   target deploys to, or the Sentry project. The receiver of the Git host's
   deliveries takes them on `/alerts/<namespace>/<alertsource>`; none is
   taken unauthenticated. A firing alert files one issue in its Container's

@@ -1,0 +1,28 @@
+# An AlertSource for the webshop (docs/plans/alerts.md): the webshop's
+# Alertmanager posts its alerts to the operator, and each firing alert becomes
+# one kind/bug, source/monitor issue in the repository of the Container it
+# names by the label theos_container, or else of the one Container that
+# deploys to the alert's namespace. The Secret alertmanager-webhook holds,
+# under "token", the bearer token the Alertmanager receiver's
+# http_config.authorization sends. Not in kustomization.yaml: apply it on its
+# own, after the Secret, with
+#   kubectl apply -n webshop -f config/samples/webshop/alertsource.yaml
+# Until the operator has its alert receiver (step 3 of the plan), Ready is
+# ReceiverOff, or SecretMissing while the Secret has no token.
+apiVersion: theos.factory.io/v1beta1
+kind: AlertSource
+metadata:
+  name: alertmanager
+spec:
+  type: alertmanager
+  secretRef:
+    name: alertmanager-webhook
+  # A Prometheus that relabels carries the namespace under another name,
+  # such as exported_namespace.
+  namespaceLabel: namespace
+  # Alerts from the payments namespace that name no Container.
+  routes:
+    - container: payments-worker
+      namespace: payments
+  commentInterval: 1h
+  dailyLimit: 5

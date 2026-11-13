@@ -598,6 +598,14 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "testenvironment")
 		os.Exit(1)
 	}
+	if err := (&controller.AlertSourceReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		APIReader: mgr.GetAPIReader(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "alertsource")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	webhookOn := webhookCert != nil || webhookCertPath != ""
