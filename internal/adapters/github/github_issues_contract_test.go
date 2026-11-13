@@ -28,34 +28,20 @@ import (
 
 // TestIssueTrackerContract covers #61: the GitHub issues client passes the
 // IssueTracker contract against the fake GitHub of this package's tests,
-// each subtest on a repository of its own. People file, edit, close, comment
-// and join teams on the fake itself, not through the client.
+// each subtest on a repository of its own. People file, edit, close and
+// comment on the fake itself, not through the client.
 func TestIssueTrackerContract(t *testing.T) {
 	contract.IssueTracker(t, contract.IssueTrackerEnv{
 		New: func(t *testing.T) contract.TrackerHost {
 			t.Helper()
 			f, tracker := newFakeGitHubIssues(t)
-			with := func(repository, token, lacks string) ports.IssueTracker {
-				t.Helper()
-				if lacks != "" {
-					f.lacks[token] = lacks
-				}
-				other, err := Client{}.GitHubIssues(ports.GitHubConfig{Repository: repository, Token: token, APIURL: f.url})
-				if err != nil {
-					t.Fatal(err)
-				}
-				return other
-			}
 			return contract.TrackerHost{
 				Tracker: tracker,
 				// The token's account, as the fake names who wrote a comment.
-				Account:      "theos-bot",
-				Refused:      with(fakeGitHubRepo, rand.Text(), ""),
-				LacksIssues:  with(fakeGitHubRepo, rand.Text(), lacksIssues),
-				LacksMembers: with(fakeGitHubRepo, rand.Text(), lacksMembers),
-				Elsewhere:    with("acme/nowhere", f.token, ""),
-				Team:         "acme/maintainers",
-				NoTeam:       "acme/nobody",
+				Account:     "theos-bot",
+				Refused:     f.with(t, fakeGitHubRepo, rand.Text(), ""),
+				LacksIssues: f.with(t, fakeGitHubRepo, rand.Text(), lacksIssues),
+				Elsewhere:   f.with(t, "acme/nowhere", f.token, ""),
 				// A person's login is their name.
 				Person: func(_ *testing.T, name string) string { return name },
 				File: func(_ *testing.T, author, title, body string) int {
@@ -75,8 +61,6 @@ func TestIssueTrackerContract(t *testing.T) {
 							githubComment{ID: f.nextID, Body: body, User: githubUser{Login: author}})
 					})
 				},
-				Join:    func(_ *testing.T, team, login string) { f.membership(team, login, "active") },
-				Invite:  func(_ *testing.T, team, login string) { f.membership(team, login, "pending") },
 				Disable: func(*testing.T) { f.answer(http.StatusGone, "Issues are disabled for this repo") },
 				Down:    func(*testing.T) { f.answer(http.StatusServiceUnavailable, "No server is currently available") },
 				Issue:   f.shown,
@@ -85,6 +69,46 @@ func TestIssueTrackerContract(t *testing.T) {
 		// GitHub can do all of it: nothing is skipped.
 		Cannot: map[string]string{},
 	})
+}
+
+// TestTeamMembersContract covers #151: GitHub has teams, so its issues
+// client is a ports.TeamMembers and passes that capability's contract on the
+// same fake GitHub. People join teams and are invited on the fake itself.
+func TestTeamMembersContract(t *testing.T) {
+	contract.TeamMembers(t, contract.TeamMembersEnv{
+		New: func(t *testing.T) contract.TeamsHost {
+			t.Helper()
+			f, tracker := newFakeGitHubIssues(t)
+			return contract.TeamsHost{
+				Members:      teamMembers(t, tracker),
+				Refused:      teamMembers(t, f.with(t, fakeGitHubRepo, rand.Text(), "")),
+				LacksMembers: teamMembers(t, f.with(t, fakeGitHubRepo, rand.Text(), lacksMembers)),
+				Team:         "acme/maintainers",
+				NoTeam:       "acme/nobody",
+				// A person's login is their name.
+				Person: func(_ *testing.T, name string) string { return name },
+				Join:   func(_ *testing.T, team, login string) { f.membership(team, login, "active") },
+				Invite: func(_ *testing.T, team, login string) { f.membership(team, login, "pending") },
+				Down:   func(*testing.T) { f.answer(http.StatusServiceUnavailable, "No server is currently available") },
+			}
+		},
+		// GitHub can do all of it: nothing is skipped.
+		Cannot: map[string]string{},
+	})
+}
+
+// with is a client of repository on the fake with token, which may not do
+// what lacks names (lacksIssues, lacksMembers) when it is set.
+func (f *fakeGitHubIssues) with(t *testing.T, repository, token, lacks string) ports.IssueTracker {
+	t.Helper()
+	if lacks != "" {
+		f.lacks[token] = lacks
+	}
+	other, err := Client{}.GitHubIssues(ports.GitHubConfig{Repository: repository, Token: token, APIURL: f.url})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return other
 }
 
 // person does what a person does to issue number on GitHub's own pages.
