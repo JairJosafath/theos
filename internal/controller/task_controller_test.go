@@ -365,7 +365,7 @@ var _ = Describe("Task", func() {
 			cond := condition(task.Status.Conditions, "Progressing")
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Reason).To(Equal(model.ReasonOverBudget))
-			g.Expect(cond.Message).To(Equal("The Task's runs cost $1.00, at its Crew's cap of $1; " +
+			g.Expect(cond.Message).To(Equal("The Task's runs cost $1.00, at its Crew's cap of $1.00; " +
 				"raise the Crew's taskBudgetUSD to go on"))
 		}).Should(Succeed())
 		Consistently(func() bool {
