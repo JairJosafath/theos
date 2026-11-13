@@ -1074,6 +1074,12 @@ with no pull request and nothing for you to look at.
   `kubectl annotate crew orders-cli theos.factory.io/run-schedule=dependencies`.
   The same two rules hold: while the schedule's last issue is open, or the
   Crew is paused, the run waits and the page says which.
+- **Take one your Standard proposes.** A Standard can propose schedules
+  (`spec.schedules`, such as its language's weekly dependency update). None
+  runs by itself. The Crew's page lists the ones the Crew doesn't have; with
+  the UI's actions on, type the time zone and press *Take*, and the Crew has
+  it as its own, to change like any other. For a name the Crew already uses,
+  the page shows where the Crew's schedule differs from the proposal.
 - **Where it stands:** `kubectl get crew orders-cli -o jsonpath='{.status.schedules}'`
   shows each schedule's next time and the last issue it filed, and the
   `Scheduled` condition says why a schedule can't be used: `InvalidSchedule`

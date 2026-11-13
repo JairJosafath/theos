@@ -50,7 +50,7 @@ runs on a schedule, through the same loop as everything else.
 | 3. Run one now (done) | #72 | an annotation on the Crew, and a button in the UI, file a schedule's issue at once |
 | 4. The UI shows schedules (done) | #72 | the Crew's page lists each schedule, its next time and its last issue |
 | 5. Standards propose schedules: the field (done) | #72 | `Standard.spec.schedules`, each in the shape of a Crew's schedule, held to the same patterns; nothing copies one into a Crew |
-| 6. The UI offers a Standard's proposals | #72 | a Crew's page shows the proposals of its Container's Standard whose name the Crew doesn't use, and a person takes one, with the time zone asked for; a proposal whose name is in use shows where the Crew's schedule differs from it |
+| 6. The UI offers a Standard's proposals (done) | #72 | a Crew's page shows the proposals of its Container's Standard whose name the Crew doesn't use, and a person takes one, with the time zone asked for; a proposal whose name is in use shows where the Crew's schedule differs from it |
 
 ## Done when
 
@@ -172,3 +172,71 @@ step 6.
 - **Tested:** the CRD's refusals in envtest
   (`internal/controller/standard_schedules_test.go`) and as files in
   `test/invalid/standard-schedule-*.yaml`; the sample in `make validate-yaml`.
+
+## What step 6 found
+
+Built 2026-11-13 in a session the owner ran. The UI alone: no Go, no CRD and
+no chart change. It closes #72.
+
+- **The taken schedule is the UI's own write, not the operator's.** The page
+  appends the schedule to the Crew's `spec.schedules`; no annotation asks
+  the operator to copy it. Why:
+  - A goal is words an agent will act on, and decision 7 has them written by
+    whoever may edit the Crew. With the patch the person sends the cron and
+    the goal they read on the page, as themselves when signed in with OIDC,
+    and the API server's audit log names them. An operator that copied on
+    request would copy what the Standard says when it gets round to it,
+    which may no longer be what the person read.
+  - Step 5 left the operator reading no proposal, and a Standard a catalog
+    entry with no reconciler. That stays true. An annotation would have
+    needed the Crew's reconciler to read Standards, write a Crew's spec, and
+    say in a condition why a request failed: a second way to do what
+    `kubectl edit` and the patch already do.
+  - Nothing is lost by it: the same RBAC decides either way, since both are
+    patches of the Crew.
+- **The write is an append, and the UI server lets through nothing else.**
+  The browser sends one JSON patch operation, `add` at `/spec/schedules/-`,
+  with an object of `name`, `cron`, `timeZone` and `goal`. `ui/server.mjs`
+  checks that shape (strings, no other field) and, as for a Brief's first
+  prompt, makes the list for a Crew that has none, guarded by the
+  `resourceVersion` it just read. So the UI can add a schedule and can't
+  set, change or remove one: a stale page loses nobody's schedule. The
+  values are the CRD's to judge: a name already in use (`listType=map`), a
+  ninth schedule and a cron of the wrong shape are refused by the API server
+  and the form shows its message.
+- **The zone is asked for with an empty field.** The form's one input is the
+  time zone; *Take* is off until something is typed. It is not filled in
+  with the proposal's zone (UTC as stored, the Standard's choice or not) and
+  not with the browser's either: a filled field is taken without being
+  read. The hint names the browser's zone and the field suggests the IANA
+  names the browser knows. What is typed goes as typed, trimmed: a zone the
+  operator can't load is said by the Crew's `Scheduled` condition, on the
+  same page.
+- **Only the zone is asked.** The cron and the goal are copied as written;
+  a person who wants other words takes it and edits the Crew. A form that
+  edits a whole schedule would be the UI editing the model, which it
+  doesn't (docs/design.md, "UI actions").
+- **The rule is `scheduleProposals` in `ui/src/model/schedules.ts`.** The
+  Standard is the one the Container chose (`choicesOf`: its `standardRef`,
+  or what its Bundle expanded to). A proposal is offered when none of the
+  Crew's schedules has its name, else in use with its differences: the cron
+  as written, the zone with UTC for none, the goal without the white space
+  at its ends (YAML's block styles end a text differently, and that is no
+  change of words). Both lists are by name in code-point order
+  (`compareText`), the same for every reader.
+- **A taken proposal says its zone differs,** when the zone given isn't UTC:
+  the page shows the Crew's zone beside the proposal's stored `UTC`. That is
+  what the two objects say, and it tells the reader the two run at different
+  hours. The page words it as a difference, not as a change someone made.
+- **Without a writer the page still shows both lists** (actions off, the
+  demo, nobody signed in), with the `kubectl edit` line in place of the
+  form, as the header does for a step the UI can't take.
+- **Not done:** the Standard's own page doesn't list its proposals, and the
+  demo's data has none, so the demo shows no proposals panel.
+- **Tested:** the rule's table (`ui/src/model/schedules.test.ts`); the
+  page's panel, rendered (`CrewPage.test.ts`, "the Crew page's Standard
+  proposals"); the form in a DOM, typing the zone and reading the patch it
+  sends (`TakeProposal.test.ts`); the writer (`crews.test.ts`); the server's
+  entry, what it sends upstream and what it refuses (`ui/test/server.test.mjs`).
+  The UI's browser tests don't run in an agent's container; CI runs them.
+  Evidence: [72-ui-proposals.txt](../screenshots/72-ui-proposals.txt).

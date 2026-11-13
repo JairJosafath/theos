@@ -410,8 +410,22 @@ const BRIEF_SETTINGS = {
   '/spec/releases': 'array',
 }
 const RELEASES_PATH = '/spec/releases'
+const SCHEDULE_PATH = '/spec/schedules/-'
+const SCHEDULE_FIELDS = ['name', 'cron', 'timeZone', 'goal']
 const PUBLISH_PATH = '/spec/publishReleases'
 const RV_PATH = '/metadata/resourceVersion'
+
+/**
+ * A JSON patch of one operation, the `add` of one schedule at the end of
+ * /spec/schedules: an object of name, cron, timeZone and goal, each a string
+ * where given. Returns that operation, or undefined. No patch of a schedule
+ * the Crew has passes: the UI adds one, and changes and removes none.
+ */
+function addsSchedule(body) {
+  if (!Array.isArray(body) || body.length !== 1 || !addsFields({ [SCHEDULE_PATH]: 'object' })(body)) return undefined
+  const fields = Object.entries(body[0].value)
+  return fields.every(([k, v]) => SCHEDULE_FIELDS.includes(k) && typeof v === 'string') ? body[0] : undefined
+}
 
 /**
  * `check` over a JSON patch that may start with a test of the object's
@@ -535,6 +549,14 @@ const ACTIONS = [
     path: resourcePath('crews', true),
     type: MERGE_PATCH,
     check: setsAnnotation('theos.factory.io/run-schedule'),
+  },
+  {
+    what: `add a schedule (an object of ${SCHEDULE_FIELDS.join(', ')}, each a string) to a Crew at ${SCHEDULE_PATH}`,
+    method: 'PATCH',
+    path: resourcePath('crews', true),
+    type: JSON_PATCH,
+    check: addsSchedule,
+    write: addSchedule,
   },
   {
     what: 'set annotation theos.factory.io/retry on a Container',
@@ -678,6 +700,26 @@ async function addPrompt({ res, upstream, log, apiPath, namespace, name, body: o
       ]
     : (retiringAppend(current.body, op.value) ?? [op])
   log(`Adding a prompt to Brief ${namespace}/${name}${by(as)}`)
+  return forwardWrite(res, upstream, 'PATCH', apiPath, JSON_PATCH, ops, as)
+}
+
+/**
+ * Appends a schedule to a Crew. As for a Brief's first prompt, a JSON patch
+ * can't append to a list that isn't there: for a Crew with no schedules the
+ * patch adds the list, guarded by the resourceVersion just read so it never
+ * replaces a list made meanwhile. A name the Crew already uses, a ninth
+ * schedule and a cron of the wrong shape are the API server's to refuse.
+ */
+async function addSchedule({ res, upstream, log, apiPath, namespace, name, body: op, as }) {
+  const current = await requestJson(upstream, apiPath)
+  if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
+  const ops = Array.isArray(current.body?.spec?.schedules)
+    ? [op]
+    : [
+        { op: 'test', path: RV_PATH, value: current.body?.metadata?.resourceVersion },
+        { op: 'add', path: '/spec/schedules', value: [op.value] },
+      ]
+  log(`Adding a schedule to Crew ${namespace}/${name}${by(as)}`)
   return forwardWrite(res, upstream, 'PATCH', apiPath, JSON_PATCH, ops, as)
 }
 

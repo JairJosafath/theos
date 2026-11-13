@@ -1,6 +1,7 @@
 // What a person does to a Crew from its page (design.md, UI actions): pause or
 // resume it or its running Tasks, set how many issues it works on at once, its release settings,
-// and re-run its last release's failed runs. Shown only when the UI server
+// re-run its last release's failed runs, run one of its schedules now, and
+// take a schedule its Container's Standard proposes. Shown only when the UI server
 // takes actions; with OIDC and nobody signed in, a "Sign in" link instead. The
 // API server decides each write; a refusal shows its message. Where a Crew
 // publishes is its Brief's when the Brief sets it: the form changes the
@@ -18,11 +19,12 @@ import {
   releaseSettings,
   settledEdits,
   sourceTagPrefix,
+  takenSchedule,
   type BriefTarget,
   type CrewReleaseSettings,
   type CrewWriter,
 } from '../../k8s/crews'
-import type { Brief, Crew, PublishSource } from '../../k8s/types'
+import type { Brief, Crew, CrewSchedule, PublishSource } from '../../k8s/types'
 import { pauseRunsAction } from '../../model/brief'
 import { SignInLink } from '../Account'
 import { writeError, type WriteError } from '../briefs/errors'
@@ -537,6 +539,101 @@ export function RunScheduleButton({
       </div>
       {error ? <FormError error={error} /> : null}
     </div>
+  )
+}
+
+/** The IANA time zones this browser knows, UTC first; none where it can't list them. */
+function knownTimeZones(): string[] {
+  try {
+    return ['UTC', ...Intl.supportedValuesOf('timeZone').filter((z) => z !== 'UTC')]
+  } catch {
+    return []
+  }
+}
+
+/** The time zone names a TakeProposalForm suggests, once for the forms of a page: a datalist under `id`. */
+export function TimeZoneList({ id }: { id: string }) {
+  return (
+    <datalist id={id}>
+      {knownTimeZones().map((z) => (
+        <option key={z} value={z} />
+      ))}
+    </datalist>
+  )
+}
+
+/** The time zone this browser is in, or undefined where it doesn't say. */
+function browserTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Takes one of the schedules the Crew's Standard proposes: adds it to the
+ * Crew's spec.schedules under the proposal's name, its cron and goal as they
+ * are written, in the time zone typed here. The zone is asked for and not
+ * filled in: a proposal names none of its own (the API server writes UTC into
+ * it), so a copy made without asking would run at UTC as if the Standard chose
+ * that. What is typed goes as it is; a zone the operator can't load is said by
+ * the Crew's Scheduled condition, and a refused write shows the API server's
+ * message. `zones` is the id of the TimeZoneList to suggest names from.
+ */
+export function TakeProposalForm({
+  crew,
+  proposal,
+  zones,
+  writer,
+}: {
+  crew: Crew
+  proposal: CrewSchedule
+  zones?: string
+  writer: CrewWriter
+}) {
+  const id = useId()
+  const [zone, setZone] = useState('')
+  const { sending, error, done, run } = useWrite()
+  const given = zone.trim() !== ''
+  const here = browserTimeZone()
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!given) return
+    void run(
+      () => writer.addSchedule(crew.metadata.namespace ?? '', crew.metadata.name, takenSchedule(proposal, zone)),
+      'Added to the Crew’s schedules',
+    )
+  }
+
+  return (
+    <form className="crew-rerun" onSubmit={submit}>
+      <label className="field" htmlFor={`${id}-zone`}>
+        <span className="field-label">Time zone for {proposal.name}</span>
+        <span className="field-hint">
+          The zone its cron is read in, such as Europe/Amsterdam, or UTC.{here ? ` This browser is in ${here}.` : ''}
+        </span>
+      </label>
+      <div className="form-row">
+        <input
+          id={`${id}-zone`}
+          className="input mono crew-zone"
+          value={zone}
+          list={zones}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => setZone(e.target.value)}
+          disabled={sending}
+        />
+        {/* Taken once; the Crew's page lists it under the names in use when the Crew has it. */}
+        <button type="submit" className="button button-secondary" disabled={sending || !given || Boolean(done)}>
+          {sending ? 'Taking…' : `Take ${proposal.name}`}
+        </button>
+        <Done text={done} />
+      </div>
+      {error ? <FormError error={error} /> : null}
+    </form>
   )
 }
 

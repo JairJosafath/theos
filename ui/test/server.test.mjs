@@ -104,6 +104,10 @@ describe('server.mjs', () => {
       if (url.pathname === '/apis/theos.factory.io/v1beta1/namespaces/webshop/crews/orders-api') {
         return json(200, { kind: 'Crew', metadata: { name: 'orders-api', resourceVersion: '7' }, spec: {} })
       }
+      if (url.pathname === '/apis/theos.factory.io/v1beta1/namespaces/webshop/crews/timed') {
+        const schedules = [{ name: 'flakes', cron: '0 2 * * *', timeZone: 'UTC', goal: 'Find the flaky tests.' }]
+        return json(200, { kind: 'Crew', metadata: { name: 'timed', resourceVersion: '4' }, spec: { schedules } })
+      }
       if (url.pathname === `${briefs}gone`) {
         return json(404, { kind: 'Status', code: 404, reason: 'NotFound', message: 'briefs "gone" not found' })
       }
@@ -545,7 +549,7 @@ describe('server.mjs', () => {
     it('says on /ui/session that actions are on, made as the ServiceAccount, with every write', async () => {
       const answer = await (await fetch(`${actionBase}/ui/session`)).json()
       assert.deepEqual([answer.actions, answer.mode, answer.user], [true, 'service-account', null])
-      assert.equal(answer.writes.length, 13)
+      assert.equal(answer.writes.length, 14)
       assert.ok(!JSON.stringify(answer).includes(browserToken))
     })
 
@@ -744,6 +748,32 @@ describe('server.mjs', () => {
       )
     })
 
+    // #72, step 6: a Standard's proposal, taken, is one schedule appended to the Crew.
+    const schedule = { name: 'dependencies', cron: '0 6 * * 1', timeZone: 'Europe/Amsterdam', goal: 'Update them.' }
+
+    it('adds a schedule to a Crew that has some with exactly the append it was sent', async () => {
+      seen.length = 0
+      const body = [add('/spec/schedules/-', schedule)]
+      const res = await write('PATCH', '/crews/timed', body, JP)
+      assert.equal(res.status, 200)
+      assert.deepEqual(
+        seen.map((r) => [r.method, r.url]),
+        [
+          ['GET', `${api}/crews/timed`],
+          ['PATCH', `${api}/crews/timed?fieldManager=theos-ui`],
+        ],
+      )
+      assert.equal(seen[1].headers['content-type'], JP)
+      assert.deepEqual(seen[1].body, body)
+    })
+
+    it("adds the list for a Crew's first schedule, guarded by the resourceVersion it read", async () => {
+      seen.length = 0
+      const res = await write('PATCH', '/crews/orders-api', [add('/spec/schedules/-', schedule)], JP)
+      assert.equal(res.status, 200)
+      assert.deepEqual(seen[1].body, [tested('7'), add('/spec/schedules', [schedule])])
+    })
+
     it("passes the API server's refusal back as-is", async () => {
       seen.length = 0
       const res = await write('PATCH', '/crews/denied', [add('/spec/parallel', 0)], JP)
@@ -761,6 +791,7 @@ describe('server.mjs', () => {
     })
 
     const crewAnn = (key, value = 'x') => ({ metadata: { annotations: { [key]: value } } })
+    const taken = { name: 'dependencies', cron: '0 6 * * 1', timeZone: 'UTC', goal: 'Update them.' }
     // [what, method, path, content type, body, status]
     const refused = [
       // Other paths.
@@ -824,6 +855,64 @@ describe('server.mjs', () => {
         403,
       ],
       ["a Crew's implementer", 'PATCH', '/crews/orders-api', JP, [add('/spec/implementer', { name: 'x' })], 403],
+      // #72: the UI adds one schedule to a Crew; it sets, changes and removes none.
+      ["a Crew's schedules set whole", 'PATCH', '/crews/timed', JP, [add('/spec/schedules', [taken])], 403],
+      [
+        "a Crew's schedules set whole after a test of its resourceVersion",
+        'PATCH',
+        '/crews/timed',
+        JP,
+        [{ op: 'test', path: '/metadata/resourceVersion', value: '4' }, add('/spec/schedules', [taken])],
+        403,
+      ],
+      ["one of a Crew's schedules set", 'PATCH', '/crews/timed', JP, [add('/spec/schedules/0', taken)], 403],
+      ["a Crew's schedule's goal", 'PATCH', '/crews/timed', JP, [add('/spec/schedules/0/goal', 'x')], 403],
+      [
+        "one of a Crew's schedules replaced",
+        'PATCH',
+        '/crews/timed',
+        JP,
+        [{ op: 'replace', path: '/spec/schedules/-', value: taken }],
+        403,
+      ],
+      ["a Crew's schedule removed", 'PATCH', '/crews/timed', JP, [{ op: 'remove', path: '/spec/schedules/0' }], 403],
+      ["a Crew's schedules removed", 'PATCH', '/crews/timed', JP, [{ op: 'remove', path: '/spec/schedules' }], 403],
+      [
+        'two schedules in one patch',
+        'PATCH',
+        '/crews/timed',
+        JP,
+        [add('/spec/schedules/-', taken), add('/spec/schedules/-', { ...taken, name: 'b' })],
+        403,
+      ],
+      [
+        'a schedule with a setting beside it',
+        'PATCH',
+        '/crews/timed',
+        JP,
+        [add('/spec/schedules/-', taken), add('/spec/paused', false)],
+        403,
+      ],
+      ['a schedule as a string', 'PATCH', '/crews/timed', JP, [add('/spec/schedules/-', 'dependencies')], 403],
+      ['a schedule as a list', 'PATCH', '/crews/timed', JP, [add('/spec/schedules/-', [taken])], 403],
+      [
+        'a schedule with a field that is none of a schedule’s',
+        'PATCH',
+        '/crews/timed',
+        JP,
+        [add('/spec/schedules/-', { ...taken, paused: 'true' })],
+        403,
+      ],
+      [
+        'a schedule whose cron is not a string',
+        'PATCH',
+        '/crews/timed',
+        JP,
+        [add('/spec/schedules/-', { ...taken, cron: 6 })],
+        403,
+      ],
+      ['a schedule added to a Brief', 'PATCH', '/briefs/lens', JP, [add('/spec/schedules/-', taken)], 403],
+      ['a schedule added to a Standard', 'PATCH', '/standards/go-service', JP, [add('/spec/schedules/-', taken)], 403],
       ["a Crew's paused as a string", 'PATCH', '/crews/orders-api', JP, [add('/spec/paused', 'true')], 403],
       ["a Crew's parallel as a fraction", 'PATCH', '/crews/orders-api', JP, [add('/spec/parallel', 1.5)], 403],
       [

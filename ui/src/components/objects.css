@@ -339,6 +339,16 @@
   max-width: 6em;
 }
 
+.crew-zone {
+  max-width: 16em;
+}
+
+/* Where a Crew's schedule differs from the proposal of its name. */
+.object-page .routes .facts {
+  grid-template-columns: 90px minmax(0, 1fr);
+  margin-top: 6px;
+}
+
 .crew-check {
   display: flex;
   align-items: baseline;
