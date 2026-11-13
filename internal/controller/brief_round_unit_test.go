@@ -31,10 +31,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+	portsfake "github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 func briefScheme(t *testing.T) *runtime.Scheme {
@@ -209,7 +212,7 @@ func TestClearOperatorNeedsInputRestoresThePlannersQuestion(t *testing.T) {
 		{Round: 1, Outcome: model.ReasonApplied},
 		{Round: 2, Outcome: model.ReasonPlannerNeedsInput, NeedsInput: "Which CRDs first?"},
 	}
-	operatorNeedsInput(brief, "GitProvider gitea is missing")
+	operatorNeedsInput(brief, "GitProvider git is missing")
 	clearOperatorNeedsInput(brief)
 	cond := meta.FindStatusCondition(brief.Status.Conditions, c4v1beta1.ConditionNeedsInput)
 	if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != model.ReasonPlannerNeedsInput ||
@@ -273,6 +276,319 @@ func TestEndingARoundOnAStaleBriefWritesNothing(t *testing.T) {
 	if cond := meta.FindStatusCondition(got.Status.Conditions, c4v1beta1.ConditionPlanned); cond == nil ||
 		cond.Reason != model.ReasonApplied {
 		t.Errorf("Planned = %+v, want reason %s", cond, model.ReasonApplied)
+	}
+}
+
+// readBrief reads the Brief from the API server.
+func readBrief(t *testing.T, c client.Client, key client.ObjectKey) *c4v1beta1.Brief {
+	t.Helper()
+	var b c4v1beta1.Brief
+	if err := c.Get(context.Background(), key, &b); err != nil {
+		t.Fatal(err)
+	}
+	return &b
+}
+
+// requestInNeedsYou says whether the Brief's needsYou lists a request.
+func requestInNeedsYou(b *c4v1beta1.Brief) bool {
+	return slices.ContainsFunc(b.Status.NeedsYou, func(n c4v1beta1.BriefNeedsYou) bool {
+		return n.Kind == model.AttentionRequest
+	})
+}
+
+// staleRequestsOff is #199's Brief: a round's start writes a waiting request,
+// a reconcile lists it in needsYou, and a person turns requests Off. It
+// returns the reconcile for that change: the copy from before needsYou listed
+// the request, with the new spec and requests read Off, and the copy its
+// status patches are made from.
+func staleRequestsOff(t *testing.T) (c client.Client, r *BriefReconciler, stale, orig *c4v1beta1.Brief) {
+	t.Helper()
+	scheme := briefScheme(t)
+	const repository = "ada/cel-lens"
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
+		Spec: c4v1beta1.BriefSpec{Idea: "A linter.", Releases: []c4v1beta1.BriefRelease{{Container: "linter",
+			CrewPublishReleases: c4v1beta1.CrewPublishReleases{GitHub: c4v1beta1.CrewPublishGitHub{
+				Repository: repository, TokenSecretRef: c4v1beta1.LocalRef{Name: "cel-lens-github"}}},
+			Requests: &c4v1beta1.BriefRequests{Mode: model.RequestsAsk, Authors: []string{"ada"}}}}}}
+	c = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Brief{}).
+		WithObjects(brief).Build()
+	r = &BriefReconciler{Client: c, Scheme: scheme}
+	ctx := context.Background()
+	key := client.ObjectKeyFromObject(brief)
+
+	// A round's start writes the waiting request; the cache keeps this copy.
+	waiting := readBrief(t, c, key)
+	waiting.Status.Round = 1
+	waiting.Status.Requests = []c4v1beta1.BriefRequest{{Repository: repository, Number: 1, Author: "ada",
+		Title: "Dark theme", Stage: model.RequestWaiting}}
+	if err := c.Status().Update(ctx, waiting); err != nil {
+		t.Fatal(err)
+	}
+	stale = readBrief(t, c, key)
+	// The reconcile then tends the Brief and lists the request in needsYou.
+	current := readBrief(t, c, key)
+	n := model.RequestNeedsYou(modelRequests(current.Status.Requests)[0])
+	current.Status.NeedsYou = []c4v1beta1.BriefNeedsYou{{Kind: n.Kind, Name: n.Name, Question: n.Question,
+		Recommend: n.Recommend}}
+	current.Status.NeedsYouWaiting = 1
+	if err := c.Status().Update(ctx, current); err != nil {
+		t.Fatal(err)
+	}
+	// A person turns requests Off.
+	current = readBrief(t, c, key)
+	current.Spec.Releases[0].Requests.Mode = model.RequestsOff
+	if err := c.Update(ctx, current); err != nil {
+		t.Fatal(err)
+	}
+
+	// The reconcile for that change reads the new spec over the older status.
+	stale.Spec = *current.Spec.DeepCopy()
+	orig = stale.DeepCopy()
+	r.syncRequests(ctx, stale)
+	if len(stale.Status.Requests) != 0 {
+		t.Fatalf("requests = %+v, want none read with requests Off", stale.Status.Requests)
+	}
+	return c, r, stale, orig
+}
+
+// #199: a reconcile that reads requests turned Off on a copy from before an
+// earlier reconcile listed the waiting request in needsYou must not clear
+// status.requests over the newer status and leave the request in needsYou;
+// it writes nothing and reads the Brief again, and that read drops both.
+func TestTurningRequestsOffOnAStaleBriefLeavesNoRequestInNeedsYou(t *testing.T) {
+	c, r, stale, orig := staleRequestsOff(t)
+	ctx := context.Background()
+	key := client.ObjectKeyFromObject(stale)
+	result, err := r.finishReconcile(ctx, stale, orig, ctrl.Result{}, nil)
+	if err != nil || result.RequeueAfter == 0 {
+		t.Errorf("finishReconcile on the stale copy = %+v, %v; want a requeue and no error", result, err)
+	}
+	if got := readBrief(t, c, key); len(got.Status.Requests) == 0 && requestInNeedsYou(got) {
+		t.Fatalf("status.requests is empty but needsYou lists %+v: a stale write half applied", got.Status.NeedsYou)
+	}
+
+	// The next reconcile reads the Brief as it is.
+	fresh := readBrief(t, c, key)
+	orig = fresh.DeepCopy()
+	r.syncRequests(ctx, fresh)
+	if _, err := r.finishReconcile(ctx, fresh, orig, ctrl.Result{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := readBrief(t, c, key); len(got.Status.Requests) != 0 || requestInNeedsYou(got) {
+		t.Errorf("requests = %+v, needsYou = %+v; want the request in neither", got.Status.Requests,
+			got.Status.NeedsYou)
+	}
+}
+
+// #199: recording a filed issue writes the status at once; on a stale copy
+// that write would carry the rest of what the reconcile computed (requests
+// cleared) over the newer status, and hand writeStatus a version that already
+// holds it, so the lock there let the half-write through. It writes nothing.
+func TestRecordingAnIssueOnAStaleBriefWritesNothing(t *testing.T) {
+	c, r, stale, orig := staleRequestsOff(t)
+	ctx := context.Background()
+	run := &roundApply{brief: stale, orig: orig}
+	err := r.recordIssue(ctx, run, "apps/linter", 1, ports.Issue{Number: 7, Title: "Lint rule 1",
+		URL: "http://git.example/apps/linter/issues/7"})
+	if !errors.Is(err, errStaleBrief) {
+		t.Fatalf("recordIssue on a stale Brief = %v, want errStaleBrief", err)
+	}
+	result, err := r.finishReconcile(ctx, stale, orig, ctrl.Result{}, err)
+	if err != nil || result.RequeueAfter == 0 {
+		t.Errorf("finishReconcile = %+v, %v; want a requeue and no error", result, err)
+	}
+	got := readBrief(t, c, client.ObjectKeyFromObject(stale))
+	if len(got.Status.Requests) == 0 && requestInNeedsYou(got) {
+		t.Fatalf("status.requests is empty but needsYou lists %+v: a stale write half applied", got.Status.NeedsYou)
+	}
+	if len(got.Status.Issues) != 0 {
+		t.Errorf("issues = %+v, want none recorded from the stale copy", got.Status.Issues)
+	}
+}
+
+// issueRound is a Brief in round 1 whose plan files one issue in Container
+// linter, on a fake Git host; funcs intercept the fake client's calls.
+func issueRound(t *testing.T, funcs interceptor.Funcs) (c client.Client, r *BriefReconciler, git *portsfake.Git,
+	key client.ObjectKey, ready map[string]*c4v1beta1.Container, issues []model.PlanIssue) {
+	t.Helper()
+	scheme := briefScheme(t)
+	const ns = "apps"
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta(ns, "cel-lens"), Spec: c4v1beta1.BriefSpec{Idea: "A linter."}}
+	linter := &c4v1beta1.Container{ObjectMeta: objectMeta(ns, "linter"),
+		Spec: c4v1beta1.ContainerSpec{GitProviderRef: c4v1beta1.LocalRef{Name: "git"}}}
+	c = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Brief{}).
+		WithObjects(brief, linter,
+			&corev1.Secret{ObjectMeta: objectMeta(ns, "git-credentials"),
+				Data: map[string][]byte{"username": []byte("theos"), "token": []byte("t")}},
+			&c4v1beta1.GitProvider{ObjectMeta: objectMeta(ns, "git"), Spec: c4v1beta1.GitProviderSpec{
+				Provider: c4v1beta1.GitProviderGitea, URL: "http://git.example:3000", Owner: ns,
+				CredentialsSecretRef: c4v1beta1.LocalRef{Name: "git-credentials"}}}).
+		WithInterceptorFuncs(funcs).Build()
+	git = portsfake.New()
+	r = &BriefReconciler{Client: c, APIReader: c, Scheme: scheme, Git: fakeGitClient{git}}
+	key = client.ObjectKeyFromObject(brief)
+	started := readBrief(t, c, key)
+	started.Status.Round = 1
+	if err := c.Status().Update(context.Background(), started); err != nil {
+		t.Fatal(err)
+	}
+	return c, r, git, key, map[string]*c4v1beta1.Container{"linter": linter},
+		[]model.PlanIssue{{N: 1, Container: "linter", Title: "Lint rule 1", Body: "Lint rule 1."}}
+}
+
+// #199: a round whose Brief the API server holds newer than the reconcile
+// read files nothing: the newer status may have ended or cancelled the round,
+// and an issue filed from the stale copy could not be recorded, so it would
+// stay open and ready, unrecorded.
+func TestARoundOnAStaleBriefFilesNoIssue(t *testing.T) {
+	c, r, git, key, ready, issues := issueRound(t, interceptor.Funcs{})
+	ctx := context.Background()
+	stale := readBrief(t, c, key)
+	newer := readBrief(t, c, key)
+	newer.Status.Phase = c4v1beta1.BriefFailed
+	if err := c.Status().Update(ctx, newer); err != nil {
+		t.Fatal(err)
+	}
+	err := r.fileIssues(ctx, &roundApply{brief: stale, orig: stale.DeepCopy(), round: "1"}, ready, issues)
+	if !errors.Is(err, errStaleBrief) {
+		t.Fatalf("fileIssues on a stale Brief = %v, want errStaleBrief", err)
+	}
+	if all := git.AllIssues(key.Namespace, "linter"); len(all) != 0 {
+		t.Errorf("issues on the Git host = %+v, want none filed from the stale copy", all)
+	}
+}
+
+// #199: a record refused because the Brief changed after the round checked
+// it does not file the issue twice: the next reconcile finds the filed issue
+// by its marker and records it.
+func TestARefusedIssueRecordFilesTheIssueOnce(t *testing.T) {
+	changed := false
+	c, r, git, key, ready, issues := issueRound(t, interceptor.Funcs{SubResourcePatch: func(ctx context.Context,
+		c client.Client, sub string, obj client.Object, patch client.Patch,
+		opts ...client.SubResourcePatchOption) error {
+		if !changed {
+			// Another writer, between the check and the record.
+			changed = true
+			newer := &c4v1beta1.Brief{}
+			if err := c.Get(ctx, client.ObjectKeyFromObject(obj), newer); err != nil {
+				return err
+			}
+			newer.Status.NeedsYouWaiting = 1
+			if err := c.Status().Update(ctx, newer); err != nil {
+				return err
+			}
+		}
+		return c.SubResource(sub).Patch(ctx, obj, patch, opts...)
+	}})
+	ctx := context.Background()
+	stale := readBrief(t, c, key)
+	err := r.fileIssues(ctx, &roundApply{brief: stale, orig: stale.DeepCopy(), round: "1"}, ready, issues)
+	if !errors.Is(err, errStaleBrief) {
+		t.Fatalf("fileIssues on a Brief changed meanwhile = %v, want errStaleBrief", err)
+	}
+	if got := readBrief(t, c, key); len(got.Status.Issues) != 0 || got.Status.NeedsYouWaiting != 1 {
+		t.Fatalf("issues = %+v, needsYouWaiting = %d; want none recorded and the newer status kept",
+			got.Status.Issues, got.Status.NeedsYouWaiting)
+	}
+	if open := git.OpenIssues(key.Namespace, "linter"); len(open) != 1 {
+		t.Fatalf("open issues = %+v, want the one filed before the refused record", open)
+	}
+
+	fresh := readBrief(t, c, key)
+	if err := r.fileIssues(ctx, &roundApply{brief: fresh, orig: fresh.DeepCopy(), round: "1"}, ready,
+		issues); err != nil {
+		t.Fatal(err)
+	}
+	open := git.OpenIssues(key.Namespace, "linter")
+	if len(open) != 1 {
+		t.Fatalf("open issues = %+v, want the one filed once", open)
+	}
+	if got := readBrief(t, c, key).Status.Issues; len(got) != 1 || int(got[0].Number) != open[0].Number {
+		t.Errorf("issues = %+v, want issue %d recorded", got, open[0].Number)
+	}
+}
+
+// heldBrief is a Brief whose reconcile put the finalizer on (holdForBot), which
+// moves brief's version on and not orig's.
+func heldBrief(t *testing.T, objs ...client.Object) (c client.Client, r *BriefReconciler, brief,
+	orig *c4v1beta1.Brief) {
+	t.Helper()
+	scheme := briefScheme(t)
+	b := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
+		Spec: c4v1beta1.BriefSpec{Idea: "A linter.", Agents: c4v1beta1.BriefAgents{
+			Planner: c4v1beta1.LocalRef{Name: "planner"}}}}
+	c = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Brief{}).
+		WithObjects(append(objs, b)...).Build()
+	r = &BriefReconciler{Client: c, Scheme: scheme}
+	brief = readBrief(t, c, client.ObjectKeyFromObject(b))
+	orig = brief.DeepCopy()
+	if err := r.holdForBot(context.Background(), brief); err != nil {
+		t.Fatal(err)
+	}
+	if brief.ResourceVersion == orig.ResourceVersion {
+		t.Fatal("holdForBot left brief's version as it was")
+	}
+	return c, r, brief, orig
+}
+
+// #199: the status patch locks on the version this reconcile last wrote:
+// putting the finalizer on is the reconcile's own write, not a stale copy.
+func TestWriteStatusLocksOnTheVersionTheReconcileLastWrote(t *testing.T) {
+	c, r, brief, orig := heldBrief(t)
+	brief.Status.Phase = c4v1beta1.BriefPlanning
+	if err := r.writeStatus(context.Background(), brief, orig); err != nil {
+		t.Fatalf("writeStatus after holdForBot = %v, want the status written", err)
+	}
+	if got := readBrief(t, c, client.ObjectKeyFromObject(brief)); got.Status.Phase != c4v1beta1.BriefPlanning ||
+		!controllerutil.ContainsFinalizer(got, briefBotFinalizer) {
+		t.Errorf("phase = %q, finalizers = %v; want the status and the finalizer", got.Status.Phase, got.Finalizers)
+	}
+}
+
+// #199: starting a round locks on the version this reconcile last wrote too,
+// so the first reconcile of a Brief doesn't conflict with its own finalizer.
+func TestStartRoundLocksOnTheVersionTheReconcileLastWrote(t *testing.T) {
+	c, r, brief, orig := heldBrief(t, &c4v1beta1.Agent{ObjectMeta: objectMeta("apps", "planner")},
+		&c4v1beta1.Framework{ObjectMeta: objectMeta("apps", "python-fastapi")})
+	if err := r.startRound(context.Background(), brief, orig, false); err != nil {
+		t.Fatalf("startRound after holdForBot = %v, want round 1 started", err)
+	}
+	if got := readBrief(t, c, client.ObjectKeyFromObject(brief)); got.Status.Round != 1 {
+		t.Errorf("round = %d, want 1", got.Status.Round)
+	}
+}
+
+// #199: putting the finalizer on a stale Brief writes nothing: the version it
+// would hand the status patch would hold changes the reconcile never saw.
+func TestHoldForBotOnAStaleBriefWritesNothing(t *testing.T) {
+	scheme := briefScheme(t)
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"), Spec: c4v1beta1.BriefSpec{Idea: "A linter."}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&c4v1beta1.Brief{}).
+		WithObjects(brief).Build()
+	r := &BriefReconciler{Client: c, Scheme: scheme}
+	ctx := context.Background()
+	key := client.ObjectKeyFromObject(brief)
+	stale := readBrief(t, c, key)
+	newer := readBrief(t, c, key)
+	newer.Status.Round = 1
+	if err := c.Status().Update(ctx, newer); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := stale.DeepCopy()
+	err := r.holdForBot(ctx, stale)
+	if !errors.Is(err, errStaleBrief) {
+		t.Fatalf("holdForBot on a stale Brief = %v, want errStaleBrief", err)
+	}
+	stale.Status.Phase = c4v1beta1.BriefPlanning
+	result, err := r.finishReconcile(ctx, stale, orig, ctrl.Result{}, err)
+	if err != nil || result.RequeueAfter == 0 {
+		t.Errorf("finishReconcile = %+v, %v; want a requeue and no error", result, err)
+	}
+	got := readBrief(t, c, key)
+	if controllerutil.ContainsFinalizer(got, briefBotFinalizer) || got.Status.Round != 1 || got.Status.Phase != "" {
+		t.Errorf("finalizers = %v, round = %d, phase = %q; want the newer Brief as it was", got.Finalizers,
+			got.Status.Round, got.Status.Phase)
 	}
 }
 

@@ -297,10 +297,7 @@ func (r *BriefReconciler) startRound(ctx context.Context, brief, orig *c4v1beta1
 	// A new round answers the planner's question, if it had one.
 	setCondition(&status.Conditions, brief.Generation, c4v1beta1.ConditionNeedsInput,
 		metav1.ConditionFalse, c4v1beta1.ReasonResolved, "The Brief has what it needs")
-	if err := r.Status().Patch(ctx, brief, client.MergeFromWithOptions(orig, client.MergeFromWithOptimisticLock{})); err != nil {
-		if apierrors.IsConflict(err) {
-			return fmt.Errorf("%w: %w", errStaleBrief, err)
-		}
+	if err := r.patchStatusLocked(ctx, brief, orig); err != nil {
 		return err
 	}
 	*orig = *brief.DeepCopy()
