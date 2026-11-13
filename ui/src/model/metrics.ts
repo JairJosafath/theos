@@ -6,7 +6,7 @@
 // run's Agent, harness and model; personCommits; pullRequestSize).
 
 import type { Task, TaskAgentRun } from '../k8s/types'
-import { median, time } from './factory'
+import { mergedChange, median, time } from './factory'
 import { compareText } from './order'
 
 /** The periods the panel offers, in days. */
@@ -99,21 +99,7 @@ export interface Metrics {
 
 const DAY = 24 * 60 * 60 * 1000
 
-/**
- * Whether a Task that ended is a merged change: internal/model's MergedChange (#204), which the
- * operator's series and theos-session report count by. Its own pull request merged, or, for a Task
- * that ended DoneByStandardChange, its Standard change's record names the change that merged in its
- * place (the Task's own pull request, if any, was closed in an earlier round). A Task that ended
- * with nothing to do, or has no pull request (a Plan or a Triage Task), merged nothing.
- */
-export function mergedChange(task: Task): boolean {
-  const status = task.status
-  if (status?.phase !== 'Merged') return false
-  const reason = status.conditions?.find((c) => c.type === 'Succeeded')?.reason
-  if (reason === 'NothingToDo') return false
-  if (reason === 'DoneByStandardChange') return Boolean(status.standardChange?.issue)
-  return Boolean(status.pullRequest)
-}
+export { mergedChange }
 
 /** A Task that merged a change inside the period ending now. */
 function mergedIn(task: Task, from: number, now: number): boolean {
