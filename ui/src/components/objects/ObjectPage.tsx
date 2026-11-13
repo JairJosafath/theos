@@ -133,6 +133,7 @@ function pageFor(
             agents={data.agents}
             tasks={data.tasks}
             containers={data.containers}
+            standards={data.standards}
             briefs={data.briefs}
             writer={crewWriter}
             briefWriter={writer}
