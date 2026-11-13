@@ -282,6 +282,18 @@ describe('formatCost', () => {
   ])('%d', (milli, want) => {
     expect(formatCost(milli)).toBe(want)
   })
+
+  // #143: a cost under zero, or one that is no number, is no cost. It shows as
+  // none, as the report's page writes it, never as "$-1.50" or "$NaN".
+  it.each([
+    ['a cost under zero', -1500],
+    ['a hair under zero', -0.001],
+    ['a cost of NaN', NaN],
+    ['an endless cost', Infinity],
+    ['and its opposite', -Infinity],
+  ])('#143: %s shows as no cost', (_, milli) => {
+    expect(formatCost(milli)).toBe('–')
+  })
 })
 
 describe('sortBriefs', () => {

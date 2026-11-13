@@ -5,7 +5,8 @@
 // criteria and the judged Task's configuration.
 
 import type { ScoreCriterion, Task } from '../k8s/types'
-import { compareText, configKey, NOT_RECORDED } from './metrics'
+import { configKey, NOT_RECORDED } from './metrics'
+import { compareText } from './order'
 import { isFinal, time } from './factory'
 
 export function isScoreTask(task: Task): boolean {
@@ -30,7 +31,7 @@ export function scoresOf(task: Task, tasks: Task[]): TaskScore[] {
     .sort(
       (a, b) =>
         (time(a.metadata.creationTimestamp) ?? 0) - (time(b.metadata.creationTimestamp) ?? 0) ||
-        a.metadata.name.localeCompare(b.metadata.name),
+        compareText(a.metadata.name, b.metadata.name),
     )
     .map((t) => ({
       scorer: t.spec.score?.scorerRef.name ?? '',

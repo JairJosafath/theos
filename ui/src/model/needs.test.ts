@@ -601,6 +601,132 @@ describe('needs', () => {
     ).toEqual([])
   })
 
+  // #172: the Standard of an adopted repository arrives as a pull request a person merges or
+  // closes (#97); until main holds its files no agent works there, so the Container is listed.
+  describe('a Standard that waits to come into an adopted repository (#172)', () => {
+    const pullRequestURL = 'https://git.example/shop/api/pulls/12'
+    const open = { name: 'go-standard', ref: 'v1.2.0', pullRequest: 12, pullRequestURL, paths: ['Makefile'] }
+    const adopting = (
+      reason: string,
+      message: string,
+      standardAdoption?: NonNullable<Container['status']>['standardAdoption'],
+    ): Container => ({
+      ...container({
+        phase: 'Ready',
+        ...repo,
+        standardAdoption,
+        conditions: [cond('StandardUpdated', 'False', reason, message)],
+      }),
+      spec: { ...container(undefined).spec, adopt: true, standardRef: { name: 'go-standard' } },
+    })
+
+    it.each([
+      [
+        'PullRequestOpen',
+        `Pull request ${pullRequestURL} brings the files of go-standard at v1.2.0 into the repository`,
+        open,
+        [{ label: 'The Standard’s pull request #12', url: pullRequestURL }],
+      ],
+      [
+        'StandardFilesDiffer',
+        `Pull request ${pullRequestURL} merged, but main holds Makefile with other content`,
+        { ...open, stopped: 'StandardFilesDiffer' },
+        [{ label: 'Its repository', url: repo.repositoryURL }],
+      ],
+      [
+        'UpdateClosed',
+        `Pull request ${pullRequestURL} was closed without merging`,
+        { ...open, stopped: 'UpdateClosed' },
+        [{ label: 'Its repository', url: repo.repositoryURL }],
+      ],
+      [
+        'UnsupportedFramework',
+        'standard "go-standard" supports only the Frameworks it lists, and the Container names no frameworkRef',
+        undefined,
+        [],
+      ],
+    ])('lists the Container on %s, in the condition’s words', (reason, message, standardAdoption, links) => {
+      const items = needs(input({ containers: [adopting(reason, message, standardAdoption)] }))
+      expect(items).toHaveLength(1)
+      expect(items[0]).toMatchObject({
+        key: 'Container|shop|api|StandardWaits',
+        kind: 'Container',
+        title: 'has a Standard waiting on you',
+        reason,
+        message,
+        since: T,
+        links,
+        place: { to: { page: { ns: 'shop', kind: 'Container', name: 'api' } } },
+      })
+      expect(items[0].command).toBe(undefined)
+    })
+
+    // #183: the Standard is missing, unpinned, has no such template path, or fails to render.
+    it.each([
+      ['NotFound', 'Standard go-standard was not found'],
+      ['UnpinnedRef', 'Standard go-standard: template ref "main" is a branch, not a tag or commit'],
+      ['TemplatePathNotFound', 'Standard go-standard: path "go" is not in the template at v1.2.0'],
+      ['Failed', 'Could not render the Standard go-standard: template: Makefile:3: unexpected }}'],
+    ])('lists the Container on %s, in the condition’s words, with nothing to open (#183)', (reason, message) => {
+      const items = needs(input({ containers: [adopting(reason, message)] }))
+      expect(items).toHaveLength(1)
+      expect(items[0]).toMatchObject({
+        key: 'Container|shop|api|StandardWaits',
+        kind: 'Container',
+        title: 'has a Standard waiting on you',
+        reason,
+        message,
+        since: T,
+        links: [],
+        place: { to: { page: { ns: 'shop', kind: 'Container', name: 'api' } } },
+      })
+      expect(items[0].command).toBe(undefined)
+    })
+
+    it.each(['NotFound', 'UnpinnedRef', 'TemplatePathNotFound', 'Failed'])(
+      'lists no Container on %s whose Standard is recorded: an update’s rules answer (#183)',
+      (reason) => {
+        const c = adopting(reason, 'the operator’s words')
+        const recorded: Container = { ...c, status: { ...c.status, standard: { name: 'go-standard', ref: 'v1.2.0' } } }
+        expect(needs(input({ containers: [recorded] }))).toEqual([])
+      },
+    )
+
+    it('links no pull request that stays open while the Standard doesn’t fit: merging it unblocks nothing', () => {
+      const [item] = needs(input({ containers: [adopting('UnsupportedFramework', 'fits no Framework', open)] }))
+      expect(item.reason).toBe('UnsupportedFramework')
+      expect(item.links).toEqual([])
+    })
+
+    it('leaves an ordinary update’s UpdateClosed out, as before', () => {
+      const closed = container({
+        phase: 'Ready',
+        ...repo,
+        standard: {
+          name: 'go-standard',
+          ref: 'v1',
+          update: {
+            ref: 'v2',
+            pullRequest: 3,
+            pullRequestURL: 'https://git.example/shop/api/pulls/3',
+            stopped: 'UpdateClosed',
+          },
+        },
+        conditions: [cond('StandardUpdated', 'False', 'UpdateClosed', 'Pull request 3 was closed without merging')],
+      })
+      // The same on a Container that adopted its repository and has its Standard recorded since.
+      const adopted: Container = {
+        ...closed,
+        spec: { ...closed.spec, adopt: true, standardRef: { name: 'go-standard' } },
+      }
+      expect(needs(input({ containers: [closed, adopted] }))).toEqual([])
+    })
+
+    it('lists no adoption the factory still works on', () => {
+      expect(needs(input({ containers: [adopting('GitError', 'Talking to Git failed; retrying', open)] }))).toEqual([])
+    })
+  })
+
   it('lists no release or Standard update the factory still works on', () => {
     const items = needs(
       input({
@@ -681,6 +807,34 @@ describe('needs', () => {
     const failed = task('api-7', { phase: 'Failed', completedAt: T })
     const retry = task('api-7-2', { phase: 'Implementing' }, 7, '2026-06-01T11:00:00Z')
     expect(needs(input({ tasks: [failed, retry] }))).toEqual([])
+  })
+
+  // #175: the last tie broke on the joined key, where "|" is above every character a name can hold,
+  // so "orders2" and "orders-api" came before "orders".
+  it.each([
+    ['orders', 'orders2', 'orders-api'],
+    ['orders', 'orders-api', 'orders2'],
+    ['orders2', 'orders', 'orders-api'],
+    ['orders2', 'orders-api', 'orders'],
+    ['orders-api', 'orders', 'orders2'],
+    ['orders-api', 'orders2', 'orders'],
+  ])('orders names of one namespace, kind and time as every list does, from %s, %s, %s (#175)', (...names) => {
+    // One issue each, or a later Task of the issue answers the failure.
+    const failed = (name: string, issue: number) =>
+      task(
+        name,
+        {
+          phase: 'Failed',
+          completedAt: T,
+          conditions: [cond('Succeeded', 'False', 'ReviewRejected', 'The reviewer rejected it 3 times')],
+        },
+        issue,
+      )
+    expect(needs(input({ tasks: names.map((n, i) => failed(n, i + 1)) })).map((i) => i.name)).toEqual([
+      'orders',
+      'orders-api',
+      'orders2',
+    ])
   })
 
   it('groups items by project, with its display name', () => {

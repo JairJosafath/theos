@@ -4,6 +4,7 @@
 
 import type { Agent, Task, TaskPhase, TaskTransition } from '../k8s/types'
 import { findCondition } from '../k8s/types'
+import { compareText } from './order'
 
 /** Where a Task's time goes. Each timeline step falls in one stage. */
 export type Stage = 'queued' | 'slot' | 'implement' | 'checks' | 'review' | 'verify' | 'approval' | 'blocked'
@@ -272,7 +273,7 @@ export function boardColumns(tasks: Task[], doneLimit = 8): Record<Column, Task[
   }
   columns.done.sort(
     (a, b) =>
-      (time(b.status?.completedAt) ?? 0) - (time(a.status?.completedAt) ?? 0) || taskKey(a).localeCompare(taskKey(b)),
+      (time(b.status?.completedAt) ?? 0) - (time(a.status?.completedAt) ?? 0) || compareText(taskKey(a), taskKey(b)),
   )
   columns.done = columns.done.slice(0, doneLimit)
   return columns

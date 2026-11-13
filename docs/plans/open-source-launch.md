@@ -121,7 +121,7 @@ live state; this is the short of it.
 | #65 docs/comparison.md | done (#67) |
 | #47 the licence | done (#71): Apache-2.0 |
 | #55 contributor and governance docs | done (#67, #71) |
-| #63 work on a timer | done (#71). Of the rest, #72: the UI lists the schedules, a run that finds nothing to do closes its issue instead of failing, and a person runs a schedule now ([crew-schedules.md](crew-schedules.md), steps 2 to 4); open: Standards that propose schedules |
+| #63 work on a timer | done (#71), and the rest with #72, closed on 2026-11-13 ([crew-schedules.md](done/crew-schedules.md), six steps): the UI lists the schedules, a run that finds nothing to do closes its issue instead of failing, a person runs a schedule now, a Standard proposes schedules, and a Crew's page offers them for a person to take |
 | #70 the flaky cost spec | done (#71) |
 | #59 Prometheus metrics, the dashboard and alerts | done (#67, #71) |
 | #53 a first run in ten minutes | `hack/quickstart.sh` and README's first screen are in; the script asks for the release's chart before it makes anything, and says the two reasons when it can't pull it (no such release, private packages); open: the guide cut into pages, the time measured, a run on a real machine |
@@ -135,7 +135,9 @@ live state; this is the short of it.
 | #60 bring a repository you already have | planned ([adopt-existing.md](adopt-existing.md)), six steps; steps 1 to 3, 5 and 6 (#95, #96, #98, #99) are built: an adopting Container needs nothing from the catalog, a Crew works on it once main requires the repository's own checks, `theos-session adopt` proposes the model, the Crew's first issue there writes `AGENTS.md`, and [docs/adopt.md](../adopt.md) walks it; open: #97 (a Standard as a pull request) |
 | #61 Slack, Linear and Jira | planned on 2026-11-13 ([requests-and-chat.md](requests-and-chat.md)): thirteen steps, none filed or started; the two ports' contract suites are merged (#131); nothing else is built |
 | #58 more harnesses and models | planned ([harnesses.md](harnesses.md)), eight steps; step 1 (the harness table in the runner) and the proxy's part of step 2 (named upstreams) are built; open: the chart's upstreams, the price table, and the `codex` harness, which no session has run |
-| #54, #64, #66, #73 | open |
+| #66 the factory's own numbers, published | planned ([results-report.md](results-report.md)), four steps; on 2026-11-13 steps 1 and 2 are built: the report's rules in Go with a fixture the UI's numbers are held to, and `theos-session report`, which writes a release's JSON and its page, the page the release notes link; open: the first report, which a person runs on the owner's cluster, and README's numbers |
+| #73 scaffolded Node packages' license | done (#84) |
+| #54, #64 | open |
 
 ## For the owner
 

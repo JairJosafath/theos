@@ -98,16 +98,16 @@ var _ = Describe("Brief requests shipped", func() {
 
 	It("says where a planned request shipped once its release is published, once, and closes it as completed", func() {
 		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
-			Authors: []string{"gray-lenovo"}})
+			Authors: []string{"ada"}})
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
-		theme := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")
-		early := githubFake.openIssue(repository, "gray-lenovo", "Light theme", "Too.")
-		byHand := githubFake.openIssue(repository, "gray-lenovo", "Sepia theme", "Also.")
-		split := githubFake.openIssue(repository, "gray-lenovo", "Server rules", "Lint them on the server.")
+		theme := githubFake.openIssue(repository, "ada", "Dark theme", "Please.")
+		early := githubFake.openIssue(repository, "ada", "Light theme", "Too.")
+		byHand := githubFake.openIssue(repository, "ada", "Sepia theme", "Also.")
+		split := githubFake.openIssue(repository, "ada", "Server rules", "Lint them on the server.")
 		plan := linterPlan(ns, 4)
 		plan[model.PlanModelFile] = scaffold.File{Data: append(plan[model.PlanModelFile].Data,
 			[]byte(engineContainer("server", "Server"))...)}
@@ -184,7 +184,7 @@ var _ = Describe("Brief requests shipped", func() {
 
 	It("says a request was done in its issue when its Container publishes nowhere", func() {
 		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
-			Authors: []string{"gray-lenovo"}})
+			Authors: []string{"ada"}})
 		Eventually(func(g Gomega) {
 			brief := getBrief(g, ns)
 			g.Expect(patch(brief, func() { brief.Spec.Releases[0].Container = "elsewhere" })).To(Succeed())
@@ -194,7 +194,7 @@ var _ = Describe("Brief requests shipped", func() {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
-		theme := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please.")
+		theme := githubFake.openIssue(repository, "ada", "Dark theme", "Please.")
 		became := takeAll(ns, repository, []int{theme},
 			requestsPlan(ns, fmt.Sprintf("- {request: %s#%d, answer: take, issues: [1]}\n", repository, theme)))
 		Expect(linterCrew(Default, ns).Spec.PublishReleases).To(BeNil())

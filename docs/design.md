@@ -257,22 +257,69 @@ tries again when something it depends on changes, or when its
 
 **Adopting a repository.** A Container with `spec.adopt: true` (set at
 creation, immutable) takes over a repository that already has commits and
-is never scaffolded: the operator writes nothing. It checks main for two
-things. `.theos.yaml` carries the identity file's fields, naming this
-project and Container (`scaffoldedFrom` is what another factory scaffolded
-it from, or empty); a missing file or another identity fails `IdentityMismatch`,
-saying what the file holds. Every file the Container's Standard renders for
-it at its ref is there with that content; else it fails
-`StandardFilesDiffer`, naming the paths of the closest render. The Standard
-renders its agent guides with the system's Domains, so the check tries, in
-order, the Domains `.theos.yaml`'s `scaffoldedFrom` records (its entries
-that name a Domain of the project's catalog), the Domains the system names
-now, and none, and the first that renders main's files wins (#42): a
-repository theos scaffolded with Domains can be adopted by another factory
-with the same catalog. When both hold, it protects `main` and goes `Ready`,
-recording the Standard at its ref and those Domains in
+is never scaffolded: the operator writes nothing to its main. It checks
+main for two things. `.theos.yaml` carries the identity file's fields,
+naming this project and Container (`scaffoldedFrom` is what another factory
+scaffolded it from, or empty); a missing file or another identity fails
+`IdentityMismatch`, saying what the file holds. And every file the
+Container's Standard renders for it at its ref, with that content. The
+Standard renders its agent guides with the system's Domains, so the check
+tries, in order, the Domains `.theos.yaml`'s `scaffoldedFrom` records (its
+entries that name a Domain of the project's catalog), the Domains the
+system names now, and none, and the first that renders main's files wins
+(#42): a repository theos scaffolded with Domains can be adopted by another
+factory with the same catalog. When both hold, it protects `main` and goes
+`Ready`, recording the Standard at its ref and those Domains in
 `status.scaffoldedDomains`, which `DomainsApplied` and later Standard
-updates read. An empty repository
+updates read.
+
+**A Standard is something an adopted repository grows into** (#97). When
+the identity holds and the Standard's files don't, the Container is `Ready`
+on its identity all the same, with the Domains of the render main is
+closest to (a set of Domains only when it renders strictly closer than
+none), and the Standard arrives as a pull request: the operator pushes the
+files that differ, as the Standard renders them, to
+`standard-adopt/<name>-<ref>` and opens one pull request, recorded in
+`status.standardAdoption`; `StandardUpdated=False`, reason
+`PullRequestOpen`, names it. A Standard named after the adoption arrives
+the same way. Until it is recorded, the Standard is held to the Frameworks
+it lists, as at creation: while the Container's Framework isn't one of
+them, or the Container names none, `StandardUpdated=False`, reason
+`UnsupportedFramework`, no pull request opens, one already open stays as it
+is, and no agent works there. A person reads the pull request like any
+change, pushes to it what the repository must keep, and merges or closes
+it; the operator never merges it, since it may replace files the
+repository's people wrote. Until the Standard is on main it isn't recorded
+(`status.standard` is unset, and `ChecksApplied` with it), main isn't
+protected by the Standard's checks (a rule a bare adoption put there for
+its own checks stays on the Git host), and no agent works there: a Crew
+starts no Task and a Task made by hand waits, `ContainerNotProtected`, with
+the condition's words. The pull request stays at the ref it was opened at;
+once it merges, an ordinary Standard update brings a newer one.
+
+- **Merged:** when main holds every file the Standard protects (its
+  `protectedPaths` and the platform's) as rendered, the operator records
+  the Standard in `status.standard` at that ref and protects main. A file
+  it doesn't protect that the person changed in the pull request is the
+  repository's own from then on, and later updates merge with it. When a
+  protected file differs, `StandardUpdated=False`, reason
+  `StandardFilesDiffer`, names it: the Standard's checks would not be the
+  ones it renders.
+- **Closed:** `StandardUpdated=False`, reason `UpdateClosed`, says which
+  files the repository is without; the Container stays `Ready`, without the
+  Standard.
+
+Either stop is read again when main moves, so files a person brings by
+hand are found (after a close, all of them), and the Standard's ref or the
+Container's checks changing opens a new pull request. The pull request is
+for one Standard, named in `status.standardAdoption.name`: when the
+Container names none, or names another, once the Standard named now fits,
+the operator closes it if it is open, deletes its branch and forgets it,
+and the Standard named now is compared with main afresh. While the one
+named now doesn't fit or doesn't exist, the pull request stays as it is.
+A pull request gone from the host reads as closed. Every
+run asks whether the Standard is on main before it starts, a triage's and a
+later round's too, and puts no rule on main while it waits. An empty repository
 fails `NothingToAdopt`; one with commits but no `main` branch fails
 `NoDefaultBranch`, telling the user to rename its default branch to `main`
 first (#1908). A Container without a Standard adopts on the
@@ -1041,7 +1088,7 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   jobs, once per value. While a failed full check holds the next release, the
   value re-runs that check first: its issue holds the release no more, is
   closed if the check passes, and holds it again if it fails (#2028).
-- **Schedules** (`spec.schedules`, [plans/crew-schedules.md](plans/crew-schedules.md), #63).
+- **Schedules** (`spec.schedules`, [plans/done/crew-schedules.md](plans/done/crew-schedules.md), #63).
   Work that starts from the clock: up to eight named goals, each with a
   five-field `cron` and a `timeZone` (UTC unset). When one comes due the
   Crew files an issue in the Container's repository, titled with the
@@ -1095,9 +1142,16 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   as written would run at UTC unasked. One whose name the Crew uses is shown
   as in use, with where the Crew's schedule differs in cron, time zone or
   goal. The page says nothing of where a schedule came from: the name is all
-  that links the two. The write is the UI's own: made as the person signed
-  in where the UI signs people in with OIDC, and as the UI's ServiceAccount
-  over a port-forward. The operator still reads no proposal.
+  that links the two. The Standard's own page lists each proposal the same
+  way, read-only, beside the Crews that have a schedule of its name and, for
+  each, in which of cron, time zone and goal it differs; only Crews whose
+  Container chose that Standard count (its `standardRef`, or what its Bundle
+  expanded to), and while the Crews or Containers are still being read or
+  were refused, the page says so instead of a count. A proposal is taken on a
+  Crew's page, where the zone is asked. The write is the UI's own: made as
+  the person signed in where the UI signs people in with OIDC, and as the
+  UI's ServiceAccount over a port-forward. The operator still reads no
+  proposal.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
@@ -1455,9 +1509,11 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
   sidebar; a UI and an operator of different versions get a warning.
 - **The factory's health** comes from the UI server (`GET /factory/health`,
   sampled every 15 seconds, an hour kept). The last hour's CPU and memory
-  are the cluster's: every node's usage added up, against what the nodes
-  can allocate together; each node's own usage and trouble show beside it.
-  No Prometheus or Grafana.
+  are the cluster's: every node's usage added up, against what those nodes
+  could allocate together when sampled, so a node that joins or leaves moves
+  no earlier point, with the fullest node's share of itself as a second
+  line; each node's own usage and trouble, as they are at this moment, show
+  beside it. No Prometheus or Grafana.
 - **The project's Chat** (*Chat*, below) on About and in Settings, read
   only: its homeserver, each room by name with a `https://matrix.to/#/` link
   to its alias (else its ID), and `Ready` with its message; nothing when the
@@ -1466,9 +1522,11 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
 ### UI actions
 
 With actions off (the default) the UI server writes three things: create a
-Brief, append a prompt, pause or resume one. With `ui.actions.enabled`, each
-row below is one allowlisted request in `ui/server.mjs`, refused there for any
-other path, method, content type or field, and by RBAC for anything else:
+Brief, append a prompt, pause or resume one, with or without its running
+Tasks (`spec.paused`, `spec.pauseRuns`; see *Pausing runs*). With
+`ui.actions.enabled`, each row below is one allowlisted request in
+`ui/server.mjs`, refused there for any other path, method, content type or
+field, and by RBAC for anything else:
 
 | Kind | Request | Fields |
 | --- | --- | --- |
@@ -1573,7 +1631,7 @@ controllers call, not by one product's API;
 | Port | What the operator asks of it | Today |
 | --- | --- | --- |
 | GitHost | repositories, files, branches, tags, branch rules, pull requests, merges, commit statuses | Gitea |
-| Issues | issues, comments, labels, milestones, dependencies | Gitea; request intake on GitHub |
+| Issues | issues, comments, labels, milestones, dependencies; request intake is a port of its own (`IssueTracker`: the open issues a Brief reads as requests, its answer on each, the close), with any tracker behind it | Gitea; GitHub for request intake |
 | CI | runs of a commit or tag, reruns, job logs, runners; the jobs that wait for a label's runner, and a runner registered for one job | Gitea Actions |
 | AgentAccess | a credential for one repository, and revoking it | Gitea bot users |
 | Registry | Go modules and the proxy; npm, PyPI and images to come | Gitea packages |
@@ -1656,6 +1714,28 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   second. A new version or another state files again; recovering to `Healthy`
   files nothing. A failure to reach the Git host is not filed.
   (`model.DeployMonitorDue`.)
+- **Alerts** ([plans/alerts.md](plans/alerts.md), #64; the rules are built,
+  the kind and the receiver are still to come): the operator monitors no
+  app, it listens to the tools that do. An `AlertSource` in the Project's
+  namespace names one sender (`alertmanager`, `sentry` or `generic`), the
+  Secret that checks its deliveries, and how an alert finds its Container:
+  the label `theos_container`, else a route, the namespace an `argoCD`
+  target deploys to, or the Sentry project. The receiver of the Git host's
+  deliveries takes them on `/alerts/<namespace>/<alertsource>`; none is
+  taken unauthenticated. A firing alert files one issue in its Container's
+  repository, `Alert: <name>`, labelled `kind/bug`, `source/monitor` and
+  `status/proposed`, so triage decides and the Crew's approval rules hold:
+  since when, what is deployed, the link back, and what the alert says, cut
+  to size, between marker lines as a prompt puts issue text, since it is
+  data from the tool and from whatever the app logged. The same alert
+  firing again is counted, and said in a comment at most once an hour
+  (`commentInterval`); resolved, it says so once and closes nothing. An
+  alert files at most once a day, and past five issues a day for a
+  Container (`dailyLimit`) the rest are counted in one "and N more" on the
+  last. The counts are the AlertSource's status, which also counts the
+  alerts that named no known Container; those file nothing.
+  (`model.ParseAlerts`, `model.AlertContainer`, `model.AlertStep`,
+  `model.AlertRecordOwed`, `model.AlertDayOwed`, `model.AlertIssue`.)
 - **Release images** (#1069): built by the `image` runner, pushed by digest,
   shipped by digest ([plans/images.md](plans/images.md)). When the
   Container's choice builds one (`model.BuildsImage`: `k8s-manifests`,
@@ -1827,7 +1907,10 @@ meant. Within a served version a release never:
 Adding an optional field, an enum value, a condition type or reason, or a kind
 is fine. A change these rules forbid is a new version, never a change to a
 served one. The status is held to them as the spec is; what the operator does
-with an object may change, as the release notes say.
+with an object may change, as the release notes say. A condition's reason is
+not in the schema: a reason may be renamed or removed, and the release that
+does it lists the pull request under *Changed*, marked Breaking, by its title,
+so the title of such a pull request names the old and the new reason.
 
 **Across versions** ([plans/done/api-versions.md](plans/done/api-versions.md), #1082).
 `v1alpha1` was dropped before theos's first release without the 90 days

@@ -43,7 +43,7 @@ type IssueTrackerEnv struct {
 // tracker itself.
 type TrackerHost struct {
 	// Tracker speaks as the factory's account, which may read and answer
-	// the issues and read the teams' members.
+	// the issues.
 	Tracker ports.IssueTracker
 	// Account is the login of the factory's account, as a comment names its
 	// author.
@@ -51,17 +51,13 @@ type TrackerHost struct {
 	// Refused is an IssueTracker of the same issues with a credential the
 	// tracker doesn't know.
 	Refused ports.IssueTracker
-	// LacksIssues has a credential that may not read or answer the issues,
-	// LacksMembers one that may not read a team's members.
-	LacksIssues, LacksMembers ports.IssueTracker
-	// Elsewhere is an IssueTracker of a repository the tracker doesn't
-	// have, or doesn't show the credential.
+	// LacksIssues has a credential that may not read or answer the issues.
+	LacksIssues ports.IssueTracker
+	// Elsewhere is an IssueTracker of a repository, team or project the
+	// tracker doesn't have, or doesn't show the credential.
 	Elsewhere ports.IssueTracker
-	// Team is a team of the tracker without members, as TeamMember takes
-	// it, and NoTeam the name of one the tracker doesn't have.
-	Team, NoTeam string
 	// Person makes a person's account and returns their login, as an issue
-	// names its author and TeamMember takes it.
+	// names its author.
 	Person func(t *testing.T, name string) string
 	// File files an issue as author and returns its number.
 	File func(t *testing.T, author, title, body string) int
@@ -74,9 +70,6 @@ type TrackerHost struct {
 	Close func(t *testing.T, number int)
 	// Say comments body on issue number as author.
 	Say func(t *testing.T, number int, author, body string)
-	// Join makes login an active member of team; Invite leaves login with
-	// an invitation to team that isn't accepted.
-	Join, Invite func(t *testing.T, team, login string)
 	// Disable turns the issues off.
 	Disable func(t *testing.T)
 	// Down makes the tracker answer nothing from now on, as an outage or a
@@ -117,46 +110,47 @@ const (
 	markerPlanned  = "<!-- contract:request stage=planned -->"
 	markerReleased = "<!-- contract:request stage=released -->"
 	answerPlanned  = "Planned as: dark mode\n\n" + markerPlanned
+	// How a failed call is named, in this suite and in TeamMembers.
+	whenRefused = " with a credential the tracker doesn't know"
+	whenDown    = " of a tracker that doesn't answer"
 )
 
 // IssueTracker states what a Brief relies on of every IssueTracker: the
-// list is the open issues, oldest first, each with its number, text, author,
-// page and when it was filed, with no closed issue and no pull request; a
-// list asked with the ETag of the last is NotModified while nothing changed,
-// with the ETag to ask with again, and is read again once an issue is filed,
-// edited or closed; TeamMember is true for a team's active member alone;
-// Comment posts as the factory's account and returns the comment with its
-// ID, author and page, and FindComment finds that comment by its marker on
-// that issue, the first when two have it, nobody else's, and none by an
-// empty marker; CloseIssue closes with one of the two reasons, a closed
-// issue again with the new reason, and never with another reason; no call
-// changes an issue's text or what people said on it; and seven failures
-// have their reason, as ports.IssuesReason reads it: an issue that isn't
-// there, a credential the tracker doesn't know, one that may not use the
-// issues, one that may not read the members, a repository that isn't there,
-// issues turned off, and a tracker that doesn't answer. A failed list is
-// empty and a failed TeamMember false. ReasonGitHubError, the reason of
-// anything else, is not in the suite.
+// list is the open issues, oldest first, each with its number, a key of its
+// own for people to read, its text, author, page and when it was filed, with
+// no closed issue and no pull request; a list asked with the ETag of the
+// last is NotModified while nothing changed, with the ETag to ask with
+// again, and is read again once an issue is filed, edited or closed; Comment
+// posts as the factory's account and returns the comment with its ID, author
+// and page, and FindComment finds that comment by its marker on that issue,
+// the first when two have it, nobody else's, and none by an empty marker;
+// CloseIssue closes with one of the two reasons, a closed issue again with
+// the new reason, and never with another reason; no call changes an issue's
+// text or what people said on it; and six failures have their reason, as
+// ports.IssuesReason reads it: an issue that isn't there, a credential the
+// tracker doesn't know, one that may not use the issues, a repository, team
+// or project that isn't there, issues turned off, and a tracker that doesn't
+// answer. A failed list is empty. ReasonTrackerError, the reason of anything
+// else, is not in the suite.
 //
-// What a tracker does its own way stays in its adapter's tests: how lists
-// and comments are paged and which page an ETag covers, the names a team
-// and a login may have, what a moved or locked issue answers, and what an
-// error's message holds.
+// A tracker's teams are an optional capability with a suite of their own,
+// TeamMembers (teammembers.go). What a tracker does its own way stays in its
+// adapter's tests: how lists and comments are paged and which page an ETag
+// covers, how a key and a comment's ID are written, what a moved or locked
+// issue answers, and what an error's message holds.
 func IssueTracker(t *testing.T, env IssueTrackerEnv) {
 	t.Helper()
 	ctx, cancel := suiteContext()
 	defer cancel()
 	runSubtests(t, trackerSuite{ctx: ctx, env: env}, env.Cannot, []subtest[trackerSuite]{
-		{"lists the open issues, oldest first, with who wrote each", trackerSuite.lists},
+		{"lists the open issues, oldest first, with who wrote each and a Key of its own (#151)", trackerSuite.lists},
 		{"lists each issue with when it was filed", trackerSuite.listsCreated},
 		{"lists no closed issue", trackerSuite.listsNoClosed},
 		{"never lists a pull request", trackerSuite.listsNoPulls},
 		{"says an unchanged list is not modified, with the ETag to ask with again", trackerSuite.notModified},
 		{"reads the list again once an issue is filed, edited or closed", trackerSuite.modified},
-		{"tells a team's active member from a stranger, and from a team it can't see", trackerSuite.members},
-		{"does not count an invitation that isn't accepted", trackerSuite.invited},
 		{"comments as the factory's account, and finds its comment by its marker", trackerSuite.comments},
-		{"returns the comment it posted, with its ID, author and page", trackerSuite.posted},
+		{"returns the comment it posted, with its ID (a string), author and page (#151)", trackerSuite.posted},
 		{"finds the first of its comments with a marker", trackerSuite.firstComment},
 		{"finds no comment by an empty marker", trackerSuite.emptyMarker},
 		{"ignores a marker in a comment someone else wrote", trackerSuite.strangers},
@@ -167,8 +161,7 @@ func IssueTracker(t *testing.T, env IssueTrackerEnv) {
 		{"says an issue that isn't there is not found", trackerSuite.issueNotFound},
 		{"says a credential the tracker doesn't know is unauthorized", trackerSuite.refused},
 		{"says a credential that may not use the issues lacks them", trackerSuite.lacksIssues},
-		{"says a credential that may not read a team's members lacks them", trackerSuite.lacksMembers},
-		{"says a repository that isn't there is not found", trackerSuite.repositoryNotFound},
+		{"says a repository, team or project that isn't there is not found", trackerSuite.trackerNotFound},
 		{"says issues that are turned off are disabled", trackerSuite.disabled},
 		{"says a tracker that doesn't answer is unavailable", trackerSuite.unavailable},
 	})
@@ -264,7 +257,7 @@ func (s trackerSuite) lists(t *testing.T) {
 		t.Fatalf("ListOpenIssues() of a tracker without issues = %+v, want no issue, read", list)
 	}
 	ada, grace := h.Person(t, authorAda), h.Person(t, authorGrace)
-	want := []ports.GitHubIssue{
+	want := []ports.TrackerIssue{
 		{Title: requestDarkMode, Body: requestWhy, Author: ada},
 		{Title: requestExport, Body: "With the totals.", Author: grace},
 		{Title: "Print it", Body: "", Author: ada},
@@ -276,16 +269,20 @@ func (s trackerSuite) lists(t *testing.T) {
 	}
 	list := s.list(t, h.Tracker, "")
 	wantListed(t, list, numbers...)
-	pages := map[string]bool{}
+	pages, keys := map[string]bool{}, map[string]bool{}
 	for i, got := range list.Issues {
 		if got.Title != want[i].Title || got.Body != want[i].Body || !strings.EqualFold(got.Author, want[i].Author) {
 			t.Errorf("issue %d is listed as %q by %q with the body %q; want %q by %q with %q", got.Number, got.Title,
 				got.Author, got.Body, want[i].Title, want[i].Author, want[i].Body)
 		}
 		pages[got.URL] = true
+		keys[got.Key] = true
 	}
 	if len(pages) != len(want) || pages[""] {
 		t.Errorf("the issues' pages are %v, want one for each issue", pages)
+	}
+	if len(keys) != len(want) || keys[""] {
+		t.Errorf("the issues' keys are %v, want one for each issue, for people to read", keys)
 	}
 }
 
@@ -362,37 +359,6 @@ func (s trackerSuite) modified(t *testing.T) {
 	wantListed(t, s.list(t, x.Tracker, list.ETag), x.request)
 }
 
-func (s trackerSuite) members(t *testing.T) {
-	h := s.env.New(t)
-	ada, grace := h.Person(t, authorAda), h.Person(t, authorGrace)
-	h.Join(t, h.Team, ada)
-	for _, tt := range []struct {
-		who, team, login string
-		want             bool
-	}{
-		{"the team's member", h.Team, ada, true},
-		{"a stranger to the team", h.Team, grace, false},
-		{"a team the tracker doesn't have", h.NoTeam, ada, false},
-	} {
-		if got, err := h.Tracker.TeamMember(s.ctx, tt.team, tt.login); err != nil || got != tt.want {
-			t.Errorf("TeamMember(%s, %s), %s = %v, %v; want %v", tt.team, tt.login, tt.who, got, err, tt.want)
-		}
-	}
-}
-
-func (s trackerSuite) invited(t *testing.T) {
-	h := s.env.New(t)
-	grace := h.Person(t, authorGrace)
-	h.Invite(t, h.Team, grace)
-	if got, err := h.Tracker.TeamMember(s.ctx, h.Team, grace); err != nil || got {
-		t.Errorf("TeamMember() of someone invited = %v, %v; want false", got, err)
-	}
-	h.Join(t, h.Team, grace)
-	if got, err := h.Tracker.TeamMember(s.ctx, h.Team, grace); err != nil || !got {
-		t.Errorf("TeamMember() once the invitation is accepted = %v, %v; want true", got, err)
-	}
-}
-
 func (s trackerSuite) comments(t *testing.T) {
 	x := s.filed(t)
 	other := x.File(t, x.ada, requestExport, "")
@@ -424,7 +390,7 @@ func (s trackerSuite) posted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Comment() = %v", err)
 	}
-	if first.ID == 0 || first.Body != answerPlanned || !strings.EqualFold(first.Author, x.Account) || first.URL == "" {
+	if first.ID == "" || first.Body != answerPlanned || !strings.EqualFold(first.Author, x.Account) || first.URL == "" {
 		t.Errorf("Comment() = %+v; want the comment with an ID, the body %q, the author %q and its page", first,
 			answerPlanned, x.Account)
 	}
@@ -554,13 +520,9 @@ func (s trackerSuite) issueNotFound(t *testing.T) {
 
 func (s trackerSuite) refused(t *testing.T) {
 	x := s.filed(t)
-	x.Join(t, x.Team, x.ada)
-	const with = " with a credential the tracker doesn't know"
 	for _, call := range s.answers(x.Refused, "", x.request) {
-		wantReason(t, call.name+with, call.err, ports.ReasonUnauthorized)
+		wantReason(t, call.name+whenRefused, call.err, ports.ReasonUnauthorized)
 	}
-	_, err := x.Refused.TeamMember(s.ctx, x.Team, x.ada)
-	wantReason(t, "TeamMember()"+with, err, ports.ReasonUnauthorized)
 	wantUntouched(t, x)
 }
 
@@ -573,20 +535,10 @@ func (s trackerSuite) lacksIssues(t *testing.T) {
 	wantUntouched(t, x)
 }
 
-func (s trackerSuite) lacksMembers(t *testing.T) {
-	x := s.filed(t)
-	x.Join(t, x.Team, x.ada)
-	member, err := x.LacksMembers.TeamMember(s.ctx, x.Team, x.ada)
-	wantReason(t, "TeamMember() with a credential that may not read the members", err, ports.ReasonTokenLacksMembers)
-	if member {
-		t.Error("TeamMember() that failed said the login is a member")
-	}
-}
-
-func (s trackerSuite) repositoryNotFound(t *testing.T) {
+func (s trackerSuite) trackerNotFound(t *testing.T) {
 	x := s.filed(t)
 	list, err := x.Elsewhere.ListOpenIssues(s.ctx, "")
-	wantReason(t, "ListOpenIssues() of a repository that isn't there", err, ports.ReasonRepositoryNotFound)
+	wantReason(t, "ListOpenIssues() of a repository, team or project that isn't there", err, ports.ReasonTrackerNotFound)
 	if len(list.Issues) != 0 || list.NotModified {
 		t.Errorf("ListOpenIssues() that failed returned %+v", list)
 	}
@@ -605,16 +557,9 @@ func (s trackerSuite) disabled(t *testing.T) {
 
 func (s trackerSuite) unavailable(t *testing.T) {
 	x := s.filed(t)
-	x.Join(t, x.Team, x.ada)
 	etag := s.list(t, x.Tracker, "").ETag
 	x.Down(t)
-	const down = " of a tracker that doesn't answer"
 	for _, call := range s.answers(x.Tracker, etag, x.request) {
-		wantReason(t, call.name+down, call.err, ports.ReasonGitHubUnavailable)
-	}
-	member, err := x.Tracker.TeamMember(s.ctx, x.Team, x.ada)
-	wantReason(t, "TeamMember()"+down, err, ports.ReasonGitHubUnavailable)
-	if member {
-		t.Error("TeamMember() that failed said the login is a member")
+		wantReason(t, call.name+whenDown, call.err, ports.ReasonTrackerUnavailable)
 	}
 }

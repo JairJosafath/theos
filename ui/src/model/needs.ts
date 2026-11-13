@@ -9,7 +9,8 @@ import type { Area } from './areas'
 import { failureAnswered } from './attention'
 import { approveCommand, deploysOf, type DeployRow } from './deploys'
 import { time } from './factory'
-import { hasPage, standardKeepCommand, standardTakeCommand } from './lifecycle'
+import { hasPage, STANDARD_FIX_REASONS, standardKeepCommand, standardTakeCommand, standardWaits } from './lifecycle'
+import { compareText } from './order'
 
 export type NeedKind = 'Brief' | 'Container' | 'Task' | 'Crew'
 
@@ -79,9 +80,13 @@ export function needs(input: NeedsInput): Need[] {
   ]
   return items.sort(
     (a, b) =>
-      a.namespace.localeCompare(b.namespace) ||
+      compareText(a.namespace, b.namespace) ||
       (time(a.since) ?? Infinity) - (time(b.since) ?? Infinity) ||
-      a.key.localeCompare(b.key),
+      // Kind, then name, then the key: names order as everywhere else (#175),
+      // where the joined key put "orders2" before "orders".
+      compareText(a.kind, b.kind) ||
+      compareText(a.name, b.name) ||
+      compareText(a.key, b.key),
   )
 }
 
@@ -171,6 +176,31 @@ function containerNeeds(c: Container): Need[] {
       ...why(protection, 'NoMatchingCheck'),
       place,
       links: c.status?.repositoryURL ? [{ label: 'Its repository', url: c.status.repositoryURL }] : [],
+    })
+  }
+  // #172: the Standard of an adopted repository arrives as a pull request a person merges or
+  // closes, and no agent works there until main holds its files (lifecycle.ts, standardWaits).
+  const waits = standardWaits(c)
+  if (waits) {
+    // A pull request still open while the Standard doesn't fit is no way out: nothing is read
+    // or done until it fits, so merging it unblocks nothing. The next step links it only on
+    // PullRequestOpen too (containerNextStep).
+    const pr = waits.reason === 'PullRequestOpen' ? waits.pullRequest : undefined
+    const repo = c.status?.repositoryURL
+    // #183: a Standard that is missing, doesn't fit or doesn't render is fixed on the Standard.
+    const fixed = STANDARD_FIX_REASONS.some((r) => r === waits.reason)
+    items.push({
+      ...base('Container', c, 'StandardWaits'),
+      title: 'has a Standard waiting on you',
+      ...why(waits.condition, waits.reason),
+      place,
+      // The pull request while it waits to be merged; once it stopped, the repository whose main the
+      // files go to; nothing while the Standard doesn't fit or can't be read: that is fixed on the Standard.
+      links: pr
+        ? [{ label: `The Standard’s pull request${pr.number ? ` #${pr.number}` : ''}`, url: pr.href }]
+        : repo && !fixed
+          ? [{ label: 'Its repository', url: repo }]
+          : [],
     })
   }
   const updated = findCondition(c.status?.conditions, 'StandardUpdated')

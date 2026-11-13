@@ -1,0 +1,75 @@
+{
+  "action": "triggered",
+  "installation": {
+    "uuid": "a8e5d37a-696c-4c54-adb5-b3f28d64c7de"
+  },
+  "data": {
+    "event": {
+      "event_id": "e4874d664c3540c1a32eab185f12c5ab",
+      "project": 1,
+      "release": "orders-web@1.4.2",
+      "dist": null,
+      "platform": "javascript",
+      "message": "",
+      "datetime": "2026-11-12T08:58:37.391000Z",
+      "tags": [
+        ["browser", "Chrome 131.0.0"],
+        ["environment", "production"],
+        ["level", "error"],
+        ["theos_container", "orders-web"],
+        ["url", "https://shop.example.com/checkout"]
+      ],
+      "_meta": {},
+      "contexts": {
+        "browser": {"name": "Chrome", "version": "131.0.0", "type": "browser"}
+      },
+      "culprit": "?(checkout)",
+      "environment": "production",
+      "exception": {
+        "values": [
+          {
+            "type": "ReferenceError",
+            "value": "heck is not defined",
+            "mechanism": {"type": "onerror", "handled": false}
+          }
+        ]
+      },
+      "fingerprint": ["{{ default }}"],
+      "level": "error",
+      "location": "checkout.js",
+      "logger": "",
+      "metadata": {
+        "filename": "checkout.js",
+        "type": "ReferenceError",
+        "value": "heck is not defined"
+      },
+      "received": 1794473917.391,
+      "request": {
+        "url": "https://shop.example.com/checkout",
+        "headers": [["User-Agent", "Mozilla/5.0"]]
+      },
+      "sdk": {"name": "sentry.javascript.browser", "version": "8.40.0"},
+      "timestamp": 1794473917.391,
+      "title": "ReferenceError: heck is not defined",
+      "type": "error",
+      "user": {"ip_address": "203.0.113.7"},
+      "version": "7",
+      "url": "https://sentry.io/api/0/projects/test-org/orders-web/events/e4874d664c3540c1a32eab185f12c5ab/",
+      "web_url": "https://sentry.io/organizations/test-org/issues/1117540176/events/e4874d664c3540c1a32eab185f12c5ab/",
+      "issue_url": "https://sentry.io/api/0/issues/1117540176/",
+      "issue_id": "1117540176"
+    },
+    "triggered_rule": "Send a notification for new issues",
+    "issue_alert": {
+      "title": "Send a notification for new issues",
+      "settings": [
+        {"name": "channel", "value": "#general"}
+      ]
+    }
+  },
+  "actor": {
+    "type": "application",
+    "id": "sentry",
+    "name": "Sentry"
+  }
+}

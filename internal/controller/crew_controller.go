@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -200,7 +201,7 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 	facts := model.CrewFacts{Paused: crew.Spec.Paused, Parallel: int(crew.Spec.Parallel),
 		ContainerReady: container.Status.Phase == c4v1beta1.ContainerReady, Routes: crewRoutes(&crew.Spec),
-		Cadence: cadence.Cuts(), Unprotected: unprotected(&container)}
+		Cadence: cadence.Cuts(), Unprotected: cmp.Or(unprotected(&container), standardNotOnMain(&container))}
 	// Read live: a Task created a moment ago must count, or the Crew starts two.
 	var tasks c4v1beta1.TaskList
 	if err := r.APIReader.List(ctx, &tasks, client.InNamespace(crew.Namespace)); err != nil {
@@ -731,7 +732,7 @@ func (r *CrewReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&c4v1beta1.Container{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				return crewsOf(ctx, obj.GetNamespace(), obj.GetName())
-			}), containerPhaseChanges()).
+			}), containerPhaseOrStandardRecorded()).
 		Watches(&c4v1beta1.Task{}, handler.EnqueueRequestsFromMapFunc(
 			func(ctx context.Context, obj client.Object) []reconcile.Request {
 				task, ok := obj.(*c4v1beta1.Task)

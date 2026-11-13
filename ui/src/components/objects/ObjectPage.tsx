@@ -169,6 +169,8 @@ function pageFor(
             kind="Standard"
             entry={standard}
             containers={data.containers}
+            crews={data.crews}
+            connection={connection}
             actions={<StandardActions standard={standard} containers={data.containers} writer={standardWriter} />}
           />
         )

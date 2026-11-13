@@ -129,10 +129,19 @@ jobs:
       # halfway after 1170 s at a load of 55 to 90, which ran out of the
       # Makefile's 20m (#1504). 60m gives that run 1.5 times its 2300 s, and
       # still ends a hung spec, naming it, 30 s before.
+      # THEOS_TEST_PROCS: the controller suite is the long pole of every run
+      # that reaches it, a quarter of an hour in the 2 processes a device
+      # runs it in. One of GitHub's runners has 4 CPUs and 16 GiB to itself,
+      # and each process takes about a GiB, so there it runs in 8: its
+      # longest part took 827 s at 2, 449 s at 4 and 291 s at 8, and the
+      # slowest spec 11 s at each, so the parts wait more than they compute
+      # (docs/dev/devices.md has the table). A self-hosted runner shares its
+      # device and keeps hack/go-test.sh's default.
       - name: Running Tests
         env:
           THEOS_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
           TEST_TIMEOUT: 60m
+          THEOS_TEST_PROCS: ${{ runner.environment == 'github-hosted' && '8' || '' }}
         run: |
           go mod tidy
           COVER=1 make check CHECK_STEPS="generate fmt vet test"

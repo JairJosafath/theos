@@ -1142,6 +1142,15 @@ func ChecksBound(message string) string {
 // that starts no Task for it.
 const ReasonNotProtected = "ContainerNotProtected"
 
+// WaitForProtection is the step of a Task that waits because the main of
+// container isn't protected, for why: no agent runs there, whatever the
+// Task's kind or how far it is. It is looked at again at each recheck.
+func WaitForProtection(container, why string) TaskStep {
+	return TaskStep{Action: ActionWait, Recheck: true, Reason: ReasonNotProtected, Message: fmt.Sprintf(
+		"Waiting for the main of Container %s to be protected; agents work only on protected repositories: %s",
+		container, why)}
+}
+
 // TaskAction is what the operator does next.
 type TaskAction string
 
@@ -1423,9 +1432,7 @@ func nextTaskStep(f TaskFacts) TaskStep {
 func pendingStep(f TaskFacts) TaskStep {
 	switch {
 	case !f.Protected && f.Unprotected != "":
-		return TaskStep{Action: ActionWait, Recheck: true, Reason: ReasonNotProtected, Message: fmt.Sprintf(
-			"Waiting for the main of Container %s to be protected; agents work only on protected repositories: %s",
-			f.Container, f.Unprotected)}
+		return WaitForProtection(f.Container, f.Unprotected)
 	case !f.Protected:
 		return TaskStep{Action: ActionFail, Message: fmt.Sprintf("Container %s has no Standard, so its default "+
 			"branch has no checks to protect it; agents work only on protected repositories", f.Container)}

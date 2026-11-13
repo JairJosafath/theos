@@ -26,10 +26,10 @@ const SIGNED_OUT: UiSession = { actions: true, mode: 'oidc', user: null, login: 
 
 const lens: BriefRelease = {
   container: 'cel-lens',
-  github: { repository: 'gray-lenovo/cel-lens', tokenSecretRef: { name: 'gh' } },
-  requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [3] },
+  github: { repository: 'ada/cel-lens', tokenSecretRef: { name: 'gh' } },
+  requests: { mode: 'Ask', authors: ['ada'], accepted: [3] },
 }
-const repo = 'gray-lenovo/cel-lens'
+const repo = 'ada/cel-lens'
 const brief: Brief = {
   apiVersion: 'theos.factory.io/v1beta1',
   kind: 'Brief',
@@ -42,7 +42,7 @@ const brief: Brief = {
       {
         repository: repo,
         number: 3,
-        author: 'gray-lenovo',
+        author: 'ada',
         title: 'Export as PNG',
         stage: 'Planned',
         round: 2,
@@ -52,7 +52,7 @@ const brief: Brief = {
       {
         repository: repo,
         number: 12,
-        author: 'gray-lenovo',
+        author: 'ada',
         title: 'Dark mode',
         url: `https://github.com/${repo}/issues/12`,
         stage: 'Waiting',
@@ -62,7 +62,7 @@ const brief: Brief = {
       {
         kind: 'Request',
         name: `${repo}#12`,
-        question: `Request ${repo}#12 "Dark mode" by gray-lenovo waits for you.`,
+        question: `Request ${repo}#12 "Dark mode" by ada waits for you.`,
       },
     ],
     needsYouWaiting: 1,
@@ -142,9 +142,9 @@ describe("a Brief's requests", () => {
     const { page } = await render(ACTING)
     const list = page.querySelector('section[aria-label="Requests from GitHub"]')!
     expect(list.textContent).toContain('2 open')
-    expect(list.textContent).toContain('gray-lenovo/cel-lens #3')
+    expect(list.textContent).toContain('ada/cel-lens #3')
     expect(list.textContent).toContain('Round 2 planned it as cel-lens#7, in release v0.3.0')
-    expect(list.textContent).toContain('Dark mode by gray-lenovo')
+    expect(list.textContent).toContain('Dark mode by ada')
     expect(list.textContent).toContain('Waits for you')
     expect(list.querySelector(`a[href="https://github.com/${repo}/issues/12"]`)).not.toBeNull()
   })
@@ -166,7 +166,7 @@ describe("a Brief's requests", () => {
       {
         op: 'add',
         path: '/spec/releases',
-        value: [{ ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [3, 12] } }],
+        value: [{ ...lens, requests: { mode: 'Ask', authors: ['ada'], accepted: [3, 12] } }],
       },
     ])
   })
@@ -186,7 +186,7 @@ describe("a Brief's requests", () => {
     expect(sent(fetchImpl)[1]).toEqual({
       op: 'add',
       path: '/spec/releases',
-      value: [{ ...lens, requests: { mode: 'Ask', authors: ['gray-lenovo'], accepted: [3], declined: [12] } }],
+      value: [{ ...lens, requests: { mode: 'Ask', authors: ['ada'], accepted: [3], declined: [12] } }],
     })
   })
 
@@ -243,7 +243,7 @@ function field(form: Element, label: string): HTMLInputElement | HTMLSelectEleme
 describe("a releases entry's requests in the settings", () => {
   it('are summed up on the entry', async () => {
     const { page } = await render(ACTING)
-    expect(page.querySelector('.brief-setting-releases')!.textContent).toContain('requests Ask, from gray-lenovo')
+    expect(page.querySelector('.brief-setting-releases')!.textContent).toContain('requests Ask, from ada')
   })
 
   it('change mode, authors and teams, keeping the numbers answered', async () => {
@@ -251,8 +251,8 @@ describe("a releases entry's requests in the settings", () => {
     const form = page.querySelector('form[aria-label="Requests of cel-lens"]')!
     await act(async () => {
       type(field(form, 'Requests from'), 'On')
-      type(field(form, 'Authors'), 'gray-lenovo, a-colleague')
-      type(field(form, 'Teams'), 'gray-org/maintainers')
+      type(field(form, 'Authors'), 'ada, a-colleague')
+      type(field(form, 'Teams'), 'acme/maintainers')
     })
     await act(async () => form.querySelector<HTMLButtonElement>('button[type="submit"]')!.click())
     expect(sent(fetchImpl)).toEqual([
@@ -265,8 +265,8 @@ describe("a releases entry's requests in the settings", () => {
             ...lens,
             requests: {
               mode: 'On',
-              authors: ['gray-lenovo', 'a-colleague'],
-              teams: ['gray-org/maintainers'],
+              authors: ['ada', 'a-colleague'],
+              teams: ['acme/maintainers'],
               accepted: [3],
             },
           },
@@ -278,14 +278,14 @@ describe("a releases entry's requests in the settings", () => {
   it('start again from the entry when it changed meanwhile', async () => {
     const { page } = await render(ACTING)
     const authors = () => field(page.querySelector('form[aria-label="Requests of cel-lens"]')!, 'Authors').value
-    expect(authors()).toBe('gray-lenovo')
-    const changed = { ...lens, requests: { ...lens.requests, authors: ['gray-lenovo', 'b'] } }
+    expect(authors()).toBe('ada')
+    const changed = { ...lens, requests: { ...lens.requests, authors: ['ada', 'b'] } }
     await rerender(ACTING, {
       ...brief,
       metadata: { ...brief.metadata, resourceVersion: '8' },
       spec: { ...brief.spec, releases: [changed] },
     })
-    expect(authors()).toBe('gray-lenovo, b')
+    expect(authors()).toBe('ada, b')
   })
 
   it('are set when an app’s releases are first published', async () => {
@@ -296,10 +296,10 @@ describe("a releases entry's requests in the settings", () => {
     const { page, fetchImpl } = await render(ACTING, undefined, two)
     const form = page.querySelector('form[aria-label="Publish an app\'s releases"]')!
     await act(async () => {
-      type(field(form, 'GitHub repository'), 'gray-lenovo/cel-cli')
+      type(field(form, 'GitHub repository'), 'ada/cel-cli')
       type(field(form, 'Token Secret'), 'gh')
       type(field(form, 'Requests from'), 'Ask')
-      type(field(form, 'Teams'), 'gray-org/maintainers')
+      type(field(form, 'Teams'), 'acme/maintainers')
     })
     await act(async () => form.querySelector<HTMLButtonElement>('button[type="submit"]')!.click())
     expect(sent(fetchImpl)[1]).toEqual({
@@ -309,8 +309,8 @@ describe("a releases entry's requests in the settings", () => {
         lens,
         {
           container: 'cli',
-          github: { repository: 'gray-lenovo/cel-cli', tokenSecretRef: { name: 'gh' } },
-          requests: { mode: 'Ask', teams: ['gray-org/maintainers'] },
+          github: { repository: 'ada/cel-cli', tokenSecretRef: { name: 'gh' } },
+          requests: { mode: 'Ask', teams: ['acme/maintainers'] },
         },
       ],
     })

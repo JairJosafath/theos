@@ -5,7 +5,7 @@ Milestone 6 in [the MVP plan](../docs/plans/done/mvp-v1.md): someone who has
 never used kubectl can read the story in a browser. It reads everything and,
 with actions off, changes only three things: it creates a Brief from an app
 idea, adds a follow-up prompt to one ([docs/plans/done/brief.md](../docs/plans/done/brief.md)),
-and pauses or resumes one ([docs/plans/done/upgrade-in-place.md](../docs/plans/done/upgrade-in-place.md)).
+and pauses or resumes one or its running Tasks ([docs/plans/done/upgrade-in-place.md](../docs/plans/done/upgrade-in-place.md)).
 With actions on it takes a few more (_Actions_ below). design.md's _The UI:
 areas and object pages_ says what it shows and why.
 
@@ -41,7 +41,9 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   screen: what waits on a
   person, read only from status ([src/model/needs.ts](src/model/needs.ts)): a
   Brief needing input or a decision, a Container that failed to scaffold or
-  whose Standard update pull request waits, or one whose deploy waits for a
+  whose Standard update pull request waits, one whose Standard waits to come
+  into the repository it adopted (or whose Standard is missing, unpinned, has no
+  template at its path or fails to render), or one whose deploy waits for a
   person's approval, failed or runs degraded (with the `kubectl patch` line
   that approves the version waiting), a Task blocked or failed (until a
   newer Task or a round answers it), a Crew that left a release to a person or
@@ -74,7 +76,8 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   latest tag linking to its Gitea release, and where it was published, linking to
   the GitHub release, and how many issues its crew works on at once), its prompts (those not yet planned marked
   _next round_), its repository and cost, a field to add a prompt, and a Pause or Resume
-  button that sets `spec.paused`; while paused, the card shows its `Paused`
+  button that sets `spec.paused` (with `spec.pauseRuns` when its runs are paused
+  too) and a Pause runs or Resume runs button that sets `spec.pauseRuns`; while paused, the card shows its `Paused`
   condition: which Tasks still run, or that nothing does. The forms check none
   of the CRD's rules: submit is enabled for any non-empty input, and the API
   server's message shows as is when it refuses. Only shown in a namespace with a Project.
@@ -100,8 +103,8 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   they used). Each Task and Crew opens its page.
 - **Factory**, a dashboard: a card for each part of the factory, healthy or
   not, with restarts, CPU and memory; each node's usage; the last hour (API
-  server response, and the CPU and memory of all nodes together) side by
-  side; the agent slots and who waits for one.
+  server response, and the CPU and memory of all nodes together and of the
+  fullest of them) side by side; the agent slots and who waits for one.
 - **About**: the versions running, and links to the running release's design
   and release notes, and to the repository.
 
@@ -194,8 +197,8 @@ rewrites the address to the area's.
 
 The UI enforces nothing; the rules live in the CRDs and the operator. It reads
 every theos kind and writes only three things: it creates a Brief, it
-appends a prompt to one, and it pauses or resumes one. Three layers keep it
-that way:
+appends a prompt to one, and it pauses or resumes one or its running Tasks.
+Three layers keep it that way:
 
 1. The browser sends GET requests to `/k8s/...` and `/k8s-watch`, plus the three
    writes ([src/k8s/briefs.ts](src/k8s/briefs.ts)).
@@ -210,8 +213,11 @@ application/json-patch+json`: a patch whose one operation is `add` at
      equivalent `add /spec/prompts`, guarded by a `test` of the
      resourceVersion it read; a Brief that changed in between is answered
      with `409 Conflict`, and the same request again goes through.
-   - the same `PATCH`, whose one operation is `add` of `true` or `false` at
-     `/spec/paused`: Pause and Resume.
+   - the same `PATCH`, an `add` of `true` or `false` at `/spec/paused`, at
+     `/spec/pauseRuns`, or both in one patch: pause or resume a Brief or its
+     running Tasks. The page sends both when it pauses the running Tasks, as the
+     CRD takes `pauseRuns` only with `paused`, and when it resumes a Brief whose
+     running Tasks are paused.
 
    A write whose `Origin` names another host is refused. Everything else is
    answered with 405 (other methods), 403 (other paths or bodies) or 415
@@ -237,8 +243,8 @@ takes more writes, each one method, path, content type and body shape:
 | Kind      | Request              | Fields                                                                                                                                                                                                                                                                                                                                                                                                            |
 | --------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Brief     | `POST`, JSON         | a new Brief, as above                                                                                                                                                                                                                                                                                                                                                                                             |
-| Brief     | `PATCH`, JSON patch  | `add` at `/spec/prompts/-` alone, as above; or `add` of any of `/spec/paused`, `/spec/autopilot`, `/spec/parallel`, `/spec/releases`; `/spec/releases` only after a `test` of `/metadata/resourceVersion`, and a Brief changed since that version is refused with `409 Conflict`                                                                                                                                  |
-| Crew      | `PATCH`, JSON patch  | `add` of any of `/spec/paused`, `/spec/parallel`, `/spec/tagReleases`, `/spec/prepareReleases`, `/spec/publishReleases` (or `remove` of it), `/spec/publishReleases` only after a `test` of `/metadata/resourceVersion`, and a Crew changed since that version is refused with `409 Conflict`                                                                                                                     |
+| Brief     | `PATCH`, JSON patch  | `add` at `/spec/prompts/-` alone, as above; or `add` of any of `/spec/paused`, `/spec/pauseRuns`, `/spec/autopilot`, `/spec/parallel`, `/spec/releases`; `/spec/releases` only after a `test` of `/metadata/resourceVersion`, and a Brief changed since that version is refused with `409 Conflict`                                                                                                               |
+| Crew      | `PATCH`, JSON patch  | `add` of any of `/spec/paused`, `/spec/pauseRuns`, `/spec/parallel`, `/spec/tagReleases`, `/spec/prepareReleases`, `/spec/publishReleases` (or `remove` of it), `/spec/publishReleases` only after a `test` of `/metadata/resourceVersion`, and a Crew changed since that version is refused with `409 Conflict`                                                                                                  |
 | Crew      | `PATCH`, merge patch | one annotation alone: `theos.factory.io/rerun-release`, or `theos.factory.io/run-schedule`                                                                                                                                                                                                                                                                                                                        |
 | Crew      | `PATCH`, JSON patch  | one `add` at `/spec/schedules/-` alone, of an object of `name`, `cron`, `timeZone` and `goal`, each a string: a Standard's proposal, taken. For a Crew with no schedules the server sends `add` of the list instead, after a `test` of the `resourceVersion` it read, and answers a Crew that changed in between with `409 Conflict`: the same request again goes through. No schedule is set, changed or removed |
 | Container | `PATCH`, merge patch | one annotation alone: `theos.factory.io/retry`, or the answer to its Standard's bump, `theos.factory.io/standard-take` or `theos.factory.io/standard-keep`                                                                                                                                                                                                                                                        |
@@ -310,13 +316,31 @@ and metrics-server's figures itself and sends only a
 summary (component states, restarts, CPU and memory, agent slots and sandboxes,
 the last hour), never a pod spec. It samples every 15 seconds in the background
 (`FACTORY_SAMPLE_SECONDS`; 0 turns it off) and keeps an hour in memory, timing
-its own API calls as the API server's response time. A sample's CPU and memory
-are the cluster's: every node's usage added up, which the chart draws against
-what the nodes can allocate together, next to what CI and the agents used on
-whichever node. Components are found by
+its own API calls as the API server's response time. Components are found by
 namespace and labels; `FACTORY_COMPONENTS` (a JSON list of `{key, name,
 namespace, selector, optional}`) replaces the built-in list. Without
 metrics-server (`make metrics-server`) the view shows states but no figures.
+
+A sample's CPU and memory are the cluster's: every node's usage added up, with
+what those nodes could allocate together at that moment, and the fullest
+node's name and its share of its own CPU and of its own memory. A node
+metrics-server has no figures for is in none of them, nor is a node that
+reports nothing to allocate. The last hour's CPU and memory charts draw
+shares, 0 to 100%, each point against its own sample, so a node that joined
+or left since moves no earlier point; a sample with nothing to draw against
+breaks the line. Their lines:
+
+- **nodes**: the nodes' usage together over what they could allocate together.
+- **fullest node**: the fullest node's share of itself, so one full node among
+  idle ones shows as full. After the figures of now the summary gives the
+  hour's peak, as in "· peak worker-b 95%": the node that was fullest at any
+  moment within the hour, and how full it was then, not how full it is now. Of
+  two equally full, in one sample or at different moments of the hour, it is
+  the first by name. The line is dashed, in the chart and in the legend. Where
+  it would lie on **nodes** for the whole hour, as it does on one node, the
+  chart draws one line.
+- **CI** and **agents** (CPU only): what the runner's pods and the agent
+  sandboxes used on whichever node, over the same sample's allocatable.
 
 `server.mjs` has no dependencies. Its upstream is `K8S_API` if set (for example
 `http://127.0.0.1:8001` for a `kubectl proxy`), otherwise the in-cluster API with
@@ -351,7 +375,7 @@ src/k8s/watch.ts        list-then-watch: NDJSON events, reconnect with backoff, 
 src/k8s/mux.ts          many watches over one connection
 src/k8s/sources.ts      one watcher per kind, combined into a story snapshot
 src/k8s/health.ts       polls /factory/health while Work or Factory is open
-src/k8s/briefs.ts       the three writes: create a Brief, add a prompt, pause or resume; a name from the idea
+src/k8s/briefs.ts       the three writes: create a Brief, add a prompt, pause or resume it or its running Tasks; a name from the idea
 src/model/story.ts      resources -> diagram model (boxes, arrows, roll-ups)
 src/model/layout.ts     a small layered layout and edge routing
 src/model/describe.ts   plain-language wording for phases, conditions and times

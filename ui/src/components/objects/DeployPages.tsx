@@ -41,6 +41,7 @@ import { ExternalLinkIcon } from '../icons'
 import { CommandLine, ObjectHeader } from '../ObjectHeader'
 import { pageHref, projectCrumb } from './links'
 import { ReadProblem } from './ReadProblem'
+import { compareText } from '../../model/order'
 
 /** A small badge of a tone, such as a Ready condition's or a lease's state. */
 export function Badge({ tone, label, title }: { tone: Tone; label: string; title?: string }) {
@@ -190,7 +191,7 @@ export function DeployTargetPage({ target, containers }: { target: DeployTarget;
   const name = target.metadata.name
   const member = memberOf(target)
   const ready = readinessOf(target)
-  const parameters = Object.entries(target.spec.parameters ?? {}).sort(([a], [b]) => a.localeCompare(b))
+  const parameters = Object.entries(target.spec.parameters ?? {}).sort(([a], [b]) => compareText(a, b))
   return (
     <div className="shell-page object-page">
       <ObjectHeader

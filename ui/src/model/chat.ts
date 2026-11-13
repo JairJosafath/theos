@@ -3,6 +3,7 @@
 // spec and status. Read only: the UI changes nothing of a Chat.
 
 import { CHAT_PURPOSES, findCondition, type Chat, type ChatPurpose } from '../k8s/types'
+import { compareText } from './order'
 
 export interface ChatRoomRow {
   purpose: ChatPurpose
@@ -30,7 +31,7 @@ export function chatOf(chats: Chat[], namespace: string | undefined): Chat | und
   if (!namespace) return undefined
   const mine = chats
     .filter((c) => c.metadata.namespace === namespace)
-    .sort((a, b) => (a.metadata.creationTimestamp ?? '').localeCompare(b.metadata.creationTimestamp ?? ''))
+    .sort((a, b) => compareText(a.metadata.creationTimestamp ?? '', b.metadata.creationTimestamp ?? ''))
   return mine.find((c) => findCondition(c.status?.conditions, 'Ready')?.status === 'True') ?? mine[0]
 }
 

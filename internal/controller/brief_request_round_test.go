@@ -44,14 +44,14 @@ var _ = Describe("Brief requests in rounds", func() {
 
 	It("takes requests into a round, refuses a plan that answers them wrong, and says on GitHub what each became", func() {
 		repository, _ := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsAsk,
-			Authors: []string{"gray-lenovo"}})
+			Authors: []string{"ada"}})
 		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
 		Eventually(func(g Gomega) {
 			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
 		}).Should(Succeed())
 
-		theme := githubFake.openIssue(repository, "gray-lenovo", "Dark theme", "Please add a dark theme.")
-		rules := githubFake.openIssue(repository, "gray-lenovo", "Lint rules", "Lint my rules.")
+		theme := githubFake.openIssue(repository, "ada", "Dark theme", "Please add a dark theme.")
+		rules := githubFake.openIssue(repository, "ada", "Lint rules", "Lint my rules.")
 		themeName, rulesName := model.RequestName(repository, theme), model.RequestName(repository, rules)
 		Eventually(func(g Gomega) {
 			g.Expect(requestNumbers(g, ns)).To(Equal(map[int32]string{int32(theme): model.RequestWaiting,
@@ -70,7 +70,7 @@ var _ = Describe("Brief requests in rounds", func() {
 			g.Expect(requestNumbers(g, ns)).To(Equal(map[int32]string{int32(theme): model.RequestPlanning,
 				int32(rules): model.RequestPlanning}))
 			requests := string(gitFake.MainFiles(ns, briefRepo)[model.WorkspaceRequestsFile].Data)
-			g.Expect(requests).To(And(ContainSubstring("request: "+themeName), ContainSubstring("author: gray-lenovo"),
+			g.Expect(requests).To(And(ContainSubstring("request: "+themeName), ContainSubstring("author: ada"),
 				ContainSubstring("body: Please add a dark theme."), ContainSubstring("request: "+rulesName)))
 			g.Expect(string(gitFake.MainFiles(ns, briefRepo)[model.BriefFile].Data)).To(
 				ContainSubstring("## Requests (**new**)"))

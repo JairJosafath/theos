@@ -7,6 +7,7 @@
 
 import type { Task, TaskAgentRun } from '../k8s/types'
 import { median, time } from './factory'
+import { compareText } from './order'
 
 /** The periods the panel offers, in days. */
 export const PERIODS = [7, 30] as const
@@ -42,21 +43,6 @@ export const NOT_RECORDED = 'not recorded'
 
 export function configKey(config: RunConfig | undefined): string {
   return config ? `${config.harness} · ${config.model || 'default model'}` : NOT_RECORDED
-}
-
-/**
- * Orders two names by their code points: "Opus" before "haiku". The same in
- * every browser and locale, and the order internal/model's report gives its
- * rows (#66); localeCompare follows the reader's locale, so two readers saw
- * rows with as many Tasks in different orders.
- */
-export function compareText(a: string, b: string): number {
-  const x = Array.from(a, (c) => c.codePointAt(0) ?? 0)
-  const y = Array.from(b, (c) => c.codePointAt(0) ?? 0)
-  for (let i = 0; i < x.length && i < y.length; i++) {
-    if (x[i] !== y[i]) return x[i] - y[i]
-  }
-  return x.length - y.length
 }
 
 /** The implementer's configuration a Task ran on: its newest implement run's that recorded one. */

@@ -27,10 +27,13 @@ import (
 
 // trailerUpdate marks the operator's commit that updates a Standard's files, as
 // <name>@<from>..<to>, and trailerTake the one that takes a Standard's version
-// of files its updates left out, as <name>@<ref>.
+// of files its updates left out, as <name>@<ref>. trailerAdoption marks the
+// one that brings a Standard's files into an adopted repository, as
+// <name>@<ref>.
 const (
-	trailerUpdate = "Standard-Update"
-	trailerTake   = "Standard-Take"
+	trailerUpdate   = "Standard-Update"
+	trailerTake     = "Standard-Take"
+	trailerAdoption = "Standard-Adoption"
 )
 
 // trailerChecks marks the operator's commit that changes when CI runs the full
@@ -298,6 +301,20 @@ func UpdateMessage(in Input, name string, from, to model.StandardVersion, u Upda
 	if from.Checks != to.Checks {
 		fmt.Fprintf(&b, "%s: %s..%s\n", trailerChecks, from.Checks, to.Checks)
 	}
+	return b.String()
+}
+
+// AdoptionMessage is the message of the commit that brings the files of the
+// Standard name at version v into the repository in's Container adopted
+// without them (#97).
+func AdoptionMessage(in Input, name string, v model.StandardVersion) string {
+	v = v.Normal()
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n\n", model.StandardAdoptionTitle(name, v))
+	fmt.Fprintf(&b, "Writes the files of %s at %s that the repository of Container %s didn't hold as the Standard "+
+		"renders them.\nCI runs the full check %s.\n", name, v.Ref, in.Container, checksWhen(v.Checks))
+	fmt.Fprintf(&b, "\n%s: %s/%s\n", trailerContainer, in.Project, in.Container)
+	fmt.Fprintf(&b, "%s: %s@%s\n", trailerAdoption, name, v.Ref)
 	return b.String()
 }
 

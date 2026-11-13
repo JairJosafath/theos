@@ -1,0 +1,48 @@
+The controller suite in the Tests workflow, by THEOS_TEST_PROCS (#127), on GitHub's runners (4 CPUs, 16 GiB).
+2026-11-13. Each block is from the log of the run it names.
+
+== 2 processes: pull request #138 (https://github.com/JairJosafath/theos/actions/runs/43347838979)
+01:53:49 make test: the controller suite runs in 2 processes (THEOS_TEST_PROCS)
+02:03:30 make test: controller suite part 1/2:
+02:03:30 ok  	github.com/JairJosafath/theos/internal/controller	516.733s	coverage: 66.5% of statements
+02:08:41 make test: controller suite part 2/2:
+02:08:41 ok  	github.com/JairJosafath/theos/internal/controller	826.921s	coverage: 71.6% of statements
+02:08:41   test                ran      14m58s; 29 of 42 packages, those the change since origin/main (3a0494ace027) affects; changed: cmd/theos-session internal/model; read by the
+02:08:41 Controller Suite: 785 specs in 2 of 2 processes, the longest 827s; the 10 slowest:
+
+== 4 processes, each go test compiling for itself: #177 at dc4b327 (https://github.com/JairJosafath/theos/actions/runs/43370553007)
+05:13:37 make test: the controller suite runs in 4 processes (THEOS_TEST_PROCS)
+05:20:49 ok  	github.com/JairJosafath/theos/test/chart	64.417s	coverage: [no statements]
+05:24:28 make test: controller suite part 1/4:
+05:24:28 ok  	github.com/JairJosafath/theos/internal/controller	254.595s	coverage: 54.8% of statements
+05:25:42 make test: controller suite part 4/4:
+05:25:42 ok  	github.com/JairJosafath/theos/internal/controller	330.320s	coverage: 52.9% of statements
+05:26:50 make test: controller suite part 3/4:
+05:26:50 ok  	github.com/JairJosafath/theos/internal/controller	397.507s	coverage: 56.2% of statements
+05:27:42 make test: controller suite part 2/4:
+05:27:42 ok  	github.com/JairJosafath/theos/internal/controller	449.391s	coverage: 56.7% of statements
+05:27:42   test                ran      14m11s; 2 of 42 packages, those the change since origin/main (8e5fb79e066b) affects; read by their tests: .github/workflows hack/go-test.sh
+05:27:42 Controller Suite: 801 specs in 4 of 4 processes, the longest 449s; the 10 slowest:
+
+== 8 processes, the suite built once first: #177 at a45682a (https://github.com/JairJosafath/theos/actions/runs/43372476607)
+05:31:09 make test: the controller suite runs in 8 processes (THEOS_TEST_PROCS); building its tests once for them
+05:32:33 make test: built in 84s
+05:33:32 ok  	github.com/JairJosafath/theos/test/chart	51.366s	coverage: [no statements]
+05:34:11 make test: controller suite part 1/8:
+05:34:11 ok  	github.com/JairJosafath/theos/internal/controller	90.501s	coverage: 44.3% of statements
+05:35:16 make test: controller suite part 7/8:
+05:35:16 ok  	github.com/JairJosafath/theos/internal/controller	155.701s	coverage: 41.9% of statements
+05:35:24 make test: controller suite part 8/8:
+05:35:24 ok  	github.com/JairJosafath/theos/internal/controller	163.671s	coverage: 48.5% of statements
+05:35:33 make test: controller suite part 4/8:
+05:35:33 ok  	github.com/JairJosafath/theos/internal/controller	173.047s	coverage: 42.7% of statements
+05:35:42 make test: controller suite part 2/8:
+05:35:42 ok  	github.com/JairJosafath/theos/internal/controller	181.963s	coverage: 41.7% of statements
+05:35:54 make test: controller suite part 5/8:
+05:35:54 ok  	github.com/JairJosafath/theos/internal/controller	194.287s	coverage: 44.3% of statements
+05:36:59 make test: controller suite part 6/8:
+05:36:59 ok  	github.com/JairJosafath/theos/internal/controller	259.563s	coverage: 50.2% of statements
+05:37:30 make test: controller suite part 3/8:
+05:37:30 ok  	github.com/JairJosafath/theos/internal/controller	290.608s	coverage: 49.3% of statements
+05:37:30   test                ran      6m27s; 2 of 42 packages, those the change since origin/main (8e5fb79e066b) affects; read by their tests: .github/workflows hack/go-test.sh
+05:37:30 Controller Suite: 801 specs in 8 of 8 processes, the longest 290s; the 10 slowest:

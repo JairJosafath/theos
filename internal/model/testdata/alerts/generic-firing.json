@@ -1,0 +1,18 @@
+{
+  "key": "checkout-probe",
+  "status": "firing",
+  "title": "Checkout probe fails",
+  "summary": "The synthetic checkout has failed 3 times in a row",
+  "description": "GET https://shop.example.com/checkout answered 502.\nLast success 08:01 UTC.",
+  "container": "storefront",
+  "namespace": "shop-prod",
+  "startsAt": "2026-11-12T08:05:00Z",
+  "url": "https://probes.example.com/checks/checkout",
+  "labels": {
+    "severity": "page",
+    "region": "eu-west-1"
+  },
+  "annotations": {
+    "attempts": 3
+  }
+}

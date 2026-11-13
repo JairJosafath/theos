@@ -697,6 +697,15 @@ describe('crewSummary', () => {
   })
 })
 
+describe('crewSummaries with one title (#175)', () => {
+  it('orders two Crews of one project with one display name by their key, from either input order', () => {
+    const named = (name: string) => crew(name, { displayName: 'Same name' } as Partial<Crew['spec']>)
+    const keys = (list: Crew[]) => crewSummaries(list, agents, []).map((c) => c.key)
+    expect(keys([named('b-crew'), named('a-crew')])).toEqual(['tools/a-crew', 'tools/b-crew'])
+    expect(keys([named('a-crew'), named('b-crew')])).toEqual(['tools/a-crew', 'tools/b-crew'])
+  })
+})
+
 describe('formatClock', () => {
   // Local times, as the browser shows them.
   const now = new Date(2026, 9, 2, 12, 0).getTime()

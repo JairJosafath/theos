@@ -260,7 +260,7 @@ func (f *fakeGitHubIssues) takeCalls() []string {
 	return calls
 }
 
-func numbers(issues []ports.GitHubIssue) []int {
+func numbers(issues []ports.TrackerIssue) []int {
 	out := make([]int, 0, len(issues))
 	for _, i := range issues {
 		out = append(out, i.Number)
@@ -269,7 +269,8 @@ func numbers(issues []ports.GitHubIssue) []int {
 }
 
 // TestGitHubIssuesList lists issues with pull requests left out, asks again
-// with the ETag and gets a 304, then sees a new issue and a closed one.
+// with the ETag and gets a 304, then sees a new issue and a closed one. Each
+// issue's Key is GitHub's "#number" (#151).
 func TestGitHubIssuesList(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()
@@ -279,8 +280,8 @@ func TestGitHubIssuesList(t *testing.T) {
 		t.Fatalf("ListOpenIssues() on no issues = %+v, %v", empty, err)
 	}
 
-	f.open("dark mode", "gray-lenovo", false)
-	f.open("a pull request", "gray-lenovo", true)
+	f.open("dark mode", "ada", false)
+	f.open("a pull request", "ada", true)
 	f.open("export to CSV", "stranger", false)
 	list, err := g.ListOpenIssues(ctx, empty.ETag)
 	if err != nil {
@@ -289,7 +290,7 @@ func TestGitHubIssuesList(t *testing.T) {
 	if list.NotModified || !reflect.DeepEqual(numbers(list.Issues), []int{1, 3}) {
 		t.Fatalf("ListOpenIssues() = %+v; want issues 1 and 3", list)
 	}
-	want := ports.GitHubIssue{Number: 1, Title: "dark mode", Body: "body of dark mode", Author: "gray-lenovo",
+	want := ports.TrackerIssue{Number: 1, Key: "#1", Title: "dark mode", Body: "body of dark mode", Author: "ada",
 		URL: "https://github.com/" + fakeGitHubRepo + "/issues/1", Created: time.Date(2026, 10, 9, 0, 0, 1, 0, time.UTC)}
 	if !reflect.DeepEqual(list.Issues[0], want) {
 		t.Errorf("issue 1 = %+v; want %+v", list.Issues[0], want)
@@ -311,7 +312,7 @@ func TestGitHubIssuesList(t *testing.T) {
 	f.mu.Lock()
 	f.issue(1).State = "closed"
 	f.mu.Unlock()
-	f.open("print it", "gray-lenovo", false)
+	f.open("print it", "ada", false)
 	changed, err := g.ListOpenIssues(ctx, list.ETag)
 	if err != nil || changed.NotModified || !reflect.DeepEqual(numbers(changed.Issues), []int{3, 4}) {
 		t.Errorf("ListOpenIssues(changed) = %+v, %v; want issues 3 and 4", changed, err)
@@ -326,7 +327,7 @@ func TestGitHubIssuesListPages(t *testing.T) {
 	var want []int
 	for n := 1; n <= 2*githubPageSize+10; n++ {
 		pull := n%7 == 0
-		f.open("issue "+strconv.Itoa(n), "gray-lenovo", pull)
+		f.open("issue "+strconv.Itoa(n), "ada", pull)
 		if !pull {
 			want = append(want, n)
 		}
@@ -361,43 +362,54 @@ func TestGitHubIssuesListPages(t *testing.T) {
 	}
 
 	for range githubMaxPages*githubPageSize - len(f.issues) + 1 {
-		f.open("more", "gray-lenovo", false)
+		f.open("more", "ada", false)
 	}
-	if _, err := g.ListOpenIssues(ctx, ""); ports.IssuesReason(err) != ports.ReasonGitHubError {
-		t.Errorf("ListOpenIssues() past %d pages error = %v; want reason %s", githubMaxPages, err, ports.ReasonGitHubError)
+	if _, err := g.ListOpenIssues(ctx, ""); ports.IssuesReason(err) != ports.ReasonTrackerError {
+		t.Errorf("ListOpenIssues() past %d pages error = %v; want reason %s", githubMaxPages, err, ports.ReasonTrackerError)
 	}
 }
 
+// teamMembers is tracker's ports.TeamMembers: the GitHub client has teams.
+func teamMembers(t *testing.T, tracker ports.IssueTracker) ports.TeamMembers {
+	t.Helper()
+	members, ok := tracker.(ports.TeamMembers)
+	if !ok {
+		t.Fatalf("GitHubIssues() = %T, which is no ports.TeamMembers", tracker)
+	}
+	return members
+}
+
 func TestGitHubIssuesTeamMember(t *testing.T) {
-	f, g := newFakeGitHubIssues(t)
+	f, tracker := newFakeGitHubIssues(t)
+	g := teamMembers(t, tracker)
 	ctx := context.Background()
-	f.members["gray-org/maintainers"] = map[string]string{"a-colleague": "active", "invited": "pending"}
+	f.members["acme/maintainers"] = map[string]string{"a-colleague": "active", "invited": "pending"}
 	for _, tt := range []struct {
 		team, login string
 		want        bool
 	}{
-		{"gray-org/maintainers", "a-colleague", true},
-		{"gray-org/maintainers", "invited", false},
-		{"gray-org/maintainers", "stranger", false},
-		{"gray-org/other", "a-colleague", false},
+		{"acme/maintainers", "a-colleague", true},
+		{"acme/maintainers", "invited", false},
+		{"acme/maintainers", "stranger", false},
+		{"acme/other", "a-colleague", false},
 	} {
 		got, err := g.TeamMember(ctx, tt.team, tt.login)
 		if err != nil || got != tt.want {
 			t.Errorf("TeamMember(%s, %s) = %v, %v; want %v", tt.team, tt.login, got, err, tt.want)
 		}
 	}
-	if calls := f.takeCalls(); calls[0] != "GET /orgs/gray-org/teams/maintainers/memberships/a-colleague" {
+	if calls := f.takeCalls(); calls[0] != "GET /orgs/acme/teams/maintainers/memberships/a-colleague" {
 		t.Errorf("TeamMember() called %q", calls[0])
 	}
 	for _, bad := range [][2]string{
 		{"maintainers", "a-colleague"},
-		{"gray-org/maintainers/x", "a-colleague"},
+		{"acme/maintainers/x", "a-colleague"},
 		{"-org/maintainers", "a-colleague"},
-		{"gray-org/..", "a-colleague"},
-		{"gray-org/.", "a-colleague"},
-		{"gray-org/maintainers", "../../../repos/acme/cel-lens"},
-		{"gray-org/maintainers", strings.Repeat("a", 40)},
-		{"gray-org/maintainers", ""},
+		{"acme/..", "a-colleague"},
+		{"acme/.", "a-colleague"},
+		{"acme/maintainers", "../../../repos/acme/cel-lens"},
+		{"acme/maintainers", strings.Repeat("a", 40)},
+		{"acme/maintainers", ""},
 	} {
 		if _, err := g.TeamMember(ctx, bad[0], bad[1]); err == nil {
 			t.Errorf("TeamMember(%q, %q) error = nil; want one", bad[0], bad[1])
@@ -409,11 +421,13 @@ func TestGitHubIssuesTeamMember(t *testing.T) {
 }
 
 // TestGitHubIssuesCommentAndClose finds no marked comment, comments, finds it
-// on the second page of comments, and closes the issue with each reason.
+// on the second page of comments, and closes the issue with each reason. The
+// comment's ID is a string, the number its page's URL ends in, in decimal
+// (#151).
 func TestGitHubIssuesCommentAndClose(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()
-	n := f.open("dark mode", "gray-lenovo", false)
+	n := f.open("dark mode", "ada", false)
 	const marker = "<!-- theos:request brief=shop stage=planned -->"
 
 	found, err := g.FindComment(ctx, n, marker)
@@ -426,12 +440,16 @@ func TestGitHubIssuesCommentAndClose(t *testing.T) {
 		}
 	}
 	posted, err := g.Comment(ctx, n, "Planned as: dark mode\n\n"+marker)
-	if err != nil || posted.ID == 0 || !strings.Contains(posted.Body, marker) || posted.URL == "" {
+	if err != nil || !strings.Contains(posted.Body, marker) || posted.URL == "" {
 		t.Fatalf("Comment() = %+v, %v", posted, err)
+	}
+	// The ID is GitHub's number in decimal, the one its page's address ends in.
+	if id, ok := strings.CutPrefix(posted.URL, fmt.Sprintf("https://github.com/%s/issues/%d#issuecomment-", fakeGitHubRepo, n)); !ok || id != posted.ID || posted.ID == "" {
+		t.Errorf("Comment() has the ID %q and the page %s; want the ID the page ends in", posted.ID, posted.URL)
 	}
 	found, err = g.FindComment(ctx, n, marker)
 	if err != nil || found == nil || found.ID != posted.ID || found.Author != "theos-bot" {
-		t.Errorf("FindComment() = %+v, %v; want comment %d", found, err, posted.ID)
+		t.Errorf("FindComment() = %+v, %v; want comment %s", found, err, posted.ID)
 	}
 	if calls := f.takeCalls(); !slices.Contains(calls, "GET /user") {
 		t.Errorf("FindComment() called %q; want GET /user", calls)
@@ -475,7 +493,7 @@ func TestGitHubIssuesCommentAndClose(t *testing.T) {
 func TestGitHubIssuesFindCommentStranger(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()
-	n := f.open("dark mode", "gray-lenovo", false)
+	n := f.open("dark mode", "ada", false)
 	const marker = "<!-- theos:request brief=shop stage=declined -->"
 	f.mu.Lock()
 	f.comments[n] = []githubComment{{ID: 1, Body: "Declined.\n\n" + marker, User: githubUser{Login: "a-stranger"}}}
@@ -491,7 +509,7 @@ func TestGitHubIssuesFindCommentStranger(t *testing.T) {
 	}
 	found, err = g.FindComment(ctx, n, marker)
 	if err != nil || found == nil || found.ID != posted.ID {
-		t.Errorf("FindComment() = %+v, %v; want the factory's comment %d", found, err, posted.ID)
+		t.Errorf("FindComment() = %+v, %v; want the factory's comment %s", found, err, posted.ID)
 	}
 }
 
@@ -512,16 +530,16 @@ func TestGitHubIssuesFailures(t *testing.T) {
 	}{
 		{"bad token", response{401, nil, `{"message":"Bad credentials"}`}, ports.ReasonUnauthorized, ""},
 		{"no permission", response{403, nil, noPermission}, ports.ReasonTokenLacksIssues, ports.ReasonTokenLacksMembers},
-		{"rate limited", response{403, map[string]string{"X-RateLimit-Remaining": "0"}, `{"message":"API rate limit exceeded"}`}, ports.ReasonGitHubUnavailable, ""},
-		{"secondary rate limit", response{403, map[string]string{"Retry-After": "60"}, `{"message":"You have exceeded a secondary rate limit"}`}, ports.ReasonGitHubUnavailable, ""},
-		{"too many requests", response{429, nil, `{"message":"slow down"}`}, ports.ReasonGitHubUnavailable, ""},
-		{"server error", response{502, nil, "<html>" + strings.Repeat("Bad Gateway ", 1000) + "</html>"}, ports.ReasonGitHubUnavailable, ""},
+		{"rate limited", response{403, map[string]string{"X-RateLimit-Remaining": "0"}, `{"message":"API rate limit exceeded"}`}, ports.ReasonTrackerUnavailable, ""},
+		{"secondary rate limit", response{403, map[string]string{"Retry-After": "60"}, `{"message":"You have exceeded a secondary rate limit"}`}, ports.ReasonTrackerUnavailable, ""},
+		{"too many requests", response{429, nil, `{"message":"slow down"}`}, ports.ReasonTrackerUnavailable, ""},
+		{"server error", response{502, nil, "<html>" + strings.Repeat("Bad Gateway ", 1000) + "</html>"}, ports.ReasonTrackerUnavailable, ""},
 		{"not found", response{404, nil, `{"message":"Not Found"}`}, ports.ReasonIssueNotFound, "-"},
-		{"gone", response{410, nil, `{"message":"Issues are disabled for this repo"}`}, ports.ReasonIssueNotFound, ports.ReasonGitHubError},
+		{"gone", response{410, nil, `{"message":"Issues are disabled for this repo"}`}, ports.ReasonIssueNotFound, ports.ReasonTrackerError},
 		{"moved", response{301, map[string]string{"Location": "/repositories/1/issues/1"}, `{"message":"Moved Permanently"}`}, ports.ReasonIssueNotFound, ""},
-		{"locked", response{403, nil, `{"message":"Unable to create comment because issue is locked."}`}, ports.ReasonGitHubError, ""},
-		{"validation", response{422, nil, `{"message":"Validation Failed"}`}, ports.ReasonGitHubError, ""},
-		{"unreadable success", response{200, nil, `not json`}, ports.ReasonGitHubError, ""},
+		{"locked", response{403, nil, `{"message":"Unable to create comment because issue is locked."}`}, ports.ReasonTrackerError, ""},
+		{"validation", response{422, nil, `{"message":"Validation Failed"}`}, ports.ReasonTrackerError, ""},
+		{"unreadable success", response{200, nil, `not json`}, ports.ReasonTrackerError, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -537,10 +555,13 @@ func TestGitHubIssuesFailures(t *testing.T) {
 			ctx := context.Background()
 			calls := map[string]func() error{
 				"ListOpenIssues": func() error { _, err := g.ListOpenIssues(ctx, `W/"x"`); return err },
-				"TeamMember":     func() error { _, err := g.TeamMember(ctx, "gray-org/maintainers", "a-colleague"); return err },
-				"FindComment":    func() error { _, err := g.FindComment(ctx, 1, "marker"); return err },
-				"Comment":        func() error { _, err := g.Comment(ctx, 1, "hello"); return err },
-				"CloseIssue":     func() error { return g.CloseIssue(ctx, 1, ports.CloseCompleted) },
+				"TeamMember": func() error {
+					_, err := teamMembers(t, g).TeamMember(ctx, "acme/maintainers", "a-colleague")
+					return err
+				},
+				"FindComment": func() error { _, err := g.FindComment(ctx, 1, "marker"); return err },
+				"Comment":     func() error { _, err := g.Comment(ctx, 1, "hello"); return err },
+				"CloseIssue":  func() error { return g.CloseIssue(ctx, 1, ports.CloseCompleted) },
 			}
 			for name, call := range calls {
 				err := call()
@@ -548,13 +569,13 @@ func TestGitHubIssuesFailures(t *testing.T) {
 				switch {
 				case tt.resp.status == http.StatusMovedPermanently && name != "Comment" && name != "CloseIssue":
 					// A read follows it, here round and round.
-					want = ports.ReasonGitHubUnavailable
+					want = ports.ReasonTrackerUnavailable
 				case name == "TeamMember" && tt.team == "-":
 					want = "" // not a member
 				case name == "TeamMember" && tt.team != "":
 					want = tt.team
 				case name == "ListOpenIssues" && tt.resp.status == http.StatusNotFound:
-					want = ports.ReasonRepositoryNotFound
+					want = ports.ReasonTrackerNotFound
 				case name == "ListOpenIssues" && tt.resp.status == http.StatusGone:
 					want = ports.ReasonIssuesDisabled
 				case name == "CloseIssue" && tt.resp.status == http.StatusOK:
@@ -589,17 +610,17 @@ func TestGitHubIssuesNetworkError(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := g.ListOpenIssues(ctx, ""); ports.IssuesReason(err) != ports.ReasonGitHubUnavailable {
-		t.Errorf("ListOpenIssues() on a closed server error = %v; want reason %s", err, ports.ReasonGitHubUnavailable)
+	if _, err := g.ListOpenIssues(ctx, ""); ports.IssuesReason(err) != ports.ReasonTrackerUnavailable {
+		t.Errorf("ListOpenIssues() on a closed server error = %v; want reason %s", err, ports.ReasonTrackerUnavailable)
 	}
-	if _, err := g.TeamMember(ctx, "gray-org/maintainers", "a-colleague"); ports.IssuesReason(err) != ports.ReasonGitHubUnavailable {
-		t.Errorf("TeamMember() on a closed server error = %v; want reason %s", err, ports.ReasonGitHubUnavailable)
+	if _, err := teamMembers(t, g).TeamMember(ctx, "acme/maintainers", "a-colleague"); ports.IssuesReason(err) != ports.ReasonTrackerUnavailable {
+		t.Errorf("TeamMember() on a closed server error = %v; want reason %s", err, ports.ReasonTrackerUnavailable)
 	}
-	if err := g.CloseIssue(ctx, 1, ports.CloseCompleted); ports.IssuesReason(err) != ports.ReasonGitHubUnavailable {
-		t.Errorf("CloseIssue() on a closed server error = %v; want reason %s", err, ports.ReasonGitHubUnavailable)
+	if err := g.CloseIssue(ctx, 1, ports.CloseCompleted); ports.IssuesReason(err) != ports.ReasonTrackerUnavailable {
+		t.Errorf("CloseIssue() on a closed server error = %v; want reason %s", err, ports.ReasonTrackerUnavailable)
 	}
-	if ports.IssuesReason(context.DeadlineExceeded) != ports.ReasonGitHubUnavailable {
-		t.Error("IssuesReason() of a plain error is not GitHubUnavailable")
+	if ports.IssuesReason(context.DeadlineExceeded) != ports.ReasonTrackerUnavailable {
+		t.Error("IssuesReason() of a plain error is not TrackerUnavailable")
 	}
 }
 

@@ -21,6 +21,7 @@ import {
 import { describeContainerType, plural, titleOf } from './describe'
 import { activeCrewTasks, crewSummary, type CrewSummary } from './crews'
 import { choicesOf } from './choices'
+import { compareText, compareTitle } from './order'
 
 export type NodeRole = 'person' | 'system' | 'external-system' | 'container' | 'datastore'
 
@@ -127,7 +128,7 @@ const ROLE_ORDER: Record<NodeRole, number> = {
 }
 
 function byRoleThenTitle(a: DiagramNode, b: DiagramNode): number {
-  return ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.title.localeCompare(b.title) || a.id.localeCompare(b.id)
+  return ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || compareTitle(a.title, b.title) || compareText(a.id, b.id)
 }
 
 /** Lookups shared by both views. */
@@ -260,7 +261,7 @@ class StoryIndex {
 export function crewOf(crews: Crew[], container: string): Crew | undefined {
   return crews
     .filter((c) => c.spec.containerRef?.name === container)
-    .sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))[0]
+    .sort((a, b) => compareText(a.metadata.name, b.metadata.name))[0]
 }
 
 /** How many work on the project now: active Sessions, and the Tasks its Crews are on. */
@@ -276,7 +277,7 @@ export function sessionsOf(sessions: Session[], container: string): Session[] {
   const beat = (s: Session) => Date.parse(s.status?.lastHeartbeat ?? s.metadata.creationTimestamp ?? '') || 0
   return sessions
     .filter((s) => s.spec.containerRef?.name === container)
-    .sort((a, b) => rank(a) - rank(b) || beat(b) - beat(a) || a.metadata.name.localeCompare(b.metadata.name))
+    .sort((a, b) => rank(a) - rank(b) || beat(b) - beat(a) || compareText(a.metadata.name, b.metadata.name))
 }
 
 function describeRef(ref: ElementRef): string {
@@ -318,12 +319,12 @@ class EdgeCollector {
         if (others > 0) label = label ? `${label} (+${others} more)` : plural(edge.relationships.length, 'link')
         return { ...edge, label }
       })
-      .sort((a, b) => a.id.localeCompare(b.id))
+      .sort((a, b) => compareText(a.id, b.id))
   }
 }
 
 function sortedRelationships(data: StoryData): Relationship[] {
-  return [...data.relationships].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))
+  return [...data.relationships].sort((a, b) => compareText(a.metadata.name, b.metadata.name))
 }
 
 /**
@@ -470,7 +471,7 @@ export function systemsForPicker(data: StoryData): { name: string; title: string
       title: titleOf(s),
       containers: data.containers.filter((c) => c.spec.softwareSystemRef?.name === s.metadata.name).length,
     }))
-    .sort((a, b) => b.containers - a.containers || a.title.localeCompare(b.title))
+    .sort((a, b) => b.containers - a.containers || compareTitle(a.title, b.title) || compareText(a.name, b.name))
 }
 
 export interface Link {
@@ -546,5 +547,7 @@ export function linksOf(data: StoryData, kind: ElementKind, name: string): Link[
 export function containerNodes(data: StoryData, system?: string): ContainerNode[] {
   const index = new StoryIndex(data)
   const systems = system ? [system] : [...new Set(data.containers.map((c) => c.spec.softwareSystemRef?.name))]
-  return systems.flatMap((s) => index.containerNodes(s)).sort((a, b) => a.title.localeCompare(b.title))
+  return systems
+    .flatMap((s) => index.containerNodes(s))
+    .sort((a, b) => compareTitle(a.title, b.title) || compareText(a.id, b.id))
 }

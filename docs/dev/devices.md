@@ -255,6 +255,21 @@ queue:
   `THEOS_TEST_MIN_MEM_GIB` (4 GiB, two parts and the relay's 2 GiB of
   headroom) of `MemAvailable` the suite runs in one process. A device with
   memory to spare runs `THEOS_TEST_PROCS=4 make check`.
+
+  One of GitHub's runners has 4 CPUs and 16 GiB to itself, so the *Tests*
+  workflow sets 8 there. Measured on 2026-11-13 in the runs of pull requests
+  #138 and #177 (785 and 801 specs), the `test` step of a run that reaches
+  the suite:
+
+  | `THEOS_TEST_PROCS` | Longest part | The parts together | Slowest spec | The `test` step |
+  | --- | --- | --- | --- | --- |
+  | 2 | 827 s | 1343 s | 10.8 s | 14m58s |
+  | 4 | 449 s | 1432 s | 10.8 s | 14m11s, 6.5 minutes of it five go tests compiling the same packages |
+  | 8 | 291 s | 1509 s | 11.0 s | 6m27s, the suite built once first, in 84 s |
+
+  The parts together take little more at 8 than at 2, and no spec got
+  slower: the suite waits more than it computes. The parts are split by
+  their number of specs, not by time, so at 8 they run from 91 s to 291 s.
 - Two checks at once still start several envtest control planes at once, so
   `make test` gives them slack: 2 minutes for etcd and kube-apiserver to
   start (`ENVTEST_START_TIMEOUT`), and etcd a 10 s election timeout

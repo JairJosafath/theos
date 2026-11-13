@@ -11,6 +11,7 @@ import type { Brief, Container, Crew, Task } from '../k8s/types'
 import { deploysOf, type DeployRow } from './deploys'
 import { isFinal } from './factory'
 import { approvalWaits } from './needs'
+import { compareText } from './order'
 
 export type StageKey =
   | 'idea'
@@ -287,5 +288,5 @@ function monitorItem(container: Container, row: DeployRow): LoopItem {
 
 /** Name order, so the lists keep still as the resources change. */
 function sorted<T extends { metadata: { name: string } }>(list: T[]): T[] {
-  return [...list].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))
+  return [...list].sort((a, b) => compareText(a.metadata.name, b.metadata.name))
 }

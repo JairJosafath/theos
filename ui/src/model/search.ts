@@ -9,6 +9,7 @@ import type { UrlState } from '../lib/hooks'
 import { AREAS, type Area } from './areas'
 import { titleOf } from './describe'
 import { hasPage } from './lifecycle'
+import { compareText, compareTitle } from './order'
 
 export interface PaletteItem {
   /** Unique among the entries. */
@@ -171,7 +172,9 @@ export function matchPalette(query: string, items: PaletteItem[], limit = 50): P
       TYPE_ORDER[a.item.type] - TYPE_ORDER[b.item.type] ||
       // The shorter name is the closer match: orders-api before orders-api-21.
       a.name.length - b.name.length ||
-      a.item.label.localeCompare(b.item.label),
+      compareTitle(a.item.label, b.item.label) ||
+      // Two objects of one kind and name in two projects share a label (#175).
+      compareText(a.item.key, b.item.key),
   )
   return scored.slice(0, limit).map((s) => s.item)
 }

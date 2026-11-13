@@ -320,7 +320,8 @@ var _ = Describe("Container adoption", func() {
 			ns + "/orders-api"))
 	})
 
-	It("fails StandardFilesDiffer, naming the paths, when a Standard file is missing or changed", func() {
+	It("is Ready, with a pull request for the one Standard file that is changed, where it failed "+
+		"StandardFilesDiffer (#97)", func() {
 		ns := newProjectNamespace()
 		files := adoptableFiles(ns)
 		Expect(files).To(HaveKey("AGENTS.md"), "the Standard's file")
@@ -328,8 +329,10 @@ var _ = Describe("Container adoption", func() {
 		gitFake.SeedRepoFiles(ns, "orders-api", "Import orders-api\n", files)
 		createAdoptingWebshop(ns)
 
-		cond := failedAdoption(ns, c4v1beta1.ReasonStandardFilesDiffer)
-		Expect(cond.Message).To(ContainSubstring("differs from Standard python-strict at v1.0.0 in AGENTS.md"))
+		adoption := openedAdoption(ns)
+		Expect(adoption.Paths).To(Equal([]string{"AGENTS.md"}), "only the file that differs")
+		Expect(gitFake.Repo(ns, "orders-api").Commits).To(HaveLen(1), "an adopted repository's main is never written")
+		Expect(gitFake.ProtectedBranches(ns, "orders-api")).NotTo(ContainElement("main"))
 	})
 
 	It("fails NoDefaultBranch when the repository's only branch is not main (#1908)", func() {

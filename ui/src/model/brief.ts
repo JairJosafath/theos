@@ -17,6 +17,7 @@ import {
 } from '../k8s/types'
 import { plural, type PhaseInfo, type Tone } from './describe'
 import { describeRequests, splitRequest, type RequestsView } from './requests'
+import { compareText } from './order'
 
 /** The Brief phase as a badge label, colour tone and one-line explanation. */
 export function describeBriefPhase(phase: BriefPhase | undefined): PhaseInfo {
@@ -676,8 +677,15 @@ export function formatTokens(n: number): string {
   return `${shown}${unit}`
 }
 
-/** Thousandths of a US dollar as dollars and cents; under a cent shows as "<$0.01". */
+/**
+ * Thousandths of a US dollar as dollars and cents; under a cent shows as
+ * "<$0.01". A cost under zero, or one that is no number (NaN, an infinity),
+ * is no cost and shows as none, "–", as the report's page writes it
+ * (reportMoney in internal/model/report_page.go): "$-1.50" and "$NaN" would
+ * pass for a price. Both sides are held to testdata/report/money.json.
+ */
 export function formatCost(milliUSD: number): string {
+  if (!Number.isFinite(milliUSD) || milliUSD < 0) return '–'
   if (milliUSD > 0 && milliUSD < 10) return '<$0.01'
   return `$${(milliUSD / 1000).toFixed(2)}`
 }
@@ -686,7 +694,7 @@ export function formatCost(milliUSD: number): string {
 export function sortBriefs(briefs: Brief[]): Brief[] {
   return [...briefs].sort(
     (a, b) =>
-      (b.metadata.creationTimestamp ?? '').localeCompare(a.metadata.creationTimestamp ?? '') ||
-      a.metadata.name.localeCompare(b.metadata.name),
+      compareText(b.metadata.creationTimestamp ?? '', a.metadata.creationTimestamp ?? '') ||
+      compareText(a.metadata.name, b.metadata.name),
   )
 }

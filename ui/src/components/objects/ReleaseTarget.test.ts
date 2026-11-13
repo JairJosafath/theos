@@ -27,7 +27,7 @@ const OLD: PublishReleases = {
 const NEW: PublishReleases = {
   github: { repository: 'JairJosafath/private-cel-lens', tokenSecretRef: { name: 'cel-lens-github' } },
 }
-const REQUESTS = { mode: 'Ask' as const, authors: ['gray-lenovo'] }
+const REQUESTS = { mode: 'Ask' as const, authors: ['ada'] }
 
 /** A Crew publishing to `publish`; with `brief`, made by Brief cel-lens, which last set `brief` on it. */
 function crew(publish: PublishReleases | undefined, brief?: PublishReleases): Crew {

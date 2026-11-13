@@ -201,6 +201,16 @@
   --spark: var(--text-2);
 }
 
+/* The fullest node's share of itself, beside the nodes' together: dashed, so
+   it is told from the nodes' line by more than its colour. */
+.spark-fullest {
+  --spark: var(--waiting);
+}
+
+.spark-line.spark-fullest {
+  stroke-dasharray: 4 2;
+}
+
 .spark-ci {
   --spark: var(--progress);
 }
@@ -209,9 +219,15 @@
   --spark: var(--agent);
 }
 
+/* The summary names a node: it wraps on a narrow chart, kept to the right. */
+.spark .meter-head > .muted {
+  text-align: right;
+}
+
 .spark-legend {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 2px 12px;
   margin-top: 4px;
   font-size: 11.5px;
   color: var(--text-3);
@@ -227,4 +243,9 @@
   width: 10px;
   height: 2px;
   background: var(--spark);
+}
+
+/* The same dash as its line: 4 on, 2 off. */
+.spark-fullest > .spark-key {
+  background: repeating-linear-gradient(to right, var(--spark) 0 4px, transparent 4px 6px);
 }
