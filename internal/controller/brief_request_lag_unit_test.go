@@ -357,3 +357,76 @@ func TestAHeldCloseGoesWithItsRequest(t *testing.T) {
 		t.Errorf("item %d is %+v, want it closed with its one comment", a, issue)
 	}
 }
+
+// TestAHeldCloseStaysWithItsOwnSource covers #245: a read of one source
+// forgets only that source's held closes. Two sources hold an item of the
+// same number; the other source's read, with its item listed and with
+// nothing listed, leaves the held close of the first, which is not tried
+// again before its recheck.
+func TestAHeldCloseStaysWithItsOwnSource(t *testing.T) {
+	t0 := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
+	tr := fake.NewIssueTracker()
+	tr.Project("ENG")
+	tr.Project("OPS")
+	token := tr.Account(trackerLogin, fake.TrackerAccess{Issues: true})
+	a, b := linearSource("a", "ENG"), linearSource("b", "OPS")
+	a.Mode, b.Mode = model.RequestsAsk, model.RequestsAsk
+	na, err := tr.File("ENG", "ada", "Declined", "Please.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nb, err := tr.File("OPS", "ada", "Asked", "Please.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if na != nb {
+		t.Fatalf("the items are %d and %d, want the same number", na, nb)
+	}
+	a.Declined = []int32{int32(na)}
+	brief := &c4v1beta1.Brief{ObjectMeta: objectMeta("apps", "cel-lens"),
+		Spec: c4v1beta1.BriefSpec{RequestSources: []c4v1beta1.BriefRequestSource{a, b}}}
+	secret := func(name string) *corev1.Secret {
+		return &corev1.Secret{ObjectMeta: objectMeta("apps", name),
+			Data: map[string][]byte{fake.CredentialKey: []byte(token)}}
+	}
+	c := crfake.NewClientBuilder().WithScheme(briefScheme(t)).
+		WithObjects(secret("a-linear"), secret("b-linear")).Build()
+	r := &BriefReconciler{Client: c, APIReader: c, SuggestionsRecheck: lagRecheck,
+		Issues: ports.IssueTrackers{model.TrackerLinear: tr}}
+	tr.CannotClose("ENG", `the team has no state of type "canceled"`)
+	read := func(i int, known []model.Request, now time.Time) ([]model.Request, *requestsFailure) {
+		r.Now = func() time.Time { return now }
+		return r.readOrigin(context.Background(), brief, requestOrigins(brief)[i], known, map[string][]int32{}, now)
+	}
+
+	gotA, fail := read(0, nil, t0)
+	if fail == nil || fail.reason != ports.ReasonCannotClose {
+		t.Fatalf("declining a's item = %v, %+v; want it kept and CannotClose", gotA, fail)
+	}
+	declined := model.Request{Source: "a", Number: na}
+	gotB, fail := read(1, nil, t0.Add(time.Second))
+	if fail != nil || len(gotB) != 1 {
+		t.Fatalf("reading b = %v, %+v; want its one request", gotB, fail)
+	}
+	if r.heldClose(brief, declined, t0.Add(time.Second)) == nil {
+		t.Error("b's read, its item listed, forgot a's held close")
+	}
+	if err := tr.Unlabel("OPS", nb); err != nil {
+		t.Fatal(err)
+	}
+	brief.Spec.RequestSources[1].Declined = []int32{int32(nb)}
+	if gotB, fail = read(1, gotB, t0.Add(2*time.Second)); fail != nil || len(gotB) != 0 {
+		t.Fatalf("reading b with nothing listed = %v, %+v; want no request", gotB, fail)
+	}
+	if r.heldClose(brief, declined, t0.Add(2*time.Second)) == nil {
+		t.Error("b's read, nothing listed, forgot a's held close")
+	}
+	closes := tr.Calls("CloseIssue")
+	tr.CannotClose("ENG", "")
+	if _, fail = read(0, gotA, t0.Add(3*time.Second)); fail == nil || fail.reason != ports.ReasonCannotClose {
+		t.Errorf("a's read before the recheck = %+v, want the held CannotClose", fail)
+	}
+	if n := tr.Calls("CloseIssue"); n != closes {
+		t.Errorf("a's close was tried %d more times before its recheck, want none", n-closes)
+	}
+}
