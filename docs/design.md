@@ -1688,8 +1688,13 @@ controllers call, not by one product's API;
   `readToken`, which the user makes for installs alone: it reaches agent
   pods and CI as the agent bot's token does.
 - **A port is swappable only once its fake and two real adapters pass its
-  contract;** request intake is, with its fake, GitHub and Linear (#156); no
-  other is yet.
+  contract;** request intake is, with its fake, GitHub and Linear (#156);
+  ChatHost is: its fake, Matrix (`internal/adapters/matrix`) and Slack
+  (`internal/adapters/slack`, on its fake workspace `slacktest`, the Space
+  and the rename skipped since a workspace has neither). No Chat names Slack
+  until the Chat takes `spec.host`
+  ([plans/requests-and-chat.md](plans/requests-and-chat.md), steps 7 and 8).
+  No other port is yet.
 
 ## Deploys: each release to its targets
 
