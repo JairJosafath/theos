@@ -514,6 +514,91 @@ func TestFirstSyncDuringTheFirstCatchUp(t *testing.T) {
 	wantIDs(t, "the fresh Chat's next Sync()", sync0(t, c, mark.Next).Events)
 }
 
+// socketOpen is whether c's feed holds an open socket.
+func socketOpen(c *Client) bool {
+	c.feed.mu.Lock()
+	defer c.feed.mu.Unlock()
+	return c.feed.conn != nil
+}
+
+// reopenWaits posts a message while c has no socket open, then opens one
+// again by a Sync of since, whose catch-up waits on users.conversations
+// while a fresh Chat's first Sync comes: that Sync waits for the catch-up,
+// so the fresh Chat is not given the message. It returns the reopening
+// Sync's answer.
+func reopenWaits(t *testing.T, x rooms, c *Client, since string) ports.ChatSync {
+	t.Helper()
+	said := x.post(t, x.alerts, "retry", "")
+	calls := x.ws.Calls("users.conversations")
+	release := x.ws.Hold("users.conversations")
+	t.Cleanup(release)
+	reopen := syncLater(t, c, since)
+	waitFor(t, "the reopen's catch-up is under way", func() bool { return x.ws.Calls("users.conversations") > calls })
+	mark := answerOf(syncLater(t, c, ""), release)
+	got := <-reopen
+	wantIDs(t, "the Sync that opened the socket again", got.Events, x.alerts+"/"+said)
+	wantIDs(t, "the fresh Chat's next Sync()", sync0(t, c, mark.Next).Events)
+	return got
+}
+
+// TestSocketDropsDuringItsCatchUp covers #155: a socket that drops while
+// its catch-up is read is not taken as caught up once the catch-up is read,
+// so a fresh Chat's first Sync during the next reopen's catch-up waits for
+// it (the confirming review's C1).
+func TestSocketDropsDuringItsCatchUp(t *testing.T) {
+	x := newRooms(t)
+	older := sync0(t, x.c, "").Next
+	said := x.post(t, x.specs, "approve", "")
+	c, release, first := catchingUp(t, x, older)
+	x.ws.Disconnect("")
+	waitFor(t, "the adapter sees the socket closed", func() bool { return !socketOpen(c) })
+	release()
+	got := <-first
+	wantIDs(t, "Sync() of the older token", got.Events, x.specs+"/"+said)
+	reopenWaits(t, x, c, got.Next)
+}
+
+// TestSyncDuringAReopensCatchUpWaitsForIt covers #155: a socket that drops
+// is no longer caught up, so a fresh Chat's first Sync during the reopen's
+// catch-up waits for it; once that catch-up is read, the new socket serves a
+// Sync while a redial after Slack's disconnect holds the dial (the
+// confirming review's N1).
+func TestSyncDuringAReopensCatchUpWaitsForIt(t *testing.T) {
+	x := newRooms(t)
+	since := sync0(t, x.c, "").Next
+	x.ws.Disconnect("")
+	waitFor(t, "the adapter sees the socket closed", func() bool { return !socketOpen(x.c) })
+	next := reopenWaits(t, x, x.c, since).Next
+
+	release := x.ws.HoldOpens()
+	t.Cleanup(release)
+	opens := x.ws.Calls("apps.connections.open")
+	x.ws.Disconnect("refresh_requested")
+	waitFor(t, "the adapter asks for a new address", func() bool { return x.ws.Calls("apps.connections.open") > opens })
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := x.c.Sync(ctx, next, 0); err != nil {
+		t.Errorf("Sync() while the adapter dials again = %v, want an answer from the socket open", err)
+	}
+}
+
+// TestFailedRedialCatchUpLeavesNoSocketCaught covers #155: a redial whose
+// catch-up fails leaves the feed not caught up, so a fresh Chat's first Sync
+// during the next reopen's catch-up waits for it (the confirming review's
+// N1).
+func TestFailedRedialCatchUpLeavesNoSocketCaught(t *testing.T) {
+	x := newRooms(t)
+	since := sync0(t, x.c, "").Next
+	x.ws.Revoke(x.botToken, "groups:read")
+	calls := x.ws.Calls("users.conversations")
+	x.ws.Disconnect("refresh_requested")
+	waitFor(t, "the redial's catch-up failed and closed its socket", func() bool {
+		return x.ws.Calls("users.conversations") > calls && !socketOpen(x.c)
+	})
+	x.ws.Grant(x.botToken, "groups:read")
+	reopenWaits(t, x, x.c, since)
+}
+
 // TestSocketDialErrorHoldsNoTicket covers #155: a dial that fails is
 // reported by the socket's host, never by its address, whose ticket is the
 // one-use credential of the app's event stream (the review's S3).

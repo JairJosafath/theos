@@ -243,6 +243,15 @@ func (s *Server) Revoke(token, scope string) {
 	}
 }
 
+// Grant gives scope back to token, as a reinstall with the scope does.
+func (s *Server) Grant(token, scope string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.tokens[token]; ok {
+		c.scopes[scope] = true
+	}
+}
+
 // RateLimit makes the next n calls answer 429, with Retry-After: 0.
 func (s *Server) RateLimit(n int) {
 	s.mu.Lock()
