@@ -66,6 +66,26 @@ func TestTakenAndNewRequests(t *testing.T) {
 	}
 }
 
+// #160: a round names a source's item source:key, so an item and a GitHub
+// issue of one number are two requests.
+func TestRoundRequestsFromASource(t *testing.T) {
+	requests := []Request{
+		{Repository: "o/r", Number: 412, Stage: RequestAccepted},
+		{Source: "product", Key: "ENG-412", Number: 412, Stage: RequestAccepted},
+		{Source: "support", Key: "SHOP-7", Number: 7, Stage: RequestPlanning, Round: 2},
+	}
+	if got := NewRequests(requests, []string{"o/r#412"}); got != 1 {
+		t.Errorf("NewRequests = %d, want 1: product:ENG-412 is new", got)
+	}
+	if got := NewRequests(requests, []string{"product:ENG-412"}); got != 1 {
+		t.Errorf("NewRequests = %d, want 1: o/r#412 is new", got)
+	}
+	running := WorkspaceRequests(requests, []string{"support:SHOP-7"}, true)
+	if len(running) != 1 || running[0].Key != "SHOP-7" {
+		t.Errorf("WorkspaceRequests while a round runs = %+v, want support:SHOP-7", running)
+	}
+}
+
 func TestParsePlanRequests(t *testing.T) {
 	files := map[string]string{
 		PlanModelFile: "",
@@ -193,6 +213,28 @@ func TestBriefWorkspaceRequests(t *testing.T) {
 	}
 	if strings.Contains(files[BriefFile], "## Requests") || files[WorkspaceRequestsFile] != "[]\n" {
 		t.Errorf("no requests: brief.md says some, or %s is %q", WorkspaceRequestsFile, files[WorkspaceRequestsFile])
+	}
+}
+
+// #160: model/requests.yaml names a source's item by its source and key, with
+// no repository, and leaves the author out when the tracker names nobody.
+func TestBriefWorkspaceRequestsFromASource(t *testing.T) {
+	ws := BriefWorkspace{Brief: "lens", Idea: "A linter.", IdeaPlanned: true,
+		Requests: []Request{
+			{Source: "product", Key: "ENG-412", Number: 412, Author: "Ada Lovelace", Title: "Dark theme",
+				Body: "Please add a dark theme."},
+			{Source: "support", Key: "SHOP-7", Number: 7, Title: "Refunds", Body: "From the service desk."},
+		}}
+	files, err := BriefWorkspaceFiles(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "- request: product:ENG-412\n  source: product\n  key: ENG-412\n  number: 412\n" +
+		"  author: Ada Lovelace\n  title: Dark theme\n  body: Please add a dark theme.\n" +
+		"- request: support:SHOP-7\n  source: support\n  key: SHOP-7\n  number: 7\n" +
+		"  title: Refunds\n  body: From the service desk.\n"
+	if got := files[WorkspaceRequestsFile]; got != want {
+		t.Errorf("%s =\n%s\nwant\n%s", WorkspaceRequestsFile, got, want)
 	}
 }
 

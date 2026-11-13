@@ -1,0 +1,38 @@
+# cel-lens taking requests from where its team already tracks work
+# (docs/plans/requests-and-chat.md, decisions 12 to 20): an open item of
+# Linear team ENG, or of Jira project SHOP, that carries the label factory is
+# a request. In Ask, the default, it waits under status.needsYou as
+# product:ENG-412 until its number is added to accepted, or to declined. Not
+# read by the operator yet (step 10 of the plan).
+# Needs Secret product-linear with the key token, a Linear API key of an
+# account made for the factory, and Secret acme-jira with the keys email and
+# token, an Atlassian account's address and an API token with the scopes
+# read:jira-work, write:jira-work and read:jira-user. You create them
+# yourself. cloudID is the Jira site's ID at Atlassian.
+# Apply with: kubectl apply -f config/samples/brief/request-sources.yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: cel-lens
+spec:
+  idea: >-
+    cel-lens is a VS Code extension that helps Kubernetes developers write,
+    test and dry-run the CEL in their CustomResourceDefinitions and admission
+    policies, right in the editor.
+  requestSources:
+  - name: product
+    linear: {team: ENG, label: factory}
+    credentialsSecretRef: {name: product-linear}
+    mode: Ask
+    accepted: [412]
+    declined: [415]
+  - name: support
+    jira:
+      site: https://acme.atlassian.net
+      cloudID: 00000000-0000-4000-8000-000000000000
+      project: SHOP
+      label: factory
+      close:
+        notPlanned: {resolution: "Won't Fix"}
+    credentialsSecretRef: {name: acme-jira}

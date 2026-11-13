@@ -1452,9 +1452,14 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   Crew whose target was edited away from the Brief's publishes nothing
   until they agree (`ReleaseTarget=False`, `DiffersFromBrief`).
   `status.apps[].nextRelease` copies the Crew's next cut.
-- **Requests from GitHub.** An entry that takes requests plans the allowed
-  authors' GitHub issues like prompts, answers each, and closes it once
-  shipped.
+- **Requests.** Requests come from a releases repository's GitHub issues or
+  from a source in `spec.requestSources`. A releases entry that takes
+  requests plans the allowed authors' GitHub issues like prompts, answers
+  each, and closes it once shipped. A source is a Linear team or a Jira
+  project and a label: an open item with the label is a request (`Ask` by
+  default), named `<source>:<key>` (`product:ENG-412`); its author, when
+  the tracker names one, is a display name kept as data. The operator
+  doesn't read sources yet (docs/plans/requests-and-chat.md, step 10).
 - **The person answers in prompts.** Reviewers' suggestions
   (`status/proposed`) and failed issues (`status/needs-human`) in the Brief's
   apps are listed in its status; a plan answers only those a new prompt

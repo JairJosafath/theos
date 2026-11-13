@@ -1,0 +1,17 @@
+# expect: a request source names exactly one of linear and jira
+apiVersion: theos.factory.io/v1beta1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: webshop
+spec:
+  idea: A linter for CEL rules.
+  requestSources:
+  - name: product
+    linear: {team: ENG, label: factory}
+    jira:
+      site: https://acme.atlassian.net
+      cloudID: 00000000-0000-4000-8000-000000000000
+      project: SHOP
+      label: factory
+    credentialsSecretRef: {name: product-tracker}

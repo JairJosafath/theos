@@ -1,0 +1,16 @@
+# expect: site must be an https address with no path
+apiVersion: theos.factory.io/v1beta1
+kind: Brief
+metadata:
+  name: cel-lens
+  namespace: webshop
+spec:
+  idea: A linter for CEL rules.
+  requestSources:
+  - name: support
+    jira:
+      site: http://acme.atlassian.net
+      cloudID: 00000000-0000-4000-8000-000000000000
+      project: SHOP
+      label: factory
+    credentialsSecretRef: {name: acme-jira}

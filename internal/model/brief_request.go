@@ -96,10 +96,18 @@ func RequestBody(body string) string {
 	return ClipSentences(body, MaxRequestBody)
 }
 
-// RequestName names a request in status.needsYou and status.roundRequests:
-// owner/name#number.
+// RequestName names a GitHub request in status.needsYou and
+// status.roundRequests: owner/name#number.
 func RequestName(repository string, number int) string {
 	return fmt.Sprintf("%s#%d", repository, number)
+}
+
+// SourceRequestName names a request from a spec.requestSources entry in
+// status.needsYou and status.roundRequests: source:key, such as
+// product:ENG-412. A source's name is a DNS label, which holds neither '/'
+// nor '#', so it never equals a GitHub request's owner/name#number.
+func SourceRequestName(source, key string) string {
+	return source + ":" + key
 }
 
 // RequestFacts are what a request's stage follows from.
@@ -330,12 +338,18 @@ func ReleaseHolds(tag, milestone string) bool {
 	return t != nil && m != nil && compareVersions(t, m) > 0
 }
 
-// Request is a request as a Brief's status keeps it.
+// Request is a request as a Brief's status keeps it: a GitHub issue of
+// Repository, or an item of the spec.requestSources entry Source, whose key
+// on its tracker is Key (ENG-412) and whose Number is the key's digits.
 type Request struct {
 	Repository string
+	Source     string
+	Key        string
 	Number     int
-	Author     string
-	Title      string
+	// Author is the GitHub login, or the display name of whoever made a
+	// source's item; empty when the tracker names nobody.
+	Author string
+	Title  string
 	// Body is the issue's body when it was let through; empty while it waits.
 	Body  string
 	URL   string
@@ -352,6 +366,15 @@ type Request struct {
 	Why     string
 	// Shipped is where it went out, once Released.
 	Shipped []Shipped
+}
+
+// Name names r in status.needsYou and status.roundRequests: source:key for
+// a source's item, owner/name#number for a GitHub issue.
+func (r Request) Name() string {
+	if r.Source != "" {
+		return SourceRequestName(r.Source, r.Key)
+	}
+	return RequestName(r.Repository, r.Number)
 }
 
 // RequestsRead is a read of the open issues of a releases repository whose
@@ -471,18 +494,29 @@ func ListRequests(all []Request) ([]Request, int) {
 		if c := strings.Compare(a.Repository, b.Repository); c != 0 {
 			return c
 		}
+		if c := strings.Compare(a.Source, b.Source); c != 0 {
+			return c
+		}
 		return a.Number - b.Number
 	})
 	return all[:min(len(all), MaxRequests)], len(all)
 }
 
 // RequestNeedsYou is the status.needsYou item of a request waiting in Ask:
-// its title and author, and none of its body.
+// its title and author, and none of its body. A source's item that names no
+// author is named without one (#160).
 func RequestNeedsYou(r Request) NeedsYou {
-	name := RequestName(r.Repository, r.Number)
-	return NeedsYou{Kind: AttentionRequest, Name: name,
-		Question:  fmt.Sprintf("Request %s %q by %s waits for you.", name, r.Title, r.Author),
-		Recommend: fmt.Sprintf("Add %d to the accepted requests of %s to plan it, or to the declined ones.", r.Number, r.Repository),
+	name := r.Name()
+	question := fmt.Sprintf("Request %s %q waits for you.", name, r.Title)
+	if r.Author != "" {
+		question = fmt.Sprintf("Request %s %q by %s waits for you.", name, r.Title, r.Author)
+	}
+	answers := r.Repository
+	if r.Source != "" {
+		answers = "request source " + r.Source
+	}
+	return NeedsYou{Kind: AttentionRequest, Name: name, Question: question,
+		Recommend: fmt.Sprintf("Add %d to the accepted requests of %s to plan it, or to the declined ones.", r.Number, answers),
 		Why:       "In Ask, a request reaches the planner only once a person lets it through.",
 		Since:     r.Since}
 }

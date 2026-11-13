@@ -80,6 +80,18 @@ type BriefSpec struct {
 	// +optional
 	Releases []BriefRelease `json:"releases,omitempty"`
 
+	// requestSources are trackers the Brief takes requests from, besides the
+	// GitHub issues of a releases repository (docs/plans/requests-and-chat.md,
+	// decisions 12 to 15): a Linear team or a Jira project, where an open item
+	// with the entry's label is a request. Nothing reads them yet (step 10).
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=10
+	// +kubebuilder:validation:XValidation:rule="self.all(a, !has(a.linear) || self.exists_one(b, has(b.linear) && b.linear.team.lowerAscii() == a.linear.team.lowerAscii()))",message="at most one request source per Linear team: an item is read once"
+	// +kubebuilder:validation:XValidation:rule="self.all(a, !has(a.jira) || self.exists_one(b, has(b.jira) && (b.jira.site.lowerAscii() == a.jira.site.lowerAscii() || b.jira.cloudID.lowerAscii() == a.jira.cloudID.lowerAscii()) && b.jira.project.lowerAscii() == a.jira.project.lowerAscii()))",message="at most one request source per Jira site and project: an item is read once"
+	// +optional
+	RequestSources []BriefRequestSource `json:"requestSources,omitempty"`
+
 	// autopilot says whether the Brief tends its failed issues by itself, in
 	// tending rounds with no new prompt (docs/plans/done/brief-autopilot.md):
 	// Off tends nothing; Ask decides them and lists each answer under
@@ -193,6 +205,157 @@ type BriefRequests struct {
 	// +kubebuilder:validation:items:Minimum=1
 	// +optional
 	Declined []int32 `json:"declined,omitempty"`
+}
+
+// BriefRequestSource is a tracker a Brief takes requests from: exactly one of
+// a Linear team and a Jira project, and a label. An open item of the team or
+// project that carries the label is a request: the label is the door, so no
+// authors or teams are offered (decision 13). The item becomes input to a
+// planning round once a person accepts it (Ask), or at once (On).
+// +kubebuilder:validation:XValidation:rule="has(self.linear) != has(self.jira)",message="a request source names exactly one of linear and jira"
+// +kubebuilder:validation:XValidation:rule="!has(self.accepted) || !has(self.declined) || !self.accepted.exists(n, n in self.declined)",message="an item number can't be both accepted and declined"
+type BriefRequestSource struct {
+	// name names the source, a DNS label. A request from it is named
+	// <name>:<key> in status.needsYou and status.roundRequests, such as
+	// product:ENG-412.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="name must be a DNS label: lowercase letters, digits and '-'"
+	// +required
+	Name string `json:"name"`
+
+	// linear is a Linear team and the label that makes its items requests.
+	// +optional
+	Linear *BriefLinearSource `json:"linear,omitempty"`
+
+	// jira is a Jira Cloud project and the label that makes its items
+	// requests.
+	// +optional
+	Jira *BriefJiraSource `json:"jira,omitempty"`
+
+	// credentialsSecretRef names a Secret in the Brief's namespace that only
+	// the operator reads: for Linear the key token, an API key; for Jira the
+	// keys email and token, an Atlassian account's address and an API token
+	// with the scopes read:jira-work, write:jira-work and read:jira-user.
+	// +required
+	CredentialsSecretRef LocalRef `json:"credentialsSecretRef"`
+
+	// mode is Off, which reads no item; Ask (the default), where a request
+	// waits in status.needsYou until its number is in accepted; or On, which
+	// lets each request through when first seen, so whoever may label an
+	// item puts its text before the planner.
+	// +kubebuilder:validation:Enum=Off;Ask;On
+	// +kubebuilder:default=Ask
+	// +optional
+	Mode string `json:"mode,omitempty"`
+
+	// accepted are the numbers of the items a person let through, in Ask:
+	// 412 for ENG-412.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=200
+	// +kubebuilder:validation:items:Minimum=1
+	// +optional
+	Accepted []int32 `json:"accepted,omitempty"`
+
+	// declined are the numbers of the items a person turned down; the Brief
+	// says so on each and closes it.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=200
+	// +kubebuilder:validation:items:Minimum=1
+	// +optional
+	Declined []int32 `json:"declined,omitempty"`
+}
+
+// BriefLinearSource is a Linear team and a label.
+type BriefLinearSource struct {
+	// team is the team's key, the prefix of its items' keys (ENG in ENG-412).
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9_]+$`
+	// +required
+	Team string `json:"team"`
+
+	// label is the name of the label that makes an item a request.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:Pattern=`^\S(.*\S)?$`
+	// +required
+	Label string `json:"label"`
+}
+
+// BriefJiraSource is a Jira Cloud project and a label. A scoped API token
+// calls Atlassian's gateway with the site's cloud ID, never the site itself,
+// so the entry names both.
+type BriefJiraSource struct {
+	// site is the https address people open, such as
+	// https://acme.atlassian.net, with no path; the factory's links point to it.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[A-Za-z0-9]([-A-Za-z0-9.]*[A-Za-z0-9])?(:[0-9]{1,5})?$')",message="site must be an https address with no path, such as https://acme.atlassian.net"
+	// +required
+	Site string `json:"site"`
+
+	// cloudID is the site's ID at Atlassian, which a scoped token's address
+	// holds: https://api.atlassian.com/ex/jira/<cloudID>.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9][A-Za-z0-9-]*$`
+	// +required
+	CloudID string `json:"cloudID"`
+
+	// project is the project's key, the prefix of its items' keys (SHOP in
+	// SHOP-412).
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:Pattern=`^[A-Za-z][A-Za-z0-9_]*$`
+	// +required
+	Project string `json:"project"`
+
+	// label is the label that makes an item a request; a Jira label is one
+	// word.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:Pattern=`^\S+$`
+	// +required
+	Label string `json:"label"`
+
+	// close says how the Brief closes an item, when the site's workflow or
+	// resolutions differ from Jira's defaults.
+	// +optional
+	Close *BriefJiraClosing `json:"close,omitempty"`
+}
+
+// BriefJiraClosing is how a Brief closes a Jira item: as completed once its
+// work is released, and as not planned once it is declined or skipped.
+type BriefJiraClosing struct {
+	// completed is how an item is closed as completed. Unset takes the first
+	// transition the item offers into a status of category Done, with the
+	// resolution Done where the transition asks for one.
+	// +optional
+	Completed *BriefJiraOutcome `json:"completed,omitempty"`
+
+	// notPlanned is how an item is closed as not planned. Unset takes the
+	// first transition the item offers into a status of category Done, with
+	// the resolution Won't Do where the transition asks for one.
+	// +optional
+	NotPlanned *BriefJiraOutcome `json:"notPlanned,omitempty"`
+}
+
+// BriefJiraOutcome names the status a Jira item is moved to and the
+// resolution it is given, as the site names them.
+type BriefJiraOutcome struct {
+	// status is the name of a status of category Done the item is moved to.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +optional
+	Status string `json:"status,omitempty"`
+
+	// resolution is the name of the resolution sent, where the transition's
+	// screen takes one.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +optional
+	Resolution string `json:"resolution,omitempty"`
 }
 
 // BriefAgents names the Agent for each role: the planner turns the Brief into
@@ -380,14 +543,15 @@ type BriefFailedIssue struct {
 // may heal by itself, and when the Brief acts if it hasn't.
 type BriefHealing struct {
 	// kind of the item: Issue, Task, Crew, Container or Request. A Request
-	// is answered in spec.releases[].requests, and a Container whose Standard
-	// files an update left out on the Container, not by a prompt.
+	// is answered in spec.releases[].requests or spec.requestSources, and a
+	// Container whose Standard files an update left out on the Container,
+	// not by a prompt.
 	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container;Request
 	// +required
 	Kind string `json:"kind"`
 
 	// name of the item; container#number for an issue, owner/name#number for
-	// a request.
+	// a request, or source:key for a request source's item.
 	// +kubebuilder:validation:MaxLength=320
 	// +required
 	Name string `json:"name"`
@@ -407,14 +571,15 @@ type BriefHealing struct {
 // Brief would do and why. A prompt answers it.
 type BriefNeedsYou struct {
 	// kind of the item: Issue, Task, Crew, Container or Request. A Request
-	// is answered in spec.releases[].requests, and a Container whose Standard
-	// files an update left out on the Container, not by a prompt.
+	// is answered in spec.releases[].requests or spec.requestSources, and a
+	// Container whose Standard files an update left out on the Container,
+	// not by a prompt.
 	// +kubebuilder:validation:Enum=Issue;Task;Crew;Container;Request
 	// +required
 	Kind string `json:"kind"`
 
 	// name of the item; container#number for an issue, owner/name#number for
-	// a request.
+	// a request, or source:key for a request source's item.
 	// +kubebuilder:validation:MaxLength=320
 	// +required
 	Name string `json:"name"`
@@ -439,23 +604,37 @@ type BriefNeedsYou struct {
 	Since *metav1.Time `json:"since,omitempty"`
 }
 
-// BriefRequest is a GitHub issue taken as a request: its text as it was when
-// let through, and how far it got.
+// BriefRequest is a GitHub issue of a releases repository, or an item of a
+// spec.requestSources entry, taken as a request: its text as it was when let
+// through, and how far it got. A GitHub issue names its repository; an item
+// names its source and its key, and no repository.
+// +kubebuilder:validation:XValidation:rule="has(self.repository) != has(self.source) && has(self.source) == has(self.key)",message="a request names either its repository, or its source and key"
 type BriefRequest struct {
-	// repository is owner/name on github.com.
+	// repository is owner/name on github.com, for a GitHub issue.
 	// +kubebuilder:validation:MaxLength=140
-	// +required
-	Repository string `json:"repository"`
+	// +optional
+	Repository string `json:"repository,omitempty"`
 
-	// number is the issue's number.
+	// source is the name of the spec.requestSources entry the item is from.
+	// +kubebuilder:validation:MaxLength=63
+	// +optional
+	Source string `json:"source,omitempty"`
+
+	// key is the item's key on its tracker, such as ENG-412.
+	// +kubebuilder:validation:MaxLength=120
+	// +optional
+	Key string `json:"key,omitempty"`
+
+	// number is the issue's number, or the digits of the item's key.
 	// +kubebuilder:validation:Minimum=1
 	// +required
 	Number int32 `json:"number"`
 
-	// author is the issue's author's GitHub login.
-	// +kubebuilder:validation:MaxLength=39
-	// +required
-	Author string `json:"author"`
+	// author is the issue's author's GitHub login, or the display name of
+	// whoever made the item, on one line; unset when the tracker names nobody.
+	// +kubebuilder:validation:MaxLength=100
+	// +optional
+	Author string `json:"author,omitempty"`
 
 	// title is the issue's title.
 	// +kubebuilder:validation:MaxLength=256
@@ -585,6 +764,22 @@ type BriefRequestsSettled struct {
 
 	// numbers are the issue numbers in its entry's accepted or declined whose
 	// issues are closed, as the last read of the repository saw them.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=400
+	// +optional
+	Numbers []int32 `json:"numbers,omitempty"`
+}
+
+// BriefRequestSourceSettled are the answered numbers of one request source
+// that do nothing more.
+type BriefRequestSourceSettled struct {
+	// source is the name of the spec.requestSources entry.
+	// +kubebuilder:validation:MaxLength=63
+	// +required
+	Source string `json:"source"`
+
+	// numbers are the item numbers in its entry's accepted or declined whose
+	// items are closed, as the last read of the source saw them.
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=400
 	// +optional
@@ -792,7 +987,8 @@ type BriefStatus struct {
 	RoundPrompts int32 `json:"roundPrompts,omitempty"`
 
 	// roundRequests are the requests the running or last round took, by
-	// owner/name#number, as roundPrompts counts its prompts.
+	// owner/name#number, or source:key for a request source's item, as
+	// roundPrompts counts its prompts.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MaxLength=200
@@ -884,9 +1080,10 @@ type BriefStatus struct {
 	// +optional
 	NeedsYouWaiting int32 `json:"needsYouWaiting,omitempty"`
 
-	// requests are the GitHub issues of spec.releases repositories taken as
-	// requests and still open, oldest first; at most 50. A request leaves
-	// the list once it is closed on GitHub.
+	// requests are the GitHub issues of spec.releases repositories and the
+	// items of spec.requestSources taken as requests and still open, oldest
+	// first; at most 50. A request leaves the list once it is closed on its
+	// tracker.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=50
 	// +optional
@@ -907,6 +1104,15 @@ type BriefStatus struct {
 	// +kubebuilder:validation:MaxItems=10
 	// +optional
 	RequestsSettled []BriefRequestsSettled `json:"requestsSettled,omitempty"`
+
+	// requestSourcesSettled are, per spec.requestSources entry, the numbers in
+	// its accepted and declined whose items are closed and no request has, as
+	// requestsSettled are for a releases repository.
+	// +listType=map
+	// +listMapKey=source
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	RequestSourcesSettled []BriefRequestSourceSettled `json:"requestSourcesSettled,omitempty"`
 
 	// tended are the failed issues rounds answered and the Brief remembers,
 	// so it raises one again only when its tries grow or a wait lapses; at
