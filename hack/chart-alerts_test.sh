@@ -126,6 +126,39 @@ else
 	bad "alerts.drainTimeout=25s with a null grace period does not render:"
 	head -3 "$T/out"
 fi
+# #64: 0 is admitted and means the 5s default, as in the receiver; it must
+# not crash the render, and it is compared with the grace period as 5s.
+renders_drain() {
+	if render "$2" && grep -q -- "^ *- --alert-drain-timeout=$1\$" "$T/out"; then
+		ok "renders $2"
+	else
+		bad "does not render $2:"
+		head -3 "$T/out"
+	fi
+}
+renders_drain 0 "alerts.drainTimeout=0"
+renders_drain 0 "alerts.drainTimeout=0,manager.terminationGracePeriodSeconds=6"
+renders_drain 0s "alerts.drainTimeout=0s,manager.terminationGracePeriodSeconds=6"
+refuses "is not under manager.terminationGracePeriodSeconds" "alerts.drainTimeout=0,manager.terminationGracePeriodSeconds=3"
+refuses "is not under manager.terminationGracePeriodSeconds" "alerts.drainTimeout=0s,manager.terminationGracePeriodSeconds=3"
+# The same through --set-string.
+for v in 0 0s 00s 0ms; do
+	if "$HELM" template theos "$ROOT/dist/chart" --namespace theos-system \
+		--set "gitea.projects={apps}" --set-string "alerts.drainTimeout=$v" >"$T/out" 2>&1; then
+		ok "--set-string alerts.drainTimeout=$v renders"
+	else
+		bad "--set-string alerts.drainTimeout=$v does not render:"
+		head -3 "$T/out"
+	fi
+	if "$HELM" template theos "$ROOT/dist/chart" --namespace theos-system \
+		--set "gitea.projects={apps}" --set-string "alerts.drainTimeout=$v" \
+		--set manager.terminationGracePeriodSeconds=3 >"$T/out" 2>&1 ||
+		! grep -q "is not under" "$T/out"; then
+		bad "--set-string alerts.drainTimeout=$v under grace 3 is not refused"
+	else
+		ok "--set-string alerts.drainTimeout=$v under grace 3 is refused"
+	fi
+done
 if ! render "gitEvents.enabled=false"; then
 	bad "the chart without the listener does not render:"
 	head -3 "$T/out"
