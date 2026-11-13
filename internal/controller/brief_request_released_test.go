@@ -278,6 +278,13 @@ var _ = Describe("Brief requests shipped", func() {
 		merged, byHand := became[theme][0], became[theme][1]
 
 		pull := mergedFiledTask(ns, merged)
+		// Tasks are listed from the cache after the live read of closed issues: cache it merged first.
+		Eventually(func(g Gomega) {
+			task := &c4v1beta1.Task{}
+			g.Expect(managerClient.Get(ctx, key(ns, strings.Replace(merged, "#", "-", 1)+"-merged"), task)).To(Succeed())
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			g.Expect(task.Status.PullRequestURL).To(Equal(pull))
+		}).Should(Succeed())
 		closeFiled(ns, merged, byHand)
 		// Each issue's page, as the Brief's status recorded it.
 		pages := map[string]string{}
