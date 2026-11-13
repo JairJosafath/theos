@@ -67,9 +67,9 @@ type roundApply struct {
 	uses *usesLookup
 	// usesWaits say which filed issues wait for a used app's module.
 	usesWaits []string
-	// issuesRead says the run's Brief was checked against the API server's,
+	// briefChecked says the run's Brief was checked against the API server's,
 	// as it is once before an issue is filed (checkBriefCurrent).
-	issuesRead bool
+	briefChecked bool
 	// catalog and bundles are the namespace's installed catalog and Bundles,
 	// for the round's summary.
 	catalog []model.CatalogEntry
@@ -504,9 +504,9 @@ type issueRepo struct {
 // filed but not recorded, and run.usesWaits says what it waits for. An issue
 // already filed is found by its marker among the open issues, so a restart
 // files no duplicate and finishes what it left. Each is recorded in the
-// Brief's status once done, and an issue the cached Brief doesn't show
-// recorded is looked up in the API server's before it is filed, so a closed
-// one is never filed again.
+// Brief's status once done, and the round stops (errStaleBrief, requeue) when
+// the API server's Brief is newer than the one the run read, so an issue is
+// never filed from a copy that lacks a record, a closed one included.
 func (r *BriefReconciler) fileIssues(ctx context.Context, run *roundApply, ready map[string]*c4v1beta1.Container,
 	issues []model.PlanIssue) error {
 	repos := map[string]*issueRepo{}
@@ -592,11 +592,11 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 		// The cached Brief can lag the status an earlier reconcile wrote, and
 		// a closed issue isn't among the open ones (#501); a newer status may
 		// have ended the round (#199): nothing is filed from a stale copy.
-		if !run.issuesRead {
+		if !run.briefChecked {
 			if err := r.checkBriefCurrent(ctx, run); err != nil {
 				return err
 			}
-			run.issuesRead = true
+			run.briefChecked = true
 		}
 		milestone, err := issueMilestone(gitCtx, run, ir, c.Name, issue)
 		if err != nil {
@@ -703,6 +703,9 @@ func briefIssueLabels(issues []model.PlanIssue) []ports.Label {
 // writer, or a cache that lags, makes them differ; finishReconcile reads the
 // Brief again a second later. With the versions equal the cached status is
 // the API server's, so it holds every recorded issue, closed ones too (#501).
+// A window is left: a write landing between this check and recordIssue still
+// lets the issue be filed and its record be refused; it spans one issue's Git
+// calls, and a later round that files it finds it again by its marker.
 func (r *BriefReconciler) checkBriefCurrent(ctx context.Context, run *roundApply) error {
 	var current c4v1beta1.Brief
 	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(run.brief), &current); err != nil {
