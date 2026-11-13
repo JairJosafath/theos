@@ -56,7 +56,7 @@ type TestEnvironmentReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	// APIReader reads a remote member's Secret live: the operator caches no
-	// Secrets.
+	// Secrets. It reads again the Task of a lease about to be returned.
 	APIReader client.Reader
 	// Providers are the providers by member, as cmd/main.go builds them.
 	Providers ports.TestEnvironmentProviders
@@ -168,11 +168,11 @@ func (r *TestEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	live := make([]ports.Lease, 0, len(leases))
 	for _, l := range leases {
-		held, err := r.held(ctx, env.Namespace, l, work)
+		orphan, err := r.orphan(ctx, env.Namespace, l, work)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		if model.OrphanLease(held, l.Started, r.now(), r.orphanGrace()) {
+		if orphan {
 			if err := r.returnLease(ctx, provider, environment, l, work); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -320,11 +320,30 @@ func (r *TestEnvironmentReconciler) readiness(ctx context.Context, env *c4v1beta
 	return model.TestEnvReady, "", nil
 }
 
-// held reports whether lease l's holder still holds it: a Task that is
-// there, unfinished, and lists the lease in status.environments, or a CI
-// job's runner while work says it needs the lease (step 8).
-func (r *TestEnvironmentReconciler) held(ctx context.Context, namespace string, l ports.Lease,
+// orphan reports whether lease l is to be returned: its holder holds it no
+// more, and it is older than the grace. A Task the cache says doesn't hold it
+// is read again from the API server first: the cache may not have the status
+// that lists a lease just taken yet, and a lease returned under a running
+// agent ends its environment (#214).
+func (r *TestEnvironmentReconciler) orphan(ctx context.Context, namespace string, l ports.Lease,
 	work *ciWork) (bool, error) {
+	held, err := r.held(ctx, r.Client, namespace, l, work)
+	if err != nil || !model.OrphanLease(held, l.Started, r.now(), r.orphanGrace()) {
+		return false, err
+	}
+	if _, _, ci := model.ParseCIHolder(l.Holder); ci || l.Holder == "" || r.APIReader == nil {
+		return true, nil
+	}
+	held, err = r.held(ctx, r.APIReader, namespace, l, work)
+	return err == nil && !held, err
+}
+
+// held reports whether lease l's holder, as reader has it, still holds it: a
+// Task that is there, unfinished, and lists the lease in
+// status.environments, or a CI job's runner while work says it needs the
+// lease (step 8).
+func (r *TestEnvironmentReconciler) held(ctx context.Context, reader client.Reader, namespace string,
+	l ports.Lease, work *ciWork) (bool, error) {
 	if l.Holder == "" {
 		return false, nil
 	}
@@ -332,7 +351,7 @@ func (r *TestEnvironmentReconciler) held(ctx context.Context, namespace string, 
 		return work.held(l, r.now()), nil
 	}
 	var task c4v1beta1.Task
-	err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: l.Holder}, &task)
+	err := reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: l.Holder}, &task)
 	if apierrors.IsNotFound(err) {
 		return false, nil
 	}

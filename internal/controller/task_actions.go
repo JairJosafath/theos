@@ -332,8 +332,7 @@ func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, sta
 		return ctrl.Result{}, err
 	}
 	if wait != nil {
-		r.waitForEnvironment(task, status, wait)
-		return ctrl.Result{RequeueAfter: r.environmentRecheck()}, nil
+		return r.waitForEnvironment(task, status, wait), nil
 	}
 
 	setProgress(status, model.StartRun(progressOf(status), role))
