@@ -1,0 +1,40 @@
+{
+  "version": "4",
+  "groupKey": "{}:{alertname=\"HighErrorRate\"}",
+  "truncatedAlerts": 3,
+  "status": "resolved",
+  "receiver": "theos",
+  "groupLabels": {
+    "alertname": "HighErrorRate"
+  },
+  "commonLabels": {
+    "alertname": "HighErrorRate",
+    "severity": "critical",
+    "namespace": "shop-prod",
+    "service": "orders-api",
+    "theos_container": "orders-api"
+  },
+  "commonAnnotations": {
+    "summary": "Requests succeed again"
+  },
+  "externalURL": "http://alertmanager.monitoring.svc:9093",
+  "alerts": [
+    {
+      "status": "resolved",
+      "labels": {
+        "theos_container": "orders-api",
+        "service": "orders-api",
+        "namespace": "shop-prod",
+        "severity": "critical",
+        "alertname": "HighErrorRate"
+      },
+      "annotations": {
+        "summary": "Requests succeed again"
+      },
+      "startsAt": "2026-11-12T08:14:30.123Z",
+      "endsAt": "2026-11-12T09:02:00Z",
+      "generatorURL": "http://prometheus.monitoring.svc:9090/graph?g0.expr=rate%28http_requests_total%5B10m%5D%29&g0.tab=1",
+      "fingerprint": "c1b2a3d4e5f60718"
+    }
+  ]
+}
