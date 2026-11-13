@@ -72,6 +72,16 @@ const (
 	mergeCommitSlowRetry = time.Hour
 )
 
+// readsMergedPull reports whether a Merged Task has a merged pull request of its
+// own to read the merge commit and the size of (#220). Not one that ended
+// DoneByStandardChange: its Standard change merged in its place, and the
+// pull request it opened in an earlier round was closed, so it has no merge
+// commit to wait for and no size that was merged.
+func readsMergedPull(task *c4v1beta1.Task) bool {
+	return task.Status.Phase == c4v1beta1.TaskMerged && task.Status.PullRequest != 0 &&
+		!taskfacts.EndedByStandardChange(task)
+}
+
 // mergeCommitRetryAfter is when a Merged Task without its merge commit reads it
 // again: each minute for the first hour after it completed, then each hour, so a
 // pull request that is gone doesn't cost a Git request a minute forever.
@@ -219,8 +229,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			result := r.tendAbandonedPull(ctx, &task, status, &container)
 			return result, r.writeStatus(ctx, &task, status)
 		}
-		if status.Phase != c4v1beta1.TaskMerged || status.PullRequest == 0 ||
-			status.MergeCommit != "" && status.PersonCommits != nil {
+		if !readsMergedPull(&task) || status.MergeCommit != "" && status.PersonCommits != nil {
 			return ctrl.Result{}, r.writeStatus(ctx, &task, status)
 		}
 		// Merged before the Task recorded merge commits, or pull requests'

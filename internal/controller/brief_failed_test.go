@@ -67,6 +67,9 @@ func endedTask(ns, name string, n int, phase c4v1beta1.TaskPhase, completed time
 	Eventually(func(g Gomega) {
 		task := getTask(g, ns, name)
 		task.Status.Phase, task.Status.CompletedAt = phase, &metav1.Time{Time: completed}
+		if phase == c4v1beta1.TaskMerged {
+			task.Status.PullRequest = int32(900 + n) // a merged change has its pull request (#220)
+		}
 		g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 	}).Should(Succeed())
 }
