@@ -199,8 +199,8 @@ var _ = Describe("Brief requests", func() {
 
 	It("lets a team member's issue through, and says when the token can't read teams", func() {
 		repository, token := requestsBrief(ns, c4v1beta1.BriefRequests{Mode: model.RequestsOn,
-			Authors: []string{"ada"}, Teams: []string{"gray-org/maintainers"}})
-		githubFake.addTeamMember("gray-org/maintainers", "team-mate")
+			Authors: []string{"ada"}, Teams: []string{"acme/maintainers"}})
+		githubFake.addTeamMember("acme/maintainers", "team-mate")
 		mate := githubFake.openIssue(repository, "team-mate", "Light theme", "Too.")
 		stranger := githubFake.openIssue(repository, "stranger", "Spam", "Spam.")
 		Eventually(func(g Gomega) {

@@ -29,6 +29,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -306,8 +307,13 @@ func sudo(t *testing.T, base, token, user, path string, body map[string]string) 
 	}
 }
 
+// sshURLLogin is the login of a payload's ssh_url: the OS user Gitea ran as
+// on the machine that recorded it.
+var sshURLLogin = regexp.MustCompile(`("ssh_url":")[^"@]*@`)
+
 // captureEvents writes the body, compacted, and event header of a delivery of
-// each kind to testdata/events/<kind>.json and .event.
+// each kind to testdata/events/<kind>.json and .event. The ssh_url's login
+// is written as git, so that a recording doesn't name who recorded it.
 func captureEvents(t *testing.T, found map[string]delivery) {
 	t.Helper()
 	dir := filepath.Join("testdata", "events")
@@ -320,7 +326,8 @@ func captureEvents(t *testing.T, found map[string]delivery) {
 			t.Fatal(err)
 		}
 		compact.WriteByte('\n')
-		if err := os.WriteFile(filepath.Join(dir, kind+".json"), compact.Bytes(), 0o644); err != nil {
+		body := sshURLLogin.ReplaceAll(compact.Bytes(), []byte("${1}git@"))
+		if err := os.WriteFile(filepath.Join(dir, kind+".json"), body, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, kind+".event"), []byte(d.header.Get("X-Gitea-Event")+"\n"), 0o644); err != nil {

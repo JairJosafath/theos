@@ -156,11 +156,7 @@ describe('requestAnswered', () => {
 
 describe('the settings helpers', () => {
   it('split names on commas and spaces', () => {
-    expect(splitNames(' ada, a-colleague  gray-org/maintainers,,ada')).toEqual([
-      'ada',
-      'a-colleague',
-      'gray-org/maintainers',
-    ])
+    expect(splitNames(' ada, a-colleague  acme/maintainers,,ada')).toEqual(['ada', 'a-colleague', 'acme/maintainers'])
     expect(splitNames('  ')).toEqual([])
   })
 

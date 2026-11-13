@@ -371,33 +371,33 @@ func TestGitHubIssuesListPages(t *testing.T) {
 func TestGitHubIssuesTeamMember(t *testing.T) {
 	f, g := newFakeGitHubIssues(t)
 	ctx := context.Background()
-	f.members["gray-org/maintainers"] = map[string]string{"a-colleague": "active", "invited": "pending"}
+	f.members["acme/maintainers"] = map[string]string{"a-colleague": "active", "invited": "pending"}
 	for _, tt := range []struct {
 		team, login string
 		want        bool
 	}{
-		{"gray-org/maintainers", "a-colleague", true},
-		{"gray-org/maintainers", "invited", false},
-		{"gray-org/maintainers", "stranger", false},
-		{"gray-org/other", "a-colleague", false},
+		{"acme/maintainers", "a-colleague", true},
+		{"acme/maintainers", "invited", false},
+		{"acme/maintainers", "stranger", false},
+		{"acme/other", "a-colleague", false},
 	} {
 		got, err := g.TeamMember(ctx, tt.team, tt.login)
 		if err != nil || got != tt.want {
 			t.Errorf("TeamMember(%s, %s) = %v, %v; want %v", tt.team, tt.login, got, err, tt.want)
 		}
 	}
-	if calls := f.takeCalls(); calls[0] != "GET /orgs/gray-org/teams/maintainers/memberships/a-colleague" {
+	if calls := f.takeCalls(); calls[0] != "GET /orgs/acme/teams/maintainers/memberships/a-colleague" {
 		t.Errorf("TeamMember() called %q", calls[0])
 	}
 	for _, bad := range [][2]string{
 		{"maintainers", "a-colleague"},
-		{"gray-org/maintainers/x", "a-colleague"},
+		{"acme/maintainers/x", "a-colleague"},
 		{"-org/maintainers", "a-colleague"},
-		{"gray-org/..", "a-colleague"},
-		{"gray-org/.", "a-colleague"},
-		{"gray-org/maintainers", "../../../repos/acme/cel-lens"},
-		{"gray-org/maintainers", strings.Repeat("a", 40)},
-		{"gray-org/maintainers", ""},
+		{"acme/..", "a-colleague"},
+		{"acme/.", "a-colleague"},
+		{"acme/maintainers", "../../../repos/acme/cel-lens"},
+		{"acme/maintainers", strings.Repeat("a", 40)},
+		{"acme/maintainers", ""},
 	} {
 		if _, err := g.TeamMember(ctx, bad[0], bad[1]); err == nil {
 			t.Errorf("TeamMember(%q, %q) error = nil; want one", bad[0], bad[1])
@@ -537,7 +537,7 @@ func TestGitHubIssuesFailures(t *testing.T) {
 			ctx := context.Background()
 			calls := map[string]func() error{
 				"ListOpenIssues": func() error { _, err := g.ListOpenIssues(ctx, `W/"x"`); return err },
-				"TeamMember":     func() error { _, err := g.TeamMember(ctx, "gray-org/maintainers", "a-colleague"); return err },
+				"TeamMember":     func() error { _, err := g.TeamMember(ctx, "acme/maintainers", "a-colleague"); return err },
 				"FindComment":    func() error { _, err := g.FindComment(ctx, 1, "marker"); return err },
 				"Comment":        func() error { _, err := g.Comment(ctx, 1, "hello"); return err },
 				"CloseIssue":     func() error { return g.CloseIssue(ctx, 1, ports.CloseCompleted) },
@@ -592,7 +592,7 @@ func TestGitHubIssuesNetworkError(t *testing.T) {
 	if _, err := g.ListOpenIssues(ctx, ""); ports.IssuesReason(err) != ports.ReasonGitHubUnavailable {
 		t.Errorf("ListOpenIssues() on a closed server error = %v; want reason %s", err, ports.ReasonGitHubUnavailable)
 	}
-	if _, err := g.TeamMember(ctx, "gray-org/maintainers", "a-colleague"); ports.IssuesReason(err) != ports.ReasonGitHubUnavailable {
+	if _, err := g.TeamMember(ctx, "acme/maintainers", "a-colleague"); ports.IssuesReason(err) != ports.ReasonGitHubUnavailable {
 		t.Errorf("TeamMember() on a closed server error = %v; want reason %s", err, ports.ReasonGitHubUnavailable)
 	}
 	if err := g.CloseIssue(ctx, 1, ports.CloseCompleted); ports.IssuesReason(err) != ports.ReasonGitHubUnavailable {

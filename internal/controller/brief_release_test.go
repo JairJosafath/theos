@@ -792,7 +792,7 @@ var _ = Describe("Brief releases", func() {
 		})
 
 		It("refuses a login GitHub wouldn't give", func() {
-			for _, login := range []string{"-gray", "gray--lenovo", "gray_lenovo", strings.Repeat("a", 40)} {
+			for _, login := range []string{"-ada", "ada--b", "ada_b", strings.Repeat("a", 40)} {
 				brief := newBrief(ns, "login")
 				brief.Spec.Releases = []c4v1beta1.BriefRelease{requesting("acme/cel-lens", c4v1beta1.BriefRequests{
 					Mode: "On", Authors: []string{login}})}

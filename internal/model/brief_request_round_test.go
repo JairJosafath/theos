@@ -168,13 +168,13 @@ func TestRequestIssues(t *testing.T) {
 // says what they are and where to answer them.
 func TestBriefWorkspaceRequests(t *testing.T) {
 	ws := BriefWorkspace{Brief: "lens", GitProvider: "gitea", Idea: "A linter.", IdeaPlanned: true,
-		Requests: []Request{{Repository: "gray/lens", Number: 12, Author: "gray", Title: "Dark theme",
+		Requests: []Request{{Repository: "acme/lens", Number: 12, Author: "ada", Title: "Dark theme",
 			Body: "Please add a dark theme.\n"}}}
 	files, err := BriefWorkspaceFiles(ws)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "- request: gray/lens#12\n  repository: gray/lens\n  number: 12\n  author: gray\n  title: Dark theme\n" +
+	want := "- request: acme/lens#12\n  repository: acme/lens\n  number: 12\n  author: ada\n  title: Dark theme\n" +
 		"  body: Please add a dark theme.\n"
 	if got := files[WorkspaceRequestsFile]; got != want {
 		t.Errorf("%s =\n%s\nwant\n%s", WorkspaceRequestsFile, got, want)
@@ -204,7 +204,7 @@ func TestStandInPlanRequests(t *testing.T) {
 	lend := PlanObject{Kind: KindContainer, Name: "lend", SoftwareSystem: "tools", Type: TypeCLI,
 		GitProvider: "gitea", Framework: "go-cli"}
 	request := func(n int, title, body string) Request {
-		return Request{Repository: "gray/lend", Number: n, Author: "gray", Title: title, Body: body}
+		return Request{Repository: "acme/lend", Number: n, Author: "ada", Title: title, Body: body}
 	}
 	many := make([]Request, 0, MaxPlanIssues+1)
 	for n := 1; n <= MaxPlanIssues+1; n++ {
@@ -222,18 +222,18 @@ func TestStandInPlanRequests(t *testing.T) {
 				Prompts:  []string{"Add a calendar."},
 				Requests: []Request{request(12, "Dark theme", "Please add\na dark theme.")}},
 			issues:  []string{"lend: Stand-in: Add a calendar.", "lend: Stand-in: Dark theme"},
-			answers: []string{"gray/lend#12 take [2]"},
+			answers: []string{"acme/lend#12 take [2]"},
 		},
 		{
 			name:    "a request with the idea, for its new Container",
 			ws:      BriefWorkspace{Objects: []PlanObject{system}, Requests: []Request{request(3, "Dark theme", "")}},
 			issues:  []string{"lend: Stand-in: start lend", "lend: Stand-in: Dark theme"},
-			answers: []string{"gray/lend#3 take [2]"},
+			answers: []string{"acme/lend#3 take [2]"},
 		},
 		{
 			name:    "no Container to file it for",
 			ws:      BriefWorkspace{IdeaPlanned: true, Objects: []PlanObject{system}, Requests: []Request{request(3, "Dark theme", "")}},
-			answers: []string{"gray/lend#3 skip []"},
+			answers: []string{"acme/lend#3 skip []"},
 		},
 		{
 			name: "more than a round has room for",

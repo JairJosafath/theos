@@ -214,7 +214,7 @@ describe('a Brief’s requests in the browser', () => {
     await settings().getByText('Requests of cel-lens').click()
     const form = settings().getByRole('form', { name: 'Requests of cel-lens' })
     await form.getByLabel(/^Requests from its GitHub issues/).selectOption('On')
-    await form.getByLabel(/^Teams/).fill('gray-org/maintainers')
+    await form.getByLabel(/^Teams/).fill('acme/maintainers')
     const ops = await patchOf(() => form.getByRole('button', { name: 'Set requests' }).click())
     assert.deepEqual(ops, [
       {
@@ -226,7 +226,7 @@ describe('a Brief’s requests in the browser', () => {
             requests: {
               mode: 'On',
               authors: ['ada'],
-              teams: ['gray-org/maintainers'],
+              teams: ['acme/maintainers'],
               accepted: [12],
               declined: [13],
             },
@@ -234,7 +234,7 @@ describe('a Brief’s requests in the browser', () => {
         ],
       },
     ])
-    await settings().getByText('requests On, from ada and gray-org/maintainers').waitFor({ timeout: 5000 })
+    await settings().getByText('requests On, from ada and acme/maintainers').waitFor({ timeout: 5000 })
   })
 
   it('shows the API server’s message when it refuses requests', async () => {

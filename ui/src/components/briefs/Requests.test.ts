@@ -252,7 +252,7 @@ describe("a releases entry's requests in the settings", () => {
     await act(async () => {
       type(field(form, 'Requests from'), 'On')
       type(field(form, 'Authors'), 'ada, a-colleague')
-      type(field(form, 'Teams'), 'gray-org/maintainers')
+      type(field(form, 'Teams'), 'acme/maintainers')
     })
     await act(async () => form.querySelector<HTMLButtonElement>('button[type="submit"]')!.click())
     expect(sent(fetchImpl)).toEqual([
@@ -266,7 +266,7 @@ describe("a releases entry's requests in the settings", () => {
             requests: {
               mode: 'On',
               authors: ['ada', 'a-colleague'],
-              teams: ['gray-org/maintainers'],
+              teams: ['acme/maintainers'],
               accepted: [3],
             },
           },
@@ -299,7 +299,7 @@ describe("a releases entry's requests in the settings", () => {
       type(field(form, 'GitHub repository'), 'ada/cel-cli')
       type(field(form, 'Token Secret'), 'gh')
       type(field(form, 'Requests from'), 'Ask')
-      type(field(form, 'Teams'), 'gray-org/maintainers')
+      type(field(form, 'Teams'), 'acme/maintainers')
     })
     await act(async () => form.querySelector<HTMLButtonElement>('button[type="submit"]')!.click())
     expect(sent(fetchImpl)[1]).toEqual({
@@ -310,7 +310,7 @@ describe("a releases entry's requests in the settings", () => {
         {
           container: 'cli',
           github: { repository: 'ada/cel-cli', tokenSecretRef: { name: 'gh' } },
-          requests: { mode: 'Ask', teams: ['gray-org/maintainers'] },
+          requests: { mode: 'Ask', teams: ['acme/maintainers'] },
         },
       ],
     })
