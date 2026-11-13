@@ -24,21 +24,29 @@ import (
 )
 
 // Reasons an IssueTracker call fails, as a Brief's Requests condition names
-// them. A 401 is ReasonUnauthorized, and anything else ReasonGitHubError.
+// them. They are the port's own, whatever tracker is behind it: a credential
+// the tracker refuses is ReasonUnauthorized, and anything no other reason
+// covers ReasonTrackerError.
 const (
-	// ReasonTokenLacksIssues: the token may not read or write the repository's
-	// issues (403 without rate limiting).
+	// ReasonTokenLacksIssues: the credential may not read or write the
+	// tracker's issues.
 	ReasonTokenLacksIssues = "TokenLacksIssues"
-	// ReasonTokenLacksMembers: the token may not read the organization's team
-	// members (403 without rate limiting).
+	// ReasonTokenLacksMembers: the credential may not read a team's members
+	// (TeamMembers).
 	ReasonTokenLacksMembers = "TokenLacksMembers"
-	// ReasonGitHubUnavailable: a rate limit, a 5xx or the network; the next try
-	// may work.
-	ReasonGitHubUnavailable = "GitHubUnavailable"
-	// ReasonIssuesDisabled: the repository has its issues turned off (410).
+	// ReasonTrackerUnavailable: a rate limit, a failure of the tracker's own
+	// or the network; the next try may work.
+	ReasonTrackerUnavailable = "TrackerUnavailable"
+	// ReasonTrackerError: anything else the tracker answers, or an answer
+	// that can't be read.
+	ReasonTrackerError = "TrackerError"
+	// ReasonTrackerNotFound: no such repository, team or project to read
+	// issues from, or one the credential can't see.
+	ReasonTrackerNotFound = "TrackerNotFound"
+	// ReasonIssuesDisabled: the tracker has its issues turned off.
 	ReasonIssuesDisabled = "IssuesDisabled"
-	// ReasonIssueNotFound: no such issue, or it was deleted or moved (404, 410
-	// or 301 on one issue's call). A 404 on the list is ReasonRepositoryNotFound.
+	// ReasonIssueNotFound: no such issue, or it was deleted or moved. A list
+	// that finds no tracker is ReasonTrackerNotFound.
 	ReasonIssueNotFound = "IssueNotFound"
 )
 
@@ -58,19 +66,24 @@ func (e *IssuesError) Error() string {
 }
 
 // IssuesReason returns the reason err failed with: an IssuesError's, else
-// ReasonGitHubUnavailable, since only the network or ctx fails otherwise.
+// ReasonTrackerUnavailable, since only the network or ctx fails otherwise.
 func IssuesReason(err error) string {
 	if ie, ok := errors.AsType[*IssuesError](err); ok {
 		return ie.Reason
 	}
-	return ReasonGitHubUnavailable
+	return ReasonTrackerUnavailable
 }
 
-// GitHubIssue is an open issue of a repository on GitHub.
-type GitHubIssue struct {
+// TrackerIssue is an open issue of a tracker.
+type TrackerIssue struct {
+	// Number is the issue's own in its tracker, which the calls below take.
 	Number int
-	Title  string
-	Body   string
+	// Key is the issue as people name it, to read and never to look up by:
+	// `#12` where an issue has a number alone, `ENG-412` where a team's or a
+	// project's prefix comes first. Never empty, and never another issue's.
+	Key   string
+	Title string
+	Body  string
 	// Author is the login of the person who opened it.
 	Author string
 	// URL is the issue's page.
@@ -79,10 +92,11 @@ type GitHubIssue struct {
 	Created time.Time
 }
 
-// GitHubComment is a comment on a GitHub issue.
-type GitHubComment struct {
-	// ID is the comment's own, never 0 and never another comment's.
-	ID   int64
+// TrackerComment is a comment on a tracker's issue.
+type TrackerComment struct {
+	// ID is the comment's own, as its tracker writes it (a number, a UUID):
+	// never empty and never another comment's.
+	ID   string
 	Body string
 	// Author is the login of the account that wrote it.
 	Author string
@@ -90,20 +104,20 @@ type GitHubComment struct {
 	URL string
 }
 
-// IssueList is a repository's open issues, or that they didn't change.
+// IssueList is a tracker's open issues, or that they didn't change.
 type IssueList struct {
 	// Issues are the open issues, oldest first, pull requests left out. Empty
 	// when NotModified.
-	Issues []GitHubIssue
+	Issues []TrackerIssue
 	// NotModified: the list is the one ETag was given for.
 	NotModified bool
 	// ETag is passed to the next ListOpenIssues. A NotModified list carries
-	// one too, to ask with again. It is empty when the list took more than one
-	// page, since a page's ETag doesn't cover the others.
+	// one too, to ask with again. It is empty when the adapter has none that
+	// covers the whole list.
 	ETag string
 }
 
-// CloseReason is why an issue is closed, as GitHub shows it.
+// CloseReason is why an issue is closed, as its tracker shows it.
 type CloseReason string
 
 const (
@@ -111,29 +125,40 @@ const (
 	CloseNotPlanned CloseReason = "not_planned"
 )
 
-// IssueTracker is the issues of a repository on GitHub. It never reads a
-// pull request, and never edits an issue's text. What a Brief relies on of
-// every adapter is the suite contract.IssueTracker
-// (internal/ports/contract/intake.go), which each adapter's tests run.
+// IssueTracker is where a Brief reads requests: the issues of one repository,
+// team or project on a tracker. It never reads a pull request, and never
+// edits an issue's text. What a Brief relies on of every adapter is the suite
+// contract.IssueTracker (internal/ports/contract/intake.go), which each
+// adapter's tests run. A tracker that has teams is a TeamMembers too.
 type IssueTracker interface {
-	// ListOpenIssues returns the open issues. Given the ETag of the last list,
-	// it asks with If-None-Match, which an unchanged list answers with a 304
-	// that costs no rate limit. A list that failed is empty.
+	// ListOpenIssues returns the open issues. Given the ETag of the last
+	// list, a list that didn't change is NotModified, which an adapter
+	// answers as cheaply as its tracker lets it. A list that failed is empty.
 	ListOpenIssues(ctx context.Context, etag string) (IssueList, error)
-	// TeamMember reports whether login is an active member of team, org/slug.
-	// A pending invitation is not; neither is a team the token can't see. It
-	// is false when the call failed.
-	TeamMember(ctx context.Context, team, login string) (bool, error)
 	// FindComment returns the first comment on issue number written by the
-	// token's own account whose body contains marker, nil when there is none.
-	// Anyone can copy a marker into a comment of their own; theirs is ignored.
-	// An empty marker is in every comment and says nothing: it finds none.
-	FindComment(ctx context.Context, number int, marker string) (*GitHubComment, error)
-	// Comment posts body on issue number as the token's account, and returns
-	// the comment with its ID, Author and URL.
-	Comment(ctx context.Context, number int, body string) (GitHubComment, error)
+	// credential's own account whose body contains marker, nil when there is
+	// none. Anyone can copy a marker into a comment of their own; theirs is
+	// ignored. An empty marker is in every comment and says nothing: it finds
+	// none.
+	FindComment(ctx context.Context, number int, marker string) (*TrackerComment, error)
+	// Comment posts body on issue number as the credential's account, and
+	// returns the comment with its ID, Author and URL.
+	Comment(ctx context.Context, number int, body string) (TrackerComment, error)
 	// CloseIssue closes issue number with reason. Closing a closed issue
 	// changes nothing but its reason. A reason that is neither CloseCompleted
 	// nor CloseNotPlanned is refused with an error, the issue left as it was.
 	CloseIssue(ctx context.Context, number int, reason CloseReason) error
+}
+
+// TeamMembers is an optional capability of an IssueTracker: who is in the
+// tracker's teams, which a Brief asks when an entry lets a team's members
+// file requests. A tracker that has teams implements it too; find it with a
+// type assertion. What a Brief relies on of it is the suite
+// contract.TeamMembers (internal/ports/contract/teammembers.go), which the
+// adapter's tests run beside contract.IssueTracker.
+type TeamMembers interface {
+	// TeamMember reports whether login is an active member of team, named as
+	// the tracker names its teams. A pending invitation is not; neither is a
+	// team the credential can't see. It is false when the call failed.
+	TeamMember(ctx context.Context, team, login string) (bool, error)
 }

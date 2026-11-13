@@ -448,6 +448,36 @@ step that adds API fields runs `make manifests generate`, and
 | 12. The UI shows a tracker's requests | 9 | A Brief's page lists a source's request by its source and key, with *Accept* and *Decline*, which patch `/spec/requestSources`, one more write on the UI server's allowlist. | The UI's tests on the fixture with a Linear source: the request reads `product:ENG-412` and never `undefined #412`, and *Accept* patches the source's `accepted` and not `/spec/releases`; the server refuses a patch of `/spec/requestSources` that changes anything but `accepted` and `declined`. | the UI's check | "UI actions": the one more write. |
 | 13. The guide and the chart | 8, 10, 11, 12 | `docs/chat-slack.md`, `docs/requests-linear.md` and `docs/requests-jira.md`, each with how to make the app or the account, every token's scopes and what the factory writes; the Slack page says the socket needs a direct route to Slack, the tracker pages who reaches the planner with `On`, what taking the label off does and, for Jira, how to find the cloud ID and name `close`; linked from `docs/getting-started.md` and the README. The chart's `chat.slack.apiURL`, Linear's address and Jira's, and a section each in `dist/chart/README.md`: protected paths, an owner's session. `docs/architecture.md`'s two rows and its line on swappable ports; `docs/comparison.md` loses "not yet (#61)". This plan moves to `done/`. | `make validate-yaml` passes with every option on and renders no credential; the link check passes; each page's scopes are the ones the adapters' tests ask their fakes for. | 2 | A last read against what steps 7 to 12 wrote. |
 
+## Step 1 as built (#151)
+
+What the step chose where the plan says nothing:
+
+- **The `TeamMembers` suite has five subtests, not three.** The three the
+  table names moved as they were. `TeamMember` was also read in two of the
+  IssueTracker suite's failures (a credential the tracker doesn't know, a
+  tracker that doesn't answer), which can't ask it any more, so its half of
+  each is a subtest of the new suite: nothing the old suite pinned is lost.
+- **A tracker without teams, asked for a team's members, fails.** The Brief
+  finds the capability with a type assertion (`inTeams`,
+  `internal/controller/brief_requests.go`). An entry that names teams on a
+  tracker without it gets `TrackerError` with a message that says so, never
+  a stranger let in on a guess. GitHub has teams, so nothing reaches it
+  today; step 9's CEL keeps `teams` off the sources that lack them
+  (decision 13).
+- **`Unauthorized` stays one reason for both ports.** It names no product
+  and its value doesn't change, so the intake port goes on using the
+  constant in `internal/ports/deployer.go`.
+- **The guard reads lines, not identifiers**
+  (`internal/ports/productneutral_test.go`): `github`, `gitlab`, `gitea`,
+  `linear`, `jira`, `slack` and `matrix`, without case, anywhere in a line
+  of `intake.go` and its two suites. An import's path is left out, since
+  this module's own is on a code host. A file of the list that is gone
+  fails the test, so a move can't leave the port unguarded.
+- **Whoever matches on a reason is told by the release notes.** A commit of
+  the step carries the `BREAKING CHANGE` footer `hack/release-notes.sh`
+  reads, and docs/design.md, "Compatibility", now says a reason may be
+  renamed or removed that way.
+
 ## How we will know #61 is done
 
 The issue's done-when, by step:

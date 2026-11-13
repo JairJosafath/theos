@@ -1622,7 +1622,7 @@ controllers call, not by one product's API;
 | Port | What the operator asks of it | Today |
 | --- | --- | --- |
 | GitHost | repositories, files, branches, tags, branch rules, pull requests, merges, commit statuses | Gitea |
-| Issues | issues, comments, labels, milestones, dependencies | Gitea; request intake on GitHub |
+| Issues | issues, comments, labels, milestones, dependencies; request intake is a port of its own (`IssueTracker`: the open issues a Brief reads as requests, its answer on each, the close), with any tracker behind it | Gitea; GitHub for request intake |
 | CI | runs of a commit or tag, reruns, job logs, runners; the jobs that wait for a label's runner, and a runner registered for one job | Gitea Actions |
 | AgentAccess | a credential for one repository, and revoking it | Gitea bot users |
 | Registry | Go modules and the proxy; npm, PyPI and images to come | Gitea packages |
@@ -1876,7 +1876,10 @@ meant. Within a served version a release never:
 Adding an optional field, an enum value, a condition type or reason, or a kind
 is fine. A change these rules forbid is a new version, never a change to a
 served one. The status is held to them as the spec is; what the operator does
-with an object may change, as the release notes say.
+with an object may change, as the release notes say. A condition's reason is
+not in the schema: a reason may be renamed or removed, and the release that
+does it says so under *Changed*, marked Breaking, with the old and the new
+value.
 
 **Across versions** ([plans/done/api-versions.md](plans/done/api-versions.md), #1082).
 `v1alpha1` was dropped before theos's first release without the 90 days
