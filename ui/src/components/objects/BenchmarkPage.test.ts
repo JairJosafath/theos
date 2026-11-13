@@ -56,6 +56,15 @@ describe('A Benchmark’s page (measure-and-improve, step 7)', () => {
       'The change has a test that fails without it. (tests-and-why) 83% (5 of 6; 44 to 97%) 100% (5 of 5; 57 to 100%), 1 unclear',
     )
     expect(text(html)).toContain('2 goals × 2 variants × 3 repetitions, 2 at a time')
-    expect(text(html)).toContain('$21.48 of $30')
+  })
+
+  it('prints its budget as it prints its cost, with two decimals (#168)', () => {
+    const spent = (b: typeof bench) =>
+      text(renderToStaticMarkup(createElement(BenchmarkPage, { bench: b, tasks: [] }))).match(
+        /Spent (.*?) Judged by/,
+      )?.[1]
+    expect(spent(bench)).toBe('$21.48 of $30.00')
+    // At its cap the two amounts read the same.
+    expect(spent({ ...bench, status: { ...bench.status, costMilliUSD: 30_000 } })).toBe('$30.00 of $30.00')
   })
 })
