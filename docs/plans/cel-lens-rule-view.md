@@ -329,3 +329,17 @@ Each is an issue in the session's Gitea (bodies in
 ## Status
 
 - **13 November, 19:30 UTC.** Planned. Nothing built.
+- **13 November, evening. Steps 1 and 4 approved.** cel-lens-core#41
+  (issue #35, the rule index, with #40 for #38 merged in) is approved
+  after four review rounds. The reviews found that a rule the check never
+  compiled was listed `ok`: a document the API server cannot read, a
+  schema that is not structural or whose defaults it refuses. `pkg/check`
+  now says which rules it did not compile (`Diagnostic.Uncompiled`),
+  deciding a whole version as apiextensions-apiserver does, and the list
+  shows those rules as errors. One fix had made every check of a CRD
+  with defaults 50% slower; a bench with 900 defaults now holds it.
+  Decision: the index's cost while it runs (+1 to 2 ms on a 4 ms hover,
+  re-measured alone) is accepted, as the check of the examples' larger
+  one is. Follow-ups: #42 (the line above a rule says `compiles` for
+  such a rule) and #43 (the reviews' non-blocking items). Building now:
+  #36 (engine) and cel-lens-vscode#24 (the view, against #41's engine).
