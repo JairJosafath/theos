@@ -18,6 +18,7 @@ package slack
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -325,23 +326,177 @@ func syncUntil(t *testing.T, c *Client, since string, n int) ([]ports.ChatEvent,
 }
 
 // TestSyncDialsAgainAfterDisconnect covers #155: Slack's disconnect is
-// answered by a new address from apps.connections.open and a new dial
-// (decision 7), and a message said while no socket was open is read once.
+// answered, with no Sync, by a new address from apps.connections.open and a
+// new dial (decision 7), and the old socket is closed once the new one is
+// open. Slack's warning leaves the old socket open meanwhile: a message said
+// then reaches it and is read once, and a Sync does not wait behind the
+// redial while the old socket serves.
 func TestSyncDialsAgainAfterDisconnect(t *testing.T) {
 	x := newRooms(t)
 	since := sync0(t, x.c, "").Next
 	before := x.post(t, x.specs, "status", "")
+	release := x.ws.HoldOpens()
+	t.Cleanup(release)
 	x.ws.Disconnect("refresh_requested")
-	// Said while the adapter dials again: it reaches the new socket or the
-	// catch-up, and comes once either way.
+	waitFor(t, "the adapter asks for a new address", func() bool { return x.ws.Calls("apps.connections.open") == 2 })
 	gap := x.post(t, x.alerts, "retry", "")
-	events, next := syncUntil(t, x.c, since, 2)
-	wantIDs(t, "Sync() across the disconnect", events, x.specs+"/"+before, x.alerts+"/"+gap)
-	waitFor(t, "a second socket is open", func() bool { return x.ws.Opens() == 2 && x.ws.Open() == 1 })
+
+	type result struct {
+		got ports.ChatSync
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		got, err := x.c.Sync(t.Context(), since, 0)
+		done <- result{got, err}
+	}()
+	var next string
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("Sync() while the adapter dials again = %v", r.err)
+		}
+		wantIDs(t, "Sync() while the adapter dials again", r.got.Events, x.specs+"/"+before, x.alerts+"/"+gap)
+		next = r.got.Next
+	case <-time.After(5 * time.Second):
+		release()
+		t.Fatal("Sync() waited behind the redial, though the old socket was open")
+	}
+
+	release()
+	waitFor(t, "a second socket is open and the first closed", func() bool {
+		return x.ws.Opens() == 2 && x.ws.Open() == 1
+	})
 	after := x.post(t, x.specs, "help", "")
 	got := sync0(t, x.c, next)
 	wantIDs(t, "Sync() on the new socket", got.Events, x.specs+"/"+after)
 	wantIDs(t, "the next Sync()", sync0(t, x.c, got.Next).Events)
+}
+
+// TestReopenAfterARestartReadsNothingTwice covers #155: the catch-up of a
+// socket opened again reads from a minute before the newest time heard, but
+// never from before the buffer's floor, so a message the token had read
+// before a restart does not come again (the review's B1).
+func TestReopenAfterARestartReadsNothingTwice(t *testing.T) {
+	x := newRooms(t)
+	since := sync0(t, x.c, "").Next
+	said := x.post(t, x.specs, "approve", "")
+	got := sync0(t, x.c, since)
+	wantIDs(t, "Sync() before the restart", got.Events, x.specs+"/"+said)
+	x.c.Close()
+	waitFor(t, "the socket is closed", func() bool { return x.ws.Open() == 0 })
+
+	restarted := client(t, x.ws, x.botToken, x.appToken)
+	got = sync0(t, restarted, got.Next)
+	wantIDs(t, "Sync() after the restart", got.Events)
+	x.ws.Disconnect("")
+	// Sync until one finds the socket closed and opens it again, its
+	// catch-up done.
+	var again []ports.ChatEvent
+	next := got.Next
+	for deadline := time.Now().Add(10 * time.Second); x.ws.Opens() < 3; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the socket was not opened a third time")
+		}
+		s := sync0(t, restarted, next)
+		again, next = append(again, s.Events...), s.Next
+	}
+	again = append(again, sync0(t, restarted, next).Events...)
+	wantIDs(t, "Sync() after the socket dropped", again)
+}
+
+// TestForeignTokenWhileAnEventIsOnItsWay covers #155: a token of before a
+// restart, read on a socket another Chat opened, is given a message the
+// catch-up read whose event comes after, once (the review's S1).
+func TestForeignTokenWhileAnEventIsOnItsWay(t *testing.T) {
+	x := newRooms(t)
+	since := sync0(t, x.c, "").Next
+	x.post(t, x.specs, "status", "")
+	token := sync0(t, x.c, since).Next
+	x.c.Close()
+	waitFor(t, "the socket is closed", func() bool { return x.ws.Open() == 0 })
+
+	other := client(t, x.ws, x.botToken, x.appToken)
+	sync0(t, other, "") // another Chat opens the socket: the buffer starts now
+	held, deliver, err := x.ws.PostHeld(x.specs, x.ada, "approve", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := sync0(t, other, token)
+	wantIDs(t, "Sync() of the older token", first.Events, x.specs+"/"+held)
+	if err := deliver(); err != nil {
+		t.Fatal(err)
+	}
+	wantIDs(t, "the next Sync(), after the event arrived", sync0(t, other, first.Next).Events)
+}
+
+// TestSocketDialErrorHoldsNoTicket covers #155: a dial that fails is
+// reported by the socket's host, never by its address, whose ticket is the
+// one-use credential of the app's event stream (the review's S3).
+func TestSocketDialErrorHoldsNoTicket(t *testing.T) {
+	x := newRooms(t)
+	x.ws.RefuseDials(1)
+	_, err := x.c.Sync(t.Context(), "", 0)
+	if err == nil {
+		t.Fatal("Sync() with a dial refused = nil error")
+	}
+	if strings.Contains(err.Error(), "ticket") || strings.Contains(err.Error(), "?") {
+		t.Errorf("Sync() with a dial refused = %q, which holds the socket's address", err)
+	}
+	if _, err := x.c.Sync(t.Context(), "", 0); err != nil {
+		t.Errorf("Sync() once the dial is no longer refused = %v", err)
+	}
+}
+
+// TestReceiveDropsAnEventIDSeen covers #155: an envelope whose event_id was
+// delivered is dropped by that ID alone, even where its message's key would
+// not drop it (decision 8).
+func TestReceiveDropsAnEventIDSeen(t *testing.T) {
+	c, err := New(ports.ChatConfig{Address: "http://slack.invalid/api", Token: rand.Text()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	for _, ts := range []string{"1700000000.000100", "1700000000.000200"} {
+		payload, err := json.Marshal(map[string]any{"event_id": "Ev00000001", "event": map[string]any{
+			"type": "message", "channel": "C0000001", "user": "U0000001", "text": "approve", "ts": ts}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.receive(payload)
+	}
+	c.feed.mu.Lock()
+	defer c.feed.mu.Unlock()
+	if n := len(c.feed.buf); n != 1 {
+		t.Errorf("two envelopes of one event_id buffered %d messages, want 1", n)
+	}
+}
+
+// TestCatchUpReadsEveryPage covers #155: the catch-up reads every page of
+// the bot's channels, of a channel's history and of a thread's replies.
+func TestCatchUpReadsEveryPage(t *testing.T) {
+	x := newRooms(t)
+	since := sync0(t, x.c, "").Next
+	x.c.Close()
+	waitFor(t, "the socket is closed", func() bool { return x.ws.Open() == 0 })
+	x.ws.MaxPage(1)
+
+	missed := make([]string, 0, 8)
+	for _, text := range []string{"status", "help", "retry"} {
+		missed = append(missed, x.specs+"/"+x.post(t, x.specs, text, ""))
+	}
+	root := x.post(t, x.specs, "brief", "")
+	missed = append(missed, x.specs+"/"+root)
+	for _, text := range []string{"approve", "changes: more", "approve again"} {
+		missed = append(missed, x.specs+"/"+x.post(t, x.specs, text, root))
+	}
+	missed = append(missed, x.alerts+"/"+x.post(t, x.alerts, "retry", ""))
+
+	restarted := client(t, x.ws, x.botToken, x.appToken)
+	wantIDs(t, "Sync() after the restart, a page at a time", sync0(t, restarted, since).Events, missed...)
+	if n := x.ws.Calls("conversations.replies"); n < 4 {
+		t.Errorf("conversations.replies was called %d times, want a page for the root and each reply", n)
+	}
 }
 
 // TestSyncOpensAgainAfterTheSocketDrops covers #155: a socket that closes
@@ -389,8 +544,13 @@ func TestSyncCatchesUpAfterARestart(t *testing.T) {
 	restarted := client(t, x.ws, x.botToken, x.appToken)
 	got = sync0(t, restarted, token)
 	wantIDs(t, "Sync() after the restart", got.Events, missed...)
-	if len(got.Events) == 2 && got.Events[0].ThreadRoot != root {
-		t.Errorf("the reply read in the catch-up = %+v, want it in the thread of %s", got.Events[0], root)
+	if len(got.Events) == len(missed) {
+		if got.Events[0].ThreadRoot != root {
+			t.Errorf("the reply read in the catch-up = %+v, want it in the thread of %s", got.Events[0], root)
+		}
+		if got.Events[2].ThreadRoot != alert {
+			t.Errorf("the reply read in the catch-up = %+v, want it in the thread of %s", got.Events[2], alert)
+		}
 	}
 	later := x.post(t, x.specs, "help", "")
 	wantIDs(t, "the next Sync(), on the socket", sync0(t, restarted, got.Next).Events, x.specs+"/"+later)
@@ -563,6 +723,34 @@ func TestPostIsMrkdwn(t *testing.T) {
 	ch, _ = x.ws.Channel(x.specs)
 	if m := ch.Messages[0]; m.Blocks != "" || m.Text != "Spec: merged" || m.Edited == "" {
 		t.Errorf("the message after an edit without mrkdwn = %+v, want its text alone", m)
+	}
+}
+
+// TestPostMentionsNobody covers #155: `@channel`, `@here`, `@everyone` and
+// `#name` in a request's title are sent as typed, in section blocks whose
+// mrkdwn is verbatim, so that Slack reads no mention and no channel in them
+// (the review's S2).
+func TestPostMentionsNobody(t *testing.T) {
+	x := newRooms(t)
+	post := model.ChatPost{Title: "@channel urgent: @here, @everyone, see #general"}
+	if _, err := x.c.Send(t.Context(), x.specs, ports.ChatMessage{Text: post.Text(),
+		Formatted: post.Mrkdwn()}); err != nil {
+		t.Fatalf("Send() of a title with mentions = %v", err)
+	}
+	ch, _ := x.ws.Channel(x.specs)
+	var blocks []struct {
+		Text struct {
+			Text     string `json:"text"`
+			Verbatim bool   `json:"verbatim"`
+		} `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(ch.Messages[0].Blocks), &blocks); err != nil || len(blocks) == 0 {
+		t.Fatalf("the blocks %q: %v", ch.Messages[0].Blocks, err)
+	}
+	for _, b := range blocks {
+		if !b.Text.Verbatim || !strings.Contains(b.Text.Text, "@channel urgent: @here, @everyone, see #general") {
+			t.Errorf("a section = %+v, want the title as typed, verbatim", b.Text)
+		}
 	}
 }
 

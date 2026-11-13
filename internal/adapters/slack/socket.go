@@ -90,8 +90,9 @@ type feed struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// dial is held while a socket is opened, so one opens at a time.
-	dial sync.Mutex
+	// dial holds a token while a socket is opened, so one opens at a time;
+	// a channel, so that a Sync waiting for it heeds its ctx.
+	dial chan struct{}
 
 	mu      sync.Mutex
 	conn    *websocket.Conn
@@ -114,8 +115,21 @@ type feed struct {
 func newFeed() *feed {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &feed{epoch: strings.ToLower(rand.Text()[:10]), ctx: ctx, cancel: cancel,
-		keys: map[string]uint64{}, seen: map[string]bool{}, wake: make(chan struct{})}
+		keys: map[string]uint64{}, seen: map[string]bool{}, wake: make(chan struct{}), dial: make(chan struct{}, 1)}
 }
+
+// lockDial takes f.dial, or gives ctx's error when ctx ends first.
+func (f *feed) lockDial(ctx context.Context) error {
+	select {
+	case f.dial <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// unlockDial gives f.dial back.
+func (f *feed) unlockDial() { <-f.dial }
 
 // close closes the socket and keeps it closed.
 func (f *feed) close() {
@@ -269,7 +283,10 @@ func sortByTime(events []ports.ChatEvent) {
 
 // syncForeign answers a token of another buffer, one given before a
 // restart: what is buffered after its time, and what Slack holds after it
-// that the buffer has not, when the buffer starts later.
+// that the buffer has not, when the buffer starts later. What the read
+// finds after the buffer's floor goes into the buffer, which is meant to
+// hold all of it, so that its event, still on its way, is dropped as a
+// repeat; only what is at or before the floor is this reader's alone.
 func (c *Client) syncForeign(ctx context.Context, tok token) (ports.ChatSync, error) {
 	f := c.feed
 	f.mu.Lock()
@@ -286,7 +303,10 @@ func (c *Client) syncForeign(ctx context.Context, tok token) (ports.ChatSync, er
 	defer f.mu.Unlock()
 	var events []ports.ChatEvent
 	for _, b := range read {
-		if _, ok := f.keys[b.key]; !ok {
+		switch _, ok := f.keys[b.key]; {
+		case b.ev.Time.After(f.floor):
+			f.add(b.key, b.ev)
+		case !ok:
 			events = append(events, b.ev)
 		}
 	}
@@ -304,8 +324,21 @@ func (c *Client) syncForeign(ctx context.Context, tok token) (ports.ChatSync, er
 // down reads from a minute before the newest time heard.
 func (c *Client) open(ctx context.Context, since string, tok token) error {
 	f := c.feed
-	f.dial.Lock()
-	defer f.dial.Unlock()
+	// An open socket serves, even while a redial after Slack's disconnect
+	// holds f.dial.
+	f.mu.Lock()
+	closed, open := f.closed, f.conn != nil
+	f.mu.Unlock()
+	if closed {
+		return errors.New("slack: the client is closed")
+	}
+	if open {
+		return nil
+	}
+	if err := f.lockDial(ctx); err != nil {
+		return err
+	}
+	defer f.unlockDial()
 	f.mu.Lock()
 	if f.closed {
 		f.mu.Unlock()
@@ -328,12 +361,15 @@ func (c *Client) open(ctx context.Context, since string, tok token) error {
 }
 
 // catchUpFrom is where a catch-up after a redial reads from; f.mu is held.
+// It is never before the floor: the buffer holds every message after it,
+// and one before it may have been given already, by a token of before a
+// restart or as the mark of a first Sync.
 func (f *feed) catchUpFrom() time.Time {
 	from := later(f.newest, f.heard).Add(-overlap)
 	if !f.pending.IsZero() && f.pending.Before(from) {
 		from = f.pending
 	}
-	return from
+	return later(from, f.floor)
 }
 
 // connect asks apps.connections.open for an address, dials it, waits for
@@ -402,13 +438,18 @@ func (c *Client) dialSocket(ctx context.Context) (*websocket.Conn, error) {
 	if err := c.call(ctx, c.appToken, "apps.connections.open", nil, &answer); err != nil {
 		return nil, err
 	}
+	// The address holds the socket's ticket, a credential: no error names
+	// more of it than its host, as theos-chat logs what Sync returns.
 	cfg, err := websocket.NewConfig(answer.URL, c.base)
 	if err != nil {
-		return nil, fmt.Errorf("slack: the socket's address %q: %w", answer.URL, err)
+		return nil, errors.New("slack: apps.connections.open gave no socket address the adapter can dial")
 	}
 	ws, err := cfg.DialContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("slack: dialling the socket: %w", err)
+		if dialErr, ok := errors.AsType[*websocket.DialError](err); ok {
+			err = dialErr.Err
+		}
+		return nil, fmt.Errorf("slack: dialling the socket at %s: %w", cfg.Location.Host, err)
 	}
 	_ = ws.SetReadDeadline(time.Now().Add(helloWait))
 	var hello frame
@@ -476,8 +517,11 @@ func (c *Client) redial(old *websocket.Conn, gen uint64) {
 	f := c.feed
 	ctx, cancel := context.WithTimeout(f.ctx, redialWait)
 	defer cancel()
-	f.dial.Lock()
-	defer f.dial.Unlock()
+	if err := f.lockDial(ctx); err != nil {
+		f.down(gen)
+		return
+	}
+	defer f.unlockDial()
 	f.mu.Lock()
 	// The old socket may have closed already, as Slack closes it after a
 	// disconnect; a socket another call opened since takes its place.

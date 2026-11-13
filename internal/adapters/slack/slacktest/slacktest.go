@@ -22,6 +22,8 @@ limitations under the License.
 // A message event goes to the newest open socket and waits for its
 // acknowledgement, so a person's message is buffered when Post returns; a
 // message said while no socket is open is only in the history, as on Slack.
+// A section block's text must say verbatim, so that no `@channel` or
+// `#name` a person typed becomes a mention.
 package slacktest
 
 import (
@@ -120,6 +122,9 @@ type Server struct {
 	sent     *delivery // the last event delivered, for Redeliver
 	limited  int
 	calls    map[string]int
+	refuse   int           // dials to refuse, at the handshake
+	maxPage  int           // the most items a page holds, 0 for the limit asked
+	held     chan struct{} // closed when apps.connections.open may answer
 }
 
 type credential struct {
@@ -166,8 +171,10 @@ func New(t testing.TB) *Server {
 
 // Start starts a fake workspace the caller closes with Close.
 func Start() *Server {
+	held := make(chan struct{})
+	close(held)
 	s := &Server{users: map[string]string{}, tokens: map[string]*credential{}, channels: map[string]*channel{},
-		tickets: map[string]bool{}, calls: map[string]int{}}
+		tickets: map[string]bool{}, calls: map[string]int{}, held: held}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/", s.serve)
 	mux.Handle("/link", websocket.Handler(s.socket))
@@ -369,20 +376,52 @@ func (s *Server) Redeliver() error {
 	return s.send(d.eventID, d.event, 1)
 }
 
-// Disconnect sends Slack's disconnect with reason on every open socket and
-// closes it, as Slack does every few hours; "" closes them without a word.
+// Disconnect sends Slack's disconnect with reason on every open socket, as
+// Slack does every few hours, and leaves each open, as Slack does for about
+// ten seconds after its warning: it gets events until the app closes it or
+// Disconnect("") does. Disconnect("") closes every socket without a word.
 func (s *Server) Disconnect(reason string) {
 	s.mu.Lock()
-	socks := s.socks
-	s.socks = nil
+	socks := slices.Clone(s.socks)
+	if reason == "" {
+		s.socks = nil
+	}
 	s.mu.Unlock()
 	for _, k := range socks {
 		if reason != "" {
 			_ = k.write(map[string]any{keyType: "disconnect", "reason": reason,
 				"debug_info": map[string]string{"host": "slacktest"}})
+			continue
 		}
 		_ = k.ws.Close()
 	}
+}
+
+// HoldOpens makes apps.connections.open wait, until release is called, to
+// answer: a socket being opened again. Calls counts a call that waits.
+// Release is safe to call twice.
+func (s *Server) HoldOpens() (release func()) {
+	held := make(chan struct{})
+	s.mu.Lock()
+	s.held = held
+	s.mu.Unlock()
+	return sync.OnceFunc(func() { close(held) })
+}
+
+// RefuseDials makes the next n dials to an address apps.connections.open
+// gave fail at the handshake, as a socket server that is down does.
+func (s *Server) RefuseDials(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refuse = n
+}
+
+// MaxPage caps every listing's page at n items, whatever limit the caller
+// asks for, as Slack may return fewer than the limit.
+func (s *Server) MaxPage(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.maxPage = n
 }
 
 // ChannelState is a channel as the people in it see it.
@@ -645,6 +684,16 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	s.calls[method]++
+	held := s.held
+	s.mu.Unlock()
+	if method == appMethod {
+		select {
+		case <-held:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	s.mu.Lock()
 	if s.limited > 0 {
 		s.limited--
 		s.mu.Unlock()
@@ -711,7 +760,14 @@ func (s *Server) handle(method, user string, form url.Values) (map[string]any, m
 		ticket := rand.Text()
 		s.tickets[ticket] = true
 		s.opens++
-		return ok(map[string]any{"url": "ws" + strings.TrimPrefix(s.srv.URL, "http") + "/link?ticket=" + ticket}), nil
+		path := "/link"
+		if s.refuse > 0 {
+			// No socket is served there: the handshake gets a 404.
+			s.refuse--
+			path = "/refused"
+		}
+		return ok(map[string]any{"url": "ws" + strings.TrimPrefix(s.srv.URL, "http") + path + "?ticket=" + ticket}),
+			nil
 	case "users.conversations":
 		return s.listChannels(user, form), nil
 	case "conversations.create":
@@ -749,8 +805,11 @@ func (s *Server) handle(method, user string, form url.Values) (map[string]any, m
 	return fail("unknown_method"), nil
 }
 
-// blocksAllowed checks blocks as Slack does: a JSON array of section blocks
-// whose text is at most 3000 characters.
+// blocksAllowed checks blocks as Slack does: a JSON array of at most 50
+// section blocks whose text is at most 3000 characters. It also refuses a
+// section whose mrkdwn is not verbatim, which Slack takes but which turns
+// `@here`, `@channel`, `@everyone` and `#name` in the text into mentions
+// and links: the adapter must never send one.
 func blocksAllowed(raw string) (map[string]any, bool) {
 	if raw == "" {
 		return nil, true
@@ -758,15 +817,16 @@ func blocksAllowed(raw string) (map[string]any, bool) {
 	var blocks []struct {
 		Type string `json:"type"`
 		Text struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Verbatim bool   `json:"verbatim"`
 		} `json:"text"`
 	}
 	if err := json.Unmarshal([]byte(raw), &blocks); err != nil || len(blocks) > 50 {
 		return fail("invalid_blocks"), false
 	}
 	for _, b := range blocks {
-		if b.Type != "section" || b.Text.Type != "mrkdwn" || b.Text.Text == "" ||
+		if b.Type != "section" || b.Text.Type != "mrkdwn" || !b.Text.Verbatim || b.Text.Text == "" ||
 			len([]rune(b.Text.Text)) > 3000 {
 			return fail("invalid_blocks"), false
 		}
@@ -774,12 +834,15 @@ func blocksAllowed(raw string) (map[string]any, bool) {
 	return nil, true
 }
 
-// page is the slice of n items a listing's limit and cursor ask for, and
-// the next cursor.
-func page(n int, form url.Values) (from, to int, next string) {
+// page is the slice of n items a listing's limit and cursor ask for, at
+// most maxPage when it is set, and the next cursor.
+func page(n int, form url.Values, maxPage int) (from, to int, next string) {
 	limit, err := strconv.Atoi(form.Get("limit"))
 	if err != nil || limit <= 0 {
 		limit = 100
+	}
+	if maxPage > 0 {
+		limit = min(limit, maxPage)
 	}
 	from, _ = strconv.Atoi(form.Get("cursor"))
 	from = min(max(from, 0), n)
@@ -802,7 +865,7 @@ func (s *Server) listChannels(user string, form url.Values) map[string]any {
 				"topic": map[string]string{"value": ch.topic}})
 		}
 	}
-	from, to, next := page(len(mine), form)
+	from, to, next := page(len(mine), form, s.maxPage)
 	return ok(map[string]any{"channels": mine[from:to], "response_metadata": map[string]string{"next_cursor": next}})
 }
 
@@ -910,7 +973,7 @@ func (s *Server) history(ch *channel, method string, form url.Values) map[string
 			}
 		}
 	}
-	from, to, next := page(len(msgs), form)
+	from, to, next := page(len(msgs), form, s.maxPage)
 	return ok(map[string]any{"messages": msgs[from:to], "has_more": next != "",
 		"response_metadata": map[string]string{"next_cursor": next}})
 }

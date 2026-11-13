@@ -562,12 +562,9 @@ method and event pages named):
   asked for. A missing scope's answer carries `needed` and `provided` (the
   `search.all` and `admin.apps.requests.cancel` pages show it; the pages of
   the methods above don't), and `ScopeMissing` names `needed`.
-- **Not confirmed: `connections:write`.** `apps.connections.open` says "No
-  scopes required" beside an app-level token, and neither the Socket Mode
-  page nor the tokens page names a scope of an app-level token. The plan
-  keeps `connections:write`, the scope Slack's app settings offer for one,
-  from memory; the fake asks for it, and step 13 checks it when it makes a
-  real app.
+- **`connections:write` is the app-level token's scope.** Its page in
+  Slack's scope reference says it is for app-level tokens alone, for
+  `apps.connections.open`; the fake asks for it.
 - **Socket Mode, as decision 7 says,** with what the page adds: the token
   goes in the `Authorization` header (as a form field it is an error),
   hello comes first, an envelope is `envelope_id`, `type`, `payload` and
@@ -581,9 +578,12 @@ method and event pages named):
   `_`, at most 80 characters (decision 3's prefix of 70 leaves room for
   `-<purpose>`); `conversations.invite` invites nobody when one of a batch
   fails, so the adapter invites one person a call; a reaction already put
-  is `already_reacted`, which is no error. A section block's 3000
-  characters and a message's 50 blocks are from memory: the pages read
-  don't give them.
+  is `already_reacted`, which is no error. A section block's text takes
+  3000 characters (the section block's page) and a message 50 blocks (the
+  blocks page). A mrkdwn text object is not `verbatim` by default, and then
+  Slack makes mentions and channel links of `@here`, `@channel`,
+  `@everyone` and `#name` in it ("Formatting message text"): the adapter
+  sends each section `verbatim`, and the fake refuses one that is not.
 
 **What the step chose where the plan says nothing:**
 
@@ -603,17 +603,22 @@ method and event pages named):
   its time into the buffer. A token from before a restart that comes once
   the buffer started later (another Chat synced first) gets what the
   buffer holds after its time and what the history holds that the buffer
-  doesn't, read for it alone, so no other reader is given a message twice.
-  The first Sync (`""`) marks the buffer's end and the cluster's clock.
+  doesn't: what that read finds after the buffer's start goes into the
+  buffer, so its event, if still on its way, is dropped as a repeat, and
+  what is older is this reader's alone, so no other reader is given a
+  message twice. The first Sync (`""`) marks the buffer's end and the cluster's clock.
 - **Order:** each Sync returns its messages oldest first. Slack promises no
   order of delivery, so two Syncs may not be in order, even in one
   channel; the position, not the time, keeps every message once.
 - **Bounds:** the buffer keeps 10000 messages and 10000 event IDs. A
   position older than the buffer reads from its oldest message.
 - **Redial:** on `disconnect` the adapter dials a new socket, reads from a
-  minute before the newest time heard and then closes the old one; a
-  socket that drops without a word is opened again by the next Sync, with
-  the same read. A catch-up that fails closes the new socket, so the next
+  minute before the newest time heard, never from before the buffer's
+  start (a token of before a restart, or a first Sync, may have read what
+  is older), and then closes the old one; the old socket serves Syncs
+  meanwhile. A socket that drops without a word is opened again by the
+  next Sync, with the same read. An error names the socket's host, never
+  its address, whose `ticket` is a credential. A catch-up that fails closes the new socket, so the next
   Sync opens one and reads from the same time again.
 - **A reaction has no ID of its own:** `React` returns the message's ts.
   Its emoji names are a table in the adapter (`✅` is `white_check_mark`).
@@ -624,7 +629,9 @@ method and event pages named):
   as the suite's "returns only once the host would deliver it" asks; a
   message said with no socket open is only in the history. `PostHeld`,
   `Redeliver` and `Disconnect` make the late message, the delivery sent
-  twice and Slack's refresh.
+  twice and Slack's refresh, which leaves the old socket open, as Slack's
+  warning does; `HoldOpens`, `RefuseDials` and `MaxPage` hold a redial,
+  refuse a dial and page every listing.
 - **Lint:** only `slack` is added to `adapters-stay-out-of-kubernetes`;
   Linear and Jira are added by their own pull requests.
 

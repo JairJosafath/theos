@@ -435,7 +435,9 @@ func message(msg ports.ChatMessage) url.Values {
 		blocks := make([]map[string]any, 0, len(sections))
 		for _, s := range sections {
 			blocks = append(blocks, map[string]any{"type": "section",
-				"text": map[string]string{"type": "mrkdwn", "text": s}})
+				// Verbatim, so that Slack makes no mention or channel
+				// link of `@channel` or `#name` in what people wrote.
+				"text": map[string]any{"type": "mrkdwn", "text": s, "verbatim": true}})
 		}
 		b, _ := json.Marshal(blocks)
 		args.Set("blocks", string(b))
