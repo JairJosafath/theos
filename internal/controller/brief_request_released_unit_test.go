@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"slices"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,5 +50,33 @@ func TestNotePublished(t *testing.T) {
 	}
 	if got := r.notePublished(brief, "server", nil); got != (model.Shipped{}) {
 		t.Errorf("another Container's = %v, want none", got)
+	}
+}
+
+// #161: the released comment names the merged pull request of each issue a
+// request became, as the Task that merged its work recorded it; an issue no
+// Task merged, a failed Task's and another Container's are not named.
+func TestMergedPulls(t *testing.T) {
+	brief := &c4v1beta1.Brief{Status: c4v1beta1.BriefStatus{Issues: []c4v1beta1.BriefIssue{
+		{Repository: "cel-lens/linter", Number: 4, URL: "https://git.test/cel-lens/linter/issues/4"},
+		{Repository: "cel-lens/linter", Number: 5, URL: "https://git.test/cel-lens/linter/issues/5"},
+		{Repository: "cel-lens/server", Number: 4, URL: "https://git.test/cel-lens/server/issues/4"}}}}
+	task := func(container string, issue int32, phase c4v1beta1.TaskPhase, pull int32, url string) c4v1beta1.Task {
+		return c4v1beta1.Task{
+			Spec:   c4v1beta1.TaskSpec{ContainerRef: c4v1beta1.LocalRef{Name: container}, Issue: issue},
+			Status: c4v1beta1.TaskStatus{Phase: phase, PullRequest: pull, PullRequestURL: url}}
+	}
+	tasks := []c4v1beta1.Task{
+		task("linter", 4, c4v1beta1.TaskFailed, 8, "https://git.test/cel-lens/linter/pulls/8"),
+		task("linter", 4, c4v1beta1.TaskMerged, 9, "https://git.test/cel-lens/linter/pulls/9"),
+		task("server", 5, c4v1beta1.TaskMerged, 3, "https://git.test/cel-lens/server/pulls/3"),
+	}
+	got := mergedPulls(brief, []string{"linter#4", "linter#5", "server#4"}, tasks)
+	want := []model.Merged{
+		{Issue: "https://git.test/cel-lens/linter/issues/4", Pull: "https://git.test/cel-lens/linter/pulls/9"},
+		{Issue: "https://git.test/cel-lens/linter/issues/5"},
+		{Issue: "https://git.test/cel-lens/server/issues/4"}}
+	if !slices.Equal(got, want) {
+		t.Errorf("mergedPulls() =\n%+v\nwant\n%+v", got, want)
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -350,6 +351,43 @@ func TestLabelTakenOff(t *testing.T) {
 	if got := listed(t, s.tr); !slices.Equal(got, []int{b}) {
 		t.Errorf("after the label is taken off the requests are %v, want %v", got, []int{b})
 	}
+}
+
+// TestIssueOpen covers #161: Jira's search index can lag behind a change for
+// minutes and longer, so an item the factory closed is still listed. Read on
+// its own, the item is listed while its status isn't Done and it carries the
+// label; one done, unlabelled, moved to another project or never filed isn't,
+// with no error.
+func TestIssueOpen(t *testing.T) {
+	ctx := context.Background()
+	s := newSite(t)
+	s.Project("OPS")
+	reader, ok := s.tr.(ports.IssueReader)
+	if !ok {
+		t.Fatal("the Jira tracker is no ports.IssueReader")
+	}
+	open, closed, finished := s.file(titleDarkMode, ""), s.file(titleExport, ""), s.file("Finished", "")
+	unlabelled, moved := s.file("Unlabelled", ""), s.file("Moved", "")
+	s.Lag(testProject, true)
+	if err := s.tr.CloseIssue(ctx, closed, ports.CloseNotPlanned); err != nil {
+		t.Fatal(err)
+	}
+	s.Finish(testProject, finished)
+	s.Unlabel(testProject, unlabelled, testLabel)
+	s.Move(testProject, moved, "OPS")
+	if got := listed(t, s.tr); !slices.Equal(got, []int{open, closed, finished}) {
+		t.Fatalf("the lagging search lists %v, want the items done still listed: %v", got,
+			[]int{open, closed, finished})
+	}
+	for n, want := range map[int]bool{open: true, closed: false, finished: false, unlabelled: false, moved: false,
+		0: false, 5000: false} {
+		if got, err := reader.IssueOpen(ctx, n); err != nil || got != want {
+			t.Errorf("IssueOpen(%d) = %v, %v; want %v", n, got, err, want)
+		}
+	}
+	s.Down(true)
+	_, err := reader.IssueOpen(ctx, open)
+	wantReason(t, err, ports.ReasonTrackerUnavailable)
 }
 
 // TestMovedItem covers #157: Jira keeps the old key of an item that moved to
@@ -835,5 +873,45 @@ func TestBadReasonCallsNothing(t *testing.T) {
 	}
 	if got := len(s.Requests()) - before; got != 0 {
 		t.Errorf("a refused reason made %d calls, want none", got)
+	}
+}
+
+// TestTrackerFromASource covers #161: the operator builds the adapter from a
+// Brief's source, the Secret's two keys and its own gateway address, and
+// the source's close settings reach the close.
+func TestTrackerFromASource(t *testing.T) {
+	s := newSite(t)
+	s.SetWorkflow(testProject, withClosed())
+	source := ports.TrackerSource{Tracker: "jira", Project: testProject, Label: testLabel, Site: jiratest.SiteURL,
+		Instance: s.CloudID(), Close: map[ports.CloseReason]ports.CloseOutcome{
+			ports.CloseNotPlanned: {Status: "Closed"}}}
+	secret := map[string][]byte{SecretEmail: []byte(s.creds.Email), SecretToken: []byte(s.creds.Token + "\n")}
+	tr, err := Client{Address: s.URL()}.Tracker(context.Background(), source, secret)
+	if err != nil {
+		t.Fatalf("Tracker() = %v", err)
+	}
+	n := s.file(titleDarkMode, "")
+	if got := closes(t, s, tr, n, ports.CloseNotPlanned); got.Status != "Closed" || got.Resolution != "Won't Do" {
+		t.Errorf("closed as not planned into %s with %s, want Closed with Won't Do", got.Status, got.Resolution)
+	}
+	n = s.file(titleExport, "")
+	if got := closes(t, s, tr, n, ports.CloseCompleted); got.Status != "Done" {
+		t.Errorf("closed as completed into %s, want Done: only notPlanned names a status", got.Status)
+	}
+
+	for name, data := range map[string]map[string][]byte{
+		"no Secret": nil, "no email": {SecretToken: []byte(s.creds.Token)},
+		"no token": {SecretEmail: []byte(s.creds.Email)}} {
+		_, err := Client{Address: s.URL()}.Tracker(context.Background(), source, data)
+		if missing, ok := errors.AsType[*ports.CredentialMissingError](err); !ok ||
+			missing.Keys != "the keys email and token" {
+			t.Errorf("Tracker() with %s = %v, want the keys email and token missing", name, err)
+		}
+	}
+	bad := source
+	bad.Site = "http://acme.atlassian.net"
+	if _, err := (Client{Address: s.URL()}).Tracker(context.Background(), bad, secret); ports.IssuesReason(err) !=
+		ports.ReasonTrackerError {
+		t.Errorf("Tracker() with an http site = %v, want %s", err, ports.ReasonTrackerError)
 	}
 }

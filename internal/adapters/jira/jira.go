@@ -19,11 +19,12 @@ limitations under the License.
 // label are the requests (docs/plans/requests-and-chat.md, decisions 13, 14
 // and 17 to 20, and "Step 6 as built, Jira"). Jira Cloud has no teams to ask
 // about members of, so it is no ports.TeamMembers. Data Center has other
-// auth and other search calls and is not claimed. Nothing builds one yet: no
-// Brief can name Jira until the plan's steps 9 and 10.
+// auth and other search calls and is not claimed. A Brief's
+// spec.requestSources entry builds one through Client.Tracker (step 10).
 package jira
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -136,9 +137,49 @@ type Config struct {
 }
 
 // Client builds the issue tracker. HTTP is the client it calls Jira with, a
-// default one when nil.
+// default one when nil. Address is the API gateway for every source that
+// names no address of its own, the package's APIURL when empty: the
+// operator's --jira-api-url.
 type Client struct {
-	HTTP *http.Client
+	HTTP    *http.Client
+	Address string
+}
+
+// The keys of a source's Secret: the Atlassian account's e-mail address and
+// its API token.
+const (
+	SecretEmail = "email"
+	SecretToken = "token"
+)
+
+var _ ports.TrackerAdapter = Client{}
+
+// Tracker is the adapter as a ports.TrackerAdapter: the tracker of
+// source.Project, the project's key, and source.Label on the site
+// source.Site, whose cloud ID is source.Instance, with the account the
+// Secret's SecretEmail and SecretToken hold. source.Close names the status
+// and the resolution of each reason. source.Address, else the Client's
+// Address, is the gateway. A Secret without both keys is a
+// ports.CredentialMissingError; a source the adapter can't read
+// ReasonTrackerError.
+func (c Client) Tracker(_ context.Context, source ports.TrackerSource,
+	secret map[string][]byte) (ports.IssueTracker, error) {
+	email := strings.TrimSpace(string(secret[SecretEmail]))
+	token := strings.TrimSpace(string(secret[SecretToken]))
+	if email == "" || token == "" {
+		return nil, &ports.CredentialMissingError{Keys: "the keys " + SecretEmail + " and " + SecretToken}
+	}
+	outcome := func(reason ports.CloseReason) Outcome {
+		o := source.Close[reason]
+		return Outcome{Status: o.Status, Resolution: o.Resolution}
+	}
+	tr, err := c.Issues(Config{Site: source.Site, CloudID: source.Instance, Project: source.Project,
+		Label: source.Label, Email: email, Token: token, Address: cmp.Or(source.Address, c.Address),
+		Close: Closing{Completed: outcome(ports.CloseCompleted), NotPlanned: outcome(ports.CloseNotPlanned)}})
+	if err != nil {
+		return nil, &ports.IssuesError{Reason: ports.ReasonTrackerError, Message: err.Error()}
+	}
+	return tr, nil
 }
 
 // Issues returns an IssueTracker on the items of cfg's project with cfg's
@@ -204,7 +245,10 @@ type jira struct {
 	account string
 }
 
-var _ ports.IssueTracker = (*jira)(nil)
+var (
+	_ ports.IssueTracker = (*jira)(nil)
+	_ ports.IssueReader  = (*jira)(nil)
+)
 
 // key is item number as people name it: SHOP-412.
 func (j *jira) key(number int) string {
@@ -233,6 +277,7 @@ type (
 			Created     string                `json:"created"`
 			Updated     string                `json:"updated"`
 			Project     *struct{ Key string } `json:"project"`
+			Labels      []string              `json:"labels"`
 			Status      *struct {
 				Name           string `json:"name"`
 				StatusCategory struct {
@@ -418,6 +463,32 @@ func (j *jira) item(ctx context.Context, number int, fields string) (issueNode, 
 		return issueNode{}, notFound(j.key(number))
 	}
 	return n, nil
+}
+
+// IssueOpen reads item number on its own, never through the search
+// ListOpenIssues makes, whose index can lag behind a change for minutes and
+// sometimes longer (#161), and reports whether that search lists it: in a
+// status whose category is not Done, and carrying the label. An item that
+// isn't there, or is another project's now, is false.
+func (j *jira) IssueOpen(ctx context.Context, number int) (bool, error) {
+	n, err := j.item(ctx, number, "project,status,labels")
+	if ports.IssuesReason(err) == ports.ReasonIssueNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	status := n.Fields.Status
+	if status == nil {
+		return false, &ports.IssuesError{Reason: ports.ReasonTrackerError,
+			Message: "jira: read " + j.key(number) + ": the answer names no status"}
+	}
+	if status.StatusCategory.Key == categoryDone {
+		return false, nil
+	}
+	// A label is matched ignoring case, so that no item the search lists is
+	// left out.
+	return slices.ContainsFunc(n.Fields.Labels, func(l string) bool { return strings.EqualFold(l, j.label) }), nil
 }
 
 func notFound(key string) *ports.IssuesError {

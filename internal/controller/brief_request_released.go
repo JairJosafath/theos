@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,8 +60,8 @@ type shipContainer struct {
 	published model.Shipped
 }
 
-// shipRequests marks each planned request of a repository the Brief reads
-// as Released once its issues shipped, with where. It looks at a request's
+// shipRequests marks each planned request of a repository or source the
+// Brief reads as Released once its issues shipped, with where. It looks at a request's
 // issues at most every suggestions recheck, and at once when a release of one
 // of their Containers changes. A request whose planned comment isn't said yet
 // waits for it, so the two come in order. A Git host that fails is logged and
@@ -72,8 +71,9 @@ func (r *BriefReconciler) shipRequests(ctx context.Context, brief *c4v1beta1.Bri
 	now := r.now()
 	for i := range brief.Status.Requests {
 		s := &brief.Status.Requests[i]
-		req := model.Request{Repository: s.Repository, Number: int(s.Number), Stage: s.Stage, Round: int(s.Round)}
-		if s.Stage != model.RequestPlanned || len(s.Issues) == 0 || !readsRequests(brief, s.Repository) {
+		req := model.Request{Repository: s.Repository, Source: s.Source, Key: s.Key, Number: int(s.Number),
+			Stage: s.Stage, Round: int(s.Round)}
+		if s.Stage != model.RequestPlanned || len(s.Issues) == 0 || !readsOrigin(brief, req) {
 			continue
 		}
 		// Its Containers' Crews are read even while it waits for its planned
@@ -87,8 +87,8 @@ func (r *BriefReconciler) shipRequests(ctx context.Context, brief *c4v1beta1.Bri
 		}
 		shipped, err := r.requestShipped(ctx, brief, s, containers, now)
 		if err != nil {
-			logf.FromContext(ctx).Info("Could not tell whether a request shipped", "request",
-				model.RequestName(s.Repository, int(s.Number)), "error", err.Error())
+			logf.FromContext(ctx).Info("Could not tell whether a request shipped", "request", req.Name(),
+				"error", err.Error())
 			continue
 		}
 		if shipped == nil {
@@ -98,17 +98,8 @@ func (r *BriefReconciler) shipRequests(ctx context.Context, brief *c4v1beta1.Bri
 		for _, sh := range shipped {
 			s.Shipped = append(s.Shipped, c4v1beta1.BriefRequestShipped{Tag: sh.Tag, URL: model.Clip(sh.URL, 300)})
 		}
-		logf.FromContext(ctx).Info("A request shipped", "request", model.RequestName(s.Repository, int(s.Number)),
-			"releases", len(shipped))
+		logf.FromContext(ctx).Info("A request shipped", "request", req.Name(), "releases", len(shipped))
 	}
-}
-
-// readsRequests reports whether the Brief reads repository's issues: an
-// entry of spec.releases names it with a requests mode other than Off.
-func readsRequests(brief *c4v1beta1.Brief, repository string) bool {
-	return slices.ContainsFunc(brief.Spec.Releases, func(e c4v1beta1.BriefRelease) bool {
-		return e.GitHub.Repository == repository && requestsMode(&e) != model.RequestsOff
-	})
 }
 
 // requestShipped is where a planned request shipped, nil while one of its
@@ -130,7 +121,7 @@ func (r *BriefReconciler) requestShipped(ctx context.Context, brief *c4v1beta1.B
 			releases = append(releases, container+" "+c.last.Tag+" "+state)
 		}
 	}
-	key := requestsKey(brief, s.Repository) + fmt.Sprintf("#%d %d", s.Number, s.Round)
+	key := requestsKey(brief, originID(s.Repository, s.Source)) + fmt.Sprintf("#%d %d", s.Number, s.Round)
 	seen := strings.Join(releases, ",")
 	r.requestsMu.Lock()
 	last, checked := r.requestsShip[key]
@@ -243,22 +234,39 @@ func filedURL(brief *c4v1beta1.Brief, name string) string {
 	return name
 }
 
-// answerReleased says on each released request where it shipped, once, and
-// closes it as completed; it then leaves the list. It goes on past a request
-// it fails, and returns the first failure.
+// answerReleased says on each released request where it shipped and the
+// merged pull request of each of its issues, once, and closes it as
+// completed; it then leaves the list. It goes on past a request it fails,
+// and returns the first failure.
 func (r *BriefReconciler) answerReleased(ctx context.Context, brief *c4v1beta1.Brief,
 	tracker ports.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
+	var tasks []c4v1beta1.Task
+	listed := false
 	out := requests[:0:0]
-	for _, req := range requests {
+	now := r.now()
+	for i, req := range requests {
 		if req.Stage != model.RequestReleased {
 			out = append(out, req)
 			continue
 		}
-		err := sayReleased(ctx, tracker, brief.Name, req)
+		if !listed {
+			// The merged pull requests are the Tasks': without them, nothing
+			// is said yet.
+			var list c4v1beta1.TaskList
+			if err := r.List(ctx, &list, client.InNamespace(brief.Namespace)); err != nil {
+				return append(out, requests[i:]...), err
+			}
+			tasks, listed = list.Items, true
+		}
+		err := r.heldClose(brief, req, now)
+		if err == nil {
+			err = sayReleased(ctx, tracker, brief.Name, req, mergedPulls(brief, req.Issues, tasks))
+			r.holdClose(brief, req, err, now)
+		}
 		switch {
 		case ports.IssuesReason(err) == ports.ReasonIssueNotFound:
-			// Deleted or moved on GitHub: nothing to say.
+			// Deleted or moved on the tracker: nothing to say.
 		case err != nil:
 			if first == nil {
 				first = err
@@ -266,24 +274,45 @@ func (r *BriefReconciler) answerReleased(ctx context.Context, brief *c4v1beta1.B
 			out = append(out, req)
 			continue
 		default:
-			logf.FromContext(ctx).Info("Said on a request where it shipped", "request",
-				model.RequestName(req.Repository, req.Number))
+			logf.FromContext(ctx).Info("Said on a request where it shipped", "request", req.Name())
 		}
-		r.forgetIssue(brief, req.Repository, req.Number)
+		r.forgetIssue(brief, req)
 	}
 	return out, first
 }
 
+// mergedPulls are the issues a request became, container#number, each by its
+// page with the pull request of the Task that merged its work, as the Task
+// recorded it: none where no Task merged one.
+func mergedPulls(brief *c4v1beta1.Brief, issues []string, tasks []c4v1beta1.Task) []model.Merged {
+	out := make([]model.Merged, 0, len(issues))
+	for _, name := range issues {
+		container, number, _ := strings.Cut(name, "#")
+		m := model.Merged{Issue: filedURL(brief, name)}
+		for i := range tasks {
+			t := &tasks[i]
+			if t.Spec.ContainerRef.Name == container && fmt.Sprint(t.Spec.Issue) == number &&
+				t.Status.PullRequestURL != "" && mergedItsIssue(t) {
+				m.Pull = t.Status.PullRequestURL
+				break
+			}
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
 // sayReleased comments where the request shipped unless the Brief did for
 // the round that planned it, then closes it as completed.
-func sayReleased(ctx context.Context, tracker ports.IssueTracker, brief string, req model.Request) error {
+func sayReleased(ctx context.Context, tracker ports.IssueTracker, brief string, req model.Request,
+	merged []model.Merged) error {
 	marker := model.RequestReleasedMarker(brief, req.Round)
 	said, err := tracker.FindComment(ctx, req.Number, marker)
 	if err != nil {
 		return err
 	}
 	if said == nil {
-		text := model.ReleasedComment(brief, req.Shipped) + marker + "\n"
+		text := requestComment(req, model.ReleasedComment(brief, req.Shipped, merged)+marker+"\n")
 		if _, err := tracker.Comment(ctx, req.Number, text); err != nil {
 			return err
 		}

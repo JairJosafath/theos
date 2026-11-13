@@ -36,10 +36,14 @@ const (
 	RequestsOn  = "On"
 )
 
-// TrackerGitHub is the tracker a releases entry's requests come from: its
-// GitHub repository's issues, under the name the operator keys that
-// tracker's adapter by (ports.IssueTrackers).
-const TrackerGitHub = "github"
+// The trackers requests come from, by the names the operator keys their
+// adapters by (ports.IssueTrackers): a releases entry's GitHub repository's
+// issues, and a spec.requestSources entry's Linear team or Jira project.
+const (
+	TrackerGitHub = "github"
+	TrackerLinear = "linear"
+	TrackerJira   = "jira"
+)
 
 // The stages of a request, as status.requests shows them.
 const (
@@ -68,9 +72,20 @@ const MaxRequests = 50
 // MaxRequestBody is how much of an issue's body a request keeps.
 const MaxRequestBody = 4000
 
-// RequestIssue is an open issue of a releases repository, as GitHub lists it.
+// MaxRequestAuthor and MaxRequestKey are the longest author and key a
+// request keeps, as status.requests holds them.
+const (
+	MaxRequestAuthor = 100
+	MaxRequestKey    = 120
+)
+
+// RequestIssue is an open issue of a releases repository, as GitHub lists it,
+// or an open item of a request source that carries its label.
 type RequestIssue struct {
 	Number int
+	// Key is the item's key on its tracker, such as ENG-412; a source's
+	// request keeps it.
+	Key    string
 	Author string
 	Title  string
 	Body   string
@@ -210,12 +225,24 @@ func requestComment(brief, stage, text string) string {
 	return RequestMarker(brief, stage) + "\n" + text + "\n"
 }
 
-// PlannedComment says what a taken request became: the titles of the issues
-// a round filed for it and the release they are in, if any.
-func PlannedComment(brief string, titles []string, release string) string {
-	quoted := make([]string, 0, len(titles))
-	for _, t := range titles {
-		quoted = append(quoted, fmt.Sprintf("%q", t))
+// PlannedIssue is an issue a round filed for a request: its title and its
+// page.
+type PlannedIssue struct {
+	Title string
+	URL   string
+}
+
+// PlannedComment says what a taken request became: the issues a round filed
+// for it, each by its title and its page (#161), and the release they are
+// in, if any.
+func PlannedComment(brief string, issues []PlannedIssue, release string) string {
+	quoted := make([]string, 0, len(issues))
+	for _, i := range issues {
+		q := fmt.Sprintf("%q", i.Title)
+		if i.URL != "" {
+			q += " (" + i.URL + ")"
+		}
+		quoted = append(quoted, q)
 	}
 	text := "Planned as " + joinAnd(quoted)
 	if release != "" {
@@ -248,10 +275,18 @@ type Shipped struct {
 	URL string
 }
 
-// ReleasedComment says which published releases shipped a request, and where
-// the issues done in a Container that publishes nowhere are; the issue is
-// then closed as completed.
-func ReleasedComment(brief string, shipped []Shipped) string {
+// Merged is the pull request that merged the work of one of the issues a
+// request became: the issue's page and the pull request's.
+type Merged struct {
+	Issue string
+	Pull  string
+}
+
+// ReleasedComment says which published releases shipped a request, where
+// the issues done in a Container that publishes nowhere are, and the merged
+// pull request of each issue that has one (#161); the issue is then closed
+// as completed.
+func ReleasedComment(brief string, shipped []Shipped, merged []Merged) string {
 	var releases, done []string
 	for _, s := range shipped {
 		switch {
@@ -270,7 +305,32 @@ func ReleasedComment(brief string, shipped []Shipped) string {
 	if len(done) > 0 {
 		lines = append(lines, "Done in "+joinAnd(done)+".")
 	}
+	var pulls []string
+	for _, m := range merged {
+		if m.Pull != "" {
+			pulls = append(pulls, m.Pull+" for "+m.Issue)
+		}
+	}
+	if len(pulls) > 0 {
+		lines = append(lines, "Merged in "+joinAnd(pulls)+".")
+	}
 	return requestComment(brief, CommentReleased, strings.Join(lines, "\n"))
+}
+
+// MarkersLast moves the marker a request comment starts with to its end, for
+// a tracker that shows no hidden text: there the comment reads as its words,
+// and the markers as its last lines (decision 17 of
+// docs/plans/requests-and-chat.md). A comment that starts with no marker is
+// left as it is.
+func MarkersLast(comment string) string {
+	first, rest, ok := strings.Cut(comment, "\n")
+	if !ok || !requestMarker.MatchString(first) || requestMarker.FindStringIndex(first)[0] != 0 {
+		return comment
+	}
+	if !strings.HasSuffix(rest, "\n") {
+		rest += "\n"
+	}
+	return rest + first + "\n"
 }
 
 // RequestReleasedMarker is the hidden line that ends the released comment of
@@ -377,20 +437,39 @@ func (r Request) Name() string {
 	return RequestName(r.Repository, r.Number)
 }
 
-// RequestsRead is a read of the open issues of a releases repository whose
-// requests mode isn't Off.
+// RequestsRead is a read of the open issues of a releases repository, or of
+// the labelled items of a request source, whose requests mode isn't Off.
 type RequestsRead struct {
 	Repository string
-	Mode       string
-	Authors    []string
+	// Source is the request source read, for which Repository is empty.
+	Source  string
+	Mode    string
+	Authors []string
 	// Members are the logins found to be members of the entry's teams.
 	Members []string
 	// Unsure are the logins whose membership couldn't be read.
 	Unsure   []string
 	Accepted []int32
 	Declined []int32
-	// Open are the repository's open issues.
+	// Open are the repository's open issues, or the source's labelled items.
 	Open []RequestIssue
+}
+
+// owns reports whether r is a request of what read reads.
+func (read RequestsRead) owns(r Request) bool {
+	return r.Repository == read.Repository && r.Source == read.Source
+}
+
+// admits reports whether an open issue of the read is a request. A source's
+// tracker lists only the items that carry its label, and the label is the
+// door (decision 13 of docs/plans/requests-and-chat.md): each is a request,
+// whoever made it, with an author or none. A GitHub issue is one by
+// IsRequest.
+func (read RequestsRead) admits(issue RequestIssue) bool {
+	if read.Source != "" {
+		return !issue.PullRequest
+	}
+	return IsRequest(issue, read.Authors, read.Members)
 }
 
 // ReadRequests is what a read of its repository makes of the Brief's
@@ -403,14 +482,14 @@ type RequestsRead struct {
 func ReadRequests(known []Request, read RequestsRead, now time.Time) []Request {
 	mine := map[int]Request{}
 	for _, r := range known {
-		if r.Repository == read.Repository {
+		if read.owns(r) {
 			mine[r.Number] = r
 		}
 	}
 	var out []Request
 	if read.Mode == RequestsOff || read.Mode == "" {
 		for _, r := range known {
-			if r.Repository == read.Repository && r.Round > 0 {
+			if read.owns(r) && r.Round > 0 {
 				out = append(out, r)
 			}
 		}
@@ -421,7 +500,7 @@ func ReadRequests(known []Request, read RequestsRead, now time.Time) []Request {
 		switch {
 		case seen && prev.Round > 0:
 			out = append(out, prev)
-		case IsRequest(issue, read.Authors, read.Members):
+		case read.admits(issue):
 			var p *Request
 			if seen {
 				p = &prev
@@ -447,7 +526,7 @@ func SettledAnswers(read RequestsRead, requests []Request) []int32 {
 		live[int32(issue.Number)] = true
 	}
 	for _, r := range requests {
-		if r.Repository == read.Repository {
+		if read.owns(r) {
 			live[int32(r.Number)] = true
 		}
 	}
@@ -468,7 +547,11 @@ func readRequest(known *Request, read RequestsRead, issue RequestIssue, now time
 	stage := RequestStage(RequestFacts{LetThrough: read.Mode == RequestsOn || slices.Contains(read.Accepted, n),
 		Declined: slices.Contains(read.Declined, n)})
 	r := Request{Repository: read.Repository, Number: issue.Number, Stage: stage, Since: now,
-		Author: issue.Author, Title: Clip(oneParagraph(issue.Title), 256), URL: Clip(issue.URL, 300)}
+		Author: Clip(oneParagraph(issue.Author), MaxRequestAuthor), Title: Clip(oneParagraph(issue.Title), 256),
+		URL: Clip(issue.URL, 300)}
+	if read.Source != "" {
+		r.Source, r.Key = read.Source, Clip(issue.Key, MaxRequestKey)
+	}
 	if known != nil {
 		r.Since = known.Since
 	}

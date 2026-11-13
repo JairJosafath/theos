@@ -36,10 +36,11 @@ import (
 // what the Brief says.
 const trackerLogin = "theos-bot"
 
-// fakeTrackers is the suite's adapter of the GitHub tracker
-// (model.TrackerGitHub): it builds a source's tracker with the fake tracker
-// made for its repository, and counts the lists that came back unchanged. A
-// repository no spec made a tracker for is ports.ReasonTrackerNotFound.
+// fakeTrackers is the suite's adapter of every tracker (model.TrackerGitHub,
+// model.TrackerLinear and model.TrackerJira): it builds a source's tracker
+// with the fake tracker made for its repository, team or project, keeps the
+// source it was built for, and counts the lists that came back unchanged. A
+// project no spec made a tracker for is ports.ReasonTrackerNotFound.
 type fakeTrackers struct {
 	mu       sync.Mutex
 	projects map[string]*specTracker
@@ -63,6 +64,9 @@ func (f *fakeTrackers) Tracker(ctx context.Context, source ports.TrackerSource,
 	if err != nil {
 		return nil, err
 	}
+	tr.mu.Lock()
+	tr.source = source
+	tr.mu.Unlock()
 	counted := countedTracker{IssueTracker: port, notModified: &tr.notModified}
 	if members, ok := port.(ports.TeamMembers); ok {
 		return countedTeams{counted, members}, nil
@@ -80,6 +84,41 @@ type specTracker struct {
 	token string
 	// notModified counts the lists that came back unchanged.
 	notModified atomic.Int64
+	// source is the last source a tracker was built for.
+	mu     sync.Mutex
+	source ports.TrackerSource
+}
+
+// builtFor is the last source the Brief built this tracker for.
+func (tr *specTracker) builtFor() ports.TrackerSource {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.source
+}
+
+// issueURL is the page of issue n.
+func (tr *specTracker) issueURL(n int) string {
+	GinkgoHelper()
+	issue, _ := tr.issue(n)
+	return issue.URL
+}
+
+// unlabel takes the request's label off issue n, as a person does.
+func (tr *specTracker) unlabel(n int) {
+	GinkgoHelper()
+	Expect(tr.Unlabel(tr.repository, n)).To(Succeed())
+}
+
+// lag makes the list a search that lags, as Jira's index can (#161): it
+// goes on listing the issues closed.
+func (tr *specTracker) lag() {
+	tr.Lag(tr.repository, true)
+}
+
+// relabel puts the request's label back on issue n.
+func (tr *specTracker) relabel(n int) {
+	GinkgoHelper()
+	Expect(tr.Label(tr.repository, n)).To(Succeed())
 }
 
 // newRequestsTracker makes the fake tracker of repository, and keeps it for
@@ -158,6 +197,12 @@ func (c countedTracker) ListOpenIssues(ctx context.Context, etag string) (ports.
 		c.notModified.Add(1)
 	}
 	return list, err
+}
+
+// IssueOpen passes the read of one item on to the tracker, which the fake's
+// is: the Brief finds the capability on what Tracker returns.
+func (c countedTracker) IssueOpen(ctx context.Context, number int) (bool, error) {
+	return c.IssueTracker.(ports.IssueReader).IssueOpen(ctx, number)
 }
 
 // countedTeams is a countedTracker of a tracker that has teams.

@@ -74,6 +74,28 @@ type roundApply struct {
 	// for the round's summary.
 	catalog []model.CatalogEntry
 	bundles []model.Bundle
+	// answers are the plan's answers to the round's requests, and requests
+	// the requests the round took, so each issue filed for one links it
+	// back (#161).
+	answers  []model.RequestAnswer
+	requests []model.Request
+}
+
+// roundTook are the requests the running round took.
+func roundTook(status *c4v1beta1.BriefStatus) []model.Request {
+	var out []model.Request
+	for _, req := range modelRequests(status.Requests) {
+		if req.Round == int(status.Round) {
+			out = append(out, req)
+		}
+	}
+	return out
+}
+
+// issueRequests are the requests the round took that issue n of its plan was
+// filed for.
+func (run *roundApply) issueRequests(n int) []model.Request {
+	return model.IssueRequests(run.answers, run.requests, n)
 }
 
 // applyRound applies the plan the Brief accepted (B8), in order and each step
@@ -128,7 +150,8 @@ func (r *BriefReconciler) applyRound(ctx context.Context, brief, orig *c4v1beta1
 		return ctrl.Result{}, r.applyFailed(ctx, brief, "setting the Crews' parallel", err)
 	}
 	run := &roundApply{brief: brief, orig: orig, round: strconv.Itoa(int(brief.Status.Round)),
-		catalog: current.Catalog, bundles: current.Bundles}
+		catalog: current.Catalog, bundles: current.Bundles, answers: plan.Requests,
+		requests: roundTook(&brief.Status)}
 	var created []string
 	newRelationships := false
 	for _, o := range model.ApplyOrder(plan.Objects) {
@@ -610,7 +633,7 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 		if len(buildsOn) > 0 || len(issue.Uses) > 0 {
 			labels = slices.DeleteFunc(labels, func(l string) bool { return l == model.LabelReady })
 		}
-		body := model.BriefIssueBodyUsing(issue, brief.Name, round, buildsOn, uses.packages)
+		body := model.BriefIssueBodyFor(issue, brief.Name, round, buildsOn, uses.packages, run.issueRequests(issue.N))
 		filed, err = provider.CreateIssue(gitCtx, repo, issue.Title, body, labels, milestone)
 		if err != nil {
 			return err
@@ -630,8 +653,8 @@ func (r *BriefReconciler) fileIssue(ctx context.Context, run *roundApply, repos 
 				repo.Owner, repo.Name, filed.Number, strings.Join(uses.waits, " and ")))
 			return nil // readied once the releases have published, so not recorded yet
 		}
-		if err := r.pinUses(gitCtx, provider, repo, filed, model.BriefIssueBodyUsing(issue, brief.Name, round,
-			buildsOn, uses.packages), uses.packages); err != nil {
+		if err := r.pinUses(gitCtx, provider, repo, filed, model.BriefIssueBodyFor(issue, brief.Name, round,
+			buildsOn, uses.packages, run.issueRequests(issue.N)), uses.packages); err != nil {
 			return err
 		}
 		if !byHand && !slices.Contains(filed.Labels, model.LabelReady) {

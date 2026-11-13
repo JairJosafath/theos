@@ -1456,6 +1456,42 @@ func UsesNothingPublished(app, tag, goMessage, packagesMessage string) string {
 // BriefIssueBodyUsing is BriefIssueBody with a UsesLine for each thing the
 // issue uses, after the Builds on lines.
 func BriefIssueBodyUsing(issue PlanIssue, brief string, round int, buildsOn []BuildsOn, uses []UsedPackage) string {
+	return BriefIssueBodyFor(issue, brief, round, buildsOn, uses, nil)
+}
+
+// RequestedLine is the line of an issue a round filed for a request that
+// links the request back (#161): its name, owner/name#N or source:key, and
+// its page, where it has one.
+func RequestedLine(r Request) string {
+	name := strings.Join(strings.Fields(strings.ReplaceAll(r.Name(), "<!--", "&lt;!--")), " ")
+	url := strings.Join(strings.Fields(strings.ReplaceAll(r.URL, "<!--", "&lt;!--")), "")
+	if url == "" {
+		return "Requested in " + name + "."
+	}
+	return "Requested in " + name + ": " + url
+}
+
+// IssueRequests are the requests a plan's answers say issue n became part of,
+// in the order of the answers: the round's own, as status.requests keeps
+// them.
+func IssueRequests(answers []RequestAnswer, requests []Request, n int) []Request {
+	var out []Request
+	for _, a := range answers {
+		if a.Answer != AnswerTake || !slices.Contains(a.Issues, n) {
+			continue
+		}
+		i := slices.IndexFunc(requests, func(r Request) bool { return r.Name() == a.Request })
+		if i >= 0 {
+			out = append(out, requests[i])
+		}
+	}
+	return out
+}
+
+// BriefIssueBodyFor is BriefIssueBodyUsing with a RequestedLine for each
+// request the issue was filed for, after the UsesLines.
+func BriefIssueBodyFor(issue PlanIssue, brief string, round int, buildsOn []BuildsOn, uses []UsedPackage,
+	requested []Request) string {
 	var body strings.Builder
 	body.WriteString(strings.ReplaceAll(issue.Body, "<!--", "&lt;!--") + "\n\n")
 	for _, b := range buildsOn {
@@ -1469,6 +1505,12 @@ func BriefIssueBodyUsing(issue PlanIssue, brief string, round int, buildsOn []Bu
 		body.WriteString(UsesLine(m) + "\n")
 	}
 	if len(uses) > 0 {
+		body.WriteString("\n")
+	}
+	for _, r := range requested {
+		body.WriteString(RequestedLine(r) + "\n")
+	}
+	if len(requested) > 0 {
 		body.WriteString("\n")
 	}
 	return body.String() + IssueMarker(brief, round, issue.N) + "\n"

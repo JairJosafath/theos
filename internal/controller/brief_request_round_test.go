@@ -120,7 +120,11 @@ var _ = Describe("Brief requests in rounds", func() {
 				HaveField("Issues", []string{fmt.Sprintf("linter#%d", filed.Number)}),
 				HaveField("Release", "v0.2.0"))), "the skipped one is closed, so it leaves the list")
 		}).Should(Succeed())
+		Expect(filed.URL).NotTo(BeEmpty())
 		Expect(gitFake.Issue(ns, "linter", int(filed.Number)).Title).To(Equal("Lint rule 1"))
+		// #161: the issue a round filed for a request links the request back.
+		Expect(gitFake.Issue(ns, "linter", int(filed.Number)).Body).To(ContainSubstring(
+			fmt.Sprintf("Requested in %s: %s", themeName, tr.issueURL(theme))))
 
 		Eventually(func(g Gomega) {
 			issue, comments := tr.issue(theme)
@@ -128,7 +132,7 @@ var _ = Describe("Brief requests in rounds", func() {
 			g.Expect(comments).To(ConsistOf(And(
 				HavePrefix(model.RequestMarker("cel-lens", model.CommentPlanned)),
 				ContainSubstring(model.RequestRoundMarker("cel-lens", 2)),
-				ContainSubstring(`Planned as "Lint rule 1", in release v0.2.0.`))))
+				ContainSubstring(fmt.Sprintf(`Planned as "Lint rule 1" (%s), in release v0.2.0.`, filed.URL)))))
 			issue, comments = tr.issue(rules)
 			g.Expect(issue.Closed).To(BeTrue())
 			g.Expect(issue.Reason).To(Equal(ports.CloseNotPlanned))

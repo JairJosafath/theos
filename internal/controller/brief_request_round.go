@@ -46,7 +46,7 @@ func takeRequests(status *c4v1beta1.BriefStatus) []string {
 			continue
 		}
 		req.Round, req.Stage = status.Round, model.RequestPlanning
-		names = append(names, model.RequestName(req.Repository, int(req.Number)))
+		names = append(names, requestName(*req))
 	}
 	return names
 }
@@ -75,10 +75,10 @@ func heldRequests(status *c4v1beta1.BriefStatus) []string {
 }
 
 // roundRequests are the requests the running round took, and those of them
-// still open on GitHub, which its plan must answer.
+// still open on their tracker, which its plan must answer.
 func roundRequests(status *c4v1beta1.BriefStatus) (took, open []string) {
 	for _, req := range status.Requests {
-		name := model.RequestName(req.Repository, int(req.Number))
+		name := requestName(req)
 		if req.Round == status.Round && slices.Contains(status.RoundRequests, name) {
 			open = append(open, name)
 		}
@@ -100,10 +100,10 @@ func (r *BriefReconciler) answerRequests(ctx context.Context, run *roundApply, p
 	releases := map[string]string{}
 	for _, answer := range plan.Requests {
 		i := slices.IndexFunc(status.Requests, func(s c4v1beta1.BriefRequest) bool {
-			return s.Round == status.Round && model.RequestName(s.Repository, int(s.Number)) == answer.Request
+			return s.Round == status.Round && requestName(s) == answer.Request
 		})
 		if i < 0 {
-			continue // closed on GitHub during the round
+			continue // closed on its tracker during the round
 		}
 		req := &status.Requests[i]
 		if answer.Answer == model.AnswerSkip {
@@ -164,15 +164,13 @@ func (r *BriefReconciler) roundRelease(ctx context.Context, brief *c4v1beta1.Bri
 // oneLine is s with its line breaks and runs of spaces made single spaces.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-// owesRequests reports whether a request of a repository the Brief reads
-// waits for its planned comment.
+// owesRequests reports whether a request of a repository or source the
+// Brief reads waits for its planned comment.
 func (r *BriefReconciler) owesRequests(brief *c4v1beta1.Brief) bool {
 	return slices.ContainsFunc(brief.Status.Requests, func(s c4v1beta1.BriefRequest) bool {
-		reads := slices.ContainsFunc(brief.Spec.Releases, func(e c4v1beta1.BriefRelease) bool {
-			return e.GitHub.Repository == s.Repository && requestsMode(&e) != model.RequestsOff
-		})
-		return reads && r.owesPlanned(brief, model.Request{Repository: s.Repository, Number: int(s.Number),
-			Stage: s.Stage, Round: int(s.Round)})
+		req := model.Request{Repository: s.Repository, Source: s.Source, Key: s.Key, Number: int(s.Number),
+			Stage: s.Stage, Round: int(s.Round)}
+		return readsOrigin(brief, req) && r.owesPlanned(brief, req)
 	})
 }
 
@@ -192,7 +190,8 @@ func (r *BriefReconciler) owesPlanned(brief *c4v1beta1.Brief, req model.Request)
 }
 
 func saidKey(brief *c4v1beta1.Brief, req model.Request) string {
-	return requestsKey(brief, req.Repository) + fmt.Sprintf("#%d %s %d", req.Number, model.CommentPlanned, req.Round)
+	return requestsKey(brief, originID(req.Repository, req.Source)) +
+		fmt.Sprintf("#%d %s %d", req.Number, model.CommentPlanned, req.Round)
 }
 
 // answerPlanned says on each request a round answered what it became, once:
@@ -203,6 +202,7 @@ func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1beta1.Br
 	tracker ports.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
 	out := requests[:0:0]
+	now := r.now()
 	for _, req := range requests {
 		if !r.owesPlanned(brief, req) {
 			out = append(out, req)
@@ -210,13 +210,17 @@ func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1beta1.Br
 		}
 		text := model.SkippedComment(brief.Name, req.Why)
 		if req.Stage == model.RequestPlanned {
-			text = model.PlannedComment(brief.Name, issueTitles(brief, req.Issues), req.Release)
+			text = model.PlannedComment(brief.Name, plannedIssues(brief, req.Issues), req.Release)
 		}
 		text += model.RequestRoundMarker(brief.Name, req.Round) + "\n"
-		err := sayPlanned(ctx, tracker, brief.Name, req, text)
+		err := r.heldClose(brief, req, now)
+		if err == nil {
+			err = sayPlanned(ctx, tracker, brief.Name, req, requestComment(req, text))
+			r.holdClose(brief, req, err, now)
+		}
 		switch {
 		case ports.IssuesReason(err) == ports.ReasonIssueNotFound:
-			// Deleted or moved on GitHub: nothing to say.
+			// Deleted or moved on the tracker: nothing to say.
 			if req.Stage == model.RequestPlanned {
 				r.markSaid(brief, req)
 				out = append(out, req)
@@ -229,15 +233,14 @@ func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1beta1.Br
 			out = append(out, req)
 			continue
 		case req.Stage == model.RequestPlanned:
-			logf.FromContext(ctx).Info("Said on a request what it became", "request",
-				model.RequestName(req.Repository, req.Number))
+			logf.FromContext(ctx).Info("Said on a request what it became", "request", req.Name())
 			r.markSaid(brief, req)
 			out = append(out, req)
 			continue
 		default:
-			logf.FromContext(ctx).Info("Skipped a request", "request", model.RequestName(req.Repository, req.Number))
+			logf.FromContext(ctx).Info("Skipped a request", "request", req.Name())
 		}
-		r.forgetIssue(brief, req.Repository, req.Number)
+		r.forgetIssue(brief, req)
 	}
 	return out, first
 }
@@ -270,20 +273,24 @@ func (r *BriefReconciler) markSaid(brief *c4v1beta1.Brief, req model.Request) {
 	r.requestsSaid[saidKey(brief, req)] = true
 }
 
-// issueTitles are the titles of the issues a request became, as the Brief
-// recorded them, container#number when it has none.
-func issueTitles(brief *c4v1beta1.Brief, issues []string) []string {
-	out := make([]string, 0, len(issues))
+// plannedIssues are the issues a request became, by their titles and pages
+// as the Brief recorded them: container#number when it has no title, and no
+// page when it has none.
+func plannedIssues(brief *c4v1beta1.Brief, issues []string) []model.PlannedIssue {
+	out := make([]model.PlannedIssue, 0, len(issues))
 	for _, name := range issues {
 		container, number, _ := strings.Cut(name, "#")
-		title := name
+		issue := model.PlannedIssue{Title: name}
 		for _, i := range brief.Status.Issues {
-			if strings.HasSuffix(i.Repository, "/"+container) && fmt.Sprint(i.Number) == number && i.Title != "" {
-				title = i.Title
+			if strings.HasSuffix(i.Repository, "/"+container) && fmt.Sprint(i.Number) == number {
+				if i.Title != "" {
+					issue.Title = i.Title
+				}
+				issue.URL = i.URL
 				break
 			}
 		}
-		out = append(out, title)
+		out = append(out, issue)
 	}
 	return out
 }
