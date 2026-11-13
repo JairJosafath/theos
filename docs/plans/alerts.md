@@ -2,8 +2,8 @@
 
 GitHub issue #64, a step of [open-source-launch.md](open-source-launch.md)
 (#46). Written 2026-11-13 in a session the owner ran, and changed the same
-day after step 1's review: where a decision below says "the review", that is
-what changed and why.
+day after step 1's two reviews: where a decision below says "the review" or
+"the second review", that is what changed and why.
 
 ## Goal
 
@@ -50,8 +50,8 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
    | --- | --- | --- |
    | `type` | `alertmanager`, `sentry` or `generic`; immutable, since the type decides what makes two deliveries the same alert | required |
    | `secretRef.name` | a Secret in the namespace that checks each delivery (decision 3) | required |
-   | `containerLabel` | the label, tag or field of an alert that names its Container; at most 100 characters | `theos_container` |
-   | `namespaceLabel` | the label of an Alertmanager alert, or of a generic body that has no `namespace` field, that names the namespace its app runs in; at most 100 characters | `namespace` |
+   | `containerLabel` | the label, tag or field of an alert that names its Container; 1 to 100 characters, none of them white space or a control character | `theos_container` |
+   | `namespaceLabel` | the label of an Alertmanager alert, or of a generic body that has no `namespace` field, that names the namespace its app runs in; 1 to 100 characters, as `containerLabel` | `namespace` |
    | `routes[]` | at most 32 of `container` and exactly one of `namespace` or `project`: where alerts go that name no Container (decision 4) | none |
    | `commentInterval` | the least time between two comments about one alert, and between two "and N more"; a duration of at least `1m` | `1h` |
    | `dailyLimit` | issues the source files for one Container in one UTC day, 1 to 100 | `5` |
@@ -61,6 +61,12 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
    Prometheus that relabels has `exported_namespace` or
    `kubernetes_namespace` (the review; AGENTS.md, "What can be configured is
    configured"). The parsers take both names as `model.AlertLabels`.
+
+   Both labels have a minimum length of 1 and the pattern
+   `^[^\p{Z}\p{C}]+$` in the CRD: no space or other separator, no control
+   or format character. A field left out gets its default from the CRD; an
+   empty one is refused, and so is `" "`, which the parsers would read as
+   the label named " " and find on no alert (the second review).
 
    `status`, written by the AlertSource's reconciler alone:
 
@@ -136,15 +142,34 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
    and an inbox on disk or in the API server is a queue to build and to
    bound, for deliveries that monitoring tools already treat as best
    effort. Step 3 narrows the loss instead:
-   - on shutdown (SIGTERM, or leadership lost) the receiver first stops
-     taking deliveries (503, so a sender that retries does), then drains
-     the inbox with a deadline, 20 seconds, within the pod's grace period;
-   - what is still in the inbox at the deadline is counted in
+   - on SIGTERM the receiver first stops taking deliveries (503, so a
+     sender that retries does), then drains the inbox until a deadline.
+     The deadline is the operator's flag `--alert-drain-timeout`, by
+     default `5s`. It has to fit the pod's grace period, which is 10
+     seconds in `config/manager` and in the chart's
+     `manager.terminationGracePeriodSeconds`, a value the user sets: so
+     the deadline is a setting too, and the chart's `manager.args` takes
+     the flag. A deadline longer than the grace period is cut by the
+     kill, and what the inbox held then is lost unsaid; the flag's help
+     says so. (The second review: the first text said 20 seconds, twice
+     the grace period.) A longer default would mean a longer grace
+     period, which is `config/manager` and `dist/chart`, protected paths:
+     this plan changes neither;
+   - on leadership lost nothing is drained. controller-runtime ends the
+     manager at once then (it sets its graceful shutdown to zero when the
+     lock is lost without intending to), and another operator may already
+     lead: a drain would file and write status beside it. What the inbox
+     holds counts as dropped. The receiver tells the two apart by the
+     signal handler's context, which only a signal ends: when its own
+     context ends and that one has not, it drains nothing;
+   - what is dropped, at the deadline or with the lock, is counted in
      `theos_alert_deliveries_total` with `result="dropped"` and logged by
-     AlertSource and count, with no alert's text;
-   - one envtest spec holds it: an alert taken while the Git host fails is
-     filed when the host answers, and one still in the inbox at the
-     deadline is counted as dropped.
+     AlertSource and count, with no alert's text, as far as the process
+     gets before it ends;
+   - one envtest spec holds it, with a short deadline: an alert taken
+     while the Git host fails is filed when the host answers, one still
+     in the inbox at the deadline is counted as dropped, and when the
+     context ends without a signal nothing more is filed.
 
 3. **Every delivery is authenticated, by what its sender can do.** The
    Secret is the user's: it holds what the sender holds too.
@@ -246,7 +271,20 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
    silence an alert; that is done where the alert comes from, and the
    issue says so. Filing first looks for the alert's marker among the
    repository's open `source/monitor` issues (decision 12), so a status
-   write lost after filing doesn't file a second.
+   write lost after filing doesn't file a second, and neither does an
+   alert whose record made room while its issue stayed open (decision
+   10: the second review showed `model.AlertStep` alone says `File`
+   there).
+
+   An issue found that way is taken as the one filed: the decision's
+   `Filed` gets its number. So it counts in the day's `filed`, a slot of
+   the limit for an issue nobody filed today, and it is the day's
+   `lastIssue`, the issue an "and N more" of today is then said on. The
+   record starts anew at `count` 1 and `reported` 1, and finding the
+   issue says nothing on it: its next word is a count, an interval
+   later, of the firings since it was found. Step 3 keeps no second
+   kind of filing for it: the limit errs on the quiet side, and the case
+   takes a day of a hundred new alerts.
 
    The day is the UTC day of the operator's clock, and it doesn't start
    twice: when status holds the day after the clock's (a new leader on a
@@ -290,10 +328,12 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
 
     **Past what status remembers the day counts deliveries.** Status
     holds 100 alerts, and a storm can have more. An alert past the limit
-    that status has no room to remember (`model.AlertRecordsFull`: 100
-    records, each seen today) is not folded but counted in the day's
-    `unrecorded` (`AlertOverflow`): its next delivery can't be told from
-    another alert's, so what is counted is deliveries. The comment then
+    that has no record, and that status has no room to remember
+    (`model.AlertRecordsFull`: 100 records, each seen today), is not
+    folded but counted in the day's `unrecorded` (`AlertOverflow`): its
+    next delivery can't be told from another alert's, so what is counted
+    is deliveries. An alert that has a record needs no room and is folded
+    (the second review: it was counted unrecorded). The comment then
     says both, as what each is: "And 95 more alerts fired ... of those it
     counts the deliveries, 150, and cannot say how many alerts they are."
     When a record has to make room (`model.PutAlertRecord`), one not seen
@@ -306,6 +346,36 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
     an earlier day goes before a folded one of today, filed or not,
     because that is what keeps a count from doubling: its alert, if it
     comes back, files or finds its open issue by the marker.
+
+    That costs an open issue its alert for a while (the second review).
+    After 96 to 100 new alerts in a day, the record of an alert filed on
+    an earlier day, its issue still open, has made room. Under the limit
+    its next delivery finds the issue again (decision 8). Past the limit
+    nothing is looked up: the alert is folded as any alert without a
+    record, or counted unrecorded, so the day's "and N more ... filed no
+    issue" counts one that has an issue, and that issue gets no count and
+    no word that the alert resolved until the alert files again on a
+    later day and finds it. A lookup for every folded alert would be a
+    call to the Git host for each alert of a storm, which is what the
+    limit is there to spare.
+
+    **The old day is settled before the new one starts.** `containers[]`
+    holds one day a Container, and `model.AlertStep` on a new day puts
+    the new day in its place. So before the first step of a Container's
+    new day, a midnight in the middle of a batch included, step 3 asks
+    `model.AlertDayOwed` about the day status holds and makes the comment
+    it is owed; only then does it step. A day is over for both rules at
+    once: `AlertDayOwed` settles at once every day that `AlertStep` would
+    start afresh, one far ahead of the clock included.
+
+    **An alert is folded once a day while status stays full.** A record
+    folded today makes room for a filed alert alone, and status is then
+    full, so its alert's next delivery is counted unrecorded. Step 3
+    drops the records of a Container that is gone (decision 1), which
+    makes room in the middle of a day: an alert whose folded record had
+    made room is then folded once more, and the day's count is one too
+    high for it. That takes a storm past 100 records and a Container
+    deleted on the same day; the comment says "more", and we leave it.
 
 11. **Resolved is said once and closes nothing.** The alert's open issue
     gets a comment that its source reports it resolved, with what fired
@@ -321,9 +391,9 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
     mentions, and an alert's name is an app's error message: the title
     puts a space after the sign (`# 12`, `@ name`), so an alert leaves no
     "mentioned" note on another issue and notifies nobody. In the
-    operator's words: the
-    Container and source, since when, when the operator saw it, what the
-    Container's `status.deploys[]` says runs where, and the link back.
+    operator's words: the Container and source, since when, when the
+    operator saw it, what the Container's `status.deploys[]` says runs
+    where, and the link back.
     Then what the alert says (name, summary, description, labels,
     annotations) between `======== alert ========` and `======== end of
     alert ========`, lines of the shape a prompt's issue block has, which
@@ -348,6 +418,19 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
       address is the link and its own text. Written bare, Markdown in an
       address (`https://x/[a](https://evil)`) dressed one link as another
       (the review).
+    - The address of an issue on the Git host itself is accepted, in the
+      link back and in a title, and so is `GH-12` in a title: the host
+      notes on that issue that it was mentioned (for `GH-12`, GitHub on
+      issue 12 of the Container's own repository). Step 3 drops no link
+      back for its host and the title is not cut further (the second
+      review asked which). Every delivery is authenticated; the note
+      notifies nobody and changes nothing; it lands only where the
+      operator's account can read; and the limit bounds it to
+      `dailyLimit` issues a Container a day. Dropping the link back alone
+      would leave the same address in the title, and telling an address
+      of the Git host from other text there needs the host's address in
+      `internal/model`, which knows no host: a door half closed would
+      read as closed.
     - The marker is read only outside the block
       (`model.HasAlertMarker`): an alert whose text holds another alert's
       marker is not that alert's issue.
@@ -372,8 +455,8 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
 | Step | Issue | Done when |
 | --- | --- | --- |
 | 1. The plan and the rules (this one) | #64 | this file; `docs/design.md` and `ROADMAP.md` say what is planned; `internal/model/alert*.go` with table tests on the recorded deliveries in `internal/model/testdata/alerts/`, deduplication, the daily limit and hostile input included |
-| 2. The `AlertSource` kind | #64 | `kubebuilder create api --group theos --version v1beta1 --kind AlertSource --resource --controller`; spec and status as decision 1, field names and integer widths included, with the CRD's patterns and CEL (`type` immutable, a route has exactly one of `namespace` and `project`, `commentInterval` at least `1m`); a sample in `config/samples`; envtest: each rule's failing case; the reconciler sets `Ready` from the Secret (`SecretMissing`, an empty value included, else `ReceiverOff`); `make validate-yaml` passes. `make manifests` writes the CRD and the role into `dist/chart/` too, a protected path: the owner's session may, and the commit says so |
-| 3. The receiver and the filing | #64 | `model.AlertDeliveryAuthentic` (decision 3) table-tested, an empty `token` and an empty `secret` among its cases; `POST /alerts/{namespace}/{name}` on the Git events listener; the reconciler drains the inbox as decision 2 says, on shutdown too, and requeues for what is owed, on a clock the specs move (`Now`, as the Crew's reconciler has); it passes `ClosedAt` and `Full` to `model.AlertStep` and keeps no record of an `AlertOverflow`; the deploy monitor's bug gets `source/monitor`; the metric, with `result="dropped"`; envtest: a signed delivery files one issue, a second comments once the interval passed, an unsigned one is refused and writes nothing, an alert that names no known Container is counted on `status.unmatched` and files nothing, the limit folds, a lost status write files no second, an alert taken while the Git host fails is filed when it answers. `make manifests` regenerates the role in `dist/chart/` (protected path, as step 2) |
+| 2. The `AlertSource` kind | #64 | `kubebuilder create api --group theos --version v1beta1 --kind AlertSource --resource --controller`; spec and status as decision 1, field names and integer widths included, with the CRD's patterns and CEL (`type` immutable, a route has exactly one of `namespace` and `project`, `commentInterval` at least `1m`, the two labels' minimum length and pattern); a sample in `config/samples`; envtest: each rule's failing case; the reconciler sets `Ready` from the Secret (`SecretMissing`, an empty value included, else `ReceiverOff`); `make validate-yaml` passes. `make manifests` writes the CRD and the role into `dist/chart/` too, a protected path: the owner's session may, and the commit says so |
+| 3. The receiver and the filing | #64 | `model.AlertDeliveryAuthentic` (decision 3) table-tested, an empty `token` and an empty `secret` among its cases; `POST /alerts/{namespace}/{name}` on the Git events listener; the reconciler drains the inbox as decision 2 says, on SIGTERM too, until `--alert-drain-timeout` (default `5s`) and never on leadership lost, and requeues for what is owed, on a clock the specs move (`Now`, as the Crew's reconciler has); it settles a Container's old day (`model.AlertDayOwed`) before the first `model.AlertStep` of a new one, passes `ClosedAt` and `Full` to `model.AlertStep`, gives `Filed` the number of an open issue the marker finds (decision 8) and keeps no record of an `AlertOverflow`; the deploy monitor's bug gets `source/monitor`; the metric, with `result="dropped"`; envtest: a signed delivery files one issue, a second comments once the interval passed, an unsigned one is refused and writes nothing, an alert that names no known Container is counted on `status.unmatched` and files nothing, the limit folds, a lost status write files no second, an alert whose record made room and whose issue is open files no second, a fold of yesterday is said before today's first alert steps, an alert taken while the Git host fails is filed when it answers, one still in the inbox at the drain's deadline is counted as dropped. `make manifests` regenerates the role in `dist/chart/` (protected path, as step 2) |
 | 4. The chart and the guide | #64 | the chart's Service exposes the path and a value gives it an Ingress for senders outside the cluster (`dist/chart` is a protected path); `docs/alerts.md` shows the Alertmanager receiver's YAML, the Sentry integration's settings and a `curl` for the generic type; README, `docs/comparison.md`, `docs/design.md` ("Out of scope", the Alerts rule) and `ROADMAP.md` say it is built |
 
 ## Done when

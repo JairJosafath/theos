@@ -123,10 +123,9 @@ type alertmanagerDelivery struct {
 // ones Alertmanager says it left out, never below zero nor past
 // maxAlertsUnread. Its body has one shape: a field of another JSON type than
 // that shape gives it (a label that is no string) is no Alertmanager's body,
-// and an error. An alert's key is a digest of
-// its labels, as Alertmanager's own fingerprint is, so a firing alert, its
-// repeats and its resolution are the same alert and a change of annotations
-// makes no new one.
+// and an error. An alert's key is a digest of its labels, as Alertmanager's
+// own fingerprint is, so a firing alert, its repeats and its resolution are
+// the same alert and a change of annotations makes no new one.
 func ParseAlertmanager(body []byte, labels AlertLabels) (alerts []Alert, more int, err error) {
 	var d alertmanagerDelivery
 	if err := json.Unmarshal(body, &d); err != nil {

@@ -24,9 +24,9 @@ import (
 // What an alert's delivery does (docs/plans/alerts.md, decisions 8 to 11): it
 // files an issue, is folded into the day's "and N more" (or only counted
 // there, past what status remembers), says the alert resolved, or is only
-// noted. A delivery never comments on a count; what an
-// issue is owed about repeats is a rule of its own, AlertRecordOwed, so the
-// comments keep their interval however the deliveries arrive.
+// noted. A delivery never comments on a count; what an issue is owed about
+// repeats is a rule of its own, AlertRecordOwed, so the comments keep their
+// interval however the deliveries arrive.
 
 // What an AlertSource does unless its spec says otherwise.
 const (
@@ -114,7 +114,8 @@ type AlertFacts struct {
 	// Day is the Container's day as status holds it, whatever its date.
 	Day AlertDay
 	// Full says status has no room to remember another alert past the limit
-	// (AlertRecordsFull).
+	// (AlertRecordsFull). It says nothing of an alert that has a Record:
+	// that one needs no room, its record is replaced in place.
 	Full bool
 }
 
@@ -163,12 +164,19 @@ func alertDate(t time.Time) string {
 	return t.UTC().Format(time.DateOnly)
 }
 
-// alertDayAt is day when it is the UTC day of now, or the one after it: a
-// clock that went back over midnight doesn't start the day, and with it the
-// limit, a second time. Any other day is over, and the count starts afresh.
+// alertDayGoesOn says the day of date is not over at now: it is the UTC day
+// of now, or the one after it, since a clock that went back over midnight
+// doesn't start the day, and with it the limit, a second time. Any other
+// day is over.
+func alertDayGoesOn(date string, now time.Time) bool {
+	return date == alertDate(now) || date == alertDate(now.Add(maxAlertClockBack))
+}
+
+// alertDayAt is day while it goes on at now (alertDayGoesOn), and else the
+// day of now, its count started afresh.
 func alertDayAt(day AlertDay, now time.Time) AlertDay {
-	if today := alertDate(now); day.Date != today && day.Date != alertDate(now.Add(maxAlertClockBack)) {
-		return AlertDay{Date: today}
+	if !alertDayGoesOn(day.Date, now) {
+		return AlertDay{Date: alertDate(now)}
 	}
 	return day
 }
@@ -178,12 +186,12 @@ func alertDayAt(day AlertDay, now time.Time) AlertDay {
 // A firing alert files an issue when it has none to go on with: it is new,
 // its issue was filed and closed on earlier days, or it was folded on an
 // earlier day. Past the Container's limit for the day it is folded instead,
-// or, when status has no room to remember it, only counted on the day
-// (AlertOverflow). With an open issue, or one filed, folded or closed today,
-// it is only counted: an alert files at most once a day, a fix that merged
-// today is given the day to reach the app, and closing an issue doesn't
-// silence its alert for longer. A resolved alert says so once on its open
-// issue, and is noted otherwise; one never seen is ignored.
+// or, when it has no record and status no room to remember it, only counted
+// on the day (AlertOverflow). With an open issue, or one filed, folded or
+// closed today, it is only counted: an alert files at most once a day, a fix
+// that merged today is given the day to reach the app, and closing an issue
+// doesn't silence its alert for longer. A resolved alert says so once on its
+// open issue, and is noted otherwise; one never seen is ignored.
 //
 // A step on a new day starts the day's count afresh, so the caller settles
 // what the old day is owed (AlertDayOwed) first.
@@ -206,7 +214,7 @@ func AlertStep(a Alert, container string, f AlertFacts, s AlertSettings, now tim
 		day.Filed++
 		return AlertDecision{Action: AlertFile, Record: next, Day: day}
 	}
-	if f.Full {
+	if f.Full && rec == nil {
 		day.Unrecorded++
 		return AlertDecision{Action: AlertOverflow, Day: day}
 	}
@@ -217,7 +225,8 @@ func AlertStep(a Alert, container string, f AlertFacts, s AlertSettings, now tim
 
 // alertGoesOn says a firing alert goes on with what rec holds: it was filed
 // or folded today, or its issue is open or was closed today. A day after
-// today is today, to a clock that went back.
+// today is today, to a clock that went back; no closing time is the year 1,
+// an earlier day.
 func alertGoesOn(rec AlertRecord, f AlertFacts, today string) bool {
 	if alertDate(rec.FiledAt) >= today {
 		return true
@@ -225,7 +234,7 @@ func alertGoesOn(rec AlertRecord, f AlertFacts, today string) bool {
 	if rec.Folded {
 		return false
 	}
-	return f.IssueOpen || (!f.ClosedAt.IsZero() && alertDate(f.ClosedAt) >= today)
+	return f.IssueOpen || alertDate(f.ClosedAt) >= today
 }
 
 func alertResolved(rec *AlertRecord, issueOpen bool, day AlertDay, now time.Time) AlertDecision {
@@ -290,15 +299,16 @@ type AlertFoldReport struct {
 // AlertDayOwed says whether the last issue of a Container's day is owed an
 // "and N more" now: alerts were folded, or counted unrecorded, since the
 // last one said so, and the interval has passed since then, or the day is
-// over. wait is as AlertRecordOwed's.
+// over (alertDayGoesOn). wait is as AlertRecordOwed's.
 func AlertDayOwed(day AlertDay, s AlertSettings, now time.Time) (report *AlertFoldReport, wait time.Duration) {
 	s = s.withDefaults()
 	more := day.Folded + day.Unrecorded
 	if day.LastIssue == 0 || more <= day.FoldReported {
 		return nil, 0
 	}
-	// A day after now's is not over: the clock went back (alertDayAt).
-	if due := day.FoldReportedAt.Add(s.CommentInterval); day.Date >= alertDate(now) && now.Before(due) {
+	// Over is what AlertStep starts afresh: what such a day is owed is said
+	// before its count is gone.
+	if due := day.FoldReportedAt.Add(s.CommentInterval); alertDayGoesOn(day.Date, now) && now.Before(due) {
 		return nil, due.Sub(now)
 	}
 	next := day
@@ -326,10 +336,13 @@ func AlertRecordsFull(records []AlertRecord, now time.Time) bool {
 // longest. The issue of a record that made room stays, and is found again by
 // its marker (HasAlertMarker) if the alert comes back.
 //
-// An AlertFold is put only when AlertRecordsFull said there was room, so a
-// record folded today makes room for a filed alert alone, and status is full
-// from then on for the day: its alert's next delivery is an AlertOverflow,
-// never a second fold.
+// An AlertFold of an alert that has no record is put only when
+// AlertRecordsFull said there was room, so a record folded today makes room
+// for a filed alert alone, and status is full from then on for the day: its
+// alert's next delivery is an AlertOverflow, never a second fold. That holds
+// while status stays full: a caller that drops records during the day (those
+// of a Container that is gone) makes room, and such an alert is then folded
+// once more (docs/plans/alerts.md, decision 10).
 func PutAlertRecord(records []AlertRecord, rec AlertRecord) []AlertRecord {
 	out := slices.Clone(records)
 	if i := slices.IndexFunc(out, func(r AlertRecord) bool { return r.Key == rec.Key }); i >= 0 {

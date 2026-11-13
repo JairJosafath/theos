@@ -19,6 +19,7 @@ package model
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 )
@@ -77,7 +78,7 @@ func TestAlertContainer(t *testing.T) {
 
 func TestAlertStep(t *testing.T) {
 	now := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
-	today, yesterday := "2026-11-12", now.Add(-24*time.Hour)
+	today, yesterday, tomorrow := "2026-11-12", now.Add(-24*time.Hour), now.Add(24*time.Hour)
 	earlier := now.Add(-2 * time.Hour)
 	firing, resolved := Alert{Key: "k1", Name: "HighErrorRate"}, Alert{Key: "k1", Resolved: true}
 	day := AlertDay{Date: today, Filed: 2, LastIssue: 8}
@@ -115,6 +116,13 @@ func TestAlertStep(t *testing.T) {
 			AlertFacts{Day: full, Full: true}, AlertSettings{},
 			AlertDecision{Action: AlertOverflow,
 				Day: AlertDay{Date: today, Filed: 5, LastIssue: 11, Folded: 3, Unrecorded: 1, FoldReported: 3,
+					FoldReportedAt: earlier}}},
+		{"#64: past the limit a full status still folds an alert it holds a record of", firing,
+			AlertFacts{Record: with(open, func(r *AlertRecord) { r.Folded, r.Resolved, r.FiledAt = true, true, yesterday }),
+				Day: full, Full: true}, AlertSettings{},
+			AlertDecision{Action: AlertFold,
+				Record: *with(fresh, func(r *AlertRecord) { r.Issue, r.Folded = 11, true }),
+				Day: AlertDay{Date: today, Filed: 5, LastIssue: 11, Folded: 4, FoldReported: 3,
 					FoldReportedAt: earlier}}},
 		{"under the limit an alert files whether or not status has room", firing,
 			AlertFacts{Day: day, Full: true}, AlertSettings{},
@@ -173,6 +181,19 @@ func TestAlertStep(t *testing.T) {
 		{"a day further ahead than a clock goes back starts afresh", firing,
 			AlertFacts{Day: AlertDay{Date: "2026-11-14", Filed: 5, LastIssue: 11}}, AlertSettings{},
 			AlertDecision{Action: AlertFile, Record: fresh, Day: AlertDay{Date: today, Filed: 1}}},
+		{"#64: a record filed on the day after the clock's was filed today, to a clock that went back", firing,
+			AlertFacts{Record: with(open, func(r *AlertRecord) { r.FiledAt = tomorrow }), IssueOpen: false, Day: day},
+			AlertSettings{},
+			AlertDecision{Action: AlertNote,
+				Record: *with(open, func(r *AlertRecord) { r.FiledAt, r.Count, r.LastSeen = tomorrow, 4, now }),
+				Day:    day}},
+		{"#64: an issue closed on the day after the clock's was closed today, to a clock that went back", firing,
+			AlertFacts{Record: with(open, func(r *AlertRecord) { r.FiledAt = yesterday }), IssueOpen: false,
+				ClosedAt: tomorrow, Day: day},
+			AlertSettings{},
+			AlertDecision{Action: AlertNote,
+				Record: *with(open, func(r *AlertRecord) { r.FiledAt, r.Count, r.LastSeen = yesterday, 4, now }),
+				Day:    day}},
 		{"an issue closed on an earlier day is folded past the limit", firing,
 			AlertFacts{Record: with(open, func(r *AlertRecord) { r.FiledAt = yesterday }), IssueOpen: false, Day: full},
 			AlertSettings{},
@@ -434,6 +455,11 @@ func TestAlertDayOwed(t *testing.T) {
 		{"#64: a clock that went back over midnight keeps the interval",
 			with(func(d *AlertDay) { d.Date, d.FoldReportedAt = "2026-11-13", now.Add(-20*time.Minute) }),
 			AlertSettings{}, nil, 40 * time.Minute},
+		{"#64: a day further ahead than a clock goes back is over too, as AlertStep takes it",
+			with(func(d *AlertDay) { d.Date, d.FoldReportedAt = "2026-11-14", now.Add(-time.Minute) }),
+			AlertSettings{},
+			&AlertFoldReport{Issue: 11, More: 40, Date: "2026-11-14",
+				Day: said(with(func(d *AlertDay) { d.Date = "2026-11-14" }))}, 0},
 		{"a day that is over is settled at once",
 			with(func(d *AlertDay) { d.Date, d.FoldReportedAt = "2026-11-11", now.Add(-time.Minute) }),
 			AlertSettings{},
@@ -494,6 +520,20 @@ func TestPutAlertRecord(t *testing.T) {
 	}
 	if !AlertRecordsFull(today, at.Add(2*time.Hour)) || AlertRecordsFull(today[1:], at) {
 		t.Error("status is full with 100 records seen today, and with no fewer")
+	}
+	// #64: a day after the clock's is today, to a clock that went back.
+	if !AlertRecordsFull(today, at.Add(-24*time.Hour)) {
+		t.Error("status is not full though its 100 records were seen on the day after the clock's")
+	}
+	ahead := slices.Clone(today)
+	for i := range ahead {
+		ahead[i].Folded = false
+	}
+	ahead[50].LastSeen = at.Add(24 * time.Hour)
+	if out := PutAlertRecord(ahead, AlertRecord{Key: "new", LastSeen: at.Add(3 * time.Hour)}); !has(out, "k050") ||
+		has(out, "k000") {
+		t.Errorf("a record seen on the day after the new one's: held %v, the one seen longest ago held %v; "+
+			"want it to count as seen today", has(out, "k050"), has(out, "k000"))
 	}
 	today[99].LastSeen = at.Add(-24 * time.Hour)
 	if AlertRecordsFull(today, at) {

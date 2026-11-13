@@ -172,6 +172,11 @@ func TestParseAlertmanagerKeys(t *testing.T) {
 			t.Errorf("%s: key %q against %q, want same = %v", tc.name, got, base, tc.same)
 		}
 	}
+	// #64: a label's name is quoted in the digest, so a name that spells the
+	// start of its value is another alert than the name with that value.
+	if a, b := key(`{"labels":{"a=b":"c"}}`), key(`{"labels":{"a":"b=c"}}`); a == b {
+		t.Errorf(`the labels {"a=b":"c"} and {"a":"b=c"} have one key, %q`, a)
+	}
 }
 
 func TestParseAlertmanagerRefused(t *testing.T) {

@@ -179,6 +179,7 @@ func TestAlertIssueTitle(t *testing.T) {
 		"(@team/sub) [!7] (#8)":            "Alert: (@ team/sub) [! 7] (# 8)",
 		"C# and F#: 5 > #x, a@b.example!":  "Alert: C# and F#: 5 > #x, a@ b.example!",
 		"@@name ##1 #":                     "Alert: @@ name ## 1 #",
+		"@-x @_y @.z":                      "Alert: @ -x @ _y @.z",
 	} {
 		if title, _ := AlertIssue(Alert{Key: "k", Name: name}, AlertIssueFacts{Source: "s"}); title != want {
 			t.Errorf("title of %q:\n got %q\nwant %q", name, title, want)
