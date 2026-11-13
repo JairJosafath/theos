@@ -49,6 +49,11 @@ const (
 	// ReasonIssueNotFound: no such issue, or it was deleted or moved. A list
 	// that finds no tracker is ReasonTrackerNotFound.
 	ReasonIssueNotFound = "IssueNotFound"
+	// ReasonCannotClose: the tracker's workflow offers no way to close the
+	// issue the way it was asked to, or the settings name a status or a
+	// resolution it doesn't have; a person closes it. The message names what
+	// the tracker does offer.
+	ReasonCannotClose = "CannotClose"
 )
 
 // IssuesError is a failed IssueTracker call, with the reason it failed.

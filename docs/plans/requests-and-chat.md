@@ -350,7 +350,8 @@ corrects this plan where it differs.
     factory, with read and write, limited to the team where Linear offers
     it. Jira: `email` and `token`, an API token with scopes of such an
     account, which may browse the project, comment and transition its
-    items (`read:jira-work` and `write:jira-work`). The chart
+    items (`read:jira-work` and `write:jira-work`, and `read:jira-user`, for
+    the account's own ID: step 6 as built, Jira). The chart
     renders none of them, and no test holds a literal: a fixture's token is
     `rand.Text()` (the `secrets` skill), never a string shaped like a Slack
     or Atlassian token, which the scanner on every pull request would flag.
@@ -535,6 +536,135 @@ What the step chose where the plan says nothing:
   `theos-chat` that matched a thread by its ID alone would approve the spec
   from a person's thread in `reviews`. With the room dropped from
   `state.thread` the spec failed; nothing in `internal/chatbot` changed.
+
+## Step 6 as built, Jira (#157)
+
+Read on 2026-11-13: Atlassian's Jira Cloud platform REST API version 3
+reference, as its published OpenAPI description
+(`dac-static.atlassian.com/cloud/jira/platform/swagger-v3.v3.json`, whose text
+is the page's: each operation's description, parameters, scopes and
+responses, and each schema's fields), because the reference's own pages are
+rendered by script and came back empty. Also Atlassian's pages on API tokens
+(support.atlassian.com), on basic auth for REST APIs and on search and
+reconcile (developer.atlassian.com). What that settled:
+
+- **Corrected: the search call.** `GET /rest/api/3/search` is marked "Currently
+  being removed" (changelog CHANGE-2046). The list is
+  `GET /rest/api/3/search/jql`: `jql` (it must be bounded, and a `project`
+  clause is), `fields` (the default is `id` alone, not all fields as for one
+  item), `maxResults` (default 50, at most 5000) and `nextPageToken`, with
+  `{issues, nextPageToken, isLast}` back and no `total`. The token is absent
+  on the last page and expires in 7 days. The query is
+  `project = "SHOP" AND labels = "factory" AND statusCategory != Done ORDER BY
+  created ASC`, in a pure function that quotes the two names. A page is 100.
+- **Found: the list lags.** Atlassian's page on search and reconcile says the
+  search has no read-after-write consistency by default: an update shows
+  "within seconds" and sometimes after minutes. So an item the factory just
+  closed may be listed again by the next read, and one just labelled may not
+  yet be. The adapter does not use `reconcileIssues` (50 ids at most, and a
+  request lists whatever is labelled). It is safe by how the rest is built:
+  a read of one item (`GET /issue/{key}`), a comment's list and a transition
+  are not search and are consistent, and `CloseIssue` of an item already in
+  category Done does nothing, so a stale list costs one read and no second
+  close. The ETag follows the list, so a lagging list is a late change.
+- **Confirmed: a moved item.** "Get issue" says that when the identifier
+  matches no issue, "a case-insensitive search and check for moved issues is
+  performed"; if one is found "its details are returned, a 302 or other
+  redirect is **not** returned. The issue key returned in the response is the
+  key of the issue found." So a call for `SHOP-412` answers with `OPS-88`,
+  and the adapter's comparison of the returned `fields.project.key` with its
+  own is needed, as the issue says. It is made after every read of an item,
+  and the write that follows goes to the ID of what was read.
+  `jiratest` answers a moved item by its old key, and the moved-item test
+  fails without the comparison.
+- **Confirmed: transitions.** `GET /issue/{key}/transitions?expand=transitions.fields`
+  lists what the item can do now: each transition's `id`, `name`,
+  `to.name`, `to.statusCategory.key`, `hasScreen` and `fields`, each field
+  with `required`, `hasDefaultValue` and `allowedValues`. "Fields hidden from
+  the screen are not returned": the resolution is sent only when it is in
+  `fields`, since a field that is not on the screen makes the transition a
+  400 ("a field that isn't included on the transition screen is defined in
+  `fields` or `update`"). `POST` takes `{transition: {id}, fields:
+  {resolution: {name}}}` and answers 204. The names a resolution takes are
+  the field's `allowedValues`, which is where the site's own are read
+  from, so no call to `/resolution` (which the reference marks deprecated) is
+  made. A transition that is not offered, a condition or a validator is a 400
+  with Jira's words, and the adapter reads that as `CannotClose` with them.
+- **Corrected: the scopes, by one.** `GET /myself` asks for `read:jira-user`,
+  which the plan's decision 20 did not name. FindComment must tell the
+  factory's own comments from a stranger's, and a comment names its author
+  by `accountId`, so the account's own ID is read once and kept. The token is
+  made with `read:jira-work`, `write:jira-work` and `read:jira-user`. Search,
+  one item, its comments and its transitions are `read:jira-work`; a
+  comment and a transition are `write:jira-work`. Each has a finer "beta"
+  scope list, which is not used.
+- **Confirmed: the address.** Atlassian's page on API tokens: a scoped token
+  calls `https://api.atlassian.com/ex/jira/{cloudId}` and not the site, and
+  basic auth is the account's e-mail address and the token. The reference's
+  basic auth is `email:token`.
+- **Not reached.** The reference lists no 403 and no 429 for these calls: a
+  call fails with 400 (a search it can't run), 401 ("credentials incorrect
+  or missing") or 404 ("issue not found or the user does not have permission
+  to view it"). So the adapter reads 401 as `Unauthorized`, 404 as
+  `IssueNotFound`, a search of a project that isn't there or isn't visible as
+  `TrackerNotFound` (a 400; its words, "does not exist for the field
+  'project'", are from memory), and 403, 409, 429 and 5xx by the status's
+  usual meaning. A scoped token that lacks a scope of a call is a 401 whose
+  message says "scope" (from memory of the gateway; the reference has
+  nothing): the adapter reads that as `TokenLacksIssues` with Jira's words.
+  The status categories' keys are not enumerated either: the reference's
+  examples are invented values (`in-flight`, `completed`). The adapter takes
+  `done`, the key of Jira's third category, from memory, and the search says
+  `statusCategory != Done`, which is JQL's own name for it. How to find the
+  cloud ID was not in the reference or on the pages above (`_edge/tenant_info`
+  on the site is from memory): step 9 and the guide say how, after reading
+  Atlassian's developer guide on the request URL, which no page reached
+  here links to. A real site shows what no fake can: a workflow with
+  conditions, a screen with fields the factory can't fill, and what the
+  gateway answers to a token without a scope.
+
+What the step chose where the plan says nothing:
+
+- **The adapter is `jira.Client{HTTP}.Issues(jira.Config{Site, CloudID,
+  Project, Label, Email, Token, Address, Close})`,** an `IssueTracker` and no
+  `ports.TeamMembers`, which a test holds. `Close` is `Closing{Completed,
+  NotPlanned}`, each `Outcome{Status, Resolution}`: step 9's `close` fields.
+  `Address` is `https://api.atlassian.com` when empty. `Site` must be https.
+- **`CannotClose` is a port reason,** `ports.ReasonCannotClose`, added beside
+  the others in `internal/ports/intake.go` so that the Brief can name it
+  (step 10). Nothing reads it yet.
+- **Closing** reads the item (the project check, and its status's category),
+  returns when it is in category Done, reads the transitions with their
+  screens, and picks: the first offered into a status of category Done, or the
+  one into the `status` named (compared without case). It then holds the
+  screen against what it would send: a required field other than the
+  resolution that has no default, and a resolution that is not among the
+  field's `allowedValues`, are `CannotClose` naming what the site has, before
+  any write. Where the screen has no resolution, none is sent, even when one
+  is named. A reason that is neither completed nor not planned is refused
+  before any call.
+- **The ETag costs the IDs and update times alone.** Given one, the adapter
+  reads `fields=updated` first and the items with their text only when the
+  hash differs. The ETag is the hash of what the full read returned.
+- **The author is the reporter's display name, else the creator's,** cut to
+  one line of 100 characters. Jira gives `displayName` for an account of any
+  type, an automation's included, and may withhold it for privacy; when
+  neither field has a name it is empty. The e-mail address is never read.
+- **A comment is Atlassian's document format, a paragraph to a line,** so
+  that its text reads back as it was written, an empty line included, and the
+  marker is its last line, shown. The flattening of a description is
+  `jira.FlattenADF`, a pure function: paragraphs and headings a line each,
+  lists behind `- ` and `1. `, a link as `text (address)`, a mention, a card,
+  a status and a date as text, a table a line a row, and a node it does not
+  know read for the text inside it.
+- **`jiratest` serves one query,** the adapter's own, and refuses any other
+  with a 400, so a change of the query is a change of the fake. It enforces
+  the gateway's path and the account's scopes, pages with tokens, bumps an
+  item's `updated` on every change, and keeps the old key of a moved item.
+  Its status categories and its error words are the memory above.
+- **Three subtests are in `Cannot`,** with their reasons, as decision 22 says:
+  a pull request among the items, issues turned off, and closing a closed item
+  again. `TestClosedItemStaysClosed` holds what Jira does instead.
 
 ## How we will know #61 is done
 
