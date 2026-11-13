@@ -397,6 +397,8 @@ var _ = BeforeSuite(func() {
 	gitFake, err = fake.NewGit(filepath.Join("..", "..", "templates"))
 	Expect(err).NotTo(HaveOccurred())
 	gitFake.SetImageCopier(copySuiteImage)
+	// An issue closes on the alerts' clock, which their specs move.
+	gitFake.SetClock(alertNow)
 	githubFake = newFakeGitHub()
 	DeferCleanup(githubFake.server.Close)
 	DeferCleanup(githubFake.enterprise.Close)

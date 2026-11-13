@@ -121,6 +121,23 @@ func TestAlertReceiverAnswers(t *testing.T) {
 	}
 }
 
+// A body that isn't the type's shape is answered with a fixed message: the
+// parser's words would echo what the body held (#64).
+func TestAlertReceiverAnswersABadBodyWithAFixedMessage(t *testing.T) {
+	a, token, _ := alertUnitSource(t)
+	req := httptest.NewRequest(http.MethodPost, model.AlertsURL("", "shop", "alerts"),
+		strings.NewReader(`{"summary":"no title","container":"orders-api"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	a.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+	if got, want := strings.TrimSpace(w.Body.String()), "the delivery is not a generic body"; got != want {
+		t.Errorf("answer = %q, want %q", got, want)
+	}
+}
+
 // drainerFunc drains with a func.
 type drainerFunc func(context.Context, types.NamespacedName) error
 

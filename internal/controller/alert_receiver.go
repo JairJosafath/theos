@@ -247,7 +247,8 @@ func (a *AlertReceiver) serve(w http.ResponseWriter, req *http.Request) {
 		model.AlertLabels{Container: src.Spec.ContainerLabel, Namespace: src.Spec.NamespaceLabel})
 	if err != nil {
 		log.Info("Refused a delivery that isn't the AlertSource's type's shape", "type", typ)
-		answerAlert(w, alertBadRequest, http.StatusBadRequest, "the delivery is not a "+typ+" body: "+err.Error())
+		// A fixed answer: the parser's words would echo the body back.
+		answerAlert(w, alertBadRequest, http.StatusBadRequest, "the delivery is not a "+typ+" body")
 		return
 	}
 	if !a.put(key, alerts, more) {

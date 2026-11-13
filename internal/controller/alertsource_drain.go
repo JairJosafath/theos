@@ -90,7 +90,17 @@ func (r *AlertSourceReconciler) drain(ctx context.Context, key types.NamespacedN
 		var seq uint64
 		if q != nil {
 			seq = q.seq
+			// The clock is read for each alert: one taken after midnight
+			// counts on its own day, however long the pass ran.
+			p.now = r.now()
 			if err := p.take(ctx, status, q.Alert, q.At); err != nil {
+				// What was said before the step failed is written even
+				// so, that it is said once (decision 11); the alert
+				// stays in the inbox.
+				if werr := r.writeStatus(ctx, &src, status); werr != nil {
+					return 0, errors.Join(err, werr)
+				}
+				r.Receiver.taken(key, 0, counts)
 				return 0, err
 			}
 		}
@@ -100,6 +110,7 @@ func (r *AlertSourceReconciler) drain(ctx context.Context, key types.NamespacedN
 		r.Receiver.taken(key, seq, counts)
 	}
 	status := src.Status.DeepCopy()
+	p.now = r.now()
 	wait, owedErr := p.owed(ctx, status)
 	p.forgetGone(status)
 	return wait, errors.Join(owedErr, r.writeStatus(ctx, &src, status))
@@ -166,8 +177,9 @@ func (p *alertPass) host(ctx context.Context, container string) (alertHost, erro
 }
 
 // take does what a's delivery, taken at at, does, and puts it in status. An
-// error leaves status as it may be half done: the caller writes nothing,
-// and the alert stays in the inbox for the next pass.
+// error leaves in status only what was said before it, the old day settled:
+// the caller writes that, and the alert stays in the inbox for the next
+// pass.
 func (p *alertPass) take(ctx context.Context, status *c4v1beta1.AlertSourceStatus, a model.Alert,
 	at time.Time) error {
 	log := logf.FromContext(ctx)

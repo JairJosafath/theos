@@ -507,7 +507,18 @@ Where the decisions above said nothing, these are the choices.
   a conflict requeues at once. The source is read live (`APIReader`) at the
   start of a drain, so the write starts from its latest. The reconcile and
   the drain on SIGTERM take a lock per source, so they never file one alert
-  side by side.
+  side by side. The clock is read for each alert, so one taken after
+  midnight counts on its own day however long the drain ran
+  (`TestAlertDrainCountsAnAlertTakenAfterMidnightOnItsDay`).
+- **A comment is said once, but for a lost status write.** A step that
+  fails after saying something (yesterday's fold, settled before the step)
+  still writes what it said, and the alert stays in the inbox, so the next
+  pass doesn't say it again
+  (`TestAlertDrainSaysYesterdaysFoldOnceAcrossAFailedStep`). A comment is
+  made before the status write that records it, so when that write itself
+  is lost or conflicts, the next pass says it again: comments are
+  at-least-once across a lost status write, as filing is not (the marker
+  finds the issue).
 - **The drain on SIGTERM** (`AlertReceiver.Start`) tries the inboxes again
   every 100 ms while the Git host fails, until `--alert-drain-timeout`; a
   context that ends while the signal handler's hasn't is leadership lost,
@@ -521,10 +532,15 @@ Where the decisions above said nothing, these are the choices.
   interval is said a little sooner than the poll would. The envtest spec
   sees the outcome (yesterday's count on yesterday's last issue, today's
   first alert filed with today's count) whether the delivery or the poll
-  settles it first.
+  settles it first; the unit test of the drain, with no poll beside it,
+  sees the step settle it, and fails when the step doesn't.
 - **`ClosedAt` is the host's `closed_at`:** `ports.Issue.ClosedAt`, read by
   the GitHub and Gitea adapters, and set by the fake when it closes an
-  issue. An issue the host no longer has is taken as closed with no time.
+  issue, on the clock a test gives it (`SetClock`; the suite gives it the
+  alerts' clock its specs move). An issue the host no longer has is taken
+  as closed with no time.
+- **A body that isn't the type's shape** is answered 400 with a fixed
+  message, not the parser's words, which would echo what the body held.
 - **A closed issue is owed nothing.** When a record's count is due and its
   issue is closed, the record's `reported` takes its `count`: the repeats
   stay unsaid, and the host is not asked again at every pass.

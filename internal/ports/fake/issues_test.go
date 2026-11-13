@@ -20,6 +20,7 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
@@ -105,5 +106,25 @@ func TestPullRequestReviews(t *testing.T) {
 	}
 	if _, err := operator.PullRequestReviews(ctx, repo, pr.Number+1); err == nil {
 		t.Error("PullRequestReviews() of a missing pull request: no error")
+	}
+}
+
+// A closed issue's ClosedAt is on the clock the test gave the fake, so a spec
+// that moves its clock sees the issue closed when it says (#64).
+func TestCloseIssueStampsTheFakesClock(t *testing.T) {
+	git := fake.New()
+	repo := ports.Repository{Owner: "shop", Name: "orders-api"}
+	at := time.Date(2026, 3, 1, 23, 59, 0, 0, time.UTC)
+	git.SetClock(func() time.Time { return at })
+	n := git.AddIssue(repo.Owner, repo.Name, "Alert: Disk full", "", nil)
+	if err := git.CloseIssue(context.Background(), repo, n); err != nil {
+		t.Fatal(err)
+	}
+	got, err := git.GetIssue(context.Background(), repo, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.ClosedAt.Equal(at) {
+		t.Errorf("ClosedAt = %v, want the fake's clock %v", got.ClosedAt, at)
 	}
 }
