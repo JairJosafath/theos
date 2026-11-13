@@ -231,7 +231,7 @@ describe('proposalUse', () => {
   const cases: {
     name: string
     proposed?: CrewSchedule[]
-    pairs: [Container, Crew][]
+    pairs: [Container | undefined, Crew][]
     want: [string, [string, string[]][]][]
   }[] = [
     { name: 'a Standard that proposes none has none', pairs: [pair('orders-api', PYTHON, [DEPS])], want: [] },
@@ -279,6 +279,31 @@ describe('proposalUse', () => {
       want: [['dependencies', []]],
     },
     {
+      name: 'a Crew whose Container is not in the list is not listed: nothing says which Standard it follows',
+      proposed: [DEPS],
+      pairs: [pair('orders-api', PYTHON, [DEPS]), [undefined, pair('orphan', PYTHON, [DEPS])[1]]],
+      want: [['dependencies', [['orders-api', []]]]],
+    },
+    {
+      name: 'a Crew whose schedule differs in its cron only, or in its goal only, says which',
+      proposed: [DEPS],
+      pairs: [
+        pair('by-cron', PYTHON, [{ ...DEPS, cron: '0 7 * * 1' }]),
+        pair('by-goal', PYTHON, [{ ...DEPS, goal: 'Update them all.' }]),
+        pair('by-all', PYTHON, [{ ...DEPS, cron: '0 7 * * 1', timeZone: 'Asia/Tokyo', goal: 'x' }]),
+      ],
+      want: [
+        [
+          'dependencies',
+          [
+            ['by-all', ['cron', 'timeZone', 'goal']],
+            ['by-cron', ['cron']],
+            ['by-goal', ['goal']],
+          ],
+        ],
+      ],
+    },
+    {
       name: 'a Crew of the same names in another namespace is not listed',
       proposed: [DEPS],
       pairs: [pair('orders-api', PYTHON, [DEPS], 'other')],
@@ -289,7 +314,7 @@ describe('proposalUse', () => {
     it(c.name, () => {
       const got = proposalUse(
         standard('python-standard', c.proposed),
-        c.pairs.map(([container]) => container),
+        c.pairs.flatMap(([container]) => (container ? [container] : [])),
         c.pairs.map(([, crew]) => crew),
       )
       expect(got.map((u) => [u.proposal.name, u.users.map((x) => [x.crew, x.differs.map((d) => d.field)])])).toEqual(

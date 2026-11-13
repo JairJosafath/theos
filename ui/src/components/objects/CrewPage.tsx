@@ -297,7 +297,7 @@ function SchedulesPanel({ crew, writer }: { crew: Crew; writer?: CrewWriter }) {
   )
 }
 
-const FIELD_NAME: Record<ScheduleField, string> = { cron: 'Cron', timeZone: 'Time zone', goal: 'Goal' }
+export const FIELD_NAME: Record<ScheduleField, string> = { cron: 'Cron', timeZone: 'Time zone', goal: 'Goal' }
 
 /**
  * A proposal as its Standard wrote it: its name, its cron and its goal. This

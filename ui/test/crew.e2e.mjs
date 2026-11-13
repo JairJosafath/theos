@@ -379,15 +379,23 @@ describe('a Crew page’s actions', () => {
 
   it('asks the operator to run a schedule now, and offers it again once its issue is filed', async () => {
     const scheduled = structuredClone(crew())
-    scheduled.spec.schedules = [taken('dependencies', 'UTC')]
+    // Two schedules, and the second row's button is the one pressed: a button that asked for the first
+    // schedule whatever its row would pass with only one (#144).
+    scheduled.spec.schedules = [taken('dependencies', 'UTC'), taken('flaky-tests', 'UTC')]
     delete scheduled.metadata.annotations?.[RUN_SCHEDULE]
     api.modify('crews', scheduled)
     await page.goto(crewPage(base))
-    const row = schedulesPanel()
-      .getByRole('listitem')
-      .filter({ has: page.getByText('dependencies', { exact: true }) })
+    const rowOf = (name) =>
+      schedulesPanel()
+        .getByRole('listitem')
+        .filter({ has: page.getByText(name, { exact: true }) })
+    const first = rowOf('dependencies')
+    const row = rowOf('flaky-tests')
     const run = row.getByRole('button', { name: 'Run now', exact: true })
     await run.waitFor()
+    const others = first.getByRole('button', { name: 'Run now', exact: true })
+    await others.waitFor()
+    assert.equal(await schedulesPanel().getByRole('listitem').count(), 2)
     const count = api.writes.length
     await run.click()
 
@@ -395,18 +403,19 @@ describe('a Crew page’s actions', () => {
     assert.equal(write.method, 'PATCH')
     assert.equal(write.path, crewPath())
     assert.equal(write.contentType, 'application/merge-patch+json')
-    assert.deepEqual(write.body, { metadata: { annotations: { [RUN_SCHEDULE]: 'dependencies' } } })
-    assert.equal(crew().metadata.annotations[RUN_SCHEDULE], 'dependencies')
+    assert.deepEqual(write.body, { metadata: { annotations: { [RUN_SCHEDULE]: 'flaky-tests' } } })
+    assert.equal(crew().metadata.annotations[RUN_SCHEDULE], 'flaky-tests')
     // Asked once: the row waits for the operator.
     const asked = row.getByRole('button', { name: 'Asked to run now', exact: true })
     await asked.waitFor()
     assert.equal(await asked.isDisabled(), true)
+    assert.equal(await others.isEnabled(), true, 'the other schedule’s row is not asked')
 
     // The operator files the schedule's issue and takes the annotation off. The fake API runs none: this does its part.
     const filed = structuredClone(crew())
     delete filed.metadata.annotations[RUN_SCHEDULE]
     const at = new Date(NOW).toISOString()
-    filed.status.schedules = [{ name: 'dependencies', since: at, lastFiled: at, lastIssue: 19 }]
+    filed.status.schedules = [{ name: 'flaky-tests', since: at, lastFiled: at, lastIssue: 19 }]
     api.modify('crews', filed)
     await row.getByText(/last filed issue #19/).waitFor()
     await run.waitFor()

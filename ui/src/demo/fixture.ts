@@ -97,6 +97,8 @@ export function demoStory(now: number): StoryData {
     return new Date(local.getTime() - shift).toISOString().replace('.000Z', 'Z')
   }
   const created = ago(3 * 3600)
+  // A time as the operator writes it, without a fraction.
+  const whole = (iso: string) => iso.replace(/\.\d+Z$/, 'Z')
 
   const project: Project = {
     apiVersion: API_VERSION,
@@ -1119,10 +1121,12 @@ export function demoStory(now: number): StoryData {
               ago(2 * 3600),
             ),
           ],
-          // dependencies has not come due since the Crew was made; a person ran docs now, two hours ago.
+          // As the operator writes them: times without a fraction, a schedule first seen soon after the
+          // Crew was made (dependencies, nothing filed yet), and a Run now that filed issue #9, an issue
+          // no other Task of the demo uses, and moved since to that time (docs).
           schedules: [
-            { name: 'dependencies', since: created, next: dependenciesNext },
-            { name: 'docs', since: ago(2 * 3600), lastFiled: ago(2 * 3600), lastIssue: 13, next: docsNext },
+            { name: 'dependencies', since: whole(at(178)), next: dependenciesNext },
+            { name: 'docs', since: whole(at(150)), lastFiled: whole(at(150)), lastIssue: 9, next: docsNext },
           ],
           // The release its Brief's app shows.
           lastRelease: {

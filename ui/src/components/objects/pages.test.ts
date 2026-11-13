@@ -193,7 +193,7 @@ describe('the Standard page’s proposals', () => {
     const [dependencies, flaky] = html.split('<li>').slice(1)
     expect(dependencies).toContain('Crews with a schedule of this name:')
     expect(dependencies).toContain(
-      '<a class="mono" href="/?ns=webshop&amp;kind=Crew&amp;name=orders-api">orders-api</a> (differs from the proposal)',
+      '<a class="mono" href="/?ns=webshop&amp;kind=Crew&amp;name=orders-api">orders-api</a> (differs from the proposal in time zone)',
     )
     expect(flaky).toContain('No Crew of its Containers has a schedule of this name.')
     expect(flaky).not.toContain('kind=Crew')
@@ -246,7 +246,7 @@ describe('the Standard page’s proposals', () => {
       .split('<li>')
       .slice(1)
     expect(text(dependencies)).toContain(
-      'Crews with a schedule of this name: inventory-api , orders-api (differs from the proposal)',
+      'Crews with a schedule of this name: inventory-api , orders-api (differs from the proposal in time zone)',
     )
   })
 
@@ -262,6 +262,46 @@ describe('the Standard page’s proposals', () => {
     expect(text(html)).toContain('Could not read crews (403): crews is forbidden')
     expect(html).toContain('>flaky-tests<')
     expect(html).not.toContain('No Crew of its Containers')
+  })
+
+  // #144: the panel may not state a count of Crews it has not read.
+  it('says it is reading while the Crews are loading, not that no Crew uses a proposal', () => {
+    const data = demoStory(NOW)
+    data.crews = []
+    const html = panel(page('Standard', 'python-standard', data, { ...LIVE, waiting: ['crews'] }))
+    expect(text(html)).toContain('Reading the Crews and Containers')
+    expect(html).toContain('>flaky-tests<')
+    expect(html).not.toContain('No Crew of its Containers')
+  })
+
+  it('says a refused read of the Containers instead of claiming no Crew uses a proposal (#144)', () => {
+    const data = demoStory(NOW)
+    data.containers = []
+    const html = panel(
+      page('Standard', 'python-standard', data, {
+        ...LIVE,
+        problems: [{ what: 'containers', message: 'containers is forbidden', code: 403, resource: 'containers' }],
+      }),
+    )
+    expect(text(html)).toContain('Could not read containers (403): containers is forbidden')
+    expect(html).toContain('>flaky-tests<')
+    expect(html).not.toContain('No Crew of its Containers')
+    expect(html).not.toContain('Reading the')
+  })
+
+  it('names the fields in which a Crew’s schedule differs, as the Crew’s page does (#144)', () => {
+    const data = demoStory(NOW)
+    const [proposal] = python(data).spec.schedules!
+    const orders = data.crews.find((c) => c.metadata.name === 'orders-api')!
+    orders.spec.schedules = [{ ...proposal, cron: '0 7 * * 1', timeZone: 'Asia/Tokyo', goal: 'Something else' }]
+    const [dependencies] = panel(page('Standard', 'python-standard', data))
+      .split('<li>')
+      .slice(1)
+    expect(text(dependencies)).toContain('orders-api (differs from the proposal in cron, time zone and goal)')
+    // The demo's own Crew differs in its zone only.
+    const demo = panel(page('Standard', 'python-standard')).split('<li>')[1]
+    expect(text(demo)).toContain('orders-api (differs from the proposal in time zone)')
+    expect(text(demo)).not.toContain('in cron')
   })
 })
 
@@ -282,7 +322,15 @@ describe('the demo’s schedules', () => {
     expect(t).toContain('Work on a timer')
     expect(t).toMatch(/dependencies · 0 6 \* \* 1 \(Asia\/Tokyo\)/)
     expect(t).toMatch(/docs · 0 9 \* \* 5 \(Asia\/Tokyo\)/)
-    expect(t).toContain('last filed issue #13')
+    expect(t).toContain('last filed issue #9')
+    // #144: issue #13 is the demo's refund Task (orders-api-13), not a schedule's issue.
+    expect(crew.status?.schedules?.map((s) => s.lastIssue)).toEqual([undefined, 9])
+    expect(data.tasks.some((task) => task.metadata.name === 'orders-api-9')).toBe(false)
+    // Times as the operator writes them: whole seconds, and a schedule's since never before its Crew was made.
+    for (const s of crew.status!.schedules!) {
+      for (const time of [s.since, s.lastFiled, s.next]) expect(time ?? '').not.toMatch(/\.\d+Z$/)
+      expect(Date.parse(s.since)).toBeGreaterThanOrEqual(Date.parse(crew.metadata.creationTimestamp!))
+    }
   })
 
   it('shows the proposals panel on the Crew’s page: one offered, one in use whose time zone differs', () => {

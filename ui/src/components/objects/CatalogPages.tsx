@@ -8,7 +8,7 @@
 // reads Secrets), and the Project page's list of them, where a refused read
 // of any of these kinds says so.
 
-import { unreadOf, type Connection, type StoryData } from '../../k8s/sources'
+import { problemsOf, readOf, unreadOf, type Connection, type StoryData } from '../../k8s/sources'
 import type { ReactNode } from 'react'
 import {
   RESOURCES,
@@ -25,7 +25,7 @@ import { bundleEntries, bundleTypes, choicesOf, type BundleSide, type Catalog } 
 import { describeContainerType } from '../../model/describe'
 import { proposalUse } from '../../model/schedules'
 import { ObjectHeader, type ChildRef } from '../ObjectHeader'
-import { ProposalFacts } from './CrewPage'
+import { FIELD_NAME, ProposalFacts } from './CrewPage'
 import { pageHref, projectCrumb } from './links'
 import { ReadProblem } from './ReadProblem'
 
@@ -135,6 +135,11 @@ export function CatalogPage({
   )
 }
 
+/** "cron", "cron and goal", "cron, time zone and goal". */
+function inWords(names: string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : (names[0] ?? '')
+}
+
 /**
  * The schedules a Standard proposes, each as the Crew's page words it
  * (ProposalFacts), with the Crews of its Containers that have a schedule of
@@ -155,8 +160,11 @@ function StandardSchedules({
   connection?: Connection
 }) {
   const ns = standard.metadata.namespace ?? ''
-  // A refused read of the Crews would show every proposal as used by none: say the refusal instead.
-  const unread = connection ? unreadOf(connection, RESOURCES.crews) : undefined
+  // Which Crews use a name needs both the Crews and the Containers (whose Standard a Crew follows): a read
+  // still under way or refused would show every proposal as used by none, so say that instead of a count.
+  const needed = [RESOURCES.crews, RESOURCES.containers]
+  const problems = connection ? problemsOf(connection, ...needed) : []
+  const reading = connection ? !readOf(connection, ...needed) : false
   return (
     <section className="panel" aria-labelledby="standard-schedules">
       <h2 className="panel-title small-title" id="standard-schedules">
@@ -166,12 +174,16 @@ function StandardSchedules({
         It proposes these to the Crews of its Containers. A proposal files nothing: a Crew works one once it has a
         schedule of that name, which is then the Crew’s own to change. A proposal is taken on a Crew’s page.
       </p>
-      {unread ? <ReadProblem problem={unread} /> : null}
+      {problems.map((p) => (
+        <ReadProblem key={p.what} problem={p} />
+      ))}
       <ol className="routes">
         {proposalUse(standard, containers, crews).map(({ proposal, users }) => (
           <li key={proposal.name}>
             <ProposalFacts proposal={proposal} zoneNote="A Crew that takes it gives the zone it reads it in." />
-            {unread ? null : users.length ? (
+            {problems.length ? null : reading ? (
+              <div className="muted">Reading the Crews and Containers.</div>
+            ) : users.length ? (
               <div className="muted">
                 Crews with a schedule of this name:{' '}
                 {users.map((u, i) => (
@@ -180,7 +192,9 @@ function StandardSchedules({
                     <a className="mono" href={pageHref(ns, 'Crew', u.crew)}>
                       {u.crew}
                     </a>
-                    {u.differs.length ? ' (differs from the proposal)' : null}
+                    {u.differs.length
+                      ? ` (differs from the proposal in ${inWords(u.differs.map((d) => FIELD_NAME[d.field].toLowerCase()))})`
+                      : null}
                   </span>
                 ))}
               </div>
