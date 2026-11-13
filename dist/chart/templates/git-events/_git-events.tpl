@@ -32,6 +32,9 @@ else empty, and AlertSource status.url shows the in-cluster address.
 */}}
 {{- define "theos.alertsURL" -}}
 {{- if .Values.alerts.url }}
+{{- if not (regexMatch "^https?://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$" .Values.alerts.url) }}
+{{- fail (printf "alerts.url %q must be an http or https address, with no user, query or fragment" .Values.alerts.url) }}
+{{- end }}
 {{- .Values.alerts.url | trimSuffix "/" }}
 {{- else if and .Values.alerts.ingress.enabled .Values.alerts.ingress.host }}
 {{- printf "https://%s" .Values.alerts.ingress.host }}

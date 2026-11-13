@@ -252,7 +252,9 @@ alerts:
   ## https://<ingress.host> when ingress.enabled, else none, and status.url
   ## shows the in-cluster address of gitEvents.url, which stays valid for
   ## in-cluster senders either way. Give one when another proxy fronts the
-  ## receiver.
+  ## receiver. It applies only with gitEvents.enabled: without the listener
+  ## status.url is empty and the chart passes no flag. An http or https
+  ## address, or the render fails.
   ##
   url: ""
   ## An Ingress for senders outside the cluster, such as Sentry's cloud:

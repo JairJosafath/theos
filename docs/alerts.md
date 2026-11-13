@@ -148,9 +148,10 @@ goes: `Ready` is `Receiving` once the Secret holds the key its type reads,
 `SecretMissing` while it doesn't (an empty value included), and
 `ReceiverOff` when the chart's `gitEvents.enabled` is off. `status.url` is
 where to deliver from outside the cluster, or from inside it when nothing
-outside reaches the receiver ([above](#where-alerts-are-delivered)), and `deliveries`, `unmatched` and `unread` count what
-came. A delivery that fails the check writes nothing to the AlertSource;
-the operator's metric `theos_alert_deliveries_total` counts it, by `result`.
+outside reaches the receiver ([above](#where-alerts-are-delivered)), and
+`deliveries`, `unmatched` and `unread` count what came. A delivery that
+fails the check writes nothing to the AlertSource; the operator's metric
+`theos_alert_deliveries_total` counts it, by `result`.
 
 ## Alertmanager
 

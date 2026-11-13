@@ -486,7 +486,9 @@ only the Git host reaches the port, so a sender needs a value:
 - `alerts.url`: the address outside senders deliver to (`--alerts-url`),
   which each AlertSource's `status.url` starts with. Empty, the default:
   `https://<alerts.ingress.host>` when `alerts.ingress.enabled`, else the
-  in-cluster address. Give one when another proxy fronts the receiver.
+  in-cluster address. Give one when another proxy fronts the receiver. It
+  must be an http or https address, and applies only with
+  `gitEvents.enabled` (without the listener no flag is passed).
 - `alerts.drainTimeout` (default `5s`): how long the operator, stopped by a
   signal, files the alerts it took (`--alert-drain-timeout`). Keep it under
   `manager.terminationGracePeriodSeconds`.

@@ -178,6 +178,8 @@ alerts_url "alerts.url is the --alerts-url" "alerts.url=https://hooks.example.or
 alerts_url "alerts.url wins over the Ingress's host" "$PEER,$INGRESS,alerts.url=https://hooks.example.org" \
 	"https://hooks.example.org"
 alerts_url "without the listener no --alerts-url" "gitEvents.enabled=false,alerts.url=https://hooks.example.org" ""
+# #240: alerts.url without a scheme is refused, naming the value.
+refuses "alerts.url" "alerts.url=hooks.example.org"
 
 if ! render "gitEvents.enabled=false"; then
 	bad "the chart without the listener does not render:"
