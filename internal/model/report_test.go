@@ -86,8 +86,10 @@ type fixtureTask struct {
 	}
 }
 
-// reportTask reads a fixture Task as the operator's taskMetricFacts reads a
-// Task (internal/controller/factory_metrics.go), and the report's own fields.
+// reportTask reads a fixture Task as taskfacts.Metric reads the API's Task
+// (internal/taskfacts, which this package can't import), and the report's
+// own fields. The fixture's merged Tasks say how they ended done (#142), so
+// reading that otherwise here gives another report.
 func (f fixtureTask) reportTask() ReportTask {
 	t := ReportTask{
 		TaskMetricFacts: TaskMetricFacts{

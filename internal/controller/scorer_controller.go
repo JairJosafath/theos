@@ -36,6 +36,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/taskfacts"
 )
 
 // LabelScorer names the Scorer a Score Task judges for.
@@ -158,7 +159,7 @@ func (r *ScorerReconciler) startScores(ctx context.Context, scorer *c4v1beta1.Sc
 	var due []*c4v1beta1.Task
 	for i := range tasks {
 		t := &tasks[i]
-		if t.Spec.ContainerRef.Name == "" || !t.DeletionTimestamp.IsZero() || endedWithNoChange(t) {
+		if t.Spec.ContainerRef.Name == "" || !t.DeletionTimestamp.IsZero() || taskfacts.EndedWithNoChange(t) {
 			// A Task that changed nothing has no change to judge (#72).
 			continue
 		}

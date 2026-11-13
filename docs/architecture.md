@@ -44,6 +44,7 @@ every scaffolded repository.
 | Sandbox runner | `internal/agentrunner`, `cmd/theos-agent` | the standard library, `internal/model` | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
 | Test environment tool | `cmd/theos-env`: `run` in a sandbox, `serve` in a leased environment ([plans/done/test-environments.md](plans/done/test-environments.md), T4) | the standard library, `internal/model`, go-git's gitignore matcher | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
 | Model proxy | `internal/modelproxy`, `cmd/model-proxy` | the standard library; `cmd/model-proxy` also `internal/modelproxy` and `internal/buildinfo` | Kubernetes, controller-runtime, `api/`, `internal/controller`, `internal/adapters`; `internal/modelproxy` any other `internal/` package |
+| Readings of the API's resources | `internal/taskfacts`: a Task as the plain facts the factory's numbers are computed from, which the operator's Prometheus series and `theos-session report` both read through it (#142) | `api/v1beta1`, apimachinery, `internal/model` | controller-runtime, client-go, any other `internal/` package |
 | Clients of the API | `internal/controller`, `internal/sessionclient`, `internal/chatbot` (theos-chat) | everything above but adapters; their tests wire adapters onto fakes | `cmd/`, `internal/adapters/*` |
 | Build info | `internal/buildinfo` | nothing | everything; only `cmd/*` reads it |
 | Assets | `features` | `internal/scaffold` | everything else |
@@ -69,7 +70,10 @@ metrics-server itself (`ui/health.mjs`) and sends the browser only a summary;
 pods only in the components' and the Projects' namespaces.
 
 `make lint` enforces the rows marked "must not import" with golangci-lint's
-`depguard`, so a wrong import fails the build rather than a review.
+`depguard`, so a wrong import fails the build rather than a review. The row
+of `internal/taskfacts` is held by the package's own test (`TestImports`,
+in `make test`), and by the compiler for `internal/controller`, which
+imports it.
 
 ## Why the split
 

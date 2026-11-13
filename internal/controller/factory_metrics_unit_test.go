@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/model"
 )
 
 // TestFactoryMetricsServesTheTasksNumbers covers #59: a scrape of the
@@ -127,6 +128,31 @@ theos_agent_runs_tokens{agent="implementer",harness="claude-code",model="claude-
 			t.Errorf("%s: got %d observations, want %d (all: %v)", key, histograms[key], want, histograms)
 		}
 	}
+}
+
+// TestFactoryMetricsCountAChangeByHowTheTaskEnded covers #142: the series
+// read a Task through taskfacts.Metric, as theos-session report does, so a
+// Task that ended done counts as a merged change for every reason the
+// operator writes on its Succeeded condition but NothingToDo (#72).
+func TestFactoryMetricsCountAChangeByHowTheTaskEnded(t *testing.T) {
+	ended := func(name, reason string) *c4v1beta1.Task {
+		return &c4v1beta1.Task{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "webshop", Name: name},
+			Spec:       c4v1beta1.TaskSpec{ContainerRef: c4v1beta1.LocalRef{Name: "orders-api"}},
+			Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskMerged, Conditions: []metav1.Condition{
+				{Type: ConditionSucceeded, Status: metav1.ConditionTrue, Reason: reason}}},
+		}
+	}
+	c := fake.NewClientBuilder().WithScheme(briefScheme(t)).WithObjects(ended("orders-api-1", "Merged"),
+		ended("orders-api-2", reasonDoneByStandardChange), ended("orders-api-3", model.ReasonNothingToDo)).Build()
+	g := gomega.NewWithT(t)
+	tasks := map[string]string{"namespace": "webshop", "container": "orders-api", "kind": "Implement"}
+	merged := maps.Clone(tasks)
+	merged["code"], merged["approved"] = model.CodeUnknown, model.ApprovedReviewer
+	g.Expect(factoryMetricValue(g, c, model.MetricTasksMerged, merged)).To(gomega.Equal(2.0),
+		"the Task that ended with nothing to do is no merged change, and the two others are")
+	tasks["phase"] = "Merged"
+	g.Expect(factoryMetricValue(g, c, model.MetricTasks, tasks)).To(gomega.Equal(3.0))
 }
 
 // factoryMetricValue scrapes a fresh registry with FactoryMetrics on reader and

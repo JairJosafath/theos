@@ -32,6 +32,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
+	"github.com/JairJosafath/theos/internal/taskfacts"
 )
 
 // ConditionReleased says whether a Crew's next release went out, and why not.
@@ -426,7 +427,7 @@ func releaseFacts(ctx context.Context, provider interface {
 // with no change, and no release waits for a merge commit there never was
 // (#72).
 func mergedItsIssue(t *c4v1beta1.Task) bool {
-	return t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(t) && !endedWithNoChange(t)
+	return t.Status.Phase == c4v1beta1.TaskMerged && !isSpec(t) && !taskfacts.EndedWithNoChange(t)
 }
 
 func (r *CrewReconciler) setReleased(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus,
