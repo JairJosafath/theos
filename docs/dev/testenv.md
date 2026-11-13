@@ -220,7 +220,12 @@ the same way, and so do the workflows on GitHub, each job with its part of
 `make check`: *Tests* runs `CHECK_STEPS="generate fmt vet test"` and then
 `CHECK_STEPS=test-gitea`, *Lint* `CHECK_STEPS="generate lint validate-yaml"`
 and, in its *Shell tests* job, `CHECK_STEPS="test-hack doc-links
-license-headers readers"`. They set `TEST_BASE`:
+license-headers readers"`. *Lint* starts for a push to main or a pull request
+that changes one of its `paths`: Go, the linter's configuration, the YAML,
+the chart, templates, `hack/`, and every Markdown file and `docs/**`, so a
+change to documents alone starts it too: its *Lint* job's steps select
+nothing, and *Shell tests* selects `doc-links` alone and fails on a dead link
+(#148; `hack/check-workflows.sh` requires both patterns). They set `TEST_BASE`:
 a pull request is compared with its base branch, a push to main with main's
 head before the push (`github.event.before`), a manual run with main. Each
 push to main gets its own run, none cancelled or dropped for a newer one,
