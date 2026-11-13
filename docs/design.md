@@ -1651,7 +1651,8 @@ controllers call, not by one product's API;
   Matrix in `internal/adapters/matrix`; and request intake (`IssueTracker`),
   with GitHub in `internal/adapters/github`. Each has its fake in
   `internal/ports/fake`, which passes its suite: ChatHost's in two shapes,
-  with Spaces and without, and request intake's with teams and without.
+  with Spaces and without, and request intake's in a shape with teams and
+  one without.
 - **What a host lacks** its adapter emulates, or the port makes an optional
   capability (a second small interface, a condition reason when missing):
   Go modules, npm and PyPI, a project's own runners, webhooks.

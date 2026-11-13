@@ -33,9 +33,10 @@ import (
 	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
-// newTheosChat is theos-chat as cmd/theos-chat runs it, on chatFake, as its
-// own ServiceAccount bound to config/chat/rbac.yaml's role; each call is a
-// fresh process, as after a restart: all it knows is in its ConfigMap.
+// newTheosChat is theos-chat as cmd/theos-chat runs it, on chatFake (a Chat at
+// chatPortFake's address reaches chatPortFake), as its own ServiceAccount
+// bound to config/chat/rbac.yaml's role; each call is a fresh process, as
+// after a restart: all it knows is in its ConfigMap.
 func newTheosChat() *chatbot.Bot {
 	GinkgoHelper()
 	c := theosChatConfig()

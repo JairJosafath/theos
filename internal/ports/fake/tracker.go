@@ -102,7 +102,8 @@ type trackerAccount struct {
 type trackerProject struct {
 	issues   []*TrackedIssue // by number - 1
 	disabled bool
-	// version counts the changes to the open issues; the ETag names it.
+	// version counts the changes the ETag names: filing an issue, and an edit,
+	// a comment or a close of one, bumps it.
 	version int
 }
 
