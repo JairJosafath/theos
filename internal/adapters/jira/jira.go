@@ -245,7 +245,10 @@ type jira struct {
 	account string
 }
 
-var _ ports.IssueTracker = (*jira)(nil)
+var (
+	_ ports.IssueTracker = (*jira)(nil)
+	_ ports.IssueReader  = (*jira)(nil)
+)
 
 // key is item number as people name it: SHOP-412.
 func (j *jira) key(number int) string {
@@ -274,6 +277,7 @@ type (
 			Created     string                `json:"created"`
 			Updated     string                `json:"updated"`
 			Project     *struct{ Key string } `json:"project"`
+			Labels      []string              `json:"labels"`
 			Status      *struct {
 				Name           string `json:"name"`
 				StatusCategory struct {
@@ -459,6 +463,32 @@ func (j *jira) item(ctx context.Context, number int, fields string) (issueNode, 
 		return issueNode{}, notFound(j.key(number))
 	}
 	return n, nil
+}
+
+// IssueOpen reads item number on its own, never through the search
+// ListOpenIssues makes, whose index can lag behind a change for minutes and
+// sometimes longer (#161), and reports whether that search lists it: in a
+// status whose category is not Done, and carrying the label. An item that
+// isn't there, or is another project's now, is false.
+func (j *jira) IssueOpen(ctx context.Context, number int) (bool, error) {
+	n, err := j.item(ctx, number, "project,status,labels")
+	if ports.IssuesReason(err) == ports.ReasonIssueNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	status := n.Fields.Status
+	if status == nil {
+		return false, &ports.IssuesError{Reason: ports.ReasonTrackerError,
+			Message: "jira: read " + j.key(number) + ": the answer names no status"}
+	}
+	if status.StatusCategory.Key == categoryDone {
+		return false, nil
+	}
+	// A label is matched ignoring case, so that no item the search lists is
+	// left out.
+	return slices.ContainsFunc(n.Fields.Labels, func(l string) bool { return strings.EqualFold(l, j.label) }), nil
 }
 
 func notFound(key string) *ports.IssuesError {

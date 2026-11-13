@@ -94,6 +94,10 @@ type BriefReconciler struct {
 	// requestsShip is when the Brief last looked whether each planned
 	// request shipped.
 	requestsShip map[string]shipCheck
+	// requestsHeld are the requests whose close the tracker's workflow
+	// refused (ports.ReasonCannotClose), with when and why: tried again a
+	// recheck later, not on every reconcile.
+	requestsHeld map[string]heldClose
 	// requestsPublished is the newest release of each Container's Crew the
 	// Brief saw published.
 	requestsPublished map[string]model.Shipped

@@ -256,6 +256,36 @@ func TestLabelTakenOff(t *testing.T) {
 	}
 }
 
+// TestIssueOpen covers #161: an item read on its own is one the list shows
+// while it is in an open state and carries the label; one closed, unlabelled,
+// moved to another team or never filed isn't, with no error.
+func TestIssueOpen(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	w.Team("OPS")
+	reader, ok := w.tracker.(ports.IssueReader)
+	if !ok {
+		t.Fatal("the Linear tracker is no ports.IssueReader")
+	}
+	open, unlabelled, done, canceled, moved := w.request("Open"), w.request("Unlabelled"), w.request("Done"),
+		w.request("Canceled"), w.request("Moved")
+	w.Unlabel(testTeam, unlabelled, testLabel)
+	w.MoveTo(testTeam, done, "Done")
+	if err := w.tracker.CloseIssue(ctx, canceled, ports.CloseNotPlanned); err != nil {
+		t.Fatal(err)
+	}
+	w.Move(testTeam, moved, "OPS")
+	for n, want := range map[int]bool{open: true, unlabelled: false, done: false, canceled: false, moved: false,
+		0: false, 5000: false} {
+		if got, err := reader.IssueOpen(ctx, n); err != nil || got != want {
+			t.Errorf("IssueOpen(%d) = %v, %v; want %v", n, got, err, want)
+		}
+	}
+	w.Down(true)
+	_, err := reader.IssueOpen(ctx, open)
+	wantReason(t, "IssueOpen() while Linear is down", err, ports.ReasonTrackerUnavailable)
+}
+
 // TestMovedItem covers #156: Linear goes on answering to the key an item
 // had before it moved to another team, with the item, which is that team's
 // now. The factory must neither comment on it nor close it.
@@ -366,9 +396,12 @@ func TestKeys(t *testing.T) {
 	if err := w.tracker.CloseIssue(ctx, n, ports.CloseCompleted); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := w.tracker.(ports.IssueReader).IssueOpen(ctx, n); err != nil {
+		t.Fatal(err)
+	}
 	for _, r := range w.Requests() {
 		switch r.Operation {
-		case opIssue, opComments, opCloseTarget:
+		case opIssue, opIssueOpen, opComments, opCloseTarget:
 			if r.Variables["id"] != "ENG-412" {
 				t.Errorf("%s asked for the item %v, want its key ENG-412", r.Operation, r.Variables["id"])
 			}
@@ -574,7 +607,7 @@ func TestConfig(t *testing.T) {
 // Linear answers by.
 func TestOperations(t *testing.T) {
 	for op, text := range map[string]string{opOpenIssues: queryOpenIssues, opOpenStamps: queryOpenStamps,
-		opIssue: queryIssue, opComments: queryComments, opComment: mutationComment,
+		opIssue: queryIssue, opIssueOpen: queryIssueOpen, opComments: queryComments, opComment: mutationComment,
 		opCloseTarget: queryCloseTarget, opMove: mutationMove} {
 		if !strings.HasPrefix(text, "query "+op+"(") && !strings.HasPrefix(text, "mutation "+op+"(") {
 			t.Errorf("the text of %s starts %q", op, text[:min(40, len(text))])

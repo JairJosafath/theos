@@ -453,6 +453,139 @@ var _ = Describe("Brief requests from a request source", func() {
 	})
 })
 
+// roundTwoIssues counts the issues Brief cel-lens filed in round 2.
+func roundTwoIssues(g Gomega, ns string) int {
+	n := 0
+	for _, i := range getBrief(g, ns).Status.Issues {
+		if i.Round == 2 {
+			n++
+		}
+	}
+	return n
+}
+
+// #161: a source's list is a search, which can lag behind its items for
+// minutes and longer (Jira's index). An item the Brief closed is listed
+// still; it is no new request, so no second round plans it, and nothing is
+// said or filed on it twice.
+var _ = Describe("Brief requests from a request source whose search lags", func() {
+	var ns string
+	BeforeEach(func() { ns = newProjectNamespace() })
+
+	It("Ask (#161): an item skipped or released, its number still accepted, is not planned again", func() {
+		tr, src := linearTracker(ns, "product")
+		tr.lag()
+		sourceBrief(ns, src)
+		repository := "ada/" + ns
+		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+		}).Should(Succeed())
+		theme := tr.file("Ada Lovelace", "Dark theme", "Please add a dark theme.")
+		rules := tr.file("Grace", "Lint rules", "Lint my rules.")
+		name := func(n int) string { return model.SourceRequestName("product", "REQ-"+fmt.Sprint(n)) }
+		Eventually(func(g Gomega) {
+			g.Expect(sourceRequests(g, ns, "product")).To(Equal(map[int32]string{int32(theme): model.RequestWaiting,
+				int32(rules): model.RequestWaiting}))
+		}).Should(Succeed())
+		setSource(ns, 0, func(s *c4v1beta1.BriefRequestSource) { s.Accepted = []int32{int32(theme), int32(rules)} })
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Round).To(Equal(int32(2)))
+		}).Should(Succeed())
+		planRound(ns, 2, 1, requestsPlan(ns, fmt.Sprintf("- {request: %s, answer: take, issues: [1]}\n"+
+			"- {request: %s, answer: skip, why: \"The linter lints rules already.\"}\n", name(theme), name(rules))))
+		var filed c4v1beta1.BriefIssue
+		Eventually(func(g Gomega) {
+			for _, i := range getBrief(g, ns).Status.Issues {
+				if i.Round == 2 {
+					filed = i
+				}
+			}
+			g.Expect(filed.Number).NotTo(BeZero())
+			issue, comments := tr.issue(rules)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(comments).To(HaveLen(1))
+			g.Expect(sourceRequests(g, ns, "product")).To(Equal(map[int32]string{int32(theme): model.RequestPlanned}))
+		}).Should(Succeed())
+
+		By("leaving the skipped item alone while the search lists it")
+		Consistently(func(g Gomega) {
+			brief := getBrief(g, ns)
+			g.Expect(brief.Status.Round).To(Equal(int32(2)), "one planning round")
+			g.Expect(brief.Spec.RequestSources[0].Accepted).To(ContainElement(int32(rules)))
+			g.Expect(sourceRequests(g, ns, "product")).NotTo(HaveKey(int32(rules)))
+			_, comments := tr.issue(rules)
+			g.Expect(comments).To(HaveLen(1), "one comment")
+			g.Expect(roundTwoIssues(g, ns)).To(Equal(1), "no second filed issue")
+		}, "3s").Should(Succeed())
+
+		By("leaving the released item alone while the search lists it")
+		closeFiled(ns, fmt.Sprintf("linter#%d", filed.Number))
+		publishLinter(ns, repository, "v0.2.0")
+		Eventually(func(g Gomega) {
+			issue, comments := tr.issue(theme)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(comments).To(HaveLen(2))
+			g.Expect(sourceRequests(g, ns, "product")).To(BeEmpty())
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			brief := getBrief(g, ns)
+			g.Expect(brief.Status.Round).To(Equal(int32(2)), "one planning round")
+			g.Expect(sourceRequests(g, ns, "product")).To(BeEmpty())
+			_, comments := tr.issue(theme)
+			g.Expect(comments).To(HaveLen(2), "the planned comment and the released one, once each")
+			g.Expect(roundTwoIssues(g, ns)).To(Equal(1), "no second filed issue")
+		}, "3s").Should(Succeed())
+		listed, err := tr.For(tr.repository, tr.token).ListOpenIssues(ctx, "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(listed.Issues).To(HaveLen(2), "the search lists both closed items still")
+	})
+
+	It("On (#161): an item skipped or declined is not let through again", func() {
+		tr, src := linearTracker(ns, "product")
+		src.Mode = model.RequestsOn
+		src.Declined = []int32{1}
+		tr.lag()
+		sourceBrief(ns, src)
+		planRound(ns, 1, 1, releasingLinterPlan(ns, 1))
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+		}).Should(Succeed())
+		spam := tr.file("Mallory", "Spam", "Spam.")
+		Expect(spam).To(Equal(1))
+		rules := tr.file("Grace", "Lint rules", "Lint my rules.")
+		Eventually(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Round).To(Equal(int32(2)))
+			issue, comments := tr.issue(spam)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(comments).To(HaveLen(1))
+		}).Should(Succeed())
+		planRound(ns, 2, 1, requestsPlan(ns, fmt.Sprintf(
+			"- {request: %s, answer: skip, why: \"The linter lints rules already.\"}\n",
+			model.SourceRequestName("product", "REQ-"+fmt.Sprint(rules)))))
+		filed := 0
+		Eventually(func(g Gomega) {
+			issue, comments := tr.issue(rules)
+			g.Expect(issue.Closed).To(BeTrue())
+			g.Expect(comments).To(HaveLen(1))
+			g.Expect(getBrief(g, ns).Status.Phase).To(Equal(c4v1beta1.BriefPlanned))
+			filed = roundTwoIssues(g, ns)
+		}).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(getBrief(g, ns).Status.Round).To(Equal(int32(2)), "one planning round")
+			g.Expect(sourceRequests(g, ns, "product")).To(BeEmpty())
+			for _, n := range []int{spam, rules} {
+				_, comments := tr.issue(n)
+				g.Expect(comments).To(HaveLen(1), "one comment on %d", n)
+			}
+			g.Expect(roundTwoIssues(g, ns)).To(Equal(filed), "no second filed issue")
+		}, "3s").Should(Succeed())
+		listed, err := tr.For(tr.repository, tr.token).ListOpenIssues(ctx, "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(listed.Issues).To(HaveLen(2), "the search lists both closed items still")
+	})
+})
+
 // jiraTracker makes the fake tracker of a Jira project of the spec's own and
 // the Secret of source name, whose close settings name a status and a
 // resolution for not planned, and returns the tracker and the source.

@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -67,6 +68,19 @@ type requestsRead struct {
 	members    map[string]bool
 	unsure     []string
 	membersErr error
+	// checked are the items the Brief closed, or read on their own, by
+	// number, kept across reads while the list shows them (#161).
+	checked map[int]itemCheck
+}
+
+// itemCheck is what the Brief knows of one listed item beyond the list: that
+// it closed it, or what reading the item on its own said, and when. A source's
+// list is a search, which can lag behind its items for minutes and longer (a
+// search index does): an item the Brief closed may be listed still, and
+// would be read as a new request and planned twice.
+type itemCheck struct {
+	open bool
+	at   time.Time
 }
 
 // requestsMode is a releases entry's requests mode, Off when it has none.
@@ -241,16 +255,25 @@ func (r *BriefReconciler) readOrigin(ctx context.Context, brief *c4v1beta1.Brief
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
+	// A request whose close the workflow refused waits for the recheck
+	// rather than forcing a read on every reconcile.
 	var owed []int
 	for _, req := range same {
-		if r.owesPlanned(brief, req) || req.Stage == model.RequestReleased {
+		if (r.owesPlanned(brief, req) || req.Stage == model.RequestReleased) && r.heldClose(brief, req, now) == nil {
 			owed = append(owed, req.Number)
+		}
+	}
+	for _, n := range origin.declined {
+		req := model.Request{Repository: origin.repository, Source: origin.source, Number: int(n)}
+		if r.heldClose(brief, req, now) == nil {
+			owed = append(owed, int(n))
 		}
 	}
 	last := r.readIssues(gitCtx, brief, origin, tracker, owed, now)
 	if last.err != nil {
 		return same, &requestsFailure{ports.IssuesReason(last.err), last.err.Error()}
 	}
+	listed, listErr := r.listedItems(gitCtx, origin, tracker, last, same, now)
 	in := model.RequestsRead{Repository: origin.repository, Source: origin.source, Mode: origin.mode,
 		Authors: origin.authors, Unsure: last.unsure, Accepted: origin.accepted, Declined: origin.declined}
 	for login, member := range last.members {
@@ -258,7 +281,7 @@ func (r *BriefReconciler) readOrigin(ctx context.Context, brief *c4v1beta1.Brief
 			in.Members = append(in.Members, login)
 		}
 	}
-	for _, i := range last.open {
+	for _, i := range listed {
 		in.Open = append(in.Open, model.RequestIssue{Number: i.Number, Key: i.Key, Author: i.Author, Title: i.Title,
 			Body: i.Body, URL: i.URL})
 	}
@@ -266,6 +289,9 @@ func (r *BriefReconciler) readOrigin(ctx context.Context, brief *c4v1beta1.Brief
 	var failure *requestsFailure
 	if last.membersErr != nil {
 		failure = &requestsFailure{ports.IssuesReason(last.membersErr), last.membersErr.Error()}
+	}
+	if listErr != nil && failure == nil {
+		failure = &requestsFailure{ports.IssuesReason(listErr), listErr.Error()}
 	}
 	got, err := r.declineRequests(gitCtx, brief, tracker, got)
 	if err != nil {
@@ -287,7 +313,8 @@ func (r *BriefReconciler) readOrigin(ctx context.Context, brief *c4v1beta1.Brief
 // source, reading it again when its entry changed or the suggestions recheck
 // has passed: the open issues, asked with the last ETag, and the teams of the
 // authors not named in authors. owed are the requests the Brief has to
-// answer on the tracker, which it reads again first.
+// answer on the tracker, and the declined numbers, which it reads again
+// first.
 func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief, origin requestOrigin,
 	tracker ports.IssueTracker, owed []int, now time.Time) *requestsRead {
 	key := requestsKey(brief, origin.id())
@@ -300,15 +327,18 @@ func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief
 	// the ETag, so one its author closed meanwhile is dropped rather than
 	// answered.
 	if last != nil && last.entry == fingerprint && now.Sub(last.readAt) < r.suggestionsRecheck() &&
-		!slices.ContainsFunc(last.open, func(i ports.TrackerIssue) bool {
-			return slices.Contains(origin.declined, int32(i.Number)) || slices.Contains(owed, i.Number)
-		}) {
+		!slices.ContainsFunc(last.open, func(i ports.TrackerIssue) bool { return slices.Contains(owed, i.Number) }) {
 		return last
 	}
 	next := &requestsRead{entry: fingerprint, readAt: now}
 	etag := ""
-	if last != nil && last.entry == fingerprint && last.err == nil {
-		etag = last.etag
+	if last != nil && last.entry == fingerprint {
+		r.requestsMu.Lock()
+		next.checked = maps.Clone(last.checked)
+		r.requestsMu.Unlock()
+		if last.err == nil {
+			etag = last.etag
+		}
 	}
 	list, err := tracker.ListOpenIssues(ctx, etag)
 	switch {
@@ -324,6 +354,11 @@ func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief
 		next.etag, next.open, next.members = list.ETag, last.open, last.members
 	default:
 		next.etag, next.open = list.ETag, list.Issues
+		// An item the list no longer shows is done with; one listed again
+		// later is read anew.
+		maps.DeleteFunc(next.checked, func(n int, _ itemCheck) bool {
+			return !slices.ContainsFunc(list.Issues, func(i ports.TrackerIssue) bool { return i.Number == n })
+		})
 	}
 	if next.err == nil {
 		r.readMembers(ctx, origin, tracker, next)
@@ -335,6 +370,65 @@ func (r *BriefReconciler) readIssues(ctx context.Context, brief *c4v1beta1.Brief
 	r.requestsReads[key] = next
 	r.requestsMu.Unlock()
 	return next
+}
+
+// listedItems are the items of the origin's last read that may be requests
+// (#161): each one a request is kept for, and each other one unless the
+// Brief closed it or found it closed less than a suggestions recheck ago. A
+// source's list is a search, which can lag behind its items, so a source's
+// item no request is kept for is read on its own first where its tracker can
+// (ports.IssueReader), and left out unless it is open and labelled: what the
+// Brief closed is never asked again, whatever the search says, and after a
+// restart too. What a read found is kept for a recheck, so an item is read
+// once per recheck at most. A read that fails leaves its item out of this
+// pass, and is returned.
+func (r *BriefReconciler) listedItems(ctx context.Context, origin requestOrigin,
+	tracker ports.IssueTracker, last *requestsRead, same []model.Request, now time.Time) ([]ports.TrackerIssue, error) {
+	reader, reads := tracker.(ports.IssueReader)
+	reads = reads && origin.source != ""
+	var out []ports.TrackerIssue
+	var first error
+	for _, i := range last.open {
+		if slices.ContainsFunc(same, func(k model.Request) bool { return k.Number == i.Number }) {
+			out = append(out, i)
+			continue
+		}
+		r.requestsMu.Lock()
+		check, checked := last.checked[i.Number]
+		r.requestsMu.Unlock()
+		switch {
+		case checked && now.Sub(check.at) < r.suggestionsRecheck():
+			if check.open {
+				out = append(out, i)
+			}
+			continue
+		case !reads:
+			out = append(out, i)
+			continue
+		}
+		open, err := reader.IssueOpen(ctx, i.Number)
+		if err != nil {
+			if first == nil {
+				first = err
+			}
+			continue
+		}
+		r.checkItem(last, i.Number, itemCheck{open: open, at: now})
+		if open {
+			out = append(out, i)
+		}
+	}
+	return out, first
+}
+
+// checkItem keeps what the Brief knows of item number of read.
+func (r *BriefReconciler) checkItem(read *requestsRead, number int, check itemCheck) {
+	r.requestsMu.Lock()
+	defer r.requestsMu.Unlock()
+	if read.checked == nil {
+		read.checked = map[int]itemCheck{}
+	}
+	read.checked[number] = check
 }
 
 // readMembers finds which authors of the open issues, not named in authors,
@@ -402,12 +496,17 @@ func (r *BriefReconciler) declineRequests(ctx context.Context, brief *c4v1beta1.
 	tracker ports.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
 	out := requests[:0:0]
+	now := r.now()
 	for _, req := range requests {
 		if req.Stage != model.RequestDeclined {
 			out = append(out, req)
 			continue
 		}
-		err := declineRequest(ctx, tracker, brief.Name, req)
+		err := r.heldClose(brief, req, now)
+		if err == nil {
+			err = declineRequest(ctx, tracker, brief.Name, req)
+			r.holdClose(brief, req, err, now)
+		}
 		switch {
 		case ports.IssuesReason(err) == ports.ReasonIssueNotFound:
 			// Deleted or moved on the tracker: nothing to say.
@@ -450,7 +549,8 @@ func requestComment(req model.Request, text string) string {
 }
 
 // forgetIssue takes a request the Brief closed out of what it last read, so
-// it isn't answered again before the next read.
+// it isn't answered again before the next read, and keeps that it closed it:
+// a list that lags may show it again (#161), and it is no new request.
 func (r *BriefReconciler) forgetIssue(brief *c4v1beta1.Brief, req model.Request) {
 	r.requestsMu.Lock()
 	defer r.requestsMu.Unlock()
@@ -458,7 +558,52 @@ func (r *BriefReconciler) forgetIssue(brief *c4v1beta1.Brief, req model.Request)
 		last.open = slices.DeleteFunc(slices.Clone(last.open), func(i ports.TrackerIssue) bool {
 			return i.Number == req.Number
 		})
+		if last.checked == nil {
+			last.checked = map[int]itemCheck{}
+		}
+		last.checked[req.Number] = itemCheck{at: r.now()}
 	}
+}
+
+// heldClose is a close of the tracker's workflow refused for a close of req
+// (ports.ReasonCannotClose).
+type heldClose struct {
+	at  time.Time
+	err error
+}
+
+func heldKey(brief *c4v1beta1.Brief, req model.Request) string {
+	return requestsKey(brief, originID(req.Repository, req.Source)) + fmt.Sprintf("#%d", req.Number)
+}
+
+// heldClose is why the tracker's workflow refused to close req less than a
+// suggestions recheck ago, nil when it didn't: a workflow that has no way to
+// close it won't have one a second later, and the source isn't asked again
+// on every reconcile until then.
+func (r *BriefReconciler) heldClose(brief *c4v1beta1.Brief, req model.Request, now time.Time) error {
+	r.requestsMu.Lock()
+	defer r.requestsMu.Unlock()
+	held, ok := r.requestsHeld[heldKey(brief, req)]
+	if !ok || now.Sub(held.at) >= r.suggestionsRecheck() {
+		return nil
+	}
+	return held.err
+}
+
+// holdClose keeps err, what answering req ended in, when the tracker's
+// workflow refused the close, and forgets a refusal before otherwise.
+func (r *BriefReconciler) holdClose(brief *c4v1beta1.Brief, req model.Request, err error, now time.Time) {
+	r.requestsMu.Lock()
+	defer r.requestsMu.Unlock()
+	key := heldKey(brief, req)
+	if err == nil || ports.IssuesReason(err) != ports.ReasonCannotClose {
+		delete(r.requestsHeld, key)
+		return
+	}
+	if r.requestsHeld == nil {
+		r.requestsHeld = map[string]heldClose{}
+	}
+	r.requestsHeld[key] = heldClose{at: now, err: err}
 }
 
 // forgetReads drops what the Brief read of repositories and sources it no
@@ -477,6 +622,12 @@ func (r *BriefReconciler) forgetReads(brief *c4v1beta1.Brief, read map[string]bo
 		rest, ok := strings.CutPrefix(key, prefix)
 		if id, _, _ := strings.Cut(rest, "#"); ok && !read[id] {
 			delete(r.requestsShip, key)
+		}
+	}
+	for key := range r.requestsHeld {
+		rest, ok := strings.CutPrefix(key, prefix)
+		if id, _, _ := strings.Cut(rest, "#"); ok && !read[id] {
+			delete(r.requestsHeld, key)
 		}
 	}
 }

@@ -38,7 +38,8 @@ import (
 // A project's issues are numbered from 1, its pull requests among them, and
 // keyed REQ-1, REQ-2: a key is never the number alone, so a caller that
 // looks an issue up by its key fails on it. WithoutTeams makes a tracker
-// without teams, whose port is no ports.TeamMembers.
+// without teams, whose port is no ports.TeamMembers. Every port is a
+// ports.IssueReader, and Lag makes a project's list lag behind it.
 type IssueTracker struct {
 	s *trackerState
 }
@@ -107,6 +108,9 @@ type trackerProject struct {
 	disabled bool
 	// cannotClose, when set, is why its workflow can't close an open issue.
 	cannotClose string
+	// lags makes its list a search that lags: a closed issue is still
+	// listed.
+	lags bool
 	// version counts the changes the ETag names: filing an issue, and an edit,
 	// a comment or a close of one, bumps it.
 	version int
@@ -260,6 +264,20 @@ func (tr *IssueTracker) CannotClose(project, why string) {
 	}
 }
 
+// Lag makes project's list a search whose index lags behind its issues, as
+// Jira's can for minutes and longer (#161): while it lags, ListOpenIssues
+// goes on listing the issues closed, and only IssueOpen, which reads one
+// issue on its own, says they are. Lag(project, false) catches up.
+func (tr *IssueTracker) Lag(project string, lags bool) {
+	s := tr.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p := s.projects[project]; p != nil {
+		p.lags = lags
+		p.version++
+	}
+}
+
 // Disable turns project's issues off.
 func (tr *IssueTracker) Disable(project string) {
 	s := tr.s
@@ -359,6 +377,7 @@ type trackerView struct {
 
 var (
 	_ ports.IssueTracker = (*trackerView)(nil)
+	_ ports.IssueReader  = (*trackerView)(nil)
 	_ ports.IssueTracker = (*teamsView)(nil)
 	_ ports.TeamMembers  = (*teamsView)(nil)
 )
@@ -421,11 +440,24 @@ func (v *trackerView) ListOpenIssues(_ context.Context, etag string) (ports.Issu
 	}
 	list := ports.IssueList{ETag: now}
 	for _, i := range p.issues {
-		if !i.Closed && !i.PullRequest && !i.Unlabelled {
+		if (!i.Closed || p.lags) && !i.PullRequest && !i.Unlabelled {
 			list.Issues = append(list.Issues, i.TrackerIssue)
 		}
 	}
 	return list, nil
+}
+
+func (v *trackerView) IssueOpen(_ context.Context, number int) (bool, error) {
+	_, p, err := v.open("IssueOpen")
+	defer v.s.mu.Unlock()
+	if err != nil {
+		return false, err
+	}
+	i, err := v.issue(p, number)
+	if err != nil {
+		return false, nil
+	}
+	return !i.Closed && !i.Unlabelled, nil
 }
 
 func (v *trackerView) FindComment(_ context.Context, number int, marker string) (*ports.TrackerComment, error) {

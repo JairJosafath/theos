@@ -244,6 +244,7 @@ func (r *BriefReconciler) answerReleased(ctx context.Context, brief *c4v1beta1.B
 	var tasks []c4v1beta1.Task
 	listed := false
 	out := requests[:0:0]
+	now := r.now()
 	for i, req := range requests {
 		if req.Stage != model.RequestReleased {
 			out = append(out, req)
@@ -258,7 +259,11 @@ func (r *BriefReconciler) answerReleased(ctx context.Context, brief *c4v1beta1.B
 			}
 			tasks, listed = list.Items, true
 		}
-		err := sayReleased(ctx, tracker, brief.Name, req, mergedPulls(brief, req.Issues, tasks))
+		err := r.heldClose(brief, req, now)
+		if err == nil {
+			err = sayReleased(ctx, tracker, brief.Name, req, mergedPulls(brief, req.Issues, tasks))
+			r.holdClose(brief, req, err, now)
+		}
 		switch {
 		case ports.IssuesReason(err) == ports.ReasonIssueNotFound:
 			// Deleted or moved on the tracker: nothing to say.

@@ -157,7 +157,10 @@ type linear struct {
 	http                    *http.Client
 }
 
-var _ ports.IssueTracker = (*linear)(nil)
+var (
+	_ ports.IssueTracker = (*linear)(nil)
+	_ ports.IssueReader  = (*linear)(nil)
+)
 
 // key is item number as people name it: ENG-412.
 func (l *linear) key(number int) string {
@@ -203,6 +206,12 @@ type (
 		External    *user     `json:"externalUserCreator"`
 		Team        *team     `json:"team"`
 		State       *state    `json:"state"`
+		Labels      *struct {
+			Nodes []labelNode `json:"nodes"`
+		} `json:"labels"`
+	}
+	labelNode struct {
+		Name string `json:"name"`
 	}
 	commentNode struct {
 		ID        string    `json:"id"`
@@ -220,6 +229,7 @@ const (
 	opOpenIssues  = "TheosOpenIssues"
 	opOpenStamps  = "TheosOpenIssueStamps"
 	opIssue       = "TheosIssue"
+	opIssueOpen   = "TheosIssueOpen"
 	opComments    = "TheosIssueComments"
 	opComment     = "TheosComment"
 	opCloseTarget = "TheosCloseTarget"
@@ -255,6 +265,12 @@ const queryOpenStamps = `query ` + opOpenStamps + `($team: String!, $filter: Iss
 
 const queryIssue = `query ` + opIssue + `($id: String!) {
   issue(id: $id) { id number team { key } }
+}`
+
+// queryIssueOpen reads what makes an item a request: its state's type and
+// its labels. An item carries at most a few labels; 250 is Linear's most.
+const queryIssueOpen = `query ` + opIssueOpen + `($id: String!) {
+  issue(id: $id) { id number team { key } state { type } labels(first: 250) { nodes { name } } }
 }`
 
 const queryComments = `query ` + opComments + `($id: String!, $first: Int!, $after: String) {
@@ -461,6 +477,38 @@ func (l *linear) issue(ctx context.Context, number int) (issueNode, error) {
 		return issueNode{}, err
 	}
 	return *data.Issue, nil
+}
+
+// IssueOpen reads item number on its own, never through the search
+// ListOpenIssues makes, and reports whether that search lists it: in a state
+// that isn't closed, and carrying the label (#161). An item that isn't
+// there, or is another team's now, is false.
+func (l *linear) IssueOpen(ctx context.Context, number int) (bool, error) {
+	if number < 1 {
+		return false, nil
+	}
+	var data struct {
+		Issue *issueNode `json:"issue"`
+	}
+	err := l.call(ctx, "reading issue "+l.key(number), opIssueOpen, queryIssueOpen,
+		map[string]any{"id": l.key(number)}, ports.ReasonIssueNotFound, &data)
+	if ports.IssuesReason(err) == ports.ReasonIssueNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if data.Issue == nil || l.own(data.Issue, number) != nil {
+		return false, nil
+	}
+	if data.Issue.State == nil {
+		return false, &ports.IssuesError{Reason: ports.ReasonTrackerError,
+			Message: "linear: reading issue " + l.key(number) + ": the answer names no state"}
+	}
+	if slices.Contains(closedTypes, data.Issue.State.Type) || data.Issue.Labels == nil {
+		return false, nil
+	}
+	return slices.ContainsFunc(data.Issue.Labels.Nodes, func(n labelNode) bool { return n.Name == l.label }), nil
 }
 
 // asComment is c as the port names it.

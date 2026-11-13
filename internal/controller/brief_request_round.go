@@ -202,6 +202,7 @@ func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1beta1.Br
 	tracker ports.IssueTracker, requests []model.Request) ([]model.Request, error) {
 	var first error
 	out := requests[:0:0]
+	now := r.now()
 	for _, req := range requests {
 		if !r.owesPlanned(brief, req) {
 			out = append(out, req)
@@ -212,7 +213,11 @@ func (r *BriefReconciler) answerPlanned(ctx context.Context, brief *c4v1beta1.Br
 			text = model.PlannedComment(brief.Name, plannedIssues(brief, req.Issues), req.Release)
 		}
 		text += model.RequestRoundMarker(brief.Name, req.Round) + "\n"
-		err := sayPlanned(ctx, tracker, brief.Name, req, requestComment(req, text))
+		err := r.heldClose(brief, req, now)
+		if err == nil {
+			err = sayPlanned(ctx, tracker, brief.Name, req, requestComment(req, text))
+			r.holdClose(brief, req, err, now)
+		}
 		switch {
 		case ports.IssuesReason(err) == ports.ReasonIssueNotFound:
 			// Deleted or moved on the tracker: nothing to say.

@@ -109,6 +109,12 @@ func (tr *specTracker) unlabel(n int) {
 	Expect(tr.Unlabel(tr.repository, n)).To(Succeed())
 }
 
+// lag makes the list a search that lags, as Jira's index can (#161): it
+// goes on listing the issues closed.
+func (tr *specTracker) lag() {
+	tr.Lag(tr.repository, true)
+}
+
 // relabel puts the request's label back on issue n.
 func (tr *specTracker) relabel(n int) {
 	GinkgoHelper()
@@ -191,6 +197,12 @@ func (c countedTracker) ListOpenIssues(ctx context.Context, etag string) (ports.
 		c.notModified.Add(1)
 	}
 	return list, err
+}
+
+// IssueOpen passes the read of one item on to the tracker, which the fake's
+// is: the Brief finds the capability on what Tracker returns.
+func (c countedTracker) IssueOpen(ctx context.Context, number int) (bool, error) {
+	return c.IssueTracker.(ports.IssueReader).IssueOpen(ctx, number)
 }
 
 // countedTeams is a countedTracker of a tracker that has teams.

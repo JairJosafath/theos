@@ -319,3 +319,55 @@ func TestIssueTrackersBuildForASource(t *testing.T) {
 		t.Errorf("Tracker() of a tracker with no adapter = %v, want %s naming it", err, ports.ReasonTrackerError)
 	}
 }
+
+// TestLaggingListAndIssueOpen covers #161: a tracker whose list lags goes on
+// listing an issue closed, as Jira's search index can for minutes; IssueOpen
+// reads the issue on its own and says it is closed, unlabelled or not there.
+func TestLaggingListAndIssueOpen(t *testing.T) {
+	ctx := context.Background()
+	tr := fake.NewIssueTracker()
+	tr.Project(trackerProject)
+	port := tr.For(trackerProject, tr.Account("theos-bot", fake.TrackerAccess{Issues: true}))
+	reader, ok := port.(ports.IssueReader)
+	if !ok {
+		t.Fatal("the fake tracker's port is no ports.IssueReader")
+	}
+	closed, _ := tr.File(trackerProject, "ada", "Closed", "")
+	unlabelled, _ := tr.File(trackerProject, "ada", "Unlabelled", "")
+	open, _ := tr.File(trackerProject, "ada", "Open", "")
+	pull, _ := tr.PullRequest(trackerProject, "ada", "A pull request")
+	tr.Lag(trackerProject, true)
+	if err := port.CloseIssue(ctx, closed, ports.CloseNotPlanned); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.Unlabel(trackerProject, unlabelled); err != nil {
+		t.Fatal(err)
+	}
+	listed := func() []int {
+		list, err := port.ListOpenIssues(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]int, 0, len(list.Issues))
+		for _, i := range list.Issues {
+			out = append(out, i.Number)
+		}
+		return out
+	}
+	if got := listed(); fmt.Sprint(got) != fmt.Sprint([]int{closed, open}) {
+		t.Errorf("a lagging list = %v, want the closed issue still listed: %v", got, []int{closed, open})
+	}
+	for n, want := range map[int]bool{closed: false, unlabelled: false, open: true, pull: false, 99: false} {
+		if got, err := reader.IssueOpen(ctx, n); err != nil || got != want {
+			t.Errorf("IssueOpen(%d) = %v, %v; want %v", n, got, err, want)
+		}
+	}
+	tr.Lag(trackerProject, false)
+	if got := listed(); fmt.Sprint(got) != fmt.Sprint([]int{open}) {
+		t.Errorf("the list caught up = %v, want %v", got, []int{open})
+	}
+	tr.Down(true)
+	if _, err := reader.IssueOpen(ctx, open); ports.IssuesReason(err) != ports.ReasonTrackerUnavailable {
+		t.Errorf("IssueOpen() of a tracker that is down = %v, want %s", err, ports.ReasonTrackerUnavailable)
+	}
+}

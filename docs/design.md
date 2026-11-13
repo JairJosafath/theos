@@ -1474,9 +1474,13 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   `model/requests.yaml`, and `brief.md` names the request by its source
   and key. Taking the label off reads as closing the item: the request
   leaves `status.requests`, and the factory writes nothing more on the item
-  and doesn't close it; the label put back is a new request. A workflow
-  that can't close the item as asked is `Requests=False`, `CannotClose`,
-  the comment posted all the same; a team or project the credential can't
+  and doesn't close it; the label put back is a new request. An item the
+  operator closed is no new request, however long the tracker's search
+  lags behind it: before an item becomes a request the operator reads that
+  item on its own, and takes it only while it is open and labelled. A
+  workflow that can't close the item as asked is `Requests=False`,
+  `CannotClose`, the comment posted all the same and the close tried again
+  every ten minutes; a team or project the credential can't
   see is `TrackerNotFound` (docs/plans/requests-and-chat.md, step 10).
 - **The person answers in prompts.** Reviewers' suggestions
   (`status/proposed`) and failed issues (`status/needs-human`) in the Brief's

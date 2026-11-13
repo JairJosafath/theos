@@ -353,6 +353,43 @@ func TestLabelTakenOff(t *testing.T) {
 	}
 }
 
+// TestIssueOpen covers #161: Jira's search index can lag behind a change for
+// minutes and longer, so an item the factory closed is still listed. Read on
+// its own, the item is listed while its status isn't Done and it carries the
+// label; one done, unlabelled, moved to another project or never filed isn't,
+// with no error.
+func TestIssueOpen(t *testing.T) {
+	ctx := context.Background()
+	s := newSite(t)
+	s.Project("OPS")
+	reader, ok := s.tr.(ports.IssueReader)
+	if !ok {
+		t.Fatal("the Jira tracker is no ports.IssueReader")
+	}
+	open, closed, finished := s.file(titleDarkMode, ""), s.file(titleExport, ""), s.file("Finished", "")
+	unlabelled, moved := s.file("Unlabelled", ""), s.file("Moved", "")
+	s.Lag(testProject, true)
+	if err := s.tr.CloseIssue(ctx, closed, ports.CloseNotPlanned); err != nil {
+		t.Fatal(err)
+	}
+	s.Finish(testProject, finished)
+	s.Unlabel(testProject, unlabelled, testLabel)
+	s.Move(testProject, moved, "OPS")
+	if got := listed(t, s.tr); !slices.Equal(got, []int{open, closed, finished}) {
+		t.Fatalf("the lagging search lists %v, want the items done still listed: %v", got,
+			[]int{open, closed, finished})
+	}
+	for n, want := range map[int]bool{open: true, closed: false, finished: false, unlabelled: false, moved: false,
+		0: false, 5000: false} {
+		if got, err := reader.IssueOpen(ctx, n); err != nil || got != want {
+			t.Errorf("IssueOpen(%d) = %v, %v; want %v", n, got, err, want)
+		}
+	}
+	s.Down(true)
+	_, err := reader.IssueOpen(ctx, open)
+	wantReason(t, err, ports.ReasonTrackerUnavailable)
+}
+
 // TestMovedItem covers #157: Jira keeps the old key of an item that moved to
 // another project and answers a call for it with the item as it is now
 // (Atlassian's reference for "Get issue"), so the factory would comment on

@@ -1004,24 +1004,68 @@ What the step chose where the plan says nothing:
   source, by `source:key` alone. The display name is in
   `model/requests.yaml` and nowhere else; a spec holds that the
   description's words reach no other workspace file.
-- **`CannotClose`** needs no code of its own: it is a port reason, the
-  comment comes before the close in every stage, and a request whose close
-  failed stays in `status.requests`, so the next read finds its comment by
-  the marker, posts none again and tries the close again. The fake tracker
-  gained `CannotClose(project, why)`, and `Unlabel` and `Label`, an open
-  item no list shows, for the specs.
+- **`CannotClose`** is a port reason, the comment comes before the close in
+  every stage, and a request whose close failed stays in
+  `status.requests`, so a later read finds its comment by the marker, posts
+  none again and tries the close again. A workflow that has no way to close
+  an item won't have one a second later, so the refusal is kept in memory
+  (`requestsHeld`) and the close, with the fresh read of the source an owed
+  answer forces, waits for the suggestions recheck rather than coming on
+  every reconcile; the `Requests` condition says `CannotClose` all along
+  (review of #161, `TestACloseTheWorkflowRefusesWaitsForTheRecheck`). The
+  fake tracker gained `CannotClose(project, why)`, and `Unlabel` and
+  `Label`, an open item no list shows, for the specs.
+- **An item the Brief closed is no new request, whatever a lagging search
+  says** (review of #161). A source's list is a search, and Jira's index
+  can lag behind a change for minutes and sometimes longer (step 6 as
+  built, Jira): the item a round skipped, or the Brief declined or released
+  and closed, is listed again on the next fresh search. It was read as a
+  new request, `Accepted` in `On`, or in `Ask` while its number was still
+  in `accepted` (which nobody can have pruned inside the window, since
+  `status.requestSourcesSettled` can't list a number the search still
+  returns). A second round then planned it, posted a second comment (its
+  round marker differs, so the dedupe missed it) and could file its issues
+  twice. The fix rests on the item itself, not on the search: a tracker
+  whose list is a search is a `ports.IssueReader`, whose `IssueOpen(number)`
+  reads the one item, which no index lags (Jira's `GET /issue/{key}`,
+  Linear's `issue(id:)`), and says whether the list should show it: open
+  and carrying the label. Before an item of a source becomes a request, one
+  no request is kept for in `status.requests`, the Brief reads it so, and
+  leaves it out unless it is open. That holds after an operator restart and
+  through a lag of any length, since the truth is the item's state, which
+  the Brief's close set. In memory, as a cheap first filter, each read
+  keeps what the Brief closed (`forgetIssue`) and what `IssueOpen` said,
+  with when, until the list no longer shows the item: within a suggestions
+  recheck the item is not read again, so a lagging item costs one read per
+  recheck. A read that fails leaves the item out of that pass and names the
+  `Requests` condition. Both adapters and the fake tracker are
+  `IssueReader`s; the fake gained `Lag(project, on)`, a list that goes on
+  showing closed issues, and `jiratest` the same for its search. A
+  repository's GitHub list doesn't lag that way and its adapter is no
+  `IssueReader`: there the in-memory filter alone applies. A capability,
+  not a fifth `IssueTracker` method, so the GitHub adapter and its contract
+  suite are unchanged. A durable mark on the Brief (a list of closed
+  numbers in status) was the other way; it would grow with every request
+  and need its own pruning, where the item already holds the answer.
 - **The condition names a source as `request source <name>`,** in
   `Reading the issues of …` and before a failure's message.
 
 Left as it is, and why:
 
-- **Jira's lagging list** (step 6 as built, Jira) can list an item the
-  factory just closed once more. A declined item is commented on once,
-  by its marker, and Jira leaves a closed item closed. A skipped one could
-  come back for minutes as a new request, `Waiting`, or `Accepted` while its
-  number is still in `accepted`, and so be taken by a later round. Only a
-  real site shows how long the lag is; until then the number dropped from
-  `accepted` (`status.requestSourcesSettled` lists it) closes the gap.
+- **What the lag still leaves.** A person who reopens, or relabels, an
+  item the Brief closed less than a suggestions recheck ago waits up to that
+  recheck before it is a request again: the in-memory filter skips it
+  unread until then (after a restart, it is read at once). On a repository,
+  whose GitHub adapter is no `IssueReader`, a closed issue a lagging list
+  still showed after a restart, or after the recheck, would be read as a
+  request as before; GitHub's issue list has not been seen to lag so. The
+  envtest specs of the lag run on the fake tracker; how long a real Jira
+  site lags is still unread, and no longer matters to the outcome.
+- **Not done: an envtest of `Merged in <PR> for <issue>`** (review of
+  #161, a nit). The line is covered by `TestRequestComments` and
+  `TestMergedPulls`; seeing it end to end needs a merged Task of the
+  linter in the Brief's specs, which the Crew's release logic also reads,
+  and isn't cheap to make without a new helper. A follow-up.
 - **Whether Linear keeps a `<!-- -->` marker in a comment's body,** and
   whether Jira's document format does, is still unread (step 6 as built,
   Linear): the markers are the comment's last lines there, shown, and the

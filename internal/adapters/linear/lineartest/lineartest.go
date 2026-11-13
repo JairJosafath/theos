@@ -493,7 +493,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		data, err = s.openIssues(req.Variables, false)
 	case "TheosOpenIssueStamps":
 		data, err = s.openIssues(req.Variables, true)
-	case "TheosIssue":
+	case "TheosIssue", "TheosIssueOpen":
 		data, err = s.issueOf(req.Variables, false)
 	case "TheosIssueComments":
 		data, err = s.comments(req.Variables, k)
@@ -603,6 +603,10 @@ func (s *Server) teamJSON(key string) map[string]any {
 // issueJSON is every field of the item that the adapter may ask for.
 func (s *Server) issueJSON(i *issue) map[string]any {
 	st := s.state(i)
+	labels := make([]map[string]any, 0, len(i.labels))
+	for _, l := range i.labels {
+		labels = append(labels, map[string]any{keyName: l})
+	}
 	var creator, bot, external any
 	switch {
 	case i.by.User != "":
@@ -621,6 +625,7 @@ func (s *Server) issueJSON(i *issue) map[string]any {
 		"team":                s.teamJSON(i.team),
 		"state":               map[string]any{"id": st.id, keyName: st.Name, keyType: st.Type},
 		"previousIdentifiers": i.previous,
+		"labels":              map[string]any{keyNodes: labels},
 	}
 }
 

@@ -169,6 +169,20 @@ type TeamMembers interface {
 	TeamMember(ctx context.Context, team, login string) (bool, error)
 }
 
+// IssueReader is an optional capability of an IssueTracker whose list is a
+// search, which may lag behind the issues themselves the way a search index
+// does: an issue closed a minute ago can still be listed (#161). It reads one
+// issue on its own, which never lags, so a Brief can tell an issue it closed
+// from a new one before it makes a request of it. Find it with a type
+// assertion; a tracker whose list doesn't lag needn't have it.
+type IssueReader interface {
+	// IssueOpen reports whether issue number is one ListOpenIssues lists
+	// now, read from the issue itself: open and, where the source has a
+	// Label, carrying it. An issue deleted, moved to another project or never
+	// filed is false, with no error.
+	IssueOpen(ctx context.Context, number int) (bool, error)
+}
+
 // TrackerSource is where a Brief reads requests: a project of a tracker.
 type TrackerSource struct {
 	// Tracker names the kind of tracker, as IssueTrackers key their
