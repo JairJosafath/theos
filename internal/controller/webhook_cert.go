@@ -71,8 +71,8 @@ const (
 // serves v1beta1 alone (#1963), so none is today: the webhook, its
 // certificate and the migrator stay, so the next version brings none of them.
 var WebhookCRDs = []string{
-	"agents.theos.factory.io", "benchmarks.theos.factory.io", "briefs.theos.factory.io",
-	"bundles.theos.factory.io", "chats.theos.factory.io", "computes.theos.factory.io",
+	"agents.theos.factory.io", "alertsources.theos.factory.io", "benchmarks.theos.factory.io",
+	"briefs.theos.factory.io", "bundles.theos.factory.io", "chats.theos.factory.io", "computes.theos.factory.io",
 	"connectors.theos.factory.io", "containers.theos.factory.io", "crews.theos.factory.io",
 	"datastores.theos.factory.io", "deployments.theos.factory.io", "deploytargets.theos.factory.io",
 	"domains.theos.factory.io", "frameworks.theos.factory.io", "gitproviders.theos.factory.io",
@@ -82,7 +82,7 @@ var WebhookCRDs = []string{
 }
 
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;patch,resourceNames=agents.theos.factory.io;benchmarks.theos.factory.io;briefs.theos.factory.io;bundles.theos.factory.io;chats.theos.factory.io;computes.theos.factory.io;connectors.theos.factory.io;containers.theos.factory.io;crews.theos.factory.io;datastores.theos.factory.io;deployments.theos.factory.io;deploytargets.theos.factory.io;domains.theos.factory.io;frameworks.theos.factory.io;gitproviders.theos.factory.io;people.theos.factory.io;projects.theos.factory.io;relationships.theos.factory.io;scorers.theos.factory.io;sessions.theos.factory.io;softwaresystems.theos.factory.io;standards.theos.factory.io;tasks.theos.factory.io;testenvironments.theos.factory.io
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;patch,resourceNames=agents.theos.factory.io;alertsources.theos.factory.io;benchmarks.theos.factory.io;briefs.theos.factory.io;bundles.theos.factory.io;chats.theos.factory.io;computes.theos.factory.io;connectors.theos.factory.io;containers.theos.factory.io;crews.theos.factory.io;datastores.theos.factory.io;deployments.theos.factory.io;deploytargets.theos.factory.io;domains.theos.factory.io;frameworks.theos.factory.io;gitproviders.theos.factory.io;people.theos.factory.io;projects.theos.factory.io;relationships.theos.factory.io;scorers.theos.factory.io;sessions.theos.factory.io;softwaresystems.theos.factory.io;standards.theos.factory.io;tasks.theos.factory.io;testenvironments.theos.factory.io
 
 // WebhookCert keeps the webhook server's certificate: it reads the Secret
 // Namespace/Secret or issues a CA and a serving certificate for

@@ -1,0 +1,22 @@
+# #187: the six envtest specs that name it, run with the AlertSourceSpec CEL
+# rule "containerLabel and namespaceLabel must differ" dropped from
+# api/v1beta1/alertsource_types.go and the CRD regenerated (make manifests);
+# the rule was restored after. Every create or update the rule refuses was
+# accepted, so each spec failed:
+#   go test ./internal/controller/ -v -run '^TestControllers$' -ginkgo.focus '#187'
+# With the rule, the same six pass (Ran 23 of 830 with -ginkgo.focus AlertSource: 23 Passed).
+
+  [FAILED] Expected an error, got nil
+  [FAILED] Expected an error, got nil
+  [FAILED] Expected an error, got nil
+  [FAILED] Expected an error, got nil
+  [FAILED] Expected an error, got nil
+  [FAILED] Expected an error, got nil
+  [FAIL] AlertSource refuses a spec its CEL rules or schema reject [It] #187: containerLabel and namespaceLabel both set to one name
+  [FAIL] AlertSource refuses a spec its CEL rules or schema reject [It] #187: containerLabel set to namespaceLabel's default
+  [FAIL] AlertSource refuses a spec its CEL rules or schema reject [It] #187: namespaceLabel set to containerLabel's default
+  [FAIL] AlertSource #187: refuses an update that makes containerLabel and namespaceLabel one name [It] both set to one name
+  [FAIL] AlertSource #187: refuses an update that makes containerLabel and namespaceLabel one name [It] containerLabel set to namespaceLabel's default, namespaceLabel left at it
+  [FAIL] AlertSource #187: refuses an update that makes containerLabel and namespaceLabel one name [It] namespaceLabel set to containerLabel's default, containerLabel left at it
+Ran 6 of 830 Specs in 7.387 seconds
+FAIL! -- 0 Passed | 6 Failed | 0 Pending | 824 Skipped

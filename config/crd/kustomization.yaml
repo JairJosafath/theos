@@ -26,6 +26,7 @@ resources:
 - bases/theos.factory.io_scorers.yaml
 - bases/theos.factory.io_benchmarks.yaml
 - bases/theos.factory.io_testenvironments.yaml
+- bases/theos.factory.io_alertsources.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
