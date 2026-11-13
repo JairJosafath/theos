@@ -472,6 +472,221 @@ spec:
                     || !(a.source.path == '.' || b.source.path == '.' || a.source.path
                     == b.source.path || a.source.path.startsWith(b.source.path + '/')
                     || b.source.path.startsWith(a.source.path + '/'))))
+              requestSources:
+                description: |-
+                  requestSources are trackers the Brief takes requests from, besides the
+                  GitHub issues of a releases repository (docs/plans/requests-and-chat.md,
+                  decisions 12 to 15): a Linear team or a Jira project, where an open item
+                  with the entry's label is a request. Nothing reads them yet (step 10).
+                items:
+                  description: |-
+                    BriefRequestSource is a tracker a Brief takes requests from: exactly one of
+                    a Linear team and a Jira project, and a label. An open item of the team or
+                    project that carries the label is a request: the label is the door, so no
+                    authors or teams are offered (decision 13). The item becomes input to a
+                    planning round once a person accepts it (Ask), or at once (On).
+                  properties:
+                    accepted:
+                      description: |-
+                        accepted are the numbers of the items a person let through, in Ask:
+                        412 for ENG-412.
+                      items:
+                        format: int32
+                        minimum: 1
+                        type: integer
+                      maxItems: 200
+                      type: array
+                      x-kubernetes-list-type: set
+                    credentialsSecretRef:
+                      description: |-
+                        credentialsSecretRef names a Secret in the Brief's namespace that only
+                        the operator reads: for Linear the key token, an API key; for Jira the
+                        keys email and token, an Atlassian account's address and an API token
+                        with the scopes read:jira-work, write:jira-work and read:jira-user.
+                      properties:
+                        name:
+                          description: name of the referenced object.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    declined:
+                      description: |-
+                        declined are the numbers of the items a person turned down; the Brief
+                        says so on each and closes it.
+                      items:
+                        format: int32
+                        minimum: 1
+                        type: integer
+                      maxItems: 200
+                      type: array
+                      x-kubernetes-list-type: set
+                    jira:
+                      description: |-
+                        jira is a Jira Cloud project and the label that makes its items
+                        requests.
+                      properties:
+                        close:
+                          description: |-
+                            close says how the Brief closes an item, when the site's workflow or
+                            resolutions differ from Jira's defaults.
+                          properties:
+                            completed:
+                              description: |-
+                                completed is how an item is closed as completed. Unset takes the first
+                                transition the item offers into a status of category Done, with the
+                                resolution Done where the transition asks for one.
+                              properties:
+                                resolution:
+                                  description: |-
+                                    resolution is the name of the resolution sent, where the transition's
+                                    screen takes one.
+                                  maxLength: 255
+                                  minLength: 1
+                                  type: string
+                                status:
+                                  description: status is the name of a status of category
+                                    Done the item is moved to.
+                                  maxLength: 255
+                                  minLength: 1
+                                  type: string
+                              type: object
+                            notPlanned:
+                              description: |-
+                                notPlanned is how an item is closed as not planned. Unset takes the
+                                first transition the item offers into a status of category Done, with
+                                the resolution Won't Do where the transition asks for one.
+                              properties:
+                                resolution:
+                                  description: |-
+                                    resolution is the name of the resolution sent, where the transition's
+                                    screen takes one.
+                                  maxLength: 255
+                                  minLength: 1
+                                  type: string
+                                status:
+                                  description: status is the name of a status of category
+                                    Done the item is moved to.
+                                  maxLength: 255
+                                  minLength: 1
+                                  type: string
+                              type: object
+                          type: object
+                        cloudID:
+                          description: |-
+                            cloudID is the site's ID at Atlassian, which a scoped token's address
+                            holds: https://api.atlassian.com/ex/jira/<cloudID>.
+                          maxLength: 64
+                          minLength: 1
+                          pattern: ^[A-Za-z0-9][A-Za-z0-9-]*$
+                          type: string
+                        label:
+                          description: |-
+                            label is the label that makes an item a request; a Jira label is one
+                            word.
+                          maxLength: 100
+                          minLength: 1
+                          pattern: ^\S+$
+                          type: string
+                        project:
+                          description: |-
+                            project is the project's key, the prefix of its items' keys (SHOP in
+                            SHOP-412).
+                          maxLength: 100
+                          minLength: 1
+                          pattern: ^[A-Za-z][A-Za-z0-9_]*$
+                          type: string
+                        site:
+                          description: |-
+                            site is the https address people open, such as
+                            https://acme.atlassian.net, with no path; the factory's links point to it.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: site must be an https address with no path, such
+                              as https://acme.atlassian.net
+                            rule: self.matches('^https://[A-Za-z0-9]([-A-Za-z0-9.]*[A-Za-z0-9])?(:[0-9]{1,5})?$')
+                      required:
+                      - cloudID
+                      - label
+                      - project
+                      - site
+                      type: object
+                    linear:
+                      description: linear is a Linear team and the label that makes
+                        its items requests.
+                      properties:
+                        label:
+                          description: label is the name of the label that makes an
+                            item a request.
+                          maxLength: 100
+                          minLength: 1
+                          pattern: ^\S(.*\S)?$
+                          type: string
+                        team:
+                          description: team is the team's key, the prefix of its items'
+                            keys (ENG in ENG-412).
+                          maxLength: 100
+                          minLength: 1
+                          pattern: ^[A-Za-z0-9_]+$
+                          type: string
+                      required:
+                      - label
+                      - team
+                      type: object
+                    mode:
+                      default: Ask
+                      description: |-
+                        mode is Off, which reads no item; Ask (the default), where a request
+                        waits in status.needsYou until its number is in accepted; or On, which
+                        lets each request through when first seen, so whoever may label an
+                        item puts its text before the planner.
+                      enum:
+                      - "Off"
+                      - Ask
+                      - "On"
+                      type: string
+                    name:
+                      description: |-
+                        name names the source, a DNS label. A request from it is named
+                        <name>:<key> in status.needsYou and status.roundRequests, such as
+                        product:ENG-412.
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: 'name must be a DNS label: lowercase letters, digits
+                          and ''-'''
+                        rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+                  required:
+                  - credentialsSecretRef
+                  - name
+                  type: object
+                  x-kubernetes-validations:
+                  - message: a request source names exactly one of linear and jira
+                    rule: has(self.linear) != has(self.jira)
+                  - message: an item number can't be both accepted and declined
+                    rule: '!has(self.accepted) || !has(self.declined) || !self.accepted.exists(n,
+                      n in self.declined)'
+                maxItems: 10
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: 'at most one request source per Linear team: an item is
+                    read once'
+                  rule: self.all(a, !has(a.linear) || self.exists_one(b, has(b.linear)
+                    && b.linear.team.lowerAscii() == a.linear.team.lowerAscii()))
+                - message: 'at most one request source per Jira site and project:
+                    an item is read once'
+                  rule: self.all(a, !has(a.jira) || self.exists_one(b, has(b.jira)
+                    && (b.jira.site.lowerAscii() == a.jira.site.lowerAscii() || b.jira.cloudID.lowerAscii()
+                    == a.jira.cloudID.lowerAscii()) && b.jira.project.lowerAscii()
+                    == a.jira.project.lowerAscii()))
             required:
             - idea
             type: object
@@ -650,8 +865,9 @@ spec:
                     kind:
                       description: |-
                         kind of the item: Issue, Task, Crew, Container or Request. A Request
-                        is answered in spec.releases[].requests, and a Container whose Standard
-                        files an update left out on the Container, not by a prompt.
+                        is answered in spec.releases[].requests or spec.requestSources, and a
+                        Container whose Standard files an update left out on the Container,
+                        not by a prompt.
                       enum:
                       - Issue
                       - Task
@@ -662,7 +878,7 @@ spec:
                     name:
                       description: |-
                         name of the item; container#number for an issue, owner/name#number for
-                        a request.
+                        a request, or source:key for a request source's item.
                       maxLength: 320
                       type: string
                     reason:
@@ -1019,8 +1235,9 @@ spec:
                     kind:
                       description: |-
                         kind of the item: Issue, Task, Crew, Container or Request. A Request
-                        is answered in spec.releases[].requests, and a Container whose Standard
-                        files an update left out on the Container, not by a prompt.
+                        is answered in spec.releases[].requests or spec.requestSources, and a
+                        Container whose Standard files an update left out on the Container,
+                        not by a prompt.
                       enum:
                       - Issue
                       - Task
@@ -1031,7 +1248,7 @@ spec:
                     name:
                       description: |-
                         name of the item; container#number for an issue, owner/name#number for
-                        a request.
+                        a request, or source:key for a request source's item.
                       maxLength: 320
                       type: string
                     question:
@@ -1105,19 +1322,56 @@ spec:
                   repositoryURL is the Brief's own repository, where every round's plan
                   is kept.
                 type: string
-              requests:
+              requestSourcesSettled:
                 description: |-
-                  requests are the GitHub issues of spec.releases repositories taken as
-                  requests and still open, oldest first; at most 50. A request leaves
-                  the list once it is closed on GitHub.
+                  requestSourcesSettled are, per spec.requestSources entry, the numbers in
+                  its accepted and declined whose items are closed and no request has, as
+                  requestsSettled are for a releases repository.
                 items:
                   description: |-
-                    BriefRequest is a GitHub issue taken as a request: its text as it was when
-                    let through, and how far it got.
+                    BriefRequestSourceSettled are the answered numbers of one request source
+                    that do nothing more.
+                  properties:
+                    numbers:
+                      description: |-
+                        numbers are the item numbers in its entry's accepted or declined whose
+                        items are closed, as the last read of the source saw them.
+                      items:
+                        format: int32
+                        type: integer
+                      maxItems: 400
+                      type: array
+                      x-kubernetes-list-type: set
+                    source:
+                      description: source is the name of the spec.requestSources entry.
+                      maxLength: 63
+                      type: string
+                  required:
+                  - source
+                  type: object
+                maxItems: 10
+                type: array
+                x-kubernetes-list-map-keys:
+                - source
+                x-kubernetes-list-type: map
+              requests:
+                description: |-
+                  requests are the GitHub issues of spec.releases repositories and the
+                  items of spec.requestSources taken as requests and still open, oldest
+                  first; at most 50. A request leaves the list once it is closed on its
+                  tracker.
+                items:
+                  description: |-
+                    BriefRequest is a GitHub issue of a releases repository, or an item of a
+                    spec.requestSources entry, taken as a request: its text as it was when let
+                    through, and how far it got. A GitHub issue names its repository; an item
+                    names its source and its key, and no repository.
                   properties:
                     author:
-                      description: author is the issue's author's GitHub login.
-                      maxLength: 39
+                      description: |-
+                        author is the issue's author's GitHub login, or the display name of
+                        whoever made the item, on one line; unset when the tracker names nobody.
+                      maxLength: 100
                       type: string
                     body:
                       description: |-
@@ -1133,8 +1387,13 @@ spec:
                       maxItems: 20
                       type: array
                       x-kubernetes-list-type: atomic
+                    key:
+                      description: key is the item's key on its tracker, such as ENG-412.
+                      maxLength: 120
+                      type: string
                     number:
-                      description: number is the issue's number.
+                      description: number is the issue's number, or the digits of
+                        the item's key.
                       format: int32
                       minimum: 1
                       type: integer
@@ -1144,7 +1403,8 @@ spec:
                       maxLength: 100
                       type: string
                     repository:
-                      description: repository is owner/name on github.com.
+                      description: repository is owner/name on github.com, for a GitHub
+                        issue.
                       maxLength: 140
                       type: string
                     round:
@@ -1179,6 +1439,11 @@ spec:
                       description: since is when the Brief first saw it.
                       format: date-time
                       type: string
+                    source:
+                      description: source is the name of the spec.requestSources entry
+                        the item is from.
+                      maxLength: 63
+                      type: string
                     stage:
                       description: |-
                         stage is Waiting (for a person, in Ask), Accepted (for a round),
@@ -1205,12 +1470,15 @@ spec:
                       maxLength: 500
                       type: string
                   required:
-                  - author
                   - number
-                  - repository
                   - stage
                   - title
                   type: object
+                  x-kubernetes-validations:
+                  - message: a request names either its repository, or its source
+                      and key
+                    rule: has(self.repository) != has(self.source) && has(self.source)
+                      == has(self.key)
                 maxItems: 50
                 type: array
                 x-kubernetes-list-type: atomic
@@ -1270,7 +1538,8 @@ spec:
               roundRequests:
                 description: |-
                   roundRequests are the requests the running or last round took, by
-                  owner/name#number, as roundPrompts counts its prompts.
+                  owner/name#number, or source:key for a request source's item, as
+                  roundPrompts counts its prompts.
                 items:
                   maxLength: 200
                   type: string

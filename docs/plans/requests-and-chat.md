@@ -794,6 +794,60 @@ What the step chose where the plan says nothing:
   a pull request among the items, issues turned off, and closing a closed item
   again. `TestClosedItemStaysClosed` holds what Jira does instead.
 
+## Step 9 as built (#160)
+
+Atlassian's reference was not read again: step 6 as built, Jira, records
+the reading decision 20 asks for (the gateway's address with the cloud ID,
+basic auth with the e-mail address and a scoped token, and the three
+scopes), and decision 20 already carries its correction. `site` and
+`cloudID` are both required, as decision 20 says. How to find the cloud ID
+is still unread here; the guide (step 13) says how, and `cloudID` is
+loosened only if Atlassian documents a lookup the token may make.
+
+What the step chose where the plan says nothing:
+
+- **The fields' shapes follow the adapters'.** `name` is a DNS label, so
+  `<source>:<key>` holds no `/` or `#` and never equals an
+  `owner/name#N`. Jira's `project` and `cloudID` take the patterns the
+  Jira adapter checks (`^[A-Za-z][A-Za-z0-9_]*$` and
+  `^[A-Za-z0-9][A-Za-z0-9-]*$`, which a UUID matches but does not have to),
+  and its `label` is one word, since a Jira label has no space. Linear's
+  `team` is letters, digits and `_` (from memory; the Linear adapter only
+  refuses whitespace), and its `label` any text without space at either
+  end. `site` is an https origin with no path, so one site has one
+  spelling but for its case. Each takes at most 100 characters but the
+  name (63), the site (253), the cloud ID (64) and `close`'s names (255).
+- **One item is read once, whatever the mode.** "One team" and "one site
+  and project" compare without case, and two Jira entries are one project
+  when they share the project and either the site or the cloud ID. Unlike
+  `spec.releases`, where an entry in `Off` may share a repository, an entry
+  in `Off` counts: it becomes `Ask` by one field, and the rule stays simple.
+- **The item number lists are the releases entry's:** sets of at most 200,
+  each from 1, with the same CEL rule worded for an item.
+- **A request names either its repository or its source and key.** A CEL
+  rule on `status.requests[]` holds the operator to it: `repository`, or
+  `source` and `key` together, never both. `author` became optional with
+  `repository`, as "Found after the plan's review" in #160 asks: a tracker's
+  item may name nobody (an automation, an e-mail, a service desk), the
+  label is the door, and the adapters return an empty author (#156, #157).
+  `status.requestSourcesSettled` has the shape of `requestsSettled`, keyed
+  by `source`.
+- **The model names a request by `Request.Name()`:** `source:key` when
+  `Source` is set, else `owner/name#number`; `NewRequests`,
+  `WorkspaceRequests` and `model/requests.yaml` use it. The `needsYou`
+  line drops "by …" when there is no author, and its recommendation says
+  "the accepted requests of request source product". `model/requests.yaml`
+  gains `source` and `key`, and leaves `repository` and `author` out when
+  they are empty; a GitHub request's entry reads as before.
+  `ListRequests` breaks a tie of time by repository, then source, then
+  number.
+- **Left for step 10,** since nothing reads a source yet: the controller's
+  `modelRequests`, `recordRequests` and `recordSettled` carry `source` and
+  `key` (today they would drop a source's request, which no read makes),
+  a source's own `IsRequest` (the label, no author needed; GitHub's is
+  unchanged), `brief.md`'s words for a tracker's request and the
+  `Requests` condition's message.
+
 ## How we will know #61 is done
 
 The issue's done-when, by step:
