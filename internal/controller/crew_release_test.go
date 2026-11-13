@@ -75,6 +75,8 @@ func mergedTask(ns, name string, n int, commit string, at time.Time) {
 		task := getTask(g, ns, name)
 		completed := metav1.NewTime(at)
 		task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1beta1.TaskMerged, commit, &completed
+		// A merged change has its pull request (#220); the host has none of this number.
+		task.Status.PullRequest = int32(900 + n)
 		g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 	}).Should(Succeed())
 }
@@ -724,6 +726,7 @@ var _ = Describe("Crew release preparation", func() {
 			task := getTask(g, ns, task.Name)
 			completed := metav1.Now()
 			task.Status.Phase, task.Status.MergeCommit, task.Status.CompletedAt = c4v1beta1.TaskMerged, "fix-merge", &completed
+			task.Status.PullRequest = 950 // a merged change has its pull request (#220)
 			g.Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 		}).Should(Succeed())
 		Eventually(func(g Gomega) {
