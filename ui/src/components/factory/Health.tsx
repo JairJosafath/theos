@@ -1,7 +1,8 @@
-// The factory's health: its components, the node's usage, and the history
-// charts of the last hours, as the Factory area's dashboard grid
-// (docs/plans/done/ui-shell.md, step 2): a card per part of the factory, the node's
-// usage, the last hour's charts side by side, and the agent slots beside them.
+// The factory's health: its components, each node's usage, and the history
+// charts of the last hour, as the Factory area's dashboard grid
+// (docs/plans/done/ui-shell.md, step 2): a card per part of the factory, each
+// node's usage, the last hour's charts of the nodes together side by side, and
+// the agent slots beside them.
 
 import type { ReactNode } from 'react'
 import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../../k8s/health'
@@ -63,10 +64,10 @@ export function HealthDashboard({
       </section>
       <section className="panel dash-node" aria-labelledby="dash-node">
         <h2 className="panel-title small-title" id="dash-node">
-          Node
+          Nodes
         </h2>
         {reading ? (
-          <p className="panel-note">{problems.length ? 'Not read.' : 'Reading the node’s usage…'}</p>
+          <p className="panel-note">{problems.length ? 'Not read.' : 'Reading the nodes’ usage…'}</p>
         ) : (
           <>
             {health.nodes.map((node) => (
@@ -263,14 +264,19 @@ function Sparkline({
   )
 }
 
-/** The last hour of the API server's response time, CPU and memory. */
+/**
+ * The last hour of the API server's response time, CPU and memory. The CPU and
+ * memory are the cluster's: every node's usage added up, drawn against what the
+ * nodes can allocate together (#122). Each node on its own is in the panel above.
+ */
 function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) {
   const history = health.history ?? []
   if (history.length < 2) {
     return <p className="panel-note">The last hour fills in here: the UI samples the factory every 15 seconds.</p>
   }
   const points = history.map((s) => ({ ...s, t: Date.parse(s.at) }))
-  const node = health.nodes[0]
+  const cpuAllocatableMilli = health.nodes.reduce((n, node) => n + node.cpuAllocatableMilli, 0)
+  const memoryAllocatableBytes = health.nodes.reduce((n, node) => n + node.memoryAllocatableBytes, 0)
   const latest = points[points.length - 1]
   const worstApi = Math.max(...points.map((p) => p.apiMs))
   const stalls = points.filter((p) => p.apiFailed || p.apiMs >= API_STALL_MS)
@@ -284,15 +290,15 @@ function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) 
         series={[{ label: 'API', className: 'spark-api', values: points.map((p) => ({ t: p.t, v: p.apiMs })) }]}
         marks={stalls.map((p) => ({ t: p.t, className: 'spark-stall' }))}
       />
-      {health.metrics && node ? (
+      {health.metrics && cpuAllocatableMilli > 0 && memoryAllocatableBytes > 0 ? (
         <>
           <Sparkline
             title="CPU"
-            summary={`of ${formatCpu(node.cpuAllocatableMilli)}`}
-            max={node.cpuAllocatableMilli}
+            summary={`of ${formatCpu(cpuAllocatableMilli)}`}
+            max={cpuAllocatableMilli}
             now={now}
             series={[
-              { label: 'node', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.cpuMilli })) },
+              { label: 'nodes', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.cpuMilli })) },
               { label: 'CI', className: 'spark-ci', values: points.map((p) => ({ t: p.t, v: p.ciCpuMilli })) },
               {
                 label: 'agents',
@@ -303,11 +309,11 @@ function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) 
           />
           <Sparkline
             title="Memory"
-            summary={`now ${formatBytes(latest.memoryBytes)} of ${formatBytes(node.memoryAllocatableBytes)}`}
-            max={node.memoryAllocatableBytes}
+            summary={`now ${formatBytes(latest.memoryBytes)} of ${formatBytes(memoryAllocatableBytes)}`}
+            max={memoryAllocatableBytes}
             now={now}
             series={[
-              { label: 'node', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.memoryBytes })) },
+              { label: 'nodes', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.memoryBytes })) },
             ]}
           />
         </>

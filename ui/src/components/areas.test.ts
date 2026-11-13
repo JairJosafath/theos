@@ -275,4 +275,29 @@ describe('Factory', () => {
     expect(dash.querySelectorAll('.dash-parts .component').length).toBe(demoHealth(NOW).components.length)
     expect(dash.querySelector('.dash-slots')!.textContent).toContain('Agent slots')
   })
+
+  it('draws the last hour against every node together, not the first one listed (#122)', async () => {
+    const health = demoHealth(NOW)
+    const first = health.nodes[0]
+    health.nodes = [
+      { ...first, name: 'worker-a', cpuAllocatableMilli: 4000, memoryAllocatableBytes: 8 * 2 ** 30 },
+      { ...first, name: 'worker-b', cpuAllocatableMilli: 12000, memoryAllocatableBytes: 24 * 2 ** 30 },
+    ]
+    const { host } = await render(
+      createElement(FactoryArea, {
+        data: demoFactory(NOW),
+        connection: live,
+        health,
+        healthLoaded: true,
+        healthProblems: [],
+        onSelectTask: () => {},
+      }),
+    )
+    const charts = [...host.querySelectorAll('.dash-charts .spark')].map((c) => c.textContent)
+    expect(charts[1]).toContain('of 16.0 cores')
+    expect(charts[1]).toContain('nodes')
+    expect(charts[2]).toContain('of 32.0 GiB')
+    expect(host.querySelector('#dash-node')!.textContent).toBe('Nodes')
+    expect(host.querySelectorAll('.dash-node .node-usage').length).toBe(2)
+  })
 })
