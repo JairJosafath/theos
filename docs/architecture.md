@@ -194,9 +194,30 @@ in (`internal/controller/container_standard_adopt.go`, the rule in
 `internal/model/standardadoption.go`). It opens one pull request with the
 files that differ, kept in `status.standardAdoption`, which a person merges
 or closes; the operator never merges it. Once `main` holds the files the
-Standard protects, the Standard is recorded and the updates above take
+Standard protects, the Standard is recorded and the updates below take
 over. Until then the Task and the Crew read `standardNotOnMain` and start
 no run.
+
+1. `internal/controller` takes the ref the Container's Standard files are at from
+   `status.standard`, or before the first update from `scaffoldedFrom`
+   (`model.ScaffoldedRef`). It compares it with the Standard's ref.
+2. `internal/adapters/git` fetches the template at both refs; `internal/scaffold`
+   renders each with the scaffold's input (`RenderLayer`); the Gitea adapter reads
+   `main`'s copy of every path either render has (`ReadFiles`).
+3. `internal/scaffold.PlanUpdate` decides by whole files what to write, remove
+   and leave out. Nothing to write: the controller records the new ref.
+4. The Gitea adapter pushes one commit onto the `main` commit it read
+   (`PushBranch`, branch `model.StandardUpdateBranch`) and opens a pull request
+   with `model`'s title and body. The controller records it in
+   `status.standard.update`.
+5. Each later reconcile reads the pull request: merged, closed, conflicting,
+   pushed to by someone else, or waiting for CI. `model.NextStandardStep`
+   decides every step from the facts the controller reads, one read at a time:
+   whether to plan, record a merge, drop, stop, wait or merge. Once CI is green,
+   `model.StandardUpdateRefusal` checks the required checks and the paths, and
+   the Gitea adapter merges it as admin (`ForceMergePullRequest`). The controller
+   moves `status.standard.ref` and reports each step in the condition
+   `StandardUpdated`.
 
 ## Flow of a Git host's delivery
 
@@ -227,26 +248,28 @@ Polling stays the contract; a delivery only shortens the wait
    delivery, and enqueues the GitProvider when the later of the two changes;
    its reconciler writes `Events` `Receiving` (True) or `DeliveryRefused`.
 
-1. `internal/controller` takes the ref the Container's Standard files are at from
-   `status.standard`, or before the first update from `scaffoldedFrom`
-   (`model.ScaffoldedRef`). It compares it with the Standard's ref.
-2. `internal/adapters/git` fetches the template at both refs; `internal/scaffold`
-   renders each with the scaffold's input (`RenderLayer`); the Gitea adapter reads
-   `main`'s copy of every path either render has (`ReadFiles`).
-3. `internal/scaffold.PlanUpdate` decides by whole files what to write, remove
-   and leave out. Nothing to write: the controller records the new ref.
-4. The Gitea adapter pushes one commit onto the `main` commit it read
-   (`PushBranch`, branch `model.StandardUpdateBranch`) and opens a pull request
-   with `model`'s title and body. The controller records it in
-   `status.standard.update`.
-5. Each later reconcile reads the pull request: merged, closed, conflicting,
-   pushed to by someone else, or waiting for CI. `model.NextStandardStep`
-   decides every step from the facts the controller reads, one read at a time:
-   whether to plan, record a merge, drop, stop, wait or merge. Once CI is green,
-   `model.StandardUpdateRefusal` checks the required checks and the paths, and
-   the Gitea adapter merges it as admin (`ForceMergePullRequest`). The controller
-   moves `status.standard.ref` and reports each step in the condition
-   `StandardUpdated`.
+### Alerts on the same listener
+
+The listener also serves `POST /alerts/<namespace>/<alertsource>`
+(`model.AlertsPath`), so `--git-events-bind-address` turns it on too
+([alerts.md](alerts.md), [plans/alerts.md](plans/alerts.md), #64). An alert
+is not a hint: nobody can be asked again what fired, so the delivery is the
+fact.
+
+1. `controller.AlertReceiver` (`internal/controller/alert_receiver.go`,
+   mounted as `GitEventsReceiver.Alerts`) reads at most 1 MiB (413), finds
+   the AlertSource (404), reads its Secret live and checks the delivery with
+   `model.AlertDeliveryAuthentic` (401), parses it with `model.ParseAlerts`
+   (400), puts its alerts in the source's inbox in memory (503 when the inbox
+   is full or the operator is stopping) and answers 202.
+2. The AlertSource reconciler (`internal/controller/alertsource_controller.go`,
+   `alertsource_drain.go`) drains the inbox: for each alert its Container
+   (`model.AlertContainer`), the facts from the Git host, `model.AlertStep`,
+   the issue or comment through `ports.Issues`, then one status write; only
+   then is the alert dropped from the inbox.
+3. On SIGTERM the receiver stops taking deliveries and drains until
+   `--alert-drain-timeout` (the chart's `alerts.drainTimeout`); on leadership
+   lost it drains nothing.
 
 ## Flow of one Session
 

@@ -90,7 +90,9 @@ install on a cluster of your own, real agents with a Claude token, a model
 and a Crew of your own, releases and deploys. Have a repository already?
 [docs/adopt.md](docs/adopt.md) puts a Crew on it as it is, checked by your
 own command and CI, with every change waiting for your approval until you
-say otherwise.
+say otherwise. Apps already watched by Alertmanager or Sentry?
+[docs/alerts.md](docs/alerts.md) turns their alerts into bugs for the
+loop.
 
 ## How it works
 
@@ -112,7 +114,8 @@ The board's source is [docs/images/how-it-works.excalidraw](docs/images/how-it-w
 Shipping goes through the tool that owns each place an app runs (the GitHub API,
 CloudFormation, Argo CD or Flux): the factory hands it each release and shows
 the health that tool reports. Monitoring the apps and provisioning real
-databases are left to existing tools such as Crossplane.
+databases are left to existing tools such as Prometheus and Crossplane;
+their alerts come back as bugs.
 
 ## The loop
 
@@ -140,7 +143,8 @@ idea or bug ─▶ triage ─▶ spec ─▶ [you review the spec] ─▶ implem
   against what it does before it merges.
 - **Ship and review the product.** Releases, and the deploys you approve.
 - **Monitor.** A deploy that turns degraded or fails files a bug, which goes
-  back to triage.
+  back to triage, and so does an alert from Alertmanager, Sentry or any tool
+  that posts JSON ([docs/alerts.md](docs/alerts.md)).
 
 Each stage is off until a Crew names its Agent:
 

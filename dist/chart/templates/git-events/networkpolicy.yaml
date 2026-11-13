@@ -1,6 +1,7 @@
 {{- if .Values.gitEvents.enabled }}
 # Only the Git host reaches the receiver's port: the pods of Gitea's namespace,
-# or gitEvents.from (docs/plans/done/git-events.md, decision 10). Not behind
+# or gitEvents.from (docs/plans/done/git-events.md, decision 10), and the
+# senders of alerts the user names in alerts.from. Not behind
 # networkPolicy.enabled: it is the fence on that port. A policy that selects
 # the manager isolates it, so without networkPolicy.enabled the manager's
 # other ports stay open to all, as they are without any policy.
@@ -31,6 +32,16 @@ spec:
       ports:
         - port: {{ .Values.gitEvents.port }}
           protocol: TCP
+    {{- with .Values.alerts.from }}
+    # The senders of alerts, and the alert Ingress's controller: alerts.from
+    # alone. Rendered only when it names a peer, since a rule with no from
+    # admits everyone (docs/plans/alerts.md, "Step 4 as built").
+    - from:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        - port: {{ $.Values.gitEvents.port }}
+          protocol: TCP
+    {{- end }}
     {{- if not .Values.networkPolicy.enabled }}
     - ports:
         - port: {{ .Values.manager.healthProbe.port }}

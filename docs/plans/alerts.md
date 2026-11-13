@@ -457,7 +457,7 @@ scope"): it scrapes no app and holds no alert rules. It takes deliveries.
 | 1. The plan and the rules (this one) | #64 | this file; `docs/design.md` and `ROADMAP.md` say what is planned; `internal/model/alert*.go` with table tests on the recorded deliveries in `internal/model/testdata/alerts/`, deduplication, the daily limit and hostile input included |
 | 2. The `AlertSource` kind (done) | #64, #187 | `kubebuilder create api --group theos --version v1beta1 --kind AlertSource --resource --controller`; spec and status as decision 1, field names and integer widths included, with the CRD's patterns and CEL (`type` immutable, a route has exactly one of `namespace` and `project`, `commentInterval` at least `1m`, the two labels' minimum length and pattern, and the two labels differ with their defaults applied, `theos_container` and `namespace` for one left out, at create and at update: #187); a sample in `config/samples`; envtest: each rule's failing case, and for #187 one spec per case (both set and equal; one set to the other's default) that fails without the rule; the reconciler sets `Ready` from the Secret (`SecretMissing`, an empty value included, else `ReceiverOff`); `make validate-yaml` passes. `make manifests` writes the CRD and the role into `dist/chart/` too, a protected path: the owner's session may, and the commit says so |
 | 3. The receiver and the filing (done) | #64 | `model.AlertDeliveryAuthentic` (decision 3) table-tested, an empty `token` and an empty `secret` among its cases; `POST /alerts/{namespace}/{name}` on the Git events listener; the reconciler drains the inbox as decision 2 says, on SIGTERM too, until `--alert-drain-timeout` (default `5s`) and never on leadership lost, and requeues for what is owed, on a clock the specs move (`Now`, as the Crew's reconciler has); it settles a Container's old day (`model.AlertDayOwed`) before the first `model.AlertStep` of a new one, passes `ClosedAt` and `Full` to `model.AlertStep`, gives `Filed` the number of an open issue the marker finds (decision 8) and keeps no record of an `AlertOverflow`; the deploy monitor's bug gets `source/monitor`; the metric, with `result="dropped"`; envtest: a signed delivery files one issue, a second comments once the interval passed, an unsigned one is refused and writes nothing, an alert that names no known Container is counted on `status.unmatched` and files nothing, the limit folds, a lost status write files no second, an alert whose record made room and whose issue is open files no second, a fold of yesterday is said before today's first alert steps, an alert taken while the Git host fails is filed when it answers, one still in the inbox at the drain's deadline is counted as dropped. `make manifests` regenerates the role in `dist/chart/` (protected path, as step 2) |
-| 4. The chart and the guide | #64 | the chart's Service exposes the path and a value gives it an Ingress for senders outside the cluster (`dist/chart` is a protected path); `docs/alerts.md` shows the Alertmanager receiver's YAML, the Sentry integration's settings and a `curl` for the generic type; README, `docs/comparison.md`, `docs/design.md` ("Out of scope", the Alerts rule) and `ROADMAP.md` say it is built |
+| 4. The chart and the guide (done) | #64, #236 | the chart's Service exposes the path and a value gives it an Ingress for senders outside the cluster (`dist/chart` is a protected path); `docs/alerts.md` shows the Alertmanager receiver's YAML, the Sentry integration's settings and a `curl` for the generic type; README, `docs/comparison.md`, `docs/design.md` ("Out of scope", the Alerts rule) and `ROADMAP.md` say it is built |
 
 ## What step 2 found
 
@@ -551,6 +551,50 @@ Where the decisions above said nothing, these are the choices.
 - **The deploy monitor's bug** is labelled `kind/bug`, `source/monitor` and
   `status/proposed`; it still looks its marker up among `kind/bug` issues,
   so one filed before this step is found.
+
+## Step 4 as built (#64)
+
+- **The path is the Git events Service's,** port `gitEvents.port`: no
+  Service or port of its own, since it is one listener. `values.yaml`,
+  the Service and the README say so.
+- **`alerts.drainTimeout`** (default `5s`) is the manager's
+  `--alert-drain-timeout`, rendered with the listener's flags. The chart
+  refuses a value that is no Go duration, so the manager doesn't fail to
+  start on one; it does not compare it with
+  `manager.terminationGracePeriodSeconds` (Helm parses no duration), and
+  the values comment says to keep it under.
+- **Who reaches the port is `alerts.from`, empty by default.** The
+  NetworkPolicy on `gitEvents.port` gets a second rule with those peers,
+  rendered only when the list names one: an empty `from` in a rule admits
+  everyone, which is what the default must not do. One list serves
+  in-cluster senders (Alertmanager's namespace) and the Ingress
+  controller's pods, since both are peers of the same port. A
+  NetworkPolicy fences a port, not a path, so a peer there reaches
+  `/git-events/` too; every delivery there is signed per GitProvider, and
+  the guide says so.
+- **`alerts.ingress`** (off) renders Ingress `<release>-alerts`: the path
+  `/alerts/` alone (`Prefix`), so `/git-events/` stays inside the cluster,
+  and always a `tls` section for `host` (decision 3: a bearer token over
+  plain HTTP is the credential in the clear). `className`, `host`,
+  `annotations` and `tlsSecretName` are settings; an empty
+  `tlsSecretName` leaves the certificate to the controller's default or
+  to cert-manager's annotation. The chart refuses the Ingress without
+  `gitEvents.enabled`, without a host, and without `alerts.from`: an
+  Ingress the policy keeps its controller out of would fail quietly.
+- **No credential in the chart:** each AlertSource's Secret is the
+  user's; the guide makes them with `kubectl create secret` from
+  `/dev/urandom` or from a file of Sentry's client secret.
+- **Tests:** `hack/chart-alerts_test.sh` renders the chart with the values
+  off and on and checks the policy's rules, the Ingress and each refusal;
+  `make helm-lint` renders the Ingress on as `chart-alerts.yaml`, which
+  `make validate-yaml` validates, and `HELM_ALL_ON` turns it on for the
+  no-Secret check; `hack/chart-manager.sh` keeps the drain flag.
+- **`status.url` is the in-cluster address** even with the Ingress on: it
+  is `--git-events-url`'s, where the Git host delivers. The guide gives
+  the Ingress's address for Sentry.
+- **The guide** is [../alerts.md](../alerts.md). `docs/architecture.md`
+  names the route and `controller.AlertReceiver` under the Git events
+  listener's flow (#236).
 
 ## Done when
 

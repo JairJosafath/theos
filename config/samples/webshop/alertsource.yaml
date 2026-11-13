@@ -7,8 +7,9 @@
 # http_config.authorization sends. Not in kustomization.yaml: apply it on its
 # own, after the Secret, with
 #   kubectl apply -n webshop -f config/samples/webshop/alertsource.yaml
-# Until the operator has its alert receiver (step 3 of the plan), Ready is
-# ReceiverOff, or SecretMissing while the Secret has no token.
+# Ready is Receiving once the Secret has a token, SecretMissing until then,
+# and ReceiverOff with the chart's gitEvents.enabled off. docs/alerts.md has
+# the Alertmanager receiver and the chart's alerts.from it needs.
 apiVersion: theos.factory.io/v1beta1
 kind: AlertSource
 metadata:

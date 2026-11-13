@@ -1568,6 +1568,8 @@ restart of the UI, or the ID token's expiry, signs everyone out.
 
 - A repository you already have: [adopt.md](adopt.md) puts a Crew on it as
   it is, with its own check command and CI.
+- Alerts from the Alertmanager or Sentry that watch your apps:
+  [alerts.md](alerts.md) files them as bugs in the Containers' repositories.
 - Your own project: add it to `gitea.projects` and `helm upgrade` with the
   same values ([Upgrading](#upgrading)).
 - [docs/design.md](design.md) explains the model, the catalog, Crews and
