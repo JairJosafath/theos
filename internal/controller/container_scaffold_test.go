@@ -20,6 +20,8 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"path"
+	"slices"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -109,21 +111,25 @@ func eventuallyOrdersAPI(ns string, phase c4v1beta1.ContainerPhase) *c4v1beta1.C
 
 // historySettle is how long settledHistoryCount waits without a read. It
 // is far longer than the reconciles a story's own creation queues take
-// (milliseconds), and short enough that a reconciler retrying a Failed
-// Container cannot slip past both it and the 2s the specs then watch the
-// count for: a retry every historySettle or less never settles; a doubling
-// backoff settles on its first pause longer than historySettle, at most twice
-// it, and its next read comes at most four times it (2s) after the last,
-// while the watch runs from historySettle to 2.5s after it.
-const historySettle = 500 * time.Millisecond
+// (milliseconds, a second read following another reconcile's status write
+// and live read, which a loaded API server can stretch), and short enough
+// that a reconciler retrying a Failed Container cannot slip past both it and
+// the 2s the specs then watch the count for, from historySettle to 3s after
+// the last read: a retry every historySettle or less never settles; a fixed
+// period under 3s reads inside the watch; a doubling backoff settles on its
+// first pause longer than historySettle, which is at most twice it, so its
+// next read comes at most 2s after the last read, at most historySettle (1s)
+// into the watch (#238).
+const historySettle = 1 * time.Second
 
-// settledHistoryCount waits until ns/repo's history has not been read for
-// historySettle and returns how often it was read. A Failed Container's
+// settledHistoryCount waits until ns/orders-api's history has not been read
+// for historySettle and returns how often it was read. A Failed Container's
 // creation queues more than one reconcile (the Relationship created with it
 // maps to it, then its own Create), and each reads the history once, so the
 // count taken the moment it turns Failed can still move (#64).
-func settledHistoryCount(ns, repo string) int {
+func settledHistoryCount(ns string) int {
 	GinkgoHelper()
+	const repo = "orders-api"
 	reads, since := gitFake.HistoryCount(ns, repo), time.Now()
 	Eventually(func() time.Duration {
 		if n := gitFake.HistoryCount(ns, repo); n != reads {
@@ -133,6 +139,68 @@ func settledHistoryCount(ns, repo string) int {
 	}).WithPolling(10*time.Millisecond).Should(BeNumerically(">=", historySettle),
 		"the history is still read again and again")
 	return reads
+}
+
+// watchContainer records every version of ns/orders-api the API server sends a
+// watch from now on, so a status that lasts a single write is seen, not only
+// what a poll happens to catch (#237). The returned func waits until the
+// watch has seen the live object's version, or a later one, and returns the
+// versions so far, which can include writes after that.
+func watchContainer(ns string) func() []c4v1beta1.Container {
+	const name = "orders-api"
+	GinkgoHelper()
+	wc, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	w, err := wc.Watch(ctx, &c4v1beta1.ContainerList{}, client.InNamespace(ns),
+		client.MatchingFields{"metadata.name": name})
+	Expect(err).NotTo(HaveOccurred())
+	var mu sync.Mutex
+	var versions []c4v1beta1.Container
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for event := range w.ResultChan() {
+			if c, ok := event.Object.(*c4v1beta1.Container); ok {
+				mu.Lock()
+				versions = append(versions, *c.DeepCopy())
+				mu.Unlock()
+			}
+		}
+	}()
+	DeferCleanup(func() {
+		w.Stop()
+		<-done
+	})
+	return func() []c4v1beta1.Container {
+		GinkgoHelper()
+		var live c4v1beta1.Container
+		Expect(k8sClient.Get(ctx, key(ns, name), &live)).To(Succeed())
+		// Contain, not end with: a status write landing after the Get above
+		// makes a later version the last, and the live one stays in the list.
+		Eventually(func() []string {
+			mu.Lock()
+			defer mu.Unlock()
+			out := make([]string, 0, len(versions))
+			for _, v := range versions {
+				out = append(out, v.ResourceVersion)
+			}
+			return out
+		}).Should(ContainElement(live.ResourceVersion), "the watch catching up with the live Container")
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(versions)
+	}
+}
+
+// phases are the phases the versions pass through, a repeat counted once.
+func phases(versions []c4v1beta1.Container) []c4v1beta1.ContainerPhase {
+	var out []c4v1beta1.ContainerPhase
+	for _, v := range versions {
+		if len(out) == 0 || out[len(out)-1] != v.Status.Phase {
+			out = append(out, v.Status.Phase)
+		}
+	}
+	return out
 }
 
 // kustomizationFiles returns the repository paths that deploy/k8s/kustomization.yaml
@@ -375,7 +443,7 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(cond.Message).To(ContainSubstring("has commits theos didn't make"))
 
 		By("not trying again on its own")
-		reads := settledHistoryCount(ns, "orders-api")
+		reads := settledHistoryCount(ns)
 		Consistently(func() int { return gitFake.HistoryCount(ns, "orders-api") }, "2s").Should(Equal(reads))
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
 		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerFailed))
@@ -396,6 +464,128 @@ var _ = Describe("Container scaffolding", func() {
 		Expect(k8sClient.Get(ctx, key(ns, "orders-api-to-orders-db"), &rel)).To(Succeed())
 		Expect(patch(&rel, func() { metav1.SetMetaDataLabel(&rel.ObjectMeta, "example.com/touched", "yes") })).To(Succeed())
 		Consistently(func() int { return gitFake.HistoryCount(ns, "orders-api") }, "2s").Should(Equal(reads))
+	})
+
+	It("keeps a Failed Container Failed while events read it again (#237)", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepo(ns, "orders-api", "Initial commit\n")
+		createWebshop(ns)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		reads := settledHistoryCount(ns)
+		Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+		failedWith := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded).DeepCopy()
+		Expect(failedWith).To(HaveField("Reason", c4v1beta1.ReasonForeignCommits))
+		versions := watchContainer(ns)
+
+		By("events that reconcile it: its retry annotation, set and changed, and a Compute created")
+		readAgain := func() {
+			GinkgoHelper()
+			Eventually(func() int { return gitFake.HistoryCount(ns, "orders-api") }).Should(BeNumerically(">", reads),
+				"the event reconciling the Container, which reads its history again")
+			reads = settledHistoryCount(ns)
+		}
+		for _, retry := range []string{"1", "2"} {
+			Expect(patch(container, func() {
+				container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: retry}
+			})).To(Succeed())
+			readAgain()
+		}
+		mustCreate(&c4v1beta1.Compute{ObjectMeta: objectMeta(ns, "spare"),
+			Spec: newCatalogSpec(templatesURL+"spare-compute", "v1.0.0", c4v1beta1.ContainerTypeService)})
+		readAgain()
+
+		By("every version it passed through being Failed, its condition unchanged")
+		seen := versions()
+		Expect(phases(seen)).To(Equal([]c4v1beta1.ContainerPhase{c4v1beta1.ContainerFailed}),
+			"no status write in between shows Scaffolding")
+		for _, v := range seen {
+			cond := condition(v.Status.Conditions, c4v1beta1.ConditionScaffolded)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Reason).To(Equal(failedWith.Reason))
+			Expect(cond.Message).To(Equal(failedWith.Message))
+			Expect(cond.LastTransitionTime.Equal(&failedWith.LastTransitionTime)).To(BeTrue(),
+				"lastTransitionTime %s moved from %s", cond.LastTransitionTime, failedWith.LastTransitionTime)
+		}
+	})
+
+	It("takes a Failed Container straight to its new reason when the cause changes (#237)", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepo(ns, "orders-api", "Initial commit\n")
+		createWebshop(ns)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		Expect(condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)).
+			To(HaveField("Reason", c4v1beta1.ReasonForeignCommits))
+		settledHistoryCount(ns)
+		versions := watchContainer(ns)
+
+		By("the Framework's template moved to a branch and the repository emptied")
+		var framework c4v1beta1.Framework
+		Expect(k8sClient.Get(ctx, key(ns, "python-fastapi"), &framework)).To(Succeed())
+		Expect(patch(&framework, func() { framework.Spec.Template.Ref = "main" })).To(Succeed())
+		gitFake.ClearRepo(ns, "orders-api")
+		Expect(patch(container, func() {
+			container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: "1"}
+		})).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			g.Expect(condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)).
+				To(HaveField("Reason", c4v1beta1.ReasonUnpinnedRef))
+		}).Should(Succeed())
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerFailed))
+
+		seen := versions()
+		Expect(phases(seen)).To(Equal([]c4v1beta1.ContainerPhase{c4v1beta1.ContainerFailed}),
+			"the new reason replaces the old one without Scaffolding in between")
+		Expect(condition(seen[len(seen)-1].Status.Conditions, c4v1beta1.ConditionScaffolded)).
+			To(HaveField("Reason", c4v1beta1.ReasonUnpinnedRef))
+	})
+
+	It("keeps a Failed Container Failed, with a GitError condition, while the Git host is down (#237)", func() {
+		ns := newProjectNamespace()
+		gitFake.SeedRepo(ns, "orders-api", "Initial commit\n")
+		createWebshop(ns)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		settledHistoryCount(ns)
+		versions := watchContainer(ns)
+
+		By("a retry while the host doesn't answer")
+		release := gitFake.Hang(ns, "orders-api")
+		DeferCleanup(release)
+		Expect(patch(container, func() {
+			container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: "1"}
+		})).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "orders-api"), container)).To(Succeed())
+			cond := condition(container.Status.Conditions, c4v1beta1.ConditionScaffolded)
+			g.Expect(cond).To(HaveField("Reason", c4v1beta1.ReasonGitError))
+			g.Expect(cond.Message).To(ContainSubstring("deadline exceeded"))
+		}).Should(Succeed())
+		Expect(container.Status.Phase).To(Equal(c4v1beta1.ContainerFailed))
+		Expect(phases(versions())).To(Equal([]c4v1beta1.ContainerPhase{c4v1beta1.ContainerFailed}),
+			"a Git error that may pass doesn't show Scaffolding either")
+	})
+
+	It("shows Scaffolding the first time, and again once a Failed Container's cause is gone (#237)", func() {
+		ns := newProjectNamespace()
+		versions := watchContainer(ns)
+		gitFake.SeedRepo(ns, "orders-api", "Initial commit\n")
+		createWebshop(ns)
+		container := eventuallyOrdersAPI(ns, c4v1beta1.ContainerFailed)
+		first := phases(versions())
+		Expect(first).To(ContainElement(c4v1beta1.ContainerScaffolding))
+		Expect(slices.Index(first, c4v1beta1.ContainerScaffolding)).
+			To(BeNumerically("<", slices.Index(first, c4v1beta1.ContainerFailed)), "Scaffolding before it failed")
+		settledHistoryCount(ns)
+		before := len(versions())
+
+		gitFake.ClearRepo(ns, "orders-api")
+		Expect(patch(container, func() {
+			container.Annotations = map[string]string{c4v1beta1.AnnotationRetry: "1"}
+		})).To(Succeed())
+		eventuallyOrdersAPI(ns, c4v1beta1.ContainerReady)
+		Expect(phases(versions()[before-1:])).To(Equal([]c4v1beta1.ContainerPhase{
+			c4v1beta1.ContainerFailed, c4v1beta1.ContainerScaffolding, c4v1beta1.ContainerReady,
+		}), "a Failed Container that can be scaffolded now shows Scaffolding, then Ready")
 	})
 
 	It("stays Ready when its SoftwareSystem goes missing", func() {
