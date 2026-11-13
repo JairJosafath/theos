@@ -110,7 +110,10 @@ them with the work around them (#45).
 
 All four come from [docs/design.md](docs/design.md):
 
-- runtime health of the apps beyond what a deploy target's tool reports;
+- runtime health of the apps beyond what a deploy target's tool reports
+  (alerts from the tools that watch them are now planned: #64,
+  [docs/plans/alerts.md](docs/plans/alerts.md); theos itself still
+  monitors no app);
 - git providers other than Gitea (GitHub is now planned: #57);
 - short-lived Session tokens;
 - a webhook that refuses an incompatible Container up front.

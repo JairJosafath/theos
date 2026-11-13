@@ -1616,6 +1616,28 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   second. A new version or another state files again; recovering to `Healthy`
   files nothing. A failure to reach the Git host is not filed.
   (`model.DeployMonitorDue`.)
+- **Alerts** ([plans/alerts.md](plans/alerts.md), #64; the rules are built,
+  the kind and the receiver are still to come): the operator monitors no
+  app, it listens to the tools that do. An `AlertSource` in the Project's
+  namespace names one sender (`alertmanager`, `sentry` or `generic`), the
+  Secret that checks its deliveries, and how an alert finds its Container:
+  the label `theos_container`, else a route, the namespace an `argoCD`
+  target deploys to, or the Sentry project. The receiver of the Git host's
+  deliveries takes them on `/alerts/<namespace>/<alertsource>`; none is
+  taken unauthenticated. A firing alert files one issue in its Container's
+  repository, `Alert: <name>`, labelled `kind/bug`, `source/monitor` and
+  `status/proposed`, so triage decides and the Crew's approval rules hold:
+  since when, what is deployed, the link back, and what the alert says, cut
+  to size, between marker lines as a prompt puts issue text, since it is
+  data from the tool and from whatever the app logged. The same alert
+  firing again is counted, and said in a comment at most once an hour
+  (`commentInterval`); resolved, it says so once and closes nothing. An
+  alert files at most once a day, and past five issues a day for a
+  Container (`dailyLimit`) the rest are counted in one "and N more" on the
+  last. The counts are the AlertSource's status, which also counts the
+  alerts that named no known Container; those file nothing.
+  (`model.ParseAlerts`, `model.AlertContainer`, `model.AlertStep`,
+  `model.AlertRecordOwed`, `model.AlertDayOwed`, `model.AlertIssue`.)
 - **Release images** (#1069): built by the `image` runner, pushed by digest,
   shipped by digest ([plans/images.md](plans/images.md)). When the
   Container's choice builds one (`model.BuildsImage`: `k8s-manifests`,
