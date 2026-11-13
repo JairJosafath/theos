@@ -269,7 +269,7 @@ export function boardColumns(tasks: Task[], doneLimit = 8): Record<Column, Task[
   for (const task of tasks) columns[currentStage(task)].push(task)
   for (const key of Object.keys(columns) as Column[]) {
     if (key === 'done') continue
-    columns[key].sort((a, b) => (stageSince(a) ?? 0) - (stageSince(b) ?? 0))
+    columns[key].sort((a, b) => (stageSince(a) ?? 0) - (stageSince(b) ?? 0) || compareText(taskKey(a), taskKey(b)))
   }
   columns.done.sort(
     (a, b) =>
@@ -283,7 +283,11 @@ export function boardColumns(tasks: Task[], doneLimit = 8): Record<Column, Task[
 export function slotQueue(tasks: Task[]): Task[] {
   return tasks
     .filter((t) => t.status?.slotWaitSince && !isFinal(t.status?.phase))
-    .sort((a, b) => (time(a.status?.slotWaitSince) ?? 0) - (time(b.status?.slotWaitSince) ?? 0))
+    .sort(
+      (a, b) =>
+        (time(a.status?.slotWaitSince) ?? 0) - (time(b.status?.slotWaitSince) ?? 0) ||
+        compareText(taskKey(a), taskKey(b)),
+    )
 }
 
 /** Tasks that hold an agent slot now: their sandbox runs. */

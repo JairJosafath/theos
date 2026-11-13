@@ -17,6 +17,7 @@ import {
   taskRoles,
   taskSegments,
   timeByStage,
+  taskKey,
 } from './factory'
 import { formatClock, formatDuration } from './format'
 
@@ -168,6 +169,35 @@ describe('currentStage and the board', () => {
     const later = task('later', { phase: 'Pending', slotWaitSince: at(20) })
     expect(slotQueue([later, waitingForSlot, merged]).map((t) => t.metadata.name)).toEqual(['doc-scanner-v1', 'later'])
   })
+
+  it('orders slot-queue Tasks equal on the time by namespace/name, in either input order (#190)', () => {
+    const other = (name: string, namespace: string, status: Task['status']): Task => ({
+      ...task(name, status),
+      metadata: { name, namespace, creationTimestamp: at(0) },
+    })
+    const waiting = { phase: 'Pending' as const, slotWaitSince: at(5) }
+    const rows = [other('b', 'apps', waiting), other('a', 'zeta', waiting), other('a', 'apps', waiting)]
+    const want = ['apps/a', 'apps/b', 'zeta/a']
+    for (const input of [rows, [...rows].reverse()]) {
+      expect(slotQueue(input).map(taskKey)).toEqual(want)
+    }
+  })
+
+  it('orders board column Tasks equal on the time by namespace/name, in either input order (#190)', () => {
+    const other = (name: string, namespace: string, status: Task['status']): Task => ({
+      ...task(name, status),
+      metadata: { name, namespace, creationTimestamp: at(0) },
+    })
+    const waiting = { phase: 'Pending' as const, slotWaitSince: at(5) }
+    const rows = [other('b', 'apps', waiting), other('a', 'zeta', waiting), other('a', 'apps', waiting)]
+    for (const input of [rows, [...rows].reverse()]) {
+      expect(boardColumns(input).slot.map(taskKey)).toEqual(['apps/a', 'apps/b', 'zeta/a'])
+    }
+    const queuedRows = [task('q2'), task('q1')]
+    for (const input of [queuedRows, [...queuedRows].reverse()]) {
+      expect(boardColumns(input).queued.map((t) => t.metadata.name)).toEqual(['q1', 'q2'])
+    }
+  })
 })
 
 describe('factoryStats', () => {
@@ -254,10 +284,24 @@ describe('attention', () => {
     expect(items[0].detail).toContain('CrashLoopBackOff')
   })
 
+  it('orders items of one level by their key, in either input order (#190)', () => {
+    const stale = (name: string) =>
+      ({ metadata: { name, namespace: 'apps' }, spec: {}, status: { phase: 'Stale', lastHeartbeat: at(0) } }) as Session
+    const sessions = [stale('b'), stale('a'), stale('c')]
+    for (const input of [sessions, [...sessions].reverse()]) {
+      const items = attention({ tasks: [], containers: [], sessions: input, health: health(), now: T0 })
+      expect(items.map((i) => i.title)).toEqual([
+        'Session apps/a is stale',
+        'Session apps/b is stale',
+        'Session apps/c is stale',
+      ])
+    }
+  })
+
   it('lists each failed read once, under a key of its own', () => {
     const errors = ['/api/v1/pods: 404 not found', '/api/v1/nodes: 404 not found', '/api/v1/pods: 404 not found']
     const items = attention({ tasks: [], containers: [], sessions: [], health: health({ errors }), now: T0 })
-    expect(items.map((i) => i.detail)).toEqual(['/api/v1/pods: 404 not found', '/api/v1/nodes: 404 not found'])
+    expect(items.map((i) => i.detail)).toEqual(['/api/v1/nodes: 404 not found', '/api/v1/pods: 404 not found'])
     expect(new Set(items.map(attentionKey)).size).toBe(items.length)
   })
 
@@ -304,10 +348,10 @@ describe('attention', () => {
     const items = attention({ tasks: [failed], containers: [container], sessions: [session], now: T0 + 60_000 })
     expect(items.map((i) => i.title)).toEqual([
       'Container webshop/web failed',
-      'Task apps/qr-scanner-v1 failed',
       'Session webshop/s1 is stale',
+      'Task apps/qr-scanner-v1 failed',
     ])
-    expect(items[1].detail).toBe('Failed after 4 rounds')
+    expect(items[2].detail).toBe('Failed after 4 rounds')
   })
 
   it('lists Tasks waiting for the agent instead of calling them stuck', () => {

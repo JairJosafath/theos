@@ -7,6 +7,7 @@ import { findCondition } from '../k8s/types'
 import type { FactoryHealth } from '../k8s/health'
 import { agentBackAt, currentStage, isFinal, STAGES, stageSince, taskKey, time, type Stage } from './factory'
 import { formatClock, formatDuration } from './format'
+import { compareText } from './order'
 
 /** How long a Task may stay in a stage before it needs a look. */
 export const STUCK_AFTER_MS: Record<Stage, number> = {
@@ -271,7 +272,9 @@ export function attention(input: {
   // The same item twice (the same read error twice) says nothing more, and two
   // rows with one key make React keep stale ones.
   const unique = [...new Map(items.map((item) => [attentionKey(item), item])).values()]
-  return unique.sort((a, b) => (a.level === b.level ? 0 : a.level === 'error' ? -1 : 1))
+  return unique.sort(
+    (a, b) => (a.level === b.level ? 0 : a.level === 'error' ? -1 : 1) || compareText(attentionKey(a), attentionKey(b)),
+  )
 }
 
 function timeAgoShort(iso: string | undefined, now: number): string {
