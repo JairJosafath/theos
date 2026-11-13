@@ -10,6 +10,7 @@ import { failureAnswered } from './attention'
 import { approveCommand, deploysOf, type DeployRow } from './deploys'
 import { time } from './factory'
 import { hasPage, standardKeepCommand, standardTakeCommand } from './lifecycle'
+import { compareText } from './order'
 
 export type NeedKind = 'Brief' | 'Container' | 'Task' | 'Crew'
 
@@ -79,9 +80,9 @@ export function needs(input: NeedsInput): Need[] {
   ]
   return items.sort(
     (a, b) =>
-      a.namespace.localeCompare(b.namespace) ||
+      compareText(a.namespace, b.namespace) ||
       (time(a.since) ?? Infinity) - (time(b.since) ?? Infinity) ||
-      a.key.localeCompare(b.key),
+      compareText(a.key, b.key),
   )
 }
 
