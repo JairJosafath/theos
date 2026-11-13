@@ -2,9 +2,13 @@ name: Lint
 
 # Go sources, the linter's configuration and the YAML that make validate-yaml
 # checks (with the templates and tools it renders them with), and what the
-# shell tests of hack/ read (make test-hack). It runs on pull requests to main
-# too, with the same paths, so lint and the shell tests answer before
-# hack/lib/github.sh land (hack/check-workflows.sh).
+# shell tests of hack/ read (make test-hack), and every Markdown file and
+# docs/** (#148: the link check runs in the Shell tests job, and a pull request
+# that changes only documents must still start it; on such a change the Lint
+# job's make check steps select nothing, its lint-config and check-generated
+# steps still run, and Shell tests selects doc-links alone). It runs
+# on pull requests to main too, with the same paths, so lint and the shell
+# tests answer before hack/lib/github.sh land (hack/check-workflows.sh).
 # Every run is partial, against main (#127): each job runs its part of make
 # check (CHECK_STEPS), each step only when the change can have broken it
 # (hack/check.sh). The linter reads the packages gta selects; validate-yaml
@@ -27,7 +31,8 @@ on:
       - hack/**
       - dev
       - ui/Dockerfile
-      - docs/getting-started.md
+      - '**/*.md'
+      - 'docs/**'
       - .claude/skills/**
       - .github/workflows/**
   pull_request:
@@ -46,7 +51,8 @@ on:
       - hack/**
       - dev
       - ui/Dockerfile
-      - docs/getting-started.md
+      - '**/*.md'
+      - 'docs/**'
       - .claude/skills/**
       - .github/workflows/**
   workflow_dispatch:

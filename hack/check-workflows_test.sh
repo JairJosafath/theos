@@ -178,6 +178,17 @@ out=$("$CHECK" "$T/r/wf" 2>&1)
 check "Lint's shell tests without the scans fail (#127)" "$?" 1
 check "Lint's shell tests without the scans say so" "$(grep -c 'lint.yml: has no test-hack job running make check CHECK_STEPS="test-hack doc-links license-headers readers"' <<<"$out")" 1
 
+# #148: the link check runs in Lint's Shell tests job, so Lint's paths, for
+# pull requests and for pushes, take every Markdown file and docs/**.
+real lint "/^  pull_request:/,/^  workflow_dispatch:/{/- '\\*\\*\\/\\*\\.md'/d;}"
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Lint's pull requests without **/*.md fail (#148)" "$?" 1
+check "Lint's pull requests without **/*.md say so (#148)" "$(grep -c "lint.yml: its pull_request paths lack '\*\*/\*.md'" <<<"$out")" 1
+real lint "/^  push:/,/^  pull_request:/{/- 'docs\\/\\*\\*'/d;}"
+out=$("$CHECK" "$T/r/wf" 2>&1)
+check "Lint's push to main without docs/** fails (#148)" "$?" 1
+check "Lint's push to main without docs/** says so (#148)" "$(grep -c "lint.yml: its push paths lack 'docs/\*\*'" <<<"$out")" 1
+
 # #127: a test of the UI reads the CRDs.
 real ui '/config\/crd\/bases/d'
 out=$("$CHECK" "$T/r/wf" 2>&1)
