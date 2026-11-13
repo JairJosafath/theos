@@ -9,7 +9,7 @@ import type { Area } from './areas'
 import { failureAnswered } from './attention'
 import { approveCommand, deploysOf, type DeployRow } from './deploys'
 import { time } from './factory'
-import { hasPage, standardKeepCommand, standardTakeCommand } from './lifecycle'
+import { hasPage, standardKeepCommand, standardTakeCommand, standardWaits } from './lifecycle'
 import { compareText } from './order'
 
 export type NeedKind = 'Brief' | 'Container' | 'Task' | 'Crew'
@@ -172,6 +172,29 @@ function containerNeeds(c: Container): Need[] {
       ...why(protection, 'NoMatchingCheck'),
       place,
       links: c.status?.repositoryURL ? [{ label: 'Its repository', url: c.status.repositoryURL }] : [],
+    })
+  }
+  // #172: the Standard of an adopted repository arrives as a pull request a person merges or
+  // closes, and no agent works there until main holds its files (lifecycle.ts, standardWaits).
+  const waits = standardWaits(c)
+  if (waits) {
+    // A pull request still open while the Standard doesn't fit is no way out: nothing is read
+    // or done until it fits, so merging it unblocks nothing. The next step links it only on
+    // PullRequestOpen too (containerNextStep).
+    const pr = waits.reason === 'PullRequestOpen' ? waits.pullRequest : undefined
+    const repo = c.status?.repositoryURL
+    items.push({
+      ...base('Container', c, 'StandardWaits'),
+      title: 'has a Standard waiting on you',
+      ...why(waits.condition, waits.reason),
+      place,
+      // The pull request while it waits to be merged; once it stopped, the repository whose main the
+      // files go to; nothing while the Standard doesn't fit: that is fixed on the Container's page.
+      links: pr
+        ? [{ label: `The Standard’s pull request${pr.number ? ` #${pr.number}` : ''}`, url: pr.href }]
+        : repo && waits.reason !== 'UnsupportedFramework'
+          ? [{ label: 'Its repository', url: repo }]
+          : [],
     })
   }
   const updated = findCondition(c.status?.conditions, 'StandardUpdated')

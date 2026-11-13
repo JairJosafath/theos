@@ -2,7 +2,8 @@
 # Tests for hack/go-test.sh, with a fake go: the controller suite runs as
 # THEOS_TEST_PROCS go tests with THEOS_TEST_SHARD=i/n beside one go test of the
 # rest, 1 runs it as before, short memory means 1, a failing part fails the
-# run, and the parts' profiles and slowest specs are merged (#1283).
+# run, and the parts' profiles and slowest specs are merged (#1283). Before
+# the parts, one go test that runs no test builds the suite for them (#127).
 # Run: hack/go-test_test.sh
 HERE=$(cd "$(dirname "$0")" && pwd)
 T=$(mktemp -d)
@@ -14,19 +15,22 @@ unset THEOS_TEST_PROCS THEOS_TEST_MIN_MEM_GIB THEOS_SLOWEST_SPECS
 CTRL=github.com/JairJosafath/theos/internal/controller
 # The parts after the first run the suite alone, not the package's plain tests.
 R="-run ^TestControllers\$ $CTRL"
+# The go test that builds the suite once, before the parts: it runs no test.
+B="- -run ^\$ $CTRL"
 # The fake go logs "SHARD args" per call; with a profile it writes one block
-# per package, with THEOS_SLOWEST_SPECS a part's report; FAIL_SHARD fails one,
+# per package, with THEOS_SLOWEST_SPECS a part's report; FAIL_SHARD fails one
+# part, FAIL_REST the go test of the other packages, FAIL_BUILD the build,
 # LONG_MODE pads one part's mode line past what a pipe holds (#1372).
 cat >"$T/go" <<'EOF'
 #!/usr/bin/env bash
 shift # test
 echo "${THEOS_TEST_SHARD:--} $*" >>"$GO_LOG"
-cover=
+cover= run=
 args=()
 while [ $# -gt 0 ]; do
   case $1 in
     -coverprofile) cover=$2; shift ;;
-    -run) shift ;;
+    -run) run=$2; shift ;;
     *) args+=("$1") ;;
   esac
   shift
@@ -42,6 +46,12 @@ if [ -n "$THEOS_TEST_SHARD" ] && [ -n "${THEOS_SLOWEST_SPECS:-}" ] && [ "${NO_SL
     $((10 * i)) $((100 + i)) $((20 * i)) "$i" $((i)) "$i" >"$THEOS_SLOWEST_SPECS.$i"
 fi
 echo "ok fake ${THEOS_TEST_SHARD:-}"
+# The build is the call without a part whose -run matches no test.
+kind=rest
+[ -z "${THEOS_TEST_SHARD:-}" ] && [ "$run" = '^$' ] && kind=build
+[ -n "${THEOS_TEST_SHARD:-}" ] && kind=part
+[ "$kind" != build ] || [ -z "${FAIL_BUILD:-}" ] || exit 1
+[ "$kind" != rest ] || [ -z "${FAIL_REST:-}" ] || exit 1
 [ "${FAIL_SHARD:-}" != "${THEOS_TEST_SHARD:--}" ]
 EOF
 chmod +x "$T/go"
@@ -52,12 +62,18 @@ run() { : >"$GO_LOG"; "$HERE/go-test.sh" "$@" >"$T/out" 2>&1; echo $?; }
 calls() { LC_ALL=C sort "$GO_LOG" | paste -sd'|'; }
 
 check "default: 2 parts and the rest" "$(run -timeout 20m -- a/b $CTRL c/d)" 0
-check "default: the calls" "$(calls)" "- -timeout 20m a/b c/d|1/2 -timeout 20m $CTRL|2/2 -timeout 20m -run ^TestControllers\$ $CTRL"
+check "default: the calls, the build first" "$(calls)" "- -timeout 20m -run ^\$ $CTRL|- -timeout 20m a/b c/d|1/2 -timeout 20m $CTRL|2/2 -timeout 20m -run ^TestControllers\$ $CTRL"
+check "#127 default: the build comes before every part" "$(head -n 1 "$GO_LOG")" "- -timeout 20m -run ^\$ $CTRL"
 check "default: says so" "$(grep -c 'runs in 2 processes' "$T/out")" 1
 check "default: prints each part" "$(grep -c '^ok fake' "$T/out")" 3
 
 check "THEOS_TEST_PROCS=4" "$(THEOS_TEST_PROCS=4 run -- $CTRL)" 0
-check "THEOS_TEST_PROCS=4: four parts, no rest" "$(calls)" "1/4 $CTRL|2/4 $R|3/4 $R|4/4 $R"
+check "THEOS_TEST_PROCS=4: one build, four parts, no rest" "$(calls)" "$B|1/4 $CTRL|2/4 $R|3/4 $R|4/4 $R"
+
+# The Tests workflow sets it empty on a self-hosted runner, which keeps the
+# default.
+check "THEOS_TEST_PROCS empty" "$(THEOS_TEST_PROCS= run -- $CTRL)" 0
+check "THEOS_TEST_PROCS empty: the default, 2 parts" "$(calls)" "$B|1/2 $CTRL|2/2 $R"
 
 check "THEOS_TEST_PROCS=1" "$(THEOS_TEST_PROCS=1 run -- a/b $CTRL)" 0
 check "THEOS_TEST_PROCS=1: one go test, as before" "$(calls)" "- a/b $CTRL"
@@ -70,12 +86,16 @@ check "short memory" "$(run -- $CTRL)" 0
 check "short memory: one process" "$(calls)" "- $CTRL"
 check "short memory: says why" "$(grep -c '3 GiB available' "$T/out")" 1
 check "short memory, THEOS_TEST_PROCS set: it wins" "$(THEOS_TEST_PROCS=2 run -- $CTRL)" 0
-check "short memory, THEOS_TEST_PROCS set: two parts" "$(calls)" "1/2 $CTRL|2/2 $R"
+check "short memory, THEOS_TEST_PROCS set: two parts" "$(calls)" "$B|1/2 $CTRL|2/2 $R"
 printf 'MemAvailable:   %d kB\n' $((8 * 1048576)) >"$T/meminfo"
 
 check "a failing part fails the run" "$(FAIL_SHARD=2/2 run -- a/b $CTRL)" 1
-check "a failing part: the others still ran" "$(calls)" "- a/b|1/2 $CTRL|2/2 $R"
-check "a failing rest fails the run" "$(FAIL_SHARD=- run -- a/b $CTRL)" 1
+check "a failing part: the others still ran" "$(calls)" "$B|- a/b|1/2 $CTRL|2/2 $R"
+check "a failing rest fails the run" "$(FAIL_REST=1 run -- a/b $CTRL)" 1
+check "a failing rest: the parts still ran" "$(calls)" "$B|- a/b|1/2 $CTRL|2/2 $R"
+check "#127 a suite that doesn't build fails the run" "$(FAIL_BUILD=1 run -- a/b $CTRL)" 1
+check "#127 a suite that doesn't build: no part starts" "$(calls)" "$B"
+check "#127 a suite that doesn't build: says so, with go's output" "$(grep -c "tests don't build\|^ok fake" "$T/out")" 2
 check "bad THEOS_TEST_PROCS" "$(THEOS_TEST_PROCS=x run -- $CTRL)" 2
 
 check "coverage" "$(run -coverprofile "$T/cover.out" -- a/b $CTRL)" 0

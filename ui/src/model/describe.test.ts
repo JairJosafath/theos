@@ -76,6 +76,68 @@ describe('describeCondition', () => {
     expect(info.tone).toBe('error')
   })
 
+  // #172: StandardUpdated on a Ready Container whose Standard comes into the repository it adopted
+  // as a pull request (#97), with the operator's messages.
+  it.each([
+    [
+      'PullRequestOpen',
+      'Pull request https://git.example/shop/api/pulls/12 brings the files of go-standard at v1.2.0 into the repository; a person merges it, or closes it to leave the repository without them. No agent works on the repository until it merges',
+      'A pull request brings its Standard’s files into the adopted repository, and waits for a person to merge or close it',
+      'waiting',
+    ],
+    [
+      'StandardFilesDiffer',
+      'Pull request https://git.example/shop/api/pulls/12 merged, but main holds Makefile with other content than go-standard renders at v1.2.0, and go-standard protects them.',
+      'The pull request with its Standard’s files merged, but main holds a file the Standard protects with other content',
+      'error',
+    ],
+    [
+      'UpdateClosed',
+      'Pull request https://git.example/shop/api/pulls/12 was closed without merging, so the repository is without AGENTS.md, Makefile as go-standard renders them at v1.2.0.',
+      'Its Standard’s pull request was closed without merging',
+      'error',
+    ],
+    [
+      'UnsupportedFramework',
+      'standard "go-standard" supports only the Frameworks it lists, and the Container names no frameworkRef',
+      'Its Standard fits only the Frameworks it lists, and this container names none of them',
+      'error',
+    ],
+  ] as const)(
+    'says what StandardUpdated=False, %s means on an adopting Container (#172)',
+    (reason, message, title, tone) => {
+      expect(describeCondition({ type: 'StandardUpdated', status: 'False', reason, message })).toEqual({
+        title,
+        tone,
+        detail: message,
+      })
+    },
+  )
+
+  it('reads the reasons that mean something else on another condition as they read there (#172)', () => {
+    // A Standard that doesn't fit at creation fails ChoicesValid, with that condition's sentence.
+    expect(describeCondition({ type: 'ChoicesValid', status: 'False', reason: 'UnsupportedFramework' }).title).toBe(
+      'One of its templates does not support this type of container',
+    )
+    // An operations update a person closed has no sentence of its own, as before.
+    expect(describeCondition({ type: 'OperationsApplied', status: 'False', reason: 'UpdateClosed' }).title).toBe(
+      'Operations applied: no',
+    )
+  })
+
+  it('reads an ordinary update’s UpdateClosed as a pull request closed without merging too (#172)', () => {
+    // The condition is all describeCondition sees, and status.standard, which tells the two apart, is
+    // not in it: one sentence, true of both. Red as before; what differs is the page's next step.
+    expect(
+      describeCondition({
+        type: 'StandardUpdated',
+        status: 'False',
+        reason: 'UpdateClosed',
+        message: 'Pull request https://git.example/shop/api/pulls/7 was closed without merging',
+      }),
+    ).toMatchObject({ title: 'Its Standard’s pull request was closed without merging', tone: 'error' })
+  })
+
   it('falls back to the condition type for unknown conditions', () => {
     expect(describeCondition({ type: 'SomethingNew', status: 'True' }).title).toBe('Something new: yes')
     expect(describeCondition({ type: 'SomethingNew', status: 'Unknown' }).tone).toBe('unknown')

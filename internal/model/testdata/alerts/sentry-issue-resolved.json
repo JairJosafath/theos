@@ -1,0 +1,44 @@
+{
+  "action": "resolved",
+  "installation": {
+    "uuid": "a8e5d37a-696c-4c54-adb5-b3f28d64c7de"
+  },
+  "data": {
+    "issue": {
+      "id": "1117540176",
+      "shortId": "ORDERS-WEB-1",
+      "title": "ReferenceError: heck is not defined",
+      "culprit": "?(checkout)",
+      "level": "error",
+      "status": "resolved",
+      "statusDetails": {},
+      "substatus": null,
+      "platform": "javascript",
+      "project": {
+        "id": "1",
+        "name": "orders-web",
+        "slug": "orders-web",
+        "platform": "javascript"
+      },
+      "type": "error",
+      "metadata": {
+        "filename": "checkout.js",
+        "type": "ReferenceError",
+        "value": "heck is not defined"
+      },
+      "count": "14",
+      "userCount": 9,
+      "firstSeen": "2026-11-12T08:58:37.391000Z",
+      "lastSeen": "2026-11-12T10:41:02.120000Z",
+      "url": "https://sentry.io/api/0/organizations/test-org/issues/1117540176/",
+      "web_url": "https://sentry.io/organizations/test-org/issues/1117540176/",
+      "project_url": "https://sentry.io/organizations/test-org/issues/?project=1",
+      "assignedTo": null
+    }
+  },
+  "actor": {
+    "type": "user",
+    "id": 12,
+    "name": "A person"
+  }
+}

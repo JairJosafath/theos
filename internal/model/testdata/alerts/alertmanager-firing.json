@@ -1,0 +1,55 @@
+{
+  "version": "4",
+  "groupKey": "{}:{alertname=\"HighErrorRate\"}",
+  "truncatedAlerts": 0,
+  "status": "firing",
+  "receiver": "theos",
+  "groupLabels": {
+    "alertname": "HighErrorRate"
+  },
+  "commonLabels": {
+    "alertname": "HighErrorRate",
+    "severity": "critical"
+  },
+  "commonAnnotations": {
+    "summary": "More than 5% of requests fail"
+  },
+  "externalURL": "http://alertmanager.monitoring.svc:9093",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighErrorRate",
+        "severity": "critical",
+        "namespace": "shop-prod",
+        "service": "orders-api",
+        "theos_container": "orders-api"
+      },
+      "annotations": {
+        "summary": "More than 5% of requests fail",
+        "description": "orders-api answered 7.4% of its requests with a 5xx over the last 10 minutes.\nThe budget is 1%.",
+        "runbook_url": "https://runbooks.example.com/high-error-rate"
+      },
+      "startsAt": "2026-11-12T08:14:30.123Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.monitoring.svc:9090/graph?g0.expr=rate%28http_requests_total%5B10m%5D%29&g0.tab=1",
+      "fingerprint": "c1b2a3d4e5f60718"
+    },
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighErrorRate",
+        "severity": "critical",
+        "namespace": "shop-staging",
+        "service": "storefront"
+      },
+      "annotations": {
+        "summary": "More than 5% of requests fail"
+      },
+      "startsAt": "2026-11-12T08:16:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "",
+      "fingerprint": "9f8e7d6c5b4a3921"
+    }
+  ]
+}
