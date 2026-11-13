@@ -227,12 +227,12 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
   number prints as none (`reportMoney` printed `$-1.-49` for the first and
   panicked on NaN and on an infinity; the UI's `formatCost` printed `$-1.50`
   and `$NaN` until #143 gave it the same rule, so `money.json` holds the
-  cost under zero for both sides, and each side's own table the NaN and
+  cost under zero for both sides, and each side's own table holds NaN and
   the infinities, which JSON cannot write: `TestReportPage` and
-  `brief.test.ts`); a dollar sign in a
-  cell or a heading takes a backslash, since GitHub reads what lies between
-  two as mathematics (decision 12's list, one more; the review of step 2
-  made it a span); and the directory is checked first, as above.
+  `brief.test.ts`); a dollar sign in a cell or a heading takes a backslash,
+  since GitHub reads what lies between two as mathematics (decision 12's
+  list, one more; the review of step 2 made it a span); and the directory
+  is checked first, as above.
 - **From the review of step 2:**
   - *A failed write leaves the report that was there.* The two files were
     written in a map's order, so a page that couldn't be written left the
