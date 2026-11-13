@@ -116,6 +116,15 @@ describe('a Container whose Standard waits to come into the repository it adopte
     expect(t).not.toMatch(/pull request #/i)
   })
 
+  it('links no open pull request while the Standard doesn’t fit: merging it unblocks nothing (#183)', () => {
+    const data = adopting('UnsupportedFramework', 'python-standard fits only the Frameworks it lists')
+    const markup = containerMarkup('orders-api', data)
+    expect(hrefs(markup)).not.toContain(PR)
+    const t = containerPage('orders-api', data)
+    expect(t).toMatch(/fits only the Frameworks it lists/)
+    expect(t).not.toMatch(/Standard pull request #12|Open pull request #12|Pull request #12|The files it writes/)
+  })
+
   it.each([
     ['UpdateClosed', /Its pull request was closed without merging, so no agent works on the repository/],
     ['StandardFilesDiffer', /Its pull request merged, but main holds a file the Standard protects/],

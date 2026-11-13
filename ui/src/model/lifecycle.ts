@@ -377,12 +377,25 @@ export interface NextStep {
   page?: { kind: string; name: string; label: string }
 }
 
+/**
+ * The StandardUpdated reasons of a Standard that waits to come into an adopted repository (#97)
+ * and is fixed on the Standard, not in a pull request or the repository (#183): the Standard
+ * doesn't exist, doesn't fit, or can't be fetched or rendered, and only a person changes it.
+ */
+export const STANDARD_FIX_REASONS = [
+  'UnsupportedFramework',
+  'NotFound',
+  'UnpinnedRef',
+  'TemplatePathNotFound',
+  'Failed',
+] as const
+
 /** The StandardUpdated reasons of a Standard that waits to come into an adopted repository (#97). */
 export const STANDARD_WAITS_REASONS = [
   'PullRequestOpen',
   'StandardFilesDiffer',
   'UpdateClosed',
-  'UnsupportedFramework',
+  ...STANDARD_FIX_REASONS,
 ] as const
 
 export type StandardWaitsReason = (typeof STANDARD_WAITS_REASONS)[number]
@@ -413,7 +426,8 @@ export function standardAdoptionPullRequest(container: Container): { href: strin
  * "Its Standard waits to come in" (#172): the Container adopted its
  * repository, is Ready, names a Standard that status doesn't record (the
  * operator's awaitsStandard), and StandardUpdated is False with one of the
- * four reasons that wait on a person. Until a person acts no agent works on
+ * reasons that wait on a person: a pull request to merge or close, files to
+ * bring to main, or a Standard that is missing, doesn't fit or doesn't render (#183). Until a person acts no agent works on
  * the repository. The Container's page, its next step and Needs you all read
  * this one rule. An ordinary update that a person closed says UpdateClosed
  * too, on a Container whose Standard is recorded: that one is not this.
@@ -538,6 +552,26 @@ export function containerNextStep(container: Container): NextStep | undefined {
           page,
         }
       }
+      // #183: a Standard a person fixes. The operator reads it again when it changes.
+      case 'NotFound':
+        return {
+          text: `The Container names the Standard ${waits.standard}, but something it needs is missing: the condition names it. Create it, or name another Standard. No pull request opens and no agent works on the repository until then.`,
+        }
+      case 'UnpinnedRef':
+        return {
+          text: `${waits.standard}’s template is pinned to a branch. Pin its ref to a tag or commit on the Standard. No pull request opens and no agent works on the repository until then.`,
+          page: { kind: 'Standard', name: waits.standard, label: `Open Standard ${waits.standard}` },
+        }
+      case 'TemplatePathNotFound':
+        return {
+          text: `${waits.standard}’s template path is not a directory its repository has at the pinned ref. Point the path at one that exists, or pin a ref that has it, on the Standard. No pull request opens and no agent works on the repository until then.`,
+          page: { kind: 'Standard', name: waits.standard, label: `Open Standard ${waits.standard}` },
+        }
+      case 'Failed':
+        return {
+          text: `${waits.standard}’s files could not be rendered: the condition says why. Fix its templates and pin the Standard’s ref to the fixed one. No pull request opens and no agent works on the repository until then.`,
+          page: { kind: 'Standard', name: waits.standard, label: `Open Standard ${waits.standard}` },
+        }
     }
   }
   const standard = status?.standard

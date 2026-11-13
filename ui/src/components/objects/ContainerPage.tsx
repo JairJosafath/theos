@@ -33,6 +33,7 @@ import {
   describeStandardAdoption,
   describeStandardUpdate,
   standardAdoptionPullRequest,
+  standardWaits,
 } from '../../model/lifecycle'
 import { sessionsOf } from '../../model/story'
 import { SessionContext } from '../../lib/hooks'
@@ -93,7 +94,10 @@ export function ContainerPage({
   // #172: the pull request that brings its Standard into the repository it adopted, while it is open.
   const adoption = status?.standardAdoption
   const adopting = describeStandardAdoption(container)
-  const adoptionPR = standardAdoptionPullRequest(container)
+  // #183: linked on the next step's terms, only while its reason is PullRequestOpen: under any other
+  // reason merging it unblocks nothing (UnsupportedFramework keeps one open as it is).
+  const adoptionPR =
+    standardWaits(container)?.reason === 'PullRequestOpen' ? standardAdoptionPullRequest(container) : undefined
   if (adoptionPR)
     links.push({
       href: adoptionPR.href,

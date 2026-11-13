@@ -42,7 +42,8 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   person, read only from status ([src/model/needs.ts](src/model/needs.ts)): a
   Brief needing input or a decision, a Container that failed to scaffold or
   whose Standard update pull request waits, one whose Standard waits to come
-  into the repository it adopted, or one whose deploy waits for a
+  into the repository it adopted (or whose Standard is missing, unpinned or fails
+  to render), or one whose deploy waits for a
   person's approval, failed or runs degraded (with the `kubectl patch` line
   that approves the version waiting), a Task blocked or failed (until a
   newer Task or a round answers it), a Crew that left a release to a person or

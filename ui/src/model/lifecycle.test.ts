@@ -426,6 +426,43 @@ describe('a Standard that waits to come into an adopted repository (#172)', () =
     },
   )
 
+  // #183: four more reasons wait on a person, who fixes the Standard.
+  describe('a Standard a person fixes (#183)', () => {
+    const fixes: [string, RegExp, boolean][] = [
+      [
+        'NotFound',
+        /something it needs is missing: the condition names it\. Create it, or name another Standard/,
+        false,
+      ],
+      ['UnpinnedRef', /pinned to a branch\. Pin its ref to a tag or commit on the Standard/, true],
+      ['TemplatePathNotFound', /template path is not a directory its repository has at the pinned ref/, true],
+      ['Failed', /files could not be rendered: the condition says why\. Fix its templates/, true],
+    ]
+
+    it.each(fixes)('on %s, says what is wrong, where it is fixed, and gives no retry line', (reason, text, page) => {
+      const c = adopting(reason, undefined, 'the operator’s words')
+      expect(standardWaits(c)).toMatchObject({ standard: 'go-standard', reason, condition: { reason } })
+      const step = containerNextStep(c)!
+      expect(step.text).toMatch(text)
+      expect(step.text).toMatch(/no agent works on the repository until then/)
+      expect(step.text).not.toMatch(/retry/)
+      expect(step.command).toBe(undefined)
+      expect(step.page).toEqual(
+        page ? { kind: 'Standard', name: 'go-standard', label: 'Open Standard go-standard' } : undefined,
+      )
+    })
+
+    it.each(fixes)(
+      'on %s, is no next step on a Container whose Standard is recorded: an update’s rules answer',
+      (reason) => {
+        const c = adopting(reason, undefined, 'the operator’s words')
+        const recorded: Container = { ...c, status: { ...c.status, standard: { name: 'go-standard', ref: 'v1.2.0' } } }
+        expect(standardWaits(recorded)).toBe(undefined)
+        expect(containerNextStep(recorded)).toBe(undefined)
+      },
+    )
+  })
+
   it('leaves an ordinary update’s UpdateClosed as it reads: no next step, and the update’s own words', () => {
     const c = container({
       phase: 'Ready',

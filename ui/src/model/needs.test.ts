@@ -661,6 +661,37 @@ describe('needs', () => {
       expect(items[0].command).toBe(undefined)
     })
 
+    // #183: the Standard is missing, unpinned, has no such template path, or fails to render.
+    it.each([
+      ['NotFound', 'Standard go-standard was not found'],
+      ['UnpinnedRef', 'Standard go-standard: template ref "main" is a branch, not a tag or commit'],
+      ['TemplatePathNotFound', 'Standard go-standard: path "go" is not in the template at v1.2.0'],
+      ['Failed', 'Could not render the Standard go-standard: template: Makefile:3: unexpected }}'],
+    ])('lists the Container on %s, in the condition’s words, with nothing to open (#183)', (reason, message) => {
+      const items = needs(input({ containers: [adopting(reason, message)] }))
+      expect(items).toHaveLength(1)
+      expect(items[0]).toMatchObject({
+        key: 'Container|shop|api|StandardWaits',
+        kind: 'Container',
+        title: 'has a Standard waiting on you',
+        reason,
+        message,
+        since: T,
+        links: [],
+        place: { to: { page: { ns: 'shop', kind: 'Container', name: 'api' } } },
+      })
+      expect(items[0].command).toBe(undefined)
+    })
+
+    it.each(['NotFound', 'UnpinnedRef', 'TemplatePathNotFound', 'Failed'])(
+      'lists no Container on %s whose Standard is recorded: an update’s rules answer (#183)',
+      (reason) => {
+        const c = adopting(reason, 'the operator’s words')
+        const recorded: Container = { ...c, status: { ...c.status, standard: { name: 'go-standard', ref: 'v1.2.0' } } }
+        expect(needs(input({ containers: [recorded] }))).toEqual([])
+      },
+    )
+
     it('links no pull request that stays open while the Standard doesn’t fit: merging it unblocks nothing', () => {
       const [item] = needs(input({ containers: [adopting('UnsupportedFramework', 'fits no Framework', open)] }))
       expect(item.reason).toBe('UnsupportedFramework')
