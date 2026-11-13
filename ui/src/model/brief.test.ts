@@ -306,6 +306,17 @@ describe('sortBriefs', () => {
     ])
     expect(sorted.map((b) => b.metadata.name)).toEqual(['a', 'b', 'old', 'pending'])
   })
+
+  it('orders one name and time in two namespaces by namespace, in either input order (#190)', () => {
+    const in_ = (namespace: string): Brief => ({
+      ...brief('same', '2026-02-01T00:00:00Z'),
+      metadata: { name: 'same', namespace, creationTimestamp: '2026-02-01T00:00:00Z' },
+    })
+    const rows = [in_('zeta'), in_('apps'), in_('mid')]
+    for (const input of [rows, [...rows].reverse()]) {
+      expect(sortBriefs(input).map((b) => b.metadata.namespace)).toEqual(['apps', 'mid', 'zeta'])
+    }
+  })
 })
 
 describe('describeCost', () => {
