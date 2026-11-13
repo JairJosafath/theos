@@ -74,8 +74,7 @@ check "it names the done plan and line (#243)" "$(grep -c "^docs/plans/done/p.md
 
 tree
 printf '%s\n' 'Code: `[x](gone.md)` and `a` then [ok](README.md).' >"$T/r/README.md"
-cp "$T/r/README.md" "$T/r/docs/plans/done/p.md"
-sed -i 's#(README.md)#(../../../README.md)#' "$T/r/docs/plans/done/p.md"
+printf '%s\n' 'Code: `[x](gone.md)` and `a` then [ok](../../../README.md).' >"$T/r/docs/plans/done/p.md"
 run
 check "link-like text in an inline code span is not a link (#243)" "$rc" 0
 
@@ -83,5 +82,15 @@ tree
 printf '%s\n' 'Code: `[x](gone.md)` and [y](gone.md).' >"$T/r/README.md"
 run
 check "a real link after a code span is still checked (#243)" "$(grep -c 'links to gone.md' <<<"$out")" 1
+
+tree
+printf '%s\n' 'Code: ``[x](gone.md)`` only.' >"$T/r/README.md"
+run
+check "a double-backtick code span hides link-like text (#243)" "$rc" 0
+
+tree
+printf '%s\n' 'A stray ` here, then [y](gone.md).' >"$T/r/README.md"
+run
+check "an unmatched backtick still reports a later broken link (#243)" "$(grep -c 'links to gone.md' <<<"$out")" 1
 
 exit $fail

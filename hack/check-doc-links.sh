@@ -38,6 +38,9 @@ while IFS= read -r f; do
     [ "$fence" = 0 ] || continue
     rest=$line
     # An inline code span is text, not a link (#243).
+    while [[ $rest =~ \`\`[^\`]+\`\` ]]; do
+      rest=${rest/"${BASH_REMATCH[0]}"/}
+    done
     while [[ $rest =~ \`[^\`]*\` ]]; do
       rest=${rest/"${BASH_REMATCH[0]}"/}
     done
