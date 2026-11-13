@@ -29,6 +29,7 @@ import (
 	"github.com/JairJosafath/theos/internal/adapters/matrix/matrixtest"
 	"github.com/JairJosafath/theos/internal/chatbot"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // newTheosChat is theos-chat as cmd/theos-chat runs it, on chatFake, as its
@@ -39,7 +40,13 @@ func newTheosChat() *chatbot.Bot {
 	c := theosChatConfig()
 	cl, err := client.New(c, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
-	return &chatbot.Bot{Client: cl, APIReader: cl, Config: c, ChatHosts: matrix.Hosts(nil)}
+	return &chatbot.Bot{Client: cl, APIReader: cl, Config: c, ChatHosts: chatHosts()}
+}
+
+// chatHosts are the chat adapters of the suite's operator and theos-chat, as
+// cmd/main.go gives them: Matrix's, which reaches chatFake.
+func chatHosts() map[string]ports.ChatHosts {
+	return map[string]ports.ChatHosts{model.ChatMatrix: matrix.Hosts(nil)}
 }
 
 // chatPass runs one of bot's passes over chat.

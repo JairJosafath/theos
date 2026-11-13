@@ -22,15 +22,22 @@ import (
 	"time"
 )
 
-// ChatConfig is how to reach one chat homeserver as the factory's bot.
+// ChatConfig is how to reach one chat host as the factory's bot. It is
+// comparable: theos-chat keeps one ChatHost per ChatConfig.
 type ChatConfig struct {
-	// Homeserver is the homeserver's address, http(s)://host[:port].
-	Homeserver string
-	// Token is the bot's access token, from the Chat's Secret.
+	// Address is the host's address, http(s)://host[:port] with an optional
+	// path.
+	Address string
+	// Token is the bot's token, from the Chat's Secret.
 	Token string
+	// AppToken is a second token, from the same Secret, for a host whose bot
+	// opens its own connection to read the rooms; "" for a host that needs
+	// none, and for the operator, which reads no rooms.
+	AppToken string
 }
 
-// ChatRoomSpec is a room EnsureRoom finds or makes.
+// ChatRoomSpec is a room EnsureRoom finds or makes. A host without Spaces
+// (model.ChatSystem) is never asked for a Space nor given a Parent.
 type ChatRoomSpec struct {
 	// ID is the room's ID as last recorded, "" for none: the room is kept
 	// while the bot is in it.
@@ -51,17 +58,19 @@ type ChatRoomSpec struct {
 
 // ChatRoom is a room EnsureRoom found or made.
 type ChatRoom struct {
-	// ID is the room's ID; Alias its full alias, #localpart:server.
+	// ID is the room's ID; Alias its full alias, as the host spells it.
 	ID    string
 	Alias string
 	// Created says EnsureRoom made it: nobody is invited to it yet.
 	Created bool
 }
 
-// ChatMessage is a message in plain text and in the host's HTML.
+// ChatMessage is a message in plain text and in the markup the host reads
+// (model.ChatSystem).
 type ChatMessage struct {
 	Text string
-	HTML string
+	// Formatted is the message in the host's markup; "" sends Text alone.
+	Formatted string
 }
 
 // ChatEvent is a message a person posted in a room the bot is in.
@@ -78,7 +87,7 @@ type ChatEvent struct {
 	// Replaces is the event an edit replaces, "" for a new message: an edit
 	// runs no command again.
 	Replaces string
-	// Time is when the homeserver received it, never the zero time.
+	// Time is when the host received it, never the zero time.
 	Time time.Time
 }
 
@@ -92,21 +101,21 @@ type ChatSync struct {
 	Events []ChatEvent
 }
 
-// ChatHost is the chat port (docs/plans/done/chat-matrix.md, "Matrix through a
-// port"): the operator makes a Chat's Space and rooms with it, and
+// ChatHost is the chat port (docs/plans/requests-and-chat.md): the operator
+// makes a Chat's rooms with it, and its Space on a host that has Spaces, and
 // theos-chat posts, threads, edits, reacts and reads the rooms. One value
-// speaks as one bot on one homeserver. What the two rely on of every
-// adapter is the suite contract.ChatHost (internal/ports/contract/chathost.go),
-// which each adapter's tests run.
+// speaks as one bot on one host. What the two rely on of every adapter is
+// the suite contract.ChatHost (internal/ports/contract/chathost.go), which
+// each adapter's tests run.
 type ChatHost interface {
-	// WhoAmI is the bot's user ID; ErrChatCredentialRefused when the
-	// homeserver doesn't know the token.
+	// WhoAmI is the bot's user ID; ErrChatCredentialRefused when the host
+	// doesn't know the token.
 	WhoAmI(ctx context.Context) (string, error)
 	// EnsureRoom finds the room spec describes, by its ID and then its alias,
 	// among the rooms the bot is in, or makes it: private, invite only and
 	// unencrypted. It makes an existing room's name and Space link match the
 	// spec. An alias held by a room the bot is not in is ErrChatAliasTaken.
-	// A token the homeserver doesn't know is ErrChatCredentialRefused, as
+	// A token the host doesn't know is ErrChatCredentialRefused, as
 	// WhoAmI's.
 	EnsureRoom(ctx context.Context, spec ChatRoomSpec) (ChatRoom, error)
 	// Invite invites user to room; a user already invited or in the room is
@@ -127,19 +136,19 @@ type ChatHost interface {
 	Sync(ctx context.Context, since string, wait time.Duration) (ChatSync, error)
 }
 
-// ChatHosts builds the ChatHost of one homeserver and bot, as cmd/main.go
-// picks the adapter.
+// ChatHosts builds the ChatHost of one host and bot. cmd/main.go and
+// cmd/theos-chat give one per chat host, by the name of its model.ChatSystem.
 type ChatHosts func(cfg ChatConfig) (ChatHost, error)
 
-// ErrChatCredentialRefused is a token the homeserver doesn't take.
-var ErrChatCredentialRefused = errors.New("the homeserver refused the access token")
+// ErrChatCredentialRefused is a token the host doesn't take.
+var ErrChatCredentialRefused = errors.New("the chat host refused the bot's token")
 
 // ErrChatAliasTaken is an alias held by a room the bot is not in.
 var ErrChatAliasTaken = errors.New("the alias belongs to a room the bot is not in")
 
 // ChatAliasTakenError is ErrChatAliasTaken naming the alias.
 type ChatAliasTakenError struct {
-	// Alias is the full alias, #localpart:server.
+	// Alias is the full alias, as the host spells it.
 	Alias string
 }
 

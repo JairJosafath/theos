@@ -59,9 +59,9 @@ type Bot struct {
 	// Config is theos-chat's own; a command's write is sent with a copy that
 	// impersonates the person.
 	Config *rest.Config
-	// ChatHosts builds the ChatHost of a homeserver and bot, as
-	// cmd/theos-chat picks the adapter.
-	ChatHosts ports.ChatHosts
+	// ChatHosts builds the ChatHost of a host and bot, by the name of the
+	// host's model.ChatSystem, as cmd/theos-chat gives the adapters.
+	ChatHosts map[string]ports.ChatHosts
 	// Interval is how often a Chat's rooms are read and its news posted; 0
 	// means five seconds.
 	Interval time.Duration
@@ -72,7 +72,7 @@ type Bot struct {
 	UIURL string
 
 	mu    sync.Mutex
-	hosts map[ports.ChatConfig]ports.ChatHost
+	hosts map[hostKey]chatHost
 }
 
 // The conditions of Tasks and Containers theos-chat reads, as the operator
@@ -133,33 +133,68 @@ func rooms(chat *c4v1beta1.Chat) map[model.ChatPurpose]string {
 	return out
 }
 
-// host is the ChatHost of chat's homeserver as its bot, built once per
-// homeserver and token.
-func (b *Bot) host(ctx context.Context, chat *c4v1beta1.Chat) (ports.ChatHost, error) {
+// chatHost is a Chat's ChatHost with the row of its host, which says how a
+// post is formatted there.
+type chatHost struct {
+	ports.ChatHost
+	system model.ChatSystem
+}
+
+// message is p as the host's message.
+func (h chatHost) message(p model.ChatPost) ports.ChatMessage {
+	return ports.ChatMessage{Text: p.Text(), Formatted: h.system.Format(p)}
+}
+
+// hostKey is what one built ChatHost serves: a host, its address and the
+// bot's tokens.
+type hostKey struct {
+	system string
+	ports.ChatConfig
+}
+
+// host is the ChatHost of chat's host as its bot, built once per host,
+// address and tokens. Every Chat is on model.ChatSystemDefault until a Chat
+// can name its host: step 8 of docs/plans/requests-and-chat.md reads
+// spec.host here.
+func (b *Bot) host(ctx context.Context, chat *c4v1beta1.Chat) (chatHost, error) {
+	system, err := model.ChatSystemByName(model.ChatSystemDefault)
+	if err != nil {
+		return chatHost{}, err
+	}
+	hosts, ok := b.ChatHosts[system.Name]
+	if !ok {
+		return chatHost{}, fmt.Errorf("theos-chat has no adapter for the chat host %s", system.Name)
+	}
 	var secret corev1.Secret
 	name := chat.Spec.CredentialsSecretRef.Name
 	if err := b.APIReader.Get(ctx, client.ObjectKey{Namespace: chat.Namespace, Name: name}, &secret); err != nil {
-		return nil, fmt.Errorf("reading Secret %s: %w", name, err)
+		return chatHost{}, fmt.Errorf("reading Secret %s: %w", name, err)
 	}
-	token := string(secret.Data[model.ChatTokenKey])
-	if token == "" {
-		return nil, fmt.Errorf("secret %s has no %s", name, model.ChatTokenKey)
+	// The operator wrote the address it reached into status.homeserver.
+	cfg := ports.ChatConfig{Address: chat.Status.Homeserver, Token: string(secret.Data[system.TokenKey])}
+	if cfg.Token == "" {
+		return chatHost{}, fmt.Errorf("secret %s has no %s", name, system.TokenKey)
 	}
-	cfg := ports.ChatConfig{Homeserver: chat.Status.Homeserver, Token: token}
+	if system.AppTokenKey != "" {
+		if cfg.AppToken = string(secret.Data[system.AppTokenKey]); cfg.AppToken == "" {
+			return chatHost{}, fmt.Errorf("secret %s has no %s", name, system.AppTokenKey)
+		}
+	}
+	key := hostKey{system: system.Name, ChatConfig: cfg}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if h, ok := b.hosts[cfg]; ok {
+	if h, ok := b.hosts[key]; ok {
 		return h, nil
 	}
-	h, err := b.ChatHosts(cfg)
+	h, err := hosts(cfg)
 	if err != nil {
-		return nil, err
+		return chatHost{}, err
 	}
 	if b.hosts == nil {
-		b.hosts = map[ports.ChatConfig]ports.ChatHost{}
+		b.hosts = map[hostKey]chatHost{}
 	}
-	b.hosts[cfg] = h
-	return h, nil
+	b.hosts[key] = chatHost{ChatHost: h, system: system}
+	return b.hosts[key], nil
 }
 
 func (b *Bot) now() time.Time {
@@ -176,15 +211,10 @@ func (b *Bot) interval() time.Duration {
 	return 5 * time.Second
 }
 
-// message is p as the host's message.
-func message(p model.ChatPost) ports.ChatMessage {
-	return ports.ChatMessage{Text: p.Text(), HTML: p.HTML()}
-}
-
 // post posts the namespace's news (model.ChatNextPost): threads started,
 // edited and marked done, plain posts, and the updates digest when it is
 // due. A failed post is skipped for this pass and the rest go on.
-func (b *Bot) post(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHost, st *state) error {
+func (b *Bot) post(ctx context.Context, chat *c4v1beta1.Chat, host chatHost, st *state) error {
 	news, err := b.news(ctx, chat.Namespace)
 	if err != nil {
 		return err
@@ -211,7 +241,7 @@ func (b *Bot) post(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHos
 		case step.Digest:
 			pending = append(pending, n)
 		case step.New:
-			id, err := host.Send(ctx, ids[route.Room], message(n.Post))
+			id, err := host.Send(ctx, ids[route.Room], host.message(n.Post))
 			if err != nil {
 				errs = append(errs, fmt.Errorf("posting %s in %s: %w", n.Key, route.Room, err))
 				continue
@@ -232,7 +262,7 @@ func (b *Bot) post(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHos
 		}
 	}
 	if model.ChatDigestDue(len(pending), st.digestAt, b.now(), time.Duration(chat.Spec.DigestMinutes)*time.Minute) {
-		id, err := host.Send(ctx, ids[model.ChatUpdates], message(model.ChatDigest(pending)))
+		id, err := host.Send(ctx, ids[model.ChatUpdates], host.message(model.ChatDigest(pending)))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("posting the updates digest: %w", err))
 		} else {
@@ -252,11 +282,11 @@ func (b *Bot) post(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHos
 // with ✅, recording each step in prev as it is done, and says whether it
 // changed prev; the thread's item follows the news's, so a command answers
 // what the root shows.
-func (b *Bot) follow(ctx context.Context, host ports.ChatHost, room string, prev *model.ChatPosted, n model.ChatNews,
+func (b *Bot) follow(ctx context.Context, host chatHost, room string, prev *model.ChatPosted, n model.ChatNews,
 	step model.ChatPostStep) (bool, error) {
 	changed := false
 	if step.Edit {
-		if _, err := host.Edit(ctx, room, prev.Event, message(n.Post)); err != nil {
+		if _, err := host.Edit(ctx, room, prev.Event, host.message(n.Post)); err != nil {
 			return changed, err
 		}
 		prev.Hash, changed = model.ChatHash(n.Post), true

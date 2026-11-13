@@ -478,6 +478,36 @@ What the step chose where the plan says nothing:
   reads, and docs/design.md, "Compatibility", now says a reason may be
   renamed or removed that way.
 
+## Step 2 as built (#152)
+
+What the step chose where the plan says nothing:
+
+- **The row is `model.ChatSystem`, in `internal/model/chat_system.go`.**
+  Its fields are `Spaces`, `TokenKey`, `AppTokenKey` and `Markup`, with
+  `Format` writing a post in that markup. The operator and `theos-chat`
+  take `map[string]ports.ChatHosts`, keyed by the row's `Name`, and
+  `cmd/main.go` and `cmd/theos-chat` give it one entry, `matrix`.
+- **How a Chat picks its host today.** It doesn't: every Chat is on
+  `model.ChatSystemDefault`, which is `matrix`. The Chat controller's
+  `Reconcile` and `theos-chat`'s `Bot.host` look that name up. Step 7 adds
+  `spec.host`, and step 8 reads it in those two places. A name that has no
+  adapter is a reconcile error, not a reason: until step 8, no Chat can
+  name such a host.
+- **The operator passes no `AppToken`.** It reads no rooms. `theos-chat`
+  reads `AppTokenKey` only when the row names one, and a missing key is
+  the same error as a missing `TokenKey`. `theos-chat` keeps one built host
+  per host name and `ChatConfig`, so two hosts at one address with one
+  token never share an adapter.
+- **The Ready messages still use Matrix's words.** They name the Space and
+  `accessToken`, which is true of the one row. Step 8 rewords them when it
+  adds the Slack row, the no-Space branch of the controller with them. That
+  branch is built and nothing reaches it yet; the Slack-shaped fake of
+  step 3 and the envtest of step 8 test it.
+- **The refusal's text changed and no user sees it.** It now reads "the chat
+  host refused the bot's token". It reaches a condition only through the
+  Matrix adapter's empty token, and the controller says `SecretIncomplete`
+  before it builds an adapter.
+
 ## How we will know #61 is done
 
 The issue's done-when, by step:

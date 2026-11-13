@@ -108,15 +108,15 @@ func WithRetries(n int, maxWait time.Duration) Option {
 // New is a Client of cfg's homeserver, http(s)://host[:port] with an
 // optional path, speaking with cfg's token.
 func New(cfg ports.ChatConfig, opts ...Option) (*Client, error) {
-	u, err := url.Parse(cfg.Homeserver)
+	u, err := url.Parse(cfg.Address)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" ||
 		u.Fragment != "" {
-		return nil, fmt.Errorf("homeserver %q is not an http or https address", cfg.Homeserver)
+		return nil, fmt.Errorf("homeserver %q is not an http or https address", cfg.Address)
 	}
 	if cfg.Token == "" {
 		return nil, fmt.Errorf("%w: it is empty", ports.ErrChatCredentialRefused)
 	}
-	c := &Client{base: strings.TrimSuffix(cfg.Homeserver, "/"), token: cfg.Token, http: http.DefaultClient,
+	c := &Client{base: strings.TrimSuffix(cfg.Address, "/"), token: cfg.Token, http: http.DefaultClient,
 		retries: defaultRetries, maxWait: defaultMaxWait, txnPrefix: rand.Text()[:12]}
 	for _, opt := range opts {
 		opt(c)
@@ -496,12 +496,13 @@ func (c *Client) Invite(ctx context.Context, room, user string) error {
 }
 
 // content is msg as a message's content: a notice, with its HTML when it
-// has one.
+// has one. Matrix's model.ChatSystem row reads HTML, so a message's
+// Formatted is HTML here.
 func content(msg ports.ChatMessage) map[string]any {
 	c := map[string]any{"msgtype": msgNotice, "body": msg.Text}
-	if msg.HTML != "" {
+	if msg.Formatted != "" {
 		c["format"] = formatHTML
-		c["formatted_body"] = msg.HTML
+		c["formatted_body"] = msg.Formatted
 	}
 	return c
 }
@@ -536,9 +537,9 @@ func (c *Client) Reply(ctx context.Context, room, threadRoot string, msg ports.C
 // new text marked with a star.
 func (c *Client) Edit(ctx context.Context, room, event string, msg ports.ChatMessage) (string, error) {
 	body := content(ports.ChatMessage{Text: "* " + msg.Text})
-	if msg.HTML != "" {
+	if msg.Formatted != "" {
 		body["format"] = formatHTML
-		body["formatted_body"] = "* " + msg.HTML
+		body["formatted_body"] = "* " + msg.Formatted
 	}
 	body["m.new_content"] = content(msg)
 	body["m.relates_to"] = map[string]string{keyRelType: relReplace, keyEventID: event}

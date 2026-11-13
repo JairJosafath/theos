@@ -40,9 +40,10 @@ import (
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// ChatReconciler makes each Chat's Space and its six rooms on the Matrix
-// homeserver, invites the Chat's people, and reports the rooms' IDs and
-// Ready (docs/plans/done/chat-matrix.md). It finds what it made before by the
+// ChatReconciler makes each Chat's six rooms on its chat host, and their
+// Space on a host that has Spaces (model.ChatSystem), invites the Chat's
+// people, and reports the rooms' IDs and Ready
+// (docs/plans/done/chat-matrix.md). It finds what it made before by the
 // IDs in status, then by alias, so a restart makes nothing twice. It never
 // posts or reads the rooms; theos-chat does.
 type ChatReconciler struct {
@@ -50,9 +51,9 @@ type ChatReconciler struct {
 	Scheme *runtime.Scheme
 	// APIReader reads the Chat's Secret live: the operator caches no Secrets.
 	APIReader client.Reader
-	// ChatHosts builds the ChatHost of a homeserver and bot, as cmd/main.go
-	// picks the adapter.
-	ChatHosts ports.ChatHosts
+	// ChatHosts builds the ChatHost of a host and bot, by the name of the
+	// host's model.ChatSystem, as cmd/main.go gives the adapters.
+	ChatHosts map[string]ports.ChatHosts
 	// Homeserver is the homeserver of a Chat that names none, the operator's
 	// --chat-homeserver; "" when the chart runs none.
 	Homeserver string
@@ -92,6 +93,17 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return notReady(model.ChatDuplicate)
 	}
 
+	// Every Chat is on model.ChatSystemDefault until a Chat can name its
+	// host: step 8 of docs/plans/requests-and-chat.md reads spec.host here.
+	system, err := model.ChatSystemByName(model.ChatSystemDefault)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	hosts, ok := r.ChatHosts[system.Name]
+	if !ok {
+		return ctrl.Result{}, fmt.Errorf("the operator has no adapter for the chat host %s", system.Name)
+	}
+
 	check.Homeserver = chat.Spec.Homeserver
 	if check.Homeserver == "" {
 		check.Homeserver = r.Homeserver
@@ -100,19 +112,20 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return notReady(model.ChatHomeserverUnset)
 	}
 	var secret corev1.Secret
-	err := r.APIReader.Get(ctx, client.ObjectKey{Namespace: chat.Namespace, Name: check.Secret}, &secret)
+	err = r.APIReader.Get(ctx, client.ObjectKey{Namespace: chat.Namespace, Name: check.Secret}, &secret)
 	switch {
 	case apierrors.IsNotFound(err):
 		return notReady(model.ChatSecretMissing)
 	case err != nil:
 		return ctrl.Result{}, err
-	case len(secret.Data[model.ChatTokenKey]) == 0:
+	case len(secret.Data[system.TokenKey]) == 0:
 		return notReady(model.ChatSecretIncomplete)
 	}
 
-	host, err := r.ChatHosts(ports.ChatConfig{Homeserver: check.Homeserver, Token: string(secret.Data[model.ChatTokenKey])})
+	// The operator reads no rooms, so it takes the bot's token alone.
+	host, err := hosts(ports.ChatConfig{Address: check.Homeserver, Token: string(secret.Data[system.TokenKey])})
 	if err == nil {
-		err = r.ensureRooms(ctx, &chat, host, status, &check)
+		err = r.ensureRooms(ctx, &chat, host, system, status, &check)
 	}
 	if err != nil {
 		check.Detail = err.Error()
@@ -157,36 +170,17 @@ func (r *ChatReconciler) olderChat(ctx context.Context, chat *c4v1beta1.Chat) (s
 	return "", nil
 }
 
-// ensureRooms makes or finds the Space and the six rooms, invites the
-// people, and records each step in status as it goes, so a failure halfway
-// keeps what was made.
+// ensureRooms makes or finds the Space, on a host that has Spaces, and the
+// six rooms, invites the people, and records each step in status as it
+// goes, so a failure halfway keeps what was made.
 func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHost,
-	status *c4v1beta1.ChatStatus, check *model.ChatCheck) error {
+	system model.ChatSystem, status *c4v1beta1.ChatStatus, check *model.ChatCheck) error {
 	bot, err := host.WhoAmI(ctx)
 	if err != nil {
 		return err
 	}
 	status.Homeserver, status.Bot = check.Homeserver, bot
-	var project c4v1beta1.Project
-	if err := r.Get(ctx, client.ObjectKey{Namespace: chat.Namespace, Name: chat.Namespace}, &project); err != nil &&
-		!apierrors.IsNotFound(err) {
-		return err
-	}
 	prefix := model.ChatAliasPrefix(chat.Namespace, chat.Spec.AliasPrefix)
-	spaceSpec := ports.ChatRoomSpec{Alias: prefix, Topic: model.ChatSpaceTopic, Space: true,
-		Name: model.ChatSpaceName(chat.Spec.Space, project.Spec.DisplayName, chat.Namespace)}
-	check.Space = spaceSpec.Name
-	if status.Space != nil {
-		spaceSpec.ID = status.Space.ID
-	}
-	space, err := host.EnsureRoom(ctx, spaceSpec)
-	if err != nil {
-		return err
-	}
-	status.Space = &c4v1beta1.ChatRoomRef{ID: space.ID, Alias: space.Alias}
-	if space.Alias != "" {
-		check.Space = space.Alias
-	}
 	// status.invited are the people invited to every room it lists: a room
 	// made anew empties it, so everyone is invited again (an invite of a
 	// member is no error), even when a later step fails.
@@ -195,13 +189,21 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 		invited[id] = true
 	}
 	forget := func() { status.Invited, invited = nil, map[string]bool{} }
-	if space.Created {
-		forget()
+	var rooms []string
+	parent := ""
+	if system.Spaces {
+		space, err := r.ensureSpace(ctx, chat, host, prefix, status, check)
+		if err != nil {
+			return err
+		}
+		if space.Created {
+			forget()
+		}
+		rooms, parent = append(rooms, space.ID), space.ID
 	}
-	rooms := []string{space.ID}
 	for _, purpose := range model.ChatPurposes {
 		spec := ports.ChatRoomSpec{Alias: model.ChatRoomAlias(prefix, purpose), Name: chatRoomName(chat.Spec.Rooms, purpose),
-			Topic: model.ChatTopic(purpose), Parent: space.ID}
+			Topic: model.ChatTopic(purpose), Parent: parent}
 		i := slices.IndexFunc(status.Rooms, func(s c4v1beta1.ChatRoomStatus) bool {
 			return s.Purpose == c4v1beta1.ChatPurpose(purpose)
 		})
@@ -240,6 +242,32 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 	status.Invited = people
 	check.People = len(people)
 	return nil
+}
+
+// ensureSpace makes or finds the Chat's Space, named for the Chat's space,
+// else its Project, and records it in status.
+func (r *ChatReconciler) ensureSpace(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHost, prefix string,
+	status *c4v1beta1.ChatStatus, check *model.ChatCheck) (ports.ChatRoom, error) {
+	var project c4v1beta1.Project
+	if err := r.Get(ctx, client.ObjectKey{Namespace: chat.Namespace, Name: chat.Namespace}, &project); err != nil &&
+		!apierrors.IsNotFound(err) {
+		return ports.ChatRoom{}, err
+	}
+	spec := ports.ChatRoomSpec{Alias: prefix, Topic: model.ChatSpaceTopic, Space: true,
+		Name: model.ChatSpaceName(chat.Spec.Space, project.Spec.DisplayName, chat.Namespace)}
+	check.Space = spec.Name
+	if status.Space != nil {
+		spec.ID = status.Space.ID
+	}
+	space, err := host.EnsureRoom(ctx, spec)
+	if err != nil {
+		return ports.ChatRoom{}, err
+	}
+	status.Space = &c4v1beta1.ChatRoomRef{ID: space.ID, Alias: space.Alias}
+	if space.Alias != "" {
+		check.Space = space.Alias
+	}
+	return space, nil
 }
 
 // chatRoomName is the room's display name: the Chat's, else its purpose.
