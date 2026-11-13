@@ -9,6 +9,12 @@
 # go test beside them. Each go test's output is printed when it ends; the
 # exit code is 1 when any failed.
 #
+# The suite's test binary is built once before the parts start (a go test of
+# the package that runs no test): go commands that run at once don't share
+# what they compile, so on a build cache without it every part and the rest
+# compiled the same packages side by side, 6.5 minutes of a Tests run on 4
+# CPUs before the first spec (#127). After it the parts only link.
+#
 # With -coverprofile FILE, each go test writes its own profile and they are
 # merged into FILE. With THEOS_SLOWEST_SPECS=FILE, each part writes FILE.i and
 # they are merged into FILE: the 10 slowest specs of the whole suite.
@@ -82,7 +88,14 @@ start() {
   names[$!]=$name
 }
 
-say "the controller suite runs in $procs processes (THEOS_TEST_PROCS)"
+say "the controller suite runs in $procs processes (THEOS_TEST_PROCS); building its tests once for them"
+built=$SECONDS
+if ! "$GO" test "${flags[@]}" ${cover:+-coverprofile "$work/build.profile"} -run '^$' "$SHARDED" >"$work/build.out" 2>&1; then
+  cat "$work/build.out"
+  say "the controller suite's tests don't build"
+  exit 1
+fi
+say "built in $((SECONDS - built))s"
 [ ${#rest[@]} -eq 0 ] || start rest -- "${rest[@]}"
 # A part an earlier run left must not be merged into this one's report.
 [ -z "${THEOS_SLOWEST_SPECS:-}" ] || rm -f "$THEOS_SLOWEST_SPECS".*

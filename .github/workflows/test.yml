@@ -139,7 +139,7 @@ jobs:
         env:
           THEOS_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
           TEST_TIMEOUT: 60m
-          THEOS_TEST_PROCS: ${{ runner.environment == 'github-hosted' && '4' || '' }}
+          THEOS_TEST_PROCS: ${{ runner.environment == 'github-hosted' && '8' || '' }}
         run: |
           go mod tidy
           COVER=1 make check CHECK_STEPS="generate fmt vet test"
