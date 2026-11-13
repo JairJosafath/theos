@@ -111,6 +111,7 @@ func main() {
 	var chatHomeserver string
 	var gitEventsURL string
 	var gitEventsAddr string
+	var alertDrainTimeout time.Duration
 	var testEnvToolsImage, testEnvToolsURL, testEnvRunnerURL string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
@@ -207,6 +208,10 @@ func main() {
 	flag.StringVar(&gitEventsAddr, "git-events-bind-address", "0",
 		"The address the receiver of the Git host's deliveries binds to, such as :8082, on the leader. "+
 			"Leave as 0 to receive none: the operator polls the host.")
+	flag.DurationVar(&alertDrainTimeout, "alert-drain-timeout", controller.DefaultAlertDrainTimeout,
+		"How long the operator, stopped by a signal, files the alerts it took and has not filed yet. It has to "+
+			"fit the pod's termination grace period: past it the kill cuts the drain, and what the inbox held "+
+			"then is lost unsaid.")
 	flag.StringVar(&testEnvToolsImage, "test-environment-tools-image", "",
 		"The image holding theos-env at /usr/local/bin/theos-env, such as the release's theos-agent image: a "+
 			"local TestEnvironment's lease pods copy it in. None: no local environment can be leased.")
@@ -404,6 +409,20 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	// The receiver of alerts, on the same listener; nil when it is off
+	// (docs/plans/alerts.md, decision 2). Only a signal ends signalCtx, so
+	// the receiver drains on SIGTERM and not when leadership is lost.
+	signalCtx := ctrl.SetupSignalHandler()
+	var alerts *controller.AlertReceiver
+	if gitEvents != nil {
+		alerts = &controller.AlertReceiver{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(),
+			SignalContext: signalCtx, DrainTimeout: alertDrainTimeout}
+		gitEvents.Alerts = alerts
+		if err := mgr.Add(alerts); err != nil {
+			setupLog.Error(err, "Failed to add the alert receiver")
+			os.Exit(1)
+		}
+	}
 
 	if err := (&controller.ProjectReconciler{
 		Client:            mgr.GetClient(),
@@ -598,11 +617,18 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "testenvironment")
 		os.Exit(1)
 	}
-	if err := (&controller.AlertSourceReconciler{
+	alertSources := &controller.AlertSourceReconciler{
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		APIReader: mgr.GetAPIReader(),
-	}).SetupWithManager(mgr); err != nil {
+		Git:       gitClient{},
+		Receiver:  alerts,
+		EventsURL: gitEventsURL,
+	}
+	if alerts != nil {
+		alerts.Drainer = alertSources
+	}
+	if err := alertSources.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "alertsource")
 		os.Exit(1)
 	}
@@ -665,7 +691,7 @@ func main() {
 	}
 
 	setupLog.Info("Starting manager", "version", buildinfo.Version, "chartVersion", os.Getenv("THEOS_CHART_VERSION"))
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(signalCtx); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}

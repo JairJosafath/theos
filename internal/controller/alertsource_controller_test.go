@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"crypto/rand"
 	"fmt"
 	"time"
 
@@ -39,7 +40,8 @@ func newAlertSource(ns string) *c4v1beta1.AlertSource {
 		Type: c4v1beta1.AlertSourceAlertmanager, SecretRef: c4v1beta1.LocalRef{Name: "alerts-webhook"}}}
 }
 
-// alertSourceReady waits for src's Ready to be False with reason, and returns it.
+// alertSourceReady waits for src's Ready to have reason, True for Receiving
+// and False for the others, and returns it.
 func alertSourceReady(src *c4v1beta1.AlertSource, reason string) *metav1.Condition {
 	GinkgoHelper()
 	var cond *metav1.Condition
@@ -48,7 +50,11 @@ func alertSourceReady(src *c4v1beta1.AlertSource, reason string) *metav1.Conditi
 		cond = condition(src.Status.Conditions, c4v1beta1.ConditionAlertSourceReady)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Reason).To(Equal(reason), cond.Message)
-		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		want := metav1.ConditionFalse
+		if reason == c4v1beta1.ReasonAlertSourceReceiving {
+			want = metav1.ConditionTrue
+		}
+		g.Expect(cond.Status).To(Equal(want))
 		g.Expect(cond.ObservedGeneration).To(Equal(src.Generation))
 	}).Should(Succeed())
 	return cond
@@ -93,7 +99,7 @@ var _ = Describe("AlertSource", func() {
 		Expect(src.Spec.DailyLimit).To(Equal(int32(model.DefaultAlertDailyLimit)))
 	})
 
-	It("is SecretMissing without its Secret, and ReceiverOff once the Secret holds the token", func() {
+	It("is SecretMissing without its Secret, and Receiving once the Secret holds the token", func() {
 		ns := newProjectNamespace()
 		src := newAlertSource(ns)
 		mustCreate(src)
@@ -101,15 +107,16 @@ var _ = Describe("AlertSource", func() {
 		Expect(cond.Message).To(ContainSubstring("Secret alerts-webhook is missing"))
 
 		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "alerts-webhook"),
-			Data: map[string][]byte{model.AlertSecretKeyToken: []byte("a-token")}})
-		cond = alertSourceReady(src, c4v1beta1.ReasonAlertSourceReceiverOff)
-		Expect(cond.Message).To(ContainSubstring("takes no deliveries"))
+			Data: map[string][]byte{model.AlertSecretKeyToken: []byte(rand.Text())}})
+		cond = alertSourceReady(src, c4v1beta1.ReasonAlertSourceReceiving)
+		Expect(cond.Message).To(ContainSubstring("/alerts/" + ns + "/alerts"))
+		Expect(src.Status.URL).To(Equal("/alerts/" + ns + "/alerts"))
 	})
 
-	It("is SecretMissing while the key its type reads is empty, and ReceiverOff once it has a value", func() {
+	It("is SecretMissing while the key its type reads is empty, and Receiving once it has a value", func() {
 		ns := newProjectNamespace()
 		secret := &corev1.Secret{ObjectMeta: objectMeta(ns, "alerts-webhook"),
-			Data: map[string][]byte{model.AlertSecretKeySecret: {}, model.AlertSecretKeyToken: []byte("a-token")}}
+			Data: map[string][]byte{model.AlertSecretKeySecret: {}, model.AlertSecretKeyToken: []byte(rand.Text())}}
 		mustCreate(secret)
 		// A sentry source reads "secret": the token beside it is not its key.
 		src := newAlertSource(ns)
@@ -118,9 +125,9 @@ var _ = Describe("AlertSource", func() {
 		cond := alertSourceReady(src, c4v1beta1.ReasonAlertSourceSecretMissing)
 		Expect(cond.Message).To(ContainSubstring(`has an empty "secret", which is no credential`))
 
-		secret.Data[model.AlertSecretKeySecret] = []byte("a-client-secret")
+		secret.Data[model.AlertSecretKeySecret] = []byte(rand.Text())
 		Expect(k8sClient.Update(ctx, secret)).To(Succeed())
-		alertSourceReady(src, c4v1beta1.ReasonAlertSourceReceiverOff)
+		alertSourceReady(src, c4v1beta1.ReasonAlertSourceReceiving)
 	})
 
 	It("is SecretMissing when its Secret has none of the keys its type reads", func() {

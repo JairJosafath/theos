@@ -78,6 +78,24 @@ type issueStore struct {
 	// CloseIssue is next called on it, as one opened after its blockers were
 	// read.
 	closeBlockers map[string]string
+	// now is the clock CloseIssue stamps ClosedAt with; nil is time.Now.
+	now func() time.Time
+}
+
+// SetClock makes now the clock a closed issue's ClosedAt is stamped with, so
+// a test that moves its own clock sees the issue closed on it; nil is
+// time.Now. now must not call back into the fake.
+func (g *Git) SetClock(now func() time.Time) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	g.s.issueState().now = now
+}
+
+func (s *issueStore) clock() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 // BlockOnClose makes the next CloseIssue of an issue of owner/name first give
@@ -470,7 +488,7 @@ func (g *Git) CloseIssue(ctx context.Context, repo ports.Repository, number int)
 		return fmt.Errorf("closing issue %d of %s/%s, which waits on %v: %w", number, repo.Owner, repo.Name,
 			blockers, ports.ErrOpenDependencies)
 	}
-	i.State = stateClosed
+	i.State, i.ClosedAt = stateClosed, g.s.issueState().clock()
 	g.s.deliver(repo, EventIssue, number)
 	return nil
 }

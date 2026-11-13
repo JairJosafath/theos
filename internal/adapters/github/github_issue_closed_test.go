@@ -1,0 +1,46 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package github
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+)
+
+// An alert's rule needs when its issue was closed (#64, docs/plans/alerts.md,
+// decision 8): GitHub says it in closed_at, null while the issue is open.
+func TestIssueClosedAt(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		want       time.Time
+	}{
+		{"closed", `{"number":3,"state":"closed","closed_at":"2026-11-12T10:00:00Z"}`,
+			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)},
+		{"open", `{"number":3,"state":"open","closed_at":null}`, time.Time{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var issue ghIssue
+			if err := json.Unmarshal([]byte(tc.body), &issue); err != nil {
+				t.Fatal(err)
+			}
+			if got := issue.issue().ClosedAt; !got.Equal(tc.want) {
+				t.Errorf("ClosedAt = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

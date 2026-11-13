@@ -55,7 +55,8 @@ var _ = Describe("The deploy monitor", func() {
 		Expect(gitFake.IssueCount(ns, "orders-api")).To(Equal(1))
 		issue := gitFake.Issue(ns, "orders-api", int(number))
 		Expect(issue.Title).To(Equal("Deploy v0.1.0 to staging is Degraded"))
-		Expect(issue.Labels).To(ConsistOf(model.LabelBug, model.LabelProposed))
+		// #64: what the monitor files is source/monitor, an alert's bug or a deploy's.
+		Expect(issue.Labels).To(ConsistOf(model.LabelBug, model.LabelMonitor, model.LabelProposed))
 		Expect(issue.Body).To(ContainSubstring("staging runs v0.1.0"))
 		Expect(model.HasDeployMonitorMarker(issue.Body, "staging", "v0.1.0", model.DeployMonitorDegraded)).To(BeTrue())
 
