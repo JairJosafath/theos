@@ -414,8 +414,7 @@ func (r *TaskReconciler) resumeRun(ctx context.Context, task *c4v1beta1.Task, st
 		return ctrl.Result{}, err
 	}
 	if wait != nil {
-		r.waitForEnvironment(task, status, wait)
-		return ctrl.Result{RequeueAfter: r.environmentRecheck()}, nil
+		return r.waitForEnvironment(task, status, wait), nil
 	}
 	fresh, err := r.runSandbox(ctx, task, status, container, agents, role, status.Sandbox, in, envs)
 	if err != nil {

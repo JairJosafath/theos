@@ -29,6 +29,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -52,8 +53,16 @@ type runEnvironment struct {
 }
 
 // environmentWait is why a run waits for its environments: the Task's
-// Progressing message.
-type environmentWait struct{ message string }
+// Progressing message. A run that took a lease this pass waits with record
+// set instead, and no message: only for the status that lists the lease to be
+// written, before its sandbox is made or resumed. The TestEnvironment
+// reconciler returns a lease its holder doesn't list once it is OrphanGrace
+// old, so a lease listed only after the sandbox, its Git calls and a status
+// write that may conflict could be returned under a running agent (#214).
+type environmentWait struct {
+	message string
+	record  bool
+}
 
 // environmentRecheck is how often a Task waiting for a test environment
 // looks again.
@@ -78,7 +87,8 @@ func envTokenSecret(task *c4v1beta1.Task) string {
 // waits: one isn't in the project, every lease of one is taken, one spent its
 // day's budget or its provider refuses its credential, or one is
 // starting or failed. The leases are recorded in status.environments as
-// they are taken, so a run never takes one twice and the Task returns each.
+// they are taken, so a run never takes one twice and the Task returns each;
+// a run that took one this pass waits for that status to be written (record).
 func (r *TaskReconciler) leaseEnvironments(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, role, sandbox string, labels []string) ([]runEnvironment, *environmentWait, error) {
 	if !model.LeasesEnvironments(role, isSpec(task)) {
@@ -101,7 +111,11 @@ func (r *TaskReconciler) leaseEnvironments(ctx context.Context, task *c4v1beta1.
 	}
 	envs := model.EnvironmentsOf(required, asked, names)
 	if len(envs.Missing) > 0 {
-		return nil, &environmentWait{model.EnvironmentWaitMessage(model.EnvNotInProject, envs.Missing, "")}, nil
+		return nil, &environmentWait{message: model.EnvironmentWaitMessage(model.EnvNotInProject, envs.Missing, "")}, nil
+	}
+	listed := map[string]bool{}
+	for _, l := range status.Environments {
+		listed[l.Lease] = true
 	}
 	var ready []runEnvironment
 	var waits []string
@@ -119,7 +133,10 @@ func (r *TaskReconciler) leaseEnvironments(ctx context.Context, task *c4v1beta1.
 			tokenSecret: envTokenSecret(task)})
 	}
 	if len(waits) > 0 {
-		return nil, &environmentWait{strings.Join(waits, "; ")}, nil
+		return nil, &environmentWait{message: strings.Join(waits, "; ")}, nil
+	}
+	if slices.ContainsFunc(ready, func(e runEnvironment) bool { return !listed[e.lease.ID] }) {
+		return nil, &environmentWait{record: true}, nil
 	}
 	return ready, nil, nil
 }
@@ -364,8 +381,14 @@ func environmentEnv(envs []runEnvironment) []corev1.EnvVar {
 	return append(out, corev1.EnvVar{Name: agentrunner.EnvEnvironments, Value: string(data)})
 }
 
-// waitForEnvironment records that the run waits for its environments.
+// waitForEnvironment records that the run waits for its environments, and
+// when to look again. A run that waits only for its new leases to be recorded
+// goes on in the pass the written status brings, its progress as it was.
 func (r *TaskReconciler) waitForEnvironment(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	wait *environmentWait) {
+	wait *environmentWait) ctrl.Result {
+	if wait.record {
+		return ctrl.Result{}
+	}
 	r.progress(task, status, metav1.ConditionTrue, model.ReasonWaitingForEnvironment, wait.message)
+	return ctrl.Result{RequeueAfter: r.environmentRecheck()}
 }
