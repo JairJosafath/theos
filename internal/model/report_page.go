@@ -242,9 +242,11 @@ func reportTime(rfc3339 string) string {
 // [see here](https://...) prints as it was typed and links nowhere. An
 // ampersand and a less-than sign become their HTML entities, which every
 // Markdown renderer prints as the character: no tag and no entity of the
-// text's own reaches the page.
+// text's own reaches the page. A dollar sign takes a backslash too: GitHub
+// reads what lies between two of them as mathematics, and a criterion that
+// names $HOME and $PATH would print as a formula.
 var reportEscapes = strings.NewReplacer(
-	`\`, `\\`, "|", `\|`, "`", "\\`", "*", `\*`, "_", `\_`, "~", `\~`, "[", `\[`, "]", `\]`,
+	`\`, `\\`, "|", `\|`, "`", "\\`", "*", `\*`, "_", `\_`, "~", `\~`, "[", `\[`, "]", `\]`, "$", `\$`,
 	"&", "&amp;", "<", "&lt;",
 )
 
@@ -279,8 +281,11 @@ func reportPercent(share *float64) string {
 // $1.115 is held a hair under and prints $1.11. fmt's %.2f rounds an exact
 // half to the even cent, $1.12, and the page would differ from the UI by a
 // cent. The cases both sides must print are in the fixture's money.json.
+// A cost under zero, or one that is no number (NaN, an infinity), is no cost
+// and prints as none: no Task's agents report one, the arithmetic below has
+// no cents for it, and "$-1.-49" on a published page would pass for a number.
 func reportMoney(milliUSD *float64) string {
-	if milliUSD == nil {
+	if milliUSD == nil || math.IsNaN(*milliUSD) || math.IsInf(*milliUSD, 0) || *milliUSD < 0 {
 		return reportNone
 	}
 	if *milliUSD > 0 && *milliUSD < 10 {

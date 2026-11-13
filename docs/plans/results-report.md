@@ -109,8 +109,9 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
     harness and model, an Agent's name, a Scorer's name and its criteria are
     what someone typed into a resource, and the page is published. In a
     table cell or a heading each is one line, with a backslash before `\`,
-    `|`, a backtick, `*`, `_`, `~`, `[` and `]`, and `&` and `<` as their
-    HTML entities. The backslash comes first so the text's own can't undo an
+    `|`, a backtick, `*`, `_`, `~`, `[`, `]` and `$` (GitHub reads what two
+    dollar signs enclose as mathematics), and `&` and `<` as their HTML
+    entities. The backslash comes first so the text's own can't undo an
     escape (`a\|b`). The backtick is escaped because a code span shows
     backslashes as they are; once it is, escaping the emphasis and link
     characters is the same rule, and a criterion that says
@@ -147,7 +148,7 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
    a period and Tasks into a `Report`; `Report.JSON` and `Report.Markdown`
    write it. Done when the table tests pass, the fixture gives its report
    and page byte for byte, and the UI's test agrees with the report.
-2. **`theos-session report`.** Reads the Tasks of the cluster the session
+2. **`theos-session report`** (done). Reads the Tasks of the cluster the session
    talks to, maps each to `model.ReportTask`, and writes the two files of
    `model.ReportPaths(dir, name)`: the name is the release's tag, and the
    directory a flag, `docs/results` when it isn't given. It asks for the
@@ -158,11 +159,69 @@ cluster's UI, and `docs/results.md` holds screenshots from October.
    `mergedTasks`, so a reader has the pull request's address and not only
    its number (decision 15). `hack/release-notes.sh` links the period's
    page when the file exists. `docs/design.md`, "Measuring the factory",
-   gets its paragraph with the command.
+   gets its paragraph with the command. "What step 2 found", below, has
+   what it settled.
 3. **The first report,** from the owner's cluster, run by a person.
 4. **README's first screen** carries three numbers with the date: Tasks
    merged, the share merged with no person's commit, and the median cost of
    a merged Task. They are `merged`, `noPersonCommit` and `cost` in the JSON.
+
+## What step 2 found
+
+- **The command is `theos-session report --name <tag>`,** with `--from` and
+  `--to` (RFC 3339), `--dir` (`docs/results`), `--namespace` (every
+  namespace the person may list Tasks in) and `--kubeconfig`. `--to` is now
+  when it isn't given and `--from` the first Task, so the first report needs
+  only its name; each later one takes the report before's `to` as its
+  `--from`. It reads and never writes to the cluster: it registers no
+  Session, so it needs no `.theos.yaml`.
+- **Checked before the cluster is opened, in this order:** the name
+  (`model.ReportPaths`), the two times and that the period ends after it
+  begins, and the directory: it, or the nearest of its parents that exists,
+  must be a directory. Nothing is made to find that out; the directory is
+  made after the cluster was read, and both files are rendered before
+  either is written. `TestReportChecksBeforeItReadsOrWrites` holds each to a
+  cluster never opened and a folder with nothing new in it.
+- **The mapping is the command's, and is the operator's written again.**
+  `reportTask` (`cmd/theos-session/report.go`) reads the metric facts as
+  `taskMetricFacts` does in `internal/controller`, which a command of a
+  devcontainer shouldn't link (the whole operator would come with it).
+  `TestReportOfTheFixture` decodes `tasks.json` into `c4v1beta1.TaskList`,
+  refusing a field the API's types don't have, runs the command on a fake
+  cluster holding it, and compares the two files it wrote with
+  `report.json` and `report.md` byte for byte. Tried: a size always read,
+  and a person's approval of a held change left out, each failed it.
+- **What the fixture can't hold of the mapping is table-tested beside it**
+  (`TestReportTask`). The fixture has one Task with a `Succeeded` condition,
+  the one that ended with no change, so reading any `Succeeded` condition as
+  "no change" passed the fixture; the table has a merged Task whose reason
+  is another, one that only `Progressing` says it of, and a failed one.
+  `Unreviewed` is read by the Prometheus series and by no number of the
+  report, so no report can show it wrong; the table holds it to the
+  operator's rule all the same. `status.pullRequestSize` is a struct the API
+  leaves out when it is empty: one that says nothing was not read, and one
+  that names only files (a rename) was read, as a change of no lines.
+- **A merged Task's `repository` is its Container's `status.repositoryURL`**
+  (decision 15), by namespace and name, read in one list of Containers. It
+  is absent, not empty, for a Container deleted since or not scaffolded
+  yet, and the page doesn't print it, so `report.json` and `report.md` of
+  the fixture, which has no Containers, are as step 1 wrote them.
+- **The release notes look in the tag's tree,** not in the working copy:
+  `git cat-file -e <tag>:<RESULTS>/<tag>.md`. The notes' links point at the
+  tag, so a report committed after it would be a dead link, and a draft
+  from `HEAD` (version `X.Y.Z`) links none. `RESULTS` is the directory, as
+  `--dir` is the command's; the line stands between the changes and the
+  images. So the report is written and committed before the release is
+  tagged, with `--to` at that moment; what merges between then and the tag
+  is the next report's.
+- **From the last review of step 1:** a cost under zero or one that is no
+  number prints as none (`reportMoney` printed `$-1.-49` for the first and
+  panicked on NaN and on an infinity; the UI's `formatCost` prints `$-1.50`
+  and `$NaN`, which no Task can give it, so `money.json` has no such case
+  and the rule is Go's alone, in `TestReportPage`); a dollar sign in a
+  cell or a heading takes a backslash, since GitHub reads what lies between
+  two as mathematics (decision 12's list, one more); and the directory is
+  checked first, as above.
 
 ## What the fixture holds
 
@@ -201,6 +260,8 @@ ignores (their names are Kubernetes names; `compareText` has its own test).
 
 - `go test ./internal/model -run 'Report|MedianAndPercentile'` and
   `make ui-test` pass.
+- Step 2: `go test ./cmd/theos-session -run Report` and
+  `hack/release-notes_test.sh` pass.
 - Changing a rule the table above lists, on either side, fails a test.
   Tried on 2026-11-10, one change at a time. In Go, each of these failed
   Go's test and, once the fixture was written again with `-update`, the

@@ -19,6 +19,7 @@ package model
 import (
 	"encoding/json"
 	"flag"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -493,19 +494,30 @@ func TestFactoryReportNamesTheMergedTasks(t *testing.T) {
 	}
 	failed := named(5, "shop", "api", "failed", 9)
 	failed.Phase = TaskFailed
+	// The repository is its Container's, where it was read (decision 15).
+	late := named(30, "shop", "web", "late", 3)
+	late.Repository = "https://git.example.com/shop/web"
 	r := FactoryReport(period(), []ReportTask{
-		named(10, "shop", "api", "b", 7), named(30, "shop", "web", "late", 3), named(10, "shop", "api", "a", 8),
+		named(10, "shop", "api", "b", 7), late, named(10, "shop", "api", "a", 8),
 		named(10, "docs", "site", "z", 1), named(48*60, "shop", "api", "before", 2), failed,
 	})
 	want := []ReportMerged{
-		{"shop", "web", "late", 3, "2026-11-05T11:30:00Z"},
-		{"docs", "site", "z", 1, "2026-11-05T11:50:00Z"},
-		{"shop", "api", "a", 8, "2026-11-05T11:50:00Z"},
-		{"shop", "api", "b", 7, "2026-11-05T11:50:00Z"},
+		{"shop", "web", "https://git.example.com/shop/web", "late", 3, "2026-11-05T11:30:00Z"},
+		{"docs", "site", "", "z", 1, "2026-11-05T11:50:00Z"},
+		{"shop", "api", "", "a", 8, "2026-11-05T11:50:00Z"},
+		{"shop", "api", "", "b", 7, "2026-11-05T11:50:00Z"},
 	}
 	if !reflect.DeepEqual(r.MergedTasks, want) {
 		t.Errorf("merged Tasks = %+v, want %+v: the period's, the oldest merge first, then by namespace and name",
 			r.MergedTasks, want)
+	}
+	document, err := r.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(document), `"repository"`); got != 1 ||
+		!strings.Contains(string(document), `"repository": "https://git.example.com/shop/web"`) {
+		t.Errorf("the JSON has %d repositories, want the one that was read and no empty one:\n%s", got, document)
 	}
 	if none := FactoryReport(period(), nil); none.MergedTasks == nil || len(none.MergedTasks) != 0 {
 		t.Errorf("with no merged Task the list is %v, want an empty one, which the JSON writes as []", none.MergedTasks)
@@ -681,6 +693,12 @@ func TestReportPage(t *testing.T) {
 		"and over a dollar": {reportMoney(new(1125.0)), "$1.13"},
 		"under a cent":      {reportMoney(new(9.5)), "<$0.01"},
 		"no cost":           {reportMoney(nil), "–"},
+		"a cost under zero": {reportMoney(new(-1500.0)), "–"},
+		"and a hair under":  {reportMoney(new(-0.001)), "–"},
+		"a cost of NaN":     {reportMoney(new(math.NaN())), "–"},
+		"an endless cost":   {reportMoney(new(math.Inf(1))), "–"},
+		"and its opposite":  {reportMoney(new(math.Inf(-1))), "–"},
+		"mathematics":       {reportCell(`reads $HOME and $PATH, costs $5`), `reads \$HOME and \$PATH, costs \$5`},
 		"share":             {reportPercent(new(2.0 / 3)), "67%"},
 		"rate":              {reportRate(ReportVerdicts{Pass: 3, Fail: 1, Unclear: 2, Rate: new(0.75)}), "75% (3 of 4), 2 unclear"},
 		"nothing judged":    {reportRate(ReportVerdicts{}), "–"},

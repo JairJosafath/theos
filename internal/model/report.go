@@ -43,6 +43,9 @@ type ReportTask struct {
 	Name string
 	// PullRequest is the Task's pull request; 0 when it has none.
 	PullRequest int
+	// Repository is the web address of the Task's Container's repository,
+	// which its pull request is in; empty when it wasn't read.
+	Repository string
 	// Completed is when the Task finished; zero while it hasn't.
 	Completed time.Time
 	// Size is the merged pull request's changed lines; nil when the Git host
@@ -142,8 +145,12 @@ type Report struct {
 // ReportMerged is one merged Task: its Container, whose repository the pull
 // request is in, and when it merged, RFC 3339 in UTC.
 type ReportMerged struct {
-	Namespace   string `json:"namespace"`
-	Container   string `json:"container"`
+	Namespace string `json:"namespace"`
+	Container string `json:"container"`
+	// Repository is the web address of the Container's repository, so a
+	// reader has the pull request's address and not only its number. It is
+	// absent when the Container's wasn't read (a Container deleted since).
+	Repository  string `json:"repository,omitempty"`
 	Task        string `json:"task"`
 	PullRequest int    `json:"pullRequest"`
 	Completed   string `json:"completed"`
@@ -358,7 +365,8 @@ func FactoryReport(period ReportPeriod, tasks []ReportTask) Report {
 	r.MergedTasks = make([]ReportMerged, 0, len(merged))
 	for _, t := range merged {
 		r.MergedTasks = append(r.MergedTasks, ReportMerged{Namespace: t.Namespace, Container: t.Container,
-			Task: t.Name, PullRequest: t.PullRequest, Completed: t.Completed.UTC().Format(time.RFC3339)})
+			Repository: t.Repository, Task: t.Name, PullRequest: t.PullRequest,
+			Completed: t.Completed.UTC().Format(time.RFC3339)})
 	}
 	slices.SortFunc(r.MergedTasks, func(a, b ReportMerged) int {
 		return cmp.Or(cmp.Compare(a.Completed, b.Completed), cmp.Compare(a.Namespace, b.Namespace),

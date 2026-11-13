@@ -1169,6 +1169,33 @@ be judged by numbers the factory keeps itself.
   `internal/model`, so they are gauges, a restart counts nothing twice, and
   keeping history is the Prometheus's job (#59). The chart installs a
   Grafana dashboard and alert rules on them, each behind a value.
+- **A release publishes the numbers** (#66, [plans/results-report.md](plans/results-report.md)).
+  `theos-session report --name <tag> [--from <time>] [--to <time>]` reads
+  the Tasks and Containers of the cluster its kubeconfig names, changes
+  nothing there, and writes one page and one JSON document,
+  `docs/results/<tag>.md` and `<tag>.json` (`--dir` for a repository that
+  keeps its pages elsewhere, `--namespace` for one project's Tasks): the
+  Tasks that finished after `--from`, up to and including `--to`, so the
+  next report begins where this one ends and no Task is counted twice.
+  Without `--from` it runs from the first Task, and without `--to` up to
+  now. They hold the Tasks merged, failed by reason and ended with no
+  change, the shares merged with no person's commit, on a person's approval
+  and in the first round, the median and 90th percentile of the lead times
+  and of each stage, cost per merged Task by size and by harness, model and
+  Agent, and each Scorer's pass rates. The rules are `internal/model`'s
+  (`FactoryReport`), the UI's written again in Go and held to them by one
+  fixture both sides' tests read; the command only maps a Task to what the
+  rules read, and the same fixture, decoded as the API's typed Tasks, holds
+  that mapping. The JSON names every merged Task with its pull request's
+  number and its Container's repository, so a number can be checked against
+  the pull requests; the page and the JSON say what the numbers don't show
+  (what people decided, why a Task failed, what failures cost, what is no
+  longer recorded, that it is one project). A name that is no name, a time
+  that is none, or a directory that can't be one fails before the cluster is
+  read and before a file is written. A person runs it before tagging the
+  release and commits both files; `hack/release-notes.sh` links the page
+  from the release's notes when the tag's tree has it (`RESULTS` names the
+  directory there).
 - **A Scorer judges finished Tasks.** Plain-words criteria, a judge Agent
   (`judgeRef`), what it selects (kinds, Containers, outcomes; by default
   merged Implement Tasks), a sample picked by a hash of the Scorer and the
