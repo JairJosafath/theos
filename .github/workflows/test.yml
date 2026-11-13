@@ -132,9 +132,11 @@ jobs:
       # THEOS_TEST_PROCS: the controller suite is the long pole of every run
       # that reaches it, a quarter of an hour in the 2 processes a device
       # runs it in. One of GitHub's runners has 4 CPUs and 16 GiB to itself,
-      # and each process takes about a GiB (docs/dev/devices.md), so there it
-      # runs in 4. A self-hosted runner shares its device and keeps
-      # hack/go-test.sh's default.
+      # and each process takes about a GiB, so there it runs in 8: its
+      # longest part took 827 s at 2, 449 s at 4 and 291 s at 8, and the
+      # slowest spec 11 s at each, so the parts wait more than they compute
+      # (docs/dev/devices.md has the table). A self-hosted runner shares its
+      # device and keeps hack/go-test.sh's default.
       - name: Running Tests
         env:
           THEOS_SLOWEST_SPECS: ${{ runner.temp }}/slowest-specs.txt
