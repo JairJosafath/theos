@@ -175,11 +175,11 @@ export function demoHealth(now: number): FactoryHealth {
     metrics: true,
     nodes: [
       {
-        name: 'theos-control-plane',
+        name: DEMO_NODE,
         ready: true,
         pressure: [],
-        cpuAllocatableMilli: 12000,
-        memoryAllocatableBytes: 14.7 * 2 ** 30,
+        cpuAllocatableMilli: DEMO_CPU_MILLI,
+        memoryAllocatableBytes: DEMO_MEMORY_BYTES,
         cpuMilli: 1370,
         memoryBytes: 4.2 * 2 ** 30,
       },
@@ -278,6 +278,11 @@ export function demoHealth(now: number): FactoryHealth {
   }
 }
 
+/** The demo's one node, and what it can allocate: the scale every sample of its hour carries. */
+const DEMO_NODE = 'theos-control-plane'
+const DEMO_CPU_MILLI = 12000
+const DEMO_MEMORY_BYTES = 14.7 * 2 ** 30
+
 /**
  * An hour sampled every 15 s: quiet, then CI and an agent sandbox running at
  * once 40 to 30 minutes ago, when the API server stalled, then the review now.
@@ -292,12 +297,18 @@ function demoHistory(now: number) {
     const ci = busy ? 4200 + wave * 2500 : minutesAgo < 9 && minutesAgo > 4 ? 1800 : 5
     const agent = busy ? 3600 + wave * 1800 : review ? 1200 : 0
     const stall = busy && minutesAgo > 33 && minutesAgo < 35
+    const cpuMilli = Math.round(160 + ci + agent)
+    const memoryBytes = Math.round((1.9 + (busy ? 6.5 : 0) + (review ? 2.2 : 0) + wave * 0.2) * 2 ** 30)
     samples.push({
       at: new Date(now - minutesAgo * MIN).toISOString(),
       apiMs: stall ? 10_000 : busy ? 300 + Math.round(wave * 2600) : 9 + Math.round(wave * 12),
       ...(stall && i % 2 ? { apiFailed: true } : {}),
-      cpuMilli: Math.round(160 + ci + agent),
-      memoryBytes: Math.round((1.9 + (busy ? 6.5 : 0) + (review ? 2.2 : 0) + wave * 0.2) * 2 ** 30),
+      cpuMilli,
+      cpuAllocatableMilli: DEMO_CPU_MILLI,
+      cpuFullest: { node: DEMO_NODE, share: cpuMilli / DEMO_CPU_MILLI },
+      memoryBytes,
+      memoryAllocatableBytes: DEMO_MEMORY_BYTES,
+      memoryFullest: { node: DEMO_NODE, share: memoryBytes / DEMO_MEMORY_BYTES },
       ciCpuMilli: Math.round(ci),
       agentCpuMilli: Math.round(agent),
     })

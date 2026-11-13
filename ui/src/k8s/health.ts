@@ -41,6 +41,12 @@ export interface NodeHealth {
   memoryBytes?: number
 }
 
+/** The fullest node of a sample: its name and its usage over its own allocatable, 1 being full. */
+export interface FullestNode {
+  node: string
+  share: number
+}
+
 /** One point of the last hour, sampled by the UI server every 15 s. */
 export interface HealthSample {
   at: string
@@ -50,8 +56,20 @@ export interface HealthSample {
   apiFailed?: boolean
   /** Every node's CPU, added up; absent when no node has figures. */
   cpuMilli?: number
+  /**
+   * What the nodes added up in cpuMilli could allocate together when the sample
+   * was taken (#141): the sample's own scale, whatever nodes came or went
+   * since. Absent when they could allocate nothing, and from older servers.
+   */
+  cpuAllocatableMilli?: number
+  /** The node that used most of its own CPU, and that share. */
+  cpuFullest?: FullestNode
   /** Every node's memory, added up. */
   memoryBytes?: number
+  /** As cpuAllocatableMilli, for the nodes added up in memoryBytes. */
+  memoryAllocatableBytes?: number
+  /** The node that used most of its own memory, and that share. */
+  memoryFullest?: FullestNode
   ciCpuMilli?: number
   agentCpuMilli?: number
 }

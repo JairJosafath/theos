@@ -336,6 +336,35 @@ export const HISTORY_MS = 60 * 60_000
 export const SAMPLE_GAP_MS = 14_000
 
 /**
+ * The nodes that have a figure of `used`, as one: what they used and what they
+ * could allocate together, and the fullest of them by its share of its own
+ * allocatable. A node without the figure (not ready, or new to metrics-server)
+ * is in none of the three, so the sum is never drawn against room it didn't
+ * count (#141). A node that reports nothing to allocate has no share of its
+ * own and can't be the fullest. On a tie the fullest is the first by name
+ * (node names are DNS names, so `<` orders them by code point): the same
+ * node from one sample to the next, whatever order the API lists them in.
+ */
+function nodesTogether(nodes, used, allocatable) {
+  const counted = nodes.filter((node) => node[used] !== undefined)
+  if (!counted.length) return {}
+  let fullest
+  for (const node of counted) {
+    if (!(node[allocatable] > 0)) continue
+    const share = node[used] / node[allocatable]
+    if (!fullest || share > fullest.share || (share === fullest.share && node.name < fullest.node)) {
+      fullest = { node: node.name, share }
+    }
+  }
+  return {
+    used: sum(counted.map((node) => node[used])),
+    allocatable: sum(counted.map((node) => node[allocatable])),
+    // Four decimals: a hundredth of a percent, and a short number in the answer.
+    ...(fullest ? { fullest: { node: fullest.node, share: Math.round(fullest.share * 10_000) / 10_000 } } : {}),
+  }
+}
+
+/**
  * One point of the factory's recent history: how long the API server took to
  * answer (a stalling API server is what restarts controllers on a small
  * cluster), the cluster's CPU and memory, and what CI and the agents used.
@@ -344,20 +373,31 @@ export const SAMPLE_GAP_MS = 14_000
  * agents' pods run on any node, so only the nodes' total belongs on one scale
  * with them. A node without figures (not ready, or new to metrics-server)
  * adds nothing; the sample has no figure only when no node has one.
+ *
+ * The sample carries its own scale (#141): what the nodes it added up could
+ * allocate at that moment, so a node that joins or leaves later moves no
+ * earlier point, and the fullest node's share of its own CPU and of its own
+ * memory with that node's name, since one full node among idle ones is a
+ * small part of the sum. The allocatable is left out when it is nothing:
+ * there is no share of nothing to draw.
  */
 export function sampleOf(health, apiMs, apiFailed) {
   const runner = health.components.find((c) => c.key === 'runner')
   const total = (items, field) => sum(items.map((item) => item[field]))
-  const cpuMilli = total(health.nodes, 'cpuMilli')
-  const memoryBytes = total(health.nodes, 'memoryBytes')
+  const cpu = nodesTogether(health.nodes, 'cpuMilli', 'cpuAllocatableMilli')
+  const memory = nodesTogether(health.nodes, 'memoryBytes', 'memoryAllocatableBytes')
   const ciCpuMilli = runner ? total(runner.pods, 'cpuMilli') : undefined
   const agentCpuMilli = total(health.agents.sandboxes, 'cpuMilli')
   return {
     at: health.generatedAt,
     apiMs: Math.round(apiMs),
     ...(apiFailed ? { apiFailed: true } : {}),
-    ...(cpuMilli !== undefined ? { cpuMilli } : {}),
-    ...(memoryBytes !== undefined ? { memoryBytes } : {}),
+    ...(cpu.used !== undefined ? { cpuMilli: cpu.used } : {}),
+    ...(cpu.allocatable > 0 ? { cpuAllocatableMilli: cpu.allocatable } : {}),
+    ...(cpu.fullest ? { cpuFullest: cpu.fullest } : {}),
+    ...(memory.used !== undefined ? { memoryBytes: memory.used } : {}),
+    ...(memory.allocatable > 0 ? { memoryAllocatableBytes: memory.allocatable } : {}),
+    ...(memory.fullest ? { memoryFullest: memory.fullest } : {}),
     ...(ciCpuMilli !== undefined ? { ciCpuMilli } : {}),
     ...(agentCpuMilli !== undefined ? { agentCpuMilli } : {}),
   }

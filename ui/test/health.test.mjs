@@ -400,11 +400,135 @@ describe('history', () => {
       apiMs: 1234,
       apiFailed: true,
       cpuMilli: 7000,
+      cpuAllocatableMilli: 12000,
+      cpuFullest: { node: 'theos-control-plane', share: 0.5833 },
       memoryBytes: 8 * 2 ** 30,
+      memoryAllocatableBytes: 15000000 * 1024,
+      memoryFullest: { node: 'theos-control-plane', share: 0.5592 },
       ciCpuMilli: 4000,
       agentCpuMilli: 2500,
     })
   })
+
+  // What each sample carries besides its sums (#141): what the nodes it added
+  // up could allocate at that moment, and the fullest of them by its share of
+  // itself. A row is a node: its name, the CPU and memory it can allocate, and
+  // the CPU and memory it uses, absent when metrics-server has no figures.
+  const GiB = 2 ** 30
+  const sampleOfNodes = (rows) => {
+    const health = summarizeHealth({
+      components: [],
+      pods: [],
+      podMetrics: [],
+      nodes: rows.map(([name, cpu, memory]) => ({
+        metadata: { name },
+        status: { allocatable: { cpu, memory }, conditions: [{ type: 'Ready', status: 'True' }] },
+      })),
+      nodeMetrics: rows
+        .filter(([, , , cpu]) => cpu !== undefined)
+        .map(([name, , , cpu, memory]) => ({ metadata: { name }, usage: { cpu, memory } })),
+      now: NOW,
+    })
+    return sampleOf(health, 5, false)
+  }
+  for (const [name, rows, want] of [
+    [
+      'one node is its own scale and its own fullest node',
+      [['worker-a', '8', '16Gi', '7', '8Gi']],
+      {
+        cpuMilli: 7000,
+        cpuAllocatableMilli: 8000,
+        cpuFullest: { node: 'worker-a', share: 0.875 },
+        memoryBytes: 8 * GiB,
+        memoryAllocatableBytes: 16 * GiB,
+        memoryFullest: { node: 'worker-a', share: 0.5 },
+      },
+    ],
+    [
+      'a node that joined adds what it can allocate, not only what it uses',
+      [
+        ['worker-a', '8', '16Gi', '7', '8Gi'],
+        ['worker-b', '8', '16Gi', '1', '2Gi'],
+      ],
+      {
+        cpuMilli: 8000,
+        cpuAllocatableMilli: 16000,
+        cpuFullest: { node: 'worker-a', share: 0.875 },
+        memoryBytes: 10 * GiB,
+        memoryAllocatableBytes: 32 * GiB,
+        memoryFullest: { node: 'worker-a', share: 0.5 },
+      },
+    ],
+    [
+      'a full node among idle ones is the fullest by its share of itself, for CPU and for memory apart',
+      [
+        ['worker-a', '8', '16Gi', '400m', '2Gi'],
+        ['worker-b', '4', '8Gi', '3800m', '1Gi'],
+        ['worker-c', '8', '16Gi', '400m', '14Gi'],
+      ],
+      {
+        cpuMilli: 4600,
+        cpuAllocatableMilli: 20000,
+        cpuFullest: { node: 'worker-b', share: 0.95 },
+        memoryBytes: 17 * GiB,
+        memoryAllocatableBytes: 40 * GiB,
+        memoryFullest: { node: 'worker-c', share: 0.875 },
+      },
+    ],
+    [
+      'a node without figures is in neither the allocatable nor the fullest',
+      [
+        ['worker-a', '8', '16Gi', '2', '4Gi'],
+        ['worker-b', '64', '256Gi'],
+      ],
+      {
+        cpuMilli: 2000,
+        cpuAllocatableMilli: 8000,
+        cpuFullest: { node: 'worker-a', share: 0.25 },
+        memoryBytes: 4 * GiB,
+        memoryAllocatableBytes: 16 * GiB,
+        memoryFullest: { node: 'worker-a', share: 0.25 },
+      },
+    ],
+    [
+      'on a tie the fullest is the first by name, in whatever order the nodes are listed',
+      [
+        ['worker-b', '8', '16Gi', '4', '8Gi'],
+        ['worker-a', '4', '8Gi', '2', '4Gi'],
+      ],
+      {
+        cpuMilli: 6000,
+        cpuAllocatableMilli: 12000,
+        cpuFullest: { node: 'worker-a', share: 0.5 },
+        memoryBytes: 12 * GiB,
+        memoryAllocatableBytes: 24 * GiB,
+        memoryFullest: { node: 'worker-a', share: 0.5 },
+      },
+    ],
+    [
+      'a node that allocates nothing has no share of itself, and is not the fullest',
+      [
+        ['worker-a', '0', '0', '1', '1Gi'],
+        ['worker-b', '8', '16Gi', '2', '4Gi'],
+      ],
+      {
+        cpuMilli: 3000,
+        cpuAllocatableMilli: 8000,
+        cpuFullest: { node: 'worker-b', share: 0.25 },
+        memoryBytes: 5 * GiB,
+        memoryAllocatableBytes: 16 * GiB,
+        memoryFullest: { node: 'worker-b', share: 0.25 },
+      },
+    ],
+    [
+      'nodes that allocate nothing leave the sums without a scale or a fullest node',
+      [['worker-a', '0', '0', '1', '1Gi']],
+      { cpuMilli: 1000, memoryBytes: GiB },
+    ],
+  ]) {
+    it(`${name} (#141)`, () =>
+      assert.deepEqual(sampleOfNodes(rows), { at: '2026-10-01T12:00:00.000Z', apiMs: 5, ...want }))
+  }
 
   it('samples every node together, not the first one listed (#122)', () => {
     const worker = (name) => ({ ...node, metadata: { name } })

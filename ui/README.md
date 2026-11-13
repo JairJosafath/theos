@@ -100,8 +100,8 @@ The page opens on _Needs you_ when it has items, else on _Story_:
   they used). Each Task and Crew opens its page.
 - **Factory**, a dashboard: a card for each part of the factory, healthy or
   not, with restarts, CPU and memory; each node's usage; the last hour (API
-  server response, and the CPU and memory of all nodes together) side by
-  side; the agent slots and who waits for one.
+  server response, and the CPU and memory of all nodes together and of the
+  fullest of them) side by side; the agent slots and who waits for one.
 - **About**: the versions running, and links to the running release's design
   and release notes, and to the repository.
 
@@ -310,13 +310,27 @@ and metrics-server's figures itself and sends only a
 summary (component states, restarts, CPU and memory, agent slots and sandboxes,
 the last hour), never a pod spec. It samples every 15 seconds in the background
 (`FACTORY_SAMPLE_SECONDS`; 0 turns it off) and keeps an hour in memory, timing
-its own API calls as the API server's response time. A sample's CPU and memory
-are the cluster's: every node's usage added up, which the chart draws against
-what the nodes can allocate together, next to what CI and the agents used on
-whichever node. Components are found by
+its own API calls as the API server's response time. Components are found by
 namespace and labels; `FACTORY_COMPONENTS` (a JSON list of `{key, name,
 namespace, selector, optional}`) replaces the built-in list. Without
 metrics-server (`make metrics-server`) the view shows states but no figures.
+
+A sample's CPU and memory are the cluster's: every node's usage added up, with
+what those nodes could allocate together at that moment, and the fullest
+node's name and its share of its own CPU and of its own memory. A node
+metrics-server has no figures for is in none of them. The last hour's CPU and
+memory charts draw shares, 0 to 100%, each point against its own sample, so a
+node that joined or left since moves no earlier point; a sample with nothing
+to draw against breaks the line. Their lines:
+
+- **nodes**: the nodes' usage together over what they could allocate together.
+- **fullest node**: the fullest node's share of itself, so one full node among
+  idle ones shows as full. The summary names the node that was fullest within
+  the hour and how full; of two equally full, the first by name. Where this
+  line would lie on **nodes** for the whole hour, as it does on one node, the
+  chart draws one line.
+- **CI** and **agents** (CPU only): what the runner's pods and the agent
+  sandboxes used on whichever node, over the same sample's allocatable.
 
 `server.mjs` has no dependencies. Its upstream is `K8S_API` if set (for example
 `http://127.0.0.1:8001` for a `kubectl proxy`), otherwise the in-cluster API with

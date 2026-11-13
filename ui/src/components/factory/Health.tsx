@@ -1,11 +1,11 @@
 // The factory's health: its components, each node's usage, and the history
 // charts of the last hour, as the Factory area's dashboard grid
 // (docs/plans/done/ui-shell.md, step 2): a card per part of the factory, each
-// node's usage, the last hour's charts of the nodes together side by side, and
-// the agent slots beside them.
+// node's usage, the last hour's charts of the nodes together and of the
+// fullest of them side by side, and the agent slots beside them.
 
 import type { ReactNode } from 'react'
-import type { ComponentHealth, FactoryHealth, NodeHealth, PodHealth } from '../../k8s/health'
+import type { ComponentHealth, FactoryHealth, FullestNode, NodeHealth, PodHealth } from '../../k8s/health'
 import { plural } from '../../model/describe'
 import { API_STALL_MS } from '../../model/attention'
 import { formatBytes, formatCpu, formatDuration, percent } from '../../model/format'
@@ -264,22 +264,76 @@ function Sparkline({
   )
 }
 
+/** Used over allocatable, 1 being full; nothing when either is missing or there is nothing to allocate. */
+function shareOf(used: number | undefined, allocatable: number | undefined): number | undefined {
+  return used === undefined || !allocatable ? undefined : used / allocatable
+}
+
+/** A share as the summary says it. Not cut at 100: usage can pass what a node allocates. */
+const asPercent = (share: number) => `${Math.round(share * 100)}%`
+
+/**
+ * The fullest node's line of one chart, and its highest point of the hour for
+ * the summary (#141): one full node among idle ones is a small part of the
+ * nodes' sum. Nothing when the line would lie on the nodes' own at every
+ * point, as it does on one node: the chart then draws one line. The two lie
+ * on each other within half a percent, less than a pixel of the chart and
+ * more than the rounding of the share the server sends.
+ */
+function fullestOf(
+  points: { t: number; share: number | undefined; fullest: FullestNode | undefined }[],
+): { series: Series; peak: FullestNode } | undefined {
+  let peak: FullestNode | undefined
+  let apart = false
+  for (const { share, fullest } of points) {
+    if (!fullest) continue
+    // The later of two equal peaks: the one nearer to now.
+    if (!peak || fullest.share >= peak.share) peak = fullest
+    if (share === undefined || Math.abs(fullest.share - share) >= 0.005) apart = true
+  }
+  if (!peak || !apart) return undefined
+  return {
+    peak,
+    series: {
+      label: 'fullest node',
+      className: 'spark-fullest',
+      values: points.map((p) => ({ t: p.t, v: p.fullest?.share })),
+    },
+  }
+}
+
 /**
  * The last hour of the API server's response time, CPU and memory. The CPU and
- * memory are the cluster's: every node's usage added up, drawn against what the
- * nodes can allocate together (#122). Each node on its own is in the panel above.
+ * memory are the cluster's: every node's usage added up, over what those nodes
+ * could allocate together (#122). Each point is drawn as the share it was when
+ * it was sampled, against the sample's own allocatable (#141): a node that
+ * joined or left since moves no earlier point. A sample that carries no
+ * allocatable (no node had figures, or an older server took it) has no point,
+ * and the line breaks there: drawn against the nodes of now it would say what
+ * nobody measured. A second line is the fullest node's share of itself, where
+ * it differs from the nodes'. Each node as it is now is in the panel above.
  */
 function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) {
   const history = health.history ?? []
   if (history.length < 2) {
     return <p className="panel-note">The last hour fills in here: the UI samples the factory every 15 seconds.</p>
   }
-  const points = history.map((s) => ({ ...s, t: Date.parse(s.at) }))
-  const cpuAllocatableMilli = health.nodes.reduce((n, node) => n + node.cpuAllocatableMilli, 0)
-  const memoryAllocatableBytes = health.nodes.reduce((n, node) => n + node.memoryAllocatableBytes, 0)
+  const points = history.map((s) => ({
+    ...s,
+    t: Date.parse(s.at),
+    cpuShare: shareOf(s.cpuMilli, s.cpuAllocatableMilli),
+    memoryShare: shareOf(s.memoryBytes, s.memoryAllocatableBytes),
+  }))
   const latest = points[points.length - 1]
   const worstApi = Math.max(...points.map((p) => p.apiMs))
   const stalls = points.filter((p) => p.apiFailed || p.apiMs >= API_STALL_MS)
+  const cpuFullest = fullestOf(points.map((p) => ({ t: p.t, share: p.cpuShare, fullest: p.cpuFullest })))
+  const memoryFullest = fullestOf(points.map((p) => ({ t: p.t, share: p.memoryShare, fullest: p.memoryFullest })))
+  /** "now 8.5 cores of 16.0 cores · fullest worker-b 94%": the latest sample, and the hour's fullest node. */
+  const summary = (used: string, allocatable: string | undefined, fullest: typeof cpuFullest) =>
+    `now ${used}` +
+    (allocatable ? ` of ${allocatable}` : '') +
+    (fullest ? ` · fullest ${fullest.peak.node} ${asPercent(fullest.peak.share)}` : '')
   return (
     <div className="history">
       <Sparkline
@@ -290,33 +344,47 @@ function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) 
         series={[{ label: 'API', className: 'spark-api', values: points.map((p) => ({ t: p.t, v: p.apiMs })) }]}
         marks={stalls.map((p) => ({ t: p.t, className: 'spark-stall' }))}
       />
-      {health.metrics && cpuAllocatableMilli > 0 && memoryAllocatableBytes > 0 ? (
-        <>
-          <Sparkline
-            title="CPU"
-            summary={`of ${formatCpu(cpuAllocatableMilli)}`}
-            max={cpuAllocatableMilli}
-            now={now}
-            series={[
-              { label: 'nodes', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.cpuMilli })) },
-              { label: 'CI', className: 'spark-ci', values: points.map((p) => ({ t: p.t, v: p.ciCpuMilli })) },
-              {
-                label: 'agents',
-                className: 'spark-agents',
-                values: points.map((p) => ({ t: p.t, v: p.agentCpuMilli ?? 0 })),
-              },
-            ]}
-          />
-          <Sparkline
-            title="Memory"
-            summary={`now ${formatBytes(latest.memoryBytes)} of ${formatBytes(memoryAllocatableBytes)}`}
-            max={memoryAllocatableBytes}
-            now={now}
-            series={[
-              { label: 'nodes', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.memoryBytes })) },
-            ]}
-          />
-        </>
+      {health.metrics && points.some((p) => p.cpuShare !== undefined) ? (
+        <Sparkline
+          title="CPU"
+          summary={summary(
+            formatCpu(latest.cpuMilli),
+            latest.cpuAllocatableMilli ? formatCpu(latest.cpuAllocatableMilli) : undefined,
+            cpuFullest,
+          )}
+          max={1}
+          now={now}
+          series={[
+            { label: 'nodes', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.cpuShare })) },
+            ...(cpuFullest ? [cpuFullest.series] : []),
+            {
+              label: 'CI',
+              className: 'spark-ci',
+              values: points.map((p) => ({ t: p.t, v: shareOf(p.ciCpuMilli, p.cpuAllocatableMilli) })),
+            },
+            {
+              label: 'agents',
+              className: 'spark-agents',
+              values: points.map((p) => ({ t: p.t, v: shareOf(p.agentCpuMilli ?? 0, p.cpuAllocatableMilli) })),
+            },
+          ]}
+        />
+      ) : null}
+      {health.metrics && points.some((p) => p.memoryShare !== undefined) ? (
+        <Sparkline
+          title="Memory"
+          summary={summary(
+            formatBytes(latest.memoryBytes),
+            latest.memoryAllocatableBytes ? formatBytes(latest.memoryAllocatableBytes) : undefined,
+            memoryFullest,
+          )}
+          max={1}
+          now={now}
+          series={[
+            { label: 'nodes', className: 'spark-node', values: points.map((p) => ({ t: p.t, v: p.memoryShare })) },
+            ...(memoryFullest ? [memoryFullest.series] : []),
+          ]}
+        />
       ) : null}
     </div>
   )
