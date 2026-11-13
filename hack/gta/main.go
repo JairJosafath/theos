@@ -20,7 +20,7 @@ limitations under the License.
 // make test and make check test, vet and lint only those
 // (hack/test-packages.sh, hack/check.sh; docs/plans/done/selective-check.md).
 //
-//	go run ./hack/gta [-changed-files FILE]
+//	go run ./hack/gta [-changed-files FILE] [-base REVISION]
 //
 // FILE holds the changed files, one a line, relative to the working directory
 // or absolute; without it, or with "-", they are read from stdin. The command
@@ -29,6 +29,17 @@ limitations under the License.
 //
 //	changed IMPORTPATH     a changed file lies in the package
 //	dependent IMPORTPATH   the package, or its tests, depend on a changed one
+//	module IMPORTPATH      the package, or its tests, are built from a module
+//	                       whose version go.mod or go.sum changed
+//
+// gta knows nothing of go.mod and go.sum: a change to them alone selects no
+// package there. Here, when one of the two is among the files, they are
+// compared with those of the git revision -base names (modules.go), and
+// before the packages one of these lines is printed:
+//
+//	modules MODULE...      the changed modules the module's packages use
+//	all REASON             every package is affected: the go or toolchain
+//	                       line changed, or the two files can't be compared
 //
 // It is gta's library and not its command, for these reasons:
 //
@@ -69,14 +80,15 @@ import (
 
 func main() {
 	changedFiles := flag.String("changed-files", "-", "file listing the changed files, one a line; - reads stdin")
+	base := flag.String("base", "", "the git revision a changed go.mod or go.sum is compared with")
 	flag.Parse()
-	if err := run(*changedFiles, os.Stdin, os.Stdout); err != nil {
+	if err := run(*changedFiles, *base, os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "gta:", err)
 		os.Exit(1)
 	}
 }
 
-func run(changedFiles string, stdin io.Reader, stdout io.Writer) error {
+func run(changedFiles, base string, stdin io.Reader, stdout io.Writer) error {
 	in := stdin
 	if changedFiles != "-" {
 		f, err := os.Open(changedFiles) //nolint:gosec // The caller names the list of changed files.
@@ -93,7 +105,7 @@ func run(changedFiles string, stdin io.Reader, stdout io.Writer) error {
 	if len(files) == 0 {
 		return nil
 	}
-	lines, err := affected(files)
+	lines, err := affected(files, base)
 	if err != nil {
 		return err
 	}
@@ -124,14 +136,63 @@ func readFiles(r io.Reader) ([]string, error) {
 	return files, sc.Err()
 }
 
-// affected asks gta which packages of the module in the working directory the
-// changed files (absolute paths) affect, and returns a "changed PKG" or
-// "dependent PKG" line for each that still exists, sorted by import path.
-func affected(files []string) ([]string, error) {
+// affected returns a "changed PKG", "dependent PKG" or "module PKG" line for
+// each package of the module in the working directory that the changed files
+// (absolute paths) affect and that still exists, sorted by import path. gta
+// says which packages the files affect; go.mod and go.sum are compared with
+// those of the git revision base, and put a "modules ..." line first, or
+// make an "all REASON" line the only one.
+func affected(files []string, base string) ([]string, error) {
 	root, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
+	mod, files := modFiles(root, files)
+	var modules map[string]bool
+	if len(mod) > 0 {
+		var all string
+		if all, modules, err = moduleChanges(base); err != nil {
+			return nil, err
+		}
+		if all != "" {
+			return []string{"all " + all}, nil
+		}
+	}
+	kinds := map[string]string{}
+	if len(files) > 0 {
+		if kinds, err = selected(root, files); err != nil {
+			return nil, err
+		}
+	}
+	var head []string
+	if len(modules) > 0 {
+		users, used, err := moduleUsers(modules)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range users {
+			if _, ok := kinds[p]; !ok {
+				kinds[p] = "module"
+			}
+		}
+		if len(used) > 0 {
+			head = []string{"modules " + strings.Join(used, " ")}
+		}
+	}
+	lines := make([]string, 0, len(kinds))
+	for p, kind := range kinds {
+		lines = append(lines, kind+" "+p)
+	}
+	slices.SortFunc(lines, func(a, b string) int {
+		return strings.Compare(a[strings.Index(a, " "):], b[strings.Index(b, " "):])
+	})
+	return append(head, lines...), nil
+}
+
+// selected asks gta which packages of the module in root the changed files
+// (absolute paths) affect, and returns each that still exists with its kind:
+// changed or dependent.
+func selected(root string, files []string) (map[string]string, error) {
 	packager := owner{Packager: gta.NewPackager([]string{"./..."}, nil), root: root}
 	g, err := gta.New(gta.SetDiffer(gta.NewFileDiffer(files)), gta.SetPackager(packager))
 	if err != nil {
@@ -165,14 +226,7 @@ func affected(files []string) ([]string, error) {
 			}
 		}
 	}
-	lines := make([]string, 0, len(kinds))
-	for p, kind := range kinds {
-		lines = append(lines, kind+" "+p)
-	}
-	slices.SortFunc(lines, func(a, b string) int {
-		return strings.Compare(a[strings.Index(a, " "):], b[strings.Index(b, " "):])
-	})
-	return lines, nil
+	return kinds, nil
 }
 
 // linked returns the affected packages whose code other than their tests the

@@ -10,7 +10,8 @@
 # manifests and generate, and fmt, vet, lint and test on the packages gta
 # selects; a UI-only change runs the UI's check alone, a hack/ script the shell
 # tests alone; a CRD, a template, go.mod and the linter's configuration run
-# what reads them, and so do the Makefile and a script that selects the
+# what reads them (for go.mod, the packages built from a module whose version
+# changed), and so do the Makefile and a script that selects the
 # steps; FORCE, TEST_ALL and a missing merge base run every step; a file
 # make manifests writes selects the steps below it; a tier whose inputs passed
 # on this device is answered from its cache, unless FORCE is set; a failing
@@ -61,20 +62,25 @@ printf 'templates internal/scaffold internal/adapters/gitea\nconfig internal/oth
 export TEST_READERS=$T/readers
 
 # A module as the tiers of hack/check-cache.sh know it: hack/render builds
-# internal/scaffold, internal/other stands alone.
+# internal/scaffold, internal/other stands alone and builds on the module
+# dep, which lies below this one and is replaced, so that no proxy is asked.
 src=$T/src
 git init -q -b main "$src"
 cd "$src" || exit 1
 mkdir -p hack/lib hack/render hack/runner-fence internal/scaffold internal/other internal/adapters/gitea ui config/crd/bases templates/x docs
 cp "$HERE/check.sh" "$HERE/check-cache.sh" "$HERE/test-packages.sh" hack/
 cp "$HERE/lib/change.sh" hack/lib/
-printf 'module example.com/r\n\ngo 1.22\n' >go.mod
+mkdir -p third_party/dep
+printf 'module example.com/r\n\ngo 1.22\n\nrequire example.com/dep v0.1.0\n\nreplace example.com/dep => ./third_party/dep\n' >go.mod
+printf 'module example.com/dep\n\ngo 1.22\n' >third_party/dep/go.mod
+echo 'package dep' >third_party/dep/dep.go
 pkg() { # pkg DIR NAME
   echo "package $2" >"$1/$2.go"
   printf 'package %s\nimport "testing"\nfunc TestX(t *testing.T) {}\n' "$2" >"$1/$2_test.go"
 }
 pkg internal/scaffold scaffold
 pkg internal/other other
+printf 'package other\n\nimport _ "example.com/dep"\n' >internal/other/dep.go
 pkg internal/adapters/gitea gitea
 printf 'package main\n\nimport _ "example.com/r/internal/scaffold"\n\nfunc main() {}\n' >hack/render/main.go
 printf 'package main\n\nfunc main() {}\n' >hack/runner-fence/main.go
@@ -217,12 +223,39 @@ check "a template: validate-yaml and its readers" "$(states)" "skipped skipped s
 check "a template: the tests that read templates/" \
   "$(grep -c "^test TEST_PACKAGES=$m/internal/adapters/gitea $m/internal/scaffold\$" "$T/calls")" 1
 
+# #127: go.mod runs fmt, vet, lint and test on the packages built from a
+# module whose version changed, not on every package; every package only for
+# a line each is built by.
+change
+sed -i 's|example.com/dep v0.1.0|example.com/dep v0.2.0|' go.mod
+run
+check "#127 go.mod, a version: Go, the YAML and the shell tests" "$(states)" "ran ran ran ran ran ran skipped ran"
+check "#127 go.mod, a version: the packages built from that module, not every package" "$(calls)" \
+  "manifests generate;fmt GO_PACKAGES=$m/internal/other;vet GO_PACKAGES=$m/internal/other;lint LINT_PACKAGES=./internal/other;validate-yaml;test-hack;test TEST_PACKAGES=$m/internal/other;"
+check "#127 go.mod, a version: says which module" \
+  "$(grep -c '^  vet  *ran  *[0-9]*s; the package gta selects; built from the changed modules: example.com/dep$' "$T/out")" 1
+check "#127 go.mod, a version: the tests say which module" \
+  "$(grep -c '^  test  *ran  *[0-9]*s; 1 of 5 packages.*built from the changed modules: example.com/dep$' "$T/out")" 1
+change internal/scaffold/scaffold.go
+sed -i 's|example.com/dep v0.1.0|example.com/dep v0.2.0|' go.mod
+run
+check "#127 go.mod and a Go file: the module's users and what gta selects" \
+  "$(grep -c "^vet GO_PACKAGES=$m/hack/render $m/internal/other $m/internal/scaffold\$" "$T/calls")" 1
+check "#127 go.mod and a Go file: says both" \
+  "$(grep -c '^  vet  *ran  *[0-9]*s; the 3 packages gta selects; changed: internal/scaffold; built from the changed modules: example.com/dep$' "$T/out")" 1
 change go.mod
 run
-check "go.mod: all of Go, the YAML and the shell tests" "$(states)" "ran ran ran ran ran ran skipped ran"
-check "go.mod: every package" "$(calls)" \
+check "#127 go.mod, a comment: no package is formatted, vetted, linted or tested" "$(states)" "ran skipped skipped skipped ran ran skipped skipped"
+check "#127 go.mod, a comment: says why" \
+  "$(grep -c '^  vet  *skipped  gta finds no Go package the change affects$' "$T/out")" 1
+change
+sed -i 's|^go 1.22$|go 1.23|' go.mod
+run
+check "go.mod, the go line: all of Go, the YAML and the shell tests" "$(states)" "ran ran ran ran ran ran skipped ran"
+check "go.mod, the go line: every package" "$(calls)" \
   "manifests generate;fmt GO_PACKAGES=./...;vet GO_PACKAGES=./...;lint LINT_PACKAGES=;validate-yaml;test-hack;test TEST_PACKAGES=$all_pkgs;"
-check "go.mod: says why" "$(grep -c '^  vet  *ran  *[0-9]*s; every package: go.mod changed$' "$T/out")" 1
+check "go.mod, the go line: says why" \
+  "$(grep -c '^  vet  *ran  *[0-9]*s; every package: the go line of go.mod changed, which every package is built by$' "$T/out")" 1
 
 change .golangci.yml
 run

@@ -19,10 +19,13 @@
 #                        pins controller-gen
 #   fmt, vet, lint       the packages gta says the change affects (hack/gta):
 #                        those a changed file lies in and those that depend on
-#                        them. Every package after a change to go.mod or
-#                        go.sum; for vet and lint after one to the Makefile
-#                        or a *.mk, which hold vet's flags and pin the
-#                        linter; for lint after one to its configuration
+#                        them. After a change to go.mod or go.sum, the
+#                        packages built from a module whose version changed;
+#                        every package only for a line each is built by (go,
+#                        toolchain). Every package for vet and lint after a
+#                        change to the Makefile or a *.mk, which hold vet's
+#                        flags and pin the linter; for lint after one to its
+#                        configuration
 #   validate-yaml,       a changed file among the tier's inputs
 #   test-hack, ui-test   (hack/check-cache.sh changed). A tier the change selects
 #                        is still answered from the device's cache when those
@@ -104,7 +107,11 @@ GENERATE=('api/*' 'cmd/*.go' 'internal/*.go' go.mod go.sum go.work go.work.sum
   'config/crd/*' 'config/rbac/*' 'dist/chart/templates/crd/*' 'dist/chart/templates/rbac/*'
   hack/chart-crds.sh hack/chart-role.sh hack/keep-mtime.sh hack/boilerplate.go.txt Makefile)
 # A change to one of these reaches every package: each is built from them.
-GO_ALL=(go.mod go.sum go.work go.work.sum)
+GO_ALL=(go.work go.work.sum)
+# These name the modules the packages are built from: hack/gta compares them
+# with the merge base's and says which packages a changed module reaches, or
+# that a line every package is built by changed.
+GO_MODULES=(go.mod go.sum)
 # The Makefile and what it includes hold vet's flags and pin the linter: a
 # change to one reaches every package for those two.
 MAKE_FILES=(Makefile '*.mk')
@@ -141,10 +148,12 @@ load() {
 }
 
 # in_go_tree: whether a changed file lies where a Go package can own or embed
-# it: under a top-level directory that holds Go files. gta loads the module's
-# packages, which takes a second or two a docs-only change need not spend.
+# it: under a top-level directory that holds Go files, or is go.mod or go.sum.
+# gta loads the module's packages, which takes a second or two a docs-only
+# change need not spend.
 in_go_tree() {
   local tops f
+  ! first "${GO_MODULES[@]}" >/dev/null || return 0
   tops=$(git ls-files -co --exclude-standard -- '*.go' | awk -F/ '{ print (NF > 1 ? $1 : ".") }' | sort -u)
   for f in "${files[@]}"; do
     [[ $f == */* ]] || f=.
@@ -156,7 +165,7 @@ in_go_tree() {
 # go_scope: the packages fmt, vet and lint read, into go_pkgs: ./... for
 # every package, the import paths gta selects, or none; go_why says which.
 go_scope() {
-  local f out kind pkg module changed=()
+  local f out kind pkg module changed=() modules=() n
   go_pkgs=()
   go_why=
   if [ -n "$failed" ]; then
@@ -169,7 +178,7 @@ go_scope() {
     go_why="every package: $f changed"
   elif ! in_go_tree; then
     go_why="no changed file lies in a Go package"
-  elif ! out=$(printf '%s\n' "${files[@]}" | ${THEOS_GTA:-go run ./hack/gta} 2>"$T/gta.err"); then
+  elif ! out=$(printf '%s\n' "${files[@]}" | ${THEOS_GTA:-go run ./hack/gta} -base "$CHANGE_BASE" 2>"$T/gta.err"); then
     go_pkgs=(./...)
     go_why="every package: gta could not select them ($(tail -n 1 "$T/gta.err"))"
   elif [ -z "$out" ]; then
@@ -177,11 +186,30 @@ go_scope() {
   else
     module=$(go list -m 2>/dev/null)
     while read -r kind pkg; do
-      go_pkgs+=("$pkg")
-      [ "$kind" != changed ] || changed+=("${pkg#"$module/"}")
+      case $kind in
+        all)
+          go_pkgs=(./...)
+          go_why="every package: $pkg"
+          return 0
+          ;;
+        modules) read -ra modules <<<"$pkg" ;;
+        changed)
+          go_pkgs+=("$pkg")
+          changed+=("${pkg#"$module/"}")
+          ;;
+        *) go_pkgs+=("$pkg") ;;
+      esac
     done <<<"$out"
-    go_why="the ${#go_pkgs[@]} packages gta selects; changed: ${changed[*]}"
-    [ ${#go_pkgs[@]} != 1 ] || go_why="the package gta selects: ${changed[*]}"
+    n=${#go_pkgs[@]}
+    if [ "$n" = 1 ]; then
+      go_why="the package gta selects${changed[*]:+: ${changed[*]}}"
+    else
+      go_why="the $n packages gta selects${changed[*]:+; changed: ${changed[*]}}"
+    fi
+    if [ ${#modules[@]} -gt 0 ]; then
+      go_why+="; built from the changed modules: ${modules[*]:0:3}"
+      [ ${#modules[@]} -le 3 ] || go_why+=" and $((${#modules[@]} - 3)) more"
+    fi
   fi
 }
 
