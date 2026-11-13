@@ -44,7 +44,7 @@ func TestFactoryMetricsServesTheTasksNumbers(t *testing.T) {
 	merged := &c4v1beta1.Task{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "webshop", Name: "orders-api-7"},
 		Spec:       c4v1beta1.TaskSpec{ContainerRef: c4v1beta1.LocalRef{Name: "orders-api"}},
-		Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskMerged, Round: 2, PersonCommits: &none, CostMilliUSD: 1250,
+		Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskMerged, Round: 2, PullRequest: 7, PersonCommits: &none, CostMilliUSD: 1250,
 			// #92: its Crew's approval rules held it, and ada approved it.
 			Approval: &c4v1beta1.TaskApproval{Require: c4v1beta1.ApprovalPerson, Rule: 1, ApprovedBy: "ada"},
 			History: []c4v1beta1.TaskTransition{{At: t0, Phase: c4v1beta1.TaskImplementing},
@@ -130,36 +130,47 @@ theos_agent_runs_tokens{agent="implementer",harness="claude-code",model="claude-
 	}
 }
 
-// TestFactoryMetricsCountAChangeByHowTheTaskEnded covers #142: the series
-// read a Task through taskfacts.Metric, as theos-session report does, so a
-// Task that ended done counts as a merged change for every reason the
-// operator writes on its Succeeded condition but NothingToDo (#72).
-//
-// The facts are the same for both; the count is not yet. The
-// DoneByStandardChange case pins today's count of the series, a merged
-// change: theos-session report counts such a Task only when its
-// status.pullRequest is set. Both rules are internal/model's.
+// TestFactoryMetricsCountAChangeByHowTheTaskEnded covers #142 and #204: the
+// series read a Task through taskfacts.Metric, as theos-session report does,
+// and count a merged change by model.MergedChange, which the report calls
+// too. A Task that ended done is one when its own pull request merged or,
+// ended DoneByStandardChange, when its Standard change's record names the
+// change that merged in its place; not when it ended with nothing to do (#72),
+// or with no pull request (a Triage Task), or DoneByStandardChange with no
+// record of it. The report's test (TestReportReadsATaskAsTheSeriesDo and
+// TestReportOfTheFixture, cmd/theos-session) agrees on the fixture's Tasks.
 func TestFactoryMetricsCountAChangeByHowTheTaskEnded(t *testing.T) {
-	ended := func(name, reason string) *c4v1beta1.Task {
+	ended := func(name, reason string, pull int32, change *c4v1beta1.TaskStandardChange) *c4v1beta1.Task {
 		return &c4v1beta1.Task{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "webshop", Name: name},
 			Spec:       c4v1beta1.TaskSpec{ContainerRef: c4v1beta1.LocalRef{Name: "orders-api"}},
-			Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskMerged, Conditions: []metav1.Condition{
-				{Type: ConditionSucceeded, Status: metav1.ConditionTrue, Reason: reason}}},
+			Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskMerged, PullRequest: pull, StandardChange: change,
+				Conditions: []metav1.Condition{{Type: ConditionSucceeded, Status: metav1.ConditionTrue, Reason: reason}}},
 		}
 	}
-	// orders-api-2 has no pull request: a merged change of the series today,
-	// and in no number of the report.
-	c := fake.NewClientBuilder().WithScheme(briefScheme(t)).WithObjects(ended("orders-api-1", "Merged"),
-		ended("orders-api-2", reasonDoneByStandardChange), ended("orders-api-3", model.ReasonNothingToDo)).Build()
+	change := &c4v1beta1.TaskStandardChange{Issue: 41, Paths: []string{"Makefile"}, Count: 1, ResumedRound: 2}
+	c := fake.NewClientBuilder().WithScheme(briefScheme(t)).WithObjects(
+		// Its own pull request merged.
+		ended("orders-api-1", "Merged", 11, nil),
+		// Its Standard change merged and left the issue nothing to do: a
+		// merged change, the Standard change's, with no pull request of its
+		// own or one an earlier round closed (#204).
+		ended("orders-api-2", reasonDoneByStandardChange, 0, change),
+		ended("orders-api-3", reasonDoneByStandardChange, 12, change),
+		// Nothing merged.
+		ended("orders-api-4", model.ReasonNothingToDo, 0, nil),
+		ended("orders-api-5", reasonDoneByStandardChange, 0, nil),
+		ended("orders-api-6", "Triaged", 0, nil),
+	).Build()
 	g := gomega.NewWithT(t)
 	tasks := map[string]string{"namespace": "webshop", "container": "orders-api", "kind": "Implement"}
 	merged := maps.Clone(tasks)
 	merged["code"], merged["approved"] = model.CodeUnknown, model.ApprovedReviewer
-	g.Expect(factoryMetricValue(g, c, model.MetricTasksMerged, merged)).To(gomega.Equal(2.0),
-		"the Task that ended with nothing to do is no merged change, and the two others are")
+	g.Expect(factoryMetricValue(g, c, model.MetricTasksMerged, merged)).To(gomega.Equal(3.0),
+		"the Task that merged and the two done by their Standard change are merged changes, and the three "+
+			"that ended with nothing merged are not")
 	tasks["phase"] = "Merged"
-	g.Expect(factoryMetricValue(g, c, model.MetricTasks, tasks)).To(gomega.Equal(3.0))
+	g.Expect(factoryMetricValue(g, c, model.MetricTasks, tasks)).To(gomega.Equal(6.0))
 }
 
 // factoryMetricValue scrapes a fresh registry with FactoryMetrics on reader and

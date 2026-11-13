@@ -99,16 +99,26 @@ export interface Metrics {
 
 const DAY = 24 * 60 * 60 * 1000
 
-/** A Task that merged a pull request inside the period ending now. */
+/**
+ * Whether a Task that ended is a merged change: internal/model's MergedChange (#204), which the
+ * operator's series and theos-session report count by. Its own pull request merged, or, for a Task
+ * that ended DoneByStandardChange, its Standard change's record names the change that merged in its
+ * place (the Task's own pull request, if any, was closed in an earlier round). A Task that ended
+ * with nothing to do, or has no pull request (a Plan or a Triage Task), merged nothing.
+ */
+export function mergedChange(task: Task): boolean {
+  const status = task.status
+  if (status?.phase !== 'Merged') return false
+  const reason = status.conditions?.find((c) => c.type === 'Succeeded')?.reason
+  if (reason === 'NothingToDo') return false
+  if (reason === 'DoneByStandardChange') return Boolean(status.standardChange?.issue)
+  return Boolean(status.pullRequest)
+}
+
+/** A Task that merged a change inside the period ending now. */
 function mergedIn(task: Task, from: number, now: number): boolean {
   const done = time(task.status?.completedAt)
-  return (
-    task.status?.phase === 'Merged' &&
-    Boolean(task.status.pullRequest) &&
-    done !== undefined &&
-    done >= from &&
-    done <= now
-  )
+  return mergedChange(task) && done !== undefined && done >= from && done <= now
 }
 
 /** When a Task's timeline first reached phase, at or after from; undefined when it never did. */

@@ -129,7 +129,7 @@ func TestReportOfTheFixture(t *testing.T) {
 				"written for.\n--- got ---\n%s", name, got)
 		}
 	}
-	if want := "Wrote " + dir + "/report.md and " + dir + "/report.json: of 35 Tasks read, 13 merged, 4 failed and " +
+	if want := "Wrote " + dir + "/report.md and " + dir + "/report.json: of 38 Tasks read, 14 merged, 4 failed and " +
 		"1 ended with no change in the period.\n"; stdout.String() != want {
 		t.Errorf("it said %q, want %q", stdout.String(), want)
 	}
@@ -481,7 +481,8 @@ func TestReportTask(t *testing.T) {
 // only its own. Every Task of the fixture says so, and the fixture holds
 // what tells the ways a Task ends done apart: its merged Tasks carry the
 // Succeeded condition the operator writes, reason Merged where a pull
-// request merged, Scored on a judge's run, and NothingToDo on one Task. A
+// request merged, Scored on a judge's run, PlanAccepted, Triaged and
+// DoneByStandardChange (#204) on one Task each, and NothingToDo on one. A
 // mapping that took any Succeeded=True for "no change" then gives another
 // report (TestReportOfTheFixture).
 func TestReportReadsATaskAsTheSeriesDo(t *testing.T) {
@@ -506,6 +507,12 @@ func TestReportReadsATaskAsTheSeriesDo(t *testing.T) {
 		switch {
 		case task.Spec.Kind == c4v1beta1.TaskScore:
 			want = "Scored"
+		case task.Spec.Kind == c4v1beta1.TaskPlan:
+			want = "PlanAccepted"
+		case task.Spec.Kind == c4v1beta1.TaskTriage:
+			want = "Triaged"
+		case task.Status.StandardChange != nil:
+			want = model.ReasonDoneByStandardChange
 		case task.Status.PullRequest == 0:
 			want = model.ReasonNothingToDo
 		}
@@ -514,7 +521,9 @@ func TestReportReadsATaskAsTheSeriesDo(t *testing.T) {
 				done.Reason, want)
 		}
 	}
-	if reasons["Merged"] != 16 || reasons["Scored"] != 10 || reasons[model.ReasonNothingToDo] != 1 {
-		t.Errorf("the fixture's merged Tasks ended done as %v, want 16 Merged, 10 Scored and 1 NothingToDo", reasons)
+	if reasons["Merged"] != 16 || reasons["Scored"] != 10 || reasons[model.ReasonNothingToDo] != 1 ||
+		reasons["PlanAccepted"] != 1 || reasons["Triaged"] != 1 || reasons[model.ReasonDoneByStandardChange] != 1 {
+		t.Errorf("the fixture's merged Tasks ended done as %v, want 16 Merged, 10 Scored, 1 PlanAccepted, "+
+			"1 Triaged, 1 DoneByStandardChange and 1 NothingToDo (#204)", reasons)
 	}
 }

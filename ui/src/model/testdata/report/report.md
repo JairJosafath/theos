@@ -6,7 +6,7 @@ The Tasks that finished after 2026-10-06 12:00 UTC, up to 2026-11-05 12:00 UTC, 
 
 | Outcome | Tasks |
 | --- | ---: |
-| Merged a pull request | 13 |
+| Merged a pull request | 14 |
 | Failed | 4 |
 | Ended with no change needed | 1 |
 
@@ -25,8 +25,8 @@ The failed Tasks, by the reason each recorded:
 | Merged Tasks | Tasks | Share |
 | --- | ---: | ---: |
 | With no commit by a person | 10 of 12 | 83% |
-| On a person's approval | 2 of 13 | 15% |
-| In their first round | 11 of 13 | 85% |
+| On a person's approval | 2 of 14 | 14% |
+| In their first round | 11 of 14 | 79% |
 
 The first row is of the merged Tasks whose commits were read from the Git host.
 
@@ -36,26 +36,26 @@ From its first Implementing step:
 
 | To | Tasks | Median | 90th percentile |
 | --- | ---: | ---: | ---: |
-| The pull request | 13 | 20m | 1h 30m |
-| The first review | 13 | 27m | 1h 50m |
-| The merge | 13 | 1h 14m | 10h 25m |
+| The pull request | 14 | 22m 30s | 1h 30m |
+| The first review | 14 | 30m | 1h 50m |
+| The merge | 14 | 1h 22m | 10h 25m |
 
 In each stage, over the Tasks that were in it:
 
 | Stage | Tasks | Median | 90th percentile |
 | --- | ---: | ---: | ---: |
-| Queued | 11 | 2m | 4m |
+| Queued | 12 | 2m | 5m |
 | Waiting for a slot | 1 | 6m | 6m |
-| Implementing | 13 | 20m | 1h |
-| CI checks | 13 | 8m | 1h |
-| Reviewing | 13 | 9m | 30m |
+| Implementing | 14 | 22m 30s | 1h 40m |
+| CI checks | 14 | 8m 30s | 1h |
+| Reviewing | 14 | 7m 30s | 30m |
 | Verifying | 1 | 20m | 20m |
 | Awaiting approval | 2 | 6h 30m | 10h |
-| Blocked | 1 | 1d | 1d |
+| Blocked | 2 | 16h | 1d |
 
 ## What a merged Task cost
 
-The median is $1.13, over the merged Tasks whose agents reported a cost: 11 of 13.
+The median is $1.01, over the merged Tasks whose agents reported a cost: 12 of 14.
 
 | Size, in changed lines | Merged | Reported a cost | Median cost |
 | --- | ---: | ---: | ---: |
@@ -64,11 +64,11 @@ The median is $1.13, over the merged Tasks whose agents reported a cost: 11 of 1
 | L (500 to 999) | 1 | 1 | $9.00 |
 | XL (1000 or more) | 1 | 1 | $20.00 |
 
-1 merged Task had no size read and is in no row above.
+2 merged Tasks had no size read and are in no row above.
 
 | Harness and model | Merged | No commit by a person | Reported a cost | Median cost | Median time to merge |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| claude-code · sonnet | 5 | 5 of 5 | 4 | $0.55 | 22m |
+| claude-code · sonnet | 6 | 5 of 5 | 5 | $0.80 | 23m |
 | claude-code · opus | 3 | 1 of 3 | 3 | $3.00 | 3h 35m |
 | claude-code · Opus | 1 | 1 of 1 | 1 | $1.13 | 42m |
 | claude-code · default model | 1 | 1 of 1 | 1 | $9.00 | 1d 1h |
@@ -77,7 +77,7 @@ The median is $1.13, over the merged Tasks whose agents reported a cost: 11 of 1
 
 | Agent | Merged | No commit by a person | Reported a cost | Median cost | Median time to merge |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| implementer | 8 | 8 of 8 | 7 | $0.80 | 28m |
+| implementer | 9 | 8 of 8 | 8 | $0.85 | 32m |
 | senior | 3 | 1 of 3 | 3 | $3.00 | 3h 35m |
 | not recorded | 2 | 1 of 1 | 1 | $0.50 | 5h 57m |
 

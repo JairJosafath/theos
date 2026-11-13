@@ -66,6 +66,44 @@ func TestEndedWithNoChange(t *testing.T) {
 	}
 }
 
+// #204: a Task that ended DoneByStandardChange reads as one, with its own pull
+// request that an earlier round closed and the issue of its Standard change,
+// and model.MergedChange counts it by the Standard change's record. Another
+// reason is not, and a Task that says nothing of a Standard change has none.
+func TestMetricOfATaskDoneByItsStandardChange(t *testing.T) {
+	task := func(reason string, pull int32, change *c4v1beta1.TaskStandardChange) *c4v1beta1.Task {
+		return &c4v1beta1.Task{Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskMerged, PullRequest: pull,
+			StandardChange: change,
+			Conditions:     []metav1.Condition{{Type: ConditionSucceeded, Status: metav1.ConditionTrue, Reason: reason}}}}
+	}
+	change := &c4v1beta1.TaskStandardChange{Issue: 41, Paths: []string{".golangci.yml"}, Count: 1, ResumedRound: 2}
+	for name, c := range map[string]struct {
+		task   *c4v1beta1.Task
+		done   bool
+		issue  int
+		pull   int
+		merged bool
+	}{
+		"done by its Standard change, its own pull request closed": {task(model.ReasonDoneByStandardChange, 7, change), true, 41, 7, true},
+		"done by its Standard change, with no pull request":        {task(model.ReasonDoneByStandardChange, 0, change), true, 41, 0, true},
+		"done by it, and no record of it":                          {task(model.ReasonDoneByStandardChange, 7, nil), true, 0, 7, false},
+		"merged after a Standard change that resumed it":           {task("Merged", 8, change), false, 41, 8, true},
+		"merged, with no Standard change":                          {task("Merged", 8, nil), false, 0, 8, true},
+		"a plan accepted":                                          {task("PlanAccepted", 0, nil), false, 0, 0, false},
+	} {
+		got := Metric(c.task)
+		if EndedByStandardChange(c.task) != c.done || got.DoneByStandardChange != c.done || got.StandardChange != c.issue ||
+			got.PullRequest != c.pull || model.MergedChange(got) != c.merged {
+			t.Errorf("%s: read as %+v, want done %v, Standard change %d, pull request %d, merged change %v",
+				name, got, c.done, c.issue, c.pull, c.merged)
+		}
+	}
+	if failed := (&c4v1beta1.Task{Status: c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskFailed, Conditions: []metav1.Condition{
+		{Type: ConditionSucceeded, Reason: model.ReasonDoneByStandardChange}}}}); EndedByStandardChange(failed) {
+		t.Error("a Failed Task ended by its Standard change")
+	}
+}
+
 // #142: every fact the numbers read, from a Task that says each of them.
 func TestMetric(t *testing.T) {
 	at := time.Date(2026, 11, 9, 8, 0, 0, 0, time.UTC)

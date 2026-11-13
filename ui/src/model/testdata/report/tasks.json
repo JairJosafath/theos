@@ -1761,6 +1761,238 @@
       "apiVersion": "theos.factory.io/v1beta1",
       "kind": "Task",
       "metadata": {
+        "name": "plan-51",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-02T17:30:00Z"
+      },
+      "spec": {
+        "kind": "Plan",
+        "briefRef": {
+          "name": "webshop"
+        },
+        "agentRef": {
+          "name": "planner"
+        }
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-11-02T18:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-02T17:30:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-02T17:31:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-02T17:50:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-02T18:00:00Z",
+            "phase": "Merged",
+            "round": 1,
+            "reason": "PlanAccepted"
+          }
+        ],
+        "costMilliUSD": 300,
+        "runs": [
+          {
+            "round": 1,
+            "role": "plan",
+            "agent": "planner",
+            "endedAt": "2026-11-02T17:50:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "PlanAccepted",
+            "message": "The Brief accepted the plan.",
+            "lastTransitionTime": "2026-11-02T18:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "triage-52",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-03T17:40:00Z"
+      },
+      "spec": {
+        "kind": "Triage",
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "triager"
+        },
+        "issue": 152
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 1,
+        "completedAt": "2026-11-03T18:00:00Z",
+        "history": [
+          {
+            "at": "2026-11-03T17:40:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-03T17:41:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-03T18:00:00Z",
+            "phase": "Merged",
+            "round": 1,
+            "reason": "Triaged"
+          }
+        ],
+        "costMilliUSD": 100,
+        "runs": [
+          {
+            "round": 1,
+            "role": "triage",
+            "agent": "triager",
+            "endedAt": "2026-11-03T18:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "Triaged",
+            "message": "Triaged: ready to build.",
+            "lastTransitionTime": "2026-11-03T18:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
+        "name": "std-53",
+        "namespace": "shop",
+        "creationTimestamp": "2026-11-04T08:00:00Z"
+      },
+      "spec": {
+        "containerRef": {
+          "name": "api"
+        },
+        "agentRef": {
+          "name": "implementer"
+        },
+        "issue": 153
+      },
+      "status": {
+        "phase": "Merged",
+        "round": 2,
+        "pullRequest": 53,
+        "completedAt": "2026-11-04T18:00:00Z",
+        "standardChange": {
+          "issue": 253,
+          "paths": [
+            ".golangci.yml"
+          ],
+          "branch": "standard-change/153",
+          "count": 1,
+          "resumedRound": 2
+        },
+        "history": [
+          {
+            "at": "2026-11-04T08:00:00Z",
+            "phase": "Pending"
+          },
+          {
+            "at": "2026-11-04T08:05:00Z",
+            "phase": "Implementing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-04T08:45:00Z",
+            "phase": "Checking",
+            "round": 1
+          },
+          {
+            "at": "2026-11-04T08:55:00Z",
+            "phase": "Reviewing",
+            "round": 1
+          },
+          {
+            "at": "2026-11-04T09:00:00Z",
+            "phase": "Blocked",
+            "round": 1
+          },
+          {
+            "at": "2026-11-04T17:00:00Z",
+            "phase": "Implementing",
+            "round": 2
+          },
+          {
+            "at": "2026-11-04T18:00:00Z",
+            "phase": "Merged",
+            "round": 2,
+            "reason": "DoneByStandardChange"
+          }
+        ],
+        "costMilliUSD": 900,
+        "runs": [
+          {
+            "round": 1,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-11-04T09:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          },
+          {
+            "round": 1,
+            "role": "review",
+            "agent": "reviewer",
+            "endedAt": "2026-11-04T08:59:00Z",
+            "harness": "claude-code",
+            "model": "opus"
+          },
+          {
+            "round": 2,
+            "role": "implement",
+            "agent": "implementer",
+            "endedAt": "2026-11-04T18:00:00Z",
+            "harness": "claude-code",
+            "model": "sonnet"
+          }
+        ],
+        "conditions": [
+          {
+            "type": "Succeeded",
+            "status": "True",
+            "reason": "DoneByStandardChange",
+            "message": "Done by Standard change #253: with it merged, this issue needed nothing more.",
+            "lastTransitionTime": "2026-11-04T18:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "theos.factory.io/v1beta1",
+      "kind": "Task",
+      "metadata": {
         "name": "active-42",
         "namespace": "shop",
         "creationTimestamp": "2026-11-05T09:00:00Z"

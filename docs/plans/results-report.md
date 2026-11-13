@@ -301,9 +301,9 @@ GitHub issue #142, from the review of step 2. Written 2026-11-13.
   True: reason `Merged` on the 16 with a pull request, `Scored` on the 10
   Score Tasks, `NothingToDo` on `done-41`, as before. `report.json` and
   `report.md` are unchanged: 13 merged and 1 ended with no change in the
-  period. The fixture has no Plan or Triage Task and none a Standard change
-  finished, so `PlanAccepted`, `Triaged` and `DoneByStandardChange` are in
-  `internal/taskfacts`' table only.
+  period. (#204 then added a Plan, a Triage and a DoneByStandardChange Task
+  to it, which `internal/model`'s `MergedChange` counts the same for both
+  readers: the fixture is now 38 Tasks, 14 merged.)
 - **Tried.** `EndedWithNoChange` taking any `Succeeded=True` of a Merged
   Task for "no change": with the fixture as it was, `TestReportOfTheFixture`
   passed; with the conditions in, it fails, on both files and on what the
@@ -314,12 +314,12 @@ GitHub issue #142, from the review of step 2. Written 2026-11-13.
   fixture's merged Tasks carry the reasons above.
   `TestFactoryMetricsCountAChangeByHowTheTaskEnded`
   (`internal/controller`): a scrape counts a Task that ended `Merged` or
-  `DoneByStandardChange` as a merged change and one that ended
-  `NothingToDo` as none.
+  `DoneByStandardChange` (with its Standard change's record, #204) as a
+  merged change and one that ended `NothingToDo` as none.
 
 ## What the fixture holds
 
-`tasks.json` is 35 Tasks; 13 merged in the period. A rule is held on both
+`tasks.json` is 38 Tasks; 14 merged in the period. A rule is held on both
 sides only while its Task is there, so both tests name the Tasks they lean
 on and fail when one is gone. The period is called `report`, so the
 directory holds it as a repository holds a release's: `report.md`, and the
@@ -338,11 +338,12 @@ directory holds it as a repository holds a release's: `report.md`, and the
 | Half a cent goes up | the median cost is `pricing-23`'s 1125, which the page prints as $1.13 |
 | Lead times run from the first Implementing step to the steps after it | `adopted-25` was in CI and in review before it |
 | The stages of several rounds add up | `checkout-12`, `catalog-17` |
-| The 90th percentile is not the slowest | 13 merged Tasks: it is the second slowest (Go's alone) |
+| The 90th percentile is not the slowest | 14 merged Tasks: it is the second slowest (Go's alone) |
 | A person's approval, of a spec or a held change | `spec-16`, `payments-13` |
 | The sizes' bounds | `spec-16` at 99 lines and `payments-13` at 100, `checkout-18` at 499 and `search-15` at 500, `catalog-17` at 1000 |
 | A Benchmark's run and a judge run are no failed Task | `bench-36`, `score-quality-17` |
-| Only `NothingToDo` is an ending with no change (Go's alone, #142) | `done-41` ended `NothingToDo`; the 16 merged Tasks with a pull request have `Succeeded` with reason `Merged`, the 10 Score Tasks with `Scored` |
+| Only `NothingToDo` is an ending with no change (Go's alone, #142) | `done-41` ended `NothingToDo`; the 16 merged Tasks with a pull request have `Succeeded` with reason `Merged`, the 10 Score Tasks with `Scored`, `plan-51` with `PlanAccepted`, `triage-52` with `Triaged` |
+| A merged change is a pull request of the Task's own that merged, or, ended `DoneByStandardChange`, its Standard change's record (#204) | `std-53` ended `DoneByStandardChange`: its pull request 53 was closed in round 1, its record names Standard change 253, and the report names it by that; `plan-51` and `triage-52` have no pull request and merged nothing |
 | Only a Scorer's newest generation counts | `score-quality-19` is of generation 1 |
 | Text is printed as text | `score-tone-19`'s criterion has a pipe, a tag, backticks and a link |
 

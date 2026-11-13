@@ -48,8 +48,11 @@ import (
 const (
 	// ConditionProgressing says what the Task is doing or waiting for.
 	ConditionProgressing = "Progressing"
-	// ConditionSucceeded is True once merged and False once failed. The
-	// name is taskfacts', which reads how a Task ended for the numbers.
+	// ConditionSucceeded is True once the Task ended done and False once it
+	// failed; a Merged Task's reason says how it ended (Merged, PlanAccepted,
+	// Scored, Triaged, DoneByStandardChange or NothingToDo). A Benchmark's
+	// Task ends Approved with it True and never merges. The name is
+	// taskfacts', which reads how a Task ended for the numbers.
 	ConditionSucceeded = taskfacts.ConditionSucceeded
 )
 

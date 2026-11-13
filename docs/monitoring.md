@@ -33,7 +33,7 @@ day", as the chart's alerts do, never `rate()`.
 | Series | Labels | What it is |
 | --- | --- | --- |
 | `theos_tasks` | `namespace`, `container`, `kind`, `phase` | Tasks, by where they are |
-| `theos_tasks_merged` | `namespace`, `container`, `kind`, `code`, `approved` | merged Tasks by who wrote the code: `factory` (no commit by a person), `person` or `unknown` (the Git host wasn't read); and by who approved the change: `person` (a spec at its review point, or a change the Crew's `approval` rules held), `reviewer` (the reviewer Agent, and the verifier where there is one) or `none` (the rules asked for no review, or a kind that has none) |
+| `theos_tasks_merged` | `namespace`, `container`, `kind`, `code`, `approved` | merged Tasks (a Task whose own pull request merged, or that ended `DoneByStandardChange` with its Standard change's record; a Plan, a Triage or a Score Task has no pull request and is none, as is one that ended `NothingToDo`) by who wrote the code: `factory` (no commit by a person), `person` or `unknown` (the Git host wasn't read); and by who approved the change: `person` (a spec at its review point, or a change the Crew's `approval` rules held), `reviewer` (the reviewer Agent, and the verifier where there is one) or `none` (the rules asked for no review, or a kind that has none) |
 | `theos_tasks_cost_usd` | `namespace`, `container`, `kind` | what the Tasks' agent runs cost, as the agents reported it |
 | `theos_task_seconds` (histogram) | `namespace`, `kind`, `outcome` | a finished Task's time from its first step to its last |
 | `theos_task_phase_seconds` (histogram) | `namespace`, `kind`, `phase` | each stay in a phase that ended |

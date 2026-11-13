@@ -118,8 +118,18 @@ type TaskMetricFacts struct {
 	Unreviewed       bool
 	// NoChange means the Task ended done with nothing merged: its agent found
 	// its issue needs no change (#72). It is no merged change.
-	NoChange     bool
-	CostMilliUSD int64
+	NoChange bool
+	// PullRequest is the Task's own pull request, the newest it opened: the
+	// one that merged, or, for a Task DoneByStandardChange, one closed in an
+	// earlier round. 0 when it has none.
+	PullRequest int
+	// DoneByStandardChange means the Task ended because its Standard change
+	// merged and left its issue nothing to do (ReasonDoneByStandardChange),
+	// and StandardChange is that change's issue number, from the Task's
+	// record of it; 0 when it has none. MergedChange reads them (#204).
+	DoneByStandardChange bool
+	StandardChange       int
+	CostMilliUSD         int64
 	// History is the Task's timeline, oldest first.
 	History []TaskMetricStep
 	Runs    []TaskMetricRun
@@ -222,7 +232,7 @@ func FactoryMetrics(tasks []TaskMetricFacts) []MetricFamily {
 		if t.CostMilliUSD != 0 {
 			add(MetricTasksCostUSD, float64(t.CostMilliUSD)/1000, t.Namespace, container, kind)
 		}
-		if phase == TaskMerged && !t.NoChange {
+		if MergedChange(t) {
 			code := CodeUnknown
 			if t.PersonCommits != nil {
 				code = CodeFactory
