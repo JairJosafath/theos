@@ -110,3 +110,13 @@ plan.
 
 - **13 November, start.** The factory is being rebuilt in the session's
   container from `cloud-session/`. Nothing of the steps is built.
+- **13 November, afternoon.** Steps 1 and 2 are built and approved in the
+  session's Gitea: cel-lens-vscode#3 (`release.yml`, two review rounds; the
+  second round made a new run finish a release whose tags a failed run
+  left at the commit) and cel-lens-core#6 (Prepare v0.28.0, the wording of
+  two lines fixed after the review). Both are on JairJosafath/cel-lens
+  branch `claude/jolly-ritchie-onxx00` (d003b85, 80caee7). The merge in
+  Gitea with the operator's account was refused to the session as a merge
+  without review, so step 3 waits for the owner to allow merging, in
+  Gitea and on GitHub. Follow-ups: cel-lens-vscode#4 (the review's three
+  non-blocking findings).
