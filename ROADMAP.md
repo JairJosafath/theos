@@ -85,6 +85,12 @@ its user-visible steps join an existing milestone or none.
 | The open alternative to Warp's factory | [docs/comparison.md](docs/comparison.md) has no "not yet" in theos's column for something Warp ships (#46); the page is rechecked at each minor release | open |
 | 1.0: a stable API | the criteria below hold; it holds only those, and the work towards them comes in the milestones above | when they hold |
 
+Under *The open alternative to Warp's factory*, chat on Slack and requests
+from Linear and Jira (#61) are planned in
+[docs/plans/requests-and-chat.md](docs/plans/requests-and-chat.md) and not
+built: of its thirteen steps none is filed or started, and only the two
+ports' contract suites are merged (#131).
+
 ## What 1.0 means
 
 1.0 is a promise: what an install builds keeps working across upgrades. It needs

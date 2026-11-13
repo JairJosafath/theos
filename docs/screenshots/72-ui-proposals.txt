@@ -1,0 +1,84 @@
+# #72, step 6: the Crew's page offers the schedules its Standard proposes (2026-11-13)
+#
+# The rule: which proposals a Crew is offered, which names it uses, what differs;
+# and the form, in a DOM: the zone is asked for, the patch is one append.
+$ cd ui && npx vitest run src/model/schedules.test.ts src/components/objects/TakeProposal.test.ts --reporter=verbose
+ ✓ src/model/schedules.test.ts > scheduleProposals > a Crew with no schedules is offered every proposal
+ ✓ src/model/schedules.test.ts > scheduleProposals > a proposal whose name the Crew uses is in use, not offered, and the same one differs in nothing
+ ✓ src/model/schedules.test.ts > scheduleProposals > a schedule of the name with another cron, zone and goal says each
+ ✓ src/model/schedules.test.ts > scheduleProposals > a zone given on take is the one difference of a proposal taken as it is written
+ ✓ src/model/schedules.test.ts > scheduleProposals > a schedule the Crew has under a name no proposal has is neither
+ ✓ src/model/schedules.test.ts > scheduleProposals > both lists are by name in code-point order, whatever the Standard’s order
+ ✓ src/model/schedules.test.ts > scheduleProposals > a bundled Container’s Standard is the one its Bundle expanded to
+ ✓ src/model/schedules.test.ts > scheduleProposals > a Standard with no proposals offers none
+ ✓ src/model/schedules.test.ts > scheduleProposals > another Standard’s proposals are not this Crew’s
+ ✓ src/model/schedules.test.ts > scheduleProposals > a Container with no Standard offers none
+ ✓ src/model/schedules.test.ts > scheduleProposals > a Container that isn’t found offers none
+ ✓ src/model/schedules.test.ts > scheduleProposals > a Standard named but not found offers none, and is still named
+ ✓ src/model/schedules.test.ts > scheduleProposals > a Container and a Standard of the same names in another namespace are not this Crew’s
+ ✓ src/model/schedules.test.ts > scheduleProposals > gives the Crew’s schedule beside the proposal it shares a name with
+ ✓ src/model/schedules.test.ts > scheduleDifferences > nothing for the same schedule
+ ✓ src/model/schedules.test.ts > scheduleDifferences > the cron as each is written
+ ✓ src/model/schedules.test.ts > scheduleDifferences > the zone, the Crew’s first
+ ✓ src/model/schedules.test.ts > scheduleDifferences > no zone is UTC, on the Crew’s side
+ ✓ src/model/schedules.test.ts > scheduleDifferences > no zone is UTC, on the proposal’s side
+ ✓ src/model/schedules.test.ts > scheduleDifferences > the goal
+ ✓ src/model/schedules.test.ts > scheduleDifferences > not a goal’s white space at its ends
+ ✓ src/model/schedules.test.ts > scheduleDifferences > a goal’s white space inside it
+ ✓ src/model/schedules.test.ts > scheduleDifferences > cron, zone and goal in that order
+ ✓ src/components/objects/TakeProposal.test.ts > taking a schedule the Standard proposes > asks for the time zone: the field starts empty and nothing is sent without one
+ ✓ src/components/objects/TakeProposal.test.ts > taking a schedule the Standard proposes > adds the proposal as it is written, in the zone given, as one append to the Crew’s schedules
+ ✓ src/components/objects/TakeProposal.test.ts > taking a schedule the Standard proposes > sends UTC when the person says UTC, and a zone it can’t check as typed
+ ✓ src/components/objects/TakeProposal.test.ts > taking a schedule the Standard proposes > shows the API server’s refusal, and can be sent again
+ Test Files  2 passed (2)
+      Tests  27 passed (27)
+
+# The page's panel, rendered, and the writer.
+$ npx vitest run src/components/objects/CrewPage.test.ts src/k8s/crews.test.ts --reporter=verbose -t "Standard proposals|takenSchedule|adds a schedule"
+ ✓ src/k8s/crews.test.ts > the Crew writer > adds a schedule with a JSON patch that appends it, sent as given
+ ✓ src/k8s/crews.test.ts > takenSchedule > has the zone given, not the proposal’s
+ ✓ src/k8s/crews.test.ts > takenSchedule > has UTC when the person says UTC
+ ✓ src/k8s/crews.test.ts > takenSchedule > has the zone without the white space around it
+ ✓ src/k8s/crews.test.ts > takenSchedule > has a zone it can’t judge, as typed
+ ✓ src/k8s/crews.test.ts > takenSchedule > copies only a schedule’s four fields
+ ✓ src/components/objects/CrewPage.test.ts > the Crew page’s Standard proposals > shows no proposals panel when the Standard proposes nothing, or the Container has no Standard
+ ✓ src/components/objects/CrewPage.test.ts > the Crew page’s Standard proposals > lists the proposals whose name the Crew doesn’t use, with their cron and goal and the Standard they are from
+ ✓ src/components/objects/CrewPage.test.ts > the Crew page’s Standard proposals > shows no time zone as the proposal’s own: the zone is asked for on take
+ ✓ src/components/objects/CrewPage.test.ts > the Crew page’s Standard proposals > offers to take a proposal only where the page can write, and says how otherwise
+ ✓ src/components/objects/CrewPage.test.ts > the Crew page’s Standard proposals > offers no proposal whose name the Crew uses, and says the Crew’s schedule has the proposal’s fields when it does
+ ✓ src/components/objects/CrewPage.test.ts > the Crew page’s Standard proposals > shows where the Crew’s schedule differs from the proposal of its name: cron, zone and goal
+ ✓ src/components/objects/CrewPage.test.ts > the Crew page’s Standard proposals > names only the fields that differ
+ ✓ src/components/objects/CrewPage.test.ts > the Crew page’s Standard proposals > claims nothing about where a schedule came from
+ ✓ src/components/objects/CrewPage.test.ts > the Crew page’s Standard proposals > leaves the Crew’s own schedules as they were listed
+ Test Files  2 passed (2)
+      Tests  15 passed | 43 skipped (58)
+
+# The UI server: the one write it lets through, what it sends upstream, what it refuses.
+$ node --test --test-name-pattern="schedule" test/server.test.mjs
+ok 1 - takes a Crew's schedule run now (\#72), and sends exactly that as the UI
+ok 2 - adds a schedule to a Crew that has some with exactly the append it was sent
+ok 3 - adds the list for a Crew's first schedule, guarded by the resourceVersion it read
+ok 4 - refuses a Crew's schedules set whole with 403, and writes nothing upstream
+ok 5 - refuses a Crew's schedules set whole after a test of its resourceVersion with 403, and writes nothing upstream
+ok 6 - refuses one of a Crew's schedules set with 403, and writes nothing upstream
+ok 7 - refuses a Crew's schedule's goal with 403, and writes nothing upstream
+ok 8 - refuses one of a Crew's schedules replaced with 403, and writes nothing upstream
+ok 9 - refuses a Crew's schedule removed with 403, and writes nothing upstream
+ok 10 - refuses a Crew's schedules removed with 403, and writes nothing upstream
+ok 11 - refuses two schedules in one patch with 403, and writes nothing upstream
+ok 12 - refuses a schedule with a setting beside it with 403, and writes nothing upstream
+ok 13 - refuses a schedule as a string with 403, and writes nothing upstream
+ok 14 - refuses a schedule as a list with 403, and writes nothing upstream
+ok 15 - refuses a schedule with a field that is none of a schedule’s with 403, and writes nothing upstream
+ok 16 - refuses a schedule whose cron is not a string with 403, and writes nothing upstream
+ok 17 - refuses a schedule added to a Brief with 403, and writes nothing upstream
+ok 18 - refuses a schedule added to a Standard with 403, and writes nothing upstream
+ok 19 - refuses the run-schedule annotation on a Container with 403, and writes nothing upstream
+ok 20 - refuses the run-schedule annotation with another beside it with 403, and writes nothing upstream
+ok 1 - the action table, over port-forward (UI_ACTIONS=service-account)
+ok 1 - server.mjs
+# pass 20
+# fail 0
+
+# Not run here: the UI's browser tests (npm run test:e2e), which need a headless
+# browser the agent's container doesn't have. CI runs them.

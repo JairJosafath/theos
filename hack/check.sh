@@ -19,10 +19,12 @@
 #                        pins controller-gen
 #   fmt, vet, lint       the packages gta says the change affects (hack/gta):
 #                        those a changed file lies in and those that depend on
-#                        them. Every package after a change to go.mod or
-#                        go.sum; for vet and lint after one to the Makefile
-#                        or a *.mk, which hold vet's flags and pin the
-#                        linter; for lint after one to its configuration
+#                        them. None after a change to go.mod or go.sum
+#                        alone, which gta places in no package: only a
+#                        release reads every package for them. Every package
+#                        for vet and lint after a change to the Makefile or
+#                        a *.mk, which hold vet's flags and pin the linter;
+#                        for lint after one to its configuration
 #   validate-yaml,       a changed file among the tier's inputs
 #   test-hack, ui-test   (hack/check-cache.sh changed). A tier the change selects
 #                        is still answered from the device's cache when those
@@ -103,8 +105,6 @@ asked() { [[ $steps == *" $1 "* ]]; }
 GENERATE=('api/*' 'cmd/*.go' 'internal/*.go' go.mod go.sum go.work go.work.sum
   'config/crd/*' 'config/rbac/*' 'dist/chart/templates/crd/*' 'dist/chart/templates/rbac/*'
   hack/chart-crds.sh hack/chart-role.sh hack/keep-mtime.sh hack/boilerplate.go.txt Makefile)
-# A change to one of these reaches every package: each is built from them.
-GO_ALL=(go.mod go.sum go.work go.work.sum)
 # The Makefile and what it includes hold vet's flags and pin the linter: a
 # change to one reaches every package for those two.
 MAKE_FILES=(Makefile '*.mk')
@@ -164,9 +164,6 @@ go_scope() {
   elif [ -n "$all" ]; then
     go_pkgs=(./...)
     go_why="every package: $all"
-  elif f=$(first "${GO_ALL[@]}"); then
-    go_pkgs=(./...)
-    go_why="every package: $f changed"
   elif ! in_go_tree; then
     go_why="no changed file lies in a Go package"
   elif ! out=$(printf '%s\n' "${files[@]}" | ${THEOS_GTA:-go run ./hack/gta} 2>"$T/gta.err"); then
