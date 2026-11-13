@@ -17,6 +17,7 @@ import {
 } from '../k8s/types'
 import { plural, type PhaseInfo, type Tone } from './describe'
 import { describeRequests, splitRequest, type RequestsView } from './requests'
+import { compareText } from './order'
 
 /** The Brief phase as a badge label, colour tone and one-line explanation. */
 export function describeBriefPhase(phase: BriefPhase | undefined): PhaseInfo {
@@ -693,7 +694,7 @@ export function formatCost(milliUSD: number): string {
 export function sortBriefs(briefs: Brief[]): Brief[] {
   return [...briefs].sort(
     (a, b) =>
-      (b.metadata.creationTimestamp ?? '').localeCompare(a.metadata.creationTimestamp ?? '') ||
-      a.metadata.name.localeCompare(b.metadata.name),
+      compareText(b.metadata.creationTimestamp ?? '', a.metadata.creationTimestamp ?? '') ||
+      compareText(a.metadata.name, b.metadata.name),
   )
 }

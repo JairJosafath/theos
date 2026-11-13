@@ -8,7 +8,7 @@
 
 import type { Container, Crew, CrewSchedule, Standard } from '../k8s/types'
 import { choicesOf } from './choices'
-import { compareText } from './metrics'
+import { compareText } from './order'
 
 /** The fields of a schedule a Crew may have changed, in the order the page shows them. */
 export type ScheduleField = 'cron' | 'timeZone' | 'goal'
