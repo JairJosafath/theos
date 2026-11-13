@@ -1717,8 +1717,8 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   second. A new version or another state files again; recovering to `Healthy`
   files nothing. A failure to reach the Git host is not filed.
   (`model.DeployMonitorDue`.)
-- **Alerts** ([plans/alerts.md](plans/alerts.md), #64; the rules are built,
-  the kind and the receiver are still to come): the operator monitors no
+- **Alerts** ([plans/alerts.md](plans/alerts.md), #64; the rules and the
+  `AlertSource` kind are built, the receiver is still to come): the operator monitors no
   app, it listens to the tools that do. An `AlertSource` in the Project's
   namespace names one sender (`alertmanager`, `sentry` or `generic`), the
   Secret that checks its deliveries, and how an alert finds its Container:
