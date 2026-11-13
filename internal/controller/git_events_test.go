@@ -110,7 +110,7 @@ var _ = Describe("Git events", func() {
 		Expect(k8sClient.Get(ctx, key(ns, container.Spec.GitProviderRef.Name), &gp)).To(Succeed())
 		secret := registeredSecret(&gp)
 		base := gitEventsServer()
-		reads := gitFake.HistoryCount(ns, "orders-api")
+		reads := settledHistoryCount(ns, "orders-api")
 		Consistently(func() int { return gitFake.HistoryCount(ns, "orders-api") }, "2s").Should(Equal(reads))
 
 		By("refusing a forged delivery with 401, reconciling nothing, and turning Events DeliveryRefused")
