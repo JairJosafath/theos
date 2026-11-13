@@ -1007,6 +1007,15 @@ var _ = Describe("Task with an interrupted run", func() {
 			agent.Spec.Image = "theos/agent-go:new"
 			g.Expect(k8sClient.Update(ctx, &agent)).To(Succeed())
 		}).Should(Succeed())
+		// #213: the Agent and the pod reach the operator's cache through
+		// separate informers, in no set order. A pod deleted at once could
+		// wake the Task before its cache has the new Agent; the run resumed
+		// then with the image the Agent had.
+		Eventually(func(g Gomega) {
+			var cached c4v1beta1.Agent
+			g.Expect(managerClient.Get(ctx, key(ns, "claude"), &cached)).To(Succeed())
+			g.Expect(cached.Spec.Image).To(Equal("theos/agent-go:new"))
+		}).Should(Succeed())
 		Expect(k8sClient.Delete(ctx, running, client.GracePeriodSeconds(0))).To(Succeed())
 		var agent c4v1beta1.Agent
 		Expect(k8sClient.Get(ctx, key(ns, "claude"), &agent)).To(Succeed())
