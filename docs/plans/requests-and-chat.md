@@ -607,6 +607,12 @@ method and event pages named):
   buffer, so its event, if still on its way, is dropped as a repeat, and
   what is older is this reader's alone, so no other reader is given a
   message twice. The first Sync (`""`) marks the buffer's end and the cluster's clock.
+  A Sync that comes while a socket's first catch-up is read waits for it,
+  so that its position counts what the catch-up adds.
+- **Clocks:** on a first Sync the buffer's start is the cluster's clock,
+  and Slack's ts are Slack's; with the two apart, a message said near that
+  start may be missed or given twice, so step 13's guide asks for NTP on
+  the cluster's nodes.
 - **Order:** each Sync returns its messages oldest first. Slack promises no
   order of delivery, so two Syncs may not be in order, even in one
   channel; the position, not the time, keeps every message once.
@@ -630,8 +636,9 @@ method and event pages named):
   message said with no socket open is only in the history. `PostHeld`,
   `Redeliver` and `Disconnect` make the late message, the delivery sent
   twice and Slack's refresh, which leaves the old socket open, as Slack's
-  warning does; `HoldOpens`, `RefuseDials` and `MaxPage` hold a redial,
-  refuse a dial and page every listing.
+  warning does; `HoldOpens` (`Hold` for any method), `RefuseDials` and
+  `MaxPage` hold a redial or a catch-up, refuse a dial and page every
+  listing.
 - **Lint:** only `slack` is added to `adapters-stay-out-of-kubernetes`;
   Linear and Jira are added by their own pull requests.
 

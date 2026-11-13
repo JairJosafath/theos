@@ -96,6 +96,7 @@ type feed struct {
 
 	mu      sync.Mutex
 	conn    *websocket.Conn
+	caught  bool      // the open socket's first catch-up is read into the buffer
 	gen     uint64    // counts the sockets opened
 	opened  bool      // a socket was ever open
 	floor   time.Time // the buffer holds every message after it
@@ -139,7 +140,7 @@ func (f *feed) close() {
 	f.closed = true
 	if f.conn != nil {
 		_ = f.conn.Close()
-		f.conn = nil
+		f.conn, f.caught = nil, false
 	}
 	f.notify()
 }
@@ -324,10 +325,12 @@ func (c *Client) syncForeign(ctx context.Context, tok token) (ports.ChatSync, er
 // down reads from a minute before the newest time heard.
 func (c *Client) open(ctx context.Context, since string, tok token) error {
 	f := c.feed
-	// An open socket serves, even while a redial after Slack's disconnect
-	// holds f.dial.
+	// An open socket whose catch-up is read serves, even while a redial
+	// after Slack's disconnect holds f.dial. One whose catch-up is still
+	// being read does not: until it is, the buffer is not whole, and a
+	// position in it would skip what the catch-up adds (#155).
 	f.mu.Lock()
-	closed, open := f.closed, f.conn != nil
+	closed, open := f.closed, f.conn != nil && f.caught
 	f.mu.Unlock()
 	if closed {
 		return errors.New("slack: the client is closed")
@@ -403,6 +406,9 @@ func (c *Client) connect(ctx context.Context, old *websocket.Conn, first bool, f
 	}
 	go c.read(ws, gen)
 	if from.IsZero() {
+		f.mu.Lock()
+		f.caught = true
+		f.mu.Unlock()
 		return nil
 	}
 	read, err := c.catchUp(ctx, from)
@@ -413,7 +419,7 @@ func (c *Client) connect(ctx context.Context, old *websocket.Conn, first bool, f
 		// next Sync opens one.
 		f.pending = from
 		if f.conn == ws {
-			f.conn = nil
+			f.conn, f.caught = nil, false
 		}
 		_ = ws.Close()
 		f.notify()
@@ -423,6 +429,7 @@ func (c *Client) connect(ctx context.Context, old *websocket.Conn, first bool, f
 	for _, b := range read {
 		f.add(b.key, b.ev)
 	}
+	f.caught = true
 	return nil
 }
 
@@ -505,7 +512,7 @@ func (f *feed) down(gen uint64) {
 	defer f.mu.Unlock()
 	if f.gen == gen && f.conn != nil {
 		_ = f.conn.Close()
-		f.conn = nil
+		f.conn, f.caught = nil, false
 		f.notify()
 	}
 }

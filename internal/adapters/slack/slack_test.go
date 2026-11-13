@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -407,27 +408,110 @@ func TestReopenAfterARestartReadsNothingTwice(t *testing.T) {
 
 // TestForeignTokenWhileAnEventIsOnItsWay covers #155: a token of before a
 // restart, read on a socket another Chat opened, is given a message the
-// catch-up read whose event comes after, once (the review's S1).
+// catch-up read whose event comes after, once (the review's S1). What the
+// catch-up read from before the buffer's floor is that token's alone: the
+// other Chat, whose first Sync came after it, is not given it (the
+// re-review's N-a).
 func TestForeignTokenWhileAnEventIsOnItsWay(t *testing.T) {
 	x := newRooms(t)
 	since := sync0(t, x.c, "").Next
 	x.post(t, x.specs, "status", "")
 	token := sync0(t, x.c, since).Next
+	gap := x.post(t, x.alerts, "retry", "") // after the token, before the floor
 	x.c.Close()
 	waitFor(t, "the socket is closed", func() bool { return x.ws.Open() == 0 })
 
 	other := client(t, x.ws, x.botToken, x.appToken)
-	sync0(t, other, "") // another Chat opens the socket: the buffer starts now
+	mark := sync0(t, other, "").Next // another Chat opens the socket: the buffer starts now
 	held, deliver, err := x.ws.PostHeld(x.specs, x.ada, "approve", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	first := sync0(t, other, token)
-	wantIDs(t, "Sync() of the older token", first.Events, x.specs+"/"+held)
+	wantIDs(t, "Sync() of the older token", first.Events, x.alerts+"/"+gap, x.specs+"/"+held)
 	if err := deliver(); err != nil {
 		t.Fatal(err)
 	}
 	wantIDs(t, "the next Sync(), after the event arrived", sync0(t, other, first.Next).Events)
+	wantIDs(t, "the other Chat's Sync()", sync0(t, other, mark).Events, x.specs+"/"+held)
+}
+
+// catchingUp restarts x's Client and opens the new one's socket by a Sync
+// of since, a token of before the restart, whose catch-up waits on
+// users.conversations until release is called; first gives that Sync's
+// answer.
+func catchingUp(t *testing.T, x rooms, since string) (c *Client, release func(), first <-chan ports.ChatSync) {
+	t.Helper()
+	x.c.Close()
+	waitFor(t, "the socket is closed", func() bool { return x.ws.Open() == 0 })
+	c = client(t, x.ws, x.botToken, x.appToken)
+	if _, err := c.WhoAmI(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	calls := x.ws.Calls("users.conversations")
+	release = x.ws.Hold("users.conversations")
+	t.Cleanup(release)
+	first = syncLater(t, c, since)
+	waitFor(t, "the first catch-up is under way", func() bool { return x.ws.Calls("users.conversations") > calls })
+	return c, release, first
+}
+
+// syncLater syncs c from since, without waiting, in a goroutine of its own.
+func syncLater(t *testing.T, c *Client, since string) <-chan ports.ChatSync {
+	out := make(chan ports.ChatSync, 1)
+	go func() {
+		got, err := c.Sync(t.Context(), since, 0)
+		if err != nil {
+			t.Errorf("Sync(%q) = %v", since, err)
+		}
+		out <- got
+	}()
+	return out
+}
+
+// answerOf is what comes on ch, release called once it came or after a
+// moment, whichever is first.
+func answerOf(ch <-chan ports.ChatSync, release func()) ports.ChatSync {
+	select {
+	case got := <-ch:
+		release()
+		return got
+	case <-time.After(200 * time.Millisecond):
+		release()
+		return <-ch
+	}
+}
+
+// TestSyncDuringTheFirstCatchUpWaitsForIt covers #155: a Sync that comes
+// while the first socket after a restart reads its catch-up waits for it,
+// so a newer token of before the restart, on the same Client, is not given
+// again what it read then (the re-review's R1).
+func TestSyncDuringTheFirstCatchUpWaitsForIt(t *testing.T) {
+	x := newRooms(t)
+	older := sync0(t, x.c, "").Next
+	said := x.post(t, x.specs, "approve", "")
+	got := sync0(t, x.c, older)
+	wantIDs(t, "Sync() before the restart", got.Events, x.specs+"/"+said)
+
+	c, release, first := catchingUp(t, x, older)
+	newer := answerOf(syncLater(t, c, got.Next), release)
+	wantIDs(t, "Sync() of the older token", (<-first).Events, x.specs+"/"+said)
+	wantIDs(t, "Sync() of the newer token, twice", append(newer.Events, sync0(t, c, newer.Next).Events...))
+}
+
+// TestFirstSyncDuringTheFirstCatchUp covers #155: a fresh Chat's first Sync,
+// while the first socket after a restart reads its catch-up, marks where the
+// rooms stand once it is read: the fresh Chat is not given what was said
+// before (the re-review's R1).
+func TestFirstSyncDuringTheFirstCatchUp(t *testing.T) {
+	x := newRooms(t)
+	older := sync0(t, x.c, "").Next
+	said := x.post(t, x.specs, "approve", "")
+
+	c, release, first := catchingUp(t, x, older)
+	mark := answerOf(syncLater(t, c, ""), release)
+	wantIDs(t, "Sync() of the older token", (<-first).Events, x.specs+"/"+said)
+	wantIDs(t, "the fresh Chat's next Sync()", sync0(t, c, mark.Next).Events)
 }
 
 // TestSocketDialErrorHoldsNoTicket covers #155: a dial that fails is
@@ -751,6 +835,27 @@ func TestPostMentionsNobody(t *testing.T) {
 		if !b.Text.Verbatim || !strings.Contains(b.Text.Text, "@channel urgent: @here, @everyone, see #general") {
 			t.Errorf("a section = %+v, want the title as typed, verbatim", b.Text)
 		}
+	}
+}
+
+// TestFakeRefusesASectionNotVerbatim covers #155: the fake workspace
+// refuses a section whose mrkdwn is not verbatim, which the adapter must
+// never send, and takes the same section verbatim (the re-review's N-d).
+func TestFakeRefusesASectionNotVerbatim(t *testing.T) {
+	x := newRooms(t)
+	section := func(verbatim bool) url.Values {
+		blocks, err := json.Marshal([]map[string]any{{"type": "section",
+			"text": map[string]any{"type": "mrkdwn", "text": "@here", "verbatim": verbatim}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return url.Values{"text": {"@here"}, "blocks": {string(blocks)}}
+	}
+	if _, err := x.c.post(t.Context(), x.specs, section(false)); err == nil || !strings.Contains(err.Error(), "invalid_blocks") {
+		t.Errorf("a post of a section not verbatim = %v, want invalid_blocks", err)
+	}
+	if _, err := x.c.post(t.Context(), x.specs, section(true)); err != nil {
+		t.Errorf("a post of the section verbatim = %v", err)
 	}
 }
 

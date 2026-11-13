@@ -122,9 +122,9 @@ type Server struct {
 	sent     *delivery // the last event delivered, for Redeliver
 	limited  int
 	calls    map[string]int
-	refuse   int           // dials to refuse, at the handshake
-	maxPage  int           // the most items a page holds, 0 for the limit asked
-	held     chan struct{} // closed when apps.connections.open may answer
+	refuse   int                      // dials to refuse, at the handshake
+	maxPage  int                      // the most items a page holds, 0 for the limit asked
+	holds    map[string]chan struct{} // by method, closed when it may answer
 }
 
 type credential struct {
@@ -171,10 +171,8 @@ func New(t testing.TB) *Server {
 
 // Start starts a fake workspace the caller closes with Close.
 func Start() *Server {
-	held := make(chan struct{})
-	close(held)
 	s := &Server{users: map[string]string{}, tokens: map[string]*credential{}, channels: map[string]*channel{},
-		tickets: map[string]bool{}, calls: map[string]int{}, held: held}
+		tickets: map[string]bool{}, calls: map[string]int{}, holds: map[string]chan struct{}{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/", s.serve)
 	mux.Handle("/link", websocket.Handler(s.socket))
@@ -400,10 +398,15 @@ func (s *Server) Disconnect(reason string) {
 // HoldOpens makes apps.connections.open wait, until release is called, to
 // answer: a socket being opened again. Calls counts a call that waits.
 // Release is safe to call twice.
-func (s *Server) HoldOpens() (release func()) {
+func (s *Server) HoldOpens() (release func()) { return s.Hold(appMethod) }
+
+// Hold makes every call of method wait, until release is called, to answer:
+// a catch-up under way, when method is one it reads. Calls counts a call
+// that waits. Release is safe to call twice.
+func (s *Server) Hold(method string) (release func()) {
 	held := make(chan struct{})
 	s.mu.Lock()
-	s.held = held
+	s.holds[method] = held
 	s.mu.Unlock()
 	return sync.OnceFunc(func() { close(held) })
 }
@@ -684,9 +687,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	s.calls[method]++
-	held := s.held
+	held, hold := s.holds[method]
 	s.mu.Unlock()
-	if method == appMethod {
+	if hold {
 		select {
 		case <-held:
 		case <-r.Context().Done():
