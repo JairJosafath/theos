@@ -244,8 +244,9 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if container.Choices().Standard != "" {
 			answered = r.updateStandard(ctx, &container, status, live)
 		} else {
+			// #97: the pull request of a Standard the Container names no more is closed.
+			result = sooner(result, r.dropStandardAdoption(ctx, &container, status, live))
 			meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionStandardUpdated)
-			status.StandardAdoption = nil
 		}
 		r.reportBundleCurrent(ctx, &container, status)
 		reportDomainsApplied(&container, status, &system)

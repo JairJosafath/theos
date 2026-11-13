@@ -83,8 +83,9 @@ Read from the code, with what was run on #60:
 7. **A Standard is something an adopted repository grows into.** Naming one
    whose files differ opens the operator's pull request with the
    difference, as a bump of the Standard's ref does, instead of failing
-   `StandardFilesDiffer`: the person reviews the files, and the repository
-   keeps working meanwhile.
+   `StandardFilesDiffer`: the person reviews the files, and the Container
+   stays `Ready` meanwhile. No agent works on the repository until the
+   Standard is on main (step 4 found why).
 8. **The first issue on an adopted repository is the Crew's own:** "Write
    AGENTS.md for this repository, and say what you found", filed once,
    labelled `kind/onboarding`. Its pull request adds the guide every later
@@ -216,18 +217,45 @@ Choices the issue left open, and why:
   the Standard is on main (`standardOnMain`, `standardNotOnMain`) and wait
   with `ContainerNotProtected`, as on a bare adoption. The helpers sit
   beside the adoption, not in `protection.go`, which is the owner's; it
-  would be their natural home.
+  would be their natural home. `pendingStep` alone was not enough: a
+  Triage, a plan and a judge run skip it, and so does a Task past Pending
+  when a bare adoption names a Standard. `protectRepository`, which still
+  reads "names a Standard" as "has checks", would put the Standard's rule
+  on main before such a run, and under it the person could no longer merge
+  the pull request. So `runInputs`, the one door to every run, asks
+  `standardNotOnMain` first, protects nothing and waits.
+- **An adoption is for one Standard.** `spec.standardRef` can change, and
+  two Standards of one catalog repository are pinned at the same ref, so
+  ref and checks don't tell them apart: `status.standardAdoption.name`
+  does. When the Container names another Standard, a stopped adoption is
+  forgotten and an open one closed (the pull request is the operator's
+  own), and the named Standard is compared with main afresh. Naming none
+  closes it the same way. A status kept before the name reads as the named
+  Standard's.
+- **A pull request gone from the host is a closed one:** it brings nothing
+  any more, and `GitError; retrying` had no way out.
 
 Left as it is:
 
 - The UI shows the condition's reason and message, and nothing of
   `status.standardAdoption`; `describe.ts` still describes
   `StandardFilesDiffer` as a failed adoption.
-- A status write lost right after the pull request opened opens a second
-  one on the same branch at the next pass, as a Standard update's does.
+- A status write lost right after the pull request opened opens no second
+  one: `OpenPullRequest` returns the open one for the head, on every
+  adapter. The next pass pushes the branch again, a new commit with the
+  same files, and records that pull request. A commit a person pushed to
+  the branch between the two is replaced.
 - A bare adoption that main protects by its own checks and then names a
-  Standard keeps the old rule on the host while the pull request is open:
-  a person with the rights merges it over the protected workflow paths.
+  Standard keeps that rule on the host while the pull request is open: no
+  run replaces it with the Standard's any more, and nothing lifts it. The
+  rule requires the old checks, protects the workflow paths and keeps the
+  merge to the operator, so the pull request takes a person the host lets
+  merge past it. Whether the operator should lift the rule while it waits
+  is `protection.go`'s to answer, and not tested on a real host.
+- An adopted Container whose Standard is recorded and then named anew
+  still says `AddedAfterScaffold`: the files on main are the first one's.
+- The Brief's "needs you" and the Chat don't list a waiting adoption
+  (`standardBehind` reads `FilesBehind` only).
 
 ## What step 5 found
 

@@ -51,6 +51,10 @@ type StandardAdoptionFacts struct {
 
 // StandardAdoptionInFlight is an adoption's state in status.
 type StandardAdoptionInFlight struct {
+	// Name is the Standard the pull request brings: the Container may name
+	// another one since. Empty, in a status written before the name was
+	// kept, reads as the Standard the Container names.
+	Name string
 	// Version is what the pull request renders the Standard's files at.
 	Version        StandardVersion
 	PullRequestURL string
@@ -99,8 +103,13 @@ const (
 	// holds files the Standard protects with other content.
 	AdoptionStopDiffer AdoptionAction = "StopDiffer"
 	// AdoptionForget forgets a stopped adoption the Standard's ref or the
-	// Container's checks moved past, so it is planned again.
+	// Container's checks moved past, or one of another Standard than the
+	// Container names now, so the named Standard is planned.
 	AdoptionForget AdoptionAction = "Forget"
+	// AdoptionClose ends the adoption of another Standard than the Container
+	// names now: it closes the pull request when it is still open, deletes
+	// its branch and forgets the adoption, so the named Standard is planned.
+	AdoptionClose AdoptionAction = "Close"
 )
 
 // AdoptionStep is the next step of a Standard's adoption.
@@ -116,14 +125,16 @@ type AdoptionStep struct {
 // NextAdoptionStep decides the next step of bringing a Standard into an
 // adopted repository. The operator takes it, adds what it read to the facts,
 // and asks again until a step ends the pass: every step but the reads,
-// Compare and Forget does.
+// Compare, Forget and Close does.
 //
 // An open pull request stays at the version it was planned at, whatever the
 // Standard's ref does meanwhile: once it merges the Standard is recorded at
 // that version, and an ordinary Standard update brings it on. A stopped
 // adoption is compared again when main moved, so files a person brings by
 // hand are found, and planned again when the Standard's ref or the
-// Container's checks change.
+// Container's checks change. An adoption is for one Standard: when the
+// Container names another, a stopped one is forgotten and an open one closed,
+// and the named Standard is planned from main as it is.
 func NextAdoptionStep(f StandardAdoptionFacts) AdoptionStep {
 	a := f.Adoption
 	target := f.Target.Normal()
@@ -137,9 +148,12 @@ func NextAdoptionStep(f StandardAdoptionFacts) AdoptionStep {
 		return AdoptionStep{Action: AdoptionOpen, Version: target}
 	}
 	version := a.Version.Normal()
+	other := a.Name != "" && a.Name != f.Name
 	switch {
-	case a.Stopped && version != target:
+	case a.Stopped && (other || version != target):
 		return AdoptionStep{Action: AdoptionForget}
+	case other:
+		return AdoptionStep{Action: AdoptionClose}
 	case a.Stopped && f.Main == "":
 		return AdoptionStep{Action: AdoptionReadMain}
 	case a.Stopped && f.Main == a.Base:

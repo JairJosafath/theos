@@ -305,7 +305,13 @@ opened at; once it merges, an ordinary Standard update brings a newer one.
 
 Either stop is read again when main moves, so files a person brings by
 hand are found (after a close, all of them), and the Standard's ref or the
-Container's checks changing opens a new pull request. An empty repository
+Container's checks changing opens a new pull request. The pull request is
+for one Standard, named in `status.standardAdoption.name`: when the
+Container names another, or none, the operator closes it if it is open,
+deletes its branch and forgets it, and the Standard named now is compared
+with main afresh. A pull request gone from the host reads as closed. Every
+run asks whether the Standard is on main before it starts, a triage's and a
+later round's too, and puts no rule on main while it waits. An empty repository
 fails `NothingToAdopt`; one with commits but no `main` branch fails
 `NoDefaultBranch`, telling the user to rename its default branch to `main`
 first (#1908). A Container without a Standard adopts on the

@@ -5,7 +5,8 @@ arrives as a pull request, not as a failed adoption
 2026-11-13. Test output is the evidence; no cluster was used.
 
 The repository, the Container, the pull request a person merges or closes,
-and a Task that waits, on the fake Git host (envtest,
+a Task and a Crew that wait, a Standard named later or changed, and the
+ordinary update after the merge, on the fake Git host (envtest,
 internal/controller/container_adopt_standard_test.go, and the two specs of
 container_adopt_test.go and container_adopt_domains_test.go that used to
 fail StandardFilesDiffer). Every adoption spec ran, the ones of a repository
@@ -23,8 +24,15 @@ Container adoption refuses a change to spec.operations after the adoption, Adopt
 Container adoption with Domains adopts a repository scaffolded with a Domain, and records it, DomainsApplied (#42)
 Container adoption with Domains brings only the changed guide, rendered with the repository's Domains, when its domain section differs (#42, #97)
 Container adoption with Domains finds the Domains in .theos.yaml's scaffoldedFrom when the system names none now (#42)
+Container adoption with a Standard the repository doesn't hold closes the pull request of a Standard the Container names no more, and plans the one it names: an adoption is for one Standard (#97)
+Container adoption with a Standard the repository doesn't hold closes the pull request when the Container names no Standard any more (#97)
 Container adoption with a Standard the repository doesn't hold has a Task wait while the pull request is open: no agent works where the Standard's checks aren't on main (#97)
+Container adoption with a Standard the repository doesn't hold has a Triage Task made by hand wait too, and leaves main for the person to merge into (#97)
+Container adoption with a Standard the repository doesn't hold has the Crew start no Task, its triager's included, while the pull request is open (#97)
+Container adoption with a Standard the repository doesn't hold keeps the pull request at its ref when the Standard's ref moves, and brings the new ref as an ordinary update once it merged (#97)
 Container adoption with a Standard the repository doesn't hold opens one pull request with exactly the Standard's files and is Ready; merging it records the Standard and protects main (#97)
+Container adoption with a Standard the repository doesn't hold opens the pull request for a Standard named after a bare adoption, where a scaffolded Container says AddedAfterScaffold (#97)
+Container adoption with a Standard the repository doesn't hold reads a pull request gone from the host as closed, not as a Git error for ever (#97)
 Container adoption with a Standard the repository doesn't hold records the Standard when the pull request merged with a file it doesn't protect changed: the file is the repository's own (#97)
 Container adoption with a Standard the repository doesn't hold says StandardFilesDiffer when the pull request merged with a file the Standard protects changed, until main holds it as rendered (#97)
 Container adoption with a Standard the repository doesn't hold stays Ready without the Standard when a person closes the pull request, and says so; the files brought by hand are found (#97)
@@ -41,9 +49,9 @@ Container adoption without the catalog keeps a Container that doesn't adopt to a
 Container adoption without the catalog says the Container names no Framework when its spec.operations has nothing to read it
 Container adoption without the catalog still fails IdentityMismatch for a repository that doesn't name the Container
 --- PASS: TestNoAgentWorksUntilTheStandardIsOnMain (0.00s)
-Ran 28 of 790 Specs in 51.684 seconds
-SUCCESS! -- 28 Passed | 0 Failed | 0 Pending | 762 Skipped
-ok  	github.com/JairJosafath/theos/internal/controller	51.717s
+Ran 35 of 797 Specs in 81.870 seconds
+SUCCESS! -- 35 Passed | 0 Failed | 0 Pending | 762 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	81.931s
 
 The rules as tables (internal/model/standardadoption_test.go, internal/scaffold/update_test.go):
 
@@ -74,6 +82,13 @@ $ go test ./internal/model ./internal/scaffold -run 'TestNextAdoptionStep|TestCl
     --- PASS: TestNextAdoptionStep/merged_and_differing,_and_main_moved_without_a_fix:_still_StandardFilesDiffer (0.00s)
     --- PASS: TestNextAdoptionStep/a_stopped_adoption_is_forgotten_when_the_Standard's_ref_moves (0.00s)
     --- PASS: TestNextAdoptionStep/a_stopped_adoption_is_forgotten_when_the_Container's_checks_change (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_another_Standard's_pull_request_was_closed,_the_named_one_at_the_same_ref:_forgotten,_though_main_is_as_it_was_compared (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_another_Standard's_merged_and_differing_adoption_is_forgotten (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_another_Standard's_pull_request_is_open,_the_named_one_at_the_same_ref:_closed,_never_waited_for (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_another_Standard's_open_pull_request_is_closed_whatever_was_read_of_it (0.00s)
+    --- PASS: TestNextAdoptionStep/#97_once_the_other_Standard's_adoption_is_gone,_the_named_one_is_planned_from_main (0.00s)
+    --- PASS: TestNextAdoptionStep/an_adoption_kept_before_its_Standard's_name_was_recorded_is_the_named_Standard's (0.00s)
+    --- PASS: TestNextAdoptionStep/a_stopped_adoption_without_a_name_is_the_named_Standard's_too (0.00s)
 --- PASS: TestClosestRender (0.00s)
     --- PASS: TestClosestRender/only_the_render_with_no_Domains (0.00s)
     --- PASS: TestClosestRender/a_repository_with_none_of_the_files_gets_them_without_Domains (0.00s)
@@ -83,6 +98,16 @@ $ go test ./internal/model ./internal/scaffold -run 'TestNextAdoptionStep|TestCl
     --- PASS: TestClosestRender/no_Domains_renders_closest (0.00s)
     --- PASS: TestClosestRender/a_set_as_close_as_none_loses_to_none (0.00s)
 --- PASS: TestStandardAdoptionPullRequest (0.00s)
-ok  	github.com/JairJosafath/theos/internal/model	0.028s
+ok  	github.com/JairJosafath/theos/internal/model	0.014s
 --- PASS: TestAdoptionMessage (0.00s)
 ok  	github.com/JairJosafath/theos/internal/scaffold	0.006s
+
+The specs of the review's findings fail without their fix. Each line is one
+fix taken out through go test -overlay, no file in the tree touched, and the
+one spec that then fails (1 Failed of 1 focused):
+
+runInputs without the wait             has a Triage Task made by hand wait too, and leaves main for the person to merge into
+the Crew without standardNotOnMain     has the Crew start no Task, its triager's included, while the pull request is open
+the model without the Standard's name  closes the pull request of a Standard the Container names no more, and plans the one it names
+no Standard: status cleared, no close  closes the pull request when the Container names no Standard any more
+a pull request not found: GitError     reads a pull request gone from the host as closed, not as a Git error for ever

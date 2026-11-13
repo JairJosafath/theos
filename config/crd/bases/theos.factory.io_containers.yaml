@@ -1164,6 +1164,13 @@ spec:
                   commit:
                     description: commit is the commit the operator pushed to the branch.
                     type: string
+                  name:
+                    description: |-
+                      name is the Standard the pull request brings. The Container may name
+                      another one since: the adoption of a Standard it no longer names is
+                      closed. Empty, in a status written before the name was kept, reads as
+                      the Standard the Container names.
+                    type: string
                   paths:
                     description: |-
                       paths are the Standard's files the pull request writes: the ones main

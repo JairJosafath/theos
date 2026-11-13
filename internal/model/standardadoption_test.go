@@ -28,7 +28,14 @@ func TestNextAdoptionStep(t *testing.T) {
 	v1 := StandardVersion{Ref: "v1", Checks: ChecksEveryChange}
 	v2 := StandardVersion{Ref: "v2", Checks: ChecksEveryChange}
 	open := func() *StandardAdoptionInFlight {
-		return &StandardAdoptionInFlight{Version: StandardVersion{Ref: "v1"}, PullRequestURL: url, Base: "m1"}
+		return &StandardAdoptionInFlight{Name: "python-strict", Version: StandardVersion{Ref: "v1"},
+			PullRequestURL: url, Base: "m1"}
+	}
+	// of is the adoption a, of the Standard name: the Container names
+	// python-strict.
+	of := func(name string, a *StandardAdoptionInFlight) *StandardAdoptionInFlight {
+		a.Name = name
+		return a
 	}
 	closed := func() *StandardAdoptionInFlight {
 		a := open()
@@ -129,6 +136,28 @@ func TestNextAdoptionStep(t *testing.T) {
 			facts: StandardAdoptionFacts{Target: StandardVersion{Ref: "v1", Checks: ChecksBeforeRelease},
 				Adoption: differs()},
 			want: AdoptionForget},
+
+		// #97: spec.standardRef is mutable, and two Standards of one catalog
+		// repository are pinned at the same ref.
+		{name: "#97 another Standard's pull request was closed, the named one at the same ref: forgotten, " +
+			"though main is as it was compared",
+			facts: StandardAdoptionFacts{Adoption: of("python-loose", closed()), Main: "m1"}, want: AdoptionForget},
+		{name: "#97 another Standard's merged and differing adoption is forgotten",
+			facts: StandardAdoptionFacts{Adoption: of("python-loose", differs()), Main: "m2", Diff: workflow},
+			want:  AdoptionForget},
+		{name: "#97 another Standard's pull request is open, the named one at the same ref: closed, never " +
+			"waited for",
+			facts: StandardAdoptionFacts{Adoption: of("python-loose", open())}, want: AdoptionClose},
+		{name: "#97 another Standard's open pull request is closed whatever was read of it",
+			facts: StandardAdoptionFacts{Target: v2, Adoption: of("python-loose", open()),
+				PR: &UpdatePullRequest{Merged: true, Closed: true}, Diff: none},
+			want: AdoptionClose},
+		{name: "#97 once the other Standard's adoption is gone, the named one is planned from main",
+			facts: StandardAdoptionFacts{Diff: workflow}, want: AdoptionOpen, version: v1},
+		{name: "an adoption kept before its Standard's name was recorded is the named Standard's",
+			facts: StandardAdoptionFacts{Adoption: of("", open()), PR: &UpdatePullRequest{}}, want: AdoptionWait},
+		{name: "a stopped adoption without a name is the named Standard's too",
+			facts: StandardAdoptionFacts{Adoption: of("", closed()), Main: "m1"}, want: AdoptionNone},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -565,10 +565,13 @@ func matchGlob(pattern, s string) bool {
 
 // Protected reports whether a Container's default branch is protected by
 // required checks, which is where agents may work. A Standard brings CI, so a
-// Container with one has checks to require. A Container that adopts its
-// repository with no Standard brings its own: it is protected once main's
-// head reports the checks it names (adoptedChecks: its Protected condition,
-// from AdoptedChecks). Any other Container has no checks to require.
+// Container whose main holds one's files has checks to require: hasStandard
+// is false for a Container that adopted its repository and still waits for
+// its Standard's files to reach main (#97, NextAdoptionStep), whatever it
+// names. A Container that adopts its repository with no Standard brings its
+// own: it is protected once main's head reports the checks it names
+// (adoptedChecks: its Protected condition, from AdoptedChecks). Any other
+// Container has no checks to require.
 func Protected(hasStandard, adoptedChecks bool) bool { return hasStandard || adoptedChecks }
 
 // ProjectNotesPath is the project's own word to its agents about its workspace

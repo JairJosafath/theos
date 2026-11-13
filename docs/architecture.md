@@ -177,6 +177,16 @@ step per reconcile (`internal/controller/container_standard.go`); the minute
 recheck polls the pull request, and a Standard's spec change enqueues its
 Containers at once.
 
+A Container that adopted its repository and names a Standard `main` doesn't
+hold has no `status.standard` yet: the same pass first brings the Standard
+in (`internal/controller/container_standard_adopt.go`, the rule in
+`internal/model/standardadoption.go`). It opens one pull request with the
+files that differ, kept in `status.standardAdoption`, which a person merges
+or closes; the operator never merges it. Once `main` holds the files the
+Standard protects, the Standard is recorded and the updates above take
+over. Until then the Task and the Crew read `standardNotOnMain` and start
+no run.
+
 ## Flow of a Git host's delivery
 
 Polling stays the contract; a delivery only shortens the wait

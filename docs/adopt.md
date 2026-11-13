@@ -13,9 +13,10 @@ What an adopted repository gets, and what it doesn't:
 
 - A Crew that works its issues like any other: a Task per issue, in a
   sandbox, checked by **your** command and **your** CI, reviewed by an Agent.
-- No Framework and no Standard. The factory writes no file of its own, so
-  there are no Standard updates until the Container names one, and nothing
-  is wired from the model's Relationships.
+- No Framework, and no Standard until you name one. The factory writes no
+  file of its own to `main`: a Standard you name arrives as a pull request
+  that you merge ([step 6](#6-name-a-standard-when-you-want-one)), and
+  nothing is wired from the model's Relationships.
 - A fence that is the same as everywhere: agents work only on a repository
   whose `main` requires its checks, and they can't change the CI workflows,
   `.theos.yaml` or `.devcontainer/`.
@@ -189,6 +190,60 @@ Then [file an issue](getting-started.md#4-the-first-issue) of your own in
 `webshop/invoices`, labelled `status/ready`, with an *Acceptance criteria*
 checklist, and [watch it build](getting-started.md#5-watch-it-build).
 
+## 6. Name a Standard when you want one
+
+A Standard is the factory's rules for a kind of repository: an agent guide,
+a `make check` and the CI workflow that runs it. An adopted repository
+works without one. To take one, set `spec.standardRef` on the Container,
+and remove `checkCommand` and `checkContexts`: a Standard brings its own
+check, and the API refuses both together. A Standard fits only the
+Frameworks it lists (`kubectl -n webshop get standards`), so the Container
+names one of those as its `frameworkRef` too; nothing is scaffolded from
+it.
+
+The Container stays `Ready`, and nothing is written to `main`. The operator
+opens **one pull request**, "Bring in the Standard *name* at *ref*", from
+the branch `standard-adopt/<name>-<ref>`, and says where it is:
+
+```bash
+kubectl -n webshop get container invoices \
+  -o jsonpath='{.status.conditions[?(@.type=="StandardUpdated")].message}{"\n"}'
+```
+
+It holds the Standard's files that `main` lacks or has with other content,
+and its description lists them, the ones the Standard protects marked
+`(protected)`. It is yours to merge; the operator never merges it.
+
+- **Read it like any change.** A file that was there is replaced: a
+  Makefile, a workflow. Push to the branch what the repository must keep.
+  The protected files have to stay as the Standard has them; any other file
+  you change in the pull request is the repository's own from then on.
+- **Merge it,** and the operator records the Standard, protects `main` with
+  the Standard's checks, and the Crew goes on. If a protected file differs
+  on `main` after the merge, the condition says `StandardFilesDiffer` and
+  names it; bring it to what the Standard renders and the operator finds
+  it, with no pull request needed.
+- **Close it** to stay without the Standard's files. The condition says
+  `UpdateClosed` and which files are missing; the Container stays `Ready`.
+  A new pull request comes when the Standard's ref or the Container's
+  `checks` change, and files you bring to `main` by hand are found.
+- **Change your mind** by naming another Standard, or none: the operator
+  closes the pull request it opened and, for another Standard, opens that
+  one's.
+
+**While the pull request is open, or closed without the files, no agent
+works on the repository.** The Crew starts no Task and a Task made by hand
+waits, `ContainerNotProtected`, with the condition's words: `main` doesn't
+require the Standard's checks yet. The pull request stays at the ref it
+was opened at; a newer ref of the Standard follows after the merge, as an
+ordinary update the operator merges once CI passes.
+
+If `main` was already protected by your own checks (step 4), that rule
+stays on the Git host while the pull request is open: it requires the old
+checks and keeps the workflow paths and the merge to the operator, so
+merging the pull request takes an account the host lets merge past the
+rule, an administrator of the repository.
+
 ## What is and isn't tested
 
 Each step above is held by a test that runs with every change to theos, on
@@ -199,15 +254,19 @@ the retry, and the adoption on the identity alone
 (`internal/controller/container_adopt_test.go`); the protection by your
 checks, the waiting Crew and a Task that runs your check command to a merge
 (`internal/controller/container_adopt_checks_test.go`); the Crew's first
-issue, filed once (`internal/controller/crew_onboarding_test.go`).
+issue, filed once (`internal/controller/crew_onboarding_test.go`); the
+Standard's pull request, merged, closed, changed and renamed, and the Crew
+and the Tasks that wait for it
+(`internal/controller/container_adopt_standard_test.go`).
 
-Not tested: an adoption on a real cluster against a real Gitea, and whether
-a given workflow of yours runs on the factory's runner images. If a step
+Not tested: an adoption on a real cluster against a real Gitea, whether
+a given workflow of yours runs on the factory's runner images, and merging
+the Standard's pull request on a real host whose `main` already has the
+rule of step 4. If a step
 here doesn't do what it says,
 [report it](https://github.com/JairJosafath/theos/issues/new?template=user-report.yml).
 
 ## What comes next
 
-[plans/adopt-existing.md](plans/adopt-existing.md) has the plan. Still to
-come: a Standard that arrives as a pull request instead of a condition to
-meet first.
+[plans/adopt-existing.md](plans/adopt-existing.md) has the plan, what each
+step found and what it left as it is.

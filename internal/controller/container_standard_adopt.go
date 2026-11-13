@@ -24,6 +24,7 @@ import (
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
@@ -78,6 +79,7 @@ func adoptionInFlight(a *c4v1beta1.StandardAdoptionStatus) *model.StandardAdopti
 		return nil
 	}
 	return &model.StandardAdoptionInFlight{
+		Name:           a.Name,
 		Version:        model.StandardVersion{Ref: a.Ref, Checks: string(a.Checks)},
 		PullRequestURL: a.PullRequestURL,
 		Stopped:        a.Stopped != "",
@@ -115,7 +117,12 @@ func (u *standardUpdate) adoptStandard(ctx, gitCtx context.Context, standard *c4
 				return false
 			}
 			pr, err := git.provider.GetPullRequest(gitCtx, git.provider.Repository(u.container.Name), int(a.PullRequest))
-			if err != nil {
+			switch {
+			case errors.Is(err, ports.ErrPullRequestNotFound):
+				// Gone from the host, as when someone deleted it: it brings
+				// nothing any more, as one a person closed.
+				pr = ports.PullRequest{State: stateClosed}
+			case err != nil:
 				u.gitError(ctx, err)
 				return false
 			}
@@ -154,9 +161,14 @@ func (u *standardUpdate) adoptStandard(ctx, gitCtx context.Context, standard *c4
 			u.stopAdoption(ctx, gitCtx, c4v1beta1.ReasonStandardFilesDiffer, step.Message, compared.head)
 			return false
 		case model.AdoptionForget:
-			log.Info("Forgot a stopped Standard adoption its Standard or checks moved past",
-				"url", a.PullRequestURL, "ref", a.Ref, "stopped", a.Stopped)
+			log.Info("Forgot a stopped Standard adoption the Container's Standard, its ref or the checks moved past",
+				"url", a.PullRequestURL, "standard", a.Name, "ref", a.Ref, "stopped", a.Stopped)
 			u.status.StandardAdoption = nil
+			f.Adoption, f.PR, f.Diff, f.Main = nil, nil, nil, ""
+		case model.AdoptionClose:
+			if !u.closeAdoption(ctx, gitCtx) {
+				return false
+			}
 			f.Adoption, f.PR, f.Diff, f.Main = nil, nil, nil, ""
 		default: // model.AdoptionNone
 			return false
@@ -233,7 +245,7 @@ func (u *standardUpdate) openAdoption(ctx, gitCtx context.Context, v model.Stand
 		return
 	}
 	u.status.StandardAdoption = &c4v1beta1.StandardAdoptionStatus{
-		Ref: v.Ref, Checks: c4v1beta1.ChecksMode(v.Checks), Branch: branch, Commit: commit, Base: compared.head,
+		Name: name, Ref: v.Ref, Checks: c4v1beta1.ChecksMode(v.Checks), Branch: branch, Commit: commit, Base: compared.head,
 		PullRequest: int32(pr.Number), PullRequestURL: pr.URL, Paths: diff.Paths,
 	}
 	step := model.NextAdoptionStep(model.StandardAdoptionFacts{Name: name, Target: v,
@@ -291,4 +303,59 @@ func (u *standardUpdate) stopAdoption(ctx, gitCtx context.Context, reason, messa
 	}
 	a.Stopped, a.Base = reason, head
 	u.condition(metav1.ConditionFalse, reason, message)
+}
+
+// closeAdoption ends an adoption the Container no longer asks for, because
+// it names another Standard or none: the pull request is the operator's own,
+// so it closes it when it is still open and deletes its branch, and forgets
+// the adoption. It reports false on a Git error, and the next pass tries
+// again.
+func (u *standardUpdate) closeAdoption(ctx, gitCtx context.Context) bool {
+	a := u.status.StandardAdoption
+	if a.Stopped == "" {
+		git, ok := u.access(ctx)
+		if !ok {
+			return false
+		}
+		repo := git.provider.Repository(u.container.Name)
+		pr, err := git.provider.GetPullRequest(gitCtx, repo, int(a.PullRequest))
+		switch {
+		case errors.Is(err, ports.ErrPullRequestNotFound):
+		case err != nil:
+			u.gitError(ctx, err)
+			return false
+		case !pr.Merged && pr.State != stateClosed:
+			if err := git.provider.ClosePullRequest(gitCtx, repo, int(a.PullRequest)); err != nil {
+				u.gitError(ctx, err)
+				return false
+			}
+		}
+		if err := git.provider.DeleteBranch(gitCtx, repo, a.Branch); err != nil {
+			u.gitError(ctx, err)
+			return false
+		}
+	}
+	logf.FromContext(ctx).Info("Closed a Standard adoption the Container no longer names the Standard of",
+		"url", a.PullRequestURL, "standard", a.Name, "ref", a.Ref, "named", u.container.Choices().Standard)
+	u.status.StandardAdoption = nil
+	return true
+}
+
+// dropStandardAdoption ends the adoption of a Container that names no Standard
+// any more (closeAdoption). live says whether the Container is the one on the
+// API server. Its result says when to look again: at the next recheck when the
+// Git host didn't answer, since nothing else reconciles a Container without a
+// Standard.
+func (r *ContainerReconciler) dropStandardAdoption(ctx context.Context, container *c4v1beta1.Container,
+	status *c4v1beta1.ContainerStatus, live func() bool) ctrl.Result {
+	if status.StandardAdoption == nil || !live() {
+		return ctrl.Result{}
+	}
+	gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
+	defer cancel()
+	u := &standardUpdate{r: r, container: container, status: status}
+	if !u.closeAdoption(ctx, gitCtx) {
+		return ctrl.Result{RequeueAfter: r.checksRecheck()}
+	}
+	return ctrl.Result{}
 }

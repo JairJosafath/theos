@@ -455,6 +455,13 @@ type ContainerStandardStatus struct {
 // into a repository a Container adopted without them. A person merges or
 // closes it; the operator never merges it.
 type StandardAdoptionStatus struct {
+	// name is the Standard the pull request brings. The Container may name
+	// another one since: the adoption of a Standard it no longer names is
+	// closed. Empty, in a status written before the name was kept, reads as
+	// the Standard the Container names.
+	// +optional
+	Name string `json:"name,omitempty"`
+
 	// ref is the Standard's template ref the pull request brings the files at.
 	// +required
 	Ref string `json:"ref"`
