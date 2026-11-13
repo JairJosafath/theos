@@ -143,7 +143,7 @@ export function BenchmarkPage({ bench, tasks }: { bench: Benchmark; tasks: Task[
                   </dd>
                   <dt>Spent</dt>
                   <dd>
-                    {formatCost(status?.costMilliUSD ?? 0)} of ${spec.budgetUSD}
+                    {formatCost(status?.costMilliUSD ?? 0)} of {formatCost(spec.budgetUSD * 1000)}
                   </dd>
                   <dt>Judged by</dt>
                   <dd>{spec.scorerRefs?.length ? spec.scorerRefs.map((s) => s.name).join(', ') : 'no Scorer'}</dd>
