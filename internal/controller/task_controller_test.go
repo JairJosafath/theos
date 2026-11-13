@@ -1007,7 +1007,7 @@ var _ = Describe("Task with an interrupted run", func() {
 			agent.Spec.Image = "theos/agent-go:new"
 			g.Expect(k8sClient.Update(ctx, &agent)).To(Succeed())
 		}).Should(Succeed())
-		// #213: the Agent and the pod reach the operator's cache through
+		// #214: the Agent and the pod reach the operator's cache through
 		// separate informers, in no set order. A pod deleted at once could
 		// wake the Task before its cache has the new Agent; the run resumed
 		// then with the image the Agent had.

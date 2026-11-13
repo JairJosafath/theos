@@ -58,7 +58,7 @@ type runEnvironment struct {
 // written, before its sandbox is made or resumed. The TestEnvironment
 // reconciler returns a lease its holder doesn't list once it is OrphanGrace
 // old, so a lease listed only after the sandbox, its Git calls and a status
-// write that may conflict could be returned under a running agent (#213).
+// write that may conflict could be returned under a running agent (#214).
 type environmentWait struct {
 	message string
 	record  bool

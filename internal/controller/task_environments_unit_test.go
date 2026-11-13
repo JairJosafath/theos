@@ -29,7 +29,7 @@ import (
 	portsfake "github.com/JairJosafath/theos/internal/ports/fake"
 )
 
-// #213: a run that takes a lease goes on to its sandbox only once the status
+// #214: a run that takes a lease goes on to its sandbox only once the status
 // that lists the lease is written, in the next pass. Made in the same pass,
 // the sandbox, its Git calls and a status write that may conflict came
 // before the lease was listed, and the TestEnvironment reconciler returned
@@ -79,7 +79,7 @@ func TestLeaseEnvironmentsWaitsUntilANewLeaseIsRecorded(t *testing.T) {
 	}
 }
 
-// #213: the TestEnvironment reconciler's cache may not have the Task status
+// #214: the TestEnvironment reconciler's cache may not have the Task status
 // that lists a lease just taken; it reads the Task from the API server before
 // it returns the lease as its holder's no more.
 func TestTestEnvironmentKeepsALeaseItsCacheSeesUnlisted(t *testing.T) {

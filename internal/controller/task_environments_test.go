@@ -99,7 +99,7 @@ var _ = Describe("Task with a test environment", func() {
 		Expect(k8sClient.Get(ctx, key(ns, "pictures-1-test-environments"), &secret)).To(Succeed())
 		Expect(string(secret.Data[id])).To(Equal(req.Token))
 		Expect(secret.OwnerReferences).To(ContainElement(HaveField("Kind", "Task")))
-		// #213: the status that lists the lease is written before the sandbox
+		// #214: the status that lists the lease is written before the sandbox
 		// is made, so the TestEnvironment reconciler never finds a started
 		// run's lease unlisted (#197 had the status trail the sandbox).
 		Expect(getTask(Default, ns, "pictures-1").Status.Environments).To(ConsistOf(HaveField("Lease", id)))

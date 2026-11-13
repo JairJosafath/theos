@@ -324,7 +324,7 @@ func (r *TestEnvironmentReconciler) readiness(ctx context.Context, env *c4v1beta
 // more, and it is older than the grace. A Task the cache says doesn't hold it
 // is read again from the API server first: the cache may not have the status
 // that lists a lease just taken yet, and a lease returned under a running
-// agent ends its environment (#213).
+// agent ends its environment (#214).
 func (r *TestEnvironmentReconciler) orphan(ctx context.Context, namespace string, l ports.Lease,
 	work *ciWork) (bool, error) {
 	held, err := r.held(ctx, r.Client, namespace, l, work)
