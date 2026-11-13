@@ -1085,8 +1085,19 @@ A milestone titled `vMAJOR.MINOR.PATCH` with a due date is a release.
   drops it and proposes another, and a Crew that took it under the old name
   keeps its schedule. A changed or removed proposal changes no Crew. What
   only the operator can tell is wrong in a proposal (a time zone it can't
-  load) is said by the Crew that takes it, in `Scheduled`. Not yet: the UI
-  offering a Crew the proposals of its Container's Standard.
+  load) is said by the Crew that takes it, in `Scheduled`. The Crew's page
+  in the UI lists the proposals of its Container's Standard
+  (`ui/src/model/schedules.ts`). One whose name is none of the Crew's
+  schedules is offered: with actions on a person takes it, which appends it
+  to the Crew's `spec.schedules`, its cron and goal as written, in the time
+  zone the person gives. The zone is asked for and never filled in: a
+  proposal's own reads UTC whether or not its Standard chose that, so a copy
+  as written would run at UTC unasked. One whose name the Crew uses is shown
+  as in use, with where the Crew's schedule differs in cron, time zone or
+  goal. The page says nothing of where a schedule came from: the name is all
+  that links the two. The write is the UI's own: made as the person signed
+  in where the UI signs people in with OIDC, and as the UI's ServiceAccount
+  over a port-forward. The operator still reads no proposal.
 - **Bundles.** Once B's release is built (and published, if B publishes),
   each Container A with a `bundles: true` Relationship to B gets a ready
   `Bump B to vX` issue, `kind/bump`, in A's next unprepared release.
@@ -1466,6 +1477,7 @@ other path, method, content type or field, and by RBAC for anything else:
 | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.pauseRuns`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` |
 | Crew | `PATCH`, merge patch | annotation `theos.factory.io/run-schedule` |
+| Crew | `PATCH`, JSON patch | one schedule appended to `spec.schedules`, a Standard's proposal taken; none set, changed or removed |
 | Container | `PATCH`, merge patch | annotations `theos.factory.io/retry`, `theos.factory.io/standard-take`, `theos.factory.io/standard-keep` |
 | Container | `PATCH`, JSON patch | `spec.checks`; or one `spec.deploy` entry's `approved`, after a `test` of its `target` and a `test` of the approval the page showed: its old `approved`, or, when it had none, the whole entry as read (JSON Patch can't test a missing member), so a stale page fails, and says it is out of date, rather than overwrite a newer approval, a first one too |
 | Task | `POST` | `kind: Implement`, `containerRef`, `agentRef`, `reviewerRef`, `goal` |
