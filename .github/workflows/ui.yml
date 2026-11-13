@@ -1,17 +1,20 @@
 name: UI
 
-# The UI is self-contained in ui/. It runs on pull requests to main too, with
-# the same paths (hack/check-workflows.sh).
+# The UI is self-contained in ui/, but for the CRDs, which
+# ui/src/demo/limits.test.ts reads (#127). It runs on pull requests to main
+# too, with the same paths (hack/check-workflows.sh).
 on:
   push:
     branches: [main]
     paths:
       - 'ui/**'
+      - config/crd/bases/**
       - .github/workflows/ui.yml
   pull_request:
     branches: [main]
     paths:
       - 'ui/**'
+      - config/crd/bases/**
       - .github/workflows/ui.yml
   workflow_dispatch:
 

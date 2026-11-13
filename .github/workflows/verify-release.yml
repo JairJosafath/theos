@@ -5,10 +5,10 @@ name: Verify Release
 # a patch, or a release to check again, runs on demand (Actions → Verify
 # Release → Run workflow, or `gh workflow run verify-release.yml -f
 # tag=vX.Y.Z`), after Release has published the tag. "install" installs the published chart from GHCR into a fresh Kind
-# cluster, as a new device would; "upgrade" installs the previous release (the
+# cluster, as a new install would; "upgrade" installs the previous release (the
 # highest published release below this one, hack/previous-release.sh: a tag
 # whose release failed is skipped) the same way and then `helm upgrade`s it to
-# this one, as a device that already runs a release would. The first release
+# this one, as an install that already runs a release would. The first release
 # has no previous one: the upgrade is skipped and says so.
 #
 # Both follow the same steps: Agent Sandbox, the ghcr pull secret made from
@@ -32,7 +32,7 @@ name: Verify Release
 # without config/samples/first-app skips that part and says so. upgrade takes
 # the previous release's own first-app when it has one, else the guide's. A
 # release whose chart has no catalog (v0.3.0 and older) takes the newest
-# samples that still made their own catalog and Agents, as such a device did.
+# samples that still made their own catalog and Agents, as such an install did.
 #
 # upgrade then notes the objects, Gitea's repositories and Secrets gitea-admin
 # and gitea-runner, `helm upgrade`s with the same values and checks that the
@@ -88,7 +88,7 @@ jobs:
           # lookup fails the plan, never an upgrade from nothing.
           prev=$(hack/previous-release.sh "$TAG")
           skipped=$(hack/previous-release.sh --skipped "$TAG")
-          # Dispatched with from: the path a given device takes, or the same
+          # Dispatched with from: the path a given install takes, or the same
           # release again to try the check's own steps.
           if [ -n "$FROM_INPUT" ]; then
             prev=$FROM_INPUT skipped=
@@ -406,7 +406,7 @@ jobs:
       # config/samples/brief/stand-in.yaml from the catalog, its Container
       # scaffolds on go-cli with gitea-release, its Crew merges the issue,
       # prepares and tags v0.1.0, and the release run puts the binaries on the
-      # Gitea release. A device's Brief, from the idea to the app's release,
+      # Gitea release. An install's Brief, from the idea to the app's release,
       # with the published chart and the guide alone and no Claude token
       # (#1083). test/chart/verify_release_guide_test.go holds this step to the
       # section: every command of it, kubectl as $KUBECTL, and no other change
@@ -513,7 +513,7 @@ jobs:
           report "Brief stand-in-demo released $container $tag on Gitea, with $(wc -l <<<"$files") files" \
             "($(paste -sd ' ' <<<"$files"))."
 
-      # What a device has before it upgrades: every c4 object with its phase
+      # What an install has before it upgrades: every c4 object with its phase
       # and Ready condition, Gitea's repositories with their head commits, and
       # a hash of each generated Secret. The script stays for the check after.
       - name: "Upgrade: note what the previous release made"

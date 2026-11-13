@@ -36,7 +36,7 @@ const (
 )
 
 // TestVerifyReleaseFollowsTheGuidesBrief holds Verify Release's Brief step to
-// docs/getting-started.md's "Without a token" (#1083), so a device's Brief
+// docs/getting-started.md's "Without a token" (#1083), so an install's Brief
 // reaches a release with the published chart and the guide alone: the step
 // runs every command of the section, in order, kubectl as $KUBECTL, from the
 // guide's clone; it changes the cluster and Gitea with nothing else; the

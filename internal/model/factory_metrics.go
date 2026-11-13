@@ -129,6 +129,10 @@ type TaskMetricFacts struct {
 type TaskMetricStep struct {
 	At    time.Time
 	Phase string
+	// Reason is the step's reason, which the metric families don't read and
+	// the report does (#66): WaitingForSlot is a stage of its own there, and
+	// a Failed step's reason is why the Task failed.
+	Reason string
 }
 
 // TaskMetricRun is one ended agent run.

@@ -14,11 +14,21 @@
 #   hack/check-cache.sh record   record a pass of the working state; warn and exit 0 when it can't
 #   hack/check-cache.sh key TIER        print the hash of TIER's inputs in the working state
 #   hack/check-cache.sh run TIER CMD... run CMD unless TIER's inputs passed on this device; record a pass
+#   hack/check-cache.sh cached TIER     print the cached line and exit 0 when TIER's inputs passed on this device; exit 1 on a miss or FORCE=1
+#   hack/check-cache.sh changed TIER BASE
+#                                       print the files among TIER's inputs that differ from the commit BASE in the
+#                                       working state, untracked ones too; exit 1 when none does, 2 when it can't tell
+#   hack/check-cache.sh inputs TIER     print what TIER's inputs are, in a few words
 #
 # A tier of make check (ui-test, test-hack, validate-yaml) is cached on its own,
 # keyed on the git hashes of the files it reads and the versions of the tools
 # it runs, so a change to hack/ doesn't rerun the UI's check, nor one to ui/ the
 # shell tests (#1285). The whole-tree record stays for land and CHECK_CACHED.
+#
+# make check asks changed first (hack/check.sh, #127): a tier none of whose
+# inputs the change since the merge base touches is skipped on any device, one
+# that never ran make check too. The cache then answers a tier the change does
+# touch, when those inputs already passed here.
 #
 #   CHECK_CACHE_DIR  where passes live (default $XDG_CACHE_HOME/theos/checks, which ./dev puts in .dev/cache)
 #   FORCE            non-empty: lookup always misses
@@ -52,14 +62,30 @@ add_all() { git add -A >/dev/null 2>&1 && "$@"; }
 # is listed on its own. docs/dev/testenv.md says what each covers.
 tier_paths() {
   case $1 in
-    ui-test) printf '%s\n' ui Makefile 'hack/*.mk' hack/check-cache.sh ;;
+    # ui/ and the CRDs, which ui/src/demo/limits.test.ts reads (#127).
+    ui-test) printf '%s\n' ui config/crd/bases Makefile 'hack/*.mk' hack/check-cache.sh ;;
     # The shell tests read the Makefile, the chart, config/, .claude/ and more,
-    # so everything but the Go, UI and docs trees, and the files there they read.
+    # so everything but the Go, UI and docs trees, and the files there they
+    # read. Three of them scan the whole repository, the trees left out here
+    # too; those scans are below, each with what it reads.
     test-hack)
       printf '%s\n' . ':!api' ':!cmd' ':!internal' ':!templates' ':!test' ':!features' ':!docs' ':!ui' --
-      printf '%s\n' docs/getting-started.md docs/dev/testenv.md \
-        ui/Dockerfile ui/package.json ui/package-lock.json
+      printf '%s\n' docs/getting-started.md docs/dev/testenv.md docs/monitoring.md \
+        internal/model/factory_metrics.go ui/Dockerfile ui/package.json ui/package-lock.json
       ;;
+    # The scans (#127): what hack/check-doc-links.sh, hack/check-license-headers.sh
+    # and hack/check-readers.sh read. make check runs one by itself, in
+    # seconds, when a file it reads changed and the shell tests don't run; the
+    # shell tests run all three. No pass of them is cached.
+    doc-links)
+      printf '%s\n' '*.md' ':!docs/plans/done' ':!docs/design-history.md' ':!docs/screenshots' ':!templates' --
+      printf '%s\n' hack/check-doc-links.sh
+      ;;
+    license-headers)
+      printf '%s\n' '*.go' ':!templates' --
+      printf '%s\n' hack/check-license-headers.sh
+      ;;
+    readers) printf '%s\n' '*_test.go' hack/test-packages.sh hack/check-readers.sh ;;
     # validate-yaml renders repositories with go run ./hack/render and fences
     # the runner with ./hack/runner-fence: the module's packages they build
     # count too, go.sum the rest.
@@ -99,8 +125,11 @@ version() {
 # tier_desc TIER: what TIER's key covers, in a word, for the cached line.
 tier_desc() {
   case $1 in
-    ui-test) echo "ui/" ;;
+    ui-test) echo "ui/ and the CRDs" ;;
     test-hack) echo "hack/ and the rest outside the Go, UI and docs trees" ;;
+    doc-links) echo "the Markdown" ;;
+    license-headers) echo "the Go files" ;;
+    readers) echo "the Go tests and the readers table" ;;
     validate-yaml) echo "the YAML, api/, templates/ and hack/render" ;;
   esac
 }
@@ -152,10 +181,55 @@ key() {
   [ "${PIPESTATUS[0]}" = 0 ]
 }
 
+# hit TIER FILE: the cached line of TIER's pass recorded in FILE; exit 1 when
+# there is none, or with FORCE set.
+hit() {
+  local when= checkout= name val
+  [ -z "${FORCE:-}" ] && [ -f "$2" ] || return 1
+  while IFS='=' read -r name val; do
+    case $name in
+      when) when=$val ;;
+      checkout) checkout=$val ;;
+    esac
+  done <"$2"
+  echo "$1: cached ($(tier_desc "$1") unchanged since $when, passed in $checkout); FORCE=1 to rerun"
+}
+
+# cached TIER: the cached line and exit 0 when TIER's key passed on this
+# device; exit 1 on a miss, with FORCE set, or when the key can't be taken.
+cached() {
+  local k
+  k=$(key "$1" 2>/dev/null) || return 1
+  hit "$1" "$DIR/tiers/$1-$k"
+}
+
+# changed TIER BASE: the files under TIER's paths that differ from the commit
+# BASE in the working state, and the untracked ones there. Exit 1 when there
+# is none, 2 when the paths or the diff can't be had.
+changed() {
+  local paths group=() p out all=
+  cd "$(git rev-parse --show-toplevel)" || return 2
+  paths=$(tier_paths "$1") || return 2
+  while IFS= read -r p; do
+    if [ "$p" != -- ]; then
+      group+=("$p")
+      continue
+    fi
+    if [ ${#group[@]} -gt 0 ]; then
+      out=$(git diff --name-only --no-renames "$2" -- "${group[@]}" &&
+        git ls-files --others --exclude-standard -- "${group[@]}") || return 2
+      [ -z "$out" ] || all+=$out$'\n'
+    fi
+    group=()
+  done <<<"$paths"$'\n--'
+  [ -n "$all" ] || return 1
+  sort -u <<<"${all%$'\n'}"
+}
+
 # run TIER CMD...: CMD's exit code, or 0 without running it when TIER's key
 # passed on this device. A key that can't be taken runs CMD and records nothing.
 run() {
-  local tier=$1 k f when= checkout= name val
+  local tier=$1 k f
   shift
   if ! k=$(key "$tier"); then
     echo "$tier: warning: could not hash its inputs; running it uncached" >&2
@@ -163,16 +237,7 @@ run() {
     return
   fi
   f=$DIR/tiers/$tier-$k
-  if [ -z "${FORCE:-}" ] && [ -f "$f" ]; then
-    while IFS='=' read -r name val; do
-      case $name in
-        when) when=$val ;;
-        checkout) checkout=$val ;;
-      esac
-    done <"$f"
-    echo "$tier: cached ($(tier_desc "$tier") unchanged since $when, passed in $checkout); FORCE=1 to rerun"
-    return 0
-  fi
+  if hit "$tier" "$f"; then return 0; fi
   "$@" || return
   if ! { mkdir -p "$DIR/tiers" &&
     printf 'when=%s\ncheckout=%s\n' "$(date '+%Y-%m-%d %H:%M')" "$(git rev-parse --show-toplevel)" >"$f.$$" &&
@@ -225,5 +290,8 @@ case ${1:-} in
   record) record ;;
   key) [ $# -eq 2 ] || { echo "usage: hack/check-cache.sh key TIER" >&2; exit 64; }; key "$2" ;;
   run) [ $# -ge 3 ] || { echo "usage: hack/check-cache.sh run TIER CMD..." >&2; exit 64; }; shift; run "$@" ;;
-  *) echo "usage: hack/check-cache.sh tree | lookup | record | key TIER | run TIER CMD..." >&2; exit 64 ;;
+  cached) [ $# -eq 2 ] || { echo "usage: hack/check-cache.sh cached TIER" >&2; exit 64; }; cached "$2" ;;
+  changed) [ $# -eq 3 ] || { echo "usage: hack/check-cache.sh changed TIER BASE" >&2; exit 64; }; changed "$2" "$3" ;;
+  inputs) [ $# -eq 2 ] || { echo "usage: hack/check-cache.sh inputs TIER" >&2; exit 64; }; tier_desc "$2" ;;
+  *) echo "usage: hack/check-cache.sh tree | lookup | record | key TIER | run TIER CMD... | cached TIER | changed TIER BASE | inputs TIER" >&2; exit 64 ;;
 esac

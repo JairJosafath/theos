@@ -71,7 +71,7 @@ its user-visible steps join an existing milestone or none.
 | Milestone | Outcome | State |
 | --- | --- | --- |
 | Briefs: an idea in plain words | a Brief becomes a merged plan and working Crews with the stand-in planner and no Claude token, on the published chart: the *Done when* of [docs/plans/done/brief.md](docs/plans/done/brief.md) | reached 2026-10-06, released in v0.5.0 |
-| Upgrades and release hygiene | a device upgrades without losing work, and every release says what changed | reached 2026-10-06, released in v0.5.0 |
+| Upgrades and release hygiene | an install upgrades without losing work, and every release says what changed | reached 2026-10-06, released in v0.5.0 |
 | Shared credentials | a second project gets the factory's Claude token and pull secret without anyone handing them over again (#427), on the published chart; tested by `make check` | reached 2026-10-07, released in v0.7.0 |
 | App modules | one app's Go module is published to Gitea and fetched by another app's Crew and CI, and plans order the work with `uses:` (#430); tested by `make check` and `make test-gitea` | reached 2026-10-07, released in v0.7.0 |
 | Briefs build in order | a Brief files its issues in the plan's order with Gitea dependencies, so no issue starts before what it builds on exists (#428); tested by `make check` and `make test-gitea` | reached 2026-10-07, released in v0.7.0 |
@@ -85,9 +85,15 @@ its user-visible steps join an existing milestone or none.
 | The open alternative to Warp's factory | [docs/comparison.md](docs/comparison.md) has no "not yet" in theos's column for something Warp ships (#46); the page is rechecked at each minor release | open |
 | 1.0: a stable API | the criteria below hold; it holds only those, and the work towards them comes in the milestones above | when they hold |
 
+Under *The open alternative to Warp's factory*, chat on Slack and requests
+from Linear and Jira (#61) are planned in
+[docs/plans/requests-and-chat.md](docs/plans/requests-and-chat.md) and not
+built: of its thirteen steps none is filed or started, and only the two
+ports' contract suites are merged (#131).
+
 ## What 1.0 means
 
-1.0 is a promise: what a device builds keeps working across upgrades. It needs
+1.0 is a promise: what an install builds keeps working across upgrades. It needs
 all of these:
 
 - a written [compatibility promise](docs/design.md#compatibility) for
@@ -98,7 +104,7 @@ all of these:
   sandbox ([docs/design.md](docs/design.md#the-fence)); met 2026-10-22, #1137;
 - the [OpenSSF Best Practices](https://www.bestpractices.dev/) passing
   criteria ([docs/openssf.md](docs/openssf.md) has the gaps);
-- a device builds and releases an app from a Brief with only the published
+- an install builds and releases an app from a Brief with only the published
   release and [docs/getting-started.md](docs/getting-started.md).
 
 The owner decided on 2026-11-09 to move towards open source. The licence,
