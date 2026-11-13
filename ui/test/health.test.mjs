@@ -506,25 +506,21 @@ describe('history', () => {
       },
     ],
     [
-      'a node that allocates nothing has no share of itself, and is not the fullest',
+      'a node that allocates nothing is in neither the sum, the allocatable nor the fullest',
       [
         ['worker-a', '0', '0', '1', '1Gi'],
         ['worker-b', '8', '16Gi', '2', '4Gi'],
       ],
       {
-        cpuMilli: 3000,
+        cpuMilli: 2000,
         cpuAllocatableMilli: 8000,
         cpuFullest: { node: 'worker-b', share: 0.25 },
-        memoryBytes: 5 * GiB,
+        memoryBytes: 4 * GiB,
         memoryAllocatableBytes: 16 * GiB,
         memoryFullest: { node: 'worker-b', share: 0.25 },
       },
     ],
-    [
-      'nodes that allocate nothing leave the sums without a scale or a fullest node',
-      [['worker-a', '0', '0', '1', '1Gi']],
-      { cpuMilli: 1000, memoryBytes: GiB },
-    ],
+    ['nodes that allocate nothing leave the sample without CPU or memory', [['worker-a', '0', '0', '1', '1Gi']], {}],
   ]) {
     it(`${name} (#141)`, () =>
       assert.deepEqual(sampleOfNodes(rows), { at: '2026-10-01T12:00:00.000Z', apiMs: 5, ...want }))

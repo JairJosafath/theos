@@ -318,16 +318,20 @@ metrics-server (`make metrics-server`) the view shows states but no figures.
 A sample's CPU and memory are the cluster's: every node's usage added up, with
 what those nodes could allocate together at that moment, and the fullest
 node's name and its share of its own CPU and of its own memory. A node
-metrics-server has no figures for is in none of them. The last hour's CPU and
-memory charts draw shares, 0 to 100%, each point against its own sample, so a
-node that joined or left since moves no earlier point; a sample with nothing
-to draw against breaks the line. Their lines:
+metrics-server has no figures for is in none of them, nor is a node that
+reports nothing to allocate. The last hour's CPU and memory charts draw
+shares, 0 to 100%, each point against its own sample, so a node that joined
+or left since moves no earlier point; a sample with nothing to draw against
+breaks the line. Their lines:
 
 - **nodes**: the nodes' usage together over what they could allocate together.
 - **fullest node**: the fullest node's share of itself, so one full node among
-  idle ones shows as full. The summary names the node that was fullest within
-  the hour and how full; of two equally full, the first by name. Where this
-  line would lie on **nodes** for the whole hour, as it does on one node, the
+  idle ones shows as full. After the figures of now the summary gives the
+  hour's peak, as in "· peak worker-b 95%": the node that was fullest at any
+  moment within the hour, and how full it was then, not how full it is now. Of
+  two equally full, in one sample or at different moments of the hour, it is
+  the first by name. The line is dashed, in the chart and in the legend. Where
+  it would lie on **nodes** for the whole hour, as it does on one node, the
   chart draws one line.
 - **CI** and **agents** (CPU only): what the runner's pods and the agent
   sandboxes used on whichever node, over the same sample's allocatable.

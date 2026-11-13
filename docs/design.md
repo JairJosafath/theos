@@ -1458,8 +1458,8 @@ refusal it shows ([plans/done/ui-lifecycle.md](plans/done/ui-lifecycle.md)).
   are the cluster's: every node's usage added up, against what those nodes
   could allocate together when sampled, so a node that joins or leaves moves
   no earlier point, with the fullest node's share of itself as a second
-  line; each node's own usage and trouble now show beside it. No Prometheus
-  or Grafana.
+  line; each node's own usage and trouble, as they are at this moment, show
+  beside it. No Prometheus or Grafana.
 - **The project's Chat** (*Chat*, below) on About and in Settings, read
   only: its homeserver, each room by name with a `https://matrix.to/#/` link
   to its alias (else its ID), and `Ready` with its message; nothing when the

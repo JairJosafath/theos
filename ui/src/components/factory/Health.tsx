@@ -278,7 +278,9 @@ const asPercent = (share: number) => `${Math.round(share * 100)}%`
  * nodes' sum. Nothing when the line would lie on the nodes' own at every
  * point, as it does on one node: the chart then draws one line. The two lie
  * on each other within half a percent, less than a pixel of the chart and
- * more than the rounding of the share the server sends.
+ * more than the rounding of the share the server sends. Of equal peaks the
+ * hour's is the first by name, whenever each was reached: the rule of a tie
+ * within one sample (health.mjs).
  */
 function fullestOf(
   points: { t: number; share: number | undefined; fullest: FullestNode | undefined }[],
@@ -287,8 +289,9 @@ function fullestOf(
   let apart = false
   for (const { share, fullest } of points) {
     if (!fullest) continue
-    // The later of two equal peaks: the one nearer to now.
-    if (!peak || fullest.share >= peak.share) peak = fullest
+    if (!peak || fullest.share > peak.share || (fullest.share === peak.share && fullest.node < peak.node)) {
+      peak = fullest
+    }
     if (share === undefined || Math.abs(fullest.share - share) >= 0.005) apart = true
   }
   if (!peak || !apart) return undefined
@@ -329,11 +332,11 @@ function HistoryCharts({ health, now }: { health: FactoryHealth; now: number }) 
   const stalls = points.filter((p) => p.apiFailed || p.apiMs >= API_STALL_MS)
   const cpuFullest = fullestOf(points.map((p) => ({ t: p.t, share: p.cpuShare, fullest: p.cpuFullest })))
   const memoryFullest = fullestOf(points.map((p) => ({ t: p.t, share: p.memoryShare, fullest: p.memoryFullest })))
-  /** "now 8.5 cores of 16.0 cores · fullest worker-b 94%": the latest sample, and the hour's fullest node. */
+  /** "now 8.5 cores of 16.0 cores · peak worker-b 94%": the latest sample, and the fullest any node was within the hour. */
   const summary = (used: string, allocatable: string | undefined, fullest: typeof cpuFullest) =>
     `now ${used}` +
     (allocatable ? ` of ${allocatable}` : '') +
-    (fullest ? ` · fullest ${fullest.peak.node} ${asPercent(fullest.peak.share)}` : '')
+    (fullest ? ` · peak ${fullest.peak.node} ${asPercent(fullest.peak.share)}` : '')
   return (
     <div className="history">
       <Sparkline

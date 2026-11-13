@@ -336,21 +336,21 @@ export const HISTORY_MS = 60 * 60_000
 export const SAMPLE_GAP_MS = 14_000
 
 /**
- * The nodes that have a figure of `used`, as one: what they used and what they
- * could allocate together, and the fullest of them by its share of its own
- * allocatable. A node without the figure (not ready, or new to metrics-server)
- * is in none of the three, so the sum is never drawn against room it didn't
- * count (#141). A node that reports nothing to allocate has no share of its
- * own and can't be the fullest. On a tie the fullest is the first by name
- * (node names are DNS names, so `<` orders them by code point): the same
- * node from one sample to the next, whatever order the API lists them in.
+ * The nodes that have a figure of `used` and something to allocate, as one:
+ * what they used and what they could allocate together, and the fullest of
+ * them by its share of its own allocatable. A node without the figure (not
+ * ready, or new to metrics-server) is in none of the three, so the sum is
+ * never drawn against room it didn't count; nor is a node that reports
+ * nothing to allocate, so no usage is counted that has no room (#141). On a
+ * tie the fullest is the first by name (node names are DNS names, so `<`
+ * orders them by code point): the same node from one sample to the next,
+ * whatever order the API lists them in.
  */
 function nodesTogether(nodes, used, allocatable) {
-  const counted = nodes.filter((node) => node[used] !== undefined)
+  const counted = nodes.filter((node) => node[used] !== undefined && node[allocatable] > 0)
   if (!counted.length) return {}
   let fullest
   for (const node of counted) {
-    if (!(node[allocatable] > 0)) continue
     const share = node[used] / node[allocatable]
     if (!fullest || share > fullest.share || (share === fullest.share && node.name < fullest.node)) {
       fullest = { node: node.name, share }
@@ -372,14 +372,14 @@ function nodesTogether(nodes, used, allocatable) {
  * The cluster's figures are every node's, added up (#122): CI's and the
  * agents' pods run on any node, so only the nodes' total belongs on one scale
  * with them. A node without figures (not ready, or new to metrics-server)
- * adds nothing; the sample has no figure only when no node has one.
+ * adds nothing, and neither does one that reports nothing to allocate; the
+ * sample has no figure only when no node is left.
  *
  * The sample carries its own scale (#141): what the nodes it added up could
  * allocate at that moment, so a node that joins or leaves later moves no
  * earlier point, and the fullest node's share of its own CPU and of its own
  * memory with that node's name, since one full node among idle ones is a
- * small part of the sum. The allocatable is left out when it is nothing:
- * there is no share of nothing to draw.
+ * small part of the sum.
  */
 export function sampleOf(health, apiMs, apiFailed) {
   const runner = health.components.find((c) => c.key === 'runner')

@@ -54,12 +54,12 @@ export interface HealthSample {
   apiMs: number
   /** The API server did not answer at all (timeout or error). */
   apiFailed?: boolean
-  /** Every node's CPU, added up; absent when no node has figures. */
+  /** Every node's CPU, added up; absent when no node has figures and something to allocate. */
   cpuMilli?: number
   /**
    * What the nodes added up in cpuMilli could allocate together when the sample
    * was taken (#141): the sample's own scale, whatever nodes came or went
-   * since. Absent when they could allocate nothing, and from older servers.
+   * since. Absent with cpuMilli, and from older servers.
    */
   cpuAllocatableMilli?: number
   /** The node that used most of its own CPU, and that share. */

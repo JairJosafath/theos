@@ -318,7 +318,7 @@ describe('Factory', () => {
     ...figures,
   })
 
-  it('draws the last hour against every node together, not the first one listed (#122)', async () => {
+  it("says what the latest sample's nodes could allocate together, and lists each node of now (#122)", async () => {
     const health = demoHealth(NOW)
     const first = health.nodes[0]
     health.nodes = [
@@ -450,11 +450,35 @@ describe('Factory', () => {
     // The nodes together never pass a quarter (y 32.8); the fullest node's line reaches 95% (y 4.0).
     expect(charts.CPU.lines['spark-node']).toBe('M150.0,39.6L200.0,32.8L300.0,39.6')
     expect(charts.CPU.lines['spark-fullest']).toBe('M150.0,40.0L200.0,4.0L300.0,40.0')
-    expect(charts.CPU.text).toContain('now 1.2 cores of 20.0 cores · fullest worker-b 95%')
+    expect(charts.CPU.text).toContain('now 1.2 cores of 20.0 cores · peak worker-b 95%')
     expect(charts.CPU.text).toContain('fullest node')
     expect(charts.Memory.lines['spark-fullest']).toBe('M150.0,32.0L200.0,7.0L300.0,32.0')
-    expect(charts.Memory.text).toContain('now 6.0 GiB of 40.0 GiB · fullest worker-c 88%')
+    expect(charts.Memory.text).toContain('now 6.0 GiB of 40.0 GiB · peak worker-c 88%')
     expect(charts.Memory.text).toContain('fullest node')
+  })
+
+  // One rule for a tie, within a sample (the server's) and across the hour:
+  // the first by name. Neither the earliest of the equal peaks (worker-b's
+  // here) nor the latest (worker-b's again) decides.
+  it('names the first by name of the nodes that peaked equally within the hour (#141)', async () => {
+    const at = (node: string, share: number) => ({
+      cpuMilli: 2000,
+      cpuAllocatableMilli: 20000,
+      cpuFullest: { node, share },
+      memoryBytes: 6 * GiB,
+      memoryAllocatableBytes: 40 * GiB,
+      memoryFullest: { node, share },
+    })
+    const history = [
+      sampleAt(30, at('worker-b', 0.9)),
+      sampleAt(20, at('worker-a', 0.9)),
+      sampleAt(10, at('worker-c', 0.5)),
+      sampleAt(0, at('worker-b', 0.9)),
+    ]
+    const { host } = await renderHealth({ ...demoHealth(NOW), history })
+    const charts = chartsOf(host)
+    expect(charts.CPU.text).toContain('now 2.0 cores of 20.0 cores · peak worker-a 90%')
+    expect(charts.Memory.text).toContain('now 6.0 GiB of 40.0 GiB · peak worker-a 90%')
   })
 
   it('draws one line on one node, where the fullest node is the nodes together (#141)', async () => {
@@ -463,7 +487,9 @@ describe('Factory', () => {
     expect(Object.keys(charts.CPU.lines)).toEqual(['spark-node', 'spark-ci', 'spark-agents'])
     expect(Object.keys(charts.Memory.lines)).toEqual(['spark-node'])
     expect(charts.CPU.text).not.toContain('fullest')
+    expect(charts.CPU.text).not.toContain('peak')
     expect(charts.Memory.text).not.toContain('fullest')
+    expect(charts.Memory.text).not.toContain('peak')
   })
 
   it('draws one line on one node whose share the server rounded to the next percent (#141)', async () => {
@@ -474,6 +500,7 @@ describe('Factory', () => {
     const { CPU } = chartsOf(host)
     expect(Object.keys(CPU.lines)).toEqual(['spark-node', 'spark-agents'])
     expect(CPU.text).not.toContain('fullest')
+    expect(CPU.text).not.toContain('peak')
   })
 
   // Nothing to divide by: a chart of shares is left out when no sample of the
@@ -488,7 +515,7 @@ describe('Factory', () => {
       },
     ],
     [
-      'the samples carry nothing the nodes could allocate (they allocate nothing, or an older server sampled)',
+      'the samples carry nothing the nodes could allocate (an older server sampled)',
       (health: FactoryHealth) => {
         health.history = health.history!.map(({ at, apiMs, cpuMilli, memoryBytes, ciCpuMilli, agentCpuMilli }) => ({
           at,
