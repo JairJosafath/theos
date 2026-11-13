@@ -112,7 +112,8 @@ owner's acts are listed under *For the owner*.
 
 ## Progress
 
-As of 2026-11-10. The issues hold the live state; this is the short of it.
+As of 2026-11-10, but for a row that names a later day. The issues hold the
+live state; this is the short of it.
 
 | Step | State |
 | --- | --- |
@@ -132,7 +133,7 @@ As of 2026-11-10. The issues hold the live state; this is the short of it.
 | #57 GitHub as a Git host | planned ([github-host.md](github-host.md)), nine steps filed as #74 to #82; steps 1 (#74) and 3 (#76) are built |
 | #62 a Crew's approval rules | done ([approval-rules.md](done/approval-rules.md); #93, #105): the rules, the wait and the merge; a waiting change's thread in chat; the triager's `risk/high` label; the reviewer raises a change to a person, never lowers; merged Tasks split by who approved |
 | #60 bring a repository you already have | planned ([adopt-existing.md](adopt-existing.md)), six steps; steps 1 to 3, 5 and 6 (#95, #96, #98, #99) are built: an adopting Container needs nothing from the catalog, a Crew works on it once main requires the repository's own checks, `theos-session adopt` proposes the model, the Crew's first issue there writes `AGENTS.md`, and [docs/adopt.md](../adopt.md) walks it; open: #97 (a Standard as a pull request) |
-| #61 Slack, Linear and Jira | planned ([requests-and-chat.md](requests-and-chat.md)), twelve steps; the two ports' contract suites are merged (#131); nothing else is built |
+| #61 Slack, Linear and Jira | planned on 2026-11-13 ([requests-and-chat.md](requests-and-chat.md)): thirteen steps, none filed or started; the two ports' contract suites are merged (#131); nothing else is built |
 | #54, #58, #64, #66, #73 | open |
 
 ## For the owner
