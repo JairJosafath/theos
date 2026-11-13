@@ -111,7 +111,7 @@ func TestBriefWorkspaceBrief(t *testing.T) {
 		{
 			name: "spec.releases entries are listed by Container",
 			ws: BriefWorkspace{Brief: "b", Idea: "Idea.", GitProvider: "gitea", Releases: []WorkspaceRelease{
-				{Container: "sprout", Repository: "gray/sprout"},
+				{Container: "sprout", Repository: "acme/sprout"},
 				{Container: "cel-lens", Repository: "JairJosafath/cel-lens", TagPrefix: "cli-"},
 			}},
 			want: []string{"## Releases\n", "`plan/releases.yaml`",
@@ -120,7 +120,7 @@ func TestBriefWorkspaceBrief(t *testing.T) {
 				"never to tag or publish a release, to change which tags start the release workflow, " +
 					"or to put a GitHub token in CI",
 				"- `cel-lens`, published by the factory to github.com/JairJosafath/cel-lens as `cli-vX.Y.Z`\n" +
-					"- `sprout`, published by the factory to github.com/gray/sprout as `vX.Y.Z`\n"},
+					"- `sprout`, published by the factory to github.com/acme/sprout as `vX.Y.Z`\n"},
 		},
 		{
 			name: "a prompt's line breaks stay inside its list item",

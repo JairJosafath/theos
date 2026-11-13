@@ -25,20 +25,20 @@ import (
 )
 
 func TestIsRequest(t *testing.T) {
-	authors := []string{"gray-lenovo", "A-Colleague"}
+	authors := []string{"ada", "A-Colleague"}
 	members := []string{"team-mate"}
 	tests := []struct {
 		name  string
 		issue RequestIssue
 		want  bool
 	}{
-		{"an allowed author's issue", RequestIssue{Number: 1, Author: "gray-lenovo"}, true},
+		{"an allowed author's issue", RequestIssue{Number: 1, Author: "ada"}, true},
 		{"an author in another case", RequestIssue{Number: 2, Author: "a-colleague"}, true},
 		{"a team member's issue", RequestIssue{Number: 3, Author: "Team-Mate"}, true},
 		{"a stranger's issue", RequestIssue{Number: 4, Author: "stranger"}, false},
-		{"an allowed author's pull request", RequestIssue{Number: 5, Author: "gray-lenovo", PullRequest: true}, false},
+		{"an allowed author's pull request", RequestIssue{Number: 5, Author: "ada", PullRequest: true}, false},
 		{"no author (a deleted user)", RequestIssue{Number: 6}, false},
-		{"an author whose login only starts like an allowed one", RequestIssue{Number: 7, Author: "gray-lenovo2"}, false},
+		{"an author whose login only starts like an allowed one", RequestIssue{Number: 7, Author: "ada2"}, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -47,7 +47,7 @@ func TestIsRequest(t *testing.T) {
 			}
 		})
 	}
-	if IsRequest(RequestIssue{Number: 1, Author: "gray-lenovo"}, nil, nil) {
+	if IsRequest(RequestIssue{Number: 1, Author: "ada"}, nil, nil) {
 		t.Error("IsRequest with no authors or teams took an issue")
 	}
 }
@@ -69,7 +69,7 @@ func TestRequestBody(t *testing.T) {
 }
 
 func TestRequestName(t *testing.T) {
-	if got := RequestName("gray-lenovo/cel-lens", 12); got != "gray-lenovo/cel-lens#12" {
+	if got := RequestName("ada/cel-lens", 12); got != "ada/cel-lens#12" {
 		t.Errorf("RequestName = %q", got)
 	}
 }
@@ -143,9 +143,9 @@ func TestRequestComments(t *testing.T) {
 		{"declined", DeclinedComment("cel-lens"),
 			"<!-- theos:request brief=cel-lens stage=declined -->\nNot taken by the app's owners.\n"},
 		{"released", ReleasedComment("cel-lens", []Shipped{
-			{Tag: "v0.3.0", URL: "https://github.com/gray-lenovo/cel-lens/releases/tag/v0.3.0"}}),
+			{Tag: "v0.3.0", URL: "https://github.com/ada/cel-lens/releases/tag/v0.3.0"}}),
 			"<!-- theos:request brief=cel-lens stage=released -->\n" +
-				"Shipped in v0.3.0: https://github.com/gray-lenovo/cel-lens/releases/tag/v0.3.0\n"},
+				"Shipped in v0.3.0: https://github.com/ada/cel-lens/releases/tag/v0.3.0\n"},
 		{"released in two", ReleasedComment("cel-lens", []Shipped{{Tag: "v0.3.0", URL: "https://x/v0.3.0"},
 			{Tag: "v1.0.0"}}),
 			"<!-- theos:request brief=cel-lens stage=released -->\nShipped in v0.3.0: https://x/v0.3.0 and v1.0.0\n"},
@@ -202,24 +202,24 @@ func TestHasRequestComment(t *testing.T) {
 }
 
 func TestReadRequests(t *testing.T) {
-	repo := "gray-lenovo/cel-lens"
+	repo := "ada/cel-lens"
 	then := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	now := then.Add(time.Hour)
-	mine := RequestIssue{Number: 1, Author: "gray-lenovo", Title: "Dark theme", Body: "Please. Thanks.", URL: "u1"}
-	edited := RequestIssue{Number: 1, Author: "gray-lenovo", Title: "Edited", Body: "Edited.", URL: "u1"}
+	mine := RequestIssue{Number: 1, Author: "ada", Title: "Dark theme", Body: "Please. Thanks.", URL: "u1"}
+	edited := RequestIssue{Number: 1, Author: "ada", Title: "Edited", Body: "Edited.", URL: "u1"}
 	mate := RequestIssue{Number: 2, Author: "team-mate", Title: "Light theme", Body: "Too.", URL: "u2"}
 	stranger := RequestIssue{Number: 3, Author: "stranger", Title: "Spam", Body: "Spam."}
 	read := func(mode string, open ...RequestIssue) RequestsRead {
-		return RequestsRead{Repository: repo, Mode: mode, Authors: []string{"gray-lenovo"}, Members: []string{"team-mate"},
+		return RequestsRead{Repository: repo, Mode: mode, Authors: []string{"ada"}, Members: []string{"team-mate"},
 			Open: open}
 	}
-	waiting := Request{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", URL: "u1",
+	waiting := Request{Repository: repo, Number: 1, Author: "ada", Title: "Dark theme", URL: "u1",
 		Stage: RequestWaiting, Since: then}
-	accepted := Request{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", Body: "Please. Thanks.",
+	accepted := Request{Repository: repo, Number: 1, Author: "ada", Title: "Dark theme", Body: "Please. Thanks.",
 		URL: "u1", Stage: RequestAccepted, Since: then}
-	taken := Request{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", Stage: RequestPlanning,
+	taken := Request{Repository: repo, Number: 1, Author: "ada", Title: "Dark theme", Stage: RequestPlanning,
 		Round: 2, Since: then}
-	other := Request{Repository: "gray-lenovo/other", Number: 1, Stage: RequestWaiting, Since: then}
+	other := Request{Repository: "ada/other", Number: 1, Stage: RequestWaiting, Since: then}
 	tests := []struct {
 		name  string
 		known []Request
@@ -227,10 +227,10 @@ func TestReadRequests(t *testing.T) {
 		want  []Request
 	}{
 		{"Ask: a new request waits, without its body", nil, read(RequestsAsk, mine, stranger),
-			[]Request{{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", URL: "u1",
+			[]Request{{Repository: repo, Number: 1, Author: "ada", Title: "Dark theme", URL: "u1",
 				Stage: RequestWaiting, Since: now}}},
 		{"On: a new request is let through with its body", nil, read(RequestsOn, mine),
-			[]Request{{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", Body: "Please. Thanks.",
+			[]Request{{Repository: repo, Number: 1, Author: "ada", Title: "Dark theme", Body: "Please. Thanks.",
 				URL: "u1", Stage: RequestAccepted, Since: now}}},
 		{"a team member's issue is a request", nil, read(RequestsOn, mate),
 			[]Request{{Repository: repo, Number: 2, Author: "team-mate", Title: "Light theme", Body: "Too.", URL: "u2",
@@ -238,13 +238,13 @@ func TestReadRequests(t *testing.T) {
 		{"a stranger's issue is nothing", nil, read(RequestsOn, stranger), nil},
 		{"Ask: accepted takes the text then", []Request{waiting},
 			func() RequestsRead { r := read(RequestsAsk, edited); r.Accepted = []int32{1}; return r }(),
-			[]Request{{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Edited", Body: "Edited.", URL: "u1",
+			[]Request{{Repository: repo, Number: 1, Author: "ada", Title: "Edited", Body: "Edited.", URL: "u1",
 				Stage: RequestAccepted, Since: then}}},
 		{"an edit after it was let through changes nothing", []Request{accepted}, read(RequestsOn, edited),
 			[]Request{accepted}},
 		{"declined", []Request{waiting},
 			func() RequestsRead { r := read(RequestsAsk, mine); r.Declined = []int32{1}; return r }(),
-			[]Request{{Repository: repo, Number: 1, Author: "gray-lenovo", Title: "Dark theme", URL: "u1",
+			[]Request{{Repository: repo, Number: 1, Author: "ada", Title: "Dark theme", URL: "u1",
 				Stage: RequestDeclined, Since: then}}},
 		{"closed before it was taken: dropped", []Request{accepted}, read(RequestsOn), nil},
 		{"taken by a round: kept as it is", []Request{taken}, read(RequestsOn, edited), []Request{taken}},
@@ -254,7 +254,7 @@ func TestReadRequests(t *testing.T) {
 		{"an author whose membership couldn't be read: kept",
 			[]Request{accepted}, func() RequestsRead {
 				r := read(RequestsOn, mine)
-				r.Authors, r.Unsure = nil, []string{"Gray-Lenovo"}
+				r.Authors, r.Unsure = nil, []string{"Ada"}
 				return r
 			}(), []Request{accepted}},
 		{"Off: only what a round took stays", []Request{waiting, taken, other}, read(RequestsOff, mine),
@@ -274,7 +274,7 @@ func TestReadRequests(t *testing.T) {
 // request has, can go; an open issue's number, a request's and another
 // repository's request don't count.
 func TestSettledAnswers(t *testing.T) {
-	repo := "gray-lenovo/cel-lens"
+	repo := "ada/cel-lens"
 	open := []RequestIssue{{Number: 5}, {Number: 9}}
 	tests := []struct {
 		name               string
@@ -287,7 +287,7 @@ func TestSettledAnswers(t *testing.T) {
 		{"a closed issue's numbers go, sorted, once", []int32{7, 1, 5}, []int32{3, 9}, nil, []int32{1, 3, 7}},
 		{"a request's number stays", []int32{4}, nil, []Request{{Repository: repo, Number: 4}}, nil},
 		{"another repository's request doesn't count", nil, []int32{4},
-			[]Request{{Repository: "gray-lenovo/other", Number: 4}}, []int32{4}},
+			[]Request{{Repository: "ada/other", Number: 4}}, []int32{4}},
 		{"a number in both lists is listed once", []int32{2}, []int32{2}, nil, []int32{2}},
 	}
 	for _, tt := range tests {
@@ -341,10 +341,10 @@ func TestListRequests(t *testing.T) {
 }
 
 func TestRequestNeedsYou(t *testing.T) {
-	r := Request{Repository: "gray-lenovo/cel-lens", Number: 12, Author: "gray-lenovo", Title: "Dark theme",
+	r := Request{Repository: "ada/cel-lens", Number: 12, Author: "ada", Title: "Dark theme",
 		Body: "secret words", Since: time.Unix(5, 0)}
 	n := RequestNeedsYou(r)
-	if n.Kind != AttentionRequest || n.Name != "gray-lenovo/cel-lens#12" || !n.Since.Equal(r.Since) {
+	if n.Kind != AttentionRequest || n.Name != "ada/cel-lens#12" || !n.Since.Equal(r.Since) {
 		t.Errorf("RequestNeedsYou = %+v", n)
 	}
 	for _, s := range []string{n.Question, n.Recommend, n.Why} {
@@ -352,7 +352,7 @@ func TestRequestNeedsYou(t *testing.T) {
 			t.Errorf("RequestNeedsYou says the body: %q", s)
 		}
 	}
-	if !strings.Contains(n.Question, `"Dark theme"`) || !strings.Contains(n.Question, "gray-lenovo") ||
+	if !strings.Contains(n.Question, `"Dark theme"`) || !strings.Contains(n.Question, "ada") ||
 		!strings.Contains(n.Recommend, "12") {
 		t.Errorf("RequestNeedsYou = %+v", n)
 	}

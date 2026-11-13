@@ -20,7 +20,7 @@
 - Names: label `status/design`; branches `design/<issue>` and `team/<issue>` (D14); team files `docs/agents/team/<name>.md` (D8); guide `docs/agents/designer.md` (D22); role `design`; Task kind `Implement` (default) or `Design` (D15); phases `Designing`, `Designed`.
 - Changed templates get a new version in `templates/versions.txt`; tags never move.
 - Never use the Fable model; the designer Agent in samples is Opus (`claude-opus-5-5`).
-- Conventional Commits, author `JairJosafath <jairjosafath@gmail.com>`, trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Conventional Commits, author `JairJosafath <the owner's address>`, trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ## Review Focus
 

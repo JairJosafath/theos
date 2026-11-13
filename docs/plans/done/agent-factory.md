@@ -17,7 +17,7 @@
 - Never edit generated files (`config/crd/bases`, `config/rbac/role.yaml`, `zz_generated.*`, `PROJECT`).
 - Templates are pinned: every new template has a tag in `templates/versions.txt`.
 - Tests write with merge patches (`patch(obj, func(){...})`), never `Update`.
-- Commits: Conventional Commits, small, as JairJosafath <jairjosafath@gmail.com>, ending with the Co-Authored-By line.
+- Commits: Conventional Commits, small, as JairJosafath, with the owner's address, ending with the Co-Authored-By line.
 - The operator never branches on a Container type (spec decision 7).
 - The sandbox pod mounts no ServiceAccount token (`automountServiceAccountToken: false`).
 - Logging follows the Kubernetes message style (capital letter, no period, past tense for failures).
