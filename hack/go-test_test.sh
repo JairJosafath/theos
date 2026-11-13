@@ -59,6 +59,11 @@ check "default: prints each part" "$(grep -c '^ok fake' "$T/out")" 3
 check "THEOS_TEST_PROCS=4" "$(THEOS_TEST_PROCS=4 run -- $CTRL)" 0
 check "THEOS_TEST_PROCS=4: four parts, no rest" "$(calls)" "1/4 $CTRL|2/4 $R|3/4 $R|4/4 $R"
 
+# The Tests workflow sets it empty on a self-hosted runner, which keeps the
+# default.
+check "THEOS_TEST_PROCS empty" "$(THEOS_TEST_PROCS= run -- $CTRL)" 0
+check "THEOS_TEST_PROCS empty: the default, 2 parts" "$(calls)" "1/2 $CTRL|2/2 $R"
+
 check "THEOS_TEST_PROCS=1" "$(THEOS_TEST_PROCS=1 run -- a/b $CTRL)" 0
 check "THEOS_TEST_PROCS=1: one go test, as before" "$(calls)" "- a/b $CTRL"
 

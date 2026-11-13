@@ -268,7 +268,9 @@ number of specs than its containers hold fails. Go's test cache answers each
 part on its own, and their profiles (`COVER=1`) and slowest specs
 (`THEOS_SLOWEST_SPECS`) are merged into one. With `THEOS_TEST_PROCS` unset and less
 than `THEOS_TEST_MIN_MEM_GIB` (default 4) of `MemAvailable`, the suite runs in
-one process; `THEOS_TEST_PROCS=1` always does. A spec run outside `make test`
+one process; `THEOS_TEST_PROCS=1` always does. The *Tests* workflow sets 4
+on GitHub's runners, which have 4 CPUs and 16 GiB to themselves; a
+self-hosted runner shares its device and keeps the default. A spec run outside `make test`
 (an IDE, `go test` by hand) runs the whole suite in one process, as before.
 What it costs is under [Memory on the cluster device](devices.md#memory-on-the-cluster-device).
 

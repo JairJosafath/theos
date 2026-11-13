@@ -16,7 +16,9 @@
 #   hack/go-test.sh [GO TEST FLAGS] -- PACKAGE...
 #
 #   THEOS_TEST_PROCS        processes the controller suite runs in (default 2;
-#                        1 runs it in one go test, as before)
+#                        1 runs it in one go test, as before; empty is unset).
+#                        The Tests workflow sets 4 on GitHub's runners, which
+#                        have 4 CPUs and 16 GiB to themselves
 #   THEOS_TEST_MIN_MEM_GIB  below this much MemAvailable an unset THEOS_TEST_PROCS
 #                        means 1 (default 4): each part takes about a GiB more
 #                        (docs/dev/devices.md, "Memory on the cluster device")
