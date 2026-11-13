@@ -179,6 +179,33 @@ if grep -A1 '^apiVersion: theos.factory.io/' "$OUT/chart-gitea-bare-catalog.yaml
 	exit 1
 fi
 echo "The chart's catalog matches templates/versions.txt; off, it renders no catalog, bundles or Agents"
+# Each language Standard of the chart proposes a weekly dependencies schedule to
+# its Crews; aws-standard and factory-self propose none (#145). The render is
+# validated against the Standard CRD above, so the cron and the name are
+# checked there; here, that the default values carry the proposals.
+proposals=$(awk '
+	/^---/ { kind = ""; name = ""; sched = 0; next }
+	/^kind: / { kind = $2; next }
+	/^  name: / && name == "" { name = $2; next }
+	kind == "Standard" && /^  schedules:$/ { sched = 1; next }
+	kind == "Standard" && sched && /^  - cron: / { sub(/^  - cron: /, ""); print name, "cron", $0; next }
+	kind == "Standard" && sched && /^    name: / { print name, "name", $2; next }
+	/^  [a-zA-Z]/ { sched = 0 }
+' "$OUT/chart-gitea-catalog.yaml" | sort -u)
+wantproposals='go-operator-standard cron 0 6 * * 1
+go-operator-standard name dependencies
+go-standard cron 0 6 * * 1
+go-standard name dependencies
+python-standard cron 0 6 * * 1
+python-standard name dependencies
+ts-standard cron 0 6 * * 1
+ts-standard name dependencies'
+if [ "$proposals" != "$wantproposals" ]; then
+	echo "The chart's Standards propose the wrong schedules (< chart, > want):" >&2
+	diff <(echo "$proposals") <(echo "$wantproposals") >&2 || true
+	exit 1
+fi
+echo "The chart's go, go-operator, ts and python Standards each propose a weekly dependencies schedule; aws and factory-self none"
 # The seed's browser in each project (docs/plans/done/test-environments.md, T14):
 # on by default, on the release's env-browser image; off, none.
 browser=$(awk '/^kind: TestEnvironment$/ { te = 1 } te && /^  namespace: / { print $2; te = 0 }' \

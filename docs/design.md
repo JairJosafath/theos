@@ -1317,7 +1317,13 @@ and the role guides, the `make check` contract and its CI workflow. A change
 touching only the changelog, `docs/` or images passes CI without `make check`.
 `status.checks` reports CI on `main`. A Standard may also propose its
 language's upkeep to the Crews of its Containers, as `spec.schedules`
-(*Schedules*, above); a proposal is a Crew's to take or leave.
+(*Schedules*, above); a proposal is a Crew's to take or leave. The chart's
+language Standards (`go-standard`, `go-operator-standard`, `ts-standard`,
+`python-standard`) propose a weekly dependency update, `dependencies`, in the
+words of their own tools; `aws-standard` spans three languages and
+`factory-self` takes its updates from Dependabot, so they propose none. They
+are chart values (`catalog.entries`): an install overrides the words, the day
+or the entry.
 
 **A Standard's fixes reach its Containers.** Bumping its pinned `ref` updates
 every Ready Container on it: the operator renders the Standard at the old and
