@@ -14,12 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Command model-proxy keeps the factory's Claude token out of agent
-// sandboxes. It forwards every request to one upstream, the Claude API by
+// Command model-proxy keeps the factory's model keys out of agent
+// sandboxes. It forwards a request to its upstream, the Claude API by
 // default, with the client's credential swapped for the one in a mounted
-// Secret directory, and answers /healthz and /readyz itself.
+// Secret directory, and answers /healthz and /readyz itself. A path under
+// /upstreams/<name>/ goes to the --named-upstream of that name, with that
+// upstream's key.
 //
 //	model-proxy [--listen :8080] [--upstream https://api.anthropic.com] [--credentials-dir DIR] [--drain 5s]
+//	    [--named-upstream openai=https://api.openai.com/v1,key=OPENAI_API_KEY]...
 package main
 
 import (
@@ -32,6 +35,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,9 +47,34 @@ import (
 // included, under the kubelet's default grace period of 30 seconds.
 const shutdownGrace = 25 * time.Second
 
+// namedUpstreams collects the --named-upstream flags.
+type namedUpstreams []modelproxy.Upstream
+
+func (n *namedUpstreams) String() string {
+	names := make([]string, 0, len(*n))
+	for _, up := range *n {
+		names = append(names, up.Name)
+	}
+	return strings.Join(names, ",")
+}
+
+func (n *namedUpstreams) Set(spec string) error {
+	up, err := modelproxy.ParseUpstream(spec)
+	if err != nil {
+		return err
+	}
+	*n = append(*n, up)
+	return nil
+}
+
 func main() {
 	listen := flag.String("listen", ":8080", "Address to serve on")
-	upstream := flag.String("upstream", "https://api.anthropic.com", "The one URL every request is forwarded to")
+	upstream := flag.String("upstream", "https://api.anthropic.com",
+		"The URL every request is forwarded to, but those under "+modelproxy.NamedPrefix)
+	var named namedUpstreams
+	flag.Var(&named, "named-upstream", "An upstream for the requests under "+modelproxy.NamedPrefix+"<name>/, as "+
+		"<name>=<url>[,auth=bearer|header:<Header>|none][,key=<key file in --credentials-dir>]: a key without "+
+		"auth is a bearer key, neither is an upstream that takes none. Repeatable.")
 	dir := flag.String("credentials-dir", "/etc/model-proxy/credentials",
 		"The mounted Secret directory holding "+modelproxy.OAuthTokenKey+" or "+modelproxy.APIKeyKey)
 	drain := flag.Duration("drain", 5*time.Second,
@@ -62,9 +91,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	log.Info("Starting model proxy", "listen", *listen, "upstream", target.Redacted(), "credentialsDir", *dir,
-		"drain", *drain, "version", buildinfo.Version)
-	proxy := modelproxy.New(target, *dir, log)
+	log.Info("Starting model proxy", "listen", *listen, "upstream", target.Redacted(), "namedUpstreams", named.String(),
+		"credentialsDir", *dir, "drain", *drain, "version", buildinfo.Version)
+	proxy, err := modelproxy.NewWithUpstreams(target, named, *dir, log)
+	if err != nil {
+		log.Error("Invalid --named-upstream", "error", err)
+		os.Exit(2)
+	}
 	server := &http.Server{
 		Addr:    *listen,
 		Handler: proxy,

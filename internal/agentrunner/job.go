@@ -145,12 +145,6 @@ type TestEnvironment struct {
 // CheckpointDir is where the operator mounts a sandbox's checkpoint volume.
 const CheckpointDir = "/checkpoint"
 
-// Harnesses: the agent programs theos-agent can run.
-const (
-	HarnessClaudeCode = "claude-code"
-	HarnessStandIn    = "stand-in"
-)
-
 // Job is one sandbox run: implement a goal on a branch, review or verify that branch, or
 // plan a round of a Brief on plan/<round>.
 type Job struct {
@@ -295,10 +289,10 @@ func JobFromEnv(getenv func(string) string) (Job, error) {
 		}
 	}
 	if job.Harness == "" {
-		job.Harness = HarnessClaudeCode
+		job.Harness = harnesses[0].Name
 	}
-	if job.Harness != HarnessClaudeCode && job.Harness != HarnessStandIn {
-		return Job{}, fmt.Errorf("%s=%q: want %s or %s", EnvHarness, job.Harness, HarnessClaudeCode, HarnessStandIn)
+	if _, ok := harnessOf(job.Harness); !ok {
+		return Job{}, fmt.Errorf("%s=%q: want %s", EnvHarness, job.Harness, oneOf(Harnesses()))
 	}
 	if issue := getenv(EnvIssue); issue != "" {
 		n, err := strconv.Atoi(issue)

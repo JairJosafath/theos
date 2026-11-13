@@ -342,8 +342,8 @@ func resumeFrom(ctx context.Context) (resumedSession, bool) {
 // resumable reports whether agent's sessions can be resumed: Claude Code's
 // own command, whose sessions have IDs a checkpoint records.
 func resumable(agent Agent) bool {
-	claude, ok := agent.(ClaudeAgent)
-	return ok && claude.SessionIDs
+	resumer, ok := agent.(sessionResumer)
+	return ok && resumer.resumesSessions()
 }
 
 // noConversation is Claude Code's answer to a --resume of a session it has

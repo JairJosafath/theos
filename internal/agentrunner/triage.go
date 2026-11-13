@@ -28,7 +28,7 @@ func triage(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 	result Result) Result {
 	output, err := prog.session(ctx, agent, r.dir, TriagePrompt(job, ws))
 	if err != nil {
-		return agentFailed(result, err)
+		return agentFailed(job, result, err)
 	}
 	decision, err := ParseTriage(output)
 	if err != nil {
@@ -45,7 +45,7 @@ func score(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pro
 	result Result) Result {
 	output, err := prog.session(ctx, agent, r.dir, ScorePrompt(job, ws))
 	if err != nil {
-		return agentFailed(result, err)
+		return agentFailed(job, result, err)
 	}
 	verdicts, err := model.ParseScore(output, job.Criteria)
 	if err != nil {

@@ -262,12 +262,12 @@ func (l *sessionLog) newest() (id, lastText string) {
 	return l.id, l.lastText
 }
 
-// withSessionLog has a Claude Code agent record its sessions in log, guard
-// them with pause, and save periodic checkpoints between their tool calls.
+// withSessionLog has an agent that keeps sessions (Claude Code) record them
+// in log, guard them with pause, and save periodic checkpoints between their
+// tool calls. Any other agent runs as it is.
 func withSessionLog(agent Agent, log *sessionLog, pause *pauseWatch, periodic *periodicCheckpoints) Agent {
-	if claude, ok := agent.(ClaudeAgent); ok {
-		claude.sessions, claude.pause, claude.checkpoints = log, pause, periodic
-		return claude
+	if keeper, ok := agent.(sessionKeeper); ok {
+		return keeper.keepingSessions(log, pause, periodic)
 	}
 	return agent
 }
