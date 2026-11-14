@@ -47,6 +47,7 @@ const (
 	typeMember   = "m.room.member"
 	memberInvite = "invite"
 	memberJoin   = "join"
+	memberBan    = "ban"
 )
 
 // Server is a fake homeserver.
@@ -61,8 +62,9 @@ type Server struct {
 	events   []*event          // every timeline event, by stream position
 	next     int               // numbers rooms and events
 	calls    map[string]int
-	limited  int   // how many next calls answer 429
-	limitFor int64 // the retry_after_ms they name
+	limited  int             // how many next calls answer 429
+	limitFor int64           // the retry_after_ms they name
+	banned   map[string]bool // users Ban banned from every room
 }
 
 type room struct {
@@ -115,6 +117,16 @@ func (s *Server) NewUser(localpart string) (userID, token string) {
 	return userID, token
 }
 
+// hasUser says NewUser made userID. The caller holds mu.
+func (s *Server) hasUser(userID string) bool {
+	for _, u := range s.tokens {
+		if u == userID {
+			return true
+		}
+	}
+	return false
+}
+
 // RateLimit makes the next n calls answer 429 with retry_after_ms ms.
 func (s *Server) RateLimit(n int, ms int64) {
 	s.mu.Lock()
@@ -155,6 +167,21 @@ func (s *Server) Leave(roomID, user string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.setMember(s.rooms[roomID], user, user, "leave")
+}
+
+// Ban bans user from every room on the server, those made later too, as a
+// moderator who bans them on sight: an invite of them is refused 403
+// M_FORBIDDEN, and the room's state says ban (#251).
+func (s *Server) Ban(user string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.banned == nil {
+		s.banned = map[string]bool{}
+	}
+	s.banned[user] = true
+	for _, r := range s.rooms {
+		s.setMember(r, r.creator, user, memberBan)
+	}
 }
 
 // Delete deletes room and the aliases that point to it, as an admin who
@@ -283,6 +310,9 @@ func (s *Server) newRoom(creator string, space bool) *room {
 		state: map[stateKey]map[string]any{}}
 	s.rooms[r.id] = r
 	s.setMember(r, creator, creator, memberJoin)
+	for user := range s.banned {
+		s.setMember(r, creator, user, memberBan)
+	}
 	return r
 }
 
@@ -472,6 +502,16 @@ func (s *Server) roomCall(w http.ResponseWriter, method, user, roomID string, re
 		target, _ := body["user_id"].(string)
 		if m := r.membership(target); m == memberJoin || m == memberInvite {
 			matrixError(w, http.StatusForbidden, "M_FORBIDDEN", target+" is already in the room.")
+			return
+		}
+		if r.membership(target) == memberBan {
+			matrixError(w, http.StatusForbidden, "M_FORBIDDEN", target+" is banned from the room")
+			return
+		}
+		// A user of this server it has no account for is not found, as a
+		// homeserver answers (#251); one of another server it can't know.
+		if strings.HasSuffix(target, ":"+ServerName) && !s.hasUser(target) {
+			matrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Unknown user "+target)
 			return
 		}
 		s.calls[memberInvite]++

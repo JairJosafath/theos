@@ -73,7 +73,9 @@ func TestChatHostContract(t *testing.T) {
 				Host:    w.c,
 				Refused: refused,
 				Person:  func(_ *testing.T, name string) string { return w.ws.NewUser(name) },
-				Join:    func(t *testing.T, room, user string) { fail(t, w.ws.Join(room, user)) },
+				// A member ID the workspace has no member for.
+				Stranger: "U0GHOST00",
+				Join:     func(t *testing.T, room, user string) { fail(t, w.ws.Join(room, user)) },
 				Post: func(t *testing.T, room, user, text, threadRoot string) string {
 					ts, err := w.ws.Post(room, user, text, threadRoot)
 					fail(t, err)

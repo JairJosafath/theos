@@ -96,6 +96,11 @@ type chatState struct {
 	// users are the user IDs by their token, and tokens the tokens by user.
 	users  map[string]string
 	tokens map[string]string
+	// inactive are the accounts Deactivate closed, by user ID.
+	inactive map[string]bool
+	// refuse are the codes RefuseIn refuses a user's invite with, by room
+	// and then user.
+	refuse map[string]map[string]string
 	// lacks are the scopes a token lacks, by the token and then the port
 	// method that needs the scope (Revoke).
 	lacks map[string]map[string]string
@@ -231,6 +236,53 @@ func (h *ChatHost) Grant(token, scope string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	maps.DeleteFunc(s.lacks[token], func(_, lacked string) bool { return lacked == scope })
+}
+
+// CodeUserNotFound is the code an invite of a person the host has no
+// account for, or whose account Deactivate closed, is refused with: a
+// ports.ChatInviteRefusedError, as Slack answers user_not_found for both
+// (#251).
+const CodeUserNotFound = "user_not_found"
+
+// Deactivate closes user's account, as an admin who deactivates a member
+// does: an invite of them is refused (CodeUserNotFound) until Reactivate.
+func (h *ChatHost) Deactivate(user string) {
+	s := h.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inactive == nil {
+		s.inactive = map[string]bool{}
+	}
+	s.inactive[user] = true
+}
+
+// Reactivate opens the account Deactivate closed.
+func (h *ChatHost) Reactivate(user string) {
+	s := h.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.inactive, user)
+}
+
+// RefuseIn makes an invite of user to room refused with code, a
+// ports.ChatInviteRefusedError, as Slack refuses a single-channel guest in
+// every channel but theirs (ura_max_channels); a code of "" lifts it
+// (#251). It refuses user in that room alone.
+func (h *ChatHost) RefuseIn(room, user, code string) {
+	s := h.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if code == "" {
+		delete(s.refuse[room], user)
+		return
+	}
+	if s.refuse == nil {
+		s.refuse = map[string]map[string]string{}
+	}
+	if s.refuse[room] == nil {
+		s.refuse[room] = map[string]string{}
+	}
+	s.refuse[room][user] = code
 }
 
 // Hosts builds the ChatHost of a bot on this host, as cmd/main.go's
@@ -586,8 +638,11 @@ func (b *chatBot) Invite(_ context.Context, room, user string) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := s.tokens[user]; !ok {
-		return fmt.Errorf("no user %s", user)
+	if _, ok := s.tokens[user]; !ok || s.inactive[user] {
+		return &ports.ChatInviteRefusedError{User: user, Code: CodeUserNotFound}
+	}
+	if code := s.refuse[room][user]; code != "" {
+		return &ports.ChatInviteRefusedError{User: user, Code: code}
 	}
 	if !r.members[user] {
 		r.invited[user] = true

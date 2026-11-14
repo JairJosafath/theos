@@ -152,6 +152,49 @@ func TestChatReadyMessage(t *testing.T) {
 	}
 }
 
+// TestChatInvitedMessage covers #251: a person the host refuses to invite
+// is named with the host's code, in the field of the Chat's host, and the
+// rest are counted.
+func TestChatInvitedMessage(t *testing.T) {
+	for _, tt := range []struct {
+		name, reason, want string
+		c                  ChatCheck
+	}{
+		{"all invited on matrix", ChatInvited, "The 3 people in spec.people are invited to every room",
+			ChatCheck{Homeserver: "https://matrix.example", People: 3}},
+		{"one invited on slack", ChatInvited, "The 1 person in spec.slack.people is invited to every room",
+			ChatCheck{Homeserver: "https://slack.example/api", Host: ChatSlack, People: 1}},
+		{"#251 one refused on matrix", ChatInviteRefused, "https://matrix.example refused to invite " +
+			"@ghost:example (M_NOT_FOUND); the other 2 people in spec.people are invited. Fix the account or the ID " +
+			"in spec.people; the operator tries again",
+			ChatCheck{Homeserver: "https://matrix.example", People: 2,
+				Refused: []ChatRefusal{{Person: "@ghost:example", Code: "M_NOT_FOUND"}}}},
+		{"#251 two refused on slack, one without a code", ChatInviteRefused, "https://slack.example/api refused to " +
+			"invite U0000002 (user_not_found), U0000004 (no code); the other 1 person in spec.slack.people is invited. " +
+			"Fix the account or the ID in spec.slack.people; the operator tries again",
+			ChatCheck{Homeserver: "https://slack.example/api", Host: ChatSlack, People: 1,
+				Refused: []ChatRefusal{{Person: "U0000002", Code: "user_not_found"}, {Person: "U0000004"}}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ChatInvitedReason(tt.c.Refused); got != tt.reason {
+				t.Errorf("ChatInvitedReason = %s, want %s", got, tt.reason)
+			}
+			if got := ChatInvitedMessage(tt.c); got != tt.want {
+				t.Errorf("ChatInvitedMessage = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestChatInviteNotCheckedMessage covers #251: a pass that ends before the
+// invites says so on Invited, with Ready's reason, never the old verdict.
+func TestChatInviteNotCheckedMessage(t *testing.T) {
+	want := "The invites were not checked: the last pass ended before them, the Chat not Ready (Unreachable)"
+	if got := ChatInviteNotCheckedMessage(ChatUnreachable); got != want {
+		t.Errorf("ChatInviteNotCheckedMessage = %q, want %q", got, want)
+	}
+}
+
 // A post's every field is shown as written: HTML in a title, a question or
 // a code line is escaped, and only an http or https link is a link.
 func TestChatPostHTML(t *testing.T) {

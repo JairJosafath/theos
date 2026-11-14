@@ -468,12 +468,51 @@ func (c *Client) setTopic(ctx context.Context, channel, topic string) error {
 	return c.bot(ctx, "conversations.setTopic", url.Values{argChannel: {channel}, "topic": {topic}}, nil)
 }
 
+// refusedInviteCodes are conversations.invite's error codes that refuse the
+// person alone (#251), by Slack's documentation of the method: Slack will
+// not put that one member in the channel, and the next member's invite
+// may well work.
+//
+//   - user_not_found: a member ID the workspace has no member for, or a
+//     deactivated member.
+//   - cant_invite: the member cannot be invited to this channel.
+//   - user_is_restricted, user_is_ultra_restricted: a guest kept out of
+//     the channel.
+//   - ura_max_channels: a single-channel guest already in their channel.
+//   - no_permission: the bot "does not have permission to invite that
+//     specific user": a rule on that member, such as a guest an admin
+//     keeps from being invited, not a scope the token lacks.
+//   - no_external_invite_permission: the member is external (Slack
+//     Connect) and the bot may not invite external members.
+//   - org_user_not_in_team: an Enterprise Grid member who is not in this
+//     workspace.
+//   - invitee_cant_see_channel: an Enterprise Grid channel not shared with
+//     any workspace the member is in.
+//
+// Every other code says nothing of the person and stays loud: the bot or
+// its token lacks something for every member (missing_scope, not_in_channel,
+// access_denied, team_access_not_granted, not_allowed_token_type, a refused
+// token), the channel is gone (channel_not_found, is_archived), or Slack
+// could not answer (a rate limit, a 5xx).
+var refusedInviteCodes = map[string]bool{"user_not_found": true, "cant_invite": true, "user_is_restricted": true,
+	"user_is_ultra_restricted": true, "ura_max_channels": true, "no_permission": true,
+	"no_external_invite_permission": true, "org_user_not_in_team": true, "invitee_cant_see_channel": true}
+
 // Invite adds user to room. Slack has no pending invite: the person is in
-// the channel at once, and someone already in it is no error.
+// the channel at once, and someone already in it is no error. A code that
+// refuses the person (refusedInviteCodes) is a
+// ports.ChatInviteRefusedError.
 func (c *Client) Invite(ctx context.Context, room, user string) error {
 	err := c.bot(ctx, "conversations.invite", url.Values{argChannel: {room}, "users": {user}}, nil)
-	if code := errCode(err); code == codeAlreadyInChannel || code == codeCantInviteSelf {
+	e, ok := errors.AsType[*Error](err)
+	switch {
+	case !ok:
+		return err
+	case e.Code == codeAlreadyInChannel || e.Code == codeCantInviteSelf:
 		return nil
+	case e.Status == http.StatusOK && refusedInviteCodes[e.Code]:
+		// Slack answered: a 5xx carrying the code is no answer on the person.
+		return &ports.ChatInviteRefusedError{User: user, Code: e.Code}
 	}
 	return err
 }

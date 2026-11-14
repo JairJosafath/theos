@@ -19,8 +19,13 @@ package matrix
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -164,8 +169,85 @@ func TestInvite(t *testing.T) {
 		t.Errorf("invited %d times, want 1", hs.Calls("invite"))
 	}
 	other := hs.CreateRoomAs(ada, "")
-	if err := c.Invite(ctx, other, ada); err == nil {
-		t.Error("Invite into a room the bot is not in succeeded")
+	if err := c.Invite(ctx, other, ada); err == nil || errors.Is(err, ports.ErrChatInviteRefused) {
+		t.Errorf("Invite into a room the bot is not in = %v, want an error that is not the person's", err)
+	}
+	// #251: a user of the server it has no account for is refused, theirs
+	// alone, with the homeserver's code.
+	ghost := "@ghost:" + matrixtest.ServerName
+	err := c.Invite(ctx, sp.ID, ghost)
+	if refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err); !ok || refused.User != ghost ||
+		refused.Code != "M_NOT_FOUND" {
+		t.Errorf("Invite of %s = %v, want a ChatInviteRefusedError naming them and M_NOT_FOUND", ghost, err)
+	}
+	// A user the room has banned is refused alone too, with the 403's code:
+	// the room's state says ban (#251).
+	banned, _ := hs.NewUser("banned")
+	hs.Ban(banned)
+	err = c.Invite(ctx, sp.ID, banned)
+	if refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err); !ok || refused.User != banned ||
+		refused.Code != "M_FORBIDDEN" {
+		t.Errorf("Invite of banned %s = %v, want a ChatInviteRefusedError naming them and M_FORBIDDEN", banned, err)
+	}
+}
+
+// TestInviteRefusedOrUnreachable covers #251: which homeserver answers to
+// an invite refuse the person alone (a ChatInviteRefusedError), and which
+// say the host could not be reached or took no token.
+func TestInviteRefusedOrUnreachable(t *testing.T) {
+	for _, tt := range []struct {
+		status       int
+		code         string
+		membership   string // the invitee's in the room's state, "" for none
+		refused      bool
+		tokenRefused bool
+	}{
+		{status: http.StatusNotFound, code: "M_NOT_FOUND", refused: true},
+		{status: http.StatusBadRequest, code: "M_INVALID_PARAM", refused: true},
+		{status: http.StatusNotFound, code: "M_UNRECOGNIZED"},
+		{status: http.StatusForbidden, code: "M_FORBIDDEN"},
+		// #251: a banned invitee, an invitee whose homeserver blocks invites
+		// (spec v1.18) or can't take the room's version is refused alone; a
+		// 403 for an invitee who left, or one the room has no state for, is
+		// the bot's (no power to invite) and stays loud.
+		{status: http.StatusForbidden, code: "M_FORBIDDEN", membership: "ban", refused: true},
+		{status: http.StatusForbidden, code: "M_FORBIDDEN", membership: "leave"},
+		{status: http.StatusForbidden, code: "M_INVITE_BLOCKED", refused: true},
+		{status: http.StatusBadRequest, code: "M_UNSUPPORTED_ROOM_VERSION", refused: true},
+		{status: http.StatusBadRequest, code: "M_BAD_JSON"},
+		{status: http.StatusTooManyRequests, code: "M_LIMIT_EXCEEDED"},
+		{status: http.StatusInternalServerError, code: "M_UNKNOWN"},
+		{status: http.StatusBadGateway},
+		{status: http.StatusUnauthorized, code: "M_UNKNOWN_TOKEN", tokenRefused: true},
+	} {
+		t.Run(fmt.Sprintf("%d %s %s", tt.status, tt.code, tt.membership), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if tt.membership != "" && strings.Contains(r.URL.Path, "/state/m.room.member/") {
+					_ = json.NewEncoder(w).Encode(map[string]string{"membership": tt.membership})
+					return
+				}
+				w.WriteHeader(tt.status)
+				_ = json.NewEncoder(w).Encode(map[string]string{"errcode": tt.code, "error": "no"})
+			}))
+			defer srv.Close()
+			c, err := New(ports.ChatConfig{Address: srv.URL, Token: rand.Text()}, WithRetries(0, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = c.Invite(t.Context(), "!room:"+matrixtest.ServerName, "@ghost:"+matrixtest.ServerName)
+			refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err)
+			switch {
+			case err == nil:
+				t.Fatal("Invite = nil, want an error")
+			case ok != tt.refused:
+				t.Errorf("Invite = %v, refused the person %v, want %v", err, ok, tt.refused)
+			case ok && (refused.Code != tt.code || refused.User != "@ghost:"+matrixtest.ServerName):
+				t.Errorf("Invite = %+v, want the person and %s", refused, tt.code)
+			case errors.Is(err, ports.ErrChatCredentialRefused) != tt.tokenRefused:
+				t.Errorf("Invite = %v, token refused %v, want %v", err, !tt.tokenRefused, tt.tokenRefused)
+			}
+		})
 	}
 }
 

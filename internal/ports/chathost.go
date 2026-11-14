@@ -122,7 +122,11 @@ type ChatHost interface {
 	// WhoAmI's.
 	EnsureRoom(ctx context.Context, spec ChatRoomSpec) (ChatRoom, error)
 	// Invite invites user to room; a user already invited or in the room is
-	// no error.
+	// no error. A person the host answers it will not invite, one it has no
+	// account for or whose account it closed, is a ChatInviteRefusedError
+	// naming them and the host's error code: theirs alone, so the caller
+	// goes on with the others (#251). Any other error, a host it could not
+	// reach, a rate limit or a refused token, is not one.
 	Invite(ctx context.Context, room, user string) error
 	// Send posts msg in room and returns its event ID.
 	Send(ctx context.Context, room string, msg ChatMessage) (string, error)
@@ -173,6 +177,28 @@ func (e *ChatScopeMissingError) Error() string {
 
 // Is makes the error ErrChatScopeMissing.
 func (e *ChatScopeMissingError) Is(target error) bool { return target == ErrChatScopeMissing }
+
+// ErrChatInviteRefused is a person the chat host answers it will not
+// invite: it has no account for them, or closed theirs (#251). The host was
+// reached, and the refusal is that person's alone.
+var ErrChatInviteRefused = errors.New("the chat host refused to invite the person")
+
+// ChatInviteRefusedError is ErrChatInviteRefused naming the person and the
+// host's error code.
+type ChatInviteRefusedError struct {
+	// User is the person's user ID, as Invite was given it.
+	User string
+	// Code is the host's error code, as the host spells it, such as
+	// M_NOT_FOUND or user_not_found.
+	Code string
+}
+
+func (e *ChatInviteRefusedError) Error() string {
+	return "the chat host refused to invite " + e.User + ": " + e.Code
+}
+
+// Is makes the error ErrChatInviteRefused.
+func (e *ChatInviteRefusedError) Is(target error) bool { return target == ErrChatInviteRefused }
 
 // ErrChatAliasTaken is an alias held by a room the bot is not in.
 var ErrChatAliasTaken = errors.New("the alias belongs to a room the bot is not in")

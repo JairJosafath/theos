@@ -21,10 +21,12 @@ import (
 	"crypto/rand"
 	"errors"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -449,5 +451,289 @@ func TestMatrixChatInvitesToARoomMadeAgain(t *testing.T) {
 				t.Errorf("ada, who left triage, is %s in it again", m[x.ada])
 			}
 		})
+	}
+}
+
+// TestSlackChatRemadeChannelWithARefusedPerson covers #251 with #159's
+// rule: the people are ada, a member ID the workspace has no member for
+// (Slack answers user_not_found) and bob. The first pass invites ada and
+// bob to every channel, stays Ready and names the refusal on Invited. Then
+// ada leaves general and an admin deletes alerts: the next pass makes
+// alerts again, invites ada and bob to it and records its new ID though
+// the stranger is refused again, asks the stranger to each channel they
+// were refused and to the new one, and pulls nobody back: ada stays out of
+// general.
+func TestSlackChatRemadeChannelWithARefusedPerson(t *testing.T) {
+	x := newSlackWorkspaceChat(t, "bob")
+	bob, ghost := x.others[0], "U0GHOST00"
+	var chat c4v1beta1.Chat
+	if err := x.cl.Get(t.Context(), x.req.NamespacedName, &chat); err != nil {
+		t.Fatal(err)
+	}
+	chat.Spec.Slack.People = slices.Insert(chat.Spec.Slack.People, 1,
+		c4v1beta1.ChatSlackPerson{SlackID: ghost, User: "ghost"})
+	if err := x.cl.Update(t.Context(), &chat); err != nil {
+		t.Fatal(err)
+	}
+	wantRefused := func(chat *c4v1beta1.Chat) {
+		t.Helper()
+		c := apimeta.FindStatusCondition(chat.Status.Conditions, c4v1beta1.ConditionChatInvited)
+		if c == nil || c.Status != metav1.ConditionFalse || c.Reason != model.ChatInviteRefused ||
+			!strings.Contains(c.Message, ghost+" (user_not_found)") {
+			t.Errorf("Invited = %+v, want False, InviteRefused, naming %s and user_not_found", c, ghost)
+		}
+		want := []string{x.ada, bob}
+		slices.Sort(want)
+		if !slices.Equal(chat.Status.Invited, want) {
+			t.Errorf("status.invited = %v, want ada and bob", chat.Status.Invited)
+		}
+	}
+
+	first := x.ready(t)
+	wantRefused(first)
+	for _, purpose := range model.ChatPurposes {
+		if m := x.channel(t, first, purpose).Members; !slices.Contains(m, x.ada) || !slices.Contains(m, bob) {
+			t.Errorf("%s's members = %v, want ada and bob", purpose, m)
+		}
+	}
+	general, alerts := x.channel(t, first, model.ChatGeneral), x.channel(t, first, model.ChatAlerts)
+	if err := x.ws.Remove(general.ID, x.ada); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.ws.Delete(alerts.ID); err != nil {
+		t.Fatal(err)
+	}
+	invites := x.ws.Calls("conversations.invite")
+
+	again := x.ready(t)
+	wantRefused(again)
+	made := x.channel(t, again, model.ChatAlerts)
+	if made.ID == alerts.ID {
+		t.Fatalf("alerts = %s, want the channel made again, its new ID recorded", made.ID)
+	}
+	if !slices.Contains(made.Members, x.ada) || !slices.Contains(made.Members, bob) {
+		t.Errorf("alerts' members = %v, want ada and bob", made.Members)
+	}
+	if got := x.ws.Calls("conversations.invite") - invites; got != 8 {
+		t.Errorf("conversations.invite called %d times, want 8: the stranger to the 6 channels, ada and bob to "+
+			"alerts", got)
+	}
+	if slices.Contains(x.channel(t, again, model.ChatGeneral).Members, x.ada) {
+		t.Error("ada, who left general, is back in it")
+	}
+}
+
+// refusals are the invites a refusingHost refuses: the host's code by room
+// ID, "*" for every room, and then person.
+type refusals struct {
+	mu   sync.Mutex
+	code map[string]map[string]string
+}
+
+// set refuses person's invite to room with code; "" lifts it.
+func (r *refusals) set(room, person, code string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.code == nil {
+		r.code = map[string]map[string]string{}
+	}
+	if r.code[room] == nil {
+		r.code[room] = map[string]string{}
+	}
+	r.code[room][person] = code
+}
+
+func (r *refusals) of(room, person string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if code := r.code[room][person]; code != "" {
+		return code
+	}
+	return r.code["*"][person]
+}
+
+// refusingHost is a ChatHost that refuses the invites its refusals name,
+// as Slack refuses a deactivated member everywhere or a single-channel
+// guest in all but one channel (#251), and passes every other call on.
+type refusingHost struct {
+	ports.ChatHost
+	refuse *refusals
+}
+
+func (h refusingHost) Invite(ctx context.Context, room, user string) error {
+	if code := h.refuse.of(room, user); code != "" {
+		return &ports.ChatInviteRefusedError{User: user, Code: code}
+	}
+	return h.ChatHost.Invite(ctx, room, user)
+}
+
+// refusing makes the Chat's Slack host refuse the invites the refusals it
+// returns name.
+func (x *slackWorkspaceChat) refusing() *refusals {
+	rf := &refusals{}
+	hosts := x.r.ChatHosts[model.ChatSlack]
+	x.r.ChatHosts[model.ChatSlack] = func(cfg ports.ChatConfig) (ports.ChatHost, error) {
+		h, err := hosts(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return refusingHost{ChatHost: h, refuse: rf}, nil
+	}
+	return rf
+}
+
+// addPerson adds the person id to the Chat's spec.slack.people.
+func (x *slackWorkspaceChat) addPerson(t *testing.T, id, user string) {
+	t.Helper()
+	var chat c4v1beta1.Chat
+	if err := x.cl.Get(t.Context(), x.req.NamespacedName, &chat); err != nil {
+		t.Fatal(err)
+	}
+	chat.Spec.Slack.People = append(chat.Spec.Slack.People, c4v1beta1.ChatSlackPerson{SlackID: id, User: user})
+	if err := x.cl.Update(t.Context(), &chat); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSlackChatRefusedInOneChannel covers #251 with #159's rule: bob, a
+// single-channel guest, is refused in alerts alone. He is invited to the
+// other five channels and kept in status.refused with alerts; he leaves
+// general, and each later pass asks him to alerts alone, so general never
+// pulls him back. A pass with a refusal standing requeues after the check
+// interval (10 minutes), not the minute's poll. Once Slack takes him in
+// alerts he joins status.invited, still out of general. Before, he was
+// asked to every channel each minute, and general pulled him back.
+func TestSlackChatRefusedInOneChannel(t *testing.T) {
+	x := newSlackWorkspaceChat(t)
+	rf := x.refusing()
+	first := x.ready(t)
+	alerts, general := x.channel(t, first, model.ChatAlerts).ID, x.channel(t, first, model.ChatGeneral).ID
+	bob := x.ws.NewUser("bob")
+	rf.set(alerts, bob, "ura_max_channels")
+	x.addPerson(t, bob, "bob")
+
+	res, err := x.r.Reconcile(t.Context(), x.req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RequeueAfter != 10*time.Minute {
+		t.Errorf("RequeueAfter = %s with a refusal standing, want the check interval, 10m", res.RequeueAfter)
+	}
+	chat := x.ready(t)
+	want := []c4v1beta1.ChatRefusedPerson{{ID: bob, Code: "ura_max_channels", Rooms: []string{alerts}}}
+	if !reflect.DeepEqual(chat.Status.Refused, want) || !slices.Equal(chat.Status.Invited, []string{x.ada}) {
+		t.Errorf("status.refused = %+v, invited = %v; want %+v and ada alone", chat.Status.Refused,
+			chat.Status.Invited, want)
+	}
+	if c := apimeta.FindStatusCondition(chat.Status.Conditions, c4v1beta1.ConditionChatInvited); c == nil ||
+		c.Status != metav1.ConditionFalse || !strings.Contains(c.Message, bob+" (ura_max_channels)") {
+		t.Errorf("Invited = %+v, want False naming %s and ura_max_channels", c, bob)
+	}
+	for _, purpose := range model.ChatPurposes {
+		if in := slices.Contains(x.channel(t, chat, purpose).Members, bob); in != (purpose != model.ChatAlerts) {
+			t.Errorf("bob in %s = %v, want %v", purpose, in, purpose != model.ChatAlerts)
+		}
+	}
+
+	if err := x.ws.Remove(general, bob); err != nil {
+		t.Fatal(err)
+	}
+	for pass := range 3 {
+		invites := x.ws.Calls("conversations.invite")
+		chat = x.ready(t)
+		if slices.Contains(x.channel(t, chat, model.ChatGeneral).Members, bob) {
+			t.Fatalf("pass %d: bob, who left general, is back in it", pass)
+		}
+		// The refusingHost answers bob's invite to alerts without a call.
+		if got := x.ws.Calls("conversations.invite") - invites; got != 0 {
+			t.Errorf("pass %d: conversations.invite called %d times, want none: bob is asked to alerts alone",
+				pass, got)
+		}
+	}
+
+	rf.set(alerts, bob, "")
+	chat = x.ready(t)
+	if len(chat.Status.Refused) != 0 || !slices.Contains(chat.Status.Invited, bob) {
+		t.Errorf("status.refused = %+v, invited = %v; want none refused and bob invited", chat.Status.Refused,
+			chat.Status.Invited)
+	}
+	if !slices.Contains(x.channel(t, chat, model.ChatAlerts).Members, bob) {
+		t.Error("bob is not in alerts once Slack takes him")
+	}
+	if slices.Contains(x.channel(t, chat, model.ChatGeneral).Members, bob) {
+		t.Error("bob, who left general, is back in it")
+	}
+}
+
+// TestSlackChatRemadeChannelRefusingAnInvitedPerson covers #251's remade
+// channel: ada and bob are invited everywhere; bob leaves general and is
+// deactivated, and an admin deletes alerts. The next pass makes alerts
+// again, invites ada and records bob as refused in the new alerts alone.
+// Once bob is active again he is asked to alerts alone, and general never
+// pulls him back. Before, the refusal dropped bob from status.invited, and
+// the pass after his account came back invited him to every channel.
+func TestSlackChatRemadeChannelRefusingAnInvitedPerson(t *testing.T) {
+	x := newSlackWorkspaceChat(t, "bob")
+	bob := x.others[0]
+	rf := x.refusing()
+	first := x.ready(t)
+	general, alerts := x.channel(t, first, model.ChatGeneral).ID, x.channel(t, first, model.ChatAlerts).ID
+	if err := x.ws.Remove(general, bob); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.ws.Delete(alerts); err != nil {
+		t.Fatal(err)
+	}
+	rf.set("*", bob, "user_not_found")
+
+	chat := x.ready(t)
+	made := x.channel(t, chat, model.ChatAlerts)
+	want := []c4v1beta1.ChatRefusedPerson{{ID: bob, Code: "user_not_found", Rooms: []string{made.ID}}}
+	if made.ID == alerts || !slices.Contains(made.Members, x.ada) {
+		t.Errorf("alerts = %s with %v, want a new channel with ada", made.ID, made.Members)
+	}
+	if !reflect.DeepEqual(chat.Status.Refused, want) || !slices.Equal(chat.Status.Invited, []string{x.ada}) {
+		t.Errorf("status.refused = %+v, invited = %v; want %+v and ada alone", chat.Status.Refused,
+			chat.Status.Invited, want)
+	}
+
+	rf.set("*", bob, "")
+	for pass := range 2 {
+		chat = x.ready(t)
+		if !slices.Contains(x.channel(t, chat, model.ChatAlerts).Members, bob) {
+			t.Errorf("pass %d: bob is not in the alerts made again", pass)
+		}
+		if slices.Contains(x.channel(t, chat, model.ChatGeneral).Members, bob) {
+			t.Fatalf("pass %d: bob, who left general, is back in it", pass)
+		}
+		if len(chat.Status.Refused) != 0 || !slices.Contains(chat.Status.Invited, bob) {
+			t.Errorf("pass %d: status.refused = %+v, invited = %v; want none refused and bob invited", pass,
+				chat.Status.Refused, chat.Status.Invited)
+		}
+	}
+}
+
+// TestChatInvitedNotCheckedAfterAFailedPass covers #251: a pass that ends
+// Unreachable before the invites turns Invited to Unknown, NotChecked, at
+// the Chat's generation, so the last pass's True is not read as current;
+// the next pass that reaches the invites sets it True again.
+func TestChatInvitedNotCheckedAfterAFailedPass(t *testing.T) {
+	x := newSlackWorkspaceChat(t)
+	chat := x.ready(t)
+	if c := apimeta.FindStatusCondition(chat.Status.Conditions, c4v1beta1.ConditionChatInvited); c == nil ||
+		c.Status != metav1.ConditionTrue {
+		t.Fatalf("Invited = %+v, want True", c)
+	}
+	x.calls.fail("/auth.test", 0)
+	chat = x.notReady(t, "auth.test failed")
+	c := apimeta.FindStatusCondition(chat.Status.Conditions, c4v1beta1.ConditionChatInvited)
+	if c == nil || c.Status != metav1.ConditionUnknown || c.Reason != model.ChatInviteNotChecked ||
+		c.Message != model.ChatInviteNotCheckedMessage(model.ChatUnreachable) || c.ObservedGeneration != chat.Generation {
+		t.Errorf("Invited = %+v, want Unknown, NotChecked, naming Unreachable, at generation %d", c, chat.Generation)
+	}
+	chat = x.ready(t)
+	if c := apimeta.FindStatusCondition(chat.Status.Conditions, c4v1beta1.ConditionChatInvited); c == nil ||
+		c.Status != metav1.ConditionTrue {
+		t.Errorf("Invited = %+v after a pass that reached the invites, want True", c)
 	}
 }
