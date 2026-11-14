@@ -2119,7 +2119,83 @@ model exported from a cluster becomes a project repository, once its Crew
 is paused and `main`'s rule names the person's account. A person keeps a
 Container to a Crew or to outside sessions. The label is all that checks
 it: a Crew starts only `status/ready` issues, and a session never takes a
-`status/in-progress` issue that has no counted claim marker.
+`status/in-progress` issue that has no counted marker.
+
+## Agents outside the cluster
+
+*Decided, not built* (#260,
+[plans/external-agents.md](plans/external-agents.md)).
+
+An Agent with `harness: external` is one the factory does not run: a
+teammate's local agent, a cloud session, a hosted agent or a person. For
+its run the operator makes no sandbox. It offers the work on the Git host,
+waits for the agent's push, and from there treats the Task as any other:
+it opens the pull request as the Container's bot, which it makes before
+the first offer, waits for the checks, runs the reviewer and merges.
+
+- **The Git host is the only channel.** The operator creates the Task's
+  branch and posts the work order on the issue: the Agent and its account,
+  the branch, the role, the round's feedback, the guides to read and the
+  lease. The agent answers with the marker comments of *Without a
+  cluster*: it claims the run, renews its lease, and ends with `done` and
+  the commit it pushed, or with `blocked`, `nothing` or `release`. Markers
+  count only from the Agent's account, and the work order only from the
+  operator's. A marker is a whole comment that begins with its marker
+  line; a comment that quotes one is none. An outside agent holds no
+  credential of the cluster.
+- **The operator schedules, the agent answers.** The work order is a
+  counted marker and mentions the account. In a Crew's repository
+  `theos`, told the operator's login, takes only an issue the operator
+  offered the account, with a claim on the branch as it is: never a
+  `status/ready` issue, which is the Crew's to start. Only the client
+  holds a session to that (`OwnCredential`).
+- **A silent agent loses its run.** Once its lease and the grace are past
+  (60 and 5 minutes unless the Agent says otherwise), by the times the
+  host stamped, the operator ends the run and offers it again, as it runs
+  an interrupted sandbox again: twice in a round at no cost, then the
+  round fails. The branch keeps the commits for the next claim. An offer
+  nobody claims waits, and becomes a Needs-you item.
+- **Implementer, spec writer and triager only.** An external Agent lists
+  the roles it may fill, and the CRD's enum holds no other: the reviewer
+  and the verifier decide the merge, a plan has no reviewer, and a judge's
+  and a Benchmark's numbers are the measure. The operator runs a role
+  outside only for an Agent that lists it; an external Agent named in any
+  other spot stops the Crew or the Task, `ExternalNotAllowed`.
+- **An account of its own.** The Agent names its account on the Git host.
+  While a Crew names the Agent, the operator gives that account write
+  access to the Container's repository and lists it in the Container's
+  status; it takes the access away once no Crew of the Container leads to
+  the account, and before a deleted Container goes. When the Git host
+  cannot be asked, or fails for ten minutes, the Container goes all the
+  same and an Event names the account left there. Its token is its
+  holder's and never enters the cluster. An account that is the
+  operator's, a bot's or another Agent's, that writes the repository some other way, or that
+  administers it, is refused, and an access level the operator does not
+  know reads as administration. The account is one of the factory's: its
+  review of a pull request is no person's approval.
+- **A person registers it, as themselves.** The admission policy refuses a
+  ServiceAccount's or a node's write that sets or changes an Agent's
+  `external` block, and the block names the person whose delegate the
+  Agent is, in the API server's words.
+- **Where the agent reaches the host.** The chart's Gitea answers in the
+  cluster and on a port-forward, which a person runs, and registration is
+  off there: its site administrator makes the agent's account. An agent
+  anywhere else needs a Gitea the user runs at an address it reaches, or
+  GitHub once a GitProvider can name it.
+
+What the spot is without, in the words the Crew's status, each work order
+and each pull request carry: `NoFence` (no NetworkPolicy, tokenless pod or
+deadline: the agent's own runtime is all there is), `OwnModelCredential`
+(no model proxy), `NoCheckpoint` (no resume, and a pause stops no run
+under way), `CostUnreported` (each run counts in `runsWithoutCost`, and
+a Crew's `taskBudgetUSD` does not see it), `OwnCredential` (the token is
+its holder's: with write access the account can label, edit and close
+issues and pull requests and push every branch but `main`, and the
+factory can only take the access away) and `OfferIsAComment` (a work
+order is told from a look-alike only by its author, which `theos` checks
+against the operator's login). What still holds is the Git host's part of
+*The fence*: `main` takes no push, only the operator merges, and no
+change to a protected path or with a red required check merges.
 
 ## Distribution and issues
 

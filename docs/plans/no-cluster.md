@@ -38,7 +38,7 @@ cluster made can be worked without one.
 | #268 the CLI and MCP server | step 1; `agents` is step 2, claims step 3, `plan` step 5, `mcp` step 6 | the model is three files under `model/` in a project repository, not `.theos.yaml` (2); ChatGPT is not a listed MCP client (6) |
 | #269 any Git provider | step 8; GitLab without a cluster is step 9 | the credential is `THEOS_GIT_TOKEN` or `git credential fill`, not each host's CLI (9); GitLab as a cluster's host gets an issue of its own, and Bitbucket is not planned (11) |
 | #270 Containers in one repository | out of scope | it changes the model for the cluster too and needs its own plan |
-| #260 an agent outside the cluster | kept | its plan comes after steps 2 and 3, whose markers, lease and work order it should reuse |
+| #260 an agent outside the cluster | kept | its plan, [external-agents.md](external-agents.md), reuses the markers, lease and work order of steps 2 and 3 |
 | #259 subagents per role | kept as filed | step 2 writes role subagents in the project repository and changes none of its files |
 | #57 GitHub as a host, #58 more harnesses | kept | no-cluster uses #57's adapter as it is, and only a move to a cluster on GitHub needs #81; #58 is about a sandbox, and shares the rule that `AGENTS.md` is the one guide |
 
@@ -154,9 +154,11 @@ Code is cited as it is on main at fa3c409.
    overlap:
    - *Another session's counted claim, alive:* taken. The session posts
      nothing and takes another issue.
-   - *Counted markers, none alive* (run out, or released): a takeover. The
-     session posts a `claim`, reads the issue until its own comment shows,
-     and works only if the markers name it, on the branch as it is.
+   - *Counted markers, none alive* (run out, released, or an operator's
+     work order nobody claimed yet:
+     [external-agents.md](external-agents.md), decision 14): a takeover.
+     The session posts a `claim`, reads the issue until its own comment
+     shows, and works only if the markers name it, on the branch as it is.
    - *No counted marker:* no comment has a time to compare, so the branch
      decides. With no branch and no `status/in-progress`, the session
      creates the branch: the one the host lets through posts the first
