@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Chat } from '../k8s/types'
-import { chatOf, chatSummary, matrixToHref } from './chat'
+import { chatHost, chatOf, chatSummary, matrixToHref } from './chat'
 
 function chat(name: string, more: Partial<Chat> = {}, created = '2026-11-05T10:00:00Z'): Chat {
   return {
@@ -125,5 +125,74 @@ describe('chatSummary', () => {
     expect(stale('True').refused).toEqual([])
     expect(stale('Unknown').refused).toEqual([])
     expect(chatSummary(chat('webshop')).refused).toEqual([])
+  })
+
+  it('#162: a Chat with no host, or host: matrix, is on Matrix and keeps its Space and homeserver', () => {
+    const base = chat('webshop', {
+      spec: { credentialsSecretRef: { name: 'matrix-bot' }, homeserver: 'https://matrix.example.com' },
+      status: { space: { id: '!s:example.com', alias: '#theos-webshop:example.com' } },
+    })
+    for (const c of [base, { ...base, spec: { ...base.spec, host: 'matrix' as const } }]) {
+      const s = chatSummary(c)
+      expect(chatHost(c)).toBe('matrix')
+      expect(s.host).toBe('matrix')
+      expect(s.homeserver).toBe('https://matrix.example.com')
+      expect(s.space?.target).toBe('#theos-webshop:example.com')
+      expect(s.people).toEqual([])
+    }
+  })
+
+  it('#162: a Slack Chat has no Space, no homeserver and no link, its rooms are channels and its people are by slackID', () => {
+    const s = chatSummary(
+      chat('webshop', {
+        spec: {
+          host: 'slack',
+          credentialsSecretRef: { name: 'slack-bot' },
+          // A Slack Chat names no homeserver and no space (CEL); status holds what the operator reached.
+          slack: {
+            people: [
+              { slackID: 'U0TESTADA01', user: 'ada@example.com', groups: ['developers'] },
+              { slackID: 'U0TESTBOB02', user: 'bob@example.com' },
+            ],
+          },
+        },
+        status: {
+          homeserver: 'https://slack.com/api',
+          space: { id: '!ignored:example.com' },
+          rooms: [
+            { purpose: 'general', id: 'C0TESTGEN01', alias: '#theos-webshop-general' },
+            { purpose: 'alerts', id: 'C0TESTALE02' },
+          ],
+          conditions: [ready('True', 'Ready', '')],
+        },
+      }),
+    )
+    expect(s.host).toBe('slack')
+    expect(s.homeserver).toBeUndefined()
+    expect(s.space).toBeUndefined()
+    expect(s.rooms.map((r) => [r.purpose, r.name, r.target, r.href])).toEqual([
+      ['updates', '#theos-webshop-updates', undefined, undefined],
+      ['general', '#theos-webshop-general', '#theos-webshop-general', undefined],
+      ['triage', '#theos-webshop-triage', undefined, undefined],
+      ['specs', '#theos-webshop-specs', undefined, undefined],
+      ['reviews', '#theos-webshop-reviews', undefined, undefined],
+      // Made, but the operator stored no alias: the ID is all the Chat carries, and is shown as it is.
+      ['alerts', 'C0TESTALE02', 'C0TESTALE02', undefined],
+    ])
+    expect(s.people).toEqual([
+      { id: 'U0TESTADA01', user: 'ada@example.com', groups: ['developers'] },
+      { id: 'U0TESTBOB02', user: 'bob@example.com', groups: [] },
+    ])
+    expect(s.ready).toEqual({ state: 'ready', reason: 'Ready', message: 'The channels are there.' })
+  })
+
+  it('#162: a Slack Chat names its channels after its aliasPrefix, and lists no people it holds none of', () => {
+    const s = chatSummary(
+      chat('webshop', {
+        spec: { host: 'slack', credentialsSecretRef: { name: 'slack-bot' }, aliasPrefix: 'acme_shop' },
+      }),
+    )
+    expect(s.rooms[0].name).toBe('#acme_shop-updates')
+    expect(s.people).toEqual([])
   })
 })

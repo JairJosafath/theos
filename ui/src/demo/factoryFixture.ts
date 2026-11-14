@@ -111,7 +111,7 @@ export function demoFactory(now: number): FactoryData {
     sessions: story.sessions,
     crews: story.crews,
     briefs: story.briefs,
-    chats: [demoChat(at(240))],
+    chats: [demoChat(at(240)), demoSlackChat(at(180))],
   }
 }
 
@@ -153,6 +153,58 @@ function demoChat(created: string): Chat {
           status: 'False',
           reason: 'InviteRefused',
           message: `@ghost:${server}: M_NOT_FOUND`,
+          lastTransitionTime: created,
+        },
+      ],
+    },
+  }
+}
+
+/**
+ * A Chat on Slack (#162), in a namespace of its own: a namespace has one Chat, so it cannot sit in webshop beside the
+ * Matrix one. Six private channels, no Space, its people by Slack member ID; open it with ?project=webshop-slack.
+ */
+function demoSlackChat(created: string): Chat {
+  const purposes = ['updates', 'general', 'triage', 'specs', 'reviews', 'alerts'] as const
+  return {
+    metadata: {
+      name: 'webshop-slack',
+      namespace: 'webshop-slack',
+      uid: 'demo-chat-webshop-slack',
+      creationTimestamp: created,
+    },
+    spec: {
+      host: 'slack',
+      credentialsSecretRef: { name: 'slack-bot' },
+      slack: {
+        people: [
+          { slackID: 'U0DEMOADA01', user: 'ada@example.com', groups: ['developers'] },
+          { slackID: 'U0DEMOBOB02', user: 'bob@example.com' },
+        ],
+      },
+    },
+    status: {
+      homeserver: 'https://slack.com/api',
+      bot: 'U0DEMOBOT00',
+      rooms: purposes.map((purpose) => ({
+        purpose,
+        id: `C0DEMO${purpose.toUpperCase().slice(0, 4)}`,
+        alias: `#theos-webshop-slack-${purpose}`,
+      })),
+      invited: ['U0DEMOADA01', 'U0DEMOBOB02'],
+      conditions: [
+        {
+          type: 'Ready',
+          status: 'True',
+          reason: 'Ready',
+          message: 'The 6 rooms are ready on https://slack.com/api, with no Space, 2 people invited',
+          lastTransitionTime: created,
+        },
+        {
+          type: 'Invited',
+          status: 'True',
+          reason: 'Invited',
+          message: 'Every person is invited to every room',
           lastTransitionTime: created,
         },
       ],

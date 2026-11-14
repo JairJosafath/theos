@@ -652,9 +652,17 @@ export interface GitProvider extends K8sObject {
 export const CHAT_PURPOSES = ['updates', 'general', 'triage', 'specs', 'reviews', 'alerts'] as const
 export type ChatPurpose = (typeof CHAT_PURPOSES)[number]
 
-/** A project's Space on a Matrix homeserver, where people follow and steer the factory: one per namespace. */
+/** The chat app a Chat is on (docs/plans/requests-and-chat.md, decision 1). A Chat with no host is on matrix: the CRD defaults it. */
+export type ChatHost = 'matrix' | 'slack'
+
+/**
+ * A project's conversation with the factory on a chat host, where people follow and steer it: one per
+ * namespace. On Matrix, a Space on a homeserver with a room per purpose; on Slack, a private channel per
+ * purpose and no Space (the workspace is the Space), its people in spec.slack.people.
+ */
 export interface Chat extends K8sObject {
   spec: {
+    host?: ChatHost
     homeserver?: string
     credentialsSecretRef: LocalRef
     space?: string
@@ -662,6 +670,10 @@ export interface Chat extends K8sObject {
     rooms?: Partial<Record<ChatPurpose, string>>
     digestMinutes?: number
     people?: { matrixID: string; user: string; groups?: string[] }[]
+    /** What a Chat with host: slack holds of its own; a Matrix Chat has none (the CRD refuses it). */
+    slack?: {
+      people?: { slackID: string; user: string; groups?: string[] }[]
+    }
   }
   status?: {
     homeserver?: string
