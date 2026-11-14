@@ -248,13 +248,18 @@ describe('the Chat panel', () => {
       expect(html).toContain('Unknown: The operator has not reported on it yet.')
     })
 
-    it('lists the people of spec.slack.people by Slack ID, with the user and groups', () => {
+    it('lists the people of spec.slack.people by Slack ID', () => {
       const html = render(slack)
-      expect(html).toContain(
-        '<span>U0TESTADA01</span><span class="muted small"> ada@example.com (developers, ops)</span>',
-      )
-      expect(html).toContain('<span>W0TESTBOB02</span><span class="muted small"> bob@example.com</span>')
+      expect(html).toContain('<li><span>U0TESTADA01</span></li>')
+      expect(html).toContain('<li><span>W0TESTBOB02</span></li>')
       expect(render({ ...slack, spec: { ...slack.spec, slack: undefined } })).toContain('No one is listed')
+    })
+
+    it('#162: does not show the Kubernetes user or groups of a person', () => {
+      const html = render(slack)
+      for (const hidden of ['ada@example.com', 'bob@example.com', 'developers', 'ops)']) {
+        expect(html).not.toContain(hidden)
+      }
     })
 
     it('shows a refused invite by Slack ID, naming the channels', () => {
@@ -270,6 +275,8 @@ describe('the Chat panel', () => {
         },
       })
       expect(html).toContain('The host refused the invite for U0TESTGHO03: user_not_found (rooms: #acme_shop-specs).')
+      // On Slack the note points at slack.people; Matrix's wording is unchanged.
+      expect(html).toContain('check the ID in the Chat&#x27;s slack.people.')
     })
 
     it('renders what the Chat holds as text, never as HTML', () => {
@@ -297,6 +304,9 @@ describe('the Chat panel', () => {
       expect(html).toContain('#theos-webshop-slack-alerts')
       expect(html).toContain('U0DEMOADA01')
       expect(html).not.toContain('Homeserver')
+      // One channel not made yet and one refused person, so the demo shows them.
+      expect(html).toContain('not made yet')
+      expect(html).toContain('The host refused the invite for U0DEMOGHO03')
     })
   })
 })

@@ -43,7 +43,7 @@ export function ChatPanel({ chat, problems = [] }: { chat?: Chat; problems?: Pro
           {s.ready.reason && s.ready.state !== 'ready' ? ` (${s.ready.reason})` : ''}: {s.ready.message}
         </dd>
       </dl>
-      <Refused refused={s.refused} />
+      <Refused refused={s.refused} where="the Chat's people" />
       <ul className="chat-rooms" aria-label="Rooms">
         {s.rooms.map((r) => (
           <li key={r.purpose}>
@@ -65,7 +65,7 @@ function MatrixLink({ href, children }: { href: string; children: string }) {
   )
 }
 
-function Refused({ refused }: { refused: ChatSummary['refused'] }) {
+function Refused({ refused, where }: { refused: ChatSummary['refused']; where: string }) {
   if (!refused.length) return null
   return (
     <div className="chat-refused" role="note" aria-label="Refused invites">
@@ -80,8 +80,8 @@ function Refused({ refused }: { refused: ChatSummary['refused'] }) {
         ))}
       </ul>
       <p className="muted small">
-        The Chat keeps working for everyone else. The operator asks the host again about those rooms; check the ID in
-        the Chat&apos;s people.
+        The Chat keeps working for everyone else. The operator asks the host again about those rooms; check the ID in{' '}
+        {where}.
       </p>
     </div>
   )
@@ -104,7 +104,7 @@ function SlackChat({ s }: { s: ChatSummary }) {
           {s.ready.reason && s.ready.state !== 'ready' ? ` (${s.ready.reason})` : ''}: {s.ready.message}
         </dd>
       </dl>
-      <Refused refused={s.refused} />
+      <Refused refused={s.refused} where="the Chat's slack.people" />
       <p className="chat-list-title">Channels</p>
       <ul className="chat-rooms" aria-label="Channels">
         {s.rooms.map((r) => (
@@ -121,11 +121,6 @@ function SlackChat({ s }: { s: ChatSummary }) {
           s.people.map((p) => (
             <li key={p.id}>
               <span>{p.id}</span>
-              <span className="muted small">
-                {' '}
-                {p.user}
-                {p.groups.length ? ` (${p.groups.join(', ')})` : ''}
-              </span>
             </li>
           ))
         ) : (

@@ -162,7 +162,7 @@ function demoChat(created: string): Chat {
 
 /**
  * A Chat on Slack (#162), in a namespace of its own: a namespace has one Chat, so it cannot sit in webshop beside the
- * Matrix one. Six private channels, no Space, its people by Slack member ID; open it with ?project=webshop-slack.
+ * Matrix one. Six private channels (one not made yet), no Space, its people by Slack member ID (one refused); open it with ?project=webshop-slack.
  */
 function demoSlackChat(created: string): Chat {
   const purposes = ['updates', 'general', 'triage', 'specs', 'reviews', 'alerts'] as const
@@ -180,31 +180,36 @@ function demoSlackChat(created: string): Chat {
         people: [
           { slackID: 'U0DEMOADA01', user: 'ada@example.com', groups: ['developers'] },
           { slackID: 'U0DEMOBOB02', user: 'bob@example.com' },
+          { slackID: 'U0DEMOGHO03', user: 'gus@example.com' },
         ],
       },
     },
     status: {
       homeserver: 'https://slack.com/api',
       bot: 'U0DEMOBOT00',
-      rooms: purposes.map((purpose) => ({
-        purpose,
-        id: `C0DEMO${purpose.toUpperCase().slice(0, 4)}`,
-        alias: `#theos-webshop-slack-${purpose}`,
-      })),
+      // The alerts channel is not made yet: it has no entry here.
+      rooms: purposes
+        .filter((purpose) => purpose !== 'alerts')
+        .map((purpose) => ({
+          purpose,
+          id: `C0DEMO${purpose.toUpperCase().slice(0, 4)}`,
+          alias: `#theos-webshop-slack-${purpose}`,
+        })),
       invited: ['U0DEMOADA01', 'U0DEMOBOB02'],
+      refused: [{ id: 'U0DEMOGHO03', code: 'user_not_found', rooms: ['C0DEMOSPEC'] }],
       conditions: [
         {
           type: 'Ready',
           status: 'True',
           reason: 'Ready',
-          message: 'The 6 rooms are ready on https://slack.com/api, with no Space, 2 people invited',
+          message: 'The 5 rooms are ready on https://slack.com/api, with no Space; 2 people invited',
           lastTransitionTime: created,
         },
         {
           type: 'Invited',
-          status: 'True',
-          reason: 'Invited',
-          message: 'Every person is invited to every room',
+          status: 'False',
+          reason: 'InviteRefused',
+          message: 'The host refused the invite for U0DEMOGHO03',
           lastTransitionTime: created,
         },
       ],

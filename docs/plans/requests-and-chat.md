@@ -1327,6 +1327,24 @@ Left as it is, and why:
   guide's page for each tracker. The UI (step 12) still reads a source's
   request as `undefined #412`: steps 9, 10 and 12 ship in one release.
 
+## Step 11 as built (#162)
+
+- **What the panel shows for a Slack Chat:** the host, Ready, any refused
+  invites, each room as a channel, and the people of `spec.slack.people`. No
+  Space, no homeserver.
+- **People: the `slackID` only, not the Kubernetes user or groups.** #162 asks
+  for "its people"; the user and groups say as whom a person's commands run, and
+  the page puts them in front of every viewer of the project (kubectl readers of
+  the Chat still see them). The refused note on a Slack Chat points at
+  `slack.people`; Matrix's wording is unchanged.
+- **A channel's name** is the one the operator made (`status.rooms[].alias`),
+  else the one it will make: `#`, the prefix, `-`, the purpose, where the prefix
+  is `spec.aliasPrefix` or `theos-<namespace>`. That mirrors
+  `model.ChatAliasPrefix` and `ChatRoomAlias`; a channel not made yet says so.
+- **The demo** has the Slack Chat in its own namespace, `webshop-slack`: open
+  `?demo=1&area=about&project=webshop-slack`. It shows one channel not made yet
+  and one refused person.
+
 ## How we will know #61 is done
 
 The issue's done-when, by step:
