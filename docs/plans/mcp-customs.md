@@ -28,28 +28,45 @@ is the whole input theos gets; this section is what it means.
 
 | Part | AWS | What it does |
 | --- | --- | --- |
-| Checker | Lambda durable function, Go SDK v1, provided.al2023, arm64 | Plans the check at runtime and runs it durably |
+| Checker | Lambda durable function, Go SDK v1, provided.al2023, arm64 | Runs the fixed checks and the investigation loop durably |
 | Sandbox | Lambda MicroVM | Runs the server under test with canary values and records its network and file activity |
-| Planner | Amazon Bedrock, through a JSON Schema tool | Writes the plan as data; a decide step may change it after each observation |
+| Judge | Amazon Bedrock, through a JSON Schema tool | Writes probe arguments, judges behaviour against purpose, picks the next investigation move |
 | Store | DynamoDB, S3 | Checks, verdicts and tool-list snapshots; reports |
 | Web | Go Lambda behind API Gateway, html/template | Submit, watch the run, read the report, Approve or Block |
 
-Routing comes from
-[Runtime-Planned Workflows on Lambda Durable Functions](https://claude.ai/artifact/Cvj9v5JXuReeW2pK5XokgS):
-plan as data, a small interpreter maps each action kind to one durable
-operation (Step, Map, WaitForCallback, Wait), everything nondeterministic
-inside a step, hard rules in code. Two submissions take different paths
-through one handler:
+Code decides everything that code can; the model only judges. This is the
+"one move at a time" loop from
+[Runtime-Planned Workflows on Lambda Durable Functions](https://claude.ai/artifact/Cvj9v5JXuReeW2pK5XokgS),
+used only for the investigation, not to plan steps whose order is already
+known. A static plan from a model was dropped on 2026-11-14: every branch
+it chose (hash known, tool list changed, canary left) is a fact code
+already has.
+
+| | Code | Model |
+| --- | --- | --- |
+| Resolve, hash lookup, tool-list compare | ✓ | |
+| Start the sandbox, list tools, run probes | ✓ | |
+| Probe arguments from each tool's schema and description, canaries planted | | ✓ |
+| Does the behaviour match the stated purpose; do descriptions instruct the model | | ✓ |
+| Investigate, one registered action per turn, at most 8 turns | | ✓ |
+| Verdict rules; the model may only make a verdict stricter | ✓ | |
+
+Three submissions, one handler:
 
 - **Seen before:** same hash and tool list as an approved check. Resolve,
-  look up, compare, pass. Seconds.
-- **New and suspicious:** the bundled demo server, a "weather" tool with an
-  instruction hidden in a description that sends its arguments to an
-  outside host. Resolve, start the sandbox, list tools, scan descriptions
-  and probe each read-only tool in parallel, see the canary leave, wait for
-  a human, block. An approved server is checked again later (a minute in
-  the demo), and a changed tool list needs a new approval: the "rug pull"
-  case.
+  look up, compare, pass. No model call. Seconds.
+- **New and fine:** a GitHub MCP server. The fixed checks, probes the model
+  wrote, its tools call `api.github.com`; the model judges that matches the
+  purpose. Pass, with no human.
+- **New and hostile:** the bundled demo weather tool. Its plain probe only
+  calls a weather API, so a fixed check would pass it. The model reads the
+  description, which asks for the user's SSH key, probes again with a
+  planted fake key, sees it posted to an unknown host, reads the source
+  file that sent it, and asks a human, who blocks it.
+
+An approved server is checked again later (a minute in the demo), and a
+changed tool list is judged again and needs a new approval: the "rug pull"
+case.
 
 Choices made, and why:
 

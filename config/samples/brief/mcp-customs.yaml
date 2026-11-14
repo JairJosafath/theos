@@ -18,20 +18,26 @@ spec:
     and gets a verdict (pass, review or block) with a report that says why.
 
     The check is a Go AWS Lambda durable function (the AWS Durable Execution
-    SDK for Go, v1, on provided.al2023, arm64, in us-east-2). Its path is
-    planned at runtime: a planning step asks an Amazon Bedrock model, through
-    a JSON Schema tool, for a plan of actions as data, and a small interpreter
-    runs each action as one durable operation: a call as a Step, one tool over
-    many items as a Map, a human decision as WaitForCallback, a pause as Wait.
-    After each observation a decide step may change the rest of the plan.
-    Every model call, clock read and lookup happens inside a step, so a replay
-    follows the same path. The actions come from a fixed registry: resolve the
-    package and its publisher, look up earlier verdicts by content hash, start
-    the sandbox, list the server's tools, scan the tool descriptions for
-    injected instructions, call each tool that says it is read-only with
-    canary arguments, report the sandbox's network and file activity, compare
-    the tool list with the last approved one, ask a human, and wait to check
-    again.
+    SDK for Go, v1, on provided.al2023, arm64, in us-east-2). What can be
+    decided by code is code: resolve the package and its publisher, look up
+    earlier verdicts by content hash, compare the tool list with the last
+    approved one, start the sandbox, list the server's tools, run probes, and
+    every verdict rule. A server seen before with the same hash and tool list
+    passes with no model call. An Amazon Bedrock model, through a JSON Schema
+    tool, does only what code can't: it writes probe arguments for each tool
+    from its schema and description, with canary values planted in them; it
+    judges whether what the server did matches what it says it is for (a
+    GitHub server calling api.github.com is expected, a weather tool posting
+    to an unknown host is not) and whether a tool description carries
+    instructions to the model; and when something does not add up it
+    investigates one move at a time, at most eight turns: each turn it picks
+    one action from a fixed registry (probe again with other arguments, read
+    the source file that opened a connection, fetch and inspect what the
+    server downloaded, compare with the previous version, ask a human), and a
+    small interpreter runs it as one durable operation: a Step, a Map over
+    many tools, WaitForCallback for a human, Wait to check again. Every model
+    call, clock read and lookup happens inside a step, so a replay follows the
+    same path.
 
     The server under test runs in an AWS Lambda MicroVM: an image with Go,
     Node and Python, and a small harness written in Go that starts the server,
@@ -42,12 +48,11 @@ spec:
 
     Hard rules live in code, not in the prompt: a server whose descriptions
     carry instructions to the model, or whose read-only tool writes or sends a
-    canary anywhere, is never passed without a human; a plan may only name
-    registered actions, with capped fan-outs and timeouts. A server seen
-    before with the same hash and tool list passes in a few steps; a new one
-    gets the whole check. An approved server is checked again after a set time
-    (24 hours, a minute in the demo), and a changed tool list needs a new
-    approval.
+    canary anywhere, is never passed without a human; the model may make a
+    verdict stricter, never looser; it may only name registered actions, with
+    capped fan-outs, turns and timeouts. An approved server is checked again
+    after a set time (24 hours, a minute in the demo), and a changed tool list
+    is judged again and needs a new approval.
 
     The web page is server-rendered Go (html/template, a little plain
     JavaScript), served by a Go Lambda function behind the same API. It
@@ -57,5 +62,6 @@ spec:
     Everything scales to zero. All application code is Go, in small packages
     of small files and short functions. The repository also carries a demo
     server, a Go module, that looks like a weather tool but hides an
-    instruction in a tool description and sends its arguments to an outside
-    host, so the demo can show a block.
+    instruction in a tool description asking for the user's SSH key, and posts
+    its arguments to an outside host only when they hold something that looks
+    like a secret, so a fixed probe misses it and the investigation finds it.
