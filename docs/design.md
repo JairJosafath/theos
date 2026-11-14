@@ -40,7 +40,7 @@ once ([Why Kubernetes](#why-kubernetes)).
 | Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools, whose alerts file bugs. |
-| Where it runs | One Kubernetes cluster per install, of any number of nodes. Kind on one machine is the test rig and a way to try it, never the purpose ([Why Kubernetes](#why-kubernetes)). |
+| Where it runs | One Kubernetes cluster per install, of any number of nodes. Kind on one machine is the test rig and a way to try it, never the purpose ([Why Kubernetes](#why-kubernetes)). For one developer or a small team, the same method with no cluster, decided and not built ([Without a cluster](#without-a-cluster)). |
 
 ### Why Kubernetes
 
@@ -2009,6 +2009,76 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
   copied into the bootstrap's ECR repository as its image-publishing
   role, which reads tags as well as pushes (the copy resolves its tag
   first; a role without `ecr:BatchGetImage` refuses the credential, #1877).
+
+## Without a cluster
+
+*Decided, not built* (#265, [plans/no-cluster.md](plans/no-cluster.md); its
+steps are #266 to #269 and the issues that plan names).
+
+The cluster is one runtime of theos's method; an agent tool a person
+already uses is the other. Without a cluster there is no operator, no
+sandbox and no chart: a local binary, `theos`, runs the same rules
+(`internal/model`, `internal/scaffold`) against the same Git host ports,
+from a terminal or as an MCP server, and the person's own agent sessions do
+the work.
+
+- **One model.** The story is `model/model.yaml`, `theos.factory.io/v1beta1`
+  manifests with the catalog and the GitProvider, in the project's
+  repository (`theos-<project>` unless set). The host, its owner, the
+  registry and the npm scope are the GitProvider's fields; templates are
+  catalog entries at pinned refs. Nothing is a second format.
+- **The same repositories.** `theos scaffold` renders a Container's
+  repository through the function the operator calls, once, with the same
+  `.theos.yaml` and the same first commit. A Container repository holds
+  nothing that says which runtime made it.
+- **The project repository is the lead's seat.** A lead session plays the
+  operator's and the planner's part there: it reads the model, plans in the
+  Brief's plan format, files the issues and hands each to a role. The
+  method bundle (the lead playbook and a work order per role) is rendered
+  into that repository from one source, for Claude Code's subagents, for
+  tools that read `AGENTS.md`, and as prompts of the MCP server. The
+  Standard's `AGENTS.md` and role guides in each Container repository stay
+  what a role reads about the stack. A runtime without subagents plays one
+  role per session, and a review is always a fresh one.
+- **The Git host coordinates.** A session claims an issue with
+  `status/in-progress` and a marker comment that names it and when the
+  claim runs out; the earliest claim alive wins, and one that runs out is
+  taken over on its branch, `task/<issue>-<slug>`. Sessions in any tool
+  work one repository at once this way.
+- **A person merges, unless the host can tell the agents apart.** With
+  `merge: person`, the default, a person merges every pull request. With
+  `merge: rules`, `main` requires its checks and an approving review by an
+  account other than the author's, and `theos merge` merges through the
+  host adapter; it is refused while the reviewer has no account of its own.
+  A change to a protected path, a Standard's update and an adoption's pull
+  request are a person's in both.
+
+What the Git host still holds: `main` takes no push, the Standard's required
+checks, a review before the merge, and the protected paths where the host
+has a rule for them. What the mode is without, each under the reason word
+`theos status` prints:
+
+| Reason | Without a cluster |
+| --- | --- |
+| `NoFence` | no NetworkPolicy, tokenless pod or deadline: the runtime's own sandbox is all there is |
+| `OwnModelCredential` | no model proxy: the runtime holds its own key |
+| `NoCheckpoint` | no resume or pause: a dead session's commits stay on its branch for the next claim |
+| `CostUnreported` | no cost, tokens, metrics, Scorers or Benchmarks: the record is the issue and its pull request |
+| `PersonMerges`, `RulesMerge` | no operator merges |
+| `AgentHoldsOwnerCredential` | the agents act with the person's credential until a narrower one is made, and a branch rule binds nobody it lets past |
+| `RulesNotValidated` | the CRDs' CEL rules and the admission policy run only once the model reaches a cluster |
+| `ProtectedPathsByMerge` | on a host with no rule for paths, `theos merge` or the person who merges holds them |
+
+Crews, Briefs' rounds, releases, deploys, test environments, chat and the
+UI need the cluster.
+
+**Between the two.** A project made without a cluster is adopted by a
+cluster as any repository is ([adopt.md](adopt.md)): `theos export` prints
+the model with `adopt: true` and a Crew that holds every change for a
+person, and the repositories need no commit. The other way, a model
+exported from a cluster becomes a project repository, once its Crew is
+paused and `main`'s rule no longer keeps the merge to the operator. A
+Container is worked by a Crew or by outside sessions, never both.
 
 ## Distribution and issues
 
