@@ -17,17 +17,22 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"crypto/rand"
 	"slices"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/adapters/matrix/matrixtest"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // newChat is a Chat on chatFake whose bot's token is in Secret secret.
@@ -282,4 +287,126 @@ var _ = Describe("Chat", func() {
 			To(MatchError(ContainSubstring("aliasPrefix is immutable")))
 		Expect(patch(set, func() { set.Spec.Space = "Shop" })).To(Succeed())
 	})
+
+	It("reads a Chat that names no host as on matrix, and keeps its host as it was made (#158)", func() {
+		ns := newProjectNamespace()
+		matrix := newChat(ns, "matrix", "matrix-bot")
+		mustCreate(matrix)
+		Expect(k8sClient.Get(ctx, key(ns, "matrix"), matrix)).To(Succeed())
+		Expect(matrix.Spec.Host).To(Equal(c4v1beta1.ChatHostMatrix))
+		Expect(patch(matrix, func() { matrix.Spec.Host, matrix.Spec.Homeserver = c4v1beta1.ChatHostSlack, "" })).
+			To(MatchError(ContainSubstring("host is immutable")))
+
+		slack := newSlackChat(ns, "slack", "slack-bot")
+		mustCreate(slack)
+		Expect(patch(slack, func() { slack.Spec.Host = c4v1beta1.ChatHostMatrix })).
+			To(MatchError(ContainSubstring("host is immutable")))
+		Expect(k8sClient.Get(ctx, key(ns, "slack"), slack)).To(Succeed())
+		Expect(patch(slack, func() { slack.Spec.Host = "" })).
+			To(MatchError(ContainSubstring("host is immutable")), "unset, host is matrix again")
+		Expect(k8sClient.Get(ctx, key(ns, "slack"), slack)).To(Succeed())
+		Expect(patch(slack, func() { slack.Spec.DigestMinutes = 5 })).To(Succeed())
+	})
+
+	DescribeTable("refuses a Slack Chat its CEL rules don't allow (#158)",
+		func(mutate func(*c4v1beta1.Chat), message string) {
+			ns := newProjectNamespace()
+			chat := newSlackChat(ns, "chat", "slack-bot")
+			chat.Spec.Slack = &c4v1beta1.ChatSlack{People: []c4v1beta1.ChatSlackPerson{
+				{SlackID: "U012AB3CD", User: "ada@example.com"}}}
+			mutate(chat)
+			Expect(k8sClient.Create(ctx, chat)).To(MatchError(ContainSubstring(message)))
+		},
+		Entry("slack on a Chat that names no host", func(c *c4v1beta1.Chat) { c.Spec.Host = "" },
+			"slack is only for a Chat with host: slack"),
+		Entry("slack on a Matrix Chat", func(c *c4v1beta1.Chat) {
+			c.Spec.Host, c.Spec.Homeserver = c4v1beta1.ChatHostMatrix, chatFake.URL()
+		}, "slack is only for a Chat with host: slack"),
+		Entry("a host the factory doesn't know", func(c *c4v1beta1.Chat) { c.Spec.Host = "teams" },
+			"spec.host: Unsupported value"),
+		Entry("a homeserver", func(c *c4v1beta1.Chat) { c.Spec.Homeserver = "https://matrix.example" },
+			"a Chat with host: slack names no homeserver"),
+		Entry("a space", func(c *c4v1beta1.Chat) { c.Spec.Space = "Shop" },
+			"a Chat with host: slack names no space"),
+		Entry("Matrix people", func(c *c4v1beta1.Chat) {
+			c.Spec.People = []c4v1beta1.ChatPerson{{MatrixID: "@ada:example.org", User: "ada@example.com"}}
+		}, "a Chat with host: slack lists its people under slack.people"),
+		Entry("a renamed room", func(c *c4v1beta1.Chat) { c.Spec.Rooms.General = "lobby" },
+			"a Chat with host: slack keeps each room's name its purpose"),
+		Entry("an alias prefix with a dot", func(c *c4v1beta1.Chat) { c.Spec.AliasPrefix = "acme.shop" },
+			"a Chat with host: slack needs an aliasPrefix Slack takes in a channel name"),
+		Entry("an alias prefix of 71 characters", func(c *c4v1beta1.Chat) { c.Spec.AliasPrefix = strings.Repeat("a", 71) },
+			"a Chat with host: slack needs an aliasPrefix Slack takes in a channel name"),
+		Entry("a slackID that isn't a member ID", func(c *c4v1beta1.Chat) { c.Spec.Slack.People[0].SlackID = "ada" },
+			"slackID must be a Slack member ID"),
+		Entry("a bot's ID", func(c *c4v1beta1.Chat) { c.Spec.Slack.People[0].SlackID = "B012AB3CD" },
+			"slackID must be a Slack member ID"),
+		Entry("a Slack person twice", func(c *c4v1beta1.Chat) {
+			c.Spec.Slack.People = append(c.Spec.Slack.People, c.Spec.Slack.People[0])
+		}, "Duplicate value"),
+		Entry("a system: user", func(c *c4v1beta1.Chat) { c.Spec.Slack.People[0].User = "system:admin" },
+			"user must be a person's name, not a system: identity"),
+		Entry("a system: group", func(c *c4v1beta1.Chat) {
+			c.Spec.Slack.People[0].Groups = []string{"team", "system:masters"}
+		}, "groups must be people's groups, not system: groups"),
+	)
+
+	It("takes a Slack Chat with its rooms at their defaults and a prefix Slack takes (#158)", func() {
+		ns := newProjectNamespace()
+		chat := newSlackChat(ns, "chat", "slack-bot")
+		chat.Spec.Rooms.General, chat.Spec.AliasPrefix = "general", "acme-shop-"+strings.Repeat("a", 60)
+		chat.Spec.Slack = &c4v1beta1.ChatSlack{}
+		mustCreate(chat)
+	})
+
+	It("leaves a Chat on a host it runs no adapter for alone, its Secret unread (#158)", func() {
+		ns := newProjectNamespace()
+		// A bot and its Secret are there: a Matrix Chat would get its rooms.
+		chatBot(ns)
+		chat := newSlackChat(ns, "chat", "matrix-bot")
+		mustCreate(chat)
+		cond := chatReady(chat, metav1.ConditionFalse, model.ChatHostNotSupported)
+		Expect(cond.Message).To(ContainSubstring("Chat chat is on slack, a chat host this operator runs no adapter for"))
+		Expect(chat.Status.Homeserver).To(BeEmpty())
+		Expect(chat.Status.Bot).To(BeEmpty())
+		Expect(chat.Status.Space).To(BeNil())
+		Expect(chat.Status.Rooms).To(BeEmpty())
+
+		By("reading no Secret and building no host, even with a homeserver and Matrix's adapter")
+		reads := &secretReads{Reader: k8sClient}
+		built := 0
+		r := &ChatReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), APIReader: reads,
+			Homeserver: chatFake.URL(), ChatHosts: map[string]ports.ChatHosts{
+				model.ChatMatrix: func(cfg ports.ChatConfig) (ports.ChatHost, error) {
+					built++
+					return chatHosts()[model.ChatMatrix](cfg)
+				}}}
+		res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key(ns, "chat")})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(res).To(Equal(ctrl.Result{}), "spec.host never changes, so it is not polled")
+		Expect(reads.secrets).To(BeZero())
+		Expect(built).To(BeZero())
+		chatReady(chat, metav1.ConditionFalse, model.ChatHostNotSupported)
+		Expect(chat.Status.Rooms).To(BeEmpty())
+	})
 })
+
+// newSlackChat is a Chat with host: slack whose bot's tokens are in Secret
+// secret.
+func newSlackChat(ns, name, secret string) *c4v1beta1.Chat {
+	return &c4v1beta1.Chat{ObjectMeta: objectMeta(ns, name), Spec: c4v1beta1.ChatSpec{
+		Host: c4v1beta1.ChatHostSlack, CredentialsSecretRef: c4v1beta1.LocalRef{Name: secret}}}
+}
+
+// secretReads is a client.Reader that counts the Secrets read through it.
+type secretReads struct {
+	client.Reader
+	secrets int
+}
+
+func (r *secretReads) Get(ctx context.Context, k client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if _, ok := obj.(*corev1.Secret); ok {
+		r.secrets++
+	}
+	return r.Reader.Get(ctx, k, obj, opts...)
+}

@@ -71,7 +71,9 @@ type ChatReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile reads the Chat's Secret, makes or finds its Space and rooms,
-// invites its people and writes what it found into status.
+// invites its people and writes what it found into status. A Chat on a
+// host the operator runs no adapter for is HostNotSupported, and nothing
+// more.
 func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var chat c4v1beta1.Chat
 	if err := r.Get(ctx, req.NamespacedName, &chat); err != nil {
@@ -93,15 +95,22 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return notReady(model.ChatDuplicate)
 	}
 
-	// Every Chat is on model.ChatSystemDefault until a Chat can name its
-	// host: step 8 of docs/plans/requests-and-chat.md reads spec.host here.
-	system, err := model.ChatSystemByName(model.ChatSystemDefault)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
+	// A Chat on a host the operator runs no adapter for (Slack until step 8
+	// of docs/plans/requests-and-chat.md, a host newer than the operator) is
+	// left alone before its Secret is read or a host called. spec.host is
+	// immutable, so it is not polled: only a new spec, or an operator
+	// restarted with that host's adapter, tries it again.
+	check.Host = model.ChatHostName(string(chat.Spec.Host))
+	system, err := model.ChatSystemByName(check.Host)
 	hosts, ok := r.ChatHosts[system.Name]
-	if !ok {
-		return ctrl.Result{}, fmt.Errorf("the operator has no adapter for the chat host %s", system.Name)
+	if err != nil || !ok {
+		if cond := apimeta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionChatReady); cond == nil ||
+			cond.Reason != model.ChatHostNotSupported {
+			logf.FromContext(ctx).Info("Left the Chat alone: the operator runs no adapter for its chat host",
+				"host", check.Host)
+		}
+		r.setReady(status, chat.Generation, model.ChatHostNotSupported, check)
+		return ctrl.Result{}, r.writeStatus(ctx, &chat, status)
 	}
 
 	check.Homeserver = chat.Spec.Homeserver

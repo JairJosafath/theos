@@ -1,0 +1,10 @@
+# expect: a Chat with host: slack names no space
+apiVersion: theos.factory.io/v1beta1
+kind: Chat
+metadata:
+  name: webshop
+  namespace: webshop
+spec:
+  host: slack
+  space: Webshop
+  credentialsSecretRef: {name: slack-bot}

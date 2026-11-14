@@ -1,0 +1,10 @@
+# expect: a Chat with host: slack needs an aliasPrefix Slack takes in a channel name
+apiVersion: theos.factory.io/v1beta1
+kind: Chat
+metadata:
+  name: webshop
+  namespace: webshop
+spec:
+  host: slack
+  aliasPrefix: acme.webshop
+  credentialsSecretRef: {name: slack-bot}

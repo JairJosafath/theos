@@ -97,7 +97,8 @@ func TestChatNames(t *testing.T) {
 
 func TestChatReadyMessage(t *testing.T) {
 	c := ChatCheck{Chat: "chat", Secret: "matrix-bot", Homeserver: "https://matrix.example", Space: "#theos-shop:example",
-		Alias: "#theos-shop-general:example", Rooms: 6, People: 1, Other: "first", Detail: "M_UNKNOWN_TOKEN"}
+		Alias: "#theos-shop-general:example", Rooms: 6, People: 1, Other: "first", Host: "slack",
+		Detail: "M_UNKNOWN_TOKEN"}
 	for reason, want := range map[string]string{
 		ChatReady:             "Space #theos-shop:example and its 6 rooms are ready on https://matrix.example; 1 person invited",
 		ChatSecretMissing:     "Secret matrix-bot is missing; whoever owns Chat chat creates it with the bot's access token under accessToken",
@@ -107,6 +108,9 @@ func TestChatReadyMessage(t *testing.T) {
 		ChatUnreachable:       "Could not reach the rooms on https://matrix.example: M_UNKNOWN_TOKEN",
 		ChatAliasTaken:        "Alias #theos-shop-general:example on https://matrix.example belongs to a room the bot is not in",
 		ChatDuplicate:         "Chat first already serves this namespace",
+		// #158: a Chat on a host the operator runs no adapter for.
+		ChatHostNotSupported: "Chat chat is on slack, a chat host this operator runs no adapter for; " +
+			"it reads no Secret and makes no rooms",
 	} {
 		if got := ChatReadyMessage(reason, c); !strings.HasPrefix(got, want) {
 			t.Errorf("ChatReadyMessage(%s) = %q, want it to start with %q", reason, got, want)

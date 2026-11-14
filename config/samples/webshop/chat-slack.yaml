@@ -1,0 +1,34 @@
+# The webshop's Chat on Slack instead of Matrix (docs/plans/requests-and-chat.md,
+# decisions 1 to 3): the six rooms of docs/plans/done/chat-matrix.md as
+# private channels named <aliasPrefix>-<purpose> (webshop-updates,
+# webshop-general, ...), and the people below, by their Slack member ID.
+# A Slack Chat names no homeserver and no space (the workspace is the Space),
+# lists no Matrix people and keeps each room's name; host can't change once
+# the Chat exists.
+# This operator runs no Slack adapter yet: it reports such a Chat Ready=False,
+# reason HostNotSupported, reads no Secret and makes no channel, and
+# theos-chat does nothing for it.
+# A namespace has one Chat: apply this one instead of chat.yaml, on its own,
+# with kubectl apply -n webshop -f config/samples/webshop/chat-slack.yaml
+apiVersion: theos.factory.io/v1beta1
+kind: Chat
+metadata:
+  name: webshop
+spec:
+  host: slack
+  credentialsSecretRef:
+    name: slack-bot
+  # A channel name takes lowercase letters, digits, - and _, so the
+  # prefix does too, at most 70 characters; unset, it is theos-<namespace>.
+  aliasPrefix: webshop
+  digestMinutes: 10
+  slack:
+    # Each person's commands are made as their Kubernetes user and groups,
+    # so the cluster's RBAC decides. Each person adds their own entry: the
+    # admission policy takes one only with the writer's own user and groups
+    # (config/policy/chat_people_policy.yaml), so ada applies this.
+    people:
+      - slackID: U0123ABCD
+        user: ada@example.com
+        groups:
+          - webshop-team

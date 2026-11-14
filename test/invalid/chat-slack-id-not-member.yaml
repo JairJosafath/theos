@@ -1,0 +1,13 @@
+# expect: slackID must be a Slack member ID
+apiVersion: theos.factory.io/v1beta1
+kind: Chat
+metadata:
+  name: webshop
+  namespace: webshop
+spec:
+  host: slack
+  credentialsSecretRef: {name: slack-bot}
+  slack:
+    people:
+    - slackID: ada
+      user: ada@example.com

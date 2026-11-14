@@ -1,0 +1,12 @@
+# expect: slack is only for a Chat with host: slack
+apiVersion: theos.factory.io/v1beta1
+kind: Chat
+metadata:
+  name: webshop
+  namespace: webshop
+spec:
+  credentialsSecretRef: {name: slack-bot}
+  slack:
+    people:
+    - slackID: U0123ABCD
+      user: ada@example.com

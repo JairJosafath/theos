@@ -41,8 +41,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          Chat is a project's Space on a Matrix homeserver, where people follow and
-          steer the factory: one per project namespace.
+          Chat is a project's rooms on a chat host, a Space on a Matrix homeserver
+          or channels in a Slack workspace, where people follow and steer the
+          factory: one per project namespace.
         properties:
           apiVersion:
             description: |-
@@ -62,8 +63,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec is the homeserver, the bot's Secret, the rooms and the
-              people.
+            description: spec is the host, the bot's Secret, the rooms and the people.
             properties:
               aliasPrefix:
                 description: |-
@@ -71,7 +71,9 @@ spec:
                   #<aliasPrefix>:<server>, and each room, #<aliasPrefix>-<purpose>:<server>,
                   by which it finds them again. Unset, it is theos-<namespace>. An alias
                   another account holds is not taken over: the Chat reports AliasTaken,
-                  and a prefix of the user's own avoids it on a shared homeserver.
+                  and a prefix of the user's own avoids it on a shared homeserver. On
+                  Slack it names the channels, <aliasPrefix>-<purpose>, so it takes no
+                  . or = and at most 70 characters.
                 maxLength: 100
                 minLength: 1
                 pattern: ^[a-z0-9][a-z0-9._=-]*$
@@ -117,12 +119,27 @@ spec:
                 - message: homeserver must be an http or https address, with no query
                     or fragment
                   rule: self.matches('^https?://[^/?#[:space:]]+(/[^?#[:space:]]*)?$')
+              host:
+                default: matrix
+                description: |-
+                  host is the chat app the Chat is on: matrix, a Matrix homeserver, or
+                  slack, a Slack workspace. A Chat written before the field is on
+                  matrix. It can't change: the rooms are on the host they were made on.
+                enum:
+                - matrix
+                - slack
+                type: string
+                x-kubernetes-validations:
+                - message: 'host is immutable: the rooms are on the host they were
+                    made on'
+                  rule: self == oldSelf
               people:
                 description: |-
                   people may speak to the factory: each is invited to the Space and its
                   rooms, and their commands are made as their Kubernetes user and
                   groups, by impersonation, so the cluster's RBAC decides. Anyone else
-                  in a room gets a one-line refusal.
+                  in a room gets a one-line refusal. A Chat with host: slack lists its
+                  people under slack.people instead.
                 items:
                   description: |-
                     ChatPerson is a Matrix account and the Kubernetes identity its commands
@@ -174,7 +191,9 @@ spec:
                   specs: specs
                   triage: triage
                   updates: updates
-                description: rooms names each room; each defaults to its purpose.
+                description: |-
+                  rooms names each room; each defaults to its purpose. On Slack each
+                  keeps its default: a channel has one name, its alias.
                 properties:
                   alerts:
                     default: alerts
@@ -231,6 +250,67 @@ spec:
                     self.alerts].all(n, [self.updates, self.general, self.triage,
                     self.specs, self.reviews, self.alerts].filter(m, m == n).size()
                     == 1)'
+              slack:
+                description: |-
+                  slack is what a Chat with host: slack holds of its own: its people,
+                  by Slack member ID.
+                properties:
+                  people:
+                    description: |-
+                      people may speak to the factory, each by their Slack member ID: each
+                      is invited to the rooms, and their commands are made as their
+                      Kubernetes user and groups, by impersonation, so the cluster's RBAC
+                      decides. Anyone else in a room gets a one-line refusal.
+                    items:
+                      description: |-
+                        ChatSlackPerson is a Slack member and the Kubernetes identity their
+                        commands are made as, held to the same rules as a ChatPerson.
+                      properties:
+                        groups:
+                          description: groups are the Kubernetes groups the person's
+                            commands are made with.
+                          items:
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                          maxItems: 20
+                          type: array
+                          x-kubernetes-list-type: set
+                          x-kubernetes-validations:
+                          - message: 'groups must be people''s groups, not system:
+                              groups'
+                            rule: self.all(g, !g.startsWith('system:'))
+                        slackID:
+                          description: |-
+                            slackID is the person's Slack member ID, U or W and then capital
+                            letters and digits, which a message's sender carries; not the e-mail
+                            address, which changes.
+                          maxLength: 32
+                          type: string
+                          x-kubernetes-validations:
+                          - message: 'slackID must be a Slack member ID: U or W, then
+                              capital letters and digits'
+                            rule: self.matches('^[UW][A-Z0-9]+$')
+                        user:
+                          description: user is the Kubernetes user name the person's
+                            commands are made as.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: 'user must be a person''s name, not a system:
+                              identity'
+                            rule: '!self.startsWith(''system:'')'
+                      required:
+                      - slackID
+                      - user
+                      type: object
+                    maxItems: 100
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - slackID
+                    x-kubernetes-list-type: map
+                type: object
               space:
                 description: |-
                   space is the Space's display name. Unset, it is the Project's
@@ -245,6 +325,30 @@ spec:
             - message: 'aliasPrefix can''t be set or unset once the Chat exists: the
                 rooms carry its aliases'
               rule: has(self.aliasPrefix) == has(oldSelf.aliasPrefix)
+            - message: 'slack is only for a Chat with host: slack'
+              rule: '!has(self.slack) || (has(self.host) && self.host == ''slack'')'
+            - message: 'a Chat with host: slack names no homeserver: that is Matrix''s'
+              rule: '!has(self.host) || self.host != ''slack'' || !has(self.homeserver)'
+            - message: 'a Chat with host: slack names no space: the Slack workspace
+                is the Space'
+              rule: '!has(self.host) || self.host != ''slack'' || !has(self.space)'
+            - message: 'a Chat with host: slack lists its people under slack.people,
+                by slackID, not under people'
+              rule: '!has(self.host) || self.host != ''slack'' || !has(self.people)
+                || size(self.people) == 0'
+            - message: 'a Chat with host: slack keeps each room''s name its purpose:
+                a channel is named <aliasPrefix>-<purpose>'
+              rule: '!has(self.host) || self.host != ''slack'' || !has(self.rooms)
+                || ((!has(self.rooms.updates) || self.rooms.updates == ''updates'')
+                && (!has(self.rooms.general) || self.rooms.general == ''general'')
+                && (!has(self.rooms.triage) || self.rooms.triage == ''triage'') &&
+                (!has(self.rooms.specs) || self.rooms.specs == ''specs'') && (!has(self.rooms.reviews)
+                || self.rooms.reviews == ''reviews'') && (!has(self.rooms.alerts)
+                || self.rooms.alerts == ''alerts''))'
+            - message: 'a Chat with host: slack needs an aliasPrefix Slack takes in
+                a channel name: no . or =, at most 70 characters'
+              rule: '!has(self.host) || self.host != ''slack'' || !has(self.aliasPrefix)
+                || (size(self.aliasPrefix) <= 70 && self.aliasPrefix.matches(''^[a-z0-9_-]+$''))'
           status:
             description: status is the Space and rooms the operator made, and Ready.
             properties:
