@@ -67,3 +67,34 @@ describe('DemoStorySource as a BriefWriter', () => {
     expect(spec()).toMatchObject({ paused: false, pauseRuns: false })
   })
 })
+
+describe('DemoStorySource answering a request source item (#163)', () => {
+  const feedback = (source: DemoStorySource) =>
+    source.getSnapshot().data.briefs.find((b) => b.metadata.name === 'product-feedback')!
+
+  it('sets the entry’s accepted and declined and leaves spec.releases and the rest of the entry alone', async () => {
+    const source = new DemoStorySource()
+    const entry = feedback(source).spec.requestSources![0]
+    await source.answerSourceRequest(DEMO_NAMESPACE, 'product-feedback', { index: 0, entry, accepted: [409, 412] })
+    expect(feedback(source).spec.requestSources).toEqual([{ ...entry, accepted: [409, 412] }])
+    expect(feedback(source).spec.releases).toBeUndefined()
+    await source.answerSourceRequest(DEMO_NAMESPACE, 'product-feedback', {
+      index: 0,
+      entry: feedback(source).spec.requestSources![0],
+      declined: [418],
+    })
+    expect(feedback(source).spec.requestSources![0]).not.toHaveProperty('accepted')
+    expect(feedback(source).spec.requestSources![0]).toMatchObject({ name: 'product', declined: [418] })
+  })
+
+  it('refuses an entry that is not at its place any more', async () => {
+    const source = new DemoStorySource()
+    const entry = { ...feedback(source).spec.requestSources![0], name: 'other' }
+    await expect(
+      source.answerSourceRequest(DEMO_NAMESPACE, 'product-feedback', { index: 0, entry, accepted: [1] }),
+    ).rejects.toThrow('changed since this page showed it')
+    await expect(
+      source.answerSourceRequest(DEMO_NAMESPACE, 'nope', { index: 0, entry, accepted: [1] }),
+    ).rejects.toThrow('not found')
+  })
+})

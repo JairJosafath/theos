@@ -12,11 +12,12 @@ import {
   type BriefNeedsYou,
   type BriefPhase,
   type BriefRelease,
+  type BriefRequestSource,
   type BriefTendedIssue,
   type TokenUsage,
 } from '../k8s/types'
 import { plural, type PhaseInfo, type Tone } from './describe'
-import { describeRequests, splitRequest, type RequestsView } from './requests'
+import { describeRequests, httpUrl, requestLabel, requestOfName, type RequestRef, type RequestsView } from './requests'
 import { compareText } from './order'
 
 /** The Brief phase as a badge label, colour tone and one-line explanation. */
@@ -102,6 +103,8 @@ export interface BriefView {
   requests: RequestsView
   /** spec.releases, which accepting or declining a request sends whole. */
   releases: BriefRelease[]
+  /** spec.requestSources, whose entry accepting or declining an item changes. */
+  requestSources: BriefRequestSource[]
   /** The resourceVersion the view was worked out from, which a releases write tests. */
   resourceVersion?: string
   repositoryURL?: string
@@ -219,6 +222,7 @@ export function describeBrief(brief: Brief, plannerLimit?: number): BriefView {
     apps: (status.apps ?? []).map((a) => describeBriefApp(a)),
     requests: describeRequests(brief),
     releases: brief.spec.releases ?? [],
+    requestSources: brief.spec.requestSources ?? [],
     resourceVersion: brief.metadata.resourceVersion,
     repositoryURL: status.repositoryURL,
     usage: describeUsage(status.costMilliUSD, status.runsWithoutCost, status.tokens, plannerLimit),
@@ -339,8 +343,8 @@ export interface BriefNeedsYouView {
   url?: string
   /** The issue it is about, with its title when the Brief lists it; unset for any other kind. */
   issue?: { container: string; number: number; title?: string }
-  /** The GitHub issue a request is, for a request waiting in Ask; unset for any other kind. */
-  request?: { repository: string; number: number }
+  /** The GitHub issue or request source item a request is, for a request waiting in Ask; unset for any other kind. */
+  request?: RequestRef
   /** The Container it is about, settled on the Container's page; unset for any other kind. */
   container?: string
   /** The answer the Brief would give the issue, from the tending round that asked. */
@@ -357,7 +361,7 @@ export function describeNeedsYou(
   status: Pick<NonNullable<Brief['status']>, 'failed' | 'issues' | 'tended' | 'requests'>,
 ): BriefNeedsYouView {
   const issue = entry.kind === 'Issue' ? splitIssue(entry.name) : undefined
-  const request = entry.kind === 'Request' ? splitRequest(entry.name) : undefined
+  const request = entry.kind === 'Request' ? requestOfName(entry.name, status.requests) : undefined
   const same = (t: { container: string; number: number }) =>
     issue !== undefined && t.container === issue.container && t.number === issue.number
   const failed = (status.failed ?? []).find(same)
@@ -368,17 +372,19 @@ export function describeNeedsYou(
   const tended = (status.tended ?? []).filter((t) => same(t) && t.answer === 'ask').at(-1)
   const requested =
     request &&
-    (status.requests ?? []).find(
-      (r) => r.number === request.number && r.repository.toLowerCase() === request.repository.toLowerCase(),
+    (status.requests ?? []).find((r) =>
+      'source' in request
+        ? r.source === request.source && r.key === request.key
+        : r.number === request.number && r.repository?.toLowerCase() === request.repository.toLowerCase(),
     )
   return {
     kind: entry.kind,
     label: issue
       ? `${issue.container} #${issue.number}`
       : request
-        ? `${request.repository} #${request.number}`
+        ? requestLabel(request)
         : `${entry.kind} ${entry.name}`,
-    url: failed?.url || requested?.url || undefined,
+    url: failed?.url || httpUrl(requested?.url),
     issue: issue && { ...issue, title: failed?.title || filed?.title || undefined },
     request,
     container: entry.kind === 'Container' ? entry.name : undefined,

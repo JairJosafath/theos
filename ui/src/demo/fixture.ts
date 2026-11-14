@@ -1735,6 +1735,94 @@ export function demoStory(now: number): StoryData {
         conditions: [cond('Planned', 'False', 'Planning', 'Round 1 is being planned', ago(4 * 60))],
       },
     },
+    // Takes requests from a Linear team (config/samples/brief/request-sources.yaml,
+    // docs/plans/requests-and-chat.md): two wait in Ask, one of them from an item
+    // that names nobody, and one was accepted and is planned.
+    {
+      apiVersion: API_VERSION,
+      kind: 'Brief',
+      metadata: meta('product-feedback', ago(2 * 86400)),
+      spec: {
+        idea: 'A feedback board where customers vote on what the shop builds next, and the team sees the top requests.',
+        agents: { planner: { name: 'claude' } },
+        autopilot: 'Ask',
+        requestSources: [
+          {
+            name: 'product',
+            linear: { team: 'ENG', label: 'factory' },
+            credentialsSecretRef: { name: 'product-linear' },
+            mode: 'Ask',
+            accepted: [409],
+          },
+        ],
+      },
+      status: {
+        phase: 'Planned',
+        round: 2,
+        promptsPlanned: 0,
+        choices: ['Votes are kept in orders-db, one row per customer and request.'],
+        created: [{ kind: 'Container', name: 'feedback-api' }],
+        repositoryURL: `${GITEA_WEB}/webshop/brief-product-feedback`,
+        requests: [
+          {
+            source: 'product',
+            key: 'ENG-409',
+            number: 409,
+            author: 'Sam Sample',
+            title: 'Show the stock left on the product page',
+            url: 'https://linear.example/acme/issue/ENG-409',
+            stage: 'Planned',
+            round: 2,
+            issues: ['feedback-api#4'],
+            since: ago(36 * 3600),
+          },
+          {
+            source: 'product',
+            key: 'ENG-412',
+            number: 412,
+            author: 'Sam Sample',
+            title: 'Add a dark mode to the storefront',
+            url: 'https://linear.example/acme/issue/ENG-412',
+            stage: 'Waiting',
+            since: ago(3 * 3600),
+          },
+          {
+            // Made by an automation: the tracker names nobody.
+            source: 'product',
+            key: 'ENG-418',
+            number: 418,
+            title: 'Let customers export their order history',
+            url: 'https://linear.example/acme/issue/ENG-418',
+            stage: 'Waiting',
+            since: ago(2 * 3600),
+          },
+        ],
+        requestsWaiting: 3,
+        needsYou: [
+          {
+            kind: 'Request',
+            name: 'product:ENG-412',
+            question: 'Request product:ENG-412 "Add a dark mode to the storefront" by Sam Sample waits for you.',
+            recommend:
+              'Add 412 to the accepted requests of request source product to plan it, or to the declined ones.',
+            since: ago(3 * 3600),
+          },
+          {
+            kind: 'Request',
+            name: 'product:ENG-418',
+            question: 'Request product:ENG-418 "Let customers export their order history" waits for you.',
+            recommend:
+              'Add 418 to the accepted requests of request source product to plan it, or to the declined ones.',
+            since: ago(2 * 3600),
+          },
+        ],
+        needsYouWaiting: 2,
+        conditions: [
+          cond('Planned', 'True', 'Applied', 'Round 2 is applied', ago(30 * 3600)),
+          cond('NeedsInput', 'False', 'NothingAsked', 'Nothing is asked', ago(30 * 3600)),
+        ],
+      },
+    },
   ]
 
   // A finished Benchmark of orders-api's implementer models

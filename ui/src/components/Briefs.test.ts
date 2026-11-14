@@ -15,6 +15,7 @@ const writer: BriefWriter = {
   setPaused: async () => {},
   setPauseRuns: async () => {},
   setSettings: async () => {},
+  answerSourceRequest: async () => {},
 }
 
 const pageHref = (name: string) => `?kind=Brief&name=${name}`
@@ -159,6 +160,56 @@ describe('the Brief card with an item that needs you', () => {
   it('neither clamps nor keeps the item on one line', () => {
     const item = html.slice(html.indexOf('brief-needs-you'), html.indexOf(why))
     expect(item).not.toMatch(/clamp|nowrap|ellipsis/)
+  })
+})
+
+// #163: the open link of a request in Needs you goes to an http or https address only, however React treats the rest.
+describe('the Brief card with a request from a source that needs you', () => {
+  const now = Date.parse('2026-11-12T17:00:00Z')
+  const brief = (url: string): Brief => ({
+    metadata: { name: 'product-feedback', namespace: DEMO_NAMESPACE, creationTimestamp: '2026-11-12T10:00:00Z' },
+    spec: {
+      idea: 'A feedback tool',
+      requestSources: [
+        {
+          name: 'product',
+          linear: { team: 'ENG', label: 'factory' },
+          credentialsSecretRef: { name: 'product-linear' },
+        },
+      ],
+    },
+    status: {
+      phase: 'Planned',
+      needsYou: [{ kind: 'Request', name: 'product:ENG-412', question: 'Request product:ENG-412 waits for you.' }],
+      needsYouWaiting: 1,
+      requests: [{ source: 'product', key: 'ENG-412', number: 412, title: 'Dark mode', stage: 'Waiting', url }],
+    },
+  })
+  const needsYou = (url: string) => {
+    const html = render([brief(url)], now)
+    return html.slice(html.indexOf('brief-needs-you'), html.indexOf('</ul>', html.indexOf('brief-needs-you')))
+  }
+
+  it('links a good https address', () => {
+    expect(needsYou('https://linear.example/acme/issue/ENG-412')).toContain(
+      'href="https://linear.example/acme/issue/ENG-412"',
+    )
+  })
+
+  it('links nothing else, a script address in any case included', () => {
+    for (const url of [
+      'javascript:alert(1)',
+      'JaVaScRiPt:alert(1)',
+      'data:text/html,x',
+      'vbscript:x',
+      '//evil.example',
+      ' https://x.example',
+    ]) {
+      const box = needsYou(url)
+      expect(box, url).toContain('Request product:ENG-412 waits for you.')
+      expect(box, url).not.toMatch(/<a /)
+      expect(box, url).not.toMatch(/javascript|vbscript|data:|evil/i)
+    }
   })
 })
 

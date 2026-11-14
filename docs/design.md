@@ -1572,6 +1572,7 @@ field, and by RBAC for anything else:
 | --- | --- | --- |
 | Brief | `POST` | a new Brief |
 | Brief | `PATCH`, JSON patch | append to `spec.prompts`; `spec.paused`, `spec.pauseRuns`, `spec.autopilot`, `spec.parallel`, `spec.releases` (after a `test` of the `resourceVersion`) |
+| Brief | `PATCH`, JSON patch | one `spec.requestSources` entry's `accepted` and `declined` (Accept and Decline on a tracker's request), after a `test` of the whole entry at `N` as the page read it; the server also compares that test with the stored Brief and refuses a stale page, or another entry at `N`, as a `409`, and sends the API server a `test` of the entry's `name` and of each list it has instead, never a free-text field. No other field of an entry, no entry added, removed or moved |
 | Crew | `PATCH`, JSON patch | `spec.paused`, `spec.pauseRuns`, `spec.parallel`, `spec.tagReleases`, `spec.prepareReleases`, `spec.publishReleases` (after a `test` of the `resourceVersion`) |
 | Crew | `PATCH`, merge patch | annotation `theos.factory.io/rerun-release` |
 | Crew | `PATCH`, merge patch | annotation `theos.factory.io/run-schedule` |
