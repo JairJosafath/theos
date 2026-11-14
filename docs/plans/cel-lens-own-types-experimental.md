@@ -90,3 +90,16 @@ README shows it with a GIF.
 ## Status
 
 - **13 November, evening.** Planned. Nothing built.
+- **14 November, 02:20 UTC. Steps 1 and 2 done.** cel-lens-core#46 (issue
+  #44) was approved in one round; its five smaller findings were fixed
+  before publishing, among them a notice sent after the person had turned
+  the feature off. It merged as JairJosafath/cel-lens#29 (02eaf25), and
+  `release.yml` published
+  [cel-lens core v0.32.0](https://github.com/JairJosafath/cel-lens/releases/tag/core-v0.32.0).
+  Checked here: `checksums.txt`'s signature and the Linux binary's
+  provenance verify with cosign, the binary matches `checksums.txt`, and
+  its `initialize` lists `cellens-types` among the experimental features.
+  Decision from the review: with the feature off, the engine still walks
+  the folders once, reading no `.cellens`, to notice one and say so; the
+  issue asked both for no search and for the notice, and only this gives
+  both. Step 3 (cel-lens-vscode#29, with the GIF) is being built.
