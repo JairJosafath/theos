@@ -898,9 +898,22 @@
   line-height: 1.8;
 }
 
-.chat-rooms {
+.chat-rooms,
+.chat-people {
   margin: 12px 0 0;
   padding-left: 18px;
   font-size: 14px;
   line-height: 1.8;
+}
+
+/* A Slack Chat names its two lists: its channels and its people. */
+.chat-list-title {
+  margin: 12px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chat-list-title + .chat-rooms,
+.chat-list-title + .chat-people {
+  margin-top: 2px;
 }

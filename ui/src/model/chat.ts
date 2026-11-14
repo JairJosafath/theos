@@ -1,8 +1,10 @@
-// A project's Chat for About and Settings (docs/design.md, Chat): the
-// homeserver, each room with a matrix.to link, and Ready, all from the Chat's
-// spec and status. Read only: the UI changes nothing of a Chat.
+// A project's Chat for About and Settings (docs/design.md, Chat): the host,
+// and on Matrix the homeserver, the Space and each room with a matrix.to link;
+// on Slack each room as the channel it is and the people of spec.slack.people;
+// and Ready, all from the Chat's spec and status. Read only: the UI changes
+// nothing of a Chat.
 
-import { CHAT_PURPOSES, findCondition, type Chat, type ChatPurpose } from '../k8s/types'
+import { CHAT_PURPOSES, findCondition, type Chat, type ChatHost, type ChatPurpose } from '../k8s/types'
 import { compareText } from './order'
 
 export interface ChatRoomRow {
@@ -11,7 +13,15 @@ export interface ChatRoomRow {
   name: string
   /** The alias, else the ID, once the operator has made the room. */
   target?: string
+  /** A matrix.to link: Matrix only. A Slack channel has no link here, which would need the workspace's address. */
   href?: string
+}
+
+/** A person of a Slack Chat, by Slack member ID, and the Kubernetes identity their commands are made as. */
+export interface ChatPersonRow {
+  id: string
+  user: string
+  groups: string[]
 }
 
 /** A person the chat host refused to invite (#251, #253): not a failure, the Chat stays Ready. */
@@ -25,10 +35,16 @@ export interface ChatRefusal {
 
 export interface ChatSummary {
   name: string
-  /** Where the operator reached the rooms, else the address the Chat names; unset when it names none. */
+  /** The chat app the Chat is on; a Chat with no host is on Matrix, as the CRD defaults it. */
+  host: ChatHost
+  /** Where the operator reached the rooms, else the address the Chat names; unset when it names none, and on Slack. */
   homeserver?: string
+  /** Unset on Slack: the workspace is the Space. */
   space?: { target: string; href: string }
+  /** On Slack a room's name is its channel's, #<aliasPrefix>-<purpose>, as the operator made it. */
   rooms: ChatRoomRow[]
+  /** The people of spec.slack.people; empty on Matrix, whose people the panel does not list. */
+  people: ChatPersonRow[]
   ready: { state: 'ready' | 'not-ready' | 'unknown'; reason?: string; message: string }
   /** Empty unless the Invited condition is False (InviteRefused): any other state shows no refusal. */
   refused: ChatRefusal[]
@@ -51,14 +67,30 @@ export function matrixToHref(target: string): string {
   return `https://matrix.to/#/${encodeURIComponent(target)}`
 }
 
+/** The Chat's host: slack, else matrix, which is what a Chat with no host, or one this UI does not know, reads as. */
+export function chatHost(chat: Chat): ChatHost {
+  return chat.spec.host === 'slack' ? 'slack' : 'matrix'
+}
+
+/** The default alias prefix, which the operator takes when the Chat names none (internal/model ChatAliasPrefix). */
+const aliasPrefixOf = (chat: Chat) => chat.spec.aliasPrefix || `theos-${chat.metadata.namespace ?? ''}`
+
 export function chatSummary(chat: Chat): ChatSummary {
+  const host = chatHost(chat)
+  const slack = host === 'slack'
   const made = new Map((chat.status?.rooms ?? []).map((r) => [r.purpose, r]))
   const rooms = CHAT_PURPOSES.map((purpose): ChatRoomRow => {
     const room = made.get(purpose)
     const target = room ? room.alias || room.id : undefined
+    if (slack) {
+      // A channel has one name, its alias (#<aliasPrefix>-<purpose>): spec.rooms is not read, the CRD keeps it at the
+      // purposes. Made, the name is what the operator stored; else the one it will give the channel.
+      return { purpose, name: target ?? `#${aliasPrefixOf(chat)}-${purpose}`, target }
+    }
     return { purpose, name: chat.spec.rooms?.[purpose] || purpose, target, href: target && matrixToHref(target) }
   })
-  const space = chat.status?.space
+  // A Slack Chat has no Space: the workspace is the Space.
+  const space = slack ? undefined : chat.status?.space
   const spaceTarget = space ? space.alias || space.id : undefined
   const ready = findCondition(chat.status?.conditions, 'Ready')
   // A refusal shows only while the last pass reached the invites and found one:
@@ -77,14 +109,22 @@ export function chatSummary(chat: Chat): ChatSummary {
     : []
   return {
     name: chat.metadata.name,
-    homeserver: chat.status?.homeserver || chat.spec.homeserver || undefined,
+    host,
+    homeserver: slack ? undefined : chat.status?.homeserver || chat.spec.homeserver || undefined,
     space: spaceTarget ? { target: spaceTarget, href: matrixToHref(spaceTarget) } : undefined,
     rooms,
+    people: slack
+      ? (chat.spec.slack?.people ?? []).map((p) => ({ id: p.slackID, user: p.user, groups: p.groups ?? [] }))
+      : [],
     refused,
     ready: !ready
       ? { state: 'unknown', message: 'The operator has not reported on it yet.' }
       : ready.status === 'True'
-        ? { state: 'ready', reason: ready.reason, message: ready.message || 'The Space and its rooms are there.' }
+        ? {
+            state: 'ready',
+            reason: ready.reason,
+            message: ready.message || (slack ? 'The channels are there.' : 'The Space and its rooms are there.'),
+          }
         : { state: 'not-ready', reason: ready.reason, message: ready.message || ready.reason || 'Not ready.' },
   }
 }
