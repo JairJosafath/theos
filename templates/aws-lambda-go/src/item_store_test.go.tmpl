@@ -18,9 +18,7 @@ type fakeDynamo struct {
 	err   error
 }
 
-func (f *fakeDynamo) GetItem(
-	_ context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options),
-) (*dynamodb.GetItemOutput, error) {
+func (f *fakeDynamo) GetItem(_ context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -32,9 +30,7 @@ func (f *fakeDynamo) GetItem(
 	return &dynamodb.GetItemOutput{Item: f.rows[key.Value]}, nil
 }
 
-func (f *fakeDynamo) PutItem(
-	_ context.Context, in *dynamodb.PutItemInput, _ ...func(*dynamodb.Options),
-) (*dynamodb.PutItemOutput, error) {
+func (f *fakeDynamo) PutItem(_ context.Context, in *dynamodb.PutItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -67,15 +63,13 @@ func TestDynamoItemStorePutsAndGets(t *testing.T) {
 }
 
 func TestDynamoItemStoreRefusesAMalformedRow(t *testing.T) {
-	str := func(v string) types.AttributeValue { return &types.AttributeValueMemberS{Value: v} }
-	num := func(v string) types.AttributeValue { return &types.AttributeValueMemberN{Value: v} }
 	for name, row := range map[string]map[string]types.AttributeValue{
-		"no name":         {"quantity": num("1")},
-		"a numeric name":  {"name": num("1"), "quantity": num("1")},
-		"no quantity":     {"name": str("Lamp")},
-		"a fraction":      {"name": str("Lamp"), "quantity": num("1.5")},
-		"a negative":      {"name": str("Lamp"), "quantity": num("-1")},
-		"a string number": {"name": str("Lamp"), "quantity": str("1")},
+		"no name":         {"quantity": &types.AttributeValueMemberN{Value: "1"}},
+		"a numeric name":  {"name": &types.AttributeValueMemberN{Value: "1"}, "quantity": &types.AttributeValueMemberN{Value: "1"}},
+		"no quantity":     {"name": &types.AttributeValueMemberS{Value: "Lamp"}},
+		"a fraction":      {"name": &types.AttributeValueMemberS{Value: "Lamp"}, "quantity": &types.AttributeValueMemberN{Value: "1.5"}},
+		"a negative":      {"name": &types.AttributeValueMemberS{Value: "Lamp"}, "quantity": &types.AttributeValueMemberN{Value: "-1"}},
+		"a string number": {"name": &types.AttributeValueMemberS{Value: "Lamp"}, "quantity": &types.AttributeValueMemberS{Value: "1"}},
 	} {
 		fake := &fakeDynamo{rows: map[string]map[string]types.AttributeValue{"lamp": row}}
 		if _, _, err := NewDynamoItemStore(fake, "items").Get(t.Context(), "lamp"); err == nil {

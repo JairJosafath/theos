@@ -135,15 +135,7 @@ dependency.
 - `defer f.Close()` right after a successful open; check `Close` on files you
   wrote. No `defer` in a loop: extract a function. [lint: errcheck, revive defer]
 - Close every HTTP response body. [lint: bodyclose]
-- More than five parameters, or several optional ones: an options struct; more
-  than three results: a struct. [lint: revive argument-limit, function-result-limit]
-- A function fits on a screen and reads top to bottom: at most 60 lines and 40
-  statements, few paths (cyclomatic 10, cognitive 15), no if nested four deep.
-  Too long or too branched: extract a named function, return early. Never
-  raise a limit in a task. [lint: funlen, cyclop, gocognit, nestif, maintidx]
-- A file holds one idea: at most 300 lines of code, lines of at most 120
-  characters. A file that grows past that is split by what its parts do,
-  not by numbering them. [lint: revive file-length-limit, lll]
+- More than about four parameters, or several optional ones: an options struct. [review]
 - No parameter that is unused or always gets the same value. [lint: revive unused-parameter, unparam]
 - `for i := range n`; `strconv` over `fmt` for simple conversions; `%q` to quote. [lint: intrange, perfsprint; %q review]
 - `http.MethodGet`, `http.StatusOK`, not `"GET"`, `200`. [lint: usestdlibvars]

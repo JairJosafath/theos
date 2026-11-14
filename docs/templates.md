@@ -465,7 +465,7 @@ run in Node.
   the command logs at `info` when it runs and at `error` when it fails.
 - Auth: n/a: it runs in the user's editor.
 
-### go-standard (v1.7.0) and go-operator-standard (v1.6.0)
+### go-standard (v1.6.0) and go-operator-standard (v1.6.0)
 
 The Go rulebook, and its kubebuilder variant (protected generated paths,
 envtest).
@@ -473,13 +473,6 @@ Since v1.4.0 `AGENTS.md` tells the implementer which Domains the system is
 about and to read `docs/agents/domain/<name>/README.md` and its topic files
 before planning a change, and the reviewer guide to check the change against
 each domain's common mistakes; without Domains both read as before (#1758).
-Since go-standard v1.7.0 its `.golangci.yml` limits size and complexity,
-because agents write long, branched functions and big files unless the lint
-stops them: cyclop (10), gocognit (15), nestif (4), funlen (60 lines, 40
-statements; not in tests, whose length is their cases), maintidx, lll (120)
-and revive's `file-length-limit` (300 lines of code), `argument-limit` (5) and
-`function-result-limit` (3) (`TestGoStandardLimitsComplexityAndSize`).
-go-operator-standard keeps kubebuilder's config.
 
 - CI: go-operator-standard: `make test-templates-operator`, as for
   go-kubebuilder. go-standard: its `make check` in `make test-templates`'
@@ -507,7 +500,7 @@ repository; its `protectedPaths` are the fence agents may not change.
 
 ### The AWS Frameworks
 
-aws-lambda-ts (v1.5.1), aws-lambda-go (v1.5.2) and aws-lambda-py (v1.5.1): an
+aws-lambda-ts (v1.5.1), aws-lambda-go (v1.5.1) and aws-lambda-py (v1.5.1): an
 HTTP API on Lambda with a DynamoDB table. aws-ec2-ts (v1.4.1) and
 aws-fargate-ts (v2.2.1): a Node service behind an HTTPS load balancer.
 aws-queue-ts, aws-schedule-ts and aws-event-ts (v1.3.1): an SQS, EventBridge
@@ -516,8 +509,7 @@ site on S3 behind CloudFront and WAF. Each is a CDK app paired with
 aws-standard. Since these versions `package.json` and `package-lock.json`
 name the license the repository is scaffolded with, `UNLICENSED` when it has
 none (#73); so do react-vite v1.0.1, node-cli v1.1.2 and vscode-extension
-v1.1.1. aws-lambda-go v1.5.2 wraps its lines at 120 characters for
-aws-standard v1.25.0's lint.
+v1.1.1.
 
 - CI: `make test-templates` runs each one's combo's `make check` (combos
   "aws lambda function", "aws lambda function in go", "aws python lambda
@@ -546,7 +538,7 @@ aws-standard v1.25.0's lint.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.25.0)
+### aws-standard (v1.24.0)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
@@ -595,9 +587,6 @@ driver with the secret) (#1927).
 - README, Deploy: n/a: a Standard; its Makefile deploys nothing on purpose,
   and `make dist` only writes the assembly the `cloudFormation` DeployTarget
   ships.
-
-Since v1.25.0 the Go function's `.golangci.yml` is go-standard v1.7.0's,
-with its size and complexity limits.
 
 ### dynamodb (v1.3.1)
 

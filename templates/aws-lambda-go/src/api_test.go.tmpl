@@ -98,19 +98,15 @@ func TestAnswerReadsABase64Body(t *testing.T) {
 }
 
 func TestAnswerRefusesBadInput(t *testing.T) {
-	const (
-		badID   = `The id must be 1 to 64 letters, digits, "-" or "_".`
-		badName = `"name" must be a non-empty string of at most 200 characters.`
-	)
 	for name, tc := range map[string]struct {
 		req    *events.APIGatewayV2HTTPRequest
 		status int
 		msg    string
 	}{
-		"no id":       {request("GET /items/{id}", "", ""), http.StatusBadRequest, badID},
-		"a bad id":    {request("GET /items/{id}", "a b", ""), http.StatusBadRequest, badID},
+		"no id":       {request("GET /items/{id}", "", ""), http.StatusBadRequest, `The id must be 1 to 64 letters, digits, "-" or "_".`},
+		"a bad id":    {request("GET /items/{id}", "a b", ""), http.StatusBadRequest, `The id must be 1 to 64 letters, digits, "-" or "_".`},
 		"a bad body":  {request("PUT /items/{id}", "lamp", "{"), http.StatusBadRequest, "The body must be JSON."},
-		"no name":     {request("PUT /items/{id}", "lamp", `{"quantity":1}`), http.StatusBadRequest, badName},
+		"no name":     {request("PUT /items/{id}", "lamp", `{"quantity":1}`), http.StatusBadRequest, `"name" must be a non-empty string of at most 200 characters.`},
 		"a missing":   {request("GET /items/{id}", "chair", ""), http.StatusNotFound, "No item chair."},
 		"a bad route": {request("DELETE /items/{id}", "lamp", ""), http.StatusNotFound, "No route DELETE /items/{id}."},
 	} {
@@ -133,15 +129,13 @@ func TestAnswerLogsAFailureAndHidesIt(t *testing.T) {
 		logs.Reset()
 		resp := answer(t.Context(), req, store, log)
 		if resp.StatusCode != http.StatusInternalServerError || strings.Contains(resp.Body, "timeout") {
-			t.Errorf("%s with the store down = %d %s, want 500 without the cause",
-				req.RouteKey, resp.StatusCode, resp.Body)
+			t.Errorf("%s with the store down = %d %s, want 500 without the cause", req.RouteKey, resp.StatusCode, resp.Body)
 		}
 		var entry map[string]any
 		if err := json.Unmarshal(logs.Bytes(), &entry); err != nil {
 			t.Fatalf("the log %q is not one JSON entry: %v", logs.String(), err)
 		}
-		if entry["level"] != "ERROR" || entry["error"] != "timeout" ||
-			entry["requestId"] != "request-1" || entry["routeKey"] != req.RouteKey {
+		if entry["level"] != "ERROR" || entry["error"] != "timeout" || entry["requestId"] != "request-1" || entry["routeKey"] != req.RouteKey {
 			t.Errorf("%s logged %v", req.RouteKey, entry)
 		}
 	}
