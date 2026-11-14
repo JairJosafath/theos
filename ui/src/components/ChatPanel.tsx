@@ -1,6 +1,7 @@
 // The project's Chat, read only, on About and in Settings (docs/design.md,
 // Chat): the homeserver, each room with a matrix.to link, and Ready with its
-// message. Nothing when the namespace has no Chat.
+// message, and each person the host refused to invite (#251, #253), told as
+// news, not a failure: Ready stays True. Nothing when the namespace has no Chat.
 
 import type { Problem } from '../k8s/sources'
 import type { Chat } from '../k8s/types'
@@ -38,6 +39,24 @@ export function ChatPanel({ chat, problems = [] }: { chat?: Chat; problems?: Pro
           {s.ready.reason && s.ready.state !== 'ready' ? ` (${s.ready.reason})` : ''}: {s.ready.message}
         </dd>
       </dl>
+      {s.refused.length ? (
+        <div className="chat-refused" role="note" aria-label="Refused invites">
+          <p className="chat-refused-title">Refused invites</p>
+          <ul>
+            {s.refused.map((p) => (
+              <li key={p.id}>
+                The host refused the invite for {p.id}
+                {p.code ? `: ${p.code}` : ''}
+                {p.rooms.length ? ` (rooms: ${p.rooms.join(', ')})` : ''}.
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">
+            The Chat keeps working for everyone else. The operator asks the host again about those rooms; check the ID
+            in the Chat&apos;s people.
+          </p>
+        </div>
+      ) : null}
       <ul className="chat-rooms" aria-label="Rooms">
         {s.rooms.map((r) => (
           <li key={r.purpose}>

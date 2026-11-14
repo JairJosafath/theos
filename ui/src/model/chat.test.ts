@@ -95,4 +95,35 @@ describe('chatSummary', () => {
     expect(refused.space).toBeUndefined()
     expect(chatSummary(chat('webshop')).ready.state).toBe('unknown')
   })
+
+  it('#251/#253: lists refusals only while Invited is False, naming rooms as the Chat does', () => {
+    const base = {
+      spec: { credentialsSecretRef: { name: 'matrix-bot' }, rooms: { general: 'lobby' } },
+      status: {
+        space: { id: '!s:example.com' },
+        rooms: [{ purpose: 'general' as const, id: '!g:example.com' }],
+        refused: [
+          {
+            id: '@ghost:example.com',
+            code: 'M_NOT_FOUND',
+            rooms: ['!s:example.com', '!g:example.com', '!x:example.com'],
+          },
+        ],
+        conditions: [{ type: 'Invited', status: 'False' as const, reason: 'InviteRefused', message: '' }],
+      },
+    }
+    expect(chatSummary(chat('webshop', base)).refused).toEqual([
+      { id: '@ghost:example.com', code: 'M_NOT_FOUND', rooms: ['the Space', 'lobby', '!x:example.com'] },
+    ])
+    const stale = (status: 'True' | 'Unknown') =>
+      chatSummary(
+        chat('webshop', {
+          ...base,
+          status: { ...base.status, conditions: [{ type: 'Invited', status, reason: 'x', message: '' }] },
+        }),
+      )
+    expect(stale('True').refused).toEqual([])
+    expect(stale('Unknown').refused).toEqual([])
+    expect(chatSummary(chat('webshop')).refused).toEqual([])
+  })
 })

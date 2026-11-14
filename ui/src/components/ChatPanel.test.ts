@@ -61,4 +61,57 @@ describe('the Chat panel', () => {
     expect(html).toContain('No (SecretMissing): Secret matrix-bot is missing')
     expect(html).toContain('Not made yet')
   })
+
+  it('#253: says each refused invite with the host code and rooms, and that the Chat keeps working', () => {
+    const html = render({
+      ...webshop,
+      status: {
+        ...webshop.status,
+        refused: [
+          { id: '@ghost:theos.internal', code: 'M_NOT_FOUND', rooms: ['!s:theos.internal', '!g:theos.internal'] },
+          { id: '@nocode:theos.internal', rooms: ['!unknown:theos.internal'] },
+        ],
+        conditions: [
+          { type: 'Ready', status: 'True', reason: 'Ready', message: 'The Space and its 6 rooms are there' },
+          { type: 'Invited', status: 'False', reason: 'InviteRefused', message: '@ghost:theos.internal: M_NOT_FOUND' },
+        ],
+      },
+    })
+    expect(html).toContain(
+      'The host refused the invite for @ghost:theos.internal: M_NOT_FOUND (rooms: the Space, lobby).',
+    )
+    expect(html).toContain('The host refused the invite for @nocode:theos.internal (rooms: !unknown:theos.internal).')
+    expect(html).toContain('The Chat keeps working for everyone else.')
+    expect(html).toContain(
+      'The operator asks the host again about those rooms; check the ID in the Chat&#x27;s people.',
+    )
+    expect(html).toContain('<p class="chat-refused-title">Refused invites</p>')
+    // Not a failure: Ready stays Yes and nothing is styled as an error.
+    expect(html).toContain('Yes: The Space and its 6 rooms are there')
+    expect(html).not.toContain('chat-ready-not-ready')
+  })
+
+  it('#253: shows no refusal when Invited is True, or when the last pass did not reach the invites', () => {
+    const refused = [{ id: '@ghost:theos.internal', code: 'M_NOT_FOUND', rooms: ['!g:theos.internal'] }]
+    const ready = {
+      type: 'Ready',
+      status: 'True' as const,
+      reason: 'Ready',
+      message: 'The Space and its 6 rooms are there',
+    }
+    const withInvited = (status: 'True' | 'Unknown', reason: string, list = refused) =>
+      render({
+        ...webshop,
+        status: {
+          ...webshop.status,
+          refused: list,
+          conditions: [ready, { type: 'Invited', status, reason, message: '' }],
+        },
+      })
+    for (const html of [withInvited('True', 'Invited', []), withInvited('Unknown', 'NotChecked'), render(webshop)]) {
+      expect(html).not.toContain('refused the invite')
+      expect(html).not.toContain('Refused invites')
+      expect(html).not.toContain('keeps working for everyone else')
+    }
+  })
 })
