@@ -2022,41 +2022,53 @@ sandbox and no chart: a local binary, `theos`, runs the same rules
 from a terminal or as an MCP server, and the person's own agent sessions do
 the work.
 
-- **One model.** The story is `model/model.yaml`, `theos.factory.io/v1beta1`
-  manifests with the catalog and the GitProvider, in the project's
-  repository (`theos-<project>` unless set). The host, its owner, the
-  registry and the npm scope are the GitProvider's fields; templates are
-  catalog entries at pinned refs. Nothing is a second format.
+- **One model, in the CRDs' types.** In the project's repository
+  (`theos-<project>` unless set), `model/model.yaml` is the story and
+  `model/setup.yaml` the GitProvider and the catalog entries: all
+  `theos.factory.io/v1beta1` manifests, decoded strictly and given the
+  CRDs' defaults. The host, its owner, the registry and the npm scope are
+  the GitProvider's fields; templates are catalog entries at pinned refs.
+  `model/settings.yaml` holds what no CRD does, and is the one file with a
+  format of its own. A cluster takes these manifests only where it can
+  host: its `provider` is `gitea` alone today.
 - **The same repositories.** `theos scaffold` renders a Container's
   repository through the function the operator calls, once, with the same
-  `.theos.yaml` and the same first commit. A Container repository holds
-  nothing that says which runtime made it.
+  `.theos.yaml` and the same first commit: what an operator with the same
+  settings scaffolds. The settings are the operator's scaffold flags (the
+  Session client's feature, the CI images), kept in `model/settings.yaml`
+  with the flags' defaults. A Container repository holds nothing that says
+  which runtime made it.
 - **The project repository is the lead's seat.** A lead session plays the
   operator's and the planner's part there: it reads the model, plans in the
   Brief's plan format, files the issues and hands each to a role. The
   method bundle (the lead playbook and a work order per role) is rendered
   into that repository from one source, for Claude Code's subagents, for
-  tools that read `AGENTS.md`, and as prompts of the MCP server. The
+  tools that read `AGENTS.md`, and as tools of the MCP server. The
   Standard's `AGENTS.md` and role guides in each Container repository stay
-  what a role reads about the stack. A runtime without subagents plays one
-  role per session, and a review is always a fresh one.
-- **The Git host coordinates.** A session claims an issue with
-  `status/in-progress` and a marker comment that names it and when the
-  claim runs out; the earliest claim alive wins, and one that runs out is
-  taken over on its branch, `task/<issue>-<slug>`. Sessions in any tool
-  work one repository at once this way.
-- **A person merges, unless the host can tell the agents apart.** With
-  `merge: person`, the default, a person merges every pull request. With
-  `merge: rules`, `main` requires its checks and an approving review by an
-  account other than the author's, and `theos merge` merges through the
-  host adapter; it is refused while the reviewer has no account of its own.
-  A change to a protected path, a Standard's update and an adoption's pull
-  request are a person's in both.
+  what a role reads about the stack, and a work order names them. A
+  runtime without subagents plays one role per session, and a review is
+  always a fresh one.
+- **The Git host coordinates.** A session claims an issue by creating its
+  Task's branch, the operator's `task/<container>-<issue>`, which the host
+  lets one session do. Marker comments that are never edited carry the
+  lease, read by the times the host stamped on them: a claim that ran out
+  is taken over on its branch and never renewed. `status/in-progress`
+  shows the claim to people and to a Crew. Markers count only from the
+  accounts the project names. Sessions in any tool work one repository at
+  once this way.
+- **A person merges.** Either with `theos merge` from their terminal,
+  which merges through the host adapter and wants an approving verdict
+  from a session other than the author's, or in the host's pages. Agents
+  merging under the host's rules (`merge: rules`) waits for a branch rule
+  that can require a review and name who merges, and is refused until
+  then.
 
-What the Git host still holds: `main` takes no push, the Standard's required
-checks, a review before the merge, and the protected paths where the host
-has a rule for them. What the mode is without, each under the reason word
-`theos status` prints:
+What the Git host still holds, for an account its rule binds: `main` takes
+no push and a change arrives as a pull request; on Gitea and Forgejo, also
+the Standard's required checks and the protected paths. The account that
+protected `main` can merge past the checks and the paths, and by default
+the agents' sessions hold that account's credential. What the mode is
+without, each under the reason word `theos status` prints:
 
 | Reason | Without a cluster |
 | --- | --- |
@@ -2064,10 +2076,11 @@ has a rule for them. What the mode is without, each under the reason word
 | `OwnModelCredential` | no model proxy: the runtime holds its own key |
 | `NoCheckpoint` | no resume or pause: a dead session's commits stay on its branch for the next claim |
 | `CostUnreported` | no cost, tokens, metrics, Scorers or Benchmarks: the record is the issue and its pull request |
-| `PersonMerges`, `RulesMerge` | no operator merges |
-| `AgentHoldsOwnerCredential` | the agents act with the person's credential until a narrower one is made, and a branch rule binds nobody it lets past |
-| `RulesNotValidated` | the CRDs' CEL rules and the admission policy run only once the model reaches a cluster |
-| `ProtectedPathsByMerge` | on a host with no rule for paths, `theos merge` or the person who merges holds them |
+| `PersonMerges` | no operator merges: a person does |
+| `AgentHoldsOwnerCredential` | the agents act with the person's credential until a second account's is given, and a branch rule binds nobody it lets past |
+| `ReviewNotEnforced` | no host is asked for a review: `theos merge` wants a verdict from another session, and a session's name is its own word |
+| `ChecksByMerge`, `ProtectedPathsByMerge` | on GitHub the host holds neither: `theos merge` does, or the eye of the person who merges in the host's pages |
+| `RulesNotValidated` | the CRDs' CEL rules, enums and the admission policy run only once the model reaches a cluster |
 
 Crews, Briefs' rounds, releases, deploys, test environments, chat and the
 UI need the cluster.
@@ -2075,10 +2088,16 @@ UI need the cluster.
 **Between the two.** A project made without a cluster is adopted by a
 cluster as any repository is ([adopt.md](adopt.md)): `theos export` prints
 the model with `adopt: true` and a Crew that holds every change for a
-person, and the repositories need no commit. The other way, a model
-exported from a cluster becomes a project repository, once its Crew is
-paused and `main`'s rule no longer keeps the merge to the operator. A
-Container is worked by a Crew or by outside sessions, never both.
+person. On a Gitea or Forgejo the cluster reaches, the repositories need
+no commit and their issues stay; the person first makes the Secret the
+GitProvider names, with a site administrator's token, and the Agents. Onto
+the chart's own Gitea the histories are pushed, and issues, pull requests
+and claims stay behind. On GitHub the move waits for #81. The other way, a
+model exported from a cluster becomes a project repository, once its Crew
+is paused and `main`'s rule names the person's account. A person keeps a
+Container to a Crew or to outside sessions. The label is all that checks
+it: a Crew starts only `status/ready` issues, and a session never takes a
+`status/in-progress` issue that has no claim marker.
 
 ## Distribution and issues
 
