@@ -180,7 +180,7 @@ new version that converts them. See
 ### Chat
 
 People can follow and steer each project from Matrix rooms (the design's
-[Chat](../../docs/design.md#chat-the-factory-in-matrix)): a Space per
+[Chat](../../docs/design.md#chat-the-factory-in-chat)): a Space per
 project with rooms `updates`, `general`, `triage`, `specs`, `reviews` and
 `alerts`, kept by the operator and `theos-chat`. It is off by default.
 

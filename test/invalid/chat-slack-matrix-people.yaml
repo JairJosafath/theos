@@ -1,0 +1,12 @@
+# expect: a Chat with host: slack lists its people under slack.people
+apiVersion: theos.factory.io/v1beta1
+kind: Chat
+metadata:
+  name: webshop
+  namespace: webshop
+spec:
+  host: slack
+  credentialsSecretRef: {name: slack-bot}
+  people:
+  - matrixID: "@ada:matrix.example.com"
+    user: ada@example.com

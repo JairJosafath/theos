@@ -41,6 +41,20 @@ func TestChatSystems(t *testing.T) {
 	}
 }
 
+// TestChatHostName covers #158: a Chat that names no host is on the default,
+// Matrix, as one written before spec.host is; one that names a host is on
+// it. Slack has no row until step 8, so a Chat on it is HostNotSupported.
+func TestChatHostName(t *testing.T) {
+	for host, want := range map[string]string{"": ChatMatrix, ChatMatrix: ChatMatrix, ChatSlack: ChatSlack} {
+		if got := ChatHostName(host); got != want {
+			t.Errorf("ChatHostName(%q) = %q, want %q", host, got, want)
+		}
+	}
+	if _, err := ChatSystemByName(ChatSlack); err == nil {
+		t.Error("ChatSystemByName(slack) = nil error, want no row before step 8")
+	}
+}
+
 // TestChatSystemFormat covers #152: a post is formatted in the host's markup,
 // and a host that reads plain text alone gets none.
 func TestChatSystemFormat(t *testing.T) {

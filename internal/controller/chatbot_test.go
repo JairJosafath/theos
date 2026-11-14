@@ -17,9 +17,13 @@ limitations under the License.
 package controller
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -165,5 +169,32 @@ var _ = Describe("theos-chat", func() {
 		err := k8sClient.Get(ctx, key(ns, chatbot.StateConfigMap), &corev1.ConfigMap{})
 		Expect(client.IgnoreNotFound(err)).To(Succeed())
 		Expect(err).To(HaveOccurred(), "no state for a Chat without rooms")
+	})
+
+	It("leaves a Chat on a host it runs no adapter for alone, even one that reads Ready (#158)", func() {
+		ns := newProjectNamespace()
+		chat := newSlackChat(ns, "chat", "slack-bot")
+		mustCreate(chat)
+		chatReady(chat, metav1.ConditionFalse, model.ChatHostNotSupported)
+
+		// As an operator that ran Slack would write it: theos-chat still has
+		// no adapter for the host, so it reads no Secret (there is none) and
+		// posts nothing.
+		orig := chat.DeepCopy()
+		chat.Status.Homeserver = "https://slack.example/api"
+		for _, p := range model.ChatPurposes {
+			chat.Status.Rooms = append(chat.Status.Rooms, c4v1beta1.ChatRoomStatus{
+				Purpose: c4v1beta1.ChatPurpose(p), ID: "C" + strings.ToUpper(string(p))})
+		}
+		apimeta.SetStatusCondition(&chat.Status.Conditions, metav1.Condition{Type: c4v1beta1.ConditionChatReady,
+			Status: metav1.ConditionTrue, Reason: model.ChatReady, Message: "ready", ObservedGeneration: chat.Generation})
+		Expect(k8sClient.Status().Patch(ctx, chat, client.MergeFrom(orig))).To(Succeed())
+
+		res, err := newTheosChat().Reconcile(ctx, ctrl.Request{NamespacedName: key(ns, "chat")})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(res).To(Equal(ctrl.Result{}))
+		err = k8sClient.Get(ctx, key(ns, chatbot.StateConfigMap), &corev1.ConfigMap{})
+		Expect(client.IgnoreNotFound(err)).To(Succeed())
+		Expect(err).To(HaveOccurred(), "no state for a Chat on a host theos-chat doesn't run")
 	})
 })

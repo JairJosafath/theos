@@ -5,7 +5,11 @@
 # request.userInfo.username, and groups only from the writer's
 # request.userInfo.groups, unless that exact entry was there before. So
 # nobody can make a Matrix account act as someone else, and theos-chat's
-# right to impersonate reaches only who added themselves.
+# right to impersonate reaches only who added themselves. A Slack Chat's
+# spec.slack.people, keyed by slackID, is held the same way
+# (docs/plans/requests-and-chat.md, decision 10). The chart's copy,
+# dist/chart/templates/extras/chat-people-are-themselves.yaml, is kept by
+# hand: change both.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -29,12 +33,30 @@ spec:
         (has(o.groups) ? o.groups : []) == (has(p.groups) ? p.groups : [])) &&
         !(p.user == request.userInfo.username &&
         (!has(p.groups) || p.groups.all(g, g in request.userInfo.groups))))
+    - name: oldSlack
+      expression: >-
+        oldObject != null && has(oldObject.spec.slack) && has(oldObject.spec.slack.people) ?
+        oldObject.spec.slack.people : []
+    # The same, of spec.slack.people.
+    - name: foreignSlack
+      expression: >-
+        (has(object.spec.slack) && has(object.spec.slack.people) ? object.spec.slack.people : []).filter(p,
+        !variables.oldSlack.exists(o, o.slackID == p.slackID && o.user == p.user &&
+        (has(o.groups) ? o.groups : []) == (has(p.groups) ? p.groups : [])) &&
+        !(p.user == request.userInfo.username &&
+        (!has(p.groups) || p.groups.all(g, g in request.userInfo.groups))))
   validations:
     - expression: "size(variables.foreign) == 0"
       messageExpression: >-
         'spec.people may name only the writer, ' + request.userInfo.username +
         ', and groups the writer is in; each person adds themselves: ' +
         variables.foreign.map(p, p.matrixID + ' as ' + p.user).join(', ')
+      reason: Forbidden
+    - expression: "size(variables.foreignSlack) == 0"
+      messageExpression: >-
+        'spec.slack.people may name only the writer, ' + request.userInfo.username +
+        ', and groups the writer is in; each person adds themselves: ' +
+        variables.foreignSlack.map(p, p.slackID + ' as ' + p.user).join(', ')
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

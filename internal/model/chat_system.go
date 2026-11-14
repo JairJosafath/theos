@@ -56,11 +56,23 @@ const ChatMarkupMrkdwn = "mrkdwn"
 // ChatMatrix names Matrix, the chat host of the chart's homeserver.
 const ChatMatrix = "matrix"
 
-// ChatSystemDefault is the host of every Chat today. A Chat names no host
-// until spec.host (step 7 of docs/plans/requests-and-chat.md), and one
-// written before it means this one; step 8 makes the Chat controller and
-// theos-chat read the field where they now take this name.
+// ChatSlack names Slack. No row in chatSystems has it until step 8 of
+// docs/plans/requests-and-chat.md adds Slack's: until then a Chat on it is
+// HostNotSupported.
+const ChatSlack = "slack"
+
+// ChatSystemDefault is the host of a Chat that names none in spec.host, as
+// one written before the field: the CRD's default for it.
 const ChatSystemDefault = ChatMatrix
+
+// ChatHostName is the name of the host a Chat's spec.host names, the
+// default when it names none.
+func ChatHostName(host string) string {
+	if host == "" {
+		return ChatSystemDefault
+	}
+	return host
+}
 
 // chatSystems are the chat hosts the factory knows, by name.
 var chatSystems = map[string]ChatSystem{

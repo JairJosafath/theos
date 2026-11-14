@@ -89,6 +89,9 @@ const (
 	ChatUnreachable       = "Unreachable"
 	ChatAliasTaken        = "AliasTaken"
 	ChatDuplicate         = "Duplicate"
+	// ChatHostNotSupported is a Chat on a host the operator runs no adapter
+	// for: it is left alone before its Secret is read or a host called.
+	ChatHostNotSupported = "HostNotSupported"
 )
 
 // ChatTokenKey is the key of a Chat's Secret that holds the bot's access
@@ -109,6 +112,8 @@ type ChatCheck struct {
 	Rooms, People int
 	// Other is the Chat that already serves the namespace, for Duplicate.
 	Other string
+	// Host is the Chat's chat host, for HostNotSupported.
+	Host string
 	// Detail is the homeserver's error.
 	Detail string
 }
@@ -141,6 +146,9 @@ func ChatReadyMessage(reason string, c ChatCheck) string {
 	case ChatDuplicate:
 		return fmt.Sprintf("Chat %s already serves this namespace; a namespace has one Chat, so this one does nothing",
 			c.Other)
+	case ChatHostNotSupported:
+		return fmt.Sprintf("Chat %s is on %s, a chat host this operator runs no adapter for; it reads no Secret and "+
+			"makes no rooms until an operator that runs %s is installed", c.Chat, c.Host, c.Host)
 	}
 	return reason + detail
 }

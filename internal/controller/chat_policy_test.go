@@ -171,6 +171,49 @@ var _ = Describe("Chat admission policies", func() {
 		Expect(chat.Spec.People).To(Equal([]c4v1beta1.ChatPerson{adaEntry, bobEntry}))
 	})
 
+	It("lets each person map only themselves into a Slack Chat's people (#158)", func() {
+		ns := newProjectNamespace()
+		ada, bob := "ada-"+ns+"@example.com", "bob-"+ns+"@example.com"
+		grant(ada, roleChatPeople)
+		grant(bob, roleChatPeople)
+		adaEntry := c4v1beta1.ChatSlackPerson{SlackID: "U0ADA", User: ada, Groups: []string{"shop"}}
+		chat := newSlackChat(ns, "chat", "slack-bot")
+		chat.Spec.Slack = &c4v1beta1.ChatSlack{People: []c4v1beta1.ChatSlackPerson{adaEntry}}
+
+		By("refusing an admin who maps someone else")
+		Eventually(func() error { return k8sClient.Create(ctx, chat.DeepCopy()) }).Should(MatchError(And(
+			ContainSubstring("spec.slack.people may name only the writer, admin"),
+			ContainSubstring("U0ADA as "+ada))))
+
+		By("refusing a group the writer isn't in")
+		Expect(asUser(ada).Create(ctx, chat.DeepCopy())).To(MatchError(ContainSubstring(
+			"groups the writer is in")))
+
+		By("taking a person who maps themselves, with their groups")
+		Expect(asUser(ada, "shop").Create(ctx, chat)).To(Succeed())
+
+		By("taking another person who adds themselves, ada's entry kept as it was")
+		bobEntry := c4v1beta1.ChatSlackPerson{SlackID: "W0BOB", User: bob}
+		Expect(patchAs(asUser(bob), chat, func() { chat.Spec.Slack.People = append(chat.Spec.Slack.People, bobEntry) })).
+			To(Succeed())
+
+		By("refusing a person who maps a Slack member to someone else")
+		Expect(k8sClient.Get(ctx, key(ns, "chat"), chat)).To(Succeed())
+		Expect(patchAs(asUser(bob), chat, func() {
+			chat.Spec.Slack.People = append(chat.Spec.Slack.People, c4v1beta1.ChatSlackPerson{SlackID: "U0MALLORY", User: ada})
+		})).To(MatchError(ContainSubstring("U0MALLORY as " + ada)))
+
+		By("refusing a person who changes someone else's groups")
+		Expect(k8sClient.Get(ctx, key(ns, "chat"), chat)).To(Succeed())
+		Expect(patchAs(asUser(bob), chat, func() { chat.Spec.Slack.People[0].Groups = []string{"admins"} })).
+			To(MatchError(ContainSubstring("U0ADA as " + ada)))
+
+		By("taking an admin's change beside the people, who are as they were")
+		Expect(k8sClient.Get(ctx, key(ns, "chat"), chat)).To(Succeed())
+		Expect(patch(chat, func() { chat.Spec.DigestMinutes = 5 })).To(Succeed())
+		Expect(chat.Spec.Slack.People).To(Equal([]c4v1beta1.ChatSlackPerson{adaEntry, bobEntry}))
+	})
+
 	It("lets only a person write a chat annotation, and only in their own name", func() {
 		ns := newProjectNamespace()
 		ada := "ada-" + ns + "@example.com"

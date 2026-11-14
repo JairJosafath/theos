@@ -1588,15 +1588,28 @@ decides; the chart refuses actions behind an Ingress without OIDC. The browser
 never sees a token. Out of reach: deletes, Secrets, the Git host and editing
 the model ([plans/done/ui-actions.md](plans/done/ui-actions.md)).
 
-## Chat: the factory in Matrix
+## Chat: the factory in chat
 
 People follow and steer a project from a chat app as well as the UI
 ([plans/done/chat-matrix.md](plans/done/chat-matrix.md)). A `Chat`, one per
-project namespace, names a Matrix homeserver (unset: the operator's
-`--chat-homeserver`, the chart's own), a Secret with its bot's access token
-under `accessToken`, the Space's and rooms' names, the updates digest and its
-`people`: each Matrix user ID with the Kubernetes user and groups it acts as
-(`system:` ones refused).
+project namespace, names its `host`, `matrix` (the default, and what a Chat
+written before the field means) or `slack`, which never changes: the rooms
+are on the host they were made on. A Matrix Chat names a homeserver (unset:
+the operator's `--chat-homeserver`, the chart's own), a Secret with its bot's
+access token under `accessToken`, the Space's and rooms' names, the updates
+digest and its `people`: each Matrix user ID with the Kubernetes user and
+groups it acts as (`system:` ones refused). A Slack Chat
+([plans/requests-and-chat.md](plans/requests-and-chat.md), decisions 1 to 3)
+names its Secret and digest too, and holds its people in a block of its own,
+`slack.people`, each a Slack member ID (`U…` or `W…`) with a user and groups
+held to the same rules; CEL keeps the two hosts apart: `slack` only with
+`host: slack`, and with it no `homeserver`, no `space`, no `people`, each room
+named its purpose (a channel's one name is `<aliasPrefix>-<purpose>`), and an
+`aliasPrefix` Slack takes in a channel name (no `.` or `=`, at most 70
+characters). The operator runs no Slack adapter yet: a Chat on a host it has
+no adapter for is left alone before its Secret is read or a host called,
+`Ready=False` with reason `HostNotSupported` naming the host, and `theos-chat`
+does nothing for it.
 
 - **The operator makes the rooms and only reports.** It makes one Space,
   named after the Project, with six rooms (`updates`, `general`, `triage`,
@@ -1639,10 +1652,10 @@ under `accessToken`, the Space's and rooms' names, the updates digest and its
   own address), next to the Git host's links; without it, it links to the
   Git host alone.
 - **Nobody acts in someone else's name.** `theos-chat` may impersonate users
-  and groups, so two admission policies (`config/policy`) bound it: a Chat's
-  `people` entry names only its writer's own user and groups
-  (`request.userInfo`), unless that exact entry was there before, so each
-  person adds themselves; and the three chat annotations and their `-by`
+  and groups, so two admission policies (`config/policy`) bound it: an entry
+  of a Chat's `people`, or of its `slack.people`, names only its writer's own
+  user and groups (`request.userInfo`), unless that exact entry was there
+  before, so each person adds themselves; and the three chat annotations and their `-by`
   are written only by a person, never a `system:` identity (the operator's
   ServiceAccount, `theos-chat`'s acting as itself, an agent's), and each
   `-by` names the writer. The operator counts a word only with its `-by`.
