@@ -14,6 +14,15 @@ export interface ChatRoomRow {
   href?: string
 }
 
+/** A person the chat host refused to invite (#251, #253): not a failure, the Chat stays Ready. */
+export interface ChatRefusal {
+  id: string
+  /** The host's error code for the first refusal, when it gave one. */
+  code?: string
+  /** The rooms the host refused the invite to, named as the Chat's rooms are; the Space is "the Space". */
+  rooms: string[]
+}
+
 export interface ChatSummary {
   name: string
   /** Where the operator reached the rooms, else the address the Chat names; unset when it names none. */
@@ -21,6 +30,8 @@ export interface ChatSummary {
   space?: { target: string; href: string }
   rooms: ChatRoomRow[]
   ready: { state: 'ready' | 'not-ready' | 'unknown'; reason?: string; message: string }
+  /** Empty unless the Invited condition is False (InviteRefused): any other state shows no refusal. */
+  refused: ChatRefusal[]
 }
 
 /**
@@ -50,11 +61,26 @@ export function chatSummary(chat: Chat): ChatSummary {
   const space = chat.status?.space
   const spaceTarget = space ? space.alias || space.id : undefined
   const ready = findCondition(chat.status?.conditions, 'Ready')
+  // A refusal shows only while the last pass reached the invites and found one:
+  // Unknown (NotChecked) means the entries may be from an earlier pass.
+  const refusedNow = findCondition(chat.status?.conditions, 'Invited')?.status === 'False'
+  const roomName = new Map(
+    rooms.flatMap((r) => (made.get(r.purpose) ? [[made.get(r.purpose)!.id, r.name] as const] : [])),
+  )
+  if (space) roomName.set(space.id, 'the Space')
+  const refused = refusedNow
+    ? (chat.status?.refused ?? []).map((p) => ({
+        id: p.id,
+        code: p.code || undefined,
+        rooms: (p.rooms ?? []).map((id) => roomName.get(id) ?? id),
+      }))
+    : []
   return {
     name: chat.metadata.name,
     homeserver: chat.status?.homeserver || chat.spec.homeserver || undefined,
     space: spaceTarget ? { target: spaceTarget, href: matrixToHref(spaceTarget) } : undefined,
     rooms,
+    refused,
     ready: !ready
       ? { state: 'unknown', message: 'The operator has not reported on it yet.' }
       : ready.status === 'True'

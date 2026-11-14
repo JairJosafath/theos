@@ -880,6 +880,17 @@
   color: var(--error);
 }
 
+.chat-refused {
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+.chat-refused ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.8;
+}
+
 .chat-rooms {
   margin: 12px 0 0;
   padding-left: 18px;

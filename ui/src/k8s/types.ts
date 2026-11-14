@@ -669,6 +669,8 @@ export interface Chat extends K8sObject {
     space?: { id: string; alias?: string }
     rooms?: { purpose: ChatPurpose; id: string; alias?: string }[]
     invited?: string[]
+    /** People the chat host refused to invite to some rooms (#251); a person is in invited or here, never both. */
+    refused?: { id: string; code?: string; rooms?: string[] }[]
     conditions?: Condition[]
   }
 }
