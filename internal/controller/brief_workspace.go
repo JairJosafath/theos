@@ -35,6 +35,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
@@ -532,42 +533,42 @@ func installedCatalog(ctx context.Context, c client.Reader, ns string) ([]model.
 		return nil, err
 	}
 	for i := range frameworks.Items {
-		out = append(out, catalogEntry(model.SideFramework, &frameworks.Items[i]))
+		out = append(out, modelfacts.CatalogEntry(model.SideFramework, &frameworks.Items[i]))
 	}
 	var standards c4v1beta1.StandardList
 	if err := c.List(ctx, &standards, in); err != nil {
 		return nil, err
 	}
 	for i := range standards.Items {
-		out = append(out, catalogEntry(model.SideStandard, &standards.Items[i]))
+		out = append(out, modelfacts.CatalogEntry(model.SideStandard, &standards.Items[i]))
 	}
 	var computes c4v1beta1.ComputeList
 	if err := c.List(ctx, &computes, in); err != nil {
 		return nil, err
 	}
 	for i := range computes.Items {
-		out = append(out, catalogEntry(model.SideCompute, &computes.Items[i]))
+		out = append(out, modelfacts.CatalogEntry(model.SideCompute, &computes.Items[i]))
 	}
 	var deployments c4v1beta1.DeploymentList
 	if err := c.List(ctx, &deployments, in); err != nil {
 		return nil, err
 	}
 	for i := range deployments.Items {
-		out = append(out, catalogEntry(model.SideDeployment, &deployments.Items[i]))
+		out = append(out, modelfacts.CatalogEntry(model.SideDeployment, &deployments.Items[i]))
 	}
 	var connectors c4v1beta1.ConnectorList
 	if err := c.List(ctx, &connectors, in); err != nil {
 		return nil, err
 	}
 	for i := range connectors.Items {
-		out = append(out, catalogEntry(model.SideConnector, &connectors.Items[i]))
+		out = append(out, modelfacts.CatalogEntry(model.SideConnector, &connectors.Items[i]))
 	}
 	var domains c4v1beta1.DomainList
 	if err := c.List(ctx, &domains, in); err != nil {
 		return nil, err
 	}
 	for i := range domains.Items {
-		out = append(out, catalogEntry(model.SideDomain, &domains.Items[i]))
+		out = append(out, modelfacts.CatalogEntry(model.SideDomain, &domains.Items[i]))
 	}
 	return out, nil
 }

@@ -164,6 +164,8 @@ func (g *agentGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	repo := "/api/v1/repos/apps/photo-editor"
 	switch {
+	case call == "GET /api/v1/user":
+		reply(http.StatusOK, map[string]string{"login": "token-owner"})
 	case call == "POST "+repo+"/branch_protections":
 		if g.rules["main"] {
 			reply(http.StatusForbidden, map[string]string{"message": "Branch protection already exist"})
@@ -257,6 +259,50 @@ func TestProtectBranchCreatesThenUpdates(t *testing.T) {
 	}
 	if last := g.calls[len(g.calls)-1]; last != "PATCH /api/v1/repos/apps/photo-editor/branch_protections/main" {
 		t.Errorf("second call = %s, want the update", last)
+	}
+}
+
+// #268: a credential of a token alone, as no-cluster mode reads one, says
+// nobody's name, so the rule names the account Gitea says the token is of,
+// and the Secret's username is never asked for.
+func TestProtectWithATokenAloneNamesItsAccount(t *testing.T) {
+	g, _ := newAgentGitea(t)
+	srv := httptest.NewServer(g)
+	t.Cleanup(srv.Close)
+	p, err := Client{}.Provider(ports.Config{URL: srv.URL, Owner: "apps", Credentials: ports.Credentials{Token: rand.Text()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if login, err := p.Login(context.Background()); err != nil || login != "token-owner" {
+		t.Fatalf("Login() = %q, %v", login, err)
+	}
+	repo := p.Repository("photo-editor")
+	rule := ports.BranchRule{StatusContexts: []string{"check*"}, OperatorPushes: true}
+	if err := p.ProtectBranch(context.Background(), repo, "main", rule); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ProtectTags(context.Background(), repo, "v*"); err != nil {
+		t.Fatal(err)
+	}
+	body := g.bodies["POST /api/v1/repos/apps/photo-editor/branch_protections"]
+	if fmt.Sprint(body["merge_whitelist_usernames"]) != "[token-owner]" ||
+		fmt.Sprint(body["push_whitelist_usernames"]) != "[token-owner]" {
+		t.Errorf("rule = %v, want the token's account to merge and push", body)
+	}
+	if tags := g.bodies["POST /api/v1/repos/apps/photo-editor/tag_protections"]; fmt.Sprint(tags["whitelist_usernames"]) !=
+		"[token-owner]" {
+		t.Errorf("tag rule = %v, want the token's account", tags)
+	}
+}
+
+// #268: a Secret that names its user is taken at its word, with no call.
+func TestLoginIsTheSecretsUsername(t *testing.T) {
+	g, p := newAgentGitea(t)
+	if login, err := p.Login(context.Background()); err != nil || login != "c4admin" {
+		t.Fatalf("Login() = %q, %v", login, err)
+	}
+	if slices.Contains(g.calls, "GET /api/v1/user") {
+		t.Error("Login asked Gitea for the account of a Secret that names its user")
 	}
 }
 

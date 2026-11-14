@@ -26,6 +26,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 )
 
 // scaffoldedDomains are the Domains the scaffold wrote, as it passed them to
@@ -46,7 +47,7 @@ func scaffoldedDomains(status *c4v1beta1.ContainerStatus) []string {
 // scaffold), absent when the system names none and none was scaffolded.
 func reportDomainsApplied(container *c4v1beta1.Container, status *c4v1beta1.ContainerStatus,
 	system *c4v1beta1.SoftwareSystem) {
-	have, wanted := scaffoldedDomains(status), domainNames(system)
+	have, wanted := scaffoldedDomains(status), modelfacts.DomainNames(system)
 	if len(have) == 0 && len(wanted) == 0 {
 		meta.RemoveStatusCondition(&status.Conditions, c4v1beta1.ConditionDomainsApplied)
 		return

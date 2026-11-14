@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,170 +25,67 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
-	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
-// resolved is everything a Container's scaffold depends on, turned into the plain
-// values the business rules take.
-type resolved struct {
-	provider *c4v1beta1.GitProvider
-	// creds come from the GitProvider's credentials Secret.
-	creds ports.Credentials
-	// entries are the catalog entries in layer order: Framework, Standard,
-	// Compute, Deployment, each Connector, then each Domain.
-	entries []model.CatalogEntry
-	// domains are the names of the system's Domains, sorted and unique: the
-	// Domain layers at the end of entries.
-	domains []string
-	// standard is the Standard's entry, or nil when the Container picks none.
-	standard *model.CatalogEntry
-	// use is what the Container picks up through its Relationships to DataStores.
-	use model.DataStoreUse
-	// choices are the entries the Container picked, by name: its spec's refs,
-	// or its Bundle's.
-	choices c4v1beta1.ContainerChoices
-	// bundle is what the Container's Bundle expanded to, or nil when it names
-	// none or the Bundle is missing.
-	bundle *c4v1beta1.ContainerBundleStatus
-}
-
-// resolve looks up every object the Container's scaffold needs. missing names the
-// ones that don't exist yet, such as "Framework python-fastapi".
+// resolve reads the objects the Container's scaffold needs and works out
+// what they resolve to (modelfacts.Resolve). missing names the ones that
+// don't exist yet, such as "Framework python-fastapi".
 func (r *ContainerReconciler) resolve(ctx context.Context, container *c4v1beta1.Container,
-	system *c4v1beta1.SoftwareSystem) (resolved, []string, error) {
-	var res resolved
-	var missing []string
-	ns := container.Namespace
-	spec := container.Spec
-
-	var provider c4v1beta1.GitProvider
-	found, err := r.lookup(ctx, ns, spec.GitProviderRef.Name, &provider)
+	system *c4v1beta1.SoftwareSystem) (modelfacts.Resolved, []string, error) {
+	objs, err := r.scaffoldObjects(ctx, container)
 	if err != nil {
-		return res, nil, err
+		return modelfacts.Resolved{}, nil, err
 	}
-	if found {
-		res.provider = &provider
-		creds, ok, err := r.credentials(ctx, &provider)
-		if err != nil {
-			return res, nil, err
-		}
-		if ok {
-			res.creds = creds
-		} else {
-			missing = append(missing, "Secret "+provider.Spec.CredentialsSecretRef.Name)
-		}
-	} else {
-		missing = append(missing, "GitProvider "+spec.GitProviderRef.Name)
-	}
-
-	// A Bundle is expanded afresh at each resolve, as if the Container had
-	// named its entries; only a Container not yet scaffolded resolves.
-	res.choices = container.Choices()
-	if spec.BundleRef != nil {
-		res.choices = c4v1beta1.ContainerChoices{Bundle: spec.BundleRef.Name}
-		var bundle c4v1beta1.Bundle
-		found, err := r.lookup(ctx, ns, spec.BundleRef.Name, &bundle)
-		if err != nil {
-			return res, nil, err
-		}
-		if found {
-			b := bundle.Spec
-			res.bundle = &c4v1beta1.ContainerBundleStatus{Name: bundle.Name, Framework: b.FrameworkRef.Name,
-				Standard: refName(b.StandardRef), Compute: refName(b.ComputeRef), Deployment: refName(b.DeploymentRef)}
-			res.choices = c4v1beta1.ContainerChoices{Bundle: bundle.Name, Framework: res.bundle.Framework,
-				Standard: res.bundle.Standard, Compute: res.bundle.Compute, Deployment: res.bundle.Deployment}
-		} else {
-			missing = append(missing, "Bundle "+spec.BundleRef.Name)
-		}
-	}
-
-	objs := map[string]client.Object{
-		model.SideFramework:  &c4v1beta1.Framework{},
-		model.SideStandard:   &c4v1beta1.Standard{},
-		model.SideCompute:    &c4v1beta1.Compute{},
-		model.SideDeployment: &c4v1beta1.Deployment{},
-	}
-	for _, c := range model.BundleChoices(model.Bundle{Framework: res.choices.Framework,
-		Standard: res.choices.Standard, Compute: res.choices.Compute, Deployment: res.choices.Deployment}) {
-		obj := objs[c.Side]
-		found, err := r.lookup(ctx, ns, c.Name, obj)
-		if err != nil {
-			return res, nil, err
-		}
-		if !found {
-			missing = append(missing, c.Side+" "+c.Name)
-			continue
-		}
-		entry := catalogEntry(c.Side, obj)
-		res.entries = append(res.entries, entry)
-		if c.Side == model.SideStandard {
-			res.standard = &entry
-		}
-	}
-
-	// Connectors come through Relationships from this Container to DataStores.
-	// They are read from the API server, not the cache: the Relationship
-	// informer may not yet hold one created just before the Container, and a
-	// scaffold missing it is never redone (#1992). A missing DataStore or
-	// Connector only delays the scaffold, so those stay cached.
-	var rels c4v1beta1.RelationshipList
-	if err := r.APIReader.List(ctx, &rels, client.InNamespace(ns)); err != nil {
-		return res, nil, err
-	}
-	var stores c4v1beta1.DataStoreList
-	if err := r.List(ctx, &stores, client.InNamespace(ns)); err != nil {
-		return res, nil, err
-	}
-	connectorOf := make(map[string]string, len(stores.Items))
-	for _, s := range stores.Items {
-		connectorOf[s.Name] = s.Spec.ConnectorRef.Name
-	}
-	modelRels := make([]model.Relationship, 0, len(rels.Items))
-	for _, rel := range rels.Items {
-		source := rel.Spec.Source
-		if rel.DeletionTimestamp.IsZero() && source.Kind == c4v1beta1.ElementContainer && source.Name == container.Name {
-			modelRels = append(modelRels, toModel(rel))
-		}
-	}
-	res.use = model.DataStoresUsedBy(container.Name, modelRels, connectorOf)
-	for _, name := range res.use.MissingDataStores {
-		missing = append(missing, "DataStore "+name)
-	}
-	for _, name := range res.use.Connectors {
-		var connector c4v1beta1.Connector
-		found, err := r.lookup(ctx, ns, name, &connector)
-		if err != nil {
-			return res, nil, err
-		}
-		if !found {
-			missing = append(missing, "Connector "+name)
-			continue
-		}
-		res.entries = append(res.entries, catalogEntry(model.SideConnector, &connector))
-	}
-	// The system's Domains render last, sorted by name (docs/plans/domains.md).
-	for _, name := range domainNames(system) {
-		var domain c4v1beta1.Domain
-		found, err := r.lookup(ctx, ns, name, &domain)
-		if err != nil {
-			return res, nil, err
-		}
-		if !found {
-			missing = append(missing, "Domain "+name)
-			continue
-		}
-		res.entries = append(res.entries, catalogEntry(model.SideDomain, &domain))
-		res.domains = append(res.domains, name)
-	}
+	res, missing := modelfacts.Resolve(container, system, objs)
 	return res, missing, nil
 }
 
-// domainNames are the Domains a system names, sorted and unique.
-func domainNames(system *c4v1beta1.SoftwareSystem) []string {
-	names := slices.Clone(system.Spec.DomainRefs)
-	slices.Sort(names)
-	return slices.Compact(names)
+// scaffoldObjects lists the Container's namespace's objects of each kind its
+// scaffold reads, and the credentials of its GitProvider's Secret.
+func (r *ContainerReconciler) scaffoldObjects(ctx context.Context,
+	container *c4v1beta1.Container) (modelfacts.Objects, error) {
+	var objs modelfacts.Objects
+	in := client.InNamespace(container.Namespace)
+	var (
+		providers   c4v1beta1.GitProviderList
+		bundles     c4v1beta1.BundleList
+		frameworks  c4v1beta1.FrameworkList
+		standards   c4v1beta1.StandardList
+		computes    c4v1beta1.ComputeList
+		deployments c4v1beta1.DeploymentList
+		connectors  c4v1beta1.ConnectorList
+		domains     c4v1beta1.DomainList
+		stores      c4v1beta1.DataStoreList
+		rels        c4v1beta1.RelationshipList
+	)
+	for _, list := range []client.ObjectList{&providers, &bundles, &frameworks, &standards, &computes,
+		&deployments, &connectors, &domains, &stores} {
+		if err := r.List(ctx, list, in); err != nil {
+			return objs, err
+		}
+	}
+	// Relationships are read from the API server, not the cache: the
+	// Relationship informer may not yet hold one created just before the
+	// Container, and a scaffold missing it is never redone (#1992). A missing
+	// DataStore or Connector only delays the scaffold, so those stay cached.
+	if err := r.APIReader.List(ctx, &rels, in); err != nil {
+		return objs, err
+	}
+	objs = modelfacts.Objects{GitProviders: providers.Items, Bundles: bundles.Items, Frameworks: frameworks.Items,
+		Standards: standards.Items, Computes: computes.Items, Deployments: deployments.Items,
+		Connectors: connectors.Items, Domains: domains.Items, DataStores: stores.Items, Relationships: rels.Items}
+	if provider := modelfacts.Find(objs.GitProviders, container.Spec.GitProviderRef.Name); provider != nil {
+		creds, ok, err := r.credentials(ctx, provider)
+		if err != nil {
+			return objs, err
+		}
+		if ok {
+			objs.Secrets = map[string]ports.Credentials{provider.Spec.CredentialsSecretRef.Name: creds}
+		}
+	}
+	return objs, nil
 }
 
 // credentials reads a GitProvider's Secret. It goes straight to the API server
@@ -223,63 +119,4 @@ func (r *ContainerReconciler) lookup(ctx context.Context, ns, name string, obj c
 		return false, nil
 	}
 	return err == nil, err
-}
-
-// catalogEntry converts any of the six catalog kinds into a model.CatalogEntry.
-func catalogEntry(side string, obj client.Object) model.CatalogEntry {
-	var spec c4v1beta1.CatalogEntrySpec
-	var frameworks, wiredBy []string
-	var checksBeforeRelease, deploysItself, readsOperations bool
-	switch o := obj.(type) {
-	case *c4v1beta1.Framework:
-		spec = o.Spec.CatalogEntrySpec
-		deploysItself = o.Spec.DeploysItself
-		readsOperations = o.Spec.ReadsOperations
-	case *c4v1beta1.Standard:
-		spec = o.Spec.CatalogEntrySpec
-		frameworks = o.Spec.SupportedFrameworks
-		checksBeforeRelease = o.Spec.ChecksBeforeRelease
-	case *c4v1beta1.Compute:
-		spec = o.Spec
-	case *c4v1beta1.Deployment:
-		spec = o.Spec
-	case *c4v1beta1.Connector:
-		spec = o.Spec.CatalogEntrySpec
-		wiredBy = o.Spec.WiredBy
-	case *c4v1beta1.Domain:
-		// No supportedTypes: what a system is about doesn't depend on a
-		// Container's type.
-		spec = c4v1beta1.CatalogEntrySpec{DisplayName: o.Spec.DisplayName, Description: o.Spec.Description,
-			Template: o.Spec.Template}
-	}
-	supported := make([]string, 0, len(spec.SupportedTypes))
-	for _, t := range spec.SupportedTypes {
-		supported = append(supported, string(t))
-	}
-	return model.CatalogEntry{
-		Side:                side,
-		Name:                obj.GetName(),
-		Description:         spec.Description,
-		SupportedTypes:      supported,
-		TemplateURL:         spec.Template.URL,
-		TemplateRef:         spec.Template.Ref,
-		TemplatePath:        spec.Template.Path,
-		SupportedFrameworks: frameworks,
-		WiredBy:             wiredBy,
-		ChecksBeforeRelease: checksBeforeRelease,
-		DeploysItself:       deploysItself,
-		ReadsOperations:     readsOperations,
-	}
-}
-
-// frameworkEntry is the Framework's entry among a Container's resolved
-// entries, which start with it. A Container that adopts its repository may
-// name no Framework (#60): its entries then start with another side, or are
-// none, and the entry is the zero one, a Framework that deploys nothing
-// itself and reads no operations.
-func frameworkEntry(entries []model.CatalogEntry) model.CatalogEntry {
-	if len(entries) == 0 || entries[0].Side != model.SideFramework {
-		return model.CatalogEntry{}
-	}
-	return entries[0]
 }

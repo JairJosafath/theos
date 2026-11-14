@@ -32,6 +32,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
@@ -72,11 +73,11 @@ func (r *ContainerReconciler) scaffoldTimeout() time.Duration {
 // commit. It is safe to retry: an empty repository gets the commit, one holding
 // only our own commit is recognised, and anything else fails the Container.
 func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1.Container,
-	res resolved, status *c4v1beta1.ContainerStatus) (ctrl.Result, error) {
+	res modelfacts.Resolved, status *c4v1beta1.ContainerStatus) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	// What the scaffold reads of the Container's choices: status.bundle is
 	// written only with the rest of the status, so a copy carries it.
-	view := withBundle(container, res.bundle)
+	view := withBundle(container, res.Bundle)
 
 	// The cache can lag behind our own status writes. Check the live object, so a
 	// reconcile queued during the last attempt doesn't scaffold a second time.
@@ -105,19 +106,13 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	gitCtx, cancel := context.WithTimeout(ctx, r.scaffoldTimeout())
 	defer cancel()
 
-	provider, err := r.Git.Provider(ports.Config{
-		Kind:        string(res.provider.Spec.Provider),
-		URL:         res.provider.Spec.URL,
-		Owner:       res.provider.Spec.Owner,
-		Credentials: res.creds,
-		Packages:    packagesOf(res.provider),
-	})
+	provider, err := r.Git.Provider(modelfacts.Config(res.Provider, res.Credentials))
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionRepositoryCreated, c4v1beta1.ReasonFailed,
-			fmt.Sprintf("GitProvider %s: %v", res.provider.Name, err))
+			fmt.Sprintf("GitProvider %s: %v", res.Provider.Name, err))
 	}
 
-	repo, err := provider.EnsureRepository(gitCtx, container.Name, repoDescription(container))
+	repo, err := provider.EnsureRepository(gitCtx, container.Name, modelfacts.RepoDescription(container))
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionRepositoryCreated, err)
 	}
@@ -149,14 +144,15 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 		// The commit records the expansion the push used; the Bundle may
 		// have changed since, which is reported, never applied (#1621). An
 		// older commit without it keeps the expansion resolved now.
-		standard := res.choices.Standard
+		standard := res.Choices.Standard
 		if b := info.Bundle; b != nil {
 			status.Bundle = &c4v1beta1.ContainerBundleStatus{Name: b.Name, Framework: b.Framework,
 				Standard: b.Standard, Compute: b.Compute, Deployment: b.Deployment}
 			standard = b.Standard
 		}
 		return r.ready(ctx, container, status, standard, model.ScaffoldedRef(info.ScaffoldedFrom, standard),
-			info.ScaffoldedFrom, info.Domains, info.Relationships, info.Checks, frameworkEntry(res.entries).ReadsOperations,
+			info.ScaffoldedFrom, info.Domains, info.Relationships, info.Checks,
+			modelfacts.FrameworkEntry(res.Entries).ReadsOperations,
 			"Found the initial commit from an earlier attempt")
 	case model.HistoryForeign:
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonForeignCommits,
@@ -164,7 +160,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 				repo.WebURL))
 	}
 
-	layers, err := r.fetchLayers(gitCtx, res)
+	layers, err := modelfacts.FetchLayers(gitCtx, r.Git, res)
 	if reason, ok := templateFailure(err); ok {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, reason, err.Error())
 	}
@@ -172,7 +168,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
 
-	ci, err := gitProviderCI(res.provider)
+	ci, err := modelfacts.CI(res.Provider)
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonFailed, err.Error())
 	}
@@ -180,10 +176,8 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	in := scaffoldInput(view, ci, res.use.Connectors, res.domains,
-		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
-		r.ciImages(), specOperations(container), repo.NpmScope, license)
-	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
+	render, err := modelfacts.Build(view, res, layers, ci, repo.NpmScope, license,
+		modelfacts.Settings{CIImages: r.CIImages, Options: r.ScaffoldOptions})
 	if err != nil {
 		reason := c4v1beta1.ReasonFailed
 		if _, ok := errors.AsType[*scaffold.ConflictError](err); ok {
@@ -206,9 +200,9 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 			return ctrl.Result{}, err
 		}
 	}
-	message := scaffold.CommitMessage(in, result.ScaffoldedFrom, res.use.Relationships)
+	result := render.Result
 	author := ports.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
-	if _, err := provider.PushInitialCommit(gitCtx, repo, result.Files, message, author); err != nil {
+	if _, err := provider.PushInitialCommit(gitCtx, repo, result.Files, render.Message, author); err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
 	if err := protectRepository(gitCtx, r.Client, provider, repo, view); err != nil {
@@ -216,8 +210,9 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	}
 	log.Info("Scaffolded repository", "url", repo.WebURL, "files", len(result.Files),
 		"scaffoldedFrom", result.ScaffoldedFrom)
-	return r.ready(ctx, container, status, res.choices.Standard, model.ScaffoldedRef(result.ScaffoldedFrom, res.choices.Standard),
-		result.ScaffoldedFrom, in.Domains, res.use.Relationships, in.Checks, frameworkEntry(res.entries).ReadsOperations,
+	return r.ready(ctx, container, status, res.Choices.Standard, model.ScaffoldedRef(result.ScaffoldedFrom, res.Choices.Standard),
+		result.ScaffoldedFrom, render.Input.Domains, res.Use.Relationships, render.Input.Checks,
+		modelfacts.FrameworkEntry(res.Entries).ReadsOperations,
 		fmt.Sprintf("Pushed the initial commit with %d files", len(result.Files)))
 }
 
@@ -231,27 +226,27 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 // (#97, adoptStandard). Nothing is recorded as scaffolded. Its spec.operations
 // is recorded as it is now, as a recovered scaffold's is.
 func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1beta1.Container,
-	status *c4v1beta1.ContainerStatus, res resolved, view *c4v1beta1.Container, provider ports.GitHost,
+	status *c4v1beta1.ContainerStatus, res modelfacts.Resolved, view *c4v1beta1.Container, provider ports.GitHost,
 	repo ports.Repository) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	// Only the Standard is checked, rendered from what a later Standard update
 	// renders an adopted Container with: no Framework ref and no Connectors
 	// recorded, so no Framework files and no Connectors.
 	standardOnly := res
-	standardOnly.entries = nil
-	for _, entry := range res.entries {
+	standardOnly.Entries = nil
+	for _, entry := range res.Entries {
 		if entry.Side == model.SideStandard {
-			standardOnly.entries = append(standardOnly.entries, entry)
+			standardOnly.Entries = append(standardOnly.Entries, entry)
 		}
 	}
-	layers, err := r.fetchLayers(gitCtx, standardOnly)
+	layers, err := modelfacts.FetchLayers(gitCtx, r.Git, standardOnly)
 	if reason, ok := templateFailure(err); ok {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, reason, err.Error())
 	}
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	ci, err := gitProviderCI(res.provider)
+	ci, err := modelfacts.CI(res.Provider)
 	if err != nil {
 		return r.fail(ctx, container, status, c4v1beta1.ConditionScaffolded, c4v1beta1.ReasonFailed, err.Error())
 	}
@@ -296,16 +291,17 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	// so the check tries the Domains the repository was scaffolded with,
 	// then the system's, then none, and the first that renders main's files
 	// is recorded as the ones it holds.
-	domainSets, err := r.adoptionDomains(ctx, container.Namespace, id.ScaffoldedFrom, res.domains)
+	domainSets, err := r.adoptionDomains(ctx, container.Namespace, id.ScaffoldedFrom, res.Domains)
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	checks := model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease)
+	checks := res.Checks(container)
 	renders := make([]scaffold.Tree, len(domainSets))
 	paths := map[string]bool{}
 	var standardRef string
 	for i, domains := range domainSets {
-		in := scaffoldInput(view, ci, nil, domains, checks, r.ciImages(), specOperations(container), repo.NpmScope, license)
+		in := modelfacts.ScaffoldInput(view, ci, nil, domains, checks, r.ciImages(), specOperations(container),
+			repo.NpmScope, license)
 		renders[i] = scaffold.Tree{}
 		for _, layer := range layers {
 			tree, err := scaffold.RenderLayer(in, layer)
@@ -339,21 +335,21 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 		// pull request with the files that differ (adoptStandard).
 		domains := domainSets[model.ClosestRender(differ)]
 		log.Info("Adopted repository without its Standard's files", "url", repo.WebURL,
-			"standard", res.choices.Standard, "ref", standardRef, "domains", domains)
+			"standard", res.Choices.Standard, "ref", standardRef, "domains", domains)
 		return r.ready(ctx, container, status, "", "", nil, domains, nil, checks,
-			frameworkEntry(res.entries).ReadsOperations, fmt.Sprintf(
+			modelfacts.FrameworkEntry(res.Entries).ReadsOperations, fmt.Sprintf(
 				"Adopted repository %s; the files of its Standard %s arrive as a pull request", repo.WebURL,
-				res.choices.Standard))
+				res.Choices.Standard))
 	}
 	domains := domainSets[adopted]
 
 	if err := protectRepository(gitCtx, r.Client, provider, repo, view); err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.choices.Standard, "ref", standardRef,
+	log.Info("Adopted repository", "url", repo.WebURL, "standard", res.Choices.Standard, "ref", standardRef,
 		"domains", domains)
-	return r.ready(ctx, container, status, res.choices.Standard, standardRef, nil, domains, nil, checks,
-		frameworkEntry(res.entries).ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
+	return r.ready(ctx, container, status, res.Choices.Standard, standardRef, nil, domains, nil, checks,
+		modelfacts.FrameworkEntry(res.Entries).ReadsOperations, fmt.Sprintf("Adopted repository %s", repo.WebURL))
 }
 
 // adoptionDomains are the sets of Domains an adoption tries the Standard
@@ -374,24 +370,6 @@ func (r *ContainerReconciler) adoptionDomains(ctx context.Context, ns string, sc
 		domains[name] = found
 	}
 	return model.AdoptionDomains(scaffoldedFrom, func(name string) bool { return domains[name] }, systemDomains), nil
-}
-
-// fetchLayers fetches every catalog entry's template at its pinned ref, in layer
-// order. The GitProvider's credentials are used for templates on the same host.
-func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]scaffold.Layer, error) {
-	layers := make([]scaffold.Layer, 0, len(res.entries))
-	for _, entry := range res.entries {
-		var creds *ports.Credentials
-		if ports.SameHost(res.provider.Spec.URL, entry.TemplateURL) {
-			creds = &res.creds
-		}
-		files, err := r.Git.FetchTemplate(ctx, entry.TemplateURL, entry.TemplateRef, entry.TemplatePath, creds)
-		if err != nil {
-			return nil, fmt.Errorf("%s %s: %w", entry.Side, entry.Name, err)
-		}
-		layers = append(layers, scaffold.Layer{Side: entry.Side, Name: entry.Name, Ref: entry.TemplateRef, Files: files})
-	}
-	return layers, nil
 }
 
 // ready records a finished scaffold. From here on the factory only reports.
@@ -470,47 +448,6 @@ func (r *ContainerReconciler) condition(container *c4v1beta1.Container, status *
 	setCondition(&status.Conditions, container.Generation, condType, s, reason, message)
 }
 
-// scaffoldInput is what every template of the Container renders with. ci is
-// the CI system its repository runs, connectors are the unique Connector
-// names, sorted, checks is when CI runs the full check
-// (model.EffectiveChecks), ops its operations block, the defaults filled in,
-// and npmScope the scope the repository's npm package is named under
-// (ports.Repository.NpmScope; empty means ports.DefaultNpmScope).
-// license is the license the repository carries (resolveLicense); a caller
-// that only writes a message passes none. images are the toolchain images a
-// GitHub check falls back to (#284): the operator's (ContainerReconciler.ciImages)
-// for what a scaffold, an adoption or an update brings, the recorded ones
-// (scaffoldedCIImages) for what the repository's files are at.
-func scaffoldInput(container *c4v1beta1.Container, ci model.CI, connectors, domains []string,
-	checks string, images model.CIImages, ops model.Operations, npmScope string, license scaffold.License) scaffold.Input {
-	if npmScope == "" {
-		npmScope = ports.DefaultNpmScope
-	}
-	choices := container.Choices()
-	in := scaffold.Input{
-		CI:             ci,
-		Project:        container.Namespace,
-		SoftwareSystem: container.Spec.SoftwareSystemRef.Name,
-		Container:      container.Name,
-		DisplayName:    container.Spec.DisplayName,
-		Description:    container.Spec.Description,
-		Type:           string(container.Spec.Type),
-		Framework:      choices.Framework,
-		Standard:       choices.Standard,
-		Compute:        choices.Compute,
-		Deployment:     choices.Deployment,
-		Bundle:         choices.Bundle,
-		Connectors:     connectors,
-		Domains:        domains,
-		Checks:         checks,
-		Operations:     ops,
-		NpmScope:       npmScope,
-		License:        license,
-		CIImages:       images,
-	}
-	return in
-}
-
 // ciImages are the toolchain images the operator renders a scaffold, an
 // adoption and the files a Standard update brings with: its own, each one it
 // was given none of the release's (#284).
@@ -550,11 +487,15 @@ func ciImagesRecord(images model.CIImages) *c4v1beta1.CIImages {
 func (r *ContainerReconciler) resolveLicense(ctx context.Context,
 	container *c4v1beta1.Container) (scaffold.License, error) {
 	var project c4v1beta1.Project
-	if _, err := r.lookup(ctx, container.Namespace, container.Namespace, &project); err != nil {
+	found, err := r.lookup(ctx, container.Namespace, container.Namespace, &project)
+	if err != nil {
 		return scaffold.License{}, fmt.Errorf("reading Project %s: %w", container.Namespace, err)
 	}
-	return scaffold.ResolveLicense(string(container.Spec.License), string(project.Spec.License),
-		project.Spec.DisplayName, container.Namespace, time.Now()), nil
+	var holder *c4v1beta1.Project
+	if found {
+		holder = &project
+	}
+	return modelfacts.License(container, holder, time.Now()), nil
 }
 
 // scaffoldedLicense is the license the Container's repository carries: the
@@ -596,16 +537,6 @@ func withBundle(container *c4v1beta1.Container, bundle *c4v1beta1.ContainerBundl
 	view := container.DeepCopy()
 	view.Status.Bundle = bundle.DeepCopy()
 	return view
-}
-
-func repoDescription(container *c4v1beta1.Container) string {
-	if container.Spec.Description != "" {
-		return container.Spec.Description
-	}
-	if container.Spec.DisplayName != "" {
-		return container.Spec.DisplayName
-	}
-	return fmt.Sprintf("The %s %s of %s", container.Name, container.Spec.Type, container.Spec.SoftwareSystemRef.Name)
 }
 
 // appliedStatus splits what was applied into the Relationship names and, for

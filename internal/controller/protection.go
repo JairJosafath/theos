@@ -28,18 +28,9 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 )
-
-// gitProviderCI returns the CI system of a GitProvider's Git host: the host's
-// own, since no GitProvider names another yet.
-func gitProviderCI(gp *c4v1beta1.GitProvider) (model.CI, error) {
-	ci, err := model.HostCI(string(gp.Spec.Provider))
-	if err != nil {
-		return model.CI{}, fmt.Errorf("GitProvider %s: %w", gp.Name, err)
-	}
-	return ci, nil
-}
 
 // adoptsBare reports whether the Container adopts its repository with no
 // Standard: its checks are the repository's own, which the Container names
@@ -73,33 +64,36 @@ func containerCI(ctx context.Context, c client.Reader, container *c4v1beta1.Cont
 	if err := c.Get(ctx, key, &gp); err != nil {
 		return model.CI{}, fmt.Errorf("GitProvider %s: %w", key.Name, err)
 	}
-	ci, err := gitProviderCI(&gp)
+	ci, err := modelfacts.CI(&gp)
 	return containerCIOf(ci, container), err
 }
 
 // protectedPaths returns the paths agents may not change in the Container: the
 // platform's for its CI system and its Standard's.
 func protectedPaths(ctx context.Context, c client.Reader, container *c4v1beta1.Container) ([]string, error) {
-	_, paths, err := protection(ctx, c, container)
-	return paths, err
+	_, rule, err := protection(ctx, c, container)
+	return rule.ProtectedPaths, err
 }
 
-// protection returns the Container's CI system and the paths agents may not
-// change in it.
-func protection(ctx context.Context, c client.Reader, container *c4v1beta1.Container) (model.CI, []string, error) {
+// protection returns the Container's CI system and the rule its default
+// branch is protected with, which modelfacts.Rule builds, as it does for the
+// theos binary (#268). Its ProtectedPaths are the paths agents may not
+// change in the Container.
+func protection(ctx context.Context, c client.Reader,
+	container *c4v1beta1.Container) (model.CI, ports.BranchRule, error) {
 	ci, err := containerCI(ctx, c, container)
 	if err != nil {
-		return model.CI{}, nil, err
+		return model.CI{}, ports.BranchRule{}, err
 	}
 	var standard []string
 	if name := container.Choices().Standard; name != "" {
 		var s c4v1beta1.Standard
 		if err := c.Get(ctx, client.ObjectKey{Namespace: container.Namespace, Name: name}, &s); err != nil {
-			return model.CI{}, nil, fmt.Errorf("reading Standard %s: %w", name, err)
+			return model.CI{}, ports.BranchRule{}, fmt.Errorf("reading Standard %s: %w", name, err)
 		}
 		standard = s.Spec.ProtectedPaths
 	}
-	return ci, model.AgentProtectedPaths(ci, standard), nil
+	return ci, modelfacts.Rule(ci, standard), nil
 }
 
 // protectRepository makes the Container's default branch take changes only
@@ -114,18 +108,16 @@ func protectRepository(ctx context.Context, c client.Reader, provider ports.GitH
 	if !model.Protected(container.Choices().Standard != "", adoptedChecks(container)) {
 		return nil
 	}
-	ci, paths, err := protection(ctx, c, container)
+	_, rule, err := protection(ctx, c, container)
 	if err != nil {
 		return err
 	}
-	return protectWith(ctx, provider, repo, ci, paths)
+	return protectWith(ctx, provider, repo, rule)
 }
 
-// protectWith puts the rule on the default branch: ci's check contexts and
-// paths, the paths no agent may change. Release tags stay the operator's.
-func protectWith(ctx context.Context, provider ports.GitHost, repo ports.Repository, ci model.CI,
-	paths []string) error {
-	rule := ports.BranchRule{StatusContexts: ci.CheckContexts, ProtectedPaths: paths}
+// protectWith puts rule on the default branch. Release tags stay the
+// operator's.
+func protectWith(ctx context.Context, provider ports.GitHost, repo ports.Repository, rule ports.BranchRule) error {
 	if err := provider.ProtectBranch(ctx, repo, ports.DefaultBranch, rule); err != nil {
 		return fmt.Errorf("protecting %s: %w", ports.DefaultBranch, err)
 	}
@@ -153,11 +145,11 @@ func protectAdopted(ctx context.Context, c client.Reader, provider ports.GitHost
 		(was.ObservedGeneration == container.Generation || len(contexts) == 0) {
 		return nil
 	}
-	ci, paths, err := protection(ctx, c, container)
+	_, rule, err := protection(ctx, c, container)
 	if err != nil {
 		return err
 	}
-	ok, message := model.AdoptedChecks(ci.CheckContexts, contexts)
+	ok, message := model.AdoptedChecks(rule.StatusContexts, contexts)
 	if !ok {
 		if was == nil || was.Status != metav1.ConditionFalse {
 			logf.FromContext(ctx).Info("Left an adopted repository's default branch unprotected", "message", message)
@@ -166,11 +158,11 @@ func protectAdopted(ctx context.Context, c client.Reader, provider ports.GitHost
 			model.ReasonNoMatchingCheck, message)
 		return nil
 	}
-	if err := protectWith(ctx, provider, repo, ci, paths); err != nil {
+	if err := protectWith(ctx, provider, repo, rule); err != nil {
 		return err
 	}
-	logf.FromContext(ctx).Info("Protected an adopted repository's default branch", "contexts", ci.CheckContexts,
-		"paths", paths)
+	logf.FromContext(ctx).Info("Protected an adopted repository's default branch", "contexts", rule.StatusContexts,
+		"paths", rule.ProtectedPaths)
 	setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionProtected, metav1.ConditionTrue,
 		model.ReasonProtected, message)
 	return nil

@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -92,6 +93,8 @@ type state struct {
 	events      *eventStore
 	// copyImage copies an image for CopyImage, nil to only record the copy.
 	copyImage ImageCopier
+	// logins are the accounts tokens are of, by token (SetLogin).
+	logins map[string]string
 }
 
 type repository struct {
@@ -682,6 +685,31 @@ func (g *Git) ProtectBranch(_ context.Context, repo ports.Repository, branch str
 	}
 	s.rules[key] = rule
 	return nil
+}
+
+// SetLogin makes token the credential of account login, as the host knows
+// whose each token is.
+func (g *Git) SetLogin(token, login string) {
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	if g.s.logins == nil {
+		g.s.logins = map[string]string{}
+	}
+	g.s.logins[token] = login
+}
+
+// Login is the Config's Username, else the account SetLogin made its token
+// the credential of: a token alone says nobody's name (#268).
+func (g *Git) Login(context.Context) (string, error) {
+	if g.cfg.Credentials.Username != "" {
+		return g.cfg.Credentials.Username, nil
+	}
+	g.s.mu.Lock()
+	defer g.s.mu.Unlock()
+	if login, ok := g.s.logins[g.cfg.Credentials.Token]; ok && g.cfg.Credentials.Token != "" {
+		return login, nil
+	}
+	return "", errors.New("fake: the credential names no account the host knows")
 }
 
 func (g *Git) ProtectTags(_ context.Context, repo ports.Repository, pattern string) error {

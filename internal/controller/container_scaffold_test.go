@@ -35,6 +35,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
@@ -305,7 +306,7 @@ var _ = Describe("Container scaffolding", func() {
 		stale.Status.Phase = c4v1beta1.ContainerScaffolding
 		r := &ContainerReconciler{Client: k8sClient, Scheme: scheme.Scheme, APIReader: k8sClient, Git: fakeGitClient{gitFake},
 			ScaffoldTimeout: testScaffoldTimeout}
-		result, err := r.scaffold(ctx, stale, resolved{}, stale.Status.DeepCopy())
+		result, err := r.scaffold(ctx, stale, modelfacts.Resolved{}, stale.Status.DeepCopy())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RequeueAfter).To(BeNumerically(">", 0), "nothing else reconciles a Ready Container")
 		Expect(gitFake.PushCount()).To(Equal(pushes))

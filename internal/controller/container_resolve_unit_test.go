@@ -50,10 +50,10 @@ func TestResolveSeesARelationshipTheCacheDoesNotHoldYet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.use.Relationships) != 1 || res.use.Relationships[0].Name != rel.Name {
-		t.Fatalf("resolve used %v, want only %s: a Relationship the cache lacks is missed", res.use.Relationships, rel.Name)
+	if len(res.Use.Relationships) != 1 || res.Use.Relationships[0].Name != rel.Name {
+		t.Fatalf("resolve used %v, want only %s: a Relationship the cache lacks is missed", res.Use.Relationships, rel.Name)
 	}
-	if len(res.use.Connectors) != 1 || res.use.Connectors[0] != "postgres" {
-		t.Errorf("connectors are %v, want [postgres]", res.use.Connectors)
+	if len(res.Use.Connectors) != 1 || res.Use.Connectors[0] != "postgres" {
+		t.Errorf("connectors are %v, want [postgres]", res.Use.Connectors)
 	}
 }

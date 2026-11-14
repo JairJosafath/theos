@@ -17,6 +17,7 @@ limitations under the License.
 package fake_test
 
 import (
+	"crypto/rand"
 	"fmt"
 	"testing"
 
@@ -31,11 +32,16 @@ func TestGitHostContract(t *testing.T) {
 	// statuses are the states SetStatus reported, by owner/name@commit and
 	// context.
 	statuses := map[string]map[string]string{}
+	// #268: a token alone, whose account the host knows.
+	token := rand.Text()
+	g.SetLogin(token, "contract-operator")
 	contract.GitHost(t, contract.GitHostEnv{
 		New: func(*testing.T) ports.GitHost {
 			owners++
-			return g.For(ports.Config{URL: "http://gitea.test", Owner: fmt.Sprintf("contract-%d", owners)})
+			return g.For(ports.Config{URL: "http://gitea.test", Owner: fmt.Sprintf("contract-%d", owners),
+				Credentials: ports.Credentials{Token: token}})
 		},
+		Login: "contract-operator",
 		SetStatus: func(_ *testing.T, repo ports.Repository, commit, context, state string) {
 			key := repo.Owner + "/" + repo.Name + "@" + commit
 			if statuses[key] == nil {

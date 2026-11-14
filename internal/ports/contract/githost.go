@@ -35,6 +35,9 @@ import (
 type GitHostEnv struct {
 	// New returns a GitHost of a fresh owner that holds no repository.
 	New func(t *testing.T) ports.GitHost
+	// Login is the account the credential New's GitHosts hold is of, which
+	// their Login says.
+	Login string
 	// SetStatus reports state for check context on commit, as a CI run does.
 	SetStatus func(t *testing.T, repo ports.Repository, commit, context, state string)
 	// Release makes the release of tag at commit, with body and one asset
@@ -83,8 +86,9 @@ var (
 // made once and empty; the initial push, refused on a branch that exists;
 // ReadFiles of files, directories and missing paths; PushBranch and
 // PushDefaultBranch, a moved base refused and ErrEmptyChange; branches and
-// tags; branch rules; pull requests, opened once, ErrPullRequestNotFound, a
-// merge on a stale head refused, a merge past the rule forced,
+// tags; branch rules; the credential's own login; pull requests, opened
+// once, ErrPullRequestNotFound, a merge on a stale head refused, a merge past
+// the rule forced,
 // UpdatePullRequest and ErrConflict, and their files a rename's old path
 // included; combined statuses; releases; and ReadSource.
 func GitHost(t *testing.T, env GitHostEnv) {
@@ -104,6 +108,7 @@ func GitHost(t *testing.T, env GitHostEnv) {
 		{"creates and deletes branches", suite.createsBranches},
 		{"creates tags once", suite.createsTags},
 		{"protects branches and tags again", suite.protects},
+		{"names the credential's own login", suite.namesLogin},
 		{"opens and merges a pull request", suite.mergesPullRequest},
 		{"refuses a merge past the rule and forces it", suite.forcesMerge},
 		{"updates a pull request, or reports a conflict", suite.updatesPullRequest},
@@ -315,6 +320,15 @@ func (s suite) protects(t *testing.T) {
 		if err := h.ProtectTags(s.ctx, repo, "v*"); err != nil {
 			t.Errorf("ProtectTags() = %v", err)
 		}
+	}
+}
+
+// namesLogin: the account the credential is of, which a token alone does not
+// say (#268).
+func (s suite) namesLogin(t *testing.T) {
+	login, err := s.env.New(t).Login(s.ctx)
+	if err != nil || login != s.env.Login {
+		t.Errorf("Login() = %q, %v; want %q", login, err, s.env.Login)
 	}
 }
 

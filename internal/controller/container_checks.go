@@ -29,6 +29,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
@@ -135,7 +136,7 @@ func gitAccessFor(ctx context.Context, c client.Client, apiReader client.Reader,
 	if err != nil {
 		return gitAccess{}, err
 	}
-	ci, err := gitProviderCI(&provider)
+	ci, err := modelfacts.CI(&provider)
 	if err != nil {
 		return gitAccess{}, err
 	}

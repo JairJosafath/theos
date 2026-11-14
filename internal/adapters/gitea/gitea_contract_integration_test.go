@@ -51,6 +51,7 @@ func TestGitHostContractIntegration(t *testing.T) {
 			}
 			return p
 		},
+		Login: creds.Username,
 		SetStatus: func(t *testing.T, repo ports.Repository, commit, context, state string) {
 			giteaJSON(t, base, creds.Token, http.MethodPost,
 				fmt.Sprintf("/api/v1/repos/%s/%s/statuses/%s", repo.Owner, repo.Name, commit),

@@ -24,25 +24,15 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 )
 
 // operationsChoices is spec.operations as model reads it; nil leaves every
-// field out.
+// field out. It and specOperations forward to modelfacts and stay as the
+// reconcilers' and their unit tests' names, so this part (#268) moves no
+// call site.
 func operationsChoices(spec *c4v1beta1.OperationsSpec) model.OperationsChoices {
-	var c model.OperationsChoices
-	if spec == nil {
-		return c
-	}
-	if b := spec.Backups; b != nil {
-		c.RetentionDays, c.CopyToRegion = b.RetentionDays, b.CopyToRegion
-	}
-	if r := spec.Recovery; r != nil {
-		c.RPO, c.RTO = r.RPO, r.RTO
-	}
-	if a := spec.Alerts; a != nil {
-		c.Email = a.Email
-	}
-	return c
+	return modelfacts.OperationsChoices(spec)
 }
 
 // plannedOperations is an existing Container's block as a plan's object
@@ -76,7 +66,7 @@ func operationsSpec(c *model.OperationsChoices) *c4v1beta1.OperationsSpec {
 
 // specOperations is the Container's operations block, the defaults filled in.
 func specOperations(container *c4v1beta1.Container) model.Operations {
-	return model.ResolveOperations(operationsChoices(container.Spec.Operations))
+	return modelfacts.Operations(container)
 }
 
 // operationsStatus is a resolved block as status.operations records it, every

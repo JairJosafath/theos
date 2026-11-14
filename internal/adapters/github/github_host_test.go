@@ -56,6 +56,8 @@ func TestGitHostContract(t *testing.T) {
 			}
 			return h
 		},
+		// The token's account, whatever the Secret's username says.
+		Login: "ada",
 		SetStatus: func(t *testing.T, repo ports.Repository, commit, context, state string) {
 			t.Helper()
 			status, conclusion := "completed", state
