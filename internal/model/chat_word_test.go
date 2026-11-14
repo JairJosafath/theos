@@ -155,10 +155,15 @@ func TestChatPersonFor(t *testing.T) {
 // What theos-chat answers: a stranger's refusal in one line, the API
 // server's refusal with its words, and what was done as whom.
 func TestChatAnswers(t *testing.T) {
-	refusal := ChatStrangerRefusal("@mallory:example.org", "webshop")
+	refusal := ChatStrangerRefusal("@mallory:example.org", "webshop", "spec.people")
 	if strings.Contains(refusal, "\n") || !strings.Contains(refusal, "@mallory:example.org is not one of Chat "+
-		"webshop's people, so nothing was done") {
+		"webshop's people, so nothing was done") || !strings.HasSuffix(refusal, "adds you to its spec.people") {
 		t.Errorf("ChatStrangerRefusal = %q", refusal)
+	}
+	// #159: a Slack Chat's stranger is told the list that would let them in.
+	if refusal := ChatStrangerRefusal("U0MALLORY", "webshop", "spec.slack.people"); !strings.HasSuffix(refusal,
+		"adds you to its spec.slack.people") {
+		t.Errorf("ChatStrangerRefusal on Slack = %q", refusal)
 	}
 	if got := ChatRefused("ada@example.com", 403, ` tasks "api-1-spec" is forbidden `); got !=
 		`The cluster refused it for ada@example.com (403): tasks "api-1-spec" is forbidden` {

@@ -124,6 +124,10 @@ func New(cfg ports.ChatConfig, opts ...Option) (*Client, error) {
 	return c, nil
 }
 
+// Close does nothing: a Client holds nothing open between calls, its Sync a
+// long poll that ends with the call.
+func (c *Client) Close() {}
+
 // Hosts builds the Client of each Chat's homeserver and bot with httpClient
 // (nil for http.DefaultClient), for cmd/main.go.
 func Hosts(httpClient *http.Client) ports.ChatHosts {

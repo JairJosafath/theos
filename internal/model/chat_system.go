@@ -44,22 +44,33 @@ type ChatSystem struct {
 	// Markup is what the host reads a formatted post in, such as
 	// ChatMarkupHTML; "" for plain text alone.
 	Markup string
+	// People is the field of a Chat that lists who may speak to the factory
+	// on the host, each by the ID a message's sender carries there.
+	People string
+	// AddressFlag is the operator's flag that gives the host's address to
+	// a Chat that names none.
+	AddressFlag string
 }
 
 // ChatMarkupHTML is a post as HTML (ChatPost.HTML).
 const ChatMarkupHTML = "html"
 
-// ChatMarkupMrkdwn is a post as Slack's mrkdwn (ChatPost.Mrkdwn). No row
-// names it until step 8 of docs/plans/requests-and-chat.md adds Slack's.
+// ChatMarkupMrkdwn is a post as Slack's mrkdwn (ChatPost.Mrkdwn).
 const ChatMarkupMrkdwn = "mrkdwn"
 
 // ChatMatrix names Matrix, the chat host of the chart's homeserver.
 const ChatMatrix = "matrix"
 
-// ChatSlack names Slack. No row in chatSystems has it until step 8 of
-// docs/plans/requests-and-chat.md adds Slack's: until then a Chat on it is
-// HostNotSupported.
+// ChatSlack names Slack.
 const ChatSlack = "slack"
+
+// The keys of a Slack Chat's Secret (docs/plans/requests-and-chat.md,
+// decision 9): the bot token, which the operator and theos-chat read, and
+// the app-level token, which theos-chat alone reads, to open its socket.
+const (
+	ChatSlackBotTokenKey = "botToken" //nolint:gosec // a key name, not a credential
+	ChatSlackAppTokenKey = "appToken" //nolint:gosec // a key name, not a credential
+)
 
 // ChatSystemDefault is the host of a Chat that names none in spec.host, as
 // one written before the field: the CRD's default for it.
@@ -78,7 +89,22 @@ func ChatHostName(host string) string {
 var chatSystems = map[string]ChatSystem{
 	// Matrix groups rooms in Spaces, takes one access token and reads the
 	// HTML subset of a message's formatted_body.
-	ChatMatrix: {Name: ChatMatrix, Spaces: true, TokenKey: ChatTokenKey, Markup: ChatMarkupHTML},
+	ChatMatrix: {Name: ChatMatrix, Spaces: true, TokenKey: ChatTokenKey, Markup: ChatMarkupHTML,
+		People: "spec.people", AddressFlag: "--chat-homeserver"},
+	// Slack has no Space: the workspace is one (decision 5). Its bot token
+	// makes and posts in the channels, its app-level token opens the Socket
+	// Mode connection theos-chat reads them on, and a post is mrkdwn.
+	ChatSlack: {Name: ChatSlack, TokenKey: ChatSlackBotTokenKey, AppTokenKey: ChatSlackAppTokenKey,
+		Markup: ChatMarkupMrkdwn, People: "spec.slack.people", AddressFlag: "--chat-slack-api-url"},
+}
+
+// Keys are the keys of a Chat's Secret the host's bot takes, its token's
+// first.
+func (s ChatSystem) Keys() []string {
+	if s.AppTokenKey == "" {
+		return []string{s.TokenKey}
+	}
+	return []string{s.TokenKey, s.AppTokenKey}
 }
 
 // ChatSystemNames names the chat hosts the factory knows, sorted.

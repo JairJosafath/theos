@@ -276,37 +276,43 @@ type ChatRoomStatus struct {
 	// +required
 	Purpose ChatPurpose `json:"purpose"`
 
-	// id is the room's ID, !opaque:server.
+	// id is the room's ID: !opaque:server on Matrix, the channel's ID on
+	// Slack.
 	// +required
 	ID string `json:"id"`
 
-	// alias is the room's alias, #localpart:server.
+	// alias is the room's alias: #localpart:server on Matrix, #name on
+	// Slack.
 	// +optional
 	Alias string `json:"alias,omitempty"`
 }
 
-// ConditionChatReady on a Chat says whether the Space and its six rooms
-// are there with the people invited. Its reasons are Ready, SecretMissing,
-// SecretIncomplete, HomeserverUnset, CredentialRefused, Unreachable,
-// AliasTaken, Duplicate and HostNotSupported; its message carries the last
-// error.
+// ConditionChatReady on a Chat says whether its six rooms, and their Space
+// on Matrix, are there with the people invited. Its reasons are Ready,
+// SecretMissing, SecretIncomplete, HomeserverUnset, CredentialRefused,
+// ScopeMissing, Unreachable, AliasTaken, Duplicate and HostNotSupported;
+// its message carries the last error.
 const ConditionChatReady = "Ready"
 
-// ChatStatus is what the operator made and found on the homeserver.
+// ChatStatus is what the operator made and found on the chat host.
 type ChatStatus struct {
-	// homeserver is the address the operator last reached the rooms at.
+	// homeserver is the chat host's address the operator last reached the
+	// rooms at: the Matrix homeserver, or Slack's Web API. theos-chat
+	// reaches the host there.
 	// +optional
 	Homeserver string `json:"homeserver,omitempty"`
 
-	// bot is the Matrix user the access token belongs to.
+	// bot is the user ID on the chat host the bot's token belongs to.
 	// +optional
 	Bot string `json:"bot,omitempty"`
 
-	// space is the Space the rooms belong to.
+	// space is the Space the rooms belong to; unset on Slack, which has
+	// none.
 	// +optional
 	Space *ChatRoomRef `json:"space,omitempty"`
 
-	// rooms are the Space's rooms, one per purpose.
+	// rooms are the Chat's rooms, one per purpose: on Slack, private
+	// channels.
 	// +listType=map
 	// +listMapKey=purpose
 	// +optional

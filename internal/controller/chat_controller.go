@@ -54,9 +54,11 @@ type ChatReconciler struct {
 	// ChatHosts builds the ChatHost of a host and bot, by the name of the
 	// host's model.ChatSystem, as cmd/main.go gives the adapters.
 	ChatHosts map[string]ports.ChatHosts
-	// Homeserver is the homeserver of a Chat that names none, the operator's
-	// --chat-homeserver; "" when the chart runs none.
-	Homeserver string
+	// Addresses are each host's address for a Chat that names none, by the
+	// name of the host's model.ChatSystem: Matrix's is the operator's
+	// --chat-homeserver, "" when the chart runs none, and Slack's its
+	// --chat-slack-api-url (model.ChatSystem.AddressFlag).
+	Addresses map[string]string
 	// PollInterval is how often a Chat that isn't Ready is tried again; 0
 	// means a minute.
 	PollInterval time.Duration
@@ -95,11 +97,11 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return notReady(model.ChatDuplicate)
 	}
 
-	// A Chat on a host the operator runs no adapter for (Slack until step 8
-	// of docs/plans/requests-and-chat.md, a host newer than the operator) is
-	// left alone before its Secret is read or a host called. spec.host is
-	// immutable, so it is not polled: only a new spec, or an operator
-	// restarted with that host's adapter, tries it again.
+	// A Chat on a host the operator runs no adapter for (a host newer than
+	// the operator, or one it was built without) is left alone before its
+	// Secret is read or a host called. spec.host is immutable, so it is not
+	// polled: only a new spec, or an operator restarted with that host's
+	// adapter, tries it again.
 	check.Host = model.ChatHostName(string(chat.Spec.Host))
 	system, err := model.ChatSystemByName(check.Host)
 	hosts, ok := r.ChatHosts[system.Name]
@@ -113,9 +115,10 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, r.writeStatus(ctx, &chat, status)
 	}
 
+	// A Slack Chat names no address (CEL): the operator's flag gives it.
 	check.Homeserver = chat.Spec.Homeserver
 	if check.Homeserver == "" {
-		check.Homeserver = r.Homeserver
+		check.Homeserver = r.Addresses[system.Name]
 	}
 	if check.Homeserver == "" {
 		return notReady(model.ChatHomeserverUnset)
@@ -127,13 +130,22 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return notReady(model.ChatSecretMissing)
 	case err != nil:
 		return ctrl.Result{}, err
-	case len(secret.Data[system.TokenKey]) == 0:
-		return notReady(model.ChatSecretIncomplete)
+	}
+	// Every key the host's bot takes is there, so Ready names a missing one
+	// before theos-chat, which reads them all, fails on it.
+	for _, k := range system.Keys() {
+		if len(secret.Data[k]) == 0 {
+			check.Key = k
+			return notReady(model.ChatSecretIncomplete)
+		}
 	}
 
-	// The operator reads no rooms, so it takes the bot's token alone.
+	// The operator reads no rooms and opens no connection to the host, so
+	// it takes the bot's token alone (docs/plans/requests-and-chat.md,
+	// decision 9).
 	host, err := hosts(ports.ChatConfig{Address: check.Homeserver, Token: string(secret.Data[system.TokenKey])})
 	if err == nil {
+		defer host.Close()
 		err = r.ensureRooms(ctx, &chat, host, system, status, &check)
 	}
 	if err != nil {
@@ -141,6 +153,8 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		reason := model.ChatUnreachable
 		if taken, ok := errors.AsType[*ports.ChatAliasTakenError](err); ok {
 			reason, check.Alias = model.ChatAliasTaken, taken.Alias
+		} else if missing, ok := errors.AsType[*ports.ChatScopeMissingError](err); ok {
+			reason, check.Scope = model.ChatScopeMissing, missing.Scope
 		} else if errors.Is(err, ports.ErrChatCredentialRefused) {
 			reason = model.ChatCredentialRefused
 		}
@@ -179,9 +193,29 @@ func (r *ChatReconciler) olderChat(ctx context.Context, chat *c4v1beta1.Chat) (s
 	return "", nil
 }
 
+// chatRoomMade is the Space or a room ensureRooms made or found: its ID,
+// whether it is new, and how it is recorded in status.
+type chatRoomMade struct {
+	id     string
+	new    bool
+	record func()
+}
+
 // ensureRooms makes or finds the Space, on a host that has Spaces, and the
 // six rooms, invites the people, and records each step in status as it
 // goes, so a failure halfway keeps what was made.
+//
+// status.invited are the people invited to every room status lists. A
+// person not in it is invited to every room; the rest only to a room that
+// is new, never again to one they were invited to: on Slack an invite is a
+// join, so it would pull back into a room whoever chose to leave it
+// (#159). A room is new when EnsureRoom made it (Created), or when its ID
+// is not the one status holds for it: it was made again, on this pass or
+// on one whose invites failed partway. So status takes a new room's ID
+// only once everyone is invited to it, and the people an earlier pass did
+// not reach are invited on the next. While status.invited is empty, as
+// before the first pass that invites everyone, every person is invited to
+// every room anyway, so a new room's ID is recorded at once.
 func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHost,
 	system model.ChatSystem, status *c4v1beta1.ChatStatus, check *model.ChatCheck) error {
 	bot, err := host.WhoAmI(ctx)
@@ -190,33 +224,33 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 	}
 	status.Homeserver, status.Bot = check.Homeserver, bot
 	prefix := model.ChatAliasPrefix(chat.Namespace, chat.Spec.AliasPrefix)
-	// status.invited are the people invited to every room it lists: a room
-	// made anew empties it, so everyone is invited again (an invite of a
-	// member is no error), even when a later step fails.
-	invited := map[string]bool{}
-	for _, id := range status.Invited {
-		invited[id] = true
+	var made []chatRoomMade
+	// keep records room in status now when it is not new or nobody is in
+	// status.invited, else once its people are invited.
+	keep := func(room ports.ChatRoom, recorded string, record func()) {
+		m := chatRoomMade{id: room.ID, new: room.Created || room.ID != recorded, record: record}
+		if !m.new || len(status.Invited) == 0 {
+			record()
+		}
+		made = append(made, m)
 	}
-	forget := func() { status.Invited, invited = nil, map[string]bool{} }
-	var rooms []string
 	parent := ""
 	if system.Spaces {
-		space, err := r.ensureSpace(ctx, chat, host, prefix, status, check)
+		recorded := ""
+		if status.Space != nil {
+			recorded = status.Space.ID
+		}
+		space, err := r.ensureSpace(ctx, chat, host, prefix, recorded, check)
 		if err != nil {
 			return err
 		}
-		if space.Created {
-			forget()
-		}
-		rooms, parent = append(rooms, space.ID), space.ID
+		keep(space, recorded, func() { status.Space = &c4v1beta1.ChatRoomRef{ID: space.ID, Alias: space.Alias} })
+		parent = space.ID
 	}
 	for _, purpose := range model.ChatPurposes {
 		spec := ports.ChatRoomSpec{Alias: model.ChatRoomAlias(prefix, purpose), Name: chatRoomName(chat.Spec.Rooms, purpose),
 			Topic: model.ChatTopic(purpose), Parent: parent}
-		i := slices.IndexFunc(status.Rooms, func(s c4v1beta1.ChatRoomStatus) bool {
-			return s.Purpose == c4v1beta1.ChatPurpose(purpose)
-		})
-		if i >= 0 {
+		if i := chatRoomIndex(status.Rooms, purpose); i >= 0 {
 			spec.ID = status.Rooms[i].ID
 		}
 		room, err := host.EnsureRoom(ctx, spec)
@@ -224,27 +258,34 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 			return err
 		}
 		entry := c4v1beta1.ChatRoomStatus{Purpose: c4v1beta1.ChatPurpose(purpose), ID: room.ID, Alias: room.Alias}
-		if i >= 0 {
-			status.Rooms[i] = entry
-		} else {
-			status.Rooms = append(status.Rooms, entry)
-		}
-		if room.Created {
-			forget()
-		}
-		rooms = append(rooms, room.ID)
+		keep(room, spec.ID, func() {
+			if i := chatRoomIndex(status.Rooms, purpose); i >= 0 {
+				status.Rooms[i] = entry
+			} else {
+				status.Rooms = append(status.Rooms, entry)
+			}
+		})
 	}
 	check.Rooms = len(model.ChatPurposes)
-	var people []string
-	for _, p := range chat.Spec.People {
-		people = append(people, p.MatrixID)
-		if invited[p.MatrixID] {
-			continue
+	people := chatPeopleIDs(chat, system)
+	var newcomers []string
+	for _, id := range people {
+		if !slices.Contains(status.Invited, id) {
+			newcomers = append(newcomers, id)
 		}
-		for _, room := range rooms {
-			if err := host.Invite(ctx, room, p.MatrixID); err != nil {
-				return fmt.Errorf("inviting %s: %w", p.MatrixID, err)
+	}
+	for _, room := range made {
+		to := newcomers
+		if room.new {
+			to = people
+		}
+		for _, id := range to {
+			if err := host.Invite(ctx, room.id, id); err != nil {
+				return fmt.Errorf("inviting %s: %w", id, err)
 			}
+		}
+		if room.new {
+			room.record()
 		}
 	}
 	slices.Sort(people)
@@ -253,10 +294,17 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 	return nil
 }
 
+// chatRoomIndex is the index of purpose's room in rooms, or -1.
+func chatRoomIndex(rooms []c4v1beta1.ChatRoomStatus, purpose model.ChatPurpose) int {
+	return slices.IndexFunc(rooms, func(s c4v1beta1.ChatRoomStatus) bool {
+		return s.Purpose == c4v1beta1.ChatPurpose(purpose)
+	})
+}
+
 // ensureSpace makes or finds the Chat's Space, named for the Chat's space,
-// else its Project, and records it in status.
+// else its Project, by recorded, the ID status holds for it.
 func (r *ChatReconciler) ensureSpace(ctx context.Context, chat *c4v1beta1.Chat, host ports.ChatHost, prefix string,
-	status *c4v1beta1.ChatStatus, check *model.ChatCheck) (ports.ChatRoom, error) {
+	recorded string, check *model.ChatCheck) (ports.ChatRoom, error) {
 	var project c4v1beta1.Project
 	if err := r.Get(ctx, client.ObjectKey{Namespace: chat.Namespace, Name: chat.Namespace}, &project); err != nil &&
 		!apierrors.IsNotFound(err) {
@@ -265,18 +313,34 @@ func (r *ChatReconciler) ensureSpace(ctx context.Context, chat *c4v1beta1.Chat, 
 	spec := ports.ChatRoomSpec{Alias: prefix, Topic: model.ChatSpaceTopic, Space: true,
 		Name: model.ChatSpaceName(chat.Spec.Space, project.Spec.DisplayName, chat.Namespace)}
 	check.Space = spec.Name
-	if status.Space != nil {
-		spec.ID = status.Space.ID
-	}
+	spec.ID = recorded
 	space, err := host.EnsureRoom(ctx, spec)
 	if err != nil {
 		return ports.ChatRoom{}, err
 	}
-	status.Space = &c4v1beta1.ChatRoomRef{ID: space.ID, Alias: space.Alias}
 	if space.Alias != "" {
 		check.Space = space.Alias
 	}
 	return space, nil
+}
+
+// chatPeopleIDs are the IDs on the host of the people chat lists in the
+// field its host's row names: spec.slack.people's member IDs on Slack,
+// spec.people's Matrix IDs on Matrix.
+func chatPeopleIDs(chat *c4v1beta1.Chat, system model.ChatSystem) []string {
+	var ids []string
+	if system.Name == model.ChatSlack {
+		if chat.Spec.Slack != nil {
+			for _, p := range chat.Spec.Slack.People {
+				ids = append(ids, p.SlackID)
+			}
+		}
+		return ids
+	}
+	for _, p := range chat.Spec.People {
+		ids = append(ids, p.MatrixID)
+	}
+	return ids
 }
 
 // chatRoomName is the room's display name: the Chat's, else its purpose.

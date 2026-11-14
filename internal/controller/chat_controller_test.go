@@ -17,7 +17,6 @@ limitations under the License.
 package controller
 
 import (
-	"context"
 	"crypto/rand"
 	"slices"
 	"strings"
@@ -26,13 +25,10 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/adapters/matrix/matrixtest"
 	"github.com/JairJosafath/theos/internal/model"
-	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // newChat is a Chat on chatFake whose bot's token is in Secret secret.
@@ -196,7 +192,7 @@ var _ = Describe("Chat", func() {
 		refused := newChat(ns, "refused", "stale")
 		mustCreate(refused)
 		Expect(chatReady(refused, metav1.ConditionFalse, model.ChatCredentialRefused).Message).
-			To(ContainSubstring("refused the access token in Secret stale"))
+			To(ContainSubstring("refused the bot's token in Secret stale"))
 
 		ns = newProjectNamespace()
 		chatBot(ns)
@@ -297,7 +293,7 @@ var _ = Describe("Chat", func() {
 		Expect(patch(matrix, func() { matrix.Spec.Host, matrix.Spec.Homeserver = c4v1beta1.ChatHostSlack, "" })).
 			To(MatchError(ContainSubstring("host is immutable")))
 
-		slack := newSlackChat(ns, "slack", "slack-bot")
+		slack := newSlackChat(ns, "slack")
 		mustCreate(slack)
 		Expect(patch(slack, func() { slack.Spec.Host = c4v1beta1.ChatHostMatrix })).
 			To(MatchError(ContainSubstring("host is immutable")))
@@ -311,7 +307,7 @@ var _ = Describe("Chat", func() {
 	DescribeTable("refuses a Slack Chat its CEL rules don't allow (#158)",
 		func(mutate func(*c4v1beta1.Chat), message string) {
 			ns := newProjectNamespace()
-			chat := newSlackChat(ns, "chat", "slack-bot")
+			chat := newSlackChat(ns, "chat")
 			chat.Spec.Slack = &c4v1beta1.ChatSlack{People: []c4v1beta1.ChatSlackPerson{
 				{SlackID: "U012AB3CD", User: "ada@example.com"}}}
 			mutate(chat)
@@ -353,60 +349,100 @@ var _ = Describe("Chat", func() {
 
 	It("takes a Slack Chat with its rooms at their defaults and a prefix Slack takes (#158)", func() {
 		ns := newProjectNamespace()
-		chat := newSlackChat(ns, "chat", "slack-bot")
+		chat := newSlackChat(ns, "chat")
 		chat.Spec.Rooms.General, chat.Spec.AliasPrefix = "general", "acme-shop-"+strings.Repeat("a", 60)
 		chat.Spec.Slack = &c4v1beta1.ChatSlack{}
 		mustCreate(chat)
 	})
 
-	It("leaves a Chat on a host it runs no adapter for alone, its Secret unread (#158)", func() {
+	It("makes a Slack Chat's six private channels and no Space, and invites its people (#159)", func() {
 		ns := newProjectNamespace()
-		// A bot and its Secret are there: a Matrix Chat would get its rooms.
-		chatBot(ns)
-		chat := newSlackChat(ns, "chat", "matrix-bot")
-		mustCreate(chat)
-		cond := chatReady(chat, metav1.ConditionFalse, model.ChatHostNotSupported)
-		Expect(cond.Message).To(ContainSubstring("Chat chat is on slack, a chat host this operator runs no adapter for"))
-		Expect(chat.Status.Homeserver).To(BeEmpty())
-		Expect(chat.Status.Bot).To(BeEmpty())
-		Expect(chat.Status.Space).To(BeNil())
-		Expect(chat.Status.Rooms).To(BeEmpty())
+		ada, _ := chatSlackFake.NewUser("ada-" + ns)
+		adaUser, bobUser := "ada-"+ns+"@example.com", "bob-"+ns+"@example.com"
+		grant(adaUser, roleChatPeople)
+		grant(bobUser, roleChatPeople)
+		chat, bot, _ := slackFakeChat(ns, c4v1beta1.ChatSlackPerson{SlackID: ada, User: adaUser})
+		Expect(asUser(adaUser).Create(ctx, chat)).To(Succeed())
 
-		By("reading no Secret and building no host, even with a homeserver and Matrix's adapter")
-		reads := &secretReads{Reader: k8sClient}
-		built := 0
-		r := &ChatReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), APIReader: reads,
-			Homeserver: chatFake.URL(), ChatHosts: map[string]ports.ChatHosts{
-				model.ChatMatrix: func(cfg ports.ChatConfig) (ports.ChatHost, error) {
-					built++
-					return chatHosts()[model.ChatMatrix](cfg)
-				}}}
-		res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key(ns, "chat")})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(res).To(Equal(ctrl.Result{}), "spec.host never changes, so it is not polled")
-		Expect(reads.secrets).To(BeZero())
-		Expect(built).To(BeZero())
-		chatReady(chat, metav1.ConditionFalse, model.ChatHostNotSupported)
-		Expect(chat.Status.Rooms).To(BeEmpty())
+		cond := chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		Expect(cond.Message).To(Equal("The 6 rooms are ready on " + chatSlackFake.Address() +
+			", with no Space; 1 person invited"))
+		Expect(chat.Status.Homeserver).To(Equal(chatSlackFake.Address()), "the address theos-chat reaches Slack at")
+		Expect(chat.Status.Bot).To(Equal(bot))
+		Expect(chat.Status.Space).To(BeNil(), "Slack has no Space")
+		Expect(chat.Status.Invited).To(Equal([]string{ada}))
+		Expect(chat.Status.Rooms).To(HaveLen(6))
+		ids := make([]string, 0, len(model.ChatPurposes))
+		for i, purpose := range model.ChatPurposes {
+			status := chat.Status.Rooms[i]
+			name := "theos-" + ns + "-" + string(purpose)
+			Expect(status.Purpose).To(Equal(c4v1beta1.ChatPurpose(purpose)))
+			Expect(status.Alias).To(Equal(name))
+			channel, ok := chatSlackFake.Room(status.ID)
+			Expect(ok).To(BeTrue())
+			Expect(channel).To(And(HaveField("Name", name), HaveField("Topic", model.ChatTopic(purpose)),
+				HaveField("Space", false), HaveField("Parent", ""), HaveField("Private", true)))
+			Expect(channel.Members).To(ConsistOf(bot, ada))
+			ids = append(ids, status.ID)
+		}
+
+		By("making nothing on the next reconciles, and inviting a person added")
+		made := chatSlackFake.Rooms()
+		bob, _ := chatSlackFake.NewUser("bob-" + ns)
+		Expect(patchAs(asUser(bobUser), chat, func() {
+			chat.Spec.Slack.People = append(chat.Spec.Slack.People, c4v1beta1.ChatSlackPerson{SlackID: bob, User: bobUser})
+		})).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key(ns, "chat"), chat)).To(Succeed())
+			g.Expect(chat.Status.Invited).To(ConsistOf(ada, bob))
+			g.Expect(condition(chat.Status.Conditions, c4v1beta1.ConditionChatReady).ObservedGeneration).
+				To(Equal(chat.Generation))
+		}).Should(Succeed())
+		for _, id := range ids {
+			channel, _ := chatSlackFake.Room(id)
+			Expect(channel.Members).To(ConsistOf(bot, ada, bob))
+		}
+		Expect(chatSlackFake.Rooms()).To(Equal(made))
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+	})
+
+	It("names a Slack Chat's missing key and a scope its bot token lacks on Ready (#159)", func() {
+		ns := newProjectNamespace()
+		_, token := chatSlackFake.NewUser("bot-" + ns)
+		secret := &corev1.Secret{ObjectMeta: objectMeta(ns, "slack-bot"),
+			Data: map[string][]byte{model.ChatSlackBotTokenKey: []byte(token)}}
+		mustCreate(secret)
+		chat := newSlackChat(ns, "chat")
+		mustCreate(chat)
+		Expect(chatReady(chat, metav1.ConditionFalse, model.ChatSecretIncomplete).Message).To(HavePrefix(
+			"Secret slack-bot has no appToken; it holds the bot token under botToken and the app-level token under " +
+				"appToken"))
+		Expect(chat.Status.Rooms).To(BeEmpty(), "nothing is made before the Secret is whole")
+
+		By("saying the scope Slack names, and making the channels once the bot has it")
+		chatSlackFake.Revoke(token, "groups:write", "EnsureRoom")
+		Expect(patch(secret, func() { secret.Data[model.ChatSlackAppTokenKey] = []byte(rand.Text()) })).To(Succeed())
+		Expect(chatReady(chat, metav1.ConditionFalse, model.ChatScopeMissing).Message).To(HavePrefix(
+			"The bot's token in Secret slack-bot lacks the scope groups:write, which " + chatSlackFake.Address() +
+				" says a call needs"))
+		chatSlackFake.Grant(token, "groups:write")
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		Expect(chat.Status.Rooms).To(HaveLen(6))
+
+		By("naming the bot token when it is the key missing")
+		ns = newProjectNamespace()
+		mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "slack-bot"),
+			Data: map[string][]byte{model.ChatSlackAppTokenKey: []byte(rand.Text())}})
+		other := newSlackChat(ns, "chat")
+		mustCreate(other)
+		Expect(chatReady(other, metav1.ConditionFalse, model.ChatSecretIncomplete).Message).To(HavePrefix(
+			"Secret slack-bot has no botToken"))
 	})
 })
 
 // newSlackChat is a Chat with host: slack whose bot's tokens are in Secret
-// secret.
-func newSlackChat(ns, name, secret string) *c4v1beta1.Chat {
+// slack-bot.
+func newSlackChat(ns, name string) *c4v1beta1.Chat {
 	return &c4v1beta1.Chat{ObjectMeta: objectMeta(ns, name), Spec: c4v1beta1.ChatSpec{
-		Host: c4v1beta1.ChatHostSlack, CredentialsSecretRef: c4v1beta1.LocalRef{Name: secret}}}
-}
-
-// secretReads is a client.Reader that counts the Secrets read through it.
-type secretReads struct {
-	client.Reader
-	secrets int
-}
-
-func (r *secretReads) Get(ctx context.Context, k client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	if _, ok := obj.(*corev1.Secret); ok {
-		r.secrets++
-	}
-	return r.Reader.Get(ctx, k, obj, opts...)
+		Host: c4v1beta1.ChatHostSlack, CredentialsSecretRef: c4v1beta1.LocalRef{Name: "slack-bot"}}}
 }
