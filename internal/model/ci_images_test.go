@@ -127,3 +127,48 @@ func TestDefaultCIImages263(t *testing.T) {
 		t.Errorf("%+v.OrDefault() = %+v, want %+v", own, got, want)
 	}
 }
+
+// TestLegacyCIImages284 checks that a status that records no images reads as
+// the #263 default images, fixed at release 0.32.0 whatever ToolchainRelease
+// moves to, and that OrLegacy fills only what is empty.
+func TestLegacyCIImages284(t *testing.T) {
+	want := CIImages{Go: "ghcr.io/jairjosafath/theos/go:0.32.0", Base: "ghcr.io/jairjosafath/theos/base:0.32.0"}
+	if got := LegacyCIImages(); got != want {
+		t.Errorf("LegacyCIImages() = %+v, want %+v", got, want)
+	}
+	if got := (CIImages{}).OrLegacy(); got != want {
+		t.Errorf("CIImages{}.OrLegacy() = %+v, want %+v", got, want)
+	}
+	own := CIImages{Base: "registry.example.com/base:1.0.0"}
+	if got, want := own.OrLegacy(), (CIImages{Go: want.Go, Base: own.Base}); got != want {
+		t.Errorf("%+v.OrLegacy() = %+v, want %+v", own, got, want)
+	}
+}
+
+// TestCIImagesProblem284 checks the one check of the images the operator and
+// hack/render are given: an empty image is the default, and the first image
+// that isn't pinned is named by its toolchain.
+func TestCIImagesProblem284(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		images CIImages
+		want   string
+	}{
+		{"none given", CIImages{}, ""},
+		{"the defaults", DefaultCIImages(), ""},
+		{"go only, pinned", CIImages{Go: "registry.example.com:5000/tools/go:1.0.0"}, ""},
+		{"base by digest", CIImages{Base: "registry.example.com/base@sha256:" + strings.Repeat("a", 64)}, ""},
+		{"go moves", CIImages{Go: "registry.example.com/go:latest"}, `go: "registry.example.com/go:latest" names the tag latest`},
+		{"base has no tag", CIImages{Go: "registry.example.com/go:1.0.0", Base: "registry.example.com/base"},
+			`base: "registry.example.com/base" names no tag or digest`},
+		{"go is no reference", CIImages{Go: "go::1"}, `go: "go::1" is not an image reference`},
+		{"both wrong names go first", CIImages{Go: "a:b:c", Base: "b:latest"}, `go: "a:b:c" is not an image reference`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := c.images.Problem()
+			if c.want == "" && got != "" || c.want != "" && !strings.HasPrefix(got, c.want) {
+				t.Errorf("%+v.Problem() = %q, want it to start with %q", c.images, got, c.want)
+			}
+		})
+	}
+}

@@ -105,12 +105,8 @@ func run(name string, args []string, stdout, stderr io.Writer) error {
 	if in.CI, err = model.CIByName(*ci); err != nil {
 		return err
 	}
-	for _, f := range []struct{ flag, image string }{
-		{"-ci-image-go", in.CIImages.Go}, {"-ci-image-base", in.CIImages.Base},
-	} {
-		if problem := model.PinnedImageProblem(f.image); problem != "" {
-			return fmt.Errorf("%s: %s", f.flag, problem)
-		}
+	if problem := in.CIImages.Problem(); problem != "" {
+		return fmt.Errorf("-ci-image-%s", problem)
 	}
 	if *retention < -1 || *retention > int(model.MaxRetentionDays) {
 		return fmt.Errorf("-retention-days %d: 0 to %d, or -1 to leave it out", *retention, model.MaxRetentionDays)

@@ -250,7 +250,7 @@ var _ = Describe("Container adoption", func() {
 		Expect(gitFake.ProtectedBranches(ns, "orders-api")).To(Equal([]string{"main"}))
 		Expect(container.Status.ScaffoldedFrom).To(BeEmpty(), "nothing was scaffolded")
 		Expect(container.Status.Standard).To(Equal(&c4v1beta1.ContainerStandardStatus{
-			Name: "python-strict", Ref: "v1.0.0", Checks: c4v1beta1.ChecksEveryChange}))
+			Name: "python-strict", Ref: "v1.0.0", Checks: c4v1beta1.ChecksEveryChange, CIImages: releaseCIImages()}))
 		Expect(container.Status.RepositoryURL).NotTo(BeEmpty())
 	})
 

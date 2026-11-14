@@ -34,10 +34,18 @@ const ToolchainRegistry = "ghcr.io/jairjosafath/theos"
 // or hack/render: a release that is published, never latest or a branch.
 // hack/release.sh's bump sets it to the release it cuts and its check holds
 // it there, and test/chart holds it equal to dist/chart/Chart.yaml's version
-// (#284). Moving it changes what new scaffolds and Standard updates render;
-// a repository scaffolded before keeps its image until its Standard's ref is
-// bumped.
+// (#284). Moving it changes the images new scaffolds, and the new side of
+// Standard updates, render with when the operator was given none. A
+// repository keeps the images its Standard's files were rendered with, which
+// status.standard.ciImages records, until a Standard update moves them: a
+// change of the Standard's ref or of the Container's checks, never a release
+// alone.
 const ToolchainRelease = "0.32.0"
+
+// legacyToolchainRelease is the release whose toolchain images every render
+// fell back to from #263 until the operator recorded the images it rendered
+// with (#284). It never moves.
+const legacyToolchainRelease = "0.32.0"
 
 // CIImages are the toolchain images a CI job runs in when the CI system
 // itself names none, one per toolchain: Go for the Standards whose own
@@ -63,7 +71,31 @@ func DefaultCIImages() CIImages {
 
 // OrDefault fills each image left empty from DefaultCIImages.
 func (c CIImages) OrDefault() CIImages {
-	d := DefaultCIImages()
+	return c.or(DefaultCIImages())
+}
+
+// LegacyCIImages are the images a repository's Standard files are read as
+// rendered with when the Container's status records none: a Container
+// scaffolded or adopted before the operator recorded them (#284), when every
+// render fell back to the #263 default images. Unlike DefaultCIImages, which
+// moves with every release, they are fixed. A repository rendered by
+// hack/render with other images, or whose check a person edited, is read as
+// rendered with these too: its check's image then shows as the repository's
+// own change, as any edit by hand does.
+func LegacyCIImages() CIImages {
+	return CIImages{
+		Go:   ToolchainRegistry + "/go:" + legacyToolchainRelease,
+		Base: ToolchainRegistry + "/base:" + legacyToolchainRelease,
+	}
+}
+
+// OrLegacy fills each image left empty from LegacyCIImages: the images a
+// record of what a repository's Standard files were rendered with stands for.
+func (c CIImages) OrLegacy() CIImages {
+	return c.or(LegacyCIImages())
+}
+
+func (c CIImages) or(d CIImages) CIImages {
 	if c.Go == "" {
 		c.Go = d.Go
 	}
@@ -71,6 +103,24 @@ func (c CIImages) OrDefault() CIImages {
 		c.Base = d.Base
 	}
 	return c
+}
+
+// Problem says why an image c names isn't pinned (PinnedImageProblem), after
+// its toolchain and a colon, such as `go: "example.com/go:latest" names the
+// tag latest, ...`, or "" when every image it names is. An image left empty
+// has none: it is DefaultCIImages'. The operator (--ci-image-go,
+// --ci-image-base) and hack/render (-ci-image-go, -ci-image-base) refuse
+// such an image, naming the flag (#284).
+func (c CIImages) Problem() string {
+	for _, image := range []struct{ toolchain, image string }{{"go", c.Go}, {"base", c.Base}} {
+		if image.image == "" {
+			continue
+		}
+		if problem := PinnedImageProblem(image.image); problem != "" {
+			return image.toolchain + ": " + problem
+		}
+	}
+	return ""
 }
 
 // The image-reference grammar of the OCI distribution spec, which docker and

@@ -291,7 +291,13 @@ organization is where those three show.
   `Chart.appVersion`, or to `Chart.version` for an unreleased chart whose
   appVersion is `dev`, the release it follows) become the operator's
   `--ci-image-go` and `--ci-image-base`, which `ContainerReconciler.CIImages`
-  carries and `scaffoldInput` copies into every render. A flag left out
+  carries into what a scaffold, an adoption or a Standard update brings. The
+  files a repository already holds render with the images
+  `status.standard.ciImages` records they were rendered with (and a file
+  behind with its own), so an operator release alone moves no repository's
+  image and the next Standard update moves it cleanly
+  ([design.md](../design.md), "The CI fallback images are recorded as
+  rendered"). A flag left out
   (the kustomize deploy, an empty `repository`) keeps
   `model.DefaultCIImages`; a flag naming an image that isn't pinned stops
   the operator at startup, as an invalid `--cluster-dns` does, rather than

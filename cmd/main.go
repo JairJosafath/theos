@@ -305,16 +305,9 @@ func main() {
 	// A CI image the chart names must be pinned, as hack/render requires: the
 	// operator refuses to start rather than scaffold repositories whose check
 	// falls back to an image other than the one the chart was given (#284).
-	for _, f := range []struct{ flag, image string }{
-		{"--ci-image-go", ciImages.Go}, {"--ci-image-base", ciImages.Base},
-	} {
-		if f.image == "" {
-			continue
-		}
-		if problem := model.PinnedImageProblem(f.image); problem != "" {
-			setupLog.Error(nil, "Invalid "+f.flag+": "+problem, "value", f.image)
-			os.Exit(1)
-		}
+	if problem := ciImages.Problem(); problem != "" {
+		setupLog.Error(nil, "Invalid --ci-image-"+problem)
+		os.Exit(1)
 	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled

@@ -101,31 +101,30 @@ func TestScaffoldInput(t *testing.T) {
 		},
 		NpmScope: "@theos",
 	}
-	r := &ContainerReconciler{}
 	// An empty scope (a provider that sets none) is the default (#1231).
-	got := r.scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "",
-		scaffold.License{})
+	got := scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, model.CIImages{},
+		specOperations(container), "", scaffold.License{})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput() = %+v, want %+v", got, want)
 	}
 	// The GitProvider's own scope is passed through (#1231).
 	want.NpmScope = "@acme"
-	got = r.scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
-		scaffold.License{})
+	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, model.CIImages{},
+		specOperations(container), "@acme", scaffold.License{})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput(@acme) = %+v, want %+v", got, want)
 	}
 	// The resolved license is carried as is (#1788).
 	want.License = scaffold.License{ID: "MIT", Holder: "Web Shop", Year: 2026}
-	got = r.scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
-		want.License)
+	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, model.CIImages{},
+		specOperations(container), "@acme", want.License)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput(license) = %+v, want %+v", got, want)
 	}
-	// The operator's toolchain images are carried as they are (#284).
+	// The toolchain images are carried as they are (#284).
 	want.CIImages = model.CIImages{Go: "registry.example.com/go:1.0.0", Base: "registry.example.com/base:1.0.0"}
-	got = (&ContainerReconciler{CIImages: want.CIImages}).scaffoldInput(container, ci, []string{"postgres"},
-		[]string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme", want.License)
+	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, want.CIImages,
+		specOperations(container), "@acme", want.License)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput(CIImages) = %+v, want %+v", got, want)
 	}
@@ -170,7 +169,7 @@ func TestScaffoldedGitHubCheckRunsInTheOperatorsImage284(t *testing.T) {
 					},
 				}
 				r := &ContainerReconciler{CIImages: c.images}
-				in := r.scaffoldInput(container, github, nil, nil, model.ChecksEveryChange,
+				in := scaffoldInput(container, github, nil, nil, model.ChecksEveryChange, r.ciImages(),
 					specOperations(container), "", scaffold.License{})
 				tree, err := scaffold.RenderLayer(in, layer)
 				if err != nil {
