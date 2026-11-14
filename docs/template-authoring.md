@@ -142,12 +142,13 @@ go run ./hack/render -templates ~/catalog -out /tmp/app -type cli \
 cd /tmp/app && make check
 ```
 
-`go run ./hack/render -h` lists the rest of its flags (`-container`,
-`-npm-scope`, `-ci`, the operations ones). A layer conflict, a template error
-or a Domain's non-Markdown file fails the render with the message the
-Container would show. For a Framework or a Standard, render it with the
-layers it pairs with and run the result's own `make check`, as
-`make test-templates` does for the seeded combinations.
+`go run ./hack/render -h` lists the rest of its flags (`-project` and
+`-system`, which `.theos.yaml` names and which default to `webshop` and
+`shop`, `-container`, `-npm-scope`, `-ci`, the operations ones). A layer
+conflict, a template error or a Domain's non-Markdown file fails the render
+with the message the Container would show. For a Framework or a Standard,
+render it with the layers it pairs with and run the result's own
+`make check`, as `make test-templates` does for the seeded combinations.
 
 ## Install it
 
