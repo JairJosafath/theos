@@ -49,6 +49,38 @@ function close(server) {
 /** A credential the browser sends; the server never passes it on. */
 const browserToken = randomBytes(18).toString('base64url')
 
+/** The request sources of the fake API's Brief "sourced" (made-up names and keys). */
+const SOURCES = [
+  {
+    name: 'product',
+    linear: { team: 'ENG', label: 'factory' },
+    credentialsSecretRef: { name: 'product-linear' },
+    mode: 'Ask',
+    accepted: [412],
+    declined: [415],
+  },
+  {
+    name: 'support',
+    jira: { site: 'https://acme.example', cloudID: 'c1', project: 'SHOP', label: 'factory' },
+    credentialsSecretRef: { name: 'acme-jira' },
+  },
+]
+
+/**
+ * A source whose free text holds what Go's JSON encoder escapes (`&`, `<`, `>`,
+ * U+2028) and this server's does not (#163): made-up values.
+ */
+const TEXTY = {
+  name: 'rnd',
+  linear: { team: 'R&D<ops>', label: 'R&D \u2028 <b>' },
+  credentialsSecretRef: { name: 'rnd-linear' },
+  mode: 'Ask',
+  accepted: [3],
+}
+
+/** The entry of the fake API's Brief "odd", which a test sets to one the CRD would refuse. */
+const odd = { entry: {} }
+
 describe('server.mjs', () => {
   /** Requests the fake API server has seen. */
   const seen = []
@@ -115,6 +147,18 @@ describe('server.mjs', () => {
           spec: { prompts },
           status: { promptsPlanned: 49 },
         })
+      }
+      if (url.pathname === `${briefs}sourced`) {
+        const spec = { idea: 'x', requestSources: SOURCES }
+        return json(200, { kind: 'Brief', metadata: { name: 'sourced', resourceVersion: '12' }, spec })
+      }
+      if (url.pathname === `${briefs}texty`) {
+        const spec = { idea: 'x', requestSources: [TEXTY] }
+        return json(200, { kind: 'Brief', metadata: { name: 'texty', resourceVersion: '13' }, spec })
+      }
+      if (url.pathname === `${briefs}odd`) {
+        const spec = { idea: 'x', requestSources: [odd.entry] }
+        return json(200, { kind: 'Brief', metadata: { name: 'odd', resourceVersion: '14' }, spec })
       }
       if (url.pathname === `${briefs}fresh`) {
         return json(200, { kind: 'Brief', metadata: { name: 'fresh', resourceVersion: '8' }, spec: { idea: 'x' } })
@@ -600,7 +644,7 @@ describe('server.mjs', () => {
     it('says on /ui/session that actions are on, made as the ServiceAccount, with every write', async () => {
       const answer = await (await fetch(`${actionBase}/ui/session`)).json()
       assert.deepEqual([answer.actions, answer.mode, answer.user], [true, 'service-account', null])
-      assert.equal(answer.writes.length, 14)
+      assert.equal(answer.writes.length, 15)
       assert.ok(!JSON.stringify(answer).includes(browserToken))
     })
 
@@ -759,6 +803,181 @@ describe('server.mjs', () => {
       const answer = await res.json()
       assert.equal(answer.reason, 'Conflict')
       assert.match(answer.message, /^Brief webshop\/lens changed since this page showed it, so nothing was saved/)
+      assert.deepEqual(
+        seen.map((r) => r.method),
+        ['GET'],
+      )
+    })
+
+    // Answering an item of a request source (#163): a test of the whole entry as read, then its accepted and declined.
+    const SRC = '/spec/requestSources'
+    const testEntry = (i, value = SOURCES[i]) => ({ op: 'test', path: `${SRC}/${i}`, value })
+    const answer = [testEntry(0), add(`${SRC}/0/accepted`, [412, 413]), { op: 'remove', path: `${SRC}/0/declined` }]
+    // What goes upstream for a page's answer (#163): a test of the stored entry's name and of each list it has, then the writes.
+    const forwarded = (body) => {
+      const i = Number(body[0].path.split('/').pop())
+      const entry = SOURCES[i]
+      const lists = ['accepted', 'declined'].filter((f) => entry[f] !== undefined)
+      return [
+        { op: 'test', path: `${SRC}/${i}/name`, value: entry.name },
+        ...lists.map((f) => ({ op: 'test', path: `${SRC}/${i}/${f}`, value: entry[f] })),
+        ...body.slice(1),
+      ]
+    }
+    const getAndPatch = () => seen.map((r) => [r.method, r.url])
+
+    it("sets one request source's accepted and declined, after a test of the entry as the Brief holds it (#163)", async () => {
+      for (const body of [
+        answer,
+        [testEntry(0), add(`${SRC}/0/declined`, [415, 413]), { op: 'remove', path: `${SRC}/0/accepted` }],
+        [testEntry(0), add(`${SRC}/0/accepted`, [412, 413])],
+        // The second entry has neither list: the first answer adds one.
+        [testEntry(1), add(`${SRC}/1/declined`, [7])],
+      ]) {
+        seen.length = 0
+        const res = await write('PATCH', '/briefs/sourced', body, JP)
+        assert.equal(res.status, 200)
+        assert.deepEqual(getAndPatch(), [
+          ['GET', `${api}/briefs/sourced`],
+          ['PATCH', `${api}/briefs/sourced?fieldManager=theos-ui`],
+        ])
+        assert.deepEqual(seen[1].body, forwarded(body))
+      }
+    })
+
+    it('sends upstream no free text of the entry, only its name and numbers, so the API server’s test can match (#163)', async () => {
+      const body = [testEntry(0, TEXTY), add(`${SRC}/0/declined`, [4]), add(`${SRC}/0/accepted`, [3, 5])]
+      seen.length = 0
+      const res = await write('PATCH', '/briefs/texty', body, JP)
+      assert.equal(res.status, 200)
+      assert.deepEqual(getAndPatch(), [
+        ['GET', `${api}/briefs/texty`],
+        ['PATCH', `${api}/briefs/texty?fieldManager=theos-ui`],
+      ])
+      assert.deepEqual(seen[1].body, [
+        { op: 'test', path: `${SRC}/0/name`, value: 'rnd' },
+        { op: 'test', path: `${SRC}/0/accepted`, value: [3] },
+        add(`${SRC}/0/declined`, [4]),
+        add(`${SRC}/0/accepted`, [3, 5]),
+      ])
+      // The bytes sent: none of the entry's strings but its name, whatever the characters.
+      const sent = JSON.stringify(seen[1].body)
+      for (const text of ['R&D', '<', '>', '&', '\u2028', 'ops', 'label', 'team', 'rnd-linear', 'credentials', 'Ask']) {
+        assert.ok(!sent.includes(text), `${JSON.stringify(text)} in ${sent}`)
+      }
+      assert.deepEqual(sent.match(/"value":"[^"]*"/g), ['"value":"rnd"'], 'the only string value sent is the name')
+    })
+
+    it('still refuses an answer whose test of free text is not the stored entry’s, and writes nothing (#163)', async () => {
+      for (const entry of [
+        { ...TEXTY, linear: { ...TEXTY.linear, label: 'R&amp;D' } },
+        { ...TEXTY, linear: { ...TEXTY.linear, team: 'R&D&lt;ops&gt;' } },
+        { ...TEXTY, linear: { team: 'R&D<ops>' } },
+      ]) {
+        seen.length = 0
+        const res = await write('PATCH', '/briefs/texty', [testEntry(0, entry), add(`${SRC}/0/accepted`, [1])], JP)
+        assert.equal(res.status, 409, JSON.stringify(entry))
+        assert.deepEqual(
+          seen.map((r) => r.method),
+          ['GET'],
+        )
+      }
+    })
+
+    it('tests each list of the stored entry upstream, so a change to accepted or declined after the read is refused there (#163)', async () => {
+      // The fake API does not run a test: this shows what the real one is given to run.
+      seen.length = 0
+      const res = await write('PATCH', '/briefs/sourced', answer, JP)
+      assert.equal(res.status, 200)
+      assert.deepEqual(seen[1].body.slice(0, 3), [
+        { op: 'test', path: `${SRC}/0/name`, value: 'product' },
+        { op: 'test', path: `${SRC}/0/accepted`, value: [412] },
+        { op: 'test', path: `${SRC}/0/declined`, value: [415] },
+      ])
+    })
+
+    it('refuses an answer when the stored lists changed since the page read them, before any write (#163)', async () => {
+      // The page read accepted [412] and declined [415]; another person has since answered 500.
+      for (const stale of [
+        { ...SOURCES[0], accepted: [412, 500] },
+        { ...SOURCES[0], declined: [415, 500] },
+        { ...SOURCES[0], accepted: [] },
+      ]) {
+        seen.length = 0
+        const res = await write('PATCH', '/briefs/sourced', [testEntry(0, stale), add(`${SRC}/0/accepted`, [1])], JP)
+        assert.equal(res.status, 409, JSON.stringify(stale))
+        assert.deepEqual(
+          seen.map((r) => r.method),
+          ['GET'],
+        )
+      }
+    })
+
+    it('refuses an entry that is not as the CRD holds it, fail closed (#163)', async () => {
+      for (const entry of [
+        { name: 'R&D', credentialsSecretRef: { name: 'x' } },
+        { name: 'Upper', credentialsSecretRef: { name: 'x' } },
+        { name: 'rnd', accepted: ['3'] },
+        { name: 'rnd', declined: 'all' },
+      ]) {
+        odd.entry = entry
+        seen.length = 0
+        const res = await write('PATCH', '/briefs/odd', [testEntry(0, entry), add(`${SRC}/0/accepted`, [1])], JP)
+        assert.equal(res.status, 403, JSON.stringify(entry))
+        assert.match((await res.json()).message, /cannot test safely, so nothing was saved/)
+        assert.deepEqual(
+          seen.map((r) => r.method),
+          ['GET'],
+        )
+      }
+    })
+
+    it('refuses an answer of more numbers than the CRD holds, and says how many it takes (#163)', async () => {
+      const big = Array.from({ length: 201 }, (_, i) => i + 1)
+      seen.length = 0
+      const res = await write('PATCH', '/briefs/sourced', [testEntry(0), add(`${SRC}/0/accepted`, big)], JP)
+      assert.equal(res.status, 403)
+      assert.match((await res.json()).message, /each an add of 1 to 200 different numbers/)
+      assert.equal(seen.length, 0)
+    })
+
+    it('refuses a request source answer worked out from an entry that has changed, and writes nothing (#163)', async () => {
+      const changed = { ...SOURCES[0], accepted: [412, 500] }
+      seen.length = 0
+      const res = await write('PATCH', '/briefs/sourced', [testEntry(0, changed), add(`${SRC}/0/accepted`, [1])], JP)
+      assert.equal(res.status, 409)
+      const body = await res.json()
+      assert.equal(body.reason, 'Conflict')
+      assert.match(body.message, /^Brief webshop\/sourced's request source "product" is not as this page showed it/)
+      assert.deepEqual(
+        seen.map((r) => r.method),
+        ['GET'],
+      )
+    })
+
+    it('refuses a request source answer whose index is another entry than the one tested, and writes nothing (#163)', async () => {
+      for (const body of [
+        // Entry 1 tested at place 0, and the other way round.
+        [testEntry(0, SOURCES[1]), add(`${SRC}/0/accepted`, [1])],
+        [testEntry(1, SOURCES[0]), add(`${SRC}/1/accepted`, [1])],
+        // An entry the Brief does not have, and one with the name only.
+        [testEntry(5, { ...SOURCES[0], name: 'ghost' }), add(`${SRC}/5/accepted`, [1])],
+        [testEntry(0, { name: 'product' }), add(`${SRC}/0/accepted`, [1])],
+      ]) {
+        seen.length = 0
+        const res = await write('PATCH', '/briefs/sourced', body, JP)
+        assert.equal(res.status, 409, JSON.stringify(body))
+        assert.deepEqual(
+          seen.map((r) => r.method),
+          ['GET'],
+        )
+      }
+    })
+
+    it('passes on the API server’s answer to a request source answer for a Brief it cannot read, writing nothing (#163)', async () => {
+      seen.length = 0
+      const res = await write('PATCH', '/briefs/gone', [testEntry(0), add(`${SRC}/0/accepted`, [1])], JP)
+      assert.equal(res.status, 404)
       assert.deepEqual(
         seen.map((r) => r.method),
         ['GET'],
@@ -1379,6 +1598,181 @@ describe('server.mjs', () => {
         JP,
         [{ op: 'add', path: ['/spec/paused'], value: true }],
         403,
+      ],
+      // A request source answer: one entry's accepted and declined after a test of the entry, and nothing else (#163).
+      ...(() => {
+        const ok = add(`${SRC}/0/accepted`, [412, 413])
+        const big = Array.from({ length: 201 }, (_, i) => i + 1)
+        const cases = [
+          // Another field of an entry, or the entry itself.
+          ['a source entry’s mode', [testEntry(0), add(`${SRC}/0/mode`, 'On')]],
+          ['a source entry’s mode beside an answer', [testEntry(0), ok, add(`${SRC}/0/mode`, 'On')]],
+          ['a source entry’s team', [testEntry(0), add(`${SRC}/0/linear/team`, 'OPS')]],
+          ['a source entry’s credentials', [testEntry(0), add(`${SRC}/0/credentialsSecretRef`, { name: 'other' })]],
+          ['a source entry’s name', [testEntry(0), add(`${SRC}/0/name`, 'support')]],
+          ['a whole source entry', [testEntry(0), add(`${SRC}/0`, { ...SOURCES[0], accepted: [1] })]],
+          ['the whole source list', [testEntry(0), add(SRC, [])]],
+          ['the whole source list with an answer', [testEntry(0), ok, add(SRC, SOURCES)]],
+          // Entries added, removed, reordered.
+          ['a source entry added at the end', [testEntry(0), add(`${SRC}/-`, SOURCES[1])]],
+          ['a source entry added at an index', [testEntry(0), add(`${SRC}/2`, SOURCES[1])]],
+          ['a source entry removed', [testEntry(1), { op: 'remove', path: `${SRC}/1` }]],
+          ['a source entry removed with an answer', [testEntry(0), ok, { op: 'remove', path: `${SRC}/1` }]],
+          ['a source entry moved', [testEntry(0), { op: 'move', from: `${SRC}/0`, path: `${SRC}/1` }]],
+          ['a source entry copied', [testEntry(0), { op: 'copy', from: `${SRC}/0`, path: `${SRC}/1` }]],
+          [
+            'a list moved over another',
+            [testEntry(0), { op: 'move', from: `${SRC}/1/accepted`, path: `${SRC}/0/accepted` }],
+          ],
+          [
+            'a list copied from another entry',
+            [testEntry(0), { op: 'copy', from: `${SRC}/1/accepted`, path: `${SRC}/0/accepted` }],
+          ],
+          // Operations on the lists that are not the add and the remove.
+          ['a list replaced', [testEntry(0), { op: 'replace', path: `${SRC}/0/accepted`, value: [1] }]],
+          ['a number appended to a list', [testEntry(0), add(`${SRC}/0/accepted/-`, 1)]],
+          ['a number added at an index of a list', [testEntry(0), add(`${SRC}/0/accepted/0`, 1)]],
+          ['a list with a from', [testEntry(0), { ...ok, from: '/x' }]],
+          ['a list removed with a value', [testEntry(0), { op: 'remove', path: `${SRC}/0/accepted`, value: [] }]],
+          ['a list removed that the tested entry lacks', [testEntry(1), { op: 'remove', path: `${SRC}/1/accepted` }]],
+          // The test.
+          ['an answer with no test', [ok]],
+          ['an answer with two writes and no test', [ok, add(`${SRC}/0/declined`, [1])]],
+          ['a test alone', [testEntry(0)]],
+          ['an add of the entry where the test goes', [add(`${SRC}/0`, SOURCES[0]), ok]],
+          ['a replace of the entry where the test goes', [{ op: 'replace', path: `${SRC}/0`, value: SOURCES[0] }, ok]],
+          ['a replace of the entry with other fields', [{ op: 'replace', path: `${SRC}/0`, value: { name: 'x' } }, ok]],
+          ['an unknown op where the test goes', [{ op: 'bogus', path: `${SRC}/0`, value: SOURCES[0] }, ok]],
+          ['a test after the write', [ok, testEntry(0)]],
+          ['two tests', [testEntry(0), testEntry(0), ok]],
+          ['a test of the resourceVersion and an answer', [tested('12'), ok]],
+          ['a test of the entry’s name only', [{ op: 'test', path: `${SRC}/0/name`, value: 'product' }, ok]],
+          ['a test of the list’s item only', [{ op: 'test', path: `${SRC}/0/accepted`, value: [412] }, ok]],
+          ['a test with a from', [{ ...testEntry(0), from: '/x' }, ok]],
+          ['a test of a value that is no object', [testEntry(0, 'product'), ok]],
+          ['a test of an array', [testEntry(0, [SOURCES[0]]), ok]],
+          ['a test of null', [testEntry(0, null), ok]],
+          ['a test of an entry with no name', [testEntry(0, { mode: 'Ask' }), ok]],
+          ['a test of an entry whose name is no string', [testEntry(0, { name: 7 }), ok]],
+          ['a test of an empty list', [testEntry(0, {}), ok]],
+          // An index that does not match the entry written.
+          ['a test of entry 0 and a write of entry 1', [testEntry(0), add(`${SRC}/1/accepted`, [1])]],
+          ['a test of entry 1 and a write of entry 0', [testEntry(1), ok]],
+          ['a test of entry 0 and writes of both entries', [testEntry(0), ok, add(`${SRC}/1/accepted`, [1])]],
+          // Paths that are not the canonical one: escapes, `-`, other spellings of an index.
+          ['an escaped list name (~0)', [testEntry(0), add(`${SRC}/0/accepted~0`, [1])]],
+          ['an escaped separator (~1)', [testEntry(0), add(`${SRC}/0~1accepted`, [1])]],
+          ['an escaped source list (~1)', [testEntry(0), add('~1spec~1requestSources/0/accepted', [1])]],
+          ['an escaped index (~0)', [testEntry(0), add(`${SRC}/~00/accepted`, [1])]],
+          ['an index of -', [{ op: 'test', path: `${SRC}/-`, value: SOURCES[0] }, add(`${SRC}/-/accepted`, [1])]],
+          ...['00', '01', '+0', ' 0', '0 ', '0x0', '1e0', '0.0', '-0', '10', '99', '1%30', '٠'].map((i) => [
+            `a non-canonical index ${JSON.stringify(i)}`,
+            [{ op: 'test', path: `${SRC}/${i}`, value: SOURCES[0] }, add(`${SRC}/${i}/accepted`, [1])],
+          ]),
+          [
+            'an index in a test only that is not canonical',
+            [{ op: 'test', path: `${SRC}/00`, value: SOURCES[0] }, add(`${SRC}/0/accepted`, [1])],
+          ],
+          ['a trailing slash', [testEntry(0), add(`${SRC}/0/accepted/`, [1])]],
+          ['a path in other case', [testEntry(0), add(`${SRC}/0/Accepted`, [1])]],
+          ['a path that is no string', [testEntry(0), { op: 'add', path: [`${SRC}/0/accepted`], value: [1] }]],
+          ['an operation that is no string', [testEntry(0), { op: ['add'], path: `${SRC}/0/accepted`, value: [1] }]],
+          // Extra operations beside the allowed ones.
+          ['an answer with the same list twice', [testEntry(0), ok, add(`${SRC}/0/accepted`, [1])]],
+          [
+            'an answer with three writes',
+            [testEntry(0), ok, add(`${SRC}/0/declined`, [1]), add(`${SRC}/0/declined`, [2])],
+          ],
+          ['an answer with a write of another spec field', [testEntry(0), ok, add('/spec/paused', true)]],
+          ['an answer with a write of the idea', [testEntry(0), add('/spec/idea', 'x')]],
+          ['an answer with a prompt', [testEntry(0), ok, add('/spec/prompts/-', 'x')]],
+          ['an answer with a write of the releases', [testEntry(0), ok, add('/spec/releases', [])]],
+          ['an answer with a status write', [testEntry(0), add('/status/phase', 'Planned')]],
+          ['an answer with a metadata write', [testEntry(0), ok, add('/metadata/labels/x', 'y')]],
+          ['an answer with a finalizer', [testEntry(0), add('/metadata/finalizers', [])]],
+          ['an answer with an op that is no object', [testEntry(0), ok, 'add']],
+          ['an answer with a null op', [testEntry(0), ok, null]],
+          [
+            'an answer after a test with an unknown op',
+            [testEntry(0), { op: 'bogus', path: `${SRC}/0/accepted`, value: [1] }],
+          ],
+          // Values of the wrong type or size.
+          ...[
+            ['a string', '412'],
+            ['an object', { 0: 412 }],
+            ['null', null],
+            ['a number', 412],
+            ['a boolean', true],
+            ['an empty list', []],
+            ['a list of strings', ['412']],
+            ['a list of floats', [1.5]],
+            ['a list with a zero', [0]],
+            ['a list with a negative number', [-1]],
+            ['a list with a number over int32', [2147483648]],
+            ['a list of booleans', [true]],
+            ['a list of null', [null]],
+            ['a list of lists', [[1]]],
+            ['a list with a duplicate', [412, 412]],
+            ['a list with a duplicate spelled 1 and 1.0', [1, 1.0]],
+            ['a list of 201 numbers', big],
+            ['a list of 5000 numbers', Array.from({ length: 5000 }, (_, i) => i + 1)],
+          ].flatMap(([what, value]) =>
+            ['accepted', 'declined'].map((f) => [`${what} as ${f}`, [testEntry(0), add(`${SRC}/0/${f}`, value)]]),
+          ),
+          ['an add with no value', [testEntry(0), { op: 'add', path: `${SRC}/0/accepted` }]],
+        ]
+        return cases.map(([what, body]) => [
+          `${what} in a request source patch (#163)`,
+          'PATCH',
+          '/briefs/sourced',
+          JP,
+          body,
+          403,
+        ])
+      })(),
+      [
+        'a request source answer as a merge patch',
+        'PATCH',
+        '/briefs/sourced',
+        MP,
+        { spec: { requestSources: [] } },
+        415,
+      ],
+      [
+        'a request source answer on a Crew',
+        'PATCH',
+        '/crews/orders-api',
+        JP,
+        [testEntry(0), add(`${SRC}/0/accepted`, [1])],
+        403,
+      ],
+      [
+        'a request source answer on a Container',
+        'PATCH',
+        '/containers/orders-api',
+        JP,
+        [testEntry(0), add(`${SRC}/0/accepted`, [1])],
+        403,
+      ],
+      ['a request source answer as a POST', 'POST', '/briefs/sourced', 'application/json', {}, 403],
+      [
+        'a request source answer as an object',
+        'PATCH',
+        '/briefs/sourced',
+        JP,
+        { op: 'add', path: `${SRC}/0/accepted`, value: [1] },
+        403,
+      ],
+      ['a request source answer as a string', 'PATCH', '/briefs/sourced', JP, 'not a patch', 403],
+      ['an empty patch of a Brief with a request source', 'PATCH', '/briefs/sourced', JP, [], 403],
+      [
+        'a request source answer from another site',
+        'PATCH',
+        '/briefs/sourced',
+        JP,
+        [testEntry(0), add(`${SRC}/0/accepted`, [1])],
+        403,
+        { origin: 'https://evil.example' },
       ],
       // Other origins.
       [

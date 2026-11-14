@@ -1255,15 +1255,67 @@ export interface BriefRequests {
   declined?: number[]
 }
 
+/** A Linear team and the label that makes its items requests. */
+export interface BriefLinearSource {
+  /** The team's key, the prefix of its items' keys (ENG in ENG-412). */
+  team: string
+  label: string
+}
+
+/** A Jira Cloud project and the label that makes its items requests. */
+export interface BriefJiraSource {
+  /** The https address people open, with no path. */
+  site: string
+  /** The site's ID at Atlassian. */
+  cloudID: string
+  /** The project's key, the prefix of its items' keys (SHOP in SHOP-412). */
+  project: string
+  label: string
+  /** How the Brief closes an item, when the site's workflow differs from Jira's defaults. */
+  close?: {
+    completed?: { status?: string; resolution?: string }
+    notPlanned?: { status?: string; resolution?: string }
+  }
+}
+
+/**
+ * A tracker a Brief takes requests from (spec.requestSources): exactly one of
+ * linear and jira. A request from it is named <name>:<key>, such as product:ENG-412.
+ */
+export interface BriefRequestSource {
+  /** A DNS label. */
+  name: string
+  linear?: BriefLinearSource
+  jira?: BriefJiraSource
+  /** The Secret in the Brief's namespace that only the operator reads. */
+  credentialsSecretRef: LocalRef
+  /** Unset is Ask, the CRD's default. */
+  mode?: BriefRequestsMode
+  /** Ask: the item numbers a person let through (412 for ENG-412). */
+  accepted?: number[]
+  /** The item numbers a person turned down; the Brief says so on each and closes it. */
+  declined?: number[]
+}
+
 /** How far a request got: waiting for a person (Ask), for a round, in one, and after. */
 export type BriefRequestStage = 'Waiting' | 'Accepted' | 'Planning' | 'Planned' | 'Skipped' | 'Declined' | 'Released'
 
-/** A GitHub issue taken as a request, its text as it was when let through, and how far it got. */
+/**
+ * A GitHub issue, or an item of a spec.requestSources entry, taken as a request,
+ * its text as it was when let through, and how far it got. It names either its
+ * repository, or its source and key and no repository.
+ */
 export interface BriefRequest {
-  /** owner/name on github.com */
-  repository: string
+  /** owner/name on github.com, for a GitHub issue; unset for an item of a source. */
+  repository?: string
+  /** The name of the spec.requestSources entry the item is from. */
+  source?: string
+  /** The item's key on its tracker, such as ENG-412. */
+  key?: string
+  /** The issue's number, or the digits of the item's key. */
   number: number
-  author: string
+  /** A GitHub login, or the display name of whoever made the item; unset when the tracker names nobody. */
+  author?: string
   title: string
   /** Empty while it waits in Ask. */
   body?: string
@@ -1336,6 +1388,8 @@ export interface Brief extends K8sObject {
     parallel?: number
     /** The Containers whose releases are published to GitHub; each entry turns releases on for its Container's Crew. */
     releases?: BriefRelease[]
+    /** Trackers the Brief takes requests from, besides the GitHub issues of a releases repository: a Linear team or a Jira project each. */
+    requestSources?: BriefRequestSource[]
     /** Pauses the Brief and every Crew it made; a Task already started runs to its end. The Paused condition says what still runs. */
     paused?: boolean
     /** With paused, also pauses running Tasks, its Crews' and its planner's, at their next tool boundary; unset, each resumes where it stopped. */
@@ -1380,6 +1434,8 @@ export interface Brief extends K8sObject {
      * issues are closed: they do nothing more, and an answer drops them.
      */
     requestsSettled?: { repository: string; numbers?: number[] }[]
+    /** The same per spec.requestSources entry, by its name. */
+    requestSourcesSettled?: { source: string; numbers?: number[] }[]
     /** The requests the running or last round took, owner/name#number. */
     roundRequests?: string[]
     /** The failed issues rounds answered, at most 50. */

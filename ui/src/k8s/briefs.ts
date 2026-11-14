@@ -1,10 +1,11 @@
 // The UI's writes to a Brief: create one from an idea, add a follow-up prompt
 // to one, pause or resume one or its running Tasks and, with actions on, set its autopilot,
-// parallel and releases. server.mjs passes exactly these requests on and
+// parallel and releases, and answer an item of a request source. server.mjs passes exactly these requests on and
 // nothing else; the CRD's rules decide whether they are accepted, so this file
 // copies none of them: a refused write shows the API server's message.
 
 import { GROUP, VERSION, resourcePath, RESOURCES, type Brief, type BriefAutopilot, type BriefRelease } from './types'
+import type { SourceAnswer } from '../model/requests'
 import { errorFromResponse } from './watch'
 
 /** What a new Brief may choose besides its idea; each unset leaves the factory's default. */
@@ -96,6 +97,32 @@ export function settingsPatch(settings: BriefSettings): SettingsOp[] {
   return ops
 }
 
+type SourceOp = { op: 'add' | 'remove' | 'test'; path: string; value?: unknown }
+
+/**
+ * The JSON patch that answers an item of a request source: a test of the whole
+ * entry as the page read it, then, for each of accepted and declined that
+ * changes, an add of the list it becomes, or a remove when it ends up empty
+ * and the entry had it.
+ * The test binds the index to the entry and fails a page that is out of date
+ * (the operator never writes the spec, so nothing else moves it); server.mjs
+ * checks the test against the stored Brief and passes on only these paths.
+ */
+export function sourceAnswerPatch(answer: SourceAnswer): SourceOp[] {
+  const at = `/spec/requestSources/${answer.index}`
+  const ops: SourceOp[] = [{ op: 'test', path: at, value: answer.entry }]
+  for (const field of ['accepted', 'declined'] as const) {
+    const list = answer[field]
+    const was = answer.entry[field]
+    if (list !== undefined) {
+      if (JSON.stringify(list) !== JSON.stringify(was)) ops.push({ op: 'add', path: `${at}/${field}`, value: list })
+    } else if (was !== undefined) {
+      ops.push({ op: 'remove', path: `${at}/${field}` })
+    }
+  }
+  return ops
+}
+
 // Words that say little about the app, skipped when naming it.
 const FILLER = new Set(
   'a an the and or for to of in on at by with where which that who whose is are be can i we my our me us app apps want build make'.split(
@@ -147,6 +174,12 @@ export interface BriefWriter {
   setPauseRuns(namespace: string, name: string, pauseRuns: boolean): Promise<void>
   /** Sets spec.autopilot, spec.parallel or spec.releases; the UI server refuses it with actions off. */
   setSettings(namespace: string, name: string, settings: BriefSettings): Promise<void>
+  /**
+   * Accepts or declines an item of a request source: sets that entry's accepted
+   * and declined under spec.requestSources and nothing else of it; the UI
+   * server refuses it with actions off.
+   */
+  answerSourceRequest(namespace: string, name: string, answer: SourceAnswer): Promise<void>
 }
 
 /** Writes through the /k8s proxy, relative to the page like the watches. */
@@ -181,6 +214,10 @@ export class LiveBriefWriter implements BriefWriter {
 
   async setSettings(namespace: string, name: string, settings: BriefSettings): Promise<void> {
     await this.patch(namespace, name, settingsPatch(settings))
+  }
+
+  async answerSourceRequest(namespace: string, name: string, answer: SourceAnswer): Promise<void> {
+    await this.patch(namespace, name, sourceAnswerPatch(answer))
   }
 
   private async patch(namespace: string, name: string, ops: unknown[]): Promise<void> {

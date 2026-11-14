@@ -243,12 +243,14 @@ export function BriefDetails({ view, answers }: { view: BriefView; answers?: Ans
  * and why it can't read or answer them while it can't.
  */
 function Requests({ view }: { view: BriefView }) {
-  const { list, waiting, taking, failure } = view.requests
+  const { list, waiting, taking, failure, fromSources } = view.requests
   if (!taking && !list.length && !failure) return null
+  // "from GitHub" while GitHub is the only place it takes them from.
+  const title = fromSources || list.some((r) => r.source) ? 'Requests' : 'Requests from GitHub'
   return (
-    <section aria-label="Requests from GitHub">
+    <section aria-label={title}>
       <h4 className="section-title">
-        Requests from GitHub <span className="section-hint">{waiting ? `${waiting} open` : 'none open'}</span>
+        {title} <span className="section-hint">{waiting ? `${waiting} open` : 'none open'}</span>
       </h4>
       {failure ? (
         <div className="brief-note brief-note-error" role="status">
@@ -264,7 +266,9 @@ function Requests({ view }: { view: BriefView }) {
         />
       ) : (
         <p className="field-hint">
-          No open request: an issue of an author it allows, in a repository it takes requests from, shows here.
+          {fromSources
+            ? 'No open request: an issue of an author it allows, in a repository it takes requests from, or an item with the label of a request source, shows here.'
+            : 'No open request: an issue of an author it allows, in a repository it takes requests from, shows here.'}
         </p>
       )}
       {waiting > list.length ? (
@@ -274,13 +278,19 @@ function Requests({ view }: { view: BriefView }) {
   )
 }
 
-/** A request: its issue, title and author, its stage and what happened to it. */
+/** A request: its issue or item, title and author (when it names one), its stage and what happened to it. */
 function RequestLine({ request: r }: { request: RequestView }) {
   return (
     <li className="brief-app brief-request">
       <div className="brief-app-head">
         {r.url ? (
-          <a className="mono" href={r.url} target="_blank" rel="noreferrer" title={`Issue ${r.label} on GitHub`}>
+          <a
+            className="mono"
+            href={r.url}
+            target="_blank"
+            rel="noreferrer"
+            title={r.source ? `Item ${r.label} on its tracker` : `Issue ${r.label} on GitHub`}
+          >
             {r.label} <ExternalLinkIcon size={11} />
           </a>
         ) : (
@@ -291,7 +301,7 @@ function RequestLine({ request: r }: { request: RequestView }) {
           {r.stageLabel}
         </span>
         <span className="brief-issue-title">
-          {r.title} <span className="section-hint">by {r.author}</span>
+          {r.title} {r.author ? <span className="section-hint">by {r.author}</span> : null}
         </span>
       </div>
       <p className="brief-app-message">{r.detail}</p>
