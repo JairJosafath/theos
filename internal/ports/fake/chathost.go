@@ -96,6 +96,8 @@ type chatState struct {
 	// users are the user IDs by their token, and tokens the tokens by user.
 	users  map[string]string
 	tokens map[string]string
+	// inactive are the accounts Deactivate closed, by user ID.
+	inactive map[string]bool
 	// lacks are the scopes a token lacks, by the token and then the port
 	// method that needs the scope (Revoke).
 	lacks map[string]map[string]string
@@ -231,6 +233,32 @@ func (h *ChatHost) Grant(token, scope string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	maps.DeleteFunc(s.lacks[token], func(_, lacked string) bool { return lacked == scope })
+}
+
+// CodeUserNotFound is the code an invite of a person the host has no
+// account for, or whose account Deactivate closed, is refused with: a
+// ports.ChatInviteRefusedError, as Slack answers user_not_found for both
+// (#251).
+const CodeUserNotFound = "user_not_found"
+
+// Deactivate closes user's account, as an admin who deactivates a member
+// does: an invite of them is refused (CodeUserNotFound) until Reactivate.
+func (h *ChatHost) Deactivate(user string) {
+	s := h.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inactive == nil {
+		s.inactive = map[string]bool{}
+	}
+	s.inactive[user] = true
+}
+
+// Reactivate opens the account Deactivate closed.
+func (h *ChatHost) Reactivate(user string) {
+	s := h.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.inactive, user)
 }
 
 // Hosts builds the ChatHost of a bot on this host, as cmd/main.go's
@@ -586,8 +614,8 @@ func (b *chatBot) Invite(_ context.Context, room, user string) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := s.tokens[user]; !ok {
-		return fmt.Errorf("no user %s", user)
+	if _, ok := s.tokens[user]; !ok || s.inactive[user] {
+		return &ports.ChatInviteRefusedError{User: user, Code: CodeUserNotFound}
 	}
 	if !r.members[user] {
 		r.invited[user] = true

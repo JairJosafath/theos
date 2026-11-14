@@ -73,6 +73,8 @@ const (
 	// a relation's kind.
 	keyEventID = "event_id"
 	keyRelType = "rel_type"
+	// codeNotFound is the errcode of a thing the homeserver has not.
+	codeNotFound = "M_NOT_FOUND"
 )
 
 // Client is a ChatHost on one homeserver, as one bot.
@@ -328,7 +330,7 @@ func (c *Client) resolveAlias(ctx context.Context, alias string) (string, error)
 		RoomID string `json:"room_id"`
 	}
 	err := c.call(ctx, http.MethodGet, pathOf("directory", "room", alias), nil, nil, &answer)
-	if errCode(err) == "M_NOT_FOUND" {
+	if errCode(err) == codeNotFound {
 		return "", nil
 	}
 	return answer.RoomID, err
@@ -338,7 +340,7 @@ func (c *Client) resolveAlias(ctx context.Context, alias string) (string, error)
 // reports false when there is none.
 func (c *Client) state(ctx context.Context, room, typ, key string, out any) (bool, error) {
 	err := c.call(ctx, http.MethodGet, pathOf("rooms", room, "state", typ, key), nil, nil, out)
-	if errCode(err) == "M_NOT_FOUND" {
+	if errCode(err) == codeNotFound {
 		return false, nil
 	}
 	return err == nil, err
@@ -482,11 +484,26 @@ func (c *Client) keepLinks(ctx context.Context, space, room, server string) erro
 	return c.setState(ctx, room, typeSpaceParent, space, parent)
 }
 
+// refusedInvite says a homeserver's answer to an invite refuses the person
+// alone (#251): no such user (404 M_NOT_FOUND) or a user ID it does not
+// take (400 M_INVALID_PARAM). Every other answer, a 5xx, a 429 past the
+// retries or a 403 (the bot not in the room, or without the power to
+// invite), says nothing of the person.
+func refusedInvite(e *Error) bool {
+	return (e.Status == http.StatusNotFound && e.Code == codeNotFound) ||
+		(e.Status == http.StatusBadRequest && e.Code == "M_INVALID_PARAM")
+}
+
 // Invite invites user to room. A homeserver refuses to invite a user
-// already invited or in the room; that is no error.
+// already invited or in the room; that is no error. One that refuses the
+// person (refusedInvite) is a ports.ChatInviteRefusedError.
 func (c *Client) Invite(ctx context.Context, room, user string) error {
 	err := c.call(ctx, http.MethodPost, pathOf("rooms", room, "invite"), nil, map[string]string{"user_id": user}, nil)
-	if e, ok := errors.AsType[*Error](err); !ok || e.Status != http.StatusForbidden {
+	e, ok := errors.AsType[*Error](err)
+	if ok && refusedInvite(e) {
+		return &ports.ChatInviteRefusedError{User: user, Code: e.Code}
+	}
+	if !ok || e.Status != http.StatusForbidden {
 		return err
 	}
 	var member struct {

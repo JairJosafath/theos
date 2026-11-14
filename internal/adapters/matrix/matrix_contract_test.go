@@ -47,7 +47,9 @@ func TestChatHostContract(t *testing.T) {
 					user, _ := hs.NewUser(name)
 					return user
 				},
-				Join: func(_ *testing.T, room, user string) { hs.Join(room, user) },
+				// A user of the homeserver it has no account for.
+				Stranger: "@ghost:" + matrixtest.ServerName,
+				Join:     func(_ *testing.T, room, user string) { hs.Join(room, user) },
 				Post: func(_ *testing.T, room, user, text, threadRoot string) string {
 					return hs.Post(room, user, text, threadRoot)
 				},

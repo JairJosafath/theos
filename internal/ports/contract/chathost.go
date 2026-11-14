@@ -49,6 +49,9 @@ type ChatServer struct {
 	// Person makes a person's account and returns their user ID, as Invite
 	// takes it and a ChatEvent names its sender.
 	Person func(t *testing.T, name string) string
+	// Stranger is a user ID, as Invite takes it, that the host has no
+	// account for.
+	Stranger string
 	// Join makes user a member of room, as accepting an invite does.
 	Join func(t *testing.T, room, user string)
 	// Post posts text in room as user, in the thread whose root is
@@ -120,7 +123,9 @@ const (
 // topic; a Space and the rooms in it are each a room of their own; an alias
 // held by a room the bot is not in, one it was taken out of included, is a
 // ChatAliasTakenError that names it; Invite is no error however often it is
-// asked; Send, Reply, Edit and React post as the bot, in the thread, in
+// asked, and a person the host has no account for is a
+// ChatInviteRefusedError naming them and the host's code, after which the
+// others are invited all the same (#251); Send, Reply, Edit and React post as the bot, in the thread, in
 // place and on the message named; and Sync returns what people said since
 // its token, each message once, a room's oldest first, with its room,
 // sender, thread and the message an edit replaces, and nothing the bot
@@ -147,6 +152,7 @@ func ChatHost(t *testing.T, env ChatHostEnv) {
 		{"refuses an alias held by a room the bot is not in", chatSuite.aliasTaken},
 		{"does not go back into a room the bot was taken out of", chatSuite.removed},
 		{"invites a person, however often it is asked", chatSuite.invites},
+		{"refuses to invite a person it has no account for, them alone", chatSuite.refusesStranger},
 		{"posts as the bot", chatSuite.sends},
 		{"replies in the thread of the bot's message and of a person's", chatSuite.replies},
 		{"edits its message in place", chatSuite.edits},
@@ -379,6 +385,30 @@ func (s chatSuite) invites(t *testing.T) {
 		t.Errorf("Invite() of someone in the room = %v", err)
 	}
 	wantMembers("after an invite of someone in it")
+}
+
+// refusesStranger covers #251: the stranger's refusal names them and the
+// host's code, and is theirs alone: ada is invited after it.
+func (s chatSuite) refusesStranger(t *testing.T) {
+	srv := s.env.New(t)
+	bot := must(srv.Host.WhoAmI(s.ctx))(t)
+	room := s.room(t, srv, ports.ChatRoomSpec{Alias: chatGeneral, Name: nameGeneral}).ID
+	err := srv.Host.Invite(s.ctx, room, srv.Stranger)
+	if refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err); !ok || refused.User != srv.Stranger ||
+		refused.Code == "" {
+		t.Fatalf("Invite() of a person the host has no account for = %v, want a ChatInviteRefusedError naming "+
+			"%s and the host's code", err, srv.Stranger)
+	}
+	if !errors.Is(err, ports.ErrChatInviteRefused) {
+		t.Errorf("Invite() = %v, want it to be ErrChatInviteRefused", err)
+	}
+	ada := srv.Person(t, personAda)
+	if err := srv.Host.Invite(s.ctx, room, ada); err != nil {
+		t.Fatalf("Invite() after a refusal = %v", err)
+	}
+	if got := srv.Room(t, room).Members; !slices.Equal(sorted(got), sorted([]string{bot, ada})) {
+		t.Errorf("the room's members = %q, want the bot and %s alone", got, ada)
+	}
 }
 
 func (s chatSuite) sends(t *testing.T) {

@@ -291,8 +291,15 @@ type ChatRoomStatus struct {
 // on Matrix, are there with the people invited. Its reasons are Ready,
 // SecretMissing, SecretIncomplete, HomeserverUnset, CredentialRefused,
 // ScopeMissing, Unreachable, AliasTaken, Duplicate and HostNotSupported;
-// its message carries the last error.
+// its message carries the last error. A person the host refuses to invite
+// leaves it True and shows on ConditionChatInvited.
 const ConditionChatReady = "Ready"
+
+// ConditionChatInvited on a Chat says whether every person it lists is
+// invited to every room (#251). Its reasons are Invited and InviteRefused,
+// whose message names each person the host refused to invite with the
+// host's error code. Each pass that reaches the invites sets it.
+const ConditionChatInvited = "Invited"
 
 // ChatStatus is what the operator made and found on the chat host.
 type ChatStatus struct {
@@ -323,7 +330,7 @@ type ChatStatus struct {
 	// +optional
 	Invited []string `json:"invited,omitempty"`
 
-	// conditions: Ready.
+	// conditions: Ready and Invited.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

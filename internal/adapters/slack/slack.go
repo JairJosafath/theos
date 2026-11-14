@@ -468,12 +468,31 @@ func (c *Client) setTopic(ctx context.Context, channel, topic string) error {
 	return c.bot(ctx, "conversations.setTopic", url.Values{argChannel: {channel}, "topic": {topic}}, nil)
 }
 
+// refusedInviteCodes are conversations.invite's error codes that refuse the
+// person alone (#251): a member ID the workspace has no member for, or a
+// deactivated member (user_not_found), a member Slack won't put in the
+// channel (cant_invite), a guest (user_is_restricted,
+// user_is_ultra_restricted) and a single-channel guest already in their one
+// channel (ura_max_channels). Every other code, a rate limit, a 5xx, a
+// refused token or a missing scope, says nothing of the person.
+var refusedInviteCodes = map[string]bool{"user_not_found": true, "cant_invite": true, "user_is_restricted": true,
+	"user_is_ultra_restricted": true, "ura_max_channels": true}
+
 // Invite adds user to room. Slack has no pending invite: the person is in
-// the channel at once, and someone already in it is no error.
+// the channel at once, and someone already in it is no error. A code that
+// refuses the person (refusedInviteCodes) is a
+// ports.ChatInviteRefusedError.
 func (c *Client) Invite(ctx context.Context, room, user string) error {
 	err := c.bot(ctx, "conversations.invite", url.Values{argChannel: {room}, "users": {user}}, nil)
-	if code := errCode(err); code == codeAlreadyInChannel || code == codeCantInviteSelf {
+	e, ok := errors.AsType[*Error](err)
+	switch {
+	case !ok:
+		return err
+	case e.Code == codeAlreadyInChannel || e.Code == codeCantInviteSelf:
 		return nil
+	case e.Status == http.StatusOK && refusedInviteCodes[e.Code]:
+		// Slack answered: a 5xx carrying the code is no answer on the person.
+		return &ports.ChatInviteRefusedError{User: user, Code: e.Code}
 	}
 	return err
 }

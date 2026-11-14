@@ -451,3 +451,70 @@ func TestMatrixChatInvitesToARoomMadeAgain(t *testing.T) {
 		})
 	}
 }
+
+// TestSlackChatRemadeChannelWithARefusedPerson covers #251 with #159's
+// rule: the people are ada, a member ID the workspace has no member for
+// (Slack answers user_not_found) and bob. The first pass invites ada and
+// bob to every channel, stays Ready and names the refusal on Invited. Then
+// ada leaves general and an admin deletes alerts: the next pass makes
+// alerts again, invites ada and bob to it and records its new ID though
+// the stranger is refused again, asks the stranger once, not once per
+// channel, and pulls nobody back: ada stays out of general.
+func TestSlackChatRemadeChannelWithARefusedPerson(t *testing.T) {
+	x := newSlackWorkspaceChat(t, "bob")
+	bob, ghost := x.others[0], "U0GHOST00"
+	var chat c4v1beta1.Chat
+	if err := x.cl.Get(t.Context(), x.req.NamespacedName, &chat); err != nil {
+		t.Fatal(err)
+	}
+	chat.Spec.Slack.People = slices.Insert(chat.Spec.Slack.People, 1,
+		c4v1beta1.ChatSlackPerson{SlackID: ghost, User: "ghost"})
+	if err := x.cl.Update(t.Context(), &chat); err != nil {
+		t.Fatal(err)
+	}
+	wantRefused := func(chat *c4v1beta1.Chat) {
+		t.Helper()
+		c := apimeta.FindStatusCondition(chat.Status.Conditions, c4v1beta1.ConditionChatInvited)
+		if c == nil || c.Status != metav1.ConditionFalse || c.Reason != model.ChatInviteRefused ||
+			!strings.Contains(c.Message, ghost+" (user_not_found)") {
+			t.Errorf("Invited = %+v, want False, InviteRefused, naming %s and user_not_found", c, ghost)
+		}
+		want := []string{x.ada, bob}
+		slices.Sort(want)
+		if !slices.Equal(chat.Status.Invited, want) {
+			t.Errorf("status.invited = %v, want ada and bob", chat.Status.Invited)
+		}
+	}
+
+	first := x.ready(t)
+	wantRefused(first)
+	for _, purpose := range model.ChatPurposes {
+		if m := x.channel(t, first, purpose).Members; !slices.Contains(m, x.ada) || !slices.Contains(m, bob) {
+			t.Errorf("%s's members = %v, want ada and bob", purpose, m)
+		}
+	}
+	general, alerts := x.channel(t, first, model.ChatGeneral), x.channel(t, first, model.ChatAlerts)
+	if err := x.ws.Remove(general.ID, x.ada); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.ws.Delete(alerts.ID); err != nil {
+		t.Fatal(err)
+	}
+	invites := x.ws.Calls("conversations.invite")
+
+	again := x.ready(t)
+	wantRefused(again)
+	made := x.channel(t, again, model.ChatAlerts)
+	if made.ID == alerts.ID {
+		t.Fatalf("alerts = %s, want the channel made again, its new ID recorded", made.ID)
+	}
+	if !slices.Contains(made.Members, x.ada) || !slices.Contains(made.Members, bob) {
+		t.Errorf("alerts' members = %v, want ada and bob", made.Members)
+	}
+	if got := x.ws.Calls("conversations.invite") - invites; got != 3 {
+		t.Errorf("conversations.invite called %d times, want 3: the stranger once, ada and bob to alerts", got)
+	}
+	if slices.Contains(x.channel(t, again, model.ChatGeneral).Members, x.ada) {
+		t.Error("ada, who left general, is back in it")
+	}
+}

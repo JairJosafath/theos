@@ -26,6 +26,27 @@ import (
 	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
+// TestChatHostDeactivate covers #251: an invite of a member Deactivate
+// closed is refused, theirs alone, with CodeUserNotFound, and taken again
+// after Reactivate.
+func TestChatHostDeactivate(t *testing.T) {
+	ctx := context.Background()
+	h := fake.NewChatHost(fake.MemberIDs())
+	_, token := h.NewUser("bot")
+	bot := h.For(ports.ChatConfig{Address: h.Address(), Token: token})
+	ada, _ := h.NewUser("ada")
+	room := must(bot.EnsureRoom(ctx, ports.ChatRoomSpec{Alias: "shop-general"}))(t)
+	h.Deactivate(ada)
+	err := bot.Invite(ctx, room.ID, ada)
+	if refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err); !ok || refused.User != ada ||
+		refused.Code != fake.CodeUserNotFound {
+		t.Fatalf("Invite of a deactivated member = %v, want a ChatInviteRefusedError naming %s and %s", err, ada,
+			fake.CodeUserNotFound)
+	}
+	h.Reactivate(ada)
+	noErr(t, bot.Invite(ctx, room.ID, ada))
+}
+
 // What the fake chat host does its own way, beside the suite (#153): a
 // message's ID is its room's alone, a Sync with a wait wakes for a message,
 // and a host without Spaces is never made to hold one.

@@ -1024,7 +1024,49 @@ What the step chose where the plan says nothing:
   deactivated or unknown member) keeps everyone listed after them out of
   every room and the Chat not `Ready`, with the reason `Unreachable` though
   the host answered. It is filed as its own issue and is fixed on top of this
-  step.
+  step (#251, below).
+
+## #251 as built
+
+- **The adapter says who is refused.** `Invite` returns a
+  `ports.ChatInviteRefusedError` (the person and the host's code; it is
+  `ErrChatInviteRefused`) when the host answers it will not invite that
+  person: on Matrix 404 `M_NOT_FOUND` and 400 `M_INVALID_PARAM`; on Slack,
+  answered with HTTP 200, `user_not_found` (unknown or deactivated),
+  `cant_invite`, `user_is_restricted`, `user_is_ultra_restricted` and
+  `ura_max_channels`. Everything else (a transport error, a 5xx, a 429 past
+  the retries, a 403 on Matrix, a refused token, a missing scope) is not the
+  person's and keeps today's reason. The classification is in the adapters,
+  not in the controller, and the ChatHost suite states it ("refuses to
+  invite a person it has no account for, them alone"). The fake refuses a
+  person it has no account for, or one `Deactivate` closed, with
+  `user_not_found`; `matrixtest` answers 404 `M_NOT_FOUND` for a user of its
+  own server it has no account for.
+- **The others go on.** The controller skips a refused person for the rest
+  of the pass (asked once, not once per room), invites everyone else, and
+  records each room as it would without them: a refused person is left out
+  of `status.invited`, so the next pass asks them again, to every room,
+  and #159's rule (a new room's ID recorded once everyone else is invited)
+  holds with them present.
+- **Ready stays True; `Invited` names the refusal.** One misspelt member
+  must not silence the Chat, and `theos-chat` acts only on a `Ready` Chat,
+  so the refusal shows on a condition of its own: `Invited`, True with
+  reason `Invited`, or False with `InviteRefused` naming each person and
+  code ("<host> refused to invite <id> (<code>); the other N people in
+  <field> are invited"). Each pass that reaches the invites sets it. A new
+  condition type is a constant and a doc comment, so the CRD changes only in
+  `status.conditions`' description. A Chat with a refusal polls (a minute),
+  not the ten-minute check, so a fixed account is invited soon.
+- **An edge that remains.** A person in `status.invited` who is refused on
+  a room made again (deactivated meanwhile) leaves `status.invited`, so once
+  reactivated they are invited to every room, and on Slack put back into
+  one they had left.
+- Tests: the envtest specs "invites the others when the homeserver refuses
+  one person ..." and "... when Slack refuses one person ..." (people
+  [ada, ghost, carol], with ghost's recovery),
+  `TestSlackChatRemadeChannelWithARefusedPerson`,
+  `TestInviteRefusedOrUnreachable` in both adapters, `TestChatInvitedMessage`,
+  `TestChatHostDeactivate` and the suite's new subtest.
 - **The port has `Close` (#234).** `ChatHost.Close()` lets go of what the
   value holds open: Slack's socket (`Client.Close`, which was there), nothing
   on Matrix or the fake (which counts its open values, `fake.ChatHost.Open`).

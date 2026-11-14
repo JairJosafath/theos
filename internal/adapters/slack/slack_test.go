@@ -22,6 +22,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
@@ -954,5 +956,67 @@ func TestRateLimited(t *testing.T) {
 	}
 	if n := w.ws.Calls("auth.test"); n != 3 {
 		t.Errorf("auth.test was called %d times, want 3", n)
+	}
+}
+
+// TestInviteRefusedOrUnreachable covers #251: which answers of
+// conversations.invite refuse the person alone (a ChatInviteRefusedError
+// naming them and Slack's code), and which say Slack could not be reached
+// or took no token. A member ID the workspace has no member for is
+// user_not_found, as on Slack.
+func TestInviteRefusedOrUnreachable(t *testing.T) {
+	x := newRooms(t)
+	ghost := "U0GHOST00"
+	err := x.c.Invite(t.Context(), x.specs, ghost)
+	if refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err); !ok || refused.User != ghost ||
+		refused.Code != "user_not_found" {
+		t.Errorf("Invite of a member ID the workspace doesn't know = %v, want a ChatInviteRefusedError naming %s "+
+			"and user_not_found", err, ghost)
+	}
+
+	for _, tt := range []struct {
+		status       int
+		code         string
+		refused      bool
+		tokenRefused bool
+	}{
+		{status: http.StatusOK, code: "user_not_found", refused: true},
+		{status: http.StatusOK, code: "cant_invite", refused: true},
+		{status: http.StatusOK, code: "user_is_restricted", refused: true},
+		{status: http.StatusOK, code: "user_is_ultra_restricted", refused: true},
+		{status: http.StatusOK, code: "ura_max_channels", refused: true},
+		{status: http.StatusOK, code: "channel_not_found"},
+		{status: http.StatusOK, code: "not_in_channel"},
+		{status: http.StatusOK, code: "is_archived"},
+		{status: http.StatusOK, code: "missing_scope"},
+		{status: http.StatusOK, code: "invalid_auth", tokenRefused: true},
+		{status: http.StatusTooManyRequests, code: "ratelimited"},
+		{status: http.StatusInternalServerError},
+		{status: http.StatusServiceUnavailable, code: "user_not_found"},
+	} {
+		t.Run(fmt.Sprintf("%d %s", tt.status, tt.code), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.status)
+				_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": tt.code})
+			}))
+			defer srv.Close()
+			c, err := New(ports.ChatConfig{Address: srv.URL, Token: rand.Text()}, WithRetries(0, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = c.Invite(t.Context(), "C0ROOM000", ghost)
+			refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err)
+			switch {
+			case err == nil:
+				t.Fatal("Invite = nil, want an error")
+			case ok != tt.refused:
+				t.Errorf("Invite = %v, refused the person %v, want %v", err, ok, tt.refused)
+			case ok && (refused.Code != tt.code || refused.User != ghost):
+				t.Errorf("Invite = %+v, want %s and %s", refused, ghost, tt.code)
+			case errors.Is(err, ports.ErrChatCredentialRefused) != tt.tokenRefused:
+				t.Errorf("Invite = %v, token refused %v, want %v", err, !tt.tokenRefused, tt.tokenRefused)
+			}
+		})
 	}
 }

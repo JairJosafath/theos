@@ -126,7 +126,8 @@ func chatServer(t *testing.T, h *fake.ChatHost) contract.ChatServer {
 			user, _ := h.NewUser(name)
 			return user
 		},
-		Join: func(t *testing.T, room, user string) { noErr(t, h.Join(room, user)) },
+		Stranger: "@ghost:nowhere.test",
+		Join:     func(t *testing.T, room, user string) { noErr(t, h.Join(room, user)) },
 		Post: func(t *testing.T, room, user, text, threadRoot string) string {
 			return must(h.Post(room, user, text, threadRoot))(t)
 		},

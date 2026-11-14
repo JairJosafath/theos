@@ -169,10 +169,36 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		logf.FromContext(ctx).Info("Made the chat rooms", "space", check.Space, "people", check.People)
 	}
 	r.setReady(status, chat.Generation, model.ChatReady, check)
+	r.setInvited(ctx, status, chat.Generation, check)
 	if err := r.writeStatus(ctx, &chat, status); err != nil {
 		return ctrl.Result{}, err
 	}
+	// A person the host refused is asked again on the poll, so an account
+	// fixed is invited within it (#251).
+	if len(check.Refused) > 0 {
+		return poll, nil
+	}
 	return ctrl.Result{RequeueAfter: r.checkInterval()}, nil
+}
+
+// setInvited sets the Invited condition from check.Refused, and logs the
+// people refused when they change (#251).
+func (r *ChatReconciler) setInvited(ctx context.Context, status *c4v1beta1.ChatStatus, generation int64,
+	check model.ChatCheck) {
+	reason, message := model.ChatInvitedReason(check.Refused), model.ChatInvitedMessage(check)
+	if cond := apimeta.FindStatusCondition(status.Conditions, c4v1beta1.ConditionChatInvited); len(check.Refused) > 0 &&
+		(cond == nil || cond.Message != message) {
+		people := make([]string, 0, len(check.Refused))
+		for _, refused := range check.Refused {
+			people = append(people, refused.Person+" ("+refused.Code+")")
+		}
+		logf.FromContext(ctx).Info("Chat host refused to invite people to the chat rooms", "people", people)
+	}
+	value := metav1.ConditionTrue
+	if reason != model.ChatInvited {
+		value = metav1.ConditionFalse
+	}
+	setCondition(&status.Conditions, generation, c4v1beta1.ConditionChatInvited, value, reason, message)
 }
 
 // olderChat is the name of another Chat in chat's namespace made before it
@@ -274,13 +300,27 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 			newcomers = append(newcomers, id)
 		}
 	}
+	// A person the host refuses to invite (ports.ChatInviteRefusedError) is
+	// theirs alone: the others are invited all the same, and each room
+	// recorded as it would be without them, and they are asked no more on
+	// this pass. They stay out of status.invited, so the next pass asks them
+	// again, to every room (#251).
+	refused := map[string]string{}
 	for _, room := range made {
 		to := newcomers
 		if room.new {
 			to = people
 		}
 		for _, id := range to {
-			if err := host.Invite(ctx, room.id, id); err != nil {
+			if _, ok := refused[id]; ok {
+				continue
+			}
+			err := host.Invite(ctx, room.id, id)
+			if refusal, ok := errors.AsType[*ports.ChatInviteRefusedError](err); ok {
+				refused[id] = refusal.Code
+				continue
+			}
+			if err != nil {
 				return fmt.Errorf("inviting %s: %w", id, err)
 			}
 		}
@@ -288,9 +328,17 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 			room.record()
 		}
 	}
-	slices.Sort(people)
-	status.Invited = people
-	check.People = len(people)
+	invited := make([]string, 0, len(people))
+	for _, id := range people {
+		if code, ok := refused[id]; ok {
+			check.Refused = append(check.Refused, model.ChatRefusal{Person: id, Code: code})
+		} else {
+			invited = append(invited, id)
+		}
+	}
+	slices.Sort(invited)
+	status.Invited = invited
+	check.People = len(invited)
 	return nil
 }
 

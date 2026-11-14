@@ -1643,6 +1643,13 @@ called, `Ready=False` with reason `HostNotSupported` naming the host, and
   ever invited to it, and a person added to `people` is invited to every
   room; on Slack an invite is a join, so nobody else is invited again. A
   channel found without its topic gets its topic back.
+- **One person the host refuses never holds up the rest.** A person the
+  host answers it will not invite (no such account, a deactivated member)
+  is that person's alone: everyone else is invited and recorded, `Ready`
+  stays True, and the condition `Invited=False`, reason `InviteRefused`,
+  names each refused person with the host's error code. They are asked
+  again on each poll, and invited once the account is fixed; a host that
+  can't be reached is still `Unreachable` (#251).
 - **Chat enforces nothing.** A command becomes one request from a closed
   allowlist in `internal/model` (`CheckChatRequest`), the UI's own entries
   for what the UI can do (a Brief, its prompts, pause and resume, a

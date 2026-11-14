@@ -19,7 +19,11 @@ package matrix
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -164,8 +168,62 @@ func TestInvite(t *testing.T) {
 		t.Errorf("invited %d times, want 1", hs.Calls("invite"))
 	}
 	other := hs.CreateRoomAs(ada, "")
-	if err := c.Invite(ctx, other, ada); err == nil {
-		t.Error("Invite into a room the bot is not in succeeded")
+	if err := c.Invite(ctx, other, ada); err == nil || errors.Is(err, ports.ErrChatInviteRefused) {
+		t.Errorf("Invite into a room the bot is not in = %v, want an error that is not the person's", err)
+	}
+	// #251: a user of the server it has no account for is refused, theirs
+	// alone, with the homeserver's code.
+	ghost := "@ghost:" + matrixtest.ServerName
+	err := c.Invite(ctx, sp.ID, ghost)
+	if refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err); !ok || refused.User != ghost ||
+		refused.Code != "M_NOT_FOUND" {
+		t.Errorf("Invite of %s = %v, want a ChatInviteRefusedError naming them and M_NOT_FOUND", ghost, err)
+	}
+}
+
+// TestInviteRefusedOrUnreachable covers #251: which homeserver answers to
+// an invite refuse the person alone (a ChatInviteRefusedError), and which
+// say the host could not be reached or took no token.
+func TestInviteRefusedOrUnreachable(t *testing.T) {
+	for _, tt := range []struct {
+		status       int
+		code         string
+		refused      bool
+		tokenRefused bool
+	}{
+		{status: http.StatusNotFound, code: "M_NOT_FOUND", refused: true},
+		{status: http.StatusBadRequest, code: "M_INVALID_PARAM", refused: true},
+		{status: http.StatusNotFound, code: "M_UNRECOGNIZED"},
+		{status: http.StatusForbidden, code: "M_FORBIDDEN"},
+		{status: http.StatusTooManyRequests, code: "M_LIMIT_EXCEEDED"},
+		{status: http.StatusInternalServerError, code: "M_UNKNOWN"},
+		{status: http.StatusBadGateway},
+		{status: http.StatusUnauthorized, code: "M_UNKNOWN_TOKEN", tokenRefused: true},
+	} {
+		t.Run(fmt.Sprintf("%d %s", tt.status, tt.code), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.status)
+				_ = json.NewEncoder(w).Encode(map[string]string{"errcode": tt.code, "error": "no"})
+			}))
+			defer srv.Close()
+			c, err := New(ports.ChatConfig{Address: srv.URL, Token: rand.Text()}, WithRetries(0, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = c.Invite(t.Context(), "!room:"+matrixtest.ServerName, "@ghost:"+matrixtest.ServerName)
+			refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err)
+			switch {
+			case err == nil:
+				t.Fatal("Invite = nil, want an error")
+			case ok != tt.refused:
+				t.Errorf("Invite = %v, refused the person %v, want %v", err, ok, tt.refused)
+			case ok && (refused.Code != tt.code || refused.User != "@ghost:"+matrixtest.ServerName):
+				t.Errorf("Invite = %+v, want the person and %s", refused, tt.code)
+			case errors.Is(err, ports.ErrChatCredentialRefused) != tt.tokenRefused:
+				t.Errorf("Invite = %v, token refused %v, want %v", err, !tt.tokenRefused, tt.tokenRefused)
+			}
+		})
 	}
 }
 

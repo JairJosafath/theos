@@ -25,10 +25,12 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/adapters/matrix/matrixtest"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports/fake"
 )
 
 // newChat is a Chat on chatFake whose bot's token is in Secret secret.
@@ -438,7 +440,122 @@ var _ = Describe("Chat", func() {
 		Expect(chatReady(other, metav1.ConditionFalse, model.ChatSecretIncomplete).Message).To(HavePrefix(
 			"Secret slack-bot has no botToken"))
 	})
+
+	It("invites the others when the homeserver refuses one person, stays Ready and names the refusal, and "+
+		"invites them once their account exists (#251)", func() {
+		ns := newProjectNamespace()
+		chatBot(ns)
+		ada, _ := chatFake.NewUser("ada-" + ns)
+		carol, _ := chatFake.NewUser("carol-" + ns)
+		// ghost has no account on the homeserver yet: it answers 404 M_NOT_FOUND.
+		ghost := "@ghost-" + ns + ":" + matrixtest.ServerName
+		people := []c4v1beta1.ChatPerson{{MatrixID: ada, User: "ada-" + ns + "@example.com"},
+			{MatrixID: ghost, User: "ghost-" + ns + "@example.com"}, {MatrixID: carol, User: "carol-" + ns + "@example.com"}}
+		chat := newChat(ns, "chat", "matrix-bot", people[0])
+		createByItsPeople(chat, people[0].User,
+			func(i int) string { chat.Spec.People = append(chat.Spec.People, people[i]); return people[i].User },
+			len(people))
+
+		cond := chatInvited(chat, metav1.ConditionFalse, model.ChatInviteRefused)
+		Expect(cond.Message).To(ContainSubstring(ghost + " (M_NOT_FOUND)"))
+		Expect(cond.Message).To(ContainSubstring("refused to invite"))
+		ready := chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		Expect(ready.Reason).NotTo(Equal(model.ChatUnreachable))
+		Expect(ready.Message).To(HaveSuffix("; 2 people invited"))
+		Expect(chat.Status.Invited).To(ConsistOf(ada, carol))
+		Expect(chat.Status.Rooms).To(HaveLen(6))
+		for _, id := range chatRoomIDs(chat) {
+			room, ok := chatFake.Room(id)
+			Expect(ok).To(BeTrue())
+			Expect(room.Members).To(And(HaveKeyWithValue(ada, "invite"), HaveKeyWithValue(carol, "invite"),
+				Not(HaveKey(ghost))), "room %s", id)
+		}
+
+		By("inviting ghost once the account exists, on the next poll")
+		chatFake.NewUser("ghost-" + ns)
+		Expect(chatInvited(chat, metav1.ConditionTrue, model.ChatInvited).Message).
+			To(Equal("The 3 people in spec.people are invited to every room"))
+		Expect(chat.Status.Invited).To(ConsistOf(ada, ghost, carol))
+		for _, id := range chatRoomIDs(chat) {
+			room, _ := chatFake.Room(id)
+			Expect(room.Members).To(HaveKeyWithValue(ghost, "invite"), "room %s", id)
+		}
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+	})
+
+	It("invites the others when Slack refuses one person, stays Ready and names the refusal, and invites them "+
+		"once the member is active again (#251)", func() {
+		ns := newProjectNamespace()
+		ada, _ := chatSlackFake.NewUser("ada-" + ns)
+		ghost, _ := chatSlackFake.NewUser("ghost-" + ns)
+		carol, _ := chatSlackFake.NewUser("carol-" + ns)
+		// ghost is deactivated: Slack answers user_not_found.
+		chatSlackFake.Deactivate(ghost)
+		people := []c4v1beta1.ChatSlackPerson{{SlackID: ada, User: "ada-" + ns + "@example.com"},
+			{SlackID: ghost, User: "ghost-" + ns + "@example.com"}, {SlackID: carol, User: "carol-" + ns + "@example.com"}}
+		chat, bot, _ := slackFakeChat(ns, people[0])
+		createByItsPeople(chat, people[0].User,
+			func(i int) string {
+				chat.Spec.Slack.People = append(chat.Spec.Slack.People, people[i])
+				return people[i].User
+			}, len(people))
+
+		cond := chatInvited(chat, metav1.ConditionFalse, model.ChatInviteRefused)
+		Expect(cond.Message).To(HavePrefix(chatSlackFake.Address() + " refused to invite " + ghost + " (" +
+			fake.CodeUserNotFound + "); the other 2 people in spec.slack.people are invited"))
+		ready := chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		Expect(ready.Reason).NotTo(Equal(model.ChatUnreachable))
+		Expect(chat.Status.Invited).To(ConsistOf(ada, carol))
+		Expect(chat.Status.Rooms).To(HaveLen(6))
+		for _, room := range chat.Status.Rooms {
+			channel, ok := chatSlackFake.Room(room.ID)
+			Expect(ok).To(BeTrue())
+			Expect(channel.Members).To(ConsistOf(bot, ada, carol), "channel %s", room.Purpose)
+		}
+
+		By("inviting ghost once the member is active again, on the next poll")
+		chatSlackFake.Reactivate(ghost)
+		chatInvited(chat, metav1.ConditionTrue, model.ChatInvited)
+		Expect(chat.Status.Invited).To(ConsistOf(ada, ghost, carol))
+		for _, room := range chat.Status.Rooms {
+			channel, _ := chatSlackFake.Room(room.ID)
+			Expect(channel.Members).To(ConsistOf(bot, ada, ghost, carol), "channel %s", room.Purpose)
+		}
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+	})
 })
+
+// createByItsPeople creates chat, which lists its first person alone, as
+// that person, first, then adds each further person as themselves
+// (config/policy/chat_people_policy.yaml): add(i) appends person i and
+// returns their user. n counts the people.
+func createByItsPeople(chat *c4v1beta1.Chat, first string, add func(i int) string, n int) {
+	GinkgoHelper()
+	grant(first, roleChatPeople)
+	Expect(asUser(first).Create(ctx, chat)).To(Succeed())
+	for i := 1; i < n; i++ {
+		orig := chat.DeepCopy()
+		user := add(i)
+		grant(user, roleChatPeople)
+		Expect(asUser(user).Patch(ctx, chat, client.MergeFrom(orig))).To(Succeed())
+	}
+}
+
+// chatInvited waits for chat's Invited to have status and reason, at the
+// Chat's generation, and returns it (#251).
+func chatInvited(chat *c4v1beta1.Chat, status metav1.ConditionStatus, reason string) *metav1.Condition {
+	GinkgoHelper()
+	var cond *metav1.Condition
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, key(chat.Namespace, chat.Name), chat)).To(Succeed())
+		cond = condition(chat.Status.Conditions, c4v1beta1.ConditionChatInvited)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Reason).To(Equal(reason), cond.Message)
+		g.Expect(cond.Status).To(Equal(status))
+		g.Expect(cond.ObservedGeneration).To(Equal(chat.Generation))
+	}).Should(Succeed())
+	return cond
+}
 
 // newSlackChat is a Chat with host: slack whose bot's tokens are in Secret
 // slack-bot.

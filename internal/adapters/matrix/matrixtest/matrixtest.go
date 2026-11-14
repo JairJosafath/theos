@@ -115,6 +115,16 @@ func (s *Server) NewUser(localpart string) (userID, token string) {
 	return userID, token
 }
 
+// hasUser says NewUser made userID. The caller holds mu.
+func (s *Server) hasUser(userID string) bool {
+	for _, u := range s.tokens {
+		if u == userID {
+			return true
+		}
+	}
+	return false
+}
+
 // RateLimit makes the next n calls answer 429 with retry_after_ms ms.
 func (s *Server) RateLimit(n int, ms int64) {
 	s.mu.Lock()
@@ -472,6 +482,12 @@ func (s *Server) roomCall(w http.ResponseWriter, method, user, roomID string, re
 		target, _ := body["user_id"].(string)
 		if m := r.membership(target); m == memberJoin || m == memberInvite {
 			matrixError(w, http.StatusForbidden, "M_FORBIDDEN", target+" is already in the room.")
+			return
+		}
+		// A user of this server it has no account for is not found, as a
+		// homeserver answers (#251); one of another server it can't know.
+		if strings.HasSuffix(target, ":"+ServerName) && !s.hasUser(target) {
+			matrixError(w, http.StatusNotFound, "M_NOT_FOUND", "Unknown user "+target)
 			return
 		}
 		s.calls[memberInvite]++

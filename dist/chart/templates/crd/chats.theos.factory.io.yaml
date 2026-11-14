@@ -357,7 +357,7 @@ spec:
                   to.
                 type: string
               conditions:
-                description: 'conditions: Ready.'
+                description: 'conditions: Ready and Invited.'
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

@@ -97,6 +97,52 @@ const (
 	ChatScopeMissing = "ScopeMissing"
 )
 
+// The reasons of a Chat's Invited condition (#251): every person listed
+// is invited to every room, or the host refused to invite some of them.
+const (
+	ChatInvited       = "Invited"
+	ChatInviteRefused = "InviteRefused"
+)
+
+// ChatRefusal is a person the chat host refused to invite, and the host's
+// error code.
+type ChatRefusal struct {
+	Person, Code string
+}
+
+// ChatInvitedReason is the reason of a Chat's Invited condition when the
+// host refused refused.
+func ChatInvitedReason(refused []ChatRefusal) string {
+	if len(refused) > 0 {
+		return ChatInviteRefused
+	}
+	return ChatInvited
+}
+
+// ChatInvitedMessage is the message of a Chat's Invited condition: how many
+// people are invited, and each person the host refused with its code.
+func ChatInvitedMessage(c ChatCheck) string {
+	field := "spec.people"
+	if system, ok := chatSystems[ChatHostName(c.Host)]; ok && system.People != "" {
+		field = system.People
+	}
+	if len(c.Refused) == 0 {
+		return fmt.Sprintf("The %d %s in %s %s invited to every room", c.People, plural(c.People, "person", "people"),
+			field, plural(c.People, "is", "are"))
+	}
+	named := make([]string, 0, len(c.Refused))
+	for _, r := range c.Refused {
+		code := r.Code
+		if code == "" {
+			code = "no code"
+		}
+		named = append(named, fmt.Sprintf("%s (%s)", r.Person, code))
+	}
+	return fmt.Sprintf("%s refused to invite %s; the other %d %s in %s %s invited. Fix the account or the ID in %s; "+
+		"the operator tries again", c.Homeserver, strings.Join(named, ", "), c.People,
+		plural(c.People, "person", "people"), field, plural(c.People, "is", "are"), field)
+}
+
 // ChatTokenKey is the key of a Chat's Secret that holds the bot's access
 // token.
 const ChatTokenKey = "accessToken" //nolint:gosec // a key name, not a credential
@@ -113,6 +159,9 @@ type ChatCheck struct {
 	Alias string
 	// Rooms and People count the rooms ready and the people invited.
 	Rooms, People int
+	// Refused are the people the host refused to invite, for the Invited
+	// condition (#251).
+	Refused []ChatRefusal
 	// Other is the Chat that already serves the namespace, for Duplicate.
 	Other string
 	// Host is the Chat's chat host, the name of its ChatSystem; "" is the
