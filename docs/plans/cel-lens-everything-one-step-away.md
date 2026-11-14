@@ -495,3 +495,23 @@ Each is an issue in the session's Gitea (bodies in
 ## Status
 
 - **14 November, 04:40 UTC.** Planned. Nothing built.
+- **14 November, 08:40 UTC. Done.** All eight steps, built and reviewed in
+  the factory as cel-lens-vscode #44 (#35), #45 (#36), #48 (#37), #50
+  (#38), #46 and #49 (#39, and #47, which step 3 of the walkthrough
+  reached), #51 (the two halves joined, with the split-editor fix), #54
+  (#40), #55 (#41) and #56 (#42), with #34 (#28) under them, merged as
+  JairJosafath/cel-lens#33 (8399ef9). `release.yml` published
+  [cel-lens for VS Code v0.42.0](https://github.com/JairJosafath/cel-lens/releases/tag/vscode-v0.42.0),
+  still carrying engine v0.33.0. Checked here: the Linux `.vsix`'s
+  signature and provenance verify with cosign, its engine is v0.33.0 with
+  the pinned hash, and it contributes the walkthrough, `ctrl+k l` and the
+  `cel-lens.editor` submenu; the README's new pictures answer on `main`.
+  The theme pictures are in `docs/screenshots/cel-lens-everything-one-step-away/`.
+  JairJosafath/cel-lens#3 is closed, with a comment going through its list.
+  The reviews' main finds: the walkthrough's sample folder, hardened over
+  three rounds against another local user (a refusal the person could not
+  fix, a linked TMPDIR refused on Linux, a private folder re-created by
+  name); split editors acting on the wrong rule; a README link to a page
+  that did not exist. Not tried: VS Code desktop (openvscode-server in
+  Chrome only), a real screen reader, the full `npm run pictures` in one
+  run, and Windows for the temp-folder checks.
