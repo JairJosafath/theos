@@ -15,6 +15,7 @@ const writer: BriefWriter = {
   setPaused: async () => {},
   setPauseRuns: async () => {},
   setSettings: async () => {},
+  answerSourceRequest: async () => {},
 }
 
 const pageHref = (name: string) => `?kind=Brief&name=${name}`

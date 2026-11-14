@@ -8,6 +8,7 @@ import {
   pauseRunsPatch,
   promptPatch,
   settingsPatch,
+  sourceAnswerPatch,
 } from './briefs'
 
 function respond(status: number, body: unknown): Response {
@@ -83,6 +84,57 @@ describe('briefManifest and promptPatch', () => {
     // Only releases replace a list; the other settings are single values.
     expect(settingsPatch({ autopilot: 'On', resourceVersion: '42' })).toEqual([
       { op: 'add', path: '/spec/autopilot', value: 'On' },
+    ])
+  })
+})
+
+describe('sourceAnswerPatch (#163)', () => {
+  const entry = {
+    name: 'product',
+    linear: { team: 'ENG', label: 'factory' },
+    credentialsSecretRef: { name: 'product-linear' },
+    mode: 'Ask' as const,
+    accepted: [409],
+    declined: [415],
+  }
+
+  it('tests the whole entry at its index, then adds the list that changes, and never touches spec.releases', () => {
+    const patch = sourceAnswerPatch({ index: 1, entry, accepted: [409, 412], declined: [415] })
+    expect(patch).toEqual([
+      { op: 'test', path: '/spec/requestSources/1', value: entry },
+      { op: 'add', path: '/spec/requestSources/1/accepted', value: [409, 412] },
+    ])
+    expect(JSON.stringify(patch)).not.toContain('/spec/releases')
+  })
+
+  it('removes a list that ends up empty, only when the entry had it', () => {
+    expect(sourceAnswerPatch({ index: 0, entry, accepted: [409, 415] })).toEqual([
+      { op: 'test', path: '/spec/requestSources/0', value: entry },
+      { op: 'add', path: '/spec/requestSources/0/accepted', value: [409, 415] },
+      { op: 'remove', path: '/spec/requestSources/0/declined' },
+    ])
+    const bare = { name: 'support', credentialsSecretRef: { name: 'acme-jira' } }
+    expect(sourceAnswerPatch({ index: 1, entry: bare, declined: [7] })).toEqual([
+      { op: 'test', path: '/spec/requestSources/1', value: bare },
+      { op: 'add', path: '/spec/requestSources/1/declined', value: [7] },
+    ])
+  })
+
+  it('is sent by the writer as a JSON patch of the Brief', async () => {
+    const fetchImpl = vi.fn(async () => respond(200, {}))
+    await new LiveBriefWriter('k8s', fetchImpl).answerSourceRequest('webshop', 'feedback', {
+      index: 0,
+      entry,
+      accepted: [409, 412],
+      declined: [415],
+    })
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('k8s/apis/theos.factory.io/v1beta1/namespaces/webshop/briefs/feedback')
+    expect(init.method).toBe('PATCH')
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json')
+    expect(JSON.parse(init.body as string)).toEqual([
+      { op: 'test', path: '/spec/requestSources/0', value: entry },
+      { op: 'add', path: '/spec/requestSources/0/accepted', value: [409, 412] },
     ])
   })
 })

@@ -351,10 +351,15 @@ function NeedsYouBox({ view, namespace, answers }: { view: BriefView; namespace:
                 name={answers.name}
                 writer={answers.writer}
                 releases={view.releases}
+                requestSources={view.requestSources}
                 resourceVersion={view.resourceVersion}
                 request={n.request}
                 label={n.label}
-                settled={view.requests.settled[n.request.repository.toLowerCase()]}
+                settled={
+                  'source' in n.request
+                    ? view.requests.settledSources[n.request.source]
+                    : view.requests.settled[n.request.repository.toLowerCase()]
+                }
               />
             ) : null}
           </li>
@@ -372,7 +377,7 @@ function NeedsYouBox({ view, namespace, answers }: { view: BriefView; namespace:
             : '',
           view.needsYou.some((n) => n.container) ? 'A Container is settled on its page, which says what to do.' : '',
           view.needsYou.some((n) => n.request)
-            ? 'A request from GitHub is answered by accepting or declining it, not by a prompt: its words reach the planner only once you said yes.'
+            ? 'A request from GitHub or a tracker is answered by accepting or declining it, not by a prompt: its words reach the planner only once you said yes.'
             : '',
         ]
           .filter(Boolean)

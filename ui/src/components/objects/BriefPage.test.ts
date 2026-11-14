@@ -14,6 +14,7 @@ const writer: BriefWriter = {
   setPaused: async () => {},
   setPauseRuns: async () => {},
   setSettings: async () => {},
+  answerSourceRequest: async () => {},
 }
 const NOW = Date.parse('2026-10-07T12:00:00Z')
 const webshop = demoStory(NOW).briefs.find((b) => b.metadata.name === 'webshop')!

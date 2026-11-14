@@ -7,6 +7,7 @@ import { briefManifest, type BriefOptions, type BriefSettings, type BriefWriter 
 import type { FactoryHealth } from '../k8s/health'
 import type { Connection, FactoryData, Snapshot, Source, StoryData } from '../k8s/sources'
 import type { Condition, Project } from '../k8s/types'
+import type { SourceAnswer } from '../model/requests'
 import { demoFactory, demoHealth } from './factoryFixture'
 import { demoStory } from './fixture'
 import { BRIEF_LIMITS, isBriefName } from './limits'
@@ -139,6 +140,23 @@ export class DemoStorySource extends StaticSource<StoryData> implements BriefWri
     if (settings.parallel !== undefined) spec.parallel = settings.parallel as number
     if (settings.releases !== undefined) spec.releases = settings.releases
     const changed = { ...brief, spec }
+    this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
+  }
+
+  /** Sets the entry's accepted and declined, as the API would take the patch; the demo has no operator to act on them. */
+  async answerSourceRequest(_namespace: string, name: string, answer: SourceAnswer): Promise<void> {
+    const data = this.snapshot.data
+    const brief = data.briefs.find((b) => b.metadata.name === name)
+    if (!brief) throw new Error(`briefs.theos.factory.io "${name}" not found`)
+    const sources = brief.spec.requestSources ?? []
+    if (sources[answer.index]?.name !== answer.entry.name) {
+      throw new Error(`Brief.theos.factory.io "${name}" changed since this page showed it, so nothing was saved`)
+    }
+    const entry = { ...sources[answer.index], accepted: answer.accepted, declined: answer.declined }
+    if (!entry.accepted) delete entry.accepted
+    if (!entry.declined) delete entry.declined
+    const requestSources = sources.map((s, i) => (i === answer.index ? entry : s))
+    const changed = { ...brief, spec: { ...brief.spec, requestSources } }
     this.update({ ...data, briefs: data.briefs.map((b) => (b === brief ? changed : b)) })
   }
 

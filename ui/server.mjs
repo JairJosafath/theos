@@ -44,6 +44,7 @@ import http from 'node:http'
 import https from 'node:https'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { componentsFromEnv, createHealthHandler } from './health.mjs'
 import { createOIDC, oidcFromEnv } from './oidc.mjs'
 
@@ -390,6 +391,81 @@ function approvesDeploy(body) {
   return op(body[1], 'test', 'approved') === index || op(body[1], 'test', undefined, entry) === index ? body : undefined
 }
 
+/** At most this many numbers in an entry's accepted or declined: the CRD's cap, held here too. */
+const MAX_ANSWERED = 200
+/** The largest number the CRD's int32 takes. */
+const MAX_INT32 = 2147483647
+
+/**
+ * A JSON patch answering one item of a request source (#163): a `test` of the
+ * whole entry at /spec/requestSources/N as the page read it, an object with a
+ * name, then one or two writes, each on that same N's `accepted` or `declined`,
+ * none twice: an `add` of a list of 1 to 200 different positive int32s, or a
+ * `remove` of a list the tested entry has. No other path, operation, key or
+ * type passes, so no other field of the entry, no entry added, removed or
+ * moved. N is one digit (the CRD keeps at most ten sources), so no leading zero,
+ * `-`, escape or sign passes, and every path is compared whole as a string,
+ * never parsed.
+ * Returns the patch, or undefined. Whether the test matches the stored Brief
+ * is writeSourceAnswer's, which has read it.
+ */
+function answersSourceRequest(body) {
+  if (!Array.isArray(body) || body.length < 2 || body.length > 3) return undefined
+  const [first, ...writes] = body
+  if (!isObject(first) || Object.keys(first).sort().join() !== 'op,path,value' || first.op !== 'test') return undefined
+  if (typeof first.path !== 'string' || !/^\/spec\/requestSources\/[0-9]$/.test(first.path)) return undefined
+  if (!isObject(first.value) || typeof first.value.name !== 'string') return undefined
+  const done = new Set()
+  for (const op of writes) {
+    if (!isObject(op) || typeof op.path !== 'string') return undefined
+    const field = [`${first.path}/accepted`, `${first.path}/declined`].indexOf(op.path)
+    if (field < 0 || done.has(op.path)) return undefined
+    const keys = Object.keys(op).sort().join()
+    if (op.op === 'add' && keys === 'op,path,value') {
+      const list = op.value
+      const numbers =
+        Array.isArray(list) &&
+        list.length >= 1 &&
+        list.length <= MAX_ANSWERED &&
+        list.every((n) => Number.isInteger(n) && n >= 1 && n <= MAX_INT32) &&
+        new Set(list).size === list.length
+      if (!numbers) return undefined
+    } else if (op.op === 'remove' && keys === 'op,path') {
+      if (!Object.hasOwn(first.value, ['accepted', 'declined'][field])) return undefined
+    } else {
+      return undefined
+    }
+    done.add(op.path)
+  }
+  return body
+}
+
+/**
+ * Forwards a patch checked by answersSourceRequest once the test's entry is the
+ * one the Brief holds at that place now, compared with the stored Brief, never
+ * with what the request says about itself. Another entry there, or an entry
+ * changed since the page read it, is refused as a Conflict saying so and
+ * nothing is written. The test goes upstream too, so a change landing between
+ * the read and the write is refused by the API server.
+ */
+async function writeSourceAnswer(args) {
+  const { res, upstream, apiPath, namespace, name, body } = args
+  const current = await requestJson(upstream, apiPath)
+  if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
+  const sources = current.body?.spec?.requestSources
+  const stored = Array.isArray(sources) ? sources[Number(body[0].path.split('/').pop())] : undefined
+  if (!isDeepStrictEqual(stored, body[0].value)) {
+    return sendStatus(
+      res,
+      409,
+      'Conflict',
+      `Brief ${namespace}/${name}'s request source ${JSON.stringify(body[0].value.name)} is not as this page showed it, ` +
+        'so nothing was saved: check it as it is now and answer again',
+    )
+  }
+  return forwardPatch(args)
+}
+
 /**
  * The UI's writes, checked before anything reaches the API (design.md, UI
  * actions). Each entry is one request: a method, a path, a content type and a
@@ -514,6 +590,14 @@ const ACTIONS = [
     type: JSON_PATCH,
     check: testsVersion(addsFields(BRIEF_SETTINGS), [RELEASES_PATH]),
     write: writeTested('Brief'),
+  },
+  {
+    what: "answer an item of a Brief's request source (a test of the whole entry at /spec/requestSources/N, then an add or remove of that entry's accepted, declined or both)",
+    method: 'PATCH',
+    path: resourcePath('briefs', true),
+    type: JSON_PATCH,
+    check: answersSourceRequest,
+    write: writeSourceAnswer,
   },
   {
     what: `set a Crew's /spec/paused, /spec/pauseRuns, /spec/parallel, /spec/tagReleases, /spec/prepareReleases, ${PUBLISH_PATH} (or remove it; ${PUBLISH_PATH} after a test of ${RV_PATH})`,

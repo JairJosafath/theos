@@ -1,15 +1,25 @@
-// Accept and Decline on a request waiting in Ask: each sends the Brief's
-// releases list with the issue's number added to the entry's accepted or
-// declined requests, behind a test of the resourceVersion, as the other
-// releases settings do. It is a setting, so it needs actions on; the CRD
-// judges it, and a refusal shows the API server's message.
+// Accept and Decline on a request waiting in Ask. For a GitHub issue each
+// sends the Brief's releases list with the issue's number added to the entry's
+// accepted or declined requests, behind a test of the resourceVersion, as the
+// other releases settings do. For an item of a request source each changes
+// that entry's accepted and declined under spec.requestSources, behind a test
+// of the entry as read, and never touches spec.releases (#163). It is a
+// setting, so it needs actions on; the CRD judges it, and a refusal shows the
+// API server's message.
 
 import { useContext, useState } from 'react'
 import type { BriefWriter } from '../../k8s/briefs'
 import { canWrite } from '../../k8s/session'
-import type { BriefRelease } from '../../k8s/types'
+import type { BriefRelease, BriefRequestSource } from '../../k8s/types'
 import { SessionContext } from '../../lib/hooks'
-import { answerRequest, requestAnswered, type RequestAnswer } from '../../model/requests'
+import {
+  answerRequest,
+  answerSourceRequest,
+  requestAnswered,
+  sourceRequestAnswered,
+  type RequestAnswer,
+  type RequestRef,
+} from '../../model/requests'
 import { SignInLink } from '../Account'
 import { FormError } from './PromptForm'
 import { writeError, type WriteError } from './errors'
@@ -28,6 +38,7 @@ export function RequestButtons({
   name,
   writer,
   releases,
+  requestSources,
   resourceVersion,
   request,
   label,
@@ -37,11 +48,12 @@ export function RequestButtons({
   name: string
   writer: BriefWriter
   releases: BriefRelease[]
+  requestSources: BriefRequestSource[]
   resourceVersion?: string
-  request: { repository: string; number: number }
-  /** The request, as its buttons name it: "acme/cel-lens #12". */
+  request: RequestRef
+  /** The request, as its buttons name it: "acme/cel-lens #12", "product:ENG-412". */
   label: string
-  /** The repository's answered numbers whose issues are closed, which an answer drops. */
+  /** The repository's or source's answered numbers whose issues or items are closed, which an answer drops. */
   settled?: number[]
 }) {
   const session = useContext(SessionContext)
@@ -51,7 +63,10 @@ export function RequestButtons({
   // Brief it made, a second click would send a stale list.
   const [sentFrom, setSentFrom] = useState<string>()
   const waitingForWatch = sentFrom !== undefined && sentFrom === resourceVersion
-  const answered = requestAnswered(releases, request.repository, request.number)
+  const answered =
+    'source' in request
+      ? sourceRequestAnswered(requestSources, request.source, request.number)
+      : requestAnswered(releases, request.repository, request.number)
   const can = canWrite(session, 'setting')
 
   if (answered) {
@@ -75,22 +90,30 @@ export function RequestButtons({
       <div className="brief-answers">
         <span className="field-hint">
           The UI answers requests only with actions on; until then, add {request.number} to the entry’s{' '}
-          <span className="mono">requests.accepted</span> or <span className="mono">requests.declined</span> with
-          kubectl.
+          <span className="mono">{'source' in request ? 'accepted' : 'requests.accepted'}</span> or{' '}
+          <span className="mono">{'source' in request ? 'declined' : 'requests.declined'}</span> with kubectl.
         </span>
       </div>
     )
   }
 
-  const next = (answer: RequestAnswer) => answerRequest(releases, request.repository, request.number, answer, settled)
+  // The write an answer makes, or undefined when no entry takes requests from there.
+  const next = (answer: RequestAnswer): (() => Promise<void>) | undefined => {
+    if ('source' in request) {
+      const item = answerSourceRequest(requestSources, request.source, request.number, answer, settled)
+      return item && (() => writer.answerSourceRequest(namespace, name, item))
+    }
+    const list = answerRequest(releases, request.repository, request.number, answer, settled)
+    return list && (() => writer.setSettings(namespace, name, { releases: list, resourceVersion }))
+  }
 
   async function send(answer: RequestAnswer) {
-    const list = next(answer)
-    if (!list) return
+    const write = next(answer)
+    if (!write) return
     setSending(answer)
     setError(undefined)
     try {
-      await writer.setSettings(namespace, name, { releases: list, resourceVersion })
+      await write()
       setSentFrom(resourceVersion)
     } catch (err) {
       setError(writeError(err))

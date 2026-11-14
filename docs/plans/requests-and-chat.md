@@ -1379,6 +1379,104 @@ Left as it is, and why:
   `?demo=1&area=about&project=webshop-slack`. It shows all six channels made
   (the operator reports Ready only then) and one refused person.
 
+## Step 12 as built (#163)
+
+- **The types follow the CRD.** `Brief.spec.requestSources` is a list of
+  `BriefRequestSource` (`name`, one of `linear` and `jira`,
+  `credentialsSecretRef`, `mode`, `accepted`, `declined`). A
+  `status.requests[]` entry now has `repository`, `source` and `key` all
+  optional and `author` optional; `status.requestSourcesSettled` is added.
+- **A request is named by its source and key.** `describeRequest` reads a
+  request with a `source` as `product:ENG-412` (label and key), a GitHub
+  issue as `owner/name #12` as before, and a request that names neither as
+  `#<number>`, never `undefined #412`. A missing, empty or blank `author`
+  is no author: the line has no "by …", never "by undefined". A request's
+  address is linked only when it is http or https. All of it is rendered as
+  text.
+- **Which request a button answers.** `status.needsYou` names a source's
+  request `<source>:<key>`; `requestOfName` reads it as a source and key,
+  with the number of the listed `status.requests` entry of that source and
+  key, else the digits at the end of the key (`ENG-412`), else nothing: a
+  name that gives no number gets no button that guesses one. The page
+  needs the source's entry, so *Accept* and *Decline* are off for a source
+  the Brief no longer has, or whose mode is `Off`.
+- **The patch shape: a `test` of the whole entry, then the lists.**
+  *Accept* and *Decline* send a JSON patch of a `test` of the whole
+  `/spec/requestSources/N` entry as the page read it, then an `add` of the
+  entry's `accepted` and of its `declined` where each changes, or a
+  `remove` where one ends up empty and the entry had it. `N` is the
+  entry's index. The settled numbers (`status.requestSourcesSettled`) drop
+  out of both lists, as for a GitHub request (#824). The choice over the
+  alternatives:
+  - A `test` of the resourceVersion, as `spec.releases` does, would let the
+    server compare one string, but the operator's status writes move it
+    all the time, so a person would meet false conflicts; and it does not
+    say which entry the write is for. The whole entry changes only when
+    someone edits the spec, which the operator never does.
+  - A `test` of the entry's list and a `replace` cannot test a list that
+    is not there (JSON Patch has no test for a missing member), so a first
+    answer of an entry with no `accepted` would be untested, as a first
+    approval of a deploy was (#1461). The whole entry has that member
+    missing too, and is tested whole.
+  - Sending the whole entry (or the whole list) as a `replace` would let a
+    gate check only its shape, and would write over the entry's other
+    fields if the page's copy was stale. With a `test` first and only the
+    two lists written, no field but those can change, and the server can
+    check the write against the stored Brief.
+- **The server's gate (`answersSourceRequest`, `writeSourceAnswer`).**
+  One more entry of the action table, a `PATCH` of a Brief as a JSON patch,
+  with actions on. It passes only a body of two or three operations: the
+  first a `test` (keys `op`, `path`, `value` and no others) at
+  `/spec/requestSources/N`, `N` one digit with no sign, zero, escape or `-`
+  (the CRD keeps at most ten sources), whose value is an object with a
+  string `name`; then one or two writes, each at that same `N`'s
+  `accepted` or `declined` (a path compared whole as a string, never
+  parsed, no path twice), either an `add` of 1 to 200 different integers
+  from 1 to 2147483647, or a `remove` (no `value`) of a list the tested
+  entry has. Every other body is refused with 403 before anything goes
+  upstream: another field of an entry, an entry added, removed, moved or
+  copied, the whole list or entry, a `replace`, an index that is not the one
+  tested, an extra operation of any path, a second test, a first operation
+  that is not the test, and values of another type, a duplicate or too
+  many. The server then reads the Brief and compares the test's value with
+  the entry stored at `N` (`isDeepStrictEqual`), not with what the request
+  says of itself; another entry there, a missing one or one changed since
+  the page read it is refused as a `409 Conflict` and nothing is written.
+  The patch, test included, goes upstream as it came, so a change landing
+  between the read and the write is refused by the API server's own test.
+  The server checks shapes and the entry's identity, not the CRD's values
+  beyond the two caps it holds for itself.
+- **The Brief's page.** The section reads "Requests" when a source is among
+  the Brief's request places or one of its requests is from one, "Requests
+  from GitHub" when GitHub alone is, so a Brief with GitHub requests only
+  reads as before. A Brief with a source and nothing open says so.
+  `BriefWriter` has `answerSourceRequest`, which the live writer sends as
+  the patch above and the demo applies to its Brief.
+- **The demo** has the Brief `product-feedback` in `webshop`: a Linear
+  source `product`, ENG-409 planned, ENG-412 waiting, and ENG-418 waiting
+  with no author. Demo mode has no session, so its page says to use kubectl
+  instead of showing the buttons, as for GitHub requests.
+- **Tests.** `ui/src/model/requests.test.ts` (names, authors, the number of
+  a request, the answers), `ui/src/k8s/briefs.test.ts` (the patch),
+  `ui/src/components/briefs/Requests.test.ts` (the fixture's Brief: it reads
+  `product:ENG-412`, *Accept* patches the source's `accepted` and never
+  `/spec/releases`, no `undefined` for a missing author, text as text),
+  `ui/src/demo/demoSource.test.ts`, and in `ui/test/server.test.mjs` the
+  accepted patches, the `409`s and 116 refused bodies (a first operation
+  that is no test, an index of the wrong spelling or entry, an escape, an
+  extra operation, a value of the wrong type or size, and so on) plus a
+  few of another method, type, kind or origin. The refused
+  ones also pass on the old server, which refuses every unknown body; they
+  guard the new entry: ten of its rules (the index, duplicate paths, the
+  numbers' type, cap and uniqueness, the stored comparison, `replace`, the
+  first operation being a test, the number of operations, the fields of an
+  entry) were each loosened in turn in a scratch copy, and each failed some
+  of them. The end-to-end suite
+  (`ui/test/requests.e2e.mjs`) is not extended: its fake API cannot patch
+  into a list.
+- **Not done here.** `status.requests[].shipped`, which the CRD has, is
+  not in the UI's type; no page reads it.
+
 ## How we will know #61 is done
 
 The issue's done-when, by step:
