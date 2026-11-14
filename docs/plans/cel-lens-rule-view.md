@@ -301,12 +301,12 @@ README shows the view with a picture.
     a folder change (a full rescan, and every open editor's lines blink).
 
 12. **Release: the engine, then the extension that pins it, with the
-    picture.** The engine's steps are released as v0.32.0 (*Prepare
-    v0.32.0*, then `release.yml` for the engine); the extension pins it in
+    picture.** The engine's steps are released as v0.33.0 (*Prepare
+    v0.33.0*, then `release.yml` for the engine); the extension pins it in
     `core-version.json`, its e2e test asks the pinned engine for the list,
     the README gains a *Rule view* section with a picture taken by
     `npm run pictures` (`images/rule-view.png`, as #1's pictures were taken
-    by cel-lens-vscode#15), and it is released as v0.40.0 with
+    by cel-lens-vscode#15), and it is released as v0.41.0 with
     `release.yml`. The version numbers are the next minors unless another
     release comes first.
 
@@ -323,8 +323,8 @@ Each is an issue in the session's Gitea (bodies in
 | 4 | cel-lens-core | Workspace folders added and removed are followed by every background run, without a restart (`w4.md`) |
 | 5 | cel-lens-vscode | The view: its container and icon, the tree from the list, labels, states, tooltips, the click and the context menu, folders, welcome views, progress (`w5.md`) |
 | 6 | cel-lens-vscode | The problems-only filter, the badge, and following the editor (`w6.md`) |
-| 7 | cel-lens-core | Prepare v0.32.0; released with `release.yml` (`w7.md`) |
-| 8 | cel-lens-vscode | Pin engine v0.32.0; the README's section and picture; Prepare v0.40.0, released with `release.yml` (`w8.md`) |
+| 7 | cel-lens-core | Prepare v0.33.0; released with `release.yml` (`w7.md`) |
+| 8 | cel-lens-vscode | Pin engine v0.33.0; the README's section and picture; Prepare v0.41.0, released with `release.yml` (`w8.md`) |
 
 ## Status
 
