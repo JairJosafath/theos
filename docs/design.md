@@ -2024,13 +2024,16 @@ the work.
 
 - **One model, in the CRDs' types.** In the project's repository
   (`theos-<project>` unless set), `model/model.yaml` is the story and
-  `model/setup.yaml` the GitProvider and the catalog entries: all
-  `theos.factory.io/v1beta1` manifests, decoded strictly and given the
-  CRDs' defaults. The host, its owner, the registry and the npm scope are
-  the GitProvider's fields; templates are catalog entries at pinned refs.
-  `model/settings.yaml` holds what no CRD does, and is the one file with a
-  format of its own. A cluster takes these manifests only where it can
-  host: its `provider` is `gitea` alone today.
+  `model/setup.yaml` the GitProvider, the catalog entries and the Bundles:
+  all whole `theos.factory.io/v1beta1` manifests, given the CRDs' defaults
+  and decoded strictly. A plan round is rendered from the story in the
+  plan's format and merged back object by object, so what a plan can't
+  write (`adopt`, a license, a deploy) stays. The host, its owner, the
+  registries and the npm scope are the GitProvider's fields; templates are
+  catalog entries at pinned refs. `model/settings.yaml` holds what no CRD
+  does, and is the one file with a format of its own. A cluster takes
+  these manifests only where it can host: its `provider` is `gitea` alone
+  today.
 - **The same repositories.** `theos scaffold` renders a Container's
   repository through the function the operator calls, once, with the same
   `.theos.yaml` and the same first commit: what an operator with the same
@@ -2048,20 +2051,24 @@ the work.
   what a role reads about the stack, and a work order names them. A
   runtime without subagents plays one role per session, and a review is
   always a fresh one.
-- **The Git host coordinates.** A session claims an issue by creating its
-  Task's branch, the operator's `task/<container>-<issue>`, which the host
-  lets one session do. Marker comments that are never edited carry the
-  lease, read by the times the host stamped on them: a claim that ran out
-  is taken over on its branch and never renewed. `status/in-progress`
+- **The Git host coordinates.** A session claims a free issue by creating
+  its Task's branch, the operator's `task/<container>-<issue>`, which the
+  host lets one session do. Marker comments that are never edited carry
+  the lease, read by the times the host stamped on them: a claim that ran
+  out is taken over on its branch and never renewed. `status/in-progress`
   shows the claim to people and to a Crew. Markers count only from the
-  accounts the project names. Sessions in any tool work one repository at
-  once this way.
+  accounts the project names, and an issue that has the branch or the
+  label and no counted marker is never taken: a person frees it. Sessions
+  in any tool work one repository at once this way.
 - **A person merges.** Either with `theos merge` from their terminal,
   which merges through the host adapter and wants an approving verdict
   from a session other than the author's, or in the host's pages. Agents
   merging under the host's rules (`merge: rules`) waits for a branch rule
   that can require a review and name who merges, and is refused until
-  then.
+  then. It is for Gitea and Forgejo, where the host holds the protected
+  paths, and for a project with three accounts of the person's: their
+  own, one that opens and merges pull requests, and one that reviews. On
+  GitHub it stays refused while no branch rule there holds a path.
 
 What the Git host still holds, for an account its rule binds: `main` takes
 no push and a change arrives as a pull request; on Gitea and Forgejo, also
@@ -2088,16 +2095,18 @@ UI need the cluster.
 **Between the two.** A project made without a cluster is adopted by a
 cluster as any repository is ([adopt.md](adopt.md)): `theos export` prints
 the model with `adopt: true` and a Crew that holds every change for a
-person. On a Gitea or Forgejo the cluster reaches, the repositories need
-no commit and their issues stay; the person first makes the Secret the
-GitProvider names, with a site administrator's token, and the Agents. Onto
+person. On a Gitea or Forgejo the cluster reaches, the issues stay, and
+the repositories need no commit where the cluster renders with the same
+settings; where it doesn't, the Standard arrives as the operator's pull
+request. The person first makes the Secret the GitProvider names, with a
+site administrator's token, and the Agents. Onto
 the chart's own Gitea the histories are pushed, and issues, pull requests
 and claims stay behind. On GitHub the move waits for #81. The other way, a
 model exported from a cluster becomes a project repository, once its Crew
 is paused and `main`'s rule names the person's account. A person keeps a
 Container to a Crew or to outside sessions. The label is all that checks
 it: a Crew starts only `status/ready` issues, and a session never takes a
-`status/in-progress` issue that has no claim marker.
+`status/in-progress` issue that has no counted claim marker.
 
 ## Distribution and issues
 
