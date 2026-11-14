@@ -103,3 +103,18 @@ README shows it with a GIF.
   the folders once, reading no `.cellens`, to notice one and say so; the
   issue asked both for no search and for the notice, and only this gives
   both. Step 3 (cel-lens-vscode#29, with the GIF) is being built.
+- **14 November, 03:15 UTC. Done.** cel-lens-vscode#31 (issue #29, two
+  review rounds: the README's new row linked a page that exists only in
+  the engine's folder, and the engine notice's action could have written
+  any name into the setting; both fixed, with a test that every relative
+  README link names a file) merged as JairJosafath/cel-lens#30 (0e0eda8),
+  and `release.yml` published
+  [cel-lens for VS Code v0.40.0](https://github.com/JairJosafath/cel-lens/releases/tag/vscode-v0.40.0).
+  Checked here: the Linux `.vsix`'s signature and provenance verify with
+  cosign, its engine is v0.32.0 with the pinned hash, its `package.json`
+  offers `cellens-types`, and the README's GIF answers on `main`. The
+  pins were compared with the `checksums.txt` verified here before
+  publishing. Not tried in a real VS Code: the engine's notice and its
+  button (tested against the stand-in); the GIF shows the rest of the
+  loop in a real one. The rule list (cel-lens#2) follows as engine
+  v0.33.0 and the extension's v0.41.0.
