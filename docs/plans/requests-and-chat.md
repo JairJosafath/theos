@@ -1026,6 +1026,27 @@ What the step chose where the plan says nothing:
   the host answered. It is filed as its own issue and is fixed on top of this
   step (#251, below).
 
+- **The port has `Close` (#234).** `ChatHost.Close()` lets go of what the
+  value holds open: Slack's socket (`Client.Close`, which was there), nothing
+  on Matrix or the fake (which counts its open values, `fake.ChatHost.Open`).
+  `theos-chat` remembers which built host each Chat used; when a Chat's
+  tokens change, or the Chat is gone, it closes the host no Chat uses any
+  more, and keeps one another Chat still uses. The operator closes the host
+  it builds at the end of each reconcile. Before, a client replaced after a
+  token change kept its socket, and Slack, which sends each event to one
+  open socket, gave some events to it.
+- **The fake shaped as Slack has member IDs.** `fake.MemberIDs()` makes a
+  user ID `U` and eight digits, so `spec.slack.people`'s CEL takes the fake's
+  people; `fake.ChatHost.Revoke` and `Grant` take a scope from a token for
+  the port methods named, and `NewToken` gives an account a second token.
+  The suite's Slack is `chatSlackFake` at `https://slack.test/api`, which is
+  also the suite's `--chat-slack-api-url`.
+- **`HostNotSupported` keeps its specs, without Slack in the map.** The
+  suite's operator runs Slack now, so an operator built without its adapter
+  is a reconciler whose map has no `slack`, run on a fake client
+  (`TestChatOnAHostWithoutAnAdapter`); `theos-chat`'s spec deletes `slack`
+  from its map. The CRD's enum takes no third host to test with.
+
 ## #251 as built
 
 - **The adapter says who is refused.** `Invite` returns a
@@ -1113,28 +1134,11 @@ What the step chose where the plan says nothing:
   host: in particular whether Synapse answers 404 `M_NOT_FOUND` for an
   unknown user, what it answers for a deactivated one, and whether Slack's
   `no_permission` ever means a workspace-wide rule rather than one member.
+  Matrix's 400 `M_INVALID_PARAM` counts as the person's refusal although
+  the spec does not list it for invite (kept as harmless); it is one of
+  the items of issue #254.
   Out of scope, filed separately: the UI showing the refusal (the Chat
   panel reads `Ready` alone).
-- **The port has `Close` (#234).** `ChatHost.Close()` lets go of what the
-  value holds open: Slack's socket (`Client.Close`, which was there), nothing
-  on Matrix or the fake (which counts its open values, `fake.ChatHost.Open`).
-  `theos-chat` remembers which built host each Chat used; when a Chat's
-  tokens change, or the Chat is gone, it closes the host no Chat uses any
-  more, and keeps one another Chat still uses. The operator closes the host
-  it builds at the end of each reconcile. Before, a client replaced after a
-  token change kept its socket, and Slack, which sends each event to one
-  open socket, gave some events to it.
-- **The fake shaped as Slack has member IDs.** `fake.MemberIDs()` makes a
-  user ID `U` and eight digits, so `spec.slack.people`'s CEL takes the fake's
-  people; `fake.ChatHost.Revoke` and `Grant` take a scope from a token for
-  the port methods named, and `NewToken` gives an account a second token.
-  The suite's Slack is `chatSlackFake` at `https://slack.test/api`, which is
-  also the suite's `--chat-slack-api-url`.
-- **`HostNotSupported` keeps its specs, without Slack in the map.** The
-  suite's operator runs Slack now, so an operator built without its adapter
-  is a reconciler whose map has no `slack`, run on a fake client
-  (`TestChatOnAHostWithoutAnAdapter`); `theos-chat`'s spec deletes `slack`
-  from its map. The CRD's enum takes no third host to test with.
 
 ## Step 9 as built (#160)
 

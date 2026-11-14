@@ -294,8 +294,9 @@ type ChatRefusedPerson struct {
 	// +required
 	ID string `json:"id"`
 
-	// code is the host's error code for the refusal, such as M_NOT_FOUND
-	// or user_not_found.
+	// code is the host's error code for the first refusal of the pass,
+	// such as M_NOT_FOUND or user_not_found. A person refused in several
+	// rooms with different codes keeps only that first code.
 	// +optional
 	Code string `json:"code,omitempty"`
 
