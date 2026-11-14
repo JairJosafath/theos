@@ -101,7 +101,11 @@ func (p ChatPost) HTML() string {
 // and the code in a block. The three characters mrkdwn reads as control,
 // &, < and >, are escaped in every field, so a field is shown as written
 // and never read as a link or a mention; a link only when its address is
-// http or https. The adapter sends it as it is and parses no HTML.
+// http or https. *, _, ~ and a backtick are not escaped: mrkdwn has no
+// escape for them, and what people wrote with them (a review's `code`, an
+// issue's *emphasis*) reads as they meant it. Only the bold title, which a
+// * would end, takes care of it (#234). The adapter sends it as it is and
+// parses no HTML.
 func (p ChatPost) Mrkdwn() string {
 	var blocks []string
 	switch title, status := strings.TrimSpace(p.Title), strings.TrimSpace(p.Status); {
@@ -141,9 +145,12 @@ var mrkdwnEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 func mrkdwnEscape(text string) string { return mrkdwnEscaper.Replace(text) }
 
 // mrkdwnBold is text bold: one line, since mrkdwn's bold ends at a line
-// break.
+// break. A * in it would end the bold early, and mrkdwn has no escape for
+// one, so it is written as U+2217, the asterisk operator, which looks the
+// same (#234).
 func mrkdwnBold(text string) string {
-	return "*" + mrkdwnEscape(strings.Join(strings.Fields(text), " ")) + "*"
+	line := strings.ReplaceAll(strings.Join(strings.Fields(text), " "), "*", "\u2217")
+	return "*" + mrkdwnEscape(line) + "*"
 }
 
 // chatEscape escapes text for HTML and keeps its line breaks.
