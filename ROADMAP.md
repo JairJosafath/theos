@@ -26,8 +26,9 @@ comes first. The `priority/N` labels say it, 1 picked first:
   app: the webshop ships*, a `kind/bug` whose fix is under `templates/`, and
   an issue the owner shaped in conversation with a session (the owner,
   2026-11-14): those are thought through and go before what an agent filed
-  on its own. An agent's steps and follow-ups of such an issue don't inherit
-  its priority.
+  on its own, and are filed `status/ready` unless something blocks them. The
+  steps an issue like that waits on carry its priority; an agent's other
+  follow-ups don't.
 - `priority/3`: what makes development itself faster (the relay, `land`,
   `make check`, flakes, the scripts).
 - `priority/4`: the rest of the goal's work: the templates (Frameworks,
