@@ -83,3 +83,38 @@ func TestEnsureRoomFinishesAChannelLeftWithoutItsTopic(t *testing.T) {
 		t.Errorf("conversations.setTopic reached Slack %d times, want once: the call that finished the channel", got)
 	}
 }
+
+// TestEnsureRoomPutsBackATopicEmptiedByHand covers #159: a channel whose
+// topic a member emptied by hand gets its topic back and is not Created,
+// so the caller invites nobody, and nobody who left a channel is pulled
+// back into it. Before, it was Created, and the Chat controller invited
+// every person to all six channels, ada again into a channel she left.
+func TestEnsureRoomPutsBackATopicEmptiedByHand(t *testing.T) {
+	x := newRooms(t)
+	bob := x.ws.NewUser("bob")
+	if err := x.c.Invite(t.Context(), x.specs, bob); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.ws.Remove(x.specs, bob); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.ws.SetTopic(x.specs, ""); err != nil {
+		t.Fatal(err)
+	}
+	spec := ports.ChatRoomSpec{ID: x.specs, Alias: aliasSpecs, Topic: "A thread per spec waiting for approval"}
+	room, err := x.c.EnsureRoom(t.Context(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if room.Created || room.ID != x.specs {
+		t.Errorf("EnsureRoom() of a channel whose topic was emptied by hand = %+v, want %s found, not Created",
+			room, x.specs)
+	}
+	ch, _ := x.ws.Channel(x.specs)
+	if ch.Topic != spec.Topic {
+		t.Errorf("the channel's topic = %q, want %q back", ch.Topic, spec.Topic)
+	}
+	if got := x.ws.Calls("conversations.members"); got != 1 {
+		t.Errorf("conversations.members called %d times, want once, for the channel without its topic", got)
+	}
+}

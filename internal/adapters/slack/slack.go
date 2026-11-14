@@ -34,6 +34,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -402,23 +403,58 @@ func (c *Client) EnsureRoom(ctx context.Context, spec ports.ChatRoomSpec) (ports
 	return ports.ChatRoom{ID: made.Channel.ID, Alias: alias(made.Channel.Name), Created: true}, nil
 }
 
-// finish is ch, a channel the bot is in that spec finds. A channel made
-// with no topic where spec has one is one a call before left half made:
-// conversations.setTopic failed after conversations.create. It gets its
-// topic now and is Created, so the caller invites the people again, which
-// it would not otherwise do for a channel it found (#234). A topic someone
-// emptied by hand is put back the same way, and its people invited again,
-// which is no error for those in it.
+// finish is ch, a channel the bot is in that spec finds. A channel found
+// without its topic, where spec has one, gets its topic back. It is
+// Created, so the caller invites its people, only when the bot is its one
+// member: conversations.setTopic failed right after conversations.create,
+// and nobody was ever invited to it (#234). A channel whose topic someone
+// emptied by hand, or that everyone else left, is found as it is: on Slack
+// an invite is a join, so inviting its people again would pull back into
+// it whoever chose to leave (#159).
 func (c *Client) finish(ctx context.Context, spec ports.ChatRoomSpec, ch channel) (ports.ChatRoom, error) {
 	room := ports.ChatRoom{ID: ch.ID, Alias: alias(ch.Name)}
 	if spec.Topic == "" || ch.Topic.Value != "" {
 		return room, nil
 	}
+	alone, err := c.botAlone(ctx, ch.ID)
+	if err != nil {
+		return ports.ChatRoom{}, err
+	}
 	if err := c.setTopic(ctx, ch.ID, spec.Topic); err != nil {
 		return ports.ChatRoom{}, err
 	}
-	room.Created = true
+	room.Created = alone
 	return room, nil
+}
+
+// botAlone says the bot is the one member of channel, by
+// conversations.members, which takes groups:read on a private channel, the
+// scope users.conversations already takes.
+func (c *Client) botAlone(ctx context.Context, channel string) (bool, error) {
+	me, err := c.WhoAmI(ctx)
+	if err != nil {
+		return false, err
+	}
+	cursor := ""
+	for {
+		args := url.Values{argChannel: {channel}, argLimit: {strconv.Itoa(pageSize)}}
+		if cursor != "" {
+			args.Set("cursor", cursor)
+		}
+		var answer struct {
+			page
+			Members []string `json:"members"`
+		}
+		if err := c.bot(ctx, "conversations.members", args, &answer); err != nil {
+			return false, err
+		}
+		if slices.ContainsFunc(answer.Members, func(m string) bool { return m != me }) {
+			return false, nil
+		}
+		if cursor = answer.Meta.NextCursor; cursor == "" {
+			return true, nil
+		}
+	}
 }
 
 // setTopic sets channel's topic to topic; "" sets none.

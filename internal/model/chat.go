@@ -174,8 +174,8 @@ func ChatReadyMessage(reason string, c ChatCheck) string {
 		if c.Scope != "" {
 			scope = "the scope " + c.Scope
 		}
-		return fmt.Sprintf("The bot's token in Secret %s lacks %s, which %s says a call needs; give the bot "+
-			"the scope, and the operator tries again%s", c.Secret, scope, c.Homeserver, detail)
+		return fmt.Sprintf("The bot's token in Secret %s lacks %s, which %s says a call needs%s; give the bot "+
+			"the scope, and the operator tries again", c.Secret, scope, c.Homeserver, detail)
 	case ChatUnreachable:
 		return fmt.Sprintf("Could not reach the rooms on %s%s; the operator tries again", c.Homeserver, detail)
 	case ChatAliasTaken:

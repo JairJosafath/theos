@@ -204,15 +204,16 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 	}
 	status.Homeserver, status.Bot = check.Homeserver, bot
 	prefix := model.ChatAliasPrefix(chat.Namespace, chat.Spec.AliasPrefix)
-	// status.invited are the people invited to every room it lists: a room
-	// made anew empties it, so everyone is invited again (an invite of a
-	// member is no error), even when a later step fails.
+	// status.invited are the people invited to every room it lists. A
+	// person not in it is invited to every room; the rest only to a room
+	// nobody was invited to yet (Created), never again to one they were
+	// invited to: on Slack an invite is a join, so it would pull back into
+	// a room whoever chose to leave it (#159).
 	invited := map[string]bool{}
 	for _, id := range status.Invited {
 		invited[id] = true
 	}
-	forget := func() { status.Invited, invited = nil, map[string]bool{} }
-	var rooms []string
+	var rooms, fresh []string
 	parent := ""
 	if system.Spaces {
 		space, err := r.ensureSpace(ctx, chat, host, prefix, status, check)
@@ -220,7 +221,7 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 			return err
 		}
 		if space.Created {
-			forget()
+			fresh = append(fresh, space.ID)
 		}
 		rooms, parent = append(rooms, space.ID), space.ID
 	}
@@ -244,7 +245,7 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 			status.Rooms = append(status.Rooms, entry)
 		}
 		if room.Created {
-			forget()
+			fresh = append(fresh, room.ID)
 		}
 		rooms = append(rooms, room.ID)
 	}
@@ -252,10 +253,11 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 	var people []string
 	for _, id := range chatPeopleIDs(chat, system) {
 		people = append(people, id)
+		to := rooms
 		if invited[id] {
-			continue
+			to = fresh
 		}
-		for _, room := range rooms {
+		for _, room := range to {
 			if err := host.Invite(ctx, room, id); err != nil {
 				return fmt.Errorf("inviting %s: %w", id, err)
 			}

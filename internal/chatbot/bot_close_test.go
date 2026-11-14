@@ -134,3 +134,54 @@ func TestReplacedHostIsClosed(t *testing.T) {
 	}
 	wantOpen(1, "a Chat theos-chat never served gone")
 }
+
+// TestSharedHostOutlivesOneChat covers #159: two Chats on one bot token
+// share one host; deleting one leaves it open, and the other Chat's next
+// pass runs on it, building no other.
+func TestSharedHostOutlivesOneChat(t *testing.T) {
+	ctx := context.Background()
+	h := portsfake.NewChatHost(portsfake.WithoutSpaces(), portsfake.OneNamePerRoom(), portsfake.MemberIDs())
+	_, token := h.NewUser("bot")
+	appToken := rand.Text()
+	shop, shopSecret := slackChat(t, h, "shop", token, appToken)
+	cart, cartSecret := slackChat(t, h, "cart", token, appToken)
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, c4v1beta1.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kube := fake.NewClientBuilder().WithScheme(scheme).WithObjects(shop, shopSecret, cart, cartSecret).Build()
+	built := 0
+	hosts := h.Hosts()
+	bot := &Bot{Client: kube, APIReader: kube,
+		ChatHosts: map[string]ports.ChatHosts{model.ChatSlack: func(cfg ports.ChatConfig) (ports.ChatHost, error) {
+			built++
+			return hosts(cfg)
+		}},
+		Now: func() time.Time { return time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC) }}
+	pass := func(chat *c4v1beta1.Chat) {
+		t.Helper()
+		if _, err := bot.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(chat)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	pass(shop)
+	pass(cart)
+	if got := h.Open(); got != 1 || built != 1 {
+		t.Fatalf("two Chats on one token: %d hosts open, %d built, want 1 and 1", got, built)
+	}
+	if err := kube.Delete(ctx, cart); err != nil {
+		t.Fatal(err)
+	}
+	pass(cart)
+	if got := h.Open(); got != 1 {
+		t.Errorf("cart deleted while shop shares its host: %d hosts open, want 1", got)
+	}
+	pass(shop)
+	if got := h.Open(); got != 1 || built != 1 {
+		t.Errorf("shop's pass after cart's deletion: %d hosts open, %d built, want 1 and 1: the host it shared", got,
+			built)
+	}
+}

@@ -175,11 +175,11 @@ corrects this plan where it differs.
 9. **The tokens, and their scopes.** Two, in the Secret
    `credentialsSecretRef` already names, which the user creates:
    `botToken` (`xoxb-…`) with `groups:write` (make a private channel, set
-   its topic, invite), `groups:read` (find the bot's channels),
-   `groups:history` (the `message.groups` event and the catch-up read),
-   `chat:write` and `reactions:write`; and `appToken` (`xapp-…`) with
-   `connections:write`. The operator reads `botToken` alone; `theos-chat`
-   reads both, as it reads the Matrix token today
+   its topic, invite), `groups:read` (find the bot's channels and a
+   channel's members), `groups:history` (the `message.groups` event and the
+   catch-up read), `chat:write` and `reactions:write`; and `appToken`
+   (`xapp-…`) with `connections:write`. The operator reads `botToken` alone;
+   `theos-chat` reads both, as it reads the Matrix token today
    (`internal/chatbot/bot.go:139-147`). A missing key is `SecretIncomplete`
    naming it; a scope Slack says is missing is a new reason, `ScopeMissing`,
    with the scope in the message.
@@ -599,7 +599,8 @@ method and event pages named):
 - **Decision 9's bot scopes hold:** `conversations.create` (private),
   `conversations.setTopic` and `conversations.invite` take `groups:write`
   (the last two also the narrower `groups:write.topic` and
-  `groups:write.invites`); `users.conversations` `groups:read`;
+  `groups:write.invites`); `users.conversations` and `conversations.members`
+  `groups:read`;
   `conversations.history`, `conversations.replies` and the
   `message.groups` event `groups:history`; `chat.postMessage` and
   `chat.update` `chat:write`; `reactions.add` `reactions:write`;
@@ -965,17 +966,28 @@ What the step chose where the plan says nothing:
 - **The people's list is picked by host name** in two small functions, the
   controller's `chatPeopleIDs` and `theos-chat`'s `people`, since
   `api/v1beta1` holds the two lists and `internal/model` may not import it.
-- **A channel left without its topic is finished, and Created (#234).** When
-  `conversations.setTopic` failed after `conversations.create`, the next
-  `EnsureRoom` found the channel by name and returned it as found, so the
-  controller, which forgets `status.invited` only for a room made anew,
-  invited nobody to a channel made again. Now `EnsureRoom` sets the topic of
-  a channel it finds with none, where the spec has one, and returns it
-  `Created`. Retrying the topic alone would leave the people out; inviting
-  on every call would cost a call per person and room every ten minutes. A
-  topic someone emptied by hand is put back the same way, and the people
-  invited again, which is no error for those in the channel; one who left it
-  is back in. `ChatRoom.Created`'s comment says so.
+- **Nobody who left a channel is pulled back (#159, #234).** On Slack an
+  invite is a join, not a pending invite as on Matrix, so inviting a person
+  again puts back whoever chose to leave, which is the surprise to avoid;
+  decision 4 says only that the room's topic is the channel's topic. So the
+  controller invites a person not yet in `status.invited` to every room, and
+  a person in it only to a room `EnsureRoom` says is `Created`, that room
+  alone. `Created` means nobody was invited to the room yet: made now, or
+  found half made. On Slack, `EnsureRoom` gives a
+  channel it finds without its topic, where the spec has one, its topic
+  back; it is `Created` only when the bot is its one member
+  (`conversations.members`, which takes `groups:read`, the scope
+  `users.conversations` already takes): `conversations.setTopic` failed
+  right after `conversations.create`, and nobody was ever invited. A topic
+  someone emptied by hand is put back and nobody is invited. Before, every
+  channel found without its topic was `Created`, the controller forgot
+  `status.invited`, and every person was invited to all six channels
+  (`TestSlackChatPullsNobodyBack`, `TestSlackChatInvitesToAChannelLeftHalfMade`,
+  `TestEnsureRoomPutsBackATopicEmptiedByHand`). Two cases remain: a channel
+  everyone left whose topic is then emptied looks half made, and its people
+  are invited to it; and a room made anew whose invites fail partway is not
+  `Created` on the next pass, so the people not reached are not invited to
+  it.
 - **The port has `Close` (#234).** `ChatHost.Close()` lets go of what the
   value holds open: Slack's socket (`Client.Close`, which was there), nothing
   on Matrix or the fake (which counts its open values, `fake.ChatHost.Open`).

@@ -52,6 +52,7 @@ import (
 var Scopes = map[string]string{
 	"auth.test":              "",
 	"users.conversations":    "groups:read",
+	"conversations.members":  "groups:read",
 	"conversations.create":   scopeGroupsWrite,
 	"conversations.setTopic": scopeGroupsWrite,
 	"conversations.invite":   scopeGroupsWrite,
@@ -301,6 +302,32 @@ func (s *Server) Remove(channelID, user string) error {
 		return errors.New(errChannelNotFound)
 	}
 	delete(ch.members, user)
+	return nil
+}
+
+// SetTopic sets channel's topic, "" for none, as any member who edits it
+// does.
+func (s *Server) SetTopic(channelID, topic string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ch, ok := s.channels[channelID]
+	if !ok {
+		return errors.New(errChannelNotFound)
+	}
+	ch.topic = topic
+	return nil
+}
+
+// Delete deletes channel, as a workspace admin who deletes it does: its
+// name is free again.
+func (s *Server) Delete(channelID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.channels[channelID]; !ok {
+		return errors.New(errChannelNotFound)
+	}
+	delete(s.channels, channelID)
+	s.order = slices.DeleteFunc(s.order, func(id string) bool { return id == channelID })
 	return nil
 }
 
@@ -784,6 +811,11 @@ func (s *Server) handle(method, user string, form url.Values) (map[string]any, m
 		return s.listChannels(user, form), nil
 	case "conversations.create":
 		return s.createChannel(user, form), nil
+	case "conversations.members":
+		if !member {
+			return fail(errChannelNotFound), nil
+		}
+		return s.members(ch, form), nil
 	case "conversations.setTopic":
 		if !member {
 			return fail(errNotInChannel), nil
@@ -879,6 +911,13 @@ func (s *Server) listChannels(user string, form url.Values) map[string]any {
 	}
 	from, to, next := page(len(mine), form, s.maxPage)
 	return ok(map[string]any{"channels": mine[from:to], "response_metadata": map[string]string{"next_cursor": next}})
+}
+
+// members lists ch's member IDs, a page at a time.
+func (s *Server) members(ch *channel, form url.Values) map[string]any {
+	ids := slices.Sorted(maps.Keys(ch.members))
+	from, to, next := page(len(ids), form, s.maxPage)
+	return ok(map[string]any{"members": ids[from:to], "response_metadata": map[string]string{"next_cursor": next}})
 }
 
 func (s *Server) createChannel(user string, form url.Values) map[string]any {

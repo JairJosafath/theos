@@ -62,7 +62,9 @@ type ChatRoom struct {
 	ID    string
 	Alias string
 	// Created says EnsureRoom made it, or finished making one a call before
-	// left half made: nobody may be invited to it yet.
+	// left half made: nobody was invited to it yet, so the caller invites
+	// its people to it. A room found any other way is not Created, even
+	// when people left it: the caller never invites them back (#159).
 	Created bool
 }
 

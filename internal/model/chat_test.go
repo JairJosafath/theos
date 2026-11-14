@@ -137,6 +137,15 @@ func TestChatReadyMessage(t *testing.T) {
 			t.Errorf("ChatReadyMessage(%s) on Slack = %q, want it to start with %q", reason, got, want)
 		}
 	}
+	// #159: the adapter's detail comes before "the operator tries again", as
+	// on Unreachable.
+	slack.Detail = "slack: conversations.create: 200 missing_scope (needs groups:write)"
+	if got, want := ChatReadyMessage(ChatScopeMissing, slack), "The bot's token in Secret slack-bot lacks the "+
+		"scope groups:write, which https://slack.example/api says a call needs: slack: conversations.create: 200 "+
+		"missing_scope (needs groups:write); give the bot the scope, and the operator tries again"; got != want {
+		t.Errorf("ChatReadyMessage(ScopeMissing) with the adapter's detail = %q, want %q", got, want)
+	}
+	slack.Detail = ""
 	slack.Scope = ""
 	if got := ChatReadyMessage(ChatScopeMissing, slack); !strings.Contains(got, "lacks a scope, which") {
 		t.Errorf("ChatReadyMessage(ScopeMissing) naming no scope = %q", got)
