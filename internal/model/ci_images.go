@@ -72,9 +72,9 @@ func (c CIImages) OrDefault() CIImages {
 var pinnedImage = regexp.MustCompile(`^[a-z0-9][A-Za-z0-9._/:-]*[A-Za-z0-9_](@sha256:[0-9a-f]{64})?$`)
 
 // PinnedImageProblem says why image isn't pinned, or "" when it is: it must
-// name a tag or a digest, and a tag other than latest, dev or main, which
 // name a tag or a digest, and a tag other than latest, dev, main or master,
 // which move.
+func PinnedImageProblem(image string) string {
 	if !pinnedImage.MatchString(image) || strings.Contains(image, "//") {
 		return fmt.Sprintf("%q is not an image reference such as registry/name:1.2.3", image)
 	}
