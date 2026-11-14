@@ -910,14 +910,21 @@ func (s *Server) listChannels(user string, form url.Values) map[string]any {
 		}
 	}
 	from, to, next := page(len(mine), form, s.maxPage)
-	return ok(map[string]any{"channels": mine[from:to], "response_metadata": map[string]string{"next_cursor": next}})
+	return ok(map[string]any{"channels": mine[from:to], keyMeta: nextCursor(next)})
 }
+
+// keyMeta is the key of a listing's response_metadata.
+const keyMeta = "response_metadata"
+
+// nextCursor is a listing's response_metadata naming the next page, ""
+// for none.
+func nextCursor(next string) map[string]string { return map[string]string{"next_cursor": next} }
 
 // members lists ch's member IDs, a page at a time.
 func (s *Server) members(ch *channel, form url.Values) map[string]any {
 	ids := slices.Sorted(maps.Keys(ch.members))
 	from, to, next := page(len(ids), form, s.maxPage)
-	return ok(map[string]any{"members": ids[from:to], "response_metadata": map[string]string{"next_cursor": next}})
+	return ok(map[string]any{"members": ids[from:to], keyMeta: nextCursor(next)})
 }
 
 func (s *Server) createChannel(user string, form url.Values) map[string]any {
@@ -1026,7 +1033,7 @@ func (s *Server) history(ch *channel, method string, form url.Values) map[string
 	}
 	from, to, next := page(len(msgs), form, s.maxPage)
 	return ok(map[string]any{"messages": msgs[from:to], "has_more": next != "",
-		"response_metadata": map[string]string{"next_cursor": next}})
+		keyMeta: nextCursor(next)})
 }
 
 // tsLess is whether ts a is before ts b.
