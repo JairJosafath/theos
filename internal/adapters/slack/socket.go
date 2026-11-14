@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"golang.org/x/net/websocket"
 
 	"github.com/JairJosafath/theos/internal/ports"
@@ -103,6 +104,12 @@ type feed struct {
 	heard   time.Time // when the last frame came, on the cluster's clock
 	pending time.Time // a catch-up that failed, to read again on the next open
 	closed  bool
+
+	// log is the logger of the latest Sync's context: the socket's reader
+	// has no context of its own. It is never given a frame's content, which
+	// may hold what people wrote.
+	log        logr.Logger
+	unreadable int // frames dropped for not parsing, since the Client was made
 
 	buf    []buffered
 	seq    uint64            // the seq of the newest message buffered
@@ -212,10 +219,11 @@ func (c *Client) Sync(ctx context.Context, since string, wait time.Duration) (po
 			return ports.ChatSync{}, err
 		}
 	}
+	f := c.feed
+	f.useLog(ctx)
 	if err := c.open(ctx, since, tok); err != nil {
 		return ports.ChatSync{}, err
 	}
-	f := c.feed
 	switch {
 	case since == "":
 		// The first Sync marks where the rooms stand.
@@ -229,9 +237,15 @@ func (c *Client) Sync(ctx context.Context, since string, wait time.Duration) (po
 	deadline := time.Now().Add(wait)
 	for {
 		f.mu.Lock()
-		events, end := f.after(tok.pos)
-		wake, closed := f.wake, f.closed
+		events, end, lost := f.after(tok.pos)
+		wake, closed, log := f.wake, f.closed, f.log
 		f.mu.Unlock()
+		if lost > 0 {
+			// The reader was away while more came in than the buffer
+			// holds: what it missed is not read again (#234).
+			log.Info("Messages were dropped from the Slack buffer before they were read",
+				"lost", lost, "kept", maxBuffered)
+		}
 		left := time.Until(deadline)
 		if len(events) > 0 || wait <= 0 || left <= 0 || closed {
 			return ports.ChatSync{Next: next(f.epoch, end, tok.time, events).String(), Events: events}, nil
@@ -264,17 +278,32 @@ func next(epoch string, end uint64, t time.Time, events []ports.ChatEvent) token
 	return token{epoch: epoch, pos: end, time: t}
 }
 
-// after is the buffer's messages after pos, a room's oldest first, and the
-// position of the last; f.mu is held. A position the buffer dropped reads
+// useLog keeps the logger of ctx, if it has one, for the socket's reader and
+// for what Sync finds lost.
+func (f *feed) useLog(ctx context.Context) {
+	if l := logr.FromContextOrDiscard(ctx); l.GetSink() != nil {
+		f.mu.Lock()
+		f.log = l
+		f.mu.Unlock()
+	}
+}
+
+// after is the buffer's messages after pos, a room's oldest first, the
+// position of the last, and how many messages after pos the buffer dropped
+// before they were read; f.mu is held. A position the buffer dropped reads
 // from its oldest message.
-func (f *feed) after(pos uint64) ([]ports.ChatEvent, uint64) {
+func (f *feed) after(pos uint64) ([]ports.ChatEvent, uint64, int) {
 	i, _ := slices.BinarySearchFunc(f.buf, pos+1, func(b buffered, seq uint64) int { return cmp.Compare(b.seq, seq) })
 	events := make([]ports.ChatEvent, 0, len(f.buf)-i)
 	for _, b := range f.buf[i:] {
 		events = append(events, b.ev)
 	}
 	sortByTime(events)
-	return events, max(pos, f.seq)
+	lost := 0
+	if len(f.buf) > 0 && f.buf[0].seq > pos+1 {
+		lost = int(f.buf[0].seq - pos - 1)
+	}
+	return events, max(pos, f.seq), lost
 }
 
 // sortByTime orders events by time, which keeps each room's oldest first.
@@ -450,7 +479,7 @@ func (c *Client) dialSocket(ctx context.Context) (*websocket.Conn, error) {
 	}
 	// The address holds the socket's ticket, a credential: no error names
 	// more of it than its host, as theos-chat logs what Sync returns.
-	cfg, err := websocket.NewConfig(answer.URL, c.base)
+	cfg, err := websocket.NewConfig(answer.URL, c.origin())
 	if err != nil {
 		return nil, errors.New("slack: apps.connections.open gave no socket address the adapter can dial")
 	}
@@ -471,6 +500,16 @@ func (c *Client) dialSocket(ctx context.Context) (*websocket.Conn, error) {
 	return ws, nil
 }
 
+// origin is the Origin the socket's handshake sends: the scheme and host of
+// the API address, with no path (#234).
+func (c *Client) origin() string {
+	u, err := url.Parse(c.base)
+	if err != nil {
+		return c.base
+	}
+	return u.Scheme + "://" + u.Host
+}
+
 // frame is a message on the socket.
 type frame struct {
 	Type       string          `json:"type"`
@@ -487,7 +526,8 @@ func (c *Client) read(ws *websocket.Conn, gen uint64) {
 	for {
 		var fr frame
 		if err := websocket.JSON.Receive(ws, &fr); err != nil {
-			if _, ok := errors.AsType[*json.SyntaxError](err); ok {
+			if unparsed(err) {
+				f.dropUnreadable()
 				continue
 			}
 			f.down(gen)
@@ -507,6 +547,25 @@ func (c *Client) read(ws *websocket.Conn, gen uint64) {
 			_ = websocket.JSON.Send(ws, map[string]string{"envelope_id": fr.EnvelopeID})
 		}
 	}
+}
+
+// unparsed says err is a frame that arrived whole and is not JSON of the
+// shape of a frame, not a socket that failed.
+func unparsed(err error) bool {
+	_, syntax := errors.AsType[*json.SyntaxError](err)
+	_, typed := errors.AsType[*json.UnmarshalTypeError](err)
+	return syntax || typed
+}
+
+// dropUnreadable counts and logs a frame that could not be read, which is
+// dropped. The line names no part of it and quotes no decoder error: a frame
+// holds what people wrote, and the decoder's errors quote it (#234).
+func (f *feed) dropUnreadable() {
+	f.mu.Lock()
+	f.unreadable++
+	n, log := f.unreadable, f.log
+	f.mu.Unlock()
+	log.Info("A frame on the Slack socket could not be read and was dropped", "unreadable", n)
 }
 
 // down marks socket gen closed, unless another took its place.
@@ -574,6 +633,7 @@ func (c *Client) receive(payload json.RawMessage) {
 		Event   event  `json:"event"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
+		c.feed.dropUnreadable()
 		return
 	}
 	me, botID := c.self()
@@ -605,7 +665,9 @@ func (c *Client) self() (string, string) {
 
 // chatEvent is a person's message, or their edit of one, as the port names
 // it, with its key in the buffer: false for the bot's own, a change that is
-// no edit (a link unfurled) and every other subtype.
+// no edit (a link unfurled) and every other subtype. A message with a file
+// attached (file_share) is a person's message, its text what they typed
+// with the file (#234).
 func chatEvent(e event, channel, me, botID string) (string, ports.ChatEvent, bool) {
 	own := func(m event) bool { return m.User == "" || m.User == me || (botID != "" && m.BotID == botID) }
 	thread := func(m event) string {
@@ -615,7 +677,7 @@ func chatEvent(e event, channel, me, botID string) (string, ports.ChatEvent, boo
 		return ""
 	}
 	switch e.Subtype {
-	case "", "thread_broadcast":
+	case "", "thread_broadcast", "file_share":
 		t, ok := tsTime(e.TS)
 		if !ok || own(e) || channel == "" {
 			return "", ports.ChatEvent{}, false
@@ -647,11 +709,14 @@ func (f *feed) add(key string, ev ports.ChatEvent) {
 	f.keys[key] = f.seq
 	f.newest = later(f.newest, ev.Time)
 	if len(f.buf) > maxBuffered {
+		// Shift the slice: append makes room again once its end is reached,
+		// copying what is kept once in many adds, not on every one (#234).
 		drop := len(f.buf) - maxBuffered
 		for _, b := range f.buf[:drop] {
 			delete(f.keys, b.key)
 		}
-		f.buf = slices.Clone(f.buf[drop:])
+		clear(f.buf[:drop])
+		f.buf = f.buf[drop:]
 	}
 	f.notify()
 }

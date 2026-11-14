@@ -1140,6 +1140,39 @@ What the step chose where the plan says nothing:
   Out of scope, filed separately: the UI showing the refusal (the Chat
   panel reads `Ready` alone).
 
+## #234 as built
+
+The review findings of #155 for the Slack adapter that step 8 left, each with
+its test (`slack_234_test.go`, `TestChatPostMrkdwn`):
+
+- **Mrkdwn is not escaped past `&`, `<` and `>` (#234).** mrkdwn has no escape
+  for `*`, `_`, `~` or a backtick, so what people wrote with them (a review's
+  `code`, an issue's *emphasis*) is shown as they meant it; the one exception
+  is the bold title, where a `*` would end the bold, so it is written as
+  U+2217 (`*Fix ∗all∗ the bugs*`).
+- **A message with a file attached is read.** `file_share` joins the subtypes
+  `chatEvent` takes; every other subtype stays dropped.
+- **A frame that does not parse is logged and counted, never quoted.** The
+  socket's reader, and `receive` for a payload of the wrong shape, drop it with
+  one line, "A frame on the Slack socket could not be read and was dropped",
+  and the running count, through the logger in the context of the latest
+  `Sync` (`theos-chat`'s). The line holds nothing of the frame, and not the
+  decoder's error, which quotes it.
+- **A reader whose position the buffer dropped is told.** `Sync` still reads
+  from the oldest message kept, and logs "Messages were dropped from the Slack
+  buffer before they were read" with how many were lost; the port is
+  unchanged. A full buffer drops its oldest by shifting the slice, with no
+  copy on each add.
+- **The socket's Origin is the scheme and host** of the API address, with no
+  path.
+- **A post with no mrkdwn leaves `blocks` out.** An edit with none still sends
+  `blocks: []`, since `chat.update` keeps a message's blocks when none are
+  given and the new text would not show; unverified against Slack itself.
+- **`missing_args` is no refused token**, so it is a plain error where it was
+  `ErrChatCredentialRefused`; `Invite`'s per-person codes (#251) never held it.
+- **A `Retry-After` is clamped to 24 hours** before it becomes a
+  `time.Duration`; the client's own maximum wait still bounds the sleep.
+
 ## Step 9 as built (#160)
 
 Atlassian's reference was not read again: step 6 as built, Jira, records

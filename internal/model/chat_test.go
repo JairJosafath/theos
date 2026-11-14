@@ -249,6 +249,14 @@ func TestChatPostMrkdwn(t *testing.T) {
 		{"escapes the three characters and keeps line breaks",
 			ChatPost{Title: "a < b", Body: []string{"<@U012AB3CD> & <!here>\n<https://evil.example|x> &amp; > y"}},
 			"*a &lt; b*\n\n&lt;@U012AB3CD&gt; &amp; &lt;!here&gt;\n&lt;https://evil.example|x&gt; &amp;amp; &gt; y"},
+		// #234: mrkdwn has no escape for * _ ~ and a backtick, so the body and
+		// the status keep them as written; a * in the bold title would end
+		// the bold, so it is written as U+2217.
+		{"a * in a title does not end the bold", ChatPost{Title: "Fix *all* the bugs", Status: "a *b*"},
+			"*Fix \u2217all\u2217 the bugs*\na *b*"},
+		{"* _ ~ and a backtick in a body are kept",
+			ChatPost{Title: "snake_case ~x~ `y`", Body: []string{"*bold* _it_ ~gone~ `code`"}},
+			"*snake_case ~x~ `y`*\n\n*bold* _it_ ~gone~ `code`"},
 		{"paragraphs apart", ChatPost{Body: []string{"one", " ", "two"}}, "one\n\ntwo"},
 		{"links, the address escaped and a | in it encoded",
 			ChatPost{Links: []ChatLink{{"Pull request #4", "https://git.example/acme/shop/pulls/4?a=1&b=2|3"},

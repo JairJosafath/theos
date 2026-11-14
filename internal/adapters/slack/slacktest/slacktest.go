@@ -118,6 +118,7 @@ type Server struct {
 	last     time.Time // the newest ts given
 	socks    []*sock   // open sockets, oldest first
 	tickets  map[string]bool
+	origins  []string // the Origin header of each socket handshake
 	opens    int
 	events   int
 	sent     *delivery // the last event delivered, for Redeliver
@@ -279,6 +280,40 @@ func (s *Server) Open() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.socks)
+}
+
+// Origins are the Origin headers the sockets' handshakes sent, oldest first.
+func (s *Server) Origins() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.origins)
+}
+
+// SendRaw sends data as one text frame on the newest open socket, as it is:
+// a frame the app cannot read, say.
+func (s *Server) SendRaw(data string) error {
+	s.mu.Lock()
+	var k *sock
+	if n := len(s.socks); n > 0 {
+		k = s.socks[n-1]
+	}
+	s.mu.Unlock()
+	if k == nil {
+		return errors.New("no socket is open")
+	}
+	return k.writeRaw(data)
+}
+
+// SendEvent sends event, with a fresh event_id, in an events_api envelope on
+// the newest open socket and waits for its acknowledgement: an event the
+// fake workspace has no call to make, such as a message with a file
+// attached.
+func (s *Server) SendEvent(event map[string]any) error {
+	s.mu.Lock()
+	s.events++
+	id := fmt.Sprintf("Ev%08d", s.events)
+	s.mu.Unlock()
+	return s.send(id, event, 0)
 }
 
 // Join puts user in channel, as an invite does.
@@ -649,6 +684,13 @@ func (k *sock) write(v any) error {
 	return websocket.JSON.Send(k.ws, v)
 }
 
+// writeRaw sends data as one text frame.
+func (k *sock) writeRaw(data string) error {
+	k.wmu.Lock()
+	defer k.wmu.Unlock()
+	return websocket.Message.Send(k.ws, data)
+}
+
 // socket serves one Socket Mode connection: hello, then acknowledgements
 // until it closes.
 func (s *Server) socket(ws *websocket.Conn) {
@@ -656,6 +698,7 @@ func (s *Server) socket(ws *websocket.Conn) {
 	s.mu.Lock()
 	ok := s.tickets[ticket]
 	delete(s.tickets, ticket)
+	s.origins = append(s.origins, ws.Request().Header.Get("Origin"))
 	s.mu.Unlock()
 	if !ok {
 		_ = ws.Close()

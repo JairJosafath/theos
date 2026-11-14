@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -57,6 +58,9 @@ const (
 	defaultMaxWait = 30 * time.Second
 	// defaultWait is the wait when a 429 names none.
 	defaultWait = time.Second
+	// maxRetryAfter clamps the wait a 429 names before it becomes a
+	// time.Duration, which a huge number of seconds would overflow (#234).
+	maxRetryAfter = 24 * time.Hour
 )
 
 // pageSize is how many items a listing asks for at once, as Slack
@@ -85,9 +89,10 @@ const (
 	codeAlreadyReacted   = "already_reacted"
 )
 
-// refusedCodes are the error codes of a token Slack doesn't take.
+// refusedCodes are the error codes of a token Slack doesn't take. A
+// malformed request (missing_args) is not one (#234).
 var refusedCodes = map[string]bool{"invalid_auth": true, "not_authed": true, "account_inactive": true,
-	"token_revoked": true, "token_expired": true, "not_allowed_token_type": true, "missing_args": true}
+	"token_revoked": true, "token_expired": true, "not_allowed_token_type": true}
 
 // Client is a ChatHost on one Slack workspace, as one app's bot.
 type Client struct {
@@ -238,10 +243,15 @@ func (c *Client) call(ctx context.Context, token, method string, args url.Values
 // retryAfter is the wait a 429 asks for: the Retry-After header's seconds,
 // else defaultWait.
 func retryAfter(header http.Header) time.Duration {
-	if s, err := strconv.Atoi(header.Get("Retry-After")); err == nil && s >= 0 {
-		return time.Duration(s) * time.Second
+	raw := header.Get("Retry-After")
+	s, err := strconv.ParseInt(raw, 10, 64)
+	if errors.Is(err, strconv.ErrRange) && !strings.HasPrefix(raw, "-") {
+		s, err = math.MaxInt64, nil
 	}
-	return defaultWait
+	if err != nil || s < 0 {
+		return defaultWait
+	}
+	return time.Duration(min(s, int64(maxRetryAfter/time.Second))) * time.Second
 }
 
 // wait sleeps d, at most the Client's maxWait, or until ctx ends.
@@ -530,11 +540,10 @@ func message(msg ports.ChatMessage) url.Values {
 	sections := sectionTexts(msg.Formatted)
 	switch {
 	case msg.Formatted == "":
-		args.Set("blocks", "[]")
+		// No blocks field: an empty array is not known to be taken (#234).
 	case len(sections) > maxBlocks:
 		// Too long for blocks: the mrkdwn as the text, which Slack cuts.
 		args.Set(argText, msg.Formatted)
-		args.Set("blocks", "[]")
 	default:
 		blocks := make([]map[string]any, 0, len(sections))
 		for _, s := range sections {
@@ -607,6 +616,11 @@ func (c *Client) Reply(ctx context.Context, room, threadRoot string, msg ports.C
 // edit has no ID of its own on Slack.
 func (c *Client) Edit(ctx context.Context, room, event string, msg ports.ChatMessage) (string, error) {
 	args := message(msg)
+	if !args.Has("blocks") {
+		// chat.update keeps a message's blocks when none are given, and
+		// the new text would not show: an empty array clears them.
+		args.Set("blocks", "[]")
+	}
 	args.Set(argChannel, room)
 	args.Set("ts", event)
 	var answer struct {
