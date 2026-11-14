@@ -180,7 +180,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	if err != nil {
 		return r.retry(ctx, container, status, c4v1beta1.ConditionScaffolded, err)
 	}
-	in := scaffoldInput(view, ci, res.use.Connectors, res.domains,
+	in := r.scaffoldInput(view, ci, res.use.Connectors, res.domains,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
 		specOperations(container), repo.NpmScope, license)
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
@@ -305,7 +305,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	paths := map[string]bool{}
 	var standardRef string
 	for i, domains := range domainSets {
-		in := scaffoldInput(view, ci, nil, domains, checks, specOperations(container), repo.NpmScope, license)
+		in := r.scaffoldInput(view, ci, nil, domains, checks, specOperations(container), repo.NpmScope, license)
 		renders[i] = scaffold.Tree{}
 		for _, layer := range layers {
 			tree, err := scaffold.RenderLayer(in, layer)
@@ -473,8 +473,9 @@ func (r *ContainerReconciler) condition(container *c4v1beta1.Container, status *
 // and npmScope the scope the repository's npm package is named under
 // (ports.Repository.NpmScope; empty means ports.DefaultNpmScope).
 // license is the license the repository carries (resolveLicense); a caller
-// that only writes a message passes none.
-func scaffoldInput(container *c4v1beta1.Container, ci model.CI, connectors, domains []string,
+// that only writes a message passes none. The toolchain images a GitHub
+// check falls back to are the operator's, r.CIImages (#284).
+func (r *ContainerReconciler) scaffoldInput(container *c4v1beta1.Container, ci model.CI, connectors, domains []string,
 	checks string, ops model.Operations, npmScope string, license scaffold.License) scaffold.Input {
 	if npmScope == "" {
 		npmScope = ports.DefaultNpmScope
@@ -499,6 +500,7 @@ func scaffoldInput(container *c4v1beta1.Container, ci model.CI, connectors, doma
 		Operations:     ops,
 		NpmScope:       npmScope,
 		License:        license,
+		CIImages:       r.CIImages,
 	}
 	return in
 }

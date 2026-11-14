@@ -323,7 +323,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		u.renderFailed(ctx, err)
 		return
 	}
-	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), to.Checks,
+	in := u.r.scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), to.Checks,
 		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope, license)
 	in.FrameworkFiles, err = u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
@@ -550,7 +550,7 @@ func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 	if err != nil {
 		return nil, err
 	}
-	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
+	in := u.r.scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
 		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope, license)
 	paths, err := u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
@@ -617,7 +617,7 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 		if err != nil {
 			return nil, err
 		}
-		in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
+		in := u.r.scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
 			scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope, license)
 		tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideFramework, Name: name, Ref: ref,
 			Files: files})
@@ -1054,7 +1054,7 @@ func (u *standardUpdate) merged(ctx context.Context) {
 func (u *standardUpdate) mergeMessage() (title, message string) {
 	s := u.status.Standard
 	update := s.Update
-	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
+	in := u.r.scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
 		scaffoldedOperations(u.container, u.status), "", scaffold.License{})
 	if update.Take {
 		taken := make([]model.TakenFile, 0, len(update.Paths))
@@ -1068,7 +1068,7 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	}
 	from, to := u.version(), model.StandardVersion{Ref: update.Ref, Checks: string(update.Checks)}
 	title = model.StandardUpdateTitle(s.Name, from, to)
-	full := scaffold.UpdateMessage(scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), to.Checks,
+	full := scaffold.UpdateMessage(u.r.scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), to.Checks,
 		scaffoldedOperations(u.container, u.status), "", scaffold.License{}), s.Name,
 		from, to, scaffold.Update{Merged: update.Merged, LeftOut: update.LeftOut})
 	message, _ = strings.CutPrefix(full, title+"\n\n")

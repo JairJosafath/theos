@@ -18,8 +18,11 @@ package controller
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
@@ -98,25 +101,92 @@ func TestScaffoldInput(t *testing.T) {
 		},
 		NpmScope: "@theos",
 	}
+	r := &ContainerReconciler{}
 	// An empty scope (a provider that sets none) is the default (#1231).
-	got := scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "",
+	got := r.scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "",
 		scaffold.License{})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput() = %+v, want %+v", got, want)
 	}
 	// The GitProvider's own scope is passed through (#1231).
 	want.NpmScope = "@acme"
-	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
+	got = r.scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
 		scaffold.License{})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput(@acme) = %+v, want %+v", got, want)
 	}
 	// The resolved license is carried as is (#1788).
 	want.License = scaffold.License{ID: "MIT", Holder: "Web Shop", Year: 2026}
-	got = scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
+	got = r.scaffoldInput(container, ci, []string{"postgres"}, []string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme",
 		want.License)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scaffoldInput(license) = %+v, want %+v", got, want)
+	}
+	// The operator's toolchain images are carried as they are (#284).
+	want.CIImages = model.CIImages{Go: "registry.example.com/go:1.0.0", Base: "registry.example.com/base:1.0.0"}
+	got = (&ContainerReconciler{CIImages: want.CIImages}).scaffoldInput(container, ci, []string{"postgres"},
+		[]string{"webshop"}, model.ChecksBeforeRelease, specOperations(container), "@acme", want.License)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("scaffoldInput(CIImages) = %+v, want %+v", got, want)
+	}
+}
+
+// TestScaffoldedGitHubCheckRunsInTheOperatorsImage284 covers #284: the
+// toolchain images the operator is given (--ci-image-go and --ci-image-base,
+// the chart's ciImages) reach the GitHub check of every Standard it scaffolds
+// with one, so a repository falls back to the chart's registry, not to the
+// fixed GHCR name; with none given it falls back to the release's.
+func TestScaffoldedGitHubCheckRunsInTheOperatorsImage284(t *testing.T) {
+	github, err := model.CIByName(model.CIGitHubActions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured := model.CIImages{Go: "registry.example.com:5000/tools/go:9.9.9",
+		Base: "registry.example.com:5000/tools/base:9.9.9"}
+	for _, standard := range []struct{ name, variable string }{
+		{"go-standard", "THEOS_CI_IMAGE_GO"}, {"hello-standard", "THEOS_CI_IMAGE_BASE"},
+	} {
+		files, err := scaffold.ReadTree(os.DirFS(filepath.Join("..", "..", "templates", standard.name)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		layer := scaffold.Layer{Side: model.SideStandard, Name: standard.name, Ref: "v1.0.0", Files: files}
+		for _, c := range []struct {
+			name   string
+			images model.CIImages
+			want   model.CIImages
+		}{
+			{"the chart's images", configured, configured},
+			{"none given", model.CIImages{}, model.DefaultCIImages()},
+		} {
+			t.Run(standard.name+", "+c.name, func(t *testing.T) {
+				container := &c4v1beta1.Container{
+					ObjectMeta: objectMeta("webshop", "orders-api"),
+					Spec: c4v1beta1.ContainerSpec{
+						SoftwareSystemRef: c4v1beta1.LocalRef{Name: "webshop-core"},
+						Type:              c4v1beta1.ContainerTypeService,
+						FrameworkRef:      c4v1beta1.LocalRef{Name: "go-cli"},
+						StandardRef:       &c4v1beta1.LocalRef{Name: standard.name},
+					},
+				}
+				r := &ContainerReconciler{CIImages: c.images}
+				in := r.scaffoldInput(container, github, nil, nil, model.ChecksEveryChange,
+					specOperations(container), "", scaffold.License{})
+				tree, err := scaffold.RenderLayer(in, layer)
+				if err != nil {
+					t.Fatal(err)
+				}
+				check, ok := tree[github.Dir()+"workflows/check.yaml"]
+				if !ok {
+					t.Fatalf("%s renders no %sworkflows/check.yaml", standard.name, github.Dir())
+				}
+				image := map[string]string{"THEOS_CI_IMAGE_GO": c.want.Go, "THEOS_CI_IMAGE_BASE": c.want.Base}[standard.variable]
+				want := "container: ${{ vars." + standard.variable + " || '" + image + "' }}"
+				if !strings.Contains(string(check.Data), want) {
+					t.Errorf("the check does not run in %s; want the line %q in:\n%s", image, want, check.Data)
+				}
+			})
+		}
 	}
 }
 
