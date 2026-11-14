@@ -73,8 +73,8 @@ var pinnedImage = regexp.MustCompile(`^[a-z0-9][A-Za-z0-9._/:-]*[A-Za-z0-9_](@sh
 
 // PinnedImageProblem says why image isn't pinned, or "" when it is: it must
 // name a tag or a digest, and a tag other than latest, dev or main, which
-// move.
-func PinnedImageProblem(image string) string {
+// name a tag or a digest, and a tag other than latest, dev, main or master,
+// which move.
 	if !pinnedImage.MatchString(image) || strings.Contains(image, "//") {
 		return fmt.Sprintf("%q is not an image reference such as registry/name:1.2.3", image)
 	}
