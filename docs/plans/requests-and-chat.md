@@ -175,11 +175,11 @@ corrects this plan where it differs.
 9. **The tokens, and their scopes.** Two, in the Secret
    `credentialsSecretRef` already names, which the user creates:
    `botToken` (`xoxb-…`) with `groups:write` (make a private channel, set
-   its topic, invite), `groups:read` (find the bot's channels),
-   `groups:history` (the `message.groups` event and the catch-up read),
-   `chat:write` and `reactions:write`; and `appToken` (`xapp-…`) with
-   `connections:write`. The operator reads `botToken` alone; `theos-chat`
-   reads both, as it reads the Matrix token today
+   its topic, invite), `groups:read` (find the bot's channels and a
+   channel's members), `groups:history` (the `message.groups` event and the
+   catch-up read), `chat:write` and `reactions:write`; and `appToken`
+   (`xapp-…`) with `connections:write`. The operator reads `botToken` alone;
+   `theos-chat` reads both, as it reads the Matrix token today
    (`internal/chatbot/bot.go:139-147`). A missing key is `SecretIncomplete`
    naming it; a scope Slack says is missing is a new reason, `ScopeMissing`,
    with the scope in the message.
@@ -599,7 +599,8 @@ method and event pages named):
 - **Decision 9's bot scopes hold:** `conversations.create` (private),
   `conversations.setTopic` and `conversations.invite` take `groups:write`
   (the last two also the narrower `groups:write.topic` and
-  `groups:write.invites`); `users.conversations` `groups:read`;
+  `groups:write.invites`); `users.conversations` and `conversations.members`
+  `groups:read`;
   `conversations.history`, `conversations.replies` and the
   `message.groups` event `groups:history`; `chat.postMessage` and
   `chat.update` `chat:write`; `reactions.add` `reactions:write`;
@@ -931,6 +932,119 @@ What the step chose where the plan says nothing:
   code before the change, run with `go test -overlay`.
 - **`model.ChatSlack` names the host,** with no row: step 8 adds the row and
   the adapter, and `ChatHostName` maps an empty `host` to the default.
+
+## Step 8 as built (#159)
+
+What the step chose where the plan says nothing:
+
+- **The row grew two fields.** Slack's row is no Space, `botToken` and
+  `appToken`, mrkdwn, as decisions 5 and 9 say, and two more fields each row
+  now holds: `People`, the Chat's field its people are in (`spec.people`,
+  `spec.slack.people`), which the stranger's refusal names, and
+  `AddressFlag`, the operator's flag for the host's address, which
+  `HomeserverUnset` names. `Keys()` lists the Secret's keys, the bot token's
+  first. The Ready messages read the row: a Slack Chat's `Ready` says "The 6
+  rooms are ready on <address>, with no Space"; `SecretMissing` and
+  `SecretIncomplete` name both keys; `CredentialRefused` says "the bot's
+  token" on both hosts, where it said "the access token".
+- **The operator checks both keys and uses one.** Decision 9 has the
+  operator read `botToken` alone; it also checks that `appToken` is in the
+  Secret, so a missing app-level token is `SecretIncomplete` naming it on
+  `Ready`, where it would otherwise surface only as an error in `theos-chat`'s
+  log. Only `botToken` reaches the adapter; the operator calls no `Sync`, so
+  it never opens the socket.
+- **One map of addresses, by host.** `ChatReconciler.Homeserver` became
+  `Addresses`, keyed by the row's name: Matrix's is `--chat-homeserver`,
+  Slack's `--chat-slack-api-url`. A Slack Chat names no address (CEL), so
+  the flag is always its address; an empty flag is `HomeserverUnset` naming
+  the flag.
+- **`ScopeMissing`** is a new reason, checked before `CredentialRefused`; its
+  message names the scope from `ports.ChatScopeMissingError` and keeps the
+  adapter's error as its detail. The operator polls it like every other
+  not-Ready reason, so a scope added (the app reinstalled) is picked up in a
+  minute.
+- **The people's list is picked by host name** in two small functions, the
+  controller's `chatPeopleIDs` and `theos-chat`'s `people`, since
+  `api/v1beta1` holds the two lists and `internal/model` may not import it.
+- **Nobody who left a channel is pulled back (#159, #234).** On Slack an
+  invite is a join, not a pending invite as on Matrix, so inviting a person
+  again puts back whoever chose to leave, which is the surprise to avoid;
+  decision 4 says only that the room's topic is the channel's topic. So the
+  controller invites a person not yet in `status.invited` to every room, and
+  a person in it only to a room `EnsureRoom` says is `Created`, that room
+  alone. `Created` means nobody was invited to the room yet: made now, or
+  found half made. On Slack, `EnsureRoom` gives a
+  channel it finds without its topic, where the spec has one, its topic
+  back; it is `Created` only when the bot is its one member
+  (`conversations.members`, which takes `groups:read`, the scope
+  `users.conversations` already takes): `conversations.setTopic` failed
+  right after `conversations.create`, and nobody was ever invited. A topic
+  someone emptied by hand is put back and nobody is invited. Before, every
+  channel found without its topic was `Created`, the controller forgot
+  `status.invited`, and every person was invited to all six channels
+  (`TestSlackChatPullsNobodyBack`, `TestSlackChatInvitesToAChannelLeftHalfMade`,
+  `TestEnsureRoomPutsBackATopicEmptiedByHand`).
+- **A room made again is new by its ID (#159).** A room is new, and every
+  person invited to it, when `EnsureRoom` says `Created` or when its ID is
+  not the one status holds for it: a channel or room deleted and made again
+  has a new ID. Status takes a new room's ID (the Space's too, on Matrix)
+  only once everyone is invited to it, so when an invite fails partway (a
+  Slack rate limit is ordinary use) status keeps the old ID, the next pass
+  finds the room by name or alias, sees an ID that differs and invites the
+  people the failed pass did not reach. The controller invites room by
+  room, and records each new room as soon as its invites are done. A found
+  room's ID and alias are recorded at once, as before, and so is a new
+  room's while `status.invited` is empty (the first pass, which invites
+  everyone to every room anyway), so a first pass that fails halfway, on
+  `AliasTaken` say, still keeps what it made in status. The `Ready=False`
+  pass loses nothing: `theos-chat` acts only on a `Ready` Chat, so it never
+  reads the old ID in the meantime. This also covers the #234 case without
+  `conversations.members`: a channel left half made never reached status.
+  No API change (`TestSlackChatInvitesToAChannelRemadeAfterAFailedInvite`,
+  `TestMatrixChatInvitesToARoomMadeAgain`).
+- **`conversations.members` is only ever a reason not to invite (#159).**
+  An error on it, a missing scope or a listing without the bot reads as
+  "not alone": the channel is found, not `Created`, and its topic is put
+  back all the same, so a failing call never makes a healthy channel
+  `Created` and never holds `Ready` on a reason about a channel that is
+  fine. A real fault in reaching Slack still shows on the
+  `conversations.setTopic` right after, with its own reason
+  (`TestEnsureRoomDoubtsTheMembersCall`).
+- **Edges that remain.** A channel everyone left whose topic is then
+  emptied looks half made, and its people are invited to it again. A person
+  invited to a room made again on a pass whose later invites failed, who
+  leaves it before the next pass, is invited to it again by that pass.
+  The same holds for a newcomer: a person added after the first pass whose
+  invite to one room fails, and who then leaves another room before the next
+  pass, is invited back to that room by the next pass (an independent review
+  reproduced it: carol's third invite fails, she leaves updates, and the next
+  pass puts her back in it).
+  A known gap, carried from main and not changed by this step: invites stop
+  at the first failed invite, so one person whose invite always fails (a
+  deactivated or unknown member) keeps everyone listed after them out of
+  every room and the Chat not `Ready`, with the reason `Unreachable` though
+  the host answered. It is filed as its own issue and is fixed on top of this
+  step.
+- **The port has `Close` (#234).** `ChatHost.Close()` lets go of what the
+  value holds open: Slack's socket (`Client.Close`, which was there), nothing
+  on Matrix or the fake (which counts its open values, `fake.ChatHost.Open`).
+  `theos-chat` remembers which built host each Chat used; when a Chat's
+  tokens change, or the Chat is gone, it closes the host no Chat uses any
+  more, and keeps one another Chat still uses. The operator closes the host
+  it builds at the end of each reconcile. Before, a client replaced after a
+  token change kept its socket, and Slack, which sends each event to one
+  open socket, gave some events to it.
+- **The fake shaped as Slack has member IDs.** `fake.MemberIDs()` makes a
+  user ID `U` and eight digits, so `spec.slack.people`'s CEL takes the fake's
+  people; `fake.ChatHost.Revoke` and `Grant` take a scope from a token for
+  the port methods named, and `NewToken` gives an account a second token.
+  The suite's Slack is `chatSlackFake` at `https://slack.test/api`, which is
+  also the suite's `--chat-slack-api-url`.
+- **`HostNotSupported` keeps its specs, without Slack in the map.** The
+  suite's operator runs Slack now, so an operator built without its adapter
+  is a reconciler whose map has no `slack`, run on a fake client
+  (`TestChatOnAHostWithoutAnAdapter`); `theos-chat`'s spec deletes `slack`
+  from its map. The CRD's enum takes no third host to test with.
 
 ## Step 9 as built (#160)
 

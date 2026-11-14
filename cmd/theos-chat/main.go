@@ -14,8 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Command theos-chat posts what the factory does in each Ready Chat's Matrix
-// rooms and runs the commands its people say there, as them
+// Command theos-chat posts what the factory does in each Ready Chat's rooms,
+// on Matrix or Slack, and runs the commands its people say there, as them
 // (docs/plans/done/chat-matrix.md). It runs beside the operator with its own
 // ServiceAccount (config/chat/rbac.yaml): it reads theos's objects, writes
 // only its ConfigMaps, and impersonates the people the Chats name; the
@@ -42,6 +42,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/adapters/matrix"
+	"github.com/JairJosafath/theos/internal/adapters/slack"
 	"github.com/JairJosafath/theos/internal/buildinfo"
 	"github.com/JairJosafath/theos/internal/chatbot"
 	"github.com/JairJosafath/theos/internal/model"
@@ -90,8 +91,10 @@ func main() {
 		log.Error(err, "Failed to make the manager")
 		os.Exit(1)
 	}
-	// One adapter per chat host, by the name of its model.ChatSystem row.
-	hosts := map[string]ports.ChatHosts{model.ChatMatrix: matrix.Hosts(nil)}
+	// One adapter per chat host, by the name of its model.ChatSystem row. Each
+	// reaches its host at the address the operator wrote into a Chat's
+	// status.homeserver, so theos-chat takes no address of its own.
+	hosts := map[string]ports.ChatHosts{model.ChatMatrix: matrix.Hosts(nil), model.ChatSlack: slack.Hosts(nil)}
 	bot := &chatbot.Bot{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Config: mgr.GetConfig(),
 		ChatHosts: hosts, Interval: interval, UIURL: ui}
 	if err := bot.SetupWithManager(mgr); err != nil {

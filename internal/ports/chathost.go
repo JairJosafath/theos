@@ -61,7 +61,10 @@ type ChatRoom struct {
 	// ID is the room's ID; Alias its full alias, as the host spells it.
 	ID    string
 	Alias string
-	// Created says EnsureRoom made it: nobody is invited to it yet.
+	// Created says EnsureRoom made it, or finished making one a call before
+	// left half made: nobody was invited to it yet, so the caller invites
+	// its people to it. A room found any other way is not Created, even
+	// when people left it: the caller never invites them back (#159).
 	Created bool
 }
 
@@ -134,6 +137,12 @@ type ChatHost interface {
 	// own, waiting up to wait for one: with a wait of 0 it returns at once,
 	// with or without messages.
 	Sync(ctx context.Context, since string, wait time.Duration) (ChatSync, error)
+	// Close lets go of what the value holds open, such as a connection Sync
+	// opened that the host sends each event to one of; it takes no call
+	// after. Whoever built the value closes it when done with it, as
+	// theos-chat does with one a new token replaces. A second Close does
+	// nothing.
+	Close()
 }
 
 // ChatHosts builds the ChatHost of one host and bot. cmd/main.go and

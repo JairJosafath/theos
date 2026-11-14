@@ -21,6 +21,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"slices"
 	"strconv"
@@ -63,6 +64,13 @@ func OneNamePerRoom() ChatOption {
 	return func(s *chatState) { s.oneName = true }
 }
 
+// MemberIDs makes a host whose user IDs name no server, as a Slack
+// workspace's member IDs: U and then digits, one per account, in the order
+// the accounts are made.
+func MemberIDs() ChatOption {
+	return func(s *chatState) { s.names = map[string]string{} }
+}
+
 // ChatAddress is the address the host answers at; the default is
 // DefaultChatAddress.
 func ChatAddress(address string) ChatOption {
@@ -82,11 +90,19 @@ type chatState struct {
 	server   string // the address's host, as a user ID ends
 	noSpaces bool
 	oneName  bool
+	// names are the member IDs by account name, nil on a host whose IDs
+	// name its server (MemberIDs).
+	names map[string]string
 	// users are the user IDs by their token, and tokens the tokens by user.
 	users  map[string]string
 	tokens map[string]string
-	rooms  map[string]*chatRoom
-	order  []string // room IDs, as made
+	// lacks are the scopes a token lacks, by the token and then the port
+	// method that needs the scope (Revoke).
+	lacks map[string]map[string]string
+	// open counts the bots For built that are not closed.
+	open  int
+	rooms map[string]*chatRoom
+	order []string // room IDs, as made
 	// log is what people said, in the order the host received it; a sync
 	// token is a position in it.
 	log []ports.ChatEvent
@@ -155,9 +171,66 @@ func NewChatHost(opts ...ChatOption) *ChatHost {
 func (h *ChatHost) Address() string { return h.s.address }
 
 // For returns the ChatHost of the bot whose token cfg holds; a token the
-// host doesn't know is refused on every call, ErrChatCredentialRefused.
+// host doesn't know is refused on every call, ErrChatCredentialRefused. It
+// counts as open (Open) until it is closed.
 func (h *ChatHost) For(cfg ports.ChatConfig) ports.ChatHost {
+	h.s.mu.Lock()
+	defer h.s.mu.Unlock()
+	h.s.open++
 	return &chatBot{s: h.s, token: cfg.Token}
+}
+
+// Open counts the ChatHosts For built that are not closed: on a host that
+// sends each event to one open connection, each one a reader holds and
+// doesn't read swallows events.
+func (h *ChatHost) Open() int {
+	h.s.mu.Lock()
+	defer h.s.mu.Unlock()
+	return h.s.open
+}
+
+// ErrChatClosed is a call of a ChatHost after its Close.
+var ErrChatClosed = errors.New("the chat host's connection is closed")
+
+// NewToken gives user a second token, as a token made again does; the
+// first goes on working until the host forgets it.
+func (h *ChatHost) NewToken(user string) (string, error) {
+	s := h.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tokens[user]; !ok {
+		return "", fmt.Errorf("no user %s", user)
+	}
+	token := rand.Text()
+	s.users[token] = user
+	return token, nil
+}
+
+// Revoke takes scope from token for the port's methods named, such as
+// "EnsureRoom" or "Invite": each such call is refused with a
+// ports.ChatScopeMissingError naming scope, as a host whose tokens carry
+// scopes refuses one without.
+func (h *ChatHost) Revoke(token, scope string, methods ...string) {
+	s := h.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lacks == nil {
+		s.lacks = map[string]map[string]string{}
+	}
+	if s.lacks[token] == nil {
+		s.lacks[token] = map[string]string{}
+	}
+	for _, m := range methods {
+		s.lacks[token][m] = scope
+	}
+}
+
+// Grant gives scope back to token, as installing the bot again with it does.
+func (h *ChatHost) Grant(token, scope string) {
+	s := h.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	maps.DeleteFunc(s.lacks[token], func(_, lacked string) bool { return lacked == scope })
 }
 
 // Hosts builds the ChatHost of a bot on this host, as cmd/main.go's
@@ -182,6 +255,12 @@ func (h *ChatHost) NewUser(name string) (id, token string) {
 
 func (s *chatState) user(name string) (id, token string) {
 	id = "@" + name + ":" + s.server
+	if s.names != nil {
+		if id = s.names[name]; id == "" {
+			id = fmt.Sprintf("U%08d", len(s.names)+1)
+			s.names[name] = id
+		}
+	}
 	if token, ok := s.tokens[id]; ok {
 		return id, token
 	}
@@ -410,23 +489,46 @@ func (r *chatRoom) own(sender, id string) (*ChatPost, error) {
 type chatBot struct {
 	s     *chatState
 	token string
+	// closed is set by Close, under s.mu.
+	closed bool
 }
 
-// bot locks the host and returns the bot's user ID; a token the host
-// doesn't know is ErrChatCredentialRefused, and the host is unlocked. The
-// caller unlocks it otherwise.
-func (b *chatBot) bot() (string, error) {
+// bot locks the host for a call of the port's method and returns the bot's
+// user ID; a closed bot is ErrChatClosed, a token the host doesn't know
+// ErrChatCredentialRefused and one Revoke took the method's scope from a
+// ChatScopeMissingError, and the host is unlocked. The caller unlocks it
+// otherwise.
+func (b *chatBot) bot(method string) (string, error) {
 	b.s.mu.Lock()
 	id, ok := b.s.users[b.token]
-	if !ok || b.token == "" {
+	scope, lacks := b.s.lacks[b.token][method]
+	switch {
+	case b.closed:
+		b.s.mu.Unlock()
+		return "", ErrChatClosed
+	case !ok || b.token == "":
 		b.s.mu.Unlock()
 		return "", ports.ErrChatCredentialRefused
+	case lacks:
+		b.s.mu.Unlock()
+		return "", &ports.ChatScopeMissingError{Scope: scope}
 	}
 	return id, nil
 }
 
+// Close closes the bot: it takes no call after, and the host counts it open
+// no more (Open).
+func (b *chatBot) Close() {
+	b.s.mu.Lock()
+	defer b.s.mu.Unlock()
+	if !b.closed {
+		b.closed = true
+		b.s.open--
+	}
+}
+
 func (b *chatBot) WhoAmI(context.Context) (string, error) {
-	id, err := b.bot()
+	id, err := b.bot("WhoAmI")
 	if err != nil {
 		return "", err
 	}
@@ -435,7 +537,7 @@ func (b *chatBot) WhoAmI(context.Context) (string, error) {
 }
 
 func (b *chatBot) EnsureRoom(_ context.Context, spec ports.ChatRoomSpec) (ports.ChatRoom, error) {
-	bot, err := b.bot()
+	bot, err := b.bot("EnsureRoom")
 	if err != nil {
 		return ports.ChatRoom{}, err
 	}
@@ -474,7 +576,7 @@ func (b *chatBot) EnsureRoom(_ context.Context, spec ports.ChatRoomSpec) (ports.
 }
 
 func (b *chatBot) Invite(_ context.Context, room, user string) error {
-	bot, err := b.bot()
+	bot, err := b.bot("Invite")
 	if err != nil {
 		return err
 	}
@@ -495,8 +597,9 @@ func (b *chatBot) Invite(_ context.Context, room, user string) error {
 
 // say posts msg in room as the bot, in the thread of threadRoot when it
 // isn't "". The bot's messages are not in the log: no Sync returns them.
-func (b *chatBot) say(room, threadRoot string, msg ports.ChatMessage) (string, error) {
-	bot, err := b.bot()
+// method is the port method that says it.
+func (b *chatBot) say(method, room, threadRoot string, msg ports.ChatMessage) (string, error) {
+	bot, err := b.bot(method)
 	if err != nil {
 		return "", err
 	}
@@ -514,18 +617,18 @@ func (b *chatBot) say(room, threadRoot string, msg ports.ChatMessage) (string, e
 }
 
 func (b *chatBot) Send(_ context.Context, room string, msg ports.ChatMessage) (string, error) {
-	return b.say(room, "", msg)
+	return b.say("Send", room, "", msg)
 }
 
 func (b *chatBot) Reply(_ context.Context, room, threadRoot string, msg ports.ChatMessage) (string, error) {
 	if threadRoot == "" {
 		return "", errors.New("a reply names its thread's root")
 	}
-	return b.say(room, threadRoot, msg)
+	return b.say("Reply", room, threadRoot, msg)
 }
 
 func (b *chatBot) Edit(_ context.Context, room, event string, msg ports.ChatMessage) (string, error) {
-	bot, err := b.bot()
+	bot, err := b.bot("Edit")
 	if err != nil {
 		return "", err
 	}
@@ -544,7 +647,7 @@ func (b *chatBot) Edit(_ context.Context, room, event string, msg ports.ChatMess
 }
 
 func (b *chatBot) React(_ context.Context, room, event, key string) (string, error) {
-	bot, err := b.bot()
+	bot, err := b.bot("React")
 	if err != nil {
 		return "", err
 	}
@@ -570,7 +673,7 @@ func syncToken(n int) string { return "s" + strconv.Itoa(n) }
 func (b *chatBot) Sync(ctx context.Context, since string, wait time.Duration) (ports.ChatSync, error) {
 	deadline := time.Now().Add(wait)
 	for {
-		bot, err := b.bot()
+		bot, err := b.bot("Sync")
 		if err != nil {
 			return ports.ChatSync{}, err
 		}

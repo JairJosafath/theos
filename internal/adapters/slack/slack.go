@@ -34,6 +34,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -142,8 +143,7 @@ func New(cfg ports.ChatConfig, opts ...Option) (*Client, error) {
 }
 
 // Hosts builds the Client of each Chat's workspace and bot with httpClient
-// (nil for http.DefaultClient). Nothing calls it yet: step 8 of
-// docs/plans/requests-and-chat.md wires it into cmd/.
+// (nil for http.DefaultClient), for cmd/main.go and cmd/theos-chat.
 func Hosts(httpClient *http.Client) ports.ChatHosts {
 	return func(cfg ports.ChatConfig) (ports.ChatHost, error) {
 		if httpClient == nil {
@@ -312,8 +312,11 @@ func (c *Client) WhoAmI(ctx context.Context) (string, error) {
 // channel is a conversation as users.conversations and conversations.create
 // give it.
 type channel struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Topic struct {
+		Value string `json:"value"`
+	} `json:"topic"`
 }
 
 // page is the cursor of a listing's next page.
@@ -372,12 +375,12 @@ func (c *Client) EnsureRoom(ctx context.Context, spec ports.ChatRoomSpec) (ports
 	}
 	for _, ch := range in {
 		if spec.ID != "" && ch.ID == spec.ID {
-			return ports.ChatRoom{ID: ch.ID, Alias: alias(ch.Name)}, nil
+			return c.finish(ctx, spec, ch)
 		}
 	}
 	for _, ch := range in {
 		if spec.Alias != "" && ch.Name == spec.Alias {
-			return ports.ChatRoom{ID: ch.ID, Alias: alias(ch.Name)}, nil
+			return c.finish(ctx, spec, ch)
 		}
 	}
 	if spec.Alias == "" {
@@ -394,13 +397,75 @@ func (c *Client) EnsureRoom(ctx context.Context, spec ports.ChatRoomSpec) (ports
 	if err != nil {
 		return ports.ChatRoom{}, err
 	}
-	if spec.Topic != "" {
-		if err := c.bot(ctx, "conversations.setTopic", url.Values{argChannel: {made.Channel.ID},
-			"topic": {spec.Topic}}, nil); err != nil {
-			return ports.ChatRoom{}, err
-		}
+	if err := c.setTopic(ctx, made.Channel.ID, spec.Topic); err != nil {
+		return ports.ChatRoom{}, err
 	}
 	return ports.ChatRoom{ID: made.Channel.ID, Alias: alias(made.Channel.Name), Created: true}, nil
+}
+
+// finish is ch, a channel the bot is in that spec finds. A channel found
+// without its topic, where spec has one, gets its topic back. It is
+// Created, so the caller invites its people, only when the bot is its one
+// member: conversations.setTopic failed right after conversations.create,
+// and nobody was ever invited to it (#234). A channel whose topic someone
+// emptied by hand, or that everyone else left, is found as it is: on Slack
+// an invite is a join, so inviting its people again would pull back into
+// it whoever chose to leave (#159).
+func (c *Client) finish(ctx context.Context, spec ports.ChatRoomSpec, ch channel) (ports.ChatRoom, error) {
+	room := ports.ChatRoom{ID: ch.ID, Alias: alias(ch.Name)}
+	if spec.Topic == "" || ch.Topic.Value != "" {
+		return room, nil
+	}
+	me, err := c.WhoAmI(ctx)
+	if err != nil {
+		return ports.ChatRoom{}, err
+	}
+	alone := c.botAlone(ctx, ch.ID, me)
+	if err := c.setTopic(ctx, ch.ID, spec.Topic); err != nil {
+		return ports.ChatRoom{}, err
+	}
+	room.Created = alone
+	return room, nil
+}
+
+// botAlone says the bot, me, is the one member of channel, by
+// conversations.members, which takes groups:read on a private channel, the
+// scope users.conversations already takes. Any doubt is false: an error,
+// a missing scope or a listing without the bot never makes a channel
+// Created, which would invite its people into it again (#159), and never
+// fails the channel, whose topic is put back all the same. A channel made
+// again is new to the caller by its ID, so its people are invited anyway.
+func (c *Client) botAlone(ctx context.Context, channel, me string) bool {
+	seen := false
+	cursor := ""
+	for {
+		args := url.Values{argChannel: {channel}, argLimit: {strconv.Itoa(pageSize)}}
+		if cursor != "" {
+			args.Set("cursor", cursor)
+		}
+		var answer struct {
+			page
+			Members []string `json:"members"`
+		}
+		if err := c.bot(ctx, "conversations.members", args, &answer); err != nil {
+			return false
+		}
+		if slices.ContainsFunc(answer.Members, func(m string) bool { return m != me }) {
+			return false
+		}
+		seen = seen || len(answer.Members) > 0
+		if cursor = answer.Meta.NextCursor; cursor == "" {
+			return seen
+		}
+	}
+}
+
+// setTopic sets channel's topic to topic; "" sets none.
+func (c *Client) setTopic(ctx context.Context, channel, topic string) error {
+	if topic == "" {
+		return nil
+	}
+	return c.bot(ctx, "conversations.setTopic", url.Values{argChannel: {channel}, "topic": {topic}}, nil)
 }
 
 // Invite adds user to room. Slack has no pending invite: the person is in

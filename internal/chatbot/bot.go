@@ -34,8 +34,10 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,6 +76,10 @@ type Bot struct {
 
 	mu    sync.Mutex
 	hosts map[hostKey]chatHost
+	// uses is the host each Chat was last served by: a host no Chat uses any
+	// more, as after a token change, is closed, so that a connection it
+	// holds swallows no event the new one should read (#234).
+	uses map[types.NamespacedName]hostKey
 }
 
 // The conditions of Tasks and Containers theos-chat reads, as the operator
@@ -91,6 +97,9 @@ const (
 func (b *Bot) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var chat c4v1beta1.Chat
 	if err := b.Client.Get(ctx, req.NamespacedName, &chat); err != nil {
+		if apierrors.IsNotFound(err) {
+			b.release(req.NamespacedName)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	// A Chat on a host theos-chat runs no adapter for is left alone, its
@@ -194,18 +203,52 @@ func (b *Bot) host(ctx context.Context, chat *c4v1beta1.Chat, system model.ChatS
 	key := hostKey{system: system.Name, ChatConfig: cfg}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	h, ok := b.hosts[key]
+	if !ok {
+		built, err := hosts(cfg)
+		if err != nil {
+			return chatHost{}, err
+		}
+		if b.hosts == nil {
+			b.hosts = map[hostKey]chatHost{}
+		}
+		h = chatHost{ChatHost: built, system: system}
+		b.hosts[key] = h
+	}
+	chatName := client.ObjectKeyFromObject(chat)
+	if prev, ok := b.uses[chatName]; ok && prev != key {
+		b.drop(chatName, prev)
+	}
+	if b.uses == nil {
+		b.uses = map[types.NamespacedName]hostKey{}
+	}
+	b.uses[chatName] = key
+	return h, nil
+}
+
+// release forgets the host the Chat name used, gone now, and closes it when
+// no other Chat uses it.
+func (b *Bot) release(name types.NamespacedName) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if key, ok := b.uses[name]; ok {
+		b.drop(name, key)
+	}
+}
+
+// drop forgets that the Chat name uses the host of key, and closes that
+// host when no other Chat uses it; b.mu is held.
+func (b *Bot) drop(name types.NamespacedName, key hostKey) {
+	delete(b.uses, name)
+	for _, other := range b.uses {
+		if other == key {
+			return
+		}
+	}
 	if h, ok := b.hosts[key]; ok {
-		return h, nil
+		h.Close()
+		delete(b.hosts, key)
 	}
-	h, err := hosts(cfg)
-	if err != nil {
-		return chatHost{}, err
-	}
-	if b.hosts == nil {
-		b.hosts = map[hostKey]chatHost{}
-	}
-	b.hosts[key] = chatHost{ChatHost: h, system: system}
-	return b.hosts[key], nil
 }
 
 func (b *Bot) now() time.Time {

@@ -167,7 +167,7 @@ func TestChatHostContract(t *testing.T) {
 func TestChatHostContractWithoutSpaces(t *testing.T) {
 	contract.ChatHost(t, contract.ChatHostEnv{
 		New: func(t *testing.T) contract.ChatServer {
-			return chatServer(t, fake.NewChatHost(fake.WithoutSpaces(), fake.OneNamePerRoom()))
+			return chatServer(t, fake.NewChatHost(fake.WithoutSpaces(), fake.OneNamePerRoom(), fake.MemberIDs()))
 		},
 		Cannot: map[string]string{
 			"makes a Space and the rooms in it, each a room of its own": "the host has no Spaces: the " +

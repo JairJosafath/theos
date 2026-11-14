@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"crypto/rand"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -54,9 +55,15 @@ func newTheosChat() *chatbot.Bot {
 // message IDs are unique in a room alone, as Slack's are.
 var chatPortFake = fake.NewChatHost()
 
+// chatSlackFake is the ports' fake chat host shaped as Slack (#159): no
+// Space, a channel's one name, member IDs. It is the suite's Slack: the
+// operator's address for a Slack Chat is its own.
+var chatSlackFake = fake.NewChatHost(fake.WithoutSpaces(), fake.OneNamePerRoom(), fake.MemberIDs(),
+	fake.ChatAddress("https://slack.test/api"))
+
 // chatHosts are the chat adapters of the suite's operator and theos-chat, as
 // cmd/main.go gives them: Matrix's, which reaches chatFake, and for a Chat at
-// chatPortFake's address, the fake's.
+// chatPortFake's address, the fake's; and Slack's, chatSlackFake.
 func chatHosts() map[string]ports.ChatHosts {
 	matrixHosts, onFake := matrix.Hosts(nil), chatPortFake.Hosts()
 	return map[string]ports.ChatHosts{model.ChatMatrix: func(cfg ports.ChatConfig) (ports.ChatHost, error) {
@@ -64,7 +71,28 @@ func chatHosts() map[string]ports.ChatHosts {
 			return onFake(cfg)
 		}
 		return matrixHosts(cfg)
-	}}
+	}, model.ChatSlack: chatSlackFake.Hosts()}
+}
+
+// slackFakeChat is a Slack Chat on chatSlackFake whose app's bot and two
+// tokens are in Secret slack-bot in ns, with people; it returns the Chat,
+// the bot's member ID and its bot token.
+func slackFakeChat(ns string, people ...c4v1beta1.ChatSlackPerson) (*c4v1beta1.Chat, string, string) {
+	GinkgoHelper()
+	bot, token := chatSlackFake.NewUser("bot-" + ns)
+	mustCreate(&corev1.Secret{ObjectMeta: objectMeta(ns, "slack-bot"), Data: map[string][]byte{
+		model.ChatSlackBotTokenKey: []byte(token), model.ChatSlackAppTokenKey: []byte(rand.Text())}})
+	chat := newSlackChat(ns, "chat")
+	chat.Spec.Slack = &c4v1beta1.ChatSlack{People: people}
+	return chat, bot, token
+}
+
+// slackFakePosts are channel's messages on chatSlackFake.
+func slackFakePosts(channel string) []fake.ChatPost {
+	GinkgoHelper()
+	r, ok := chatSlackFake.Room(channel)
+	Expect(ok).To(BeTrue(), "channel %s", channel)
+	return r.Posts
 }
 
 // portFakeChat is a Chat on chatPortFake with its bot, whose token is in
@@ -173,13 +201,15 @@ var _ = Describe("theos-chat", func() {
 
 	It("leaves a Chat on a host it runs no adapter for alone, even one that reads Ready (#158)", func() {
 		ns := newProjectNamespace()
-		chat := newSlackChat(ns, "chat", "slack-bot")
+		chat := newSlackChat(ns, "chat")
 		mustCreate(chat)
-		chatReady(chat, metav1.ConditionFalse, model.ChatHostNotSupported)
+		chatReady(chat, metav1.ConditionFalse, model.ChatSecretMissing)
 
-		// As an operator that ran Slack would write it: theos-chat still has
-		// no adapter for the host, so it reads no Secret (there is none) and
-		// posts nothing.
+		// As the operator, which runs Slack, would write it: a theos-chat
+		// built without Slack's adapter (#159) has none for the host, so it
+		// reads no Secret (there is none) and posts nothing.
+		bot := newTheosChat()
+		delete(bot.ChatHosts, model.ChatSlack)
 		orig := chat.DeepCopy()
 		chat.Status.Homeserver = "https://slack.example/api"
 		for _, p := range model.ChatPurposes {
@@ -190,7 +220,7 @@ var _ = Describe("theos-chat", func() {
 			Status: metav1.ConditionTrue, Reason: model.ChatReady, Message: "ready", ObservedGeneration: chat.Generation})
 		Expect(k8sClient.Status().Patch(ctx, chat, client.MergeFrom(orig))).To(Succeed())
 
-		res, err := newTheosChat().Reconcile(ctx, ctrl.Request{NamespacedName: key(ns, "chat")})
+		res, err := bot.Reconcile(ctx, ctrl.Request{NamespacedName: key(ns, "chat")})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(res).To(Equal(ctrl.Result{}))
 		err = k8sClient.Get(ctx, key(ns, chatbot.StateConfigMap), &corev1.ConfigMap{})

@@ -21,20 +21,36 @@ import (
 	"testing"
 )
 
-// TestChatSystems covers #152: Matrix is the one chat host, the default, and
-// its row says what the Chat controller and theos-chat assumed of it before
-// the row: a Space, the token under accessToken and nothing more, HTML.
+// TestChatSystems covers #152 and #159: Matrix is the default, and its row
+// says what the Chat controller and theos-chat assumed of it before the
+// row: a Space, the token under accessToken and nothing more, HTML. Slack's
+// has no Space, the bot token and the app-level token, and mrkdwn
+// (docs/plans/requests-and-chat.md, decisions 5 and 9).
 func TestChatSystems(t *testing.T) {
-	if got := ChatSystemNames(); !slices.Equal(got, []string{ChatMatrix}) {
-		t.Errorf("ChatSystemNames() = %q, want matrix alone", got)
+	if got := ChatSystemNames(); !slices.Equal(got, []string{ChatMatrix, ChatSlack}) {
+		t.Errorf("ChatSystemNames() = %q, want matrix and slack", got)
 	}
-	s, err := ChatSystemByName(ChatSystemDefault)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := ChatSystem{Name: "matrix", Spaces: true, TokenKey: "accessToken", Markup: "html"}
-	if s != want {
-		t.Errorf("ChatSystemByName(%q) = %+v, want %+v", ChatSystemDefault, s, want)
+	for _, tt := range []struct {
+		name string
+		want ChatSystem
+		keys []string
+	}{
+		{ChatSystemDefault, ChatSystem{Name: "matrix", Spaces: true, TokenKey: "accessToken", Markup: "html",
+			People: "spec.people", AddressFlag: "--chat-homeserver"}, []string{"accessToken"}},
+		{ChatSlack, ChatSystem{Name: "slack", Spaces: false, TokenKey: "botToken", AppTokenKey: "appToken",
+			Markup: "mrkdwn", People: "spec.slack.people", AddressFlag: "--chat-slack-api-url"},
+			[]string{"botToken", "appToken"}},
+	} {
+		s, err := ChatSystemByName(tt.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s != tt.want {
+			t.Errorf("ChatSystemByName(%q) = %+v, want %+v", tt.name, s, tt.want)
+		}
+		if got := s.Keys(); !slices.Equal(got, tt.keys) {
+			t.Errorf("ChatSystemByName(%q).Keys() = %q, want %q", tt.name, got, tt.keys)
+		}
 	}
 	if _, err := ChatSystemByName("teams"); err == nil {
 		t.Error("ChatSystemByName(teams) = nil error, want the host unknown")
@@ -43,15 +59,12 @@ func TestChatSystems(t *testing.T) {
 
 // TestChatHostName covers #158: a Chat that names no host is on the default,
 // Matrix, as one written before spec.host is; one that names a host is on
-// it. Slack has no row until step 8, so a Chat on it is HostNotSupported.
+// it.
 func TestChatHostName(t *testing.T) {
 	for host, want := range map[string]string{"": ChatMatrix, ChatMatrix: ChatMatrix, ChatSlack: ChatSlack} {
 		if got := ChatHostName(host); got != want {
 			t.Errorf("ChatHostName(%q) = %q, want %q", host, got, want)
 		}
-	}
-	if _, err := ChatSystemByName(ChatSlack); err == nil {
-		t.Error("ChatSystemByName(slack) = nil error, want no row before step 8")
 	}
 }
 
@@ -63,13 +76,26 @@ func TestChatSystemFormat(t *testing.T) {
 		markup, want string
 	}{
 		{ChatMarkupHTML, p.HTML()},
-		// #155: Slack's markup, which no row names yet.
+		// #155: Slack's markup.
 		{ChatMarkupMrkdwn, p.Mrkdwn()},
 		{"", ""},
 		{"unknown", ""},
 	} {
 		if got := (ChatSystem{Markup: tt.markup}).Format(p); got != tt.want {
 			t.Errorf("Format() with markup %q = %q, want %q", tt.markup, got, tt.want)
+		}
+	}
+	// #159: Slack's row writes a post in mrkdwn, the three characters
+	// escaped, and Matrix's in HTML.
+	q := ChatPost{Title: "Spec: a < b & c", Status: "Waiting"}
+	for name, want := range map[string]string{ChatSlack: "*Spec: a &lt; b &amp; c*\nWaiting",
+		ChatMatrix: "<p><b>Spec: a &lt; b &amp; c</b><br>Waiting</p>"} {
+		s, err := ChatSystemByName(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := s.Format(q); got != want {
+			t.Errorf("the %s row's Format() = %q, want %q", name, got, want)
 		}
 	}
 }

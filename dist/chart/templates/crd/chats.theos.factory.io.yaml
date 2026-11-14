@@ -353,7 +353,8 @@ spec:
             description: status is the Space and rooms the operator made, and Ready.
             properties:
               bot:
-                description: bot is the Matrix user the access token belongs to.
+                description: bot is the user ID on the chat host the bot's token belongs
+                  to.
                 type: string
               conditions:
                 description: 'conditions: Ready.'
@@ -416,8 +417,10 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               homeserver:
-                description: homeserver is the address the operator last reached the
-                  rooms at.
+                description: |-
+                  homeserver is the chat host's address the operator last reached the
+                  rooms at: the Matrix homeserver, or Slack's Web API. theos-chat
+                  reaches the host there.
                 type: string
               invited:
                 description: invited are the people invited to the Space and every
@@ -427,15 +430,21 @@ spec:
                 type: array
                 x-kubernetes-list-type: set
               rooms:
-                description: rooms are the Space's rooms, one per purpose.
+                description: |-
+                  rooms are the Chat's rooms, one per purpose: on Slack, private
+                  channels.
                 items:
                   description: ChatRoomStatus is one of a Chat's rooms.
                   properties:
                     alias:
-                      description: 'alias is the room''s alias, #localpart:server.'
+                      description: |-
+                        alias is the room's alias: #localpart:server on Matrix, #name on
+                        Slack.
                       type: string
                     id:
-                      description: id is the room's ID, !opaque:server.
+                      description: |-
+                        id is the room's ID: !opaque:server on Matrix, the channel's ID on
+                        Slack.
                       type: string
                     purpose:
                       description: purpose is what the room holds.
@@ -456,7 +465,9 @@ spec:
                 - purpose
                 x-kubernetes-list-type: map
               space:
-                description: space is the Space the rooms belong to.
+                description: |-
+                  space is the Space the rooms belong to; unset on Slack, which has
+                  none.
                 properties:
                   alias:
                     description: 'alias is the room''s alias, #localpart:server.'

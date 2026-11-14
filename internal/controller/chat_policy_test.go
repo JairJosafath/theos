@@ -177,7 +177,7 @@ var _ = Describe("Chat admission policies", func() {
 		grant(ada, roleChatPeople)
 		grant(bob, roleChatPeople)
 		adaEntry := c4v1beta1.ChatSlackPerson{SlackID: "U0ADA", User: ada, Groups: []string{"shop"}}
-		chat := newSlackChat(ns, "chat", "slack-bot")
+		chat := newSlackChat(ns, "chat")
 		chat.Spec.Slack = &c4v1beta1.ChatSlack{People: []c4v1beta1.ChatSlackPerson{adaEntry}}
 
 		By("refusing an admin who maps someone else")
