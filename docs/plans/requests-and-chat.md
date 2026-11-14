@@ -1470,9 +1470,12 @@ Left as it is, and why:
   (an entry the CRD would not hold). The values are the stored entry's,
   never the request's. No label, team, site, project, secret name or mode
   goes upstream. What each test guards:
-  - the name binds the index to the entry, the identity check of the whole
-    entry, so a source added, removed or moved between the read and the
-    write fails there;
+  - the name binds the index to the entry: a change that shifts or renames
+    the entry at index N fails the name test (a change to the stored lists
+    fails theirs). An appended source, a removal after N or a same-name entry
+    put back at N passes it, which is harmless: the page's whole-entry test
+    was already checked against the stored entry, and the write touches only
+    that entry's accepted and declined;
   - the two lists guard the lost update: another person's answer landing
     between the server's read and its write changes `accepted` or
     `declined`, so the test fails with a 422 and nothing is written. The
@@ -1536,6 +1539,14 @@ Left as it is, and why:
   of the entry, only the name and numbers) instead. The `422` a change
   between the server's read and its write gets from the API server is not
   shown either.
+  `ui/test/fakeApi.mjs` cannot run these patches at all: it does not walk
+  into arrays, and its `test` compares with `!==`, by reference for arrays.
+  So the browser e2e (`ui/test/requests.e2e.mjs`) is not extended for
+  sources.
+- **Follow-up, not done here.** The first-answer residue could be hardened
+  with a `test` of `/metadata/generation`, sent only when a list being
+  written is absent. It would close it, since generation does not move on
+  status writes (by reading the apiextensions source, not a run).
 
 ## How we will know #61 is done
 

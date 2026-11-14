@@ -440,7 +440,6 @@ function answersSourceRequest(body) {
   return body
 }
 
-/**
 /** What the CRD allows as a source's name, a DNS label: nothing a JSON encoder escapes. */
 const SOURCE_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/
 
