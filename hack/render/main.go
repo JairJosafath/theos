@@ -26,8 +26,10 @@ limitations under the License.
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,52 +39,73 @@ import (
 )
 
 func main() {
-	out := flag.String("out", "", "folder to write the repository into (must not exist)")
-	root := flag.String("templates", "templates", "folder with the template repositories")
-	in := scaffold.Input{Project: "webshop", SoftwareSystem: "shop"}
-	flag.StringVar(&in.Container, "container", "sample-app", "Container name")
-	flag.StringVar(&in.DisplayName, "display-name", "Sample App", "Container display name")
-	flag.StringVar(&in.Type, "type", "cli", "Container type")
-	flag.StringVar(&in.Checks, "checks", "", "when CI runs the full check: EveryChange (the default) or BeforeRelease")
-	flag.StringVar(&in.NpmScope, "npm-scope", "@theos", "the npm scope the Container's package is named under")
-	ci := flag.String("ci", model.CIGiteaActions, "the CI system the repository runs")
+	if err := run(os.Args[1:], os.Stdout); err != nil {
+		if errors.Is(err, errUsage) {
+			fmt.Fprintln(os.Stderr, "usage: render -out DIR Side=template ...")
+			os.Exit(2)
+		}
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
+		fmt.Fprintln(os.Stderr, "render:", err)
+		os.Exit(1)
+	}
+}
+
+var errUsage = errors.New("usage")
+
+// run renders what args ask for and prints its summary line to stdout.
+func run(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("render", flag.ContinueOnError)
+	out := flags.String("out", "", "folder to write the repository into (must not exist)")
+	root := flags.String("templates", "templates", "folder with the template repositories")
+	var in scaffold.Input
+	flags.StringVar(&in.Project, "project", "webshop", "Project name, written to .theos.yaml")
+	flags.StringVar(&in.SoftwareSystem, "system", "shop", "Software System name, written to .theos.yaml")
+	flags.StringVar(&in.Container, "container", "sample-app", "Container name")
+	flags.StringVar(&in.DisplayName, "display-name", "Sample App", "Container display name")
+	flags.StringVar(&in.Type, "type", "cli", "Container type")
+	flags.StringVar(&in.Checks, "checks", "", "when CI runs the full check: EveryChange (the default) or BeforeRelease")
+	flags.StringVar(&in.NpmScope, "npm-scope", "@theos", "the npm scope the Container's package is named under")
+	ci := flags.String("ci", model.CIGiteaActions, "the CI system the repository runs")
 	// The Container's spec.operations, each left out when empty (-retention-days -1).
 	var ops model.OperationsChoices
-	retention := flag.Int("retention-days", -1, "spec.operations.backups.retentionDays; -1 leaves it out")
-	flag.StringVar(&ops.CopyToRegion, "copy-to-region", "", "spec.operations.backups.copyToRegion")
-	flag.StringVar(&ops.RPO, "rpo", "", "spec.operations.recovery.rpo")
-	flag.StringVar(&ops.RTO, "rto", "", "spec.operations.recovery.rto")
-	flag.StringVar(&ops.Email, "alert-email", "", "spec.operations.alerts.email")
-	flag.Parse()
-	if *out == "" || flag.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "usage: render -out DIR Side=template ...")
-		os.Exit(2)
+	retention := flags.Int("retention-days", -1, "spec.operations.backups.retentionDays; -1 leaves it out")
+	flags.StringVar(&ops.CopyToRegion, "copy-to-region", "", "spec.operations.backups.copyToRegion")
+	flags.StringVar(&ops.RPO, "rpo", "", "spec.operations.recovery.rpo")
+	flags.StringVar(&ops.RTO, "rto", "", "spec.operations.recovery.rto")
+	flags.StringVar(&ops.Email, "alert-email", "", "spec.operations.alerts.email")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *out == "" || flags.NArg() == 0 {
+		return errUsage
 	}
 	var err error
 	if in.CI, err = model.CIByName(*ci); err != nil {
-		fail(err)
+		return err
 	}
 	if *retention < -1 || *retention > int(model.MaxRetentionDays) {
-		fail(fmt.Errorf("-retention-days %d: 0 to %d, or -1 to leave it out", *retention, model.MaxRetentionDays))
+		return fmt.Errorf("-retention-days %d: 0 to %d, or -1 to leave it out", *retention, model.MaxRetentionDays)
 	}
 	if *retention >= 0 {
 		days := int32(*retention)
 		ops.RetentionDays = &days
 	}
 	if problems := model.OperationsProblems(ops); len(problems) > 0 {
-		fail(fmt.Errorf("spec.operations: %s", strings.Join(problems, "; ")))
+		return fmt.Errorf("spec.operations: %s", strings.Join(problems, "; "))
 	}
 	in.Operations = model.ResolveOperations(ops)
 
-	layers := make([]scaffold.Layer, 0, flag.NArg())
-	for _, arg := range flag.Args() {
+	layers := make([]scaffold.Layer, 0, flags.NArg())
+	for _, arg := range flags.Args() {
 		side, name, ok := strings.Cut(arg, "=")
 		if !ok {
-			fail(fmt.Errorf("%q: want Side=template", arg))
+			return fmt.Errorf("%q: want Side=template", arg)
 		}
 		files, err := scaffold.ReadTree(os.DirFS(filepath.Join(*root, name)))
 		if err != nil {
-			fail(err)
+			return err
 		}
 		if side == model.SideDomain {
 			// A Domain's folder is <name>-domain; the layer and the input name
@@ -106,7 +129,7 @@ func main() {
 	}
 	result, err := scaffold.Build(in, layers, scaffold.Options{})
 	if err != nil {
-		fail(err)
+		return err
 	}
 	for _, p := range result.Files.Paths() {
 		f := result.Files[p]
@@ -116,16 +139,12 @@ func main() {
 		}
 		dst := filepath.Join(*out, filepath.FromSlash(p))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { //nolint:gosec // a rendered repository to read
-			fail(err)
+			return err
 		}
 		if err := os.WriteFile(dst, f.Data, mode); err != nil {
-			fail(err)
+			return err
 		}
 	}
-	fmt.Printf("Rendered %d files from %s into %s\n", len(result.Files), strings.Join(result.ScaffoldedFrom, ", "), *out)
-}
-
-func fail(err error) {
-	fmt.Fprintln(os.Stderr, "render:", err)
-	os.Exit(1)
+	fmt.Fprintf(stdout, "Rendered %d files from %s into %s\n", len(result.Files), strings.Join(result.ScaffoldedFrom, ", "), *out)
+	return nil
 }
