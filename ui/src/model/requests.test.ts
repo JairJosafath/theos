@@ -7,6 +7,7 @@ import {
   describeRequest,
   describeRequests,
   entryWithRequests,
+  httpUrl,
   requestAnswered,
   requestOfName,
   requestsSummary,
@@ -286,6 +287,50 @@ describe('a request from a request source (#163)', () => {
     )
     expect(describeRequest({ ...item, url: 'javascript:alert(1)' }).url).toBeUndefined()
     expect(describeRequest({ ...item, url: '' }).url).toBeUndefined()
+  })
+
+  // Addresses that are no http or https one with a host, such as a tracker's status could carry (#163).
+  const notLinks = [
+    'javascript:alert(1)',
+    'JaVaScRiPt:alert(1)',
+    'data:text/html,<b>x</b>',
+    'vbscript:msgbox(1)',
+    '//evil.example/x',
+    ' https://linear.example/x',
+    '\thttps://linear.example/x',
+    '\u0001https://linear.example/x',
+    'http:',
+    'http:evil.example',
+    'http://',
+    'https://',
+    'http:///evil.example',
+    'https://?x',
+    'ftp://linear.example/x',
+    '',
+  ]
+
+  it('links only an http or https address that has a host, in the list and in Needs you alike (#163)', () => {
+    expect(httpUrl(undefined)).toBeUndefined()
+    for (const url of [
+      'https://linear.example/acme/issue/ENG-412',
+      'http://linear.example',
+      'HTTPS://Linear.Example/x',
+    ]) {
+      expect(httpUrl(url)).toBe(url)
+      expect(describeRequest({ ...item, url }).url).toBe(url)
+      const needs = { kind: 'Request' as const, name: 'product:ENG-412', question: 'q' }
+      expect(describeNeedsYou(needs, { requests: [{ ...item, url }] }).url).toBe(url)
+    }
+    for (const url of notLinks) {
+      expect(httpUrl(url), JSON.stringify(url)).toBeUndefined()
+      expect(describeRequest({ ...item, url }).url, JSON.stringify(url)).toBeUndefined()
+      const needs = { kind: 'Request' as const, name: 'product:ENG-412', question: 'q' }
+      expect(describeNeedsYou(needs, { requests: [{ ...item, url }] }).url, JSON.stringify(url)).toBeUndefined()
+      // A GitHub request's address is checked the same way.
+      const gh = { kind: 'Request' as const, name: 'ada/cel-lens#12', question: 'q' }
+      const ghItem = { repository: 'ada/cel-lens', number: 12, title: 't', stage: 'Waiting' as const, url }
+      expect(describeNeedsYou(gh, { requests: [ghItem] }).url, JSON.stringify(url)).toBeUndefined()
+    }
   })
 
   it('is listed by the Brief, which takes requests from a source that is not Off', () => {

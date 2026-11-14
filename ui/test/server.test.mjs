@@ -66,6 +66,21 @@ const SOURCES = [
   },
 ]
 
+/**
+ * A source whose free text holds what Go's JSON encoder escapes (`&`, `<`, `>`,
+ * U+2028) and this server's does not (#163): made-up values.
+ */
+const TEXTY = {
+  name: 'rnd',
+  linear: { team: 'R&D<ops>', label: 'R&D \u2028 <b>' },
+  credentialsSecretRef: { name: 'rnd-linear' },
+  mode: 'Ask',
+  accepted: [3],
+}
+
+/** The entry of the fake API's Brief "odd", which a test sets to one the CRD would refuse. */
+const odd = { entry: {} }
+
 describe('server.mjs', () => {
   /** Requests the fake API server has seen. */
   const seen = []
@@ -136,6 +151,14 @@ describe('server.mjs', () => {
       if (url.pathname === `${briefs}sourced`) {
         const spec = { idea: 'x', requestSources: SOURCES }
         return json(200, { kind: 'Brief', metadata: { name: 'sourced', resourceVersion: '12' }, spec })
+      }
+      if (url.pathname === `${briefs}texty`) {
+        const spec = { idea: 'x', requestSources: [TEXTY] }
+        return json(200, { kind: 'Brief', metadata: { name: 'texty', resourceVersion: '13' }, spec })
+      }
+      if (url.pathname === `${briefs}odd`) {
+        const spec = { idea: 'x', requestSources: [odd.entry] }
+        return json(200, { kind: 'Brief', metadata: { name: 'odd', resourceVersion: '14' }, spec })
       }
       if (url.pathname === `${briefs}fresh`) {
         return json(200, { kind: 'Brief', metadata: { name: 'fresh', resourceVersion: '8' }, spec: { idea: 'x' } })
@@ -790,6 +813,17 @@ describe('server.mjs', () => {
     const SRC = '/spec/requestSources'
     const testEntry = (i, value = SOURCES[i]) => ({ op: 'test', path: `${SRC}/${i}`, value })
     const answer = [testEntry(0), add(`${SRC}/0/accepted`, [412, 413]), { op: 'remove', path: `${SRC}/0/declined` }]
+    // What goes upstream for a page's answer (#163): a test of the stored entry's name and of each list it has, then the writes.
+    const forwarded = (body) => {
+      const i = Number(body[0].path.split('/').pop())
+      const entry = SOURCES[i]
+      const lists = ['accepted', 'declined'].filter((f) => entry[f] !== undefined)
+      return [
+        { op: 'test', path: `${SRC}/${i}/name`, value: entry.name },
+        ...lists.map((f) => ({ op: 'test', path: `${SRC}/${i}/${f}`, value: entry[f] })),
+        ...body.slice(1),
+      ]
+    }
     const getAndPatch = () => seen.map((r) => [r.method, r.url])
 
     it("sets one request source's accepted and declined, after a test of the entry as the Brief holds it (#163)", async () => {
@@ -807,8 +841,104 @@ describe('server.mjs', () => {
           ['GET', `${api}/briefs/sourced`],
           ['PATCH', `${api}/briefs/sourced?fieldManager=theos-ui`],
         ])
-        assert.deepEqual(seen[1].body, body)
+        assert.deepEqual(seen[1].body, forwarded(body))
       }
+    })
+
+    it('sends upstream no free text of the entry, only its name and numbers, so the API server’s test can match (#163)', async () => {
+      const body = [testEntry(0, TEXTY), add(`${SRC}/0/declined`, [4]), add(`${SRC}/0/accepted`, [3, 5])]
+      seen.length = 0
+      const res = await write('PATCH', '/briefs/texty', body, JP)
+      assert.equal(res.status, 200)
+      assert.deepEqual(getAndPatch(), [
+        ['GET', `${api}/briefs/texty`],
+        ['PATCH', `${api}/briefs/texty?fieldManager=theos-ui`],
+      ])
+      assert.deepEqual(seen[1].body, [
+        { op: 'test', path: `${SRC}/0/name`, value: 'rnd' },
+        { op: 'test', path: `${SRC}/0/accepted`, value: [3] },
+        add(`${SRC}/0/declined`, [4]),
+        add(`${SRC}/0/accepted`, [3, 5]),
+      ])
+      // The bytes sent: none of the entry's strings but its name, whatever the characters.
+      const sent = JSON.stringify(seen[1].body)
+      for (const text of ['R&D', '<', '>', '&', '\u2028', 'ops', 'label', 'team', 'rnd-linear', 'credentials', 'Ask']) {
+        assert.ok(!sent.includes(text), `${JSON.stringify(text)} in ${sent}`)
+      }
+      assert.deepEqual(sent.match(/"value":"[^"]*"/g), ['"value":"rnd"'], 'the only string value sent is the name')
+    })
+
+    it('still refuses an answer whose test of free text is not the stored entry’s, and writes nothing (#163)', async () => {
+      for (const entry of [
+        { ...TEXTY, linear: { ...TEXTY.linear, label: 'R&amp;D' } },
+        { ...TEXTY, linear: { ...TEXTY.linear, team: 'R&D&lt;ops&gt;' } },
+        { ...TEXTY, linear: { team: 'R&D<ops>' } },
+      ]) {
+        seen.length = 0
+        const res = await write('PATCH', '/briefs/texty', [testEntry(0, entry), add(`${SRC}/0/accepted`, [1])], JP)
+        assert.equal(res.status, 409, JSON.stringify(entry))
+        assert.deepEqual(
+          seen.map((r) => r.method),
+          ['GET'],
+        )
+      }
+    })
+
+    it('tests each list of the stored entry upstream, so a change to accepted or declined after the read is refused there (#163)', async () => {
+      // The fake API does not run a test: this shows what the real one is given to run.
+      seen.length = 0
+      const res = await write('PATCH', '/briefs/sourced', answer, JP)
+      assert.equal(res.status, 200)
+      assert.deepEqual(seen[1].body.slice(0, 3), [
+        { op: 'test', path: `${SRC}/0/name`, value: 'product' },
+        { op: 'test', path: `${SRC}/0/accepted`, value: [412] },
+        { op: 'test', path: `${SRC}/0/declined`, value: [415] },
+      ])
+    })
+
+    it('refuses an answer when the stored lists changed since the page read them, before any write (#163)', async () => {
+      // The page read accepted [412] and declined [415]; another person has since answered 500.
+      for (const stale of [
+        { ...SOURCES[0], accepted: [412, 500] },
+        { ...SOURCES[0], declined: [415, 500] },
+        { ...SOURCES[0], accepted: [] },
+      ]) {
+        seen.length = 0
+        const res = await write('PATCH', '/briefs/sourced', [testEntry(0, stale), add(`${SRC}/0/accepted`, [1])], JP)
+        assert.equal(res.status, 409, JSON.stringify(stale))
+        assert.deepEqual(
+          seen.map((r) => r.method),
+          ['GET'],
+        )
+      }
+    })
+
+    it('refuses an entry that is not as the CRD holds it, fail closed (#163)', async () => {
+      for (const entry of [
+        { name: 'R&D', credentialsSecretRef: { name: 'x' } },
+        { name: 'Upper', credentialsSecretRef: { name: 'x' } },
+        { name: 'rnd', accepted: ['3'] },
+        { name: 'rnd', declined: 'all' },
+      ]) {
+        odd.entry = entry
+        seen.length = 0
+        const res = await write('PATCH', '/briefs/odd', [testEntry(0, entry), add(`${SRC}/0/accepted`, [1])], JP)
+        assert.equal(res.status, 403, JSON.stringify(entry))
+        assert.match((await res.json()).message, /cannot test safely, so nothing was saved/)
+        assert.deepEqual(
+          seen.map((r) => r.method),
+          ['GET'],
+        )
+      }
+    })
+
+    it('refuses an answer of more numbers than the CRD holds, and says how many it takes (#163)', async () => {
+      const big = Array.from({ length: 201 }, (_, i) => i + 1)
+      seen.length = 0
+      const res = await write('PATCH', '/briefs/sourced', [testEntry(0), add(`${SRC}/0/accepted`, big)], JP)
+      assert.equal(res.status, 403)
+      assert.match((await res.json()).message, /each an add of 1 to 200 different numbers/)
+      assert.equal(seen.length, 0)
     })
 
     it('refuses a request source answer worked out from an entry that has changed, and writes nothing (#163)', async () => {

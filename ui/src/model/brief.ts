@@ -17,7 +17,7 @@ import {
   type TokenUsage,
 } from '../k8s/types'
 import { plural, type PhaseInfo, type Tone } from './describe'
-import { describeRequests, requestLabel, requestOfName, type RequestRef, type RequestsView } from './requests'
+import { describeRequests, httpUrl, requestLabel, requestOfName, type RequestRef, type RequestsView } from './requests'
 import { compareText } from './order'
 
 /** The Brief phase as a badge label, colour tone and one-line explanation. */
@@ -384,7 +384,7 @@ export function describeNeedsYou(
       : request
         ? requestLabel(request)
         : `${entry.kind} ${entry.name}`,
-    url: failed?.url || requested?.url || undefined,
+    url: failed?.url || httpUrl(requested?.url),
     issue: issue && { ...issue, title: failed?.title || filed?.title || undefined },
     request,
     container: entry.kind === 'Container' ? entry.name : undefined,

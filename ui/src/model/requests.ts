@@ -95,9 +95,13 @@ const STAGES: Record<BriefRequestStage, { label: string; tone: Tone }> = {
   Released: { label: 'Released', tone: 'ok' },
 }
 
-/** The address when it is an http or https one, so a link never runs a script. */
-function httpUrl(url: string | undefined): string | undefined {
-  return url && /^https?:\/\//i.test(url) ? url : undefined
+/**
+ * The address when it is an http or https one with a host, so a link never runs
+ * a script and never points at nothing (#163). Every link built from a
+ * tracker's address goes through it: the request list's and Needs you's.
+ */
+export function httpUrl(url: string | undefined): string | undefined {
+  return url && /^https?:\/\/[^\s/?#\\]/i.test(url) ? url : undefined
 }
 
 export function describeRequest(r: BriefRequest): RequestView {

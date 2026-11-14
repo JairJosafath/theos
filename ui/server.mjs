@@ -441,19 +441,36 @@ function answersSourceRequest(body) {
 }
 
 /**
+/** What the CRD allows as a source's name, a DNS label: nothing a JSON encoder escapes. */
+const SOURCE_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/
+
+/**
  * Forwards a patch checked by answersSourceRequest once the test's entry is the
  * one the Brief holds at that place now, compared with the stored Brief, never
  * with what the request says about itself. Another entry there, or an entry
  * changed since the page read it, is refused as a Conflict saying so and
- * nothing is written. The test goes upstream too, so a change landing between
- * the read and the write is refused by the API server.
+ * nothing is written.
+ *
+ * What goes upstream is not the page's test of the whole entry. The API server
+ * compares a string of the stored object byte for byte, and its encoder writes
+ * `&`, `<`, `>` and U+2028 as escapes that this server's does not, so a test
+ * carrying a label such as `R&D` would fail there every time (#163). Upstream
+ * gets a test of the entry's name, which the CRD holds to a DNS label, and of
+ * each of accepted and declined the stored entry has, which are numbers: no
+ * free text of the entry goes upstream, so the encoders agree, and a change
+ * landing between the read and the write is refused by the API server. A list
+ * the entry does not have yet cannot be tested, as JSON Patch has no test of
+ * an absent value: the first answer to it goes without, so two first answers
+ * to the same list landing together do not conflict there, and the second
+ * replaces the first.
  */
 async function writeSourceAnswer(args) {
   const { res, upstream, apiPath, namespace, name, body } = args
   const current = await requestJson(upstream, apiPath)
   if (current.status !== 200) return send(res, current.status, `${JSON.stringify(current.body)}\n`, JSON_TYPE)
   const sources = current.body?.spec?.requestSources
-  const stored = Array.isArray(sources) ? sources[Number(body[0].path.split('/').pop())] : undefined
+  const at = body[0].path
+  const stored = Array.isArray(sources) ? sources[Number(at.split('/').pop())] : undefined
   if (!isDeepStrictEqual(stored, body[0].value)) {
     return sendStatus(
       res,
@@ -463,7 +480,25 @@ async function writeSourceAnswer(args) {
         'so nothing was saved: check it as it is now and answer again',
     )
   }
-  return forwardPatch(args)
+  const tests = [{ op: 'test', path: `${at}/name`, value: stored.name }]
+  for (const field of ['accepted', 'declined']) {
+    if (!Object.hasOwn(stored, field)) continue
+    const list = stored[field]
+    if (!Array.isArray(list) || !list.every(Number.isInteger)) return refuseSourceAnswer(res, namespace, name)
+    tests.push({ op: 'test', path: `${at}/${field}`, value: list })
+  }
+  if (!SOURCE_NAME.test(stored.name)) return refuseSourceAnswer(res, namespace, name)
+  return forwardPatch({ ...args, body: [...tests, ...body.slice(1)] })
+}
+
+/** The refusal of an entry the CRD would not hold: its name or lists are not what this server can test safely. */
+function refuseSourceAnswer(res, namespace, name) {
+  return sendStatus(
+    res,
+    403,
+    'Forbidden',
+    `Brief ${namespace}/${name} holds a request source this server cannot test safely, so nothing was saved`,
+  )
 }
 
 /**
@@ -592,7 +627,7 @@ const ACTIONS = [
     write: writeTested('Brief'),
   },
   {
-    what: "answer an item of a Brief's request source (a test of the whole entry at /spec/requestSources/N, then an add or remove of that entry's accepted, declined or both)",
+    what: "answer an item of a Brief's request source (a test of the whole entry at /spec/requestSources/N, then an add or remove of that entry's accepted, declined or both, each an add of 1 to 200 different numbers)",
     method: 'PATCH',
     path: resourcePath('briefs', true),
     type: JSON_PATCH,

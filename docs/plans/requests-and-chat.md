@@ -1391,8 +1391,12 @@ Left as it is, and why:
   issue as `owner/name #12` as before, and a request that names neither as
   `#<number>`, never `undefined #412`. A missing, empty or blank `author`
   is no author: the line has no "by …", never "by undefined". A request's
-  address is linked only when it is http or https. All of it is rendered as
-  text.
+  address is linked only when it is an http or https one with a host, in
+  the list and in Needs you's `open` link alike, both through one helper
+  (`httpUrl`, which refuses `javascript:` in any case, `data:`, `vbscript:`,
+  `//host`, a leading space or control character, `http://` and
+  `http:///host`); the UI does not rely on React's own block of
+  `javascript:`. All of it is rendered as text.
 - **Which request a button answers.** `status.needsYou` names a source's
   request `<source>:<key>`; `requestOfName` reads it as a source and key,
   with the number of the listed `status.requests` entry of that source and
@@ -1442,10 +1446,52 @@ Left as it is, and why:
   the entry stored at `N` (`isDeepStrictEqual`), not with what the request
   says of itself; another entry there, a missing one or one changed since
   the page read it is refused as a `409 Conflict` and nothing is written.
-  The patch, test included, goes upstream as it came, so a change landing
-  between the read and the write is refused by the API server's own test.
+  What goes upstream is not the page's test (below): the server
+  re-encodes the parsed patch, with a narrower test in front of the writes.
   The server checks shapes and the entry's identity, not the CRD's values
-  beyond the two caps it holds for itself.
+  beyond the two caps it holds for itself (a list of more than 200 numbers
+  gets a 403 whose message says "1 to 200 different numbers").
+- **What goes upstream: a test of the name and the lists, no free text.**
+  The page's test of the whole entry is for the server's comparison with
+  the stored Brief, the `409` above, and stays as strict as it was. It does
+  not go on to the API server, because a real one cannot match it when a
+  string of the entry holds `&`, `<`, `>` or U+2028 (a Linear label
+  `R&D` is a valid label): the API server encodes the stored object with
+  Go's JSON encoder, which writes those as `\u0026`, `\u003c`, `\u003e`
+  and `\u2028`, and its JSON patch library compares scalar strings byte for
+  byte, so a test carrying this server's `R&D` fails every time with a 422
+  and Accept and Decline never work for that source. So the server sends
+  upstream `test` of `/spec/requestSources/N/name`, then `test` of
+  `.../accepted` and of `.../declined` for each the stored entry has, then
+  the page's writes. The name is a DNS label by the CRD (`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`,
+  at most 63), and the lists are int32s, so both encoders write the same
+  bytes; the server holds the stored name to that pattern and the lists to
+  integers, and refuses with a 403 and nothing written when they are not
+  (an entry the CRD would not hold). The values are the stored entry's,
+  never the request's. No label, team, site, project, secret name or mode
+  goes upstream. What each test guards:
+  - the name binds the index to the entry, the identity check of the whole
+    entry, so a source added, removed or moved between the read and the
+    write fails there;
+  - the two lists guard the lost update: another person's answer landing
+    between the server's read and its write changes `accepted` or
+    `declined`, so the test fails with a 422 and nothing is written. The
+    server's own comparison catches the same change between the page's read
+    and the click (the `409`, no write);
+  - the other fields of the entry (`mode`, the tracker, the credentials)
+    are not tested upstream: a change to one of them between the server's
+    read and its write is not caught there, and the write does not touch
+    them. The server's comparison still refuses a page that showed them
+    differently.
+  - **A list the entry does not have yet is not tested upstream.** JSON
+    Patch has no test of an absent member, so the first answer to a list
+    (`accepted` of an entry with none) goes without one. That answer is
+    still bound to the entry by the name's test, and a page out of date on
+    it is refused by the server's comparison; only two first answers to the
+    same list landing within the server's read-to-write gap are not told
+    apart, and the second replaces the first. A person's answer is one
+    click, the gap is milliseconds, and the same gap was accepted for a first
+    approval of a deploy (#1461).
 - **The Brief's page.** The section reads "Requests" when a source is among
   the Brief's request places or one of its requests is from one, "Requests
   from GitHub" when GitHub alone is, so a Brief with GitHub requests only
@@ -1471,11 +1517,25 @@ Left as it is, and why:
   numbers' type, cap and uniqueness, the stored comparison, `replace`, the
   first operation being a test, the number of operations, the fields of an
   entry) were each loosened in turn in a scratch copy, and each failed some
-  of them. The end-to-end suite
+  of them. A Linear source whose label and team hold `&`, `<` and
+  U+2028 (`ui/test/server.test.mjs`) shows that nothing of the entry's text
+  goes upstream, and the same file the lists' tests, the refusal of an
+  entry the CRD would not hold and the cap's message; the helper's
+  `javascript:`, `JaVaScRiPt:`, `data:`, `vbscript:`, `//host`, leading
+  whitespace and no-host cases are in `requests.test.ts` and the Needs you
+  link's in `Briefs.test.ts`. The end-to-end suite
   (`ui/test/requests.e2e.mjs`) is not extended: its fake API cannot patch
   into a list.
 - **Not done here.** `status.requests[].shipped`, which the CRD has, is
   not in the UI's type; no page reads it.
+- **Not tested.** No real API server was in the loop: the forwarded tests
+  rest on reading Go's encoder and the JSON patch library's string
+  comparison, not on a run. The fake API of `ui/test/fakeApi.mjs` applies a
+  `test` with `!==` on parsed values, so it cannot show the byte-for-byte
+  comparison that failed; the server test asserts the shape sent (no free text
+  of the entry, only the name and numbers) instead. The `422` a change
+  between the server's read and its write gets from the API server is not
+  shown either.
 
 ## How we will know #61 is done
 
