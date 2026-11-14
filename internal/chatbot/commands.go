@@ -75,9 +75,19 @@ func (b *Bot) commands(ctx context.Context, chat *c4v1beta1.Chat, host chatHost,
 	return errors.Join(errs...)
 }
 
-// people are chat's people as model.ChatPersonFor reads them.
-func people(chat *c4v1beta1.Chat) []model.ChatPerson {
-	out := make([]model.ChatPerson, 0, len(chat.Spec.People))
+// people are chat's people on its host as model.ChatPersonFor reads them:
+// spec.slack.people by member ID on Slack, spec.people by Matrix ID on
+// Matrix (docs/plans/requests-and-chat.md, decision 10).
+func people(chat *c4v1beta1.Chat, system model.ChatSystem) []model.ChatPerson {
+	var out []model.ChatPerson
+	if system.Name == model.ChatSlack {
+		if chat.Spec.Slack != nil {
+			for _, p := range chat.Spec.Slack.People {
+				out = append(out, model.ChatPerson{ID: p.SlackID, User: p.User, Groups: p.Groups})
+			}
+		}
+		return out
+	}
 	for _, p := range chat.Spec.People {
 		out = append(out, model.ChatPerson{ID: p.MatrixID, User: p.User, Groups: p.Groups})
 	}
@@ -108,10 +118,10 @@ func (b *Bot) command(ctx context.Context, chat *c4v1beta1.Chat, host chatHost, 
 	}
 	say := func(line string) error { return reply(model.ChatPost{Status: line}) }
 	log := logf.FromContext(ctx).WithValues("room", purpose, "sender", ev.Sender)
-	person, ok := model.ChatPersonFor(people(chat), ev.Sender)
+	person, ok := model.ChatPersonFor(people(chat, host.system), ev.Sender)
 	if !ok {
 		log.Info("Refused a command from someone not among the Chat's people")
-		return say(model.ChatStrangerRefusal(ev.Sender, chat.Name))
+		return say(model.ChatStrangerRefusal(ev.Sender, chat.Name, host.system.People))
 	}
 	if perr != nil {
 		return say("Nothing done: " + perr.Error())

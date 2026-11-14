@@ -463,6 +463,75 @@ var _ = Describe("Crew spec", func() {
 			HaveField("Text", "Looks fine to me"), HaveField("Reactions", BeEmpty())))
 	})
 
+	// #159: the same loop on a Slack Chat, on the ports' fake shaped as Slack:
+	// channels and no Space, a post in mrkdwn, a sender looked up in
+	// spec.slack.people and the command sent as that person.
+	It("runs a spec's thread on a Slack Chat, and sends approve as the person who said it (#159)", func() {
+		n, name := specOne("")
+		head := pushSpec(name, 1, scaffold.Tree{"docs/specs/1.md": {Data: []byte(testSpec)}})
+		reviewed(name, head)
+		awaiting(name)
+
+		By("making the project's Slack Chat, its channels with ada in them")
+		adaID, _ := chatSlackFake.NewUser("ada-" + ns)
+		malloryID, _ := chatSlackFake.NewUser("mallory-" + ns)
+		ada := "ada-" + ns + "@example.com"
+		grant(ada, roleChatPeople, roleTaskWord)
+		chat, bot, token := slackFakeChat(ns, c4v1beta1.ChatSlackPerson{SlackID: adaID, User: ada})
+		Expect(asUser(ada).Create(ctx, chat)).To(Succeed())
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		Expect(chat.Status.Space).To(BeNil())
+		specs := chatRoom(chat, model.ChatSpecs)
+		Expect(chatSlackFake.Join(specs, adaID)).To(Succeed())
+		// Someone in the channel adds a colleague the Chat doesn't list.
+		member := chatSlackFake.For(ports.ChatConfig{Address: chatSlackFake.Address(), Token: token})
+		Expect(member.Invite(ctx, specs, malloryID)).To(Succeed())
+		member.Close()
+		Expect(chatSlackFake.Join(specs, malloryID)).To(Succeed())
+
+		By("opening the spec's thread in specs, in mrkdwn")
+		theosChat := newTheosChat()
+		chatPass(theosChat, chat)
+		posts := slackFakePosts(specs)
+		Expect(posts).To(ConsistOf(And(HaveField("Sender", bot), HaveField("Text", ContainSubstring("Spec of issue #1")),
+			HaveField("Formatted", HavePrefix("*Spec of issue #1")))))
+		root := posts[0].ID
+
+		By("refusing a stranger's approve, which changes nothing")
+		_, err := chatSlackFake.Post(specs, malloryID, "approve", root)
+		Expect(err).NotTo(HaveOccurred())
+		chatPass(theosChat, chat)
+		Expect(slackFakePosts(specs)).To(ContainElement(And(HaveField("Sender", bot), HaveField("ThreadRoot", root),
+			HaveField("Text", ContainSubstring(malloryID+" is not one of Chat chat's people, so nothing was done; "+
+				"whoever runs the project adds you to its spec.slack.people")))))
+		task := &c4v1beta1.Task{}
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(task.Annotations).NotTo(HaveKey(model.ChatAnnotationApproveSpec))
+
+		By("sending ada's approve as ada, and the operator merging the spec")
+		_, err = chatSlackFake.Post(specs, adaID, "approve", root)
+		Expect(err).NotTo(HaveOccurred())
+		chatPass(theosChat, chat)
+		Expect(slackFakePosts(specs)).To(ContainElement(And(HaveField("Sender", bot), HaveField("ThreadRoot", root),
+			HaveField("Text", "Done as "+ada+": approved the spec at "+head[:7]+"; the operator merges it."))))
+		Expect(k8sClient.Get(ctx, key(ns, name), task)).To(Succeed())
+		Expect(task.Annotations).To(And(HaveKeyWithValue(model.ChatAnnotationApproveSpec, head),
+			HaveKeyWithValue(model.ChatAnnotationBy(model.ChatAnnotationApproveSpec), ada)))
+		Eventually(func(g Gomega) {
+			task := getTask(g, ns, name)
+			g.Expect(task.Status.Phase).To(Equal(c4v1beta1.TaskMerged))
+			g.Expect(task.Status.Spec).To(And(HaveField("ApprovedBy", ada), HaveField("ApprovedInChat", true)))
+			readyFromSpec(g, n)
+		}).Should(Succeed())
+
+		By("editing the thread's root as the spec merged, and marking it done, once")
+		chatPass(theosChat, chat)
+		chatPass(newTheosChat(), chat)
+		Expect(slackFakePosts(specs)[0]).To(And(HaveField("ID", root), HaveField("Text", ContainSubstring(
+			"Merged: "+ada+" approved it in chat.")), HaveField("Formatted", ContainSubstring("Merged: "+ada)),
+			HaveField("Reactions", Equal([]string{model.ChatDoneReaction}))))
+	})
+
 	It("merges on the reviewer's approval alone with specApproval Reviewer", func() {
 		n, name := specOne(c4v1beta1.SpecApprovalReviewer)
 		head := pushSpec(name, 1, scaffold.Tree{"docs/specs/1.md": {Data: []byte(testSpec)}})

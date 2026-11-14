@@ -63,6 +63,7 @@ import (
 	"github.com/JairJosafath/theos/internal/adapters/linear"
 	"github.com/JairJosafath/theos/internal/adapters/localenv"
 	"github.com/JairJosafath/theos/internal/adapters/matrix"
+	"github.com/JairJosafath/theos/internal/adapters/slack"
 	"github.com/JairJosafath/theos/internal/buildinfo"
 	"github.com/JairJosafath/theos/internal/controller"
 	"github.com/JairJosafath/theos/internal/model"
@@ -110,7 +111,7 @@ func main() {
 	var sharedSecrets, sharedPullSecrets stringList
 	var uiServiceAccount string
 	var modelProxyURL string
-	var chatHomeserver string
+	var chatHomeserver, chatSlackAPIURL string
 	var linearAPIURL, jiraAPIURL string
 	var gitEventsURL string
 	var alertsURL string
@@ -205,6 +206,9 @@ func main() {
 	flag.StringVar(&chatHomeserver, "chat-homeserver", "",
 		"The Matrix homeserver of a Chat that names none, such as the chart's in-cluster one. None: each Chat "+
 			"names its homeserver.")
+	flag.StringVar(&chatSlackAPIURL, "chat-slack-api-url", slack.DefaultAddress,
+		"Slack's Web API, which a Chat with host: slack makes its channels at and theos-chat reads them from, "+
+			"such as GovSlack's.")
 	flag.StringVar(&linearAPIURL, "linear-api-url", linear.APIURL,
 		"Linear's GraphQL address, which a Brief's request source on Linear is read and answered at.")
 	flag.StringVar(&jiraAPIURL, "jira-api-url", jira.APIURL,
@@ -583,13 +587,14 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "deploytarget")
 		os.Exit(1)
 	}
-	// One chat adapter per chat host, by the name of its model.ChatSystem row.
+	// One chat adapter per chat host, and its address for a Chat that names
+	// none, by the name of its model.ChatSystem row.
 	if err := (&controller.ChatReconciler{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		APIReader:  mgr.GetAPIReader(),
-		ChatHosts:  map[string]ports.ChatHosts{model.ChatMatrix: matrix.Hosts(nil)},
-		Homeserver: chatHomeserver,
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		APIReader: mgr.GetAPIReader(),
+		ChatHosts: map[string]ports.ChatHosts{model.ChatMatrix: matrix.Hosts(nil), model.ChatSlack: slack.Hosts(nil)},
+		Addresses: map[string]string{model.ChatMatrix: chatHomeserver, model.ChatSlack: chatSlackAPIURL},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "chat")
 		os.Exit(1)

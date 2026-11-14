@@ -932,6 +932,71 @@ What the step chose where the plan says nothing:
 - **`model.ChatSlack` names the host,** with no row: step 8 adds the row and
   the adapter, and `ChatHostName` maps an empty `host` to the default.
 
+## Step 8 as built (#159)
+
+What the step chose where the plan says nothing:
+
+- **The row grew two fields.** Slack's row is no Space, `botToken` and
+  `appToken`, mrkdwn, as decisions 5 and 9 say, and two more fields each row
+  now holds: `People`, the Chat's field its people are in (`spec.people`,
+  `spec.slack.people`), which the stranger's refusal names, and
+  `AddressFlag`, the operator's flag for the host's address, which
+  `HomeserverUnset` names. `Keys()` lists the Secret's keys, the bot token's
+  first. The Ready messages read the row: a Slack Chat's `Ready` says "The 6
+  rooms are ready on <address>, with no Space"; `SecretMissing` and
+  `SecretIncomplete` name both keys; `CredentialRefused` says "the bot's
+  token" on both hosts, where it said "the access token".
+- **The operator checks both keys and uses one.** Decision 9 has the
+  operator read `botToken` alone; it also checks that `appToken` is in the
+  Secret, so a missing app-level token is `SecretIncomplete` naming it on
+  `Ready`, where it would otherwise surface only as an error in `theos-chat`'s
+  log. Only `botToken` reaches the adapter; the operator calls no `Sync`, so
+  it never opens the socket.
+- **One map of addresses, by host.** `ChatReconciler.Homeserver` became
+  `Addresses`, keyed by the row's name: Matrix's is `--chat-homeserver`,
+  Slack's `--chat-slack-api-url`. A Slack Chat names no address (CEL), so
+  the flag is always its address; an empty flag is `HomeserverUnset` naming
+  the flag.
+- **`ScopeMissing`** is a new reason, checked before `CredentialRefused`; its
+  message names the scope from `ports.ChatScopeMissingError` and keeps the
+  adapter's error as its detail. The operator polls it like every other
+  not-Ready reason, so a scope added (the app reinstalled) is picked up in a
+  minute.
+- **The people's list is picked by host name** in two small functions, the
+  controller's `chatPeopleIDs` and `theos-chat`'s `people`, since
+  `api/v1beta1` holds the two lists and `internal/model` may not import it.
+- **A channel left without its topic is finished, and Created (#234).** When
+  `conversations.setTopic` failed after `conversations.create`, the next
+  `EnsureRoom` found the channel by name and returned it as found, so the
+  controller, which forgets `status.invited` only for a room made anew,
+  invited nobody to a channel made again. Now `EnsureRoom` sets the topic of
+  a channel it finds with none, where the spec has one, and returns it
+  `Created`. Retrying the topic alone would leave the people out; inviting
+  on every call would cost a call per person and room every ten minutes. A
+  topic someone emptied by hand is put back the same way, and the people
+  invited again, which is no error for those in the channel; one who left it
+  is back in. `ChatRoom.Created`'s comment says so.
+- **The port has `Close` (#234).** `ChatHost.Close()` lets go of what the
+  value holds open: Slack's socket (`Client.Close`, which was there), nothing
+  on Matrix or the fake (which counts its open values, `fake.ChatHost.Open`).
+  `theos-chat` remembers which built host each Chat used; when a Chat's
+  tokens change, or the Chat is gone, it closes the host no Chat uses any
+  more, and keeps one another Chat still uses. The operator closes the host
+  it builds at the end of each reconcile. Before, a client replaced after a
+  token change kept its socket, and Slack, which sends each event to one
+  open socket, gave some events to it.
+- **The fake shaped as Slack has member IDs.** `fake.MemberIDs()` makes a
+  user ID `U` and eight digits, so `spec.slack.people`'s CEL takes the fake's
+  people; `fake.ChatHost.Revoke` and `Grant` take a scope from a token for
+  the port methods named, and `NewToken` gives an account a second token.
+  The suite's Slack is `chatSlackFake` at `https://slack.test/api`, which is
+  also the suite's `--chat-slack-api-url`.
+- **`HostNotSupported` keeps its specs, without Slack in the map.** The
+  suite's operator runs Slack now, so an operator built without its adapter
+  is a reconciler whose map has no `slack`, run on a fake client
+  (`TestChatOnAHostWithoutAnAdapter`); `theos-chat`'s spec deletes `slack`
+  from its map. The CRD's enum takes no third host to test with.
+
 ## Step 9 as built (#160)
 
 Atlassian's reference was not read again: step 6 as built, Jira, records

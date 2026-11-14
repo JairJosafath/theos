@@ -183,10 +183,11 @@ func ChatPersonFor(people []ChatPerson, sender string) (ChatPerson, bool) {
 }
 
 // ChatStrangerRefusal is the one line a sender outside a Chat's people gets
-// for a command: nothing is run.
-func ChatStrangerRefusal(sender, chat string) string {
+// for a command: nothing is run. field is the Chat's list of people on its
+// host (ChatSystem.People).
+func ChatStrangerRefusal(sender, chat, field string) string {
 	return fmt.Sprintf("%s is not one of Chat %s's people, so nothing was done; whoever runs the project adds you "+
-		"to its spec.people", sender, chat)
+		"to its %s", sender, chat, field)
 }
 
 // ChatRefused is what theos-chat posts when the API server refuses a

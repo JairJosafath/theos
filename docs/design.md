@@ -1606,19 +1606,37 @@ held to the same rules; CEL keeps the two hosts apart: `slack` only with
 `host: slack`, and with it no `homeserver`, no `space`, no `people`, each room
 named its purpose (a channel's one name is `<aliasPrefix>-<purpose>`), and an
 `aliasPrefix` Slack takes in a channel name (no `.` or `=`, at most 70
-characters). The operator runs no Slack adapter yet: a Chat on a host it has
-no adapter for is left alone before its Secret is read or a host called,
-`Ready=False` with reason `HostNotSupported` naming the host, and `theos-chat`
-does nothing for it.
+characters). What a host means to a Chat (whether it has Spaces, the keys of
+its Secret, the markup of a post, the list its people are in) is one row per
+host in `internal/model` (`model.ChatSystem`), which the operator and
+`theos-chat` ask. A Chat on a host the operator runs no adapter for (one
+newer than the operator) is left alone before its Secret is read or a host
+called, `Ready=False` with reason `HostNotSupported` naming the host, and
+`theos-chat` does nothing for it.
 
-- **The operator makes the rooms and only reports.** It makes one Space,
-  named after the Project, with six rooms (`updates`, `general`, `triage`,
-  `specs`, `reviews`, `alerts`), private, invite only and unencrypted, invites
-  the `people`, and writes the IDs and `Ready` into status. It finds them again
-  by the IDs in status, then by alias (`#<aliasPrefix>-<purpose>:<server>`,
-  `theos-<namespace>` unless set, immutable), so a restart makes nothing
-  twice; an alias another account holds is never taken over (`AliasTaken`).
-  A second Chat in the namespace is `Duplicate` and does nothing.
+- **The operator makes the rooms and only reports.** On Matrix it makes one
+  Space, named after the Project, with six rooms (`updates`, `general`,
+  `triage`, `specs`, `reviews`, `alerts`), private, invite only and
+  unencrypted, invites the `people`, and writes the IDs and `Ready` into
+  status. It finds them again by the IDs in status, then by alias
+  (`#<aliasPrefix>-<purpose>:<server>`, `theos-<namespace>` unless set,
+  immutable), so a restart makes nothing twice; an alias another account
+  holds is never taken over (`AliasTaken`). A second Chat in the namespace
+  is `Duplicate` and does nothing.
+- **On Slack a room is a private channel, and there is no Space:** the
+  workspace is one, and `status.space` stays unset. The six channels are
+  named `<aliasPrefix>-<purpose>` and found again by ID, then by that name
+  among the channels the bot is in; a name another channel holds is
+  `AliasTaken`. The people of `slack.people` are invited by member ID. Slack's
+  address is the operator's `--chat-slack-api-url` (by default
+  `https://slack.com/api`; GovSlack names its own), which it writes into
+  `status.homeserver`, the chat host's address, where `theos-chat` reaches it.
+  The Secret, which the user creates, holds the bot token under `botToken` and
+  the app-level token under `appToken`; the operator checks both are there
+  (`SecretIncomplete` names the missing key) and uses `botToken` alone, and a
+  scope Slack says the bot token lacks is `ScopeMissing`, naming the scope.
+  ([plans/requests-and-chat.md](plans/requests-and-chat.md), decisions 4, 5,
+  9 and 11.)
 - **Chat enforces nothing.** A command becomes one request from a closed
   allowlist in `internal/model` (`CheckChatRequest`), the UI's own entries
   for what the UI can do (a Brief, its prompts, pause and resume, a
@@ -1646,7 +1664,18 @@ does nothing for it.
   `/sync` token) are in its ConfigMap `theos-chat` in the namespace, so a
   restart says nothing twice and runs no command twice; a homeserver or room
   error is retried with backoff and keeps the other rooms going. Only a
-  Chat's `people` are obeyed; anyone else gets a one-line refusal.
+  Chat's `people` (on Slack its `slack.people`) are obeyed, each command sent
+  as the Kubernetes user its sender's entry names; anyone else gets a
+  one-line refusal. On Slack, a post goes out in mrkdwn and `theos-chat`
+  alone reads the channels, over a Socket Mode connection it opens with the
+  app-level token on its first read; the operator opens none, and of two
+  replicas only the leader holds one, since Slack sends each event to one
+  open connection. A host it built for a token no Chat uses any more (the
+  token changed, the Chat is gone) it closes. After a restart it reads again,
+  through the Web API, what each channel said after the position in its
+  ConfigMap, and the replies of the threads among a channel's last 200
+  messages; a reply to an older thread said while no connection was open is
+  not read, and the person says it again (decision 8).
   Each post about a Task or a Container links to its page in the UI under
   `theos-chat`'s `--ui-url` (the chart's `chat.uiURL`, by default the UI's
   own address), next to the Git host's links; without it, it links to the
@@ -1659,10 +1688,13 @@ does nothing for it.
   are written only by a person, never a `system:` identity (the operator's
   ServiceAccount, `theos-chat`'s acting as itself, an agent's), and each
   `-by` names the writer. The operator counts a word only with its `-by`.
-- **Matrix is behind the ChatHost port;** the adapter speaks the
-  client-server API over `net/http`, with no SDK, and tests run on a fake
-  homeserver (`internal/adapters/matrix/matrixtest`). No end-to-end
-  encryption until it is built.
+- **Matrix and Slack are behind the ChatHost port;** the Matrix adapter
+  speaks the client-server API over `net/http`, with no SDK, and tests run on
+  a fake homeserver (`internal/adapters/matrix/matrixtest`); the Slack adapter
+  speaks the Web API over `net/http` and Socket Mode over
+  `golang.org/x/net/websocket`, on a fake workspace
+  (`internal/adapters/slack/slacktest`). No end-to-end encryption on Matrix
+  until it is built.
 - **The chart** installs `theos-chat` with `chat.enabled` (off by default)
   and gives the operator `--chat-homeserver`: `chat.homeserverURL` (your own
   homeserver, or matrix.org), else, with `chat.homeserver.enabled`, an
@@ -1690,7 +1722,7 @@ controllers call, not by one product's API;
 | Registry | Go modules and the proxy; npm, PyPI and images to come | Gitea packages |
 | AgentRuntime | start a run, read its state and result, stop it | Agent Sandbox |
 | Deployer | ship a release to a target, read its state back | the GitHub release copy |
-| ChatHost | a Space and its rooms, invites, messages, thread replies, edits, reactions, sync | Matrix |
+| ChatHost | a Space and its rooms (a host's rooms alone where it has no Spaces), invites, messages, thread replies, edits, reactions, sync, close | Matrix; Slack |
 | TestEnvironments | lease a place to run commands with tools the sandbox lacks, read it back, return it, list the leases held; a remote one may lease a machine that runs one CI job; run a test package where the environment runs those (`TestRuns`) | a pod per lease on the cluster (`local`); an EC2 machine per lease in the user's AWS account, a Mac's on a kept host (`aws`); AWS Device Farm's phones (`deviceFarm`) |
 
 - **A port is a narrow Go interface** with one fake and one contract suite,
@@ -1698,7 +1730,8 @@ controllers call, not by one product's API;
   package under `internal/adapters`, and only `cmd/main.go` imports adapters
   (`make lint` enforces it). The Deployer and the Git host's five ports are
   there today, with Gitea in `internal/adapters/gitea`; ChatHost, with
-  Matrix in `internal/adapters/matrix`; and request intake (`IssueTracker`),
+  Matrix in `internal/adapters/matrix` and Slack in
+  `internal/adapters/slack`; and request intake (`IssueTracker`),
   with GitHub in `internal/adapters/github` and Linear in
   `internal/adapters/linear`, which nothing builds yet. Each has its fake in
   `internal/ports/fake`, which passes its suite: ChatHost's in two shapes,
@@ -1732,10 +1765,10 @@ controllers call, not by one product's API;
   contract;** request intake is, with its fake, GitHub and Linear (#156);
   ChatHost is: its fake, Matrix (`internal/adapters/matrix`) and Slack
   (`internal/adapters/slack`, on its fake workspace `slacktest`, the Space
-  and the rename skipped since a workspace has neither). No Chat names Slack
-  until the Chat takes `spec.host`
-  ([plans/requests-and-chat.md](plans/requests-and-chat.md), steps 7 and 8).
-  No other port is yet.
+  and the rename skipped since a workspace has neither), which the operator
+  and `theos-chat` run for a Chat with `host: slack`
+  ([plans/requests-and-chat.md](plans/requests-and-chat.md), step 8). No
+  other port is yet.
 
 ## Deploys: each release to its targets
 

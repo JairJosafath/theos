@@ -97,24 +97,49 @@ func TestChatNames(t *testing.T) {
 
 func TestChatReadyMessage(t *testing.T) {
 	c := ChatCheck{Chat: "chat", Secret: "matrix-bot", Homeserver: "https://matrix.example", Space: "#theos-shop:example",
-		Alias: "#theos-shop-general:example", Rooms: 6, People: 1, Other: "first", Host: "slack",
-		Detail: "M_UNKNOWN_TOKEN"}
+		Alias: "#theos-shop-general:example", Rooms: 6, People: 1, Other: "first", Detail: "M_UNKNOWN_TOKEN"}
 	for reason, want := range map[string]string{
 		ChatReady:             "Space #theos-shop:example and its 6 rooms are ready on https://matrix.example; 1 person invited",
 		ChatSecretMissing:     "Secret matrix-bot is missing; whoever owns Chat chat creates it with the bot's access token under accessToken",
-		ChatSecretIncomplete:  "Secret matrix-bot has no accessToken",
+		ChatSecretIncomplete:  "Secret matrix-bot has no accessToken; it holds the bot's access token there",
 		ChatHomeserverUnset:   "Chat chat names no homeserver and the operator has none (--chat-homeserver)",
-		ChatCredentialRefused: "https://matrix.example refused the access token in Secret matrix-bot: M_UNKNOWN_TOKEN",
+		ChatCredentialRefused: "https://matrix.example refused the bot's token in Secret matrix-bot: M_UNKNOWN_TOKEN",
 		ChatUnreachable:       "Could not reach the rooms on https://matrix.example: M_UNKNOWN_TOKEN",
 		ChatAliasTaken:        "Alias #theos-shop-general:example on https://matrix.example belongs to a room the bot is not in",
 		ChatDuplicate:         "Chat first already serves this namespace",
-		// #158: a Chat on a host the operator runs no adapter for.
-		ChatHostNotSupported: "Chat chat is on slack, a chat host this operator runs no adapter for; " +
-			"it reads no Secret and makes no rooms",
 	} {
 		if got := ChatReadyMessage(reason, c); !strings.HasPrefix(got, want) {
 			t.Errorf("ChatReadyMessage(%s) = %q, want it to start with %q", reason, got, want)
 		}
+	}
+
+	// #159: a Slack Chat's messages speak of no Space and of its two tokens,
+	// and a missing scope names the scope.
+	slack := ChatCheck{Chat: "chat", Secret: "slack-bot", Homeserver: "https://slack.example/api", Host: ChatSlack,
+		Rooms: 6, People: 2, Key: ChatSlackAppTokenKey, Scope: "groups:write", Alias: "#theos-shop-triage"}
+	for reason, want := range map[string]string{
+		ChatReady: "The 6 rooms are ready on https://slack.example/api, with no Space; 2 people invited",
+		ChatSecretMissing: "Secret slack-bot is missing; whoever owns Chat chat creates it with the bot token under " +
+			"botToken and the app-level token under appToken",
+		ChatSecretIncomplete: "Secret slack-bot has no appToken; it holds the bot token under botToken and the " +
+			"app-level token under appToken",
+		ChatHomeserverUnset: "The operator has no address for slack (--chat-slack-api-url), so Chat chat reaches " +
+			"no host",
+		ChatScopeMissing: "The bot's token in Secret slack-bot lacks the scope groups:write, which " +
+			"https://slack.example/api says a call needs",
+		ChatAliasTaken: "Alias #theos-shop-triage on https://slack.example/api belongs to a room the bot is not in",
+		// #158: a Chat on a host the operator runs no adapter for, as an
+		// operator built without Slack's would say.
+		ChatHostNotSupported: "Chat chat is on slack, a chat host this operator runs no adapter for; " +
+			"it reads no Secret and makes no rooms",
+	} {
+		if got := ChatReadyMessage(reason, slack); !strings.HasPrefix(got, want) {
+			t.Errorf("ChatReadyMessage(%s) on Slack = %q, want it to start with %q", reason, got, want)
+		}
+	}
+	slack.Scope = ""
+	if got := ChatReadyMessage(ChatScopeMissing, slack); !strings.Contains(got, "lacks a scope, which") {
+		t.Errorf("ChatReadyMessage(ScopeMissing) naming no scope = %q", got)
 	}
 }
 

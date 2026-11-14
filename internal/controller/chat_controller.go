@@ -54,9 +54,11 @@ type ChatReconciler struct {
 	// ChatHosts builds the ChatHost of a host and bot, by the name of the
 	// host's model.ChatSystem, as cmd/main.go gives the adapters.
 	ChatHosts map[string]ports.ChatHosts
-	// Homeserver is the homeserver of a Chat that names none, the operator's
-	// --chat-homeserver; "" when the chart runs none.
-	Homeserver string
+	// Addresses are each host's address for a Chat that names none, by the
+	// name of the host's model.ChatSystem: Matrix's is the operator's
+	// --chat-homeserver, "" when the chart runs none, and Slack's its
+	// --chat-slack-api-url (model.ChatSystem.AddressFlag).
+	Addresses map[string]string
 	// PollInterval is how often a Chat that isn't Ready is tried again; 0
 	// means a minute.
 	PollInterval time.Duration
@@ -95,11 +97,11 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return notReady(model.ChatDuplicate)
 	}
 
-	// A Chat on a host the operator runs no adapter for (Slack until step 8
-	// of docs/plans/requests-and-chat.md, a host newer than the operator) is
-	// left alone before its Secret is read or a host called. spec.host is
-	// immutable, so it is not polled: only a new spec, or an operator
-	// restarted with that host's adapter, tries it again.
+	// A Chat on a host the operator runs no adapter for (a host newer than
+	// the operator, or one it was built without) is left alone before its
+	// Secret is read or a host called. spec.host is immutable, so it is not
+	// polled: only a new spec, or an operator restarted with that host's
+	// adapter, tries it again.
 	check.Host = model.ChatHostName(string(chat.Spec.Host))
 	system, err := model.ChatSystemByName(check.Host)
 	hosts, ok := r.ChatHosts[system.Name]
@@ -113,9 +115,10 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, r.writeStatus(ctx, &chat, status)
 	}
 
+	// A Slack Chat names no address (CEL): the operator's flag gives it.
 	check.Homeserver = chat.Spec.Homeserver
 	if check.Homeserver == "" {
-		check.Homeserver = r.Homeserver
+		check.Homeserver = r.Addresses[system.Name]
 	}
 	if check.Homeserver == "" {
 		return notReady(model.ChatHomeserverUnset)
@@ -127,13 +130,22 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return notReady(model.ChatSecretMissing)
 	case err != nil:
 		return ctrl.Result{}, err
-	case len(secret.Data[system.TokenKey]) == 0:
-		return notReady(model.ChatSecretIncomplete)
+	}
+	// Every key the host's bot takes is there, so Ready names a missing one
+	// before theos-chat, which reads them all, fails on it.
+	for _, k := range system.Keys() {
+		if len(secret.Data[k]) == 0 {
+			check.Key = k
+			return notReady(model.ChatSecretIncomplete)
+		}
 	}
 
-	// The operator reads no rooms, so it takes the bot's token alone.
+	// The operator reads no rooms and opens no connection to the host, so
+	// it takes the bot's token alone (docs/plans/requests-and-chat.md,
+	// decision 9).
 	host, err := hosts(ports.ChatConfig{Address: check.Homeserver, Token: string(secret.Data[system.TokenKey])})
 	if err == nil {
+		defer host.Close()
 		err = r.ensureRooms(ctx, &chat, host, system, status, &check)
 	}
 	if err != nil {
@@ -141,6 +153,8 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		reason := model.ChatUnreachable
 		if taken, ok := errors.AsType[*ports.ChatAliasTakenError](err); ok {
 			reason, check.Alias = model.ChatAliasTaken, taken.Alias
+		} else if missing, ok := errors.AsType[*ports.ChatScopeMissingError](err); ok {
+			reason, check.Scope = model.ChatScopeMissing, missing.Scope
 		} else if errors.Is(err, ports.ErrChatCredentialRefused) {
 			reason = model.ChatCredentialRefused
 		}
@@ -236,14 +250,14 @@ func (r *ChatReconciler) ensureRooms(ctx context.Context, chat *c4v1beta1.Chat, 
 	}
 	check.Rooms = len(model.ChatPurposes)
 	var people []string
-	for _, p := range chat.Spec.People {
-		people = append(people, p.MatrixID)
-		if invited[p.MatrixID] {
+	for _, id := range chatPeopleIDs(chat, system) {
+		people = append(people, id)
+		if invited[id] {
 			continue
 		}
 		for _, room := range rooms {
-			if err := host.Invite(ctx, room, p.MatrixID); err != nil {
-				return fmt.Errorf("inviting %s: %w", p.MatrixID, err)
+			if err := host.Invite(ctx, room, id); err != nil {
+				return fmt.Errorf("inviting %s: %w", id, err)
 			}
 		}
 	}
@@ -277,6 +291,25 @@ func (r *ChatReconciler) ensureSpace(ctx context.Context, chat *c4v1beta1.Chat, 
 		check.Space = space.Alias
 	}
 	return space, nil
+}
+
+// chatPeopleIDs are the IDs on the host of the people chat lists in the
+// field its host's row names: spec.slack.people's member IDs on Slack,
+// spec.people's Matrix IDs on Matrix.
+func chatPeopleIDs(chat *c4v1beta1.Chat, system model.ChatSystem) []string {
+	var ids []string
+	if system.Name == model.ChatSlack {
+		if chat.Spec.Slack != nil {
+			for _, p := range chat.Spec.Slack.People {
+				ids = append(ids, p.SlackID)
+			}
+		}
+		return ids
+	}
+	for _, p := range chat.Spec.People {
+		ids = append(ids, p.MatrixID)
+	}
+	return ids
 }
 
 // chatRoomName is the room's display name: the Chat's, else its purpose.

@@ -510,9 +510,11 @@ func setupReconcilers(mgr ctrl.Manager) error {
 			GitEvents: gitEvents},
 		&DeployTargetReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), PollInterval: time.Second,
 			Deployers: deployers},
-		// Every Chat names chatFake; the suite's operator has no homeserver of
-		// its own, so one that names none is HomeserverUnset.
+		// Every Matrix Chat names chatFake; the suite's operator has no
+		// homeserver of its own, so one that names none is HomeserverUnset.
+		// Slack's address is chatSlackFake's, as --chat-slack-api-url gives it.
 		&ChatReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), ChatHosts: chatHosts(),
+			Addresses:    map[string]string{model.ChatSlack: chatSlackFake.Address()},
 			PollInterval: time.Second, CheckInterval: time.Second},
 		&ScorerReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake}},
 		&BenchmarkReconciler{Client: c, Scheme: s, APIReader: mgr.GetAPIReader(), Git: fakeGitClient{gitFake},

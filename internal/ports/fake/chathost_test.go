@@ -79,3 +79,51 @@ func TestChatHostOwnWays(t *testing.T) {
 		t.Error("Hosts() built a ChatHost of another address")
 	}
 }
+
+// #159: the fake shaped as Slack for the Chat controller's and theos-chat's
+// specs. Its user IDs are member IDs, a scope Revoke takes from a token
+// refuses the methods named until Grant gives it back, a token made again
+// speaks as the same bot, and a ChatHost For built counts as open until
+// its Close, after which it takes no call (#234).
+func TestChatHostShapedAsSlack(t *testing.T) {
+	ctx := context.Background()
+	h := fake.NewChatHost(fake.WithoutSpaces(), fake.OneNamePerRoom(), fake.MemberIDs())
+	botID, token := h.NewUser("bot")
+	ada, _ := h.NewUser("ada")
+	if again, _ := h.NewUser("ada"); again != ada || botID != "U00000001" || ada != "U00000002" {
+		t.Errorf("user IDs = %s, %s and %s again, want U00000001, U00000002 and the same", botID, ada, again)
+	}
+
+	bot := h.For(ports.ChatConfig{Address: h.Address(), Token: token})
+	h.Revoke(token, "groups:write", "Invite")
+	room := must(bot.EnsureRoom(ctx, ports.ChatRoomSpec{Alias: "shop-specs"}))(t)
+	err := bot.Invite(ctx, room.ID, ada)
+	if missing, ok := errors.AsType[*ports.ChatScopeMissingError](err); !ok || missing.Scope != "groups:write" ||
+		!errors.Is(err, ports.ErrChatScopeMissing) {
+		t.Errorf("Invite() without its scope = %v, want a ChatScopeMissingError naming groups:write", err)
+	}
+	h.Grant(token, "groups:write")
+	noErr(t, bot.Invite(ctx, room.ID, ada))
+
+	second, err := h.NewToken(botID)
+	noErr(t, err)
+	other := h.For(ports.ChatConfig{Address: h.Address(), Token: second})
+	if me := must(other.WhoAmI(ctx))(t); me != botID {
+		t.Errorf("WhoAmI() with a token made again = %s, want %s", me, botID)
+	}
+	if _, err := h.NewToken("U99999999"); err == nil {
+		t.Error("NewToken() of no user = nil error")
+	}
+	if got := h.Open(); got != 2 {
+		t.Errorf("Open() = %d with two ChatHosts built, want 2", got)
+	}
+	bot.Close()
+	bot.Close()
+	if got := h.Open(); got != 1 {
+		t.Errorf("Open() = %d after one of two closed, twice, want 1", got)
+	}
+	if _, err := bot.Sync(ctx, "", 0); !errors.Is(err, fake.ErrChatClosed) {
+		t.Errorf("Sync() after Close = %v, want ErrChatClosed", err)
+	}
+	must(other.Sync(ctx, "", 0))(t)
+}

@@ -92,6 +92,9 @@ const (
 	// ChatHostNotSupported is a Chat on a host the operator runs no adapter
 	// for: it is left alone before its Secret is read or a host called.
 	ChatHostNotSupported = "HostNotSupported"
+	// ChatScopeMissing is a bot token the host takes but that lacks a scope
+	// a call needs (docs/plans/requests-and-chat.md, decision 9).
+	ChatScopeMissing = "ScopeMissing"
 )
 
 // ChatTokenKey is the key of a Chat's Secret that holds the bot's access
@@ -112,32 +115,67 @@ type ChatCheck struct {
 	Rooms, People int
 	// Other is the Chat that already serves the namespace, for Duplicate.
 	Other string
-	// Host is the Chat's chat host, for HostNotSupported.
+	// Host is the Chat's chat host, the name of its ChatSystem; "" is the
+	// default's.
 	Host string
+	// Key is the key of the Secret that is missing, for SecretIncomplete.
+	Key string
+	// Scope is the scope the bot's token lacks, for ScopeMissing; "" when
+	// the host named none.
+	Scope string
 	// Detail is the homeserver's error.
 	Detail string
 }
 
 // ChatReadyMessage is the message of a Chat's Ready condition with reason.
+// It speaks of the Space and the bot's tokens as the Chat's host has them
+// (ChatSystem).
 func ChatReadyMessage(reason string, c ChatCheck) string {
 	detail := ""
 	if c.Detail != "" {
 		detail = ": " + c.Detail
 	}
+	system, known := chatSystems[ChatHostName(c.Host)]
 	switch reason {
 	case ChatReady:
-		return fmt.Sprintf("Space %s and its %d rooms are ready on %s; %d %s invited", c.Space, c.Rooms, c.Homeserver,
-			c.People, plural(c.People, "person", "people"))
+		people := fmt.Sprintf("%d %s invited", c.People, plural(c.People, "person", "people"))
+		if known && !system.Spaces {
+			return fmt.Sprintf("The %d rooms are ready on %s, with no Space; %s", c.Rooms, c.Homeserver, people)
+		}
+		return fmt.Sprintf("Space %s and its %d rooms are ready on %s; %s", c.Space, c.Rooms, c.Homeserver, people)
 	case ChatSecretMissing:
+		if known && system.AppTokenKey != "" {
+			return fmt.Sprintf("Secret %s is missing; whoever owns Chat %s creates it with the bot token under %s "+
+				"and the app-level token under %s", c.Secret, c.Chat, system.TokenKey, system.AppTokenKey)
+		}
 		return fmt.Sprintf("Secret %s is missing; whoever owns Chat %s creates it with the bot's access token under %s",
 			c.Secret, c.Chat, ChatTokenKey)
 	case ChatSecretIncomplete:
-		return fmt.Sprintf("Secret %s has no %s; it holds the bot's access token there", c.Secret, ChatTokenKey)
+		key := c.Key
+		if key == "" {
+			key = ChatTokenKey
+		}
+		if known && system.AppTokenKey != "" {
+			return fmt.Sprintf("Secret %s has no %s; it holds the bot token under %s and the app-level token "+
+				"under %s", c.Secret, key, system.TokenKey, system.AppTokenKey)
+		}
+		return fmt.Sprintf("Secret %s has no %s; it holds the bot's access token there", c.Secret, key)
 	case ChatHomeserverUnset:
+		if known && !system.Spaces {
+			return fmt.Sprintf("The operator has no address for %s (%s), so Chat %s reaches no host; run the "+
+				"operator with the flag set", system.Name, system.AddressFlag, c.Chat)
+		}
 		return fmt.Sprintf("Chat %s names no homeserver and the operator has none (--chat-homeserver); "+
 			"set spec.homeserver, or install the chart with chat.homeserver.enabled", c.Chat)
 	case ChatCredentialRefused:
-		return fmt.Sprintf("%s refused the access token in Secret %s%s", c.Homeserver, c.Secret, detail)
+		return fmt.Sprintf("%s refused the bot's token in Secret %s%s", c.Homeserver, c.Secret, detail)
+	case ChatScopeMissing:
+		scope := "a scope"
+		if c.Scope != "" {
+			scope = "the scope " + c.Scope
+		}
+		return fmt.Sprintf("The bot's token in Secret %s lacks %s, which %s says a call needs; give the bot "+
+			"the scope, and the operator tries again%s", c.Secret, scope, c.Homeserver, detail)
 	case ChatUnreachable:
 		return fmt.Sprintf("Could not reach the rooms on %s%s; the operator tries again", c.Homeserver, detail)
 	case ChatAliasTaken:
