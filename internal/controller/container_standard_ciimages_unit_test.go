@@ -31,6 +31,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
@@ -168,7 +169,7 @@ func newCIUpdate(t *testing.T, templates ciTemplates, recorded *c4v1beta1.CIImag
 // EveryChange, with images, as an update renders it for this Container.
 func (c *ciUpdate) scaffolded(images model.CIImages) scaffold.Tree {
 	c.t.Helper()
-	in := scaffoldInput(c.container, c.github, nil, nil, model.ChecksEveryChange, images,
+	in := modelfacts.ScaffoldInput(c.container, c.github, nil, nil, model.ChecksEveryChange, images,
 		scaffoldedOperations(c.container, c.status), "", scaffold.License{})
 	tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideStandard, Name: "go-standard", Ref: "R1",
 		Files: c.templates["R1"]})

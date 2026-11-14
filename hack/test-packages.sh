@@ -84,8 +84,8 @@ say() { echo "make test: $*" >&2; }
 # (#66), which cmd/theos-session's read too, for theos-session report's
 # mapping, and test/e2e/standin the e2e fixtures.
 declare -A readers=(
-  [templates]="hack/template-go-kubebuilder internal/controller internal/adapters/gitea internal/model internal/scaffold test/chart"
-  [config]="internal/controller internal/model internal/sessionclient test/chart test/compat"
+  [templates]="hack/template-go-kubebuilder internal/controller internal/adapters/gitea internal/model internal/modelfacts internal/scaffold test/chart"
+  [config]="internal/controller internal/model internal/modelfacts internal/sessionclient test/chart test/compat"
   [api]="internal/scaffold"
   [dist]="internal/model internal/scaffold test/chart"
   [test/crds]="internal/controller internal/adapters/argocd"

@@ -74,6 +74,22 @@ linters:
               desc: taskfacts must not depend on controllers (docs/architecture.md)
             - pkg: github.com/JairJosafath/theos/internal/adapters
               desc: taskfacts must not depend on adapters (docs/architecture.md)
+        # internal/modelfacts is what the operator and the theos binary both
+        # link (docs/plans/no-cluster.md, decision 4; #268): the API's types,
+        # apimachinery, the business rules and the ports, and nothing of
+        # controller-runtime, client-go, the controllers or the adapters.
+        modelfacts-stays-light:
+          files:
+            - "**/internal/modelfacts/**"
+          deny:
+            - pkg: sigs.k8s.io/controller-runtime
+              desc: modelfacts is linked by the theos binary, which runs without a cluster; it must not import controller-runtime (docs/architecture.md)
+            - pkg: k8s.io/client-go
+              desc: modelfacts is linked by the theos binary, which runs without a cluster; it must not import client-go (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/controller
+              desc: modelfacts must not depend on controllers (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/adapters
+              desc: modelfacts must not depend on adapters (docs/architecture.md)
         # Argo CD's adapter talks to the cluster; the Git host's, the
         # releases', the chat's, Linear's and Jira's adapters don't.
         adapters-stay-out-of-kubernetes:

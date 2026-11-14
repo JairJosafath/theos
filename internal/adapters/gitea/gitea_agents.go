@@ -23,6 +23,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -51,6 +52,10 @@ const agentTokenPrefix = "theos-agent"
 // ProtectBranch makes branch accept changes only through pull requests whose
 // status checks matching statusContexts (glob patterns) pass.
 func (g *gitea) ProtectBranch(ctx context.Context, repo ports.Repository, branch string, rule ports.BranchRule) error {
+	login, err := g.Login(ctx)
+	if err != nil {
+		return err
+	}
 	patterns := make([]string, 0, len(rule.ProtectedPaths))
 	for _, p := range rule.ProtectedPaths {
 		if strings.HasSuffix(p, "/") {
@@ -62,12 +67,12 @@ func (g *gitea) ProtectBranch(ctx context.Context, repo ports.Repository, branch
 		"rule_name":                 branch,
 		"enable_push":               rule.OperatorPushes,
 		"enable_push_whitelist":     rule.OperatorPushes,
-		"push_whitelist_usernames":  pushers(rule, g.creds.Username),
+		"push_whitelist_usernames":  pushers(rule, login),
 		"enable_status_check":       len(rule.StatusContexts) > 0,
 		"status_check_contexts":     rule.StatusContexts,
 		"block_on_outdated_branch":  false,
 		"enable_merge_whitelist":    true,
-		"merge_whitelist_usernames": []string{g.creds.Username},
+		"merge_whitelist_usernames": []string{login},
 		"protected_file_patterns":   strings.Join(patterns, ";"),
 	})
 	base := "/api/v1/repos/" + repoPath(repo) + "/branch_protections"
@@ -99,8 +104,34 @@ func pushers(rule ports.BranchRule, operator string) []string {
 	return []string{}
 }
 
+// Login is the Secret's username, or, when it names none, the login of the
+// account the token is of, as /api/v1/user reports it (#268).
+func (g *gitea) Login(ctx context.Context) (string, error) {
+	if g.creds.Username != "" {
+		return g.creds.Username, nil
+	}
+	status, data, err := g.do(ctx, http.MethodGet, "/api/v1/user", nil)
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("gitea: reading the token's account failed (HTTP %d): %s", status, apiMessage(data))
+	}
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := json.Unmarshal(data, &user); err != nil || user.Login == "" {
+		return "", errors.New("gitea: reading the token's account: no login in the answer")
+	}
+	return user.Login, nil
+}
+
 // ProtectTags lets only the provider's user push tags matching pattern.
 func (g *gitea) ProtectTags(ctx context.Context, repo ports.Repository, pattern string) error {
+	login, err := g.Login(ctx)
+	if err != nil {
+		return err
+	}
 	base := "/api/v1/repos/" + repoPath(repo) + "/tag_protections"
 	status, data, err := g.do(ctx, http.MethodGet, base, nil)
 	if err != nil {
@@ -116,7 +147,7 @@ func (g *gitea) ProtectTags(ctx context.Context, repo ports.Repository, pattern 
 	if err := json.Unmarshal(data, &rules); err != nil {
 		return fmt.Errorf("gitea: reading tag protections of %s: %w", repoPath(repo), err)
 	}
-	body, _ := json.Marshal(map[string]any{"name_pattern": pattern, "whitelist_usernames": []string{g.creds.Username}})
+	body, _ := json.Marshal(map[string]any{"name_pattern": pattern, "whitelist_usernames": []string{login}})
 	method, path, want := http.MethodPost, base, http.StatusCreated
 	for _, r := range rules {
 		if r.NamePattern == pattern {

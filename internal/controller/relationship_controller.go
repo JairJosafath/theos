@@ -33,6 +33,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 )
 
 // RelationshipReconciler makes a Relationship a child of its source element,
@@ -156,11 +157,7 @@ func (r *RelationshipReconciler) getElement(ctx context.Context, namespace strin
 
 // toModel converts a Relationship into the plain value the business rules use.
 func toModel(rel c4v1beta1.Relationship) model.Relationship {
-	return model.Relationship{
-		Name:   rel.Name,
-		Source: model.Ref{Kind: string(rel.Spec.Source.Kind), Name: rel.Spec.Source.Name},
-		Target: model.Ref{Kind: string(rel.Spec.Target.Kind), Name: rel.Spec.Target.Name},
-	}
+	return modelfacts.Relationship(rel)
 }
 
 // SetupWithManager sets up the controller with the Manager. Any element appearing,

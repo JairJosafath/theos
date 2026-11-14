@@ -351,6 +351,11 @@ type GitHost interface {
 	// ProtectTags lets only the provider's own user push tags matching pattern.
 	// It is safe to repeat.
 	ProtectTags(ctx context.Context, repo Repository, pattern string) error
+	// Login is the login of the provider's own user, the account its
+	// credential is of, which ProtectBranch and ProtectTags name: the
+	// credential's Username where the host takes it, else the token's
+	// account as the host reports it, for a token alone says nobody's name.
+	Login(ctx context.Context) (string, error)
 	// CombinedStatus returns the combined state of the checks on ref, and the
 	// latest state of each check by its context.
 	CombinedStatus(ctx context.Context, repo Repository, ref string) (CheckStatus, error)

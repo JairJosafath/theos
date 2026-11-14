@@ -29,6 +29,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
@@ -84,7 +85,7 @@ func standardOnMain(container *c4v1beta1.Container) bool {
 func (r *ContainerReconciler) standardFits(ctx context.Context, container *c4v1beta1.Container,
 	status *c4v1beta1.ContainerStatus, standard *c4v1beta1.Standard) bool {
 	choices := container.Choices()
-	entry := catalogEntry(model.SideStandard, standard)
+	entry := modelfacts.CatalogEntry(model.SideStandard, standard)
 	err := model.InBundle(choices.Bundle, model.CheckStandard(choices.Framework, &entry))
 	if err == nil {
 		return true

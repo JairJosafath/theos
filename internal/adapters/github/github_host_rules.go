@@ -325,6 +325,12 @@ func (h *host) ProtectBranch(ctx context.Context, repo ports.Repository, branch 
 	})
 }
 
+// Login is the login of the account the token is of: GitHub takes no
+// username beside a token, so it is always the host's answer (#268).
+func (h *host) Login(ctx context.Context) (string, error) {
+	return h.tokenUser(ctx)
+}
+
 // ProtectTags lets only the repository's administrators push tags matching
 // pattern.
 func (h *host) ProtectTags(ctx context.Context, repo ports.Repository, pattern string) error {

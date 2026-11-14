@@ -26,24 +26,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // packagesOf is a GitProvider's spec.packages as the Provider's settings:
 // the registries it names, with "" for each it leaves to the host's own.
 // The tokens are not here: packagesWithTokens adds the ones that publish.
+// It forwards to modelfacts.Packages and stays as the reconcilers' and their
+// unit tests' name for it, so this part (#268) moves no call site.
 func packagesOf(gp *c4v1beta1.GitProvider) ports.Packages {
-	var p ports.Packages
-	if gp.Spec.Packages == nil {
-		return p
-	}
-	if npm := gp.Spec.Packages.NPM; npm != nil {
-		p.NpmScope, p.NpmRegistry = npm.Scope, npm.Registry
-	}
-	if pypi := gp.Spec.Packages.PyPI; pypi != nil {
-		p.PyPIIndex, p.PyPIUpload = pypi.Index, pypi.Upload
-	}
-	return p
+	return modelfacts.Packages(gp)
 }
 
 // packagesSecrets names the Secrets of a GitProvider's npm registry and

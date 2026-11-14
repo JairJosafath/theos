@@ -42,6 +42,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
@@ -296,7 +297,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	// Until the scaffold the expansion follows the Bundle; the scaffold keeps
 	// the last one, and from then on the Container reads it.
-	status.Bundle = res.bundle
+	status.Bundle = res.Bundle
 	if len(missing) > 0 {
 		status.Phase = c4v1beta1.ContainerPending
 		setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionReferencesResolved,
@@ -311,20 +312,7 @@ func (r *ContainerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	setCondition(&status.Conditions, container.Generation, c4v1beta1.ConditionReferencesResolved,
 		metav1.ConditionTrue, c4v1beta1.ReasonResolved, "")
 
-	choices := res.choices
-	err = model.CheckChoices(string(container.Spec.Type), res.entries)
-	if err == nil {
-		err = model.CheckStandard(choices.Framework, res.standard)
-	}
-	if err == nil {
-		err = model.CheckWiring(choices.Framework, res.entries)
-	}
-	if err == nil {
-		err = model.CheckDeploysItself(frameworkEntry(res.entries), string(container.Spec.Type), choices.Compute,
-			choices.Deployment)
-	}
-	err = model.InBundle(choices.Bundle, err)
-	if err != nil {
+	if err := modelfacts.Check(&container, res); err != nil {
 		reason := c4v1beta1.ReasonUnsupportedType
 		if _, ok := errors.AsType[*model.FitError](err); ok {
 			reason = c4v1beta1.ReasonUnsupportedFramework
