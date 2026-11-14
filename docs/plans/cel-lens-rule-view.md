@@ -357,3 +357,17 @@ Each is an issue in the session's Gitea (bodies in
   the view, its filter, badge and following the editor, two rounds each)
   and #32 (v0.40.0 merged in; 23 of 23 end-to-end cases pass on the
   v0.33.0 candidate).
+- **14 November, 04:30 UTC. Done.** Engine v0.33.0 (JairJosafath/cel-lens#31,
+  merged at b2e4235) and the extension's v0.41.0 (#32, merged at 3b3af71;
+  cel-lens-vscode#33, issue #26, one review round, its changelog wording
+  and a notification wait that proved nothing fixed before publishing)
+  were published by `release.yml`. Checked here: both releases'
+  signatures and provenance verify with cosign; the engine's `initialize`
+  offers `cel-lens.ruleList`; the Linux `.vsix` carries engine v0.33.0
+  with the pinned hash and contributes the `cel-lens.rules` view; the
+  README's `rule-view.png` answers on `main`. JairJosafath/cel-lens#2 is
+  closed, with a comment going through its list. Open follow-ups:
+  cel-lens-core#43 (the reviews' smaller items, and the engine sending a
+  document's `#n` so the view stops counting), cel-lens-vscode#28 (retry
+  a cut-off engine download). Not tried: the full `npm run pictures`
+  with every picture, light and high-contrast themes.
