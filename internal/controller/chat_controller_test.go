@@ -523,6 +523,98 @@ var _ = Describe("Chat", func() {
 		}
 		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
 	})
+
+	It("invites the others when the rooms have banned one person, stays Ready and names the ban's code (#251)",
+		func() {
+			ns := newProjectNamespace()
+			chatBot(ns)
+			ada, _ := chatFake.NewUser("ada-" + ns)
+			banned, _ := chatFake.NewUser("banned-" + ns)
+			carol, _ := chatFake.NewUser("carol-" + ns)
+			// Every room bans banned, those the operator makes too: an invite
+			// is 403 M_FORBIDDEN and the room's state says ban.
+			chatFake.Ban(banned)
+			people := []c4v1beta1.ChatPerson{{MatrixID: ada, User: "ada-" + ns + "@example.com"},
+				{MatrixID: banned, User: "banned-" + ns + "@example.com"},
+				{MatrixID: carol, User: "carol-" + ns + "@example.com"}}
+			chat := newChat(ns, "chat", "matrix-bot", people[0])
+			createByItsPeople(chat, people[0].User,
+				func(i int) string { chat.Spec.People = append(chat.Spec.People, people[i]); return people[i].User },
+				len(people))
+
+			cond := chatInvited(chat, metav1.ConditionFalse, model.ChatInviteRefused)
+			Expect(cond.Message).To(ContainSubstring("refused to invite " + banned + " (M_FORBIDDEN)"))
+			ready := chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+			Expect(ready.Reason).NotTo(Equal(model.ChatUnreachable))
+			Expect(chat.Status.Invited).To(ConsistOf(ada, carol))
+			Expect(chat.Status.Rooms).To(HaveLen(6))
+			Expect(chat.Status.Refused).To(HaveLen(1))
+			Expect(chat.Status.Refused[0].ID).To(Equal(banned))
+			Expect(chat.Status.Refused[0].Rooms).To(ConsistOf(chatRoomIDs(chat)))
+			for _, id := range chatRoomIDs(chat) {
+				room, ok := chatFake.Room(id)
+				Expect(ok).To(BeTrue())
+				Expect(room.Members).To(And(HaveKeyWithValue(ada, "invite"), HaveKeyWithValue(carol, "invite"),
+					Not(HaveKey(banned))), "room %s", id)
+			}
+		})
+
+	It("asks a person Slack refused in one channel to that channel alone, and never pulls them back into a "+
+		"channel they left (#251)", func() {
+		ns := newProjectNamespace()
+		ada, _ := chatSlackFake.NewUser("ada-" + ns)
+		bob, _ := chatSlackFake.NewUser("bob-" + ns)
+		adaPerson := c4v1beta1.ChatSlackPerson{SlackID: ada, User: "ada-" + ns + "@example.com"}
+		bobPerson := c4v1beta1.ChatSlackPerson{SlackID: bob, User: "bob-" + ns + "@example.com"}
+		chat, bot, _ := slackFakeChat(ns, adaPerson)
+		createByItsPeople(chat, adaPerson.User, nil, 1)
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		Expect(chat.Status.Rooms).To(HaveLen(6))
+		byPurpose := map[c4v1beta1.ChatPurpose]string{}
+		for _, room := range chat.Status.Rooms {
+			byPurpose[room.Purpose] = room.ID
+		}
+		alerts, general := byPurpose[c4v1beta1.ChatPurpose(model.ChatAlerts)],
+			byPurpose[c4v1beta1.ChatPurpose(model.ChatGeneral)]
+
+		By("adding bob, a single-channel guest Slack refuses in alerts")
+		chatSlackFake.RefuseIn(alerts, bob, "ura_max_channels")
+		grant(bobPerson.User, roleChatPeople)
+		orig := chat.DeepCopy()
+		chat.Spec.Slack.People = append(chat.Spec.Slack.People, bobPerson)
+		Expect(asUser(bobPerson.User).Patch(ctx, chat, client.MergeFrom(orig))).To(Succeed())
+		cond := chatInvited(chat, metav1.ConditionFalse, model.ChatInviteRefused)
+		Expect(cond.Message).To(ContainSubstring(bob + " (ura_max_channels)"))
+		Expect(chat.Status.Invited).To(ConsistOf(ada))
+		Expect(chat.Status.Refused).To(ConsistOf(c4v1beta1.ChatRefusedPerson{ID: bob, Code: "ura_max_channels",
+			Rooms: []string{alerts}}))
+		chatReady(chat, metav1.ConditionTrue, model.ChatReady)
+		for _, room := range chat.Status.Rooms {
+			channel, _ := chatSlackFake.Room(room.ID)
+			if room.ID == alerts {
+				Expect(channel.Members).To(ConsistOf(bot, ada), "channel %s", room.Purpose)
+			} else {
+				Expect(channel.Members).To(ConsistOf(bot, ada, bob), "channel %s", room.Purpose)
+			}
+		}
+
+		By("bob leaving general: the passes that ask him to alerts again leave general alone")
+		Expect(chatSlackFake.Remove(general, bob)).To(Succeed())
+		Consistently(func(g Gomega) {
+			channel, _ := chatSlackFake.Room(general)
+			g.Expect(channel.Members).NotTo(ContainElement(bob))
+		}, "4s", "200ms").Should(Succeed())
+
+		By("lifting the refusal: bob is in alerts on the next pass, and still out of general")
+		chatSlackFake.RefuseIn(alerts, bob, "")
+		chatInvited(chat, metav1.ConditionTrue, model.ChatInvited)
+		Expect(chat.Status.Invited).To(ConsistOf(ada, bob))
+		Expect(chat.Status.Refused).To(BeEmpty())
+		channel, _ := chatSlackFake.Room(alerts)
+		Expect(channel.Members).To(ConsistOf(bot, ada, bob))
+		channel, _ = chatSlackFake.Room(general)
+		Expect(channel.Members).To(ConsistOf(bot, ada))
+	})
 })
 
 // createByItsPeople creates chat, which lists its first person alone, as

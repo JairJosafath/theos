@@ -985,6 +985,16 @@ func TestInviteRefusedOrUnreachable(t *testing.T) {
 		{status: http.StatusOK, code: "user_is_restricted", refused: true},
 		{status: http.StatusOK, code: "user_is_ultra_restricted", refused: true},
 		{status: http.StatusOK, code: "ura_max_channels", refused: true},
+		// #251: Enterprise Grid and Slack Connect codes that refuse one
+		// member, and the codes of a bot that lacks a permission for
+		// everyone, which stay loud.
+		{status: http.StatusOK, code: "no_permission", refused: true},
+		{status: http.StatusOK, code: "no_external_invite_permission", refused: true},
+		{status: http.StatusOK, code: "org_user_not_in_team", refused: true},
+		{status: http.StatusOK, code: "invitee_cant_see_channel", refused: true},
+		{status: http.StatusOK, code: "access_denied"},
+		{status: http.StatusOK, code: "team_access_not_granted"},
+		{status: http.StatusOK, code: "not_allowed_token_type", tokenRefused: true},
 		{status: http.StatusOK, code: "channel_not_found"},
 		{status: http.StatusOK, code: "not_in_channel"},
 		{status: http.StatusOK, code: "is_archived"},

@@ -98,11 +98,20 @@ const (
 )
 
 // The reasons of a Chat's Invited condition (#251): every person listed
-// is invited to every room, or the host refused to invite some of them.
+// is invited to every room, the host refused to invite some of them, or
+// the last pass ended before the invites (NotChecked, Unknown).
 const (
-	ChatInvited       = "Invited"
-	ChatInviteRefused = "InviteRefused"
+	ChatInvited          = "Invited"
+	ChatInviteRefused    = "InviteRefused"
+	ChatInviteNotChecked = "NotChecked"
 )
+
+// ChatInviteNotCheckedMessage is the message of a Chat's Invited condition
+// when the last pass ended not Ready, with readyReason, before it reached
+// the invites (#251): what the condition said before is no longer known.
+func ChatInviteNotCheckedMessage(readyReason string) string {
+	return "The invites were not checked: the last pass ended before them, the Chat not Ready (" + readyReason + ")"
+}
 
 // ChatRefusal is a person the chat host refused to invite, and the host's
 // error code.

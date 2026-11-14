@@ -47,6 +47,27 @@ func TestChatHostDeactivate(t *testing.T) {
 	noErr(t, bot.Invite(ctx, room.ID, ada))
 }
 
+// RefuseIn refuses a person's invite in one room alone, with the code it
+// is given, as Slack refuses a single-channel guest (#251), until lifted.
+func TestChatHostRefuseIn(t *testing.T) {
+	ctx := context.Background()
+	h := fake.NewChatHost(fake.MemberIDs())
+	_, token := h.NewUser("bot")
+	bot := h.For(ports.ChatConfig{Address: h.Address(), Token: token})
+	bob, _ := h.NewUser("bob")
+	general := must(bot.EnsureRoom(ctx, ports.ChatRoomSpec{Alias: "shop-general"}))(t)
+	alerts := must(bot.EnsureRoom(ctx, ports.ChatRoomSpec{Alias: "shop-alerts"}))(t)
+	h.RefuseIn(alerts.ID, bob, "ura_max_channels")
+	err := bot.Invite(ctx, alerts.ID, bob)
+	if refused, ok := errors.AsType[*ports.ChatInviteRefusedError](err); !ok || refused.User != bob ||
+		refused.Code != "ura_max_channels" {
+		t.Fatalf("Invite to alerts = %v, want a ChatInviteRefusedError naming %s and ura_max_channels", err, bob)
+	}
+	noErr(t, bot.Invite(ctx, general.ID, bob))
+	h.RefuseIn(alerts.ID, bob, "")
+	noErr(t, bot.Invite(ctx, alerts.ID, bob))
+}
+
 // What the fake chat host does its own way, beside the suite (#153): a
 // message's ID is its room's alone, a Sync with a wait wakes for a message,
 // and a host without Spaces is never made to hold one.

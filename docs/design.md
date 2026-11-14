@@ -1639,17 +1639,28 @@ called, `Ready=False` with reason `HostNotSupported` naming the host, and
   9 and 11.)
 - **Nobody who left a room is pulled back.** A room is invited to only when
   it is new (made, or made again with an ID that is not the one status
-  holds, which status takes once everyone is invited to it) or nobody was
-  ever invited to it, and a person added to `people` is invited to every
-  room; on Slack an invite is a join, so nobody else is invited again. A
+  holds, which status takes once everyone is asked to it) or nobody was
+  ever invited to it, a person added to `people` is invited to every room,
+  and a person the host refused is asked again to the rooms it refused
+  alone; on Slack an invite is a join, so nobody else is invited again. A
   channel found without its topic gets its topic back.
 - **One person the host refuses never holds up the rest.** A person the
-  host answers it will not invite (no such account, a deactivated member)
-  is that person's alone: everyone else is invited and recorded, `Ready`
-  stays True, and the condition `Invited=False`, reason `InviteRefused`,
-  names each refused person with the host's error code. They are asked
-  again on each poll, and invited once the account is fixed; a host that
-  can't be reached is still `Unreachable` (#251).
+  host answers it will not invite is that person's alone: no such account,
+  a deactivated member, a guest Slack keeps out of a channel, a member of
+  another workspace or org, an invitee a Matrix room has banned or whose
+  homeserver blocks invites or can't take the room's version. Everyone
+  else is invited and recorded, `Ready` stays True, and the condition
+  `Invited=False`, reason `InviteRefused`, names each refused person with
+  the host's error code. An answer that says the bot itself lacks a power
+  or a scope, for everyone, is not a person's refusal and keeps the Chat
+  not Ready; a host that can't be reached is still `Unreachable`. A refused
+  person is kept in `status.refused` with the rooms they were refused, and
+  asked again to those rooms alone (and to a room made new), never to one
+  that took them, so a refusal in some rooms never pulls them back into a
+  room they left, a room made again included. They are asked on the
+  ten-minute check, not the minute's poll: a refusal often stands for good.
+  A pass that ends not Ready before the invites turns `Invited` to Unknown,
+  reason `NotChecked`, so an old verdict is not read as current (#251).
 - **Chat enforces nothing.** A command becomes one request from a closed
   allowlist in `internal/model` (`CheckChatRequest`), the UI's own entries
   for what the UI can do (a Brief, its prompts, pause and resume, a

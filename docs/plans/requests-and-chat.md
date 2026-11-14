@@ -1031,42 +1031,90 @@ What the step chose where the plan says nothing:
 - **The adapter says who is refused.** `Invite` returns a
   `ports.ChatInviteRefusedError` (the person and the host's code; it is
   `ErrChatInviteRefused`) when the host answers it will not invite that
-  person: on Matrix 404 `M_NOT_FOUND` and 400 `M_INVALID_PARAM`; on Slack,
-  answered with HTTP 200, `user_not_found` (unknown or deactivated),
-  `cant_invite`, `user_is_restricted`, `user_is_ultra_restricted` and
-  `ura_max_channels`. Everything else (a transport error, a 5xx, a 429 past
-  the retries, a 403 on Matrix, a refused token, a missing scope) is not the
-  person's and keeps today's reason. The classification is in the adapters,
-  not in the controller, and the ChatHost suite states it ("refuses to
-  invite a person it has no account for, them alone"). The fake refuses a
-  person it has no account for, or one `Deactivate` closed, with
-  `user_not_found`; `matrixtest` answers 404 `M_NOT_FOUND` for a user of its
-  own server it has no account for.
-- **The others go on.** The controller skips a refused person for the rest
-  of the pass (asked once, not once per room), invites everyone else, and
-  records each room as it would without them: a refused person is left out
-  of `status.invited`, so the next pass asks them again, to every room,
-  and #159's rule (a new room's ID recorded once everyone else is invited)
-  holds with them present.
+  person. On Matrix, by the spec's invite endpoint: 404 `M_NOT_FOUND`, 400
+  `M_INVALID_PARAM`, 400 `M_UNSUPPORTED_ROOM_VERSION` (the invitee's own
+  homeserver can't take the room's version, so it is theirs alone), 403
+  `M_INVITE_BLOCKED` (spec v1.18: the invitee's homeserver blocks invites
+  at their wish) and a 403 `M_FORBIDDEN` for an invitee the room has
+  banned. A ban and a bot without the power to invite answer the same 403,
+  so the adapter reads the invitee's `m.room.member` state, as it already
+  did for one invited or joined: `ban` is the person's refusal, with the
+  403's code; anything else stays loud. On Slack, answered with HTTP 200,
+  by the documentation of `conversations.invite`: `user_not_found` (unknown
+  or deactivated), `cant_invite`, `user_is_restricted`,
+  `user_is_ultra_restricted`, `ura_max_channels`, `no_permission` ("to
+  invite that specific user": a rule on that member, not a scope),
+  `no_external_invite_permission`, `org_user_not_in_team` and
+  `invitee_cant_see_channel`; the comment on `refusedInviteCodes` says which
+  is which. Everything else (a transport error, a 5xx, a 429 past the
+  retries, any other 403 on Matrix, a refused token, `missing_scope`,
+  `not_in_channel`, `access_denied`, `team_access_not_granted`) is not the
+  person's and keeps today's reason. The classification is in the
+  adapters, not in the controller, and the ChatHost suite states it
+  ("refuses to invite a person it has no account for, them alone"). The
+  fake refuses a person it has no account for, or one `Deactivate` closed,
+  with `user_not_found`, and a person in one room with the code `RefuseIn`
+  gives; `matrixtest` answers 404 `M_NOT_FOUND` for a user of its own
+  server it has no account for, and 403 `M_FORBIDDEN` for one `Ban` banned.
+- **The others go on, and a refusal is kept per room.** The controller
+  invites everyone else, records each room as it would without the refused
+  person, and keeps them in a new status field, `status.refused`: each
+  person's ID, the host's code and the IDs of the rooms (and Space) the
+  host refused them. A person is in `status.invited` or `status.refused`,
+  never both. The next pass asks a refused person to those rooms alone, and
+  to a room that is new, never to a room that took them. Why a status
+  field: the controller reads no membership from the host, and on Slack an
+  invite is a join, so only a record of where each person was refused tells
+  "not yet invited" from "invited and left"; it must survive a restart, and
+  status is where the operator keeps what it found (as `status.invited`).
+  Nothing smaller holds it. Each due room is asked, not only the first:
+  per-room refusals (a ban, `cant_invite`, a single-channel guest) differ
+  from room to room. A pass that fails before its end writes neither
+  field, as before. A new room's ID is recorded at once only while both
+  fields are empty.
+- **The remade-room edge is closed.** A person in `status.invited` refused
+  on a room made again moves to `status.refused` with that room alone, so
+  once their account is back they are asked to it alone and not pulled
+  back into a room they left (`TestSlackChatRemadeChannelRefusingAnInvitedPerson`).
 - **Ready stays True; `Invited` names the refusal.** One misspelt member
   must not silence the Chat, and `theos-chat` acts only on a `Ready` Chat,
   so the refusal shows on a condition of its own: `Invited`, True with
   reason `Invited`, or False with `InviteRefused` naming each person and
   code ("<host> refused to invite <id> (<code>); the other N people in
-  <field> are invited"). Each pass that reaches the invites sets it. A new
-  condition type is a constant and a doc comment, so the CRD changes only in
-  `status.conditions`' description. A Chat with a refusal polls (a minute),
-  not the ten-minute check, so a fixed account is invited soon.
-- **An edge that remains.** A person in `status.invited` who is refused on
-  a room made again (deactivated meanwhile) leaves `status.invited`, so once
-  reactivated they are invited to every room, and on Slack put back into
-  one they had left.
+  <field> are invited"). Each pass that reaches the invites sets it. A pass
+  that ends not Ready before the invites (`Unreachable`, `SecretMissing`,
+  `Duplicate`, `HostNotSupported`, ...) turns an `Invited` already there to
+  Unknown, reason `NotChecked`, naming Ready's reason, at the Chat's
+  generation, so a stale True is not read as current; a Chat never invited
+  gets none.
+- **Refusals are retried on the ten-minute check.** A Ready Chat requeues
+  after `CheckInterval` (10 minutes) whether or not anyone is refused. A
+  refusal often stands for good (a deactivated member), and each refused
+  person costs a call per refused room on each pass; polling each minute
+  multiplied a Chat's Slack load by ten. A fixed account is invited within
+  ten minutes, or at once on a spec change.
 - Tests: the envtest specs "invites the others when the homeserver refuses
   one person ..." and "... when Slack refuses one person ..." (people
-  [ada, ghost, carol], with ghost's recovery),
+  [ada, ghost, carol], with ghost's recovery), "invites the others when the
+  rooms have banned one person ..." (Matrix, [ada, banned, carol]) and "asks
+  a person Slack refused in one channel to that channel alone, and never
+  pulls them back ..." (the Slack-shaped fake, over several passes);
   `TestSlackChatRemadeChannelWithARefusedPerson`,
-  `TestInviteRefusedOrUnreachable` in both adapters, `TestChatInvitedMessage`,
-  `TestChatHostDeactivate` and the suite's new subtest.
+  `TestSlackChatRefusedInOneChannel` (with the requeue value),
+  `TestSlackChatRemadeChannelRefusingAnInvitedPerson`,
+  `TestChatInvitedNotCheckedAfterAFailedPass`,
+  `TestInviteRefusedOrUnreachable` in both adapters, matrix `TestInvite`,
+  `TestChatInvitedMessage`, `TestChatInviteNotCheckedMessage`,
+  `TestChatHostDeactivate`, `TestChatHostRefuseIn` and the suite's
+  subtest.
+- **Not tested.** The Matrix and Slack codes come from the published docs
+  (the Matrix spec's invite endpoint and Slack's `conversations.invite`
+  page), checked against the adapters' in-repo test servers, never a real
+  host: in particular whether Synapse answers 404 `M_NOT_FOUND` for an
+  unknown user, what it answers for a deactivated one, and whether Slack's
+  `no_permission` ever means a workspace-wide rule rather than one member.
+  Out of scope, filed separately: the UI showing the refusal (the Chat
+  panel reads `Ready` alone).
 - **The port has `Close` (#234).** `ChatHost.Close()` lets go of what the
   value holds open: Slack's socket (`Client.Close`, which was there), nothing
   on Matrix or the fake (which counts its open values, `fake.ChatHost.Open`).

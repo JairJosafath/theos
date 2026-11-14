@@ -186,6 +186,15 @@ func TestChatInvitedMessage(t *testing.T) {
 	}
 }
 
+// TestChatInviteNotCheckedMessage covers #251: a pass that ends before the
+// invites says so on Invited, with Ready's reason, never the old verdict.
+func TestChatInviteNotCheckedMessage(t *testing.T) {
+	want := "The invites were not checked: the last pass ended before them, the Chat not Ready (Unreachable)"
+	if got := ChatInviteNotCheckedMessage(ChatUnreachable); got != want {
+		t.Errorf("ChatInviteNotCheckedMessage = %q, want %q", got, want)
+	}
+}
+
 // A post's every field is shown as written: HTML in a title, a question or
 // a code line is escaped, and only an http or https link is a link.
 func TestChatPostHTML(t *testing.T) {

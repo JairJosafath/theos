@@ -98,6 +98,9 @@ type chatState struct {
 	tokens map[string]string
 	// inactive are the accounts Deactivate closed, by user ID.
 	inactive map[string]bool
+	// refuse are the codes RefuseIn refuses a user's invite with, by room
+	// and then user.
+	refuse map[string]map[string]string
 	// lacks are the scopes a token lacks, by the token and then the port
 	// method that needs the scope (Revoke).
 	lacks map[string]map[string]string
@@ -259,6 +262,27 @@ func (h *ChatHost) Reactivate(user string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.inactive, user)
+}
+
+// RefuseIn makes an invite of user to room refused with code, a
+// ports.ChatInviteRefusedError, as Slack refuses a single-channel guest in
+// every channel but theirs (ura_max_channels); a code of "" lifts it
+// (#251). It refuses user in that room alone.
+func (h *ChatHost) RefuseIn(room, user, code string) {
+	s := h.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if code == "" {
+		delete(s.refuse[room], user)
+		return
+	}
+	if s.refuse == nil {
+		s.refuse = map[string]map[string]string{}
+	}
+	if s.refuse[room] == nil {
+		s.refuse[room] = map[string]string{}
+	}
+	s.refuse[room][user] = code
 }
 
 // Hosts builds the ChatHost of a bot on this host, as cmd/main.go's
@@ -616,6 +640,9 @@ func (b *chatBot) Invite(_ context.Context, room, user string) error {
 	}
 	if _, ok := s.tokens[user]; !ok || s.inactive[user] {
 		return &ports.ChatInviteRefusedError{User: user, Code: CodeUserNotFound}
+	}
+	if code := s.refuse[room][user]; code != "" {
+		return &ports.ChatInviteRefusedError{User: user, Code: code}
 	}
 	if !r.members[user] {
 		r.invited[user] = true

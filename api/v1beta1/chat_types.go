@@ -287,6 +287,25 @@ type ChatRoomStatus struct {
 	Alias string `json:"alias,omitempty"`
 }
 
+// ChatRefusedPerson is a person the chat host refused to invite to some
+// of a Chat's rooms (#251).
+type ChatRefusedPerson struct {
+	// id is the person's ID on the chat host, as the Chat lists it.
+	// +required
+	ID string `json:"id"`
+
+	// code is the host's error code for the refusal, such as M_NOT_FOUND
+	// or user_not_found.
+	// +optional
+	Code string `json:"code,omitempty"`
+
+	// rooms are the IDs of the rooms, and of the Space, the host refused
+	// to invite the person to.
+	// +listType=set
+	// +optional
+	Rooms []string `json:"rooms,omitempty"`
+}
+
 // ConditionChatReady on a Chat says whether its six rooms, and their Space
 // on Matrix, are there with the people invited. Its reasons are Ready,
 // SecretMissing, SecretIncomplete, HomeserverUnset, CredentialRefused,
@@ -298,7 +317,10 @@ const ConditionChatReady = "Ready"
 // ConditionChatInvited on a Chat says whether every person it lists is
 // invited to every room (#251). Its reasons are Invited and InviteRefused,
 // whose message names each person the host refused to invite with the
-// host's error code. Each pass that reaches the invites sets it.
+// host's error code, and NotChecked (Unknown): the last pass ended before
+// the invites, the Chat not Ready. Each pass that reaches the invites
+// sets True or False; a pass that ends not Ready turns an Invited
+// condition already there to Unknown.
 const ConditionChatInvited = "Invited"
 
 // ChatStatus is what the operator made and found on the chat host.
@@ -329,6 +351,15 @@ type ChatStatus struct {
 	// +listType=set
 	// +optional
 	Invited []string `json:"invited,omitempty"`
+
+	// refused are the people the chat host refused to invite to some of
+	// the rooms, with those rooms: each is asked again to those rooms
+	// alone, so a room they were invited to and left never pulls them back
+	// (#251). A person is in invited or in refused, never in both.
+	// +listType=map
+	// +listMapKey=id
+	// +optional
+	Refused []ChatRefusedPerson `json:"refused,omitempty"`
 
 	// conditions: Ready and Invited.
 	// +listType=map

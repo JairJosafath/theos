@@ -429,6 +429,41 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: set
+              refused:
+                description: |-
+                  refused are the people the chat host refused to invite to some of
+                  the rooms, with those rooms: each is asked again to those rooms
+                  alone, so a room they were invited to and left never pulls them back
+                  (#251). A person is in invited or in refused, never in both.
+                items:
+                  description: |-
+                    ChatRefusedPerson is a person the chat host refused to invite to some
+                    of a Chat's rooms (#251).
+                  properties:
+                    code:
+                      description: |-
+                        code is the host's error code for the refusal, such as M_NOT_FOUND
+                        or user_not_found.
+                      type: string
+                    id:
+                      description: id is the person's ID on the chat host, as the
+                        Chat lists it.
+                      type: string
+                    rooms:
+                      description: |-
+                        rooms are the IDs of the rooms, and of the Space, the host refused
+                        to invite the person to.
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: set
+                  required:
+                  - id
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
               rooms:
                 description: |-
                   rooms are the Chat's rooms, one per purpose: on Slack, private

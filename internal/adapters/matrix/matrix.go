@@ -485,18 +485,33 @@ func (c *Client) keepLinks(ctx context.Context, space, room, server string) erro
 }
 
 // refusedInvite says a homeserver's answer to an invite refuses the person
-// alone (#251): no such user (404 M_NOT_FOUND) or a user ID it does not
-// take (400 M_INVALID_PARAM). Every other answer, a 5xx, a 429 past the
-// retries or a 403 (the bot not in the room, or without the power to
-// invite), says nothing of the person.
+// alone (#251), by the spec's invite endpoint: no such user (404
+// M_NOT_FOUND), a user ID it does not take (400 M_INVALID_PARAM), an
+// invitee whose homeserver does not support the room's version (400
+// M_UNSUPPORTED_ROOM_VERSION: theirs alone, the rest are on other servers
+// or on the room's own) and an invitee whose homeserver blocks invites at
+// their wish (403 M_INVITE_BLOCKED, spec v1.18). A banned invitee is a 403
+// M_FORBIDDEN too, told apart by the room's state in Invite. Every other
+// answer, a 5xx, a 429 past the retries or another 403 (the bot not in the
+// room, or without the power to invite), says nothing of the person and
+// stays loud.
 func refusedInvite(e *Error) bool {
-	return (e.Status == http.StatusNotFound && e.Code == codeNotFound) ||
-		(e.Status == http.StatusBadRequest && e.Code == "M_INVALID_PARAM")
+	switch e.Status {
+	case http.StatusNotFound:
+		return e.Code == codeNotFound
+	case http.StatusBadRequest:
+		return e.Code == "M_INVALID_PARAM" || e.Code == "M_UNSUPPORTED_ROOM_VERSION"
+	case http.StatusForbidden:
+		return e.Code == "M_INVITE_BLOCKED"
+	}
+	return false
 }
 
 // Invite invites user to room. A homeserver refuses to invite a user
 // already invited or in the room; that is no error. One that refuses the
-// person (refusedInvite) is a ports.ChatInviteRefusedError.
+// person (refusedInvite), or a 403 for a user the room has banned, is a
+// ports.ChatInviteRefusedError: a ban is the room's word on that person
+// alone, while a 403 for anyone else is the bot's own and stays loud.
 func (c *Client) Invite(ctx context.Context, room, user string) error {
 	err := c.call(ctx, http.MethodPost, pathOf("rooms", room, "invite"), nil, map[string]string{"user_id": user}, nil)
 	e, ok := errors.AsType[*Error](err)
@@ -509,9 +524,13 @@ func (c *Client) Invite(ctx context.Context, room, user string) error {
 	var member struct {
 		Membership string `json:"membership"`
 	}
-	if ok, merr := c.state(ctx, room, typeMember, user, &member); merr == nil && ok &&
-		(member.Membership == "invite" || member.Membership == "join") {
-		return nil
+	if ok, merr := c.state(ctx, room, typeMember, user, &member); merr == nil && ok {
+		switch member.Membership {
+		case "invite", "join":
+			return nil
+		case "ban":
+			return &ports.ChatInviteRefusedError{User: user, Code: e.Code}
+		}
 	}
 	return err
 }
