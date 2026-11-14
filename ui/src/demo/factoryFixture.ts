@@ -124,7 +124,10 @@ function demoChat(created: string): Chat {
     spec: {
       credentialsSecretRef: { name: 'matrix-bot' },
       rooms: { general: 'lobby' },
-      people: [{ matrixID: `@ada:${server}`, user: 'ada@example.com' }],
+      people: [
+        { matrixID: `@ada:${server}`, user: 'ada@example.com' },
+        { matrixID: `@ghost:${server}`, user: 'ghost@example.com' },
+      ],
     },
     status: {
       homeserver: 'http://theos-matrix.theos-system.svc:8008',
@@ -136,12 +139,20 @@ function demoChat(created: string): Chat {
         alias: `#theos-webshop-${purpose}:${server}`,
       })),
       invited: [`@ada:${server}`],
+      refused: [{ id: `@ghost:${server}`, code: 'M_NOT_FOUND', rooms: [`!webshop-general:${server}`] }],
       conditions: [
         {
           type: 'Ready',
           status: 'True',
           reason: 'Ready',
           message: 'The Space and its 6 rooms are there, 1 person invited',
+          lastTransitionTime: created,
+        },
+        {
+          type: 'Invited',
+          status: 'False',
+          reason: 'InviteRefused',
+          message: `@ghost:${server}: M_NOT_FOUND`,
           lastTransitionTime: created,
         },
       ],

@@ -82,6 +82,10 @@ describe('the Chat panel', () => {
     )
     expect(html).toContain('The host refused the invite for @nocode:theos.internal (rooms: !unknown:theos.internal).')
     expect(html).toContain('The Chat keeps working for everyone else.')
+    expect(html).toContain(
+      'The operator asks the host again about those rooms; check the ID in the Chat&#x27;s people.',
+    )
+    expect(html).toContain('<p class="chat-refused-title">Refused invites</p>')
     // Not a failure: Ready stays Yes and nothing is styled as an error.
     expect(html).toContain('Yes: The Space and its 6 rooms are there')
     expect(html).not.toContain('chat-ready-not-ready')
@@ -106,6 +110,7 @@ describe('the Chat panel', () => {
       })
     for (const html of [withInvited('True', 'Invited', []), withInvited('Unknown', 'NotChecked'), render(webshop)]) {
       expect(html).not.toContain('refused the invite')
+      expect(html).not.toContain('Refused invites')
       expect(html).not.toContain('keeps working for everyone else')
     }
   })

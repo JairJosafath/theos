@@ -41,6 +41,7 @@ export function ChatPanel({ chat, problems = [] }: { chat?: Chat; problems?: Pro
       </dl>
       {s.refused.length ? (
         <div className="chat-refused" role="note" aria-label="Refused invites">
+          <p className="chat-refused-title">Refused invites</p>
           <ul>
             {s.refused.map((p) => (
               <li key={p.id}>
@@ -51,8 +52,8 @@ export function ChatPanel({ chat, problems = [] }: { chat?: Chat; problems?: Pro
             ))}
           </ul>
           <p className="muted small">
-            The Chat keeps working for everyone else. The operator asks the host again to those rooms; check the ID in
-            the Chat&apos;s people.
+            The Chat keeps working for everyone else. The operator asks the host again about those rooms; check the ID
+            in the Chat&apos;s people.
           </p>
         </div>
       ) : null}
