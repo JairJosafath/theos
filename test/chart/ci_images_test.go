@@ -65,8 +65,9 @@ func TestChartNamesTheCIImages284(t *testing.T) {
 			map[string]string{"go": defaults.Go}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			args := []string{"template", release, c.chart, "--namespace", releaseNS,
-				"--show-only", "templates/manager/manager.yaml"}
+			args := make([]string, 0, 7+2*len(c.sets))
+			args = append(args, "template", release, c.chart, "--namespace", releaseNS,
+				"--show-only", "templates/manager/manager.yaml")
 			for _, s := range c.sets {
 				args = append(args, "--set", s)
 			}

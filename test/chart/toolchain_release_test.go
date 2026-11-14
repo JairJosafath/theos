@@ -20,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"testing"
 
 	"github.com/JairJosafath/theos/internal/model"
@@ -39,10 +38,10 @@ func TestToolchainReleaseIsPublished263(t *testing.T) {
 	if m == nil {
 		t.Fatal("dist/chart/Chart.yaml has no version")
 	}
-	if _, ok := versionParts(string(m[1])); !ok {
+	if !releaseVersion.Match(m[1]) {
 		t.Fatalf("dist/chart/Chart.yaml's version %q is not X.Y.Z", m[1])
 	}
-	if _, ok := versionParts(model.ToolchainRelease); !ok {
+	if !releaseVersion.MatchString(model.ToolchainRelease) {
 		t.Fatalf("model.ToolchainRelease %q is not X.Y.Z: name a release, never latest or a branch",
 			model.ToolchainRelease)
 	}
@@ -57,15 +56,5 @@ func TestToolchainReleaseIsPublished263(t *testing.T) {
 	}
 }
 
-// versionParts returns X.Y.Z's three numbers.
-func versionParts(v string) ([3]int, bool) {
-	var out [3]int
-	m := regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)$`).FindStringSubmatch(v)
-	if m == nil {
-		return out, false
-	}
-	for i := range out {
-		out[i], _ = strconv.Atoi(m[i+1])
-	}
-	return out, true
-}
+// releaseVersion is a release's version, X.Y.Z.
+var releaseVersion = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
