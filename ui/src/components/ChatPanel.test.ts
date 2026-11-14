@@ -304,8 +304,9 @@ describe('the Chat panel', () => {
       expect(html).toContain('#theos-webshop-slack-alerts')
       expect(html).toContain('U0DEMOADA01')
       expect(html).not.toContain('Homeserver')
-      // One channel not made yet and one refused person, so the demo shows them.
-      expect(html).toContain('not made yet')
+      // All six channels are made, as the operator reports Ready only then (#162); one person is refused.
+      expect(html).not.toContain('not made yet')
+      expect(html).toContain('The 6 rooms are ready on https://slack.com/api, with no Space; 2 people invited')
       expect(html).toContain('The host refused the invite for U0DEMOGHO03')
     })
   })

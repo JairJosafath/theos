@@ -1342,8 +1342,8 @@ Left as it is, and why:
   is `spec.aliasPrefix` or `theos-<namespace>`. That mirrors
   `model.ChatAliasPrefix` and `ChatRoomAlias`; a channel not made yet says so.
 - **The demo** has the Slack Chat in its own namespace, `webshop-slack`: open
-  `?demo=1&area=about&project=webshop-slack`. It shows one channel not made yet
-  and one refused person.
+  `?demo=1&area=about&project=webshop-slack`. It shows all six channels made
+  (the operator reports Ready only then) and one refused person.
 
 ## How we will know #61 is done
 
