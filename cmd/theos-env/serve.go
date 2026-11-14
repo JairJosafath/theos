@@ -111,6 +111,10 @@ type server struct {
 	// most.
 	max  int64
 	busy sync.Mutex
+	// afterExit is nil in production. Only tests set it, to hold the handler
+	// open after the exit frame is written, while the handler is still
+	// running (#321); nothing a request carries reaches it.
+	afterExit func()
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +156,12 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "a run is going on in this environment; one runs at a time", http.StatusConflict)
 		return
 	}
-	defer s.busy.Unlock()
+	// The lock is let go before the exit frame goes out: the caller returns
+	// on that frame, and its next run must not meet this one's way out (#321).
+	// release is once-only, so the return paths that never reach the frame
+	// (an error, a panic net/http recovers) let it go here, exactly once.
+	release := sync.OnceFunc(s.busy.Unlock)
+	defer release()
 
 	// Each run gets the tree it sent, nothing a run before left.
 	if err := emptyDir(s.work); err != nil {
@@ -189,7 +198,12 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	code := s.exec(r, argv, filepath.Join(s.work, dir), fw)
 	s.bringBack(root, sent, fw)
+	// Nothing below reads or writes work: the next run may empty it.
+	release()
 	_ = fw.frame(frameExit, []byte(strconv.Itoa(code)))
+	if s.afterExit != nil {
+		s.afterExit()
+	}
 }
 
 // exec runs argv in dir, its output in frames, and returns its exit code.

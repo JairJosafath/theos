@@ -67,8 +67,14 @@ func gitRepo(t *testing.T) string {
 // own, and returns its URL, token and work folder.
 func environment(t *testing.T) (url, token, work string) {
 	t.Helper()
+	return environmentAfterExit(t, nil)
+}
+
+// environmentAfterExit is environment with the server's afterExit seam set.
+func environmentAfterExit(t *testing.T, afterExit func()) (url, token, work string) {
+	t.Helper()
 	token, work = rand.Text(), t.TempDir()
-	srv := httptest.NewServer(&server{token: token, work: work, max: model.TestEnvMaxTree})
+	srv := httptest.NewServer(&server{token: token, work: work, max: model.TestEnvMaxTree, afterExit: afterExit})
 	t.Cleanup(srv.Close)
 	return srv.URL, token, work
 }
