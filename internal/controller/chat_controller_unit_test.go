@@ -166,7 +166,8 @@ func newSlackWorkspaceChat(t *testing.T, others ...string) *slackWorkspaceChat {
 	ws := slacktest.New(t)
 	_, botToken, appToken := ws.NewApp("theos")
 	x := &slackWorkspaceChat{ws: ws, ada: ws.NewUser("ada")}
-	people := []c4v1beta1.ChatSlackPerson{{SlackID: x.ada, User: "ada"}}
+	people := make([]c4v1beta1.ChatSlackPerson, 0, 1+len(others))
+	people = append(people, c4v1beta1.ChatSlackPerson{SlackID: x.ada, User: "ada"})
 	for _, name := range others {
 		id := ws.NewUser(name)
 		x.others = append(x.others, id)
