@@ -198,13 +198,18 @@ var _ = Describe("Crew release packages", func() {
 
 	It("tries again when the host can't be reached, then publishes", func() {
 		ns := newProjectNamespace()
-		gitFake.FailPackagePublishes(ns, "orders-api", 1)
+		// #324: every publish fails until the spec lets one through, so Failed
+		// stays put for the first Eventually to see, however slowly it polls;
+		// with a count of 1 the Failed status write woke the Crew again about
+		// 100ms later and that try published, so Failed lasted one poll at most.
+		gitFake.FailPackagePublishes(ns, "orders-api", 1_000_000)
 		packagedRelease(ns, "completed", "success", []fake.ReleaseFile{ordersTarball, ordersWheel}, ordersNpm, ordersPyPI)
 
 		Eventually(func(g Gomega) {
 			packages := releasePackages(g, ns, "Failed", metav1.ConditionFalse, "GitHostUnavailable")
 			g.Expect(packages.Message).To(Equal("Could not publish the packages of v0.1.0: gitea unavailable"))
 		}).Should(Succeed())
+		gitFake.FailPackagePublishes(ns, "orders-api", 0)
 		Eventually(func(g Gomega) {
 			packages := releasePackages(g, ns, "Published", metav1.ConditionTrue, "PackagesPublished")
 			g.Expect(packages.Published).To(HaveLen(2))
