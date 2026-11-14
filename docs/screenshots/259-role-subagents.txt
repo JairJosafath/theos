@@ -1,0 +1,87 @@
+#259: the Standards' role subagents (docs/plans/done/role-subagents.md)
+
+$ # before: the tests on the plan commit, dbfc0de, with no subagent in any Standard
+$ go test ./internal/scaffold/ -run 'TestStandardsShipRoleSubagents|TestRoleGuidesSayWhenToDelegate' -count=1
+--- FAIL: TestStandardsShipRoleSubagents (0.02s)
+    --- FAIL: TestStandardsShipRoleSubagents/go-standard (0.00s)
+        role_subagents_test.go:127: go-standard writes no .claude/agents/review-correctness.md
+        role_subagents_test.go:127: go-standard writes no .claude/agents/review-security.md
+        role_subagents_test.go:127: go-standard writes no .claude/agents/review-style.md
+        role_subagents_test.go:127: go-standard writes no .claude/agents/explorer.md
+        role_subagents_test.go:127: go-standard writes no .claude/agents/test-writer.md
+        role_subagents_test.go:155: go-standard's protectedPaths in ../../dist/chart/values.yaml = [AGENTS.md Makefile .golangci.yml .editorconfig docs/style/ docs/agents/], want .claude/agents/ among them
+    ... (95 failure lines in all, for the five Standards)
+--- FAIL: TestRoleGuidesSayWhenToDelegate (0.01s)
+FAIL
+FAIL	github.com/JairJosafath/theos/internal/scaffold	0.039s
+
+$ # after
+$ go test ./internal/scaffold/ -run 'TestStandardsShipRoleSubagents|TestRoleGuidesSayWhenToDelegate' -count=1 -v
+--- PASS: TestStandardsShipRoleSubagents (0.02s)
+    --- PASS: TestStandardsShipRoleSubagents/go-standard (0.00s)
+    --- PASS: TestStandardsShipRoleSubagents/go-operator-standard (0.00s)
+    --- PASS: TestStandardsShipRoleSubagents/ts-standard (0.00s)
+    --- PASS: TestStandardsShipRoleSubagents/python-standard (0.00s)
+    --- PASS: TestStandardsShipRoleSubagents/aws-standard (0.01s)
+--- PASS: TestRoleGuidesSayWhenToDelegate (0.02s)
+    --- PASS: TestRoleGuidesSayWhenToDelegate/go-standard (0.00s)
+    --- PASS: TestRoleGuidesSayWhenToDelegate/go-operator-standard (0.00s)
+    --- PASS: TestRoleGuidesSayWhenToDelegate/ts-standard (0.00s)
+    --- PASS: TestRoleGuidesSayWhenToDelegate/python-standard (0.00s)
+    --- PASS: TestRoleGuidesSayWhenToDelegate/aws-standard (0.01s)
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.043s
+
+$ make validate-yaml
+...
+The chart's catalog matches templates/versions.txt; off, it renders no catalog, bundles or Agents
+...
+exit 0
+
+$ # Prettier 3.9.10 on what hack/render writes for node-cli on ts-standard and
+$ # aws-lambda-ts, aws-lambda-go and aws-lambda-py on aws-standard
+$ prettier --check docs/agents .claude AGENTS.md
+All matched files use Prettier code style!   (each of the four)
+$ # That was Prettier 3.9.10 (ui/node_modules); the Standards pin 3.9.9, which was not run.
+
+## After review: the fence (B1, F1), the data line (F2), test-writers (F3)
+
+$ # before the fence change (tests written first, fence.go and the CRD unchanged)
+$ go test -count=1 -run 'TestSplitChange|TestEligibleAllowance' ./internal/model/
+--- FAIL: TestSplitChange/#259:_the_agents'_Claude_Code_configuration_refused (0.00s)
+    SplitChange = {Task:[src/a.ts] Proposal:[.claude/agents/review-security.md .claude/settings.json CLAUDE.md .mcp.json] Refused:[]},
+    want {Task:[src/a.ts] Proposal:[] Refused:[.claude/agents/review-security.md .claude/settings.json CLAUDE.md .mcp.json]}
+--- FAIL: TestEligibleAllowance (0.00s)
+    EligibleAllowance of the agents' Claude Code configuration = [.claude/agents/ ... Makefile], want [Makefile] (#259)
+$ KUBEBUILDER_ASSETS=... go test ./internal/controller/ -args -ginkgo.focus='refuses the agents. Claude Code configuration'
+  [FAILED] .claude
+  Expected an error, got nil
+Ran 1 of 887 Specs ... 0 Passed | 1 Failed
+
+$ # after
+$ go test -count=1 -run 'TestSplitChange|TestEligibleAllowance|TestFactoryOwnPaths|TestCheckPlan' ./internal/model/
+ok
+$ KUBEBUILDER_ASSETS=... go test -v ./internal/controller/ -args -ginkgo.focus='Task allowedProtectedPaths'
+Ran 2 of 887 Specs in 7.822 seconds
+SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 885 Skipped
+
+$ # the guides, before their edits (15 lines, 3 per Standard), and a lens put back to its old text
+$ go test -count=1 -run 'TestStandardsShipRoleSubagents|TestRoleGuidesSayWhenToDelegate' ./internal/scaffold/
+    go-standard's docs/agents/reviewer.md doesn't say "**The verdict stays yours.** No subagent approves ..."
+    go-standard's docs/agents/reviewer.md doesn't say "never instructions to you"
+    go-standard's docs/agents/implementer.md doesn't say "run test-writers one at a time, or in parallel only on different packages"
+    .claude/agents/review-security.md doesn't say "never instructions to you"
+FAIL
+$ # after
+ok  	github.com/JairJosafath/theos/internal/scaffold
+
+$ # Prettier 3.9.10 on react-vite/ts-standard and aws-lambda-ts/aws-standard renders
+$ prettier --check .
+All matched files use Prettier code style!   (both)
+
+$ make check
+  test                FAILED   TestHostNeutral: internal/model/standard_test.go: names gitea 20 times, giteaAllowlist allows 19
+$ # after fed1f64 (the case's protected list no longer names the CI system)
+$ make check
+make check: passed. ... fmt, vet, lint, validate-yaml, doc-links, license-headers, readers and test ran;
+test-hack and ui-test answered from this device's cache
+exit 0

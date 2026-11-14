@@ -81,6 +81,14 @@ and the `make check` contract CI runs.
   `include`), `vitest.config.mts` and `esbuild.mjs`.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
+- **Role subagents** (since v1.11.0, #259): `.claude/agents/` holds the Claude
+  Code subagents the role guides name: the reviewer's three read-only lenses
+  (`review-correctness`, `review-security`, `review-style`) and the
+  implementer's read-only `explorer` and its `test-writer`. The guides say
+  when to delegate and that the role's decision is never delegated. The five
+  files are the same in go-standard, go-operator-standard, ts-standard,
+  python-standard and aws-standard; a test in theos keeps them so. Prettier
+  skips `.claude/` as it does `docs/agents/`: no agent may reformat them.
 - **Issues:** `.gitea/ISSUE_TEMPLATE/task.md` has the sections the factory needs;
   an issue without an unchecked item under "Acceptance criteria" is never picked up.
 - **Style digests:** `docs/style/` distils the Google TypeScript Style Guide, the
@@ -94,8 +102,11 @@ and the `make check` contract CI runs.
   and NO_COLOR. Every rule is marked `[lint]` or
   `[review]`; `docs/style/SOURCES.md` lists the sources with dates.
 - **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`,
-  `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/` and
-  `docs/agents/` in the catalog entry's `protectedPaths`, plus the Framework's
+  `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,
+  `docs/agents/`, `.claude/agents/`, `.claude/`, `CLAUDE.md` and `.mcp.json`
+  (which configure the agents that check a change, so no agent changes them,
+  not even through a Standard change, #259) in the catalog entry's `protectedPaths`,
+  plus the Framework's
   `tsconfig.json` and `vitest.config.mts` (`vite.config.ts` for `react-vite`),
   which decide what the type check and
   tests cover; `.gitea/` is always protected.

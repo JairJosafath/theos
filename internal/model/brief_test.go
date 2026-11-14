@@ -633,7 +633,8 @@ func TestCheckPlan(t *testing.T) {
 			p.Issues[0].Body = "## Goal\n\nThe reviewer checks orders.\n\n## Acceptance criteria\n\n" +
 				"- [ ] `docs/agents/reviewer.md` says to check orders\n"
 		}, "plan/issues/01-web.md", "names docs/agents/reviewer.md in its acceptance criteria, a path no change " +
-			"may make: `AGENTS.md`, `docs/agents/` and `.theos.yaml` are the agents' rules and the platform's " +
+			"may make: `AGENTS.md`, `docs/agents/`, `.theos.yaml`, `.claude/`, `CLAUDE.md` and `.mcp.json` are " +
+			"the agents' rules and the platform's " +
 			"settings. File no issue for it; say what wasn't planned in plan/summary.md and why in plan/choices.md. " +
 			"Notes for the agents go in docs/project-notes.md"},
 		{"an issue whose criteria name .theos.yaml", func(p *Plan, _ *CurrentModel) {

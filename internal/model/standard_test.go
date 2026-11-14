@@ -51,6 +51,13 @@ func TestSplitChange(t *testing.T) {
 			[]string{"Makefile"}, true, ChangeSplit{Task: []string{"Makefile"}, Refused: []string{"makefile", "Agents.md"}}},
 		{"unprotected AGENTS.md is the Task's", []string{"AGENTS.md"}, AgentProtectedPaths(giteaActions, nil), nil, true,
 			ChangeSplit{Task: []string{"AGENTS.md"}}},
+		// #259: what configures the agents that check a change is refused, never
+		// proposed, so no Standard change rewrites its own reviewer's subagents.
+		{"#259: the agents' Claude Code configuration refused",
+			[]string{".claude/agents/review-security.md", ".claude/settings.json", "CLAUDE.md", ".mcp.json", "src/a.ts"},
+			[]string{"AGENTS.md", "docs/agents/", ".claude/agents/", ".claude/", "CLAUDE.md", ".mcp.json"},
+			nil, true, ChangeSplit{Task: []string{"src/a.ts"},
+				Refused: []string{".claude/agents/review-security.md", ".claude/settings.json", "CLAUDE.md", ".mcp.json"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := SplitChange(tt.changed, tt.protected, tt.allow, tt.canPropose); !reflect.DeepEqual(got, tt.want) {
@@ -65,6 +72,12 @@ func TestEligibleAllowance(t *testing.T) {
 	want := []string{"Makefile", ".gitea/workflows/check.yaml"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("EligibleAllowance = %v, want %v", got, want)
+	}
+	// #259: a gated Task may never be allowed the agents' Claude Code configuration.
+	got = EligibleAllowance([]string{".claude/agents/", ".claude/agents/review-security.md", ".claude/settings.json",
+		".claude/", "CLAUDE.md", ".mcp.json", "Makefile"})
+	if want := []string{"Makefile"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("EligibleAllowance of the agents' Claude Code configuration = %v, want %v (#259)", got, want)
 	}
 	if got := EligibleAllowance(nil); got != nil {
 		t.Errorf("EligibleAllowance(nil) = %v, want nil", got)

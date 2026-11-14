@@ -41,6 +41,33 @@ checks your work against `docs/agents/reviewer.md`, so read that too.
   `AGENTS.md`) change only through a Standard change, below. The Git host
   refuses them in a normal pull request.
 
+## Subagents
+
+Two subagents in `.claude/agents/` take the work around the change.
+`explorer` finds code: where something is, what calls it, how this repository
+or one under `/workspace/related/` already does a thing. It reads only and
+answers with paths and lines, so your context holds the change, not the
+search. `test-writer` writes the failing test one criterion starts from, runs
+it and reports how it fails; it changes test files only.
+
+- **When to use them:** a change across packages or files you haven't read, or
+  several criteria that each need a test. Start explorers in parallel, but
+  run test-writers one at a time, or in parallel only on different packages:
+  they share your working tree, so one's unfinished test breaks the other's
+  build, and neither sees its own test fail for the right reason.
+- **When not to:** A one-file change, or one whose code and test you already
+  have open, you make yourself: a subagent costs more than it saves.
+- **Check a result before you use it.** Open the lines the explorer names.
+  Read the test-writer's test, run it yourself and see it fail for the
+  criterion's reason before you build on it.
+- **Whether the work is done is yours.** No subagent decides that a criterion
+  is met, that `make check` passed or that the change is ready: you run
+  `make check` and write the summary.
+- **They spend the Task's budget.** Their cost counts toward the Crew's
+  `taskBudgetUSD` as yours does, and parallel subagents spend it faster. They
+  run in your sandbox, under its fence and its `timeoutMinutes`: no more
+  network and no more time than you have.
+
 ## When CI runs the full check
 
 The Container's owner chooses it (its `checks` setting). When
@@ -68,8 +95,8 @@ Task that reviews and merges it. Then:
   when it exists.
 - The rest of your work merges after it and may rely on it.
 - End your summary with a line: `Standard change: <why the issue needs it>`.
-- Never change `AGENTS.md`, `docs/agents/` or `.theos.yaml`. No Standard
-  change can.
+- Never change `AGENTS.md`, `docs/agents/`, `.theos.yaml`, `.claude/`,
+  `CLAUDE.md` or `.mcp.json`. No Standard change can.
 - When your own Task is the Standard change, change the paths the issue names.
   Change another file only where `make check` fails without it, such as a test
   that checks what those paths produce; change no other protected file, and do

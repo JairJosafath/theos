@@ -63,6 +63,19 @@ var _ = Describe("Task allowedProtectedPaths", func() {
 		Expect(patch(task, func() { task.Spec.AllowedProtectedPaths = []string{"Makefile", ".golangci.yml"} })).
 			To(MatchError(ContainSubstring("immutable")))
 	})
+
+	It("refuses the agents' Claude Code configuration (#259)", func() {
+		ns := newProjectNamespace()
+		for i, never := range []string{".claude", ".claude/", ".claude/agents/", ".claude/agents/review-security.md",
+			".claude/settings.json", "CLAUDE.md", ".mcp.json"} {
+			t := newTask(ns, fmt.Sprintf("never-%d", i), "")
+			t.Spec.Issue = 2
+			t.Spec.AllowedProtectedPaths = []string{"Makefile", never}
+			Expect(k8sClient.Create(ctx, t)).To(MatchError(ContainSubstring(
+				"allowedProtectedPaths may not include AGENTS.md, docs/agents/, .theos.yaml, .claude/, CLAUDE.md or .mcp.json")),
+				never)
+		}
+	})
 })
 
 // proposingTask creates an issue Task on orders-api for a new ready issue in the

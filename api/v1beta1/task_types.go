@@ -132,13 +132,13 @@ type TaskSpec struct {
 	Issue int32 `json:"issue,omitempty"`
 
 	// allowedProtectedPaths are Standard-protected files, other than AGENTS.md,
-	// docs/agents/ and .theos.yaml, that this Task may change. The agent
-	// still proposes them, and the change goes through its own review. It needs
-	// an issue, and it can't change.
+	// docs/agents/, .theos.yaml, .claude/, CLAUDE.md and .mcp.json, that this
+	// Task may change. The agent still proposes them, and the change goes
+	// through its own review. It needs an issue, and it can't change.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=20
 	// +kubebuilder:validation:items:MaxLength=256
-	// +kubebuilder:validation:XValidation:rule="self.all(p, p != 'AGENTS.md' && p != '.theos.yaml' && p != 'docs/agents' && !p.startsWith('docs/agents/'))",message="allowedProtectedPaths may not include AGENTS.md, docs/agents/ or .theos.yaml"
+	// +kubebuilder:validation:XValidation:rule="self.all(p, p != 'AGENTS.md' && p != '.theos.yaml' && p != 'docs/agents' && !p.startsWith('docs/agents/') && p != '.claude' && !p.startsWith('.claude/') && p != 'CLAUDE.md' && p != '.mcp.json')",message="allowedProtectedPaths may not include AGENTS.md, docs/agents/, .theos.yaml, .claude/, CLAUDE.md or .mcp.json"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="allowedProtectedPaths is immutable"
 	// +optional
 	AllowedProtectedPaths []string `json:"allowedProtectedPaths,omitempty"`
