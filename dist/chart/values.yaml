@@ -528,6 +528,28 @@ gitProviders: []
 #        credentialsSecretRef:
 #          name: acme-pypi
 
+## The toolchain images a scaffolded repository's GitHub check runs in when
+## its Actions variable THEOS_CI_IMAGE_GO or THEOS_CI_IMAGE_BASE is empty
+## (docs/plans/github-host.md): go for the Standards on the go toolchain,
+## base for those on base (the operator's --ci-image-go and --ci-image-base).
+## By default the release's own images; point repository at your registry's
+## copy, which the GitHub runners must be able to pull. The tag defaults to
+## Chart.appVersion, or to Chart.version for an unreleased chart (appVersion
+## dev), the release it follows. A tag must not move (latest, stable,
+## nightly, edge, dev, main, master; a tag may end in @sha256:<digest>): the
+## operator refuses to start on one. An empty repository leaves the flag out,
+## and the operator falls back to its own release's images on GHCR.
+##
+ciImages:
+  go:
+    repository: ghcr.io/jairjosafath/theos/go
+    ## Defaults to Chart.appVersion
+    tag: ""
+  base:
+    repository: ghcr.io/jairjosafath/theos/base
+    ## Defaults to Chart.appVersion
+    tag: ""
+
 ## Pull secrets for the pods of the UI (unless ui.imagePullSecrets is set),
 ## Gitea, the seed and the runners; the operator's are manager.imagePullSecrets.
 ## Each must exist in the namespace the pod runs in. The operator copies each

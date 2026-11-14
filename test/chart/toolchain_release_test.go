@@ -27,9 +27,9 @@ import (
 )
 
 // TestToolchainReleaseIsPublished263 checks that the release whose toolchain
-// images the Standards' GitHub checks fall back to is a release, no later
-// than the chart's newest (#263): a version the chart has not reached has
-// published no images yet.
+// images the Standards' GitHub checks fall back to is a release (#263), the
+// chart's own (#284): hack/release.sh bumps both at once, so one that lags
+// was moved by hand, and one ahead names images not published yet.
 func TestToolchainReleaseIsPublished263(t *testing.T) {
 	chart, err := os.ReadFile(filepath.Join("..", "..", "dist", "chart", "Chart.yaml"))
 	if err != nil {
@@ -39,23 +39,16 @@ func TestToolchainReleaseIsPublished263(t *testing.T) {
 	if m == nil {
 		t.Fatal("dist/chart/Chart.yaml has no version")
 	}
-	newest, ok := versionParts(string(m[1]))
-	if !ok {
+	if _, ok := versionParts(string(m[1])); !ok {
 		t.Fatalf("dist/chart/Chart.yaml's version %q is not X.Y.Z", m[1])
 	}
-	release, ok := versionParts(model.ToolchainRelease)
-	if !ok {
+	if _, ok := versionParts(model.ToolchainRelease); !ok {
 		t.Fatalf("model.ToolchainRelease %q is not X.Y.Z: name a release, never latest or a branch",
 			model.ToolchainRelease)
 	}
-	for i := range release {
-		if release[i] != newest[i] {
-			if release[i] > newest[i] {
-				t.Errorf("model.ToolchainRelease is %s, after the chart's newest release %s",
-					model.ToolchainRelease, m[1])
-			}
-			break
-		}
+	if model.ToolchainRelease != string(m[1]) {
+		t.Errorf("model.ToolchainRelease is %s, not the chart's version %s: hack/release.sh's bump "+
+			"moves both, and its check holds them equal (#284)", model.ToolchainRelease, m[1])
 	}
 	for _, image := range []string{model.DefaultCIImages().Go, model.DefaultCIImages().Base} {
 		if problem := model.PinnedImageProblem(image); problem != "" {

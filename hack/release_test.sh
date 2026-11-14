@@ -69,11 +69,29 @@ check "  and leaves its other lines" "$(sed -n 3p "$T/quick/hack/quickstart.sh")
 ROOT=$T/quick "$RELEASE" --check v1.3.0
 check "  and --check agrees" $? 0
 
+# #284: a scaffolded GitHub check falls back to the toolchain images of the
+# release model.ToolchainRelease names, so --check holds it to the tag and
+# --bump moves it; a tree without one is as before.
+tree "$T/toolchain" 1.2.0
+mkdir -p "$T/toolchain/internal/model"
+printf 'package model\n\n// ToolchainRelease is the release.\nconst ToolchainRelease = "1.1.0"\n\nconst Other = "1.1.0"\n' \
+  >"$T/toolchain/internal/model/ci_images.go"
+ROOT=$T/toolchain "$RELEASE" --check v1.2.0 2>"$T/err"
+check "--check: a ToolchainRelease that names another release is refused (#284)" $? 1
+check "  and named" "$(grep -c 'internal/model/ci_images.go says ToolchainRelease 1.1.0, not 1.2.0' "$T/err")" 1
+ROOT=$T/toolchain "$RELEASE" --bump 1.3.0
+check "--bump: moves ToolchainRelease with the chart (#284)" "$(grep '^const ToolchainRelease' "$T/toolchain/internal/model/ci_images.go")" 'const ToolchainRelease = "1.3.0"'
+check "  and leaves the file's other lines" "$(grep -c '^const Other = "1.1.0"$' "$T/toolchain/internal/model/ci_images.go")" 1
+ROOT=$T/toolchain "$RELEASE" --check v1.3.0
+check "  and --check agrees" $? 0
+
 # The release command: a bare origin with main at 1.2.0, a clone, and a fake gh
 # whose pr merge merges the branch into origin's main with a merge commit.
 git init --quiet --bare -b main "$T/origin.git"
 git init --quiet -b main "$T/src"
 tree "$T/src" 1.2.0
+mkdir -p "$T/src/internal/model"
+printf 'package model\n\nconst ToolchainRelease = "1.2.0"\n' >"$T/src/internal/model/ci_images.go"
 git -C "$T/src" add -A
 git -C "$T/src" -c user.name=t -c user.email=t@t commit --quiet -m init
 git -C "$T/src" push --quiet "$T/origin.git" main
@@ -105,6 +123,7 @@ run patch
 check "patch: bumps, merges and tags" $? 0
 check "  the tag is origin's main, the merge commit" "$(git -C "$T/origin.git" rev-parse v1.2.1^{commit})" "$(git -C "$T/origin.git" rev-parse main)"
 check "  main names the release" "$(git -C "$T/origin.git" show main:dist/chart/Chart.yaml | grep -c '^version: 1.2.1$')" 1
+check "  main's ToolchainRelease names it too (#284)" "$(git -C "$T/origin.git" show main:internal/model/ci_images.go | grep -c '^const ToolchainRelease = "1.2.1"$')" 1
 check "  main's baseline is its CRDs" "$(git -C "$T/origin.git" ls-tree --name-only main test/compat/baseline/)" test/compat/baseline/things.yaml
 check "  main's dropped.txt has no entries" "$(git -C "$T/origin.git" show main:test/compat/dropped.txt | grep -vc '^#')" 0
 check "  and keeps its comments" "$(git -C "$T/origin.git" show main:test/compat/dropped.txt | grep -c '^#')" 3
