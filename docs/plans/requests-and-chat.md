@@ -1014,6 +1014,17 @@ What the step chose where the plan says nothing:
   emptied looks half made, and its people are invited to it again. A person
   invited to a room made again on a pass whose later invites failed, who
   leaves it before the next pass, is invited to it again by that pass.
+  The same holds for a newcomer: a person added after the first pass whose
+  invite to one room fails, and who then leaves another room before the next
+  pass, is invited back to that room by the next pass (an independent review
+  reproduced it: carol's third invite fails, she leaves updates, and the next
+  pass puts her back in it).
+  A known gap, carried from main and not changed by this step: invites stop
+  at the first failed invite, so one person whose invite always fails (a
+  deactivated or unknown member) keeps everyone listed after them out of
+  every room and the Chat not `Ready`, with the reason `Unreachable` though
+  the host answered. It is filed as its own issue and is fixed on top of this
+  step.
 - **The port has `Close` (#234).** `ChatHost.Close()` lets go of what the
   value holds open: Slack's socket (`Client.Close`, which was there), nothing
   on Matrix or the fake (which counts its open values, `fake.ChatHost.Open`).
