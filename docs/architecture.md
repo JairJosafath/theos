@@ -45,7 +45,8 @@ every scaffolded repository.
 | Test environment tool | `cmd/theos-env`: `run` in a sandbox, `serve` in a leased environment ([plans/done/test-environments.md](plans/done/test-environments.md), T4) | the standard library, `internal/model`, go-git's gitignore matcher | Kubernetes, controller-runtime, `api/`, `internal/adapters`, `internal/controller` |
 | Model proxy | `internal/modelproxy`, `cmd/model-proxy` | the standard library; `cmd/model-proxy` also `internal/modelproxy` and `internal/buildinfo` | Kubernetes, controller-runtime, `api/`, `internal/controller`, `internal/adapters`; `internal/modelproxy` any other `internal/` package |
 | Readings of the API's resources | `internal/taskfacts`: a Task as the plain facts the factory's numbers are computed from, which the operator's Prometheus series and `theos-session report` both read through it (#142) | `api/v1beta1`, apimachinery, `internal/model` | controller-runtime, client-go, any other `internal/` package |
-| What the scaffold works out of the model | `internal/modelfacts`: what the Container reconciler resolves, renders and protects a repository with, from the objects a caller read, and the one branch rule (`Rule`); the operator calls it, and the `theos` binary will ([plans/no-cluster.md](plans/no-cluster.md), decision 4; #268) | `api/v1beta1`, apimachinery, `internal/model`, `internal/scaffold`, `internal/ports` | controller-runtime, client-go, `internal/adapters`, `internal/controller`, any other `internal/` package |
+| What the scaffold works out of the model | `internal/modelfacts`: what the Container reconciler resolves, renders and protects a repository with, from the objects a caller read, and the one branch rule (`Rule`); the operator and the `theos` binary call it ([plans/no-cluster.md](plans/no-cluster.md), decision 4; #268) | `api/v1beta1`, apimachinery, `internal/model`, `internal/scaffold`, `internal/ports` | controller-runtime, client-go, `k8s.io/api`, `internal/adapters`, `internal/controller`, `internal/ports/fake`, any other `internal/` package |
+| The commands with no cluster | `internal/nocluster`: the `theos` binary's `init`, `scaffold`, `protect` and `status` on the ports, and the model files' decoder, which defaults each object from its embedded CRD (`config/crd/bases`) with the API server's defaulting package, checks it with the API server's validators of a custom resource at create, and decodes it strictly (#268) | `api/v1beta1`, apimachinery, apiextensions-apiserver's schema, defaulting and validation packages, apiserver's CEL limits, `config/crd/bases`, `features`, `internal/model`, `internal/scaffold`, `internal/modelfacts`, `internal/ports`; its tests the ports' `fake` | controller-runtime, client-go, `k8s.io/api`, `internal/adapters`, `internal/controller`, `cmd/` |
 | Clients of the API | `internal/controller`, `internal/sessionclient`, `internal/chatbot` (theos-chat) | everything above but adapters; their tests wire adapters onto fakes | `cmd/`, `internal/adapters/*` |
 | Build info | `internal/buildinfo` | nothing | everything; only `cmd/*` reads it |
 | Assets | `features` | `internal/scaffold` | everything else |
@@ -74,7 +75,9 @@ pods only in the components' and the Projects' namespaces.
 `depguard`, so a wrong import fails the build rather than a review. The row
 of `internal/taskfacts` is held by the package's own test (`TestImports`,
 in `make test`), and by the compiler for `internal/controller`, which
-imports it.
+imports it. `internal/modelfacts`, `internal/nocluster` and `cmd/theos`
+have both: depguard's rules and a `TestImports` that also runs `go list
+-deps`, so nothing they link pulls controller-runtime or client-go.
 
 ## Why the split
 
@@ -116,7 +119,9 @@ it against this table. Where the code lives:
   never `api/` or `internal/controller`.
 - **Controllers take ports.** Only `cmd/main.go` imports adapters: it builds
   the adapters a GitProvider names and gives each reconciler the ports it
-  calls (and `cmd/theos-chat` the Matrix adapter for `internal/chatbot`). A
+  calls (and `cmd/theos-chat` the Matrix adapter for `internal/chatbot`, and
+  `cmd/theos` the host adapters and plain Git for `internal/nocluster`,
+  linking no controller-runtime and no client-go). A
   depguard rule denies `internal/adapters` in `internal/controller`,
   `internal/sessionclient` and `internal/chatbot` outside their tests, which
   wire adapters onto the fakes.

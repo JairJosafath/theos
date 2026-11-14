@@ -312,6 +312,9 @@ func (g *Git) History(ctx context.Context, repo ports.Repository, limit int) ([]
 	defer g.s.mu.Unlock()
 	g.s.histories[repo.Owner+"/"+repo.Name]++
 	r := g.s.repos[repo.Owner+"/"+repo.Name]
+	if r == nil {
+		return nil, fmt.Errorf("list refs of %s: %w", repo.CloneURL, ports.ErrRepositoryNotFound)
+	}
 	var out []ports.Commit
 	for i := len(r.commits) - 1; i >= 0 && len(out) < limit; i-- {
 		out = append(out, r.commits[i])

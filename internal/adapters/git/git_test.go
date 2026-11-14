@@ -231,6 +231,15 @@ func TestFetchTemplateTaggedCommit(t *testing.T) {
 	}
 }
 
+// #268: History of a repository the host doesn't have is
+// ports.ErrRepositoryNotFound, as the ports' fake gives.
+func TestHistoryOfAMissingRepository268(t *testing.T) {
+	_, err := History(context.Background(), filepath.Join(t.TempDir(), "missing.git"), nil, 2)
+	if !errors.Is(err, ports.ErrRepositoryNotFound) {
+		t.Errorf("History() of a missing repository: %v, want %v", err, ports.ErrRepositoryNotFound)
+	}
+}
+
 func TestHistoryAndInitialCommit(t *testing.T) {
 	ctx := context.Background()
 	dir := bareRepo(t)

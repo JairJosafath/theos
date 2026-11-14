@@ -41,6 +41,7 @@ var giteaAllowlist = map[string]int{
 	"api/v1beta1/standard_types.go":                               1,
 	"api/v1beta1/zz_generated.deepcopy.go":                        10,
 	"cmd/main.go":                                                 3,
+	"cmd/theos/main.go":                                           1,
 	"hack/render/main.go":                                         2,
 	"hack/runner-fence/main.go":                                   31,
 	"hack/runner-fence/main_test.go":                              63,

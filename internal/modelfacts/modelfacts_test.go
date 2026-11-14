@@ -235,11 +235,16 @@ func TestWebshopOrdersAPIRule(t *testing.T) {
 	if !slices.Equal(rule.StatusContexts, []string{"check*"}) {
 		t.Errorf("rule requires %v", rule.StatusContexts)
 	}
-	// The host's CI files, then python-standard's own.
-	for _, p := range append(slices.Clone(ci.ProtectedPaths), "AGENTS.md", "ruff.toml", "docs/agents/") {
-		if !slices.Contains(rule.ProtectedPaths, p) {
-			t.Errorf("rule leaves %s unprotected: %v", p, rule.ProtectedPaths)
-		}
+	// The host's CI directory and python-standard's own paths, in the rule's
+	// order, sorted: the sample's host CI reads one directory, named here
+	// through ci so this file stays host-neutral (TestHostNeutral).
+	if len(ci.ProtectedPaths) != 1 {
+		t.Fatalf("the sample's CI protects %v, want one directory", ci.ProtectedPaths)
+	}
+	want := []string{".devcontainer/", ".editorconfig", ci.ProtectedPaths[0], ".theos.yaml", "AGENTS.md", "Makefile",
+		"docs/agents/", "docs/style/", "mypy.ini", "ruff.toml"}
+	if !slices.Equal(rule.ProtectedPaths, want) {
+		t.Errorf("rule protects %q, want %q", rule.ProtectedPaths, want)
 	}
 	if rule.OperatorPushes {
 		t.Error("the rule lets the protecting account push to main")

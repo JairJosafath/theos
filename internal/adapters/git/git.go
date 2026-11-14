@@ -182,6 +182,9 @@ func History(ctx context.Context, repoURL string, creds *ports.Credentials, limi
 	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		return nil, nil
 	}
+	if errors.Is(err, transport.ErrRepositoryNotFound) {
+		return nil, fmt.Errorf("list refs of %s: %w", repoURL, ports.ErrRepositoryNotFound)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list refs of %s: %w", repoURL, err)
 	}

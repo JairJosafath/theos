@@ -90,6 +90,51 @@ linters:
               desc: modelfacts must not depend on controllers (docs/architecture.md)
             - pkg: github.com/JairJosafath/theos/internal/adapters
               desc: modelfacts must not depend on adapters (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/ports/fake
+              desc: modelfacts takes the ports; the fake is for tests (docs/architecture.md)
+            - pkg: k8s.io/api/
+              desc: modelfacts reads the API's own types and apimachinery, not Kubernetes' built-in kinds (docs/architecture.md)
+        # internal/nocluster is the theos binary's commands on the ports and
+        # the model files' decoder (docs/plans/no-cluster.md, decision 4;
+        # #268): the API's types, apimachinery, the API server's defaulting
+        # and validation of the embedded CRDs, modelfacts and the business rules, and
+        # nothing of controller-runtime, client-go, the controllers or the
+        # adapters; its tests run the commands on the ports' fake.
+        nocluster-runs-on-ports:
+          files:
+            - "**/internal/nocluster/**"
+          deny:
+            - pkg: sigs.k8s.io/controller-runtime
+              desc: nocluster is the theos binary's, which runs without a cluster; it must not import controller-runtime (docs/architecture.md)
+            - pkg: k8s.io/client-go
+              desc: nocluster is the theos binary's, which runs without a cluster; it must not import client-go (docs/architecture.md)
+            - pkg: k8s.io/api/
+              desc: nocluster reads the API's own types, not Kubernetes' built-in kinds (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/controller
+              desc: nocluster must not depend on controllers (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/adapters
+              desc: nocluster runs on ports; only cmd/theos builds adapters (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/cmd
+              desc: nothing imports an entry point (docs/architecture.md)
+        nocluster-takes-ports:
+          files:
+            - "**/internal/nocluster/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/JairJosafath/theos/internal/ports/fake
+              desc: nocluster takes the ports; its tests wire the fake (docs/architecture.md)
+        # cmd/theos wires the host adapters onto internal/nocluster, as
+        # cmd/main.go does for the operator, and links no Kubernetes client.
+        theos-binary-has-no-cluster:
+          files:
+            - "**/cmd/theos/**"
+          deny:
+            - pkg: sigs.k8s.io/controller-runtime
+              desc: the theos binary runs without a cluster; it must not import controller-runtime (docs/architecture.md)
+            - pkg: k8s.io/client-go
+              desc: the theos binary runs without a cluster; it must not import client-go (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/controller
+              desc: the theos binary runs no reconciler; it calls internal/nocluster (docs/architecture.md)
         # Argo CD's adapter talks to the cluster; the Git host's, the
         # releases', the chat's, Linear's and Jira's adapters don't.
         adapters-stay-out-of-kubernetes:

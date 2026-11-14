@@ -308,6 +308,10 @@ var ErrUnpinnedRef = errors.New("template ref is not a tag or commit")
 // retry makes the directory appear at a tag or commit.
 var ErrTemplatePathNotFound = errors.New("template path is not a directory at the ref")
 
+// ErrRepositoryNotFound is History's error for a repository the host doesn't
+// have, as Git's own "repository not found".
+var ErrRepositoryNotFound = errors.New("repository not found")
+
 // GitHost is the Git host port (docs/architecture.md, "Ports"): repositories,
 // files, pushes, branches, tags, branch rules, pull requests, merges, commit
 // statuses, a release beside its tag, and the source at a tag. One GitHost
@@ -317,7 +321,7 @@ type GitHost interface {
 	EnsureRepository(ctx context.Context, name, description string) (Repository, error)
 	// History returns up to limit commits on the default branch, newest first, or
 	// on another branch when the default one is missing. An empty repository has
-	// none.
+	// none; a missing one is ErrRepositoryNotFound.
 	History(ctx context.Context, repo Repository, limit int) ([]Commit, error)
 	// PushInitialCommit pushes files as the first commit on the default branch.
 	// It fails, without force, if the branch already exists.
