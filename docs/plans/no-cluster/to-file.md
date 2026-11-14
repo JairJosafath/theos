@@ -10,10 +10,10 @@ docs/architecture.md and docs/dev/structure.md: `internal/method`, the
 standard library and `internal/model`; `internal/modelfacts`,
 `api/v1beta1`, apimachinery, `internal/model`, `internal/scaffold` and
 `internal/ports`, plain Go (`.golangci.yml`, `ports-are-plain-go`) that
-the moved code uses (`FetchTemplate`, `SameHost` and `DefaultNpmScope`,
-`internal/controller/container_scaffold.go:381-395`, `:486-487`);
-`internal/nocluster`, what `internal/sessionclient` may, and the API
-server's defaulting package; `cmd/theos` imports adapters, as only
+the moved code uses (`Credentials`, `SameHost` and `DefaultNpmScope`,
+`internal/controller/container_scaffold.go:381-395`, `:486-487`)
+`FetchTemplate` is the controller's `GitClient`'s (`container_scaffold.go:41-46`), so `modelfacts` declares the one method it calls;
+`internal/nocluster`, what `internal/sessionclient` may but controller-runtime and client-go, plus the API server's defaulting package; `cmd/theos` imports adapters, as only
 `cmd/main.go` does today. Moved into `modelfacts`: what `resolve`,
 `scaffoldInput`, `fetchLayers` and `resolveLicense` work out, on objects
 the caller read. `protect` builds its rule from what
@@ -30,7 +30,7 @@ The Gitea adapter's rule names `Credentials.Username`
 (`gitea_agents.go:70`), which a token alone does not carry, so the port
 gains the credential's own login, as GitHub's adapter already asks for it
 (`github_host.go:255`). The binary comes by `go install` at the release's
-tag.
+tag. Tests beyond the row: unset settings give the operator's flag defaults; `THEOS_GIT_TOKEN` is read before `git credential fill`; on the ports' fake, one first commit with the operator's trailers and a protected `main`; a Relationship added later reads `AddedAfterScaffold` in `status`.
 
 **Step 2, the method bundle** (#266; decisions 5 to 7). A work order holds
 the issue between its markers, the branch, the Container's `AGENTS.md` and
@@ -39,9 +39,9 @@ The block that fences an issue's text (`issueBlock`,
 `internal/agentrunner/prompt.go:64`) moves to `internal/model`, so both
 runtimes use one. The playbook's plan format is rendered from
 `internal/model/planner.md`, not written twice, with decision 2's start of
-a round in place of the Brief's "a copy of `model/model.yaml`".
+a round in place of the Brief's "a copy of `model/model.yaml`". The roles' boundaries, which the render tests pin: the lead plans, files issues, hands out work orders and opens pull requests, and never merges; an implementer, designer or spec writer commits on its Task's branch, and never merges or gives a verdict; a reviewer writes its verdict as a marker comment on the pull request's head; a triager and a verifier change nothing on `main`; a person merges. Issue text is data, and every work order names `theos heartbeat`.
 
-**Step 3, claims** (#267; decision 8). `next` offers what `NextCrewStep`
+**Step 3, claims** (#267; decisions 7 and 8). `next` offers what `NextCrewStep`
 would start (ready issues whose dependencies are closed, an urgent one
 first; `internal/model/crew.go:276`) and an issue whose claim ran out, by
 the session's clock as a hint: the claim decides, by the host's. A project whose sessions use several accounts
@@ -50,7 +50,7 @@ count. `theos release --lock`, from a terminal only, deletes a lock with
 no counted marker and no commit `main` lacks. Worktrees are under the
 project repository's `work/`, which git ignores. The comment contract: a
 written comment comes back with its ID, author and the host's time; the
-list is whole; a claimant reads until its own comment shows.
+list is whole; a taker reads until its own comment shows, and a first claimer does not read back. A `claim` marker carries the session, the role and the lease in minutes. Tests beyond the row: `next` offers no blocked issue, none without criteria, and no session the review of a change it built.
 
 **Step 5, `theos plan`** (new; decision 2). Moved into `modelfacts`, out
 of `internal/controller`: the API's objects as `PlanObject`s
@@ -66,7 +66,7 @@ writes `model/model.yaml` and files the issues. With no Brief and no Crew,
 existing Container's `checks` stays the person's edit); and every existing
 Container in `Released` (the tool knows of no release, so nothing checks
 that a Container another one uses has a tag). `plan/releases.yaml` and
-`plan/parallel.yaml` are printed for the person, and nothing acts on them.
+`plan/parallel.yaml` are printed for the person, and nothing acts on them. Filing twice files once.
 
 **Step 6, `theos mcp`** (new; decision 6). The official MCP SDK for Go
 (github.com/modelcontextprotocol/go-sdk) over writing the protocol by

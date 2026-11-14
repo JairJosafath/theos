@@ -2084,7 +2084,7 @@ without, each under the reason word `theos status` prints:
 | `NoCheckpoint` | no resume or pause: a dead session's commits stay on its branch for the next claim |
 | `CostUnreported` | no cost, tokens, metrics, Scorers or Benchmarks: the record is the issue and its pull request |
 | `PersonMerges` | no operator merges: a person does |
-| `AgentHoldsOwnerCredential` | the agents act with the person's credential until a second account's is given, and a branch rule binds nobody it lets past |
+| `AgentHoldsOwnerCredential` | the agents act with the person's credential until a second account's is given: they can merge past a branch rule, change or remove it, and reach every repository that credential does |
 | `ReviewNotEnforced` | no host is asked for a review: `theos merge` wants a verdict from another session, and a session's name is its own word |
 | `ChecksByMerge`, `ProtectedPathsByMerge` | on GitHub the host holds neither: `theos merge` does, or the eye of the person who merges in the host's pages |
 | `RulesNotValidated` | the CRDs' CEL rules, enums and the admission policy run only once the model reaches a cluster |

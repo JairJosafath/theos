@@ -17,12 +17,15 @@ cluster made can be worked without one.
 
 - **A person merges every pull request until step 11.** `merge: rules` is
   refused, `RulesMergeNotBuilt`, until then, and step 11 builds it for
-  Gitea and Forgejo alone: on GitHub it stays refused, `HostHoldsNoPaths`
-  (decision 10).
-- **A claim is written on the issue:** a claim comment, about one renewal
-  comment per half hour of work, and a release (decision 8).
-- **By default the agents hold the person's own credential,** so no rule
-  of the host binds them, and `theos status` says so (decision 9).
+  Gitea and Forgejo alone, for a person who makes three accounts there:
+  on GitHub it stays refused, `HostHoldsNoPaths` (decision 10).
+- **A claim is written on the issue:** a claim comment, about one renewal comment per half hour of work,
+  and a release. A session that dies between its branch and its first comment leaves a lock a person
+  clears (`LockWithoutClaim`, decision 8).
+- **By default the agents hold the person's own credential.** A session can then do on the host what that
+  token can: merge any pull request past the checks, the protected paths and the review, change or remove
+  the rule itself, and write to every other repository the token reaches, with no expiry theos sets.
+  `theos status` says so, and a second account's token narrows it (decision 9).
 - Every choice that depends on where a person runs theos is a setting whose
   default needs no cluster (decision 12).
 
@@ -120,7 +123,7 @@ Code is cited as it is on main at fa3c409.
      the project's reviewer file lists its tools without `Agent`.
    - Codex reads `AGENTS.md` from the Git root down to the working
      directory. ChatGPT is not listed: OpenAI's developer-mode page names
-     a server URL over "SSE and streaming HTTP", not localhost, and a
+     a server URL over "SSE and streaming HTTP" and does not say it reaches localhost, and a
      hosted endpoint is out of scope.
 7. **A runtime without subagents plays one role per session.** `theos next`
    hands out one work order for one role; the session does it, says `theos
@@ -162,8 +165,7 @@ Code is cited as it is on main at fa3c409.
      first seconds, a session that died in them, a Crew's Task, a claim
      from outside `claimants` or a person's work, and nothing on the host
      tells these apart or ages them. `claim` and `next` refuse it,
-     `status` lists it (`LockWithoutClaim`), and a person frees it by
-     deleting the branch.
+     `status` lists it (`LockWithoutClaim`), and a person frees it: they delete the branch and set the label back to `status/ready`.
 
    So a first claimer need not read back: nobody may take its issue before
    its marker shows, nor while its lease runs. The price: a session that
@@ -175,7 +177,7 @@ Code is cited as it is on main at fa3c409.
    `theos` reads it from `THEOS_GIT_TOKEN`, else from `git credential
    fill`, and never stores one. By default the sessions run with the
    person's own, the one that ran `theos protect`: it can merge past the
-   rule, so no rule binds them (`AgentHoldsOwnerCredential`). The narrower
+   rule, so no rule binds them (`AgentHoldsOwnerCredential`). It also reaches what the token reaches beyond this project, and only the runtime's own sandbox keeps it on the machine. The narrower
    credential is the token of a second account of the person's, with
    write access and no administration: then the host keeps the sessions
    off `main` and off the merge. The AgentAccess port is not used: on
@@ -259,7 +261,7 @@ request a session opens ends with a line naming them.
 | Checkpoints, resume and pause | a session that dies leaves its commits on the branch; the next claim continues there | `NoCheckpoint` |
 | Recorded cost and tokens, the metrics, Scorers and Benchmarks | nothing is recorded; the record of the work is the host's: the issue, the pull request, its reviews | `CostUnreported` |
 | The operator's merge | a person merges, with `theos merge` or in the host's pages | `PersonMerges` |
-| A credential per agent and repository | the person's own, unless a second account's is given (decision 9) | `AgentHoldsOwnerCredential` |
+| A credential per agent that writes one repository, expires, and can neither push to `main` nor merge | the person's own, unless a second account's is given (decision 9): it merges past the rule, can change or remove the rule, and reaches every repository its token does | `AgentHoldsOwnerCredential` |
 | A review no merge skips | no host is asked for one; `theos merge` wants a verdict from another session, and a session's name is its own word | `ReviewNotEnforced` |
 | Required checks and protected paths on GitHub, held by the operator's merge | held by `theos merge`; by the person's eye in the host's pages | `ChecksByMerge`, `ProtectedPathsByMerge` |
 | CEL rules, enums and the admission policy | a strict decode, the CRDs' defaults and `internal/model`'s checks; the rest runs when the model reaches a cluster, or in `kubectl-validate` | `RulesNotValidated` |
@@ -321,9 +323,7 @@ and what a step checks first) is in
 **Protected paths,** the owner's session's; a Crew's agent given the step
 says so and stops (AGENTS.md). Steps 1 and 2: the depguard rules for the
 new packages, in `.golangci.yml`; step 2 also `internal/agentrunner/`.
-Step 9: the chart's template pins, in `dist/chart/`. Step 11:
-`internal/adapters/gitea/gitea_agents.go`, and
-`internal/controller/protection.go` if the operator's rule changes. Any
+Step 9: the chart's template pins, in `dist/chart/`. Step 11: `internal/adapters/gitea/gitea_agents.go`, `internal/adapters/github/github_host_rules.go` (its `ProtectBranch` refuses a rule with mergers), and `internal/controller/protection.go` if the operator's rule changes. Any
 step that adds a make target: `Makefile`.
 
 ## Cluster-only, and not covered
@@ -366,11 +366,18 @@ their public documentation as read on 2026-11-14.
   not shown: a takeover rests on it, and a first claim, which rests on
   the branch, does not. Step 3 reads the hosts' documentation on it first,
   and has a taker read once more before its first push.
+- That of two creations of one branch in the same moment a host lets one through: the contract and step 3
+  hold it on the fake, `githubtest` and a real Gitea. For github.com it is not shown: its REST page for
+  creating a reference lists 201, 409 and 422 and does not say which an existing one gets. A first claim
+  rests on it, so step 10's walk has two sessions claim one issue there.
 - An author's own approval is refused on GitHub by its page on approving a
   pull request with required reviews, and on Gitea by its API's code
   (`routers/api/v1/repo/pull_review.go`); no page of Gitea's was read that
   says so. Gitea's branch protection is from
   docs.gitea.com/usage/access-control/protected-branches.
+- What a host's terms say of one person holding several accounts. github.com's allow one free machine
+  account beside a personal one, which covers decision 9's second account there. A hosted Gitea's or
+  Forgejo's were not read: step 11 reads them before `rules` asks anyone for three.
 - Rulesets and the administrator's bypass on a personal GitHub account,
   which is what one developer has, and #269's "required check runs green
   on GitHub Actions and on GitLab CI": runs on the real host, a person's,
