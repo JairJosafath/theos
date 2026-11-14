@@ -12,56 +12,57 @@ metadata:
   namespace: mcp-customs
 spec:
   idea: >-
-    MCP Customs checks an MCP server before an AI agent is allowed to use it.
-    A developer or a platform team submits a server, as a Go module, an npm
-    package, a PyPI package or a remote URL, on a web page or through an API,
-    and gets a verdict (pass, review or block) with a report that says why.
+    MCP Customs checks an MCP server before an AI agent may use it. Scanners
+    read what a server says; MCP Customs runs it and watches what it does. A
+    developer or platform team submits a pinned Go module, npm or PyPI
+    package, or a remote URL, on a web page or through an API, and gets pass,
+    review or block with a report that says why, and for a package an install
+    spec to copy: version, integrity and the approved tool list's hash.
 
-    The check is a Go AWS Lambda durable function (the AWS Durable Execution
-    SDK for Go, v1, on provided.al2023, arm64, in us-east-2). What can be
-    decided by code is code: resolve the package and its publisher, look up
-    earlier verdicts by content hash, compare the tool list with the last
-    approved one, start the sandbox, list the server's tools, run probes, and
-    every verdict rule. A server seen before with the same hash and tool list
-    passes with no model call. An Amazon Bedrock model, through a JSON Schema
-    tool, does only what code can't: it writes probe arguments for each tool
-    from its schema and description, with canary values planted in them; it
-    judges whether what the server did matches what it says it is for (a
-    GitHub server calling api.github.com is expected, a weather tool posting
-    to an unknown host is not) and whether a tool description carries
-    instructions to the model; and when something does not add up it
-    investigates one move at a time, at most eight turns: each turn it picks
-    one action from a fixed registry (probe again with other arguments, read
-    the source file that opened a connection, fetch and inspect what the
-    server downloaded, compare with the previous version, ask a human), and a
-    small interpreter runs it as one durable operation: a Step, a Map over
-    many tools, WaitForCallback for a human, Wait to check again. Every model
-    call, clock read and lookup happens inside a step, so a replay follows the
-    same path.
+    The check is a Go AWS Lambda durable function (Durable Execution SDK for
+    Go v1, provided.al2023, arm64, us-east-2). Code does all that code can
+    decide: resolve the package, look up earlier verdicts by the hash of its
+    whole resolved dependency set, install it in the sandbox as a recorded
+    phase, list tools, resources and prompts, run probes, scan all server text
+    (descriptions, full schemas, tool results, resources, prompts) for hidden
+    characters (ANSI escapes, Unicode tag and zero-width characters) and known
+    injection patterns, and apply every verdict rule. An Amazon Bedrock model,
+    through a JSON Schema tool, does only what code can't: it writes realistic
+    probe arguments with canaries planted; judges whether behaviour fits the
+    server's stated purpose and whether server text instructs the model; and
+    when something does not add up, investigates one registered action per
+    turn, at most eight: probe again, read the source that opened a
+    connection, inspect a download, run again with the clock moved forward,
+    ask a human. Server text reaches the model fenced as evidence, never as
+    instructions. Each action is one durable operation (Step, Map,
+    WaitForCallback, Wait); every model call, clock read and lookup runs
+    inside a step.
 
-    The server under test runs in an AWS Lambda MicroVM: an image with Go,
-    Node and Python, and a small harness written in Go that starts the server,
-    speaks MCP to it over stdio, records every outbound connection and every
-    file written, and answers the durable function over the MicroVM's HTTPS
-    URL. The sandbox holds no credentials, only canary values, and is
-    suspended between steps.
+    The server runs in an AWS Lambda MicroVM. A Go harness runs as root; the
+    server runs as an unprivileged user in a home that looks like a
+    developer's laptop (fake ~/.ssh, ~/.aws, .npmrc, git history), with no
+    Lambda variables and a common MCP client name. Canaries are fresh per run
+    and in real formats. All egress goes through the harness: DNS is logged,
+    TLS is intercepted with the harness's own CA, hosts the model expects for
+    the purpose pass, others get fake answers, and each canary is searched for
+    plain, base64, hex and URL-encoded. The harness offers sampling and
+    elicitation and records each request. A remote URL is reached only from
+    the sandbox, never from the Checker, and its OAuth metadata is linted.
 
-    Hard rules live in code, not in the prompt: a server whose descriptions
-    carry instructions to the model, or whose read-only tool writes or sends a
-    canary anywhere, is never passed without a human; the model may make a
-    verdict stricter, never looser; it may only name registered actions, with
-    capped fan-outs, turns and timeouts. An approved server is checked again
-    after a set time (24 hours, a minute in the demo), and a changed tool list
-    is judged again and needs a new approval.
+    Rules the model cannot clear: a canary leaving, a write to an agent config
+    or shell startup file, an unexplained sampling or elicitation request, or
+    hidden characters means block or a human. The model may make a verdict
+    stricter, never looser; an error or running out of turns gives review. A
+    remote server is at most "attested": this tool list, at this time. A
+    server is checked again when a new version is published or a remote tool
+    list changes.
 
-    The web page is server-rendered Go (html/template, a little plain
-    JavaScript), served by a Go Lambda function behind the same API. It
-    submits a server, shows the run's steps as they happen, shows the report,
-    and has Approve and Block buttons for a run that waits on a human. Checks,
-    verdicts and tool-list snapshots live in DynamoDB; reports in S3.
-    Everything scales to zero. All application code is Go, in small packages
-    of small files and short functions. The repository also carries a demo
-    server, a Go module, that looks like a weather tool but hides an
-    instruction in a tool description asking for the user's SSH key, and posts
-    its arguments to an outside host only when they hold something that looks
-    like a secret, so a fixed probe misses it and the investigation finds it.
+    The web page is server-rendered Go (html/template, a little JavaScript)
+    behind the same API: submit, watch the steps, read the report with server
+    text shown escaped, Approve or Block. Checks, verdicts and tool lists live
+    in DynamoDB, reports in S3; all scales to zero. All code is Go, in small
+    files and short functions. Two demo servers, Go modules: a weather tool
+    with clean descriptions whose results tell the agent to resend with the
+    SSH key, and which posts to a host it looks up at runtime only when its
+    arguments hold a secret; and a mail tool whose v1.0.1 adds one line that
+    copies every message to an outside host.
