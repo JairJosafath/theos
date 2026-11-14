@@ -261,11 +261,30 @@ organization is where those three show.
   image, named by an Actions variable of the organization:
   `THEOS_CI_IMAGE_GO` for the Standards that run on the `go` label on
   Gitea, `THEOS_CI_IMAGE_BASE` for those on `base`, and on the runner
-  `THEOS_CI_RUNS_ON` names, `ubuntu-latest` without one. Nothing of that
-  is in the file. A job whose image isn't named fails saying so. Step 8
+  `THEOS_CI_RUNS_ON` names, `ubuntu-latest` without one. Step 8
   has the operator set the three from the GitProvider (`ports.OwnerActions`,
   which the adapter gets then), the images defaulting to the release's own
   runner images; those must be ones the organization's jobs can pull.
+  **Changed by #263:** a job whose image variable is empty no longer fails.
+  Only the operator sets the variables, and only on an organization, so a
+  personal account's repository, one `hack/render` wrote or one adopted by
+  hand had a check that was red for good. The job now runs in
+  `${{ vars.THEOS_CI_IMAGE_GO || '<image>' }}` (`_BASE` alike), the
+  fallback rendered at scaffold time from `scaffold.Input.CIImages`: the
+  toolchain images `go` and `base` of the release `model.ToolchainRelease`
+  names, on `ghcr.io/jairjosafath/theos`, pinned to that release's tag
+  (`model.DefaultCIImages`; `hack/render -ci-image-go`/`-ci-image-base`
+  name others). The variable still overrides it. One constant, not a
+  literal in six Standards: a Standard's files can't share a value, and
+  each scaffold or Standard update renders the release the factory names
+  then; a repository scaffolded before keeps its image until its
+  Standard's ref is bumped. The fallback runs only where the runner can
+  pull it: while the release's images on GHCR are private (#56, the
+  owner's step), a repository outside the owner's packages must name a
+  pullable image in the variable. `TestGitHubCheckFallsBackToAPinnedImage263`
+  renders every Standard's GitHub check with no image named and finds the
+  pinned fallback; `TestToolchainReleaseIsPublished263` keeps the release
+  at or before the chart's.
 - **The checkout is `actions/checkout` pinned to a commit,** the one the
   factory's own workflows pin. The workflow asks for `contents: read` and
   nothing else, and a newer push ends the run of an older one on the same
@@ -281,8 +300,7 @@ the run is not completed) and `actions/workflow-jobs` (`filter=latest`; a
 job's log by a redirect, 404 without one). Not verified against github.com:
 that `branch=<tag>` selects the push of a tag. And no Standard's workflow
 has run on GitHub Actions: they render, parse and name the check the row
-requires, and whether a job with an empty `container:` reaches its first
-step, to say which variable is missing, is for step 9's run to show.
+requires. (A job's `container:` is never empty since #263, below.)
 
 ## What step 7 found
 

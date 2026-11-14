@@ -26,6 +26,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
@@ -96,5 +97,58 @@ func TestRenderBadFlag264(t *testing.T) {
 	var stderr bytes.Buffer
 	if err := run("prog", []string{"-h"}, io.Discard, &stderr); !errors.Is(err, flag.ErrHelp) {
 		t.Errorf("-h: err = %v, want flag.ErrHelp", err)
+	}
+}
+
+// TestRenderCIImageFlags263 checks that a GitHub check rendered without the
+// operator falls back to the release's pinned toolchain images, that
+// -ci-image-go and -ci-image-base name others, and that an image that isn't
+// pinned is refused (#263).
+func TestRenderCIImageFlags263(t *testing.T) {
+	defaults := model.DefaultCIImages()
+	cases := []struct {
+		name    string
+		flags   []string
+		want    string
+		refused string
+	}{
+		{"no flags give the release's images", nil, defaults.Go + " " + defaults.Base, ""},
+		{"flags name others", []string{"-ci-image-go", "example.com/go:1.0.0", "-ci-image-base", "example.com/base:1.0.0"},
+			"example.com/go:1.0.0 example.com/base:1.0.0", ""},
+		{"a moving tag is refused", []string{"-ci-image-go", "example.com/go:latest"}, "", "-ci-image-go"},
+		{"no tag is refused", []string{"-ci-image-base", "example.com/base"}, "", "-ci-image-base"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "app")
+			// A one-file layer of its own, as in TestRenderIdentityFlags264.
+			templates := t.TempDir()
+			layer := filepath.Join(templates, "tiny")
+			if err := os.MkdirAll(layer, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			tmpl := []byte("{{ .CIImages.Go }} {{ .CIImages.Base }}\n")
+			if err := os.WriteFile(filepath.Join(layer, "images.txt.tmpl"), tmpl, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			args := append([]string{"-templates", templates, "-out", out}, c.flags...)
+			err := run("render", append(args, "Framework=tiny"), io.Discard, io.Discard)
+			if c.refused != "" {
+				if err == nil || !strings.HasPrefix(err.Error(), c.refused+":") {
+					t.Fatalf("err = %v, want %s refused", err, c.refused)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(out, "images.txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(string(data)); got != c.want {
+				t.Errorf("rendered %q, want %q", got, c.want)
+			}
+		})
 	}
 }

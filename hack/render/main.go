@@ -78,6 +78,13 @@ func run(name string, args []string, stdout, stderr io.Writer) error {
 	flags.StringVar(&in.Checks, "checks", "", "when CI runs the full check: EveryChange (the default) or BeforeRelease")
 	flags.StringVar(&in.NpmScope, "npm-scope", "@theos", "the npm scope the Container's package is named under")
 	ci := flags.String("ci", model.CIGiteaActions, "the CI system the repository runs")
+	// The toolchain images a GitHub check falls back to when its Actions
+	// variable is empty (#263): the release's own unless a flag names another.
+	images := model.DefaultCIImages()
+	flags.StringVar(&in.CIImages.Go, "ci-image-go", images.Go,
+		"the toolchain image a GitHub check on the go toolchain runs in without THEOS_CI_IMAGE_GO; pinned")
+	flags.StringVar(&in.CIImages.Base, "ci-image-base", images.Base,
+		"the toolchain image a GitHub check on the base toolchain runs in without THEOS_CI_IMAGE_BASE; pinned")
 	// The Container's spec.operations, each left out when empty (-retention-days -1).
 	var ops model.OperationsChoices
 	retention := flags.Int("retention-days", -1, "spec.operations.backups.retentionDays; -1 leaves it out")
@@ -97,6 +104,13 @@ func run(name string, args []string, stdout, stderr io.Writer) error {
 	var err error
 	if in.CI, err = model.CIByName(*ci); err != nil {
 		return err
+	}
+	for _, f := range []struct{ flag, image string }{
+		{"-ci-image-go", in.CIImages.Go}, {"-ci-image-base", in.CIImages.Base},
+	} {
+		if problem := model.PinnedImageProblem(f.image); problem != "" {
+			return fmt.Errorf("%s: %s", f.flag, problem)
+		}
 	}
 	if *retention < -1 || *retention > int(model.MaxRetentionDays) {
 		return fmt.Errorf("-retention-days %d: 0 to %d, or -1 to leave it out", *retention, model.MaxRetentionDays)

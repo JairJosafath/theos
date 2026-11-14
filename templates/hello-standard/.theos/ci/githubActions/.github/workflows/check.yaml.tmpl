@@ -17,16 +17,14 @@ jobs:
     name: check
     # GitHub's own runners take the job unless the organization names others,
     # and they run it in the factory's toolchain image. Both are Actions
-    # variables of the organization, which the operator sets.
-    runs-on: ${{ vars.THEOS_CI_RUNS_ON || 'ubuntu-latest' }}
-    container: ${{ vars.THEOS_CI_IMAGE_BASE }}
+    # variables, which the operator sets for an organization. Without the
+    # image's, the job runs in the toolchain image of the factory release this
+    # file was rendered with, pinned to its tag, so a repository the operator
+    # sets nothing for runs its check too (#263).
+    runs-on: {{`${{ vars.THEOS_CI_RUNS_ON || 'ubuntu-latest' }}`}}
+    container: {{ printf "${{ vars.THEOS_CI_IMAGE_BASE || '%s' }}" .CIImages.Base }}
     timeout-minutes: 60
     steps:
-      - name: The toolchain image is named
-        if: ${{ vars.THEOS_CI_IMAGE_BASE == '' }}
-        run: |
-          echo "::error::The Actions variable THEOS_CI_IMAGE_BASE names no image. The check runs in the factory's toolchain image, which the operator names for the organization."
-          exit 1
       - name: Check out
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Run hello

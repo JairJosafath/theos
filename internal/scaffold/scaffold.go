@@ -131,6 +131,12 @@ type Input struct {
 	// {{ .NpmScope }}/{{ .Container }}; the name is set at scaffold time and
 	// never again. The controller fills it: an empty scope is a bug there.
 	NpmScope string
+	// CIImages are the toolchain images a CI job falls back to when the CI
+	// system names none, such as a Standard's GitHub check whose Actions
+	// variable is empty (#263): {{ .CIImages.Go }} and {{ .CIImages.Base }}.
+	// An image left empty renders as model.DefaultCIImages', the toolchain of
+	// the release model.ToolchainRelease names.
+	CIImages model.CIImages
 	// FrameworkFiles are the paths the Framework layer renders for the
 	// Container at the ref it was scaffolded at, sorted, so a later layer can
 	// tell what that version of the Framework has:
@@ -419,6 +425,7 @@ func renderFiles(in Input, layer Layer) (Tree, error) {
 	if err := checkCI(in, layer); err != nil {
 		return nil, err
 	}
+	in.CIImages = in.CIImages.OrDefault()
 	ownCI := ciDir + in.CI.Name + "/"
 	out := Tree{}
 	for _, p := range layer.Files.Paths() {

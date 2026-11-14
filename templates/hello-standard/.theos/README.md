@@ -21,8 +21,14 @@ Actions the job is named `check` (and `check (full)` with checks before a
 release), which is the check main requires; it runs on the runner the
 organization's Actions variable `THEOS_CI_RUNS_ON` names (`ubuntu-latest`
 without one) and in the toolchain image `THEOS_CI_IMAGE_BASE` names, which the operator
-sets: GitHub's own runners carry none of the factory's toolchain. `.github/`
-is always protected there, as `.gitea/` is on Gitea.
+sets for an organization: GitHub's own runners carry none of the factory's
+toolchain. Since v1.3.0, without the variable the job runs in the factory
+release's own toolchain image, `ghcr.io/jairjosafath/theos/base:<release>`,
+the release the scaffold names (`model.ToolchainRelease` in theos), so a
+repository in a personal account, rendered by `hack/render` or adopted by
+hand runs its check too (#263). The runner must be able to pull that image:
+the variable names another where it can't. `.github/` is always protected
+there, as `.gitea/` is on Gitea.
 
 ## How a template works
 

@@ -177,7 +177,7 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
   command line.
 
-### python-standard (v1.9.0)
+### python-standard (v1.10.0)
 
 The Python rulebook and its `make check`. Since v1.5.0 the check workflow
 writes `~/.npmrc` and `~/.netrc` from the owner's Actions variables and
@@ -193,6 +193,8 @@ Since v1.7.0 `AGENTS.md` tells the implementer which Domains the system is
 about and to read `docs/agents/domain/<name>/README.md` and its topic files
 before planning a change, and the reviewer guide to check the change against
 each domain's common mistakes; without Domains both read as before (#1758).
+Since v1.10.0 the GitHub check runs in the release's pinned toolchain image
+when the Actions variable `THEOS_CI_IMAGE_BASE` is empty, instead of failing (#263).
 
 - CI: its `make check` in `make test-templates`' combos "fastapi service
   with postgres" and "python cli".
@@ -207,7 +209,7 @@ each domain's common mistakes; without Domains both read as before (#1758).
 - README, Deploy, Auth: n/a: a Standard writes rules, not the app; its
   `AGENTS.md` and `docs/` are what it adds.
 
-### ts-standard (v1.9.0)
+### ts-standard (v1.10.0)
 
 The TypeScript rulebook for react-vite, node-cli and vscode-extension. Since
 v1.6.0 the check workflow writes `~/.npmrc` and `~/.netrc` from the owner's
@@ -221,6 +223,8 @@ Since v1.7.0 `AGENTS.md` tells the implementer which Domains the system is
 about and to read `docs/agents/domain/<name>/README.md` and its topic files
 before planning a change, and the reviewer guide to check the change against
 each domain's common mistakes; without Domains both read as before (#1758).
+Since v1.10.0 the GitHub check runs in the release's pinned toolchain image
+when the Actions variable `THEOS_CI_IMAGE_GO` is empty, instead of failing (#263).
 
 - CI: its `make check` in `make test-templates`' combos "react web app on
   kubernetes", "node cli" and "vscode extension".
@@ -465,7 +469,7 @@ run in Node.
   the command logs at `info` when it runs and at `error` when it fails.
 - Auth: n/a: it runs in the user's editor.
 
-### go-standard (v1.6.0) and go-operator-standard (v1.6.0)
+### go-standard (v1.7.0) and go-operator-standard (v1.7.0)
 
 The Go rulebook, and its kubebuilder variant (protected generated paths,
 envtest).
@@ -473,6 +477,8 @@ Since v1.4.0 `AGENTS.md` tells the implementer which Domains the system is
 about and to read `docs/agents/domain/<name>/README.md` and its topic files
 before planning a change, and the reviewer guide to check the change against
 each domain's common mistakes; without Domains both read as before (#1758).
+Since v1.7.0 the GitHub check runs in the release's pinned toolchain image
+when the Actions variable `THEOS_CI_IMAGE_GO` is empty, instead of failing (#263).
 
 - CI: go-operator-standard: `make test-templates-operator`, as for
   go-kubebuilder. go-standard: its `make check` in `make test-templates`'
@@ -538,7 +544,7 @@ v1.1.1.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.24.0)
+### aws-standard (v1.25.0)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
@@ -572,6 +578,8 @@ with the `rds` Connector has its runbook restore the cluster to a point in
 time and when it is gone, its AWS digest an _Aurora PostgreSQL_ section,
 and its implementer guide the data rule (`RDS_*`, the Data API or a
 driver with the secret) (#1927).
+Since v1.25.0 the GitHub check runs in the release's pinned toolchain image
+when the Actions variable `THEOS_CI_IMAGE_GO` is empty, instead of failing (#263).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by
@@ -688,6 +696,8 @@ The end-to-end suite's fixtures (`test/e2e`): the smallest Container, page and
 Standards, kept tiny on purpose so a stand-in agent's Task is fast. Every
 promise but a README is n/a for them; `hello-standard`'s `make check` runs
 `hello.sh` and expects `hello, world`. They ship nothing a user builds on.
+hello-standard v1.3.0's GitHub check runs in the release's pinned `base`
+toolchain image when `THEOS_CI_IMAGE_BASE` is empty (#263).
 
 ## Keeping it current
 
