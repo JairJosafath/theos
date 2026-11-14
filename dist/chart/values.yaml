@@ -543,11 +543,11 @@ gitProviders: []
 ciImages:
   go:
     repository: ghcr.io/jairjosafath/theos/go
-    ## Defaults to Chart.appVersion
+    ## Defaults to Chart.appVersion, or Chart.version while appVersion is dev
     tag: ""
   base:
     repository: ghcr.io/jairjosafath/theos/base
-    ## Defaults to Chart.appVersion
+    ## Defaults to Chart.appVersion, or Chart.version while appVersion is dev
     tag: ""
 
 ## Pull secrets for the pods of the UI (unless ui.imagePullSecrets is set),
