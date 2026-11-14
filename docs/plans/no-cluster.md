@@ -70,9 +70,16 @@ Code is cited as it is on main at fa3c409.
    (`internal/model/brief.go:395-407`, `:516-522`). So
    a round is never a copy of `model/model.yaml`: `theos plan` renders
    `plan/model.yaml` from it and merges an accepted plan back object by
-   object, which keeps what a plan can't write. A cluster does not take
-   every such file as it is: its CEL rules, enums and admission policy
-   don't run locally (`RulesNotValidated`), and it refuses `provider:
+   object, which keeps what a plan can't write. The decoder applies the CRDs'
+   create-time rules (OpenAPI patterns, enums, formats, lengths and
+   bounds, list types, CEL rules with no old object, object metadata, a
+   name once per kind; step 1, #268) to each object as the API server
+   reads a create: a field written as null reads as left out, then
+   defaults are set and a status subresource's `status` is dropped. A
+   cluster does not take every such file as it is: the admission policy,
+   the rules that compare an update with the object before it and the
+   GitProvider provider enum don't run locally
+   (`RulesNotValidated`), and it refuses `provider:
    github` until #81 and `gitlab` until GitLab is its host
    (`api/v1beta1/gitprovider_types.go:27`). The enum is the cluster's word
    that it can host there, so this plan does not widen it.
@@ -266,7 +273,7 @@ request a session opens ends with a line naming them.
 | A credential per agent that writes one repository, expires, and can neither push to `main` nor merge | the person's own, unless a second account's is given (decision 9): it merges past the rule, can change or remove the rule, and reaches every repository its token does | `AgentHoldsOwnerCredential` |
 | A review no merge skips | no host is asked for one; `theos merge` wants a verdict from another session, and a session's name is its own word | `ReviewNotEnforced` |
 | Required checks and protected paths on GitHub, held by the operator's merge | held by `theos merge`; by the person's eye in the host's pages | `ChecksByMerge`, `ProtectedPathsByMerge` |
-| CEL rules, enums and the admission policy | a strict decode, the CRDs' defaults and `internal/model`'s checks; the rest runs when the model reaches a cluster, or in `kubectl-validate` | `RulesNotValidated` |
+| The admission policy, the rules that compare an update with the object before it, the GitProvider provider enum | a strict decode, the CRDs' defaults and create-time rules (step 1, #268) and `internal/model`'s checks (`model.HostCI` checks the provider); these three run when the model reaches a cluster | `RulesNotValidated` |
 
 **What the Git host still holds,** for an account its rule binds: `main`
 takes no push, and a change arrives as a pull request. On Gitea and Forgejo
@@ -337,9 +344,8 @@ step that adds a make target: `Makefile`.
   Without a cluster a release is a tag a person pushes.
 - Not covered: a hosted MCP endpoint, which would hold a person's Git
   credential on the internet; Bitbucket; GitLab as a cluster's host;
-  `merge: rules` on GitHub; Containers sharing a repository (#270); the
-  CRDs' CEL rules in the local tool; a signed release file of the binary,
-  which touches `.github/` and `hack/`, both protected.
+  `merge: rules` on GitHub; Containers sharing a repository (#270); a
+  signed release file of the binary, which touches `.github/` and `hack/`, both protected.
 
 ## Done when
 

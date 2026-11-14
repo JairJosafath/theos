@@ -170,6 +170,12 @@ func HostCI(host string) (CI, error) {
 	return CIByName(name)
 }
 
+// Hosts are the Git hosts HostCI knows a CI system of, sorted: the
+// providers a GitProvider may name.
+func Hosts() []string {
+	return slices.Sorted(maps.Keys(hostCI))
+}
+
 // WorkflowDirs are where the CI systems the factory knows read a repository's
 // workflows, in the order a host looks: workflows/ under each system's own
 // paths, then its fallbacks. The adoption detector reads them (adopt.go).

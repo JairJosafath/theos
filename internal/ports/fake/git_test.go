@@ -18,6 +18,7 @@ package fake_test
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"testing"
 
@@ -25,6 +26,16 @@ import (
 	"github.com/JairJosafath/theos/internal/ports/fake"
 	"github.com/JairJosafath/theos/internal/scaffold"
 )
+
+// #268: History of a repository the host doesn't have is
+// ports.ErrRepositoryNotFound, as the Git adapter gives, not a panic.
+func TestGitHistoryOfAMissingRepository268(t *testing.T) {
+	p := fake.New().For(ports.Config{URL: "http://git.example.com", Owner: "apps"})
+	if _, err := p.History(context.Background(), p.Repository("missing"), 2); !errors.Is(err,
+		ports.ErrRepositoryNotFound) {
+		t.Errorf("History() of a missing repository: %v, want %v", err, ports.ErrRepositoryNotFound)
+	}
+}
 
 // The fake reads a plan branch as the planner leaves it: main with its plan/
 // replaced, at the branch's head.

@@ -10,6 +10,7 @@ cmd/theos-agent/                       Task runner, run in agent sandboxes
 cmd/theos-env/                     theos-env: runs an agent's commands in a leased test environment (run), and serves them there (serve); in the agent image
 cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
 cmd/theos-chat/                    theos-chat: posts in each Chat's Matrix rooms and runs its people's commands as them, a third binary in the operator image
+cmd/theos/                         theos with no cluster: init, scaffold, protect and status on a project repository's model/ files; wires the host adapters onto internal/nocluster (#268)
 api/v1beta1/*_types.go             CRD schemas for every kind (+kubebuilder markers), the one version served and stored; the operator imports it
 api/v1beta1/shared_types.go        Refs, Container types, condition names and labels
 api/*/zz_generated.*               Auto-generated (DO NOT EDIT)
@@ -26,6 +27,7 @@ internal/adapters/localenv/        The local TestEnvironment provider: a fenced 
 internal/adapters/awsenv/          The aws TestEnvironment provider: a fenced EC2 machine per lease (a Mac's on a kept host; one that runs a CI job in ci.go), and the deviceFarm one's test runs, with the AWS SDK
 internal/taskfacts/                What the factory's numbers read of a Task: the one mapping from the API's Task to model.TaskMetricFacts, for the operator's metrics and theos-session report
 internal/modelfacts/               What the scaffold works out of the objects a caller read: resolve, layers, render, license and the one branch rule, for the Container reconciler and the theos binary (#268); no controller-runtime, no client-go
+internal/nocluster/                The theos binary's commands on ports, and the model files' decoder: each object defaulted from the CRDs config/crd/bases embeds (crds.go), checked against their create-time rules, then decoded strictly (#268); no controller-runtime, no client-go, no adapter
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
 internal/chatbot/                  theos-chat's logic: news to threads, posts and the updates digest; commands sent impersonating the person; its state ConfigMap
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report
