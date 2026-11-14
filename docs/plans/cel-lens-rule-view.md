@@ -343,3 +343,17 @@ Each is an issue in the session's Gitea (bodies in
   one is. Follow-ups: #42 (the line above a rule says `compiles` for
   such a rule) and #43 (the reviews' non-blocking items). Building now:
   #36 (engine) and cel-lens-vscode#24 (the view, against #41's engine).
+- **14 November, 04:00 UTC. All engine steps approved; renumbered.** The
+  owner's request to make `.cellens` types experimental shipped first, as
+  engine v0.32.0 and the extension's v0.40.0, so this plan's release
+  steps move to engine v0.33.0 (cel-lens-core#39) and the extension's
+  v0.41.0 (cel-lens-vscode#26). Approved: #45 (issue #36, the list kept
+  current; a file that left, came back and left again was missing from
+  `removed`, fixed by naming every file that left), #47 (issue #37,
+  example states in the line's own words), #48 (v0.32.0 merged in; the
+  index takes `.cellens` types only through the one gate), #49 (issue
+  #42, the line says `not checked` for a rule never compiled) and #50
+  (Prepare v0.33.0). In the extension: #27 and #30 (issues #24 and #25,
+  the view, its filter, badge and following the editor, two rounds each)
+  and #32 (v0.40.0 merged in; 23 of 23 end-to-end cases pass on the
+  v0.33.0 candidate).
