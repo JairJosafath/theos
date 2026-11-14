@@ -18,8 +18,8 @@ spec:
   host: slack
   credentialsSecretRef:
     name: slack-bot
-  # A channel name takes lowercase letters, digits and -, so the prefix
-  # does too, at most 70 characters; unset, it is theos-<namespace>.
+  # A channel name takes lowercase letters, digits, - and _, so the
+  # prefix does too, at most 70 characters; unset, it is theos-<namespace>.
   aliasPrefix: webshop
   digestMinutes: 10
   slack:

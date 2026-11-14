@@ -914,12 +914,11 @@ What the step chose where the plan says nothing:
   each starts with `!has(self.host) || self.host != 'slack'`, so it passes
   every Chat valid before.
 - **The prefix rule says what Slack refuses, and the old pattern still
-  holds.** The rule takes Slack's characters (lowercase letters, digits, `-`
-  and `_`, at most 70); `aliasPrefix`'s own pattern
-  (`^[a-z0-9][a-z0-9._=-]*$`) stays on every Chat and has no `_`, so a
-  Slack prefix is in effect lowercase letters, digits and `-`, no `.` or
-  `=`, and the message says that. Loosening the pattern for Slack alone
-  would move it into CEL; nobody has asked for an underscore.
+  holds.** `aliasPrefix`'s own pattern (`^[a-z0-9][a-z0-9._=-]*$`) stays on
+  every Chat and holds `_`; with `host: slack` the CEL rule refuses `.` and
+  `=` and more than 70 characters, so a Slack prefix takes lowercase
+  letters, digits, `-` and `_` (`acme_shop` is accepted), as decision 3
+  says. Nothing needs loosening, so there is no follow-up.
 - **`HostNotSupported`, as the issue's review found:** the controller looks
   the host up in `internal/model`'s rows and its adapters before anything
   else but `Duplicate`, and a Chat on a host it has no row or no adapter
