@@ -201,7 +201,7 @@ func eventuallyAtChecks(ns string, at model.StandardVersion, leftOut ...string) 
 		g.Expect(container.Status.Standard).To(PointTo(MatchAllFields(Fields{
 			"Name": Equal(updatedStandard), "Ref": Equal(ref), "Update": BeNil(), "LeftOut": leftOutMatcher,
 			"Behind": behindMatcher, "Kept": BeEmpty(), "FailureIssue": Ignore(),
-			"Checks": BeEquivalentTo(at.Checks)})))
+			"Checks": BeEquivalentTo(at.Checks), "CIImages": Equal(releaseCIImages())})))
 		cond := standardCondition(g, container)
 		if len(leftOut) > 0 {
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
@@ -345,9 +345,10 @@ var _ = Describe("Container Standard update", func() {
 		Expect(gitFake.MainFiles(ns, "orders-api")).NotTo(HaveKey(reviewer), "v1.2.0 drops the reviewer's guide")
 		container := getContainer(Default, ns)
 		Expect(update.Behind).To(Equal([]c4v1beta1.StandardFile{{Path: makefile, Ref: "v1.0.0",
-			Change: makefileChange("v1.2.0")}}), "the update holds the change until it merges")
+			CIImages: releaseCIImages(), Change: makefileChange("v1.2.0")}}), "the update holds the change until it merges")
 		Expect(container.Status.Standard.Behind).To(Equal([]c4v1beta1.StandardFile{
-			{Path: makefile, Ref: "v1.0.0", PullRequestURL: update.PullRequestURL, Change: makefileChange("v1.2.0")}}),
+			{Path: makefile, Ref: "v1.0.0", PullRequestURL: update.PullRequestURL, CIImages: releaseCIImages(),
+				Change: makefileChange("v1.2.0")}}),
 			"the Container carries the Standard's change to the file it leaves out")
 		flagged := "python-strict is at v1.2.0, but its updates left out Makefile (at v1.0.0): the repository " +
 			"changed them in lines the Standard changed too. What the Standard changed in each is in " +
@@ -368,7 +369,8 @@ var _ = Describe("Container Standard update", func() {
 		eventuallyAt(ns, "v1.3.0", makefile)
 		container = getContainer(Default, ns)
 		Expect(container.Status.Standard.Behind).To(Equal([]c4v1beta1.StandardFile{
-			{Path: makefile, Ref: "v1.0.0", PullRequestURL: next.PullRequestURL, Change: makefileChange("v1.3.0")}}),
+			{Path: makefile, Ref: "v1.0.0", PullRequestURL: next.PullRequestURL, CIImages: releaseCIImages(),
+				Change: makefileChange("v1.3.0")}}),
 			"the file stays at the ref its copy was last brought to, its change now up to the new ref")
 		Eventually(behindEvents).WithArguments(ns).Should(HaveLen(2), "once per ref")
 		Consistently(behindEvents).WithArguments(ns).WithTimeout(2 * time.Second).Should(HaveLen(2))
@@ -837,7 +839,8 @@ var _ = Describe("Container Standard update", func() {
 		eventuallyAt(ns, "v1.0.2", makefile)
 		Expect(gitFake.PullRequests(ns, "orders-api")).To(BeEmpty(), "the update has nothing else to write")
 		Expect(gitFake.MainHead(ns, "orders-api")).To(Equal(head))
-		want := []c4v1beta1.StandardFile{{Path: makefile, Ref: "v1.0.0", Change: makefileChange("v1.0.2")}}
+		want := []c4v1beta1.StandardFile{{Path: makefile, Ref: "v1.0.0", CIImages: releaseCIImages(),
+			Change: makefileChange("v1.0.2")}}
 		Expect(getContainer(Default, ns).Status.Standard.Behind).To(Equal(want))
 
 		By("keeping the change, as the update planned it, through later passes")

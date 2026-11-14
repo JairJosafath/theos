@@ -126,6 +126,20 @@ spec:
         # CI runner from it.
         - --test-environment-runner-url={{ tpl . $ }}
         {{- end }}
+        {{- /* An unreleased chart (appVersion dev) names the release it follows. */}}
+        {{- $ciTag := ternary .Chart.Version .Chart.AppVersion (eq .Chart.AppVersion "dev") }}
+        {{- with .Values.ciImages.go }}
+        {{- if .repository }}
+        # A scaffolded GitHub check runs in it when THEOS_CI_IMAGE_GO is empty.
+        - --ci-image-go={{ .repository }}:{{ .tag | default $ciTag }}
+        {{- end }}
+        {{- end }}
+        {{- with .Values.ciImages.base }}
+        {{- if .repository }}
+        # A scaffolded GitHub check runs in it when THEOS_CI_IMAGE_BASE is empty.
+        - --ci-image-base={{ .repository }}:{{ .tag | default $ciTag }}
+        {{- end }}
+        {{- end }}
         {{- if .Values.ui.enabled }}
         - --ui-service-account={{ .Release.Namespace }}/{{ include "theos.uiName" . }}
         {{- end }}

@@ -3,7 +3,9 @@
 # with no relay session (#523). The guide at a tag installs that tag's release
 # (#370), so the tag's commit must name its version in two places:
 # dist/chart/Chart.yaml's version, and docs/getting-started.md's VERSION and
-# the release its prose names, and hack/quickstart.sh's default VERSION (#53).
+# the release its prose names, and hack/quickstart.sh's default VERSION (#53),
+# and internal/model/ci_images.go's ToolchainRelease, the release whose
+# toolchain images a scaffolded GitHub check falls back to (#284).
 # This bumps them in a pull request of their own,
 # merges it with a merge commit, and tags that commit; the pushed tag starts
 # Release, which checks the same thing (--check) and then runs every step of
@@ -16,7 +18,7 @@
 #
 #   hack/release.sh X.Y.Z|patch|minor   bump, merge and tag vX.Y.Z (patch and
 #                                       minor count up from the chart's version)
-#   hack/release.sh --bump X.Y.Z        only bump the two files and the
+#   hack/release.sh --bump X.Y.Z        only bump those files and the
 #                                       baseline under ROOT
 #   hack/release.sh --check vX.Y.Z      exit 1 unless the files under ROOT name X.Y.Z
 #
@@ -37,6 +39,10 @@ GUIDE=docs/getting-started.md
 # The quickstart installs the release it shipped with (#53); a tree from
 # before it has none, and is checked and bumped without it.
 QUICKSTART=hack/quickstart.sh
+# A scaffolded GitHub check falls back to the release's toolchain images
+# (#284); a tree from before has no such constant, and is checked and
+# bumped without it.
+TOOLCHAIN=internal/model/ci_images.go
 CRDS=config/crd/bases
 BASELINE=test/compat/baseline
 DROPPED=test/compat/dropped.txt
@@ -73,11 +79,18 @@ check() {
       bad=1
     fi
   fi
+  if [ -f "$dir/$TOOLCHAIN" ]; then
+    got=$(sed -n 's/^const ToolchainRelease = "\(.*\)"$/\1/p' "$dir/$TOOLCHAIN")
+    if [ "$got" != "$want" ]; then
+      echo "$TOOLCHAIN says ToolchainRelease ${got:-nothing}, not $want" >&2
+      bad=1
+    fi
+  fi
   return $bad
 }
 
-# bump DIR VERSION: names VERSION in DIR's chart and guide, and makes DIR's
-# CRDs the baseline the next release keeps.
+# bump DIR VERSION: names VERSION in DIR's chart, guide, quickstart and
+# ToolchainRelease, and makes DIR's CRDs the baseline the next release keeps.
 bump() {
   local dir=$1 to=$2
   rm -rf "${dir:?}/$BASELINE"
@@ -94,6 +107,9 @@ bump() {
     -e "s/The commands use the release \`[^\`]*\`/The commands use the release \`$to\`/" "$dir/$GUIDE"
   if [ -f "$dir/$QUICKSTART" ]; then
     sed -i "s/^VERSION=\${THEOS_VERSION:-.*}$/VERSION=\${THEOS_VERSION:-$to}/" "$dir/$QUICKSTART"
+  fi
+  if [ -f "$dir/$TOOLCHAIN" ]; then
+    sed -i "s/^const ToolchainRelease = \".*\"$/const ToolchainRelease = \"$to\"/" "$dir/$TOOLCHAIN"
   fi
   check "$dir" "$to"
 }
@@ -151,6 +167,7 @@ bump "$WT" "$to"
 paths=("$CHART" "$GUIDE" "$BASELINE")
 [ ! -f "$WT/$DROPPED" ] || paths+=("$DROPPED")
 [ ! -f "$WT/$QUICKSTART" ] || paths+=("$QUICKSTART")
+[ ! -f "$WT/$TOOLCHAIN" ] || paths+=("$TOOLCHAIN")
 git -C "$WT" add -A -- "${paths[@]}"
 git -C "$WT" commit --quiet -m "chore: release $tag" -- "${paths[@]}"
 git -C "$WT" push --quiet "$REMOTE" "HEAD:refs/heads/$branch"

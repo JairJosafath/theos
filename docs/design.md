@@ -1347,6 +1347,23 @@ version, so a Standard whose template moved within its repository is a new
 Standard, not a bump, or its old ref stops the update with
 `TemplatePathNotFound`.
 
+**The CI fallback images are recorded as rendered (#284).** A Standard's
+GitHub check runs in the image its Actions variable names, else in the one
+the operator rendered into it: the chart's `ciImages`, by default the
+release's own. `status.standard.ciImages` records the images the
+repository's Standard files were rendered with, as `checks` records when CI
+runs the full check: the scaffold's or the adoption's, then each merged
+update's. An update renders the files main holds, and the base of each file
+behind (which keeps the images its copy has, `status.standard.behind`), with
+the recorded images, and the files it brings with the operator's own. So the
+images change only with a Standard update, a bump of the ref or a change of
+the checks, as an ordinary change of the Standard's, never by an operator
+release alone. A status written before they were kept reads as the images of
+release 0.32.0 on `ghcr.io/jairjosafath/theos`, the #263 default; a
+repository rendered by `hack/render` with other images, or whose check a
+person edited, is read the same way, and its check's image then shows as the
+repository's own change, as any edit by hand does.
+
 An update whose CI fails (`ChecksFailed`) is the Crew's to fix
 ([plans/standard-update-fails.md](plans/standard-update-fails.md), #1447).
 The fix lands on main in the Crew's own pull request; once main is no longer

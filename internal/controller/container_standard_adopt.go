@@ -194,7 +194,7 @@ func (u *standardUpdate) adoptStandard(ctx, gitCtx context.Context, standard *c4
 			u.condition(metav1.ConditionFalse, c4v1beta1.ReasonPullRequestOpen, step.Message)
 			return false
 		case model.AdoptionRecord:
-			return u.recordAdoption(ctx, gitCtx, step.Version, f.Diff.Paths)
+			return u.recordAdoption(ctx, gitCtx, step.Version, compared.in.CIImages, f.Diff.Paths)
 		case model.AdoptionStopClosed:
 			u.stopAdoption(ctx, gitCtx, c4v1beta1.ReasonUpdateClosed, step.Message, compared.head)
 			return false
@@ -230,7 +230,12 @@ func (u *standardUpdate) compareAdoption(ctx, gitCtx context.Context, standard *
 	renders, err := u.renders(ctx, gitCtx, git, standard)
 	var rendered scaffold.Tree
 	if err == nil {
-		renders.in.Checks = v.Checks
+		// #284: an adoption in flight is compared with what its pull request
+		// rendered, CI images included; a new one renders with the operator's.
+		renders.in.Checks, renders.in.CIImages = v.Checks, u.r.ciImages()
+		if a := u.status.StandardAdoption; a != nil {
+			renders.in.CIImages = recordedCIImages(a.CIImages)
+		}
 		rendered, err = renders.at(gitCtx, v.Ref)
 	}
 	if err != nil {
@@ -286,7 +291,8 @@ func (u *standardUpdate) openAdoption(ctx, gitCtx context.Context, v model.Stand
 		return
 	}
 	u.status.StandardAdoption = &c4v1beta1.StandardAdoptionStatus{
-		Name: name, Ref: v.Ref, Checks: c4v1beta1.ChecksMode(v.Checks), Branch: branch, Commit: commit, Base: compared.head,
+		Name: name, Ref: v.Ref, Checks: c4v1beta1.ChecksMode(v.Checks), CIImages: ciImagesRecord(compared.in.CIImages),
+		Branch: branch, Commit: commit, Base: compared.head,
 		PullRequest: int32(pr.Number), PullRequestURL: pr.URL, Paths: diff.Paths,
 	}
 	step := model.NextAdoptionStep(model.StandardAdoptionFacts{Name: name, Target: v,
@@ -297,11 +303,13 @@ func (u *standardUpdate) openAdoption(ctx, gitCtx context.Context, v model.Stand
 }
 
 // recordAdoption protects main with the Standard's checks and records the
-// Standard at v: main holds the files it protects as it renders them. left
+// Standard at v, rendered with the CI images images: main holds the files it
+// protects as it renders them. left
 // are its files main holds otherwise, none of them protected: the
 // repository's own, which a later update merges with the Standard's changes.
 // It reports false on a Git error, and the next pass tries again.
-func (u *standardUpdate) recordAdoption(ctx, gitCtx context.Context, v model.StandardVersion, left []string) bool {
+func (u *standardUpdate) recordAdoption(ctx, gitCtx context.Context, v model.StandardVersion, images model.CIImages,
+	left []string) bool {
 	git, ok := u.access(ctx)
 	if !ok {
 		return false
@@ -313,7 +321,8 @@ func (u *standardUpdate) recordAdoption(ctx, gitCtx context.Context, v model.Sta
 		return false
 	}
 	adoption := u.status.StandardAdoption
-	u.status.Standard = &c4v1beta1.ContainerStandardStatus{Name: name, Ref: v.Ref, Checks: c4v1beta1.ChecksMode(v.Checks)}
+	u.status.Standard = &c4v1beta1.ContainerStandardStatus{Name: name, Ref: v.Ref, Checks: c4v1beta1.ChecksMode(v.Checks),
+		CIImages: ciImagesRecord(images)}
 	u.status.StandardAdoption = nil
 	url := ""
 	if adoption != nil {

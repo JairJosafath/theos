@@ -285,6 +285,33 @@ organization is where those three show.
   renders every Standard's GitHub check with no image named and finds the
   pinned fallback; `TestToolchainReleaseIsPublished263` keeps the release
   at or before the chart's.
+  **Changed by #284:** the fallback is a chart setting, since the registry
+  is one a user who runs elsewhere picks. The chart's `ciImages.go` and
+  `ciImages.base` (`repository`, and `tag`, which defaults to
+  `Chart.appVersion`, or to `Chart.version` for an unreleased chart whose
+  appVersion is `dev`, the release it follows) become the operator's
+  `--ci-image-go` and `--ci-image-base`, which `ContainerReconciler.CIImages`
+  carries into what a scaffold, an adoption or a Standard update brings. The
+  files a repository already holds render with the images
+  `status.standard.ciImages` records they were rendered with (and a file
+  behind with its own), so an operator release alone moves no repository's
+  image and the next Standard update moves it cleanly
+  ([design.md](../design.md), "The CI fallback images are recorded as
+  rendered"). A flag left out
+  (the kustomize deploy, an empty `repository`) keeps
+  `model.DefaultCIImages`; a flag naming an image that isn't pinned stops
+  the operator at startup, as an invalid `--cluster-dns` does, rather than
+  scaffold with an image the chart wasn't given. Pinned now means the
+  image-reference grammar (lowercase path components after an optional
+  host with a port, one tag of `[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}` or a
+  `sha256` digest) and no tag that moves (`latest`, `stable`, `nightly`,
+  `edge`, `dev`, `main`, `master`). The release has one source:
+  `hack/release.sh`'s bump writes `model.ToolchainRelease` with the chart's
+  version and its check refuses a tag the constant doesn't name, and
+  `TestToolchainReleaseIsPublished263` requires the two equal.
+  `TestScaffoldedGitHubCheckRunsInTheOperatorsImage284` renders a
+  scaffolded check with the reconciler's images, and
+  `TestChartNamesTheCIImages284` renders the chart's flags.
 - **The checkout is `actions/checkout` pinned to a commit,** the one the
   factory's own workflows pin. The workflow asks for `contents: read` and
   nothing else, and a newer push ends the run of an older one on the same

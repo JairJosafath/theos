@@ -67,6 +67,10 @@ var _ = Describe("Container Standard update of the checks", func() {
 		eventuallyAtChecks(ns, everyChange)
 		Expect(mainFile(ns, checkWorkflow)).To(Equal("check: make check\n"))
 		Expect(mainFile(ns, scaffold.IdentityPath)).To(ContainSubstring("checks: EveryChange\n"))
+		// #284: the scaffold records the CI images it rendered the Standard's
+		// files with: the release's, as the suite's operator was given none.
+		images := releaseCIImages()
+		Expect(getContainer(Default, ns).Status.Standard.CIImages).To(Equal(images))
 
 		setChecks(ns, c4v1beta1.ChecksBeforeRelease)
 		var update c4v1beta1.StandardUpdateStatus
@@ -82,7 +86,7 @@ var _ = Describe("Container Standard update of the checks", func() {
 				"v1.0.0 to v1.0.0 with the full check before release; it merges once CI passes"))
 		}).Should(Succeed())
 		Expect(update).To(MatchFields(IgnoreExtras, Fields{
-			"Ref": Equal("v1.0.0"), "Checks": Equal(c4v1beta1.ChecksBeforeRelease),
+			"Ref": Equal("v1.0.0"), "Checks": Equal(c4v1beta1.ChecksBeforeRelease), "CIImages": Equal(images),
 			"Branch": Equal("standard-update/python-strict-v1.0.0-before-release"),
 			"Paths":  Equal([]string{checkWorkflow}), "LeftOut": BeEmpty(), "Stopped": BeEmpty()}))
 		Expect(getContainer(Default, ns).Status.Standard.Checks).To(Equal(c4v1beta1.ChecksEveryChange),
@@ -102,6 +106,8 @@ var _ = Describe("Container Standard update of the checks", func() {
 			g.Expect(cond.Reason).To(Equal(c4v1beta1.ReasonBeforeRelease))
 		}).Should(Succeed())
 		Expect(mainFile(ns, checkWorkflow)).To(Equal("check: make check-light\nfull: make check\n"))
+		Expect(getContainer(Default, ns).Status.Standard.CIImages).To(Equal(images),
+			"the merged update's images are recorded (#284)")
 		head := gitFake.MainHead(ns, "orders-api")
 		Expect(head.Message).To(HavePrefix(
 			"Update the Standard python-strict to v1.0.0, with the full check before release\n\n"))

@@ -323,17 +323,23 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		u.renderFailed(ctx, err)
 		return
 	}
+	// #284: the files main holds render with the CI images they were rendered
+	// with, as status records them; the ones the update brings with the
+	// operator's own. So a release alone changes nothing in a repository, and
+	// the next update moves the image as any other change of the Standard's.
+	oldImages := scaffoldedCIImages(u.status)
 	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), to.Checks,
-		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope, license)
+		u.r.ciImages(), scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope,
+		license)
 	in.FrameworkFiles, err = u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
 		// Not the Standard's version's fault: the next pass plans it again.
 		u.renderFailed(ctx, err)
 		return
 	}
-	render := func(v model.StandardVersion, files scaffold.Tree) (scaffold.Tree, bool) {
+	render := func(v model.StandardVersion, images model.CIImages, files scaffold.Tree) (scaffold.Tree, bool) {
 		in := in
-		in.Checks = v.Checks
+		in.Checks, in.CIImages = v.Checks, images
 		tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideStandard, Name: name, Ref: v.Ref, Files: files})
 		if err != nil {
 			s.Update = stopped(c4v1beta1.ReasonFailed)
@@ -343,19 +349,19 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		}
 		return tree, true
 	}
-	old, ok := render(from, oldFiles)
+	old, ok := render(from, oldImages, oldFiles)
 	if !ok {
 		return
 	}
-	next, ok := render(to, nextFiles)
+	next, ok := render(to, in.CIImages, nextFiles)
 	if !ok {
 		return
 	}
 	// The files the change of checks writes: the new ref rendered with the old
-	// checks against the new render.
+	// checks against the new render, both with the new images.
 	var checksPaths []string
 	if from.Checks != to.Checks {
-		keep, ok := render(model.StandardVersion{Ref: to.Ref, Checks: from.Checks}, nextFiles)
+		keep, ok := render(model.StandardVersion{Ref: to.Ref, Checks: from.Checks}, in.CIImages, nextFiles)
 		if !ok {
 			return
 		}
@@ -363,27 +369,38 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	}
 
 	// Each file a past update left out is merged against the render its copy
-	// was last brought to.
+	// was last brought to: its ref, with the CI images its copy was rendered
+	// with (#284).
 	behind := behindFiles(s)
 	// They render with the checks the files are at.
-	renders := map[string]scaffold.Tree{from.Ref: old}
+	type rendered struct {
+		ref    string
+		images model.CIImages
+	}
+	renders := map[rendered]scaffold.Tree{{from.Ref, oldImages}: old}
+	fetched := map[string]scaffold.Tree{from.Ref: oldFiles}
 	bases := map[string]scaffold.Tree{}
 	for _, b := range behind {
-		if _, ok := renders[b.Ref]; !ok {
-			files, err := u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, b.Ref, standard.Spec.Template.Path, creds)
-			if reason, ok := templateFailure(err); ok {
-				u.condition(metav1.ConditionFalse, reason, fmt.Sprintf("Standard %s: %v", name, err))
-				return
+		key := rendered{b.Ref, recordedCIImages(b.CIImages)}
+		if _, ok := renders[key]; !ok {
+			files, ok := fetched[b.Ref]
+			if !ok {
+				files, err = u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, b.Ref, standard.Spec.Template.Path, creds)
+				if reason, ok := templateFailure(err); ok {
+					u.condition(metav1.ConditionFalse, reason, fmt.Sprintf("Standard %s: %v", name, err))
+					return
+				}
+				if err != nil {
+					u.gitError(ctx, err)
+					return
+				}
+				fetched[b.Ref] = files
 			}
-			if err != nil {
-				u.gitError(ctx, err)
-				return
-			}
-			if renders[b.Ref], ok = render(model.StandardVersion{Ref: b.Ref, Checks: from.Checks}, files); !ok {
+			if renders[key], ok = render(model.StandardVersion{Ref: b.Ref, Checks: from.Checks}, key.images, files); !ok {
 				return
 			}
 		}
-		bases[b.Path] = renders[b.Ref]
+		bases[b.Path] = renders[key]
 	}
 
 	repo := git.provider.Repository(u.container.Name)
@@ -420,9 +437,9 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	leftOut := u.leftOut(to.Ref, behind, from.Ref, old, bases, next, current, plan.LeftOut)
 	// The files behind once main holds the update, each with the Standard's
 	// change to it, as this plan sees it.
-	behindAfter := nextBehind(behind, from.Ref, plan.LeftOut, "", model.BehindChanges(to.Ref, leftOut.Files))
+	behindAfter := nextBehind(behind, from.Ref, oldImages, plan.LeftOut, "", model.BehindChanges(to.Ref, leftOut.Files))
 	if plan.Empty() {
-		u.alreadyUpToDate(ctx, to, behindAfter)
+		u.alreadyUpToDate(ctx, to, in.CIImages, behindAfter)
 		return
 	}
 
@@ -432,7 +449,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		scaffold.UpdateMessage(in, name, from, to, plan), author)
 	if errors.Is(err, ports.ErrEmptyChange) {
 		// main got there between the read and the push.
-		u.alreadyUpToDate(ctx, to, behindAfter)
+		u.alreadyUpToDate(ctx, to, in.CIImages, behindAfter)
 		return
 	}
 	if err != nil {
@@ -447,7 +464,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		return
 	}
 	s.Update = &c4v1beta1.StandardUpdateStatus{
-		Ref: to.Ref, Checks: c4v1beta1.ChecksMode(to.Checks), Branch: branch, Commit: commit, Base: base, PullRequest: int32(pr.Number), PullRequestURL: pr.URL,
+		Ref: to.Ref, Checks: c4v1beta1.ChecksMode(to.Checks), CIImages: ciImagesRecord(in.CIImages), Branch: branch, Commit: commit, Base: base, PullRequest: int32(pr.Number), PullRequestURL: pr.URL,
 		Paths: plan.Paths(), Merged: plan.Merged, LeftOut: plan.LeftOut, Behind: behindAfter,
 	}
 	u.updating()
@@ -551,7 +568,8 @@ func (u *standardUpdate) renders(ctx, gitCtx context.Context, git *gitAccess,
 		return nil, err
 	}
 	in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
-		scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope, license)
+		scaffoldedCIImages(u.status), scaffoldedOperations(u.container, u.status),
+		git.provider.Repository(u.container.Name).NpmScope, license)
 	paths, err := u.frameworkFiles(ctx, gitCtx, git)
 	if err != nil {
 		return nil, err
@@ -618,7 +636,8 @@ func (u *standardUpdate) frameworkFiles(ctx, gitCtx context.Context, git *gitAcc
 			return nil, err
 		}
 		in := scaffoldInput(u.container, git.ci, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
-			scaffoldedOperations(u.container, u.status), git.provider.Repository(u.container.Name).NpmScope, license)
+			scaffoldedCIImages(u.status), scaffoldedOperations(u.container, u.status),
+			git.provider.Repository(u.container.Name).NpmScope, license)
 		tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideFramework, Name: name, Ref: ref,
 			Files: files})
 		if err != nil {
@@ -644,30 +663,39 @@ func (u *standardUpdate) scaffoldedLicense(ctx, gitCtx context.Context, git *git
 	return license, nil
 }
 
-// at is the Standard's render at ref.
+// at is the Standard's render at ref, with the CI images r.in names.
 func (r *standardRenders) at(ctx context.Context, ref string) (scaffold.Tree, error) {
-	if tree, ok := r.trees[ref]; ok {
+	return r.with(ctx, ref, r.in.CIImages)
+}
+
+// with is the Standard's render at ref with the CI images images (#284).
+func (r *standardRenders) with(ctx context.Context, ref string, images model.CIImages) (scaffold.Tree, error) {
+	key := ref + "\x00" + images.Go + "\x00" + images.Base
+	if tree, ok := r.trees[key]; ok {
 		return tree, nil
 	}
 	files, err := r.fetch(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	tree, err := scaffold.RenderLayer(r.in, scaffold.Layer{Side: model.SideStandard, Name: r.standard, Ref: ref,
+	in := r.in
+	in.CIImages = images
+	tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideStandard, Name: r.standard, Ref: ref,
 		Files: files})
 	if err != nil {
 		return nil, &renderError{ref: ref, err: err}
 	}
-	r.trees[ref] = tree
+	r.trees[key] = tree
 	return tree, nil
 }
 
-// bases are, by path, the renders the files behind were last brought to.
+// bases are, by path, the renders the files behind were last brought to: each
+// one's ref, with the CI images its copy was rendered with (#284).
 func (r *standardRenders) bases(ctx context.Context, behind []c4v1beta1.StandardFile) (map[string]scaffold.Tree,
 	error) {
 	bases := make(map[string]scaffold.Tree, len(behind))
 	for _, b := range behind {
-		tree, err := r.at(ctx, b.Ref)
+		tree, err := r.with(ctx, b.Ref, recordedCIImages(b.CIImages))
 		if err != nil {
 			return nil, err
 		}
@@ -809,7 +837,8 @@ func (u *standardUpdate) take(ctx, gitCtx context.Context, standard *c4v1beta1.S
 			model.StandardTakeTitle(s.Name, s.Ref, take.Paths()), model.StandardTakeBody(s.Name, s.Ref, take.Taken))
 		if err == nil {
 			s.Update = &c4v1beta1.StandardUpdateStatus{
-				Ref: s.Ref, Checks: c4v1beta1.ChecksMode(recordedChecks(u.status)), Take: true, Branch: branch, Commit: commit, Base: base, PullRequest: int32(pr.Number),
+				Ref: s.Ref, Checks: c4v1beta1.ChecksMode(recordedChecks(u.status)), CIImages: ciImagesRecord(renders.in.CIImages),
+				Take: true, Branch: branch, Commit: commit, Base: base, PullRequest: int32(pr.Number),
 				PullRequestURL: pr.URL, Paths: take.Paths(),
 			}
 			u.updating()
@@ -848,13 +877,13 @@ func pathsOf(files []c4v1beta1.StandardFile) []string {
 	return paths
 }
 
-// alreadyUpToDate records to when main already holds what it renders, apart
-// from the files behind.
-func (u *standardUpdate) alreadyUpToDate(ctx context.Context, to model.StandardVersion,
+// alreadyUpToDate records to, rendered with the CI images images, when main
+// already holds what it renders, apart from the files behind.
+func (u *standardUpdate) alreadyUpToDate(ctx context.Context, to model.StandardVersion, images model.CIImages,
 	behind []c4v1beta1.StandardFile) {
 	s := u.status.Standard
 	from := u.version()
-	s.Ref, s.Checks, s.Update = to.Ref, c4v1beta1.ChecksMode(to.Checks), nil
+	s.Ref, s.Checks, s.CIImages, s.Update = to.Ref, c4v1beta1.ChecksMode(to.Checks), ciImagesRecord(images), nil
 	setBehind(s, behind)
 	u.upToDate(ctx)
 	logf.FromContext(ctx).Info("Found the Standard's files up to date", "standard", s.Name, "from", from.String(),
@@ -874,12 +903,13 @@ func (u *standardUpdate) version() model.StandardVersion {
 }
 
 // behindFiles are the files s says are behind. A path of leftOut that behind
-// doesn't list, recorded before behind was kept, is taken as at s.Ref.
+// doesn't list, recorded before behind was kept, is taken as at s.Ref, with
+// its CI images.
 func behindFiles(s *c4v1beta1.ContainerStandardStatus) []c4v1beta1.StandardFile {
 	behind := slices.Clone(s.Behind)
 	for _, p := range s.LeftOut {
 		if !slices.ContainsFunc(behind, func(b c4v1beta1.StandardFile) bool { return b.Path == p }) {
-			behind = append(behind, c4v1beta1.StandardFile{Path: p, Ref: s.Ref})
+			behind = append(behind, c4v1beta1.StandardFile{Path: p, Ref: s.Ref, CIImages: s.CIImages})
 		}
 	}
 	return behind
@@ -888,14 +918,15 @@ func behindFiles(s *c4v1beta1.ContainerStandardStatus) []c4v1beta1.StandardFile 
 // nextBehind are the files behind once an update from ref from leaves out
 // leftOut, through the pull request at url when it opened one: a file behind
 // before keeps the ref its copy was last brought to, a newly left-out one is
-// at from, and a file the update brought up to date is no longer behind. Each
+// at from, with fromImages, the CI images its copy was rendered with there
+// (#284), and a file the update brought up to date is no longer behind. Each
 // carries its change in changes, the Standard's change to it up to the
 // update's ref.
-func nextBehind(behind []c4v1beta1.StandardFile, from string, leftOut []string,
+func nextBehind(behind []c4v1beta1.StandardFile, from string, fromImages model.CIImages, leftOut []string,
 	url string, changes map[string]string) []c4v1beta1.StandardFile {
 	next := make([]c4v1beta1.StandardFile, 0, len(leftOut))
 	for _, p := range leftOut {
-		f := c4v1beta1.StandardFile{Path: p, Ref: from}
+		f := c4v1beta1.StandardFile{Path: p, Ref: from, CIImages: ciImagesRecord(fromImages)}
 		if i := slices.IndexFunc(behind, func(b c4v1beta1.StandardFile) bool { return b.Path == p }); i >= 0 {
 			f = behind[i]
 		}
@@ -1038,8 +1069,11 @@ func (u *standardUpdate) merged(ctx context.Context) {
 	for _, b := range update.Behind {
 		changes[b.Path] = b.Change
 	}
-	behind := nextBehind(behindFiles(s), s.Ref, update.LeftOut, update.PullRequestURL, changes)
-	s.Ref, s.Checks, s.Update = update.Ref, update.Checks, nil
+	behind := nextBehind(behindFiles(s), s.Ref, scaffoldedCIImages(u.status), update.LeftOut, update.PullRequestURL,
+		changes)
+	// The update's images replace the record (#284); an update planned before
+	// they were kept rendered with the ones an unset record reads as.
+	s.Ref, s.Checks, s.CIImages, s.Update = update.Ref, update.Checks, update.CIImages, nil
 	setBehind(s, behind)
 	// A kept file the update wrote is the Standard's again.
 	s.Kept = slices.DeleteFunc(s.Kept, func(k c4v1beta1.StandardFile) bool {
@@ -1055,7 +1089,7 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	s := u.status.Standard
 	update := s.Update
 	in := scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), recordedChecks(u.status),
-		scaffoldedOperations(u.container, u.status), "", scaffold.License{})
+		scaffoldedCIImages(u.status), scaffoldedOperations(u.container, u.status), "", scaffold.License{})
 	if update.Take {
 		taken := make([]model.TakenFile, 0, len(update.Paths))
 		for _, p := range update.Paths {
@@ -1069,7 +1103,7 @@ func (u *standardUpdate) mergeMessage() (title, message string) {
 	from, to := u.version(), model.StandardVersion{Ref: update.Ref, Checks: string(update.Checks)}
 	title = model.StandardUpdateTitle(s.Name, from, to)
 	full := scaffold.UpdateMessage(scaffoldInput(u.container, model.CI{}, scaffoldedConnectors(u.status), scaffoldedDomains(u.status), to.Checks,
-		scaffoldedOperations(u.container, u.status), "", scaffold.License{}), s.Name,
+		recordedCIImages(update.CIImages), scaffoldedOperations(u.container, u.status), "", scaffold.License{}), s.Name,
 		from, to, scaffold.Update{Merged: update.Merged, LeftOut: update.LeftOut})
 	message, _ = strings.CutPrefix(full, title+"\n\n")
 	return title, message
