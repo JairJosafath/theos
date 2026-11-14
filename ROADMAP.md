@@ -23,7 +23,11 @@ comes first. The `priority/N` labels say it, 1 picked first:
 - `priority/1`: something broken now (a red main, a dead relay, a failed
   release check).
 - `priority/2`: the webshop's path, the issues in the milestone *Reference
-  app: the webshop ships*, and a `kind/bug` whose fix is under `templates/`.
+  app: the webshop ships*, a `kind/bug` whose fix is under `templates/`, and
+  an issue the owner shaped in conversation with a session (the owner,
+  2026-11-14): those are thought through and go before what an agent filed
+  on its own. An agent's steps and follow-ups of such an issue don't inherit
+  its priority.
 - `priority/3`: what makes development itself faster (the relay, `land`,
   `make check`, flakes, the scripts).
 - `priority/4`: the rest of the goal's work: the templates (Frameworks,
