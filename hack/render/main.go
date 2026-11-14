@@ -154,7 +154,8 @@ func run(name string, args []string, stdout, stderr io.Writer) error {
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { //nolint:gosec // a rendered repository to read
 			return err
 		}
-		if err := os.WriteFile(dst, f.Data, mode); err != nil { //nolint:gosec // a rendered repository to read
+		// The root is the developer's own -out; scaffold.checkPath refuses absolute, unclean, ".." and .git paths.
+		if err := os.WriteFile(dst, f.Data, mode); err != nil { //nolint:gosec // path checked by scaffold, under -out
 			return err
 		}
 	}
