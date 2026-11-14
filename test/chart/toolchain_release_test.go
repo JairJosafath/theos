@@ -27,7 +27,7 @@ import (
 
 // TestToolchainReleaseIsPublished263 checks that the release whose toolchain
 // images the Standards' GitHub checks fall back to is a release (#263), the
-// chart's own (#284): hack/release.sh bumps both at once, so one that lags
+// chart's own (#284): the release script bumps both at once, so one that lags
 // was moved by hand, and one ahead names images not published yet.
 func TestToolchainReleaseIsPublished263(t *testing.T) {
 	chart, err := os.ReadFile(filepath.Join("..", "..", "dist", "chart", "Chart.yaml"))
@@ -46,7 +46,7 @@ func TestToolchainReleaseIsPublished263(t *testing.T) {
 			model.ToolchainRelease)
 	}
 	if model.ToolchainRelease != string(m[1]) {
-		t.Errorf("model.ToolchainRelease is %s, not the chart's version %s: hack/release.sh's bump "+
+		t.Errorf("model.ToolchainRelease is %s, not the chart's version %s: the release script's bump "+
 			"moves both, and its check holds them equal (#284)", model.ToolchainRelease, m[1])
 	}
 	for _, image := range []string{model.DefaultCIImages().Go, model.DefaultCIImages().Base} {
