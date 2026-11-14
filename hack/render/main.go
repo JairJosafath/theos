@@ -39,7 +39,11 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout); err != nil {
+	if err := run(os.Args[0], os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		if errors.Is(err, errFlags) {
+			// The flag package already printed the error and the usage.
+			os.Exit(2)
+		}
 		if errors.Is(err, errUsage) {
 			fmt.Fprintln(os.Stderr, "usage: render -out DIR Side=template ...")
 			os.Exit(2)
@@ -52,11 +56,17 @@ func main() {
 	}
 }
 
-var errUsage = errors.New("usage")
+var (
+	errUsage = errors.New("usage")
+	// errFlags is a flag that did not parse; the flag set has printed why.
+	errFlags = errors.New("bad flags")
+)
 
-// run renders what args ask for and prints its summary line to stdout.
-func run(args []string, stdout io.Writer) error {
-	flags := flag.NewFlagSet("render", flag.ContinueOnError)
+// run renders what args ask for and prints its summary line to stdout. name
+// heads the usage text the flag set prints to stderr.
+func run(name string, args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	out := flags.String("out", "", "folder to write the repository into (must not exist)")
 	root := flags.String("templates", "templates", "folder with the template repositories")
 	var in scaffold.Input
@@ -76,7 +86,10 @@ func run(args []string, stdout io.Writer) error {
 	flags.StringVar(&ops.RTO, "rto", "", "spec.operations.recovery.rto")
 	flags.StringVar(&ops.Email, "alert-email", "", "spec.operations.alerts.email")
 	if err := flags.Parse(args); err != nil {
-		return err
+		if errors.Is(err, flag.ErrHelp) {
+			return err
+		}
+		return errFlags
 	}
 	if *out == "" || flags.NArg() == 0 {
 		return errUsage
@@ -141,7 +154,7 @@ func run(args []string, stdout io.Writer) error {
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { //nolint:gosec // a rendered repository to read
 			return err
 		}
-		if err := os.WriteFile(dst, f.Data, mode); err != nil {
+		if err := os.WriteFile(dst, f.Data, mode); err != nil { //nolint:gosec // a rendered repository to read
 			return err
 		}
 	}
