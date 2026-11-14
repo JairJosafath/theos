@@ -1166,8 +1166,9 @@ its test (`slack_234_test.go`, `TestChatPostMrkdwn`):
 - **The socket's Origin is the scheme and host** of the API address, with no
   path.
 - **A post with no mrkdwn leaves `blocks` out.** An edit with none still sends
-  `blocks: []`, since `chat.update` keeps a message's blocks when none are
-  given and the new text would not show; unverified against Slack itself.
+  `blocks: []` with the text: Slack documents an empty array as clearing
+  earlier blocks, so an edited message never keeps a stale block, whatever
+  Slack does with omitted blocks. Not yet seen against a real Slack (#254).
 - **`missing_args` is no refused token**, so it is a plain error where it was
   `ErrChatCredentialRefused`; `Invite`'s per-person codes (#251) never held it.
 - **A `Retry-After` is clamped to 24 hours** before it becomes a

@@ -617,8 +617,10 @@ func (c *Client) Reply(ctx context.Context, room, threadRoot string, msg ports.C
 func (c *Client) Edit(ctx context.Context, room, event string, msg ports.ChatMessage) (string, error) {
 	args := message(msg)
 	if !args.Has("blocks") {
-		// chat.update keeps a message's blocks when none are given, and
-		// the new text would not show: an empty array clears them.
+		// Send blocks: [] with the text. Slack documents an empty array as
+		// clearing earlier blocks, so an edited message never keeps a stale
+		// block, whatever Slack does with omitted blocks. Not yet seen
+		// against a real Slack (#254).
 		args.Set("blocks", "[]")
 	}
 	args.Set(argChannel, room)
