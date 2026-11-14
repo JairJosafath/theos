@@ -19,6 +19,7 @@ package model
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -28,11 +29,23 @@ const ToolchainRegistry = "ghcr.io/jairjosafath/theos"
 
 // ToolchainRelease is the factory release whose toolchain images a
 // Standard's GitHub check falls back to when the repository's Actions
-// variable names none (#263): a release that is published, never latest or
-// a branch. Moving it changes what new scaffolds and Standard updates render;
-// a repository scaffolded before keeps its image until its Standard's ref is
-// bumped.
+// variable names none (#263) and the operator was given no image
+// (--ci-image-go, --ci-image-base: the chart's ciImages), as in a dev build
+// or hack/render: a release that is published, never latest or a branch.
+// hack/release.sh's bump sets it to the release it cuts and its check holds
+// it there, and test/chart holds it equal to dist/chart/Chart.yaml's version
+// (#284). Moving it changes the images new scaffolds, and the new side of
+// Standard updates, render with when the operator was given none. A
+// repository keeps the images its Standard's files were rendered with, which
+// status.standard.ciImages records, until a Standard update moves them: a
+// change of the Standard's ref or of the Container's checks, never a release
+// alone.
 const ToolchainRelease = "0.32.0"
+
+// legacyToolchainRelease is the release whose toolchain images every render
+// fell back to from #263 until the operator recorded the images it rendered
+// with (#284). It never moves.
+const legacyToolchainRelease = "0.32.0"
 
 // CIImages are the toolchain images a CI job runs in when the CI system
 // itself names none, one per toolchain: Go for the Standards whose own
@@ -40,7 +53,9 @@ const ToolchainRelease = "0.32.0"
 // check runs in the image its Actions variable (THEOS_CI_IMAGE_GO or THEOS_CI_IMAGE_BASE)
 // names, else in this one, so a repository without the operator, in a
 // personal account, rendered by hack/render or adopted by hand, still runs
-// its check.
+// its check. The operator takes them from --ci-image-go and --ci-image-base,
+// the chart's ciImages, so they come from the registry the chart pulls
+// from (#284); an image left empty is DefaultCIImages'.
 type CIImages struct {
 	Go   string
 	Base string
@@ -56,7 +71,31 @@ func DefaultCIImages() CIImages {
 
 // OrDefault fills each image left empty from DefaultCIImages.
 func (c CIImages) OrDefault() CIImages {
-	d := DefaultCIImages()
+	return c.or(DefaultCIImages())
+}
+
+// LegacyCIImages are the images a repository's Standard files are read as
+// rendered with when the Container's status records none: a Container
+// scaffolded or adopted before the operator recorded them (#284), when every
+// render fell back to the #263 default images. Unlike DefaultCIImages, which
+// moves with every release, they are fixed. A repository rendered by
+// hack/render with other images, or whose check a person edited, is read as
+// rendered with these too: its check's image then shows as the repository's
+// own change, as any edit by hand does.
+func LegacyCIImages() CIImages {
+	return CIImages{
+		Go:   ToolchainRegistry + "/go:" + legacyToolchainRelease,
+		Base: ToolchainRegistry + "/base:" + legacyToolchainRelease,
+	}
+}
+
+// OrLegacy fills each image left empty from LegacyCIImages: the images a
+// record of what a repository's Standard files were rendered with stands for.
+func (c CIImages) OrLegacy() CIImages {
+	return c.or(LegacyCIImages())
+}
+
+func (c CIImages) or(d CIImages) CIImages {
 	if c.Go == "" {
 		c.Go = d.Go
 	}
@@ -66,29 +105,89 @@ func (c CIImages) OrDefault() CIImages {
 	return c
 }
 
-// pinnedImage is name:tag, name@sha256:digest or name:tag@sha256:digest, the
-// name with no scheme and the reference with no quote or space, so it can
-// sit in a workflow's quoted expression.
-var pinnedImage = regexp.MustCompile(`^[a-z0-9][A-Za-z0-9._/:-]*[A-Za-z0-9_](@sha256:[0-9a-f]{64})?$`)
-
-// PinnedImageProblem says why image isn't pinned, or "" when it is: it must
-// name a tag or a digest, and a tag other than latest, dev, main or master,
-// which move.
-func PinnedImageProblem(image string) string {
-	if !pinnedImage.MatchString(image) || strings.Contains(image, "//") {
-		return fmt.Sprintf("%q is not an image reference such as registry/name:1.2.3", image)
+// Problem says why an image c names isn't pinned (PinnedImageProblem), after
+// its toolchain and a colon, such as `go: "example.com/go:latest" names the
+// tag latest, ...`, or "" when every image it names is. An image left empty
+// has none: it is DefaultCIImages'. The operator (--ci-image-go,
+// --ci-image-base) and hack/render (-ci-image-go, -ci-image-base) refuse
+// such an image, naming the flag (#284).
+func (c CIImages) Problem() string {
+	for _, image := range []struct{ toolchain, image string }{{"go", c.Go}, {"base", c.Base}} {
+		if image.image == "" {
+			continue
+		}
+		if problem := PinnedImageProblem(image.image); problem != "" {
+			return image.toolchain + ": " + problem
+		}
 	}
-	name, digest, hasDigest := strings.Cut(image, "@")
-	if hasDigest && digest != "" {
+	return ""
+}
+
+// The image-reference grammar of the OCI distribution spec, which docker and
+// the registries parse (#284): a name of lowercase path components, after an
+// optional registry host with a port, then a tag, a digest or both. Nothing
+// outside it, a quote, a space or a brace, can reach a workflow's quoted
+// expression.
+var (
+	imageHost = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?` +
+		`(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?$`)
+	imagePathComponent = regexp.MustCompile(`^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$`)
+	imageTag           = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
+	imageDigest        = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+)
+
+// imageNameMax is the longest name, host included, a registry takes.
+const imageNameMax = 255
+
+// movingTags are tags a registry moves on to each new build or release, so
+// an image named by one is not the same image twice.
+var movingTags = []string{"latest", "stable", "nightly", "edge", "dev", "main", "master"}
+
+// PinnedImageProblem says why image isn't pinned, or "" when it is: it must be
+// an image reference (registry/name:tag, name@sha256:digest or
+// name:tag@sha256:digest, the name in lowercase) that names a digest, or a
+// tag other than one of movingTags.
+func PinnedImageProblem(image string) string {
+	notReference := fmt.Sprintf("%q is not an image reference such as registry/name:1.2.3", image)
+	ref, digest, hasDigest := strings.Cut(image, "@")
+	if hasDigest && !imageDigest.MatchString(digest) {
+		return notReference
+	}
+	name, tag, hasTag := ref, "", false
+	if colon := strings.LastIndex(ref, ":"); colon > strings.LastIndex(ref, "/") {
+		name, tag, hasTag = ref[:colon], ref[colon+1:], true
+		if !imageTag.MatchString(tag) {
+			return notReference
+		}
+	}
+	if name == "" || len(name) > imageNameMax {
+		return notReference
+	}
+	path := name
+	// The first component is a registry host when it has a dot or a port, or
+	// is localhost, as docker reads it; else it is part of the path.
+	if host, rest, ok := strings.Cut(name, "/"); ok && (strings.ContainsAny(host, ".:") || host == "localhost") {
+		if !imageHost.MatchString(host) {
+			return notReference
+		}
+		path = rest
+	}
+	for component := range strings.SplitSeq(path, "/") {
+		if imagePathComponent.MatchString(component) {
+			continue
+		}
+		if imagePathComponent.MatchString(strings.ToLower(component)) {
+			return fmt.Sprintf("%q names the repository %s, which is not lowercase", image, path)
+		}
+		return notReference
+	}
+	if hasDigest {
 		return ""
 	}
-	slash := strings.LastIndex(name, "/")
-	colon := strings.LastIndex(name, ":")
-	if colon <= slash {
+	if !hasTag {
 		return fmt.Sprintf("%q names no tag or digest: name a release tag or a digest", image)
 	}
-	switch tag := name[colon+1:]; tag {
-	case "latest", "dev", "main", "master":
+	if slices.Contains(movingTags, tag) {
 		return fmt.Sprintf("%q names the tag %s, which moves: name a release tag or a digest", image, tag)
 	}
 	return ""

@@ -10,7 +10,9 @@
 # --test-environment-tools-image local test environments copy theos-env from,
 # and the --test-environment-tools-url and --test-environment-runner-url
 # remote ones download theos-env and the CI runner from
-# (docs/plans/done/test-environments.md), and the THEOS_CHART_VERSION
+# (docs/plans/done/test-environments.md), the --ci-image-go and
+# --ci-image-base a scaffolded GitHub check falls back to (#284), and the
+# THEOS_CHART_VERSION
 # the Project status reports, the chart's version. kubebuilder's helm
 # plugin regenerates that template without them; make chart keeps the file,
 # and this check catches a hand edit that loses them (#543).
@@ -53,6 +55,8 @@ need "the --alert-drain-timeout flag" -E '^ *- --alert-drain-timeout=[0-9][^ ]*$
 need "the --test-environment-tools-image flag" -E '^ *- --test-environment-tools-image=[^ ]+/agent-base:[^ ]+$'
 need "the --test-environment-tools-url flag" -E '^ *- --test-environment-tools-url=https://[^ ]+$'
 need "the --test-environment-runner-url flag" -E '^ *- --test-environment-runner-url=https://[^ ]+$'
+need "the --ci-image-go flag" -E '^ *- --ci-image-go=[^ ]+/go:[^ ]+$'
+need "the --ci-image-base flag" -E '^ *- --ci-image-base=[^ ]+/base:[^ ]+$'
 need "the POD_NAMESPACE env from metadata.namespace" -Pzo \
 	'\n *- name: POD_NAMESPACE\n *valueFrom:\n *fieldRef:\n *fieldPath: metadata\.namespace\n'
 need "THEOS_CHART_VERSION set to the chart's version, $version" -Pzo \
@@ -63,4 +67,4 @@ if [ "$fail" -ne 0 ]; then
 	echo "kubebuilder's helm plugin drops these; restore them in dist/chart/$SOURCE." >&2
 	exit 1
 fi
-echo "The chart's manager Deployment keeps /tmp, POD_NAMESPACE, THEOS_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount, the webhook, the Git events receiver and the test environments' tools image and downloads"
+echo "The chart's manager Deployment keeps /tmp, POD_NAMESPACE, THEOS_CHART_VERSION, the shared Secrets, the model proxy URL, the UI's ServiceAccount, the webhook, the Git events receiver, the test environments' tools image and downloads and the CI images"

@@ -60,6 +60,10 @@ type ContainerReconciler struct {
 	Git GitClient
 	// ScaffoldOptions configure the parts of a scaffold the operator owns.
 	ScaffoldOptions scaffold.Options
+	// CIImages are the toolchain images a scaffolded GitHub check falls back
+	// to without its Actions variable (--ci-image-go, --ci-image-base: the
+	// chart's ciImages, #284); one left empty is model.DefaultCIImages'.
+	CIImages model.CIImages
 	// ScaffoldTimeout bounds the Git calls of one scaffold attempt; zero means two minutes.
 	ScaffoldTimeout time.Duration
 	// ScaffoldSettle is how long a new Container waits after its creation

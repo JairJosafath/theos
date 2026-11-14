@@ -90,6 +90,9 @@ spec:
           # agent image make agent-image-base loads into Kind
           # (docs/plans/done/test-environments.md).
           - --test-environment-tools-image=theos/agent-base:dev
+          # No --ci-image-go or --ci-image-base: a scaffolded GitHub check
+          # falls back to the toolchain images of the release this tree
+          # follows, on GHCR; the chart's ciImages name others (#284).
           # The UI of config/ui reads the agent sandboxes' pods in each project
           # namespace; nowhere else but the factory's own (#1080).
           - --ui-service-account=theos-ui/theos-ui

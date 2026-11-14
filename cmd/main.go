@@ -118,6 +118,7 @@ func main() {
 	var gitEventsAddr string
 	var alertDrainTimeout time.Duration
 	var testEnvToolsImage, testEnvToolsURL, testEnvRunnerURL string
+	var ciImages model.CIImages
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -241,6 +242,14 @@ func main() {
 		"Where a remote TestEnvironment's machine that runs a CI job downloads the CI runner, an https:// address "+
 			"in which ${arch} becomes amd64 or arm64, with a SHA256SUMS next to it, such as the CI runner the "+
 			"release attaches beside theos-env. None: no remote environment runs CI jobs.")
+	flag.StringVar(&ciImages.Go, "ci-image-go", "",
+		"The toolchain image a scaffolded GitHub check on the go toolchain runs in when the repository's "+
+			"THEOS_CI_IMAGE_GO Actions variable is empty, pinned to a tag or digest, such as the release's go "+
+			"image. None: the go image of release "+model.ToolchainRelease+" on "+model.ToolchainRegistry+".")
+	flag.StringVar(&ciImages.Base, "ci-image-base", "",
+		"The toolchain image a scaffolded GitHub check on the base toolchain runs in when the repository's "+
+			"THEOS_CI_IMAGE_BASE Actions variable is empty, pinned to a tag or digest, such as the release's base "+
+			"image. None: the base image of release "+model.ToolchainRelease+" on "+model.ToolchainRegistry+".")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -291,6 +300,14 @@ func main() {
 			os.Exit(1)
 		}
 		uiAccount = types.NamespacedName{Namespace: ns, Name: name}
+	}
+
+	// A CI image the chart names must be pinned, as hack/render requires: the
+	// operator refuses to start rather than scaffold repositories whose check
+	// falls back to an image other than the one the chart was given (#284).
+	if problem := ciImages.Problem(); problem != "" {
+		setupLog.Error(nil, "Invalid --ci-image-"+problem)
+		os.Exit(1)
 	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
@@ -495,6 +512,7 @@ func main() {
 		APIReader:       mgr.GetAPIReader(),
 		Git:             gitClient{},
 		ScaffoldOptions: scaffoldOptions,
+		CIImages:        ciImages,
 		ScaffoldSettle:  func() time.Duration { return scaffoldSettle },
 		Recorder:        mgr.GetEventRecorder("container"),
 		GitEvents:       gitEvents,

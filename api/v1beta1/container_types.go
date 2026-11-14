@@ -419,6 +419,16 @@ type ContainerStandardStatus struct {
 	// +optional
 	Checks ChecksMode `json:"checks,omitempty"`
 
+	// ciImages are the toolchain images the repository's GitHub check falls
+	// back to, as its Standard files were last rendered: the scaffold's, then
+	// each merged update's. A Standard update renders the files they are at
+	// with them and the files it brings with the operator's own, so only a
+	// change of the Standard's ref or of the checks moves them, never an
+	// operator release alone. Unset, in a status written before they were
+	// kept, reads as the images of release 0.32.0 on ghcr.io/jairjosafath/theos.
+	// +optional
+	CIImages *CIImages `json:"ciImages,omitempty"`
+
 	// leftOut are the paths of behind, kept for what reads them.
 	// +listType=atomic
 	// +optional
@@ -470,6 +480,13 @@ type StandardAdoptionStatus struct {
 	// files. Empty reads as EveryChange.
 	// +optional
 	Checks ChecksMode `json:"checks,omitempty"`
+
+	// ciImages are the toolchain images the pull request renders the files'
+	// GitHub check with; main is compared with that render once it merges, and
+	// status.standard records them. Unset, in a status written before they
+	// were kept, reads as status.standard.ciImages's unset.
+	// +optional
+	CIImages *CIImages `json:"ciImages,omitempty"`
 
 	// branch is the pull request's branch.
 	// +optional
@@ -538,6 +555,14 @@ type StandardFile struct {
 	// +optional
 	PullRequestURL string `json:"pullRequestURL,omitempty"`
 
+	// ciImages are, for a file behind, the toolchain images its copy was last
+	// rendered with at ref: status.standard.ciImages when an update first left
+	// it out. Each later update merges it against ref rendered with them.
+	// Unset, in a status written before they were kept, reads as
+	// status.standard.ciImages's unset.
+	// +optional
+	CIImages *CIImages `json:"ciImages,omitempty"`
+
 	// change is, for a file behind, what the Standard changed in it from ref
 	// to the Standard's ref the files are at, as a unified diff, and the
 	// repository's lines taking the Standard's version would drop, as they
@@ -546,6 +571,19 @@ type StandardFile struct {
 	// +kubebuilder:validation:MaxLength=4096
 	// +optional
 	Change string `json:"change,omitempty"`
+}
+
+// CIImages are the toolchain images a Standard's GitHub check falls back to
+// when the repository's Actions variable (THEOS_CI_IMAGE_GO or
+// THEOS_CI_IMAGE_BASE) names none, as the operator rendered them (#284).
+type CIImages struct {
+	// go is the image of the Standards on the go toolchain.
+	// +optional
+	Go string `json:"go,omitempty"`
+
+	// base is the image of the Standards on the base toolchain.
+	// +optional
+	Base string `json:"base,omitempty"`
 }
 
 // StandardUpdateStatus is one Standard update: a pull request the operator
@@ -565,6 +603,14 @@ type StandardUpdateStatus struct {
 	// as EveryChange.
 	// +optional
 	Checks ChecksMode `json:"checks,omitempty"`
+
+	// ciImages are the toolchain images the update renders the files it brings
+	// with: the operator's when it was planned, or, for a take,
+	// status.standard.ciImages. status.standard records them once it merges.
+	// Unset, in a status written before they were kept, reads as
+	// status.standard.ciImages's unset.
+	// +optional
+	CIImages *CIImages `json:"ciImages,omitempty"`
 
 	// branch is the update's branch, and commit the one commit on it.
 	// +optional

@@ -65,6 +65,10 @@ edited '/--test-environment-tools-url=/d'; run; check "no --test-environment-too
 grep -q 'lacks the --test-environment-tools-url flag' "$T/out"; check "names the tools URL flag" $? 0
 edited '/--test-environment-runner-url=/d'; run; check "no --test-environment-runner-url: fails" $? 1
 grep -q 'lacks the --test-environment-runner-url flag' "$T/out"; check "names the runner URL flag" $? 0
+edited '/--ci-image-go=/d'; run; check "no --ci-image-go: fails (#284)" $? 1
+grep -q 'lacks the --ci-image-go flag' "$T/out"; check "names the go image flag" $? 0
+edited '/--ci-image-base=/d'; run; check "no --ci-image-base: fails (#284)" $? 1
+grep -q 'lacks the --ci-image-base flag' "$T/out"; check "names the base image flag" $? 0
 
 printf 'kind: ConfigMap\n' >"$T/rendered.yaml"
 run; check "a render without the manager: fails" $? 1

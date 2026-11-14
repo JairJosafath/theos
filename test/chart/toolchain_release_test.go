@@ -20,16 +20,15 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"testing"
 
 	"github.com/JairJosafath/theos/internal/model"
 )
 
 // TestToolchainReleaseIsPublished263 checks that the release whose toolchain
-// images the Standards' GitHub checks fall back to is a release, no later
-// than the chart's newest (#263): a version the chart has not reached has
-// published no images yet.
+// images the Standards' GitHub checks fall back to is a release (#263), the
+// chart's own (#284): the release script bumps both at once, so one that lags
+// was moved by hand, and one ahead names images not published yet.
 func TestToolchainReleaseIsPublished263(t *testing.T) {
 	chart, err := os.ReadFile(filepath.Join("..", "..", "dist", "chart", "Chart.yaml"))
 	if err != nil {
@@ -39,23 +38,16 @@ func TestToolchainReleaseIsPublished263(t *testing.T) {
 	if m == nil {
 		t.Fatal("dist/chart/Chart.yaml has no version")
 	}
-	newest, ok := versionParts(string(m[1]))
-	if !ok {
+	if !releaseVersion.Match(m[1]) {
 		t.Fatalf("dist/chart/Chart.yaml's version %q is not X.Y.Z", m[1])
 	}
-	release, ok := versionParts(model.ToolchainRelease)
-	if !ok {
+	if !releaseVersion.MatchString(model.ToolchainRelease) {
 		t.Fatalf("model.ToolchainRelease %q is not X.Y.Z: name a release, never latest or a branch",
 			model.ToolchainRelease)
 	}
-	for i := range release {
-		if release[i] != newest[i] {
-			if release[i] > newest[i] {
-				t.Errorf("model.ToolchainRelease is %s, after the chart's newest release %s",
-					model.ToolchainRelease, m[1])
-			}
-			break
-		}
+	if model.ToolchainRelease != string(m[1]) {
+		t.Errorf("model.ToolchainRelease is %s, not the chart's version %s: the release script's bump "+
+			"moves both, and its check holds them equal (#284)", model.ToolchainRelease, m[1])
 	}
 	for _, image := range []string{model.DefaultCIImages().Go, model.DefaultCIImages().Base} {
 		if problem := model.PinnedImageProblem(image); problem != "" {
@@ -64,15 +56,5 @@ func TestToolchainReleaseIsPublished263(t *testing.T) {
 	}
 }
 
-// versionParts returns X.Y.Z's three numbers.
-func versionParts(v string) ([3]int, bool) {
-	var out [3]int
-	m := regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)$`).FindStringSubmatch(v)
-	if m == nil {
-		return out, false
-	}
-	for i := range out {
-		out[i], _ = strconv.Atoi(m[i+1])
-	}
-	return out, true
-}
+// releaseVersion is a release's version, X.Y.Z.
+var releaseVersion = regexp.MustCompile(`^\d+\.\d+\.\d+$`)

@@ -182,7 +182,7 @@ func (r *ContainerReconciler) scaffold(ctx context.Context, container *c4v1beta1
 	}
 	in := scaffoldInput(view, ci, res.use.Connectors, res.domains,
 		model.EffectiveChecks(string(container.Spec.Checks), res.standard != nil && res.standard.ChecksBeforeRelease),
-		specOperations(container), repo.NpmScope, license)
+		r.ciImages(), specOperations(container), repo.NpmScope, license)
 	result, err := scaffold.Build(in, layers, r.ScaffoldOptions)
 	if err != nil {
 		reason := c4v1beta1.ReasonFailed
@@ -305,7 +305,7 @@ func (r *ContainerReconciler) adopt(ctx, gitCtx context.Context, container *c4v1
 	paths := map[string]bool{}
 	var standardRef string
 	for i, domains := range domainSets {
-		in := scaffoldInput(view, ci, nil, domains, checks, specOperations(container), repo.NpmScope, license)
+		in := scaffoldInput(view, ci, nil, domains, checks, r.ciImages(), specOperations(container), repo.NpmScope, license)
 		renders[i] = scaffold.Tree{}
 		for _, layer := range layers {
 			tree, err := scaffold.RenderLayer(in, layer)
@@ -398,7 +398,11 @@ func (r *ContainerReconciler) fetchLayers(ctx context.Context, res resolved) ([]
 // standardRef is the ref the Standard's files on main are at: the one the
 // scaffold pinned, or the one an adopted repository was checked against; empty
 // records no Standard. checks is when CI runs the full check as the scaffold
-// rendered the Standard's files; empty reads as EveryChange. readsOperations says the Framework
+// rendered the Standard's files; empty reads as EveryChange. The Standard is
+// recorded as rendered with the operator's CI images (#284): the scaffold's
+// own, the ones an adopted repository was checked against, and, for a
+// recovered scaffold, the ones the earlier attempt most likely pushed with,
+// as its commit doesn't say. readsOperations says the Framework
 // rendered spec.operations into the repository (#1209): only then is the
 // block recorded, so a Framework that doesn't read it never reports it
 // applied.
@@ -410,7 +414,7 @@ func (r *ContainerReconciler) ready(ctx context.Context, container *c4v1beta1.Co
 	status.ScaffoldedDomains = domains
 	if standard != "" && standardRef != "" {
 		status.Standard = &c4v1beta1.ContainerStandardStatus{Name: standard, Ref: standardRef,
-			Checks: c4v1beta1.ChecksMode(checks)}
+			Checks: c4v1beta1.ChecksMode(checks), CIImages: ciImagesRecord(r.ciImages())}
 	}
 	status.AppliedRelationships, status.AppliedConnectors = appliedStatus(relationships)
 	// The commit an earlier attempt pushed doesn't say its operations, so a
@@ -473,9 +477,12 @@ func (r *ContainerReconciler) condition(container *c4v1beta1.Container, status *
 // and npmScope the scope the repository's npm package is named under
 // (ports.Repository.NpmScope; empty means ports.DefaultNpmScope).
 // license is the license the repository carries (resolveLicense); a caller
-// that only writes a message passes none.
+// that only writes a message passes none. images are the toolchain images a
+// GitHub check falls back to (#284): the operator's (ContainerReconciler.ciImages)
+// for what a scaffold, an adoption or an update brings, the recorded ones
+// (scaffoldedCIImages) for what the repository's files are at.
 func scaffoldInput(container *c4v1beta1.Container, ci model.CI, connectors, domains []string,
-	checks string, ops model.Operations, npmScope string, license scaffold.License) scaffold.Input {
+	checks string, images model.CIImages, ops model.Operations, npmScope string, license scaffold.License) scaffold.Input {
 	if npmScope == "" {
 		npmScope = ports.DefaultNpmScope
 	}
@@ -499,8 +506,41 @@ func scaffoldInput(container *c4v1beta1.Container, ci model.CI, connectors, doma
 		Operations:     ops,
 		NpmScope:       npmScope,
 		License:        license,
+		CIImages:       images,
 	}
 	return in
+}
+
+// ciImages are the toolchain images the operator renders a scaffold, an
+// adoption and the files a Standard update brings with: its own, each one it
+// was given none of the release's (#284).
+func (r *ContainerReconciler) ciImages() model.CIImages {
+	return r.CIImages.OrDefault()
+}
+
+// scaffoldedCIImages are the toolchain images the repository's Standard files
+// were last rendered with, as status.standard.ciImages records them; none
+// recorded, or no Standard, reads as model.LegacyCIImages (#284).
+func scaffoldedCIImages(status *c4v1beta1.ContainerStatus) model.CIImages {
+	if status.Standard == nil {
+		return model.LegacyCIImages()
+	}
+	return recordedCIImages(status.Standard.CIImages)
+}
+
+// recordedCIImages are the images a status record names, each it leaves
+// empty model.LegacyCIImages' (#284).
+func recordedCIImages(images *c4v1beta1.CIImages) model.CIImages {
+	var c model.CIImages
+	if images != nil {
+		c = model.CIImages{Go: images.Go, Base: images.Base}
+	}
+	return c.OrLegacy()
+}
+
+// ciImagesRecord is images as a status records them.
+func ciImagesRecord(images model.CIImages) *c4v1beta1.CIImages {
+	return &c4v1beta1.CIImages{Go: images.Go, Base: images.Base}
 }
 
 // resolveLicense is the license the Container's repository carries: its own
