@@ -555,3 +555,9 @@ candidate with steps 1 to 6.
 ## Status
 
 - **14 November, 07:00 UTC.** Planned. Nothing built.
+- **14 November, 23:30 UTC.** Stopped on the owner's word, before step 9 was released.
+  - **Done and released:** steps 1 to 7. Engine v0.34.0 is on GitHub (JairJosafath/cel-lens#34, tag `core-v0.34.0`); cosign verified the checksums' signature and the SLSA provenance, and the engine's `initialize` echoes only the two hover commands.
+  - **Built and approved, not released:** step 8 (cel-lens-vscode #57, aa08e28) and step 9 with vscode #43 (cel-lens-vscode #58, 61b85e1, review comment 789). #58 merges the v0.42.0 line, since Gitea's `main` stopped at 0.35.0.
+  - **Not committed:** the README picture and the picture script's fix for it. `takeRuleHover` scrolls the rule near the top a line at a time, drags the hover's edge down so Docs: shows, and presses Escape after the save. The picture is `docs/screenshots/cel-lens-rule-hovers/rule-hover.png`, the script change `take-rule-hover.patch` beside it; ESLint wants braces on its `for`. Also open from comment 789: the README sentence on Kyverno cost estimates.
+  - **Left to do:** commit those to #58, mirror cel-lens-vscode to GitHub, release extension v0.43.0 with `release.yml` and cosign checks, close JairJosafath/cel-lens#4. The Gitea PRs core #51 and #59–#65 and vscode #57–#58 are open; their work is in the released or approved branches.
+  - **Follow-up filed:** cel-lens-core #66, a name holding `#` can give two documents one `idPart` (older than this plan).

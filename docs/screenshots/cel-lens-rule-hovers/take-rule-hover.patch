@@ -1,0 +1,39 @@
+diff --git a/test/pictures/take.ts b/test/pictures/take.ts
+index 3b0161c..a999a16 100644
+--- a/test/pictures/take.ts
++++ b/test/pictures/take.ts
+@@ -1509,7 +1509,11 @@ async function takeThemes(page: Page, workspace: string): Promise<void> {
+ async function takeRuleHover(page: Page): Promise<void> {
+   await startPicture(page, RULE_HOVER_CRD);
+   await expectCleanStart(page, 'rule-hover.png', { problems: 0, ready: '1 example passes' });
+-  await showWholeLines(page, 'rule-hover.png');
++  // The rule near the top, so its hover opens below it with room to show whole. Scrolled a
++  // line at a time from the top, so no line is cut by the top edge.
++  for (let i = 0; i < 17; i++) {
++    await page.keyboard.press('Control+ArrowDown');
++  }
+   const inside = await pointAt(page, RULE_HOVER_RULE, RULE_HOVER_AT);
+   await page.mouse.move(inside.x - 20, inside.y + 80);
+   await page.mouse.move(inside.x, inside.y, { steps: 6 });
+@@ -1518,7 +1522,21 @@ async function takeRuleHover(page: Page): Promise<void> {
+     'the hover of the near rule to show its examples',
+   );
+   await waitForHover(page);
++  // VS Code caps a hover at about 250 pixels and scrolls the rest; drag its bottom edge down
++  // so the whole hover, Docs: included, is in the picture.
++  const box = await page.locator('.monaco-resizable-hover').first().boundingBox();
++  if (box !== null) {
++    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 1);
++    await page.mouse.down();
++    await page.mouse.move(box.x + box.width / 2, box.y + box.height + 200, { steps: 8 });
++    await page.mouse.up();
++    // Off the edge it was dragged by, which stays highlighted under the mouse, and onto the
++    // hover's own text, which keeps it open.
++    await page.mouse.move(box.x + box.width - 40, box.y + 20, { steps: 4 });
++  }
++  await waitForHover(page);
+   await save('rule-hover.png', await screenshotPage(page, 'rule-hover.png'));
++  await page.keyboard.press('Escape');
+   await parkMouse(page);
+ }
+ 
