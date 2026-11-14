@@ -983,11 +983,37 @@ What the step chose where the plan says nothing:
   channel found without its topic was `Created`, the controller forgot
   `status.invited`, and every person was invited to all six channels
   (`TestSlackChatPullsNobodyBack`, `TestSlackChatInvitesToAChannelLeftHalfMade`,
-  `TestEnsureRoomPutsBackATopicEmptiedByHand`). Two cases remain: a channel
-  everyone left whose topic is then emptied looks half made, and its people
-  are invited to it; and a room made anew whose invites fail partway is not
-  `Created` on the next pass, so the people not reached are not invited to
-  it.
+  `TestEnsureRoomPutsBackATopicEmptiedByHand`).
+- **A room made again is new by its ID (#159).** A room is new, and every
+  person invited to it, when `EnsureRoom` says `Created` or when its ID is
+  not the one status holds for it: a channel or room deleted and made again
+  has a new ID. Status takes a new room's ID (the Space's too, on Matrix)
+  only once everyone is invited to it, so when an invite fails partway (a
+  Slack rate limit is ordinary use) status keeps the old ID, the next pass
+  finds the room by name or alias, sees an ID that differs and invites the
+  people the failed pass did not reach. The controller invites room by
+  room, and records each new room as soon as its invites are done. A found
+  room's ID and alias are recorded at once, as before, and so is a new
+  room's while `status.invited` is empty (the first pass, which invites
+  everyone to every room anyway), so a first pass that fails halfway, on
+  `AliasTaken` say, still keeps what it made in status. The `Ready=False`
+  pass loses nothing: `theos-chat` acts only on a `Ready` Chat, so it never
+  reads the old ID in the meantime. This also covers the #234 case without
+  `conversations.members`: a channel left half made never reached status.
+  No API change (`TestSlackChatInvitesToAChannelRemadeAfterAFailedInvite`,
+  `TestMatrixChatInvitesToARoomMadeAgain`).
+- **`conversations.members` is only ever a reason not to invite (#159).**
+  An error on it, a missing scope or a listing without the bot reads as
+  "not alone": the channel is found, not `Created`, and its topic is put
+  back all the same, so a failing call never makes a healthy channel
+  `Created` and never holds `Ready` on a reason about a channel that is
+  fine. A real fault in reaching Slack still shows on the
+  `conversations.setTopic` right after, with its own reason
+  (`TestEnsureRoomDoubtsTheMembersCall`).
+- **Edges that remain.** A channel everyone left whose topic is then
+  emptied looks half made, and its people are invited to it again. A person
+  invited to a room made again on a pass whose later invites failed, who
+  leaves it before the next pass, is invited to it again by that pass.
 - **The port has `Close` (#234).** `ChatHost.Close()` lets go of what the
   value holds open: Slack's socket (`Client.Close`, which was there), nothing
   on Matrix or the fake (which counts its open values, `fake.ChatHost.Open`).

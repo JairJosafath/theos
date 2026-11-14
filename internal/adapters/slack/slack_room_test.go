@@ -18,6 +18,7 @@ package slack
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -116,5 +117,60 @@ func TestEnsureRoomPutsBackATopicEmptiedByHand(t *testing.T) {
 	}
 	if got := x.ws.Calls("conversations.members"); got != 1 {
 		t.Errorf("conversations.members called %d times, want once, for the channel without its topic", got)
+	}
+}
+
+// answerMembers is a transport that answers every conversations.members
+// itself, with status and body, and passes every other call on.
+type answerMembers struct {
+	status int
+	body   string
+}
+
+func (a *answerMembers) RoundTrip(r *http.Request) (*http.Response, error) {
+	if !strings.HasSuffix(r.URL.Path, "/conversations.members") {
+		return http.DefaultTransport.RoundTrip(r)
+	}
+	return &http.Response{StatusCode: a.status, Header: http.Header{"Content-Type": {"application/json"}},
+		Body: io.NopCloser(strings.NewReader(a.body)), Request: r}, nil
+}
+
+// TestEnsureRoomDoubtsTheMembersCall covers #159: conversations.members,
+// which says whether a channel found without its topic was left half made,
+// never makes a healthy channel Created when it fails or answers without
+// the bot, and never fails EnsureRoom: the topic is put back, and the
+// channel is found as it is, so nobody is invited into it again. Before,
+// an error failed EnsureRoom, which left the Chat not Ready over a channel
+// that was fine, and a listing without the bot read as the bot alone.
+func TestEnsureRoomDoubtsTheMembersCall(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"an error", http.StatusOK, `{"ok":false,"error":"internal_error"}`},
+		{"a missing scope", http.StatusOK, `{"ok":false,"error":"missing_scope","needed":"groups:read"}`},
+		{"a server error", http.StatusInternalServerError, `{"ok":false}`},
+		{"a listing without the bot", http.StatusOK, `{"ok":true,"members":[]}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			x := newRooms(t)
+			c := client(t, x.ws, x.botToken, x.appToken,
+				WithHTTPClient(&http.Client{Transport: &answerMembers{status: tt.status, body: tt.body}}))
+			if err := x.ws.SetTopic(x.specs, ""); err != nil {
+				t.Fatal(err)
+			}
+			spec := ports.ChatRoomSpec{ID: x.specs, Alias: aliasSpecs, Topic: "A thread per spec waiting for approval"}
+			room, err := c.EnsureRoom(t.Context(), spec)
+			if err != nil {
+				t.Fatalf("EnsureRoom() with conversations.members answering %s = %v, want the channel found", tt.body, err)
+			}
+			if room.Created || room.ID != x.specs {
+				t.Errorf("EnsureRoom() = %+v, want %s found, not Created", room, x.specs)
+			}
+			if ch, _ := x.ws.Channel(x.specs); ch.Topic != spec.Topic {
+				t.Errorf("the channel's topic = %q, want %q back", ch.Topic, spec.Topic)
+			}
+		})
 	}
 }

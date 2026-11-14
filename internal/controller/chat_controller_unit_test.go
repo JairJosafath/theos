@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -35,6 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/adapters/matrix"
+	"github.com/JairJosafath/theos/internal/adapters/matrix/matrixtest"
 	"github.com/JairJosafath/theos/internal/adapters/slack"
 	"github.com/JairJosafath/theos/internal/adapters/slack/slacktest"
 	"github.com/JairJosafath/theos/internal/model"
@@ -102,54 +104,101 @@ func TestChatOnAHostWithoutAnAdapter(t *testing.T) {
 	}
 }
 
-// slackWorkspaceChat is a Slack Chat with ada its one person, and its Secret, on a
-// fake workspace, reconciled by a ChatReconciler on a fake client with the
-// real Slack adapter, whose calls go through transport.
+// slackWorkspaceChat is a Slack Chat with ada its first person, and its
+// Secret, on a fake workspace, reconciled by a ChatReconciler on a fake
+// client with the real Slack adapter, whose calls go through calls.
 type slackWorkspaceChat struct {
-	ws        *slacktest.Server
-	ada       string
-	cl        client.Client
-	r         *ChatReconciler
-	req       ctrl.Request
-	setTopics *failSetTopic
+	chatReconcile
+	ws     *slacktest.Server
+	ada    string
+	others []string // the people after ada, as newSlackWorkspaceChat names them
 }
 
-// failSetTopic is a transport that fails the next conversations.setTopic
-// once armed, as a connection that drops right after
-// conversations.create does, and passes every other call on.
-type failSetTopic struct{ armed atomic.Bool }
+// chatReconcile is a Chat on a fake client and the ChatReconciler that
+// reconciles it, whose host's calls go through calls.
+type chatReconcile struct {
+	cl    client.Client
+	r     *ChatReconciler
+	req   ctrl.Request
+	calls *failCalls
+}
 
-func (f *failSetTopic) RoundTrip(r *http.Request) (*http.Response, error) {
-	if strings.HasSuffix(r.URL.Path, "/conversations.setTopic") && f.armed.CompareAndSwap(true, false) {
-		return nil, errors.New("connection reset")
+// failCalls is a transport that fails one call whose path ends in a
+// suffix armed with fail, as a connection that drops, and passes every
+// other call on.
+type failCalls struct {
+	mu    sync.Mutex
+	armed map[string]int // path suffix → calls to pass before the one that fails
+}
+
+// fail fails the call whose path ends in suffix after letting pass more
+// such calls through, once.
+func (f *failCalls) fail(suffix string, pass int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.armed == nil {
+		f.armed = map[string]int{}
 	}
+	f.armed[suffix] = pass
+}
+
+func (f *failCalls) RoundTrip(r *http.Request) (*http.Response, error) {
+	f.mu.Lock()
+	for suffix, pass := range f.armed {
+		if !strings.HasSuffix(r.URL.Path, suffix) {
+			continue
+		}
+		if pass == 0 {
+			delete(f.armed, suffix)
+			f.mu.Unlock()
+			return nil, errors.New("connection reset")
+		}
+		f.armed[suffix] = pass - 1
+	}
+	f.mu.Unlock()
 	return http.DefaultTransport.RoundTrip(r)
 }
 
-func newSlackWorkspaceChat(t *testing.T) *slackWorkspaceChat {
+// newSlackWorkspaceChat is a Slack Chat of ada and a person of each of
+// others' names, after her.
+func newSlackWorkspaceChat(t *testing.T, others ...string) *slackWorkspaceChat {
 	t.Helper()
 	ws := slacktest.New(t)
 	_, botToken, appToken := ws.NewApp("theos")
-	ada := ws.NewUser("ada")
-	scheme := briefScheme(t)
+	x := &slackWorkspaceChat{ws: ws, ada: ws.NewUser("ada")}
+	people := []c4v1beta1.ChatSlackPerson{{SlackID: x.ada, User: "ada"}}
+	for _, name := range others {
+		id := ws.NewUser(name)
+		x.others = append(x.others, id)
+		people = append(people, c4v1beta1.ChatSlackPerson{SlackID: id, User: name})
+	}
 	chat := &c4v1beta1.Chat{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "chat", Generation: 1},
 		Spec: c4v1beta1.ChatSpec{Host: c4v1beta1.ChatHostSlack, CredentialsSecretRef: c4v1beta1.LocalRef{Name: "slack-bot"},
-			Slack: &c4v1beta1.ChatSlack{People: []c4v1beta1.ChatSlackPerson{{SlackID: ada, User: "ada"}}}}}
+			Slack: &c4v1beta1.ChatSlack{People: people}}}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "slack-bot"},
 		Data: map[string][]byte{model.ChatSlackBotTokenKey: []byte(botToken),
 			model.ChatSlackAppTokenKey: []byte(appToken)}}
+	x.chatReconcile = newChatReconcile(t, chat, secret, model.ChatSlack, ws.URL(), slack.Hosts)
+	return x
+}
+
+// newChatReconcile is chat and secret on a fake client, reconciled with
+// host's adapter, built by hosts, at address.
+func newChatReconcile(t *testing.T, chat *c4v1beta1.Chat, secret *corev1.Secret, host, address string,
+	hosts func(*http.Client) ports.ChatHosts) chatReconcile {
+	t.Helper()
+	scheme := briefScheme(t)
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(chat, secret).
 		WithStatusSubresource(&c4v1beta1.Chat{}).Build()
-	setTopics := &failSetTopic{}
-	r := &ChatReconciler{Client: cl, Scheme: scheme, APIReader: cl,
-		Addresses: map[string]string{model.ChatSlack: ws.URL()},
-		ChatHosts: map[string]ports.ChatHosts{model.ChatSlack: slack.Hosts(&http.Client{Transport: setTopics})}}
-	return &slackWorkspaceChat{ws: ws, ada: ada, cl: cl, r: r, setTopics: setTopics,
-		req: ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "shop", Name: "chat"}}}
+	calls := &failCalls{}
+	r := &ChatReconciler{Client: cl, Scheme: scheme, APIReader: cl, Addresses: map[string]string{host: address},
+		ChatHosts: map[string]ports.ChatHosts{host: hosts(&http.Client{Transport: calls})}}
+	return chatReconcile{cl: cl, r: r, calls: calls,
+		req: ctrl.Request{NamespacedName: types.NamespacedName{Namespace: chat.Namespace, Name: chat.Name}}}
 }
 
 // reconcile reconciles the Chat once and returns it, Ready or not.
-func (x *slackWorkspaceChat) reconcile(t *testing.T) *c4v1beta1.Chat {
+func (x *chatReconcile) reconcile(t *testing.T) *c4v1beta1.Chat {
 	t.Helper()
 	if _, err := x.r.Reconcile(t.Context(), x.req); err != nil {
 		t.Fatal(err)
@@ -162,7 +211,7 @@ func (x *slackWorkspaceChat) reconcile(t *testing.T) *c4v1beta1.Chat {
 }
 
 // ready reconciles the Chat once and fails t unless it is Ready.
-func (x *slackWorkspaceChat) ready(t *testing.T) *c4v1beta1.Chat {
+func (x *chatReconcile) ready(t *testing.T) *c4v1beta1.Chat {
 	t.Helper()
 	chat := x.reconcile(t)
 	if c := apimeta.FindStatusCondition(chat.Status.Conditions, c4v1beta1.ConditionChatReady); c == nil ||
@@ -170,6 +219,27 @@ func (x *slackWorkspaceChat) ready(t *testing.T) *c4v1beta1.Chat {
 		t.Fatalf("Ready = %+v, want True", c)
 	}
 	return chat
+}
+
+// notReady reconciles the Chat once and fails t if it is Ready.
+func (x *chatReconcile) notReady(t *testing.T, why string) *c4v1beta1.Chat {
+	t.Helper()
+	chat := x.reconcile(t)
+	if c := apimeta.FindStatusCondition(chat.Status.Conditions, c4v1beta1.ConditionChatReady); c == nil ||
+		c.Status == metav1.ConditionTrue {
+		t.Fatalf("Ready = %+v after %s, want not True", c, why)
+	}
+	return chat
+}
+
+// roomID is the ID status holds for purpose's room, or "".
+func roomID(chat *c4v1beta1.Chat, purpose model.ChatPurpose) string {
+	for _, room := range chat.Status.Rooms {
+		if room.Purpose == c4v1beta1.ChatPurpose(purpose) {
+			return room.ID
+		}
+	}
+	return ""
 }
 
 // channel is the Chat's channel of purpose, as Slack shows it.
@@ -237,12 +307,8 @@ func TestSlackChatInvitesToAChannelLeftHalfMade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	x.setTopics.armed.Store(true)
-	chat = x.reconcile(t)
-	if c := apimeta.FindStatusCondition(chat.Status.Conditions, c4v1beta1.ConditionChatReady); c == nil ||
-		c.Status == metav1.ConditionTrue {
-		t.Fatalf("Ready = %+v after setTopic failed, want not True", c)
-	}
+	x.calls.fail("/conversations.setTopic", 0)
+	x.notReady(t, "setTopic failed")
 	invites := x.ws.Calls("conversations.invite")
 
 	chat = x.ready(t)
@@ -259,5 +325,128 @@ func TestSlackChatInvitesToAChannelLeftHalfMade(t *testing.T) {
 	}
 	if slices.Contains(x.channel(t, chat, model.ChatGeneral).Members, x.ada) {
 		t.Error("ada, who left general, is back in it")
+	}
+}
+
+// TestSlackChatInvitesToAChannelRemadeAfterAFailedInvite covers #159: an
+// admin deletes alerts, and the reconcile that makes it again invites ada
+// to it but fails to invite bob (a dropped connection; a rate limit is
+// ordinary use). The next reconcile invites bob to alerts and pulls nobody
+// back: ada, who left general, stays out of it. Before, status held the new
+// channel's ID after the failed pass, the next reconcile found the channel
+// by it, not Created, and bob was never invited to it.
+func TestSlackChatInvitesToAChannelRemadeAfterAFailedInvite(t *testing.T) {
+	x := newSlackWorkspaceChat(t, "bob")
+	bob := x.others[0]
+	chat := x.ready(t)
+	general, alerts := x.channel(t, chat, model.ChatGeneral), x.channel(t, chat, model.ChatAlerts)
+	if err := x.ws.Remove(general.ID, x.ada); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.ws.Delete(alerts.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	x.calls.fail("/conversations.invite", 1)
+	chat = x.notReady(t, "bob's invite failed")
+	if got := roomID(chat, model.ChatAlerts); got != alerts.ID {
+		t.Errorf("status names alerts %s after its invites failed, want %s until everyone is invited", got, alerts.ID)
+	}
+	invites := x.ws.Calls("conversations.invite")
+
+	chat = x.ready(t)
+	made := x.channel(t, chat, model.ChatAlerts)
+	if made.ID == alerts.ID {
+		t.Fatalf("alerts = %s, want the channel made again", made.ID)
+	}
+	if !slices.Contains(made.Members, bob) || !slices.Contains(made.Members, x.ada) {
+		t.Errorf("alerts' members = %v, want ada and bob", made.Members)
+	}
+	if got := x.ws.Calls("conversations.invite") - invites; got != 2 {
+		t.Errorf("conversations.invite called %d times, want twice: ada (already in) and bob, to alerts alone", got)
+	}
+	if slices.Contains(x.channel(t, chat, model.ChatGeneral).Members, x.ada) {
+		t.Error("ada, who left general, is back in it")
+	}
+}
+
+// matrixHomeserverChat is a Matrix Chat of ada and bob on a fake
+// homeserver, reconciled with the real Matrix adapter.
+type matrixHomeserverChat struct {
+	chatReconcile
+	hs       *matrixtest.Server
+	ada, bob string
+}
+
+func newMatrixHomeserverChat(t *testing.T) *matrixHomeserverChat {
+	t.Helper()
+	hs := matrixtest.New(t)
+	_, token := hs.NewUser("theos")
+	x := &matrixHomeserverChat{hs: hs}
+	x.ada, _ = hs.NewUser("ada")
+	x.bob, _ = hs.NewUser("bob")
+	people := []c4v1beta1.ChatPerson{{MatrixID: x.ada, User: "ada"}, {MatrixID: x.bob, User: "bob"}}
+	chat := &c4v1beta1.Chat{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "chat", Generation: 1},
+		Spec: c4v1beta1.ChatSpec{Host: c4v1beta1.ChatHostMatrix, Homeserver: hs.URL(), People: people,
+			CredentialsSecretRef: c4v1beta1.LocalRef{Name: "matrix-bot"}}}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "matrix-bot"},
+		Data: map[string][]byte{model.ChatTokenKey: []byte(token)}}
+	x.chatReconcile = newChatReconcile(t, chat, secret, model.ChatMatrix, hs.URL(), matrix.Hosts)
+	return x
+}
+
+// members are the people invited to or in room.
+func (x *matrixHomeserverChat) members(t *testing.T, room string) map[string]string {
+	t.Helper()
+	r, ok := x.hs.Room(room)
+	if !ok {
+		t.Fatalf("no room %s", room)
+	}
+	return r.Members
+}
+
+// TestMatrixChatInvitesToARoomMadeAgain covers #159 on Matrix: an admin
+// deletes general, and the next reconcile makes it again and invites ada
+// and bob to it, and nobody back into a room they left: ada left triage.
+// When bob's invite fails on the pass that makes it, the next pass invites
+// him. Before, status held the new room's ID after the failed pass, the
+// room found by it was not Created, and bob was never invited to it. The
+// first case passed before too; it guards the room made in one pass.
+func TestMatrixChatInvitesToARoomMadeAgain(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		failInvite bool
+	}{
+		{"made again", false},
+		{"made again, an invite failing partway", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			x := newMatrixHomeserverChat(t)
+			chat := x.ready(t)
+			general, triage := roomID(chat, model.ChatGeneral), roomID(chat, model.ChatTriage)
+			x.hs.Join(triage, x.ada)
+			x.hs.Leave(triage, x.ada)
+			x.hs.Delete(general)
+
+			if tt.failInvite {
+				x.calls.fail("/invite", 1)
+				chat = x.notReady(t, "bob's invite failed")
+				if got := roomID(chat, model.ChatGeneral); got != general {
+					t.Errorf("status names general %s after its invites failed, want %s until everyone is invited",
+						got, general)
+				}
+			}
+			chat = x.ready(t)
+			made := roomID(chat, model.ChatGeneral)
+			if made == general {
+				t.Fatalf("general = %s, want the room made again", made)
+			}
+			if m := x.members(t, made); m[x.ada] != "invite" || m[x.bob] != "invite" {
+				t.Errorf("general's members = %v, want ada and bob invited", m)
+			}
+			if m := x.members(t, triage); m[x.ada] != "" {
+				t.Errorf("ada, who left triage, is %s in it again", m[x.ada])
+			}
+		})
 	}
 }

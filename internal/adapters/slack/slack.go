@@ -416,10 +416,11 @@ func (c *Client) finish(ctx context.Context, spec ports.ChatRoomSpec, ch channel
 	if spec.Topic == "" || ch.Topic.Value != "" {
 		return room, nil
 	}
-	alone, err := c.botAlone(ctx, ch.ID)
+	me, err := c.WhoAmI(ctx)
 	if err != nil {
 		return ports.ChatRoom{}, err
 	}
+	alone := c.botAlone(ctx, ch.ID, me)
 	if err := c.setTopic(ctx, ch.ID, spec.Topic); err != nil {
 		return ports.ChatRoom{}, err
 	}
@@ -427,14 +428,15 @@ func (c *Client) finish(ctx context.Context, spec ports.ChatRoomSpec, ch channel
 	return room, nil
 }
 
-// botAlone says the bot is the one member of channel, by
+// botAlone says the bot, me, is the one member of channel, by
 // conversations.members, which takes groups:read on a private channel, the
-// scope users.conversations already takes.
-func (c *Client) botAlone(ctx context.Context, channel string) (bool, error) {
-	me, err := c.WhoAmI(ctx)
-	if err != nil {
-		return false, err
-	}
+// scope users.conversations already takes. Any doubt is false: an error,
+// a missing scope or a listing without the bot never makes a channel
+// Created, which would invite its people into it again (#159), and never
+// fails the channel, whose topic is put back all the same. A channel made
+// again is new to the caller by its ID, so its people are invited anyway.
+func (c *Client) botAlone(ctx context.Context, channel, me string) bool {
+	seen := false
 	cursor := ""
 	for {
 		args := url.Values{argChannel: {channel}, argLimit: {strconv.Itoa(pageSize)}}
@@ -446,13 +448,14 @@ func (c *Client) botAlone(ctx context.Context, channel string) (bool, error) {
 			Members []string `json:"members"`
 		}
 		if err := c.bot(ctx, "conversations.members", args, &answer); err != nil {
-			return false, err
+			return false
 		}
 		if slices.ContainsFunc(answer.Members, func(m string) bool { return m != me }) {
-			return false, nil
+			return false
 		}
+		seen = seen || len(answer.Members) > 0
 		if cursor = answer.Meta.NextCursor; cursor == "" {
-			return true, nil
+			return seen
 		}
 	}
 }

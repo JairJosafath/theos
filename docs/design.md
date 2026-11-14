@@ -1637,6 +1637,12 @@ called, `Ready=False` with reason `HostNotSupported` naming the host, and
   scope Slack says the bot token lacks is `ScopeMissing`, naming the scope.
   ([plans/requests-and-chat.md](plans/requests-and-chat.md), decisions 4, 5,
   9 and 11.)
+- **Nobody who left a room is pulled back.** A room is invited to only when
+  it is new (made, or made again with an ID that is not the one status
+  holds, which status takes once everyone is invited to it) or nobody was
+  ever invited to it, and a person added to `people` is invited to every
+  room; on Slack an invite is a join, so nobody else is invited again. A
+  channel found without its topic gets its topic back.
 - **Chat enforces nothing.** A command becomes one request from a closed
   allowlist in `internal/model` (`CheckChatRequest`), the UI's own entries
   for what the UI can do (a Brief, its prompts, pause and resume, a

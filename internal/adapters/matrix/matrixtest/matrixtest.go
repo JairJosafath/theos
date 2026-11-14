@@ -157,6 +157,15 @@ func (s *Server) Leave(roomID, user string) {
 	s.setMember(s.rooms[roomID], user, user, "leave")
 }
 
+// Delete deletes room and the aliases that point to it, as an admin who
+// purges a room does.
+func (s *Server) Delete(roomID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.rooms, roomID)
+	maps.DeleteFunc(s.aliases, func(_, id string) bool { return id == roomID })
+}
+
 // Post posts a person's m.text message in room, in the thread of
 // threadRoot when it isn't "", and returns its event ID.
 func (s *Server) Post(roomID, sender, body, threadRoot string) string {
