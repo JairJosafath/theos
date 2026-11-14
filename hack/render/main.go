@@ -145,6 +145,7 @@ func run(args []string, stdout io.Writer) error {
 			return err
 		}
 	}
-	fmt.Fprintf(stdout, "Rendered %d files from %s into %s\n", len(result.Files), strings.Join(result.ScaffoldedFrom, ", "), *out)
-	return nil
+	_, err = fmt.Fprintf(stdout, "Rendered %d files from %s into %s\n",
+		len(result.Files), strings.Join(result.ScaffoldedFrom, ", "), *out)
+	return err
 }

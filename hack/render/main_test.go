@@ -40,7 +40,8 @@ func TestRenderIdentityFlags264(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "app")
-			args := append([]string{"-templates", filepath.Join("..", "..", "templates"), "-out", out, "-container", "checker"}, c.flags...)
+			templates := filepath.Join("..", "..", "templates")
+			args := append([]string{"-templates", templates, "-out", out, "-container", "checker"}, c.flags...)
 			args = append(args, "Framework=hello")
 			if err := run(args, io.Discard); err != nil {
 				t.Fatal(err)
@@ -54,7 +55,8 @@ func TestRenderIdentityFlags264(t *testing.T) {
 				t.Fatal(err)
 			}
 			if id.Project != c.project || id.SoftwareSystem != c.system || id.Container != "checker" {
-				t.Errorf("identity = %q/%q/%q, want %q/%q/checker", id.Project, id.SoftwareSystem, id.Container, c.project, c.system)
+				t.Errorf("identity = %q/%q/%q, want %q/%q/checker",
+					id.Project, id.SoftwareSystem, id.Container, c.project, c.system)
 			}
 		})
 	}
