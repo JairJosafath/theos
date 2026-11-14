@@ -574,8 +574,15 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
 - **Roles get their own model and guide.** An Agent has a `harness` and a
   `model`. A Standard ships `docs/agents/implementer.md` and `reviewer.md`,
   and may ship `verifier.md`, read from the base branch so a change can't
-  rewrite its own review. The reviewer reports each criterion and may name
-  up to three follow-ups, filed `status/proposed` in the *Later* milestone.
+  rewrite its own review. go-standard, go-operator-standard, ts-standard,
+  python-standard and aws-standard also ship the roles' Claude Code
+  subagents in `.claude/agents/` (three reviewer lenses, an explorer and a
+  test writer); the guides say when to delegate, and the role's decision is
+  never delegated. Those Standards protect `.claude/`, `CLAUDE.md` and
+  `.mcp.json`, and no agent may change them, as for the agents' rules: they
+  configure the agents that check a change. The reviewer reports each
+  criterion and may name up to three follow-ups, filed `status/proposed` in
+  the *Later* milestone.
 - **Context comes from the model:** the system's needs and KPIs, its users,
   the Container's Relationships, read-only clones of related repositories,
   and `docs/project-notes.md`, the project's own word to its agents.
@@ -587,8 +594,12 @@ its decision, and a Spec Task (`kind: Spec`) writes an issue's spec; see
   a `kind/standard-change` issue, the waiting Task is `Blocked`, and the
   operator merges the reviewed change after its checks. It never weakens a
   check (no target, test, lint rule or CI job removed or skipped): the
-  implementer stops with a `Blocked:` line instead. The agents' rules and
-  `.theos.yaml` stay out of reach.
+  implementer stops with a `Blocked:` line instead. The agents' rules
+  (`AGENTS.md`, `docs/agents/`), their Claude Code configuration (`.claude/`,
+  `CLAUDE.md`, `.mcp.json`) and `.theos.yaml` stay out of reach: a Brief's
+  plan, the implementer's prompt and a published source leave them out, and
+  only a person's commit changes them (the Standard's own release also changes
+  `docs/agents/` and `.claude/agents/`).
 - **A Task keeps its record:** `status.history`, `status.runs` per agent run,
   the cost (`status.costMilliUSD`) and tokens (`status.tokens`, with
   `largestSession`) its agents reported. `WaitingForSlot` says it waits for
@@ -1207,7 +1218,9 @@ The operator moves bytes with credentials it holds; it builds nothing.
   on its Crews until a Brief can name DeployTargets.
 - **The source on GitHub** (deprecated by #1070). `publishReleases.source.path`
   also commits the app's source at its tag into that folder, without the
-  factory's own files (`model.FactoryOwnPaths`), tagged `<path>/vX.Y.Z` so
+  factory's own files (`model.FactoryOwnPaths`: the files that configure the
+  factory's agents, the user's own included, as they configure agents, not the
+  app), tagged `<path>/vX.Y.Z` so
   `go install` finds it. Crews publishing to one repository may not overlap
   (`FolderOverlaps`). The same checks as a `github` target's run before the
   first write of a version (`model.PublishChecks`, below), failing
@@ -1515,7 +1528,7 @@ issues, and says what it chose ([plans/done/brief.md](plans/done/brief.md)).
   round; `Paused` names the Tasks still running. `spec.pauseRuns`, only with
   `paused`, passes on to the Crews it paused, as `paused` does, and pauses
   its planner Task's run too; `Paused` then names the Tasks still stopping. No issue may ask to change
-  `model.AgentNeverPaths` (`AGENTS.md`, `docs/agents/`, `.theos.yaml`).
+  `model.AgentNeverPaths` (`internal/model/fence.go` lists them).
 - **Follow-ups keep scaffold once:** a change to a scaffolded Container is an
   issue in its repository, a new Relationship's wiring too.
 - **Its status tells the story:** each round's summary for the person, its

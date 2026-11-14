@@ -177,7 +177,7 @@ A TypeScript command-line program for Node 22, bundled by esbuild and packed by
 - Logging: results to stdout, errors to stderr (`src/cli.ts`), exit 2 on a bad
   command line.
 
-### python-standard (v1.10.0)
+### python-standard (v1.11.0)
 
 The Python rulebook and its `make check`. Since v1.5.0 the check workflow
 writes `~/.npmrc` and `~/.netrc` from the owner's Actions variables and
@@ -195,6 +195,9 @@ before planning a change, and the reviewer guide to check the change against
 each domain's common mistakes; without Domains both read as before (#1758).
 Since v1.10.0 the GitHub check runs in the release's pinned toolchain image
 when the Actions variable `THEOS_CI_IMAGE_BASE` is empty, instead of failing (#263).
+Since v1.11.0 `.claude/agents/` holds the role subagents, and the role guides
+say when to delegate; `.claude/`, `CLAUDE.md` and `.mcp.json` are in its
+`protectedPaths`, and no agent changes them (#259).
 
 - CI: its `make check` in `make test-templates`' combos "fastapi service
   with postgres" and "python cli".
@@ -209,7 +212,7 @@ when the Actions variable `THEOS_CI_IMAGE_BASE` is empty, instead of failing (#2
 - README, Deploy, Auth: n/a: a Standard writes rules, not the app; its
   `AGENTS.md` and `docs/` are what it adds.
 
-### ts-standard (v1.10.0)
+### ts-standard (v1.11.0)
 
 The TypeScript rulebook for react-vite, node-cli and vscode-extension. Since
 v1.6.0 the check workflow writes `~/.npmrc` and `~/.netrc` from the owner's
@@ -225,6 +228,9 @@ before planning a change, and the reviewer guide to check the change against
 each domain's common mistakes; without Domains both read as before (#1758).
 Since v1.10.0 the GitHub check runs in the release's pinned toolchain image
 when the Actions variable `THEOS_CI_IMAGE_GO` is empty, instead of failing (#263).
+Since v1.11.0 `.claude/agents/` holds the role subagents, and the role guides
+say when to delegate; `.claude/`, `CLAUDE.md` and `.mcp.json` are in its
+`protectedPaths`, and no agent changes them (#259).
 
 - CI: its `make check` in `make test-templates`' combos "react web app on
   kubernetes", "node cli" and "vscode extension".
@@ -469,7 +475,7 @@ run in Node.
   the command logs at `info` when it runs and at `error` when it fails.
 - Auth: n/a: it runs in the user's editor.
 
-### go-standard (v1.7.0) and go-operator-standard (v1.7.0)
+### go-standard (v1.8.0) and go-operator-standard (v1.8.0)
 
 The Go rulebook, and its kubebuilder variant (protected generated paths,
 envtest).
@@ -479,6 +485,11 @@ before planning a change, and the reviewer guide to check the change against
 each domain's common mistakes; without Domains both read as before (#1758).
 Since v1.7.0 the GitHub check runs in the release's pinned toolchain image
 when the Actions variable `THEOS_CI_IMAGE_GO` is empty, instead of failing (#263).
+Since v1.8.0 `.claude/agents/` holds the role subagents (three reviewer
+lenses, an explorer and a test writer), and the role guides say when to
+delegate and that the role's decision is never delegated; `.claude/`,
+`CLAUDE.md` and `.mcp.json` are in both Standards' `protectedPaths`, and no
+agent changes them (#259).
 
 - CI: go-operator-standard: `make test-templates-operator`, as for
   go-kubebuilder. go-standard: its `make check` in `make test-templates`'
@@ -544,7 +555,7 @@ v1.1.1.
   `infra/user_pool.ts`, #1479). n/a for the queue, schedule and event consumers (no users) and the
   static site (public by design).
 
-### aws-standard (v1.25.0)
+### aws-standard (v1.26.0)
 
 The AWS rulebook: AGENTS.md, the style and Well-Architected digests, a
 runbook, `infra/standard.ts` with CDK Nag. Since v1.18.0 the check workflow
@@ -580,6 +591,9 @@ and its implementer guide the data rule (`RDS_*`, the Data API or a
 driver with the secret) (#1927).
 Since v1.25.0 the GitHub check runs in the release's pinned toolchain image
 when the Actions variable `THEOS_CI_IMAGE_GO` is empty, instead of failing (#263).
+Since v1.26.0 `.claude/agents/` holds the role subagents, and the role guides
+say when to delegate; `.claude/`, `CLAUDE.md` and `.mcp.json` are in its
+`protectedPaths`, and no agent changes them (#259).
 
 - CI: its `make check` in every AWS combo of `make test-templates`.
 - Tests: `Makefile.tmpl`, target `test` (vitest; pytest or `go test` by

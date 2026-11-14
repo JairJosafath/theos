@@ -892,14 +892,16 @@ catalog:
         supportedTypes: [operator]
     - kind: Standard
       name: go-standard
-      ref: v1.7.0
+      ref: v1.8.0
       spec:
         displayName: Go quality standard
         description: Strict golangci-lint, gofumpt, race-checked tests, role guides for agents and the make check CI.
         supportedTypes: [cli]
         supportedFrameworks: [go-cli]
         # The quality contract: agents fix the code, not the rules it is checked by.
-        protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
+        # .claude/, CLAUDE.md and .mcp.json configure the agents that check a change (#259).
+        # .claude/agents/ is listed although .claude/ covers it: #259 names it and a test pins it.
+        protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/, .claude/agents/, .claude/, CLAUDE.md, .mcp.json]
         # Renders a light check per change and the full one on release-check/** (the Container's checks).
         checksBeforeRelease: true
         # Upkeep proposed to the Crews of its Containers (docs/design.md, "Schedules").
@@ -913,13 +915,13 @@ catalog:
               what you updated, and what you left and why.
     - kind: Standard
       name: go-operator-standard
-      ref: v1.7.0
+      ref: v1.8.0
       spec:
         displayName: Go operator quality standard
         description: kubebuilder's golangci-lint, gofmt and goimports, envtest tests, generated files kept up to date, role guides for agents and the make check CI.
         supportedTypes: [operator]
         supportedFrameworks: [go-kubebuilder]
-        protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/]
+        protectedPaths: [AGENTS.md, Makefile, .golangci.yml, .editorconfig, docs/style/, docs/agents/, .claude/agents/, .claude/, CLAUDE.md, .mcp.json]
         checksBeforeRelease: true
         # Upkeep proposed to the Crews of its Containers (docs/design.md, "Schedules").
         # Nothing runs: a Crew takes it by adding it to its own spec.schedules.
@@ -943,13 +945,13 @@ catalog:
         protectedPaths: [internal/agentrunner/, internal/modelproxy/, internal/model/fence.go, internal/controller/task_sandbox.go, internal/controller/project_agent_network.go, internal/controller/ci_runner_pod.go, internal/controller/protection.go, internal/adapters/gitea/gitea_agents.go, internal/adapters/github/github_host_agents.go, internal/adapters/github/github_host_rules.go, dist/chart/, Makefile, .golangci.yml, .custom-gcl.yml, .claude/, CLAUDE.md, GOVERNANCE.md, hack/]
     - kind: Standard
       name: ts-standard
-      ref: v1.10.0
+      ref: v1.11.0
       spec:
         displayName: TypeScript quality standard
         description: Strictest typescript-eslint, Prettier, role guides for agents and the make check CI.
         supportedTypes: [extension, static-site, cli]
         supportedFrameworks: [vscode-extension, react-vite, node-cli]
-        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/]
+        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, .claude/agents/, .claude/, CLAUDE.md, .mcp.json]
         checksBeforeRelease: true
         # Upkeep proposed to the Crews of its Containers (docs/design.md, "Schedules").
         # Nothing runs: a Crew takes it by adding it to its own spec.schedules.
@@ -962,24 +964,24 @@ catalog:
               them. One pull request. Say what you updated, and what you left and why.
     - kind: Standard
       name: aws-standard
-      ref: v1.25.0
+      ref: v1.26.0
       spec:
         displayName: AWS quality standard
         description: "ts-standard's lint and Prettier, go-standard's golangci-lint, go vet and go test for a Go function, and python-standard's ruff, mypy and pytest for a Python function, plus cdk synth under CDK Nag's AwsSolutions and Serverless packs, cfn-lint, the Standard's stack assertions, Well-Architected and AWS digests per Framework, role guides for agents and the make check CI. Nothing deploys."
         supportedTypes: [function, service, static-site, worker, job]
         supportedFrameworks: [aws-lambda-ts, aws-lambda-go, aws-ec2-ts, aws-fargate-ts, aws-lambda-py, aws-static-site-ts, aws-queue-ts, aws-schedule-ts, aws-event-ts]
         # The CDK app's entry point and the Standard's stack rules are the contract too.
-        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .golangci.yml, ruff.toml, mypy.ini, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, docs/well-architected.md, docs/runbook.md, infra/main.ts, infra/standard.ts, infra/standard.test.ts, infra/dist.ts, infra/dist.test.ts, tsconfig.json, vitest.config.mts, cdk.json]
+        protectedPaths: [AGENTS.md, Makefile, eslint.config.mjs, .golangci.yml, ruff.toml, mypy.ini, .prettierrc.json, .prettierignore, .editorconfig, docs/style/, docs/agents/, .claude/agents/, .claude/, CLAUDE.md, .mcp.json, docs/well-architected.md, docs/runbook.md, infra/main.ts, infra/standard.ts, infra/standard.test.ts, infra/dist.ts, infra/dist.test.ts, tsconfig.json, vitest.config.mts, cdk.json]
         checksBeforeRelease: true
     - kind: Standard
       name: python-standard
-      ref: v1.10.0
+      ref: v1.11.0
       spec:
         displayName: Python quality standard
         description: Every ruff rule, ruff format, mypy --strict, pytest, role guides for agents and the make check CI.
         supportedTypes: [service, cli, worker, job]
         supportedFrameworks: [python-fastapi, python-cli]
-        protectedPaths: [AGENTS.md, Makefile, ruff.toml, mypy.ini, .editorconfig, docs/style/, docs/agents/]
+        protectedPaths: [AGENTS.md, Makefile, ruff.toml, mypy.ini, .editorconfig, docs/style/, docs/agents/, .claude/agents/, .claude/, CLAUDE.md, .mcp.json]
         checksBeforeRelease: true
         # Upkeep proposed to the Crews of its Containers (docs/design.md, "Schedules").
         # Nothing runs: a Crew takes it by adding it to its own spec.schedules.

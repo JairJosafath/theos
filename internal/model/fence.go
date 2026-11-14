@@ -30,8 +30,11 @@ import (
 // (docs/plans/self-hosting.md, step 2).
 
 // AgentNeverPaths are the protected paths no agent may change, even through a
-// Standard change: the agents' own rules and the platform's contract.
-var AgentNeverPaths = []string{"AGENTS.md", "docs/agents/", ".theos.yaml"}
+// Standard change: the agents' own rules, the platform's contract, and what
+// configures the agents' Claude Code (the subagents in .claude/agents/,
+// settings and hooks, CLAUDE.md, MCP servers), so a change can't rewrite the
+// agents that check it (#259).
+var AgentNeverPaths = []string{"AGENTS.md", "docs/agents/", ".theos.yaml", ".claude/", "CLAUDE.md", ".mcp.json"}
 
 // OperatorPaths are the operator's own files in every Container, whatever its
 // CI system: the identity file and the dev container.
@@ -78,7 +81,8 @@ func neverPathsCode() string {
 // (docs/plans/done/out-of-reach-asks.md, decision 2).
 func renderNeverPaths() string {
 	return fmt.Sprintf("\n## What no issue can change\n\n%s are the agents' rules and the platform's settings: "+
-		"only the Standard's own release or the operator changes them, never a pull request. So no issue asks "+
+		"a person changes them (the Standard's own release changes `.claude/agents/` and `docs/agents/`), "+
+		"never a pull request. So no issue asks "+
 		"to change them, and none names them in its title or acceptance criteria. When a **new** prompt or "+
 		"request asks for such a change, file no issue for it: say what wasn't planned in `%s` and why, and "+
 		"where it can go instead, in `%s`; skip such a request saying why. Notes for the agents go in `%s`, "+

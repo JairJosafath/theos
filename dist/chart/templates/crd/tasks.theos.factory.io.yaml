@@ -114,9 +114,9 @@ spec:
               allowedProtectedPaths:
                 description: |-
                   allowedProtectedPaths are Standard-protected files, other than AGENTS.md,
-                  docs/agents/ and .theos.yaml, that this Task may change. The agent
-                  still proposes them, and the change goes through its own review. It needs
-                  an issue, and it can't change.
+                  docs/agents/, .theos.yaml, .claude/, CLAUDE.md and .mcp.json, that this
+                  Task may change. The agent still proposes them, and the change goes
+                  through its own review. It needs an issue, and it can't change.
                 items:
                   maxLength: 256
                   type: string
@@ -124,10 +124,11 @@ spec:
                 type: array
                 x-kubernetes-list-type: atomic
                 x-kubernetes-validations:
-                - message: allowedProtectedPaths may not include AGENTS.md, docs/agents/
-                    or .theos.yaml
+                - message: allowedProtectedPaths may not include AGENTS.md, docs/agents/,
+                    .theos.yaml, .claude/, CLAUDE.md or .mcp.json
                   rule: self.all(p, p != 'AGENTS.md' && p != '.theos.yaml' && p !=
-                    'docs/agents' && !p.startsWith('docs/agents/'))
+                    'docs/agents' && !p.startsWith('docs/agents/') && p != '.claude'
+                    && !p.startsWith('.claude/') && p != 'CLAUDE.md' && p != '.mcp.json')
                 - message: allowedProtectedPaths is immutable
                   rule: self == oldSelf
               benchmark:

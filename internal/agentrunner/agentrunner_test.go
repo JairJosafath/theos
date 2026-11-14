@@ -1742,7 +1742,7 @@ func TestStandardChangePrompts(t *testing.T) {
 		{"implement issue", ImplementPrompt(issue, Workspace{}), []string{"Standard change:",
 			"The protected change merges first, so it must work on main without the rest of your work",
 			"may rely on it", "use a hook", "npm run dist --if-present", "each with a test that proves it",
-			"where it is met and tested", "AGENTS.md, docs/agents/ and .theos.yaml",
+			"where it is met and tested", "AGENTS.md, docs/agents/, .theos.yaml, .claude/, CLAUDE.md and .mcp.json",
 			"even if your role guide or AGENTS.md says to stop"}, []string{"must run on main alone"}},
 		{"implement goal", ImplementPrompt(goal, Workspace{}), []string{"do not change", "tests for it"},
 			[]string{"Standard change:"}},

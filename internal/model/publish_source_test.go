@@ -54,7 +54,8 @@ func engineSource() []SourceFile {
 }
 
 func TestFactoryOwnPaths(t *testing.T) {
-	want := []string{".devcontainer/", ".gitea/", ".theos.yaml", "AGENTS.md", "docs/agents/"}
+	// #259: the agents' Claude Code configuration is the factory's too.
+	want := []string{".claude/", ".devcontainer/", ".gitea/", ".mcp.json", ".theos.yaml", "AGENTS.md", "CLAUDE.md", "docs/agents/"}
 	if got := FactoryOwnPaths(giteaActions); !slices.Equal(got, want) {
 		t.Errorf("FactoryOwnPaths(giteaActions) = %q, want %q", got, want)
 	}
@@ -157,6 +158,25 @@ func TestNewSource(t *testing.T) {
 	}
 	if _, err := NewSource(giteaActions, []SourceFile{{Path: "../x", Mode: ModeFile, Blob: runSh}}, ""); err == nil {
 		t.Error("NewSource of a bad path: no error")
+	}
+}
+
+// #259: the files that configure the factory's agents are not the app's, the
+// user's own included, as a user's AGENTS.md already was not.
+func TestNewSourceLeavesOutAgentConfiguration(t *testing.T) {
+	files := []SourceFile{
+		{Path: "CLAUDE.md", Mode: ModeFile, Blob: runSh},
+		{Path: ".mcp.json", Mode: ModeFile, Blob: runSh},
+		{Path: ".claude/settings.json", Mode: ModeFile, Blob: runSh},
+		{Path: ".claude/agents/review-style.md", Mode: ModeFile, Blob: runSh},
+		{Path: "engine.go", Mode: ModeFile, Size: 15, Blob: engineGo},
+	}
+	got, err := NewSource(mustCI(CIGitHubActions), files, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []SourceFile{files[4]}; !reflect.DeepEqual(got.Files, want) {
+		t.Errorf("Files = %+v, want only the app's file %+v", got.Files, want)
 	}
 }
 

@@ -457,6 +457,15 @@ byte for byte.
   SDK clients are faked behind interfaces), nothing deploys, permissions come
   from CDK grants, and the reviewer checks every CDK Nag acknowledgement's
   reason.
+- **Role subagents** (since v1.26.0, #259): `.claude/agents/` holds the Claude
+  Code subagents the role guides name: the reviewer's three read-only lenses
+  (`review-correctness`, `review-security`, `review-style`) and the
+  implementer's read-only `explorer` and its `test-writer`. The guides say
+  when to delegate and that the role's decision is never delegated. The five
+  files are the same in go-standard, go-operator-standard, ts-standard,
+  python-standard and aws-standard, for every Framework; a test in theos
+  keeps them so. Prettier skips `.claude/` and `docs/agents/`: no agent may
+  reformat them.
 - **Issues:** `.gitea/ISSUE_TEMPLATE/task.md` has the sections the factory needs;
   an issue without an unchecked item under "Acceptance criteria" is never picked up.
   The pull request template asks for the CDK Nag acknowledgements a change adds.
@@ -518,7 +527,9 @@ byte for byte.
 - **Protect:** list `AGENTS.md`, `Makefile`, `eslint.config.mjs`, `.golangci.yml`,
   `ruff.toml`, `mypy.ini`,
   `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `docs/style/`,
-  `docs/agents/`, `docs/well-architected.md`, `docs/runbook.md`,
+  `docs/agents/`, `.claude/agents/`, `.claude/`, `CLAUDE.md`, `.mcp.json` (which
+  configure the agents that check a change, so no agent changes them, not even
+  through a Standard change, #259), `docs/well-architected.md`, `docs/runbook.md`,
   `infra/main.ts`, `infra/standard.ts` and `infra/standard.test.ts` in the
   catalog entry's
   `protectedPaths`, plus the

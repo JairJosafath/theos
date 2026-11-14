@@ -59,6 +59,13 @@ the `make check` contract CI runs.
   and later) and python-cli do all of this.
 - **Role guides:** `docs/agents/implementer.md` and `docs/agents/reviewer.md`,
   which the factory gives its implementer and reviewer Agents, read from `main`.
+- **Role subagents** (since v1.11.0, #259): `.claude/agents/` holds the Claude
+  Code subagents the role guides name: the reviewer's three read-only lenses
+  (`review-correctness`, `review-security`, `review-style`) and the
+  implementer's read-only `explorer` and its `test-writer`. The guides say
+  when to delegate and that the role's decision is never delegated. The five
+  files are the same in go-standard, go-operator-standard, ts-standard,
+  python-standard and aws-standard; a test in theos keeps them so.
 - **Issues:** `.gitea/ISSUE_TEMPLATE/task.md` has the sections the factory needs;
   an issue without an unchecked item under "Acceptance criteria" is never picked up.
 - **Style digests:** `docs/style/` distils PEP 8, PEP 257, the Google Python
@@ -67,8 +74,11 @@ the `make check` contract CI runs.
   cross-language principles. Every rule is marked
   `[lint]` or `[review]`; `docs/style/SOURCES.md` lists the sources with dates.
 - **Protect:** list `AGENTS.md`, `Makefile`, `ruff.toml`, `mypy.ini`,
-  `.editorconfig`, `docs/style/` and `docs/agents/` in the catalog entry's
-  `protectedPaths`; `.gitea/` is always protected.
+  `.editorconfig`, `docs/style/`, `docs/agents/`, `.claude/agents/`, `.claude/`,
+  `CLAUDE.md` and `.mcp.json` in the catalog entry's `protectedPaths`; `.gitea/`
+  is always protected. `.claude/`, `CLAUDE.md` and `.mcp.json` configure the
+  agents that check a change, so no agent changes them, not even through a
+  Standard change (#259).
 
 ## CI systems
 
