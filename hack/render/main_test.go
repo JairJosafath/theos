@@ -40,9 +40,18 @@ func TestRenderIdentityFlags264(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "app")
-			templates := filepath.Join("..", "..", "templates")
+			// A one-file layer of its own: a test that reads the repository's
+			// templates would make this package one of their readers.
+			templates := t.TempDir()
+			layer := filepath.Join(templates, "tiny")
+			if err := os.MkdirAll(layer, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(layer, "hello.txt"), []byte("hello\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 			args := append([]string{"-templates", templates, "-out", out, "-container", "checker"}, c.flags...)
-			args = append(args, "Framework=hello")
+			args = append(args, "Framework=tiny")
 			if err := run(args, io.Discard); err != nil {
 				t.Fatal(err)
 			}
