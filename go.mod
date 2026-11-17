@@ -5,17 +5,17 @@ go 1.26.0
 toolchain go1.26.11
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.47.8
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.16
-	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.82.6
-	github.com/aws/aws-sdk-go-v2/service/devicefarm v1.52.8
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.344.2
-	github.com/aws/aws-sdk-go-v2/service/ecr v1.67.5
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.51.5
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.9
-	github.com/aws/aws-sdk-go-v2/service/ssm v1.82.0
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.9
-	github.com/aws/smithy-go v1.28.8
+	github.com/aws/aws-sdk-go-v2 v1.48.0
+	github.com/aws/aws-sdk-go-v2/credentials v1.21.0
+	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.84.0
+	github.com/aws/aws-sdk-go-v2/service/devicefarm v1.53.0
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.347.0
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.67.6
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.51.6
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.83.0
+	github.com/aws/aws-sdk-go-v2/service/sts v1.52.0
+	github.com/aws/smithy-go v1.28.9
 	github.com/digitalocean/gta v0.2.0
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3
@@ -26,8 +26,8 @@ require (
 	github.com/onsi/gomega v1.44.0
 	github.com/prometheus/client_golang v1.25.0
 	go.yaml.in/yaml/v3 v3.0.6
-	golang.org/x/image v0.47.0
-	golang.org/x/mod v0.42.0
+	golang.org/x/image v0.48.0
+	golang.org/x/mod v0.43.0
 	golang.org/x/net v0.62.0
 	k8s.io/api v0.37.0
 	k8s.io/apiextensions-apiserver v0.37.0
@@ -45,14 +45,14 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.26 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.11 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.11 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.11 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.24 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.12 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.11 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.11 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.27 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.12 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.13 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.12 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
