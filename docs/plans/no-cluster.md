@@ -15,6 +15,11 @@ cluster made can be worked without one.
 
 ## Read this first
 
+- **For Claude Code, [lead-runtime.md](lead-runtime.md) (#331) replaces
+  decisions 4 to 8.** One engine runs the loop for both runtimes, the
+  engine (not a session) creates a Task's branch, and Crews and Agents are
+  read from `model/setup.yaml`. Its *What this changes* table lists each
+  change; the rest of this plan stands.
 - **A person merges every pull request until step 11.** `merge: rules` is
   refused, `RulesMergeNotBuilt`, until then, and step 11 builds it for
   Gitea and Forgejo alone, for a person who makes three accounts there:
