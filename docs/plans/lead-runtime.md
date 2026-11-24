@@ -15,6 +15,11 @@ way a Crew does on the cluster:
 The session is the lead. theos says what is next, each role is a Claude
 Code subagent, and a person merges.
 
+[![theos's lead runtime: one model in YAML, one engine, and two runtimes, the operator on a cluster and the lead in a Claude Code session, both on the Git host](../images/lead-runtime.png)](../images/lead-runtime.svg)
+
+The board's source is [images/lead-runtime.excalidraw](../images/lead-runtime.excalidraw).
+Its icons are from theSVG (github.com/JairJosafath/thesvg).
+
 Other harnesses (Codex, Kimi Code, OpenCode, Gemini CLI) are kept in the
 shape of every interface here, but only Claude Code is built. Any MCP
 client gets the work tools with no adapter.
