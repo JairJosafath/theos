@@ -1,0 +1,332 @@
+# theos in a Claude Code session: the lead runtime
+
+GitHub issue #331, written 2026-11-24 in the owner's session. The plan, not
+the build: each step below is an issue.
+
+## Goal
+
+A person opens Claude Code in a project repository, on a laptop or as a
+cloud session on the web. The session then works the project's issues the
+way a Crew does on the cluster:
+- the same model YAML, its `Crew` and `Agent` objects included;
+- the same decision functions (`model.NextCrewStep`, `model.NextTaskStep`);
+- the same branches, markers and labels on the Git host.
+
+The session is the lead. theos says what is next, each role is a Claude
+Code subagent, and a person merges.
+
+Other harnesses (Codex, Kimi Code, OpenCode, Gemini CLI) are kept in the
+shape of every interface here, but only Claude Code is built. Any MCP
+client gets the work tools with no adapter.
+
+## Read this first
+
+- **This changes [no-cluster.md](no-cluster.md) for Claude Code.** It
+  replaces that plan's decisions 4 to 8 with one engine that both runtimes
+  call, and it reads Crews and Agents from the model where that plan kept
+  them cluster-only. Decisions 1 to 3 and 9 to 12, the loss table and steps
+  1, 4 and 7 to 11 stand. The table under
+  [What this changes](#what-this-changes) lists each change.
+- **It takes up [external-agents.md](external-agents.md)'s markers.** Both
+  runtimes use one grammar: `offer`, `claim`, `renew`, `release`, `done`,
+  `blocked`, `nothing`, `ended`. In the lead runtime theos posts the
+  `offer` and the `ended`, as the operator does for an outside agent.
+- **A person merges** (`PersonMerges`). By default every session holds the
+  person's own credential (`AgentHoldsOwnerCredential`), as no-cluster's
+  decision 9 says.
+- No step needs Kind or `make e2e`.
+
+## Decisions, and why
+
+Code is cited as it is on main at 633ffc0.
+
+1. **Two axes with two names: runtime and harness.**
+
+   | Axis | The question it answers | Values |
+   | --- | --- | --- |
+   | Runtime | who drives the loop | `operator`: theos's reconcilers start the agents (Kubernetes); `lead`: an agent session calls theos, wherever it runs |
+   | Harness | which agent tool does a role's work | `Agent.spec.harness`: `claude-code` here; `stand-in` in tests |
+
+   A laptop session, a desktop session and a Claude Code cloud session are
+   all the `lead` runtime, so the runtime is named by who drives, not by
+   where it runs. It is not `session`, because `Session` is a kind.
+   "Target" is not used either: `DeployTarget` is a kind.
+
+   The runtime is not a field in the manifests. It is whatever reads them:
+   the operator reads the API server, the `theos` binary reads `model/`. So
+   a model moves between runtimes unchanged, and a Container repository
+   still holds nothing that says which runtime made it.
+2. **One engine, `internal/engine`, which imports `internal/model` and
+   `internal/ports` only.** A tick does three things:
+   - reads the facts through ports;
+   - calls the decision function;
+   - carries out the step through ports.
+
+   The operator calls a tick from each reconcile. The lead runtime calls it
+   from each `theos` command (`next`, `claim`, `done`, `status`). Both
+   check the current state and move it one step, so a lead session that
+   dies loses nothing: the next command starts from the host.
+
+   Why: the decision functions are already pure (`NextCrewStep`,
+   `internal/model/crew.go:276`; `NextTaskStep`, `task.go:1315`). What can
+   drift between two runtimes is the code around them, which builds the
+   facts and acts on the step. no-cluster's `internal/nocluster` would be a
+   second copy of that code; the engine is the only copy.
+   `internal/modelfacts` already does this for the scaffold.
+3. **Two new ports, `TaskStore` and `Workers`, and a `Runtime` that
+   bundles them with what it can do.**
+
+   ```go
+   // TaskStore keeps a Container's Tasks and their progress.
+   type TaskStore interface {
+       Tasks(ctx context.Context, container string) ([]model.CrewTask, error)
+       Start(ctx context.Context, container string, s model.IssueStart) error // idempotent
+       Progress(ctx context.Context, task string) (model.TaskProgress, error)
+       SaveProgress(ctx context.Context, task string, p model.TaskProgress) error
+   }
+
+   // Workers runs one role's turn on a Task.
+   type Workers interface {
+       Offer(ctx context.Context, w model.WorkOrder) error
+       Run(ctx context.Context, task string, round int, role string) (model.RunState, error)
+       End(ctx context.Context, task string, round int, role, why string) error
+   }
+
+   type Runtime interface {
+       Store() TaskStore
+       Workers() Workers
+       Capabilities() Capabilities
+   }
+   ```
+
+   | Port | Operator adapter (`internal/controller`) | Lead adapter (`internal/adapters/hostrun`) |
+   | --- | --- | --- |
+   | `TaskStore` | Task objects and their status | the branch `task/<container>-<issue>` and its issue's markers |
+   | `Workers.Offer` | make the Sandbox (theos pushes the work) | post an `offer` marker; `theos next` hands it out (the session pulls the work) |
+   | `Workers.Run` | the Sandbox's pod as a `model.RunState` | the markers as a `model.RunState` (#307) |
+   | `Capabilities` | everything | decision 6's table |
+
+   The engine never knows whether the work was pushed or pulled. An
+   operator-only behaviour (suspend, resume, pause) is an interface a
+   `Workers` has or hasn't, as `internal/agentrunner` already does for a
+   harness (`harness.go`, "the runner asks for the interface, never for
+   the harness").
+4. **The Git host is the lead runtime's only store.**
+   - Progress (the round, the phase, the round's feedback) is read back
+     from markers.
+   - Worktrees live under the project repository's `work/`, which git
+     ignores, and can be thrown away at any time.
+   - Nothing lives in the session's home directory.
+
+   Why: a Claude Code cloud session's container goes away, and a laptop
+   session can be closed. With the state on the host, a new session picks
+   up where the last one stopped.
+5. **theos makes the lock, not the session.** The engine's Crew tick
+   starts a Task. Its `TaskStore.Start` creates the branch (`CreateBranch`
+   fails on a branch that exists, `internal/ports/githost.go:403-405`),
+   labels the issue `status/in-progress` and posts the `offer`. A session
+   only claims an offer; it never creates a branch.
+   - A `task/` branch with no offer and no pull request is the engine's own
+     start that stopped halfway, and the next tick posts the offer.
+   - So no-cluster's third case (`LockWithoutClaim`, a lock a person
+     clears) goes. The `task/` prefix is theos's; a person's branch doesn't
+     use it.
+   - Two lead sessions on one Crew are safe: the host lets one branch
+     creation through. They may run one Task over `parallel` between a list
+     and a create, and the guide says to run one lead per project.
+6. **Crews and Agents are read in the lead runtime, from
+   `model/setup.yaml`.** Each field is either honoured or named with a
+   reason word by `theos status`. Nothing is dropped silently.
+
+   | Field | Lead runtime | Reason word |
+   | --- | --- | --- |
+   | Crew `implementer`, `reviewer`, `routes`, `parallel`, `paused`; Agent `maxRounds` | honoured | |
+   | Agent `model` | honoured: the subagent's model | |
+   | Agent `harness` | `claude-code` honoured; any other value is read for its MCP tools only | `HarnessNotBuilt` |
+   | Crew `triager`, `specWriter`, `specApproval`, `verifier` | not until step 13 | `RoleNotBuilt` |
+   | Crew `schedules`, `tagReleases`, `prepareReleases`, `releaseCadence`, `publishReleases` | not honoured | `NoScheduler` |
+   | Crew `approval`, the operator's merge | a person merges | `PersonMerges` |
+   | Crew `taskBudgetUSD`; Agent `sessionTokenLimit` | not honoured | `CostUnreported` |
+   | Agent `image`, `resources`, `env`, `credentialsSecretRef`, `timeoutMinutes` | not honoured | `NoSandbox` |
+
+   `image` stays required by the CRD. `theos init` writes the chart's
+   agent image there, so the file moves to a cluster unchanged. A table
+   test has a row per field of `CrewSpec` and `AgentSpec`, so a field
+   added later fails the test until someone decides its row.
+7. **A harness is an interface. The content is theos's; the format is the
+   harness's.**
+   - `internal/method` holds the content: the lead playbook, the role
+     boundaries and the work order text, as pure renderings (no-cluster
+     decision 5).
+   - `internal/harness` defines the interface:
+
+     ```go
+     type Harness interface {
+         Name() string               // the value in Agent.spec.harness
+         Capabilities() Capabilities // subagents, parallel, a model per role, MCP
+     }
+     // Optional parts, asked for by interface, never by name.
+     type LeadFiles interface{ Render(p Project) []File }
+     ```
+
+   - `internal/harness/claudecode` renders the content into the project
+     repository:
+     - `CLAUDE.md`: one line that imports `AGENTS.md`;
+     - `AGENTS.md`: the lead playbook;
+     - `.claude/agents/theos-<agent>.md`: one file for each Agent a Crew
+       names, with the Agent's `model` and the role's tools. The reviewer
+       gets no `Agent`, `Edit` or `Write` tool: its verdict is its own;
+     - `.mcp.json`: starts `theos mcp` over stdio.
+
+     Each file is marked as generated, and `theos status` reports one that
+     drifted.
+   - These files go in the project repository. A Container repository's
+     `CLAUDE.md`, `.claude/` and `.mcp.json` are its Standard's protected
+     paths, and theos doesn't touch them there.
+   - Three levels, for the other harnesses later (step 14):
+     - 0: any MCP client gets the work tools, one role per session, with
+       no code;
+     - 1: `LeadFiles`;
+     - 2: headless in an operator sandbox, today's `agentrunner.Harness`
+       (#58).
+8. **The loop in a Claude Code session.**
+
+   ```
+   lead (main session, in the project repository)
+     theos_next  ──► engine: Crew tick, then a Task tick for each Task
+                 ◄── open offers, up to parallel, each naming its subagent
+     spawns theos-<implementer> with the work order, in the background for parallel
+       subagent: theos_claim  (claim marker; theos makes work/<task>, a worktree of the Container)
+                 works, runs the Container's own checks (its AGENTS.md), pushes
+                 theos_done   (done marker: the commit and a summary)
+     theos_next  ──► engine: run done ⇒ OpenPR (theos opens it) ⇒ StartReview ⇒ offer
+     spawns theos-<reviewer>  ──► theos_done with its verdict
+     theos_next  ──► changes requested ⇒ round 2 with the feedback
+                 ──► approved ⇒ Merge, which here means waiting for a person
+   person: theos merge, or the host's pages ──► next tick: the Task is done, the issue closes
+   ```
+
+   theos opens the pull request and decides every transition; the lead
+   only spawns the subagents and passes the work orders through. Any
+   `theos` call renews a claim with under half its lease left, and the work
+   order tells a role to call `theos_heartbeat` after half an hour without
+   one (no-cluster decision 8's lease, unchanged).
+9. **A Claude Code cloud session is the same runtime. theos assumes
+   nothing about the machine.**
+   - The credential comes from `THEOS_GIT_TOKEN`, set as the environment's
+     secret, or else from `git credential fill`. theos never stores it.
+   - The binary comes from the release (#318), or from `go install` at a
+     tag in the environment's setup script.
+   - The project repository and every Container repository must be added
+     to the session.
+   - The work order says to push after each green check: work that isn't
+     pushed dies with the container. A session that dies runs out its
+     lease, the engine posts `ended`, and the Task is offered again on its
+     branch (`AfterInterruption`, `task.go:320`).
+10. **The engine posts the `offer` and `ended` markers in both runtimes.**
+    In the lead runtime theos and the sessions share one account by
+    default. So a marker counts by its kind and by the `claimants` setting
+    (no-cluster decision 8), and the session's name in the marker tells
+    the sessions apart. The session's name is its own word
+    (`ReviewNotEnforced`, unchanged).
+11. **The operator moves onto the engine one piece at a time, and envtest
+    is the safety net.**
+    - The Crew tick moves first (step 1). It is small and already
+      separates its decision.
+    - Then the host side of a Task: its pull request, checks, verdict and
+      merge (step 5).
+    - The run side, the Sandbox, moves last (step 12). It is a protected
+      path and the largest piece.
+
+    Every envtest spec passes unchanged at each step. Releases, schedules,
+    deploys and Briefs stay in the reconcilers until a second runtime needs
+    them: abstract what two runtimes use, not everything.
+12. **What can be configured is configured.**
+    - The host, its owner and the registries are the GitProvider's fields.
+    - The roles, models and parallelism are the Crew's and the Agents'.
+    - The lease, the grace, `claimants`, `merge` and the project
+      repository's name stay in `model/settings.yaml` (no-cluster decision
+      12).
+    - The lead runtime adds no setting of its own.
+
+## What this changes
+
+| In [no-cluster.md](no-cluster.md) | Now |
+| --- | --- |
+| Decision 4: `internal/nocluster` holds the commands' logic | it holds the commands; the loop is `internal/engine`'s, and the lead runtime's adapter is `internal/adapters/hostrun` |
+| Decision 5: one fixed method bundle | `internal/method`'s content, rendered by a harness; which Agent plays which role, on which model, is the Crew's |
+| Decision 6: runtimes are Claude Code, `AGENTS.md` readers, MCP clients | those are harnesses (decision 1 here); Claude Code is built, the rest are level 0 |
+| Decision 7: `theos next` hands out one work order | it returns the engine's open offers, up to the Crew's `parallel` |
+| Decision 8: a session claims by creating the branch; `LockWithoutClaim` | the engine creates the branch and posts the offer; a session claims an offer; the lock a person cleared is gone |
+| "Cluster-only": Crews | Crews are read in both runtimes; schedules, releases and budgets stay cluster-only |
+
+## Steps
+
+Priority 1 is the first wave. Work them in the order below: each one names
+what it needs. "Tier" is AGENTS.md's.
+
+| Step | Issue | Priority | Needs | Tests it brings |
+| --- | --- | --- | --- | --- |
+| 1. The engine and its ports: the Crew tick, the operator's `TaskStore` | #332 | 1 | | tier 4: the Crew's envtest specs unchanged; tier 1: the engine on the fake store and host; `contract.TaskStore`; `TestImports` |
+| 2. Claims and the lease in `internal/model` | #267 | 1 | | tier 1: a row per sentence of decision 8's lease, with decision 5's change |
+| 3. The run markers as a `RunState` | #307 | 1 | 2 | tier 1: a row per marker; another account's marker changes nothing; a quoted marker is none |
+| 4. Crew and Agent in the model files; capabilities | #333 | 1 | | tier 1: a row per field of decision 6; tier 2: a sample setup file |
+| 5. The engine's Task tick, host side shared | #334 | 1 | 1, 3 | tier 4: the Task's envtest specs unchanged; tier 1: one Task to a pull request waiting for a person |
+| 6. The lead runtime on the Git host, `hostrun` | #335 | 1 | 1, 3, 5 | tier 1: the contracts on the fake and `githubtest`; the whole Task end to end; tier 3 on Gitea |
+| 7. The harness interface and Claude Code's files, `theos agents` | #266 | 1 | 4 | tier 1: the files for a Crew; the reviewer's tools; every work order names `AGENTS.md` and `theos heartbeat` |
+| 8. `theos mcp`: the work tools | #294 | 1 | 6, 7 | tier 1: an in-process client over stdio; no merge tool; issue text fenced, no credential |
+| 9. A person merges, `theos merge` | #292 | 1 | 5 | tier 1: the merge table; refused away from a terminal |
+| 10. Release the `theos` binary | #318 | 1 | | the release itself; the owner's session (`.github/`) |
+| 11. The guide: Claude Code on a laptop and on the web | #297 | 1 | 6 to 10 | `make doc-links`; a person's walk of one Task in each |
+| 12. The operator's Task reconciler on the engine | #336 | 2 | 5 | tier 4 unchanged; `contract.Workers` on the Sandbox adapter |
+| 13. Triager, spec writer and verifier in the lead runtime | #337 | 2 | 6 to 8 | tier 1 on the fake host; tier 4 triage unchanged |
+| — `theos plan` | #293 | 2 | 6 | its issue's |
+| — `theos update`, `export`, `import` | #295 | 2 | 4 | its issue's |
+| 14. Harness authoring: `harnesstest`, the guide, Codex | #338 | 3 | 7 | tier 1: the suite on both harnesses |
+
+Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
+whenever the owner's session takes it.
+
+**Protected paths,** the owner's session's; a Crew's agent given the step
+says so and stops (AGENTS.md):
+- steps 1, 6 and 7: depguard's rows for `internal/engine`,
+  `internal/adapters/hostrun` and `internal/harness`, in `.golangci.yml`;
+- step 10: `.github/`;
+- step 12: `internal/controller/task_sandbox.go`;
+- any step that adds a make target: `Makefile`.
+
+## Not covered
+
+- Other harnesses beyond level 0, until step 14. #58 keeps the operator's
+  side of more harnesses.
+- An outside agent filling a Crew spot on a cluster (#260). It uses the
+  same markers and `theos` tools, and #310 becomes those tools with the
+  engine running in the operator.
+- `merge: rules` (no-cluster step 11, #298), GitLab (#296), Containers in
+  one repository (#270).
+
+## Done when
+
+- A tier-1 test drives one Task through the lead runtime on the ports'
+  fake. It goes from a `status/ready` issue to a pull request waiting for
+  a person, then merged and closed, with the sessions played by a test
+  that posts their markers (step 6).
+- The operator's envtest specs pass unchanged with the Crew tick and the
+  host side of the Task tick on the engine (steps 1 and 5).
+- A person walks one Task in Claude Code on a laptop and one in a Claude
+  Code cloud session, with the host's pages as evidence (step 11).
+
+## Not tested, and who can
+
+Nothing here was run against Claude Code or a cloud session.
+
+- That a Claude Code subagent started in the background can call MCP tools
+  the main session's `.mcp.json` registers, and runs its own `Bash` in a
+  worktree outside its working directory. Step 11's walk shows it, and
+  step 7 reads Claude Code's subagent documentation first.
+- That a Claude Code cloud session may push a `task/` branch. A cloud
+  session's Git access may be limited to the branches its environment
+  allows. Step 11's walk on the web settles it, and if pushes are limited
+  the guide says how the person allows them.
+- That `api.github.com` takes `THEOS_GIT_TOKEN` from a cloud session's
+  network proxy as it does on a laptop. Step 11's walk shows it.

@@ -40,7 +40,7 @@ once ([Why Kubernetes](#why-kubernetes)).
 | Catalog | Framework, Standard, Compute, Deployment, Connector and Domain entries per namespace, each a template repository at a pinned tag or commit, never a branch. A Bundle names one Framework, Standard, Compute and Deployment as a team's choice; a Container or the planner names it instead of the four, the operator expands it until the scaffold and pins it there, and `status.bundle` says what it expanded to ([plans/done/catalog-bundles.md](plans/done/catalog-bundles.md), #1092). |
 | Scaffolding | Once, at creation. Afterwards only the Standard's files and the AWS operations block follow, through pull requests the operator opens and merges. |
 | Shipping | CI builds with no deploy credential; the operator hands each release to the tool that owns the target. Monitoring the apps is left to existing tools, whose alerts file bugs. |
-| Where it runs | One Kubernetes cluster per install, of any number of nodes. Kind on one machine is the test rig and a way to try it, never the purpose ([Why Kubernetes](#why-kubernetes)). For one developer or a small team, the same method with no cluster, decided and not built ([Without a cluster](#without-a-cluster)). |
+| Where it runs | One Kubernetes cluster per install, of any number of nodes. Kind on one machine is the test rig and a way to try it, never the purpose ([Why Kubernetes](#why-kubernetes)). For one developer or a small team, the same method with no cluster, in a Claude Code session: scaffolding built, the rest being built ([Without a cluster](#without-a-cluster)). |
 
 ### Why Kubernetes
 
@@ -2025,15 +2025,27 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 
 ## Without a cluster
 
-*Decided, not built* (#265, [plans/no-cluster.md](plans/no-cluster.md); its
-steps are #266 to #269 and the issues that plan names).
+*Being built* (#265, [plans/no-cluster.md](plans/no-cluster.md); for
+Claude Code, #331, [plans/lead-runtime.md](plans/lead-runtime.md)).
+`theos init`, `scaffold`, `protect` and `status` are built (#268); the
+loop is not yet.
 
-The cluster is one runtime of theos's method; an agent tool a person
-already uses is the other. Without a cluster there is no operator, no
-sandbox and no chart: a local binary, `theos`, runs the same rules
-(`internal/model`, `internal/scaffold`) against the same Git host ports,
-from a terminal or as an MCP server, and the person's own agent sessions do
-the work.
+theos has two **runtimes**, named by who drives. In the `operator` runtime
+theos's reconcilers start the agents on a cluster. In the `lead` runtime an
+agent session drives and calls theos, wherever the session runs: a laptop,
+a desktop app or a Claude Code cloud session. Which agent tool does a role's
+work is the Agent's **harness**, on either runtime. Without a cluster there
+is no operator, no sandbox and no chart: a binary, `theos`, runs the same
+rules (`internal/model`, `internal/scaffold`) against the same Git host
+ports, from a terminal or as an MCP server, and the person's own agent
+sessions do the work.
+
+- **One engine.** `internal/engine` reads the facts through ports, calls
+  the decision functions (`NextCrewStep`, `NextTaskStep`) and carries out
+  the step through ports. The operator calls it on each reconcile, `theos`
+  on each command. The two runtimes differ only in their adapters: a Task
+  is a Task object with a Sandbox for the operator, and a branch with its
+  issue's markers for the lead runtime.
 
 - **One model, in the CRDs' types.** In the project's repository
   (`theos-<project>` unless set), `model/model.yaml` is the story and
@@ -2064,15 +2076,22 @@ the work.
   what a role reads about the stack, and a work order names them. A
   runtime without subagents plays one role per session, and a review is
   always a fresh one.
-- **The Git host coordinates.** A session claims a free issue by creating
-  its Task's branch, the operator's `task/<container>-<issue>`, which the
-  host lets one session do. Marker comments that are never edited carry
-  the lease, read by the times the host stamped on them: a claim that ran
-  out is taken over on its branch and never renewed. `status/in-progress`
-  shows the claim to people and to a Crew. Markers count only from the
-  accounts the project names, and an issue that has the branch or the
-  label and no counted marker is never taken: a person frees it. Sessions
-  in any tool work one repository at once this way.
+- **The Crew is read in both runtimes.** `model/setup.yaml` holds the
+  Crews and Agents. The lead runtime honours a Crew's implementer,
+  reviewer, routes, `parallel` and `paused`, and an Agent's `model` and
+  `maxRounds`. `theos status` names every other field it was given, with
+  its reason word.
+- **The Git host coordinates.** theos starts a Task by creating its
+  branch, the operator's `task/<container>-<issue>`, which the host lets
+  one caller do, and by posting an `offer` marker; a session claims the
+  offer. Marker comments that are never edited carry the lease, read by
+  the times the host stamped on them: a claim that ran out is offered again
+  on its branch. `status/in-progress` shows the Task to people and to a
+  Crew. Markers count only from the accounts the project names. A `task/`
+  branch with no offer is theos's own start that stopped halfway, and the
+  next command posts the offer. Sessions in any tool work one repository
+  at once this way, and all state is on the host, so a cloud session that
+  goes away loses only what it didn't push.
 - **A person merges.** Either with `theos merge` from their terminal,
   which merges through the host adapter and wants an approving verdict
   from a session other than the author's, or in the host's pages. Agents
@@ -2100,10 +2119,11 @@ without, each under the reason word `theos status` prints:
 | `AgentHoldsOwnerCredential` | the agents act with the person's credential until a second account's is given: they can merge past a branch rule, change or remove it, and reach every repository that credential does |
 | `ReviewNotEnforced` | no host is asked for a review: `theos merge` wants a verdict from another session, and a session's name is its own word |
 | `ChecksByMerge`, `ProtectedPathsByMerge` | on GitHub the host holds neither: `theos merge` does, or the eye of the person who merges in the host's pages |
+| `NoSandbox`, `NoScheduler`, `RoleNotBuilt`, `HarnessNotBuilt` | a Crew's or an Agent's field the lead runtime doesn't honour, named field by field ([plans/lead-runtime.md](plans/lead-runtime.md), decision 6) |
 | `RulesNotValidated` | the CRDs' create-time rules are checked here; the admission policy, the rules that compare an update with the object before it and the GitProvider provider enum (the host is checked by theos itself) run only once the model reaches a cluster |
 
-Crews, Briefs' rounds, releases, deploys, test environments, chat and the
-UI need the cluster.
+A Crew's schedules, releases and budget, Briefs' rounds, deploys, test
+environments, chat and the UI need the cluster.
 
 **Between the two.** A project made without a cluster is adopted by a
 cluster as any repository is ([adopt.md](adopt.md)): `theos export` prints
