@@ -19,6 +19,7 @@ package gitea
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -401,7 +402,7 @@ var _ ports.IssueComments = (*gitea)(nil)
 
 // ListIssueComments returns an issue's comments, oldest first. Gitea lists
 // an issue's comments whole, with no pages; ErrIssueNotFound for an issue
-// the repository lacks.
+// the repository lacks, which Gitea answers with HTTP 500 (#335).
 func (g *gitea) ListIssueComments(ctx context.Context, repo ports.Repository, number int) ([]ports.IssueComment,
 	error) {
 	status, data, err := g.do(ctx, http.MethodGet, issuePath(repo, number)+"/comments", nil)
@@ -413,6 +414,11 @@ func (g *gitea) ListIssueComments(ctx context.Context, repo ports.Repository, nu
 	}
 	var comments []giteaStampedComment
 	if status != http.StatusOK || json.Unmarshal(data, &comments) != nil {
+		// Gitea answers HTTP 500 for the comments of an issue it lacks: the
+		// issue itself says whether that is why.
+		if _, err := g.GetIssue(ctx, repo, number); errors.Is(err, ports.ErrIssueNotFound) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("gitea: listing the comments of #%d of %s failed (HTTP %d): %s", number,
 			repoPath(repo), status, apiMessage(data))
 	}
