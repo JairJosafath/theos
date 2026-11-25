@@ -15,9 +15,9 @@ limitations under the License.
 */
 
 // Command theos is theos with no cluster (docs/plans/no-cluster.md): it
-// writes a project repository's model files, scaffolds each Container's
-// repository as the operator does, protects its main and says what holds
-// and what a cluster would add. It wires the host adapters onto
+// writes a project repository's model files, plans them from an idea,
+// scaffolds each Container's repository as the operator does, protects its
+// main and says what holds and what a cluster would add. It wires the host adapters onto
 // internal/nocluster, as cmd/main.go does for the operator, and links no
 // Kubernetes client.
 package main
@@ -62,6 +62,7 @@ Usage:
   theos protect [-C dir]
   theos status [-C dir]
   theos agents [-C dir] [-harness claude-code|codex]
+  theos plan [-C dir] [-new]
   theos mcp [-C dir]
   theos next [-C dir]
   theos claim|heartbeat|release [-C dir] -task TASK -session NAME
@@ -79,6 +80,18 @@ heartbeat, release and done are the same on the command line. There is no
 merge tool: a person merges, on the host's pages or with theos merge, which
 runs only at a terminal and merges only a pull request a session other than
 its author's approved on its head, with green checks and no protected path.
+
+theos plan turns an idea into the model and filed issues, with the Brief's
+plan format and checks and no Brief. With no plan/model.yaml it starts a
+round: it writes the story of model/model.yaml there. A session playing the
+designer writes the round in plan/ (choices.md, issues/<nn>-<container>.md,
+summary.md), and theos plan again checks it: a refused plan prints each
+reason and writes nothing; an accepted one is merged into model/model.yaml,
+keeping what a plan can't write, and its issues are filed blockers first into
+each Container's repository that has its first commit. plan/filed.yaml
+records them, so a second run files none twice. plan/releases.yaml and
+plan/parallel.yaml are printed, and nothing acts on them. theos plan -new
+starts the next round once every issue of this one is filed.
 
 The credential is THEOS_GIT_TOKEN, else what git credential fill gives for
 its host; theos never stores or prints it. It is sent only to the host it
@@ -134,6 +147,7 @@ func run(ctx context.Context, args []string, d deps) int {
 	provider := flags.String("provider", "", "init: the Git host's provider; asked unless the remote is on github.com")
 	ref := flags.String("ref", releaseTag(), "init: the theos release whose catalog the model pins")
 	harnessName := flags.String("harness", "", "agents: the tool that plays the lead, claude-code (the default) or codex")
+	newRound := flags.Bool("new", false, "plan: start the next round once every issue of the one in plan/ is filed")
 	var lead doneIn
 	flags.StringVar(&lead.Task, "task", "", "claim, heartbeat, release, done, merge: the Task, as theos next names it")
 	flags.StringVar(&lead.Session, "session", "", "claim, heartbeat, release, done: your session's name")
@@ -159,6 +173,8 @@ func run(ctx context.Context, args []string, d deps) int {
 		err = serveMCP(ctx, leadEnv(env, d, *dir), d, *dir)
 	case "merge":
 		err = mergeCommand(ctx, leadEnv(env, d, *dir), d, *dir, lead.Task)
+	case "plan":
+		err = nocluster.Plan(ctx, env, projectFiles(*dir), nocluster.PlanOptions{New: *newRound})
 	case "next", "claim", "heartbeat", "release", "done":
 		err = leadCommand(ctx, cmd, leadEnv(env, d, *dir), d.stdout, *dir, lead)
 	case "scaffold", "protect", "status", "agents":
@@ -190,14 +206,24 @@ func run(ctx context.Context, args []string, d deps) int {
 	return 0
 }
 
-// writeProjectFile writes data at path under dir, a path theos agents
-// renders, making its folder.
+// writeProjectFile writes data at path under dir, a path theos agents or
+// theos plan renders, making its folder.
 func writeProjectFile(dir, path string, data []byte) error {
 	full := filepath.Join(dir, filepath.FromSlash(path))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil { //nolint:gosec // the project's own folder
 		return err
 	}
 	return os.WriteFile(full, data, 0o644) //nolint:gosec // files the project repository commits
+}
+
+// projectFiles is the project repository at dir, as theos plan reads and
+// writes it.
+func projectFiles(dir string) nocluster.ProjectFiles {
+	return nocluster.ProjectFiles{FS: os.DirFS(dir),
+		Write: func(path string, data []byte) error { return writeProjectFile(dir, path, data) },
+		Remove: func(path string) error {
+			return os.Remove(filepath.Join(dir, filepath.FromSlash(path))) //nolint:gosec // a round's own file
+		}}
 }
 
 // initModel writes the model files under dir, refusing to replace any.

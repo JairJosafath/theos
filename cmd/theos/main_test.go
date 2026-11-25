@@ -520,3 +520,34 @@ func TestSameOrigin268(t *testing.T) {
 		t.Errorf("#268 a redirect after %d: followed", maxRedirects)
 	}
 }
+
+// #293: theos plan starts a round in the project repository under -C, and
+// run again applies it; a round with no change and no issue needs no host.
+func TestPlan293(t *testing.T) {
+	dir := webshopDir(t)
+	d, stdout, stderr := testDeps(t, nil)
+	if code := run(context.Background(), []string{"plan", "-C", dir}, d); code != 0 {
+		t.Fatalf("theos plan exited %d:\n%s", code, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "plan", "model.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plan", "choices.md"), []byte("- Kept the shop.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := run(context.Background(), []string{"plan", "-C", dir}, d); code != 0 {
+		t.Fatalf("theos plan exited %d:\n%s", code, stderr)
+	}
+	for _, want := range []string{"round 1: wrote plan/model.yaml", "model/model.yaml: unchanged",
+		"the round files no issues"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("theos plan does not say %q:\n%s", want, stdout)
+		}
+	}
+	if code := run(context.Background(), []string{"plan", "-C", dir, "-new"}, d); code != 0 {
+		t.Fatalf("theos plan -new exited %d:\n%s", code, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "plan", "choices.md")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("theos plan -new left plan/choices.md: %v", err)
+	}
+}

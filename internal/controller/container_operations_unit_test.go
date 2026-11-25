@@ -20,11 +20,9 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
-	"github.com/JairJosafath/theos/internal/model"
 )
 
 func TestOperationsStatusRoundTrips(t *testing.T) {
@@ -97,33 +95,6 @@ func TestReportOperationsApplied(t *testing.T) {
 			case c != nil && c.Reason == c4v1beta1.ReasonNotReadByFramework &&
 				!strings.Contains(c.Message, "Framework go-cli doesn't read spec.operations"):
 				t.Errorf("OperationsApplied message = %q, want it to name the Framework", c.Message)
-			}
-		})
-	}
-}
-
-func TestStoryObjectWritesOnlyThePlannedOperations(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		in   *model.OperationsChoices
-		want *c4v1beta1.OperationsSpec
-	}{
-		{"left out", nil, nil},
-		{"one field", &model.OperationsChoices{RPO: "15m"},
-			&c4v1beta1.OperationsSpec{Recovery: &c4v1beta1.OperationsRecovery{RPO: "15m"}}},
-		{"a zero retention is a choice", &model.OperationsChoices{RetentionDays: new(int32(0)), Email: "a@b.io"},
-			&c4v1beta1.OperationsSpec{Backups: &c4v1beta1.OperationsBackups{RetentionDays: new(int32(0))},
-				Alerts: &c4v1beta1.OperationsAlerts{Email: "a@b.io"}}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			obj, err := storyObject("shop", model.PlanObject{Kind: model.KindContainer, Name: "api",
-				Operations: tt.in})
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := obj.(*c4v1beta1.Container).Spec.Operations
-			if !equality.Semantic.DeepEqual(got, tt.want) {
-				t.Errorf("spec.operations = %+v, want %+v", got, tt.want)
 			}
 		})
 	}

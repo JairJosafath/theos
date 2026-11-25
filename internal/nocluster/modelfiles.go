@@ -15,8 +15,9 @@ limitations under the License.
 */
 
 // Package nocluster is the theos binary's commands with no cluster: init,
-// scaffold, protect and status, on the ports and on the model files of a
-// project repository (docs/plans/no-cluster.md, decisions 2 to 4, 9 and 12).
+// scaffold, protect, status, plan and the lead's, on the ports and on the
+// model files of a project repository (docs/plans/no-cluster.md, decisions 2
+// to 4, 9 and 12).
 // It reads the model files as the API server would hold them: each object
 // defaulted from its embedded CRD's schema by the API server's own
 // defaulting package, checked by its own validators against the schema's

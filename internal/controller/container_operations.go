@@ -35,35 +35,6 @@ func operationsChoices(spec *c4v1beta1.OperationsSpec) model.OperationsChoices {
 	return modelfacts.OperationsChoices(spec)
 }
 
-// plannedOperations is an existing Container's block as a plan's object
-// carries it, nil when spec has none, so a plan applied again matches it.
-func plannedOperations(spec *c4v1beta1.OperationsSpec) *model.OperationsChoices {
-	if spec == nil {
-		return nil
-	}
-	c := operationsChoices(spec)
-	return &c
-}
-
-// operationsSpec is a plan's block as spec.operations writes it: only the
-// fields the plan set, so the factory's defaults stay its own; nil is nil.
-func operationsSpec(c *model.OperationsChoices) *c4v1beta1.OperationsSpec {
-	if c == nil {
-		return nil
-	}
-	spec := &c4v1beta1.OperationsSpec{}
-	if c.RetentionDays != nil || c.CopyToRegion != "" {
-		spec.Backups = &c4v1beta1.OperationsBackups{RetentionDays: c.RetentionDays, CopyToRegion: c.CopyToRegion}
-	}
-	if c.RPO != "" || c.RTO != "" {
-		spec.Recovery = &c4v1beta1.OperationsRecovery{RPO: c.RPO, RTO: c.RTO}
-	}
-	if c.Email != "" {
-		spec.Alerts = &c4v1beta1.OperationsAlerts{Email: c.Email}
-	}
-	return spec
-}
-
 // specOperations is the Container's operations block, the defaults filled in.
 func specOperations(container *c4v1beta1.Container) model.Operations {
 	return modelfacts.Operations(container)

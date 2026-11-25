@@ -170,7 +170,7 @@ func StandInPlan(workspace map[string]string) (map[string]string, error) {
 		choices = append(choices, "The stand-in planner keeps the model as it is.")
 	}
 
-	story, err := renderWorkspaceModel(objects)
+	story, err := RenderWorkspaceModel(objects)
 	if err != nil {
 		return nil, err
 	}
