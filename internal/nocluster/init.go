@@ -31,6 +31,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/modelfacts"
+	"github.com/JairJosafath/theos/internal/scaffold"
 )
 
 // CredentialsSecret is the Secret name init writes on the GitProvider. No
@@ -98,6 +99,7 @@ func Init(ctx context.Context, fetcher modelfacts.TemplateFetcher, opts InitOpti
 		return nil, fmt.Errorf("%s at %s has no %s/values.yaml", opts.TheosURL, opts.Ref, chartDir)
 	}
 	var chartValues struct {
+		Agents  chartAgents
 		Catalog struct {
 			Entries []struct {
 				Kind, Name, Template string
@@ -131,6 +133,13 @@ func Init(ctx context.Context, fetcher modelfacts.TemplateFetcher, opts InitOpti
 	for _, b := range chartValues.Catalog.Bundles {
 		setup = append(setup, object("Bundle", b.Name, b.Spec))
 	}
+	agents, err := chartValues.Agents.objects(chart, opts.Ref)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range agents {
+		setup = append(setup, object("Agent", a.name, a.spec))
+	}
 	story := []map[string]any{object("Project", opts.Project, map[string]any{"displayName": opts.Project})}
 	settings, err := DecodeSettings(nil, opts.Project)
 	if err != nil {
@@ -143,9 +152,10 @@ func Init(ctx context.Context, fetcher modelfacts.TemplateFetcher, opts InitOpti
 		return nil, err
 	}
 	if files[SetupFile], err = documents("What a person makes and no plan writes: the GitProvider, the catalog "+
-		"entries at the release "+opts.Ref+", and the Bundles.", setup); err != nil {
+		"entries at the release "+opts.Ref+", the Bundles, and the Agents a Crew names.", setup); err != nil {
 		return nil, err
 	}
+	files[SetupFile] = append(files[SetupFile], crewTemplate...)
 	if files[SettingsFile], err = yaml.Marshal(settings); err != nil {
 		return nil, err
 	}
@@ -154,6 +164,101 @@ func Init(ctx context.Context, fetcher modelfacts.TemplateFetcher, opts InitOpti
 	}
 	return files, nil
 }
+
+// The Agents init writes: the chart's implementer and reviewer on Claude
+// Code, at the release's agent image, so the file moves to a cluster
+// unchanged (docs/plans/lead-runtime.md, decision 6).
+var initAgents = []string{agentImplementer, agentReviewer}
+
+// The names of the Agents init writes, the chart's.
+const (
+	agentImplementer = "implementer"
+	agentReviewer    = "reviewer"
+)
+
+// chartAgents is what init reads of the chart's agents value.
+type chartAgents struct {
+	Image struct {
+		Repository, Tag string
+	}
+	Implementer, Reviewer chartAgent
+}
+
+// chartAgent is one of the chart's Agents.
+type chartAgent struct {
+	Description string
+	Model       string
+	MaxRounds   int `json:"maxRounds"`
+}
+
+type agentObject struct {
+	name string
+	spec map[string]any
+}
+
+// objects are the Agents init writes, from the chart's values. The image's
+// tag is the chart's, else its Chart.yaml's appVersion, else the release's
+// version, as the chart pulls it.
+func (a chartAgents) objects(chart scaffold.Tree, ref string) ([]agentObject, error) {
+	if a.Image.Repository == "" {
+		return nil, fmt.Errorf("%s/values.yaml names no agents.image.repository", chartDir)
+	}
+	tag := a.Image.Tag
+	if tag == "" {
+		if f, ok := chart["Chart.yaml"]; ok {
+			var c struct {
+				AppVersion string `json:"appVersion"`
+			}
+			if err := yaml.Unmarshal(f.Data, &c); err != nil {
+				return nil, fmt.Errorf("%s/Chart.yaml: %w", chartDir, err)
+			}
+			tag = c.AppVersion
+		}
+	}
+	if tag == "" {
+		tag = strings.TrimPrefix(ref, "v")
+	}
+	out := make([]agentObject, 0, len(initAgents))
+	for _, role := range initAgents {
+		agent := a.Implementer
+		if role == agentReviewer {
+			agent = a.Reviewer
+		}
+		spec := map[string]any{"image": a.Image.Repository + ":" + tag, "harness": model.HarnessClaudeCode}
+		if agent.Description != "" {
+			spec["description"] = agent.Description
+		}
+		if agent.Model != "" {
+			spec["model"] = agent.Model
+		}
+		if agent.MaxRounds > 0 {
+			spec["maxRounds"] = agent.MaxRounds
+		}
+		out = append(out, agentObject{name: role, spec: spec})
+	}
+	return out, nil
+}
+
+// crewTemplate ends the setup file init writes: the Crew that works a
+// Container's issues, left as a comment, as the model has no Container yet
+// and a Crew names one.
+var crewTemplate = []byte(`---
+# Once model/model.yaml has a Container, a Crew works its issues: uncomment
+# this and name the Container. theos status says what of it this runtime
+# does not honour.
+# apiVersion: theos.factory.io/v1beta1
+# kind: Crew
+# metadata:
+#   name: <container>
+# spec:
+#   containerRef:
+#     name: <container>
+#   implementer:
+#     name: implementer
+#   reviewer:
+#     name: reviewer
+#   parallel: 1
+`)
 
 // documents is objs as one YAML stream under a comment.
 func documents(comment string, objs []map[string]any) ([]byte, error) {

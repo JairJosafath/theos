@@ -31,8 +31,7 @@ import (
 
 // operatorCapabilities is what the operator runtime does: everything a Crew
 // and its Agents ask (docs/plans/lead-runtime.md, decision 6).
-var operatorCapabilities = ports.Capabilities{Merges: true, Sandboxes: true, Schedules: true, Costs: true,
-	AllRoles: true}
+var operatorCapabilities = model.OperatorCapabilities()
 
 // crewRuntime is the operator's ports.Runtime for one Crew's reconcile: the
 // Crew's Task objects are its TaskStore.

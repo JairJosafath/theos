@@ -114,8 +114,7 @@ var _ ports.Runtime = (*Runtime)(nil)
 
 // NewRuntime is a Runtime on a fresh Tasks that can do everything.
 func NewRuntime() *Runtime {
-	return &Runtime{TaskStore: NewTasks(), Caps: ports.Capabilities{Merges: true, Sandboxes: true, Schedules: true,
-		Costs: true, AllRoles: true}}
+	return &Runtime{TaskStore: NewTasks(), Caps: model.OperatorCapabilities()}
 }
 
 // Store is the Runtime's Tasks.

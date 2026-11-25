@@ -66,7 +66,7 @@ const (
 	// ModelFile is the story: the Project and the kinds a plan writes.
 	ModelFile = "model/model.yaml"
 	// SetupFile is what a person makes and no plan writes: the GitProvider,
-	// the catalog entries and the Bundles.
+	// the catalog entries, the Bundles, and the Crews and their Agents.
 	SetupFile = "model/setup.yaml"
 	// SettingsFile holds what no CRD does (decision 12); it may be absent.
 	SettingsFile = "model/settings.yaml"
@@ -77,7 +77,7 @@ const (
 var (
 	storyKinds = []string{"Project", "Person", "SoftwareSystem", "Container", "DataStore", "Relationship"}
 	setupKinds = []string{"GitProvider", "Framework", "Standard", "Compute", "Deployment", "Connector", "Domain",
-		"Bundle"}
+		"Bundle", "Agent", "Crew"}
 )
 
 // Model is a project's model files as the commands read them.
@@ -90,7 +90,14 @@ type Model struct {
 	People     []c4v1beta1.Person
 	Systems    []c4v1beta1.SoftwareSystem
 	Containers []c4v1beta1.Container
-	Settings   Settings
+	// Crews and Agents are model/setup.yaml's (docs/plans/lead-runtime.md,
+	// decision 6). Written holds, by "Crew <name>" and "Agent <name>", the
+	// spec fields each document wrote, before defaulting: what a runtime
+	// says it doesn't honour of them (model.NotHonoured).
+	Crews    []c4v1beta1.Crew
+	Agents   []c4v1beta1.Agent
+	Written  map[string][]string
+	Settings Settings
 }
 
 // Read reads the model files from fsys, a project repository's root.
@@ -119,7 +126,7 @@ func Read(fsys fs.FS) (*Model, error) {
 // has and a GitProvider whose provider no CI is known for are refused. Its
 // namespace is the Project's name.
 func Decode(story, setup, settings []byte) (*Model, error) {
-	m := &Model{}
+	m := &Model{Written: map[string][]string{}}
 	if err := decodeFile(m, ModelFile, story, storyKinds); err != nil {
 		return nil, err
 	}
@@ -142,6 +149,9 @@ func Decode(story, setup, settings []byte) (*Model, error) {
 	}
 	m.Settings = s
 	if err := setNamespaces(m); err != nil {
+		return nil, err
+	}
+	if err := checkCrews(m); err != nil {
 		return nil, err
 	}
 	return m, nil
@@ -198,6 +208,7 @@ func decodeDoc(m *Model, doc []byte, kinds []string) error {
 	if err != nil {
 		return err
 	}
+	written := writtenFields(obj)
 	if err := schemas[kind].create(obj); err != nil {
 		meta, _ := obj["metadata"].(map[string]any)
 		name, _ := meta["name"].(string)
@@ -238,6 +249,10 @@ func decodeDoc(m *Model, doc []byte, kinds []string) error {
 		return add(&m.Objects.Connectors, defaulted)
 	case "Domain":
 		return add(&m.Objects.Domains, defaulted)
+	case "Agent":
+		return addWritten(m, &m.Agents, kind, defaulted, written)
+	case "Crew":
+		return addWritten(m, &m.Crews, kind, defaulted, written)
 	default: // Bundle
 		return add(&m.Objects.Bundles, defaulted)
 	}
@@ -251,6 +266,33 @@ func add[T any](list *[]T, data []byte) error {
 	}
 	*list = append(*list, item)
 	return nil
+}
+
+// addWritten decodes data strictly into a new item of list, and records the
+// spec fields its document wrote.
+func addWritten[T any, P interface {
+	*T
+	GetName() string
+}](m *Model, list *[]T, kind string, data []byte, written []string) error {
+	if err := add(list, data); err != nil {
+		return err
+	}
+	m.Written[kind+" "+P(&(*list)[len(*list)-1]).GetName()] = written
+	return nil
+}
+
+// writtenFields are the fields of obj's spec as written, sorted; one written
+// as null is left out, as the API server reads it.
+func writtenFields(obj map[string]any) []string {
+	spec, _ := obj["spec"].(map[string]any)
+	var out []string
+	for k, v := range spec {
+		if v != nil {
+			out = append(out, k)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // strict decodes data into obj, refusing a field obj's type does not have.
@@ -360,7 +402,58 @@ func setNamespaces(m *Model) error {
 	for i := range o.Bundles {
 		set("Bundle", &o.Bundles[i].ObjectMeta)
 	}
+	for i := range m.Agents {
+		set("Agent", &m.Agents[i].ObjectMeta)
+	}
+	for i := range m.Crews {
+		set("Crew", &m.Crews[i].ObjectMeta)
+	}
 	return err
+}
+
+// checkCrews refuses a Crew whose Container is not in model/model.yaml or
+// one of whose Agents is not in model/setup.yaml, naming the field.
+func checkCrews(m *Model) error {
+	for _, c := range m.Crews {
+		crew := named("Crew", c.Name)
+		if modelfacts.Find(m.Containers, c.Spec.ContainerRef.Name) == nil {
+			return fmt.Errorf("%s: %s: spec.containerRef names Container %s, which %s does not hold", SetupFile,
+				crew, c.Spec.ContainerRef.Name, ModelFile)
+		}
+		for _, ref := range CrewAgentRefs(&c.Spec) {
+			if modelfacts.Find(m.Agents, ref.Name) == nil {
+				return fmt.Errorf("%s: %s: %s names Agent %s, which %s does not hold", SetupFile, crew, ref.Field,
+					ref.Name, SetupFile)
+			}
+		}
+	}
+	return nil
+}
+
+// AgentRef is an Agent a Crew names, and the field that names it.
+type AgentRef struct {
+	Field, Name string
+}
+
+// CrewAgentRefs are the Agents a Crew names, by field, in the spec's order:
+// its implementer and reviewer, its triager, spec writer and verifier, then
+// its routes'.
+func CrewAgentRefs(spec *c4v1beta1.CrewSpec) []AgentRef {
+	refs := []AgentRef{{"spec.implementer", spec.Implementer.Name}, {"spec.reviewer", spec.Reviewer.Name}}
+	add := func(path string, ref *c4v1beta1.LocalRef) {
+		if ref != nil {
+			refs = append(refs, AgentRef{path, ref.Name})
+		}
+	}
+	add("spec.triager", spec.Triager)
+	add("spec.specWriter", spec.SpecWriter)
+	add("spec.verifier", spec.Verifier)
+	for i, r := range spec.Routes {
+		add(fmt.Sprintf("spec.routes[%d].implementer", i), r.Implementer)
+		add(fmt.Sprintf("spec.routes[%d].reviewer", i), r.Reviewer)
+		add(fmt.Sprintf("spec.routes[%d].verifier", i), r.Verifier)
+	}
+	return refs
 }
 
 // crdSchema is one embedded CRD's served version: its structural schema,

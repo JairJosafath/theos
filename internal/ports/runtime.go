@@ -57,26 +57,9 @@ type Workers interface {
 type WorkOrder = model.WorkOrder
 
 // Capabilities is what a runtime does of what a Crew and its Agents ask
-// (docs/plans/lead-runtime.md, decision 6). A field the runtime leaves
-// false is not honoured, and the runtime's status names it with a reason
-// word.
-type Capabilities struct {
-	// Merges means the runtime merges an approved Task; without it a person
-	// merges (PersonMerges).
-	Merges bool
-	// Sandboxes means each run is a sandbox the runtime makes from the
-	// Agent's image, resources, env, credentials and timeout (NoSandbox).
-	Sandboxes bool
-	// Schedules means the runtime keeps a clock of its own: schedules and
-	// releases (NoScheduler).
-	Schedules bool
-	// Costs means the runtime reads what a run cost: budgets and token
-	// limits (CostUnreported).
-	Costs bool
-	// AllRoles means the triager, spec writer and verifier play their
-	// roles, not only the implementer and the reviewer (RoleNotBuilt).
-	AllRoles bool
-}
+// (docs/plans/lead-runtime.md, decision 6): model.NotHonoured names each
+// field a runtime without one does not honour, with its reason word.
+type Capabilities = model.Capabilities
 
 // Runtime is one runtime: where its Tasks are kept, who runs their turns,
 // and what it can do.

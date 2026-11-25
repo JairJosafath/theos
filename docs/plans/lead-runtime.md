@@ -350,6 +350,32 @@ left open:
 - `blocked` and `nothing` close the run with their note. A `blocked`
   with no reason still blocks.
 
+**Step 4 as built** (`internal/model/runtime_fields.go`,
+`internal/nocluster`). Choices the plan left open:
+- `Capabilities` is `internal/model`'s, as `model.NotHonoured` reads it,
+  and `ports.Capabilities` is the same type. `OperatorCapabilities` has
+  all of it, `LeadCapabilities` none but `claude-code` among the
+  harnesses.
+- A field counts as set when its document wrote it, before the CRD's
+  defaults: `Model.Written` keeps those, so a defaulted `timeoutMinutes`
+  is no `NoSandbox` line, while a written one is. A field written as
+  `null` counts as left out. The harness is read whether written or
+  defaulted.
+- `pauseRuns` is `NoSandbox`: it pauses runs in their sandboxes.
+  `specApproval` is `RoleNotBuilt`, with the spec writer. The PersonMerges
+  line is the Crew's own, whatever fields it sets.
+- A field the table has no row for is `UnknownField`, never dropped;
+  `TestEveryFieldHasARow333` fails on a new field of `CrewSpec` or
+  `AgentSpec` until it has a row.
+- `theos init` writes the Agents `implementer` and `reviewer` from the
+  chart's values (description, model, maxRounds) at its agent image, the
+  tag the chart's, else Chart.yaml's appVersion, else the release's
+  version. It can't write the Crew: a new model has no Container, and a
+  Crew must name one. It writes the Crew as a comment to uncomment, and
+  `theos status` says, of each Container no Crew works, to add one.
+- The sample is `config/samples/webshop/crew.yaml`, kept out of the
+  webshop's kustomization: on a cluster the chart makes the Agents.
+
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
 

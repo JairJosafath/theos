@@ -547,6 +547,9 @@ func sampleModels(t *testing.T) []sampleModel {
 	project := read("webshop/project.yaml", false)
 	models := []sampleModel{
 		{name: "webshop", story: slices.Concat(project, read("webshop/story.yaml", false)), setup: setup},
+		// #333: the webshop's Crew and Agents, as the lead runtime reads them.
+		{name: "webshop with its Crew", story: slices.Concat(project, read("webshop/story.yaml", false)),
+			setup: slices.Concat(setup, read("webshop/crew.yaml", false))},
 		{name: "first-app", story: slices.Concat(read("first-app/project.yaml", false), read("first-app/story.yaml", true)),
 			setup: setup},
 		{name: "adopt", story: slices.Concat(project, read("adopt/story.yaml", true)), setup: setup},
