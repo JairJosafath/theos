@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -56,7 +57,7 @@ type crewTaskStore struct {
 	// reader reads the Tasks without the cache: a Task created a moment ago
 	// must count, or the Crew starts two.
 	reader    client.Reader
-	writer    client.Writer
+	writer    client.Client
 	crew      *c4v1beta1.Crew
 	container *c4v1beta1.Container
 }
@@ -93,4 +94,36 @@ func (s *crewTaskStore) Start(ctx context.Context, container string, start model
 		"attempt", start.Attempt, "spec", start.Spec, "allowedPaths", start.AllowedPaths,
 		"implementer", task.Spec.AgentRef.Name, "reviewer", task.Spec.ReviewerRef.Name)
 	return nil
+}
+
+// Progress is the Task's record from its status.
+func (s *crewTaskStore) Progress(ctx context.Context, task string) (ports.TaskRecord, error) {
+	var t c4v1beta1.Task
+	if err := s.reader.Get(ctx, client.ObjectKey{Namespace: s.crew.Namespace, Name: task}, &t); err != nil {
+		return ports.TaskRecord{}, err
+	}
+	rec := ports.TaskRecord{Progress: progressOf(&t.Status), PullRequest: int(t.Status.PullRequest),
+		PullRequestURL: t.Status.PullRequestURL, Summary: t.Status.Summary}
+	if rec.Progress.Phase == "" {
+		rec.Progress.Phase = model.TaskPending
+	}
+	if t.Status.PhaseChangedAt != nil {
+		rec.PhaseSince = t.Status.PhaseChangedAt.Time
+	}
+	return rec, nil
+}
+
+// SaveProgress writes r into the Task's status.
+func (s *crewTaskStore) SaveProgress(ctx context.Context, task string, r ports.TaskRecord) error {
+	var t c4v1beta1.Task
+	if err := s.reader.Get(ctx, client.ObjectKey{Namespace: s.crew.Namespace, Name: task}, &t); err != nil {
+		return err
+	}
+	setProgress(&t.Status, r.Progress)
+	t.Status.PullRequest, t.Status.PullRequestURL = int32(r.PullRequest), r.PullRequestURL
+	t.Status.Summary = r.Summary
+	if !r.PhaseSince.IsZero() {
+		t.Status.PhaseChangedAt = &metav1.Time{Time: r.PhaseSince}
+	}
+	return s.writer.Status().Update(ctx, &t)
 }

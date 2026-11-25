@@ -66,11 +66,19 @@ var jsonBlock = regexp.MustCompile("(?s)```json\\s*\\n(.*?)\\n```")
 // tells it what to do (#266). The operator's Workers make a sandbox of it;
 // the lead runtime's post it as an offer (OfferMarker) that a session pulls.
 type WorkOrder struct {
-	Task  string
-	Round int
-	Role  string
-	Agent string
-	Text  string
+	Task string
+	// Issue is the Task's issue, Branch the branch its work goes on.
+	Issue  int
+	Branch string
+	Round  int
+	Role   string
+	Agent  string
+	// Feedback is what the round has to address, from the round before.
+	Feedback string
+	// Lease is how long a claim of the turn holds before it is renewed.
+	Lease time.Duration
+	// Text is what the role reads: the work order the method renders (#266).
+	Text string
 }
 
 // OfferMarker is the first line of the engine's offer of round of task to

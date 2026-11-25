@@ -376,6 +376,43 @@ left open:
 - The sample is `config/samples/webshop/crew.yaml`, kept out of the
   webshop's kustomization: on a cluster the chart makes the Agents.
 
+**Step 5 as built** (`internal/engine/task.go`, `internal/engine/task_host.go`).
+Choices the plan left open:
+- `TaskStore` keeps a `ports.TaskRecord`: the `model.TaskProgress`, the
+  pull request and its URL, the round's summary, when the phase last
+  changed, and the reason and message a Task ended with. A pull request
+  is no part of `TaskProgress`, which the operator's transitions change.
+- `model.WorkOrder` carries what #334 lists: Task, issue, branch, round,
+  role, Agent, feedback and lease, and the `Text` #266 renders.
+- The host halves both runtimes call are `ReadChecks` (with the CI runs,
+  the rerun's state and who cancelled a run; the operator passes the
+  runner pods' fate as a function), `ReadPull` with `PullWanted`,
+  `ReadBase` and `UpdateBranch`. The Task reconciler's `checkFacts`,
+  `pullFacts`, `baseFacts` and `updateBranch` call them, and the
+  reconciler's own copies went. `approvalFacts` stays: it reads the
+  review's Sandbox, the run side.
+- The host actions of `task_actions.go` that write the operator's status
+  as they go (open, merge, approve, comment) stay until #336, which moves
+  the reconciler onto `TaskTick`. `TaskTick` has its own: it opens the
+  pull request, merges where the runtime `Merges`, closes the issue and
+  hands a failed one back.
+- Capabilities turn steps: a `Merge` in a runtime that merges nothing
+  waits with `PersonMerges`, and the tick after a person merged ends the
+  Task Merged and closes its issue. A step the engine has no way to carry
+  out (a sandbox suspended or resumed in place, a Standard change, a
+  spec, a verification) waits with `NotBuilt`.
+- A run whose claim ran out (`MarkerRun.EndDue`) is ended by the tick
+  that sees it, read back interrupted, and decided on in the same tick:
+  `Rerun` offers it again on its branch. A rerun, a retried review and a
+  conflict to resolve offer their turn in the same tick, since a turn of
+  the same round offered again starts afresh, and the round's earlier
+  answers count until it is.
+- A request for changes goes on the pull request as a review, or, when
+  the host refuses one (an account's own pull request, as where theos
+  and the sessions share one), as a comment with the verdict.
+- Every Task envtest spec passes unchanged; the Task tick's tests are
+  tier 1 on `fake.Tasks`, `fake.Workers` and the fake host.
+
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
 

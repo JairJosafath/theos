@@ -31,6 +31,8 @@ import (
 type Tasks struct {
 	mu    sync.Mutex
 	tasks map[string][]model.CrewTask // by container
+	// records are the Tasks' records, by name.
+	records map[string]ports.TaskRecord
 	// starts are the starts asked for, repeats included, in order.
 	starts []model.IssueStart
 	// startErr makes Start fail.
@@ -40,7 +42,9 @@ type Tasks struct {
 var _ ports.TaskStore = (*Tasks)(nil)
 
 // NewTasks returns an empty TaskStore.
-func NewTasks() *Tasks { return &Tasks{tasks: map[string][]model.CrewTask{}} }
+func NewTasks() *Tasks {
+	return &Tasks{tasks: map[string][]model.CrewTask{}, records: map[string]ports.TaskRecord{}}
+}
 
 // Tasks are container's Tasks, the oldest first.
 func (s *Tasks) Tasks(_ context.Context, container string) ([]model.CrewTask, error) {
@@ -64,6 +68,36 @@ func (s *Tasks) Start(_ context.Context, container string, start model.IssueStar
 	}
 	s.tasks[container] = append(s.tasks[container], model.CrewTask{Name: start.Task, Issue: start.Issue,
 		Spec: start.Spec})
+	s.records[start.Task] = ports.TaskRecord{Progress: model.TaskProgress{Phase: model.TaskPending}}
+	return nil
+}
+
+// Progress is the Task's record.
+func (s *Tasks) Progress(_ context.Context, task string) (ports.TaskRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.records[task]
+	if !ok {
+		return ports.TaskRecord{}, fmt.Errorf("no Task %s", task)
+	}
+	return r, nil
+}
+
+// SaveProgress keeps r, and ends the Task in Tasks once r is final.
+func (s *Tasks) SaveProgress(_ context.Context, task string, r ports.TaskRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.records[task]; !ok {
+		return fmt.Errorf("no Task %s", task)
+	}
+	s.records[task] = r
+	for _, tasks := range s.tasks {
+		if i := slices.IndexFunc(tasks, func(t model.CrewTask) bool { return t.Name == task }); i >= 0 {
+			phase := r.Progress.Phase
+			tasks[i].Final = phase == model.TaskMerged || phase == model.TaskFailed
+			tasks[i].Failed = phase == model.TaskFailed
+		}
+	}
 	return nil
 }
 
@@ -103,10 +137,11 @@ func (s *Tasks) FailStart(err error) {
 	s.startErr = err
 }
 
-// Runtime is a ports.Runtime on a Tasks, with no Workers until the Task tick
-// needs them (#334), and the capabilities it is given.
+// Runtime is a ports.Runtime on a Tasks and, when set, a Workers, with the
+// capabilities it is given.
 type Runtime struct {
 	TaskStore *Tasks
+	Work      *Workers
 	Caps      ports.Capabilities
 }
 
@@ -120,8 +155,13 @@ func NewRuntime() *Runtime {
 // Store is the Runtime's Tasks.
 func (r *Runtime) Store() ports.TaskStore { return r.TaskStore }
 
-// Workers is nil: no tick of the fake runs a turn yet.
-func (r *Runtime) Workers() ports.Workers { return nil }
+// Workers is the Runtime's Work; nil when it has none.
+func (r *Runtime) Workers() ports.Workers {
+	if r.Work == nil {
+		return nil
+	}
+	return r.Work
+}
 
 // Capabilities are the Runtime's Caps.
 func (r *Runtime) Capabilities() ports.Capabilities { return r.Caps }

@@ -20,6 +20,7 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
@@ -42,7 +43,9 @@ type TaskStoreEnv struct {
 // TaskStore states what internal/engine relies on of every TaskStore: a
 // started Task is listed at once, on its Container alone, with its issue
 // and whether it writes a spec; a start repeated is no error and starts
-// nothing more; and a Task that ended is listed as final, failed or not.
+// nothing more; a Task that ended is listed as final, failed or not; and a
+// Task's record, Pending when it starts, is kept as saved, a final phase
+// ending it.
 func TaskStore(t *testing.T, env TaskStoreEnv) {
 	t.Helper()
 	ctx, cancel := suiteContext()
@@ -51,6 +54,7 @@ func TaskStore(t *testing.T, env TaskStoreEnv) {
 		{"lists a started Task at once, on its Container alone", taskStoreSuite.starts},
 		{"starts a Task once however often it is asked", taskStoreSuite.idempotent},
 		{"lists a Task that ended as final", taskStoreSuite.ends},
+		{"keeps a Task's progress, and ends it once it is final", taskStoreSuite.progress},
 	})
 }
 
@@ -133,5 +137,43 @@ func (s taskStoreSuite) ends(t *testing.T) {
 	}
 	if got := named(t, tasks, failed.Task); !got.Final || !got.Failed {
 		t.Errorf("failed Task = %+v, want final and failed", got)
+	}
+}
+
+func (s taskStoreSuite) progress(t *testing.T) {
+	store, container, _ := s.env.New(t)
+	start := model.IssueStart{Issue: 4, Task: container + "-4", Attempt: 1}
+	if err := store.Start(s.ctx, container, start); err != nil {
+		t.Fatal(err)
+	}
+	rec := must(store.Progress(s.ctx, start.Task))(t)
+	if rec.Progress.Phase != model.TaskPending || rec.Progress.Round != 0 {
+		t.Errorf("a started Task's record = %+v, want Pending, round 0", rec.Progress)
+	}
+	since := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
+	rec = ports.TaskRecord{Progress: model.TaskProgress{Phase: model.TaskChecking, Round: 2, Commit: "abc1234",
+		Feedback: "Handle an empty order."}, PullRequest: 7, PullRequestURL: "https://host.test/pulls/7",
+		Summary: "Added the orders.", PhaseSince: since}
+	if err := store.SaveProgress(s.ctx, start.Task, rec); err != nil {
+		t.Fatal(err)
+	}
+	got := must(store.Progress(s.ctx, start.Task))(t)
+	if got.Progress.Phase != model.TaskChecking || got.Progress.Round != 2 || got.Progress.Commit != "abc1234" ||
+		got.Progress.Feedback != rec.Progress.Feedback || got.PullRequest != 7 ||
+		got.PullRequestURL != rec.PullRequestURL || got.Summary != rec.Summary || !got.PhaseSince.Equal(since) {
+		t.Errorf("record read back = %+v, want %+v", got, rec)
+	}
+	if named(t, s.tasks(t, store, container), start.Task).Final {
+		t.Error("a Checking Task is listed final")
+	}
+	rec.Progress.Phase = model.TaskMerged
+	if err := store.SaveProgress(s.ctx, start.Task, rec); err != nil {
+		t.Fatal(err)
+	}
+	if got := named(t, s.tasks(t, store, container), start.Task); !got.Final || got.Failed {
+		t.Errorf("a Merged Task is listed %+v, want final, not failed", got)
+	}
+	if _, err := store.Progress(s.ctx, "no-such-task"); err == nil {
+		t.Error("the record of a Task the store doesn't hold is no error")
 	}
 }

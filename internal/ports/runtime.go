@@ -18,6 +18,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/model"
 )
@@ -37,6 +38,25 @@ type TaskStore interface {
 	// Start starts the Task s names on container. A Task of that name that
 	// exists already is no error, and is left as it is.
 	Start(ctx context.Context, container string, s model.IssueStart) error
+	// Progress is the record of the Task named task; a Task the store
+	// doesn't hold is an error. A Task just started is Pending, round 0.
+	Progress(ctx context.Context, task string) (TaskRecord, error)
+	// SaveProgress keeps r as the Task's record. A final phase ends the
+	// Task: Tasks lists it Final, and Failed for model.TaskFailed.
+	SaveProgress(ctx context.Context, task string, r TaskRecord) error
+}
+
+// TaskRecord is what a TaskStore keeps of a Task's progress: what its
+// transitions change, its pull request and the round's summary, when its
+// phase last changed, and, once it ended, why.
+type TaskRecord struct {
+	Progress       model.TaskProgress
+	PullRequest    int
+	PullRequestURL string
+	Summary        string
+	PhaseSince     time.Time
+	Reason         string
+	Message        string
 }
 
 // Workers runs one role's turn on a Task. The engine offers the turn, reads
