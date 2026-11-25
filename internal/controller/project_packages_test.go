@@ -56,8 +56,9 @@ var _ = Describe("Package registry Actions", func() {
 
 		By("deleting all five when spec.packages returns to the default")
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(provider), provider)).To(Succeed())
-		provider.Spec.Packages = nil
-		Expect(k8sClient.Update(ctx, provider)).To(Succeed())
+		// A merge patch, not an update: the operator writes the GitProvider
+		// meanwhile, and an update from a stale resourceVersion conflicts.
+		Expect(patch(provider, func() { provider.Spec.Packages = nil })).To(Succeed())
 		Eventually(func() map[string]string { return gitFake.ActionsVariables(ns) }).Should(BeEmpty())
 		Expect(gitFake.ActionsSecrets(ns)).To(BeEmpty())
 	})
