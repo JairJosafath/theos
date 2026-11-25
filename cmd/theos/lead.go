@@ -244,3 +244,31 @@ func leadCommand(ctx context.Context, cmd string, env nocluster.Env, out io.Writ
 	_, err = fmt.Fprintf(out, "%s\n", data)
 	return err
 }
+
+// stdinTerminal reports whether stdin is a terminal's.
+func stdinTerminal() bool {
+	info, err := os.Stdin.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// errNotATerminal refuses theos merge away from a person's terminal: a speed
+// bump for an agent, not a fence (docs/plans/lead-runtime.md, decision 8).
+var errNotATerminal = errors.New("theos merge runs at a person's terminal only: a person merges, " +
+	"here or on the host's pages")
+
+// mergeCommand merges task's pull request for the person at the terminal.
+func mergeCommand(ctx context.Context, env nocluster.Env, d deps, dir, task string) error {
+	if d.terminal == nil || !d.terminal() {
+		return errNotATerminal
+	}
+	m, err := nocluster.Read(os.DirFS(dir))
+	if err != nil {
+		return err
+	}
+	res, err := nocluster.Merge(ctx, env, m, task)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(d.stdout, "%s: %s\n", task, res.Says)
+	return err
+}

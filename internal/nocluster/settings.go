@@ -30,7 +30,7 @@ import (
 
 // Settings are model/settings.yaml: what no CRD holds (decision 12), each
 // with a default that needs no cluster. The decode is strict, so a key a
-// later step reads (merge) is added by that step.
+// later step reads is added by that step.
 type Settings struct {
 	// Repository is the project repository's name; theos-<project> unless set.
 	Repository string `json:"repository,omitempty"`
@@ -42,6 +42,9 @@ type Settings struct {
 	// Claimants are the accounts whose markers count; the credential's own
 	// login unless set (decision 10).
 	Claimants []string `json:"claimants,omitempty"`
+	// Merge is who merges: person, the default, with theos merge or on the
+	// host's pages; rules merges with no person, not built yet (#298).
+	Merge string `json:"merge,omitempty"`
 	// Operator holds the four flags an operator renders every scaffold with
 	// (cmd/main.go), so a Container scaffolded here is what an operator with
 	// the same flags scaffolds.
@@ -75,6 +78,14 @@ func DecodeSettings(data []byte, project string) (Settings, error) {
 	}
 	if s.Operator.SessionFeature == "" {
 		s.Operator.SessionFeature = features.SessionFeatureLocal
+	}
+	switch s.Merge {
+	case "":
+		s.Merge = model.MergePerson
+	case model.MergePerson, model.MergeRules:
+	default:
+		return Settings{}, fmt.Errorf("%s: merge %q is %s or %s", SettingsFile, s.Merge, model.MergePerson,
+			model.MergeRules)
 	}
 	if s.Lease == "" {
 		s.Lease = model.ClaimLease.String()

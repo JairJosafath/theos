@@ -366,7 +366,7 @@ func TestInit268(t *testing.T) {
 	if code := run(context.Background(), append(args, "-ref", "v0.9.0"), d); code != 1 {
 		t.Errorf("a second init exited %d", code)
 	}
-	if code := run(context.Background(), []string{"merge"}, d); code != 2 {
+	if code := run(context.Background(), []string{"rebase"}, d); code != 2 {
 		t.Errorf("an unknown command exited %d", code)
 	}
 

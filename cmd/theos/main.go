@@ -66,6 +66,7 @@ Usage:
   theos next [-C dir]
   theos claim|heartbeat|release [-C dir] -task TASK -session NAME
   theos done [-C dir] -task TASK -session NAME [-commit SHA | -verdict approve|changes] -summary TEXT
+  theos merge [-C dir] -task TASK
 
 theos agents writes the lead's files for Claude Code into the project
 repository from model/: CLAUDE.md, AGENTS.md, a subagent in
@@ -74,7 +75,9 @@ names one that changed since. theos mcp serves the lead runtime's tools
 over stdio, as .mcp.json starts it: theos_next, theos_claim,
 theos_heartbeat, theos_release, theos_done and theos_status. next, claim,
 heartbeat, release and done are the same on the command line. There is no
-merge: a person merges.
+merge tool: a person merges, on the host's pages or with theos merge, which
+runs only at a terminal and merges only a pull request a session other than
+its author's approved on its head, with green checks and no protected path.
 
 The credential is THEOS_GIT_TOKEN, else what git credential fill gives for
 its host; theos never stores or prints it. It is sent only to the host it
@@ -101,12 +104,16 @@ type deps struct {
 	stdout    io.Writer
 	stderr    io.Writer
 	now       func() time.Time
+	// terminal reports whether a person's terminal runs theos: theos merge
+	// runs nowhere else.
+	terminal func() bool
 }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := run(ctx, os.Args[1:], deps{hosts: hosts{}, templates: git.Client{}, runner: execRunner{},
-		getenv: os.Getenv, stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr, now: time.Now})
+		getenv: os.Getenv, stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr, now: time.Now,
+		terminal: stdinTerminal})
 	stop()
 	os.Exit(code)
 }
@@ -126,7 +133,7 @@ func run(ctx context.Context, args []string, d deps) int {
 	provider := flags.String("provider", "", "init: the Git host's provider; asked unless the remote is on github.com")
 	ref := flags.String("ref", releaseTag(), "init: the theos release whose catalog the model pins")
 	var lead doneIn
-	flags.StringVar(&lead.Task, "task", "", "claim, heartbeat, release, done: the Task, as theos next names it")
+	flags.StringVar(&lead.Task, "task", "", "claim, heartbeat, release, done, merge: the Task, as theos next names it")
 	flags.StringVar(&lead.Session, "session", "", "claim, heartbeat, release, done: your session's name")
 	flags.StringVar(&lead.Commit, "commit", "", "done: an implementer's pushed commit")
 	flags.StringVar(&lead.Verdict, "verdict", "", "done: a reviewer's verdict, approve or changes")
@@ -148,6 +155,8 @@ func run(ctx context.Context, args []string, d deps) int {
 			TheosURL: theosURL, Ref: *ref})
 	case "mcp":
 		err = serveMCP(ctx, leadEnv(env, d, *dir), d, *dir)
+	case "merge":
+		err = mergeCommand(ctx, leadEnv(env, d, *dir), d, *dir, lead.Task)
 	case "next", "claim", "heartbeat", "release", "done":
 		err = leadCommand(ctx, cmd, leadEnv(env, d, *dir), d.stdout, *dir, lead)
 	case "scaffold", "protect", "status", "agents":

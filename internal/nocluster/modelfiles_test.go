@@ -692,7 +692,7 @@ func TestSettings268(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := nocluster.Settings{Repository: "theos-webshop", Lease: "1h0m0s", Grace: "5m0s",
+	want := nocluster.Settings{Repository: "theos-webshop", Lease: "1h0m0s", Grace: "5m0s", Merge: model.MergePerson,
 		Operator: nocluster.OperatorSettings{SessionFeature: features.SessionFeatureLocal}}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("unset settings are %+v, want %+v", s, want)
@@ -719,8 +719,11 @@ func TestSettings268(t *testing.T) {
 		set.Operator.CIImageGo != "registry.example/go:1" {
 		t.Errorf("settings read %+v", set)
 	}
-	if _, err := nocluster.DecodeSettings([]byte("merge: rules\n"), "webshop"); err == nil {
-		t.Error("a key no step reads yet was taken")
+	if _, err := nocluster.DecodeSettings([]byte("approvals: 2\n"), "webshop"); err == nil {
+		t.Error("a key no step reads was taken")
+	}
+	if _, err := nocluster.DecodeSettings([]byte("merge: anyone\n"), "webshop"); err == nil {
+		t.Error("merge: anyone was taken")
 	}
 }
 

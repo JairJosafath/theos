@@ -513,6 +513,34 @@ Choices the plan left open:
 - No result carries the credential, and the issue's text reaches a result
   only fenced, in a work order: the test reads every result for both.
 
+**Step 9 as built** (`internal/model/person_merge.go`, `theos merge`).
+Choices the plan left open:
+- `theos merge -task <task>` holds itself, on every host, what no host
+  is trusted to hold for a person: a counted approving verdict on the
+  pull request's head, the checks main requires (`model.BaseState` of the
+  rule's contexts on the head) and the protected paths (the pull
+  request's files against the rule's). The host's merge holds what it
+  holds besides, as GitHub's adapter does. The fake host's merge stays
+  as the controller's specs know it.
+- The verdict counts when it is a reviewer's `done` with `approve` in a
+  review run offered after the implement run whose `done` named the
+  head, from a holder other than that run's: a session's name tells the
+  sessions apart where they share one account (decision 10). A verdict
+  of an earlier round is `VerdictOnAnOlderHead`; the author's own is
+  `AuthorsOwnVerdict`; one from outside `claimants` counts for nothing,
+  so `NoApprovingVerdict`.
+- `merge` in `model/settings.yaml` is `person` (the default) or `rules`;
+  any other is refused at decode, and `rules` is refused at the merge,
+  `RulesMergeNotBuilt`, until #298.
+- Away from a terminal (stdin no character device) `theos merge` is
+  refused, a speed bump for an agent, not a fence; `theos mcp` has no
+  merge tool. The next tick sees the merge and ends the Task Merged, its
+  issue closed.
+- Not run here: the merge on the fake GitHub and on Gitea. The checks and
+  protected paths are theos's own on every host, and the model's table
+  and the fake host's run test them; GitHub's adapter merge has its own
+  tests; Gitea needs a non-root host for `make test-gitea`.
+
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
 
