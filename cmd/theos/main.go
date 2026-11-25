@@ -61,17 +61,18 @@ Usage:
   theos scaffold [-C dir]
   theos protect [-C dir]
   theos status [-C dir]
-  theos agents [-C dir]
+  theos agents [-C dir] [-harness claude-code|codex]
   theos mcp [-C dir]
   theos next [-C dir]
   theos claim|heartbeat|release [-C dir] -task TASK -session NAME
   theos done [-C dir] -task TASK -session NAME [-commit SHA | -verdict approve|changes] -summary TEXT
   theos merge [-C dir] -task TASK
 
-theos agents writes the lead's files for Claude Code into the project
-repository from model/: CLAUDE.md, AGENTS.md, a subagent in
-.claude/agents/ for each Agent a Crew names, and .mcp.json; theos status
-names one that changed since. theos mcp serves the lead runtime's tools
+theos agents writes the lead's files into the project repository from
+model/: for Claude Code, CLAUDE.md, AGENTS.md, a subagent in
+.claude/agents/ for each Agent a Crew names, and .mcp.json; for Codex,
+AGENTS.md, .codex/agents/ and .codex/config.toml. theos status names one
+that changed since. theos mcp serves the lead runtime's tools
 over stdio, as .mcp.json starts it: theos_next, theos_claim,
 theos_heartbeat, theos_release, theos_done and theos_status. next, claim,
 heartbeat, release and done are the same on the command line. There is no
@@ -132,6 +133,7 @@ func run(ctx context.Context, args []string, d deps) int {
 	remote := flags.String("remote", "", "init: the project repository's remote; origin's unless set")
 	provider := flags.String("provider", "", "init: the Git host's provider; asked unless the remote is on github.com")
 	ref := flags.String("ref", releaseTag(), "init: the theos release whose catalog the model pins")
+	harnessName := flags.String("harness", "", "agents: the tool that plays the lead, claude-code (the default) or codex")
 	var lead doneIn
 	flags.StringVar(&lead.Task, "task", "", "claim, heartbeat, release, done, merge: the Task, as theos next names it")
 	flags.StringVar(&lead.Session, "session", "", "claim, heartbeat, release, done: your session's name")
@@ -166,7 +168,7 @@ func run(ctx context.Context, args []string, d deps) int {
 		}
 		switch cmd {
 		case "agents":
-			err = nocluster.Agents(d.stdout, m, os.DirFS(*dir), func(path string, data []byte) error {
+			err = nocluster.Agents(d.stdout, m, *harnessName, os.DirFS(*dir), func(path string, data []byte) error {
 				return writeProjectFile(*dir, path, data)
 			})
 		case "scaffold":

@@ -36,9 +36,18 @@ import (
 type Harness struct{}
 
 var (
-	_ harness.Harness   = Harness{}
-	_ harness.LeadFiles = Harness{}
+	_ harness.Harness    = Harness{}
+	_ harness.LeadFiles  = Harness{}
+	_ harness.RoleGrants = Harness{}
 )
+
+// Grants are the role's tools: Agent starts a subagent; Edit and Write
+// change files.
+func (Harness) Grants(role string) harness.Grants {
+	tools := roleTools[role]
+	return harness.Grants{Spawn: slices.Contains(tools, "Agent"),
+		Write: slices.Contains(tools, "Edit") || slices.Contains(tools, "Write")}
+}
 
 // Name is Agent.spec.harness for Claude Code.
 func (Harness) Name() string { return model.HarnessClaudeCode }

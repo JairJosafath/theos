@@ -217,7 +217,7 @@ func TestAgents266(t *testing.T) {
 		return os.WriteFile(full, data, 0o600)
 	}
 	var out bytes.Buffer
-	if err := nocluster.Agents(&out, m, os.DirFS(dir), write); err != nil {
+	if err := nocluster.Agents(&out, m, "", os.DirFS(dir), write); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"CLAUDE.md", "AGENTS.md", ".claude/agents/theos-implementer.md",
@@ -231,7 +231,7 @@ func TestAgents266(t *testing.T) {
 		t.Errorf("the implementer's subagent = %q, %v; want its Agent's model", impl, err)
 	}
 	out.Reset()
-	if err := nocluster.Agents(&out, m, os.DirFS(dir), write); err != nil {
+	if err := nocluster.Agents(&out, m, "", os.DirFS(dir), write); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "written") || strings.Count(out.String(), ": unchanged\n") != 5 {
@@ -263,9 +263,48 @@ func TestAgents266(t *testing.T) {
 
 // #266: with no Crew there is nothing for a lead to hand out.
 func TestAgentsNeedACrew266(t *testing.T) {
-	err := nocluster.Agents(&bytes.Buffer{}, decode(t, readWebshop(t), ""), os.DirFS(t.TempDir()),
+	err := nocluster.Agents(&bytes.Buffer{}, decode(t, readWebshop(t), ""), "", os.DirFS(t.TempDir()),
 		func(string, []byte) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "holds no Crew") {
 		t.Errorf("err = %v, want no Crew refused", err)
+	}
+}
+
+// #338: theos agents -harness codex writes Codex's files; status checks the
+// files of the harness the project has; an unknown harness is refused.
+func TestAgentsCodex338(t *testing.T) {
+	m := decode(t, withCrew(t), "")
+	dir := t.TempDir()
+	write := func(path string, data []byte) error {
+		full := filepath.Join(dir, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(full, data, 0o600)
+	}
+	var out bytes.Buffer
+	if err := nocluster.Agents(&out, m, "codex", os.DirFS(dir), write); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"AGENTS.md", ".codex/config.toml", ".codex/agents/theos-implementer.toml",
+		".codex/agents/theos-reviewer.toml"} {
+		if !strings.Contains(out.String(), path+": written\n") {
+			t.Errorf("theos agents -harness codex did not write %s:\n%s", path, out.String())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err == nil {
+		t.Error("Codex's files include CLAUDE.md")
+	}
+	w := newWorld(t)
+	w.m, w.env.Project = m, os.DirFS(dir)
+	if err := nocluster.Status(context.Background(), w.env, w.m); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(w.out.String(), "not written") || strings.Contains(w.out.String(), "changed since") {
+		t.Errorf("status names Codex's files as drifted:\n%s", w.out.String())
+	}
+	if err := nocluster.Agents(&out, m, "kimi", os.DirFS(dir), write); err == nil ||
+		!strings.Contains(err.Error(), "claude-code, codex") {
+		t.Errorf("err = %v, want the harnesses named", err)
 	}
 }

@@ -22,12 +22,14 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"slices"
 	"strings"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/harness"
 	"github.com/JairJosafath/theos/internal/harness/claudecode"
+	"github.com/JairJosafath/theos/internal/harness/codex"
 	"github.com/JairJosafath/theos/internal/method"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/modelfacts"
@@ -71,23 +73,37 @@ func LeadProject(m *Model) method.Project {
 	return p
 }
 
-// leadHarness is the harness whose files theos agents writes: Claude Code,
-// the one built (decision 7; other harnesses are #338's).
-var leadHarness harness.LeadFiles = claudecode.Harness{}
+// Harnesses are the harnesses theos agents writes the lead's files for, by
+// name: the tool the person opens the project in plays the lead, and its
+// subagents every role (decision 7; docs/harness-authoring.md).
+var Harnesses = map[string]harness.LeadFiles{
+	model.HarnessClaudeCode: claudecode.Harness{},
+	codex.Name:              codex.Harness{},
+}
 
-// AgentFiles are the lead's files for m, as the harness renders them.
-func AgentFiles(m *Model) ([]harness.File, error) {
+// harnessMarks are, by harness, the file whose presence says a project
+// uses it, for status.
+var harnessMarks = map[string]string{model.HarnessClaudeCode: claudecode.FileClaude, codex.Name: codex.FileConfig}
+
+// AgentFiles are the lead's files for m, as the harness name renders them;
+// "" is Claude Code.
+func AgentFiles(m *Model, name string) ([]harness.File, error) {
 	if len(m.Crews) == 0 {
 		return nil, fmt.Errorf("%s holds no Crew: the lead hands out a Crew's work, so add one first", SetupFile)
 	}
-	return leadHarness.Render(LeadProject(m))
+	h, ok := Harnesses[cmpOr(name, model.HarnessClaudeCode)]
+	if !ok {
+		names := slices.Sorted(maps.Keys(Harnesses))
+		return nil, fmt.Errorf("no harness %q: theos writes the lead's files for %s", name, strings.Join(names, ", "))
+	}
+	return h.Render(LeadProject(m))
 }
 
-// Agents writes the lead's files into the project repository, fsys read
-// and write writing it, and reports each: written, or unchanged. A second
-// run on the same model writes nothing.
-func Agents(out io.Writer, m *Model, fsys fs.FS, write func(path string, data []byte) error) error {
-	files, err := AgentFiles(m)
+// Agents writes the lead's files for the harness name into the project
+// repository, fsys read and write writing it, and reports each: written,
+// or unchanged. A second run on the same model writes nothing.
+func Agents(out io.Writer, m *Model, name string, fsys fs.FS, write func(path string, data []byte) error) error {
+	files, err := AgentFiles(m, name)
 	if err != nil {
 		return err
 	}
@@ -113,18 +129,36 @@ func Agents(out io.Writer, m *Model, fsys fs.FS, write func(path string, data []
 }
 
 // agentDrift prints each of the lead's files fsys lacks or holds otherwise
-// than theos agents writes it. A model with no Crew has none to check.
+// than theos agents writes it, for each harness whose files the project
+// has, else Claude Code's. A model with no Crew has none to check.
 func agentDrift(out io.Writer, m *Model, fsys fs.FS) error {
 	if fsys == nil || len(m.Crews) == 0 {
 		return nil
 	}
-	files, err := AgentFiles(m)
-	if err != nil {
-		return err
+	var used []string
+	for _, name := range slices.Sorted(maps.Keys(harnessMarks)) {
+		if _, err := fs.Stat(fsys, harnessMarks[name]); err == nil {
+			used = append(used, name)
+		}
 	}
-	drifts, err := harness.Drifted(fsys, files)
-	if err != nil {
-		return err
+	if len(used) == 0 {
+		used = []string{model.HarnessClaudeCode}
+	}
+	var drifts []harness.Drift
+	for _, name := range used {
+		files, err := AgentFiles(m, name)
+		if err != nil {
+			return err
+		}
+		found, err := harness.Drifted(fsys, files)
+		if err != nil {
+			return err
+		}
+		for _, d := range found {
+			if !slices.Contains(drifts, d) {
+				drifts = append(drifts, d)
+			}
+		}
 	}
 	for _, d := range drifts {
 		says := "changed since theos agents wrote it; theos agents writes it again"

@@ -553,6 +553,21 @@ host's pages in `docs/screenshots/`, is still to do: it settles
 [Not tested, and who can](#not-tested-and-who-can), and the guide says
 what it found once it is done.
 
+**Step 14 as built** (`internal/harness/harnesstest`, `internal/harness/codex`,
+[harness-authoring.md](../harness-authoring.md)). Choices the plan left open:
+- The harness is the lead's tool, which the person picks: `theos agents
+  -harness codex`, Claude Code by default. `Agent.spec.harness` stays the
+  program an operator's sandbox runs (`claude-code`, `stand-in`): a Codex
+  Agent runs in no sandbox yet (level 2, #58), so the enum is unchanged.
+- `harness.RoleGrants` is the part a harness has when its tool enforces
+  each role's tools. Claude Code has it; Codex, whose custom agents set no
+  tools and no sandbox, hasn't, and its reviewer's boundary is its
+  instructions alone, which the guide says.
+- `harnesstest.Check` returns the problems, `Run` reports them, so a test
+  can show that a harness that drops the reviewer's boundary fails.
+- `theos status` checks the files of each harness whose mark file the
+  project has (`CLAUDE.md`, `.codex/config.toml`), else Claude Code's.
+
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
 

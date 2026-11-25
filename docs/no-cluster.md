@@ -87,7 +87,8 @@ theos status       # what is scaffolded, what this runtime doesn't honour, the l
 git add . && git commit -m "The model and the lead's files" && git push
 ```
 
-`theos agents` writes the lead's files for Claude Code: `CLAUDE.md`
+`theos agents` writes the lead's files for Claude Code (`theos agents
+-harness codex` writes Codex's instead, [harness-authoring.md](harness-authoring.md)): `CLAUDE.md`
 imports `AGENTS.md`, the lead's playbook; each Agent a Crew names gets a
 subagent in `.claude/agents/theos-<agent>.md` on its Agent's `model`, the
 reviewer's without `Agent`, `Edit` or `Write`; `.mcp.json` starts
