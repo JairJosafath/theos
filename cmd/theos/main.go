@@ -68,6 +68,9 @@ Usage:
   theos claim|heartbeat|release [-C dir] -task TASK -session NAME
   theos done [-C dir] -task TASK -session NAME [-commit SHA | -verdict approve|changes] -summary TEXT
   theos merge [-C dir] -task TASK
+  theos update [-C dir] [-container NAME [-from REF]]
+  theos export [-C dir] > project.yaml
+  theos import [-C dir] [-f FILE] [-force]
 
 theos agents writes the lead's files into the project repository from
 model/: for Claude Code, CLAUDE.md, AGENTS.md, a subagent in
@@ -92,6 +95,18 @@ each Container's repository that has its first commit. plan/filed.yaml
 records them, so a second run files none twice. plan/releases.yaml and
 plan/parallel.yaml are printed, and nothing acts on them. theos plan -new
 starts the next round once every issue of this one is filed.
+
+theos update brings each Container's Standard files to its Standard's ref
+in model/setup.yaml, as the operator's update does, and opens the pull
+request a person merges on the host's pages: theos merge merges Tasks only.
+The ref the files are at is read from main's history (the scaffold's
+Scaffolded-From trailer, then each update's Standard-Update); -from names it
+for one Container whose history doesn't. theos export prints the model files
+as one stream for kubectl apply, with adopt: true on every Container whose
+repository has commits and every Crew holding each change for a person.
+theos import reads what kubectl get -o yaml prints of a project's namespace
+(-f, else standard input) and writes model/model.yaml and model/setup.yaml;
+-force replaces the ones there.
 
 The credential is THEOS_GIT_TOKEN, else what git credential fill gives for
 its host; theos never stores or prints it. It is sent only to the host it
@@ -148,6 +163,10 @@ func run(ctx context.Context, args []string, d deps) int {
 	ref := flags.String("ref", releaseTag(), "init: the theos release whose catalog the model pins")
 	harnessName := flags.String("harness", "", "agents: the tool that plays the lead, claude-code (the default) or codex")
 	newRound := flags.Bool("new", false, "plan: start the next round once every issue of the one in plan/ is filed")
+	containerName := flags.String("container", "", "update: the one Container to update")
+	from := flags.String("from", "", "update: the ref the Container's Standard files are at, if its history doesn't say")
+	importFile := flags.String("f", "-", "import: the file kubectl get -o yaml wrote; - for standard input")
+	force := flags.Bool("force", false, "import: replace model/model.yaml and model/setup.yaml")
 	var lead doneIn
 	flags.StringVar(&lead.Task, "task", "", "claim, heartbeat, release, done, merge: the Task, as theos next names it")
 	flags.StringVar(&lead.Session, "session", "", "claim, heartbeat, release, done: your session's name")
@@ -175,9 +194,15 @@ func run(ctx context.Context, args []string, d deps) int {
 		err = mergeCommand(ctx, leadEnv(env, d, *dir), d, *dir, lead.Task)
 	case "plan":
 		err = nocluster.Plan(ctx, env, projectFiles(*dir), nocluster.PlanOptions{New: *newRound})
+	case "export":
+		// The stream is the output; what export says goes to standard error.
+		env.Out = d.stderr
+		err = nocluster.Export(ctx, env, os.DirFS(*dir), d.stdout)
+	case "import":
+		err = importModel(d, *dir, *importFile, *force)
 	case "next", "claim", "heartbeat", "release", "done":
 		err = leadCommand(ctx, cmd, leadEnv(env, d, *dir), d.stdout, *dir, lead)
-	case "scaffold", "protect", "status", "agents":
+	case "scaffold", "protect", "status", "agents", "update":
 		var m *nocluster.Model
 		if m, err = nocluster.Read(os.DirFS(*dir)); err != nil {
 			break
@@ -191,6 +216,8 @@ func run(ctx context.Context, args []string, d deps) int {
 			err = nocluster.Scaffold(ctx, env, m)
 		case "protect":
 			err = nocluster.Protect(ctx, env, m)
+		case "update":
+			err = nocluster.Update(ctx, env, m, nocluster.UpdateOptions{Container: *containerName, From: *from})
 		default:
 			env.Project = os.DirFS(*dir)
 			err = nocluster.Status(ctx, env, m)
@@ -273,6 +300,51 @@ func initModel(ctx context.Context, d deps, dir string, opts nocluster.InitOptio
 			return err
 		}
 		_, _ = fmt.Fprintf(d.stdout, "wrote %s\n", name)
+	}
+	return nil
+}
+
+// importModel writes the model files theos import makes of file, - for
+// standard input, under dir: refusing to replace one unless force, and
+// keeping model/settings.yaml.
+func importModel(d deps, dir, file string, force bool) error {
+	if !force {
+		for _, name := range []string{nocluster.ModelFile, nocluster.SetupFile} {
+			//nolint:gosec // dir is the person's own -C
+			if _, err := os.Stat(filepath.Join(dir, name)); !errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("%s exists; pass -force to replace it with the import", name)
+			}
+		}
+	}
+	var data []byte
+	var err error
+	if file == "-" {
+		data, err = io.ReadAll(d.stdin)
+	} else {
+		data, err = os.ReadFile(file) //nolint:gosec // the person's own -f
+	}
+	if err != nil {
+		return err
+	}
+	settings, err := os.ReadFile(filepath.Join(dir, nocluster.SettingsFile)) //nolint:gosec // dir is the person's own -C
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	imported, err := nocluster.Import(data, settings)
+	if err != nil {
+		return err
+	}
+	for _, f := range []struct {
+		name string
+		data []byte
+	}{{nocluster.ModelFile, imported.Story}, {nocluster.SetupFile, imported.Setup}} {
+		if err := writeProjectFile(dir, f.name, f.data); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(d.stdout, "wrote %s\n", f.name)
+	}
+	for _, n := range imported.Notes {
+		_, _ = fmt.Fprintln(d.stdout, n)
 	}
 	return nil
 }

@@ -345,6 +345,30 @@ func TestStandardUpdateBody(t *testing.T) {
 	}
 }
 
+// #295: the pull request theos update opens says who opened it and that a
+// person merges it, and names no command for the files it leaves out.
+func TestPersonStandardUpdateBody295(t *testing.T) {
+	leftOut := LeftOut{Files: []LeftOutFile{{Path: "Makefile", Ref: "v1.0.0"}}}
+	body := PersonStandardUpdateBody("go-standard", StandardVersion{Ref: "v1.0.0"}, StandardVersion{Ref: "v1.1.1"},
+		[]string{"AGENTS.md"}, nil, leftOut)
+	for _, want := range []string{"theos update opened this pull request", "- `AGENTS.md`\n", "### `Makefile`",
+		"bring in by hand what you want of them", "A person merges this pull request on the host's pages"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("#295 body lacks %q:\n%s", want, body)
+		}
+	}
+	for _, not := range []string{"The operator", "kubectl", "take the Standard's version: "} {
+		if strings.Contains(body, not) {
+			t.Errorf("#295 body says %q:\n%s", not, body)
+		}
+	}
+	operator := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.0.0"}, StandardVersion{Ref: "v1.1.1"},
+		[]string{"AGENTS.md"}, nil, LeftOut{Files: leftOut.Files, Take: "kubectl annotate take", Keep: "kubectl annotate keep"})
+	if !strings.Contains(operator, "- take the Standard's version: `kubectl annotate take`") {
+		t.Errorf("#295 the operator's body lost its commands:\n%s", operator)
+	}
+}
+
 func TestStandardUpdateBodyChangingChecks(t *testing.T) {
 	body := StandardUpdateBody("go-standard", StandardVersion{Ref: "v1.1.1"},
 		StandardVersion{Ref: "v1.1.1", Checks: ChecksBeforeRelease}, []string{".gitea/workflows/check.yaml"}, nil, LeftOut{})

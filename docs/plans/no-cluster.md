@@ -372,6 +372,62 @@ Each is an issue; "tier" is AGENTS.md's. No step needs Kind or `make e2e`.
   designer reads the planner's guide, whose Brief-only files it does not
   get. Evidence: [theos-plan-293.txt](../screenshots/theos-plan-293.txt).
 
+**Step 7 as built** (`internal/scaffold/standardplan.go`,
+`standardhistory.go`, `internal/nocluster/update.go`, `export.go`,
+`import.go`, #295). Choices the plan left open:
+- *The ref reads back, once it is settled.* Checked first: the
+  operator's update commit ends with `Standard-Update:
+  <standard>@<from>..<to>` (and `Checks: <from>..<to>` when the checks
+  change), and its own squash merge keeps that message, but
+  `scaffold.ParseCommitMessage` read none of it, and a person's squash on
+  the host's pages writes a message theos doesn't choose. Settled:
+  `scaffold.StandardAt` reads the version from `main`'s messages, oldest
+  first: the scaffold's `Scaffolded-From` and `Checks`, then each
+  `Standard-Update` and `Standard-Adoption` for the Standard, on any line,
+  a squash list's `* ` left off; a `Standard-Take` moves nothing. The
+  trailers are written by one function, `scaffold.UpdateTrailers`, which
+  ends the commit and also the description of the pull request `theos
+  update` opens, so a merge commit, a rebase, or a squash that keeps the
+  commit's message or the description (Gitea's default) reads back. A
+  squash message a person rewrites does not: `theos update -container C
+  -from REF` names the ref then. The newest 1000 commits are read.
+- *One function plans both.* The operator's renders and plan moved to
+  `scaffold.RenderStandardUpdate` and `StandardRenders.Plan` (with
+  `ChecksLeftOut` and `NoLightCheck`) and `.LeftOut`; the reconciler
+  calls them, and `theos update` calls them with what the history
+  records: the scaffold's Connectors and Domains, `.theos.yaml`'s
+  license, the Framework's paths at its scaffolded ref, the settings' CI
+  images on both sides, the model's `operations`. Not tracked without
+  status: the files behind; each update plans them from the ref the
+  history names. The branch, commit message and title are the operator's;
+  the description is `model.PersonStandardUpdateBody`, which names no
+  take or keep command and says a person merges.
+- *Export.* Both files' documents, comments kept, each given the
+  Project's namespace; `adopt: true` on a Container whose repository has
+  a commit (History's first), never set back; every Crew's `approval`
+  replaced by `require: Person`, and `specApproval: Person` where it has
+  a spec writer; a Crew for each scaffolded Container with none, on
+  init's `implementer` and `reviewer`, said when the setup lacks them. A
+  document of comments alone is left out. The stream goes to standard
+  output and what changed to standard error.
+- *Import.* A `List` or a stream, one namespace, the Project in it; the
+  story's kinds to `model/model.yaml`, the setup's, Crews and Agents
+  included (the lead runtime reads them there, #331), to
+  `model/setup.yaml`, by kind then name. Kept of metadata: the name, the
+  labels and the annotations but kubectl's and `theos.factory.io/`'s.
+  Dropped: `status`, a Crew's `paused` and `pauseRuns`. Other kinds are
+  named and left out. The files are decoded with the project's
+  `model/settings.yaml` before anything is written, and `theos import`
+  replaces existing files only with `-force`.
+- Tier 2's sample, `config/samples/no-cluster-export/webshop.yaml`, is
+  `TestExportSample295`'s output (`-update` writes it), so
+  `make validate-yaml` checks what export prints.
+- Not here: a GitHub sample, which waits for #81. Found on the way and
+  left for an issue of its own: `theos scaffold` and `theos status` read
+  a repository with more than its first commit as one theos didn't make
+  (they ask `model.ScaffoldHistory`, the operator's rule before its first
+  scaffold), so after a merge the first refuses that Container. Evidence: [theos-move-295.txt](../screenshots/theos-move-295.txt).
+
 **To file.** Steps 4, 5, 6, 7, 9, 10 and 11, and two issues beside them:
 "GitLab as a Git host for the cluster", to follow #57, and "CI files for
 the catalog entries that ship Gitea's alone". What each issue is filed
