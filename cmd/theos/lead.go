@@ -58,7 +58,7 @@ func leadEnv(env nocluster.Env, d deps, dir string) nocluster.Env {
 		}
 		// The folder ignores itself, so no clone lands in the project's commits.
 		ignore := filepath.Join(dir, nocluster.WorkDir, ".gitignore")
-		if _, err := os.Stat(ignore); errors.Is(err, fs.ErrNotExist) {
+		if _, err := os.Stat(ignore); errors.Is(err, fs.ErrNotExist) { //nolint:gosec // dir is the project's -C
 			if err := os.WriteFile(ignore, []byte("*\n"), 0o644); err != nil { //nolint:gosec // a .gitignore
 				return err
 			}
