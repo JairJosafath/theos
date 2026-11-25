@@ -1,0 +1,55 @@
+$ go test -count=1 -v -run 295 ./internal/scaffold/ ./internal/model/ ./internal/nocluster/ ./cmd/theos/
+=== RUN   TestStandardRendersPlan295
+--- PASS: TestStandardRendersPlan295 (0.00s)
+=== RUN   TestStandardAt295
+--- PASS: TestStandardAt295 (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/scaffold	0.005s
+=== RUN   TestPersonStandardUpdateBody295
+--- PASS: TestPersonStandardUpdateBody295 (0.00s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/model	0.011s
+=== RUN   TestExportAdopts295
+--- PASS: TestExportAdopts295 (0.15s)
+=== RUN   TestExportSample295
+--- PASS: TestExportSample295 (0.03s)
+=== RUN   TestImportReadsAClustersExport295
+--- PASS: TestImportReadsAClustersExport295 (0.06s)
+=== RUN   TestImportRefuses295
+--- PASS: TestImportRefuses295 (0.00s)
+=== RUN   TestExportCrewsHoldForAPerson295
+--- PASS: TestExportCrewsHoldForAPerson295 (0.03s)
+=== RUN   TestUpdatePlansWhatTheOperatorPlans295
+--- PASS: TestUpdatePlansWhatTheOperatorPlans295 (0.05s)
+=== RUN   TestUpdateReadsTheRefBack295
+--- PASS: TestUpdateReadsTheRefBack295 (0.09s)
+=== RUN   TestUpdateWithoutARef295
+--- PASS: TestUpdateWithoutARef295 (0.02s)
+PASS
+ok  	github.com/JairJosafath/theos/internal/nocluster	0.440s
+=== RUN   TestMoveCommands295
+--- PASS: TestMoveCommands295 (0.19s)
+PASS
+ok  	github.com/JairJosafath/theos/cmd/theos	0.204s
+
+$ KUBEBUILDER_ASSETS=... go test ./internal/controller/ -count=1 -v -ginkgo.focus='#295'
+Container adoption of a repository theos scaffolded without a cluster
+  adopts it with its Standard, pushing nothing and opening no pull request (#295)
+Ran 1 of 888 Specs in 10.358 seconds
+SUCCESS! -- 1 Passed | 0 Failed | 0 Pending | 887 Skipped
+ok  	github.com/JairJosafath/theos/internal/controller	13.885s
+
+$ KUBEBUILDER_ASSETS=... go test ./internal/controller/ -count=1 -ginkgo.focus='adopt|Standard update|Standard'
+ok  	github.com/JairJosafath/theos/internal/controller	315.240s
+
+$ make validate-yaml
+Validating 75 files
+config/samples/no-cluster-export/webshop.yaml...OK
+All valid
+
+$ CHECK_STEPS="generate fmt vet lint validate-yaml doc-links license-headers readers ui-test test" make check
+  manifests generate, fmt, vet, lint, validate-yaml, doc-links, license-headers, readers: passed
+  ui-test: skipped, none of its inputs changed
+  test: 43 of 44 packages ok, the controller suite's two parts included; features'
+    TestInstallVerifiesTheDownload fails in this sandbox, whose rm refuses deletions
+    (install.sh "left ... behind"), as on main

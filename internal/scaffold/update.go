@@ -297,6 +297,19 @@ func UpdateMessage(in Input, name string, from, to model.StandardVersion, u Upda
 		fmt.Fprintf(&b, "Left out, changed in the repository since %s: %s.\n", from.Ref, joinAnd(u.LeftOut))
 	}
 	fmt.Fprintf(&b, "\n%s: %s/%s\n", trailerContainer, in.Project, in.Container)
+	b.WriteString(UpdateTrailers(name, from, to))
+	return b.String()
+}
+
+// UpdateTrailers are the trailers that say a commit brings the files of the
+// Standard name from version from to version to: Standard-Update, as
+// <name>@<from>..<to>, and Checks, as <from>..<to>, when the checks change.
+// They end the update's commit message; theos update's pull request ends
+// its description with them too, so a squash merge on the host's pages
+// keeps them (#295). StandardAt reads them back.
+func UpdateTrailers(name string, from, to model.StandardVersion) string {
+	from, to = from.Normal(), to.Normal()
+	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %s@%s..%s\n", trailerUpdate, name, from.Ref, to.Ref)
 	if from.Checks != to.Checks {
 		fmt.Fprintf(&b, "%s: %s..%s\n", trailerChecks, from.Checks, to.Checks)

@@ -12,7 +12,8 @@ page is how to use it.
 
 **Status.** Built and tested at tier 1 on the ports' fake host and GitHub's
 fake: the engine, the lead runtime on the Git host, `theos agents`,
-`theos mcp`, `theos merge` and `theos plan`. Not yet walked by a person in a real Claude
+`theos mcp`, `theos merge`, `theos plan`, and `theos update`, `theos export` and `theos
+import` ([section 8](#8-a-standards-new-ref-theos-update) and [9](#9-move-to-a-cluster-and-back)). Not yet walked by a person in a real Claude
 Code session, on a laptop or on the web: [What is not tested
 yet](#what-is-not-tested-yet) lists what that walk settles.
 
@@ -256,6 +257,122 @@ Container's `checks` stays the person's edit. A new Container goes on the
 GitProvider of `model/setup.yaml`; a model with several, which its
 Containers split between, is refused.
 
+## 8. A Standard's new ref: `theos update`
+
+When `model/setup.yaml` pins a Standard at a newer ref, say from a new
+theos release's catalog, bring each Container's files of it there:
+
+```sh
+theos update                         # every Container whose Standard moved
+theos update -container orders-api   # one
+```
+
+For each Container on a Standard, theos reads the ref its files are at from
+`main`'s history: the first commit's `Scaffolded-From` trailer, then each
+later commit's `Standard-Update: <standard>@<from>..<to>`. It renders the
+Standard at both refs and plans the change against `main` with the
+operator's own function: a file the repository changed in other lines is
+merged, and one it changed in the same lines is left out and shown in the
+pull request with the Standard's diff. It pushes the operator's branch,
+`standard-update/<standard>-<ref>`, with the operator's commit, and opens
+the pull request.
+
+**You merge it** on the host's pages once its checks pass: `theos merge`
+merges Tasks only. The commit ends with the trailers, and so does the pull
+request's description, so a merge commit, a rebase, or a squash that keeps
+either one reads back, and the next `theos update` starts from the new ref.
+A squash message you rewrite loses them. Then name the ref yourself:
+
+```sh
+theos update -container orders-api -from v1.8.0
+```
+
+What a cluster keeps in status and theos does not:
+
+- A file an update left out is not tracked. Bring in by hand what you want
+  of it; the next update plans it again from the ref the history names.
+- Nothing is opened when a change of `checks` would leave out a file it
+  writes (`ChecksLeftOut`), or would leave a Makefile with no
+  `check-light` target (`NoLightCheck`). theos says which.
+- The files render with `model/settings.yaml`'s CI images on both sides,
+  and with the Container's `operations` as the model has them now.
+
+## 9. Move to a cluster and back
+
+A project made here is what an operator with the same settings makes, so
+a cluster takes it over unchanged, and the other way around. Run one or the
+other, never both: a Crew and outside sessions on one Container are two
+schedulers on one queue, and only the `status/` labels keep them apart.
+
+**To a cluster on a Gitea or Forgejo it reaches:**
+
+1. Have the sessions release their claims, and stop the lead. A Crew
+   starts `status/ready` issues only: label any issue left
+   `status/in-progress` as `status/ready` again.
+2. On the cluster, make the namespace, named as the project, and in it the
+   Secret the GitProvider names, with a site administrator's token.
+3. Export the model and apply it:
+
+   ```sh
+   theos export > project.yaml   # what it changed goes to standard error
+   kubectl apply -f project.yaml
+   ```
+
+`theos export` prints `model/model.yaml` and `model/setup.yaml` as one
+stream, comments kept, with three changes:
+
+- every object is in the project's namespace;
+- every Container whose repository has commits gets `adopt: true`, so the
+  operator takes it as it is and scaffolds nothing. `adopt` can't change
+  once the Container is on the cluster, which is why export sets it;
+- every Crew holds every change for a person, `approval: [{require:
+  Person}]`, as [adopt.md](adopt.md) starts, and a Container with a
+  repository and no Crew gets one on the Agents `implementer` and
+  `reviewer`. Loosen it rule by rule once the cluster works.
+
+The operator then adopts each repository: `Ready`, with no commit and no
+pull request, where its four flags equal `model/settings.yaml`'s
+`operator`; where they differ, the Standard's files arrive as its pull
+request, as for any adopted repository. A Container with no repository yet
+is scaffolded there. [config/samples/no-cluster-export/webshop.yaml](../config/samples/no-cluster-export/webshop.yaml)
+is the webshop's stream. Issues, pull requests and reviews stay where they
+are. On GitHub the move waits for #81: a cluster refuses `provider:
+github` until then.
+
+**From a cluster:**
+
+1. Pause the Crew, so no Task starts:
+
+   ```sh
+   kubectl -n shop patch crew orders-api --type merge -p '{"spec":{"paused":true}}'
+   ```
+
+2. Export the project's objects and import them into the project
+   repository:
+
+   ```sh
+   g=theos.factory.io   # each kind by its group: deployments alone are another group's
+   kubectl -n shop get projects.$g,people.$g,softwaresystems.$g,containers.$g,datastores.$g,\
+   relationships.$g,gitproviders.$g,frameworks.$g,standards.$g,computes.$g,deployments.$g,\
+   connectors.$g,domains.$g,bundles.$g,agents.$g,crews.$g -o yaml > cluster.yaml
+   theos import -f cluster.yaml     # -force replaces model files already there
+   theos protect                    # main's rule names your account
+   ```
+
+3. Label each issue a Task left `status/in-progress` as `status/ready`.
+
+`theos import` reads a `List` or a stream of objects, all of one namespace,
+and writes the story's kinds to `model/model.yaml` and the rest, Crews and
+Agents included, to `model/setup.yaml`. It drops what a cluster adds:
+`status`, the metadata but the name, labels and annotations, and kubectl's
+and theos's own annotations. It drops a Crew's `paused` and `pauseRuns`:
+the lead honours `paused`, and the pause was for the move. Any other kind,
+a Task or a Secret, is left out and named. The files are decoded before
+they are written, so a model that doesn't read writes nothing.
+`model/settings.yaml` stays as it is: set its `operator` to the cluster's
+four flags if they differ from the defaults. What stays behind is every
+status, and the Tasks.
+
 ## What is not tested yet
 
 These are the plan's open items; a person's walk of one Task on a laptop
@@ -268,4 +385,8 @@ evidence in [screenshots/](screenshots/):
 - that a Claude Code cloud session may push a `task/` branch, or what the
   person allows for it;
 - that the host takes `THEOS_GIT_TOKEN` from a cloud session's environment
-  as it does on a laptop.
+  as it does on a laptop;
+- that a real Gitea's and GitHub's squash merge of `theos update`'s pull
+  request keeps its trailers, and a move to a real cluster and back. The
+  fake host's squash keeps the description, and envtest adopts a
+  repository `theos scaffold` made on it with no pull request opened.

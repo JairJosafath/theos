@@ -190,26 +190,6 @@ func TestScaffoldedGitHubCheckRunsInTheOperatorsImage284(t *testing.T) {
 	}
 }
 
-func TestPlannedFile(t *testing.T) {
-	current := scaffold.Tree{"Makefile": {Data: []byte("check:\n")}}
-	for _, tc := range []struct {
-		name string
-		plan scaffold.Update
-		want string
-	}{
-		{"kept", scaffold.Update{}, "check:\n"},
-		{"written", scaffold.Update{Files: scaffold.Tree{"Makefile": {Data: []byte("check-light:\n")}}}, "check-light:\n"},
-		{"left out", scaffold.Update{LeftOut: []string{"Makefile"}}, "check:\n"},
-		{"removed", scaffold.Update{Removes: []string{"Makefile"}}, ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := string(plannedFile(tc.plan, current, "Makefile")); got != tc.want {
-				t.Errorf("plannedFile = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestNoLightCheck(t *testing.T) {
 	const tail = ", which make check-light on each change needs; CI keeps running the full check on every change " +
 		"until the Makefile has one"

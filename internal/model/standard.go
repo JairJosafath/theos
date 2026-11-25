@@ -376,9 +376,28 @@ const (
 // it writes that the repository changed too, merged with the repository's
 // changes.
 func StandardUpdateBody(name string, from, to StandardVersion, paths, merged []string, leftOut LeftOut) string {
+	return standardUpdateBody("The operator", "The operator merges this pull request itself once CI passes. "+
+		"Close it to drop the update until the Standard's ref or the Container's checks change again.\n",
+		name, from, to, paths, merged, leftOut)
+}
+
+// PersonStandardUpdateBody is the description of the pull request theos
+// update opens with no cluster (#295): the operator's, opened by theos
+// update and merged by a person. Its leftOut names no command: with no
+// cluster nothing takes or keeps a file left out.
+func PersonStandardUpdateBody(name string, from, to StandardVersion, paths, merged []string, leftOut LeftOut) string {
+	return standardUpdateBody("theos update", "A person merges this pull request on the host's pages once CI "+
+		"passes: theos merges no Standard update. Close it to drop the update; theos update opens it again "+
+		"while the Standard's ref is ahead of the repository's files.\n", name, from, to, paths, merged, leftOut)
+}
+
+// standardUpdateBody is an update's description, opened by opener and
+// closed with closing.
+func standardUpdateBody(opener, closing, name string, from, to StandardVersion, paths, merged []string,
+	leftOut LeftOut) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "The operator opened this pull request to bring the files of the Standard `%s` from `%s` to `%s`",
-		name, from.Ref, to.Ref)
+	fmt.Fprintf(&b, "%s opened this pull request to bring the files of the Standard `%s` from `%s` to `%s`",
+		opener, name, from.Ref, to.Ref)
 	if from, to := from.Normal(), to.Normal(); from.Checks != to.Checks {
 		fmt.Fprintf(&b, ", and CI from running the full check %s to running it %s", checksPhrase(from.Checks),
 			checksPhrase(to.Checks))
@@ -397,8 +416,7 @@ func StandardUpdateBody(name string, from, to StandardVersion, paths, merged []s
 	if len(leftOut.Files) > 0 {
 		writeLeftOut(&b, to.Ref, leftOut)
 	}
-	b.WriteString("The operator merges this pull request itself once CI passes. " +
-		"Close it to drop the update until the Standard's ref or the Container's checks change again.\n")
+	b.WriteString(closing)
 	return b.String()
 }
 
@@ -408,9 +426,15 @@ func StandardUpdateBody(name string, from, to StandardVersion, paths, merged []s
 func writeLeftOut(b *strings.Builder, to string, leftOut LeftOut) {
 	b.WriteString("## Left out\n\nThese files changed in the repository in lines the Standard changed too, so the " +
 		"update leaves them out. Below is what the Standard changed in each, and the repository's lines taking " +
-		"the Standard's version would drop; every other line the repository changed stays. Once this pull " +
-		"request merges, a person settles them all on the Container:\n\n")
-	fmt.Fprintf(b, "- take the Standard's version: `%s`\n- or keep the repository's: `%s`\n\n", leftOut.Take, leftOut.Keep)
+		"the Standard's version would drop; every other line the repository changed stays.")
+	if leftOut.Take == "" && leftOut.Keep == "" {
+		b.WriteString(" Once this pull request merges, bring in by hand what you want of them: the next update " +
+			"plans them again from this one's ref.\n\n")
+	} else {
+		b.WriteString(" Once this pull request merges, a person settles them all on the Container:\n\n")
+		fmt.Fprintf(b, "- take the Standard's version: `%s`\n- or keep the repository's: `%s`\n\n", leftOut.Take,
+			leftOut.Keep)
+	}
 	for i, f := range leftOut.Files {
 		var section strings.Builder
 		fmt.Fprintf(&section, "### `%s`\n\n", f.Path)

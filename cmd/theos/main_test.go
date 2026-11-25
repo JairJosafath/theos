@@ -551,3 +551,80 @@ func TestPlan293(t *testing.T) {
 		t.Errorf("theos plan -new left plan/choices.md: %v", err)
 	}
 }
+
+// #295: theos update, export and import run from the command line: update
+// at the Standards' refs opens nothing, export prints the stream on
+// standard output and what it changed on standard error, and import writes
+// the model files from it, refusing to replace them without -force.
+func TestMoveCommands295(t *testing.T) {
+	token := rand.Text()
+	dir := webshopDir(t)
+	// The webshop's Agents and its Crew, which a cluster's export holds too.
+	crew, err := os.ReadFile(filepath.Join("..", "..", "config", "samples", "webshop", "crew.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup, err := os.ReadFile(filepath.Join(dir, nocluster.SetupFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, nocluster.SetupFile), slices.Concat(setup, []byte("\n---\n"), crew),
+		0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, stdout, stderr := testDeps(t, map[string]string{nocluster.TokenVar: token,
+		nocluster.HostVar: "http://" + providerHost(t, dir)})
+	for _, cmd := range []string{"scaffold", "update"} {
+		if code := run(context.Background(), []string{cmd, "-C", dir}, d); code != 0 {
+			t.Fatalf("theos %s exited %d:\n%s", cmd, code, stderr)
+		}
+	}
+	if !strings.Contains(stdout.String(), "orders-api: the files of the Standard python-standard are at ") {
+		t.Errorf("theos update at the Standards' refs said:\n%s", stdout)
+	}
+	if code := run(context.Background(), []string{"update", "-C", dir, "-from", "v1.0.0"}, d); code != 1 {
+		t.Errorf("theos update -from without -container exited %d", code)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"export", "-C", dir}, d); code != 0 {
+		t.Fatalf("theos export exited %d:\n%s", code, stderr)
+	}
+	stream := stdout.String()
+	if !strings.Contains(stream, "\n  adopt: true\n") ||
+		!strings.Contains(stderr.String(), "Container orders-api: adopt: true") ||
+		strings.Contains(stream, "Container orders-api: adopt") {
+		t.Errorf("theos export printed:\n%s\nand said:\n%s", stream, stderr)
+	}
+
+	d.stdin = strings.NewReader(stream)
+	if code := run(context.Background(), []string{"import", "-C", dir}, d); code != 1 ||
+		!strings.Contains(stderr.String(), "pass -force") {
+		t.Errorf("theos import over the model exited %d:\n%s", code, stderr)
+	}
+	exported := filepath.Join(t.TempDir(), "project.yaml")
+	if err := os.WriteFile(exported, []byte(stream), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if code := run(context.Background(), []string{"import", "-C", dir, "-f", exported, "-force"}, d); code != 0 {
+		t.Fatalf("theos import -force exited %d:\n%s", code, stderr)
+	}
+	m, err := nocluster.Read(os.DirFS(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Crews) != 4 {
+		t.Errorf("imported %d Crews, want orders-api's and the three export added", len(m.Crews))
+	}
+	for _, c := range m.Containers {
+		if !c.Spec.Adopt {
+			t.Errorf("the imported Container %s does not adopt", c.Name)
+		}
+	}
+	if !strings.Contains(stdout.String(), "wrote model/model.yaml") ||
+		strings.Contains(stdout.String()+stderr.String(), token) {
+		t.Errorf("theos import said:\n%s", stdout)
+	}
+}

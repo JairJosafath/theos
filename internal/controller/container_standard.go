@@ -338,36 +338,23 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		u.renderFailed(ctx, err)
 		return
 	}
-	render := func(v model.StandardVersion, images model.CIImages, files scaffold.Tree) (scaffold.Tree, bool) {
-		in := in
-		in.Checks, in.CIImages = v.Checks, images
-		tree, err := scaffold.RenderLayer(in, scaffold.Layer{Side: model.SideStandard, Name: name, Ref: v.Ref, Files: files})
-		if err != nil {
-			s.Update = stopped(c4v1beta1.ReasonFailed)
-			u.condition(metav1.ConditionFalse, c4v1beta1.ReasonFailed,
-				fmt.Sprintf("Could not render the Standard %s at %s: %v", name, v, err))
-			return nil, false
+	// #295: the renders and the plan are scaffold's, which theos update calls
+	// too.
+	renderFailed := func(err error) {
+		v := to
+		if re, ok := errors.AsType[*scaffold.StandardRenderError](err); ok {
+			v, err = re.Version, re.Err
 		}
-		return tree, true
+		s.Update = stopped(c4v1beta1.ReasonFailed)
+		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonFailed,
+			fmt.Sprintf("Could not render the Standard %s at %s: %v", name, v, err))
 	}
-	old, ok := render(from, oldImages, oldFiles)
-	if !ok {
+	renders, err := scaffold.RenderStandardUpdate(in, name, from, to, oldImages, oldFiles, nextFiles)
+	if err != nil {
+		renderFailed(err)
 		return
 	}
-	next, ok := render(to, in.CIImages, nextFiles)
-	if !ok {
-		return
-	}
-	// The files the change of checks writes: the new ref rendered with the old
-	// checks against the new render, both with the new images.
-	var checksPaths []string
-	if from.Checks != to.Checks {
-		keep, ok := render(model.StandardVersion{Ref: to.Ref, Checks: from.Checks}, in.CIImages, nextFiles)
-		if !ok {
-			return
-		}
-		checksPaths = scaffold.ChangedPaths(keep, next)
-	}
+	old := renders.Old
 
 	// Each file a past update left out is merged against the render its copy
 	// was last brought to: its ref, with the CI images its copy was rendered
@@ -378,12 +365,12 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		ref    string
 		images model.CIImages
 	}
-	renders := map[rendered]scaffold.Tree{{from.Ref, oldImages}: old}
+	renderAt := map[rendered]scaffold.Tree{{from.Ref, oldImages}: old}
 	fetched := map[string]scaffold.Tree{from.Ref: oldFiles}
 	bases := map[string]scaffold.Tree{}
 	for _, b := range behind {
 		key := rendered{b.Ref, recordedCIImages(b.CIImages)}
-		if _, ok := renders[key]; !ok {
+		if _, ok := renderAt[key]; !ok {
 			files, ok := fetched[b.Ref]
 			if !ok {
 				files, err = u.r.Git.FetchTemplate(gitCtx, standard.Spec.Template.URL, b.Ref, standard.Spec.Template.Path, creds)
@@ -397,26 +384,25 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 				}
 				fetched[b.Ref] = files
 			}
-			if renders[key], ok = render(model.StandardVersion{Ref: b.Ref, Checks: from.Checks}, key.images, files); !ok {
+			tree, err := scaffold.RenderStandard(in, name, model.StandardVersion{Ref: b.Ref, Checks: from.Checks},
+				key.images, files)
+			if err != nil {
+				renderFailed(err)
 				return
 			}
+			renderAt[key] = tree
 		}
-		bases[b.Path] = renders[key]
+		bases[b.Path] = renderAt[key]
 	}
 
 	repo := git.provider.Repository(u.container.Name)
-	paths := append(old.Paths(), next.Paths()...)
-	for p := range bases {
-		paths = append(paths, p)
-	}
-	slices.Sort(paths)
-	current, base, err := git.provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, slices.Compact(paths))
+	current, base, err := git.provider.ReadFiles(gitCtx, repo, ports.DefaultBranch, renders.Paths(bases))
 	if err != nil {
 		u.gitError(ctx, err)
 		return
 	}
-	plan := scaffold.PlanUpdate(old, next, current, bases)
-	if blocked := intersect(plan.LeftOut, checksPaths); len(blocked) > 0 {
+	plan := renders.Plan(current, bases)
+	if blocked := plan.ChecksLeftOut; len(blocked) > 0 {
 		s.Update = stopped(c4v1beta1.ReasonChecksLeftOut)
 		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonChecksLeftOut, fmt.Sprintf(
 			"CI can't change to run the full check %s: %s changed in the repository since %s and doesn't merge "+
@@ -427,15 +413,14 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 			"standard", name, "from", from.String(), "to", to.String(), "leftOut", blocked)
 		return
 	}
-	if to.Checks == model.ChecksBeforeRelease && from.Checks != to.Checks &&
-		!model.HasLightCheck(plannedFile(plan, current, model.LightCheckFile)) {
+	if plan.NoLightCheck {
 		s.Update = stopped(c4v1beta1.ReasonNoLightCheck)
-		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonNoLightCheck, noLightCheck(s, plan))
+		u.condition(metav1.ConditionFalse, c4v1beta1.ReasonNoLightCheck, noLightCheck(s, plan.Update))
 		log.Info("Held the change of a Container's checks until its Makefile has a light check",
 			"standard", name, "from", from.String(), "to", to.String())
 		return
 	}
-	leftOut := u.leftOut(to.Ref, behind, from.Ref, old, bases, next, current, plan.LeftOut)
+	leftOut := u.leftOut(to.Ref, behind, renders, bases, current, plan.LeftOut)
 	// The files behind once main holds the update, each with the Standard's
 	// change to it, as this plan sees it.
 	behindAfter := nextBehind(behind, from.Ref, oldImages, plan.LeftOut, "", model.BehindChanges(to.Ref, leftOut.Files))
@@ -447,7 +432,7 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 	branch := model.StandardUpdateBranch(name, to)
 	author := ports.Signature{Name: scaffold.AuthorName, Email: scaffold.AuthorEmail, When: time.Now()}
 	commit, err := git.provider.PushBranch(gitCtx, repo, base, branch, plan.Files, plan.Removes,
-		scaffold.UpdateMessage(in, name, from, to, plan), author)
+		scaffold.UpdateMessage(in, name, from, to, plan.Update), author)
 	if errors.Is(err, ports.ErrEmptyChange) {
 		// main got there between the read and the push.
 		u.alreadyUpToDate(ctx, to, in.CIImages, behindAfter)
@@ -473,52 +458,23 @@ func (u *standardUpdate) plan(ctx, gitCtx context.Context, standard *c4v1beta1.S
 		"paths", plan.Paths(), "merged", plan.Merged, "leftOut", plan.LeftOut)
 }
 
-// leftOut is what the update's pull request says of the files it leaves out:
-// each one's change between the Standard's render at the ref its copy is at
-// (old at from, or its base in bases) and next, and what taking next's version
-// of it would drop from current.
-func (u *standardUpdate) leftOut(to string, behind []c4v1beta1.StandardFile, from string, old scaffold.Tree,
-	bases map[string]scaffold.Tree, next, current scaffold.Tree, paths []string) model.LeftOut {
+// leftOut is what the update's pull request says of the files it leaves
+// out (scaffold.StandardRenders.LeftOut), with the commands that take or
+// keep them.
+func (u *standardUpdate) leftOut(to string, behind []c4v1beta1.StandardFile, renders scaffold.StandardRenders,
+	bases map[string]scaffold.Tree, current scaffold.Tree, paths []string) model.LeftOut {
 	refs := map[string]string{}
 	for _, b := range behind {
 		refs[b.Path] = b.Ref
 	}
-	files := map[string]scaffold.Tree{}
-	for _, p := range paths {
-		files[p] = old
-		if base, ok := bases[p]; ok {
-			files[p] = base
-		}
-	}
-	take := scaffold.PlanTake(files, next, current)
-	out := model.LeftOut{Take: u.annotate(c4v1beta1.AnnotationStandardTake, to),
-		Keep: u.annotate(c4v1beta1.AnnotationStandardKeep, to)}
-	for _, p := range paths {
-		change := scaffold.StandardChange(files[p], next, p)
-		f := model.LeftOutFile{Path: p, Ref: cmp.Or(refs[p], from), Diff: change.Diff, Note: change.Note}
-		if i := slices.IndexFunc(take.Taken, func(t model.TakenFile) bool { return t.Path == p }); i >= 0 {
-			f.Take = take.Taken[i]
-		}
-		out.Files = append(out.Files, f)
-	}
-	return out
+	return model.LeftOut{Take: u.annotate(c4v1beta1.AnnotationStandardTake, to),
+		Keep:  u.annotate(c4v1beta1.AnnotationStandardKeep, to),
+		Files: renders.LeftOut(bases, refs, current, paths)}
 }
 
 // annotate is the command that annotates the Container with key=ref.
 func (u *standardUpdate) annotate(key, ref string) string {
 	return fmt.Sprintf("kubectl -n %s annotate container %s %s=%s", u.container.Namespace, u.container.Name, key, ref)
-}
-
-// plannedFile is path's content once plan merges into current, or nil when it
-// has no such path.
-func plannedFile(plan scaffold.Update, current scaffold.Tree, path string) []byte {
-	if f, ok := plan.Files[path]; ok {
-		return f.Data
-	}
-	if slices.Contains(plan.Removes, path) {
-		return nil
-	}
-	return current[path].Data
 }
 
 // noLightCheck says why CI can't change to run the full check only before a
@@ -1194,17 +1150,6 @@ func scaffoldedConnectors(status *c4v1beta1.ContainerStatus) []string {
 	}
 	slices.Sort(names)
 	return slices.Compact(names)
-}
-
-// intersect returns the items of a that b holds too, in a's order.
-func intersect(a, b []string) []string {
-	var both []string
-	for _, item := range a {
-		if slices.Contains(b, item) {
-			both = append(both, item)
-		}
-	}
-	return both
 }
 
 // checksWhen says when CI runs the full check with checks.
