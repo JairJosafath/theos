@@ -12,7 +12,7 @@ page is how to use it.
 
 **Status.** Built and tested at tier 1 on the ports' fake host and GitHub's
 fake: the engine, the lead runtime on the Git host, `theos agents`,
-`theos mcp` and `theos merge`. Not yet walked by a person in a real Claude
+`theos mcp`, `theos merge` and `theos plan`. Not yet walked by a person in a real Claude
 Code session, on a laptop or on the web: [What is not tested
 yet](#what-is-not-tested-yet) lists what that walk settles.
 
@@ -57,7 +57,8 @@ theos init -project shop            # model/model.yaml, model/setup.yaml, model/
 
 `model/model.yaml` is the story: write the SoftwareSystem, its Containers,
 DataStores and Relationships there, as on a cluster
-([design.md](design.md)). `model/setup.yaml` has the GitProvider, the
+([design.md](design.md)), or have a session plan it from an idea with
+`theos plan` ([section 7](#7-plan-from-an-idea-theos-plan)). `model/setup.yaml` has the GitProvider, the
 catalog at the release, and two Agents, `implementer` and `reviewer`, on
 `claude-code`. At its end is a Crew left as a comment: once the story has
 a Container, uncomment it and name the Container.
@@ -203,6 +204,57 @@ pull request past the checks, the protected paths and the review, change or
 remove the rule itself, and write to every other repository the token
 reaches, with no expiry theos sets. `theos status` says so. A second
 account's token, given to the sessions and named in `claimants`, narrows it.
+
+## 7. Plan from an idea: `theos plan`
+
+`theos plan` turns an idea into the model and filed issues, with a Brief's
+plan format and its checks and no Brief, no Crew and no cluster. Tell a
+session the idea and have it play the designer:
+
+```sh
+theos plan         # round 1: writes plan/model.yaml, the story of model/model.yaml
+# the session writes the round in plan/:
+#   plan/model.yaml                     the whole story the round leaves
+#   plan/choices.md                     one line per choice it made
+#   plan/issues/<nn>-<container>.md     front matter (title, labels, after), then the body
+#   plan/summary.md                     what the round does, in a sentence or two
+theos plan         # checks the round, writes model/model.yaml, files the issues
+theos scaffold     # makes the repositories of the round's new Containers
+theos plan         # files the issues that waited for them
+git add model plan && git commit -m "Round 1" && git push
+theos plan -new    # once every issue is filed: the next round starts
+```
+
+The format is the one a Brief's planner writes: *What you write* in [the
+planner's guide](../internal/model/planner.md). Where the guide names a
+Brief's files, the designer reads `model/setup.yaml` for the catalog and
+the Bundles, and the Containers' repositories for their open issues; an
+issue's body needs an `## Acceptance criteria` checklist. Run again,
+`theos plan`:
+
+- refuses a plan with every reason the Brief would give it, prints each as
+  `refused: <object or file>: <reason>`, and writes and files nothing;
+- stops, and files nothing, while `plan/needs-input.md` asks the person
+  something;
+- merges the plan into `model/model.yaml` object by object: an object the
+  plan leaves alone stays as written, comments included; one it changes
+  gets only its new `displayName`, `description`, `needs`, `kpis` or
+  `checks`, so `adopt`, `license`, `checkCommand`, `deploy` and
+  `operations` stay; one it makes is added at the end;
+- files the issues blockers first (`after:`), each into its Container's
+  repository once that has its first commit, and records each in
+  `plan/filed.yaml`, so a second run files none twice;
+- prints `plan/releases.yaml` and `plan/parallel.yaml`. Nothing acts on
+  them: a release is a tag a person pushes, and how many Tasks a Crew runs
+  at once is its `parallel` in `model/setup.yaml`.
+
+With no cluster, the round is checked as a Brief's round that takes a new
+prompt, where a session can always play the designer: a `status/design`
+issue is allowed for every Container, and every existing Container counts
+as released, so `uses:` of one is not checked for a tag. An existing
+Container's `checks` stays the person's edit. A new Container goes on the
+GitProvider of `model/setup.yaml`; a model with several, which its
+Containers split between, is refused.
 
 ## What is not tested yet
 

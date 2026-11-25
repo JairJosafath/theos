@@ -139,7 +139,7 @@ type WorkspaceIssue struct {
 // same workspace always renders the same bytes, so an unchanged one writes
 // nothing.
 func BriefWorkspaceFiles(ws BriefWorkspace) (map[string]string, error) {
-	story, err := renderWorkspaceModel(ws.Objects)
+	story, err := RenderWorkspaceModel(ws.Objects)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceModelFile, err)
 	}
@@ -405,12 +405,16 @@ func optionalRef(name string) *refOut {
 	return &refOut{name}
 }
 
-// renderWorkspaceModel writes the namespace's story objects as manifests, in
-// plan/model.yaml's format, so the planner starts its plan from a copy. A
-// Container's checks is left out, so a copy leaves it alone; containers.yaml
-// says it. A Container on a Bundle shows the bundle and none of the sides it
-// expanded to: the bundle stays what the team wrote.
-func renderWorkspaceModel(objects []PlanObject) (string, error) {
+// WorkspaceModelHeader is the first line of RenderWorkspaceModel's file.
+const WorkspaceModelHeader = "# The namespace's story now. Copy it to plan/model.yaml and change it there.\n"
+
+// RenderWorkspaceModel writes the namespace's story objects as manifests, in
+// plan/model.yaml's format, so the planner starts its plan from a copy; theos
+// plan writes it as plan/model.yaml itself (#293). A Container's checks and
+// operations are left out, so a copy leaves them alone; containers.yaml says
+// the checks. A Container on a Bundle shows the bundle and none of the sides
+// it expanded to: the bundle stays what the team wrote.
+func RenderWorkspaceModel(objects []PlanObject) (string, error) {
 	sorted := slices.Clone(objects)
 	slices.SortStableFunc(sorted, func(a, b PlanObject) int {
 		if d := slices.Index(kindOrder, a.Kind) - slices.Index(kindOrder, b.Kind); d != 0 {
@@ -419,7 +423,7 @@ func renderWorkspaceModel(objects []PlanObject) (string, error) {
 		return strings.Compare(a.Name, b.Name)
 	})
 	var b strings.Builder
-	b.WriteString("# The namespace's story now. Copy it to plan/model.yaml and change it there.\n")
+	b.WriteString(WorkspaceModelHeader)
 	for _, o := range sorted {
 		m := manifestOut{APIVersion: PlanAPIVersion, Kind: o.Kind}
 		m.Metadata.Name = o.Name

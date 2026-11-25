@@ -453,68 +453,37 @@ func (r *BriefReconciler) openIssues(ctx context.Context, providers map[string]i
 	return provider.ListIssues(gitCtx, provider.Repository(c.Name), "")
 }
 
-// storyObjects reads the namespace's story kinds, the ones a plan may write.
+// storyObjects reads the namespace's story kinds, the ones a plan may write,
+// as modelfacts reads them for theos plan too (#293).
 func storyObjects(ctx context.Context, c client.Reader, ns string) ([]model.PlanObject, error) {
-	var out []model.PlanObject
 	in := client.InNamespace(ns)
 	var projects c4v1beta1.ProjectList
 	if err := c.List(ctx, &projects, in); err != nil {
 		return nil, err
 	}
-	for _, o := range projects.Items {
-		out = append(out, model.PlanObject{Kind: model.KindProject, Name: o.Name,
-			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description})
-	}
 	var persons c4v1beta1.PersonList
 	if err := c.List(ctx, &persons, in); err != nil {
 		return nil, err
-	}
-	for _, o := range persons.Items {
-		out = append(out, model.PlanObject{Kind: model.KindPerson, Name: o.Name,
-			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description})
 	}
 	var systems c4v1beta1.SoftwareSystemList
 	if err := c.List(ctx, &systems, in); err != nil {
 		return nil, err
 	}
-	for _, o := range systems.Items {
-		out = append(out, model.PlanObject{Kind: model.KindSoftwareSystem, Name: o.Name,
-			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description, Needs: o.Spec.Needs, KPIs: o.Spec.KPIs,
-			Location: string(o.Spec.Location), Domains: o.Spec.DomainRefs})
-	}
 	var containers c4v1beta1.ContainerList
 	if err := c.List(ctx, &containers, in); err != nil {
 		return nil, err
-	}
-	for _, o := range containers.Items {
-		s, picked := o.Spec, o.Choices()
-		out = append(out, model.PlanObject{Kind: model.KindContainer, Name: o.Name,
-			DisplayName: s.DisplayName, Description: s.Description, SoftwareSystem: s.SoftwareSystemRef.Name,
-			Type: string(s.Type), GitProvider: s.GitProviderRef.Name, Bundle: picked.Bundle,
-			Framework: picked.Framework, Standard: picked.Standard, Compute: picked.Compute, Deployment: picked.Deployment,
-			Checks: string(s.Checks), Operations: plannedOperations(s.Operations)})
 	}
 	var stores c4v1beta1.DataStoreList
 	if err := c.List(ctx, &stores, in); err != nil {
 		return nil, err
 	}
-	for _, o := range stores.Items {
-		out = append(out, model.PlanObject{Kind: model.KindDataStore, Name: o.Name,
-			DisplayName: o.Spec.DisplayName, Description: o.Spec.Description,
-			SoftwareSystem: o.Spec.SoftwareSystemRef.Name, Connector: o.Spec.ConnectorRef.Name})
-	}
 	var relationships c4v1beta1.RelationshipList
 	if err := c.List(ctx, &relationships, in); err != nil {
 		return nil, err
 	}
-	for _, o := range relationships.Items {
-		s := o.Spec
-		out = append(out, model.PlanObject{Kind: model.KindRelationship, Name: o.Name, Description: s.Description,
-			Source:  model.Ref{Kind: string(s.Source.Kind), Name: s.Source.Name},
-			Target:  model.Ref{Kind: string(s.Target.Kind), Name: s.Target.Name},
-			Bundles: s.Bundles})
-	}
-	return out, nil
+	return modelfacts.StoryObjects(modelfacts.Story{Projects: projects.Items, People: persons.Items,
+		Systems: systems.Items, Containers: containers.Items, DataStores: stores.Items,
+		Relationships: relationships.Items}), nil
 }
 
 func refName(ref *c4v1beta1.LocalRef) string {
@@ -527,50 +496,33 @@ func refName(ref *c4v1beta1.LocalRef) string {
 // installedCatalog reads every catalog entry of the namespace.
 func installedCatalog(ctx context.Context, c client.Reader, ns string) ([]model.CatalogEntry, error) {
 	in := client.InNamespace(ns)
-	var out []model.CatalogEntry
 	var frameworks c4v1beta1.FrameworkList
 	if err := c.List(ctx, &frameworks, in); err != nil {
 		return nil, err
-	}
-	for i := range frameworks.Items {
-		out = append(out, modelfacts.CatalogEntry(model.SideFramework, &frameworks.Items[i]))
 	}
 	var standards c4v1beta1.StandardList
 	if err := c.List(ctx, &standards, in); err != nil {
 		return nil, err
 	}
-	for i := range standards.Items {
-		out = append(out, modelfacts.CatalogEntry(model.SideStandard, &standards.Items[i]))
-	}
 	var computes c4v1beta1.ComputeList
 	if err := c.List(ctx, &computes, in); err != nil {
 		return nil, err
-	}
-	for i := range computes.Items {
-		out = append(out, modelfacts.CatalogEntry(model.SideCompute, &computes.Items[i]))
 	}
 	var deployments c4v1beta1.DeploymentList
 	if err := c.List(ctx, &deployments, in); err != nil {
 		return nil, err
 	}
-	for i := range deployments.Items {
-		out = append(out, modelfacts.CatalogEntry(model.SideDeployment, &deployments.Items[i]))
-	}
 	var connectors c4v1beta1.ConnectorList
 	if err := c.List(ctx, &connectors, in); err != nil {
 		return nil, err
-	}
-	for i := range connectors.Items {
-		out = append(out, modelfacts.CatalogEntry(model.SideConnector, &connectors.Items[i]))
 	}
 	var domains c4v1beta1.DomainList
 	if err := c.List(ctx, &domains, in); err != nil {
 		return nil, err
 	}
-	for i := range domains.Items {
-		out = append(out, modelfacts.CatalogEntry(model.SideDomain, &domains.Items[i]))
-	}
-	return out, nil
+	return modelfacts.Catalog(modelfacts.Objects{Frameworks: frameworks.Items, Standards: standards.Items,
+		Computes: computes.Items, Deployments: deployments.Items, Connectors: connectors.Items,
+		Domains: domains.Items}), nil
 }
 
 // installedBundles reads the namespace's Bundles, each as the entry names it
@@ -580,12 +532,7 @@ func installedBundles(ctx context.Context, c client.Reader, ns string) ([]model.
 	if err := c.List(ctx, &bundles, client.InNamespace(ns)); err != nil {
 		return nil, err
 	}
-	var out []model.Bundle
-	for _, b := range bundles.Items {
-		out = append(out, model.Bundle{Name: b.Name, Description: b.Spec.Description, Framework: b.Spec.FrameworkRef.Name,
-			Standard: refName(b.Spec.StandardRef), Compute: refName(b.Spec.ComputeRef), Deployment: refName(b.Spec.DeploymentRef)})
-	}
-	return out, nil
+	return modelfacts.Bundles(bundles.Items), nil
 }
 
 // ensureAgentSecret returns Secret name holding a bot's Git credentials, owned

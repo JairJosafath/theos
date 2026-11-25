@@ -27,6 +27,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 )
 
@@ -371,14 +372,7 @@ func (r *TaskReconciler) gitCall(ctx context.Context, call func(context.Context)
 }
 
 // issueLabels are the factory's issue labels, for the Git host.
-func issueLabels() []ports.Label {
-	labels := append(model.StatusLabels(), model.UrgentLabel(), model.RiskLabel())
-	out := make([]ports.Label, 0, len(labels))
-	for _, l := range labels {
-		out = append(out, ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
-	}
-	return out
-}
+func issueLabels() []ports.Label { return modelfacts.IssueLabels() }
 
 func logNotes(ctx context.Context, task *c4v1beta1.Task, notes []error) {
 	for _, err := range notes {

@@ -36,12 +36,9 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/modelfacts"
 	"github.com/JairJosafath/theos/internal/ports"
 )
-
-// briefLabelColor is the color of a label a planner asks for that the factory
-// doesn't define.
-const briefLabelColor = "#ededed"
 
 // roundApply is one reconcile's work on applying a round.
 type roundApply struct {
@@ -323,7 +320,7 @@ func failedWhy(c *c4v1beta1.Container) string {
 // or brings an existing one's story text up to date. It reports whether it
 // is new: created now, or so recently the cache doesn't show it.
 func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o model.PlanObject) (bool, error) {
-	desired, err := storyObject(run.brief.Namespace, o)
+	desired, err := modelfacts.StoryObject(run.brief.Namespace, o)
 	if err != nil {
 		return false, err
 	}
@@ -353,7 +350,7 @@ func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o mo
 		return false, err
 	}
 	orig, _ := existing.DeepCopyObject().(client.Object)
-	copyStoryText(existing, desired)
+	modelfacts.CopyStoryText(existing, desired)
 	if equality.Semantic.DeepEqual(existing, orig) {
 		return false, nil
 	}
@@ -367,90 +364,6 @@ func (r *BriefReconciler) applyObject(ctx context.Context, run *roundApply, o mo
 	}
 	logf.FromContext(ctx).Info("Updated story text", "kind", o.Kind, "name", o.Name, "round", run.round)
 	return false, nil
-}
-
-// storyObject is a plan's object as the kind it is.
-func storyObject(ns string, o model.PlanObject) (client.Object, error) {
-	objMeta := metav1.ObjectMeta{Namespace: ns, Name: o.Name}
-	switch o.Kind {
-	case model.KindProject:
-		return &c4v1beta1.Project{ObjectMeta: objMeta,
-			Spec: c4v1beta1.ProjectSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
-	case model.KindPerson:
-		return &c4v1beta1.Person{ObjectMeta: objMeta,
-			Spec: c4v1beta1.PersonSpec{DisplayName: o.DisplayName, Description: o.Description}}, nil
-	case model.KindSoftwareSystem:
-		return &c4v1beta1.SoftwareSystem{ObjectMeta: objMeta, Spec: c4v1beta1.SoftwareSystemSpec{
-			DisplayName: o.DisplayName, Description: o.Description, Needs: o.Needs, KPIs: o.KPIs,
-			Location: c4v1beta1.SystemLocation(o.Location), DomainRefs: o.Domains}}, nil
-	case model.KindContainer:
-		return &c4v1beta1.Container{ObjectMeta: objMeta, Spec: c4v1beta1.ContainerSpec{
-			SoftwareSystemRef: c4v1beta1.LocalRef{Name: o.SoftwareSystem},
-			DisplayName:       o.DisplayName, Description: o.Description,
-			Type:           c4v1beta1.ContainerType(o.Type),
-			GitProviderRef: c4v1beta1.LocalRef{Name: o.GitProvider},
-			BundleRef:      optionalLocalRef(o.Bundle),
-			FrameworkRef:   c4v1beta1.LocalRef{Name: o.Framework},
-			StandardRef:    optionalLocalRef(o.Standard),
-			ComputeRef:     optionalLocalRef(o.Compute),
-			DeploymentRef:  optionalLocalRef(o.Deployment),
-			Checks:         c4v1beta1.ChecksMode(o.Checks),
-			Operations:     operationsSpec(o.Operations),
-		}}, nil
-	case model.KindDataStore:
-		return &c4v1beta1.DataStore{ObjectMeta: objMeta, Spec: c4v1beta1.DataStoreSpec{
-			SoftwareSystemRef: c4v1beta1.LocalRef{Name: o.SoftwareSystem},
-			DisplayName:       o.DisplayName, Description: o.Description,
-			ConnectorRef: c4v1beta1.LocalRef{Name: o.Connector},
-		}}, nil
-	case model.KindRelationship:
-		return &c4v1beta1.Relationship{ObjectMeta: objMeta, Spec: c4v1beta1.RelationshipSpec{
-			Source:      c4v1beta1.ElementRef{Kind: c4v1beta1.ElementKind(o.Source.Kind), Name: o.Source.Name},
-			Target:      c4v1beta1.ElementRef{Kind: c4v1beta1.ElementKind(o.Target.Kind), Name: o.Target.Name},
-			Description: o.Description, Bundles: o.Bundles,
-		}}, nil
-	}
-	return nil, fmt.Errorf("a plan doesn't write %s", o.Kind)
-}
-
-func optionalLocalRef(name string) *c4v1beta1.LocalRef {
-	if name == "" {
-		return nil
-	}
-	return &c4v1beta1.LocalRef{Name: name}
-}
-
-// copyStoryText copies the story text a plan may change, displayName,
-// description, needs and kpis, from src to dst, of the same kind, and a
-// Container's checks when the plan sets it. A SoftwareSystem keeps its
-// location: the round that created it set it, and turning a built system
-// External is a person's edit, not a later plan's (#1150). It keeps its
-// domainRefs too: its Domains are picked when it is made (#1760).
-func copyStoryText(dst, src client.Object) {
-	switch d := dst.(type) {
-	case *c4v1beta1.Project:
-		s, _ := src.(*c4v1beta1.Project)
-		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
-	case *c4v1beta1.Person:
-		s, _ := src.(*c4v1beta1.Person)
-		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
-	case *c4v1beta1.SoftwareSystem:
-		s, _ := src.(*c4v1beta1.SoftwareSystem)
-		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
-		d.Spec.Needs, d.Spec.KPIs = s.Spec.Needs, s.Spec.KPIs
-	case *c4v1beta1.Container:
-		s, _ := src.(*c4v1beta1.Container)
-		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
-		if s.Spec.Checks != "" {
-			d.Spec.Checks = s.Spec.Checks
-		}
-	case *c4v1beta1.DataStore:
-		s, _ := src.(*c4v1beta1.DataStore)
-		d.Spec.DisplayName, d.Spec.Description = s.Spec.DisplayName, s.Spec.Description
-	case *c4v1beta1.Relationship:
-		s, _ := src.(*c4v1beta1.Relationship)
-		d.Spec.Description = s.Spec.Description
-	}
 }
 
 // ensureCrew makes the Crew of a Container the round created (B9): named
@@ -700,21 +613,7 @@ func issueMilestone(ctx context.Context, run *roundApply, ir *issueRepo, contain
 // briefIssueLabels are the labels the issues need: the factory's, and any
 // other the planner asked for.
 func briefIssueLabels(issues []model.PlanIssue) []ports.Label {
-	labels := issueLabels()
-	for _, issue := range issues {
-		for _, name := range model.BriefIssueLabels(issue.Labels) {
-			switch {
-			case slices.ContainsFunc(labels, func(l ports.Label) bool { return l.Name == name }):
-			case name == model.LabelByHand:
-				l := model.ByHandLabel()
-				labels = append(labels,
-					ports.Label{Name: l.Name, Color: l.Color, Description: l.Description, Exclusive: l.Exclusive})
-			default:
-				labels = append(labels, ports.Label{Name: name, Color: briefLabelColor})
-			}
-		}
-	}
-	return labels
+	return modelfacts.PlanIssueLabels(issues)
 }
 
 // checkBriefCurrent returns errStaleBrief when the API server's Brief is

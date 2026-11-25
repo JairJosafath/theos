@@ -2027,8 +2027,8 @@ code or writes rollouts ([plans/done/deploy.md](plans/done/deploy.md)).
 
 *Being built* (#265, [plans/no-cluster.md](plans/no-cluster.md); for
 Claude Code, #331, [plans/lead-runtime.md](plans/lead-runtime.md)).
-`theos init`, `scaffold`, `protect` and `status` are built (#268); the
-loop is not yet.
+`theos init`, `scaffold`, `protect` and `status` are built (#268), and
+`theos plan` (#293); the loop is not yet.
 
 theos has two **runtimes**, named by who drives. In the `operator` runtime
 theos's reconcilers start the agents on a cluster. In the `lead` runtime an

@@ -327,6 +327,51 @@ Each is an issue; "tier" is AGENTS.md's. No step needs Kind or `make e2e`.
 | 10. The guide, `docs/no-cluster.md` | new | 2 to 4, 6, 8 | `make doc-links`; a person walks one Task in Claude Code and one in a single-role runtime, with the host's pages as evidence |
 | 11. The host's rules merge | new: "The host's rules merge on Gitea, for agents with accounts of their own" | 4 | tier 1: the GitHost contract's new subtests on the fake (no merge without another account's approval; with it the authoring account merges, and can neither push to `main` nor merge a changed protected path), and `githubtest` refuses the rule; `model`'s merge table gains `rules`, `OneIdentity` and `HostHoldsNoPaths`; tier 3 on Gitea; tier 4: the operator's own merge is unchanged |
 
+**Step 5 as built** (`internal/modelfacts/story.go`, `internal/nocluster/plan.go`,
+`planmerge.go`, #293). Choices the plan left open:
+- One command, `theos plan`, whose step is read from `plan/`: with no
+  `plan/model.yaml` it starts a round and writes it from
+  `model.RenderWorkspaceModel`; with one it checks and applies the round.
+  `theos plan -new` starts the next round only once the plan is in
+  `model/model.yaml` and every issue is filed, and removes the round's
+  files (the person's Git history keeps them). A round's files left with
+  no `plan/model.yaml` start no round. The round's files are a Brief's, at
+  the same paths, so `model.ParsePlan` reads them as they are.
+- A round has a number, kept in `plan/filed.yaml` with the issues it
+  filed (owner/name, number, title, URL), written after each one. Its
+  issues carry `model.IssueMarker` with the Project's name and that
+  number, so an issue filed by a run that stopped before recording it is
+  found among the open ones; a closed one is found by the record. Filing
+  twice files once.
+- `model/model.yaml` is merged document by document (`MergePlan`): a
+  document the plan leaves alone is kept byte for byte; for one it
+  changes, `modelfacts.CopyStoryText` runs on the decoded object and only
+  the spec fields that differ are written into the document's YAML, which
+  keeps its other fields and comments; a created object is
+  `modelfacts.StoryObject`'s, appended with the fields it sets in the API
+  type's order. The merged file is decoded again and must hold the plan
+  (`PlanDiff` empty) before it is written.
+- An issue is filed into its Container's repository once that has a first
+  commit; until then it waits, as a Brief's waits for its Container to be
+  Ready, and so does every issue after it. theos plan does not scaffold:
+  `theos scaffold` does, and the next `theos plan` files the rest. Labels,
+  the body with its "Builds on" lines, the dependencies and readying are
+  the Brief's (`modelfacts.PlanIssueLabels`, `model.BriefIssueBodyFor`).
+  No milestone is made, and a `uses:` issue is filed with no version in
+  it: the tool reads no release.
+- New Containers go on the setup file's one GitProvider, or on the one
+  every Container names; several the Containers split between are
+  refused.
+- Also moved: the catalog and Bundles as the rules take them
+  (`modelfacts.Catalog`, `Bundles`), the factory's issue labels
+  (`IssueLabels`) and a plan's (`PlanIssueLabels`); the reconcilers'
+  names forward to them.
+- Not here: `plan/model.yaml`'s rendering keeps the Brief's 4-space
+  indent; the playbook does not name `theos plan` and `theos mcp` has no
+  plan tool, so a session is told to run it, as the guide says; the
+  designer reads the planner's guide, whose Brief-only files it does not
+  get. Evidence: [theos-plan-293.txt](../screenshots/theos-plan-293.txt).
+
 **To file.** Steps 4, 5, 6, 7, 9, 10 and 11, and two issues beside them:
 "GitLab as a Git host for the cluster", to follow #57, and "CI files for
 the catalog entries that ship Gitea's alone". What each issue is filed
