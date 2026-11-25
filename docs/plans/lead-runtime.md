@@ -289,6 +289,19 @@ what it needs. "Tier" is AGENTS.md's.
 | — `theos update`, `export`, `import` | #295 | 2 | 4 | its issue's |
 | 14. Harness authoring: `harnesstest`, the guide, Codex | #338 | 3 | 7 | tier 1: the suite on both harnesses |
 
+**Step 2 as built** (`internal/model/claim.go`). Choices the plan left
+open:
+- A marker line is `<!-- theos:<kind> key=value ... -->`, keys sorted,
+  each value one word, so it reads back as written; #307's kinds take the
+  same form. A session's marker names it as `session=<name>`.
+- A counted `offer` starts the work afresh: a claim before it, or before a
+  later round's offer, counts for nothing.
+- A holder is its account and its session's name together, so two
+  claimant accounts with one session name are two holders.
+- `lease`, `grace` and `claimants` reach `model/settings.yaml` with #335,
+  the first step that reads them: the settings decode refuses a key no step
+  reads. Until then `DefaultClaimRules` is the only source.
+
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
 
