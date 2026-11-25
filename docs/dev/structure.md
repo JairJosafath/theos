@@ -10,7 +10,7 @@ cmd/theos-agent/                       Task runner, run in agent sandboxes
 cmd/theos-env/                     theos-env: runs an agent's commands in a leased test environment (run), and serves them there (serve); in the agent image
 cmd/model-proxy/                   Model proxy: keeps the Claude token out of sandboxes, a second binary in the operator image
 cmd/theos-chat/                    theos-chat: posts in each Chat's Matrix rooms and runs its people's commands as them, a third binary in the operator image
-cmd/theos/                         theos with no cluster: init, scaffold, protect and status on a project repository's model/ files; wires the host adapters onto internal/nocluster (#268)
+cmd/theos/                         theos with no cluster: init, scaffold, protect, status and agents on a project repository's model/ files, and the lead runtime's next, claim, heartbeat, release and done, also as theos mcp's tools over stdio (lead.go, #294); wires the host adapters and hostrun onto internal/nocluster (#268)
 api/v1beta1/*_types.go             CRD schemas for every kind (+kubebuilder markers), the one version served and stored; the operator imports it
 api/v1beta1/shared_types.go        Refs, Container types, condition names and labels
 api/*/zz_generated.*               Auto-generated (DO NOT EDIT)

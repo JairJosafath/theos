@@ -422,7 +422,7 @@ func TestImports(t *testing.T) {
 	for _, p := range pkg.Imports {
 		switch rel := strings.TrimPrefix(p, module); {
 		case rel == "internal/buildinfo", rel == "internal/modelfacts", rel == "internal/nocluster",
-			rel == "internal/ports":
+			rel == "internal/ports", rel == "internal/model":
 		// The host adapters and plain Git; an adapter that needs a cluster
 		// (client-go) fails the dependency check below.
 		case strings.HasPrefix(rel, "internal/adapters/"):

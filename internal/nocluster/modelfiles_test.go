@@ -692,9 +692,9 @@ func TestSettings268(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := nocluster.Settings{Repository: "theos-webshop",
+	want := nocluster.Settings{Repository: "theos-webshop", Lease: "1h0m0s", Grace: "5m0s",
 		Operator: nocluster.OperatorSettings{SessionFeature: features.SessionFeatureLocal}}
-	if s != want {
+	if !reflect.DeepEqual(s, want) {
 		t.Errorf("unset settings are %+v, want %+v", s, want)
 	}
 	got, err := s.Scaffold()
@@ -719,8 +719,37 @@ func TestSettings268(t *testing.T) {
 		set.Operator.CIImageGo != "registry.example/go:1" {
 		t.Errorf("settings read %+v", set)
 	}
-	if _, err := nocluster.DecodeSettings([]byte("lease: 60m\n"), "webshop"); err == nil {
+	if _, err := nocluster.DecodeSettings([]byte("merge: rules\n"), "webshop"); err == nil {
 		t.Error("a key no step reads yet was taken")
+	}
+}
+
+// #294: the lease, the grace and the claimants the markers count by: the
+// defaults with the credential's login, or as set; a lease that is no
+// positive duration is refused.
+func TestClaimSettings294(t *testing.T) {
+	s, err := nocluster.DecodeSettings(nil, "webshop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err := s.ClaimRules("shop-owner")
+	if err != nil || !reflect.DeepEqual(rules, model.DefaultClaimRules("shop-owner")) {
+		t.Errorf("default rules %+v, %v; want %+v", rules, err, model.DefaultClaimRules("shop-owner"))
+	}
+	s, err = nocluster.DecodeSettings([]byte("lease: 30m\ngrace: 2m\nclaimants: [shop-owner, shop-bot]\n"),
+		"webshop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err = s.ClaimRules("shop-owner")
+	if err != nil || rules.Lease != 30*time.Minute || rules.Grace != 2*time.Minute ||
+		!slices.Equal(rules.Claimants, []string{"shop-owner", "shop-bot"}) {
+		t.Errorf("rules %+v, %v", rules, err)
+	}
+	for _, bad := range []string{"lease: soon\n", "grace: -1m\n", "lease: 0s\n"} {
+		if _, err := nocluster.DecodeSettings([]byte(bad), "webshop"); err == nil {
+			t.Errorf("%q was taken", bad)
+		}
 	}
 }
 
@@ -731,7 +760,7 @@ func TestImports(t *testing.T) {
 	checkImports(t, ".", "internal/nocluster", func(p string) bool {
 		return oneOf(p, "api/v1beta1", "config/crd/bases", "features", "internal/model", "internal/modelfacts",
 			"internal/ports", "internal/scaffold", "internal/method", "internal/harness",
-			"internal/harness/claudecode") ||
+			"internal/harness/claudecode", "internal/engine") ||
 			p == "sigs.k8s.io/yaml" || strings.HasPrefix(p, "k8s.io/apimachinery/") ||
 			strings.HasPrefix(p, "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions") ||
 			strings.HasPrefix(p, "k8s.io/apiextensions-apiserver/pkg/apiserver/schema") ||

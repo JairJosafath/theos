@@ -62,11 +62,19 @@ Usage:
   theos protect [-C dir]
   theos status [-C dir]
   theos agents [-C dir]
+  theos mcp [-C dir]
+  theos next [-C dir]
+  theos claim|heartbeat|release [-C dir] -task TASK -session NAME
+  theos done [-C dir] -task TASK -session NAME [-commit SHA | -verdict approve|changes] -summary TEXT
 
 theos agents writes the lead's files for Claude Code into the project
 repository from model/: CLAUDE.md, AGENTS.md, a subagent in
 .claude/agents/ for each Agent a Crew names, and .mcp.json; theos status
-names one that changed since.
+names one that changed since. theos mcp serves the lead runtime's tools
+over stdio, as .mcp.json starts it: theos_next, theos_claim,
+theos_heartbeat, theos_release, theos_done and theos_status. next, claim,
+heartbeat, release and done are the same on the command line. There is no
+merge: a person merges.
 
 The credential is THEOS_GIT_TOKEN, else what git credential fill gives for
 its host; theos never stores or prints it. It is sent only to the host it
@@ -117,6 +125,12 @@ func run(ctx context.Context, args []string, d deps) int {
 	remote := flags.String("remote", "", "init: the project repository's remote; origin's unless set")
 	provider := flags.String("provider", "", "init: the Git host's provider; asked unless the remote is on github.com")
 	ref := flags.String("ref", releaseTag(), "init: the theos release whose catalog the model pins")
+	var lead doneIn
+	flags.StringVar(&lead.Task, "task", "", "claim, heartbeat, release, done: the Task, as theos next names it")
+	flags.StringVar(&lead.Session, "session", "", "claim, heartbeat, release, done: your session's name")
+	flags.StringVar(&lead.Commit, "commit", "", "done: an implementer's pushed commit")
+	flags.StringVar(&lead.Verdict, "verdict", "", "done: a reviewer's verdict, approve or changes")
+	flags.StringVar(&lead.Summary, "summary", "", "done: what you did, or why your verdict")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 2
 	}
@@ -132,6 +146,10 @@ func run(ctx context.Context, args []string, d deps) int {
 	case "init":
 		err = initModel(ctx, d, *dir, nocluster.InitOptions{Project: *project, Remote: *remote, Provider: *provider,
 			TheosURL: theosURL, Ref: *ref})
+	case "mcp":
+		err = serveMCP(ctx, leadEnv(env, d, *dir), d, *dir)
+	case "next", "claim", "heartbeat", "release", "done":
+		err = leadCommand(ctx, cmd, leadEnv(env, d, *dir), d.stdout, *dir, lead)
 	case "scaffold", "protect", "status", "agents":
 		var m *nocluster.Model
 		if m, err = nocluster.Read(os.DirFS(*dir)); err != nil {

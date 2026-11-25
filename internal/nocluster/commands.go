@@ -57,6 +57,12 @@ type Env struct {
 	// Project is the project repository, where status looks for the lead's
 	// files (agentDrift); nil looks for none.
 	Project fs.FS
+	// Runtime is the lead runtime of container on host, its markers counted
+	// by rules: cmd/theos's hostrun.New. nil runs no lead command.
+	Runtime func(host LeadHost, container string, rules model.ClaimRules) ports.Runtime
+	// Clone clones repo's branch into dir, under the project repository, for
+	// a claimed Task's work; nil clones nothing.
+	Clone func(ctx context.Context, repo ports.Repository, branch, dir string) error
 }
 
 // container is one Container of the model, resolved and on its host.

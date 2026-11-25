@@ -324,7 +324,7 @@ open:
   later round's offer, counts for nothing.
 - A holder is its account and its session's name together, so two
   claimant accounts with one session name are two holders.
-- `lease`, `grace` and `claimants` reach `model/settings.yaml` with #335,
+- `lease`, `grace` and `claimants` reach `model/settings.yaml` with #294,
   the first step that reads them: the settings decode refuses a key no step
   reads. Until then `DefaultClaimRules` is the only source.
 
@@ -477,6 +477,41 @@ documentation (code.claude.com/docs/en/sub-agents, .../mcp, .../memory):
   it was written or unchanged; a model with no Crew is refused. `theos
   status` names a file that is missing or changed, when the model has a
   Crew.
+
+**Step 8 as built** (`cmd/theos/lead.go`, `internal/nocluster/lead.go`).
+Choices the plan left open:
+- The MCP SDK is github.com/modelcontextprotocol/go-sdk v1.8.0: `go list
+  -deps` shows it brings neither client-go nor controller-runtime, and
+  `cmd/theos`'s `TestImports` keeps it so. It is linked by `cmd/theos`
+  alone; the tools' work is `internal/nocluster`'s, on the ports and the
+  engine, and `cmd/theos` builds `hostrun` for it (`Env.Runtime`), as it
+  builds the host adapters.
+- Six tools: `theos_next`, `theos_claim`, `theos_heartbeat`,
+  `theos_release`, `theos_done` and `theos_status`, each reading the model
+  files afresh. Each is also a command, printing its result as JSON:
+  `theos next`, `claim`, `heartbeat`, `release` and `done`, with `-task`,
+  `-session`, `-commit`, `-verdict` and `-summary`. No merge tool.
+- `theos_next` runs each Crew's tick, then a Task tick for each Task at
+  work, and returns the open offers (offered and unclaimed), each with its
+  subagent and its work order (`method.WorkOrder`, which fences the
+  issue), and a line for every Task at work with its phase and the step's
+  reason, such as `PersonMerges`. The Agents of a Task are the Crew's,
+  or a route's by the issue's labels, read each tick.
+- A claim posts the claim, reads the issue back and holds the work only
+  when the host's order names the session (`model.NextClaim`,
+  `model.ClaimOf`). It then clones the Task's branch into `work/<task>`
+  with git, which asks its own credential helper: theos hands git no
+  credential. `work/` holds a `.gitignore` of `*`, so no clone lands in
+  the project's commits. A plain clone, not a worktree: the project
+  repository is not the Container's.
+- `heartbeat` renews under half the lease left and says how long the
+  claim holds; `release` and `done` post only for the session that holds
+  the claim. `done` takes a verdict of `approve` or `changes` alone.
+- `lease`, `grace` and `claimants` are `model/settings.yaml`'s keys now,
+  Go durations, 60m and 5m and the credential's own login by default;
+  `theos init` spells the two durations out.
+- No result carries the credential, and the issue's text reaches a result
+  only fenced, in a work order: the test reads every result for both.
 
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
