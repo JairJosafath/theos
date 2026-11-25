@@ -730,7 +730,8 @@ func TestSettings268(t *testing.T) {
 func TestImports(t *testing.T) {
 	checkImports(t, ".", "internal/nocluster", func(p string) bool {
 		return oneOf(p, "api/v1beta1", "config/crd/bases", "features", "internal/model", "internal/modelfacts",
-			"internal/ports", "internal/scaffold") ||
+			"internal/ports", "internal/scaffold", "internal/method", "internal/harness",
+			"internal/harness/claudecode") ||
 			p == "sigs.k8s.io/yaml" || strings.HasPrefix(p, "k8s.io/apimachinery/") ||
 			strings.HasPrefix(p, "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions") ||
 			strings.HasPrefix(p, "k8s.io/apiextensions-apiserver/pkg/apiserver/schema") ||

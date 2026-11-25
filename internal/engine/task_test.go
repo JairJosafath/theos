@@ -18,6 +18,7 @@ package engine_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -245,5 +246,20 @@ func TestTaskTickMerges334(t *testing.T) {
 	w.want(w.tick(), model.ActionMerge, model.TaskMerged)
 	if got, _ := w.g.GetPullRequest(context.Background(), w.repo, pr); !got.Merged {
 		t.Error("the pull request is not merged")
+	}
+}
+
+// #266: an offer carries the work order's text the runtime renders, from the
+// Task's issue as its goal.
+func TestTaskTickRendersTheWorkOrder266(t *testing.T) {
+	w := newTaskWorld(t)
+	w.in.Goal = "Issue #1: Add orders"
+	w.in.OrderText = func(o model.WorkOrder) string {
+		return fmt.Sprintf("%s %s round %d: %s", o.Task, o.Role, o.Round, o.Goal)
+	}
+	w.tick()
+	offers := w.rt.Work.Offers()
+	if len(offers) != 1 || offers[0].Text != w.in.Task+" implement round 1: Issue #1: Add orders" {
+		t.Errorf("offers = %+v, want the rendered text", offers)
 	}
 }

@@ -180,6 +180,37 @@ linters:
               desc: hostrun runs on any host's ports; cmd/theos builds the host adapter (docs/architecture.md)
             - pkg: github.com/JairJosafath/theos/internal/ports/fake
               desc: hostrun takes the ports; its tests wire the fake (docs/architecture.md)
+        # internal/method is the lead runtime's content and internal/harness
+        # the harnesses that render it (docs/plans/lead-runtime.md, decision 7;
+        # #266): pure renderings of the business rules, with no I/O of their
+        # own but a harness's read of the files it wrote.
+        method-and-harness-are-pure:
+          files:
+            - "**/internal/method/**"
+            - "**/internal/harness/**"
+          deny:
+            - pkg: k8s.io
+              desc: the lead's files are rendered without a cluster; no Kubernetes (docs/architecture.md)
+            - pkg: sigs.k8s.io/controller-runtime
+              desc: the lead's files are rendered without a cluster (docs/architecture.md)
+            - pkg: net/http
+              desc: rendering does no I/O (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/api
+              desc: the content takes the business rules' values; nocluster reads the model (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/controller
+              desc: the content must not depend on controllers (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/adapters
+              desc: the content must not depend on adapters (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/engine
+              desc: the engine decides; the content says what it decided (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/ports
+              desc: the content reaches no port (docs/architecture.md)
+        method-is-below-the-harness:
+          files:
+            - "**/internal/method/**"
+          deny:
+            - pkg: github.com/JairJosafath/theos/internal/harness
+              desc: a harness renders method's content, not the other way (docs/architecture.md)
         # cmd/theos wires the host adapters onto internal/nocluster, as
         # cmd/main.go does for the operator, and links no Kubernetes client.
         theos-binary-has-no-cluster:

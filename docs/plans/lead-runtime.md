@@ -451,6 +451,33 @@ Choices the plan left open:
   command that runs a tick: the settings decode refuses a key no step
   reads, and `hostrun.New` takes its `model.ClaimRules` from the caller.
 
+**Step 7 as built** (`internal/method`, `internal/harness`, `theos agents`).
+Choices the plan left open, after reading Claude Code's subagent and MCP
+documentation (code.claude.com/docs/en/sub-agents, .../mcp, .../memory):
+- A subagent's `model` is the Agent's `model` as written: Claude Code
+  takes a full model ID there as well as an alias. Its `tools` are a
+  comma-separated list; `mcp__theos__*` gives it every tool of
+  `theos mcp`. The implementer has `Read, Grep, Glob, Edit, Write, Bash`,
+  the reviewer `Read, Grep, Glob, Bash`: no `Agent`, `Edit` or `Write`.
+  Neither has `Agent`, so neither starts another subagent.
+- The generated marker is an HTML comment in the Markdown files and a YAML
+  comment in a subagent's frontmatter. `.mcp.json` is JSON, which takes
+  no comment, and carries none; `theos status` compares every file with
+  what `theos agents` writes now, so a hand edit of it is named too.
+- An Agent two Crews give two roles is refused: its one subagent file
+  can't have both roles' tools.
+- `issueBlock` and its intro moved to `internal/model` (`IssueBlock`,
+  `IssueIntro`), which `internal/agentrunner` and `method.WorkOrder` call.
+  The planner's plan format is not in the playbook yet: `theos plan`
+  (#293) is the first step that hands one out.
+- The engine renders no text: `TaskInput.OrderText` is the runtime's
+  rendering of an offer (`method.WorkOrder`, which #294 passes), and
+  `model.WorkOrder.Goal` carries the issue for it to fence.
+- `theos agents` writes only a file that differs and says of each whether
+  it was written or unchanged; a model with no Crew is refused. `theos
+  status` names a file that is missing or changed, when the model has a
+  Crew.
+
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
 

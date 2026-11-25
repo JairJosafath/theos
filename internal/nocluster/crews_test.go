@@ -201,3 +201,71 @@ func TestInitWritesAgents333(t *testing.T) {
 		t.Errorf("the uncommented Crew does not decode: %v\n%s", err, strings.Join(crew, ""))
 	}
 }
+
+// #266: theos agents writes the lead's files for the model's Crew; a second
+// run writes nothing; theos status names one a person changed, and one
+// that's gone. Nothing goes into a Container repository: the files are the
+// project repository's.
+func TestAgents266(t *testing.T) {
+	m := decode(t, withCrew(t), "")
+	dir := t.TempDir()
+	write := func(path string, data []byte) error {
+		full := filepath.Join(dir, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(full, data, 0o600)
+	}
+	var out bytes.Buffer
+	if err := nocluster.Agents(&out, m, os.DirFS(dir), write); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"CLAUDE.md", "AGENTS.md", ".claude/agents/theos-implementer.md",
+		".claude/agents/theos-reviewer.md", ".mcp.json"} {
+		if !strings.Contains(out.String(), path+": written\n") {
+			t.Errorf("theos agents did not write %s:\n%s", path, out.String())
+		}
+	}
+	impl, err := os.ReadFile(filepath.Join(dir, ".claude", "agents", "theos-implementer.md"))
+	if err != nil || !strings.Contains(string(impl), "model: claude-sonnet-5-5\n") {
+		t.Errorf("the implementer's subagent = %q, %v; want its Agent's model", impl, err)
+	}
+	out.Reset()
+	if err := nocluster.Agents(&out, m, os.DirFS(dir), write); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "written") || strings.Count(out.String(), ": unchanged\n") != 5 {
+		t.Errorf("a second theos agents:\n%s\nwant every file unchanged", out.String())
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# By hand\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, ".mcp.json")); err != nil {
+		t.Fatal(err)
+	}
+	w := newWorld(t)
+	w.m = m
+	w.env.Project = os.DirFS(dir)
+	if err := nocluster.Status(context.Background(), w.env, w.m); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"AGENTS.md: changed since theos agents wrote it; theos agents writes it again\n",
+		".mcp.json: not written; theos agents writes it\n"} {
+		if !strings.Contains(w.out.String(), line) {
+			t.Errorf("status does not say %q:\n%s", line, w.out.String())
+		}
+	}
+	if strings.Contains(w.out.String(), "CLAUDE.md:") {
+		t.Errorf("status names CLAUDE.md, which is as written:\n%s", w.out.String())
+	}
+}
+
+// #266: with no Crew there is nothing for a lead to hand out.
+func TestAgentsNeedACrew266(t *testing.T) {
+	err := nocluster.Agents(&bytes.Buffer{}, decode(t, readWebshop(t), ""), os.DirFS(t.TempDir()),
+		func(string, []byte) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "holds no Crew") {
+		t.Errorf("err = %v, want no Crew refused", err)
+	}
+}

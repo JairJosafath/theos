@@ -73,6 +73,9 @@ type WorkOrder struct {
 	Round  int
 	Role   string
 	Agent  string
+	// Goal is the issue as people wrote it, its title and body: data, which
+	// a work order fences (IssueBlock).
+	Goal string
 	// Feedback is what the round has to address, from the round before.
 	Feedback string
 	// Lease is how long a claim of the turn holds before it is renewed.

@@ -42,9 +42,15 @@ type TaskInput struct {
 	Task      string
 	Container string
 	Repo      ports.Repository
-	// Issue is the Task's issue and Title its title.
+	// Issue is the Task's issue, Title its title and Goal its title and
+	// body, as model.IssueGoal reads them.
 	Issue int
 	Title string
+	Goal  string
+	// OrderText renders an offer's text from its work order (the lead
+	// runtime's method.WorkOrder); nil offers none, and the Workers say
+	// what the turn is.
+	OrderText func(model.WorkOrder) string
 	// Implementer and Reviewer are the Agents that play the roles.
 	Implementer, Reviewer string
 	// MaxRounds is the implementer's maxRounds; 0 means 3.
@@ -269,9 +275,12 @@ func (t *taskTick) offer(ctx context.Context, role string) error {
 		return err
 	}
 	order := model.WorkOrder{Task: t.in.Task, Issue: t.in.Issue, Branch: model.TaskBranch(t.in.Task), Role: role,
-		Agent: agent, Round: p.Round, Lease: t.in.Lease}
+		Agent: agent, Round: p.Round, Lease: t.in.Lease, Goal: t.in.Goal}
 	if role == model.RoleImplementer {
 		order.Feedback = p.Feedback
+	}
+	if t.in.OrderText != nil {
+		order.Text = t.in.OrderText(order)
 	}
 	return t.rt.Workers().Offer(ctx, order)
 }

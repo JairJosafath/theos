@@ -30,6 +30,8 @@ internal/taskfacts/                What the factory's numbers read of a Task: th
 internal/modelfacts/               What the scaffold works out of the objects a caller read: resolve, layers, render, license and the one branch rule, for the Container reconciler and the theos binary (#268); no controller-runtime, no client-go
 internal/nocluster/                The theos binary's commands on ports, and the model files' decoder: each object defaulted from the CRDs config/crd/bases embeds (crds.go), checked against their create-time rules, then decoded strictly (#268); no controller-runtime, no client-go, no adapter
 internal/engine/                   The loops both runtimes run, on the ports (docs/plans/lead-runtime.md, decision 2): the Crew tick on ports.TaskStore, the operator's adapter in internal/controller/crew_tasks.go (#332); no Kubernetes, no API types, no net/http
+internal/method/                   The lead runtime's content (#266): the lead playbook, each role's boundaries and the work order's text, rendered from the model
+internal/harness/                  The harness interface (Harness, LeadFiles) and claudecode/, Claude Code's files for a project repository, which theos agents writes (#266)
 internal/sessionclient/            The Session client's logic: register, heartbeat, delete
 internal/chatbot/                  theos-chat's logic: news to threads, posts and the updates digest; commands sent impersonating the person; its state ConfigMap
 internal/agentrunner/              The Task runner's logic: clone, run the agent, check, push, report

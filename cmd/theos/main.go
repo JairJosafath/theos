@@ -61,6 +61,12 @@ Usage:
   theos scaffold [-C dir]
   theos protect [-C dir]
   theos status [-C dir]
+  theos agents [-C dir]
+
+theos agents writes the lead's files for Claude Code into the project
+repository from model/: CLAUDE.md, AGENTS.md, a subagent in
+.claude/agents/ for each Agent a Crew names, and .mcp.json; theos status
+names one that changed since.
 
 The credential is THEOS_GIT_TOKEN, else what git credential fill gives for
 its host; theos never stores or prints it. It is sent only to the host it
@@ -126,17 +132,22 @@ func run(ctx context.Context, args []string, d deps) int {
 	case "init":
 		err = initModel(ctx, d, *dir, nocluster.InitOptions{Project: *project, Remote: *remote, Provider: *provider,
 			TheosURL: theosURL, Ref: *ref})
-	case "scaffold", "protect", "status":
+	case "scaffold", "protect", "status", "agents":
 		var m *nocluster.Model
 		if m, err = nocluster.Read(os.DirFS(*dir)); err != nil {
 			break
 		}
 		switch cmd {
+		case "agents":
+			err = nocluster.Agents(d.stdout, m, os.DirFS(*dir), func(path string, data []byte) error {
+				return writeProjectFile(*dir, path, data)
+			})
 		case "scaffold":
 			err = nocluster.Scaffold(ctx, env, m)
 		case "protect":
 			err = nocluster.Protect(ctx, env, m)
 		default:
+			env.Project = os.DirFS(*dir)
 			err = nocluster.Status(ctx, env, m)
 		}
 	default:
@@ -148,6 +159,16 @@ func run(ctx context.Context, args []string, d deps) int {
 		return 1
 	}
 	return 0
+}
+
+// writeProjectFile writes data at path under dir, a path theos agents
+// renders, making its folder.
+func writeProjectFile(dir, path string, data []byte) error {
+	full := filepath.Join(dir, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil { //nolint:gosec // the project's own folder
+		return err
+	}
+	return os.WriteFile(full, data, 0o644) //nolint:gosec // files the project repository commits
 }
 
 // initModel writes the model files under dir, refusing to replace any.

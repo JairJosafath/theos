@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"slices"
 	"strings"
 	"time"
@@ -53,6 +54,9 @@ type Env struct {
 	Now func() time.Time
 	// Out is where the commands report.
 	Out io.Writer
+	// Project is the project repository, where status looks for the lead's
+	// files (agentDrift); nil looks for none.
+	Project fs.FS
 }
 
 // container is one Container of the model, resolved and on its host.
@@ -242,8 +246,9 @@ func protect(ctx context.Context, env Env, m *Model, c container, repo ports.Rep
 // its Relationships to a DataStore as the operator's Applied condition
 // reads it (AppliedAtScaffold, or AddedAfterScaffold for one added after
 // the scaffold); then each Crew's fields the lead runtime does not honour,
-// with their reason words (crewNotes); then the losses of the loss table
-// that apply.
+// with their reason words (crewNotes); then each of the lead's files that
+// drifted from what theos agents writes (agentDrift); then the losses of
+// the loss table that apply.
 func Status(ctx context.Context, env Env, m *Model) error {
 	cs, err := containers(ctx, env, m)
 	if err != nil {
@@ -259,6 +264,9 @@ func Status(ctx context.Context, env Env, m *Model) error {
 		}
 	}
 	if err := crewNotes(env.Out, m, model.LeadCapabilities()); err != nil {
+		return err
+	}
+	if err := agentDrift(env.Out, m, env.Project); err != nil {
 		return err
 	}
 	return losses(ctx, env, cs)
