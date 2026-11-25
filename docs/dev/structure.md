@@ -23,6 +23,7 @@ internal/adapters/linear/          The Linear adapter: request intake (ports.Iss
 internal/adapters/jira/            The Jira Cloud adapter: request intake (ports.IssueTracker) over the REST API version 3, for one project and one label, wired to nothing yet; jiratest/ is its fake Jira Cloud
 internal/adapters/matrix/          The Matrix adapter: the ChatHost port over the client-server API; matrixtest/ is its fake homeserver
 internal/adapters/github/          The GitHub adapter: the release copy, a Brief's requests, a GitHub App's tokens, and the Git host ports as docs/plans/github-host.md adds them (GitHost, Issues, AgentAccess, CI, Events and the Registry, so far); githubtest/ is its fake GitHub, REST and Git over HTTP
+internal/adapters/hostrun/         The lead runtime on the Git host's ports (#335): a Task's branch and its issue's markers as ports.TaskStore and ports.Workers; no Kubernetes, no net/http
 internal/adapters/localenv/        The local TestEnvironment provider: a fenced pod per lease, with client-go
 internal/adapters/awsenv/          The aws TestEnvironment provider: a fenced EC2 machine per lease (a Mac's on a kept host; one that runs a CI job in ci.go), and the deviceFarm one's test runs, with the AWS SDK
 internal/taskfacts/                What the factory's numbers read of a Task: the one mapping from the API's Task to model.TaskMetricFacts, for the operator's metrics and theos-session report

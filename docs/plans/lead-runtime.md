@@ -413,6 +413,44 @@ Choices the plan left open:
 - Every Task envtest spec passes unchanged; the Task tick's tests are
   tier 1 on `fake.Tasks`, `fake.Workers` and the fake host.
 
+**Step 6 as built** (`internal/adapters/hostrun`, `internal/ports/comments.go`).
+Choices the plan left open:
+- The ports gain `ports.IssueComments`, an optional part of `Issues`
+  asked for by interface: an issue's comments with the host's IDs,
+  authors and stamps, and a comment posted and read back as stamped.
+  `CommentIssue` stays as it is for its thirty callers. Gitea lists an
+  issue's comments whole; GitHub pages them, and the adapter reads every
+  page.
+- A Task's progress is a `progress` marker the engine posts at each
+  transition, `<!-- theos:progress task=<task> -->`, its `TaskRecord`
+  a fenced json block read strictly; the last counted one is the Task's.
+  Comments are never edited, so a Task's history is on its issue. A
+  session can't post one (`SessionMarker` refuses it), and no run reads
+  it.
+- `Start` creates the branch at main's head, labels the issue
+  `status/in-progress` and posts the first progress, Pending. A branch
+  there already is the Task's own, from a start that stopped halfway or a
+  lead that raced this one, and the start goes on from it. The offer is
+  the Task tick's first step, so a start that stopped before it is
+  finished by the next tick, as decision 5 wants, with no step of
+  `Start`'s own.
+- `Tasks` lists the Tasks at work: the issues labelled
+  `status/in-progress`. A Task that ended is not listed: its issue is
+  closed, or handed back to a person. `contract.TaskStore` takes that:
+  an ended Task is listed final or not at all. The lead runtime starts
+  no Spec Task (`NoSpecs`).
+- `Workers.Run` is `model.RunFromMarkers` on the issue's comments and the
+  branch's head, for the turn the counted offer names, else not started.
+  `Offer` posts nothing while the turn is offered and not answered or
+  ended. `End` posts `ended` only for a turn still open: a done one needs
+  none, the next offer starting afresh.
+- A Runtime is one Container's; a Task's issue is read from its name
+  (`model.IssueTaskName`).
+- Not here yet: `lease`, `grace` and `claimants` in `model/settings.yaml`,
+  and `cmd/theos`'s wiring. Both come with `theos mcp` (#294), the first
+  command that runs a tick: the settings decode refuses a key no step
+  reads, and `hostrun.New` takes its `model.ClaimRules` from the caller.
+
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
 

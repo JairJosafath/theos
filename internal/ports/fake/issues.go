@@ -46,6 +46,9 @@ type Issue struct {
 	// FiledLabels are the labels the issue was filed with, before anyone
 	// (a Crew taking it) changed them.
 	FiledLabels []string
+	// Stamped are its comments as ListIssueComments reads them: each with
+	// its ID, author and stamp, oldest first.
+	Stamped []ports.IssueComment
 }
 
 // Review is a review posted on a pull request, and the user who posted it.
@@ -82,9 +85,9 @@ type issueStore struct {
 	now func() time.Time
 }
 
-// SetClock makes now the clock a closed issue's ClosedAt is stamped with, so
-// a test that moves its own clock sees the issue closed on it; nil is
-// time.Now. now must not call back into the fake.
+// SetClock makes now the clock a closed issue's ClosedAt and each comment
+// on an issue are stamped with, so a test that moves its own clock sees
+// them on it; nil is time.Now. now must not call back into the fake.
 func (g *Git) SetClock(now func() time.Time) {
 	g.s.mu.Lock()
 	defer g.s.mu.Unlock()
@@ -185,6 +188,7 @@ func (g *Git) Issue(owner, name string, number int) Issue {
 	}
 	out := *i
 	out.Labels, out.Comments, out.Blockers = slices.Clone(i.Labels), slices.Clone(i.Comments), slices.Clone(i.Blockers)
+	out.Stamped = slices.Clone(i.Stamped)
 	return out
 }
 
@@ -464,6 +468,7 @@ func (g *Git) CommentIssue(ctx context.Context, repo ports.Repository, number in
 		return err
 	}
 	i.Comments = append(i.Comments, body)
+	i.Stamped = append(i.Stamped, g.s.stampComment(g.loginLocked(), body))
 	g.s.deliver(repo, EventIssue, number)
 	return nil
 }

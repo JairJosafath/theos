@@ -95,6 +95,8 @@ type state struct {
 	copyImage ImageCopier
 	// logins are the accounts tokens are of, by token (SetLogin).
 	logins map[string]string
+	// commentIDs is the ID of the last comment made.
+	commentIDs int64
 }
 
 type repository struct {

@@ -34,7 +34,7 @@ import (
 //	GET, PATCH  /repos/{o}/{r}/labels/{name}
 //	GET, POST   /repos/{o}/{r}/issues                     ?state=open|closed|all, labels=a,b, milestone=N, page, per_page
 //	GET, PATCH  /repos/{o}/{r}/issues/{n}                 state, body, milestone (null takes it out), assignees
-//	POST        /repos/{o}/{r}/issues/{n}/comments
+//	GET, POST   /repos/{o}/{r}/issues/{n}/comments               GET: page, per_page
 //	POST, PUT   /repos/{o}/{r}/issues/{n}/labels          add to the issue's labels; replace them
 //	DELETE      /repos/{o}/{r}/issues/{n}/labels/{name}   404 when the issue doesn't have it
 //	GET, POST   /repos/{o}/{r}/issues/{n}/dependencies/blocked_by   {issue_id}; 422 for one that is there
@@ -64,6 +64,8 @@ type issue struct {
 	labels    []string
 	assignees []string
 	comments  []string
+	// stamped are its comments as the REST API lists them.
+	stamped   []issueComment
 	milestone int64
 	// blockedBy are the ids of the issues it depends on, in any repository.
 	blockedBy []int64
@@ -86,6 +88,14 @@ var (
 	issueBlockedByPath = regexp.MustCompile(`^/issues/(\d+)/dependencies/blocked_by$`)
 	milestonePath      = regexp.MustCompile(`^/milestones/(\d+)$`)
 )
+
+// issueComment is a comment as the REST API shows it.
+type issueComment struct {
+	ID        int64     `json:"id"`
+	User      account   `json:"user"`
+	CreatedAt time.Time `json:"created_at"`
+	Body      string    `json:"body"`
+}
 
 // Comments returns an issue's comments, oldest first, for a test to read.
 func (s *Server) Comments(owner, name string, number int) []string {
@@ -388,12 +398,16 @@ func (s *Server) issueAPI(w http.ResponseWriter, r *http.Request, kept *repo, re
 			reply(w, http.StatusUnprocessableEntity, message("Validation Failed"))
 			return
 		}
-		i.comments = append(i.comments, body.Body)
+		s.nextID++
+		c := issueComment{ID: s.nextID, User: account{s.acting}, CreatedAt: time.Now().UTC(), Body: body.Body}
+		i.comments, i.stamped = append(i.comments, body.Body), append(i.stamped, c)
 		s.emit(kept, s.acting, eventComment, func() eventBody {
 			return eventBody{Action: actionCreated, Issue: s.issueJSON(kept, i),
 				Comment: &eventNote{Body: body.Body, User: account{s.acting}}}
 		})
-		reply(w, http.StatusCreated, body)
+		reply(w, http.StatusCreated, c)
+	case issueCommentsPath.MatchString(rest) && r.Method == http.MethodGet:
+		reply(w, http.StatusOK, page(r.URL.Query(), i.stamped))
 	case issueLabelsPath.MatchString(rest) && (r.Method == http.MethodPost || r.Method == http.MethodPut):
 		s.setLabels(w, r, kept, i)
 	case issueLabelPath.MatchString(rest) && r.Method == http.MethodDelete:

@@ -237,6 +237,29 @@ func TestGitHostRefsOnGitHub(t *testing.T) {
 // TestIssuesContract covers #76: the GitHub adapter passes the Issues
 // contract against the fake GitHub, exclusive labels and refused closes
 // emulated.
+// #335: the issue comments the lead runtime's markers are, as GitHub
+// stamps them, every page of them.
+func TestIssueCommentsContract(t *testing.T) {
+	gh := githubtest.New(t, "ada", hostToken)
+	orgs := 0
+	contract.IssueComments(t, contract.IssueCommentsEnv{
+		New: func(t *testing.T) (ports.GitHost, ports.Issues) {
+			t.Helper()
+			orgs++
+			org := fmt.Sprintf("comments-%d", orgs)
+			gh.AddOrg(org)
+			h, err := (Client{}).Host(ports.Config{URL: gh.URL(), Owner: org, Credentials: ports.Credentials{Token: hostToken}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return h, h
+		},
+	})
+	if calls := gh.Unserved(); len(calls) > 0 {
+		t.Errorf("the adapter made calls the fake GitHub doesn't serve: %q", calls)
+	}
+}
+
 func TestIssuesContract(t *testing.T) {
 	gh := githubtest.New(t, "ada", hostToken)
 	orgs := 0

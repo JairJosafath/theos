@@ -152,6 +152,34 @@ linters:
           deny:
             - pkg: github.com/JairJosafath/theos/internal/ports/fake
               desc: the engine takes the ports; its tests wire the fake (docs/architecture.md)
+        # internal/adapters/hostrun is the lead runtime on the Git host
+        # (docs/plans/lead-runtime.md, decisions 3 to 5; #335): the ports and
+        # the business rules, and nothing of Kubernetes, the API's types,
+        # net/http, the engine, the controllers or another adapter; its tests
+        # run the engine on the ports' fake and the fake GitHub.
+        hostrun-runs-on-ports:
+          files:
+            - "**/internal/adapters/hostrun/**"
+            - "!$test"
+          deny:
+            - pkg: k8s.io
+              desc: the lead runtime runs without a cluster; it must not import Kubernetes (docs/architecture.md)
+            - pkg: sigs.k8s.io
+              desc: the lead runtime must not import controller-runtime (docs/architecture.md)
+            - pkg: net/http
+              desc: hostrun reaches the host through the ports; the host adapters speak HTTP (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/api
+              desc: hostrun takes plain values (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/engine
+              desc: the engine calls the runtime's ports, not the other way (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/controller
+              desc: hostrun must not depend on controllers (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/adapters/gitea
+              desc: hostrun runs on any host's ports; cmd/theos builds the host adapter (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/adapters/github
+              desc: hostrun runs on any host's ports; cmd/theos builds the host adapter (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/ports/fake
+              desc: hostrun takes the ports; its tests wire the fake (docs/architecture.md)
         # cmd/theos wires the host adapters onto internal/nocluster, as
         # cmd/main.go does for the operator, and links no Kubernetes client.
         theos-binary-has-no-cluster:

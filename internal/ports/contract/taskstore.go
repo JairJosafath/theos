@@ -35,6 +35,9 @@ type TaskStoreEnv struct {
 	// Finish ends the Task named task on container, failed or merged, as
 	// the runtime's own Task tick would.
 	Finish func(t *testing.T, container, task string, failed bool)
+	// NoSpecs means the store starts no Spec Task: a start with Spec starts
+	// one that builds (the lead runtime, whose spec writer is RoleNotBuilt).
+	NoSpecs bool
 	// Cannot names the subtests the store can't run, with why; they are
 	// skipped.
 	Cannot map[string]string
@@ -43,7 +46,8 @@ type TaskStoreEnv struct {
 // TaskStore states what internal/engine relies on of every TaskStore: a
 // started Task is listed at once, on its Container alone, with its issue
 // and whether it writes a spec; a start repeated is no error and starts
-// nothing more; a Task that ended is listed as final, failed or not; and a
+// nothing more; a Task that ended is listed as final, failed or not, or no
+// longer listed, as a store that keeps only the Tasks at work does; and a
 // Task's record, Pending when it starts, is kept as saved, a final phase
 // ending it.
 func TaskStore(t *testing.T, env TaskStoreEnv) {
@@ -99,8 +103,8 @@ func (s taskStoreSuite) starts(t *testing.T) {
 	if got := named(t, tasks, build.Task); got.Issue != 3 || got.Final || got.Spec {
 		t.Errorf("Task %s = %+v, want issue 3, not final, no spec", build.Task, got)
 	}
-	if got := named(t, tasks, spec.Task); got.Issue != 5 || got.Final || !got.Spec {
-		t.Errorf("Task %s = %+v, want issue 5, not final, a spec", spec.Task, got)
+	if got := named(t, tasks, spec.Task); got.Issue != 5 || got.Final || got.Spec == s.env.NoSpecs {
+		t.Errorf("Task %s = %+v, want issue 5, not final, a spec unless the store starts none", spec.Task, got)
 	}
 	if got := s.tasks(t, store, other); len(got) != 0 {
 		t.Errorf("the other Container lists %+v, want no Task", got)
@@ -132,11 +136,17 @@ func (s taskStoreSuite) ends(t *testing.T) {
 	s.env.Finish(t, container, merged.Task, false)
 	s.env.Finish(t, container, failed.Task, true)
 	tasks := s.tasks(t, store, container)
-	if got := named(t, tasks, merged.Task); !got.Final || got.Failed {
-		t.Errorf("merged Task = %+v, want final, not failed", got)
-	}
-	if got := named(t, tasks, failed.Task); !got.Final || !got.Failed {
-		t.Errorf("failed Task = %+v, want final and failed", got)
+	endedOrGone(t, tasks, merged.Task, false)
+	endedOrGone(t, tasks, failed.Task, true)
+}
+
+// endedOrGone fails t unless the Task called name is listed final, failed
+// as failed says, or not listed.
+func endedOrGone(t *testing.T, tasks []model.CrewTask, name string, failed bool) {
+	t.Helper()
+	i := slices.IndexFunc(tasks, func(c model.CrewTask) bool { return c.Name == name })
+	if i >= 0 && (!tasks[i].Final || tasks[i].Failed != failed) {
+		t.Errorf("ended Task = %+v, want final, failed %v, or not listed", tasks[i], failed)
 	}
 }
 
@@ -153,7 +163,7 @@ func (s taskStoreSuite) progress(t *testing.T) {
 	since := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
 	rec = ports.TaskRecord{Progress: model.TaskProgress{Phase: model.TaskChecking, Round: 2, Commit: "abc1234",
 		Feedback: "Handle an empty order."}, PullRequest: 7, PullRequestURL: "https://host.test/pulls/7",
-		Summary: "Added the orders.", PhaseSince: since}
+		Summary: summaryAdded, PhaseSince: since}
 	if err := store.SaveProgress(s.ctx, start.Task, rec); err != nil {
 		t.Fatal(err)
 	}
@@ -170,9 +180,7 @@ func (s taskStoreSuite) progress(t *testing.T) {
 	if err := store.SaveProgress(s.ctx, start.Task, rec); err != nil {
 		t.Fatal(err)
 	}
-	if got := named(t, s.tasks(t, store, container), start.Task); !got.Final || got.Failed {
-		t.Errorf("a Merged Task is listed %+v, want final, not failed", got)
-	}
+	endedOrGone(t, s.tasks(t, store, container), start.Task, false)
 	if _, err := store.Progress(s.ctx, "no-such-task"); err == nil {
 		t.Error("the record of a Task the store doesn't hold is no error")
 	}

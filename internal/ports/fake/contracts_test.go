@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/ports/contract"
 	"github.com/JairJosafath/theos/internal/ports/fake"
@@ -387,6 +388,33 @@ func TestTaskStoreContract(t *testing.T) {
 			}
 			got.Final, got.Failed = true, failed
 			store.Set(container, got)
+		},
+	})
+}
+
+func TestIssueCommentsContract(t *testing.T) {
+	g, owners := fake.New(), 0
+	contract.IssueComments(t, contract.IssueCommentsEnv{
+		New: func(*testing.T) (ports.GitHost, ports.Issues) {
+			h := newOwner(g, &owners)
+			return h, h
+		},
+	})
+}
+
+func TestWorkersContract(t *testing.T) {
+	var w *fake.Workers
+	contract.Workers(t, contract.WorkersEnv{
+		New: func(*testing.T) (ports.Workers, string, int) {
+			w = fake.NewWorkers()
+			return w, "orders-api-3", 3
+		},
+		Answer: func(_ *testing.T, task string, round int, role string, result model.RunResult) {
+			w.SetRun(task, round, role, model.RunState{Started: true, Done: true, Result: &result})
+		},
+		Lapse: func(_ *testing.T, task string, round int, role string) {
+			w.SetRun(task, round, role, model.RunState{Started: true,
+				Markers: &model.MarkerRun{EndDue: model.EndSilent}})
 		},
 	})
 }
