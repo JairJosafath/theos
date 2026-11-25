@@ -289,6 +289,32 @@ what it needs. "Tier" is AGENTS.md's.
 | — `theos update`, `export`, `import` | #295 | 2 | 4 | its issue's |
 | 14. Harness authoring: `harnesstest`, the guide, Codex | #338 | 3 | 7 | tier 1: the suite on both harnesses |
 
+**Step 1 as built** (`internal/engine/crew.go`, `internal/ports/runtime.go`,
+`internal/controller/crew_tasks.go`). Choices the plan left open:
+- `CrewTick` returns a `CrewResult`: the step, and the hand-backs that
+  failed, by issue. The engine logs nothing; the runtime logs them. A
+  failure to read the host is an `*engine.HostError`, so the operator still
+  waits on `GitHostUnavailable` while any other error is the store's.
+- `CrewInput.Before` runs between the read and the decision, with the facts
+  the decision takes. The operator's releases, schedules and onboarding run
+  there, as they ran there before. It doesn't run while the Container isn't
+  Ready, and the host may then be nil.
+- `TaskStore` has `Tasks` and `Start` alone; `Progress` and `SaveProgress`
+  come with #334, the first step that calls them. `Tasks` leaves out Triage
+  Tasks, which the Crew reads apart.
+- `Workers` and `model.WorkOrder` are declared, unused. The operator's
+  `Workers()` is nil until #336, as is the fake's until #334.
+- `Capabilities` has a field per reason word of decision 6 but
+  `HarnessNotBuilt`, which is a harness's: `Merges`, `Sandboxes`,
+  `Schedules`, `Costs` and `AllRoles`. The operator has all five.
+- The reconciler still lists the Tasks itself, for releases, triage and the
+  Paused condition; the store lists them again, live. That is one more
+  list a reconcile, and the store's is at least as new as the decision
+  needs. The proposed issues a triager reads are read by the reconciler,
+  before the tick.
+- `contract.TaskStore` runs on the fake and on the operator's adapter over
+  controller-runtime's fake client, in `make test`.
+
 **Step 2 as built** (`internal/model/claim.go`). Choices the plan left
 open:
 - A marker line is `<!-- theos:<kind> key=value ... -->`, keys sorted,

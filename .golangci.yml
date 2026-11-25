@@ -123,6 +123,35 @@ linters:
           deny:
             - pkg: github.com/JairJosafath/theos/internal/ports/fake
               desc: nocluster takes the ports; its tests wire the fake (docs/architecture.md)
+        # internal/engine is the one copy of the loops both runtimes run
+        # (docs/plans/lead-runtime.md, decision 2; #332): the business rules
+        # and the ports, and nothing of Kubernetes, the API's types, net/http,
+        # the controllers or the adapters; its tests run on the ports' fake.
+        engine-runs-on-ports:
+          files:
+            - "**/internal/engine/**"
+          deny:
+            - pkg: k8s.io
+              desc: the engine is linked by the theos binary, which runs without a cluster; it must not import Kubernetes (docs/architecture.md)
+            - pkg: sigs.k8s.io
+              desc: the engine must not import controller-runtime (docs/architecture.md)
+            - pkg: net/http
+              desc: the engine does no I/O of its own; it calls the ports (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/api
+              desc: the engine takes the business rules' values; the operator's adapter converts resources (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/controller
+              desc: the engine must not depend on controllers; the operator calls it (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/internal/adapters
+              desc: the engine runs on ports; the runtimes build the adapters (docs/architecture.md)
+            - pkg: github.com/JairJosafath/theos/cmd
+              desc: nothing imports an entry point (docs/architecture.md)
+        engine-takes-ports:
+          files:
+            - "**/internal/engine/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/JairJosafath/theos/internal/ports/fake
+              desc: the engine takes the ports; its tests wire the fake (docs/architecture.md)
         # cmd/theos wires the host adapters onto internal/nocluster, as
         # cmd/main.go does for the operator, and links no Kubernetes client.
         theos-binary-has-no-cluster:

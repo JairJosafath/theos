@@ -61,6 +61,18 @@ const minCommitPrefix = 7
 // jsonBlock is a fenced json block in a marker comment's text.
 var jsonBlock = regexp.MustCompile("(?s)```json\\s*\\n(.*?)\\n```")
 
+// WorkOrder is one role's turn on a Task, as the engine offers it: the
+// round of Task, the role and the Agent that plays it, and the text that
+// tells it what to do (#266). The operator's Workers make a sandbox of it;
+// the lead runtime's post it as an offer (OfferMarker) that a session pulls.
+type WorkOrder struct {
+	Task  string
+	Round int
+	Role  string
+	Agent string
+	Text  string
+}
+
 // OfferMarker is the first line of the engine's offer of round of task to
 // role, played by agent; the work order's text (#266) follows it.
 func OfferMarker(task string, round int, role, agent string) (string, error) {

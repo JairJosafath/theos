@@ -1,0 +1,137 @@
+/*
+Copyright 2026 The theos Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package contract
+
+import (
+	"context"
+	"slices"
+	"testing"
+
+	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
+)
+
+// TaskStoreEnv builds the TaskStore under test.
+type TaskStoreEnv struct {
+	// New returns a fresh TaskStore that holds no Task, and two Containers
+	// it keeps Tasks for. Its Crew has a spec writer: a start with Spec
+	// starts a Spec Task.
+	New func(t *testing.T) (store ports.TaskStore, container, other string)
+	// Finish ends the Task named task on container, failed or merged, as
+	// the runtime's own Task tick would.
+	Finish func(t *testing.T, container, task string, failed bool)
+	// Cannot names the subtests the store can't run, with why; they are
+	// skipped.
+	Cannot map[string]string
+}
+
+// TaskStore states what internal/engine relies on of every TaskStore: a
+// started Task is listed at once, on its Container alone, with its issue
+// and whether it writes a spec; a start repeated is no error and starts
+// nothing more; and a Task that ended is listed as final, failed or not.
+func TaskStore(t *testing.T, env TaskStoreEnv) {
+	t.Helper()
+	ctx, cancel := suiteContext()
+	defer cancel()
+	runSubtests(t, taskStoreSuite{ctx: ctx, env: env}, env.Cannot, []subtest[taskStoreSuite]{
+		{"lists a started Task at once, on its Container alone", taskStoreSuite.starts},
+		{"starts a Task once however often it is asked", taskStoreSuite.idempotent},
+		{"lists a Task that ended as final", taskStoreSuite.ends},
+	})
+}
+
+// taskStoreSuite holds what every subtest of TaskStore shares.
+type taskStoreSuite struct {
+	ctx context.Context
+	env TaskStoreEnv
+}
+
+// tasks are store's Tasks on container, failing t on an error.
+func (s taskStoreSuite) tasks(t *testing.T, store ports.TaskStore, container string) []model.CrewTask {
+	t.Helper()
+	return must(store.Tasks(s.ctx, container))(t)
+}
+
+// named is the Task called name in tasks, failing t when there is none.
+func named(t *testing.T, tasks []model.CrewTask, name string) model.CrewTask {
+	t.Helper()
+	i := slices.IndexFunc(tasks, func(c model.CrewTask) bool { return c.Name == name })
+	if i < 0 {
+		t.Fatalf("no Task %s among %+v", name, tasks)
+	}
+	return tasks[i]
+}
+
+func (s taskStoreSuite) starts(t *testing.T) {
+	store, container, other := s.env.New(t)
+	if got := s.tasks(t, store, container); len(got) != 0 {
+		t.Fatalf("a fresh store lists %+v, want no Task", got)
+	}
+	build := model.IssueStart{Issue: 3, Task: container + "-3", Attempt: 1}
+	spec := model.IssueStart{Issue: 5, Task: container + "-5", Attempt: 1, Spec: true}
+	for _, start := range []model.IssueStart{build, spec} {
+		if err := store.Start(s.ctx, container, start); err != nil {
+			t.Fatalf("Start(%s): %v", start.Task, err)
+		}
+	}
+	tasks := s.tasks(t, store, container)
+	if len(tasks) != 2 {
+		t.Fatalf("Tasks = %+v, want the two started", tasks)
+	}
+	if got := named(t, tasks, build.Task); got.Issue != 3 || got.Final || got.Spec {
+		t.Errorf("Task %s = %+v, want issue 3, not final, no spec", build.Task, got)
+	}
+	if got := named(t, tasks, spec.Task); got.Issue != 5 || got.Final || !got.Spec {
+		t.Errorf("Task %s = %+v, want issue 5, not final, a spec", spec.Task, got)
+	}
+	if got := s.tasks(t, store, other); len(got) != 0 {
+		t.Errorf("the other Container lists %+v, want no Task", got)
+	}
+}
+
+func (s taskStoreSuite) idempotent(t *testing.T) {
+	store, container, _ := s.env.New(t)
+	start := model.IssueStart{Issue: 7, Task: container + "-7", Attempt: 1}
+	for range 3 {
+		if err := store.Start(s.ctx, container, start); err != nil {
+			t.Fatalf("Start(%s) again: %v, want no error", start.Task, err)
+		}
+	}
+	if got := s.tasks(t, store, container); len(got) != 1 || got[0].Name != start.Task {
+		t.Errorf("Tasks = %+v, want %s once", got, start.Task)
+	}
+}
+
+func (s taskStoreSuite) ends(t *testing.T) {
+	store, container, _ := s.env.New(t)
+	merged := model.IssueStart{Issue: 8, Task: container + "-8", Attempt: 1}
+	failed := model.IssueStart{Issue: 9, Task: container + "-9", Attempt: 1}
+	for _, start := range []model.IssueStart{merged, failed} {
+		if err := store.Start(s.ctx, container, start); err != nil {
+			t.Fatalf("Start(%s): %v", start.Task, err)
+		}
+	}
+	s.env.Finish(t, container, merged.Task, false)
+	s.env.Finish(t, container, failed.Task, true)
+	tasks := s.tasks(t, store, container)
+	if got := named(t, tasks, merged.Task); !got.Final || got.Failed {
+		t.Errorf("merged Task = %+v, want final, not failed", got)
+	}
+	if got := named(t, tasks, failed.Task); !got.Final || !got.Failed {
+		t.Errorf("failed Task = %+v, want final and failed", got)
+	}
+}

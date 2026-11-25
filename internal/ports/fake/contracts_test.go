@@ -372,3 +372,21 @@ func TestLaggingListAndIssueOpen(t *testing.T) {
 		t.Errorf("IssueOpen() of a tracker that is down = %v, want %s", err, ports.ReasonTrackerUnavailable)
 	}
 }
+
+func TestTaskStoreContract(t *testing.T) {
+	var store *fake.Tasks
+	contract.TaskStore(t, contract.TaskStoreEnv{
+		New: func(*testing.T) (ports.TaskStore, string, string) {
+			store = fake.NewTasks()
+			return store, "orders-api", "web"
+		},
+		Finish: func(t *testing.T, container, task string, failed bool) {
+			got, err := store.Get(container, task)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got.Final, got.Failed = true, failed
+			store.Set(container, got)
+		},
+	})
+}
