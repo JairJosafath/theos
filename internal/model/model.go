@@ -406,6 +406,25 @@ func ScaffoldHistory(commits int, initialFor, container string, adopt bool) Exis
 	}
 }
 
+// ScaffoldedHistory is ScaffoldHistory for a reader that has only the
+// repository to say whether a Container was scaffolded: theos without a
+// cluster keeps no status, so the history is its record. commits is how
+// many commits the history read holds; scaffoldFor is the Container named
+// by the scaffold commit found in it, empty when it holds none. The
+// scaffold is only ever pushed as a repository's first commit, so a
+// history holding container's own scaffold commit reads HistoryRecover
+// however many commits followed it: a Task's merged pull request or a
+// Standard update leaves the Container scaffolded. Every other history
+// reads as ScaffoldHistory reads it. The operator keeps ScaffoldHistory:
+// it reads the history only until its status records the scaffold, when
+// anything past the first commit is foreign.
+func ScaffoldedHistory(commits int, scaffoldFor, container string, adopt bool) ExistingHistory {
+	if !adopt && commits > 0 && scaffoldFor != "" && scaffoldFor == container {
+		return HistoryRecover
+	}
+	return ScaffoldHistory(commits, "", container, adopt)
+}
+
 // DataStoreUse is what a Container picks up from its Relationships to DataStores.
 type DataStoreUse struct {
 	// Connectors are the unique Connector names, sorted. A Connector reached through

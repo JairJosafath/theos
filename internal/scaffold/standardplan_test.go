@@ -127,3 +127,36 @@ func TestStandardAt295(t *testing.T) {
 		})
 	}
 }
+
+// theos scaffold and status find the Container's scaffold commit in a
+// history a merge has moved on, where the newest commit is a Task's merge
+// or an update's: they read only the newest and refused the Container.
+func TestScaffoldCommitAfterAMerge(t *testing.T) {
+	in := Input{Project: "shop", SoftwareSystem: "core", Container: "orders-api", Standard: "python-standard"}
+	scaffoldCommit := CommitMessage(in, []string{"python-fastapi@v1.6.0", "python-standard@v1.0.0"}, nil)
+	other := CommitMessage(Input{Project: "shop", SoftwareSystem: "core", Container: "billing-api"},
+		[]string{"python-fastapi@v1.6.0"}, nil)
+	update := UpdateMessage(in, "python-standard", model.StandardVersion{Ref: "v1.0.0"},
+		model.StandardVersion{Ref: "v1.1.0"}, Update{})
+	for _, tc := range []struct {
+		name     string
+		messages []string
+		found    bool
+	}{
+		{"the scaffold alone", []string{scaffoldCommit}, true},
+		{"a Task's merge after it", []string{scaffoldCommit, "Add orders (#3)\n\ntask/orders-api-3\n"}, true},
+		{"a merged branch's commit listed after it", []string{"Add orders\n", scaffoldCommit, "Merge (#3)\n"}, true},
+		{"an update after it", []string{scaffoldCommit, update}, true},
+		{"an update alone names no layers", []string{"Import\n", update}, false},
+		{"another Container's scaffold", []string{other, "Add orders (#3)\n"}, false},
+		{"none of ours", []string{"Initial commit\n"}, false},
+		{"no commits", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info, found := ScaffoldCommit(tc.messages, "shop/orders-api")
+			if found != tc.found || found && (info.Container != "shop/orders-api" || len(info.ScaffoldedFrom) != 2) {
+				t.Errorf("ScaffoldCommit = %+v, %v; want found %v", info, found, tc.found)
+			}
+		})
+	}
+}

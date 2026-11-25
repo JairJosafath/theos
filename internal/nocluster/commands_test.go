@@ -223,6 +223,67 @@ func TestSecondScaffoldPushesNothing268(t *testing.T) {
 	}
 }
 
+// Once a pull request has merged into a Container's repository, its newest
+// commit is no longer the scaffold: theos scaffold refused the Container
+// and theos status called it "has commits theos didn't make". The first
+// commit is the scaffold however many followed: a second scaffold pushes
+// nothing and puts the rule back on main, and status says scaffolded.
+func TestScaffoldAfterAMerge(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	if err := nocluster.Scaffold(ctx, w.env, w.m); err != nil {
+		t.Fatal(err)
+	}
+	owner := w.provider().Spec.Owner
+	rule, _ := w.git.BranchRule(owner, "orders-api")
+	host := w.git.For(ports.Config{URL: w.provider().Spec.URL, Owner: owner})
+	repo := host.Repository("orders-api")
+	head := w.git.MainHead(owner, "orders-api").Hash
+	if _, err := host.PushBranch(ctx, repo, head, "task/orders-api-3", scaffold.Tree{"orders.go": {
+		Data: []byte("package orders\n")}}, nil, "Add orders", ports.Signature{Name: "implementer"}); err != nil {
+		t.Fatal(err)
+	}
+	pr, err := host.OpenPullRequest(ctx, repo, "task/orders-api-3", ports.DefaultBranch, "Add orders", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := host.MergePullRequest(ctx, repo, pr.Number, pr.HeadSHA, "Add orders (#3)", "task/orders-api-3"); err != nil {
+		t.Fatal(err)
+	}
+	// A rule changed by hand since: the second scaffold protects main again.
+	if err := host.ProtectBranch(ctx, repo, ports.DefaultBranch, ports.BranchRule{}); err != nil {
+		t.Fatal(err)
+	}
+	if n := w.git.CommitCount(owner, "orders-api"); n != 2 {
+		t.Fatalf("%d commits on main, want the scaffold and the merge", n)
+	}
+
+	pushes := w.git.PushCount()
+	w.out.Reset()
+	if err := nocluster.Scaffold(ctx, w.env, w.m); err != nil {
+		t.Fatalf("the scaffold after a merge: %v", err)
+	}
+	if n := w.git.PushCount(); n != pushes {
+		t.Errorf("the scaffold after a merge pushed %d times", n-pushes)
+	}
+	if !strings.Contains(w.out.String(), "orders-api: scaffolded already") {
+		t.Errorf("the scaffold after a merge said:\n%s", w.out)
+	}
+	if got, _ := w.git.BranchRule(owner, "orders-api"); !reflect.DeepEqual(got, rule) {
+		t.Errorf("main's rule is %+v after the scaffold, want %+v", got, rule)
+	}
+
+	w.out.Reset()
+	if err := nocluster.Status(ctx, w.env, w.m); err != nil {
+		t.Fatal(err)
+	}
+	if out := w.out.String(); !strings.Contains(out, "orders-api: scaffolded at ") ||
+		strings.Contains(out, "orders-api: "+repo.WebURL+" has commits theos didn't make") ||
+		!strings.Contains(out, "  Relationship orders-api-to-shop-db: "+c4v1beta1.ReasonAppliedAtScaffold+": ") {
+		t.Errorf("status after a merge says:\n%s", out)
+	}
+}
+
 // #268: status reads a Relationship added after the scaffold as
 // AddedAfterScaffold, one the scaffold applied as AppliedAtScaffold, names
 // the token's account from a token alone, and prints the loss table's

@@ -80,3 +80,21 @@ func StandardAt(messages []string, name string) (v model.StandardVersion, found 
 	}
 	return v, found
 }
+
+// ScaffoldCommit is the trailers of container's (project/container)
+// scaffold commit among messages, the commit messages on main oldest
+// first, and whether they hold it: the oldest commit whose trailers name
+// container and the layers it was scaffolded from. The scaffold is only
+// ever pushed as a repository's first commit, so the commit that carries
+// them is the first one wherever a log lists it; reading the trailers,
+// not the log's last entry, keeps the commits of a merged branch, which a
+// log may list after the first commit, from hiding it.
+func ScaffoldCommit(messages []string, container string) (CommitInfo, bool) {
+	for _, msg := range messages {
+		if info, err := ParseCommitMessage(msg); err == nil && info.Container == container &&
+			len(info.ScaffoldedFrom) > 0 {
+			return info, true
+		}
+	}
+	return CommitInfo{}, false
+}
