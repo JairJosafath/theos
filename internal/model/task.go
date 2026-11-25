@@ -192,7 +192,8 @@ func FollowUpIssue(f FollowUp, by, review string, issue int, task string) string
 	return strings.TrimLeft(b.String(), "\n")
 }
 
-// RunState is the sandbox for the Task's current phase and round.
+// RunState is the run for the Task's current phase and round: its
+// sandbox's, or its markers' on the Git host (RunFromMarkers).
 type RunState struct {
 	// Started means the sandbox exists.
 	Started bool
@@ -230,6 +231,9 @@ type RunState struct {
 	// Config is the Agent configuration the run ran on, as its sandbox
 	// records it; zero for a sandbox made before it was recorded.
 	Config RunConfig
+	// Markers is what only a run on the Git host has, offered there and
+	// answered by a session (RunFromMarkers); nil for a sandbox's run.
+	Markers *MarkerRun
 }
 
 // RunConfig is the Agent configuration an agent run ran on: the Agent's name,

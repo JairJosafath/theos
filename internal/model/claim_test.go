@@ -260,8 +260,11 @@ func TestMarkers267(t *testing.T) {
 	if _, err := SessionMarker(MarkerOffer, "lead-a"); err == nil {
 		t.Error("a session posted an offer")
 	}
-	if _, err := MarkerLine("ended", nil); err == nil {
-		t.Error("a kind #307 adds was taken before it")
+	if _, err := MarkerLine("merge", nil); err == nil {
+		t.Error("a kind theos doesn't know was taken")
+	}
+	if _, err := SessionMarker(MarkerEnded, "lead-a"); err == nil {
+		t.Error("a session posted an ended (#307)")
 	}
 	if _, err := MarkerLine(MarkerClaim, map[string]string{"Session": "a"}); err == nil {
 		t.Error("an upper-case key was taken")

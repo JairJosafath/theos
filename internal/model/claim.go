@@ -17,7 +17,6 @@ limitations under the License.
 package model
 
 import (
-	"cmp"
 	"fmt"
 	"maps"
 	"regexp"
@@ -34,10 +33,11 @@ import (
 // and never edited, ordered by the host's creation stamp and then its ID:
 // every time compared is the host's, never a session's clock.
 
-// The marker kinds of a claim. #307 adds done, blocked, nothing and ended
-// in the same form.
+// The marker kinds of a run, one grammar for both runtimes
+// (docs/plans/external-agents.md, decision 3). offer and ended are the
+// engine's; the rest are a session's.
 const (
-	// MarkerOffer is theos's: the work is offered on the Task's branch.
+	// MarkerOffer is the engine's: the work is offered on the Task's branch.
 	MarkerOffer = "offer"
 	// MarkerClaim is a session's: it takes the offered work.
 	MarkerClaim = "claim"
@@ -45,6 +45,16 @@ const (
 	MarkerRenew = "renew"
 	// MarkerRelease is the holder's: it gives the work up.
 	MarkerRelease = "release"
+	// MarkerDone is the holder's: the commit it pushed and a summary, a
+	// reviewer's verdict, or a triager's decision (#307).
+	MarkerDone = "done"
+	// MarkerBlocked is the holder's: it can't start the issue, and says why.
+	MarkerBlocked = "blocked"
+	// MarkerNothing is the holder's: the issue needs no change, and why.
+	MarkerNothing = "nothing"
+	// MarkerEnded is the engine's: the run is over, and its later markers
+	// count for nothing.
+	MarkerEnded = "ended"
 )
 
 // ClaimLease is how long a claim or a renew holds the work from its
@@ -60,7 +70,8 @@ const (
 const markerPrefix = "<!-- theos:"
 
 var (
-	markerKinds = []string{MarkerOffer, MarkerClaim, MarkerRenew, MarkerRelease}
+	markerKinds = []string{MarkerOffer, MarkerClaim, MarkerRenew, MarkerRelease, MarkerDone, MarkerBlocked,
+		MarkerNothing, MarkerEnded}
 	// markerLine is a whole marker line: its kind and its key=value words.
 	markerLine = regexp.MustCompile(`^<!-- theos:([a-z]+)((?: [a-z][a-zA-Z]*=[^\s=]+)*) -->$`)
 	// markerKey is a key of a marker line's key=value words.
@@ -87,7 +98,7 @@ type Marker struct {
 }
 
 // Session is the session the marker names, "" for none.
-func (m Marker) Session() string { return m.Attrs["session"] }
+func (m Marker) Session() string { return m.Attrs[markerKeySession] }
 
 // MarkerLine is the first line of a marker comment of kind with attrs, in
 // key order. Each value is one word, so a marker reads back as it was
@@ -114,13 +125,13 @@ func MarkerLine(kind string, attrs map[string]string) (string, error) {
 // SessionMarker is the comment a session posts to claim, renew or release
 // the work: one marker line naming it.
 func SessionMarker(kind, session string) (string, error) {
-	if kind == MarkerOffer {
-		return "", fmt.Errorf("an offer is theos's, not a session's")
+	if kind == MarkerOffer || kind == MarkerEnded {
+		return "", fmt.Errorf("an %s marker is the engine's, not a session's", kind)
 	}
 	if err := CheckSessionName(session); err != nil {
 		return "", err
 	}
-	return MarkerLine(kind, map[string]string{"session": session})
+	return MarkerLine(kind, map[string]string{markerKeySession: session})
 }
 
 // CheckSessionName says why session can't name a session in a marker, nil
@@ -160,6 +171,11 @@ type ClaimRules struct {
 	Lease     time.Duration
 	Grace     time.Duration
 	Claimants []string
+	// Engine are the accounts whose offer and ended markers count: the
+	// operator's login for an outside agent. Empty, as in the lead runtime,
+	// where theos and the sessions share one account, it is Claimants, and an
+	// offer or an ended counts by its kind.
+	Engine []string
 }
 
 // DefaultClaimRules are the rules when no setting says otherwise: the
@@ -171,8 +187,19 @@ func DefaultClaimRules(login string) ClaimRules {
 
 // counts reports whether a marker by author counts: logins are compared as
 // the hosts do, without case.
-func (r ClaimRules) counts(author string) bool {
-	return slices.ContainsFunc(r.Claimants, func(c string) bool { return c != "" && strings.EqualFold(c, author) })
+func (r ClaimRules) counts(author string) bool { return loginIn(r.Claimants, author) }
+
+// engineCounts reports whether an offer or an ended by author counts.
+func (r ClaimRules) engineCounts(author string) bool {
+	if len(r.Engine) == 0 {
+		return r.counts(author)
+	}
+	return loginIn(r.Engine, author)
+}
+
+// loginIn reports whether login is one of logins, without case.
+func loginIn(logins []string, login string) bool {
+	return slices.ContainsFunc(logins, func(c string) bool { return c != "" && strings.EqualFold(c, login) })
 }
 
 // Claim is who holds an offered Task's work, read from its issue's counted
@@ -188,6 +215,12 @@ type Claim struct {
 	// Until is when the holder's lease runs out: its last counted claim's
 	// or renew's stamp and the lease.
 	Until time.Time
+	// Released is whether the last holder gave the work up and nobody has
+	// claimed it since.
+	Released bool
+	// Closed is whether the run is over: a counted ended, blocked or
+	// nothing came after the offer. Nothing is claimed until the next offer.
+	Closed bool
 }
 
 // Held reports whether a session holds the work at host time t.
@@ -207,39 +240,11 @@ func (c Claim) Names(account, session string) bool {
 //   - another session's claim counts once the lease and the grace are past;
 //   - the holder's renew before its lease runs out extends it, and a later
 //     one counts for nothing;
-//   - the holder's release gives the work up, for the next claim at once.
+//   - the holder's release gives the work up, for the next claim at once;
+//   - a counted ended, or the holder's blocked or nothing, closes the run
+//     (RunFromMarkers).
 func ClaimOf(comments []HostComment, rules ClaimRules) Claim {
-	ordered := slices.Clone(comments)
-	slices.SortStableFunc(ordered, func(a, b HostComment) int {
-		return cmp.Or(a.Created.Compare(b.Created), cmp.Compare(a.ID, b.ID))
-	})
-	var c Claim
-	for _, comment := range ordered {
-		m, ok := ParseMarker(comment)
-		if !ok || !rules.counts(comment.Author) {
-			continue
-		}
-		at, session := comment.Created, m.Session()
-		mine := c.Names(comment.Author, session)
-		switch {
-		case m.Kind == MarkerOffer:
-			c = Claim{Offered: true, Offer: m}
-		case !c.Offered || CheckSessionName(session) != nil:
-		case m.Kind == MarkerClaim:
-			if c.Session == "" || mine || !at.Before(c.Until.Add(rules.Grace)) {
-				c.Account, c.Session, c.Until = comment.Author, session, at.Add(rules.Lease)
-			}
-		case m.Kind == MarkerRenew:
-			if mine && at.Before(c.Until) {
-				c.Until = at.Add(rules.Lease)
-			}
-		case m.Kind == MarkerRelease:
-			if mine {
-				c.Account, c.Session, c.Until = "", "", time.Time{}
-			}
-		}
-	}
-	return c
+	return replayMarkers(comments, rules).claim
 }
 
 // StartStep is what the engine does next to start a Task for an issue.
@@ -279,7 +284,8 @@ type ClaimStep string
 const (
 	// ClaimNotOffered: nothing to claim. With no branch the issue is no
 	// Task; with a branch and no offer it is the engine's start, which its
-	// next tick finishes. Nothing is posted.
+	// next tick finishes; with its run closed it waits for the next offer.
+	// Nothing is posted.
 	ClaimNotOffered ClaimStep = "NotOffered"
 	// ClaimTaken: another session's claim is alive; nothing is posted and
 	// the session takes other work.
@@ -324,7 +330,7 @@ func NextClaim(f ClaimFacts, rules ClaimRules, account, session string) (ClaimDe
 	c := ClaimOf(f.Comments, rules)
 	d := ClaimDecision{Claim: c}
 	switch {
-	case !f.Branch || !c.Offered:
+	case !f.Branch || !c.Offered || c.Closed:
 		d.Step = ClaimNotOffered
 	case c.Names(account, session) && c.Held(f.Now):
 		d.Step = ClaimHeld

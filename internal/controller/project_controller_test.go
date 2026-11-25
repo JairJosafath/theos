@@ -135,8 +135,14 @@ var _ = Describe("Project", func() {
 			Expect(k8sClient.Create(ctx, review)).To(Succeed())
 			return review.Status.Allowed
 		}
-		Expect(may(ns, "", "pods", "list")).To(BeTrue())
-		Expect(may(ns, "metrics.k8s.io", "pods", "list")).To(BeTrue())
+		// The API server's RBAC authorizer reads Roles and RoleBindings from
+		// its own cache: a review made the moment the binding is there may not
+		// see it yet, so the grants are waited for and the refusals checked
+		// once they show.
+		Eventually(func(g Gomega) {
+			g.Expect(may(ns, "", "pods", "list")).To(BeTrue())
+			g.Expect(may(ns, "metrics.k8s.io", "pods", "list")).To(BeTrue())
+		}).Should(Succeed())
 		Expect(may(ns, "", "secrets", "get")).To(BeFalse())
 		Expect(may(ns, "", "pods", "delete")).To(BeFalse())
 		Expect(may("default", "", "pods", "list")).To(BeFalse(), "only in project namespaces")

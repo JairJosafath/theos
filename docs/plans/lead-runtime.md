@@ -302,6 +302,28 @@ open:
   the first step that reads them: the settings decode refuses a key no step
   reads. Until then `DefaultClaimRules` is the only source.
 
+**Step 3 as built** (`internal/model/run_markers.go`). Choices the plan
+left open:
+- `RunFromMarkers` fills the `RunState` the Task's decision already takes,
+  with no pod and no checkpoint. What only a run on the host has goes in
+  `RunState.Markers`: the offer, the claim, `Unclaimed`, `EndDue` and
+  `DoneWaits`.
+- The engine's clock only says that an `ended` is due (`EndDue`:
+  `silent` past the lease and the grace, `released` after a release). Only
+  a counted `ended` makes the run interrupted. So the run's next offer
+  always comes after a stamp the host gave, and an `ended` that came too
+  early never lets a new offer wipe a live claim.
+- `ClaimRules.Engine` holds the accounts whose `offer` and `ended` count:
+  the operator's login for an outside agent. It is empty in the lead
+  runtime, where they count from `claimants` by their kind.
+- A `done` counts from the holder alone, and the last one counts. An
+  implementer's names `commit=`: the full head, or a prefix of at least
+  7 characters. A reviewer's names `verdict=`. A triager's decision is the
+  one fenced json block of its text, read strictly into `Triage`. A
+  takeover needs its own `done`.
+- `blocked` and `nothing` close the run with their note. A `blocked`
+  with no reason still blocks.
+
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
 
