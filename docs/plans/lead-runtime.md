@@ -541,6 +541,18 @@ Choices the plan left open:
   and the fake host's run test them; GitHub's adapter merge has its own
   tests; Gitea needs a non-root host for `make test-gitea`.
 
+**Steps 10 and 11 as built.** The release workflow builds `theos` for
+Linux and macOS, amd64 and arm64, stamped with the release's version so
+`theos init` pins that release's catalog, and attaches it with the other
+binaries in `SHA256SUMS` (#318); the README names the download and
+`go install`. [no-cluster.md](../no-cluster.md) is the guide (#297): getting
+theos and its credential, `init`, `scaffold`, `protect`, `agents`, one Task
+on a laptop and in a cloud session, one lead per project, and each reason
+word `theos status` prints. A person's walk of one Task in each, with the
+host's pages in `docs/screenshots/`, is still to do: it settles
+[Not tested, and who can](#not-tested-and-who-can), and the guide says
+what it found once it is done.
+
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.
 
