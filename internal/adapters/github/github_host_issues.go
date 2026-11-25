@@ -19,6 +19,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -376,6 +377,64 @@ func (h *host) CommentIssue(ctx context.Context, repo ports.Repository, number i
 		return failed("commenting on issue "+strconv.Itoa(number), status, data)
 	}
 	return nil
+}
+
+// ghComment is an issue comment as the REST API shows it.
+type ghComment struct {
+	ID   int64 `json:"id"`
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	CreatedAt time.Time `json:"created_at"`
+	Body      string    `json:"body"`
+}
+
+func (c ghComment) port() ports.IssueComment {
+	return ports.IssueComment{ID: c.ID, Author: c.User.Login, Created: c.CreatedAt, Body: c.Body}
+}
+
+var _ ports.IssueComments = (*host)(nil)
+
+// ListIssueComments returns an issue's comments, oldest first, every page
+// of them; ErrIssueNotFound for an issue the repository lacks.
+func (h *host) ListIssueComments(ctx context.Context, repo ports.Repository, number int) ([]ports.IssueComment,
+	error) {
+	items, err := h.list(ctx, h.issuePath(repo, number)+"/comments", nil)
+	if err != nil {
+		if _, gone := h.getIssue(ctx, repo, number); errors.Is(gone, ports.ErrIssueNotFound) {
+			return nil, gone
+		}
+		return nil, err
+	}
+	out := make([]ports.IssueComment, 0, len(items))
+	for _, item := range items {
+		var c ghComment
+		if err := json.Unmarshal(item, &c); err != nil {
+			return nil, fmt.Errorf("github: reading a comment of issue %d: %w", number, err)
+		}
+		out = append(out, c.port())
+	}
+	return out, nil
+}
+
+// PostIssueComment comments on an issue and returns the comment as GitHub
+// made it.
+func (h *host) PostIssueComment(ctx context.Context, repo ports.Repository, number int,
+	body string) (ports.IssueComment, error) {
+	status, data, err := h.do(ctx, http.MethodPost, h.issuePath(repo, number)+"/comments", struct {
+		Body string `json:"body"`
+	}{body})
+	if err != nil {
+		return ports.IssueComment{}, err
+	}
+	if status != http.StatusCreated {
+		return ports.IssueComment{}, failed("commenting on issue "+strconv.Itoa(number), status, data)
+	}
+	var c ghComment
+	if err := json.Unmarshal(data, &c); err != nil {
+		return ports.IssueComment{}, fmt.Errorf("github: reading the comment on issue %d: %w", number, err)
+	}
+	return c.port(), nil
 }
 
 // CloseIssue closes an issue; ErrOpenDependencies while an issue it depends

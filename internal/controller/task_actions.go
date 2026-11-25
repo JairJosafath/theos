@@ -35,6 +35,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/engine"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 )
@@ -781,32 +782,28 @@ func (r *TaskReconciler) updateBranch(ctx context.Context, task *c4v1beta1.Task,
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	err = provider.UpdatePullRequest(gitCtx, repo, int(status.PullRequest))
-	if errors.Is(err, ports.ErrConflict) {
+	up, err := engine.UpdateBranch(gitCtx, provider, repo, int(status.PullRequest))
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if up.Conflict {
 		return r.apply(ctx, task, status, container, agents, model.ConflictStep(int(status.Round)))
 	}
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	pr, err := provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if pr.HeadSHA == status.Commit {
+	if up.Head == status.Commit {
 		// Nothing merged: the branch had main already, and the Git host had not
 		// yet seen it. Look again once it has.
 		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 	}
 	status.Review = r.reviewFrom(ctx, task, status)
 	r.comment(ctx, task, status, container, step.Message+".")
-	setProgress(status, model.UpdatedBranch(progressOf(status), pr.HeadSHA))
+	setProgress(status, model.UpdatedBranch(progressOf(status), up.Head))
 	// The checks' wait starts again on the new head, also when main moved again
 	// while the Task was already waiting for checks.
 	now := metav1.NewTime(r.now())
 	status.PhaseChangedAt = &now
 	r.progress(task, status, metav1.ConditionTrue, "UpdatingBranch", step.Message)
 	logf.FromContext(ctx).Info("Merged main into an approved Task's branch", "round", status.Round,
-		"commit", pr.HeadSHA)
+		"commit", up.Head)
 	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
 }
 
@@ -1164,7 +1161,7 @@ func (r *TaskReconciler) rerunChecks(ctx context.Context, task *c4v1beta1.Task, 
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	runs := workflowRuns(found)
+	runs := engine.WorkflowRuns(found)
 	if !model.RunsEnded(runs) {
 		r.progress(task, status, metav1.ConditionTrue, "Waiting",
 			step.Message+"; waiting for the CI runs at the commit to end first")

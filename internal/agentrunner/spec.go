@@ -77,8 +77,8 @@ func SpecPrompt(job Job, ws Workspace) string {
 	fmt.Fprintf(&b, "You write specs for %q, one application (a C4 Container) of project %q: the plan that "+
 		"settles how an issue is built, before anyone builds it.\n", job.Container, job.Project)
 	writeContext(&b, job)
-	fmt.Fprintf(&b, "\nYour task is the spec of issue #%d of this repository. %s\n%s\n", job.Issue, issueIntro,
-		issueBlock(job.Goal))
+	fmt.Fprintf(&b, "\nYour task is the spec of issue #%d of this repository. %s\n%s\n", job.Issue, model.IssueIntro,
+		model.IssueBlock(job.Goal))
 	if job.Feedback != "" {
 		fmt.Fprintf(&b, "\nThis is round %d. The previous round's spec was not accepted. Address all of this "+
 			"feedback:\n%s\n", job.Round, job.Feedback)
@@ -130,8 +130,8 @@ func SpecReviewPrompt(job Job, ws Workspace) string {
 	fmt.Fprintf(&b, "You are a strict senior reviewer for %q, one application (a C4 Container) of project %q. "+
 		"You review a spec: the plan an issue will be built from.\n", job.Container, job.Project)
 	writeContext(&b, job)
-	fmt.Fprintf(&b, "\nThe spec under review is for issue #%d of this repository. %s\n%s\n", job.Issue, issueIntro,
-		issueBlock(job.Goal))
+	fmt.Fprintf(&b, "\nThe spec under review is for issue #%d of this repository. %s\n%s\n", job.Issue, model.IssueIntro,
+		model.IssueBlock(job.Goal))
 	if job.Feedback != "" {
 		fmt.Fprintf(&b, "\nThis is round %d. The previous round was sent back with this feedback; check each point "+
 			"was addressed:\n%s\n", job.Round, job.Feedback)

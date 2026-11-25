@@ -19,7 +19,7 @@ package controller
 import (
 	"cmp"
 	"context"
-	"fmt"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,6 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/engine"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 )
@@ -220,9 +221,6 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	triage := model.TriageFacts{On: crew.Spec.Triager != nil, Paused: crew.Spec.Paused,
 		ContainerReady: facts.ContainerReady && facts.Unprotected == ""}
 	triage.Tasks, containerTasks = triageTasks(containerTasks)
-	for i := range containerTasks {
-		facts.Tasks = append(facts.Tasks, crewTask(&containerTasks[i]))
-	}
 
 	var provider interface {
 		ports.GitHost
@@ -230,10 +228,17 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		ports.CI
 		ports.Registry
 	}
+	var host ports.Issues
 	var repo ports.Repository
 	// untilSchedule is how long until the Crew's next schedule is due, 0 with
 	// none.
 	var untilSchedule time.Duration
+	hostDown := func(err error) (ctrl.Result, error) {
+		log.Error(err, "Failed to read the ready issues", "container", container.Name)
+		r.wait(&crew, status, "GitHostUnavailable", "Could not read the issues: "+err.Error())
+		setCrewPaused(&crew, status, tasks.Items)
+		return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
+	}
 	if facts.ContainerReady {
 		provider, err = providerFor(ctx, r.Client, r.APIReader, r.Git, crew.Namespace, container.Spec.GitProviderRef.Name)
 		if err != nil {
@@ -241,45 +246,52 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			setCrewPaused(&crew, status, tasks.Items)
 			return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 		}
-		repo = provider.Repository(container.Name)
-		gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-		err = readIssues(gitCtx, provider, repo, crewIssueLabels(cadence), crew.Spec.SpecWriter != nil, &facts,
-			&triage)
-		cancel()
-		if err != nil {
-			log.Error(err, "Failed to read the ready issues", "container", container.Name)
-			r.wait(&crew, status, "GitHostUnavailable", "Could not read the issues: "+err.Error())
-			setCrewPaused(&crew, status, tasks.Items)
-			return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
+		host, repo = provider, provider.Repository(container.Name)
+		if triage.On {
+			gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
+			triage.Proposed, err = proposedIssues(gitCtx, provider, repo)
+			cancel()
+			if err != nil {
+				return hostDown(err)
+			}
 		}
-		// Before the Crew picks issues: a prepare issue filed now keeps its
-		// release the current one, so the next release's work waits for it.
-		filed, preparing := r.release(ctx, &crew, &container, status, provider, repo, containerTasks)
-		if filed != nil {
-			facts.Issues = append(facts.Issues, *filed)
-		}
-		facts.Preparing = preparing
-		// A schedule that came due files its issue (#63); the next poll reads
-		// it among the ready ones.
-		untilSchedule = r.schedule(ctx, &crew, status, provider, repo)
-		// A repository adopted with no Standard gets its guide for agents
-		// first (#98); the next poll reads the issue among the ready ones.
-		r.onboard(ctx, &crew, status, &container, provider, repo)
 	}
 
-	step := model.NextCrewStep(container.Name, facts)
-	if len(step.NotReady) > 0 {
-		handBackIssues(ctx, provider, repo, step.NotReady)
+	// The Crew tick is the engine's (docs/plans/lead-runtime.md, step 1):
+	// the Tasks, the ready issues, the decision, the hand-backs and the
+	// starts. Releases, schedules and onboarding stay here.
+	res, err := engine.CrewTick(ctx, crewRuntime{store: &crewTaskStore{reader: r.APIReader, writer: r.Client,
+		crew: &crew, container: &container}}, host, engine.CrewInput{
+		Container: container.Name, Repo: repo, Facts: facts, Labels: crewIssueLabels(cadence),
+		Specs: crew.Spec.SpecWriter != nil,
+		Before: func(ctx context.Context, facts *model.CrewFacts) {
+			// Before the Crew picks issues: a prepare issue filed now keeps its
+			// release the current one, so the next release's work waits for it.
+			filed, preparing := r.release(ctx, &crew, &container, status, provider, repo, containerTasks)
+			if filed != nil {
+				facts.Issues = append(facts.Issues, *filed)
+			}
+			facts.Preparing = preparing
+			// A schedule that came due files its issue (#63); the next poll reads
+			// it among the ready ones.
+			untilSchedule = r.schedule(ctx, &crew, status, provider, repo)
+			// A repository adopted with no Standard gets its guide for agents
+			// first (#98); the next poll reads the issue among the ready ones.
+			r.onboard(ctx, &crew, status, &container, provider, repo)
+		},
+	})
+	for _, f := range res.HandBack {
+		log.Error(f.Err, "Failed to hand an issue back", "issue", f.Issue)
 	}
+	if hostErr, ok := errors.AsType[*engine.HostError](err); ok {
+		return hostDown(hostErr.Err)
+	}
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	step := res.Step
 	status.ActiveTasks = slices.Clone(step.Active)
 	for _, s := range step.Start {
-		task := crewIssueTask(&crew, &container, s)
-		if err := r.Create(ctx, task); err != nil && !apierrors.IsAlreadyExists(err) {
-			return ctrl.Result{}, err
-		}
-		log.Info("Started Task for issue", "task", s.Task, "issue", s.Issue, "attempt", s.Attempt, "spec", s.Spec,
-			"allowedPaths", s.AllowedPaths, "implementer", task.Spec.AgentRef.Name,
-			"reviewer", task.Spec.ReviewerRef.Name)
 		status.ActiveTasks = append(status.ActiveTasks, s.Task)
 	}
 	if err := r.triage(ctx, &crew, &container, triage, status, &step); err != nil {
@@ -328,33 +340,6 @@ func (r *CrewReconciler) cutPoll(cadence model.ReleaseCadence, status *c4v1beta1
 		}
 	}
 	return poll
-}
-
-// handBackIssues gives the issues agents must not take back to a person,
-// status/needs-human with the reason, out of status/ready, or
-// status/needs-spec for one whose spec they must not write.
-func handBackIssues(ctx context.Context, provider ports.Issues, repo ports.Repository,
-	rejections []model.IssueRejection) {
-	gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	for _, n := range rejections {
-		was := model.LabelReady
-		if n.Spec {
-			was = model.LabelNeedsSpec
-		}
-		notes := []error{
-			provider.AddIssueLabel(gitCtx, repo, n.Issue, model.LabelNeedsHuman),
-			// The exclusive scope drops it too, but not where the labels came
-			// over non-exclusive from a migration (#2039).
-			provider.RemoveIssueLabel(gitCtx, repo, n.Issue, was),
-			provider.CommentIssue(gitCtx, repo, n.Issue, n.Reason),
-		}
-		for _, err := range notes {
-			if err != nil {
-				logf.FromContext(ctx).Error(err, "Failed to hand an issue back", "issue", n.Issue)
-			}
-		}
-	}
 }
 
 // crewIssueTask is the Task a Crew starts for an issue, on the Agents its
@@ -496,72 +481,6 @@ func crewTask(t *c4v1beta1.Task) model.CrewTask {
 	return out
 }
 
-// readyIssues reads the open issues labelled ready, what blocks each, and which
-// are Standard changes, once the repository has the labels the Crew keeps.
-func readyIssues(ctx context.Context, provider ports.Issues, repo ports.Repository,
-	labels []ports.Label) ([]model.Issue, error) {
-	if err := provider.EnsureLabels(ctx, repo, labels); err != nil {
-		return nil, err
-	}
-	return labelledIssues(ctx, provider, repo, model.LabelReady)
-}
-
-// specIssues reads the open issues labelled status/needs-spec, and what
-// blocks each, for a Crew's spec writer.
-func specIssues(ctx context.Context, provider ports.Issues, repo ports.Repository) ([]model.Issue, error) {
-	issues, err := labelledIssues(ctx, provider, repo, model.LabelNeedsSpec)
-	for i := range issues {
-		issues[i].Spec = true
-	}
-	return issues, err
-}
-
-// labelledIssues reads the open issues labelled label, as a Crew picks them.
-func labelledIssues(ctx context.Context, provider ports.Issues, repo ports.Repository,
-	label string) ([]model.Issue, error) {
-	issues, err := provider.ListIssues(ctx, repo, label)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]model.Issue, 0, len(issues))
-	for _, i := range issues {
-		blockers, err := provider.OpenBlockers(ctx, repo, i.Number)
-		if err != nil {
-			return nil, fmt.Errorf("issue #%d: %w", i.Number, err)
-		}
-		out = append(out, model.Issue{Number: i.Number, Title: i.Title, Body: i.Body, OpenBlockers: blockers,
-			StandardChange: slices.Contains(i.Labels, model.LabelStandardChange), Release: release(i),
-			Urgent: slices.Contains(i.Labels, model.LabelUrgent), Prepare: slices.Contains(i.Labels, model.LabelRelease),
-			Labels: slices.Clone(i.Labels)})
-	}
-	return out, nil
-}
-
-// readIssues reads what a Crew picks from: the ready issues, with a spec
-// writer those that need a spec, the releases of its Tasks' issues, and, with
-// a triager, the proposed issues.
-func readIssues(ctx context.Context, provider ports.Issues, repo ports.Repository, labels []ports.Label, specs bool,
-	facts *model.CrewFacts, triage *model.TriageFacts) error {
-	var err error
-	if facts.Issues, err = readyIssues(ctx, provider, repo, labels); err != nil {
-		return err
-	}
-	if specs {
-		spec, err := specIssues(ctx, provider, repo)
-		if err != nil {
-			return err
-		}
-		facts.Issues = append(facts.Issues, spec...)
-	}
-	if err := taskReleases(ctx, provider, repo, facts.Tasks, facts.Issues); err != nil {
-		return err
-	}
-	if triage.On {
-		triage.Proposed, err = proposedIssues(ctx, provider, repo)
-	}
-	return err
-}
-
 // triage starts the Triage Task model.NextTriage starts, if any, and adds
 // the Triage Task at work, or started, to the Crew's step and active Tasks.
 func (r *CrewReconciler) triage(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
@@ -617,37 +536,6 @@ func (r *CrewReconciler) startTriage(ctx context.Context, crew *c4v1beta1.Crew, 
 	logf.FromContext(ctx).Info("Started Triage Task for issue", "task", start.Task, "issue", start.Issue,
 		"attempt", start.Attempt, "triager", crew.Spec.Triager.Name)
 	return nil
-}
-
-// taskReleases sets the release of each active Task's issue, so that a release
-// with work in progress holds back the later ones, and whether it is a
-// release's prepare issue, which runs alone.
-func taskReleases(ctx context.Context, provider ports.Issues, repo ports.Repository,
-	tasks []model.CrewTask, ready []model.Issue) error {
-	for i, t := range tasks {
-		if t.Final || t.Issue == 0 {
-			continue
-		}
-		// A Task created a moment ago may still find its issue labelled ready.
-		if j := slices.IndexFunc(ready, func(issue model.Issue) bool { return issue.Number == t.Issue }); j >= 0 {
-			tasks[i].Release, tasks[i].Prepare = ready[j].Release, ready[j].Prepare
-			continue
-		}
-		issue, err := provider.GetIssue(ctx, repo, t.Issue)
-		if err != nil {
-			return fmt.Errorf("issue #%d of Task %s: %w", t.Issue, t.Name, err)
-		}
-		tasks[i].Release, tasks[i].Prepare = release(issue), slices.Contains(issue.Labels, model.LabelRelease)
-	}
-	return nil
-}
-
-// release is an issue's milestone as a release; nil when it has no due date.
-func release(issue ports.Issue) *model.Release {
-	if issue.MilestoneDue.IsZero() {
-		return nil
-	}
-	return &model.Release{Title: issue.MilestoneTitle, Due: issue.MilestoneDue}
 }
 
 func (r *CrewReconciler) wait(crew *c4v1beta1.Crew, status *c4v1beta1.CrewStatus, reason, message string) {

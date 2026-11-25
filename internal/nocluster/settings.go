@@ -18,6 +18,8 @@ package nocluster
 
 import (
 	"fmt"
+	"slices"
+	"time"
 
 	"sigs.k8s.io/yaml"
 
@@ -28,10 +30,21 @@ import (
 
 // Settings are model/settings.yaml: what no CRD holds (decision 12), each
 // with a default that needs no cluster. The decode is strict, so a key a
-// later step reads (lease, grace, claimants, merge) is added by that step.
+// later step reads is added by that step.
 type Settings struct {
 	// Repository is the project repository's name; theos-<project> unless set.
 	Repository string `json:"repository,omitempty"`
+	// Lease is how long a session's claim holds the work, and Grace how long
+	// past it another session waits (docs/plans/lead-runtime.md, decision
+	// 8): Go durations, 60m and 5m unless set.
+	Lease string `json:"lease,omitempty"`
+	Grace string `json:"grace,omitempty"`
+	// Claimants are the accounts whose markers count; the credential's own
+	// login unless set (decision 10).
+	Claimants []string `json:"claimants,omitempty"`
+	// Merge is who merges: person, the default, with theos merge or on the
+	// host's pages; rules merges with no person, not built yet (#298).
+	Merge string `json:"merge,omitempty"`
 	// Operator holds the four flags an operator renders every scaffold with
 	// (cmd/main.go), so a Container scaffolded here is what an operator with
 	// the same flags scaffolds.
@@ -66,7 +79,50 @@ func DecodeSettings(data []byte, project string) (Settings, error) {
 	if s.Operator.SessionFeature == "" {
 		s.Operator.SessionFeature = features.SessionFeatureLocal
 	}
+	switch s.Merge {
+	case "":
+		s.Merge = model.MergePerson
+	case model.MergePerson, model.MergeRules:
+	default:
+		return Settings{}, fmt.Errorf("%s: merge %q is %s or %s", SettingsFile, s.Merge, model.MergePerson,
+			model.MergeRules)
+	}
+	if s.Lease == "" {
+		s.Lease = model.ClaimLease.String()
+	}
+	if s.Grace == "" {
+		s.Grace = model.ClaimGrace.String()
+	}
+	if _, err := s.ClaimRules(""); err != nil {
+		return Settings{}, err
+	}
 	return s, nil
+}
+
+// ClaimRules are the rules the markers count by: the lease, the grace, and
+// the claimants, login's alone unless the settings name them.
+func (s Settings) ClaimRules(login string) (model.ClaimRules, error) {
+	rules := model.DefaultClaimRules(login)
+	var err error
+	if rules.Lease, err = positive(s.Lease, "lease"); err != nil {
+		return rules, err
+	}
+	if rules.Grace, err = positive(s.Grace, "grace"); err != nil {
+		return rules, err
+	}
+	if len(s.Claimants) > 0 {
+		rules.Claimants = slices.Clone(s.Claimants)
+	}
+	return rules, nil
+}
+
+// positive reads a duration setting, which must be above zero.
+func positive(value, key string) (time.Duration, error) {
+	d, err := time.ParseDuration(value)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("%s: %s %q is not a positive duration such as 60m", SettingsFile, key, value)
+	}
+	return d, nil
 }
 
 // Scaffold is what every Container is rendered with, as an operator with

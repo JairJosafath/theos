@@ -19,7 +19,6 @@ package controller
 import (
 	"cmp"
 	"context"
-	"errors"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/engine"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 	"github.com/JairJosafath/theos/internal/taskfacts"
@@ -481,14 +481,8 @@ func (r *TaskReconciler) baseFacts(ctx context.Context, container *c4v1beta1.Con
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	checks, err := git.provider.CombinedStatus(gitCtx, git.provider.Repository(container.Name),
-		ports.DefaultBranch)
-	if err != nil {
-		return err
-	}
-	facts.Base = model.BaseState(containerCIOf(git.ci, container).CheckContexts, checks.State, checks.Contexts)
-	facts.BaseURL = checks.URL
-	return nil
+	return engine.ReadBase(gitCtx, git.provider, git.provider.Repository(container.Name),
+		containerCIOf(git.ci, container).CheckContexts, facts)
 }
 
 // checkFacts reads the CI result on the round's commit while the Task is
@@ -502,36 +496,20 @@ func (r *TaskReconciler) checkFacts(ctx context.Context, task *c4v1beta1.Task, s
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	repo := provider.Repository(container.Name)
-	checks, err := provider.CombinedStatus(gitCtx, repo, status.Commit)
+	in := engine.ChecksInput{Commit: status.Commit, Reruns: int(status.ChecksReruns),
+		RerunDue: status.ChecksRerunDue, Now: r.now(), Log: logf.FromContext(ctx),
+		PodFate: func(runner string) string { return r.runnerPodFate(gitCtx, task.Namespace, runner) }}
+	if status.ChecksRerunAt != nil {
+		in.RerunAt = status.ChecksRerunAt.Time
+	}
+	if status.PhaseChangedAt != nil {
+		in.CheckingSince = status.PhaseChangedAt.Time
+	}
+	checks, err := engine.ReadChecks(gitCtx, provider, provider.Repository(container.Name), in, facts)
 	if err != nil {
 		return err
 	}
 	status.Checks = &c4v1beta1.CheckStatus{Commit: checks.Commit, State: checks.State, URL: checks.URL}
-	facts.Checks, facts.ChecksURL = checks.State, checks.URL
-	failed := checks.State == ports.CheckFailure || checks.State == ports.CheckError
-	facts.ChecksReruns, facts.ChecksRerunDue = int(status.ChecksReruns), status.ChecksRerunDue
-	if status.ChecksRerunAt != nil {
-		facts.ChecksRerunAt = status.ChecksRerunAt.Time
-		facts.SinceChecksRerun = r.now().Sub(status.ChecksRerunAt.Time)
-		if failed {
-			// Until the rerun ends, the failure is the killed run's.
-			facts.CIRun, facts.ChecksRerunEnded = r.rerunState(gitCtx, provider, repo, status)
-		}
-	}
-	read := failed && (facts.ChecksRerunAt.IsZero() || facts.ChecksRerunEnded)
-	if read {
-		// Best effort: without the log the agent still gets the link.
-		log, err := provider.CheckLog(gitCtx, repo, checks.URL)
-		facts.ChecksLog, facts.ChecksNoLog = log, errors.Is(err, ports.ErrNoCILog)
-	}
-	// A failure whose runs still run waits for them before its jobs run again.
-	if checks.State != ports.CheckSuccess && facts.CIRun == (model.CIRun{}) {
-		facts.CIRun = r.ciRun(gitCtx, provider, repo, task.Namespace, status.Commit, read)
-	}
-	if status.PhaseChangedAt != nil {
-		facts.CheckingSince = status.PhaseChangedAt.Time
-	}
 	return nil
 }
 
@@ -545,104 +523,6 @@ func (r *TaskReconciler) approvalFacts(ctx context.Context, task *c4v1beta1.Task
 		status.MergeWhenChecksPass && facts.Checks == ports.CheckSuccess {
 		facts.ApprovalEnded = r.reviewRun(ctx, task, status) == nil
 	}
-}
-
-// rerunState reads whether the runs at the Task's commit whose failed jobs ran
-// again have given their result, and the state of its runs while they haven't. Runs that can't
-// be read are unknown, which waits.
-func (r *TaskReconciler) rerunState(ctx context.Context, provider ports.CI, repo ports.Repository,
-	status *c4v1beta1.TaskStatus) (model.CIRun, bool) {
-	runs, err := provider.CommitRuns(ctx, repo, status.Commit)
-	if err != nil {
-		logf.FromContext(ctx).Info("Could not read the CI runs of the Task's commit", "commit", status.Commit,
-			"error", err.Error())
-		return model.CIRun{Commit: status.Commit, State: model.CIRunUnknown}, false
-	}
-	seen := workflowRuns(runs)
-	if model.RerunEnded(seen, status.ChecksRerunAt.Time) {
-		return model.CIRun{}, true
-	}
-	return r.runState(ctx, provider, repo, "", status.Commit, seen, false), false
-}
-
-// workflowRuns is the model's view of the Git host's runs.
-func workflowRuns(runs []ports.WorkflowRun) []model.WorkflowRun {
-	seen := make([]model.WorkflowRun, 0, len(runs))
-	for _, run := range runs {
-		seen = append(seen, model.WorkflowRun{ID: run.ID, Workflow: run.Workflow, Event: run.Event,
-			Status: run.Status, Conclusion: run.Conclusion, Started: run.Started, URL: run.URL})
-	}
-	return seen
-}
-
-// ciRun reads the state of the CI runs at commit, whose checks have no result
-// yet, whether a runner is online while one is queued, and, when canceller,
-// who cancelled a failed one. Runs that can't be read are unknown, which waits
-// up to model.QueuedChecksLimit.
-func (r *TaskReconciler) ciRun(ctx context.Context, provider ports.CI, repo ports.Repository,
-	namespace, commit string, canceller bool) model.CIRun {
-	ci := model.CIRun{Commit: commit}
-	runs, err := provider.CommitRuns(ctx, repo, commit)
-	if err != nil {
-		logf.FromContext(ctx).Info("Could not read the CI runs of the Task's commit", "commit", commit, "error", err.Error())
-		ci.State = model.CIRunUnknown
-		return ci
-	}
-	return r.runState(ctx, provider, repo, namespace, commit, workflowRuns(runs), canceller)
-}
-
-// runState sums up the runs at commit, whether a runner is online while one is
-// queued, and, when canceller, who cancelled a failed one that ended
-// cancelled: asked only when the failure is read, as it costs a call a job.
-// namespace is the Task's, where the CI runner pool's pods are.
-func (r *TaskReconciler) runState(ctx context.Context, provider ports.CI, repo ports.Repository,
-	namespace, commit string, seen []model.WorkflowRun, canceller bool) model.CIRun {
-	ci := model.CIRun{Commit: commit}
-	state, run := model.CommitRunState(seen)
-	ci.State, ci.URL, ci.Started = state, run.URL, run.Started
-	if cancelled := model.CancelledRuns(seen); canceller && len(cancelled) > 0 {
-		ci.CancelledBy = r.canceller(ctx, provider, repo, namespace, cancelled)
-	}
-	switch state {
-	case model.CIRunRunning:
-		if !run.Started.IsZero() {
-			ci.Running = r.now().Sub(run.Started)
-		}
-	case model.CIRunQueued:
-		online, known := provider.RunnersOnline(ctx)
-		ci.NoRunnerOnline = known && online == 0
-	}
-	return ci
-}
-
-// canceller tells who cancelled the cancelled runs at a Task's commit: by the
-// fate of the pool pod a cancelled job ran on (#1140), else whether the job's
-// runner stayed online (model.Canceller).
-func (r *TaskReconciler) canceller(ctx context.Context, provider ports.CI, repo ports.Repository,
-	namespace string, cancelled []model.WorkflowRun) string {
-	var jobs []model.CIJob
-	online, known := map[int64]bool{}, map[int64]bool{}
-	for _, run := range cancelled {
-		found, err := provider.RunJobs(ctx, repo, run.ID)
-		if err != nil {
-			logf.FromContext(ctx).Info("Could not read the jobs of a cancelled CI run", "run", run.URL,
-				"error", err.Error())
-			return model.Canceller(nil, false, r.now())
-		}
-		for _, j := range found {
-			job := model.CIJob{Conclusion: j.Conclusion, Runner: j.RunnerID, RunnerName: j.RunnerName,
-				Ended: j.Completed}
-			if job.Cancelled() && job.Runner != 0 {
-				job.PodFate = r.runnerPodFate(ctx, namespace, job.RunnerName)
-				if _, asked := known[job.Runner]; !asked && job.PodFate == "" {
-					online[job.Runner], known[job.Runner] = provider.RunnerOnline(ctx, job.Runner)
-				}
-				job.RunnerOnline, job.RunnerUnknown = online[job.Runner], !known[job.Runner]
-			}
-			jobs = append(jobs, job)
-		}
-	}
-	return model.Canceller(jobs, true, r.now())
 }
 
 // runnerPodFate is the fate of the pool pod named runner in namespace, the
@@ -745,35 +625,16 @@ func (r *TaskReconciler) pullFacts(ctx context.Context, task *c4v1beta1.Task, co
 		// whether main moved, or would conflict, is nothing to it.
 		return nil
 	}
-	run := facts.Run
-	judging := status.Phase == c4v1beta1.TaskReviewing || status.Phase == c4v1beta1.TaskVerifying
-	approved := judging && run.Done && run.Result != nil && run.Result.Verdict == model.VerdictApprove
-	// A change its Crew's approval rules ask no review of merges on its checks.
-	updated := status.Phase == c4v1beta1.TaskChecking && facts.Checks == ports.CheckSuccess &&
-		(status.MergeWhenChecksPass || model.MergesUnreviewed(*facts))
-	if !approved && !updated || status.PullRequest == 0 {
+	if !engine.PullWanted(int(status.PullRequest), status.MergeWhenChecksPass, *facts) {
 		return nil
 	}
-	pr, err := r.pullRequest(ctx, container, status)
+	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
 		return err
 	}
-	open := pr.State == stateOpen && !pr.Merged
-	facts.Unmergeable, facts.Behind = open && !pr.Mergeable, open && pr.Behind
-	return nil
-}
-
-// pullRequest reads the Task's pull request: whether main moved since its
-// branch took it in, and whether it conflicts with main.
-func (r *TaskReconciler) pullRequest(ctx context.Context, container *c4v1beta1.Container,
-	status *c4v1beta1.TaskStatus) (ports.PullRequest, error) {
-	provider, repo, err := r.gitRepo(ctx, container)
-	if err != nil {
-		return ports.PullRequest{}, err
-	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
-	return provider.GetPullRequest(gitCtx, repo, int(status.PullRequest))
+	return engine.ReadPull(gitCtx, provider, repo, int(status.PullRequest), status.MergeWhenChecksPass, facts)
 }
 
 // runRole is the role of the sandbox a phase waits on.

@@ -362,3 +362,30 @@ func TestRunAfterInterruption307(t *testing.T) {
 		t.Errorf("a run on the host costs %d and %d without a cost", milli, without)
 	}
 }
+
+// #335: the lead runtime's progress marker is the engine's: a session
+// can't post one, and no run reads it, as if it weren't there.
+func TestProgressMarkerChangesNoRun335(t *testing.T) {
+	m := runMarkers{t}
+	if _, err := SessionMarker(MarkerProgress, "s1"); err == nil {
+		t.Error("a session posted a progress marker")
+	}
+	line, err := MarkerLine(MarkerProgress, map[string]string{"task": "web-12"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := DefaultClaimRules(runAgent)
+	offer := hostAt(1, runAgent, 0, m.offer(RoleImplementer))
+	claim := hostAt(2, runAgent, 1, m.session(MarkerClaim, "s1", ""))
+	progress := hostAt(3, runAgent, 2, line+"\n\n```json\n{}\n```\n")
+	without := RunFromMarkers(RunFacts{Comments: []HostComment{offer, claim}, Head: runHead, Rules: rules,
+		Now: claim.Created.Add(time.Minute)})
+	with := RunFromMarkers(RunFacts{Comments: []HostComment{offer, claim, progress}, Head: runHead, Rules: rules,
+		Now: claim.Created.Add(time.Minute)})
+	if !reflect.DeepEqual(without, with) {
+		t.Errorf("with a progress marker the run is %+v, want %+v", with, without)
+	}
+	if _, ok := ParseMarker(progress); !ok {
+		t.Error("a progress marker doesn't parse")
+	}
+}

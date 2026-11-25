@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"slices"
 	"strings"
 	"time"
@@ -53,6 +54,15 @@ type Env struct {
 	Now func() time.Time
 	// Out is where the commands report.
 	Out io.Writer
+	// Project is the project repository, where status looks for the lead's
+	// files (agentDrift); nil looks for none.
+	Project fs.FS
+	// Runtime is the lead runtime of container on host, its markers counted
+	// by rules: cmd/theos's hostrun.New. nil runs no lead command.
+	Runtime func(host LeadHost, container string, rules model.ClaimRules) ports.Runtime
+	// Clone clones repo's branch into dir, under the project repository, for
+	// a claimed Task's work; nil clones nothing.
+	Clone func(ctx context.Context, repo ports.Repository, branch, dir string) error
 }
 
 // container is one Container of the model, resolved and on its host.
@@ -241,7 +251,10 @@ func protect(ctx context.Context, env Env, m *Model, c container, repo ports.Rep
 // Status prints, for each Container, whether it is scaffolded and each of
 // its Relationships to a DataStore as the operator's Applied condition
 // reads it (AppliedAtScaffold, or AddedAfterScaffold for one added after
-// the scaffold), then the losses of the loss table that apply.
+// the scaffold); then each Crew's fields the lead runtime does not honour,
+// with their reason words (crewNotes); then each of the lead's files that
+// drifted from what theos agents writes (agentDrift); then the losses of
+// the loss table that apply.
 func Status(ctx context.Context, env Env, m *Model) error {
 	cs, err := containers(ctx, env, m)
 	if err != nil {
@@ -256,7 +269,71 @@ func Status(ctx context.Context, env Env, m *Model) error {
 			return fmt.Errorf("container %s: %w", c.obj.Name, err)
 		}
 	}
+	if err := crewNotes(env.Out, m, model.LeadCapabilities()); err != nil {
+		return err
+	}
+	if err := agentDrift(env.Out, m, env.Project); err != nil {
+		return err
+	}
 	return losses(ctx, env, cs)
+}
+
+// crewNotes prints, for each Crew, every field it or its Agents set that a
+// runtime with caps does not honour, with its reason word, and each
+// Container no Crew works. Nothing is dropped silently
+// (docs/plans/lead-runtime.md, decision 6).
+func crewNotes(out io.Writer, m *Model, caps model.Capabilities) error {
+	crews := slices.Clone(m.Crews)
+	slices.SortFunc(crews, func(a, b c4v1beta1.Crew) int { return strings.Compare(a.Name, b.Name) })
+	worked := map[string]bool{}
+	for _, c := range crews {
+		worked[c.Spec.ContainerRef.Name] = true
+		notes := model.NotHonoured(CrewSetup(m, &c), caps)
+		says := "what this runtime does not honour of it and its Agents:"
+		if len(notes) == 0 {
+			says = "this runtime honours all of it and its Agents"
+		}
+		if _, err := fmt.Fprintf(out, "Crew %s works %s; %s\n", c.Name, c.Spec.ContainerRef.Name,
+			says); err != nil {
+			return err
+		}
+		for _, n := range notes {
+			if _, err := fmt.Fprintf(out, "  %s\n", model.FieldNoteLine(n)); err != nil {
+				return err
+			}
+		}
+	}
+	names := make([]string, 0, len(m.Containers))
+	for _, c := range m.Containers {
+		if !worked[c.Name] {
+			names = append(names, c.Name)
+		}
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		if _, err := fmt.Fprintf(out, "%s: no Crew works its issues; add one to %s\n", name, SetupFile); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CrewSetup is c as a runtime reads it: the spec fields its document wrote,
+// and each Agent it names, once, with the fields its document wrote and its
+// harness.
+func CrewSetup(m *Model, c *c4v1beta1.Crew) model.CrewSetup {
+	setup := model.CrewSetup{Name: c.Name, Fields: m.Written["Crew "+c.Name]}
+	seen := map[string]bool{}
+	for _, ref := range CrewAgentRefs(&c.Spec) {
+		agent := modelfacts.Find(m.Agents, ref.Name)
+		if agent == nil || seen[ref.Name] {
+			continue
+		}
+		seen[ref.Name] = true
+		setup.Agents = append(setup.Agents, model.AgentSetup{Name: agent.Name, Fields: m.Written["Agent "+agent.Name],
+			Harness: string(agent.Spec.Harness)})
+	}
+	return setup
 }
 
 func status(ctx context.Context, env Env, m *Model, c container, connectorOf map[string]string) error {

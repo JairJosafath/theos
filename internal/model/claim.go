@@ -55,6 +55,10 @@ const (
 	// MarkerEnded is the engine's: the run is over, and its later markers
 	// count for nothing.
 	MarkerEnded = "ended"
+	// MarkerProgress is the engine's in the lead runtime: a Task's progress
+	// as its last transition left it (docs/plans/lead-runtime.md, decision
+	// 4). No run reads it.
+	MarkerProgress = "progress"
 )
 
 // ClaimLease is how long a claim or a renew holds the work from its
@@ -71,7 +75,7 @@ const markerPrefix = "<!-- theos:"
 
 var (
 	markerKinds = []string{MarkerOffer, MarkerClaim, MarkerRenew, MarkerRelease, MarkerDone, MarkerBlocked,
-		MarkerNothing, MarkerEnded}
+		MarkerNothing, MarkerEnded, MarkerProgress}
 	// markerLine is a whole marker line: its kind and its key=value words.
 	markerLine = regexp.MustCompile(`^<!-- theos:([a-z]+)((?: [a-z][a-zA-Z]*=[^\s=]+)*) -->$`)
 	// markerKey is a key of a marker line's key=value words.
@@ -125,7 +129,7 @@ func MarkerLine(kind string, attrs map[string]string) (string, error) {
 // SessionMarker is the comment a session posts to claim, renew or release
 // the work: one marker line naming it.
 func SessionMarker(kind, session string) (string, error) {
-	if kind == MarkerOffer || kind == MarkerEnded {
+	if kind == MarkerOffer || kind == MarkerEnded || kind == MarkerProgress {
 		return "", fmt.Errorf("an %s marker is the engine's, not a session's", kind)
 	}
 	if err := CheckSessionName(session); err != nil {

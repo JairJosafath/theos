@@ -2049,7 +2049,8 @@ sessions do the work.
 
 - **One model, in the CRDs' types.** In the project's repository
   (`theos-<project>` unless set), `model/model.yaml` is the story and
-  `model/setup.yaml` the GitProvider, the catalog entries and the Bundles:
+  `model/setup.yaml` the GitProvider, the catalog entries, the Bundles,
+  and the Crews and their Agents:
   all whole `theos.factory.io/v1beta1` manifests, given the CRDs' defaults
   and decoded strictly. A plan round is rendered from the story in the
   plan's format and merged back object by object, so what a plan can't

@@ -289,6 +289,32 @@ what it needs. "Tier" is AGENTS.md's.
 | — `theos update`, `export`, `import` | #295 | 2 | 4 | its issue's |
 | 14. Harness authoring: `harnesstest`, the guide, Codex | #338 | 3 | 7 | tier 1: the suite on both harnesses |
 
+**Step 1 as built** (`internal/engine/crew.go`, `internal/ports/runtime.go`,
+`internal/controller/crew_tasks.go`). Choices the plan left open:
+- `CrewTick` returns a `CrewResult`: the step, and the hand-backs that
+  failed, by issue. The engine logs nothing; the runtime logs them. A
+  failure to read the host is an `*engine.HostError`, so the operator still
+  waits on `GitHostUnavailable` while any other error is the store's.
+- `CrewInput.Before` runs between the read and the decision, with the facts
+  the decision takes. The operator's releases, schedules and onboarding run
+  there, as they ran there before. It doesn't run while the Container isn't
+  Ready, and the host may then be nil.
+- `TaskStore` has `Tasks` and `Start` alone; `Progress` and `SaveProgress`
+  come with #334, the first step that calls them. `Tasks` leaves out Triage
+  Tasks, which the Crew reads apart.
+- `Workers` and `model.WorkOrder` are declared, unused. The operator's
+  `Workers()` is nil until #336, as is the fake's until #334.
+- `Capabilities` has a field per reason word of decision 6 but
+  `HarnessNotBuilt`, which is a harness's: `Merges`, `Sandboxes`,
+  `Schedules`, `Costs` and `AllRoles`. The operator has all five.
+- The reconciler still lists the Tasks itself, for releases, triage and the
+  Paused condition; the store lists them again, live. That is one more
+  list a reconcile, and the store's is at least as new as the decision
+  needs. The proposed issues a triager reads are read by the reconciler,
+  before the tick.
+- `contract.TaskStore` runs on the fake and on the operator's adapter over
+  controller-runtime's fake client, in `make test`.
+
 **Step 2 as built** (`internal/model/claim.go`). Choices the plan left
 open:
 - A marker line is `<!-- theos:<kind> key=value ... -->`, keys sorted,
@@ -298,7 +324,7 @@ open:
   later round's offer, counts for nothing.
 - A holder is its account and its session's name together, so two
   claimant accounts with one session name are two holders.
-- `lease`, `grace` and `claimants` reach `model/settings.yaml` with #335,
+- `lease`, `grace` and `claimants` reach `model/settings.yaml` with #294,
   the first step that reads them: the settings decode refuses a key no step
   reads. Until then `DefaultClaimRules` is the only source.
 
@@ -323,6 +349,224 @@ left open:
   takeover needs its own `done`.
 - `blocked` and `nothing` close the run with their note. A `blocked`
   with no reason still blocks.
+
+**Step 4 as built** (`internal/model/runtime_fields.go`,
+`internal/nocluster`). Choices the plan left open:
+- `Capabilities` is `internal/model`'s, as `model.NotHonoured` reads it,
+  and `ports.Capabilities` is the same type. `OperatorCapabilities` has
+  all of it, `LeadCapabilities` none but `claude-code` among the
+  harnesses.
+- A field counts as set when its document wrote it, before the CRD's
+  defaults: `Model.Written` keeps those, so a defaulted `timeoutMinutes`
+  is no `NoSandbox` line, while a written one is. A field written as
+  `null` counts as left out. The harness is read whether written or
+  defaulted.
+- `pauseRuns` is `NoSandbox`: it pauses runs in their sandboxes.
+  `specApproval` is `RoleNotBuilt`, with the spec writer. The PersonMerges
+  line is the Crew's own, whatever fields it sets.
+- A field the table has no row for is `UnknownField`, never dropped;
+  `TestEveryFieldHasARow333` fails on a new field of `CrewSpec` or
+  `AgentSpec` until it has a row.
+- `theos init` writes the Agents `implementer` and `reviewer` from the
+  chart's values (description, model, maxRounds) at its agent image, the
+  tag the chart's, else Chart.yaml's appVersion, else the release's
+  version. It can't write the Crew: a new model has no Container, and a
+  Crew must name one. It writes the Crew as a comment to uncomment, and
+  `theos status` says, of each Container no Crew works, to add one.
+- The sample is `config/samples/webshop/crew.yaml`, kept out of the
+  webshop's kustomization: on a cluster the chart makes the Agents.
+
+**Step 5 as built** (`internal/engine/task.go`, `internal/engine/task_host.go`).
+Choices the plan left open:
+- `TaskStore` keeps a `ports.TaskRecord`: the `model.TaskProgress`, the
+  pull request and its URL, the round's summary, when the phase last
+  changed, and the reason and message a Task ended with. A pull request
+  is no part of `TaskProgress`, which the operator's transitions change.
+- `model.WorkOrder` carries what #334 lists: Task, issue, branch, round,
+  role, Agent, feedback and lease, and the `Text` #266 renders.
+- The host halves both runtimes call are `ReadChecks` (with the CI runs,
+  the rerun's state and who cancelled a run; the operator passes the
+  runner pods' fate as a function), `ReadPull` with `PullWanted`,
+  `ReadBase` and `UpdateBranch`. The Task reconciler's `checkFacts`,
+  `pullFacts`, `baseFacts` and `updateBranch` call them, and the
+  reconciler's own copies went. `approvalFacts` stays: it reads the
+  review's Sandbox, the run side.
+- The host actions of `task_actions.go` that write the operator's status
+  as they go (open, merge, approve, comment) stay until #336, which moves
+  the reconciler onto `TaskTick`. `TaskTick` has its own: it opens the
+  pull request, merges where the runtime `Merges`, closes the issue and
+  hands a failed one back.
+- Capabilities turn steps: a `Merge` in a runtime that merges nothing
+  waits with `PersonMerges`, and the tick after a person merged ends the
+  Task Merged and closes its issue. A step the engine has no way to carry
+  out (a sandbox suspended or resumed in place, a Standard change, a
+  spec, a verification) waits with `NotBuilt`.
+- A run whose claim ran out (`MarkerRun.EndDue`) is ended by the tick
+  that sees it, read back interrupted, and decided on in the same tick:
+  `Rerun` offers it again on its branch. A rerun, a retried review and a
+  conflict to resolve offer their turn in the same tick, since a turn of
+  the same round offered again starts afresh, and the round's earlier
+  answers count until it is.
+- A request for changes goes on the pull request as a review, or, when
+  the host refuses one (an account's own pull request, as where theos
+  and the sessions share one), as a comment with the verdict.
+- Every Task envtest spec passes unchanged; the Task tick's tests are
+  tier 1 on `fake.Tasks`, `fake.Workers` and the fake host.
+
+**Step 6 as built** (`internal/adapters/hostrun`, `internal/ports/comments.go`).
+Choices the plan left open:
+- The ports gain `ports.IssueComments`, an optional part of `Issues`
+  asked for by interface: an issue's comments with the host's IDs,
+  authors and stamps, and a comment posted and read back as stamped.
+  `CommentIssue` stays as it is for its thirty callers. Gitea lists an
+  issue's comments whole; GitHub pages them, and the adapter reads every
+  page.
+- A Task's progress is a `progress` marker the engine posts at each
+  transition, `<!-- theos:progress task=<task> -->`, its `TaskRecord`
+  a fenced json block read strictly; the last counted one is the Task's.
+  Comments are never edited, so a Task's history is on its issue. A
+  session can't post one (`SessionMarker` refuses it), and no run reads
+  it.
+- `Start` creates the branch at main's head, labels the issue
+  `status/in-progress` and posts the first progress, Pending. A branch
+  there already is the Task's own, from a start that stopped halfway or a
+  lead that raced this one, and the start goes on from it. The offer is
+  the Task tick's first step, so a start that stopped before it is
+  finished by the next tick, as decision 5 wants, with no step of
+  `Start`'s own.
+- `Tasks` lists the Tasks at work: the issues labelled
+  `status/in-progress`. A Task that ended is not listed: its issue is
+  closed, or handed back to a person. `contract.TaskStore` takes that:
+  an ended Task is listed final or not at all. The lead runtime starts
+  no Spec Task (`NoSpecs`).
+- `Workers.Run` is `model.RunFromMarkers` on the issue's comments and the
+  branch's head, for the turn the counted offer names, else not started.
+  `Offer` posts nothing while the turn is offered and not answered or
+  ended. `End` posts `ended` only for a turn still open: a done one needs
+  none, the next offer starting afresh.
+- A Runtime is one Container's; a Task's issue is read from its name
+  (`model.IssueTaskName`).
+- Not here yet: `lease`, `grace` and `claimants` in `model/settings.yaml`,
+  and `cmd/theos`'s wiring. Both come with `theos mcp` (#294), the first
+  command that runs a tick: the settings decode refuses a key no step
+  reads, and `hostrun.New` takes its `model.ClaimRules` from the caller.
+
+**Step 7 as built** (`internal/method`, `internal/harness`, `theos agents`).
+Choices the plan left open, after reading Claude Code's subagent and MCP
+documentation (code.claude.com/docs/en/sub-agents, .../mcp, .../memory):
+- A subagent's `model` is the Agent's `model` as written: Claude Code
+  takes a full model ID there as well as an alias. Its `tools` are a
+  comma-separated list; `mcp__theos__*` gives it every tool of
+  `theos mcp`. The implementer has `Read, Grep, Glob, Edit, Write, Bash`,
+  the reviewer `Read, Grep, Glob, Bash`: no `Agent`, `Edit` or `Write`.
+  Neither has `Agent`, so neither starts another subagent.
+- The generated marker is an HTML comment in the Markdown files and a YAML
+  comment in a subagent's frontmatter. `.mcp.json` is JSON, which takes
+  no comment, and carries none; `theos status` compares every file with
+  what `theos agents` writes now, so a hand edit of it is named too.
+- An Agent two Crews give two roles is refused: its one subagent file
+  can't have both roles' tools.
+- `issueBlock` and its intro moved to `internal/model` (`IssueBlock`,
+  `IssueIntro`), which `internal/agentrunner` and `method.WorkOrder` call.
+  The planner's plan format is not in the playbook yet: `theos plan`
+  (#293) is the first step that hands one out.
+- The engine renders no text: `TaskInput.OrderText` is the runtime's
+  rendering of an offer (`method.WorkOrder`, which #294 passes), and
+  `model.WorkOrder.Goal` carries the issue for it to fence.
+- `theos agents` writes only a file that differs and says of each whether
+  it was written or unchanged; a model with no Crew is refused. `theos
+  status` names a file that is missing or changed, when the model has a
+  Crew.
+
+**Step 8 as built** (`cmd/theos/lead.go`, `internal/nocluster/lead.go`).
+Choices the plan left open:
+- The MCP SDK is github.com/modelcontextprotocol/go-sdk v1.8.0: `go list
+  -deps` shows it brings neither client-go nor controller-runtime, and
+  `cmd/theos`'s `TestImports` keeps it so. It is linked by `cmd/theos`
+  alone; the tools' work is `internal/nocluster`'s, on the ports and the
+  engine, and `cmd/theos` builds `hostrun` for it (`Env.Runtime`), as it
+  builds the host adapters.
+- Six tools: `theos_next`, `theos_claim`, `theos_heartbeat`,
+  `theos_release`, `theos_done` and `theos_status`, each reading the model
+  files afresh. Each is also a command, printing its result as JSON:
+  `theos next`, `claim`, `heartbeat`, `release` and `done`, with `-task`,
+  `-session`, `-commit`, `-verdict` and `-summary`. No merge tool.
+- `theos_next` runs each Crew's tick, then a Task tick for each Task at
+  work, and returns the open offers (offered and unclaimed), each with its
+  subagent and its work order (`method.WorkOrder`, which fences the
+  issue), and a line for every Task at work with its phase and the step's
+  reason, such as `PersonMerges`. The Agents of a Task are the Crew's,
+  or a route's by the issue's labels, read each tick.
+- A claim posts the claim, reads the issue back and holds the work only
+  when the host's order names the session (`model.NextClaim`,
+  `model.ClaimOf`). It then clones the Task's branch into `work/<task>`
+  with git, which asks its own credential helper: theos hands git no
+  credential. `work/` holds a `.gitignore` of `*`, so no clone lands in
+  the project's commits. A plain clone, not a worktree: the project
+  repository is not the Container's.
+- `heartbeat` renews under half the lease left and says how long the
+  claim holds; `release` and `done` post only for the session that holds
+  the claim. `done` takes a verdict of `approve` or `changes` alone.
+- `lease`, `grace` and `claimants` are `model/settings.yaml`'s keys now,
+  Go durations, 60m and 5m and the credential's own login by default;
+  `theos init` spells the two durations out.
+- No result carries the credential, and the issue's text reaches a result
+  only fenced, in a work order: the test reads every result for both.
+
+**Step 9 as built** (`internal/model/person_merge.go`, `theos merge`).
+Choices the plan left open:
+- `theos merge -task <task>` holds itself, on every host, what no host
+  is trusted to hold for a person: a counted approving verdict on the
+  pull request's head, the checks main requires (`model.BaseState` of the
+  rule's contexts on the head) and the protected paths (the pull
+  request's files against the rule's). The host's merge holds what it
+  holds besides, as GitHub's adapter does. The fake host's merge stays
+  as the controller's specs know it.
+- The verdict counts when it is a reviewer's `done` with `approve` in a
+  review run offered after the implement run whose `done` named the
+  head, from a holder other than that run's: a session's name tells the
+  sessions apart where they share one account (decision 10). A verdict
+  of an earlier round is `VerdictOnAnOlderHead`; the author's own is
+  `AuthorsOwnVerdict`; one from outside `claimants` counts for nothing,
+  so `NoApprovingVerdict`.
+- `merge` in `model/settings.yaml` is `person` (the default) or `rules`;
+  any other is refused at decode, and `rules` is refused at the merge,
+  `RulesMergeNotBuilt`, until #298.
+- Away from a terminal (stdin no character device) `theos merge` is
+  refused, a speed bump for an agent, not a fence; `theos mcp` has no
+  merge tool. The next tick sees the merge and ends the Task Merged, its
+  issue closed.
+- Not run here: the merge on the fake GitHub and on Gitea. The checks and
+  protected paths are theos's own on every host, and the model's table
+  and the fake host's run test them; GitHub's adapter merge has its own
+  tests; Gitea needs a non-root host for `make test-gitea`.
+
+**Steps 10 and 11 as built.** The release workflow builds `theos` for
+Linux and macOS, amd64 and arm64, stamped with the release's version so
+`theos init` pins that release's catalog, and attaches it with the other
+binaries in `SHA256SUMS` (#318); the README names the download and
+`go install`. [no-cluster.md](../no-cluster.md) is the guide (#297): getting
+theos and its credential, `init`, `scaffold`, `protect`, `agents`, one Task
+on a laptop and in a cloud session, one lead per project, and each reason
+word `theos status` prints. A person's walk of one Task in each, with the
+host's pages in `docs/screenshots/`, is still to do: it settles
+[Not tested, and who can](#not-tested-and-who-can), and the guide says
+what it found once it is done.
+
+**Step 14 as built** (`internal/harness/harnesstest`, `internal/harness/codex`,
+[harness-authoring.md](../harness-authoring.md)). Choices the plan left open:
+- The harness is the lead's tool, which the person picks: `theos agents
+  -harness codex`, Claude Code by default. `Agent.spec.harness` stays the
+  program an operator's sandbox runs (`claude-code`, `stand-in`): a Codex
+  Agent runs in no sandbox yet (level 2, #58), so the enum is unchanged.
+- `harness.RoleGrants` is the part a harness has when its tool enforces
+  each role's tools. Claude Code has it; Codex, whose custom agents set no
+  tools and no sandbox, hasn't, and its reviewer's boundary is its
+  instructions alone, which the guide says.
+- `harnesstest.Check` returns the problems, `Run` reports them, so a test
+  can show that a harness that drops the reviewer's boundary fails.
+- `theos status` checks the files of each harness whose mark file the
+  project has (`CLAUDE.md`, `.codex/config.toml`), else Claude Code's.
 
 Steps 1, 2 and 4 need nothing and can run side by side. Step 10 can run
 whenever the owner's session takes it.

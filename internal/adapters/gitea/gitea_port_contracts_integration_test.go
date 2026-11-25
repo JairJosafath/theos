@@ -87,6 +87,18 @@ func TestIssuesContractIntegration(t *testing.T) {
 	})
 }
 
+// #335: the issue comments the lead runtime's markers are, as Gitea
+// stamps them.
+func TestIssueCommentsContractIntegration(t *testing.T) {
+	e := newContractEnv(t)
+	contract.IssueComments(t, contract.IssueCommentsEnv{
+		New: func(t *testing.T) (ports.GitHost, ports.Issues) {
+			p := e.provider(t)
+			return p, p
+		},
+	})
+}
+
 // contractRunnerLabel is what the workflow NoLog pushes runs on, and the
 // runner it registers takes jobs for.
 const contractRunnerLabel = "theos-contract"

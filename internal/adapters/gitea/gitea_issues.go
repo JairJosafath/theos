@@ -19,6 +19,7 @@ package gitea
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -381,6 +382,68 @@ func (g *gitea) CommentIssue(ctx context.Context, repo ports.Repository, number 
 		return fmt.Errorf("gitea: commenting on #%d of %s failed (HTTP %d): %s", number, repoPath(repo), status, apiMessage(data))
 	}
 	return nil
+}
+
+// giteaStampedComment is an issue comment as Gitea lists it.
+type giteaStampedComment struct {
+	ID   int64 `json:"id"`
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	Created time.Time `json:"created_at"`
+	Body    string    `json:"body"`
+}
+
+func (c giteaStampedComment) port() ports.IssueComment {
+	return ports.IssueComment{ID: c.ID, Author: c.User.Login, Created: c.Created, Body: c.Body}
+}
+
+var _ ports.IssueComments = (*gitea)(nil)
+
+// ListIssueComments returns an issue's comments, oldest first. Gitea lists
+// an issue's comments whole, with no pages; ErrIssueNotFound for an issue
+// the repository lacks, which Gitea answers with HTTP 500 (#335).
+func (g *gitea) ListIssueComments(ctx context.Context, repo ports.Repository, number int) ([]ports.IssueComment,
+	error) {
+	status, data, err := g.do(ctx, http.MethodGet, issuePath(repo, number)+"/comments", nil)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusNotFound {
+		return nil, fmt.Errorf("gitea: issue %d of %s: %w", number, repoPath(repo), ports.ErrIssueNotFound)
+	}
+	var comments []giteaStampedComment
+	if status != http.StatusOK || json.Unmarshal(data, &comments) != nil {
+		// Gitea answers HTTP 500 for the comments of an issue it lacks: the
+		// issue itself says whether that is why.
+		if _, err := g.GetIssue(ctx, repo, number); errors.Is(err, ports.ErrIssueNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("gitea: listing the comments of #%d of %s failed (HTTP %d): %s", number,
+			repoPath(repo), status, apiMessage(data))
+	}
+	out := make([]ports.IssueComment, 0, len(comments))
+	for _, c := range comments {
+		out = append(out, c.port())
+	}
+	return out, nil
+}
+
+// PostIssueComment comments on an issue and returns the comment as Gitea
+// made it.
+func (g *gitea) PostIssueComment(ctx context.Context, repo ports.Repository, number int,
+	body string) (ports.IssueComment, error) {
+	payload, _ := json.Marshal(giteaComment{Body: body})
+	status, data, err := g.do(ctx, http.MethodPost, issuePath(repo, number)+"/comments", payload)
+	if err != nil {
+		return ports.IssueComment{}, err
+	}
+	var c giteaStampedComment
+	if status != http.StatusCreated || json.Unmarshal(data, &c) != nil {
+		return ports.IssueComment{}, fmt.Errorf("gitea: commenting on #%d of %s failed (HTTP %d): %s", number,
+			repoPath(repo), status, apiMessage(data))
+	}
+	return c.port(), nil
 }
 
 // CloseIssue closes an issue. Gitea refuses one that depends on an open issue

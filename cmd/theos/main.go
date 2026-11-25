@@ -61,6 +61,24 @@ Usage:
   theos scaffold [-C dir]
   theos protect [-C dir]
   theos status [-C dir]
+  theos agents [-C dir] [-harness claude-code|codex]
+  theos mcp [-C dir]
+  theos next [-C dir]
+  theos claim|heartbeat|release [-C dir] -task TASK -session NAME
+  theos done [-C dir] -task TASK -session NAME [-commit SHA | -verdict approve|changes] -summary TEXT
+  theos merge [-C dir] -task TASK
+
+theos agents writes the lead's files into the project repository from
+model/: for Claude Code, CLAUDE.md, AGENTS.md, a subagent in
+.claude/agents/ for each Agent a Crew names, and .mcp.json; for Codex,
+AGENTS.md, .codex/agents/ and .codex/config.toml. theos status names one
+that changed since. theos mcp serves the lead runtime's tools
+over stdio, as .mcp.json starts it: theos_next, theos_claim,
+theos_heartbeat, theos_release, theos_done and theos_status. next, claim,
+heartbeat, release and done are the same on the command line. There is no
+merge tool: a person merges, on the host's pages or with theos merge, which
+runs only at a terminal and merges only a pull request a session other than
+its author's approved on its head, with green checks and no protected path.
 
 The credential is THEOS_GIT_TOKEN, else what git credential fill gives for
 its host; theos never stores or prints it. It is sent only to the host it
@@ -87,12 +105,16 @@ type deps struct {
 	stdout    io.Writer
 	stderr    io.Writer
 	now       func() time.Time
+	// terminal reports whether a person's terminal runs theos: theos merge
+	// runs nowhere else.
+	terminal func() bool
 }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := run(ctx, os.Args[1:], deps{hosts: hosts{}, templates: git.Client{}, runner: execRunner{},
-		getenv: os.Getenv, stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr, now: time.Now})
+		getenv: os.Getenv, stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr, now: time.Now,
+		terminal: stdinTerminal})
 	stop()
 	os.Exit(code)
 }
@@ -111,6 +133,13 @@ func run(ctx context.Context, args []string, d deps) int {
 	remote := flags.String("remote", "", "init: the project repository's remote; origin's unless set")
 	provider := flags.String("provider", "", "init: the Git host's provider; asked unless the remote is on github.com")
 	ref := flags.String("ref", releaseTag(), "init: the theos release whose catalog the model pins")
+	harnessName := flags.String("harness", "", "agents: the tool that plays the lead, claude-code (the default) or codex")
+	var lead doneIn
+	flags.StringVar(&lead.Task, "task", "", "claim, heartbeat, release, done, merge: the Task, as theos next names it")
+	flags.StringVar(&lead.Session, "session", "", "claim, heartbeat, release, done: your session's name")
+	flags.StringVar(&lead.Commit, "commit", "", "done: an implementer's pushed commit")
+	flags.StringVar(&lead.Verdict, "verdict", "", "done: a reviewer's verdict, approve or changes")
+	flags.StringVar(&lead.Summary, "summary", "", "done: what you did, or why your verdict")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 2
 	}
@@ -126,17 +155,28 @@ func run(ctx context.Context, args []string, d deps) int {
 	case "init":
 		err = initModel(ctx, d, *dir, nocluster.InitOptions{Project: *project, Remote: *remote, Provider: *provider,
 			TheosURL: theosURL, Ref: *ref})
-	case "scaffold", "protect", "status":
+	case "mcp":
+		err = serveMCP(ctx, leadEnv(env, d, *dir), d, *dir)
+	case "merge":
+		err = mergeCommand(ctx, leadEnv(env, d, *dir), d, *dir, lead.Task)
+	case "next", "claim", "heartbeat", "release", "done":
+		err = leadCommand(ctx, cmd, leadEnv(env, d, *dir), d.stdout, *dir, lead)
+	case "scaffold", "protect", "status", "agents":
 		var m *nocluster.Model
 		if m, err = nocluster.Read(os.DirFS(*dir)); err != nil {
 			break
 		}
 		switch cmd {
+		case "agents":
+			err = nocluster.Agents(d.stdout, m, *harnessName, os.DirFS(*dir), func(path string, data []byte) error {
+				return writeProjectFile(*dir, path, data)
+			})
 		case "scaffold":
 			err = nocluster.Scaffold(ctx, env, m)
 		case "protect":
 			err = nocluster.Protect(ctx, env, m)
 		default:
+			env.Project = os.DirFS(*dir)
 			err = nocluster.Status(ctx, env, m)
 		}
 	default:
@@ -148,6 +188,16 @@ func run(ctx context.Context, args []string, d deps) int {
 		return 1
 	}
 	return 0
+}
+
+// writeProjectFile writes data at path under dir, a path theos agents
+// renders, making its folder.
+func writeProjectFile(dir, path string, data []byte) error {
+	full := filepath.Join(dir, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil { //nolint:gosec // the project's own folder
+		return err
+	}
+	return os.WriteFile(full, data, 0o644) //nolint:gosec // files the project repository commits
 }
 
 // initModel writes the model files under dir, refusing to replace any.

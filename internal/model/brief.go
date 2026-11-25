@@ -848,8 +848,8 @@ type specLimit struct {
 // specLimits are the limits of kind's spec, as its CRD's markers in
 // api/v1beta1 set them; a test holds the two together.
 func specLimits(kind string) []specLimit {
-	displayName := specLimit{"displayName", 100, false, func(o PlanObject) any { return o.DisplayName }}
-	description := specLimit{"description", 1000, false, func(o PlanObject) any { return o.Description }}
+	displayName := specLimit{fieldDisplayName, 100, false, func(o PlanObject) any { return o.DisplayName }}
+	description := specLimit{fieldDescription, 1000, false, func(o PlanObject) any { return o.Description }}
 	switch kind {
 	case KindProject, KindPerson, KindContainer, KindDataStore:
 		return []specLimit{displayName, description}

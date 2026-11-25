@@ -366,7 +366,7 @@ func TestInit268(t *testing.T) {
 	if code := run(context.Background(), append(args, "-ref", "v0.9.0"), d); code != 1 {
 		t.Errorf("a second init exited %d", code)
 	}
-	if code := run(context.Background(), []string{"merge"}, d); code != 2 {
+	if code := run(context.Background(), []string{"rebase"}, d); code != 2 {
 		t.Errorf("an unknown command exited %d", code)
 	}
 
@@ -422,7 +422,7 @@ func TestImports(t *testing.T) {
 	for _, p := range pkg.Imports {
 		switch rel := strings.TrimPrefix(p, module); {
 		case rel == "internal/buildinfo", rel == "internal/modelfacts", rel == "internal/nocluster",
-			rel == "internal/ports":
+			rel == "internal/ports", rel == "internal/model":
 		// The host adapters and plain Git; an adapter that needs a cluster
 		// (client-go) fails the dependency check below.
 		case strings.HasPrefix(rel, "internal/adapters/"):

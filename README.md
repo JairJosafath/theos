@@ -94,6 +94,17 @@ say otherwise. Apps already watched by Alertmanager or Sentry?
 [docs/alerts.md](docs/alerts.md) turns their alerts into bugs for the
 loop.
 
+### No cluster: theos in Claude Code
+
+A project also runs with no cluster at all, from a Claude Code session on a
+laptop or on the web: the session is the lead, theos says what is next,
+Claude Code subagents implement and review, and a person merges.
+[docs/no-cluster.md](docs/no-cluster.md) is the guide. It needs the `theos`
+binary: `theos-<os>-<arch>` for Linux or macOS from a release on the
+[releases page](https://github.com/JairJosafath/theos/releases), checked
+against its `SHA256SUMS`, or
+`go install github.com/JairJosafath/theos/cmd/theos@<tag>`.
+
 ## How it works
 
 [![How theos works: describe, scaffold once, build from issues, keep current, watch, the fence and where it runs](docs/images/how-it-works.png)](docs/images/how-it-works.svg)

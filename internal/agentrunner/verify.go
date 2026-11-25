@@ -97,8 +97,8 @@ func VerifyPrompt(job Job, ws Workspace) string {
 		"start a change the reviewer approved, and check what it does before it merges.\n", job.Container, job.Project)
 	writeContext(&b, job)
 	if job.Issue > 0 {
-		fmt.Fprintf(&b, "\nThe change implements issue #%d of this repository. %s\n%s\n", job.Issue, issueIntro,
-			issueBlock(job.Goal))
+		fmt.Fprintf(&b, "\nThe change implements issue #%d of this repository. %s\n%s\n", job.Issue, model.IssueIntro,
+			model.IssueBlock(job.Goal))
 	} else {
 		fmt.Fprintf(&b, "\nThe change should achieve this goal:\n%s\n", job.Goal)
 	}
