@@ -125,6 +125,11 @@ func Playbook(p Project) string {
 	return b.String()
 }
 
+// RoleSpecWriter is the role of a Crew's spec writer as its subagent plays
+// it: the implementer's turn of a Spec Task (model.WorkOrder.Spec), which
+// writes the issue's spec and nothing else.
+const RoleSpecWriter = "spec"
+
 // roleWord is how the playbook names a role.
 func roleWord(role string) string {
 	switch role {
@@ -132,11 +137,39 @@ func roleWord(role string) string {
 		return "implementer"
 	case model.RoleReviewer:
 		return "reviewer"
+	case model.RoleTriager:
+		return "triager"
+	case model.RoleVerifier:
+		return "verifier"
+	case RoleSpecWriter:
+		return "spec writer"
 	}
 	return role
 }
 
-// Boundaries is what a role's subagent always does and never does.
+// Shares reports whether one Agent's subagent can play both roles a and b:
+// the same role, or the implementer and the spec writer, which both write
+// the Task's branch with the same tools. Any other pair has two
+// boundaries that one subagent can't keep.
+func Shares(a, b string) bool {
+	writes := func(r string) bool { return r == model.RoleImplementer || r == RoleSpecWriter }
+	return a == b || writes(a) && writes(b)
+}
+
+// The JSON a role's done carries, as the operator's runner reads an agent's
+// answer (model.ParseTriage, model.ParseVerdict).
+const (
+	triageJSON = `{"decision": "ready", "spec", "park" or "duplicate", "reason": "...", "criteria": ["..."], ` +
+		`"question": "...", "duplicate": <issue number>, "risk": "high" or ""}`
+	verdictJSON = `{"verdict": "approve" or "changes", "summary": "...", ` +
+		`"followUps": [{"title": "...", "body": "...", "criteria": ["..."]}], ` +
+		`"open": [{"criterion": "...", "why": "..."}]}`
+	verifyJSON = `{"verdict": "approve" or "changes", "summary": "...", "open": [{"criterion": "...", "why": "..."}]}`
+)
+
+// Boundaries is what a role's subagent always does and never does. A
+// triager and a verifier change nothing: the triager writes no file, the
+// verifier runs the build and pushes nothing.
 func Boundaries(role string) string {
 	var b strings.Builder
 	switch role {
@@ -147,7 +180,41 @@ func Boundaries(role string) string {
 			"acceptance criteria.\n", containerGuide)
 		fmt.Fprintf(&b, "- Your verdict is your own: give it with `%s`, verdict approve or changes, and say "+
 			"why in its summary. Never ask another agent for it, never start one.\n", ToolDone)
+		fmt.Fprintf(&b, "- Work for later and criteria only a person can meet go at the end of the summary, as "+
+			"one line of JSON: %s.\n", verdictJSON)
 		b.WriteString("- Never edit, commit, push or merge: a review changes nothing.\n")
+	case model.RoleTriager:
+		b.WriteString("You are a triager of theos. Each prompt is one work order: an issue to decide.\n\n")
+		fmt.Fprintf(&b, "- Claim the work order with `%s` first; if it is taken, stop.\n", ToolClaim)
+		fmt.Fprintf(&b, "- Read the issue in the work order, and the Container's %s and code at main, to "+
+			"decide what it needs next: ready to build, a spec first, a person's answer (park), or a "+
+			"duplicate.\n", containerGuide)
+		fmt.Fprintf(&b, "- Give your decision with `%s`: a summary that ends with one line of JSON: %s.\n",
+			ToolDone, triageJSON)
+		b.WriteString("- Never write a file, commit, push or merge: a triage changes nothing; theos applies " +
+			"the decision.\n")
+	case model.RoleVerifier:
+		b.WriteString("You are a verifier of theos. Each prompt is one work order: an approved change to " +
+			"build, start and check.\n\n")
+		fmt.Fprintf(&b, "- Claim the work order with `%s` first; if it is taken, stop.\n", ToolClaim)
+		fmt.Fprintf(&b, "- Read the Container's %s, then build and start the change at the head of the Task's "+
+			"branch the way the repository says (`make %s`, else its README), and check each acceptance "+
+			"criterion against what runs.\n", containerGuide, model.VerifyTarget)
+		fmt.Fprintf(&b, "- Give your verdict with `%s`, verdict approve or changes: for each criterion, the "+
+			"command you ran and what it printed. A criterion no session can meet stays open: end the "+
+			"summary with one line of JSON: %s.\n", ToolDone, verifyJSON)
+		b.WriteString("- Never edit, commit, push or merge: a verification runs the build and changes nothing.\n")
+	case RoleSpecWriter:
+		b.WriteString("You are a spec writer of theos. Each prompt is one work order: a round of an issue's " +
+			"spec.\n\n")
+		fmt.Fprintf(&b, "- Claim the work order with `%s` first; if it is taken, stop.\n", ToolClaim)
+		fmt.Fprintf(&b, "- Read the Container's %s first, then write the spec in %s<issue>.md alone: the "+
+			"problem, the approach and an \"Acceptance criteria\" checklist.\n", containerGuide, model.SpecDir)
+		b.WriteString("- Commit it on the Task's branch alone, and push: work that isn't pushed is lost when " +
+			"the session ends.\n")
+		fmt.Fprintf(&b, "- When the round is done, call `%s` with the commit you pushed and a summary.\n", ToolDone)
+		b.WriteString("- Never change another file, never merge, never give a verdict, never touch another " +
+			"branch.\n")
 	default:
 		b.WriteString("You are an implementer of theos. Each prompt is one work order: a round of a Task.\n\n")
 		fmt.Fprintf(&b, "- Claim the work order with `%s` first; if it is taken, stop.\n", ToolClaim)
@@ -177,8 +244,12 @@ func spell(d time.Duration) string {
 // it, and, last, the losses of this runtime by their reason words.
 func WorkOrder(o model.WorkOrder, container, host string) string {
 	var b strings.Builder
+	role := o.Role
+	if o.Spec && role == model.RoleImplementer {
+		role = RoleSpecWriter
+	}
 	fmt.Fprintf(&b, "Round %d of Task %s: the %s's turn for issue #%d of %s, on branch `%s`. It is for "+
-		"subagent `%s`.\n\n", o.Round, o.Task, roleWord(o.Role), o.Issue, container, o.Branch, SubagentName(o.Agent))
+		"subagent `%s`.\n\n", o.Round, o.Task, roleWord(role), o.Issue, container, o.Branch, SubagentName(o.Agent))
 	fmt.Fprintf(&b, "Claim it with `%s` before anything else. Read %s's %s first: it says how this "+
 		"repository is built and checked.\n\n", ToolClaim, container, containerGuide)
 	if goal := strings.TrimSpace(o.Goal); goal != "" {
@@ -193,16 +264,34 @@ func WorkOrder(o model.WorkOrder, container, host string) string {
 	}
 	fmt.Fprintf(&b, "Your claim holds for %s. When %s passes without a theos call, call `%s` (`%s`). ",
 		spell(lease), spell(lease/2), ToolHeartbeat, CommandHeartbeat)
-	if o.Role == model.RoleReviewer {
-		fmt.Fprintf(&b, "End with `%s`: verdict approve or changes, and why.\n\n", ToolDone)
-	} else {
-		fmt.Fprintf(&b, "Push after each green check, and end with `%s`: the commit you pushed and a summary.\n\n",
-			ToolDone)
-	}
+	b.WriteString(endWith(role, o.Issue))
 	words := make([]string, 0, 10)
 	for _, l := range model.NoClusterLosses(host, true) {
 		words = append(words, l.Reason)
 	}
 	fmt.Fprintf(&b, "Without a cluster: %s.\n", strings.Join(words, ", "))
 	return b.String()
+}
+
+// endWith is how a work order says to end role's turn on issue.
+func endWith(role string, issue int) string {
+	switch role {
+	case model.RoleReviewer:
+		return fmt.Sprintf("End with `%s`: verdict approve or changes, and why; work for later and criteria only "+
+			"a person can meet as one line of JSON at the end: %s.\n\n", ToolDone, verdictJSON)
+	case model.RoleTriager:
+		return fmt.Sprintf("Change nothing: decide, and end with `%s`, a summary whose last line is one line of "+
+			"JSON: %s. A ready issue with no acceptance criteria gets them in \"criteria\".\n\n", ToolDone,
+			triageJSON)
+	case model.RoleVerifier:
+		return fmt.Sprintf("Build and start the change at the branch's head, push nothing, and end with `%s`: "+
+			"verdict approve or changes, each criterion with the command you ran and what it printed; one "+
+			"no session can meet goes in one line of JSON at the end: %s.\n\n", ToolDone, verifyJSON)
+	case RoleSpecWriter:
+		return fmt.Sprintf("Write the spec in %s, and nothing else: the problem, the approach and an "+
+			"\"Acceptance criteria\" checklist. Push it, and end with `%s`: the commit you pushed and a "+
+			"summary.\n\n", model.SpecPath(issue), ToolDone)
+	}
+	return fmt.Sprintf("Push after each green check, and end with `%s`: the commit you pushed and a summary.\n\n",
+		ToolDone)
 }

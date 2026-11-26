@@ -54,7 +54,10 @@ type Runtime struct {
 	now       func() time.Time
 }
 
-var _ ports.Runtime = (*Runtime)(nil)
+var (
+	_ ports.Runtime     = (*Runtime)(nil)
+	_ ports.TriageStore = store{}
+)
 
 // New is the lead runtime for container on host, its markers counted by
 // rules (model.DefaultClaimRules of the credential's login, unless the
@@ -128,13 +131,87 @@ func (s store) Tasks(ctx context.Context, container string) ([]model.CrewTask, e
 		if err != nil {
 			return nil, err
 		}
-		name := model.IssueTaskName(r.container, i.Number, 1)
-		if p, ok := r.lastProgress(comments, ""); ok {
-			name = p.task
+		task := model.CrewTask{Name: model.IssueTaskName(r.container, i.Number, 1), Issue: i.Number}
+		if p, ok := r.lastAtWork(comments); ok {
+			task.Name, task.Spec = p.task, p.record.Spec
 		}
-		out = append(out, model.CrewTask{Name: name, Issue: i.Number})
+		out = append(out, task)
 	}
 	return out, nil
+}
+
+// lastAtWork is the last counted progress marker among comments of a Task
+// at work that a Crew counts: none of a Triage Task, which the Crew reads
+// apart, and none that ended, as a spec that merged before its issue's
+// build started.
+func (r *Runtime) lastAtWork(comments []model.HostComment) (progressMarker, bool) {
+	var last progressMarker
+	found := false
+	for _, p := range r.progresses(comments) {
+		if phase := p.record.Progress.Phase; p.record.Triage || phase == model.TaskMerged || phase == model.TaskFailed {
+			continue
+		}
+		last, found = p, true
+	}
+	return last, found
+}
+
+// TriageTasks are the Triage Tasks of the issues labelled status/proposed,
+// each as its last progress says (model.HostTriageTask): a Triage Task
+// pushes nothing, so it has no branch, and leaves its issue's status label
+// as it is while it works. One whose issue a person took out of
+// status/proposed meanwhile is not read.
+func (s store) TriageTasks(ctx context.Context, container string) ([]model.TriageTask, error) {
+	r := s.r
+	if container != r.container {
+		return nil, nil
+	}
+	issues, err := r.host.ListIssues(ctx, r.repo, model.LabelProposed)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.TriageTask
+	for _, i := range issues {
+		comments, err := r.comments(ctx, i.Number)
+		if err != nil {
+			return nil, err
+		}
+		last := map[string]string{}
+		var names []string
+		for _, p := range r.progresses(comments) {
+			if !p.record.Triage {
+				continue
+			}
+			if _, ok := last[p.task]; !ok {
+				names = append(names, p.task)
+			}
+			last[p.task] = p.record.Progress.Phase
+		}
+		for _, name := range names {
+			out = append(out, model.HostTriageTask(name, i.Number, last[name]))
+		}
+	}
+	return out, nil
+}
+
+// StartTriage posts the Triage Task's first progress, Pending, on its
+// issue, unless it has one: no branch, and no label, as the issue stays
+// status/proposed until the decision is applied. The offer is the Task
+// tick's first step.
+func (s store) StartTriage(ctx context.Context, container string, start model.TriageStart, _ string) error {
+	r := s.r
+	if container != r.container {
+		return fmt.Errorf("the lead runtime of %s starts no Tasks on %s", r.container, container)
+	}
+	comments, err := r.comments(ctx, start.Issue)
+	if err != nil {
+		return err
+	}
+	if _, ok := r.lastProgress(comments, start.Task); ok {
+		return nil
+	}
+	return r.postProgress(ctx, start.Issue, start.Task, ports.TaskRecord{
+		Progress: model.TaskProgress{Phase: model.TaskPending}, PhaseSince: r.now(), Triage: true})
 }
 
 // Start creates the Task's branch at main's head, labels its issue
@@ -169,7 +246,7 @@ func (s store) Start(ctx context.Context, container string, start model.IssueSta
 		return nil
 	}
 	return r.postProgress(ctx, start.Issue, start.Task,
-		ports.TaskRecord{Progress: model.TaskProgress{Phase: model.TaskPending}, PhaseSince: r.now()})
+		ports.TaskRecord{Progress: model.TaskProgress{Phase: model.TaskPending}, PhaseSince: r.now(), Spec: start.Spec})
 }
 
 // Progress is the Task's last progress marker; Pending, round 0, before
@@ -247,6 +324,19 @@ func (r *Runtime) postProgress(ctx context.Context, issue int, task string, rec 
 // or, when task is "", of any Task, in the host's order. One whose record
 // doesn't read is none.
 func (r *Runtime) lastProgress(comments []model.HostComment, task string) (progressMarker, bool) {
+	var last progressMarker
+	found := false
+	for _, p := range r.progresses(comments) {
+		if task == "" || p.task == task {
+			last, found = p, true
+		}
+	}
+	return last, found
+}
+
+// progresses are the counted progress markers among comments, in the
+// host's order. One whose record doesn't read is none.
+func (r *Runtime) progresses(comments []model.HostComment) []progressMarker {
 	ordered := slices.Clone(comments)
 	slices.SortStableFunc(ordered, func(a, b model.HostComment) int {
 		if c := a.Created.Compare(b.Created); c != 0 {
@@ -254,24 +344,19 @@ func (r *Runtime) lastProgress(comments []model.HostComment, task string) (progr
 		}
 		return int(a.ID - b.ID)
 	})
-	var last progressMarker
-	found := false
+	var out []progressMarker
 	for _, c := range ordered {
 		m, ok := model.ParseMarker(c)
 		if !ok || m.Kind != model.MarkerProgress || !r.counts(c.Author) {
-			continue
-		}
-		name := m.Attrs[markerKeyTask]
-		if task != "" && name != task {
 			continue
 		}
 		rec, err := recordIn(c.Body)
 		if err != nil {
 			continue
 		}
-		last, found = progressMarker{task: name, record: rec}, true
+		out = append(out, progressMarker{task: m.Attrs[markerKeyTask], record: rec})
 	}
-	return last, found
+	return out
 }
 
 // recordIn reads the one fenced json block of a progress marker strictly.

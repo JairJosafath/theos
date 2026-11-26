@@ -419,3 +419,55 @@ func TestMerge292(t *testing.T) {
 		t.Errorf("theos next = %+v, want the Task Merged", next)
 	}
 }
+
+// #337: with a triager in its Crew, theos next offers a proposed issue's
+// triage to theos-triager beside the ready issue's build; its claim clones
+// main, as a Triage Task has no branch; its done carries the decision; and
+// the next theos next applies it, after which the Crew builds the issue.
+func TestLeadTriages337(t *testing.T) {
+	w := newLeadWorld(t)
+	setup := filepath.Join(w.dir, nocluster.SetupFile)
+	data, err := os.ReadFile(setup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Replace(string(data), "  parallel: 2\n", "  parallel: 2\n  triager:\n    name: triager\n", 1)
+	text += "\n---\napiVersion: theos.factory.io/v1beta1\nkind: Agent\nmetadata:\n  name: triager\nspec:\n" +
+		"  image: ghcr.io/jairjosafath/theos/agent-go:0.9.0\n  harness: claude-code\n  model: claude-haiku-5-5\n"
+	if err := os.WriteFile(setup, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	proposed := w.g.AddIssue(w.owner, "orders-api", "Cancel orders", "A customer cancels an open order.",
+		[]string{model.LabelProposed})
+
+	var next nocluster.NextResult
+	w.json(t, &next, "next")
+	i := slices.IndexFunc(next.Offers, func(o nocluster.Offer) bool { return o.Role == model.RoleTriager })
+	if len(next.Offers) != 2 || i < 0 {
+		t.Fatalf("theos next = %+v, want the build's offer and the triager's", next)
+	}
+	o := next.Offers[i]
+	if o.Subagent != "theos-triager" || o.Issue != proposed || !strings.Contains(o.WorkOrder, "branch `main`") {
+		t.Errorf("the triager's offer = %+v", o)
+	}
+	var c nocluster.ClaimResult
+	w.json(t, &c, "claim", "-task", o.Task, "-session", "laptop-2")
+	if !c.Held || c.Branch != ports.DefaultBranch ||
+		!slices.ContainsFunc(w.runner.clones, func(args []string) bool { return slices.Contains(args, "main") }) {
+		t.Fatalf("theos claim = %+v, clones %v; want held, main cloned", c, w.runner.clones)
+	}
+	w.json(t, &c, "done", "-task", o.Task, "-session", "laptop-2", "-summary",
+		`Clear. {"decision": "ready", "reason": "Small.", "criteria": ["An open order can be cancelled"]}`)
+	w.json(t, &next, "next")
+	issue := w.g.Issue(w.owner, "orders-api", proposed)
+	if !slices.Contains(issue.Labels, model.LabelReady) ||
+		!strings.Contains(issue.Body, "An open order can be cancelled") {
+		t.Fatalf("the triaged issue = %v %q, want ready with its criterion", issue.Labels, issue.Body)
+	}
+	w.json(t, &next, "next")
+	if !slices.ContainsFunc(next.Offers, func(o nocluster.Offer) bool {
+		return o.Issue == proposed && o.Role == model.RoleImplementer
+	}) {
+		t.Errorf("theos next = %+v, want the triaged issue's build offered", next)
+	}
+}

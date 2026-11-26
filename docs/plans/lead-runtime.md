@@ -148,7 +148,7 @@ Code is cited as it is on main at 633ffc0.
    | Crew `implementer`, `reviewer`, `routes`, `parallel`, `paused`; Agent `maxRounds` | honoured | |
    | Agent `model` | honoured: the subagent's model | |
    | Agent `harness` | `claude-code` honoured; any other value is read for its MCP tools only | `HarnessNotBuilt` |
-   | Crew `triager`, `specWriter`, `specApproval`, `verifier` | not until step 13 | `RoleNotBuilt` |
+   | Crew `triager`, `specWriter`, `specApproval`, `verifier` | honoured since step 13 (was `RoleNotBuilt`) | |
    | Crew `schedules`, `tagReleases`, `prepareReleases`, `releaseCadence`, `publishReleases` | not honoured | `NoScheduler` |
    | Crew `approval`, the operator's merge | a person merges | `PersonMerges` |
    | Crew `taskBudgetUSD`; Agent `sessionTokenLimit` | not honoured | `CostUnreported` |
@@ -552,6 +552,76 @@ word `theos status` prints. A person's walk of one Task in each, with the
 host's pages in `docs/screenshots/`, is still to do: it settles
 [Not tested, and who can](#not-tested-and-who-can), and the guide says
 what it found once it is done.
+
+**Step 13 as built** (`internal/engine/triage.go`, `internal/engine/task_roles.go`,
+`internal/model/answers.go`, `internal/model/lead_roles.go`). All three
+roles are built; none is left `RoleNotBuilt`. Choices the plan left open:
+- **The triage tick** is `engine.TriageTick`, on `ports.TriageStore`, an
+  optional part of a `TaskStore` asked for by interface: its Triage Tasks
+  and a start. The operator's Crew reconciler calls it where `r.triage` was,
+  its store listing the Triage Tasks live; the proposed issues are read in
+  the tick, with a triager on a Container that is Ready and protected (a
+  Crew on an unprotected one no longer reads them, which decided nothing).
+  A decision's writes to the issue are `engine.ApplyTriageActions`, which
+  the operator's Task reconciler calls too; the rest of its triage stays
+  there until #336.
+- **One parser.** `ParseTriage` and `ParseVerdict` moved from
+  `internal/agentrunner` to `internal/model` (`answers.go`), in the
+  owner's session, as #311 asks; the runner calls them. A triager's `done`
+  is read by `ParseTriage`, which replaces step 3's strict reading of one
+  fenced block: the last JSON object with a decision counts, fenced or
+  not, and an unknown field is ignored, as the runner reads an agent. A
+  reviewer's or a verifier's `done` may end with a JSON verdict in the
+  runner's format, read by `ParseVerdict` for its follow-ups and open
+  criteria; one whose JSON says another verdict than its `verdict=` gave
+  none.
+- **A Triage Task on the host** is its progress markers on its issue, the
+  record marked `Triage`: no branch, no label, as the issue stays
+  `status/proposed` until the decision is applied. `TriageTasks` reads the
+  proposed issues' markers (`model.HostTriageTask`); one that decided, on
+  an issue a person labelled `status/proposed` again, counts as answered,
+  as a chat answer does on a cluster, so the issue is triaged again. A
+  claim clones `main`. One whose issue a person moved out of
+  `status/proposed` mid-run is no longer ticked; its open offer is
+  harmless, and `PlanTriage` would skip it anyway. The lead runtime has no
+  test environments, so a decision's `environments` label nothing.
+- **A Spec Task** is marked `Spec` in its record, which `Tasks` reads (the
+  contract's `NoSpecs` is gone). Its issue keeps `status/in-progress` until
+  the spec merges, as the lead lists its Tasks by that label; the
+  operator's `status/spec-review` is not used. A person's approval is a
+  review by anyone but theos's own accounts (`ClaimRules.Ours`: the
+  claimants and the engine's), or their merge, which is the only one where
+  everything is one account. The agents' approval goes on the pull request
+  as a comment: a host refuses an account's review of its own pull
+  request. The spec merged, `PlanSpecMerged` writes its criteria into the
+  issue, which stays open and `status/ready`.
+- **The verifier** runs before the merge, as design.md's Verify says: "a
+  verifier run after a merge files its follow-up" is read as what the
+  round leaves being filed once a person merged. What an approving review
+  and verification leave (`model.Findings`, kept by `KeepFindings` in the
+  `TaskRecord`, as their runs end before the merge) is filed by the tick
+  that sees the merge: the reviewer's follow-ups as proposed issues and the
+  open criteria as one `kind/by-hand` issue, in `Later`, as the operator
+  files them. The by-hand issue is found again by its marker; a tick that
+  fails between the follow-ups and its progress may file them twice, as
+  the operator's may.
+- **Subagents.** The triager has `Read, Grep, Glob` and theos's tools, no
+  `Bash`: it writes no file. The verifier adds `Bash`, to run the build,
+  and no `Edit` or `Write`. The spec writer has the implementer's tools;
+  its role is `method.RoleSpecWriter` (`spec`), as its run is the
+  implementer's turn of a Spec Task (`WorkOrder.Spec`). `harness.Grants`
+  gains `Shell`, and `harnesstest` checks each boundary. An Agent may be
+  both the implementer and the spec writer (`method.Shares`): its one
+  subagent keeps both roles' boundaries; any other pair is refused.
+- **Capabilities.** The four rows are honoured by every runtime, and
+  `RoleNotBuilt` and `Capabilities.AllRoles` are gone.
+- Still `NotBuilt` in the lead runtime: a sandbox suspended, paused or
+  resumed, and a Standard change.
+- Tests: tier 1 `TestTriageToReady337`, `TestTriageSentBackByAPerson337`,
+  `TestSpecApprovedThenImplemented337`, `TestSpecRefusedAndDeclined337` and
+  `TestVerifierFilesItsFollowUp337` (hostrun on the fake host),
+  `TestLeadTriages337` (`theos next`, `claim`, `done`), and the model's,
+  method's and harnesses' rows; tier 4, the Crew's triage specs unchanged.
 
 **Step 14 as built** (`internal/harness/harnesstest`, `internal/harness/codex`,
 [harness-authoring.md](../harness-authoring.md)). Choices the plan left open:

@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -30,6 +29,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/engine"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 )
@@ -288,50 +288,10 @@ func (r *TaskReconciler) applyDecision(ctx context.Context, task *c4v1beta1.Task
 }
 
 // applyTriageActions writes a decision's actions to the issue and says what
-// it did: the body, the comment, the close, the environments' and the risk's
-// labels, then the status label. A host
-// that won't close an issue with open dependencies leaves it open, said.
+// it did (engine.ApplyTriageActions, which the lead runtime calls too).
 func (r *TaskReconciler) applyTriageActions(ctx context.Context, provider ports.Issues, repo ports.Repository,
 	number int, actions model.TriageActions) (string, error) {
-	applied := actions.Applied
-	if actions.Body != "" {
-		if err := provider.EditIssueBody(ctx, repo, number, actions.Body); err != nil {
-			return "", err
-		}
-	}
-	if err := provider.CommentIssue(ctx, repo, number, actions.Comment); err != nil {
-		return "", err
-	}
-	if actions.Close {
-		switch err := provider.CloseIssue(ctx, repo, number); {
-		case errors.Is(err, ports.ErrOpenDependencies):
-			applied = fmt.Sprintf("Left issue #%d open: the Git host won't close it while an issue it depends on is open",
-				number)
-		case err != nil:
-			return "", err
-		}
-	}
-	for _, l := range actions.EnvLabels {
-		if err := provider.AddIssueLabel(ctx, repo, number, l); err != nil {
-			return "", err
-		}
-	}
-	if actions.RiskLabel != "" {
-		if err := provider.AddIssueLabel(ctx, repo, number, actions.RiskLabel); err != nil {
-			return "", err
-		}
-	}
-	if actions.Label != "" {
-		if err := provider.AddIssueLabel(ctx, repo, number, actions.Label); err != nil {
-			return "", err
-		}
-		// The exclusive scope drops it too, but not where the labels came over
-		// non-exclusive from a migration (#2039).
-		if err := provider.RemoveIssueLabel(ctx, repo, number, model.LabelProposed); err != nil {
-			return "", err
-		}
-	}
-	return applied, nil
+	return engine.ApplyTriageActions(ctx, provider, repo, number, actions)
 }
 
 // failTriage ends the run and fails the Triage Task, and says so on the

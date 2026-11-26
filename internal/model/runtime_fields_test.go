@@ -29,8 +29,8 @@ func TestFieldRows333(t *testing.T) {
 		field, crew, agent string
 	}{
 		{field: "implementer"}, {field: "reviewer"}, {field: "routes"}, {field: "parallel"}, {field: "paused"},
-		{field: "triager", crew: ReasonRoleNotBuilt}, {field: "specWriter", crew: ReasonRoleNotBuilt},
-		{field: "specApproval", crew: ReasonRoleNotBuilt}, {field: "verifier", crew: ReasonRoleNotBuilt},
+		// #337: every runtime plays the triager, the spec writer and the verifier.
+		{field: "triager"}, {field: "specWriter"}, {field: "specApproval"}, {field: "verifier"},
 		{field: "schedules", crew: ReasonNoScheduler}, {field: "tagReleases", crew: ReasonNoScheduler},
 		{field: "prepareReleases", crew: ReasonNoScheduler}, {field: "releaseCadence", crew: ReasonNoScheduler},
 		{field: "publishReleases", crew: ReasonNoScheduler}, {field: "approval", crew: ReasonPersonMerges},
@@ -71,7 +71,6 @@ func TestNotHonoured333(t *testing.T) {
 			{Object: "Crew orders", Field: "spec.approval", Reason: ReasonPersonMerges},
 			{Object: "Crew orders", Field: "spec.schedules", Reason: ReasonNoScheduler},
 			{Object: "Crew orders", Field: "spec.taskBudgetUSD", Reason: ReasonCostUnreported},
-			{Object: "Crew orders", Field: "spec.verifier", Reason: ReasonRoleNotBuilt},
 			{Object: "Agent implementer", Field: "spec.image", Reason: ReasonNoSandbox},
 			{Object: "Agent implementer", Field: "spec.timeoutMinutes", Reason: ReasonNoSandbox},
 			{Object: "Agent reviewer", Field: "spec.harness", Reason: ReasonHarnessNotBuilt},

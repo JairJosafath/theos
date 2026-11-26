@@ -427,6 +427,19 @@ Each is an issue; "tier" is AGENTS.md's. No step needs Kind or `make e2e`.
   a repository with more than its first commit as one theos didn't make
   (they ask `model.ScaffoldHistory`, the operator's rule before its first
   scaffold), so after a merge the first refuses that Container. Evidence: [theos-move-295.txt](../screenshots/theos-move-295.txt).
+- Fixed since: `theos scaffold`, `status` and `update` read main's history
+  as #295 does (`readMain`: up to 1000 commits) and find the Container's
+  scaffold commit by its trailers (`scaffold.ScaffoldCommit`), not by
+  being the newest; `model.ScaffoldedHistory` reads a history holding it
+  as scaffolded however many commits followed. The operator keeps
+  `model.ScaffoldHistory`: it reads the history only until its status
+  records the scaffold. The trailers find the commit, not the log's last
+  entry, because a log lists a merged branch's commits after the first
+  commit. A repository with more than 1000 commits on main, its scaffold
+  older than all of them, reads as one theos didn't make. `theos lead`,
+  `plan` and `export` ask only whether main has a commit, which a merge
+  doesn't change. Tests: `TestScaffoldAfterAMerge`,
+  `TestScaffoldedHistoryAfterAMerge`, `TestScaffoldCommitAfterAMerge`.
 
 **To file.** Steps 4, 5, 6, 7, 9, 10 and 11, and two issues beside them:
 "GitLab as a Git host for the cluster", to follow #57, and "CI files for

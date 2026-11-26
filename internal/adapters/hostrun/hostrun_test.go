@@ -98,7 +98,10 @@ func (w *world) pass(d time.Duration) {
 
 // ready makes the repository: main with one commit, the labels and
 // issues issues, each ready with acceptance criteria.
-func (w *world) ready() {
+func (w *world) ready() { w.readyWith(issues) }
+
+// readyWith is ready with n issues.
+func (w *world) readyWith(n int) {
 	w.t.Helper()
 	ctx := context.Background()
 	var err error
@@ -112,7 +115,7 @@ func (w *world) ready() {
 	if err := w.host.EnsureLabels(ctx, w.repo, labels()); err != nil {
 		w.t.Fatal(err)
 	}
-	for i := 1; i <= issues; i++ {
+	for i := 1; i <= n; i++ {
 		if _, err := w.host.CreateIssue(ctx, w.repo, fmt.Sprintf("Issue %d", i), criteria,
 			[]string{model.LabelReady}, 0); err != nil {
 			w.t.Fatal(err)
@@ -122,14 +125,17 @@ func (w *world) ready() {
 }
 
 // fakeWorld is a world on the ports' fake host.
-func fakeWorld(t *testing.T) *world {
+func fakeWorld(t *testing.T) *world { return fakeWorldWith(t, issues) }
+
+// fakeWorldWith is a world on the ports' fake host with n ready issues.
+func fakeWorldWith(t *testing.T, n int) *world {
 	t.Helper()
 	g := fake.New().For(ports.Config{URL: "http://host.test", Owner: "acme",
 		Credentials: ports.Credentials{Username: "operator", Token: "operator-token"}})
 	w := &world{t: t, host: g, login: "operator", rules: model.DefaultClaimRules("operator"),
 		now: time.Date(2026, 11, 25, 9, 0, 0, 0, time.UTC), stamps: true}
 	g.SetClock(w.clock)
-	w.ready()
+	w.readyWith(n)
 	return w
 }
 
@@ -235,7 +241,6 @@ func taskStoreEnv(newWorld func(*testing.T) *world) contract.TaskStoreEnv {
 				t.Fatal(err)
 			}
 		},
-		NoSpecs: true,
 	}
 }
 

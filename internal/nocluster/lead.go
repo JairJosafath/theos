@@ -197,6 +197,9 @@ func (l lead) next(ctx context.Context, env Env, m *Model, res *NextResult) erro
 		if r.Reviewer != nil {
 			route.Reviewer = r.Reviewer.Name
 		}
+		if r.Verifier != nil {
+			route.Verifier = r.Verifier.Name
+		}
 		routes = append(routes, route)
 	}
 	unprotected := ""
@@ -204,54 +207,155 @@ func (l lead) next(ctx context.Context, env Env, m *Model, res *NextResult) erro
 		unprotected = "its Container has no Standard, so main has no checks to protect it"
 	}
 	if _, err := engine.CrewTick(ctx, l.rt, l.host, engine.CrewInput{Container: name, Repo: l.repo,
-		Labels: crewLabels(), Facts: model.CrewFacts{Paused: l.crew.Spec.Paused, Parallel: int(l.crew.Spec.Parallel),
+		Labels: crewLabels(), Specs: l.crew.Spec.SpecWriter != nil,
+		Facts: model.CrewFacts{Paused: l.crew.Spec.Paused, Parallel: int(l.crew.Spec.Parallel),
 			ContainerReady: ready, Unprotected: unprotected, Routes: routes}}); err != nil {
 		return err
 	}
+	// The triage tick (#337): one Triage Task at a time, beside parallel. A
+	// Crew with no triager reads no proposed issue's markers.
+	if l.crew.Spec.Triager != nil {
+		if _, err := engine.TriageTick(ctx, l.rt, l.host, engine.TriageInput{Container: name, Repo: l.repo,
+			Triager: l.crew.Spec.Triager.Name, Paused: l.crew.Spec.Paused,
+			ContainerReady: ready && protected}); err != nil {
+			return err
+		}
+	}
+	provider := string(l.container.res.Provider.Spec.Provider)
+	base := engine.TaskInput{Container: name, Repo: l.repo, ContainerReady: ready, Protected: protected,
+		CheckContexts: rule.StatusContexts, Lease: l.rules.Lease, Now: env.Now(), Ours: l.rules.Ours,
+		OrderText: func(o model.WorkOrder) string { return method.WorkOrder(o, name, provider) }}
 	tasks, err := l.rt.Store().Tasks(ctx, name)
 	if err != nil {
 		return err
 	}
-	provider := string(l.container.res.Provider.Spec.Provider)
 	for _, t := range tasks {
 		issue, err := l.host.GetIssue(ctx, l.repo, t.Issue)
 		if err != nil {
 			return err
 		}
-		impl, rev := model.RouteAgents(routes, issue.Labels)
-		impl, rev = cmpOr(impl, l.crew.Spec.Implementer.Name), cmpOr(rev, l.crew.Spec.Reviewer.Name)
-		maxRounds := 0
-		if a := modelfacts.Find(m.Agents, impl); a != nil {
-			maxRounds = int(a.Spec.MaxRounds)
+		in := l.taskInput(base, m, routes, t.Name, issue)
+		in.Spec = t.Spec
+		if t.Spec {
+			// A spec is written by the Crew's spec writer, and never verified.
+			in.Implementer, in.Verifier = cmpOr(refName(l.crew.Spec.SpecWriter), in.Implementer), ""
+			in.SpecApproval, in.MaxRounds = string(l.crew.Spec.SpecApproval), maxRounds(m, in.Implementer)
 		}
-		tick, err := engine.TaskTick(ctx, l.rt, l.host, engine.TaskInput{Task: t.Name, Container: name, Repo: l.repo,
-			Issue: t.Issue, Title: issue.Title, Goal: model.IssueGoal(issue.Number, issue.Title, issue.Body),
-			Implementer: impl, Reviewer: rev, MaxRounds: maxRounds, ContainerReady: ready, Protected: protected,
-			CheckContexts: rule.StatusContexts, Lease: l.rules.Lease, Now: env.Now(),
-			OrderText: func(o model.WorkOrder) string { return method.WorkOrder(o, name, provider) }})
-		if err != nil {
-			return fmt.Errorf("the Task %s: %w", t.Name, err)
+		if err := l.tick(ctx, in, res); err != nil {
+			return err
 		}
-		p := tick.Record.Progress
-		res.Tasks = append(res.Tasks, TaskLine{Task: t.Name, Phase: p.Phase, Round: p.Round, Reason: tick.Step.Reason,
-			Says: tick.Step.Message})
-		role := engine.RunRole(p.Phase)
-		if role == "" {
+	}
+	if l.crew.Spec.Triager == nil {
+		return nil // a Crew that names no triager any more leaves its Triage Tasks as they are
+	}
+	triages, err := l.triageTasks(ctx, name)
+	if err != nil {
+		return err
+	}
+	for _, t := range triages {
+		if t.Final {
 			continue
 		}
-		run, err := l.rt.Workers().Run(ctx, t.Name, p.Round, role)
+		issue, err := l.host.GetIssue(ctx, l.repo, t.Issue)
 		if err != nil {
 			return err
 		}
-		if !run.Started || run.Done || run.Markers == nil || !run.Markers.Unclaimed {
-			continue
+		in := l.taskInput(base, m, routes, t.Name, issue)
+		in.Triage, in.Implementer, in.Reviewer, in.Verifier = true, l.crew.Spec.Triager.Name, "", ""
+		in.TriageFailed = failedTriages(triages, t.Issue)
+		if err := l.tick(ctx, in, res); err != nil {
+			return err
 		}
-		agent := run.Markers.Offer.Attrs["agent"]
-		_, text, _ := strings.Cut(run.Markers.Offer.Comment.Body, "\n")
-		res.Offers = append(res.Offers, Offer{Task: t.Name, Container: name, Issue: t.Issue, Round: p.Round,
-			Role: role, Subagent: method.SubagentName(agent), WorkOrder: strings.TrimSpace(text)})
 	}
 	return nil
+}
+
+// taskInput is base for the Task task on issue: its Agents, the Crew's or
+// a route's by the issue's labels, read each tick.
+func (l lead) taskInput(base engine.TaskInput, m *Model, routes []model.AgentRoute, task string,
+	issue ports.Issue) engine.TaskInput {
+	in := base
+	in.Task, in.Issue, in.Title = task, issue.Number, issue.Title
+	in.Goal = model.IssueGoal(issue.Number, issue.Title, issue.Body)
+	impl, rev := model.RouteAgents(routes, issue.Labels)
+	in.Implementer, in.Reviewer = cmpOr(impl, l.crew.Spec.Implementer.Name), cmpOr(rev, l.crew.Spec.Reviewer.Name)
+	in.Verifier = cmpOr(model.RouteVerifier(routes, issue.Labels), refName(l.crew.Spec.Verifier))
+	in.MaxRounds = maxRounds(m, in.Implementer)
+	return in
+}
+
+// tick runs in's Task tick, and adds its line and its open offer to res.
+func (l lead) tick(ctx context.Context, in engine.TaskInput, res *NextResult) error {
+	tick, err := engine.TaskTick(ctx, l.rt, l.host, in)
+	if err != nil {
+		return fmt.Errorf("the Task %s: %w", in.Task, err)
+	}
+	p := tick.Record.Progress
+	res.Tasks = append(res.Tasks, TaskLine{Task: in.Task, Phase: p.Phase, Round: p.Round, Reason: tick.Step.Reason,
+		Says: tick.Step.Message})
+	role := in.RunRole(p.Phase)
+	if role == "" {
+		return nil
+	}
+	run, err := l.rt.Workers().Run(ctx, in.Task, p.Round, role)
+	if err != nil {
+		return err
+	}
+	if !run.Started || run.Done || run.Markers == nil || !run.Markers.Unclaimed {
+		return nil
+	}
+	agent := run.Markers.Offer.Attrs["agent"]
+	_, text, _ := strings.Cut(run.Markers.Offer.Comment.Body, "\n")
+	res.Offers = append(res.Offers, Offer{Task: in.Task, Container: in.Container, Issue: in.Issue, Round: p.Round,
+		Role: role, Subagent: method.SubagentName(agent), WorkOrder: strings.TrimSpace(text)})
+	return nil
+}
+
+// triageTasks are the Triage Tasks of the Container, from a store that
+// keeps them.
+func (l lead) triageTasks(ctx context.Context, container string) ([]model.TriageTask, error) {
+	store, ok := l.rt.Store().(ports.TriageStore)
+	if !ok {
+		return nil, nil
+	}
+	return store.TriageTasks(ctx, container)
+}
+
+// failedTriages counts the Triage Tasks of issue that failed.
+func failedTriages(tasks []model.TriageTask, issue int) int {
+	n := 0
+	for _, t := range tasks {
+		if t.Issue == issue && t.Failed {
+			n++
+		}
+	}
+	return n
+}
+
+// maxRounds is the maxRounds of the Agent named agent; 0 for none.
+func maxRounds(m *Model, agent string) int {
+	if a := modelfacts.Find(m.Agents, agent); a != nil {
+		return int(a.Spec.MaxRounds)
+	}
+	return 0
+}
+
+// refName is the name ref names; "" for none.
+func refName(ref *c4v1beta1.LocalRef) string {
+	if ref == nil {
+		return ""
+	}
+	return ref.Name
+}
+
+// workBranch is the branch a session's clone of task's work takes: the
+// Task's own, but main for a Triage Task, which has none and pushes
+// nothing (#337).
+func workBranch(container, task string) string {
+	if model.TaskNameKind(container, task) == model.TaskNameTriage {
+		return ports.DefaultBranch
+	}
+	return model.TaskBranch(task)
 }
 
 func cmpOr(s, or string) string {
@@ -283,7 +387,7 @@ const (
 
 // session reads task's claim on the host.
 func (l lead) claimFacts(ctx context.Context, env Env, task string, issue int) (model.ClaimFacts, error) {
-	has, err := l.host.HasBranch(ctx, l.repo, model.TaskBranch(task))
+	has, err := l.host.HasBranch(ctx, l.repo, workBranch(l.container.obj.Name, task))
 	if err != nil {
 		return model.ClaimFacts{}, err
 	}
@@ -330,7 +434,7 @@ func heldStep(ctx context.Context, env Env, m *Model, task, session string, clai
 	if err != nil {
 		return ClaimResult{}, err
 	}
-	res := ClaimResult{Task: task, Step: string(d.Step), Branch: model.TaskBranch(task)}
+	res := ClaimResult{Task: task, Step: string(d.Step), Branch: workBranch(l.container.obj.Name, task)}
 	switch {
 	case d.Step == model.ClaimNotOffered:
 		res.Says = "nothing is offered on this Task now; call theos_next"
@@ -408,7 +512,7 @@ func holderPost(ctx context.Context, env Env, m *Model, task, session, step stri
 	if err != nil {
 		return ClaimResult{}, err
 	}
-	res := ClaimResult{Task: task, Branch: model.TaskBranch(task)}
+	res := ClaimResult{Task: task, Branch: workBranch(l.container.obj.Name, task)}
 	if c := model.ClaimOf(comments, l.rules); !c.Names(l.login, session) || c.Closed {
 		res.Step, res.Says = string(model.ClaimNotOffered), "this session holds no claim of this Task"
 		return res, nil

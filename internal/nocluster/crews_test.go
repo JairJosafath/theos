@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/method"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/nocluster"
 )
@@ -306,5 +307,72 @@ func TestAgentsCodex338(t *testing.T) {
 	if err := nocluster.Agents(&out, m, "kimi", os.DirFS(dir), write); err == nil ||
 		!strings.Contains(err.Error(), "claude-code, codex") {
 		t.Errorf("err = %v, want the harnesses named", err)
+	}
+}
+
+// withAllRoles is withCrew with a triager, a spec writer (the implementer,
+// who writes either way), a person's spec approval and a verifier.
+func withAllRoles(t *testing.T) webshop {
+	t.Helper()
+	w := withCrew(t)
+	const from = "  parallel: 2"
+	if !strings.Contains(w.setup, from) {
+		t.Fatalf("the sample has no %q", from)
+	}
+	w.setup = strings.Replace(w.setup, from, from+"\n  triager:\n    name: triager\n  specWriter:\n    name: implementer\n"+
+		"  specApproval: Person\n  verifier:\n    name: verifier", 1)
+	for _, name := range []string{"triager", "verifier"} {
+		w.setup += "\n---\napiVersion: theos.factory.io/v1beta1\nkind: Agent\nmetadata:\n  name: " + name +
+			"\nspec:\n  image: ghcr.io/jairjosafath/theos/agent-go:0.9.0\n  harness: claude-code\n" +
+			"  model: claude-haiku-5-5\n"
+	}
+	return w
+}
+
+// #337: the lead runtime honours a Crew's triager, spec writer, spec
+// approval and verifier: theos status names none of them.
+func TestStatusHonoursEveryRole337(t *testing.T) {
+	w := newWorld(t)
+	w.m = decode(t, withAllRoles(t), "")
+	if err := nocluster.Status(context.Background(), w.env, w.m); err != nil {
+		t.Fatal(err)
+	}
+	out := w.out.String()
+	for _, honoured := range []string{"spec.triager", "spec.specWriter", "spec.specApproval", "spec.verifier",
+		"RoleNotBuilt"} {
+		if strings.Contains(out, honoured) {
+			t.Errorf("status names %s, which the lead runtime honours:\n%s", honoured, out)
+		}
+	}
+	if !strings.Contains(out, "  Crew orders-api: "+model.ReasonPersonMerges+": ") {
+		t.Errorf("status lost the Crew's PersonMerges line:\n%s", out)
+	}
+}
+
+// #337: theos agents writes a subagent for the triager and the verifier,
+// and the implementer that also writes the specs keeps both roles'
+// boundaries in its one subagent; the triager has no tool that writes or
+// runs a command, the verifier no tool that writes.
+func TestAgentsForEveryRole337(t *testing.T) {
+	files, err := nocluster.AgentFiles(decode(t, withAllRoles(t), ""), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, f := range files {
+		got[f.Path] = string(f.Data)
+	}
+	impl := got[".claude/agents/theos-implementer.md"]
+	if !strings.Contains(impl, method.Boundaries(model.RoleImplementer)) ||
+		!strings.Contains(impl, method.Boundaries(method.RoleSpecWriter)) {
+		t.Errorf("the implementer's subagent lacks a role's boundaries:\n%s", impl)
+	}
+	for path, tools := range map[string]string{
+		".claude/agents/theos-triager.md":  "tools: Read, Grep, Glob, mcp__theos__*\n",
+		".claude/agents/theos-verifier.md": "tools: Read, Grep, Glob, Bash, mcp__theos__*\n",
+	} {
+		if !strings.Contains(got[path], tools) || !strings.Contains(got[path], "model: claude-haiku-5-5\n") {
+			t.Errorf("%s = %q, want %q on its model", path, got[path], tools)
+		}
 	}
 }

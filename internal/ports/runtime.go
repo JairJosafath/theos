@@ -46,6 +46,19 @@ type TaskStore interface {
 	SaveProgress(ctx context.Context, task string, r TaskRecord) error
 }
 
+// TriageStore is the part of a TaskStore that keeps a Container's Triage
+// Tasks, which a Crew reads apart from its other Tasks (#337): asked for by
+// interface, as the engine's triage tick needs it.
+type TriageStore interface {
+	// TriageTasks are the Triage Tasks on container that model.NextTriage
+	// reads: every one at work, and those that ended whose issue may be
+	// triaged again.
+	TriageTasks(ctx context.Context, container string) ([]model.TriageTask, error)
+	// StartTriage starts the Triage Task s names on container, triaged by
+	// the Agent triager. One of that name that exists already is no error.
+	StartTriage(ctx context.Context, container string, s model.TriageStart, triager string) error
+}
+
 // TaskRecord is what a TaskStore keeps of a Task's progress: what its
 // transitions change, its pull request and the round's summary, when its
 // phase last changed, and, once it ended, why.
@@ -57,6 +70,12 @@ type TaskRecord struct {
 	PhaseSince     time.Time
 	Reason         string
 	Message        string
+	// Spec and Triage say the Task's kind, for a store that keeps it in the
+	// record: a Spec Task, a Triage Task, or neither, an issue's build.
+	Spec, Triage bool `json:",omitempty"`
+	// Findings are what the round's approving review and verification left
+	// for the merge (#337), kept from their runs until the merge files them.
+	Findings *model.Findings `json:",omitempty"`
 }
 
 // Workers runs one role's turn on a Task. The engine offers the turn, reads

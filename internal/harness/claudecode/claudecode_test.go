@@ -150,3 +150,41 @@ func TestRenderRefusesAnAgentInTwoRoles266(t *testing.T) {
 		t.Errorf("err = %v, want the two roles refused", err)
 	}
 }
+
+// #337: the triager, the spec writer and the verifier get their tools: the
+// triager neither writes nor runs a command, the verifier runs the build
+// and writes nothing, the spec writer writes; none starts a subagent. An
+// Agent that implements and writes the specs keeps both roles' boundaries
+// in its one subagent.
+func TestRoleTools337(t *testing.T) {
+	h := claudecode.Harness{}
+	for role, want := range map[string]harness.Grants{
+		model.RoleTriager:     {},
+		model.RoleVerifier:    {Shell: true},
+		method.RoleSpecWriter: {Write: true, Shell: true},
+	} {
+		if got := h.Grants(role); got != want {
+			t.Errorf("the %s's grants = %+v, want %+v", role, got, want)
+		}
+	}
+	p := project()
+	p.Crews[0].Agents = append(p.Crews[0].Agents, method.Agent{Name: "implementer", Role: method.RoleSpecWriter},
+		method.Agent{Name: "sorter", Role: model.RoleTriager})
+	files, err := h.Render(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := byPath(t, files)
+	impl := got[".claude/agents/theos-implementer.md"]
+	if !strings.Contains(impl, method.Boundaries(model.RoleImplementer)) ||
+		!strings.Contains(impl, method.Boundaries(method.RoleSpecWriter)) || !strings.Contains(impl, "plays 2 roles") {
+		t.Errorf("the implementer who writes specs:\n%s", impl)
+	}
+	if f := readFrontmatter(t, got[".claude/agents/theos-sorter.md"]); f.Tools != "Read, Grep, Glob, mcp__theos__*" {
+		t.Errorf("the triager's tools = %q", f.Tools)
+	}
+	p.Crews[0].Agents = append(p.Crews[0].Agents, method.Agent{Name: "sorter", Role: model.RoleVerifier})
+	if _, err := h.Render(p); err == nil || !strings.Contains(err.Error(), "both roles' tools") {
+		t.Errorf("err = %v, want a triager that verifies refused", err)
+	}
+}

@@ -266,6 +266,38 @@ func TestScaffoldHistory(t *testing.T) {
 	}
 }
 
+// theos scaffold and theos status read a repository whose first commit is
+// the Container's scaffold as scaffolded however many commits followed it:
+// a Task's merged pull request or a theos update made them refuse it as
+// "has commits theos didn't make".
+func TestScaffoldedHistoryAfterAMerge(t *testing.T) {
+	const container = "shop/orders-api"
+	tests := []struct {
+		name        string
+		commits     int
+		scaffoldFor string
+		adopt       bool
+		want        ExistingHistory
+	}{
+		{"a new repository is scaffolded", 0, "", false, HistoryEmpty},
+		{"our scaffold alone is scaffolded", 1, container, false, HistoryRecover},
+		{"our scaffold and a merge after it are scaffolded", 2, container, false, HistoryRecover},
+		{"our scaffold and many commits after it are scaffolded", 1000, container, false, HistoryRecover},
+		{"a history holding no scaffold is foreign", 3, "", false, HistoryForeign},
+		{"another Container's scaffold is foreign", 2, "shop/billing-api", false, HistoryForeign},
+		{"an adopted repository holding our scaffold is adopted", 2, container, true, HistoryAdopt},
+		{"an adopted repository with no commits has nothing to adopt", 0, "", true, HistoryNothingToAdopt},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ScaffoldedHistory(tt.commits, tt.scaffoldFor, container, tt.adopt); got != tt.want {
+				t.Errorf("ScaffoldedHistory(%d, %q, adopt=%t) = %v, want %v", tt.commits, tt.scaffoldFor, tt.adopt,
+					got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCheckStandard(t *testing.T) {
 	standard := CatalogEntry{Side: SideStandard, Name: "strict-standard", SupportedFrameworks: []string{"go-cli"}}
 	tests := []struct {

@@ -107,25 +107,15 @@ func updateOne(ctx context.Context, env Env, m *Model, c container, settings mod
 	}
 	u := &standardUpdate{env: env, m: m, c: c, settings: settings, repo: c.host.Repository(c.obj.Name),
 		standard: standard}
-	commits, err := c.host.History(ctx, u.repo, historyLimit)
-	if errors.Is(err, ports.ErrRepositoryNotFound) {
-		commits, err = nil, nil
-	}
+	h, err := readMain(ctx, c, u.repo)
 	if err != nil {
 		return err
 	}
-	if len(commits) == 0 {
+	if len(h.messages) == 0 {
 		return say("not scaffolded; theos scaffold makes %s", u.repo.WebURL)
 	}
-	messages := make([]string, 0, len(commits))
-	for _, commit := range slices.Backward(commits) {
-		messages = append(messages, commit.Message)
-		if info, err := scaffold.ParseCommitMessage(commit.Message); err == nil &&
-			info.Container == c.obj.Namespace+"/"+c.obj.Name && len(info.ScaffoldedFrom) > 0 && u.info.Container == "" {
-			u.info = info
-		}
-	}
-	at, found := scaffold.StandardAt(messages, name)
+	u.info = h.info
+	at, found := scaffold.StandardAt(h.messages, name)
 	if from != "" {
 		at.Ref, found = from, true
 	}

@@ -190,7 +190,7 @@ func TestPromptsNeverLeaveAnEnvironmentsCriterionOpen(t *testing.T) {
 			t.Errorf("triage prompt lacks %q", want)
 		}
 	}
-	d, err := ParseTriage(`{"decision": "ready", "reason": "Clear.", "environments": ["browser"]}`)
+	d, err := model.ParseTriage(`{"decision": "ready", "reason": "Clear.", "environments": ["browser"]}`)
 	if err != nil || len(d.Environments) != 1 || d.Environments[0] != "browser" {
 		t.Errorf("ParseTriage = %+v, %v; want the environments", d, err)
 	}
@@ -214,7 +214,7 @@ func TestTriageRisk(t *testing.T) {
 		`{"decision": "ready", "reason": "Clear.", "risk": ""}`:                 "",
 		`{"decision": "ready", "reason": "Clear."}`:                             "",
 	} {
-		if d, err := ParseTriage(reply); err != nil || d.Risk != want {
+		if d, err := model.ParseTriage(reply); err != nil || d.Risk != want {
 			t.Errorf("ParseTriage(%s) has risk %q, %v; want %q", reply, d.Risk, err, want)
 		}
 	}
@@ -233,7 +233,7 @@ func TestReviewRisk(t *testing.T) {
 	}
 	for reply, want := range map[string]string{
 		`{"verdict": "approve", "summary": "Fine.", "risk": "High", "riskReason": " It drops\na column. "}`: "It drops a column.",
-		`{"verdict": "approve", "summary": "Fine.", "risk": "high"}`:                                        noRiskReason,
+		`{"verdict": "approve", "summary": "Fine.", "risk": "high"}`:                                        "it gave no reason",
 		`{"verdict": "approve", "summary": "Fine.", "risk": "low", "riskReason": "A typo."}`:                "",
 		`{"verdict": "approve", "summary": "Fine.", "riskReason": "It drops a column."}`:                    "",
 		`{"verdict": "approve", "summary": "Fine."}`:                                                        "",

@@ -123,16 +123,6 @@ func TestRunTriageStandIn(t *testing.T) {
 	}
 }
 
-func TestParseTriage(t *testing.T) {
-	d, err := ParseTriage("Thinking {not json}\n" + `{"decision": "park", "reason": "Unclear.", "question": "Which?"}` + "\n")
-	if err != nil || d.Decision != model.TriagePark || d.Question != "Which?" {
-		t.Errorf("ParseTriage() = %+v, %v", d, err)
-	}
-	if _, err := ParseTriage(`{"verdict": "approve"}`); err == nil {
-		t.Error("ParseTriage() of a review verdict: no error")
-	}
-}
-
 func TestEncodeKeepsATriageInTheMessage(t *testing.T) {
 	criteria := make([]string, model.MaxTriageCriteria)
 	for i := range criteria {

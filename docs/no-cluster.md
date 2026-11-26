@@ -3,7 +3,8 @@
 This guide works a project from a Claude Code session, on a laptop or as a
 cloud session on the web, with no Kubernetes anywhere. The session is the
 lead: theos tells it what is next, Claude Code subagents play the
-implementer and the reviewer, and a person merges. The model files, the
+implementer and the reviewer, and the triager, spec writer and verifier
+when the Crew names them, and a person merges. The model files, the
 branches, the markers and the labels are the same ones a Crew uses on a
 cluster, so the project moves to one unchanged.
 
@@ -92,8 +93,11 @@ git add . && git commit -m "The model and the lead's files" && git push
 `theos agents` writes the lead's files for Claude Code (`theos agents
 -harness codex` writes Codex's instead, [harness-authoring.md](harness-authoring.md)): `CLAUDE.md`
 imports `AGENTS.md`, the lead's playbook; each Agent a Crew names gets a
-subagent in `.claude/agents/theos-<agent>.md` on its Agent's `model`, the
-reviewer's without `Agent`, `Edit` or `Write`; `.mcp.json` starts
+subagent in `.claude/agents/theos-<agent>.md` on its Agent's `model`, with
+its role's tools: no role gets `Agent`; the reviewer and the verifier get
+no `Edit` or `Write`, and the triager no `Bash` either; an Agent that is
+both the implementer and the spec writer keeps both roles' rules in its one
+subagent, and any other pair of roles needs two Agents. `.mcp.json` starts
 `theos mcp`. Run it again after a change to the Crews or Agents; `theos
 status` names a file that changed by hand. A claim clones a Task's branch
 into `work/<task>`, which ignores itself.
@@ -127,6 +131,50 @@ session to work the project: its `AGENTS.md` is the loop.
 
    or on the host's pages. The next `theos_next` ends the Task Merged and
    closes its issue.
+
+### With a triager, a spec writer and a verifier
+
+A Crew's `triager`, `specWriter`, `specApproval` and `verifier` play in a
+session as on a cluster (#337), each through its own subagent:
+
+- **Triage.** With a `triager`, `theos_next` also starts one Triage Task at
+  a time for the lowest issue labelled `status/proposed`, named
+  `orders-api-<issue>-triage`. It makes no branch and leaves the label as it
+  is; its offer goes to `theos-<triager>` on `main`, which it reads and
+  never writes. The triager ends with `theos_done`, its summary's last line
+  one JSON object, as the operator's triager answers: `{"decision": "ready",
+  "spec", "park" or "duplicate", "reason": ..., "criteria": [...],
+  "question": ..., "duplicate": <issue>}`. The next `theos_next` applies
+  it as the operator does: a ready issue gets its criteria and
+  `status/ready`, a spec `status/needs-spec`, a park `status/needs-human`
+  and the question, a duplicate is closed. A done with no decision fails
+  the try, said on the issue, which stays proposed, and the next tick tries
+  again, three times. To have a decided issue triaged again, label it
+  `status/proposed`.
+- **A spec.** With a `specWriter`, an issue labelled `status/needs-spec`
+  starts a Spec Task, `orders-api-<issue>-spec`: its round writes
+  `docs/specs/<issue>.md` alone, and its pull request goes through the
+  checks and the reviewer. Then it waits for a person (`specApproval`
+  `Person`, the default): an approving review from an account other than
+  theos's own and the sessions', or your merge, approves it. You merge it
+  as any approved pull request; theos copies its criteria into the issue,
+  which stays open and is `status/ready`, and the Crew builds it. A request
+  for changes on the pull request starts the next round; closing it
+  declines the spec. With `Reviewer`, the reviewer's approval is enough,
+  and it waits for your merge only.
+- **Verify.** With a `verifier`, an approved change goes to `theos-<verifier>`
+  before it waits for your merge: it builds and starts the change at the
+  branch's head (`make verify`, else the README), checks each criterion
+  against what runs, and pushes nothing. A request for changes starts the
+  next round with its evidence. Once you merge, theos files what the round
+  left: the reviewer's follow-ups as `status/proposed` issues, and the
+  criteria the reviewer or the verifier accepted as open, as one
+  `kind/by-hand` issue for a person, both in the `Later` milestone.
+
+A reviewer or a verifier gives those in its summary's last line, as the
+operator's runner reads them: `{"verdict": ..., "summary": ...,
+"followUps": [{"title": ..., "criteria": [...]}], "open": [{"criterion":
+..., "why": ...}]}`.
 
 `theos merge` runs only at a terminal, and `theos mcp` has no merge tool.
 It merges only a pull request a session other than its author's approved
@@ -189,7 +237,6 @@ loses. Nothing is dropped silently.
 | `NoSandbox` | no sandbox is made: an Agent's `image`, `resources`, `env`, `credentialsSecretRef` and `timeoutMinutes`, and a Crew's `pauseRuns`, are not read. `image` stays, so the file moves to a cluster unchanged. |
 | `NoScheduler` | nothing keeps a clock between commands: a Crew's `schedules`, `tagReleases`, `prepareReleases`, `releaseCadence` and `publishReleases` are not read. |
 | `CostUnreported` | no cost or tokens are recorded: a Crew's `taskBudgetUSD` and an Agent's `sessionTokenLimit` are not read. |
-| `RoleNotBuilt` | only the implementer and the reviewer play: a Crew's `triager`, `specWriter`, `specApproval` and `verifier` are not read yet (#337). |
 | `HarnessNotBuilt` | only `claude-code` has its files written; any other harness gets the work tools over MCP alone. |
 | `NoFence` | no NetworkPolicy, ServiceAccount or deadline holds a session: only its runtime's own sandbox. |
 | `OwnModelCredential` | each session holds its own model subscription or key. |

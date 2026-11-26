@@ -18,8 +18,6 @@ package agentrunner
 
 import (
 	"cmp"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -422,25 +420,6 @@ End your reply with one line of JSON and nothing after it:
 	return b.String()
 }
 
-// ParseTriage reads the triager's decision from the last JSON object in its
-// output that has one, as the operator keeps it (model.NormalTriage).
-func ParseTriage(output string) (model.Triage, error) {
-	for end := strings.LastIndex(output, "}"); end >= 0; end = strings.LastIndex(output[:end], "}") {
-		for start := strings.LastIndex(output[:end], "{"); start >= 0; start = strings.LastIndex(output[:start], "{") {
-			var d model.Triage
-			if json.Unmarshal([]byte(output[start:end+1]), &d) != nil || strings.TrimSpace(d.Decision) == "" {
-				continue
-			}
-			d = model.NormalTriage(d)
-			if !slices.Contains(model.TriageDecisions, d.Decision) {
-				return model.Triage{}, fmt.Errorf("unknown decision %q", d.Decision)
-			}
-			return d, nil
-		}
-	}
-	return model.Triage{}, errors.New("the triager gave no JSON decision")
-}
-
 // PlanPrompt is what the planner is asked to do: guide is PLANNER.md and brief
 // brief.md, both as on the brief repository's base branch.
 func PlanPrompt(job Job, guide, brief string) string {
@@ -617,85 +596,11 @@ func neverList() string {
 	return strings.Join(n[:len(n)-1], ", ") + " and " + n[len(n)-1]
 }
 
-// Verdict is the reviewer's answer.
-type Verdict struct {
-	Verdict   string
-	Summary   string
-	FollowUps []model.FollowUp
-	// Open are the criteria the reviewer accepted as left open; only an
-	// approval carries them.
-	Open []model.OpenCriterion
-	// Risk is why the reviewer calls the change it approves high-risk; empty
-	// when it doesn't. Only an approval carries it.
-	Risk string
-}
+// Verdict is the reviewer's answer, as model.ParseVerdict reads it.
+type Verdict = model.Verdict
 
-// noRiskReason stands for the reason of a reviewer that called a change
-// high-risk and gave none.
-const noRiskReason = "it gave no reason"
-
-// criteria keeps a follow-up's non-empty criteria, trimmed, up to
-// model.MaxFollowUpCriteria.
-func criteria(in []string) []string {
-	var out []string
-	for _, c := range in {
-		if c = strings.TrimSpace(c); c != "" && len(out) < model.MaxFollowUpCriteria {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-// ParseVerdict finds the reviewer's JSON verdict: the last JSON object in the
-// output that has a verdict. It keeps the titled follow-ups, up to
-// model.MaxFollowUps, and on an approval the named open criteria, trimmed, up to
-// model.MaxFollowUpCriteria, and the reason of a "risk" that is "high".
-func ParseVerdict(output string) (Verdict, error) { return parseVerdict(output, "reviewer") }
-
-// parseVerdict is ParseVerdict of who's output: the reviewer's, or the
-// verifier's, which reports in the same format.
-func parseVerdict(output, who string) (Verdict, error) {
-	for end := strings.LastIndex(output, "}"); end >= 0; end = strings.LastIndex(output[:end], "}") {
-		for start := strings.LastIndex(output[:end], "{"); start >= 0; start = strings.LastIndex(output[:start], "{") {
-			var v struct {
-				Verdict    string                `json:"verdict"`
-				Summary    string                `json:"summary"`
-				FollowUps  []model.FollowUp      `json:"followUps"`
-				Open       []model.OpenCriterion `json:"open"`
-				Risk       string                `json:"risk"`
-				RiskReason string                `json:"riskReason"`
-			}
-			if json.Unmarshal([]byte(output[start:end+1]), &v) != nil || v.Verdict == "" {
-				continue
-			}
-			verdict := strings.ToLower(strings.TrimSpace(v.Verdict))
-			if !slices.Contains([]string{VerdictApprove, VerdictChanges}, verdict) {
-				return Verdict{}, fmt.Errorf("unknown verdict %q", v.Verdict)
-			}
-			out := Verdict{Verdict: verdict, Summary: strings.TrimSpace(v.Summary)}
-			for _, f := range v.FollowUps {
-				f.Title, f.Body = strings.TrimSpace(f.Title), strings.TrimSpace(f.Body)
-				f.Criteria = criteria(f.Criteria)
-				if f.Title != "" && len(out.FollowUps) < model.MaxFollowUps {
-					out.FollowUps = append(out.FollowUps, f)
-				}
-			}
-			for _, o := range v.Open {
-				o.Criterion, o.Why = strings.TrimSpace(o.Criterion), strings.TrimSpace(o.Why)
-				if verdict == VerdictApprove && o.Criterion != "" && len(out.Open) < model.MaxFollowUpCriteria {
-					out.Open = append(out.Open, o)
-				}
-			}
-			if verdict == VerdictApprove && strings.EqualFold(strings.TrimSpace(v.Risk), model.RiskHigh) {
-				if out.Risk = strings.Join(strings.Fields(v.RiskReason), " "); out.Risk == "" {
-					out.Risk = noRiskReason
-				}
-			}
-			return out, nil
-		}
-	}
-	return Verdict{}, fmt.Errorf("the %s gave no JSON verdict", who)
-}
+// ParseVerdict finds the reviewer's JSON verdict (model.ParseVerdict).
+func ParseVerdict(output string) (Verdict, error) { return model.ParseVerdict(output, "reviewer") }
 
 func sortedCopy(s []string) []string {
 	out := slices.Clone(s)

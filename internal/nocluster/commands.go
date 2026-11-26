@@ -153,20 +153,57 @@ func Scaffold(ctx context.Context, env Env, m *Model) error {
 	return nil
 }
 
+// mainHistory is main's history as theos reads a Container's scaffold
+// from it, with no status to record it: up to historyLimit commits.
+type mainHistory struct {
+	// messages are the commit messages, oldest first.
+	messages []string
+	// info is the trailers of the Container's scaffold commit, zero when the
+	// history holds none.
+	info scaffold.CommitInfo
+	// history is what the history says of the Container: HistoryRecover
+	// once its scaffold commit is there, however many commits followed it.
+	history model.ExistingHistory
+}
+
+// readMain reads c's repository's main: a repository not made yet reads
+// as an empty one. The scaffold commit is found by its trailers in up to
+// historyLimit commits (scaffold.ScaffoldCommit), as theos update finds
+// it; a Task's merge or an update after it leaves the Container
+// scaffolded (model.ScaffoldedHistory).
+func readMain(ctx context.Context, c container, repo ports.Repository) (mainHistory, error) {
+	commits, err := c.host.History(ctx, repo, historyLimit)
+	if errors.Is(err, ports.ErrRepositoryNotFound) {
+		commits, err = nil, nil
+	}
+	if err != nil {
+		return mainHistory{}, err
+	}
+	var h mainHistory
+	h.messages = make([]string, 0, len(commits))
+	for _, commit := range slices.Backward(commits) {
+		h.messages = append(h.messages, commit.Message)
+	}
+	self := c.obj.Namespace + "/" + c.obj.Name
+	info, found := scaffold.ScaffoldCommit(h.messages, self)
+	scaffoldFor := ""
+	if found {
+		h.info, scaffoldFor = info, info.Container
+	}
+	h.history = model.ScaffoldedHistory(len(commits), scaffoldFor, self, c.obj.Spec.Adopt)
+	return h, nil
+}
+
 func scaffoldOne(ctx context.Context, env Env, m *Model, c container, settings modelfacts.Settings) error {
 	repo, err := c.host.EnsureRepository(ctx, c.obj.Name, modelfacts.RepoDescription(c.obj))
 	if err != nil {
 		return err
 	}
-	commits, err := c.host.History(ctx, repo, 2)
+	h, err := readMain(ctx, c, repo)
 	if err != nil {
 		return err
 	}
-	var info scaffold.CommitInfo
-	if len(commits) > 0 {
-		info, _ = scaffold.ParseCommitMessage(commits[0].Message) // not ours leaves Container empty
-	}
-	switch model.ScaffoldHistory(len(commits), info.Container, c.obj.Namespace+"/"+c.obj.Name, c.obj.Spec.Adopt) {
+	switch h.history {
 	case model.HistoryRecover:
 		if err := protect(ctx, env, m, c, repo); err != nil {
 			return err
@@ -338,24 +375,17 @@ func CrewSetup(m *Model, c *c4v1beta1.Crew) model.CrewSetup {
 
 func status(ctx context.Context, env Env, m *Model, c container, connectorOf map[string]string) error {
 	repo := c.host.Repository(c.obj.Name)
-	commits, err := c.host.History(ctx, repo, 2)
-	if errors.Is(err, ports.ErrRepositoryNotFound) { // not made yet: as an empty one
-		commits, err = nil, nil
-	}
+	h, err := readMain(ctx, c, repo)
 	if err != nil {
 		return err
 	}
-	var info scaffold.CommitInfo
-	if len(commits) > 0 {
-		info, _ = scaffold.ParseCommitMessage(commits[0].Message)
-	}
-	history := model.ScaffoldHistory(len(commits), info.Container, c.obj.Namespace+"/"+c.obj.Name, c.obj.Spec.Adopt)
-	scaffolded := history == model.HistoryRecover
+	info := h.info
+	scaffolded := h.history == model.HistoryRecover
 	switch {
 	case scaffolded:
 		_, err = fmt.Fprintf(env.Out, "%s: scaffolded at %s from %s\n", c.obj.Name, repo.WebURL,
 			strings.Join(info.ScaffoldedFrom, ", "))
-	case len(commits) == 0:
+	case len(h.messages) == 0:
 		_, err = fmt.Fprintf(env.Out, "%s: not scaffolded; theos scaffold makes %s\n", c.obj.Name, repo.WebURL)
 	default:
 		_, err = fmt.Fprintf(env.Out, "%s: %s has commits theos didn't make\n", c.obj.Name, repo.WebURL)

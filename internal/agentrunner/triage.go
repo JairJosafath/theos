@@ -30,7 +30,7 @@ func triage(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 	if err != nil {
 		return agentFailed(job, result, err)
 	}
-	decision, err := ParseTriage(output)
+	decision, err := model.ParseTriage(output)
 	if err != nil {
 		result.Error = err.Error()
 		return result
