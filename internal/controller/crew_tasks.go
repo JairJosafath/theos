@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,7 +63,10 @@ type crewTaskStore struct {
 	container *c4v1beta1.Container
 }
 
-var _ ports.TaskStore = (*crewTaskStore)(nil)
+var (
+	_ ports.TaskStore   = (*crewTaskStore)(nil)
+	_ ports.TriageStore = (*crewTaskStore)(nil)
+)
 
 // Tasks are container's Tasks but its Triage Tasks, which the Crew reads
 // apart (triageTasks).
@@ -93,6 +97,48 @@ func (s *crewTaskStore) Start(ctx context.Context, container string, start model
 	logf.FromContext(ctx).Info("Started Task for issue", "task", start.Task, "issue", start.Issue,
 		"attempt", start.Attempt, "spec", start.Spec, "allowedPaths", start.AllowedPaths,
 		"implementer", task.Spec.AgentRef.Name, "reviewer", task.Spec.ReviewerRef.Name)
+	return nil
+}
+
+// TriageTasks are container's Triage Tasks, read live as Tasks are
+// (triageTasks).
+func (s *crewTaskStore) TriageTasks(ctx context.Context, container string) ([]model.TriageTask, error) {
+	var tasks c4v1beta1.TaskList
+	if err := s.reader.List(ctx, &tasks, client.InNamespace(s.crew.Namespace)); err != nil {
+		return nil, err
+	}
+	var on []c4v1beta1.Task
+	for _, t := range tasks.Items {
+		if t.Spec.ContainerRef.Name == container {
+			on = append(on, t)
+		}
+	}
+	triage, _ := triageTasks(on)
+	return triage, nil
+}
+
+// StartTriage creates the Triage Task model.NextTriage starts: the Crew's
+// triager on the issue, with no reviewer.
+func (s *crewTaskStore) StartTriage(ctx context.Context, container string, start model.TriageStart,
+	triager string) error {
+	if container != s.container.Name {
+		return fmt.Errorf("the Crew %s starts Tasks on %s, not %s", s.crew.Name, s.container.Name, container)
+	}
+	task := &c4v1beta1.Task{
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.crew.Namespace, Name: start.Task, Labels: map[string]string{
+			LabelCrew: s.crew.Name, LabelIssue: strconv.Itoa(start.Issue)}},
+		Spec: c4v1beta1.TaskSpec{
+			Kind:         c4v1beta1.TaskTriage,
+			ContainerRef: c4v1beta1.LocalRef{Name: container},
+			AgentRef:     c4v1beta1.LocalRef{Name: triager},
+			Issue:        int32(start.Issue),
+		},
+	}
+	if err := s.writer.Create(ctx, task); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	logf.FromContext(ctx).Info("Started Triage Task for issue", "task", start.Task, "issue", start.Issue,
+		"attempt", start.Attempt, "triager", triager)
 	return nil
 }
 

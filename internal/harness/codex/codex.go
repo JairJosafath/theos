@@ -30,8 +30,6 @@ package codex
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -73,18 +71,12 @@ func (Harness) Render(p method.Project) ([]harness.File, error) {
 		{Path: FileConfig, Data: []byte("# " + harness.Generated + "\n\n[mcp_servers.theos]\ncommand = \"theos\"\n" +
 			"args = [\"mcp\"]\n")},
 	}
-	roles := map[string]method.Agent{}
-	for _, c := range p.Crews {
-		for _, a := range c.Agents {
-			if was, ok := roles[a.Name]; ok && was.Role != a.Role {
-				return nil, fmt.Errorf("the Agent %s plays the %s in one Crew and the %s in another: its agent file "+
-					"has one role's boundaries; give each role an Agent of its own", a.Name, was.Role, a.Role)
-			}
-			roles[a.Name] = a
-		}
+	agents, err := harness.AgentRoles(p)
+	if err != nil {
+		return nil, err
 	}
-	for _, name := range slices.Sorted(maps.Keys(roles)) {
-		f, err := agentFile(roles[name])
+	for _, r := range agents {
+		f, err := agentFile(r)
 		if err != nil {
 			return nil, err
 		}
@@ -95,16 +87,17 @@ func (Harness) Render(p method.Project) ([]harness.File, error) {
 
 // agentFile is a's custom agent: its name, when to use it, its model, and
 // its role's boundaries as its developer instructions.
-func agentFile(a method.Agent) (harness.File, error) {
-	instructions := method.Boundaries(a.Role)
+func agentFile(r harness.Roles) (harness.File, error) {
+	a, role := r.Agent, strings.Join(r.Roles, " and ")
+	instructions := r.Boundaries()
 	if strings.Contains(instructions, "'''") {
 		return harness.File{}, fmt.Errorf("the Agent %s: its instructions can't be a TOML literal string", a.Name)
 	}
 	name := method.SubagentName(a.Name)
-	description := fmt.Sprintf("theos's %s: takes one work order of theos's lead, word for word.", a.Role)
+	description := fmt.Sprintf("theos's %s: takes one work order of theos's lead, word for word.", role)
 	if a.Description != "" {
 		description = fmt.Sprintf("theos's %s, Agent %s: %s Takes one work order of theos's lead, word for word.",
-			a.Role, a.Name, strings.TrimSpace(a.Description))
+			role, a.Name, strings.TrimSpace(a.Description))
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", harness.Generated)

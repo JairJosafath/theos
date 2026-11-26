@@ -83,8 +83,8 @@ type (
 		Task    string `json:"task" jsonschema:"the Task, as theos_next names it"`
 		Session string `json:"session" jsonschema:"your session's name, as you claimed with"`
 		Commit  string `json:"commit,omitempty" jsonschema:"an implementer's: the commit pushed to the Task's branch"`
-		Verdict string `json:"verdict,omitempty" jsonschema:"a reviewer's: approve or changes"`
-		Summary string `json:"summary" jsonschema:"what you did, or why your verdict"`
+		Verdict string `json:"verdict,omitempty" jsonschema:"a reviewer's or a verifier's: approve or changes"`
+		Summary string `json:"summary" jsonschema:"what you did, or why your verdict; a triager ends it with its decision"`
 	}
 	statusOut struct {
 		Status string `json:"status"`
@@ -194,8 +194,9 @@ func mcpServer(env nocluster.Env, dir string) *mcp.Server {
 		"left. Call it when half an hour passed without a theos call."}, t.heartbeat)
 	mcp.AddTool(s, &mcp.Tool{Name: ToolNames[3], Description: "Gives your claim up, for another session to " +
 		"take."}, t.release)
-	mcp.AddTool(s, &mcp.Tool{Name: ToolNames[4], Description: "Ends your turn: an implementer's pushed commit " +
-		"and summary, or a reviewer's verdict (approve or changes) and why."}, t.done)
+	mcp.AddTool(s, &mcp.Tool{Name: ToolNames[4], Description: "Ends your turn: an implementer's or a spec " +
+		"writer's pushed commit and summary, a reviewer's or a verifier's verdict (approve or changes) and why, " +
+		"or a triager's summary ending with its decision as JSON."}, t.done)
 	mcp.AddTool(s, &mcp.Tool{Name: ToolNames[5], Description: "What theos status prints: each Container, what " +
 		"this runtime does not honour, the lead's files and the losses."}, t.status)
 	return s

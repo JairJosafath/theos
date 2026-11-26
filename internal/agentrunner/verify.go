@@ -46,7 +46,7 @@ func verify(ctx context.Context, job Job, agent Agent, r *repo, ws Workspace, pr
 	if err != nil {
 		return agentFailed(job, result, err)
 	}
-	verdict, err := parseVerdict(output, "verifier")
+	verdict, err := model.ParseVerdict(output, "verifier")
 	if err != nil {
 		result.Error = err.Error()
 		return result

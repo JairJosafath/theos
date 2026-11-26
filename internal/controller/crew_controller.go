@@ -215,12 +215,16 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 	}
 	// A Triage Task is no try at its issue, takes no place from parallel and
-	// merges nothing a release could hold: the Crew reads them apart.
+	// merges nothing a release could hold: the Crew reads them apart, and the
+	// engine's triage tick reads them from the store (#337).
 	// On a repository whose main isn't protected yet no agent runs, the
 	// triager included: it pushes nothing, but its clone's token could (#95).
-	triage := model.TriageFacts{On: crew.Spec.Triager != nil, Paused: crew.Spec.Paused,
+	triage := engine.TriageInput{Container: container.Name, Paused: crew.Spec.Paused,
 		ContainerReady: facts.ContainerReady && facts.Unprotected == ""}
-	triage.Tasks, containerTasks = triageTasks(containerTasks)
+	if crew.Spec.Triager != nil {
+		triage.Triager = crew.Spec.Triager.Name
+	}
+	_, containerTasks = triageTasks(containerTasks)
 
 	var provider interface {
 		ports.GitHost
@@ -247,21 +251,15 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			return ctrl.Result{RequeueAfter: r.poll()}, r.writeStatus(ctx, &crew, status)
 		}
 		host, repo = provider, provider.Repository(container.Name)
-		if triage.On {
-			gitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-			triage.Proposed, err = proposedIssues(gitCtx, provider, repo)
-			cancel()
-			if err != nil {
-				return hostDown(err)
-			}
-		}
 	}
+	triage.Repo = repo
 
 	// The Crew tick is the engine's (docs/plans/lead-runtime.md, step 1):
 	// the Tasks, the ready issues, the decision, the hand-backs and the
 	// starts. Releases, schedules and onboarding stay here.
-	res, err := engine.CrewTick(ctx, crewRuntime{store: &crewTaskStore{reader: r.APIReader, writer: r.Client,
-		crew: &crew, container: &container}}, host, engine.CrewInput{
+	rt := crewRuntime{store: &crewTaskStore{reader: r.APIReader, writer: r.Client, crew: &crew,
+		container: &container}}
+	res, err := engine.CrewTick(ctx, rt, host, engine.CrewInput{
 		Container: container.Name, Repo: repo, Facts: facts, Labels: crewIssueLabels(cadence),
 		Specs: crew.Spec.SpecWriter != nil,
 		Before: func(ctx context.Context, facts *model.CrewFacts) {
@@ -294,7 +292,11 @@ func (r *CrewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	for _, s := range step.Start {
 		status.ActiveTasks = append(status.ActiveTasks, s.Task)
 	}
-	if err := r.triage(ctx, &crew, &container, triage, status, &step); err != nil {
+	err = triageTick(ctx, rt, host, triage, status, &step)
+	if hostErr, ok := errors.AsType[*engine.HostError](err); ok {
+		return hostDown(hostErr.Err)
+	}
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -481,12 +483,14 @@ func crewTask(t *c4v1beta1.Task) model.CrewTask {
 	return out
 }
 
-// triage starts the Triage Task model.NextTriage starts, if any, and adds
-// the Triage Task at work, or started, to the Crew's step and active Tasks.
-func (r *CrewReconciler) triage(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
-	facts model.TriageFacts, status *c4v1beta1.CrewStatus, step *model.CrewStep) error {
-	triaging := model.NextTriage(container.Name, facts)
-	if err := r.startTriage(ctx, crew, container, triaging.Start); err != nil {
+// triageTick runs the engine's triage tick (#337): the Triage Tasks, the
+// proposed issues, the decision and the start; and adds the Triage Task at
+// work, or started, to the Crew's step and active Tasks. A failure to read
+// the host is an *engine.HostError.
+func triageTick(ctx context.Context, rt ports.Runtime, host ports.Issues, in engine.TriageInput,
+	status *c4v1beta1.CrewStatus, step *model.CrewStep) error {
+	triaging, err := engine.TriageTick(ctx, rt, host, in)
+	if err != nil {
 		return err
 	}
 	switch {
@@ -496,45 +500,6 @@ func (r *CrewReconciler) triage(ctx context.Context, crew *c4v1beta1.Crew, conta
 		status.ActiveTasks = append(status.ActiveTasks, triaging.Active)
 	}
 	step.AddTriage(triaging)
-	return nil
-}
-
-// proposedIssues reads the open issues labelled status/proposed, a Crew's
-// triager's to decide.
-func proposedIssues(ctx context.Context, provider ports.Issues, repo ports.Repository) ([]model.ProposedIssue, error) {
-	issues, err := provider.ListIssues(ctx, repo, model.LabelProposed)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]model.ProposedIssue, 0, len(issues))
-	for _, i := range issues {
-		out = append(out, model.ProposedIssue{Number: i.Number, Milestone: i.MilestoneTitle})
-	}
-	return out, nil
-}
-
-// startTriage creates the Triage Task model.NextTriage starts, if any: the
-// Crew's triager on the issue, with no reviewer.
-func (r *CrewReconciler) startTriage(ctx context.Context, crew *c4v1beta1.Crew, container *c4v1beta1.Container,
-	start *model.TriageStart) error {
-	if start == nil || crew.Spec.Triager == nil {
-		return nil
-	}
-	task := &c4v1beta1.Task{
-		ObjectMeta: metav1.ObjectMeta{Namespace: crew.Namespace, Name: start.Task, Labels: map[string]string{
-			LabelCrew: crew.Name, LabelIssue: strconv.Itoa(start.Issue)}},
-		Spec: c4v1beta1.TaskSpec{
-			Kind:         c4v1beta1.TaskTriage,
-			ContainerRef: c4v1beta1.LocalRef{Name: container.Name},
-			AgentRef:     c4v1beta1.LocalRef{Name: crew.Spec.Triager.Name},
-			Issue:        int32(start.Issue),
-		},
-	}
-	if err := r.Create(ctx, task); err != nil && !apierrors.IsAlreadyExists(err) {
-		return err
-	}
-	logf.FromContext(ctx).Info("Started Triage Task for issue", "task", start.Task, "issue", start.Issue,
-		"attempt", start.Attempt, "triager", crew.Spec.Triager.Name)
 	return nil
 }
 

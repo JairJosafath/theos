@@ -2120,7 +2120,7 @@ without, each under the reason word `theos status` prints:
 | `AgentHoldsOwnerCredential` | the agents act with the person's credential until a second account's is given: they can merge past a branch rule, change or remove it, and reach every repository that credential does |
 | `ReviewNotEnforced` | no host is asked for a review: `theos merge` wants a verdict from another session, and a session's name is its own word |
 | `ChecksByMerge`, `ProtectedPathsByMerge` | on GitHub the host holds neither: `theos merge` does, or the eye of the person who merges in the host's pages |
-| `NoSandbox`, `NoScheduler`, `RoleNotBuilt`, `HarnessNotBuilt` | a Crew's or an Agent's field the lead runtime doesn't honour, named field by field ([plans/lead-runtime.md](plans/lead-runtime.md), decision 6) |
+| `NoSandbox`, `NoScheduler`, `HarnessNotBuilt` | a Crew's or an Agent's field the lead runtime doesn't honour, named field by field ([plans/lead-runtime.md](plans/lead-runtime.md), decision 6) |
 | `RulesNotValidated` | the CRDs' create-time rules are checked here; the admission policy, the rules that compare an update with the object before it and the GitProvider provider enum (the host is checked by theos itself) run only once the model reaches a cluster |
 
 A Crew's schedules, releases and budget, Briefs' rounds, deploys, test

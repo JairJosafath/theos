@@ -23,7 +23,6 @@ package claudecode
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -42,11 +41,11 @@ var (
 )
 
 // Grants are the role's tools: Agent starts a subagent; Edit and Write
-// change files.
+// change files; Bash runs commands.
 func (Harness) Grants(role string) harness.Grants {
 	tools := roleTools[role]
-	return harness.Grants{Spawn: slices.Contains(tools, "Agent"),
-		Write: slices.Contains(tools, "Edit") || slices.Contains(tools, "Write")}
+	return harness.Grants{Spawn: slices.Contains(tools, toolAgent),
+		Write: slices.Contains(tools, toolEdit) || slices.Contains(tools, toolWrite), Shell: slices.Contains(tools, toolBash)}
 }
 
 // Name is Agent.spec.harness for Claude Code.
@@ -68,12 +67,29 @@ const (
 	agentsImport = "@" + FileAgents
 )
 
-// roleTools are the tools a role's subagent has. The reviewer has no
-// Agent, Edit or Write: its verdict is its own and changes nothing.
+// roleTools are the tools a role's subagent has. None has Agent, so none
+// starts another subagent. The reviewer and the verifier have no Edit or
+// Write: a verdict changes nothing, and a verification runs the build
+// (Bash) and pushes nothing. The triager has no Bash either: it reads, and
+// writes no file (#337).
 var roleTools = map[string][]string{
-	model.RoleImplementer: {"Read", "Grep", "Glob", "Edit", "Write", "Bash", theosTools},
-	model.RoleReviewer:    {"Read", "Grep", "Glob", "Bash", theosTools},
+	model.RoleImplementer: {toolRead, toolGrep, toolGlob, toolEdit, toolWrite, toolBash, theosTools},
+	method.RoleSpecWriter: {toolRead, toolGrep, toolGlob, toolEdit, toolWrite, toolBash, theosTools},
+	model.RoleReviewer:    {toolRead, toolGrep, toolGlob, toolBash, theosTools},
+	model.RoleVerifier:    {toolRead, toolGrep, toolGlob, toolBash, theosTools},
+	model.RoleTriager:     {toolRead, toolGrep, toolGlob, theosTools},
 }
+
+// Claude Code's tools: those that read, and those Grants reads.
+const (
+	toolRead  = "Read"
+	toolGrep  = "Grep"
+	toolGlob  = "Glob"
+	toolAgent = "Agent"
+	toolEdit  = "Edit"
+	toolWrite = "Write"
+	toolBash  = "Bash"
+)
 
 // Render is the lead's files for p: CLAUDE.md importing AGENTS.md, the
 // playbook in AGENTS.md, a subagent for each Agent a Crew names, and
@@ -86,18 +102,12 @@ func (Harness) Render(p method.Project) ([]harness.File, error) {
 		{Path: FileClaude, Data: []byte(comment + agentsImport + "\n")},
 		{Path: FileAgents, Data: []byte(comment + "\n" + method.Playbook(p))},
 	}
-	roles := map[string]method.Agent{}
-	for _, c := range p.Crews {
-		for _, a := range c.Agents {
-			if was, ok := roles[a.Name]; ok && was.Role != a.Role {
-				return nil, fmt.Errorf("the Agent %s plays the %s in one Crew and the %s in another: its subagent "+
-					"can't have both roles' tools; give each role an Agent of its own", a.Name, was.Role, a.Role)
-			}
-			roles[a.Name] = a
-		}
+	agents, err := harness.AgentRoles(p)
+	if err != nil {
+		return nil, err
 	}
-	for _, name := range slices.Sorted(maps.Keys(roles)) {
-		f, err := subagent(roles[name])
+	for _, r := range agents {
+		f, err := subagent(r)
 		if err != nil {
 			return nil, err
 		}
@@ -111,18 +121,21 @@ func (Harness) Render(p method.Project) ([]harness.File, error) {
 	return append(files, harness.File{Path: FileMCP, Data: append(mcp, '\n')}), nil
 }
 
-// subagent is a's subagent file: its name, when to use it, its model and
-// its role's tools, then the role's boundaries.
-func subagent(a method.Agent) (harness.File, error) {
-	tools, ok := roleTools[a.Role]
+// subagent is r's subagent file: its name, when to use it, its model and
+// its roles' tools, then each role's boundaries.
+func subagent(r harness.Roles) (harness.File, error) {
+	a := r.Agent
+	tools, ok := roleTools[r.Roles[0]]
 	if !ok {
-		return harness.File{}, fmt.Errorf("the Agent %s: the role %s has no subagent in this runtime", a.Name, a.Role)
+		return harness.File{}, fmt.Errorf("the Agent %s: the role %s has no subagent in this runtime", a.Name,
+			r.Roles[0])
 	}
 	name := method.SubagentName(a.Name)
-	description := fmt.Sprintf("theos's %s: takes one work order of theos's lead, word for word.", a.Role)
+	role := strings.Join(r.Roles, " and ")
+	description := fmt.Sprintf("theos's %s: takes one work order of theos's lead, word for word.", role)
 	if a.Description != "" {
 		description = fmt.Sprintf("theos's %s, Agent %s: %s Takes one work order of theos's lead, word for word.",
-			a.Role, a.Name, strings.TrimSpace(a.Description))
+			role, a.Name, strings.TrimSpace(a.Description))
 	}
 	desc, err := json.Marshal(description) // a YAML double-quoted scalar
 	if err != nil {
@@ -137,6 +150,6 @@ func subagent(a method.Agent) (harness.File, error) {
 	}
 	fmt.Fprintf(&b, "tools: %s\n", strings.Join(tools, ", "))
 	b.WriteString("---\n\n")
-	b.WriteString(method.Boundaries(a.Role))
+	b.WriteString(r.Boundaries())
 	return harness.File{Path: agentsDir + name + ".md", Data: []byte(b.String())}, nil
 }

@@ -18,9 +18,7 @@ package model
 
 import (
 	"cmp"
-	"encoding/json"
 	"fmt"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -58,9 +56,6 @@ const (
 // branch's head at least this long counts as the head.
 const minCommitPrefix = 7
 
-// jsonBlock is a fenced json block in a marker comment's text.
-var jsonBlock = regexp.MustCompile("(?s)```json\\s*\\n(.*?)\\n```")
-
 // WorkOrder is one role's turn on a Task, as the engine offers it: the
 // round of Task, the role and the Agent that plays it, and the text that
 // tells it what to do (#266). The operator's Workers make a sandbox of it;
@@ -78,6 +73,10 @@ type WorkOrder struct {
 	Goal string
 	// Feedback is what the round has to address, from the round before.
 	Feedback string
+	// Spec means the round writes the issue's spec (SpecPath) and nothing
+	// else: the implementer's turn of a Spec Task, which the Crew's spec
+	// writer plays.
+	Spec bool
 	// Lease is how long a claim of the turn holds before it is renewed.
 	Lease time.Duration
 	// Text is what the role reads: the work order the method renders (#266).
@@ -99,7 +98,9 @@ func EndedMarker(why string) (string, error) {
 
 // DoneMarker is the comment a session posts when its run is done: the
 // commit it pushed, for an implementer, or a reviewer's verdict, then its
-// summary. A triager's decision goes in the summary as a fenced json block.
+// summary. A triager's decision goes in the summary as a JSON object, and a
+// reviewer's or a verifier's may carry one in the runner's verdict format
+// (ParseTriage, ParseVerdict).
 func DoneMarker(session, commit, verdict, summary string) (string, error) {
 	if err := CheckSessionName(session); err != nil {
 		return "", err
@@ -283,41 +284,54 @@ func markerText(m Marker) string {
 }
 
 // doneResult is the result a counted done reports: the head it names, its
-// summary and verdict, and for a triager the decision in its summary's
-// json block.
+// summary and verdict; for a triager the decision in its text, and for a
+// reviewer or a verifier what its text's JSON verdict leaves for the merge,
+// each read by the parser the operator's runner reads the agent's output
+// with (ParseTriage, ParseVerdict; #337).
 func doneResult(done Marker, role, head string) *RunResult {
 	res := &RunResult{Summary: markerText(done), Verdict: done.Attrs[markerKeyVerdict], Role: role}
 	if done.Attrs[markerKeyCommit] != "" {
 		res.Commit = head
 	}
-	if role == RoleTriager {
-		if d, err := triageInText(res.Summary); err != nil {
+	switch role {
+	case RoleTriager:
+		if d, err := ParseTriage(res.Summary); err != nil {
 			res.Error = err.Error()
 		} else {
-			res.Triage = d
+			res.Triage = &d
 		}
+	case RoleReviewer, RoleVerifier:
+		verdictFindings(res, role)
 	}
 	return res
 }
 
-// triageInText is the triager's decision in text's one fenced json block,
-// nil when it has none.
-func triageInText(text string) (*Triage, error) {
-	blocks := jsonBlock.FindAllStringSubmatch(text, -1)
-	switch len(blocks) {
-	case 0:
-		return nil, nil
-	case 1:
-	default:
-		return nil, fmt.Errorf("the triager's done holds %d json blocks, want one decision", len(blocks))
+// verdictFindings adds to a reviewer's or a verifier's result what the JSON
+// verdict in its done's text leaves for the merge: the reviewer's
+// follow-ups and risk, and the criteria either accepted as open. A done
+// whose text has none is its verdict= alone; one whose verdict= is missing
+// takes the JSON's, and one whose JSON says another verdict gave none.
+func verdictFindings(res *RunResult, role string) {
+	who := "reviewer"
+	if role == RoleVerifier {
+		who = "verifier"
 	}
-	dec := json.NewDecoder(strings.NewReader(blocks[0][1]))
-	dec.DisallowUnknownFields()
-	var d Triage
-	if err := dec.Decode(&d); err != nil {
-		return nil, fmt.Errorf("the triager's decision doesn't read: %w", err)
+	v, err := ParseVerdict(res.Summary, who)
+	switch {
+	case err != nil:
+		return
+	case res.Verdict == "":
+		res.Verdict = v.Verdict
+	case res.Verdict != v.Verdict:
+		res.Error = fmt.Sprintf("the %s's done says verdict=%s, and its JSON %q", who, res.Verdict, v.Verdict)
+		res.Verdict = ""
+		return
 	}
-	return &d, nil
+	res.Open = v.Open
+	if role == RoleReviewer {
+		// A verifier suggests no follow-ups: that is the reviewer's part.
+		res.FollowUps, res.Risk = v.FollowUps, v.Risk
+	}
 }
 
 // answerResult is the result a blocked or a nothing reports: its note, at

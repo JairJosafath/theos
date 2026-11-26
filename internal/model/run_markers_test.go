@@ -320,21 +320,6 @@ func TestRunAnswers307(t *testing.T) {
 		triage.Result.Error != "" {
 		t.Errorf("a triager's done reads %+v", triage.Result)
 	}
-	for name, body := range map[string]string{
-		"an unknown field": "```json\n{\"decision\": \"ready\", \"why\": \"x\"}\n```",
-		"two decisions":    "```json\n{\"decision\": \"ready\"}\n```\n```json\n{\"decision\": \"park\"}\n```",
-		"no json":          "```json\nready\n```",
-	} {
-		got := answer(RoleTriager, m.done("lead-a", "", "", body))
-		if got.Result.Triage != nil || got.Result.Error == "" {
-			t.Errorf("%s: a triager's done reads %+v", name, got.Result)
-		}
-	}
-	none := answer(RoleTriager, m.done("lead-a", "", "", "I looked."))
-	if none.Result.Triage != nil || none.Result.Error != "" {
-		t.Errorf("a triager's done without a decision reads %+v", none.Result)
-	}
-
 	// #307: a session never posts the engine's markers, and a done names its session.
 	if _, err := DoneMarker("lead a", runHead, "", ""); err == nil {
 		t.Error("a done took a session name of two words")
@@ -342,6 +327,58 @@ func TestRunAnswers307(t *testing.T) {
 	if _, err := OfferMarker("web 12", 1, RoleImplementer, "claude"); err == nil {
 		t.Error("an offer took a task name of two words")
 	}
+}
+
+// #337: a triager's, a reviewer's and a verifier's done are read by the
+// runner's parsers (ParseTriage, ParseVerdict).
+func TestRunAnswers337(t *testing.T) {
+	m := runMarkers{t}
+	const login = "jair"
+	rules := DefaultClaimRules(login)
+	answer := func(role, body string) RunState {
+		t.Helper()
+		return RunFromMarkers(RunFacts{Head: runHead, Rules: rules, Now: claimT0.Add(10 * time.Minute),
+			Comments: []HostComment{hostAt(1, login, 0, m.offer(role)),
+				hostAt(2, login, 1, m.session(MarkerClaim, "lead-a", "")), hostAt(3, login, 5, body)}})
+	}
+	// #337: the triager's done is read by the runner's parser, ParseTriage:
+	// the last JSON object with a decision counts, fenced or not.
+	for name, tt := range map[string]struct{ body, decision string }{
+		"an unknown field":   {"```json\n{\"decision\": \"ready\", \"reason\": \"r\", \"why\": \"x\"}\n```", "ready"},
+		"two decisions":      {"{\"decision\": \"ready\"} then {\"decision\": \"park\", \"question\": \"q\"}", "park"},
+		"unfenced":           {"Looked. {\"decision\": \"spec\", \"reason\": \"Too big.\"}", "spec"},
+		"unknown decision":   {"{\"decision\": \"later\"}", ""},
+		"no json":            {"```json\nready\n```", ""},
+		"no decision at all": {"I looked.", ""},
+	} {
+		got := answer(RoleTriager, m.done("lead-a", "", "", tt.body))
+		switch {
+		case tt.decision == "" && (got.Result.Triage != nil || got.Result.Error == ""):
+			t.Errorf("%s: a triager's done reads %+v, want no decision and an error", name, got.Result)
+		case tt.decision != "" && (got.Result.Triage == nil || got.Result.Triage.Decision != tt.decision):
+			t.Errorf("%s: a triager's done reads %+v, want %s", name, got.Result, tt.decision)
+		}
+	}
+
+	// #337: a verifier's or a reviewer's done may carry its verdict in the
+	// runner's format, with what it leaves for the merge.
+	verify := answer(RoleVerifier, m.done("lead-a", "", VerdictApprove, "Ran it.\n\n"+
+		`{"verdict": "approve", "summary": "Ran it.", "open": [{"criterion": "Works on a phone", "why": "no phone"}],`+
+		` "followUps": [{"title": "Not the verifier's"}]}`))
+	if r := verify.Result; r.Verdict != VerdictApprove || len(r.Open) != 1 || r.Open[0].Criterion != "Works on a phone" ||
+		len(r.FollowUps) != 0 || r.Error != "" {
+		t.Errorf("a verifier's done reads %+v, want its open criterion and no follow-ups", r)
+	}
+	reviewed := answer(RoleReviewer, m.done("lead-a", "", "", `{"verdict": "approve", "summary": "Fine.",`+
+		` "followUps": [{"title": "Cache the prices", "criteria": ["It caches"]}]}`))
+	if r := reviewed.Result; r.Verdict != VerdictApprove || len(r.FollowUps) != 1 || r.Error != "" {
+		t.Errorf("a reviewer's done with its verdict in JSON alone reads %+v", r)
+	}
+	torn := answer(RoleReviewer, m.done("lead-a", "", VerdictApprove, `{"verdict": "changes", "summary": "No."}`))
+	if r := torn.Result; r.Verdict != "" || r.Error == "" {
+		t.Errorf("a reviewer's done that says two verdicts reads %+v, want none", r)
+	}
+
 }
 
 // #307: the markers feed the Task's decision as a sandbox's run does. A

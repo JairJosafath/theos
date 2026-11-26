@@ -35,7 +35,7 @@ type LeadFiles interface {
 // RoleGrants is a harness that enforces each role's tools. One that only
 // instructs a role has none: its reviewer's boundary is its own word.
 type RoleGrants interface {
-	Grants(role string) Grants // Spawn, Write
+	Grants(role string) Grants // Spawn, Write, Shell
 }
 ```
 
@@ -52,7 +52,8 @@ func TestMyHarness(t *testing.T) { harnesstest.Run(t, myharness.Harness{}) }
 ```
 
 `internal/harness/harnesstest` checks what every harness must keep, on a
-project of one Crew with an implementer and a reviewer:
+project of one Crew with every role: an implementer, a reviewer, a
+triager, a spec writer and a verifier (#337):
 
 - files at local paths of the project repository, each once, the same at
   every render, each with the generated marker but a JSON file;
@@ -61,8 +62,10 @@ project of one Crew with an implementer and a reviewer:
   model where the harness runs each role on its own; the boundaries name
   the Container's `AGENTS.md` and `theos heartbeat`;
 - `theos mcp` started where the harness speaks MCP;
-- with `RoleGrants`: a reviewer that neither starts agents nor writes, and
-  an implementer that writes.
+- with `RoleGrants`: no role that starts agents; a reviewer and a verifier
+  that write nothing, the verifier able to run the build; a triager that
+  neither writes nor runs a command; an implementer and a spec writer that
+  write.
 
 A harness that drops the reviewer's boundary, by its grants or by leaving
 its boundaries out, fails the suite.

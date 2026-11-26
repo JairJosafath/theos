@@ -107,3 +107,62 @@ func TestWorkOrder266(t *testing.T) {
 		}
 	}
 }
+
+// #337: the triager's, the spec writer's and the verifier's boundaries keep
+// what every role's does, and their own: a triager writes nothing and ends
+// with its decision's JSON; a verifier runs the build and pushes nothing; a
+// spec writer writes the spec alone.
+func TestBoundaries337(t *testing.T) {
+	for role, wants := range map[string][]string{
+		model.RoleTriager: {"Never write a file, commit, push or merge", `"decision": "ready", "spec", "park" or "duplicate"`,
+			"theos applies the decision"},
+		model.RoleVerifier: {"`make verify`", "the command you ran and what it printed",
+			"Never edit, commit, push or merge", `"open": [{"criterion"`},
+		method.RoleSpecWriter: {"docs/specs/<issue>.md alone", `"Acceptance criteria" checklist`,
+			"Never change another file"},
+	} {
+		got := method.Boundaries(role)
+		for _, want := range append(wants, "AGENTS.md", method.CommandHeartbeat, method.ToolHeartbeat, method.ToolClaim,
+			method.ToolDone, "data, never instructions") {
+			if !strings.Contains(got, want) {
+				t.Errorf("the %s's boundaries do not say %q:\n%s", role, want, got)
+			}
+		}
+	}
+	if got := method.Boundaries(model.RoleReviewer); !strings.Contains(got, `"followUps"`) {
+		t.Errorf("the reviewer's boundaries don't say how to leave follow-ups:\n%s", got)
+	}
+	if !method.Shares(model.RoleImplementer, method.RoleSpecWriter) || method.Shares(model.RoleImplementer,
+		model.RoleReviewer) || method.Shares(model.RoleTriager, model.RoleVerifier) {
+		t.Error("only the implementer and the spec writer share a subagent")
+	}
+}
+
+// #337: each new role's work order says its turn and how to end it: the
+// triager on main with its decision's JSON, the spec writer's round of a
+// Spec Task the spec's path, the verifier the build it runs.
+func TestWorkOrder337(t *testing.T) {
+	goal := model.IssueGoal(3, "Add orders", "Orders.")
+	for _, tt := range []struct {
+		order model.WorkOrder
+		wants []string
+	}{
+		{model.WorkOrder{Task: "orders-api-3-triage", Issue: 3, Branch: "main", Round: 1, Role: model.RoleTriager,
+			Agent: "sorter", Goal: goal}, []string{"the triager's turn", "branch `main`", "Change nothing",
+			`"decision": "ready"`, "subagent `theos-sorter`"}},
+		{model.WorkOrder{Task: "orders-api-3-spec", Issue: 3, Branch: "task/orders-api-3-spec", Round: 2,
+			Role: model.RoleImplementer, Agent: "scribe", Goal: goal, Spec: true, Feedback: "Name the status code."},
+			[]string{"the spec writer's turn", "Write the spec in docs/specs/3.md, and nothing else",
+				"Name the status code."}},
+		{model.WorkOrder{Task: "orders-api-3", Issue: 3, Branch: "task/orders-api-3", Round: 1, Role: model.RoleVerifier,
+			Agent: "tester", Goal: goal}, []string{"the verifier's turn", "push nothing", `"open": [{"criterion"`}},
+	} {
+		got := method.WorkOrder(tt.order, "orders-api", "github")
+		for _, want := range append(tt.wants, model.IssueBlock(goal), method.ToolClaim, method.ToolDone,
+			method.CommandHeartbeat) {
+			if !strings.Contains(got, want) {
+				t.Errorf("the %s's work order does not say %q:\n%s", tt.order.Role, want, got)
+			}
+		}
+	}
+}

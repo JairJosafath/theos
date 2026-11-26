@@ -37,8 +37,9 @@ import (
 
 // LeadProject is m as the lead's files say it (docs/plans/lead-runtime.md,
 // decision 7): each Crew, sorted by name, with the Agents it names for the
-// roles the lead runtime plays (its implementer and reviewer, then its
-// routes'), each once, and what the lead runtime does not honour of it.
+// roles the lead runtime plays (its implementer, reviewer, triager, spec
+// writer and verifier, then its routes'), each once, and what the lead
+// runtime does not honour of it.
 func LeadProject(m *Model) method.Project {
 	p := method.Project{Name: m.Project}
 	if len(m.Objects.GitProviders) > 0 {
@@ -64,9 +65,13 @@ func LeadProject(m *Model) method.Project {
 		}
 		add(model.RoleImplementer, &c.Spec.Implementer)
 		add(model.RoleReviewer, &c.Spec.Reviewer)
+		add(model.RoleTriager, c.Spec.Triager)
+		add(method.RoleSpecWriter, c.Spec.SpecWriter)
+		add(model.RoleVerifier, c.Spec.Verifier)
 		for _, r := range c.Spec.Routes {
 			add(model.RoleImplementer, r.Implementer)
 			add(model.RoleReviewer, r.Reviewer)
+			add(model.RoleVerifier, r.Verifier)
 		}
 		p.Crews = append(p.Crews, crew)
 	}

@@ -25,7 +25,11 @@ package harness
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/JairJosafath/theos/internal/method"
 )
@@ -64,8 +68,10 @@ type LeadFiles interface {
 
 // Grants are what a role's agent may do, where a harness enforces it.
 type Grants struct {
-	// Spawn means it can start other agents; Write that it can change files.
-	Spawn, Write bool
+	// Spawn means it can start other agents; Write that it can change files
+	// with the harness's editing tools; Shell that it can run commands, a
+	// build among them.
+	Spawn, Write, Shell bool
 }
 
 // RoleGrants is a harness that enforces each role's tools, and says which
@@ -73,6 +79,57 @@ type Grants struct {
 // prompt) has none: its reviewer's boundary is its own word.
 type RoleGrants interface {
 	Grants(role string) Grants
+}
+
+// Roles is one Agent of a project and the roles it plays, in the order the
+// Crews first give them.
+type Roles struct {
+	Agent method.Agent
+	Roles []string
+}
+
+// AgentRoles are p's Agents, sorted by name, each with the roles it plays
+// in any Crew: one subagent, or agent file, per Agent. An Agent given two
+// roles one subagent can't keep the boundaries of both of (method.Shares)
+// is refused.
+func AgentRoles(p method.Project) ([]Roles, error) {
+	byName := map[string]*Roles{}
+	for _, c := range p.Crews {
+		for _, a := range c.Agents {
+			r, ok := byName[a.Name]
+			if !ok {
+				byName[a.Name] = &Roles{Agent: a, Roles: []string{a.Role}}
+				continue
+			}
+			if slices.Contains(r.Roles, a.Role) {
+				continue
+			}
+			if !method.Shares(r.Roles[0], a.Role) {
+				return nil, fmt.Errorf("the Agent %s plays the %s and the %s: its one subagent can't have both "+
+					"roles' tools and boundaries; give each role an Agent of its own", a.Name, r.Roles[0], a.Role)
+			}
+			r.Roles = append(r.Roles, a.Role)
+		}
+	}
+	out := make([]Roles, 0, len(byName))
+	for _, name := range slices.Sorted(maps.Keys(byName)) {
+		out = append(out, *byName[name])
+	}
+	return out, nil
+}
+
+// Boundaries are the boundaries of each role r plays, one after another,
+// with a line that says so when there are two.
+func (r Roles) Boundaries() string {
+	if len(r.Roles) == 1 {
+		return method.Boundaries(r.Roles[0])
+	}
+	parts := make([]string, 0, len(r.Roles))
+	for _, role := range r.Roles {
+		parts = append(parts, method.Boundaries(role))
+	}
+	return fmt.Sprintf("Agent %s plays %d roles of theos: each work order names its turn, and each role keeps "+
+		"its own rules below.\n\n%s", r.Agent.Name, len(r.Roles), strings.Join(parts, "\n"))
 }
 
 // Generated is the line that marks a file theos writes, as its format

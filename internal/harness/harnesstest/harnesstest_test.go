@@ -96,3 +96,14 @@ func TestCodexFiles338(t *testing.T) {
 		t.Error("Codex sets no tools per agent; it must not claim to")
 	}
 }
+
+// #337: a harness that lets the triager or the verifier change files fails
+// the suite: they change nothing on main.
+func TestTriagerAndVerifierChangeNothing337(t *testing.T) {
+	problems := strings.Join(harnesstest.Check(loose{grants: true}), "\n")
+	for _, role := range []string{"triager", "verifier"} {
+		if !strings.Contains(problems, "the "+role+" may start agents") {
+			t.Errorf("problems %q, want the %s's boundary named", problems, role)
+		}
+	}
+}

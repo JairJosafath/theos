@@ -35,9 +35,6 @@ type TaskStoreEnv struct {
 	// Finish ends the Task named task on container, failed or merged, as
 	// the runtime's own Task tick would.
 	Finish func(t *testing.T, container, task string, failed bool)
-	// NoSpecs means the store starts no Spec Task: a start with Spec starts
-	// one that builds (the lead runtime, whose spec writer is RoleNotBuilt).
-	NoSpecs bool
 	// Cannot names the subtests the store can't run, with why; they are
 	// skipped.
 	Cannot map[string]string
@@ -103,8 +100,8 @@ func (s taskStoreSuite) starts(t *testing.T) {
 	if got := named(t, tasks, build.Task); got.Issue != 3 || got.Final || got.Spec {
 		t.Errorf("Task %s = %+v, want issue 3, not final, no spec", build.Task, got)
 	}
-	if got := named(t, tasks, spec.Task); got.Issue != 5 || got.Final || got.Spec == s.env.NoSpecs {
-		t.Errorf("Task %s = %+v, want issue 5, not final, a spec unless the store starts none", spec.Task, got)
+	if got := named(t, tasks, spec.Task); got.Issue != 5 || got.Final || !got.Spec {
+		t.Errorf("Task %s = %+v, want issue 5, not final, a spec", spec.Task, got)
 	}
 	if got := s.tasks(t, store, other); len(got) != 0 {
 		t.Errorf("the other Container lists %+v, want no Task", got)

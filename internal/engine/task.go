@@ -51,8 +51,27 @@ type TaskInput struct {
 	// runtime's method.WorkOrder); nil offers none, and the Workers say
 	// what the turn is.
 	OrderText func(model.WorkOrder) string
-	// Implementer and Reviewer are the Agents that play the roles.
-	Implementer, Reviewer string
+	// Implementer and Reviewer are the Agents that play the roles: for a
+	// Spec Task the implementer is the Crew's spec writer, and for a Triage
+	// Task its triager. Verifier verifies an approved change; empty for
+	// none (a spec is never verified).
+	Implementer, Reviewer, Verifier string
+	// Spec means a Spec Task (#337): its round writes the issue's spec
+	// (model.SpecPath) and nothing else, and an approved spec waits for its
+	// review point; SpecApproval is who approves it, a person when empty.
+	Spec         bool
+	SpecApproval string
+	// Triage means a Triage Task: one triager run decides the issue
+	// (model.PlanTriage). TriageFailed counts its issue's Triage Tasks that
+	// failed before this one, and Environments are the project's test
+	// environments by name, which a ready decision may name.
+	Triage       bool
+	TriageFailed int
+	Environments []string
+	// Ours reports whether a pull request review's user is one of theos's
+	// own accounts (model.ClaimRules.Ours): a person's review is anyone
+	// else's. nil counts every reviewer a person.
+	Ours func(user string) bool
 	// MaxRounds is the implementer's maxRounds; 0 means 3.
 	MaxRounds int
 	// ContainerReady means the repository is scaffolded; Protected that its
@@ -94,7 +113,10 @@ func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput
 		return TaskResult{}, errors.New("the runtime has no Workers to run a Task's turns")
 	}
 	in.Log = logOr(in.Log)
-	if in.MaxRounds == 0 {
+	switch {
+	case in.Triage:
+		in.MaxRounds = 1 // a failed triage fails, and its Crew tries again
+	case in.MaxRounds == 0:
 		in.MaxRounds = defaultMaxRounds
 	}
 	rec, err := store.Progress(ctx, in.Task)
@@ -124,6 +146,15 @@ type taskTick struct {
 
 func final(phase string) bool { return phase == model.TaskMerged || phase == model.TaskFailed }
 
+// RunRole is the role whose run the Task waits on in phase: the triager's
+// in a Triage Task's Implementing, else RunRole's.
+func (in TaskInput) RunRole(phase string) string {
+	if in.Triage && phase == model.TaskImplementing {
+		return model.RoleTriager
+	}
+	return RunRole(phase)
+}
+
 // RunRole is the role whose run a phase waits on; empty for none.
 func RunRole(phase string) string {
 	switch phase {
@@ -143,7 +174,10 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 	facts := model.TaskFacts{Phase: p.Phase, Container: in.Container, Round: p.Round, MaxRounds: in.MaxRounds,
 		ContainerReady: in.ContainerReady, Protected: in.Protected, ReviewAttempts: p.ReviewAttempts,
 		ReviewAgains: p.ReviewAgains, Reruns: p.Reruns, Resumes: p.Resumes, Feedback: p.Feedback,
-		MergeWhenChecksPass: p.MergeWhenChecksPass}
+		MergeWhenChecksPass: p.MergeWhenChecksPass, Triage: in.Triage, Spec: in.Spec, Verify: in.Verifier != ""}
+	if in.Spec {
+		facts.SpecApproval = cmpOr(in.SpecApproval, model.SpecApprovalPerson)
+	}
 	if facts.Phase == "" {
 		facts.Phase = model.TaskPending
 	}
@@ -153,7 +187,7 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 	if p.ChecksFailed {
 		facts.FailedCommit = p.Commit
 	}
-	if role := RunRole(facts.Phase); role != "" {
+	if role := in.RunRole(facts.Phase); role != "" {
 		run, err := t.rt.Workers().Run(ctx, in.Task, p.Round, role)
 		if err != nil {
 			return facts, err
@@ -172,7 +206,7 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 	}
 	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
 	defer cancel()
-	if facts.Phase == model.TaskPending && in.Protected && in.ContainerReady {
+	if facts.Phase == model.TaskPending && in.Protected && in.ContainerReady && !in.Triage {
 		if err := ReadBase(hostCtx, t.host, in.Repo, in.CheckContexts, &facts); err != nil {
 			return facts, &HostError{Err: err}
 		}
@@ -187,20 +221,42 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 	if err := ReadPull(hostCtx, t.host, in.Repo, t.rec.PullRequest, p.MergeWhenChecksPass, &facts); err != nil {
 		return facts, &HostError{Err: err}
 	}
+	if err := t.specFacts(hostCtx, &facts); err != nil {
+		return facts, &HostError{Err: err}
+	}
 	return facts, nil
 }
 
 // carry carries out step, and returns it as carried out.
 func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (model.TaskStep, error) {
 	p := t.rec.Progress
-	role := RunRole(facts.Phase)
+	role := t.in.RunRole(facts.Phase)
+	if facts.Run.Done {
+		// What an approving review or verification leaves for the merge is
+		// kept with the next progress, as its run ends before the merge.
+		t.rec.Findings = model.KeepFindings(t.rec.Findings, role, facts.Run.Result)
+	}
 	switch step.Action {
 	case model.ActionNone, model.ActionWait:
 		return step, nil
 	case model.ActionStartImplement:
-		return step, t.offer(ctx, model.RoleImplementer)
+		return step, t.offer(ctx, t.in.RunRole(model.TaskImplementing))
 	case model.ActionStartReview:
 		return step, t.offer(ctx, model.RoleReviewer)
+	case model.ActionStartVerify:
+		return step, t.offer(ctx, model.RoleVerifier)
+	case model.ActionVerify:
+		// The review's run ends; its approval stays, and the verifier runs.
+		return step, t.next(ctx, role, model.VerifyChange(p))
+	case model.ActionRetryVerify:
+		return step, t.restart(ctx, role, model.RetryReview(p), model.RoleVerifier)
+	case model.ActionAwaitApproval:
+		return step, t.awaitApproval(ctx, role)
+	case model.ActionSpecDeclined:
+		return step, t.fail(ctx, role, model.TaskStep{Action: model.ActionFail, Reason: model.ReasonSpecDeclined,
+			Message: model.SpecDeclinedMessage(t.rec.PullRequestURL)})
+	case model.ActionTriaged:
+		return t.triaged(ctx, facts, step)
 	case model.ActionOpenPR:
 		return step, t.openPR(ctx, facts, false)
 	case model.ActionRerunChecks:
@@ -210,6 +266,7 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 		return step, t.rerunChecks(ctx, step)
 	case model.ActionRetry:
 		t.commentRound(ctx, facts, step)
+		t.rec.Findings = nil // the next round is reviewed afresh
 		return step, t.next(ctx, role, model.NextRound(p, step.Feedback))
 	case model.ActionRetryReview:
 		return step, t.restart(ctx, role, model.RetryReview(p), model.RoleReviewer)
@@ -223,10 +280,13 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 	case model.ActionMerge:
 		return t.merge(ctx, role, step)
 	case model.ActionFail:
+		if t.in.Triage {
+			return step, t.failTriage(ctx, step)
+		}
 		return step, t.fail(ctx, role, step)
 	}
 	// What the operator alone does (a sandbox suspended, paused or resumed in
-	// place, a Standard change, a spec, a verification) waits here, saying so.
+	// place, a Standard change) waits here, saying so.
 	return model.TaskStep{Action: model.ActionWait, Reason: ReasonNotBuilt, Message: fmt.Sprintf(
 		"%s: this runtime does not %s yet", step.Message, step.Action)}, nil
 }
@@ -267,15 +327,22 @@ func (t *taskTick) restart(ctx context.Context, role string, p model.TaskProgres
 // it offers the same turn again, which Offer takes as one.
 func (t *taskTick) offer(ctx context.Context, role string) error {
 	agent := t.in.Implementer
-	if role == model.RoleReviewer {
+	switch role {
+	case model.RoleReviewer:
 		agent = t.in.Reviewer
+	case model.RoleVerifier:
+		agent = t.in.Verifier
 	}
 	p := model.StartRun(t.rec.Progress, role)
 	if err := t.save(ctx, p); err != nil {
 		return err
 	}
-	order := model.WorkOrder{Task: t.in.Task, Issue: t.in.Issue, Branch: model.TaskBranch(t.in.Task), Role: role,
-		Agent: agent, Round: p.Round, Lease: t.in.Lease, Goal: t.in.Goal}
+	branch := model.TaskBranch(t.in.Task)
+	if t.in.Triage {
+		branch = ports.DefaultBranch // a triager reads main, and pushes nothing
+	}
+	order := model.WorkOrder{Task: t.in.Task, Issue: t.in.Issue, Branch: branch, Role: role,
+		Agent: agent, Round: p.Round, Lease: t.in.Lease, Goal: t.in.Goal, Spec: t.in.Spec}
 	if role == model.RoleImplementer {
 		order.Feedback = p.Feedback
 	}
@@ -296,8 +363,8 @@ func (t *taskTick) openPR(ctx context.Context, facts model.TaskFacts, again bool
 	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
 	defer cancel()
 	pr, err := t.host.OpenPullRequest(hostCtx, t.in.Repo, model.TaskBranch(t.in.Task), ports.DefaultBranch,
-		PullTitle(t.in.Title, t.in.Task), PullBody(PullBodyInput{Task: t.in.Task, Issue: t.in.Issue,
-			Implementer: t.in.Implementer, Reviewer: t.in.Reviewer, Round: facts.Round, Summary: res.Summary}))
+		t.pullTitle(), PullBody(PullBodyInput{Task: t.in.Task, Issue: t.in.Issue, Implementer: t.in.Implementer,
+			Reviewer: t.in.Reviewer, Verifier: t.in.Verifier, Round: facts.Round, Summary: res.Summary}))
 	if err != nil {
 		return &HostError{Err: err}
 	}
@@ -388,12 +455,21 @@ func (t *taskTick) merge(ctx context.Context, role string, step model.TaskStep) 
 				"Approved with green checks; waiting for a person to merge %s", t.rec.PullRequestURL)}, nil
 		}
 		if err := t.host.MergePullRequest(hostCtx, t.in.Repo, t.rec.PullRequest, p.Commit,
-			PullTitle(t.in.Title, t.in.Task), fmt.Sprintf("Task %s, round %d.", t.in.Task, p.Round)); err != nil {
+			t.pullTitle(), fmt.Sprintf("Task %s, round %d.", t.in.Task, p.Round)); err != nil {
 			return step, &HostError{Err: err}
 		}
 	}
-	// Merged, by theos or by a person: the issue closes with it.
+	if t.in.Spec {
+		// A spec's issue stays open: its criteria go into it, and it is ready.
+		if err := t.specMerged(hostCtx); err != nil {
+			return step, &HostError{Err: err}
+		}
+		return step, t.end(ctx, role, model.TaskEnd{Phase: model.TaskMerged, Reason: "Merged", Message: step.Message})
+	}
+	// Merged, by theos or by a person: what the review and the verification
+	// left is filed, and the issue closes with it.
 	if t.in.Issue > 0 {
+		t.fileFindings(hostCtx)
 		if err := t.host.CloseIssue(hostCtx, t.in.Repo, t.in.Issue); err != nil {
 			t.in.Log.Info("Could not close the merged Task's issue", "issue", t.in.Issue, "error", err.Error())
 		}

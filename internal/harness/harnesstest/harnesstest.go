@@ -33,15 +33,23 @@ import (
 	"github.com/JairJosafath/theos/internal/model"
 )
 
-// Project is the project the suite renders: one Crew with an implementer
-// and a reviewer, each on a model of its own.
+// Project is the project the suite renders: one Crew with every role, an
+// implementer, a reviewer, a triager, a spec writer and a verifier, each
+// on a model of its own.
 func Project() method.Project {
 	return method.Project{Name: "shop", Host: "github", Crews: []method.Crew{{Name: "orders", Container: "orders-api",
 		Parallel: 2, Agents: []method.Agent{
 			{Name: "builder", Role: model.RoleImplementer, Model: "model-for-building", Description: "Builds."},
 			{Name: "critic", Role: model.RoleReviewer, Model: "model-for-reviewing"},
+			{Name: "sorter", Role: model.RoleTriager, Model: "model-for-triage"},
+			{Name: "scribe", Role: method.RoleSpecWriter, Model: "model-for-specs"},
+			{Name: "tester", Role: model.RoleVerifier, Model: "model-for-verifying"},
 		}}}}
 }
+
+// roleWords name the roles in the suite's problems.
+var roleWords = map[string]string{model.RoleImplementer: "implementer", model.RoleReviewer: "reviewer",
+	model.RoleTriager: "triager", method.RoleSpecWriter: "spec writer", model.RoleVerifier: "verifier"}
 
 // Run runs the suite on h and fails t with each problem Check finds.
 func Run(t *testing.T, h harness.Harness) {
@@ -57,8 +65,9 @@ func Run(t *testing.T, h harness.Harness) {
 // whole in one that names its subagent (and its model, where the harness
 // runs each role on its own), theos mcp named where the harness speaks
 // MCP, and the generated marker in each file but JSON. Where the harness
-// enforces each role's tools (RoleGrants), the reviewer neither starts
-// agents nor writes, and the implementer writes.
+// enforces each role's tools (RoleGrants), no role starts agents, the
+// reviewer, the triager and the verifier write nothing, the triager runs
+// no command either, and the implementer and the spec writer write.
 func Check(h harness.Harness) []string {
 	c := &checker{}
 	if h.Name() == "" || strings.ContainsAny(h.Name(), " \t\n") {
@@ -99,14 +108,26 @@ func (c *checker) fail(format string, args ...any) {
 	c.problems = append(c.problems, fmt.Sprintf(format, args...))
 }
 
-// grants checks the roles' enforced tools.
+// grants checks the roles' enforced tools: a triager and a verifier change
+// nothing on main (#337), the triager writing no file at all and the
+// verifier running the build alone.
 func (c *checker) grants(g harness.RoleGrants) {
 	if r := g.Grants(model.RoleReviewer); r.Spawn || r.Write {
 		c.fail("the reviewer may start agents (%v) or write (%v): its verdict is its own, and it changes nothing",
 			r.Spawn, r.Write)
 	}
-	if i := g.Grants(model.RoleImplementer); !i.Write {
-		c.fail("the implementer can't write")
+	if r := g.Grants(model.RoleTriager); r.Spawn || r.Write || r.Shell {
+		c.fail("the triager may start agents (%v), write (%v) or run commands (%v): a triage writes no file",
+			r.Spawn, r.Write, r.Shell)
+	}
+	if r := g.Grants(model.RoleVerifier); r.Spawn || r.Write || !r.Shell {
+		c.fail("the verifier may start agents (%v) or write (%v), or can't run the build (%v): it runs the "+
+			"change and pushes nothing", r.Spawn, r.Write, r.Shell)
+	}
+	for _, role := range []string{model.RoleImplementer, method.RoleSpecWriter} {
+		if r := g.Grants(role); !r.Write || r.Spawn {
+			c.fail("the %s can't write (%v), or may start agents (%v)", roleWords[role], !r.Write, r.Spawn)
+		}
 	}
 }
 
@@ -145,7 +166,7 @@ func (c *checker) roles(p method.Project, files []harness.File, caps harness.Cap
 	if len(holding(method.Playbook(p))) == 0 {
 		c.fail("no file holds the lead's playbook whole")
 	}
-	word := map[string]string{model.RoleImplementer: "implementer", model.RoleReviewer: "reviewer"}
+	word := roleWords
 	for _, a := range p.Crews[0].Agents {
 		boundaries := method.Boundaries(a.Role)
 		for _, want := range []string{"AGENTS.md", method.CommandHeartbeat} {

@@ -275,3 +275,17 @@ func TestImports(t *testing.T) {
 		}
 	}
 }
+
+// #337: a triage tick on a store that keeps no Triage Tasks does nothing
+// for a Crew without a triager, and is refused for one with.
+func TestTriageTickNeedsATriageStore337(t *testing.T) {
+	rt := fake.NewRuntime()
+	if step, err := engine.TriageTick(context.Background(), rt, nil, engine.TriageInput{Container: container}); err != nil ||
+		step.Start != nil || step.Active != "" {
+		t.Errorf("TriageTick without a triager = %+v, %v; want nothing", step, err)
+	}
+	if _, err := engine.TriageTick(context.Background(), rt, nil, engine.TriageInput{Container: container,
+		Triager: "triager", ContainerReady: true}); err == nil {
+		t.Error("TriageTick with a triager on a store that keeps no Triage Tasks: no error")
+	}
+}

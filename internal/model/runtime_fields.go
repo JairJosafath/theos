@@ -39,9 +39,6 @@ const (
 	// ReasonCostUnreported: the runtime doesn't read what a run cost, so no
 	// budget or token limit stops one.
 	ReasonCostUnreported = "CostUnreported"
-	// ReasonRoleNotBuilt: the runtime plays the implementer and the
-	// reviewer only.
-	ReasonRoleNotBuilt = "RoleNotBuilt"
 	// ReasonHarnessNotBuilt: the runtime writes no files for the Agent's
 	// harness; the harness gets the work tools over MCP only.
 	ReasonHarnessNotBuilt = "HarnessNotBuilt"
@@ -63,9 +60,6 @@ type Capabilities struct {
 	Schedules bool
 	// Costs means the runtime reads what a run cost (else CostUnreported).
 	Costs bool
-	// AllRoles means the triager, spec writer and verifier play their roles
-	// (else RoleNotBuilt).
-	AllRoles bool
 	// Harnesses are the harnesses the runtime builds; empty means every one
 	// the API takes. Another is HarnessNotBuilt.
 	Harnesses []string
@@ -73,12 +67,12 @@ type Capabilities struct {
 
 // OperatorCapabilities are the operator's: everything.
 func OperatorCapabilities() Capabilities {
-	return Capabilities{Merges: true, Sandboxes: true, Schedules: true, Costs: true, AllRoles: true}
+	return Capabilities{Merges: true, Sandboxes: true, Schedules: true, Costs: true}
 }
 
 // LeadCapabilities are the lead runtime's, a Claude Code session that
-// drives theos (decision 6's table): the implementer and the reviewer on
-// claude-code, a person merging.
+// drives theos (decision 6's table): every role, the triager, spec writer
+// and verifier included since #337, on claude-code, a person merging.
 func LeadCapabilities() Capabilities {
 	return Capabilities{Harnesses: []string{HarnessClaudeCode}}
 }
@@ -97,8 +91,6 @@ func (caps Capabilities) honours(reason string) bool {
 		return caps.Schedules
 	case ReasonCostUnreported:
 		return caps.Costs
-	case ReasonRoleNotBuilt:
-		return caps.AllRoles
 	case ReasonPersonMerges:
 		return caps.Merges
 	}
@@ -129,10 +121,10 @@ var CrewFields = map[string]string{
 	"parallel":        "",
 	"paused":          "",
 	"pauseRuns":       ReasonNoSandbox,
-	"triager":         ReasonRoleNotBuilt,
-	"specWriter":      ReasonRoleNotBuilt,
-	"specApproval":    ReasonRoleNotBuilt,
-	"verifier":        ReasonRoleNotBuilt,
+	"triager":         "",
+	"specWriter":      "",
+	"specApproval":    "",
+	"verifier":        "",
 	"schedules":       ReasonNoScheduler,
 	"tagReleases":     ReasonNoScheduler,
 	"prepareReleases": ReasonNoScheduler,
@@ -239,8 +231,6 @@ func says(reason string) string {
 			"tagged or published"
 	case ReasonCostUnreported:
 		return "this runtime doesn't read what a run costs: no budget or token limit stops one"
-	case ReasonRoleNotBuilt:
-		return "this runtime plays the implementer and the reviewer only (#337)"
 	case ReasonHarnessNotBuilt:
 		return "this runtime writes no files for this harness; it gets the work tools over MCP only"
 	case ReasonPersonMerges:
