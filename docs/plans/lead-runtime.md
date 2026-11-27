@@ -634,6 +634,94 @@ What the later slices of #336 must do:
   it lasts. In the engine it lasts only until the same tick's restart ends
   the turn. A slice that lets it last longer leaves it out of the count.
 
+**Step 12 as built (slice 2: the turn's offer on the tick)** (`internal/controller/task_tick.go`,
+`internal/engine/task.go`, `ports.Preparer`). `TaskReconciler.Reconcile` now
+reads the Task, its Container and Agents, calls `engine.TaskTick` and writes
+the status. The tick reads the record from the status, the run through the
+Task's Workers, decides with `model.NextTaskStep`, and offers a turn (the
+start of an implement, review or verify run) through the Workers. Every
+other step is the reconciler's `apply`, called from inside the tick, as it
+was. Every Task envtest spec passes unchanged. Choices the plan left open:
+- **The group moved is the turn's read and offer**: the run read back
+  (`Workers.Run`, which `TaskReconciler.facts` now takes from the tick
+  instead of reading the Sandbox itself) and the three start actions
+  (`Workers.Prepare`, then the engine's save of `model.StartRun`, then
+  `Workers.Offer`). The turn's **end and restart did not move**: the
+  engine's `restart` (Rerun, RetryReview, ResolveConflicts) ends the run,
+  saves and offers the turn again in the same tick, while the operator
+  ends the run, writes the status with its reason (`Interrupted`,
+  `ReviewerFailed`, `ResolvingConflicts`) and offers it on the next pass,
+  through the start's gates (credentials, the environments leased under the
+  new Sandbox's name). Moving them would change the status between passes
+  that the specs read, so they stay `apply`'s, with every other `End`.
+- **Three engine extensions, each optional**, so the lead runtime and the
+  fakes tick as before: `TaskInput.Facts` reads the Task's facts in place
+  of the engine's reads of the host (it gets the record's facts and the
+  run, as `CrewInput.Before` gets the Crew's); `TaskInput.Carry` is asked
+  first for each step decided and carries out those it returns true for,
+  after which the engine reads the record back from the store; and
+  `ports.Preparer`, an optional part of `Workers`, readies a turn before the
+  engine saves its start. The operator passes no host: with `Facts` set and
+  only offers left to it, the engine needs none, and a step that needs the
+  host with none is an error, never a nil call.
+- **The pre-offer gates are `ports.Preparer`**, not a typed wait `build`
+  returns: `build` runs inside `Offer`, after the engine saved the start,
+  and a held start must save nothing, or the status would be written
+  Implementing with no Sandbox. `taskTurn.prepare` is `startRun`'s first
+  half (`runInputs`, `continueEarlierTry` and `startAtReview`,
+  `leaseEnvironments` under the name the Sandbox will have, the branch and a
+  Benchmark's base); held, the status says why and the reconcile's
+  requeue is the gate's. The engine says `ReasonOfferHeld`; the reconciler
+  keeps the step decided for `setPaused` and `queueForSlot`, as before.
+  A ready Preparer may have changed the record (an earlier try's pull
+  request and feedback taken over): the engine reads it back and saves the
+  start on it, and refuses a readying that moved the round.
+- **The store is the status in memory** (`statusStore`): `Progress` from it
+  (`recordOf`, which the Crew's store shares), `SaveProgress` into it, a
+  final phase ending the Task as `end` does. `PhaseSince` is read, never
+  written: `writeStatus` stamps a phase change, as it always has. `Tasks`
+  and `Start` are refused; the Crew's store has them.
+- **What the offer says** is the reconciler's, after the tick
+  (`taskTurn.started`): the `Running` condition, and the first run's
+  comments (`announce`, `noteContinued`) only when the offer made the
+  Sandbox (`sandboxWorkers.created`), never when it found it made (#906).
+  An offer that finds its Sandbox made also forgets `agentBackAt`, as
+  `startRun` did. `startRun` is gone; the Plan, Triage and Score reconciles
+  start their runs their own way, as before.
+- Tests: tier 1, `TestTaskTickHoldsAnOfferItsWorkersAreNotReadyFor336`,
+  `TestTaskTickStartsOnTheRecordTheWorkersReadied336`,
+  `TestTaskTickDecidesOnTheRuntimesFacts336`,
+  `TestTaskTickLeavesTheRuntimeItsSteps336` and `TestTaskTickWithNoHost336`
+  (the engine on the fakes); `TestStatusStoreKeepsTheReconcilesStatus336`,
+  `TestSandboxWorkersPrepareAndSayWhatTheyMade336` and
+  `TestTaskTurnLeavesTheEngineTheStarts336` (the operator's adapters on
+  controller-runtime's fake client); slice 1's contract runs unchanged.
+  Tier 4: every Task envtest spec, unchanged, runs the reconciler on the
+  tick.
+
+What the remaining slices of #336 must do:
+- **Slice 3, the turn's end and restart.** Rerun, RetryReview,
+  ResolveConflicts, NextRound (Retry), Verify and RetryVerify through the
+  engine's `next` and `restart`, with `Workers.End`. The engine's restart
+  must offer on a later tick where the Workers ready a turn (`Preparer`),
+  so the start's gates run for the new Sandbox's name; and the Progressing
+  reason each step writes needs a place: a reason the engine's step carries
+  that the reconciler writes after the tick, as `started` does for
+  `Running`.
+- **Suspend, resume and pause** as optional parts of `Workers`
+  (`ports.Suspender`, `ports.Resumer`, a pauser) on `suspendRun`,
+  `resumeRun` and `syncPause`, which `taskTurn.carry` calls now.
+- **The host actions** (open, merge, approve, comment as they write
+  status), the Standard change, specs, verification, a person's approval
+  and rules, budgets: each moves when the engine carries it as the
+  operator does, and `Carry` hands it over. With the last, `Carry` and
+  `Facts` go, and the facts are the engine's reads through the ports.
+- **The Plan, Triage and Score reconciles** go on the tick last; their
+  roles' Sandboxes are named by `model.SandboxName`, so the same Workers
+  serve them.
+- `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
+  one last past its tick yet.
+
 **Step 13 as built** (`internal/engine/triage.go`, `internal/engine/task_roles.go`,
 `internal/model/answers.go`, `internal/model/lead_roles.go`). All three
 roles are built; none is left `RoleNotBuilt`. Choices the plan left open:

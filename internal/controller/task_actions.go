@@ -56,7 +56,9 @@ func (a taskAgents) forRole(role string) *c4v1beta1.Agent {
 	return a.implementer
 }
 
-// apply does one step and records it in status.
+// apply does one step and records it in status. A turn's start (a start
+// action) is not here: the engine's Task tick offers it through the Task's
+// Workers (task_tick.go, #336).
 func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -69,9 +71,6 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 	switch step.Action {
 	case model.ActionWait:
 		return r.wait(ctx, task, status, step), nil
-
-	case model.ActionStartImplement, model.ActionStartReview, model.ActionStartVerify:
-		return r.startRun(ctx, task, status, container, agents, startRole(step.Action), step.Message)
 
 	case model.ActionVerify, model.ActionRetryVerify:
 		return r.applyVerify(ctx, task, status, container, agents, step)
@@ -303,74 +302,6 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, statu
 	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.dropRun(ctx, task, ended)
 }
 
-// startRun creates the sandbox for this round's role, after making sure the
-// Container's agent Git access and the Agent's credentials exist.
-func (r *TaskReconciler) startRun(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	container *c4v1beta1.Container, agents taskAgents, role, message string) (ctrl.Result, error) {
-	in, result, err := r.runInputs(ctx, task, status, container, agents, role)
-	if in == nil {
-		return result, err
-	}
-	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
-	defer cancel()
-	firstIssueRun := task.Spec.Issue > 0 && model.FirstRun(progressOf(status))
-	if firstIssueRun {
-		commit, err := r.continueEarlierTry(gitCtx, in.provider, in.repo, task, status)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if commit != "" {
-			return r.startAtReview(ctx, task, status, commit)
-		}
-	}
-
-	// The run's environments are leased before its sandbox, under the name
-	// the sandbox will have: a run waiting for one starts nothing.
-	next := status.DeepCopy()
-	setProgress(next, model.StartRun(progressOf(next), role))
-	envs, wait, err := r.leaseEnvironments(ctx, task, status, container, role, sandboxName(task, next, role), in.labels)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if wait != nil {
-		return r.waitForEnvironment(task, status, wait), nil
-	}
-
-	setProgress(status, model.StartRun(progressOf(status), role))
-	if status.Branch == "" {
-		status.Branch = model.TaskBranch(task.Name)
-	}
-	if b := task.Spec.Benchmark; b != nil && role == model.RoleImplementer {
-		// A Benchmark's Task branches from its pinned base: the implementer
-		// works on the branch it finds.
-		if err := ensureBranchAt(gitCtx, in.provider, in.repo, status.Branch, b.Base); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-	name := sandboxName(task, status, role)
-	sandbox, err := r.runSandbox(ctx, task, status, container, agents, role, name, in, envs)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	err = r.Create(ctx, sandbox)
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return ctrl.Result{}, err
-	}
-	// Comment with the sandbox that starts the first run, not when a retry
-	// finds it made: then the status write after it failed, and the comments
-	// are there.
-	if err == nil && (firstIssueRun || firstReviewAtStart(status, role)) {
-		if status.Continues != "" {
-			r.noteContinued(gitCtx, in.provider, in.repo, task, status)
-		}
-		r.announce(gitCtx, in.provider, in.repo, task, container, agents)
-	}
-	status.Sandbox, status.SandboxPod, status.AgentBackAt = name, "", nil
-	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", message, name))
-	logf.FromContext(ctx).Info("Started agent sandbox", "sandbox", name, "role", role, "round", status.Round)
-	return ctrl.Result{}, nil
-}
-
 // runInput is what a run of a Container's Task gets from its Git host, read
 // before each run, a resumed one too: the fence and the goal as they are now.
 type runInput struct {
@@ -448,14 +379,26 @@ func (r *TaskReconciler) runInputs(ctx context.Context, task *c4v1beta1.Task, st
 func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, role, name string, in *runInput,
 	envs []runEnvironment) (*unstructured.Unstructured, error) {
+	run, err := r.sandboxRunOf(ctx, task, status, container, agents, role, name, in, envs)
+	if err != nil {
+		return nil, err
+	}
+	return buildSandbox(run, r.Scheme, r.now())
+}
+
+// sandboxRunOf is what the Sandbox named name for a run of role on the
+// Container is made from.
+func (r *TaskReconciler) sandboxRunOf(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, agents taskAgents, role, name string, in *runInput,
+	envs []runEnvironment) (sandboxRun, error) {
 	agent := agents.forRole(role)
 	story := c4Context(ctx, r.Client, container)
 	npmSecret, pypiSecret, err := r.packagesSecrets(ctx, container)
 	if err != nil {
-		return nil, err
+		return sandboxRun{}, err
 	}
 	repo := in.repo
-	return buildSandbox(sandboxRun{
+	return sandboxRun{
 		task: task, status: status, container: container, agent: agent, name: name, role: role,
 		repoURL: repo.CloneURL, gitSecret: in.gitSecret, context: story.Text(), goal: in.goal,
 		maxRounds: agents.implementer.Spec.MaxRounds, related: story.RelatedRepositories(),
@@ -466,7 +409,7 @@ func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, s
 		npmSecret: npmSecret, pypiSecret: pypiSecret,
 		pullSecrets: r.SharedPullSecrets, modelProxyURL: r.sandboxModelProxy(agent),
 		environments: envs,
-	}, r.Scheme, r.now())
+	}, nil
 }
 
 // startAtReview starts a try that continues an earlier try's green, unreviewed
@@ -474,12 +417,11 @@ func (r *TaskReconciler) runSandbox(ctx context.Context, task *c4v1beta1.Task, s
 // starts the review (model.StartsAtReview). The review's first sandbox posts
 // the comments a first run does, so a failed status write here posts none.
 func (r *TaskReconciler) startAtReview(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	commit string) (ctrl.Result, error) {
+	commit string) {
 	setProgress(status, model.InheritedChecks(progressOf(status), commit))
 	r.progress(task, status, metav1.ConditionTrue, "Checking", model.StartAtReviewMessage(commit, status.Continues))
 	logf.FromContext(ctx).Info("Starting a try at the earlier try's review", "commit", commit,
 		"earlierTask", status.Continues)
-	return ctrl.Result{}, nil // the status write triggers the next step
 }
 
 // firstReviewAtStart reports whether role's run is the first of a try that
