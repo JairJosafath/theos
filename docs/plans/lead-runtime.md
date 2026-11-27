@@ -1136,6 +1136,101 @@ What the remaining slices of #336 must do:
 - `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
   one last past its tick yet.
 
+**Step 12 as built (slice 7: a Task's own ends, the Standard change and a person's approval on the tick)** (`internal/engine/task_change.go`,
+`internal/controller/task_change.go`, `engine.Proposer`, `model.WithoutNothing`). The engine files an
+implementer's proposal as a Standard change through the operator and blocks the
+Task on it (Propose), puts the Task back in its round once the change merged
+(Resume), ends a resumed Task its change left nothing to do
+(DoneByStandardChange) and one whose issue needs no change (NothingToDo), and
+puts an approved pull request up for a person (AwaitApproval, a spec's and a
+change its Crew's approval rules hold) or declines a spec a person closed
+(SpecDeclined). `Carry` no longer carries any of them where the engine acts on
+the run the reconciler would; what it still carries itself is the waits. Every
+Task envtest spec passes unchanged. Choices the plan left open:
+- **The change's record is the runtime's, not the engine's**: an optional
+  `engine.Proposer` (`TaskInput.Proposer`), the operator's `taskTurn.Propose`,
+  files the proposal as `propose` did (`fileProposal`: the Standard change
+  issue, the dependency, the comment, the count) and keeps the change on
+  `status.standardChange`; the facts the operator reads give it back as
+  `model.ChangeFacts` while the Task is Blocked, as before. A record field
+  would have had every store, `hostrun`'s among them, keep a change only the
+  operator files. The engine ends the run and saves `model.Proposed` with the
+  round's summary, on the record read back after `Propose`, so a new change is
+  resumed in no round as `propose` had it. `Proposed.Instead` is a failure in
+  the proposal's place (a refusal, `model.ProposeRefusal`), carried out as the
+  engine's `fail` and said through `Ending`; `Proposed.End` ends the Task with
+  nothing said (its issue closed during the round, `model.IssueClosed`), as
+  `propose` ended it with no comment and no hand back.
+- **The resumed round needed no new field**: `model.ResumeRound` keeps it in
+  `TaskProgress.ResumedRound`, which the operator's store already maps to
+  `status.standardChange.resumedRound`. Resume and DoneByStandardChange are the
+  engine's only where a Proposer is given, since only a runtime that files a
+  change can block on one; without one they, and Propose, wait `NotBuilt`, as
+  before (`TestTaskTickWaitsOnAStandardChangeWhereNoRuntimeFilesOne336`). The
+  lead runtime's runs report no proposal and its facts no change, so it never
+  reaches them.
+- **What the steps say goes through `Ending`**, which now covers Resume (the
+  issue told, the proposal's branch deleted: `sayResumed`), DoneByStandardChange
+  (an earlier pull request closed, the branch deleted, the issue closed naming
+  the change: `closeDoneByChange`), NothingToDo (the issue closed with the
+  agent's words: `closeNothing`) and AwaitApproval (the reviewer's approval, or
+  the verifier's, as its own account, the review kept: `approveForPerson`); the
+  engine reads the record back after each, keeping the approving run's findings
+  for AwaitApproval. What each says in the status follows the tick
+  (`changeCarried`: `WaitingForStandardChange`, `Resumed`, `AwaitingApproval`
+  with an earlier head's approval dropped and a recheck, `awaitingPerson`; the
+  logs), and a refused proposal's or a declined spec's issue goes back to a
+  person (`handBack`), as `fail` hands it back. `apply`'s `propose`, `resume`,
+  `doneByStandardChange`, `nothingToDo` and `applySpec` share the same helpers
+  for a status that names a Sandbox the counters don't name.
+- **The engine's own NothingToDo, which changes the lead runtime's**: with no
+  `Ending`, the engine comments the agent's words on the issue
+  (`model.NothingComment`), takes `status/in-progress` off and closes it, and
+  ends the Task Merged, `NothingToDo`, its summary the agent's reason; before,
+  it waited `NotBuilt` there. And the rule that a "nothing to do" counts only on
+  an issue's build with no pull request and no Benchmark moved into the model
+  (`model.WithoutNothing`, which the operator's `withoutNothing` now calls), so
+  the engine applies it to every runtime's run: in the lead runtime a
+  `nothing` marker on a branch with a pull request now fails the round, where
+  it would have ended the Task. No `theos_*` tool posts a `nothing` marker
+  yet, so a session reaches this only by posting the marker itself;
+  [no-cluster.md](../no-cluster.md) says it. The engine's own AwaitApproval and
+  SpecDeclined are unchanged.
+- **A person's approval and rules and budgets have no steps left to move**:
+  the approval rules are the operator's facts (`TaskFacts.Approval`, which
+  `Facts` gives) and AwaitApproval carries out their step; a budget is a wait
+  (`OverBudget`). Verification's own steps (StartVerify, Verify, RetryVerify)
+  moved with slices 2 and 3.
+- **What stays in `apply`, and why.** The waits: the engine's wait does
+  nothing, and what a wait says (`Waiting`, `WaitingForSlot`, `BaseRed`,
+  `OverBudget`, `WaitingForStandardChange`, an agent due back, each with its
+  own requeue) is the operator's status vocabulary; moving them is only moving
+  `r.wait` after the tick, with `Carry` then gone, and it belongs with removing
+  `Carry` and `Facts`. And every step on a status that names a Sandbox the
+  counters don't name, as in the earlier slices.
+- Tests: tier 1, `TestTaskTickBlocksATaskOnTheStandardChangeItsRuntimeFiles336`
+  (filed, refused, its issue closed), `TestTaskTickWaitsOnAStandardChangeWhereNoRuntimeFilesOne336`,
+  `TestTaskTickResumesAndEndsATaskByItsStandardChange336`,
+  `TestTaskTickEndsATaskWithNothingToDo336` (which failed before: the engine
+  waited `NotBuilt`; and a nothing on a branch with a pull request) and
+  `TestTaskTickPutsAPullRequestUpForAPersonInTheRuntimesWords336` in the engine;
+  `TestTaskTurnLeavesTheEngineTheTasksOwnEnds336`, `TestTaskTurnProposesAsTheReconciler336`
+  and `TestTaskTurnSaysWhatATasksOwnEndSays336` on the operator's turn;
+  `TestWithoutNothing` unchanged on the operator's wrapper. Tier 4: every Task
+  envtest spec, unchanged, among them the Standard change's, the spec's, the
+  approval rules' and "nothing to do", now runs these steps through the engine.
+  The Gitea client is unchanged.
+
+What the remaining slices of #336 must do:
+- **The waits**: `r.wait` after the tick, for the engine's wait steps, and with
+  them `Carry` goes; then `Facts` and `Ending` go as the engine reads the
+  operator's facts through the ports (the slots, budgets, pauses, the approval
+  rules, the Standard change's outcome, the base's checks), which needs ports
+  for what only the operator reads (its Crews, Agents and other Tasks).
+- **The Plan, Triage and Score reconciles** go on the tick last.
+- `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
+  one last past its tick yet.
+
 **Step 13 as built** (`internal/engine/triage.go`, `internal/engine/task_roles.go`,
 `internal/model/answers.go`, `internal/model/lead_roles.go`). All three
 roles are built; none is left `RoleNotBuilt`. Choices the plan left open:

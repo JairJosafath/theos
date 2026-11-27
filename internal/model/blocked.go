@@ -99,6 +99,22 @@ func NothingNote(summary string) string {
 	})
 }
 
+// WithoutNothing is run with a "nothing to do" the Task can't end on turned
+// into the round with no change it was before (#72): a Task with no issue to
+// close (issue 0), one with a pull request (pullOpen), whose branch a
+// reviewer judges as it is, and a Benchmark's Task, whose change is what is
+// measured. Every runtime reads its runs through it: the operator's and the
+// engine's (#336).
+func WithoutNothing(run RunState, issue int, pullOpen, benchmark bool) RunState {
+	if run.Result == nil || run.Result.Nothing == "" || issue > 0 && !pullOpen && !benchmark {
+		return run
+	}
+	result := *run.Result
+	result.Error, result.Nothing = NoChangeError(result.Summary), ""
+	run.Result = &result
+	return run
+}
+
 // NothingMessage is the status of a Task whose agent found nothing to do.
 func NothingMessage(note string) string {
 	return "The agent found the issue needs no change, and it is closed: " + note

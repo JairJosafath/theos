@@ -174,36 +174,19 @@ func (r *TaskReconciler) waitingPull(ctx context.Context, task *c4v1beta1.Task, 
 
 // applySpec does a step of a pull request that waits for a person: a spec
 // waits for its approval or fails as declined, and a change its Crew's
-// approval rules hold waits for its own (awaitPerson).
+// approval rules hold waits for its own. On the engine's Task tick the
+// engine carries both out, with the same words (taskTurn.ending, #336).
 func (r *TaskReconciler) applySpec(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
 	if step.Action == model.ActionSpecDeclined {
 		return ctrl.Result{}, r.failWith(ctx, task, status, container, model.SpecDeclined(status.PullRequestURL))
 	}
-	if !isSpec(task) {
-		return r.awaitPerson(ctx, task, status, container, agents, step)
-	}
-	return r.awaitApproval(ctx, task, status, container, agents, step)
-}
-
-// awaitApproval posts the reviewer's approval of the spec on its pull request
-// and has the Task wait for a person's: its review point.
-func (r *TaskReconciler) awaitApproval(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
-	status.Review = r.reviewFrom(ctx, task, status)
-	r.approve(ctx, task, status, container, agents.reviewer)
+	r.approveForPerson(ctx, task, status, container, agents)
 	if err := r.endRun(ctx, task, status); err != nil {
 		return ctrl.Result{}, err
 	}
 	setProgress(status, model.AwaitApproval(progressOf(status)))
-	if status.Spec != nil {
-		status.Spec.ApprovedBy, status.Spec.ApprovedInChat = "", false
-	}
-	r.progress(task, status, metav1.ConditionTrue, model.ReasonAwaitingApproval,
-		model.SpecWaitMessage(int(task.Spec.Issue), status.PullRequestURL))
-	logf.FromContext(ctx).Info("Put the spec up for a person's approval", "url", status.PullRequestURL,
-		"round", status.Round, "message", step.Message)
-	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
+	return r.awaitingPerson(ctx, task, status, step), nil
 }
 
 // syncNeedsYou sets the Task's NeedsYou condition while its spec, or its

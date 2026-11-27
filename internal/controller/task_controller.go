@@ -284,9 +284,11 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// or paused in place, through the Task's Workers, and opens the round's
 	// pull request, runs its failed checks again, fails the Task, and
 	// updates an approved change's branch and merges it through the Task's
-	// host, the merge's operator-only parts the reconciler's (task_merge.go);
-	// the reconciler carries out every other step itself, until #336 moves
-	// the rest (task_tick.go).
+	// host, the merge's operator-only parts the reconciler's (task_merge.go),
+	// and ends a Task with nothing to do or done by its Standard change, files
+	// a proposal as one and resumes the round, and puts a pull request up for
+	// a person (task_change.go); the reconciler carries out the waits itself,
+	// until #336 moves them (task_tick.go).
 	turn := r.newTaskTurn(&task, status, &container, agents)
 	res, err := engine.TaskTick(ctx, turn, nil, turn.input(ctx))
 	if err != nil {
@@ -297,6 +299,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	turn.keptInPlace(res.Step)
 	turn.carried(ctx, res.Step)
 	turn.mergeCarried(ctx, res.Step)
+	turn.changeCarried(ctx, res.Step)
 	r.setPaused(&task, status, turn.step, turn.facts.Pause)
 	r.queueForSlot(status, turn.step, &turn.result)
 	syncNeedsYou(&task, status)

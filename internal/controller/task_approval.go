@@ -180,30 +180,49 @@ func (r *TaskReconciler) askRules(ctx context.Context, task *c4v1beta1.Task, sta
 	return nil
 }
 
-// awaitPerson puts a change its agents approved up for a person's approval,
-// as its Crew's approval rules ask: the reviewer's approval, or after it the
-// verifier's, goes on the pull request, and what the review left for the
-// merge stays in status.review.
-func (r *TaskReconciler) awaitPerson(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
-	if status.Phase == c4v1beta1.TaskVerifying {
-		// The reviewer's approval went on the pull request as the verification began.
+// approveForPerson posts the agents' approval of a pull request that waits
+// for a person, before the approving run ends: a spec's reviewer's approval
+// (its review point), or, for a change its Crew's approval rules hold, the
+// reviewer's, or after it the verifier's (the reviewer's went on the pull
+// request as the verification began). What the review left for the merge
+// stays in status.review.
+func (r *TaskReconciler) approveForPerson(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, agents taskAgents) {
+	switch {
+	case isSpec(task):
+		status.Review = r.reviewFrom(ctx, task, status)
+		r.approve(ctx, task, status, container, agents.reviewer)
+	case status.Phase == c4v1beta1.TaskVerifying:
 		r.postVerification(ctx, task, status, container, agents.verifier, ports.ReviewApprove)
-	} else {
+	default:
 		status.Review = r.reviewFindings(ctx, task, status)
 		r.approve(ctx, task, status, container, agents.reviewer)
 	}
-	if err := r.endRun(ctx, task, status); err != nil {
-		return ctrl.Result{}, err
+}
+
+// awaitingPerson says in the status that the Task's pull request waits for a
+// person, its approving run ended: a person's approval of an earlier head no
+// longer counts, and the Task looks again, as the Git host does not call back.
+func (r *TaskReconciler) awaitingPerson(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	step model.TaskStep) ctrl.Result {
+	log := logf.FromContext(ctx)
+	if isSpec(task) {
+		if status.Spec != nil {
+			status.Spec.ApprovedBy, status.Spec.ApprovedInChat = "", false
+		}
+		r.progress(task, status, metav1.ConditionTrue, model.ReasonAwaitingApproval,
+			model.SpecWaitMessage(int(task.Spec.Issue), status.PullRequestURL))
+		log.Info("Put the spec up for a person's approval", "url", status.PullRequestURL,
+			"round", status.Round, "message", step.Message)
+	} else {
+		if status.Approval != nil {
+			status.Approval.ApprovedBy, status.Approval.ApprovedInChat = "", false
+		}
+		r.progress(task, status, metav1.ConditionTrue, model.ReasonAwaitingApproval, changeWaitMessage(task, status))
+		log.Info("Put the change up for a person's approval", "url", status.PullRequestURL,
+			"round", status.Round, "message", step.Message)
 	}
-	setProgress(status, model.AwaitApproval(progressOf(status)))
-	if status.Approval != nil {
-		status.Approval.ApprovedBy, status.Approval.ApprovedInChat = "", false
-	}
-	r.progress(task, status, metav1.ConditionTrue, model.ReasonAwaitingApproval, changeWaitMessage(task, status))
-	logf.FromContext(ctx).Info("Put the change up for a person's approval", "url", status.PullRequestURL,
-		"round", status.Round, "message", step.Message)
-	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, nil
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}
 }
 
 // changeWaitMessage is the status of a change waiting for a person.

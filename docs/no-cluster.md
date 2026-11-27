@@ -125,6 +125,11 @@ session to work the project: its `AGENTS.md` is the loop.
    commit's CI runs end. With no failed run to run again, a commit pushed
    again has its failure read as it stands, and a runner's failure fails
    the Task `NoCIResult`, at no try, as does a rerun the host refuses.
+   An implementer whose turn ends with a `nothing` marker (the issue needs
+   no change, and why; no `theos_*` tool posts one yet) ends the Task
+   Merged, `NothingToDo`, as on a cluster: theos closes the issue with its
+   words and how to reopen it. On a branch whose pull request is open, it
+   fails the round, as any round that changed nothing.
 4. Changes asked for start round 2, the reviewer's words in the
    implementer's next work order. An approval makes `theos_next` say the
    Task waits for a person, `PersonMerges`. If main moved since the
