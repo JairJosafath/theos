@@ -92,6 +92,22 @@ type Workers interface {
 	End(ctx context.Context, task string, round int, role, why string) error
 }
 
+// Preparer is the part of Workers that readies a turn before the engine
+// offers it, asked for by interface (#336). The operator's Sandboxes have
+// it: before an agent gets a sandbox, its credentials and the Container's
+// agent access must exist, the Standard must be on main, the issue must be
+// open and the test environments the run needs leased; a try that
+// continues an earlier one's green commit starts at its review instead.
+// Workers whose sessions pull the work have nothing to ready.
+type Preparer interface {
+	// Prepare readies the turn w names, before the engine saves the start
+	// of its run. Not ready, the engine saves nothing and offers nothing
+	// this tick: why is the runtime's, which may have changed the Task's
+	// record through its store (a wait it says, an issue closed, a start
+	// at review), and the engine reads that record back.
+	Prepare(ctx context.Context, w WorkOrder) (ready bool, err error)
+}
+
 // WorkOrder is the turn Workers.Offer offers.
 type WorkOrder = model.WorkOrder
 

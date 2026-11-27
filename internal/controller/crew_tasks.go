@@ -148,15 +148,7 @@ func (s *crewTaskStore) Progress(ctx context.Context, task string) (ports.TaskRe
 	if err := s.reader.Get(ctx, client.ObjectKey{Namespace: s.crew.Namespace, Name: task}, &t); err != nil {
 		return ports.TaskRecord{}, err
 	}
-	rec := ports.TaskRecord{Progress: progressOf(&t.Status), PullRequest: int(t.Status.PullRequest),
-		PullRequestURL: t.Status.PullRequestURL, Summary: t.Status.Summary}
-	if rec.Progress.Phase == "" {
-		rec.Progress.Phase = model.TaskPending
-	}
-	if t.Status.PhaseChangedAt != nil {
-		rec.PhaseSince = t.Status.PhaseChangedAt.Time
-	}
-	return rec, nil
+	return recordOf(&t.Status), nil
 }
 
 // SaveProgress writes r into the Task's status.
@@ -165,9 +157,7 @@ func (s *crewTaskStore) SaveProgress(ctx context.Context, task string, r ports.T
 	if err := s.reader.Get(ctx, client.ObjectKey{Namespace: s.crew.Namespace, Name: task}, &t); err != nil {
 		return err
 	}
-	setProgress(&t.Status, r.Progress)
-	t.Status.PullRequest, t.Status.PullRequestURL = int32(r.PullRequest), r.PullRequestURL
-	t.Status.Summary = r.Summary
+	setRecord(&t.Status, r)
 	if !r.PhaseSince.IsZero() {
 		t.Status.PhaseChangedAt = &metav1.Time{Time: r.PhaseSince}
 	}

@@ -52,6 +52,11 @@ const annotationEndedRun = "theos.factory.io/ended-run"
 // names, in the Sandbox called name.
 type sandboxBuild func(ctx context.Context, order ports.WorkOrder, name string) (sandboxRun, error)
 
+// sandboxPrepare readies the turn order names, in the Sandbox called name,
+// before the engine saves its start (ports.Preparer): false holds the
+// offer, the reason in the Task's status (taskTurn.prepare).
+type sandboxPrepare func(ctx context.Context, order ports.WorkOrder, name string) (bool, error)
+
 // sandboxWorkers is the operator's ports.Workers for one Task's reconcile:
 // the Task's Sandboxes, named from status, the Task's status as this
 // reconcile leaves it, which Offer, Run and End keep as the reconciler
@@ -62,9 +67,19 @@ type sandboxWorkers struct {
 	task   *c4v1beta1.Task
 	status *c4v1beta1.TaskStatus
 	build  sandboxBuild
+	// prepare, when set, readies a turn before it is offered; nil readies
+	// every turn at once.
+	prepare sandboxPrepare
+	// created is the Sandbox the last Offer made, empty when it made none:
+	// a first run's comments go with the Sandbox that starts it, not with
+	// an offer that found it made (#906).
+	created string
 }
 
-var _ ports.Workers = (*sandboxWorkers)(nil)
+var (
+	_ ports.Workers  = (*sandboxWorkers)(nil)
+	_ ports.Preparer = (*sandboxWorkers)(nil)
+)
 
 // workers returns the Workers of task's reconcile, its status as the
 // reconcile leaves it, its Sandboxes made with build.
@@ -101,6 +116,19 @@ func (w *sandboxWorkers) sandbox(ctx context.Context, name string) (*unstructure
 	return sandbox, nil
 }
 
+// Prepare readies the turn order names, as the Task's reconcile readies a
+// run before its Sandbox (taskTurn.prepare); with no prepare, every turn is
+// ready.
+func (w *sandboxWorkers) Prepare(ctx context.Context, order ports.WorkOrder) (bool, error) {
+	if err := w.own(order.Task); err != nil {
+		return false, err
+	}
+	if w.prepare == nil {
+		return true, nil
+	}
+	return w.prepare(ctx, order, w.name(order.Round, order.Role))
+}
+
 // Offer makes the Sandbox of the turn order names, unless it is there: a
 // repeated offer makes nothing more. A Sandbox whose run was ended for its
 // claim goes, and the turn starts afresh in a new one.
@@ -108,6 +136,7 @@ func (w *sandboxWorkers) Offer(ctx context.Context, order ports.WorkOrder) error
 	if err := w.own(order.Task); err != nil {
 		return err
 	}
+	w.created = ""
 	name := w.name(order.Round, order.Role)
 	existing, err := w.sandbox(ctx, name)
 	if err != nil {
@@ -120,9 +149,9 @@ func (w *sandboxWorkers) Offer(ctx context.Context, order ports.WorkOrder) error
 		return fmt.Errorf("sandbox %s is still being deleted; its turn is offered again on the next pass", name)
 	case existing.GetAnnotations()[annotationEndedRun] == "":
 		// Offered already: a status whose write failed forgot it, as a
-		// repeated startRun finds it.
+		// repeated start finds it.
 		if w.status.Sandbox != name {
-			w.status.Sandbox, w.status.SandboxPod = name, ""
+			w.status.Sandbox, w.status.SandboxPod, w.status.AgentBackAt = name, "", nil
 		}
 		return nil
 	default:
@@ -140,13 +169,13 @@ func (w *sandboxWorkers) Offer(ctx context.Context, order ports.WorkOrder) error
 	if err != nil {
 		return err
 	}
-	if err := w.r.Create(ctx, sandbox); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return err
-		}
-		if afresh {
-			return fmt.Errorf("sandbox %s is still being deleted; its turn is offered again on the next pass", name)
-		}
+	switch err := w.r.Create(ctx, sandbox); {
+	case err == nil:
+		w.created = name
+	case !apierrors.IsAlreadyExists(err):
+		return err
+	case afresh:
+		return fmt.Errorf("sandbox %s is still being deleted; its turn is offered again on the next pass", name)
 	}
 	w.status.Sandbox, w.status.SandboxPod, w.status.AgentBackAt = name, "", nil
 	logf.FromContext(ctx).Info("Started agent sandbox", "sandbox", name, "role", order.Role, "round", order.Round)

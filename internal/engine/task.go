@@ -83,6 +83,20 @@ type TaskInput struct {
 	Lease time.Duration
 	Now   time.Time
 	Log   Logger
+	// Facts, when set, reads the Task's facts in place of the engine's
+	// reads of the host, for a runtime that reads more than the engine does
+	// yet (the operator, #336: a Standard change, slots, budgets, pauses, a
+	// person's approval and rules). It gets the facts from the record and
+	// the run the Workers read back, and returns what is decided on.
+	Facts func(ctx context.Context, facts model.TaskFacts) (model.TaskFacts, error)
+	// Carry, when set, is asked first to carry out each step decided: it
+	// returns true for a step it carried out itself, through the runtime,
+	// and the engine then does nothing more; false leaves the step to the
+	// engine. The operator carries every step but a turn's offer itself
+	// until #336 moves the rest (docs/plans/lead-runtime.md, step 12). The
+	// engine reaches the host only for a step Carry leaves it, so a runtime
+	// whose Carry leaves it only the offers may tick with no host.
+	Carry func(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (bool, error)
 }
 
 // TaskResult is what a Task tick did: the step it carried out, which a
@@ -105,8 +119,11 @@ const whyDone = "done"
 // step: a turn through Workers, a pull request, a merge and the issue
 // through the host, its progress through the store. A merge the runtime
 // can't do waits for a person (model.ReasonPersonMerges), and the tick after
-// the person's merge ends the Task Merged. The run side of the operator
-// (sandboxes, pauses, resumes, budgets) is not here: #336 moves it.
+// the person's merge ends the Task Merged. The operator's Task reconcile
+// runs on it too (#336): it gives its own facts (TaskInput.Facts) and
+// carries out every step but a turn's offer itself (TaskInput.Carry), and
+// its Workers ready a turn before it is offered (ports.Preparer). The rest
+// of the operator's run side (pauses, resumes, budgets) is still its own.
 func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput) (TaskResult, error) {
 	store, workers := rt.Store(), rt.Workers()
 	if workers == nil {
@@ -132,8 +149,49 @@ func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput
 		return TaskResult{}, err
 	}
 	step := model.NextTaskStep(facts)
+	if in.Carry != nil {
+		carried, err := in.Carry(ctx, facts, step)
+		if err != nil {
+			return TaskResult{Step: step, Record: t.rec}, err
+		}
+		if carried {
+			// The runtime carried it out, through its own store: its record
+			// is what the store keeps now.
+			return t.result(ctx, step)
+		}
+	}
+	if host == nil && !turnOnly(step.Action) {
+		return TaskResult{Step: step, Record: t.rec}, fmt.Errorf(
+			"the Task tick has no host to carry out %s", step.Action)
+	}
 	step, err = t.carry(ctx, facts, step)
+	if err == nil && step.Reason == ReasonOfferHeld {
+		return t.result(ctx, step)
+	}
 	return TaskResult{Step: step, Record: t.rec}, err
+}
+
+// result is the tick's result after a step the runtime carried out, or an
+// offer its Workers held: the record is read back from the store, which the
+// runtime may have changed.
+func (t *taskTick) result(ctx context.Context, step model.TaskStep) (TaskResult, error) {
+	rec, err := t.rt.Store().Progress(ctx, t.in.Task)
+	if err != nil {
+		return TaskResult{Step: step, Record: t.rec}, err
+	}
+	t.rec = rec
+	return TaskResult{Step: step, Record: rec}, nil
+}
+
+// turnOnly reports whether the engine carries out action without the host:
+// a wait, or a turn's offer.
+func turnOnly(action model.TaskAction) bool {
+	switch action {
+	case model.ActionNone, model.ActionWait, model.ActionStartImplement, model.ActionStartReview,
+		model.ActionStartVerify:
+		return true
+	}
+	return false
 }
 
 // taskTick is one Task tick's state.
@@ -204,6 +262,12 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 		}
 		facts.Run = run
 	}
+	if in.Facts != nil {
+		return in.Facts(ctx, facts)
+	}
+	if t.host == nil {
+		return facts, errors.New("the Task tick has no host to read the Task's facts from")
+	}
 	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
 	defer cancel()
 	if facts.Phase == model.TaskPending && in.Protected && in.ContainerReady && !in.Triage {
@@ -240,11 +304,11 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 	case model.ActionNone, model.ActionWait:
 		return step, nil
 	case model.ActionStartImplement:
-		return step, t.offer(ctx, t.in.RunRole(model.TaskImplementing))
+		return t.start(ctx, step, t.in.RunRole(model.TaskImplementing))
 	case model.ActionStartReview:
-		return step, t.offer(ctx, model.RoleReviewer)
+		return t.start(ctx, step, model.RoleReviewer)
 	case model.ActionStartVerify:
-		return step, t.offer(ctx, model.RoleVerifier)
+		return t.start(ctx, step, model.RoleVerifier)
 	case model.ActionVerify:
 		// The review's run ends; its approval stays, and the verifier runs.
 		return step, t.next(ctx, role, model.VerifyChange(p))
@@ -294,6 +358,21 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 // ReasonNotBuilt is the reason of a step a runtime has no way to carry out.
 const ReasonNotBuilt = "NotBuilt"
 
+// ReasonOfferHeld is the reason of a turn's start its Workers were not ready
+// to offer (ports.Preparer): why is the runtime's, and a later tick offers
+// it.
+const ReasonOfferHeld = "OfferHeld"
+
+// start offers role's turn, the step decided; a turn its Workers held waits.
+func (t *taskTick) start(ctx context.Context, step model.TaskStep, role string) (model.TaskStep, error) {
+	offered, err := t.offer(ctx, role)
+	if err != nil || offered {
+		return step, err
+	}
+	return model.TaskStep{Action: model.ActionWait, Reason: ReasonOfferHeld,
+		Message: step.Message + ": its Workers did not offer the turn yet"}, nil
+}
+
 // save stores p as the Task's progress, with when its phase changed.
 func (t *taskTick) save(ctx context.Context, p model.TaskProgress) error {
 	if p.Phase != t.rec.Progress.Phase {
@@ -320,12 +399,43 @@ func (t *taskTick) restart(ctx context.Context, role string, p model.TaskProgres
 	if err := t.next(ctx, role, p); err != nil {
 		return err
 	}
-	return t.offer(ctx, again)
+	// A turn its Workers hold is offered by a later tick, which decides its
+	// start again.
+	_, err := t.offer(ctx, again)
+	return err
 }
 
 // offer offers role's turn: the progress first, so a tick that stops after
-// it offers the same turn again, which Offer takes as one.
-func (t *taskTick) offer(ctx context.Context, role string) error {
+// it offers the same turn again, which Offer takes as one. Workers that
+// ready a turn first (ports.Preparer) are asked before the progress is
+// saved; not ready, nothing is saved or offered, and offer reports false.
+// Ready, the start is saved on the record as the store keeps it then: what
+// readying the turn changed in it (an earlier try's pull request and
+// feedback the operator took over) stays.
+func (t *taskTick) offer(ctx context.Context, role string) (bool, error) {
+	p, order := t.order(role)
+	if prep, ok := t.rt.Workers().(ports.Preparer); ok {
+		ready, err := prep.Prepare(ctx, order)
+		if err != nil || !ready {
+			return false, err
+		}
+		if t.rec, err = t.rt.Store().Progress(ctx, t.in.Task); err != nil {
+			return false, err
+		}
+		readied := order
+		if p, order = t.order(role); order.Round != readied.Round {
+			return false, fmt.Errorf("readying the %s turn of round %d moved the Task to round %d", role,
+				readied.Round, order.Round)
+		}
+	}
+	if err := t.save(ctx, p); err != nil {
+		return false, err
+	}
+	return true, t.rt.Workers().Offer(ctx, order)
+}
+
+// order is the start of role's run on the record, and the turn it offers.
+func (t *taskTick) order(role string) (model.TaskProgress, model.WorkOrder) {
 	agent := t.in.Implementer
 	switch role {
 	case model.RoleReviewer:
@@ -334,9 +444,6 @@ func (t *taskTick) offer(ctx context.Context, role string) error {
 		agent = t.in.Verifier
 	}
 	p := model.StartRun(t.rec.Progress, role)
-	if err := t.save(ctx, p); err != nil {
-		return err
-	}
 	branch := model.TaskBranch(t.in.Task)
 	if t.in.Triage {
 		branch = ports.DefaultBranch // a triager reads main, and pushes nothing
@@ -349,7 +456,7 @@ func (t *taskTick) offer(ctx context.Context, role string) error {
 	if t.in.OrderText != nil {
 		order.Text = t.in.OrderText(order)
 	}
-	return t.rt.Workers().Offer(ctx, order)
+	return p, order
 }
 
 // openPR opens the round's pull request from the implementer's branch, or

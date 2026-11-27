@@ -279,26 +279,19 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 	}
 
-	facts, err := r.facts(ctx, &task, status, &container, &agent)
+	// The engine's Task tick reads the Task's facts, decides and carries out
+	// a turn's offer through the Task's Workers; the reconciler carries out
+	// every other step itself, until #336 moves the rest (task_tick.go).
+	turn := r.newTaskTurn(&task, status, &container, agents)
+	res, err := engine.TaskTick(ctx, turn, nil, turn.input(ctx))
 	if err != nil {
-		return ctrl.Result{}, err
+		return turn.result, err
 	}
-	step := model.NextTaskStep(facts)
-	logf.FromContext(ctx).V(1).Info("Took Task step", "phase", status.Phase, "round", status.Round,
-		"action", step.Action, "message", step.Message)
-	if role := runRole(status.Phase); role != "" {
-		if err := r.syncPause(ctx, &task, status, sandboxName(&task, status, role), facts); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-	result, err := r.apply(ctx, &task, status, &container, agents, step)
-	if err != nil {
-		return result, err
-	}
-	r.setPaused(&task, status, step, facts.Pause)
-	r.queueForSlot(status, step, &result)
+	turn.started(ctx, res.Step)
+	r.setPaused(&task, status, turn.step, turn.facts.Pause)
+	r.queueForSlot(status, turn.step, &turn.result)
 	syncNeedsYou(&task, status)
-	return result, r.writeStatus(ctx, &task, status)
+	return turn.result, r.writeStatus(ctx, &task, status)
 }
 
 // queueForSlot keeps the Task's place in the queue for an agent slot while its
@@ -318,9 +311,10 @@ func (r *TaskReconciler) queueForSlot(status *c4v1beta1.TaskStatus, step model.T
 	}
 }
 
-// facts gathers what the next step depends on.
+// facts gathers what the next step depends on, with run the run of the
+// phase's role.
 func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	container *c4v1beta1.Container, agent *c4v1beta1.Agent) (model.TaskFacts, error) {
+	container *c4v1beta1.Container, agent *c4v1beta1.Agent, run model.RunState) (model.TaskFacts, error) {
 	facts := model.TaskFacts{
 		Phase:          string(status.Phase),
 		Container:      container.Name,
@@ -377,21 +371,9 @@ func (r *TaskReconciler) facts(ctx context.Context, task *c4v1beta1.Task, status
 		return facts, err
 	}
 
-	if role := runRole(status.Phase); role != "" {
-		name := sandboxName(task, status, role)
-		startedOn := ""
-		if name == status.Sandbox {
-			startedOn = status.SandboxPod
-		}
-		run, err := runState(ctx, r.Client, task.Namespace, name, startedOn)
-		if err != nil {
-			return facts, err
-		}
-		if name == status.Sandbox && startedOn == "" {
-			status.SandboxPod = run.Pod // the pod the run started on
-		}
-		facts.Run = withoutNothing(task, status, r.withSuspendedFor(run))
-	}
+	// The run of the phase's role, which the engine's Task tick read through
+	// the Task's Workers (sandboxWorkers.Run, #336).
+	facts.Run = run
 
 	if status.Phase == c4v1beta1.TaskChecking && status.Commit != "" {
 		if err := r.checkFacts(ctx, task, status, container, &facts); err != nil {
