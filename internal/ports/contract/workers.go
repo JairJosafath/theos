@@ -19,6 +19,7 @@ package contract
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
@@ -26,6 +27,9 @@ import (
 
 // summaryAdded is the implementer's summary the suites answer with.
 const summaryAdded = "Added the orders."
+
+// agentImplementer is the Agent the suites offer an implement turn to.
+const agentImplementer = "implementer"
 
 // WorkersEnv builds the Workers under test.
 type WorkersEnv struct {
@@ -77,7 +81,7 @@ func (s workersSuite) offers(t *testing.T) {
 		t.Fatalf("a turn never offered = %+v, want not started", run)
 	}
 	order := ports.WorkOrder{Task: task, Issue: issue, Branch: model.TaskBranch(task), Round: 1,
-		Role: model.RoleImplementer, Agent: "implementer"}
+		Role: model.RoleImplementer, Agent: agentImplementer}
 	for range 2 {
 		if err := w.Offer(s.ctx, order); err != nil {
 			t.Fatal(err)
@@ -111,7 +115,7 @@ func (s workersSuite) offers(t *testing.T) {
 func (s workersSuite) lapses(t *testing.T) {
 	w, task, issue := s.env.New(t)
 	order := ports.WorkOrder{Task: task, Issue: issue, Branch: model.TaskBranch(task), Round: 1,
-		Role: model.RoleImplementer, Agent: "implementer"}
+		Role: model.RoleImplementer, Agent: agentImplementer}
 	if err := w.Offer(s.ctx, order); err != nil {
 		t.Fatal(err)
 	}
@@ -132,5 +136,104 @@ func (s workersSuite) lapses(t *testing.T) {
 	}
 	if run := s.run(t, w, task, model.RoleImplementer); !run.Started || run.Done {
 		t.Errorf("the turn offered again = %+v, want started afresh, not done", run)
+	}
+}
+
+// SuspendingWorkersEnv builds Workers that keep a turn's run in place
+// (ports.Suspender, ports.Resumer), as the operator's Sandboxes do (#336).
+type SuspendingWorkersEnv struct {
+	WorkersEnv
+	// Vacate plays the runtime letting a suspended turn's worker go, as
+	// Agent Sandbox deletes a suspended Sandbox's pod: only then is the run
+	// resumed. Gone already, it does nothing.
+	Vacate func(t *testing.T, task string, round int, role string)
+}
+
+// SuspendingWorkers states what internal/engine relies on of Workers that
+// keep a run in place: a working turn suspended reads suspended, and why
+// (paused, or waiting for its agent), not done; suspended again, the suspend
+// is not fresh, so the engine counts one resume. Its worker gone, the turn
+// resumes as the same turn, not offered again: it reads started, not
+// suspended and not done, and its answer reads as any turn's.
+func SuspendingWorkers(t *testing.T, env SuspendingWorkersEnv) {
+	t.Helper()
+	ctx, cancel := suiteContext()
+	defer cancel()
+	runSubtests(t, suspendingSuite{workersSuite{ctx: ctx, env: env.WorkersEnv}, env}, env.Cannot,
+		[]subtest[suspendingSuite]{
+			{"suspends a working turn in place, once", suspendingSuite.suspends},
+			{"resumes a suspended turn in place, as the same turn", suspendingSuite.resumes},
+		})
+}
+
+// suspendingSuite holds what every subtest of SuspendingWorkers shares.
+type suspendingSuite struct {
+	workersSuite
+	env SuspendingWorkersEnv
+}
+
+// working offers round 1's implement turn on fresh Workers, which must
+// keep runs in place.
+func (s suspendingSuite) working(t *testing.T) (ports.Workers, ports.Suspender, ports.Resumer, ports.WorkOrder) {
+	t.Helper()
+	w, task, issue := s.env.New(t)
+	suspender, ok := w.(ports.Suspender)
+	resumer, ok2 := w.(ports.Resumer)
+	if !ok || !ok2 {
+		t.Fatalf("Workers %T suspend or resume no run in place", w)
+	}
+	order := ports.WorkOrder{Task: task, Issue: issue, Branch: model.TaskBranch(task), Round: 1,
+		Role: model.RoleImplementer, Agent: agentImplementer}
+	if err := w.Offer(s.ctx, order); err != nil {
+		t.Fatal(err)
+	}
+	return w, suspender, resumer, order
+}
+
+func (s suspendingSuite) suspends(t *testing.T) {
+	for _, why := range []ports.Suspension{
+		{Kind: ports.SuspendInterrupted},
+		{Kind: ports.SuspendPaused},
+		{Kind: ports.SuspendForAgent, AgentBack: time.Now().Add(time.Hour)},
+	} {
+		w, suspender, _, order := s.working(t)
+		for i, want := range []bool{true, false} {
+			fresh, err := suspender.Suspend(s.ctx, order.Task, 1, order.Role, why)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fresh != want {
+				t.Errorf("%s suspend %d: fresh = %v, want %v: a repeat suspends again, counted once",
+					why.Kind, i+1, fresh, want)
+			}
+		}
+		run := s.run(t, w, order.Task, order.Role)
+		if !run.Started || !run.Suspended || run.Done {
+			t.Errorf("%s: a suspended turn = %+v, want started and suspended, not done", why.Kind, run)
+		}
+		if run.Paused != (why.Kind == ports.SuspendPaused) || run.AgentWait != (why.Kind == ports.SuspendForAgent) {
+			t.Errorf("%s: a suspended turn = %+v, want it to say why it waits", why.Kind, run)
+		}
+	}
+}
+
+func (s suspendingSuite) resumes(t *testing.T) {
+	w, suspender, resumer, order := s.working(t)
+	if _, err := suspender.Suspend(s.ctx, order.Task, 1, order.Role,
+		ports.Suspension{Kind: ports.SuspendInterrupted}); err != nil {
+		t.Fatal(err)
+	}
+	s.env.Vacate(t, order.Task, 1, order.Role)
+	resumed, err := resumer.Resume(s.ctx, order)
+	if err != nil || !resumed {
+		t.Fatalf("Resume = %v, %v; want the suspended turn resumed", resumed, err)
+	}
+	if run := s.run(t, w, order.Task, order.Role); !run.Started || run.Suspended || run.Done {
+		t.Fatalf("a resumed turn = %+v, want started, not suspended or done", run)
+	}
+	s.env.Answer(t, order.Task, 1, order.Role, model.RunResult{Summary: summaryAdded})
+	run := s.run(t, w, order.Task, order.Role)
+	if !run.Done || run.Interrupted || run.Result == nil || run.Result.Summary != summaryAdded {
+		t.Errorf("a resumed turn answered = %+v, want done with its result", run)
 	}
 }

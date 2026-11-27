@@ -92,8 +92,9 @@ type TaskInput struct {
 	// Carry, when set, is asked first to carry out each step decided: it
 	// returns true for a step it carried out itself, through the runtime,
 	// and the engine then does nothing more; false leaves the step to the
-	// engine. The operator carries every step but a turn's offer itself
-	// until #336 moves the rest (docs/plans/lead-runtime.md, step 12). The
+	// engine. The operator carries every step but a turn's offer, end and
+	// keeping in place itself until #336 moves the rest
+	// (docs/plans/lead-runtime.md, step 12). The
 	// engine reaches the host only for a step Carry leaves it, so a runtime
 	// whose Carry leaves it only the offers may tick with no host.
 	Carry func(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (bool, error)
@@ -110,11 +111,26 @@ type TaskInput struct {
 // TurnEnd reports whether action ends a turn and moves the Task on without
 // the host but for what the step says on the pull request (TaskInput.Ending):
 // a run to verify, a round not accepted, a review or verification to try
-// again, an interrupted run to run again and a conflict to resolve.
+// again, an interrupted run to run again, a paused run that can't resume run
+// again, a conflict to resolve, and an approval that ran out checked and
+// reviewed again.
 func TurnEnd(action model.TaskAction) bool {
 	switch action {
 	case model.ActionVerify, model.ActionRetryVerify, model.ActionRetry, model.ActionRetryReview,
-		model.ActionRerun, model.ActionResolveConflicts:
+		model.ActionRerun, model.ActionRerunPaused, model.ActionResolveConflicts, model.ActionReviewAgain:
+		return true
+	}
+	return false
+}
+
+// InPlace reports whether action keeps a turn's run in place: it suspends
+// the run (an interrupted one, one paused at the runtime's ask, one whose
+// agent is unavailable), through Workers that suspend runs (ports.Suspender),
+// or resumes a suspended one, through Workers that resume them
+// (ports.Resumer). Workers with neither wait there, saying it is not built.
+func InPlace(action model.TaskAction) bool {
+	switch action {
+	case model.ActionSuspendRun, model.ActionPauseRun, model.ActionSuspendForAgent, model.ActionResumeRun:
 		return true
 	}
 	return false
@@ -142,11 +158,12 @@ const whyDone = "done"
 // can't do waits for a person (model.ReasonPersonMerges), and the tick after
 // the person's merge ends the Task Merged. The operator's Task reconcile
 // runs on it too (#336): it gives its own facts (TaskInput.Facts), carries
-// out every step but a turn's offer and end itself (TaskInput.Carry), says
-// what a turn's end says itself (TaskInput.Ending), and its Workers ready a
-// turn before it is offered (ports.Preparer), which also offers a restarted
-// turn on a later tick. The rest of the operator's run side (pauses,
-// resumes, budgets) is still its own.
+// out every step but a turn's offer, end and keeping in place itself
+// (TaskInput.Carry), says what a turn's end says itself (TaskInput.Ending),
+// and its Workers ready a turn before it is offered (ports.Preparer), which
+// also offers a restarted turn on a later tick, and suspend, resume and
+// pause runs in place (ports.Suspender, ports.Resumer, ports.Pauser), which
+// the engine asks for by interface: Workers without them wait, not built.
 func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput) (TaskResult, error) {
 	store, workers := rt.Store(), rt.Workers()
 	if workers == nil {
@@ -172,6 +189,9 @@ func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput
 		return TaskResult{}, err
 	}
 	step := model.NextTaskStep(facts)
+	if err := t.pause(ctx, facts); err != nil {
+		return TaskResult{Step: step, Record: t.rec}, err
+	}
 	if in.Carry != nil {
 		carried, err := in.Carry(ctx, facts, step)
 		if err != nil {
@@ -182,9 +202,8 @@ func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput
 			// is what the store keeps now.
 			return t.result(ctx, step)
 		}
-		// Asked, the runtime may have changed the record through its store
-		// (the operator brings a run's pause up to date): the engine carries
-		// the step out on the record as it is now.
+		// Asked, the runtime may have changed the record through its store:
+		// the engine carries the step out on the record as it is now.
 		if t.rec, err = store.Progress(ctx, in.Task); err != nil {
 			return TaskResult{Step: step, Record: t.rec}, err
 		}
@@ -194,7 +213,7 @@ func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput
 			"the Task tick has no host to carry out %s", step.Action)
 	}
 	step, err = t.carry(ctx, facts, step)
-	if err == nil && step.Reason == ReasonOfferHeld {
+	if err == nil && (step.Reason == ReasonOfferHeld || InPlace(step.Action)) {
 		return t.result(ctx, step)
 	}
 	return TaskResult{Step: step, Record: t.rec}, err
@@ -213,18 +232,18 @@ func (t *taskTick) result(ctx context.Context, step model.TaskStep) (TaskResult,
 }
 
 // hostFree reports whether the engine carries out action without the host:
-// a wait, a turn's offer, or a turn's end whose words on the pull request
-// are the runtime's (TaskInput.Ending) or none.
+// a wait, a turn's offer, a run kept in place, or a turn's end whose words
+// on the pull request are the runtime's (TaskInput.Ending) or none.
 func (t *taskTick) hostFree(action model.TaskAction) bool {
 	switch action {
 	case model.ActionNone, model.ActionWait, model.ActionStartImplement, model.ActionStartReview,
 		model.ActionStartVerify, model.ActionVerify, model.ActionRetryVerify, model.ActionRetryReview,
-		model.ActionRerun:
+		model.ActionRerun, model.ActionRerunPaused:
 		return true
-	case model.ActionRetry, model.ActionResolveConflicts:
+	case model.ActionRetry, model.ActionResolveConflicts, model.ActionReviewAgain:
 		return t.in.Ending != nil
 	}
-	return false
+	return InPlace(action)
 }
 
 // taskTick is one Task tick's state.
@@ -333,33 +352,28 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 
 // carry carries out step, and returns it as carried out.
 func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (model.TaskStep, error) {
-	p := t.rec.Progress
 	role := t.in.RunRole(facts.Phase)
 	if facts.Run.Done {
 		// What an approving review or verification leaves for the merge is
 		// kept with the next progress, as its run ends before the merge.
 		t.rec.Findings = model.KeepFindings(t.rec.Findings, role, facts.Run.Result)
 	}
+	if TurnEnd(step.Action) {
+		return step, t.endTurn(ctx, facts, step, role)
+	}
 	switch step.Action {
 	case model.ActionNone, model.ActionWait:
 		return step, nil
+	case model.ActionSuspendRun, model.ActionPauseRun, model.ActionSuspendForAgent:
+		return t.suspend(ctx, facts, step, role)
+	case model.ActionResumeRun:
+		return t.resume(ctx, step, role)
 	case model.ActionStartImplement:
 		return t.start(ctx, step, t.in.RunRole(model.TaskImplementing))
 	case model.ActionStartReview:
 		return t.start(ctx, step, model.RoleReviewer)
 	case model.ActionStartVerify:
 		return t.start(ctx, step, model.RoleVerifier)
-	case model.ActionVerify:
-		// The review's run ends; its approval stays, and the verifier runs.
-		if err := t.ending(ctx, facts, step, nil); err != nil {
-			return step, err
-		}
-		return step, t.next(ctx, role, model.VerifyChange(p))
-	case model.ActionRetryVerify:
-		if err := t.ending(ctx, facts, step, nil); err != nil {
-			return step, err
-		}
-		return step, t.restart(ctx, role, model.RetryReview(p), model.RoleVerifier)
 	case model.ActionAwaitApproval:
 		return step, t.awaitApproval(ctx, role)
 	case model.ActionSpecDeclined:
@@ -374,27 +388,6 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 			return step, t.openPR(ctx, facts, true)
 		}
 		return step, t.rerunChecks(ctx, step)
-	case model.ActionRetry:
-		if err := t.ending(ctx, facts, step, func() { t.commentRound(ctx, facts, step) }); err != nil {
-			return step, err
-		}
-		t.rec.Findings = nil // the next round is reviewed afresh
-		return step, t.next(ctx, role, model.NextRound(p, step.Feedback))
-	case model.ActionRetryReview:
-		if err := t.ending(ctx, facts, step, nil); err != nil {
-			return step, err
-		}
-		return step, t.restart(ctx, role, model.RetryReview(p), model.RoleReviewer)
-	case model.ActionRerun:
-		if err := t.ending(ctx, facts, step, nil); err != nil {
-			return step, err
-		}
-		return step, t.restart(ctx, role, model.Rerun(p), role)
-	case model.ActionResolveConflicts:
-		if err := t.ending(ctx, facts, step, func() { t.comment(ctx, step.Message+".") }); err != nil {
-			return step, err
-		}
-		return step, t.restart(ctx, role, model.ResolveConflicts(p, step.Feedback), model.RoleImplementer)
 	case model.ActionUpdateBranch:
 		return t.updateBranch(ctx, facts, step)
 	case model.ActionMerge:
@@ -405,10 +398,118 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 		}
 		return step, t.fail(ctx, role, step)
 	}
-	// What the operator alone does (a sandbox suspended, paused or resumed in
-	// place, a Standard change) waits here, saying so.
+	// What the operator alone does (a Standard change, an agent's outage)
+	// waits here, saying so.
+	return notBuilt(step), nil
+}
+
+// endTurn ends role's turn as step says (TurnEnd), after what the step says
+// on the pull request (ending), and moves the Task on: to its verifier, its
+// next round, its checks again, or the same turn again (restart).
+func (t *taskTick) endTurn(ctx context.Context, facts model.TaskFacts, step model.TaskStep, role string) error {
+	p := t.rec.Progress
+	var say func() // the engine's own words, where the runtime has none
+	switch step.Action {
+	case model.ActionRetry:
+		say = func() { t.commentRound(ctx, facts, step) }
+	case model.ActionResolveConflicts, model.ActionReviewAgain:
+		say = func() { t.comment(ctx, step.Message+".") }
+	}
+	if err := t.ending(ctx, facts, step, say); err != nil {
+		return err
+	}
+	switch step.Action {
+	case model.ActionVerify:
+		// The review's run ends; its approval stays, and the verifier runs.
+		return t.next(ctx, role, model.VerifyChange(p))
+	case model.ActionRetryVerify:
+		return t.restart(ctx, role, model.RetryReview(p), model.RoleVerifier)
+	case model.ActionRetry:
+		t.rec.Findings = nil // the next round is reviewed afresh
+		return t.next(ctx, role, model.NextRound(p, step.Feedback))
+	case model.ActionRetryReview:
+		return t.restart(ctx, role, model.RetryReview(p), model.RoleReviewer)
+	case model.ActionRerun:
+		return t.restart(ctx, role, model.Rerun(p), role)
+	case model.ActionRerunPaused:
+		// A pause costs no rerun, even when it costs the checkpoint (#1995).
+		return t.restart(ctx, role, model.RerunPaused(p), role)
+	case model.ActionReviewAgain:
+		// The approval ran out while CI ran again: the review's run ends, and
+		// the change is checked and reviewed again, with no try spent.
+		return t.next(ctx, role, model.ReviewAgain(p))
+	case model.ActionResolveConflicts:
+		return t.restart(ctx, role, model.ResolveConflicts(p, step.Feedback), model.RoleImplementer)
+	}
+	return fmt.Errorf("%s ends no turn", step.Action)
+}
+
+// notBuilt is the wait of a step the runtime has no way to carry out.
+func notBuilt(step model.TaskStep) model.TaskStep {
 	return model.TaskStep{Action: model.ActionWait, Reason: ReasonNotBuilt, Message: fmt.Sprintf(
-		"%s: this runtime does not %s yet", step.Message, step.Action)}, nil
+		"%s: this runtime does not %s yet", step.Message, step.Action)}
+}
+
+// pause brings the pause of the phase's run up to date, where the Workers
+// pause runs (ports.Pauser), before the step is carried out: a run that
+// works is asked to pause at its next tool boundary for the runtime's pause
+// (model.PauseRequest, empty to take the ask back), and a suspended run
+// whose resume a pause holds is kept resumable.
+func (t *taskTick) pause(ctx context.Context, facts model.TaskFacts) error {
+	pauser, ok := t.rt.Workers().(ports.Pauser)
+	role := t.in.RunRole(facts.Phase)
+	if !ok || role == "" || !facts.Run.Started {
+		return nil
+	}
+	run := facts.Run
+	switch {
+	case run.Suspended && facts.Pause != "":
+		return pauser.HoldSuspended(ctx, t.in.Task, facts.Round, role)
+	case !run.Done && !run.Suspended:
+		return pauser.AskPause(ctx, t.in.Task, facts.Round, role, model.PauseRequest(facts))
+	}
+	return nil
+}
+
+// suspend suspends the run of role in place, for why step says, through
+// Workers that suspend runs (ports.Suspender); others wait, not built. An
+// interrupted run counts the resume, once: a suspend done afresh saves it,
+// one an earlier tick began only suspends again.
+func (t *taskTick) suspend(ctx context.Context, facts model.TaskFacts, step model.TaskStep,
+	role string) (model.TaskStep, error) {
+	suspender, ok := t.rt.Workers().(ports.Suspender)
+	if !ok || role == "" {
+		return notBuilt(step), nil
+	}
+	why := ports.Suspension{Kind: ports.SuspendInterrupted}
+	switch step.Action {
+	case model.ActionPauseRun:
+		why.Kind = ports.SuspendPaused
+	case model.ActionSuspendForAgent:
+		why.Kind, why.AgentBack = ports.SuspendForAgent, model.AgentBackAt(step.RetryAt, t.in.Now)
+	}
+	fresh, err := suspender.Suspend(ctx, t.in.Task, facts.Round, role, why)
+	if err != nil || !fresh || why.Kind != ports.SuspendInterrupted {
+		return step, err
+	}
+	return step, t.save(ctx, model.SuspendRun(t.rec.Progress))
+}
+
+// resume resumes the suspended run of role in place, through Workers that
+// resume runs (ports.Resumer); others wait, not built. A resume the Workers
+// held waits, as a held offer does, and a later tick asks again.
+func (t *taskTick) resume(ctx context.Context, step model.TaskStep, role string) (model.TaskStep, error) {
+	resumer, ok := t.rt.Workers().(ports.Resumer)
+	if !ok || role == "" {
+		return notBuilt(step), nil
+	}
+	_, order := t.order(role)
+	resumed, err := resumer.Resume(ctx, order)
+	if err != nil || resumed {
+		return step, err
+	}
+	return model.TaskStep{Action: model.ActionWait, Reason: ReasonOfferHeld,
+		Message: step.Message + ": its Workers did not resume the run yet"}, nil
 }
 
 // ReasonNotBuilt is the reason of a step a runtime has no way to carry out.

@@ -34,6 +34,7 @@ import (
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/agentrunner"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // A run continues from a checkpoint (docs/design.md, "A run continues from a
@@ -260,32 +261,41 @@ func (r *TaskReconciler) withSuspendedFor(run model.RunState) model.RunState {
 }
 
 // suspendRun counts what the interrupted run cost and the resume, and
-// suspends its sandbox once the status that counts them is written: a
-// failed write leaves the run to be found and counted again. A run counted
-// already, whose suspend failed after the write, is only suspended again. A
-// run that paused at the factory's ask counts its cost and no resume, and
-// so does one whose agent was unavailable, which waits until the agent is
-// due back (status.agentBackAt, as an unavailable agent's Task always did).
+// suspends its sandbox once the status that counts them is written
+// (suspendCurrent), saying so in the status (runSuspended). The Task's own
+// reconcile suspends through its Workers on the engine's tick
+// (sandboxWorkers.Suspend, #336); the Plan, Triage and Score reconciles
+// suspend here.
 func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	step model.TaskStep, kind suspendKind) error {
+	fresh, err := r.suspendCurrent(ctx, task, status, kind, model.AgentBackAt(step.RetryAt, r.now()))
+	if fresh {
+		if kind == suspendInterrupted {
+			setProgress(status, model.SuspendRun(progressOf(status)))
+		}
+		r.runSuspended(task, status, step)
+	}
+	return err
+}
+
+// suspendCurrent counts what the current run cost, and suspends its sandbox
+// once the status that counts it is written: a failed write leaves the run
+// to be found and counted again. A run counted already, whose suspend failed
+// after the write, is only suspended again, and fresh is false. A run whose
+// agent was unavailable waits until agentBack, when the agent is due back
+// (status.agentBackAt, as an unavailable agent's Task always did).
+func (r *TaskReconciler) suspendCurrent(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	kind suspendKind, agentBack time.Time) (fresh bool, err error) {
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if !runCounted(status, run) {
+	if fresh = !runCounted(status, run); fresh {
 		r.countRun(status, run)
 		status.CountedPod = runPod(status, run)
-		reason, message := model.ReasonPaused, step.Message
-		switch kind {
-		case suspendInterrupted:
-			setProgress(status, model.SuspendRun(progressOf(status)))
-			reason = "Interrupted"
-		case suspendForAgent:
-			back := model.AgentBackAt(step.RetryAt, r.now())
-			status.AgentBackAt = &metav1.Time{Time: back}
-			reason, message = reasonAgentUnavailable, fmt.Sprintf("%s, at %s", message, back.UTC().Format(time.RFC3339))
+		if kind == suspendForAgent {
+			status.AgentBackAt = &metav1.Time{Time: agentBack}
 		}
-		r.progress(task, status, metav1.ConditionTrue, reason, message)
 	}
 	// A suspended run holds no test environment: its resume leases again (T3).
 	ended := endedRun{sandbox: status.Sandbox, round: status.Round, result: run.Result, suspend: true,
@@ -305,7 +315,37 @@ func (r *TaskReconciler) suspendRun(ctx context.Context, task *c4v1beta1.Task, s
 		log.Info("Suspending an interrupted run to resume it in place", "sandbox", status.Sandbox,
 			"round", status.Round, "resumes", status.Resumes)
 	}
-	return r.afterStatusWrite(ctx, task, ended)
+	return fresh, r.afterStatusWrite(ctx, task, ended)
+}
+
+// runSuspended says in the status that step suspended the Task's run afresh:
+// its Progressing reason, Interrupted, Paused or AgentUnavailable, the last
+// with when the agent is due back. The Task's reconcile says it after the
+// engine's tick (taskTurn.keptInPlace), the others as they suspend
+// (suspendRun).
+func (r *TaskReconciler) runSuspended(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, step model.TaskStep) {
+	reason, message := model.ReasonPaused, step.Message
+	switch step.Action {
+	case model.ActionSuspendRun:
+		reason = "Interrupted"
+	case model.ActionSuspendForAgent:
+		reason = reasonAgentUnavailable
+		if status.AgentBackAt != nil {
+			message = fmt.Sprintf("%s, at %s", message, status.AgentBackAt.UTC().Format(time.RFC3339))
+		}
+	}
+	r.progress(task, status, metav1.ConditionTrue, reason, message)
+}
+
+// suspendKindOf is the kind of suspend a port's Suspension asks for.
+func suspendKindOf(kind ports.SuspendKind) suspendKind {
+	switch kind {
+	case ports.SuspendPaused:
+		return suspendPaused
+	case ports.SuspendForAgent:
+		return suspendForAgent
+	}
+	return suspendInterrupted
 }
 
 // pauseReason is the reason a paused run reported, or a stand-in when it
@@ -422,11 +462,30 @@ func (r *TaskReconciler) resumeRun(ctx context.Context, task *c4v1beta1.Task, st
 	return ctrl.Result{}, r.resumeWith(ctx, task, status, agents.forRole(role), fresh, step)
 }
 
-// resumeWith resumes the Task's suspended sandbox with fresh's pod template,
-// given the run's remaining time. The status, which forgets the old pod, is
-// written first: the new pod must not count as a replacement of it.
+// resumeWith resumes the Task's suspended sandbox in place (resumeInPlace),
+// and says in the status that its run runs. The Task's own reconcile
+// resumes through its Workers on the engine's tick (sandboxWorkers.Resume,
+// #336); the Plan, Triage and Score reconciles resume here.
 func (r *TaskReconciler) resumeWith(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	agent *c4v1beta1.Agent, fresh *unstructured.Unstructured, step model.TaskStep) error {
+	if err := r.resumeInPlace(ctx, task, status, agent, fresh); err != nil {
+		return err
+	}
+	r.runResumed(task, status, step)
+	return nil
+}
+
+// runResumed says in the status that step resumed the Task's run in place.
+func (r *TaskReconciler) runResumed(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, step model.TaskStep) {
+	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", step.Message, status.Sandbox))
+}
+
+// resumeInPlace resumes the Task's suspended sandbox with fresh's pod
+// template, given the run's remaining time. The status, which forgets the
+// old pod, is written first: the new pod must not count as a replacement of
+// it.
+func (r *TaskReconciler) resumeInPlace(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	agent *c4v1beta1.Agent, fresh *unstructured.Unstructured) error {
 	sandbox := newSandbox()
 	if err := r.Get(ctx, client.ObjectKey{Namespace: task.Namespace, Name: status.Sandbox}, sandbox); err != nil {
 		return err
@@ -440,7 +499,6 @@ func (r *TaskReconciler) resumeWith(ctx context.Context, task *c4v1beta1.Task, s
 		return err
 	}
 	status.SandboxPod, status.AgentBackAt = "", nil
-	r.progress(task, status, metav1.ConditionTrue, "Running", fmt.Sprintf("%s in sandbox %s", step.Message, status.Sandbox))
 	_, paused := sandbox.GetAnnotations()[annotationPausedRun]
 	_, waited := sandbox.GetAnnotations()[annotationAgentBack]
 	logf.FromContext(ctx).Info("Resuming a run in place", "sandbox", status.Sandbox, "paused", paused,

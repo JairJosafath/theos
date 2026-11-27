@@ -37,9 +37,12 @@ import (
 // and the rest of its facts from the reconciler (TaskReconciler.facts); it
 // decides, offers a turn through the Workers, and ends one and moves the
 // Task on (engine.TurnEnd: a verification, a round not accepted, a review or
-// verification tried again, an interrupted run run again, a conflict to
-// resolve), what the end says on the pull request the reconciler's
-// (taskTurn.ending). Every other step the reconciler carries out itself
+// verification tried again, an interrupted or paused run run again, a
+// conflict to resolve, an approval that ran out reviewed again), what the
+// end says on the pull request the reconciler's (taskTurn.ending). It
+// suspends and resumes a run in place and brings its pause up to date
+// through the same Workers (engine.InPlace; ports.Suspender, ports.Resumer,
+// ports.Pauser). Every other step the reconciler carries out itself
 // (apply), as before, until later slices of #336 move them. The status is
 // written once, after the tick.
 
@@ -60,8 +63,10 @@ type taskTurn struct {
 	facts  model.TaskFacts
 	result ctrl.Result
 	// endsTurn says the engine carries out step, a turn's end, whose
-	// Progressing reason the reconcile writes after the tick (ended).
-	endsTurn bool
+	// Progressing reason the reconcile writes after the tick (ended);
+	// inPlace that it carries out step, a run suspended or resumed in place,
+	// which the reconcile says after the tick (keptInPlace).
+	endsTurn, inPlace bool
 	// in and envs are the run's inputs and test environments, read by
 	// prepare for the Sandbox the offer makes; firstIssueRun says the run
 	// is the Task's first on its issue, which announces the Task.
@@ -79,6 +84,7 @@ func (r *TaskReconciler) newTaskTurn(task *c4v1beta1.Task, status *c4v1beta1.Tas
 	t := &taskTurn{r: r, task: task, status: status, container: container, agents: agents}
 	t.workers = r.workers(task, status, t.build)
 	t.workers.prepare = t.prepare
+	t.workers.resume = t.readyResume
 	return t
 }
 
@@ -91,8 +97,8 @@ func (t *taskTurn) Workers() ports.Workers { return t.workers }
 func (t *taskTurn) Capabilities() ports.Capabilities { return operatorCapabilities }
 
 // input is the tick's input: the reconciler reads the facts, carries out
-// every step but a turn's offer, end and restart, and says what a turn's end
-// says (ending).
+// every step but a turn's offer, end and restart and a run kept in place, and
+// says what a turn's end says (ending).
 func (t *taskTurn) input(ctx context.Context) engine.TaskInput {
 	in := engine.TaskInput{Task: t.task.Name, Container: t.container.Name, Issue: int(t.task.Spec.Issue),
 		Title: t.status.IssueTitle, Goal: t.task.Spec.Goal, Spec: isSpec(t.task),
@@ -123,20 +129,15 @@ func offers(action model.TaskAction) bool {
 	return false
 }
 
-// carry carries out step, unless it is a turn's start, or a turn's end the
-// engine ends as the reconciler would (endsAsTheEngine), which it leaves to
-// the engine. It brings the run's pause up to date first, as the step may
-// wait on it.
-func (t *taskTurn) carry(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (bool, error) {
+// carry carries out step, unless it is a turn's start, or a turn's end or a
+// run kept in place the engine carries out on the run the reconciler would
+// (endsAsTheEngine), which it leaves to the engine. The engine brought the
+// run's pause up to date before (ports.Pauser), as the step may wait on it.
+func (t *taskTurn) carry(ctx context.Context, _ model.TaskFacts, step model.TaskStep) (bool, error) {
 	t.step = step
 	status := t.status
 	logf.FromContext(ctx).V(1).Info("Took Task step", "phase", status.Phase, "round", status.Round,
 		"action", step.Action, "message", step.Message)
-	if role := runRole(status.Phase); role != "" {
-		if err := t.r.syncPause(ctx, t.task, status, sandboxName(t.task, status, role), facts); err != nil {
-			return true, err
-		}
-	}
 	if offers(step.Action) {
 		return false, nil
 	}
@@ -144,17 +145,22 @@ func (t *taskTurn) carry(ctx context.Context, facts model.TaskFacts, step model.
 		t.endsTurn = true
 		return false, nil
 	}
+	if engine.InPlace(step.Action) && t.endsAsTheEngine() {
+		t.inPlace = true
+		return false, nil
+	}
 	result, err := t.r.apply(ctx, t.task, status, t.container, t.agents, step)
 	t.result = result
 	return true, err
 }
 
-// endsAsTheEngine reports whether the engine ends the phase's run as the
-// reconciler's endRun would: the turn the engine ends (the phase's role, in
-// the Sandbox the status's counters name) is the status's current Sandbox,
-// or the phase has no run and the status names no Sandbox. A status that
-// forgot its Sandbox, or names another, is left to apply, whose endRun ends
-// whatever the status names, as it always has.
+// endsAsTheEngine reports whether the engine ends, suspends or resumes the
+// phase's run as the reconciler's endRun, suspendRun and resumeRun would:
+// the turn the engine acts on (the phase's role, in the Sandbox the status's
+// counters name) is the status's current Sandbox, or the phase has no run
+// and the status names no Sandbox. A status that forgot its Sandbox, or
+// names another, is left to apply, whose endRun ends whatever the status
+// names, as it always has.
 func (t *taskTurn) endsAsTheEngine() bool {
 	role := runRole(t.status.Phase)
 	if role == "" {
@@ -182,6 +188,8 @@ func (t *taskTurn) ending(ctx context.Context, _ model.TaskFacts, step model.Tas
 		}
 	case model.ActionResolveConflicts:
 		status.Review = r.sayConflicts(ctx, task, status, container, step)
+	case model.ActionReviewAgain:
+		r.comment(ctx, task, status, container, step.Message+".")
 	}
 	return nil
 }
@@ -196,6 +204,51 @@ func (t *taskTurn) ended(ctx context.Context, step model.TaskStep) {
 		return
 	}
 	t.r.turnEnded(ctx, t.task, t.status, step)
+}
+
+// keptInPlace says in the status that the tick suspended or resumed the
+// phase's run in place (step is the tick's result): the Progressing reason a
+// fresh suspend writes (runSuspended), or that the resumed run runs
+// (runResumed), as the Plan, Triage and Score reconciles say it. A resume
+// its Workers held says why itself (readyResume), and a run suspended
+// already says nothing more.
+func (t *taskTurn) keptInPlace(step model.TaskStep) {
+	if !t.inPlace || step.Action != t.step.Action {
+		return
+	}
+	if step.Action == model.ActionResumeRun {
+		if t.workers.resumed != "" {
+			t.r.runResumed(t.task, t.status, step)
+		}
+		return
+	}
+	if t.workers.suspended != "" {
+		t.r.runSuspended(t.task, t.status, step)
+	}
+}
+
+// readyResume readies a suspended run's resume, as the reconciler always
+// has (resumeRun): the Agent's credentials and the Container's agent Git
+// access, the Standard on main and the issue open (runInputs), and the test
+// environments the run needs leased again under its Sandbox's name. Not
+// ready, the status says why and result when to look again.
+func (t *taskTurn) readyResume(ctx context.Context, order ports.WorkOrder, name string) (bool, error) {
+	r, task, status, role := t.r, t.task, t.status, order.Role
+	in, result, err := r.runInputs(ctx, task, status, t.container, t.agents, role)
+	if in == nil {
+		t.result = result
+		return false, err
+	}
+	envs, wait, err := r.leaseEnvironments(ctx, task, status, t.container, role, name, in.labels)
+	if err != nil {
+		return false, err
+	}
+	if wait != nil {
+		t.result = r.waitForEnvironment(task, status, wait)
+		return false, nil
+	}
+	t.in, t.envs = in, envs
+	return true, nil
 }
 
 // prepare readies a run before its Sandbox, as the reconciler always has: the

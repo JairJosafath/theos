@@ -800,6 +800,112 @@ What the remaining slices of #336 must do:
 - `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
   one last past its tick yet.
 
+**Step 12 as built (slice 4: a run kept in place on the tick)** (`internal/ports/runtime.go`,
+`internal/engine/task.go`, `internal/controller/task_workers.go`, `internal/controller/task_tick.go`).
+Suspend, resume and pause are optional parts of `Workers` the engine asks
+for by interface, and the operator's Sandboxes implement them: the engine
+suspends a run (SuspendRun, PauseRun, SuspendForAgent), resumes it
+(ResumeRun) and brings its pause up to date before every step. RerunPaused
+and ReviewAgain moved with them, as turn ends. Every Task envtest spec
+passes unchanged. Choices the plan left open:
+- **Three ports, not one pauser.** `ports.Suspender.Suspend(task, round,
+  role, Suspension)` takes why (`SuspendInterrupted`, `SuspendPaused`,
+  `SuspendForAgent` with when the agent is back, which the engine works
+  out with `model.AgentBackAt`) and reports whether the suspend was fresh.
+  `ports.Resumer.Resume(order)` may hold, as `Preparer` does, and the
+  engine then waits `OfferHeld`. `ports.Pauser` has `AskPause(why)`, empty
+  to take the ask back, and `HoldSuspended`, so the engine, not the
+  Workers, decides which a run gets (`taskTick.pause`, as `syncPause` did:
+  a working run is asked `model.PauseRequest`, a suspended one a pause
+  holds is held). Workers without a part wait `NotBuilt` on its step, as
+  every runtime did before; a Pauser-less runtime is asked nothing.
+- **The engine counts the resume; the Workers count the run.** The
+  reconciler's `suspendRun` counted the run's cost, set `countedPod` and
+  counted a resume only when the run was not counted yet, so a suspend
+  that failed after its status write is only suspended again. The run's
+  cost and `agentBackAt` are the operator's status, so the Workers keep
+  them (`suspendCurrent`, which `suspendRun` now wraps for the Plan,
+  Triage and Score reconciles); the resume is the record's
+  (`model.SuspendRun`), so the engine saves it, and only when `Suspend`
+  says it was fresh.
+- **The pause is brought up to date before `Carry`**, on every step of a
+  phase with a run, where `taskTurn.carry` called `syncPause` before.
+  `taskTurn.carry` no longer touches the pause; the Plan and Triage
+  reconciles still call `syncPause` themselves.
+- **Only the Task's current run is kept in place.** `suspendRun`,
+  `resumeRun` and `syncPause` act on the Sandbox the status names; the
+  Workers name a turn from the status's counters. So `Suspend` and
+  `Resume` refuse a turn that is not the status's Sandbox, `AskPause` and
+  `HoldSuspended` leave one as it is (as `syncPause` did), and
+  `taskTurn.carry` leaves these steps to the engine only where
+  `endsAsTheEngine` holds, as for a turn's end; elsewhere `apply` still
+  carries them.
+- **What a run kept in place says is the reconciler's, after the tick**
+  (`taskTurn.keptInPlace`), as `ended` says a turn's end: a fresh suspend
+  writes `Interrupted`, `Paused` or `AgentUnavailable` (with when the agent
+  is back; `runSuspended`), a resume writes `Running` (`runResumed`), and
+  a suspend that was not fresh or a held resume says nothing more. The
+  Workers record what they did (`sandboxWorkers.suspended`, `resumed`).
+  A resume is readied by `taskTurn.readyResume` (`runInputs`, the test
+  environments leased again under the Sandbox's name), which `resumeRun`
+  did first; held, the status says why and `result` when to look again.
+- **RerunPaused and ReviewAgain are turn ends** (`engine.TurnEnd`):
+  RerunPaused is a restart with `model.RerunPaused` (a restart, no rerun
+  spent), offered on a later tick where the Workers ready turns, as Rerun;
+  ReviewAgain ends the review's run and goes back to the checks
+  (`model.ReviewAgain`), what it says on the pull request the runtime's
+  (`taskTurn.ending` comments as the operator's account) or the engine's
+  comment. `turnEnded` writes `ApprovalEnded` for it, so `apply`'s
+  fallback and the engine's say it alike. Neither is reachable in the lead
+  runtime (its runs report no pause, and an approval running out is the
+  operator's fact), so its behaviour is unchanged.
+- **AgentUnavailable stays in `apply`.** It ends the run and waits for
+  the agent until `agentBackAt`, with a requeue then. The engine's record
+  has no place for when the agent is back, and `Workers.End` deletes the
+  Sandbox, so nothing would keep it; SuspendForAgent can move because the
+  suspended Sandbox and the status the Workers keep hold it. It moves when
+  `TaskRecord` carries when the agent is back, which a lead runtime whose
+  session reports an outage would need too.
+- **The contract**: `contract.SuspendingWorkers`, apart from
+  `contract.Workers` so the existing envtest spec (one project per
+  subtest) runs unchanged: a working turn suspended reads suspended and
+  why, a repeat is not fresh, and, its worker gone (`Vacate`, which plays
+  Agent Sandbox deleting the pod), it resumes as the same turn and answers
+  as any. Neither the fakes nor `hostrun` keep runs in place, so it runs
+  on the operator's Sandboxes alone.
+- Tests: tier 1, `TestTaskTickSuspendsAndResumesARunInPlace336`,
+  `TestTaskTickSuspendsAPausedRunAndOneWaitingForItsAgent336`,
+  `TestTaskTickBringsARunsPauseUpToDate336`,
+  `TestTaskTickWaitsWhereTheWorkersKeepNoRunInPlace336` (the lead
+  runtime's behaviour kept), `TestTaskTickRerunsAPausedRunThatCantResume336`
+  and `TestTaskTickReviewsAgainAnApprovalThatRanOut336` in the engine;
+  `TestSandboxWorkersSuspendingContract336`,
+  `TestSandboxWorkersSuspendAndResumeTheCurrentRunAlone336`,
+  `TestSandboxWorkersPauseTheCurrentRunAlone336` and
+  `TestTaskTurnSaysWhatARunKeptInPlaceSays336` on the operator's adapters;
+  slice 3's `TestTaskTurnLeavesTheEngineATurnsEnd336` and
+  `TestTaskTurnSaysWhatATurnsEndSays336` now count RerunPaused and
+  ReviewAgain among the engine's turn ends. Tier 4, "keeps the suspending
+  Workers contract on Sandboxes", under the generated role; every Task
+  envtest spec, unchanged, among them "Paused runs" and the checkpoint
+  specs, now runs these steps through the Workers.
+
+What the remaining slices of #336 must do:
+- **AgentUnavailable**, once `TaskRecord` says when the agent is back
+  and the engine's wait reads it.
+- **The host actions** (open, merge, approve, comment as they write
+  status), the Standard change (Propose, Resume, DoneByStandardChange),
+  NothingToDo, specs (AwaitApproval, SpecDeclined), verification's own
+  steps, a person's approval and rules, budgets: each moves when the engine
+  carries it as the operator does, and `Carry` hands it over. With the
+  last, `Carry`, `Facts` and `Ending` go, and the facts are the engine's
+  reads through the ports.
+- **The Plan, Triage and Score reconciles** go on the tick last; they
+  still suspend, resume and pause through `suspendRun`, `resumeWith` and
+  `syncPause`, which the same Workers can serve once they do.
+- `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
+  one last past its tick yet.
+
 **Step 13 as built** (`internal/engine/triage.go`, `internal/engine/task_roles.go`,
 `internal/model/answers.go`, `internal/model/lead_roles.go`). All three
 roles are built; none is left `RoleNotBuilt`. Choices the plan left open:

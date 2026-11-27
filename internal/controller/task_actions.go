@@ -142,8 +142,7 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 			return ctrl.Result{}, err
 		}
 		setProgress(status, model.ReviewAgain(progressOf(status)))
-		r.progress(task, status, metav1.ConditionTrue, "ApprovalEnded", step.Message)
-		log.Info("Checking and reviewing an approved Standard change again", "round", status.Round)
+		r.turnEnded(ctx, task, status, step)
 		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionAwaitApproval, model.ActionSpecDeclined:
@@ -246,6 +245,9 @@ func (r *TaskReconciler) turnEnded(ctx context.Context, task *c4v1beta1.Task, st
 	case model.ActionResolveConflicts:
 		reason = "ResolvingConflicts"
 		log.Info("Sent an approved Task back to resolve conflicts", "round", status.Round)
+	case model.ActionReviewAgain:
+		reason = "ApprovalEnded"
+		log.Info("Checking and reviewing an approved Standard change again", "round", status.Round)
 	default:
 		return
 	}

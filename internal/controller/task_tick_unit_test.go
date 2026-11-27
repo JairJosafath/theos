@@ -181,10 +181,13 @@ func TestTaskTurnLeavesTheEngineATurnsEnd336(t *testing.T) {
 	for action, ends := range map[model.TaskAction]bool{
 		model.ActionVerify: true, model.ActionRetryVerify: true, model.ActionRetry: true,
 		model.ActionRetryReview: true, model.ActionRerun: true, model.ActionResolveConflicts: true,
-		// A paused run's rerun costs no rerun, the engine has no such step
-		// yet; an Agent's outage and a review again write more than a reason.
-		model.ActionRerunPaused: false, model.ActionAgentUnavailable: false, model.ActionReviewAgain: false,
+		// Slice 4: a paused run's rerun, and an approval that ran out reviewed
+		// again, are the engine's too; an Agent's outage writes when the agent
+		// is back, which the engine's record has no place for.
+		model.ActionRerunPaused: true, model.ActionReviewAgain: true, model.ActionAgentUnavailable: false,
 		model.ActionStartImplement: false, model.ActionFail: false, model.ActionMerge: false,
+		// A run kept in place is not a turn's end (engine.InPlace).
+		model.ActionSuspendRun: false, model.ActionResumeRun: false,
 	} {
 		if got := engine.TurnEnd(action); got != ends {
 			t.Errorf("engine.TurnEnd(%s) = %v, want %v", action, got, ends)
@@ -224,6 +227,7 @@ func TestTaskTurnSaysWhatATurnsEndSays336(t *testing.T) {
 		model.ActionVerify: model.ReasonVerifying, model.ActionRetryVerify: "VerifierFailed",
 		model.ActionRetry: "NextRound", model.ActionRetryReview: "ReviewerFailed",
 		model.ActionRerun: "Interrupted", model.ActionResolveConflicts: "ResolvingConflicts",
+		model.ActionRerunPaused: "Interrupted", model.ActionReviewAgain: "ApprovalEnded",
 	} {
 		status := &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing, Round: 1}
 		step := model.TaskStep{Action: action, Message: "the step's message"}
