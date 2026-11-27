@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
+	"github.com/JairJosafath/theos/internal/engine"
 	"github.com/JairJosafath/theos/internal/model"
 	"github.com/JairJosafath/theos/internal/ports"
 )
@@ -146,5 +147,102 @@ func TestTaskTurnLeavesTheEngineTheStarts336(t *testing.T) {
 		if got := offers(action); got != engines {
 			t.Errorf("offers(%s) = %v, want %v", action, got, engines)
 		}
+	}
+}
+
+// #336: a turn's end and restart (engine.TurnEnd) are the engine's where it
+// ends the run the reconciler's endRun would end: the phase's turn is the
+// status's current Sandbox, or the phase has no run and the status names
+// none. A status that forgot its Sandbox, or names another, is apply's.
+func TestTaskTurnLeavesTheEngineATurnsEnd336(t *testing.T) {
+	task := workersTask("apps")
+	implementing := &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing, Round: 1, Reruns: 1}
+	current := sandboxName(task, implementing, model.RoleImplementer)
+	for _, tc := range []struct {
+		name    string
+		phase   c4v1beta1.TaskPhase
+		sandbox string
+		engines bool
+	}{
+		{"the phase's turn is the status's sandbox", c4v1beta1.TaskImplementing, current, true},
+		{"the status forgot its sandbox", c4v1beta1.TaskImplementing, "", false},
+		{"the status names another sandbox", c4v1beta1.TaskImplementing,
+			sandboxName(task, &c4v1beta1.TaskStatus{Round: 1}, model.RoleImplementer), false},
+		{"no run, and no sandbox named", c4v1beta1.TaskChecking, "", true},
+		{"no run, but a sandbox named", c4v1beta1.TaskChecking, current, false},
+	} {
+		status := implementing.DeepCopy()
+		status.Phase, status.Sandbox = tc.phase, tc.sandbox
+		turn := &taskTurn{task: task, status: status}
+		if got := turn.endsAsTheEngine(); got != tc.engines {
+			t.Errorf("%s: endsAsTheEngine() = %v, want %v", tc.name, got, tc.engines)
+		}
+	}
+	for action, ends := range map[model.TaskAction]bool{
+		model.ActionVerify: true, model.ActionRetryVerify: true, model.ActionRetry: true,
+		model.ActionRetryReview: true, model.ActionRerun: true, model.ActionResolveConflicts: true,
+		// A paused run's rerun costs no rerun, the engine has no such step
+		// yet; an Agent's outage and a review again write more than a reason.
+		model.ActionRerunPaused: false, model.ActionAgentUnavailable: false, model.ActionReviewAgain: false,
+		model.ActionStartImplement: false, model.ActionFail: false, model.ActionMerge: false,
+	} {
+		if got := engine.TurnEnd(action); got != ends {
+			t.Errorf("engine.TurnEnd(%s) = %v, want %v", action, got, ends)
+		}
+	}
+}
+
+// #336: what a turn's end the engine carried out says is the reconciler's:
+// before the run ends, a round no agent judged drops an earlier verdict and
+// a conflict to resolve keeps the review; after the tick, the status says
+// the step's Progressing reason, as apply's own turn ends do (turnEnded),
+// and nothing when the tick carried out another step.
+func TestTaskTurnSaysWhatATurnsEndSays336(t *testing.T) {
+	ctx := context.Background()
+	task := workersTask("apps")
+	review := &c4v1beta1.TaskReview{Verdict: model.VerdictApprove, Summary: "Looks right."}
+	status := &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskChecking, Round: 1, Review: review}
+	turn := &taskTurn{r: &TaskReconciler{}, task: task, status: status}
+	conflict := model.ConflictStep(1)
+	if err := turn.ending(ctx, model.TaskFacts{}, conflict); err != nil {
+		t.Fatal(err)
+	}
+	if status.Review != review {
+		t.Errorf("review = %+v, want the approval kept as the change goes back", status.Review)
+	}
+	status.Verification = &c4v1beta1.TaskVerification{Verdict: model.VerdictApprove}
+	if err := turn.ending(ctx, model.TaskFacts{}, model.TaskStep{Action: model.ActionRetry,
+		Unreviewed: true}); err != nil {
+		t.Fatal(err)
+	}
+	if status.Review != nil || status.Verification != nil {
+		t.Errorf("review %+v, verification %+v; want an earlier round's verdicts dropped", status.Review,
+			status.Verification)
+	}
+
+	for action, reason := range map[model.TaskAction]string{
+		model.ActionVerify: model.ReasonVerifying, model.ActionRetryVerify: "VerifierFailed",
+		model.ActionRetry: "NextRound", model.ActionRetryReview: "ReviewerFailed",
+		model.ActionRerun: "Interrupted", model.ActionResolveConflicts: "ResolvingConflicts",
+	} {
+		status := &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing, Round: 1}
+		step := model.TaskStep{Action: action, Message: "the step's message"}
+		turn := &taskTurn{r: &TaskReconciler{}, task: task, status: status, step: step, endsTurn: true}
+		turn.ended(ctx, model.TaskStep{Action: model.ActionWait, Reason: engine.ReasonOfferHeld})
+		if cond := apimeta.FindStatusCondition(status.Conditions, ConditionProgressing); cond != nil {
+			t.Errorf("%s: Progressing = %+v after another step, want none", action, cond)
+		}
+		turn.ended(ctx, step)
+		cond := apimeta.FindStatusCondition(status.Conditions, ConditionProgressing)
+		if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != reason ||
+			cond.Message != step.Message {
+			t.Errorf("%s: Progressing = %+v, want True, %s, with the step's message", action, cond, reason)
+		}
+	}
+	status = &c4v1beta1.TaskStatus{Phase: c4v1beta1.TaskImplementing, Round: 1}
+	turn = &taskTurn{r: &TaskReconciler{}, task: task, status: status, step: model.TaskStep{Action: model.ActionRerun}}
+	turn.ended(ctx, turn.step)
+	if len(status.Conditions) != 0 {
+		t.Errorf("conditions = %+v, want none for a turn's end apply carried out", status.Conditions)
 	}
 }

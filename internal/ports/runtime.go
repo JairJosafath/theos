@@ -99,6 +99,12 @@ type Workers interface {
 // open and the test environments the run needs leased; a try that
 // continues an earlier one's green commit starts at its review instead.
 // Workers whose sessions pull the work have nothing to ready.
+//
+// A turn the engine restarts (a rerun, a review or verification tried
+// again, a conflict to resolve) is offered by a later tick where the
+// Workers ready turns, so it is readied as any other: such Workers name
+// each turn apart (the operator's Sandbox names count the reruns and
+// attempts), so the run a restart ended reads back not started.
 type Preparer interface {
 	// Prepare readies the turn w names, before the engine saves the start
 	// of its run. Not ready, the engine saves nothing and offers nothing

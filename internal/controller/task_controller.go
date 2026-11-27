@@ -280,14 +280,16 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	// The engine's Task tick reads the Task's facts, decides and carries out
-	// a turn's offer through the Task's Workers; the reconciler carries out
-	// every other step itself, until #336 moves the rest (task_tick.go).
+	// a turn's offer, and a turn's end and restart, through the Task's
+	// Workers; the reconciler carries out every other step itself, until
+	// #336 moves the rest (task_tick.go).
 	turn := r.newTaskTurn(&task, status, &container, agents)
 	res, err := engine.TaskTick(ctx, turn, nil, turn.input(ctx))
 	if err != nil {
 		return turn.result, err
 	}
 	turn.started(ctx, res.Step)
+	turn.ended(ctx, res.Step)
 	r.setPaused(&task, status, turn.step, turn.facts.Pause)
 	r.queueForSlot(status, turn.step, &turn.result)
 	syncNeedsYou(&task, status)

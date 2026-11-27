@@ -256,3 +256,152 @@ func actions(steps []model.TaskAction) []string {
 	}
 	return out
 }
+
+// #336: Workers that ready a turn (ports.Preparer) have a restarted turn
+// offered by a later tick: the restart ends the run and saves, and the next
+// tick decides the turn's start again and readies it first, as the
+// operator's start's gates run for the new Sandbox. The lead runtime's
+// Workers ready nothing, and offer it in the same tick
+// (TestTaskTickLeaseRunsOut334).
+func TestTaskTickRestartsOnALaterTickWhereTheWorkersReadyTurns336(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// play brings the Task to the turn that restarts, and says how
+		// many turns were offered then.
+		play   func(w *taskWorld, rt preparingRuntime) int
+		action model.TaskAction
+		role   string
+		start  model.TaskAction
+		phase  string
+	}{{
+		name: "an interrupted run runs again",
+		play: func(w *taskWorld, rt preparingRuntime) int {
+			w.tickOn(rt) // round 1 offered
+			w.rt.Work.SetRun(w.in.Task, 1, model.RoleImplementer, model.RunState{Started: true,
+				Markers: &model.MarkerRun{EndDue: model.EndSilent}})
+			return 1
+		},
+		action: model.ActionRerun, role: model.RoleImplementer, start: model.ActionStartImplement,
+		phase: model.TaskImplementing,
+	}, {
+		name: "a review with no verdict is tried again",
+		play: func(w *taskWorld, rt preparingRuntime) int {
+			w.tickOn(rt)
+			commit := w.implement(1)
+			w.tickOn(rt) // the pull request
+			w.checksPass(commit)
+			w.tickOn(rt) // the review offered
+			w.review(1, "", "")
+			return 2
+		},
+		action: model.ActionRetryReview, role: model.RoleReviewer, start: model.ActionStartReview,
+		phase: model.TaskReviewing,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newTaskWorld(t)
+			rt, workers := w.preparing(true)
+			offered := tc.play(w, rt)
+			readied := len(workers.prepared)
+
+			res := w.tickOn(rt)
+			w.want(res, tc.action, tc.phase)
+			if offers := w.rt.Work.Offers(); len(offers) != offered {
+				t.Errorf("offers = %+v, want none more in the tick that restarted the turn", offers)
+			}
+			if len(workers.prepared) != readied {
+				t.Errorf("prepared = %+v, want nothing readied in the tick that restarted the turn",
+					workers.prepared)
+			}
+			ends := w.rt.Work.Ends()
+			if last := ends[len(ends)-1]; last.Role != tc.role || last.Round != 1 || last.Why != "done" {
+				t.Errorf("ends = %+v, want round 1's %s turn ended", ends, tc.role)
+			}
+
+			// The next tick starts the turn again, readied first.
+			w.want(w.tickOn(rt), tc.start, tc.phase)
+			offers := w.rt.Work.Offers()
+			if len(offers) != offered+1 || offers[offered].Role != tc.role || offers[offered].Round != 1 {
+				t.Fatalf("offers = %+v, want round 1's %s turn offered again", offers, tc.role)
+			}
+			if len(workers.prepared) != readied+1 || workers.prepared[readied].Role != tc.role {
+				t.Errorf("prepared = %+v, want the restarted turn readied before its offer", workers.prepared)
+			}
+		})
+	}
+}
+
+// #336: a runtime's Ending says what a turn's end says, in place of the
+// engine's words on the pull request, before the Workers end the run; and
+// with it, a round not accepted needs no host.
+func TestTaskTickLeavesATurnsWordsToTheRuntime336(t *testing.T) {
+	w := newTaskWorld(t)
+	ctx := context.Background()
+	w.tick()
+	commit := w.implement(1)
+	pr := w.tick().Record.PullRequest
+	w.checksPass(commit)
+	w.tick()
+	w.review(1, model.VerdictChanges, "Handle an empty order.")
+
+	var said []model.TaskStep
+	var endsBefore int
+	w.in.Ending = func(_ context.Context, facts model.TaskFacts, step model.TaskStep) error {
+		said = append(said, step)
+		endsBefore = len(w.rt.Work.Ends())
+		if facts.Run.Result == nil || facts.Run.Result.Verdict != model.VerdictChanges {
+			t.Errorf("Ending got run %+v, want the review's, before it ends", facts.Run)
+		}
+		return nil
+	}
+	w.in.Facts = func(_ context.Context, facts model.TaskFacts) (model.TaskFacts, error) { return facts, nil }
+	endsAtStart := len(w.rt.Work.Ends())
+	res, err := engine.TaskTick(ctx, w.rt, nil, w.in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Step.Action != model.ActionRetry || res.Record.Progress.Round != 2 {
+		t.Fatalf("step %+v, record %+v; want round 2", res.Step, res.Record.Progress)
+	}
+	if len(said) != 1 || said[0].Action != model.ActionRetry {
+		t.Fatalf("Ending said %+v, want the round not accepted", said)
+	}
+	if endsBefore != endsAtStart {
+		t.Errorf("Ending ran after %d turns ended, want it before the review's run ends", endsBefore-endsAtStart)
+	}
+	if ends := w.rt.Work.Ends(); len(ends) != endsAtStart+1 || ends[len(ends)-1].Role != model.RoleReviewer {
+		t.Errorf("ends = %+v, want the review's turn ended", ends)
+	}
+	if comments := w.g.PullComments(owner, container, pr); len(comments) != 0 {
+		t.Errorf("pull request comments = %q, want the runtime's words alone", comments)
+	}
+
+	// Round 2, on the host again: its request for changes is the runtime's
+	// to say too.
+	w.in.Facts = nil
+	w.want(w.tick(), model.ActionStartImplement, model.TaskImplementing)
+	commit = w.implement(2)
+	w.tick()
+	w.checksPass(commit)
+	w.want(w.tick(), model.ActionStartReview, model.TaskReviewing)
+	w.review(2, model.VerdictChanges, "Handle a negative quantity.")
+	res = w.tick()
+	if res.Step.Action != model.ActionRetry || res.Record.Progress.Round != 3 || len(said) != 2 {
+		t.Fatalf("step %+v, round %d, Ending said %+v; want round 3, said by the runtime", res.Step,
+			res.Record.Progress.Round, said)
+	}
+	for _, c := range w.g.PullComments(owner, container, pr) {
+		if strings.Contains(c, "asks for changes") || strings.Contains(c, "not accepted") {
+			t.Errorf("the engine said %q, want the runtime's words alone", c)
+		}
+	}
+}
+
+// tickOn runs one Task tick on rt, failing on an error.
+func (w *taskWorld) tickOn(rt ports.Runtime) engine.TaskResult {
+	w.t.Helper()
+	res, err := engine.TaskTick(context.Background(), rt, w.g, w.in)
+	if err != nil {
+		w.t.Fatalf("TaskTick: %v", err)
+	}
+	return res
+}

@@ -92,11 +92,11 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		return ctrl.Result{}, r.nothingToDo(ctx, task, status, container, step)
 
 	case model.ActionRetryReview:
-		r.progress(task, status, metav1.ConditionTrue, "ReviewerFailed", step.Message)
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
 		setProgress(status, model.RetryReview(progressOf(status)))
+		r.turnEnded(ctx, task, status, step)
 		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionMerge:
@@ -106,15 +106,13 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		return r.updateBranch(ctx, task, status, container, agents, step)
 
 	case model.ActionResolveConflicts:
-		review := r.reviewFrom(ctx, task, status)
-		r.comment(ctx, task, status, container, step.Message+".")
+		review := r.sayConflicts(ctx, task, status, container, step)
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
 		status.Review = review
 		setProgress(status, model.ResolveConflicts(progressOf(status), step.Feedback))
-		r.progress(task, status, metav1.ConditionTrue, "ResolvingConflicts", step.Message)
-		log.Info("Sent an approved Task back to resolve conflicts", "round", status.Round)
+		r.turnEnded(ctx, task, status, step)
 		return ctrl.Result{}, nil // the status write triggers the next step
 
 	case model.ActionRerun, model.ActionRerunPaused, model.ActionSuspendRun, model.ActionResumeRun,
@@ -176,11 +174,28 @@ func startRole(action model.TaskAction) string {
 	return model.RoleImplementer
 }
 
-// nextRound starts the Task's next round with the step's feedback. A
-// reviewer's or verifier's request for changes goes on the pull request as a
-// review; any other reason, as a comment.
+// nextRound starts the Task's next round with the step's feedback, after
+// saying why on the pull request (sayNotAccepted).
 func (r *TaskReconciler) nextRound(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) error {
+	review := r.sayNotAccepted(ctx, task, status, container, agents, step)
+	if err := r.endRun(ctx, task, status); err != nil {
+		return err
+	}
+	if review != nil {
+		status.Review = review
+	}
+	setProgress(status, model.NextRound(progressOf(status), step.Feedback))
+	r.turnEnded(ctx, task, status, step)
+	return nil
+}
+
+// sayNotAccepted says on the pull request why the round was not accepted: a
+// reviewer's or verifier's request for changes as a review, as that Agent's
+// account; any other reason as a comment. It returns the current review
+// run's verdict, which the status keeps once the run ends (nil for none).
+func (r *TaskReconciler) sayNotAccepted(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) *c4v1beta1.TaskReview {
 	review := r.reviewFrom(ctx, task, status)
 	verification := status.Verification
 	switch {
@@ -192,16 +207,49 @@ func (r *TaskReconciler) nextRound(ctx context.Context, task *c4v1beta1.Task, st
 	default:
 		r.comment(ctx, task, status, container, fmt.Sprintf("Round %d was not accepted.\n\n%s", status.Round, step.Feedback))
 	}
-	if err := r.endRun(ctx, task, status); err != nil {
-		return err
+	return review
+}
+
+// sayConflicts says on the pull request that an approved change goes back to
+// resolve its conflicts with main, and returns the review the status keeps
+// once the review's run ends.
+func (r *TaskReconciler) sayConflicts(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, step model.TaskStep) *c4v1beta1.TaskReview {
+	review := r.reviewFrom(ctx, task, status)
+	r.comment(ctx, task, status, container, step.Message+".")
+	return review
+}
+
+// turnEnded says in the status, and the log, that step ended a turn and
+// moved the Task on (engine.TurnEnd): the Progressing reason each such step
+// writes, once its progress is in the status. The reconciler's own steps
+// and the engine's (taskTurn.ended) say it alike.
+func (r *TaskReconciler) turnEnded(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	step model.TaskStep) {
+	log := logf.FromContext(ctx)
+	reason := ""
+	switch step.Action {
+	case model.ActionVerify:
+		reason = model.ReasonVerifying
+		log.Info("Sent an approved Task to its verifier", "round", status.Round, "commit", status.Commit,
+			"verifier", task.Spec.VerifierRef)
+	case model.ActionRetryVerify:
+		reason = "VerifierFailed"
+	case model.ActionRetry:
+		reason = "NextRound"
+		log.Info("Started next round of Task", "round", status.Round, "feedback", firstLine(step.Feedback))
+	case model.ActionRetryReview:
+		reason = "ReviewerFailed"
+	case model.ActionRerun, model.ActionRerunPaused:
+		reason = "Interrupted"
+		log.Info("Rerunning an interrupted run", "round", status.Round, "reruns", status.Reruns)
+	case model.ActionResolveConflicts:
+		reason = "ResolvingConflicts"
+		log.Info("Sent an approved Task back to resolve conflicts", "round", status.Round)
+	default:
+		return
 	}
-	if review != nil {
-		status.Review = review
-	}
-	setProgress(status, model.NextRound(progressOf(status), step.Feedback))
-	r.progress(task, status, metav1.ConditionTrue, "NextRound", step.Message)
-	logf.FromContext(ctx).Info("Started next round of Task", "round", status.Round, "feedback", firstLine(step.Feedback))
-	return nil
+	r.progress(task, status, metav1.ConditionTrue, reason, step.Message)
 }
 
 // reasonAgentUnavailable is the Progressing reason of a Task waiting for its
