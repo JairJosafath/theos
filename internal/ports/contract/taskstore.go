@@ -167,8 +167,26 @@ func (s taskStoreSuite) progress(t *testing.T) {
 	got := must(store.Progress(s.ctx, start.Task))(t)
 	if got.Progress.Phase != model.TaskChecking || got.Progress.Round != 2 || got.Progress.Commit != "abc1234" ||
 		got.Progress.Feedback != rec.Progress.Feedback || got.PullRequest != 7 ||
-		got.PullRequestURL != rec.PullRequestURL || got.Summary != rec.Summary || !got.PhaseSince.Equal(since) {
+		got.PullRequestURL != rec.PullRequestURL || got.Summary != rec.Summary || !got.PhaseSince.Equal(since) ||
+		!got.AgentBack.IsZero() {
 		t.Errorf("record read back = %+v, want %+v", got, rec)
+	}
+	// #336: the record keeps when the agent whose outage ended the round's
+	// turn is due back, and forgets it once the record has none.
+	back := since.Add(30 * time.Minute)
+	rec.Progress.Phase, rec.AgentBack = model.TaskImplementing, back
+	if err := store.SaveProgress(s.ctx, start.Task, rec); err != nil {
+		t.Fatal(err)
+	}
+	if got := must(store.Progress(s.ctx, start.Task))(t); !got.AgentBack.Equal(back) {
+		t.Errorf("agent back read back = %v, want %v", got.AgentBack, back)
+	}
+	rec.AgentBack = time.Time{}
+	if err := store.SaveProgress(s.ctx, start.Task, rec); err != nil {
+		t.Fatal(err)
+	}
+	if got := must(store.Progress(s.ctx, start.Task))(t); !got.AgentBack.IsZero() {
+		t.Errorf("agent back read back = %v, want none once the record forgot it", got.AgentBack)
 	}
 	if named(t, s.tasks(t, store, container), start.Task).Final {
 		t.Error("a Checking Task is listed final")

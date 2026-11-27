@@ -58,10 +58,12 @@ func (a taskAgents) forRole(role string) *c4v1beta1.Agent {
 
 // apply does one step and records it in status. A turn's start (a start
 // action) is not here: the engine's Task tick offers it through the Task's
-// Workers (task_tick.go, #336).
+// Workers (task_tick.go, #336). The steps the tick carries out itself where
+// it acts on the run the reconciler would (a turn's end, a run kept in
+// place, a pull request opened, checks run again, a failure) are here for a
+// status that names another run (taskTurn.endsAsTheEngine).
 func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
 	if step.Unreviewed {
 		// No agent judged this round's change (its Crew's approval rules ask
 		// for no review): an earlier round's verdict is not its own, and
@@ -126,12 +128,8 @@ func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
-		back := model.AgentBackAt(step.RetryAt, r.now())
-		status.AgentBackAt = &metav1.Time{Time: back}
-		r.progress(task, status, metav1.ConditionTrue, reasonAgentUnavailable,
-			fmt.Sprintf("%s; trying again at %s", step.Message, back.UTC().Format(time.RFC3339)))
-		log.Info("Agent unavailable; Task waits", "until", back, "message", step.Message)
-		return ctrl.Result{RequeueAfter: back.Sub(r.now())}, nil
+		status.AgentBackAt = &metav1.Time{Time: model.AgentBackAt(step.RetryAt, r.now())}
+		return r.waitForAgent(ctx, task, status, step), nil
 
 	case model.ActionRetry:
 		return ctrl.Result{}, r.nextRound(ctx, task, status, container, agents, step) // the status write triggers the next step
@@ -258,6 +256,22 @@ func (r *TaskReconciler) turnEnded(ctx context.Context, task *c4v1beta1.Task, st
 // agent's service to be back.
 const reasonAgentUnavailable = "AgentUnavailable"
 
+// waitForAgent says in the status that step ended the Task's run as its
+// agent is unavailable, and when it is tried again (status.agentBackAt), and
+// is when to look again then. apply's AgentUnavailable and the engine's
+// (taskTurn.ended, #336) say it alike.
+func (r *TaskReconciler) waitForAgent(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	step model.TaskStep) ctrl.Result {
+	back := r.now()
+	if status.AgentBackAt != nil {
+		back = status.AgentBackAt.Time
+	}
+	r.progress(task, status, metav1.ConditionTrue, reasonAgentUnavailable,
+		fmt.Sprintf("%s; trying again at %s", step.Message, back.UTC().Format(time.RFC3339)))
+	logf.FromContext(ctx).Info("Agent unavailable; Task waits", "until", back, "message", step.Message)
+	return ctrl.Result{RequeueAfter: back.Sub(r.now())}
+}
+
 // wait records what the Task waits for, and when to look again.
 func (r *TaskReconciler) wait(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, step model.TaskStep) ctrl.Result {
 	if status.Phase == c4v1beta1.TaskBlocked {
@@ -333,15 +347,30 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, statu
 	if err := r.writeStatus(ctx, task, status); err != nil {
 		return ctrl.Result{}, err
 	}
+	r.pullOpened(ctx, task, status, container, run.Result, reopened)
+	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.dropRun(ctx, task, ended)
+}
+
+// pullOpened says what the round's pull request, opened, says once the
+// status that records it is written: a spec's is labelled for its review, a
+// later round's names the files a Standard change changes besides its own
+// (its description stays the first round's), and a check that fails on main
+// in the agent's workspace too is noted, with its Event. apply's openPR and
+// the engine's (taskTurn.opened, #336) say it alike.
+func (r *TaskReconciler) pullOpened(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, res *model.RunResult, reopened bool) {
 	if isSpec(task) {
 		r.labelSpecReview(ctx, task, container)
 	}
-	if reopened && len(run.Result.Extra) > 0 {
+	if res == nil {
+		return
+	}
+	if reopened && len(res.Extra) > 0 {
 		// A later round's pull request is the first one, whose description stays.
 		r.comment(ctx, task, status, container, fmt.Sprintf("Round %d: %s", status.Round,
-			extrasNote(task, run.Result.Extra)))
+			extrasNote(task, res.Extra)))
 	}
-	if failed := run.Result.CheckFailsOnBase; failed != "" {
+	if failed := res.CheckFailsOnBase; failed != "" {
 		r.comment(ctx, task, status, container, model.CheckFailsOnBaseComment(int(status.Round), failed,
 			recordedChecks(&container.Status)))
 		if r.Recorder != nil {
@@ -349,7 +378,6 @@ func (r *TaskReconciler) openPR(ctx context.Context, task *c4v1beta1.Task, statu
 				model.CheckFailsOnBaseEvent(int(status.Round), failed))
 		}
 	}
-	return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, r.dropRun(ctx, task, ended)
 }
 
 // runInput is what a run of a Container's Task gets from its Git host, read
@@ -1205,6 +1233,15 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1beta1.Task, status 
 	}
 	r.dropProposal(ctx, task, status, container)
 	r.finish(task, status, c4v1beta1.TaskFailed, metav1.ConditionFalse, reason, message)
+	r.failed(ctx, task, container, reason, message)
+	return nil
+}
+
+// failed hands a failed Task's issue back to a person, saying why, and says
+// in the log that it failed. fail and the engine's failure
+// (taskTurn.carried, #336) say it alike.
+func (r *TaskReconciler) failed(ctx context.Context, task *c4v1beta1.Task, container *c4v1beta1.Container,
+	reason, message string) {
 	why := message
 	switch reason {
 	case model.ReasonNoCIResult:
@@ -1226,7 +1263,6 @@ func (r *TaskReconciler) fail(ctx context.Context, task *c4v1beta1.Task, status 
 	}
 	r.handBack(ctx, task, container, why)
 	logf.FromContext(ctx).Info("Failed Task", "reason", reason, "message", message)
-	return nil
 }
 
 // failWith fails the Task as the model decided.

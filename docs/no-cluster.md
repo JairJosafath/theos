@@ -119,7 +119,12 @@ session to work the project: its `AGENTS.md` is the loop.
    the Container's checks, pushes, and calls `theos_done` with the commit.
 3. The lead calls `theos_next`: theos opens the pull request and waits for
    its checks; once they pass, it offers the review to `theos-reviewer`,
-   which claims it and gives its verdict with `theos_done`.
+   which claims it and gives its verdict with `theos_done`. Checks the
+   runner failed (a job killed for lack of memory) or failed at a commit
+   the agent pushed again have their failed jobs run again once the
+   commit's CI runs end. With no failed run to run again, a commit pushed
+   again has its failure read as it stands, and a runner's failure fails
+   the Task `NoCIResult`, at no try, as does a rerun the host refuses.
 4. Changes asked for start round 2, the reviewer's words in the
    implementer's next work order. An approval makes `theos_next` say the
    Task waits for a person, `PersonMerges`.

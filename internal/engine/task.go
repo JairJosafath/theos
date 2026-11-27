@@ -93,31 +93,69 @@ type TaskInput struct {
 	// returns true for a step it carried out itself, through the runtime,
 	// and the engine then does nothing more; false leaves the step to the
 	// engine. The operator carries every step but a turn's offer, end and
-	// keeping in place itself until #336 moves the rest
-	// (docs/plans/lead-runtime.md, step 12). The
-	// engine reaches the host only for a step Carry leaves it, so a runtime
-	// whose Carry leaves it only the offers may tick with no host.
+	// keeping in place, the round's pull request opened, checks run again
+	// and a failure itself until #336 moves the rest
+	// (docs/plans/lead-runtime.md, step 12). The engine reaches the host
+	// only for a step Carry leaves it, so a runtime whose Carry leaves it
+	// only steps that need none may tick with no host, and one that leaves
+	// it more resolves it then (Host).
 	Carry func(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (bool, error)
 	// Ending, when set, is the runtime's half of a step that ends a turn
-	// (TurnEnd), called before the Workers end the run: what the step says
-	// on the pull request, in place of the engine's own comment or review,
-	// and what the runtime keeps of the run before it goes. The operator
-	// posts as each Agent's own account, and keeps the review on the Task's
-	// status (#336). With Ending set, the engine reaches the host for none
-	// of these steps.
+	// (TurnEnd) or fails the Task (model.ActionFail, also one the engine
+	// turns a step into, as a rerun of checks the host refused), called
+	// before the Workers end the run: what the step says on the pull request
+	// and the issue, in place of the engine's own comment, review or hand
+	// back, and what the runtime keeps of the run before it goes. The
+	// operator posts as each Agent's own account, and keeps the review on
+	// the Task's status (#336). With Ending set, the engine reaches the host
+	// for none of these steps' words. A failure's record is read back from
+	// the store after it, as the runtime may keep there why it failed.
 	Ending func(ctx context.Context, facts model.TaskFacts, step model.TaskStep) error
+	// Host, when set, reaches the Git host for a tick whose host was not
+	// given, the first time a step needs it: the host and the Task's
+	// repository on it, which then stands for Repo. The operator's is costly
+	// to reach (a GitProvider and its Secrets) and most steps need none, so
+	// it is resolved only for one Carry left to the engine (#336).
+	Host func(ctx context.Context) (TaskHost, ports.Repository, error)
+	// HostTimeout bounds each of the tick's calls to the host; zero means
+	// HostTimeout. The operator's is its own Git timeout.
+	HostTimeout time.Duration
+	// Pull, when set, writes the round's pull request: the branch it is
+	// opened from, its title and its description, in place of the engine's
+	// (model.TaskBranch, PullTitle and PullBody). The operator's names a
+	// Benchmark's and a spec's titles, a goal with no issue, and the files a
+	// Standard change changes besides its own, and opens from the branch an
+	// earlier try's pull request continues (#336).
+	Pull func(facts model.TaskFacts) PullDraft
+}
+
+// PullDraft is a round's pull request as a runtime writes it
+// (TaskInput.Pull): the branch it is opened from, its title and its
+// description.
+type PullDraft struct {
+	Head, Title, Body string
+}
+
+// hostTimeout is how long each of the tick's calls to the host may take.
+func (in TaskInput) hostTimeout() time.Duration {
+	if in.HostTimeout > 0 {
+		return in.HostTimeout
+	}
+	return HostTimeout
 }
 
 // TurnEnd reports whether action ends a turn and moves the Task on without
 // the host but for what the step says on the pull request (TaskInput.Ending):
 // a run to verify, a round not accepted, a review or verification to try
 // again, an interrupted run to run again, a paused run that can't resume run
-// again, a conflict to resolve, and an approval that ran out checked and
-// reviewed again.
+// again, a conflict to resolve, an approval that ran out checked and
+// reviewed again, and a run whose agent is unavailable, whose turn is
+// offered again once the agent is due back (TaskRecord.AgentBack).
 func TurnEnd(action model.TaskAction) bool {
 	switch action {
 	case model.ActionVerify, model.ActionRetryVerify, model.ActionRetry, model.ActionRetryReview,
-		model.ActionRerun, model.ActionRerunPaused, model.ActionResolveConflicts, model.ActionReviewAgain:
+		model.ActionRerun, model.ActionRerunPaused, model.ActionResolveConflicts, model.ActionReviewAgain,
+		model.ActionAgentUnavailable:
 		return true
 	}
 	return false
@@ -158,8 +196,11 @@ const whyDone = "done"
 // can't do waits for a person (model.ReasonPersonMerges), and the tick after
 // the person's merge ends the Task Merged. The operator's Task reconcile
 // runs on it too (#336): it gives its own facts (TaskInput.Facts), carries
-// out every step but a turn's offer, end and keeping in place itself
-// (TaskInput.Carry), says what a turn's end says itself (TaskInput.Ending),
+// out every step but a turn's offer, end and keeping in place, a pull request
+// opened, checks run again and a failure itself (TaskInput.Carry), says what
+// a turn's end and a failure say itself (TaskInput.Ending), writes the pull
+// request (TaskInput.Pull), reaches its host only for a step that needs it
+// (TaskInput.Host),
 // and its Workers ready a turn before it is offered (ports.Preparer), which
 // also offers a restarted turn on a later tick, and suspend, resume and
 // pause runs in place (ports.Suspender, ports.Resumer, ports.Pauser), which
@@ -208,9 +249,14 @@ func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput
 			return TaskResult{Step: step, Record: t.rec}, err
 		}
 	}
-	if host == nil && !t.hostFree(step.Action) {
-		return TaskResult{Step: step, Record: t.rec}, fmt.Errorf(
-			"the Task tick has no host to carry out %s", step.Action)
+	if t.host == nil && !t.hostFree(step.Action) {
+		if in.Host == nil {
+			return TaskResult{Step: step, Record: t.rec}, fmt.Errorf(
+				"the Task tick has no host to carry out %s", step.Action)
+		}
+		if t.host, t.in.Repo, err = in.Host(ctx); err != nil {
+			return TaskResult{Step: step, Record: t.rec}, err
+		}
 	}
 	step, err = t.carry(ctx, facts, step)
 	if err == nil && (step.Reason == ReasonOfferHeld || InPlace(step.Action)) {
@@ -232,16 +278,19 @@ func (t *taskTick) result(ctx context.Context, step model.TaskStep) (TaskResult,
 }
 
 // hostFree reports whether the engine carries out action without the host:
-// a wait, a turn's offer, a run kept in place, or a turn's end whose words
-// on the pull request are the runtime's (TaskInput.Ending) or none.
+// a wait, a turn's offer, a run kept in place, or a turn's end or a failure
+// whose words are the runtime's (TaskInput.Ending) or none.
 func (t *taskTick) hostFree(action model.TaskAction) bool {
 	switch action {
 	case model.ActionNone, model.ActionWait, model.ActionStartImplement, model.ActionStartReview,
 		model.ActionStartVerify, model.ActionVerify, model.ActionRetryVerify, model.ActionRetryReview,
-		model.ActionRerun, model.ActionRerunPaused:
+		model.ActionRerun, model.ActionRerunPaused, model.ActionAgentUnavailable:
 		return true
 	case model.ActionRetry, model.ActionResolveConflicts, model.ActionReviewAgain:
 		return t.in.Ending != nil
+	case model.ActionFail:
+		// A Triage Task's failure says so on its issue, the engine's words.
+		return t.in.Ending != nil && !t.in.Triage
 	}
 	return InPlace(action)
 }
@@ -297,6 +346,9 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 	if p.ChecksFailed {
 		facts.FailedCommit = p.Commit
 	}
+	if !t.rec.AgentBack.IsZero() {
+		facts.AgentBackIn = t.rec.AgentBack.Sub(in.Now)
+	}
 	if role := in.RunRole(facts.Phase); role != "" {
 		run, err := t.rt.Workers().Run(ctx, in.Task, p.Round, role)
 		if err != nil {
@@ -327,7 +379,7 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 	if t.host == nil {
 		return facts, errors.New("the Task tick has no host to read the Task's facts from")
 	}
-	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 	defer cancel()
 	if facts.Phase == model.TaskPending && in.Protected && in.ContainerReady && !in.Triage {
 		if err := ReadBase(hostCtx, t.host, in.Repo, in.CheckContexts, &facts); err != nil {
@@ -377,8 +429,8 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 	case model.ActionAwaitApproval:
 		return step, t.awaitApproval(ctx, role)
 	case model.ActionSpecDeclined:
-		return step, t.fail(ctx, role, model.TaskStep{Action: model.ActionFail, Reason: model.ReasonSpecDeclined,
-			Message: model.SpecDeclinedMessage(t.rec.PullRequestURL)})
+		return step, t.fail(ctx, facts, role, model.TaskStep{Action: model.ActionFail,
+			Reason: model.ReasonSpecDeclined, Message: model.SpecDeclinedMessage(t.rec.PullRequestURL)})
 	case model.ActionTriaged:
 		return t.triaged(ctx, facts, step)
 	case model.ActionOpenPR:
@@ -387,7 +439,7 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 		if facts.Phase == model.TaskImplementing {
 			return step, t.openPR(ctx, facts, true)
 		}
-		return step, t.rerunChecks(ctx, step)
+		return t.rerunChecks(ctx, facts, step)
 	case model.ActionUpdateBranch:
 		return t.updateBranch(ctx, facts, step)
 	case model.ActionMerge:
@@ -396,7 +448,7 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 		if t.in.Triage {
 			return step, t.failTriage(ctx, step)
 		}
-		return step, t.fail(ctx, role, step)
+		return step, t.fail(ctx, facts, role, step)
 	}
 	// What the operator alone does (a Standard change, an agent's outage)
 	// waits here, saying so.
@@ -440,6 +492,11 @@ func (t *taskTick) endTurn(ctx context.Context, facts model.TaskFacts, step mode
 		return t.next(ctx, role, model.ReviewAgain(p))
 	case model.ActionResolveConflicts:
 		return t.restart(ctx, role, model.ResolveConflicts(p, step.Feedback), model.RoleImplementer)
+	case model.ActionAgentUnavailable:
+		// The run ends, and its turn waits for the agent: the start decided
+		// once it is due back offers it again, and forgets when (offer).
+		t.rec.AgentBack = model.AgentBackAt(step.RetryAt, t.in.Now)
+		return t.next(ctx, role, p)
 	}
 	return fmt.Errorf("%s ends no turn", step.Action)
 }
@@ -604,6 +661,9 @@ func (t *taskTick) offer(ctx context.Context, role string) (bool, error) {
 				readied.Round, order.Round)
 		}
 	}
+	// A turn offered no longer waits for its agent, as the operator's Offer
+	// forgets agentBackAt.
+	t.rec.AgentBack = time.Time{}
 	if err := t.save(ctx, p); err != nil {
 		return false, err
 	}
@@ -643,11 +703,15 @@ func (t *taskTick) openPR(ctx context.Context, facts model.TaskFacts, again bool
 	if res == nil || res.Commit == "" {
 		return errors.New("the implementer's run ended with no commit to open a pull request of")
 	}
-	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+	draft := PullDraft{Head: model.TaskBranch(t.in.Task), Title: t.pullTitle(), Body: PullBody(PullBodyInput{
+		Task: t.in.Task, Issue: t.in.Issue, Implementer: t.in.Implementer, Reviewer: t.in.Reviewer,
+		Verifier: t.in.Verifier, Round: facts.Round, Summary: res.Summary})}
+	if t.in.Pull != nil {
+		draft = t.in.Pull(facts)
+	}
+	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 	defer cancel()
-	pr, err := t.host.OpenPullRequest(hostCtx, t.in.Repo, model.TaskBranch(t.in.Task), ports.DefaultBranch,
-		t.pullTitle(), PullBody(PullBodyInput{Task: t.in.Task, Issue: t.in.Issue, Implementer: t.in.Implementer,
-			Reviewer: t.in.Reviewer, Verifier: t.in.Verifier, Round: facts.Round, Summary: res.Summary}))
+	pr, err := t.host.OpenPullRequest(hostCtx, t.in.Repo, draft.Head, ports.DefaultBranch, draft.Title, draft.Body)
 	if err != nil {
 		return &HostError{Err: err}
 	}
@@ -662,37 +726,67 @@ func (t *taskTick) openPR(ctx context.Context, facts model.TaskFacts, again bool
 	return t.save(ctx, model.OpenedPR(t.rec.Progress, res.Commit))
 }
 
-// rerunChecks runs again the failed jobs of the round's commit.
-func (t *taskTick) rerunChecks(ctx context.Context, step model.TaskStep) error {
+// rerunChecks runs again the failed jobs of the CI runs at the round's
+// commit, which the machine killed for lack of memory or the round pushed
+// again, and waits for their result in the same round. It waits while a run
+// at the commit still runs, as the Git host runs a run's jobs again only once
+// it ended (a wait that rechecks). With no failed run to run again, a commit
+// pushed again has its failure read as it stands (a wait that reads the
+// checks at once); any other fails the Task at no try (model.ReasonNoCIResult),
+// as does a rerun the host refuses.
+func (t *taskTick) rerunChecks(ctx context.Context, facts model.TaskFacts,
+	step model.TaskStep) (model.TaskStep, error) {
 	p := t.rec.Progress
-	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 	defer cancel()
 	found, err := t.host.CommitRuns(hostCtx, t.in.Repo, p.Commit)
 	if err != nil {
-		return &HostError{Err: err}
+		return step, &HostError{Err: err}
 	}
 	runs := WorkflowRuns(found)
 	if !model.RunsEnded(runs) {
-		return nil // the next tick looks again
+		return model.TaskStep{Action: model.ActionWait, Recheck: true,
+			Message: step.Message + "; waiting for the CI runs at the commit to end first"}, nil
 	}
-	for _, run := range model.FailedCommitRuns(runs) {
+	failed := model.FailedCommitRuns(runs)
+	if len(failed) == 0 && p.ChecksRerunDue {
+		p.ChecksRerunDue = false
+		return model.TaskStep{Action: model.ActionWait, Message: fmt.Sprintf(
+			"The Git host lists no failed CI run at %s to run again; reading its checks", p.Commit)}, t.save(ctx, p)
+	}
+	if len(failed) == 0 {
+		return t.carry(ctx, facts, model.TaskStep{Action: model.ActionFail, Reason: model.ReasonNoCIResult,
+			Message: fmt.Sprintf("%s, but the Git host lists no failed CI run at %s to run again", step.Message,
+				p.Commit)})
+	}
+	for _, run := range failed {
 		if err := t.host.RerunFailedJobs(hostCtx, t.in.Repo, run.ID); err != nil {
-			return t.fail(ctx, "", model.TaskStep{Action: model.ActionFail, Reason: model.ReasonNoCIResult,
-				Message: fmt.Sprintf("%s, and the Git host refused to run its failed jobs again: %v", step.Message,
-					err)})
+			why := "failed through its runner's fault"
+			if p.ChecksRerunDue {
+				why = "failed at a commit the agent pushed again"
+			}
+			return t.carry(ctx, facts, model.TaskStep{Action: model.ActionFail, Reason: model.ReasonNoCIResult,
+				Message: fmt.Sprintf("CI run %s %s, and the Git host refused to run its failed jobs again: %v",
+					run.URL, why, err)})
 		}
 	}
 	if p.ChecksRerunDue {
-		return t.save(ctx, model.RerunPushedChecks(p, t.in.Now))
+		p = model.RerunPushedChecks(p, t.in.Now)
+		t.in.Log.Info("Rerunning the checks of a commit pushed again", "round", p.Round, "commit", p.Commit,
+			"runs", len(failed))
+	} else {
+		p = model.RerunChecks(p, t.in.Now)
+		t.in.Log.Info("Rerunning checks the runner failed", "round", p.Round, "commit", p.Commit,
+			"checksReruns", p.ChecksReruns, "runs", len(failed))
 	}
-	return t.save(ctx, model.RerunChecks(p, t.in.Now))
+	return step, t.save(ctx, p)
 }
 
 // updateBranch merges main into an approved change's branch, and waits for
 // the checks on the new head; a conflict sends it back to its implementer.
 func (t *taskTick) updateBranch(ctx context.Context, facts model.TaskFacts,
 	step model.TaskStep) (model.TaskStep, error) {
-	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 	defer cancel()
 	up, err := UpdateBranch(hostCtx, t.host, t.in.Repo, t.rec.PullRequest)
 	if err != nil {
@@ -718,7 +812,7 @@ func (t *taskTick) updateBranch(ctx context.Context, facts model.TaskFacts,
 // waits for a person's merge and ends the Task Merged once it came.
 func (t *taskTick) merge(ctx context.Context, role string, step model.TaskStep) (model.TaskStep, error) {
 	p := t.rec.Progress
-	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 	defer cancel()
 	pr, err := t.host.GetPullRequest(hostCtx, t.in.Repo, t.rec.PullRequest)
 	if err != nil {
@@ -764,12 +858,24 @@ func (t *taskTick) merge(ctx context.Context, role string, step model.TaskStep) 
 const stateClosed = "closed"
 
 // fail ends the Task Failed, saying why on its pull request and handing its
-// issue back to a person.
-func (t *taskTick) fail(ctx context.Context, role string, step model.TaskStep) error {
+// issue back to a person: the runtime's words where it has them
+// (TaskInput.Ending), which may keep why in the record.
+func (t *taskTick) fail(ctx context.Context, facts model.TaskFacts, role string, step model.TaskStep) error {
 	reason := cmpOr(step.Reason, model.ReasonFailed)
+	if t.in.Ending != nil {
+		if err := t.in.Ending(ctx, facts, step); err != nil {
+			return err
+		}
+		rec, err := t.rt.Store().Progress(ctx, t.in.Task)
+		if err != nil {
+			return err
+		}
+		t.rec = rec
+		return t.end(ctx, role, model.TaskEnd{Phase: model.TaskFailed, Reason: reason, Message: step.Message})
+	}
 	t.comment(ctx, step.Message+".")
 	if t.in.Issue > 0 {
-		hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+		hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 		err := errors.Join(t.host.AddIssueLabel(hostCtx, t.in.Repo, t.in.Issue, model.LabelNeedsHuman),
 			t.host.CommentIssue(hostCtx, t.in.Repo, t.in.Issue, fmt.Sprintf("Task %s failed: %s", t.in.Task,
 				step.Message)))
@@ -798,7 +904,7 @@ func (t *taskTick) commentRound(ctx context.Context, facts model.TaskFacts, step
 	if t.rec.PullRequest == 0 {
 		return
 	}
-	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 	defer cancel()
 	var err error
 	if res := facts.Run.Result; facts.Phase == model.TaskReviewing && res != nil &&
@@ -824,7 +930,7 @@ func (t *taskTick) comment(ctx context.Context, body string) {
 	if t.rec.PullRequest == 0 {
 		return
 	}
-	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 	defer cancel()
 	if err := t.host.CommentPullRequest(hostCtx, t.in.Repo, t.rec.PullRequest, body); err != nil {
 		t.in.Log.Info("Could not comment on pull request", "task", t.in.Task, "error", err.Error())

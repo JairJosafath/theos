@@ -906,6 +906,130 @@ What the remaining slices of #336 must do:
 - `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
   one last past its tick yet.
 
+**Step 12 as built (slice 5: the host actions on the tick)** (`internal/controller/task_host.go`,
+`internal/controller/task_tick.go`, `internal/engine/task.go`, `ports.TaskRecord.AgentBack`).
+The engine opens the round's pull request, runs its failed checks again and
+fails the Task for the operator, through the operator's host, and ends a
+turn whose agent is unavailable, its record keeping when the agent is back.
+`Carry` no longer carries OpenPR, RerunChecks, Fail or AgentUnavailable
+where the engine acts on the run the reconciler would. Every Task envtest
+spec passes unchanged. Choices the plan left open:
+- **The operator's host is `taskHost`**: the operator's own account on the
+  Container's Git host (`gitRepo`), but for `OpenPullRequest`, which goes as
+  the Container's agent bot (`agentGitRepo`), as `openPR` did: the
+  implementer's pull request is its work, and the host refuses a review of
+  one's own pull request, so the operator could not review it otherwise.
+  Every other call the engine makes for these steps (the CI runs at the
+  commit, a rerun of their failed jobs) is the operator's account's, as
+  `apply`'s were. The adapter keeps `contract.GitHost`, `contract.Issues`
+  and `contract.CI` on the fake (`TestTaskHostKeepsTheHostContracts336`);
+  the CI suite's two JobRunners subtests skip, as the adapter is a
+  `TaskHost` and the Task tick registers no runner. It can't run on Gitea
+  here (`make test-gitea` needs a Gitea that runs as root); the Crew's
+  envtest spec reads the pull request's author as the agent bot.
+- **The host is resolved when a step needs it** (`TaskInput.Host`), not
+  passed to `TaskTick`: reaching it reads the GitProvider and its Secret,
+  most steps need neither, and a GitProvider or Secret that is missing must
+  fail only the step that needs it, as `apply`'s did. `TaskInput.HostTimeout`
+  is the operator's Git timeout, in place of the engine's minute.
+- **What the pull request says is the runtime's** (`TaskInput.Pull`): its
+  branch, title and description. The operator's open from `status.branch`,
+  which an earlier try's pull request may have set (`continueEarlierTry`),
+  and title and describe a Benchmark's, a spec's, a goal with no issue and
+  a Standard change's other files as `openPR` did. After the tick the status
+  says `Checking` and the reconcile looks again (`taskTurn.opened`); the
+  notes (a spec's label, a later round's other files, a check that fails on
+  main too, with its Event) follow the status write (`taskTurn.afterWrite`),
+  so a retry after a write that failed posts none twice (#906).
+  `Reconcile` now writes the status, then calls `afterWrite`.
+- **The engine's `rerunChecks` is the operator's**, which changes the lead
+  runtime's: a session reaches it when its agent pushes again the commit
+  whose checks failed, or a job of its checks is killed for lack of memory
+  (docs/no-cluster.md says what a user sees). A run at the commit still running
+  waits for it (`Wait` with `Recheck`), where the engine went on with the
+  step unchanged; with no failed run, a commit pushed again has its failure
+  read as it stands (`Wait`, its due rerun cleared), and any other fails the
+  Task, `NoCIResult`, where the engine saved a rerun of nothing; a refusal
+  fails it with the operator's message. The reconciler writes the reason
+  each says (`Waiting`, `Checking`, `RerunningChecks`; `taskTurn.carried`),
+  as reasons are the operator's vocabulary.
+- **A failure's words go through `Ending`**, which now covers
+  `model.ActionFail`, the decided one and the one the engine turns a refused
+  or empty rerun into. The operator's comments `The Task failed.` and drops a
+  Blocked Task's proposal before the run ends (a Blocked Task has no run, so
+  this is the order `fail` had); a decided failure also keeps the review's
+  verdict and the step's feedback, as `apply` did, and the engine reads the
+  record back after `Ending` so the feedback stays. The issue goes back to
+  a person after the tick, once the Task failed (`failed`, which `fail`
+  shares), as `fail` handed it back after `endRun`. A Triage Task's failure
+  keeps the engine's words; its reconcile is not on the tick.
+- **AgentUnavailable is a turn end**: `TaskRecord.AgentBack` is when the
+  agent is due back (`model.AgentBackAt`), carried to and from
+  `status.agentBackAt` by `recordOf` and `setRecord`; the engine's own facts
+  read `AgentBackIn` from it, and a turn's offer forgets it, as the
+  operator's Offer does. The reconciler says it after the tick
+  (`waitForAgent`, which `apply`'s fallback shares) and looks again when the
+  agent is due. The lead runtime's markers report no outage, so its
+  behaviour is unchanged; a runtime whose done run reads back done after
+  `End` would need its turn named apart, as the operator's Sandboxes and the
+  fakes do. The slice 3 test row that said the record had no place for it
+  flipped (`TestTaskTurnLeavesTheEngineATurnsEnd336`).
+- **The same guard**: these steps are the engine's only where
+  `endsAsTheEngine` holds. In Checking with the approving review's Sandbox
+  kept (`mergeWhenChecksPass`), a rerun or a failure stays `apply`'s, whose
+  `endRun` ends that Sandbox.
+- **What stays in `apply`, and why.** **Merge**, with the approval it posts:
+  a Benchmark's Task ends Approved (no final phase of the engine's), the
+  merge holds for a cut release's tag (the Crew's status), a Standard
+  change's gated merge may refuse or wait for CI and needs a review run that
+  lasts, a merge may skip main's push run (`planSkip`, `carryChecks`), and
+  the merge commit, the pull request's size, its person commits, the
+  follow-ups and the by-hand issue filed from the review's run are the
+  operator's status. The engine's merge has none of these. **UpdateBranch**:
+  the operator keeps the review's Sandbox through the update, for the
+  merge's follow-ups and the gated merge's lasting review, and starts the
+  checks' wait again in the same phase; the engine ends the judging run,
+  which `Workers.End` deletes. It moves with the merge. The Standard change
+  (Propose, Resume, DoneByStandardChange), NothingToDo, specs (AwaitApproval,
+  SpecDeclined) and the waits are unchanged.
+- Tests: tier 1, `TestTaskTickRerunsTheChecksOfACommitPushedAgain336`,
+  `TestTaskTickReadsAFailureWithNoRunToRunAgain336`,
+  `TestTaskTickWaitsForTheRunsBeforeARerun336`,
+  `TestTaskTickFailsWhereTheHostRefusesARerun336` (the engine's words and the
+  runtime's), `TestTaskTickOpensThePullRequestTheRuntimeWrites336`,
+  `TestTaskTickReachesTheHostOnlyForAStepThatNeedsIt336` and
+  `TestTaskTickWaitsForAnUnavailableAgent336` in the engine;
+  `TestTaskHostKeepsTheHostContracts336`,
+  `TestTaskHostOpensThePullRequestAsTheAgent336`,
+  `TestTaskTurnLeavesTheEngineTheHostSteps336`,
+  `TestTaskTurnSaysWhatAHostStepSays336` and
+  `TestTaskTurnSaysWhenTheAgentIsBack336` on the operator's adapters;
+  `contract.TaskStore`'s progress subtest now reads `AgentBack` back and
+  forgets it, on the fake, the operator's Crew store
+  (`TestCrewTaskStoreContract`) and `hostrun` on both its worlds. Slice 3's
+  `TestTaskTurnLeavesTheEngineATurnsEnd336` counts AgentUnavailable among
+  the engine's turn ends now. Tier 4: every Task envtest spec, unchanged,
+  now opens pull requests, reruns checks and fails Tasks through the engine.
+  The Gitea client is unchanged; `taskHost` only routes the pull request to
+  the agent bot's client, as `openPR` did, so `make test-gitea` (which needs
+  a Gitea that runs as other than root) has nothing new to see.
+
+What the remaining slices of #336 must do:
+- **The merge and the branch's update**, with the approval the merge posts:
+  the engine keeps the judging run until the merge where its Workers keep
+  runs, and the merge's operator-only parts (a Benchmark's Approved end, the
+  release hold, the gated merge, the CI skip, what a merge records and
+  files) become a runtime hook or facts and record fields.
+- **The Standard change** (Propose, Resume, DoneByStandardChange),
+  NothingToDo, specs (AwaitApproval, SpecDeclined), verification's own
+  steps, a person's approval and rules, budgets: each moves when the engine
+  carries it as the operator does, and `Carry` hands it over. With the
+  last, `Carry`, `Facts` and `Ending` go, and the facts are the engine's
+  reads through the ports.
+- **The Plan, Triage and Score reconciles** go on the tick last.
+- `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
+  one last past its tick yet.
+
 **Step 13 as built** (`internal/engine/triage.go`, `internal/engine/task_roles.go`,
 `internal/model/answers.go`, `internal/model/lead_roles.go`). All three
 roles are built; none is left `RoleNotBuilt`. Choices the plan left open:

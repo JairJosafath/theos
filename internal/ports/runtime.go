@@ -76,6 +76,10 @@ type TaskRecord struct {
 	// Findings are what the round's approving review and verification left
 	// for the merge (#337), kept from their runs until the merge files them.
 	Findings *model.Findings `json:",omitempty"`
+	// AgentBack is when the agent whose outage ended the round's turn is due
+	// back (model.AgentBackAt), zero for none: the Task waits for it, and the
+	// turn's next offer forgets it (#336).
+	AgentBack time.Time `json:",omitzero"`
 }
 
 // Workers runs one role's turn on a Task. The engine offers the turn, reads
