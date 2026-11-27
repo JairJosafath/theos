@@ -722,6 +722,84 @@ What the remaining slices of #336 must do:
 - `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
   one last past its tick yet.
 
+**Step 12 as built (slice 3: a turn's end and restart on the tick)** (`internal/controller/task_tick.go`,
+`internal/engine/task.go`). The six steps that end a turn and move the Task
+on are the engine's now: Verify, RetryVerify, Retry (the next round),
+RetryReview, Rerun and ResolveConflicts. The engine's `next` and `restart`
+end the run through `Workers.End`, which is `endRun` on the status's
+Sandbox, and save the progress through the store; the reconciler says what
+the end says. Every Task envtest spec passes unchanged. Choices the plan
+left open:
+- **A restart offers on a later tick where the Workers ready turns.** With
+  `ports.Preparer`, `restart` ends the run and saves, and offers nothing:
+  the status write triggers the next reconcile, which decides the turn's
+  start again and readies it (credentials, the environments leased under
+  the new Sandbox's name) before it offers, as the reconciler's rerun
+  always did. Workers that ready turns name each turn apart (the operator's
+  Sandbox names count the reruns and review attempts), so the ended run
+  reads back not started. Workers that ready nothing (the lead runtime's,
+  the fakes) offer in the same tick, as before, so the lead runtime's
+  behaviour is unchanged (`TestTaskTickLeaseRunsOut334` still passes).
+- **What the end says is the runtime's, through `TaskInput.Ending`,**
+  called before the Workers end the run, in place of the engine's own
+  comment (the round not accepted, the conflict to resolve). The operator's
+  (`taskTurn.ending`) posts as each Agent's own account and keeps the
+  verdict in the status before the review's Sandbox goes: the approval for
+  the verification (`approveForVerify`), the request for changes as a
+  review or the round's comment (`sayNotAccepted`), the conflict's comment
+  (`sayConflicts`), and a round no agent judged drops an earlier verdict,
+  as `apply` does. With `Ending` set, Retry and ResolveConflicts need no
+  host; the operator still passes none.
+- **The Progressing reason each step writes is the reconciler's, after the
+  tick** (`taskTurn.ended`), as `started` writes `Running`: `turnEnded`
+  maps the step to its reason (`Verifying`, `VerifierFailed`, `NextRound`,
+  `ReviewerFailed`, `Interrupted`, `ResolvingConflicts`) and its log line,
+  and `apply`'s own turn ends (RerunPaused, and the guard's fallback below)
+  call the same function, so the two say it alike. The reason is the
+  operator's status vocabulary, so it stays out of the engine's step.
+- **The engine ends the turn only where it would end the run `endRun`
+  ends** (`taskTurn.endsAsTheEngine`): the phase's turn, named from the
+  status's counters, is the status's current Sandbox, or the phase has no
+  run and the status names none. `endRun` ends whatever Sandbox the status
+  names, and `Workers.End` ends the turn the counters name; a status that
+  forgot its Sandbox (a status write that failed after an offer) or names
+  another would have the two differ, so such a step stays `apply`'s.
+- **The engine reads the record back after `Carry` declines a step**, as
+  it does after `Facts`: bringing the run's pause up to date may write the
+  status, and the step is carried out on the record as the store keeps it.
+- **What stays in `apply`, and why.** RerunPaused: the engine has no such
+  step (a pause that costs no rerun; it waits `NotBuilt` there), so it
+  moves with the pauser. AgentUnavailable and ReviewAgain end a run too,
+  but write more than a reason (`agentBackAt` and its requeue; the Standard
+  change's approval ended), and the engine has neither step. Suspend,
+  resume and pause did not fit: they keep the Sandbox, which `Workers.End`
+  deletes, so they need the optional parts below.
+- Tests: tier 1,
+  `TestTaskTickRestartsOnALaterTickWhereTheWorkersReadyTurns336` (a rerun
+  and a review tried again, on preparing fakes: nothing offered or readied
+  in the restart's tick, the turn readied and offered on the next) and
+  `TestTaskTickLeavesATurnsWordsToTheRuntime336` (Ending before the run
+  ends, no engine comment, no host) in the engine;
+  `TestTaskTurnLeavesTheEngineATurnsEnd336` and
+  `TestTaskTurnSaysWhatATurnsEndSays336` on the operator's turn. Tier 4:
+  every Task envtest spec, unchanged.
+
+What the remaining slices of #336 must do:
+- **Suspend, resume and pause** as optional parts of `Workers`
+  (`ports.Suspender`, `ports.Resumer`, a pauser) on `suspendRun`,
+  `resumeRun` and `syncPause`, with RerunPaused, which `apply` carries now.
+- **The other ends of a run**: AgentUnavailable (the Agent's outage, its
+  requeue) and ReviewAgain, once the engine has those steps.
+- **The host actions** (open, merge, approve, comment as they write
+  status), the Standard change, specs, verification's own steps, a
+  person's approval and rules, budgets: each moves when the engine carries
+  it as the operator does, and `Carry` hands it over. With the last,
+  `Carry`, `Facts` and `Ending` go, and the facts are the engine's reads
+  through the ports.
+- **The Plan, Triage and Score reconciles** go on the tick last.
+- `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
+  one last past its tick yet.
+
 **Step 13 as built** (`internal/engine/triage.go`, `internal/engine/task_roles.go`,
 `internal/model/answers.go`, `internal/model/lead_roles.go`). All three
 roles are built; none is left `RoleNotBuilt`. Choices the plan left open:

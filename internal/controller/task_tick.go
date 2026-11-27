@@ -90,8 +90,9 @@ func (t *taskTurn) Workers() ports.Workers { return t.workers }
 
 func (t *taskTurn) Capabilities() ports.Capabilities { return operatorCapabilities }
 
-// input is the tick's input: the reconciler reads the facts and carries out
-// every step but a turn's offer.
+// input is the tick's input: the reconciler reads the facts, carries out
+// every step but a turn's offer, end and restart, and says what a turn's end
+// says (ending).
 func (t *taskTurn) input(ctx context.Context) engine.TaskInput {
 	in := engine.TaskInput{Task: t.task.Name, Container: t.container.Name, Issue: int(t.task.Spec.Issue),
 		Title: t.status.IssueTitle, Goal: t.task.Spec.Goal, Spec: isSpec(t.task),
@@ -146,6 +147,55 @@ func (t *taskTurn) carry(ctx context.Context, facts model.TaskFacts, step model.
 	result, err := t.r.apply(ctx, t.task, status, t.container, t.agents, step)
 	t.result = result
 	return true, err
+}
+
+// endsAsTheEngine reports whether the engine ends the phase's run as the
+// reconciler's endRun would: the turn the engine ends (the phase's role, in
+// the Sandbox the status's counters name) is the status's current Sandbox,
+// or the phase has no run and the status names no Sandbox. A status that
+// forgot its Sandbox, or names another, is left to apply, whose endRun ends
+// whatever the status names, as it always has.
+func (t *taskTurn) endsAsTheEngine() bool {
+	role := runRole(t.status.Phase)
+	if role == "" {
+		return t.status.Sandbox == ""
+	}
+	return t.status.Sandbox != "" && t.status.Sandbox == sandboxName(t.task, t.status, role)
+}
+
+// ending is the reconciler's half of a turn's end the engine carries out
+// (engine.TaskInput.Ending), before the Workers end the run: what the step
+// says on the pull request, as each Agent's own account, and the verdict the
+// status keeps once the review's run is gone. A round no agent judged drops
+// an earlier round's verdict first, as apply does.
+func (t *taskTurn) ending(ctx context.Context, _ model.TaskFacts, step model.TaskStep) error {
+	r, task, status, container := t.r, t.task, t.status, t.container
+	if step.Unreviewed {
+		status.Review, status.Verification = nil, nil
+	}
+	switch step.Action {
+	case model.ActionVerify:
+		r.approveForVerify(ctx, task, status, container, t.agents)
+	case model.ActionRetry:
+		if review := r.sayNotAccepted(ctx, task, status, container, t.agents, step); review != nil {
+			status.Review = review
+		}
+	case model.ActionResolveConflicts:
+		status.Review = r.sayConflicts(ctx, task, status, container, step)
+	}
+	return nil
+}
+
+// ended says in the status that the tick ended a turn and moved the Task on
+// (step is the tick's result): the Progressing reason the step writes, as
+// apply's own turn ends write it (turnEnded). The engine saved the progress;
+// the status write after the tick triggers the next step, and a restarted
+// turn is offered then, readied as any other (ports.Preparer).
+func (t *taskTurn) ended(ctx context.Context, step model.TaskStep) {
+	if !t.endsTurn || step.Action != t.step.Action {
+		return
+	}
+	t.r.turnEnded(ctx, t.task, t.status, step)
 }
 
 // prepare readies a run before its Sandbox, as the reconciler always has: the

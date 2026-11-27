@@ -182,6 +182,12 @@ func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput
 			// is what the store keeps now.
 			return t.result(ctx, step)
 		}
+		// Asked, the runtime may have changed the record through its store
+		// (the operator brings a run's pause up to date): the engine carries
+		// the step out on the record as it is now.
+		if t.rec, err = store.Progress(ctx, in.Task); err != nil {
+			return TaskResult{Step: step, Record: t.rec}, err
+		}
 	}
 	if host == nil && !t.hostFree(step.Action) {
 		return TaskResult{Step: step, Record: t.rec}, fmt.Errorf(
