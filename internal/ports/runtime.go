@@ -186,6 +186,23 @@ type Pauser interface {
 	HoldSuspended(ctx context.Context, task string, round int, role string) error
 }
 
+// Keeper is the part of Workers that keeps a judging run past its turn,
+// until the Task's merge, asked for by interface (#336). When main moved
+// under an approved change, its branch takes in main and is checked again
+// before the merge (model.UpdatedBranch): the approving review's or
+// verification's run is then kept, so the merge reads what it left, and a
+// Standard change's gated merge refuses one whose approving run no longer
+// lasts. The operator's Sandboxes have it. Workers without it have the
+// engine end the judging run at the update, its findings kept in the record
+// (TaskRecord.Findings).
+type Keeper interface {
+	// Kept is the role whose done run of round the Workers keep for task
+	// past its turn, empty for none. The engine asks in a phase that runs no
+	// role of its own (Checking), and ends that run where a step there ends
+	// the Task's run: its merge, its next round, its failure.
+	Kept(ctx context.Context, task string, round int) (role string, err error)
+}
+
 // WorkOrder is the turn Workers.Offer offers.
 type WorkOrder = model.WorkOrder
 

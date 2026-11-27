@@ -93,8 +93,9 @@ type TaskInput struct {
 	// returns true for a step it carried out itself, through the runtime,
 	// and the engine then does nothing more; false leaves the step to the
 	// engine. The operator carries every step but a turn's offer, end and
-	// keeping in place, the round's pull request opened, checks run again
-	// and a failure itself until #336 moves the rest
+	// keeping in place, the round's pull request opened, checks run again,
+	// a failure, and an approved change's branch updated and merged itself
+	// until #336 moves the rest
 	// (docs/plans/lead-runtime.md, step 12). The engine reaches the host
 	// only for a step Carry leaves it, so a runtime whose Carry leaves it
 	// only steps that need none may tick with no host, and one that leaves
@@ -110,6 +111,9 @@ type TaskInput struct {
 	// the Task's status (#336). With Ending set, the engine reaches the host
 	// for none of these steps' words. A failure's record is read back from
 	// the store after it, as the runtime may keep there why it failed.
+	// It also says what an approved change's branch updated with main
+	// (model.ActionUpdateBranch) says, which ends a turn only where the
+	// Workers keep no judging run (ports.Keeper).
 	Ending func(ctx context.Context, facts model.TaskFacts, step model.TaskStep) error
 	// Host, when set, reaches the Git host for a tick whose host was not
 	// given, the first time a step needs it: the host and the Task's
@@ -127,6 +131,14 @@ type TaskInput struct {
 	// Standard change changes besides its own, and opens from the branch an
 	// earlier try's pull request continues (#336).
 	Pull func(facts model.TaskFacts) PullDraft
+	// Benchmark means a Benchmark's Task: its approved change never merges,
+	// and the merge ends the Task Approved (model.BenchmarkApproved), with
+	// no host, for its Benchmark to judge and close.
+	Benchmark bool
+	// Merger, when set, is the runtime's half of a merge (model.ActionMerge):
+	// what holds it, how the approved pull request merges, and what a merge
+	// records and files, in place of the engine's own (#336).
+	Merger Merger
 }
 
 // PullDraft is a round's pull request as a runtime writes it
@@ -197,14 +209,16 @@ const whyDone = "done"
 // the person's merge ends the Task Merged. The operator's Task reconcile
 // runs on it too (#336): it gives its own facts (TaskInput.Facts), carries
 // out every step but a turn's offer, end and keeping in place, a pull request
-// opened, checks run again and a failure itself (TaskInput.Carry), says what
-// a turn's end and a failure say itself (TaskInput.Ending), writes the pull
-// request (TaskInput.Pull), reaches its host only for a step that needs it
-// (TaskInput.Host),
-// and its Workers ready a turn before it is offered (ports.Preparer), which
-// also offers a restarted turn on a later tick, and suspend, resume and
-// pause runs in place (ports.Suspender, ports.Resumer, ports.Pauser), which
-// the engine asks for by interface: Workers without them wait, not built.
+// opened, checks run again, a failure, and a branch updated and merged itself
+// (TaskInput.Carry), says what a turn's end, a failure and a branch's update
+// say itself (TaskInput.Ending), writes the pull request (TaskInput.Pull),
+// merges as it merges (TaskInput.Merger), reaches its host only for a step
+// that needs it (TaskInput.Host), and its Workers ready a turn before it is
+// offered (ports.Preparer), which also offers a restarted turn on a later
+// tick, suspend, resume and pause runs in place (ports.Suspender,
+// ports.Resumer, ports.Pauser), and keep the judging run until the merge
+// (ports.Keeper), which the engine asks for by interface: Workers without
+// them wait, not built, or end the judging run at the branch's update.
 func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput) (TaskResult, error) {
 	store, workers := rt.Store(), rt.Workers()
 	if workers == nil {
@@ -291,6 +305,8 @@ func (t *taskTick) hostFree(action model.TaskAction) bool {
 	case model.ActionFail:
 		// A Triage Task's failure says so on its issue, the engine's words.
 		return t.in.Ending != nil && !t.in.Triage
+	case model.ActionMerge:
+		return t.in.Benchmark // ends Approved, merging nothing
 	}
 	return InPlace(action)
 }
@@ -303,7 +319,9 @@ type taskTick struct {
 	rec  ports.TaskRecord
 }
 
-func final(phase string) bool { return phase == model.TaskMerged || phase == model.TaskFailed }
+func final(phase string) bool {
+	return phase == model.TaskMerged || phase == model.TaskFailed || phase == model.TaskApproved
+}
 
 // RunRole is the role whose run the Task waits on in phase: the triager's
 // in a Triage Task's Implementing, else RunRole's.
@@ -404,7 +422,10 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 
 // carry carries out step, and returns it as carried out.
 func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (model.TaskStep, error) {
-	role := t.in.RunRole(facts.Phase)
+	role, err := t.endRole(ctx, facts)
+	if err != nil {
+		return step, err
+	}
 	if facts.Run.Done {
 		// What an approving review or verification leaves for the merge is
 		// kept with the next progress, as its run ends before the merge.
@@ -441,9 +462,9 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 		}
 		return t.rerunChecks(ctx, facts, step)
 	case model.ActionUpdateBranch:
-		return t.updateBranch(ctx, facts, step)
+		return t.updateBranch(ctx, facts, step, role)
 	case model.ActionMerge:
-		return t.merge(ctx, role, step)
+		return t.merge(ctx, facts, step, role)
 	case model.ActionFail:
 		if t.in.Triage {
 			return step, t.failTriage(ctx, step)
@@ -780,78 +801,6 @@ func (t *taskTick) rerunChecks(ctx context.Context, facts model.TaskFacts,
 			"checksReruns", p.ChecksReruns, "runs", len(failed))
 	}
 	return step, t.save(ctx, p)
-}
-
-// updateBranch merges main into an approved change's branch, and waits for
-// the checks on the new head; a conflict sends it back to its implementer.
-func (t *taskTick) updateBranch(ctx context.Context, facts model.TaskFacts,
-	step model.TaskStep) (model.TaskStep, error) {
-	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
-	defer cancel()
-	up, err := UpdateBranch(hostCtx, t.host, t.in.Repo, t.rec.PullRequest)
-	if err != nil {
-		return step, &HostError{Err: err}
-	}
-	if up.Conflict {
-		conflict := model.ConflictStep(facts.Round)
-		return t.carry(ctx, facts, conflict)
-	}
-	if up.Head == t.rec.Progress.Commit {
-		return model.TaskStep{Action: model.ActionWait, Message: step.Message}, nil // the host hasn't seen it yet
-	}
-	t.comment(ctx, step.Message+".")
-	if role := RunRole(facts.Phase); role != "" {
-		if err := t.rt.Workers().End(ctx, t.in.Task, facts.Round, role, whyDone); err != nil {
-			return step, err
-		}
-	}
-	return step, t.save(ctx, model.UpdatedBranch(t.rec.Progress, up.Head))
-}
-
-// merge merges an approved change, or, in a runtime that merges nothing,
-// waits for a person's merge and ends the Task Merged once it came.
-func (t *taskTick) merge(ctx context.Context, role string, step model.TaskStep) (model.TaskStep, error) {
-	p := t.rec.Progress
-	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
-	defer cancel()
-	pr, err := t.host.GetPullRequest(hostCtx, t.in.Repo, t.rec.PullRequest)
-	if err != nil {
-		return step, &HostError{Err: err}
-	}
-	switch model.DecideMerge(model.PullFacts{Merged: pr.Merged, Closed: pr.State == stateClosed,
-		HeadSHA: pr.HeadSHA}, p.Commit) {
-	case model.MergeFailClosed:
-		end := model.PullRequestClosed(t.rec.PullRequestURL)
-		return step, t.end(ctx, role, end)
-	case model.MergeRecheck:
-		// Someone pushed after the review: check and review that commit instead.
-		return step, t.next(ctx, role, model.Recheck(p, pr.HeadSHA))
-	case model.MergeSquash:
-		if !t.rt.Capabilities().Merges {
-			return model.TaskStep{Action: model.ActionWait, Reason: model.ReasonPersonMerges, Message: fmt.Sprintf(
-				"Approved with green checks; waiting for a person to merge %s", t.rec.PullRequestURL)}, nil
-		}
-		if err := t.host.MergePullRequest(hostCtx, t.in.Repo, t.rec.PullRequest, p.Commit,
-			t.pullTitle(), fmt.Sprintf("Task %s, round %d.", t.in.Task, p.Round)); err != nil {
-			return step, &HostError{Err: err}
-		}
-	}
-	if t.in.Spec {
-		// A spec's issue stays open: its criteria go into it, and it is ready.
-		if err := t.specMerged(hostCtx); err != nil {
-			return step, &HostError{Err: err}
-		}
-		return step, t.end(ctx, role, model.TaskEnd{Phase: model.TaskMerged, Reason: "Merged", Message: step.Message})
-	}
-	// Merged, by theos or by a person: what the review and the verification
-	// left is filed, and the issue closes with it.
-	if t.in.Issue > 0 {
-		t.fileFindings(hostCtx)
-		if err := t.host.CloseIssue(hostCtx, t.in.Repo, t.in.Issue); err != nil {
-			t.in.Log.Info("Could not close the merged Task's issue", "issue", t.in.Issue, "error", err.Error())
-		}
-	}
-	return step, t.end(ctx, role, model.TaskEnd{Phase: model.TaskMerged, Reason: "Merged", Message: step.Message})
 }
 
 // stateClosed is a closed pull request's State.

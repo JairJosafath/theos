@@ -169,7 +169,13 @@ func TestTaskTurnLeavesTheEngineATurnsEnd336(t *testing.T) {
 		{"the status names another sandbox", c4v1beta1.TaskImplementing,
 			sandboxName(task, &c4v1beta1.TaskStatus{Round: 1}, model.RoleImplementer), false},
 		{"no run, and no sandbox named", c4v1beta1.TaskChecking, "", true},
-		{"no run, but a sandbox named", c4v1beta1.TaskChecking, current, false},
+		// Slice 6: a phase with no run of its own ends the judging run kept
+		// past its turn for the merge (sandboxWorkers.Kept), as endRun ends
+		// the Sandbox the status names; one the counters don't name is apply's.
+		{"no run, the judging run kept for the merge", c4v1beta1.TaskChecking,
+			sandboxName(task, implementing, model.RoleReviewer), true},
+		{"no run, but a sandbox the counters don't name", c4v1beta1.TaskChecking,
+			sandboxName(task, &c4v1beta1.TaskStatus{Round: 1}, model.RoleImplementer), false},
 	} {
 		status := implementing.DeepCopy()
 		status.Phase, status.Sandbox = tc.phase, tc.sandbox

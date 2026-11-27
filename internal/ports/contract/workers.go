@@ -237,3 +237,61 @@ func (s suspendingSuite) resumes(t *testing.T) {
 		t.Errorf("a resumed turn answered = %+v, want done with its result", run)
 	}
 }
+
+// KeepingWorkersEnv builds Workers that keep a judging run past its turn
+// (ports.Keeper), as the operator's Sandboxes do (#336).
+type KeepingWorkersEnv struct {
+	WorkersEnv
+}
+
+// KeepingWorkers states what internal/engine relies on of Workers that keep
+// a judging run past its turn: before any review none is kept; a review
+// answered and not ended is kept for its round, its run read back done with
+// its verdict, so the merge reads what it left; and once ended, it is kept
+// no more.
+func KeepingWorkers(t *testing.T, env KeepingWorkersEnv) {
+	t.Helper()
+	ctx, cancel := suiteContext()
+	defer cancel()
+	runSubtests(t, workersSuite{ctx: ctx, env: env.WorkersEnv}, env.Cannot, []subtest[workersSuite]{
+		{"keeps a review answered until it is ended", workersSuite.keeps},
+	})
+}
+
+func (s workersSuite) keeps(t *testing.T) {
+	w, task, issue := s.env.New(t)
+	keeper, ok := w.(ports.Keeper)
+	if !ok {
+		t.Fatalf("Workers %T keep no judging run", w)
+	}
+	kept := func() string {
+		t.Helper()
+		return must(keeper.Kept(s.ctx, task, 1))(t)
+	}
+	if role := kept(); role != "" {
+		t.Fatalf("before any turn, kept %q, want none", role)
+	}
+	review := ports.WorkOrder{Task: task, Issue: issue, Branch: model.TaskBranch(task), Round: 1,
+		Role: model.RoleReviewer, Agent: "reviewer"}
+	if err := w.Offer(s.ctx, review); err != nil {
+		t.Fatal(err)
+	}
+	s.env.Answer(t, task, 1, model.RoleReviewer, model.RunResult{Verdict: model.VerdictApprove,
+		Summary: "Looks right."})
+	if role := kept(); role != model.RoleReviewer {
+		t.Fatalf("a review answered and not ended: kept %q, want the reviewer's", role)
+	}
+	if role := must(keeper.Kept(s.ctx, task, 2))(t); role != "" {
+		t.Errorf("round 2 keeps %q, want none: the review is round 1's", role)
+	}
+	if run := s.run(t, w, task, model.RoleReviewer); !run.Done || run.Result == nil ||
+		run.Result.Verdict != model.VerdictApprove {
+		t.Errorf("the kept review = %+v, want done with its verdict", run)
+	}
+	if err := w.End(s.ctx, task, 1, model.RoleReviewer, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if role := kept(); role != "" {
+		t.Errorf("the review ended: kept %q, want none", role)
+	}
+}

@@ -127,7 +127,10 @@ session to work the project: its `AGENTS.md` is the loop.
    the Task `NoCIResult`, at no try, as does a rerun the host refuses.
 4. Changes asked for start round 2, the reviewer's words in the
    implementer's next work order. An approval makes `theos_next` say the
-   Task waits for a person, `PersonMerges`.
+   Task waits for a person, `PersonMerges`. If main moved since the
+   change's checks ran, theos first merges main into the branch and waits
+   for the checks on the new head, their time limits counted from that
+   merge, each time main moves again.
 5. You merge, from your terminal:
 
    ```sh
@@ -165,7 +168,8 @@ session as on a cluster (#337), each through its own subagent:
   as any approved pull request; theos copies its criteria into the issue,
   which stays open and is `status/ready`, and the Crew builds it. A request
   for changes on the pull request starts the next round; closing it
-  declines the spec. With `Reviewer`, the reviewer's approval is enough,
+  declines the spec (`SpecDeclined`), also when you close it just as theos
+  would merge it. With `Reviewer`, the reviewer's approval is enough,
   and it waits for your merge only.
 - **Verify.** With a `verifier`, an approved change goes to `theos-<verifier>`
   before it waits for your merge: it builds and starts the change at the

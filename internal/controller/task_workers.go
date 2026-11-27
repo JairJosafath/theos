@@ -89,6 +89,7 @@ var (
 	_ ports.Suspender = (*sandboxWorkers)(nil)
 	_ ports.Resumer   = (*sandboxWorkers)(nil)
 	_ ports.Pauser    = (*sandboxWorkers)(nil)
+	_ ports.Keeper    = (*sandboxWorkers)(nil)
 )
 
 // workers returns the Workers of task's reconcile, its status as the
@@ -374,4 +375,32 @@ func (w *sandboxWorkers) HoldSuspended(ctx context.Context, task string, round i
 		return w.r.holdSandbox(ctx, w.task.Namespace, name)
 	}
 	return nil
+}
+
+// Kept is the role whose done run of round the Task keeps past its turn,
+// for its merge: the Sandbox the status still names in a phase that runs no
+// role, as the reconciler keeps the approving review's or verification's
+// through the branch's update with main (updateBranch). Empty for none.
+func (w *sandboxWorkers) Kept(_ context.Context, task string, round int) (string, error) {
+	if err := w.own(task); err != nil {
+		return "", err
+	}
+	return keptRole(w.task, w.status, round), nil
+}
+
+// keptRole is the role of the run of round task's status keeps past its
+// turn: that of the Sandbox it names, when the Task's counters name that
+// Sandbox for the role in round, as the engine ends a turn the counters
+// name; empty for none.
+func keptRole(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, round int) string {
+	if status.Sandbox == "" {
+		return ""
+	}
+	role := model.SandboxRole(status.Sandbox)
+	s := status
+	if role == "" || model.SandboxName(task.Name, round, int(s.Restarts), role,
+		int(s.ReviewAttempts+s.ReviewAgains)+1, int(s.Reruns)) != status.Sandbox {
+		return ""
+	}
+	return role
 }

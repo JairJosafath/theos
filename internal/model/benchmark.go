@@ -33,6 +33,14 @@ import (
 // passed its checks and its review: it would have merged.
 const TaskApproved = "Approved"
 
+// BenchmarkApproved ends a Benchmark's Task whose change was approved with
+// green checks: it never merges, and its Benchmark closes its pull request
+// once its Scorers judged it.
+func BenchmarkApproved() TaskEnd {
+	return TaskEnd{Phase: TaskApproved, Reason: TaskApproved,
+		Message: "Approved with green checks; a Benchmark's Task never merges"}
+}
+
 // BenchmarkRun is one Task a Benchmark makes.
 type BenchmarkRun struct {
 	Variant    string

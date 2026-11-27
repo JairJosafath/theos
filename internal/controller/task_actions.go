@@ -60,8 +60,9 @@ func (a taskAgents) forRole(role string) *c4v1beta1.Agent {
 // action) is not here: the engine's Task tick offers it through the Task's
 // Workers (task_tick.go, #336). The steps the tick carries out itself where
 // it acts on the run the reconciler would (a turn's end, a run kept in
-// place, a pull request opened, checks run again, a failure) are here for a
-// status that names another run (taskTurn.endsAsTheEngine).
+// place, a pull request opened, checks run again, a failure, a branch
+// updated with main and a merge) are here for a status that names another
+// run (taskTurn.endsAsTheEngine).
 func (r *TaskReconciler) apply(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
 	if step.Unreviewed {
@@ -658,8 +659,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
-		r.finish(task, status, c4v1beta1.TaskApproved, metav1.ConditionTrue, model.TaskApproved,
-			"Approved with green checks; a Benchmark's Task never merges")
+		r.end(task, status, model.BenchmarkApproved())
 		logf.FromContext(ctx).Info("Approved Benchmark Task", "url", status.PullRequestURL, "round", status.Round)
 		return ctrl.Result{}, nil
 	}
@@ -667,7 +667,7 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if wait, err := r.waitForRelease(ctx, task, status, provider, repo); err != nil || wait {
+	if hold, err := r.waitForRelease(ctx, task, status, provider, repo); err != nil || hold != "" {
 		return ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}, err
 	}
 	reviewRun := r.reviewRun(ctx, task, status)
@@ -749,37 +749,38 @@ func (r *TaskReconciler) merge(ctx context.Context, task *c4v1beta1.Task, status
 // the tag and miss the changelog the prepare issue writes. It costs no round,
 // and the Task merges on a later reconcile, once the tag is made. A Standard
 // change merges as usual: its gated merge needs a review run that still
-// lasts. It reports whether the Task waits.
+// lasts. It returns what the Task waits for, empty when it doesn't.
 func (r *TaskReconciler) waitForRelease(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
-	provider ports.Issues, repo ports.Repository) (bool, error) {
+	provider ports.Issues, repo ports.Repository) (string, error) {
 	name := task.Labels[LabelCrew]
 	if name == "" || task.Spec.Issue == 0 || len(task.Spec.AllowedProtectedPaths) > 0 {
-		return false, nil
+		return "", nil
 	}
 	var crew c4v1beta1.Crew
 	if err := r.Get(ctx, types.NamespacedName{Namespace: task.Namespace, Name: name}, &crew); err != nil {
-		return false, client.IgnoreNotFound(err)
+		return "", client.IgnoreNotFound(err)
 	}
 	cut := crew.Status.CutRelease
 	if cut == "" {
-		return false, nil
+		return "", nil
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	issue, err := provider.GetIssue(gitCtx, repo, int(task.Spec.Issue))
 	if err != nil && !errors.Is(err, ports.ErrIssueNotFound) {
-		return false, err
+		return "", err
 	}
 	if !model.MergeWaitsForRelease(cut, issue.MilestoneTitle) {
-		return false, nil
+		return "", nil
 	}
 	if cond := apimeta.FindStatusCondition(status.Conditions, ConditionProgressing); cond == nil ||
 		cond.Reason != model.ReasonWaitingForRelease {
 		logf.FromContext(ctx).Info("Holding a merge for the cut release's tag", "release", cut,
 			"url", status.PullRequestURL)
 	}
-	r.progress(task, status, metav1.ConditionTrue, model.ReasonWaitingForRelease, model.WaitingForReleaseMessage(cut))
-	return true, nil
+	hold := model.WaitingForReleaseMessage(cut)
+	r.progress(task, status, metav1.ConditionTrue, model.ReasonWaitingForRelease, hold)
+	return hold, nil
 }
 
 // waitsForRelease reports whether a Task waits at its merge for its Crew's
@@ -1143,10 +1144,11 @@ func setProgress(status *c4v1beta1.TaskStatus, p model.TaskProgress) {
 	}
 }
 
-// end finishes the Task as the model decided; only a merge succeeds.
+// end finishes the Task as the model decided; only a merge, or a
+// Benchmark's approval, succeeds.
 func (r *TaskReconciler) end(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, e model.TaskEnd) {
 	succeeded := metav1.ConditionFalse
-	if e.Phase == model.TaskMerged {
+	if e.Phase == model.TaskMerged || e.Phase == model.TaskApproved {
 		succeeded = metav1.ConditionTrue
 	}
 	r.finish(task, status, c4v1beta1.TaskPhase(e.Phase), succeeded, e.Reason, e.Message)
