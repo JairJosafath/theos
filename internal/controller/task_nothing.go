@@ -24,6 +24,7 @@ import (
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
+	"github.com/JairJosafath/theos/internal/ports"
 )
 
 // "Nothing to do" is a result (docs/design.md, "Agents and Tasks"; #72). An
@@ -33,23 +34,17 @@ import (
 // and its issue closes with the agent's words.
 
 // withoutNothing is run with a "nothing to do" the Task can't end on turned
-// into the failed round it was before: a Benchmark's Task, whose change is
-// what is measured; a Task with no issue to close; and one with a pull
-// request, whose branch a reviewer judges as it is.
+// into the failed round it was before (model.WithoutNothing): a Benchmark's
+// Task, whose change is what is measured; a Task with no issue to close; and
+// one with a pull request, whose branch a reviewer judges as it is.
 func withoutNothing(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, run model.RunState) model.RunState {
-	if run.Result == nil || run.Result.Nothing == "" ||
-		task.Spec.Issue > 0 && status.PullRequest == 0 && task.Spec.Benchmark == nil {
-		return run
-	}
-	result := *run.Result
-	result.Error, result.Nothing = model.NoChangeError(result.Summary), ""
-	run.Result = &result
-	return run
+	return model.WithoutNothing(run, int(task.Spec.Issue), status.PullRequest != 0, task.Spec.Benchmark != nil)
 }
 
 // nothingToDo ends a Task whose agent found its issue needs no change: it
 // closes the issue with the agent's reason and ends the Task Merged, reason
-// NothingToDo, with nothing merged.
+// NothingToDo, with nothing merged. On the engine's Task tick the engine
+// ends it, and taskTurn.ending closes the issue the same way (#336).
 func (r *TaskReconciler) nothingToDo(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, step model.TaskStep) error {
 	provider, repo, err := r.gitRepo(ctx, container)
@@ -59,11 +54,22 @@ func (r *TaskReconciler) nothingToDo(ctx context.Context, task *c4v1beta1.Task, 
 	if err := r.endRun(ctx, task, status); err != nil {
 		return err
 	}
-	note := step.Feedback
-	status.Summary = model.Clip(note, 2000)
+	status.Summary = model.Clip(step.Feedback, 2000)
+	r.closeNothing(ctx, provider, repo, task, step.Feedback)
+	r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, model.ReasonNothingToDo, step.Message)
+	logNothing(ctx, task, step)
+	return nil
+}
+
+// closeNothing closes the Task's issue with its agent's reason, note, and how
+// to reopen it.
+func (r *TaskReconciler) closeNothing(ctx context.Context, provider ports.Issues, repo ports.Repository,
+	task *c4v1beta1.Task, note string) {
 	logNotes(ctx, task, r.endIssue(ctx, provider, repo, task, model.NothingComment(task.Name, note),
 		"its agent found nothing to do"))
-	r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, model.ReasonNothingToDo, step.Message)
-	logf.FromContext(ctx).Info("Ended Task with nothing to do", "issue", task.Spec.Issue, "why", note)
-	return nil
+}
+
+// logNothing says in the log that the Task ended with nothing to do.
+func logNothing(ctx context.Context, task *c4v1beta1.Task, step model.TaskStep) {
+	logf.FromContext(ctx).Info("Ended Task with nothing to do", "issue", task.Spec.Issue, "why", step.Feedback)
 }

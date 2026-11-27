@@ -52,9 +52,15 @@ import (
 // change's branch with main, the judging run kept through it
 // (ports.Keeper), and merges it, the merge's operator-only parts the
 // reconciler's (engine.Merger: HoldMerge, Merge, Merged), what it says after
-// the tick (mergeCarried). Every other step the reconciler carries out
-// itself (apply), as before, until later slices of #336 move them. The
-// status is written once, after the tick.
+// the tick (mergeCarried). It ends a Task with nothing to do or done by its
+// Standard change, files a proposal as a Standard change and resumes the
+// round once it merged (the filing the reconciler's: engine.Proposer,
+// taskTurn.Propose), and puts a pull request up for a person or declines a
+// spec, what these say the reconciler's (ending, changeCarried;
+// task_change.go). The waits the reconciler carries out itself (apply), as
+// does every step on a status that names a Sandbox the counters don't name,
+// until later slices of #336 move them. The status is written once, after
+// the tick.
 
 // taskTurn is one reconcile of a Task on the engine's Task tick: the
 // ports.Runtime the tick runs on, and what the reconcile keeps between the
@@ -79,8 +85,11 @@ type taskTurn struct {
 	// carries out step through the Task's host (hostStep), which the
 	// reconcile says after the tick (carried); merges that it carries out
 	// step, a merge or a branch's update (mergeStep), which the reconcile
-	// says after the tick (mergeCarried).
-	endsTurn, inPlace, byHost, merges bool
+	// says after the tick (mergeCarried); changes that it carries out step,
+	// a Task's own end, the Standard change or a pull request put up for a
+	// person (changeStep), which the reconcile says after the tick
+	// (changeCarried).
+	endsTurn, inPlace, byHost, merges, changes bool
 	// reviewRun is the approving review run's result HoldMerge read, for the
 	// follow-ups Merged files, and skip what Merge planned for main's push
 	// run (planSkip), which Merged carries onto the merge commit.
@@ -105,8 +114,9 @@ type taskTurn struct {
 }
 
 var (
-	_ ports.Runtime = (*taskTurn)(nil)
-	_ engine.Merger = (*taskTurn)(nil)
+	_ ports.Runtime   = (*taskTurn)(nil)
+	_ engine.Merger   = (*taskTurn)(nil)
+	_ engine.Proposer = (*taskTurn)(nil)
 )
 
 // newTaskTurn is the reconcile of task on the tick, on status as the
@@ -130,17 +140,18 @@ func (t *taskTurn) Capabilities() ports.Capabilities { return operatorCapabiliti
 
 // input is the tick's input: the reconciler reads the facts, carries out
 // every step but a turn's offer, end and restart, a run kept in place and the
-// steps of hostStep and mergeStep, says what a turn's end, a failure and a
-// branch's update say (ending), writes the round's pull request (pull) and
-// merges as the operator merges (the Merger); the host is resolved when a
-// step needs it (host).
+// steps of hostStep, mergeStep and changeStep, says what a turn's end, a
+// failure, a branch's update and a step of changeStep say (ending), writes
+// the round's pull request (pull), merges as the operator merges (the
+// Merger) and files a Standard change (the Proposer); the host is resolved
+// when a step needs it (host).
 func (t *taskTurn) input(ctx context.Context) engine.TaskInput {
 	in := engine.TaskInput{Task: t.task.Name, Container: t.container.Name, Issue: int(t.task.Spec.Issue),
 		Title: t.status.IssueTitle, Goal: t.task.Spec.Goal, Spec: isSpec(t.task),
 		Implementer: t.agents.implementer.Name, Reviewer: t.agents.reviewer.Name,
 		MaxRounds: int(t.agents.implementer.Spec.MaxRounds), Now: t.r.now(), Log: logf.FromContext(ctx),
 		Facts: t.readFacts, Carry: t.carry, Ending: t.ending, Host: t.host, HostTimeout: t.r.gitTimeout(),
-		Pull: t.pull, Benchmark: t.task.Spec.Benchmark != nil, Merger: t}
+		Pull: t.pull, Benchmark: t.task.Spec.Benchmark != nil, Merger: t, Proposer: t}
 	if t.agents.verifier != nil {
 		in.Verifier = t.agents.verifier.Name
 	}
@@ -178,6 +189,22 @@ func hostStep(action model.TaskAction) bool {
 	return false
 }
 
+// changeStep reports whether the engine carries out action, where it acts on
+// the run the reconciler would (endsAsTheEngine): a proposal filed as a
+// Standard change (Propose, the filing the reconciler's: taskTurn.Propose),
+// the Task back in its round once the change merged (Resume), a resumed Task
+// its change left nothing to do (DoneByStandardChange), an issue that needs
+// no change (NothingToDo), and a pull request put up for a person's approval
+// (AwaitApproval) or a spec a person declined (SpecDeclined).
+func changeStep(action model.TaskAction) bool {
+	switch action {
+	case model.ActionPropose, model.ActionResume, model.ActionDoneByStandardChange, model.ActionNothingToDo,
+		model.ActionAwaitApproval, model.ActionSpecDeclined:
+		return true
+	}
+	return false
+}
+
 // mergeStep reports whether the engine carries out action, an approved
 // change's way into main, where it acts on the run the reconciler would
 // (endsAsTheEngine): its merge, and its branch updated with main, the
@@ -187,7 +214,7 @@ func mergeStep(action model.TaskAction) bool {
 }
 
 // carry carries out step, unless it is a turn's start, or a turn's end, a
-// run kept in place or a step of hostStep or mergeStep the engine carries
+// run kept in place or a step of hostStep, mergeStep or changeStep the engine carries
 // out on the run the reconciler would (endsAsTheEngine), which it leaves to
 // the engine. The engine brought the run's pause up to date before
 // (ports.Pauser), as the step may wait on it.
@@ -223,6 +250,10 @@ func (t *taskTurn) carry(ctx context.Context, _ model.TaskFacts, step model.Task
 		t.merges = true
 		return false, nil
 	}
+	if changeStep(step.Action) && t.endsAsTheEngine() {
+		t.changes = true
+		return false, nil
+	}
 	result, err := t.r.apply(ctx, t.task, status, t.container, t.agents, step)
 	t.result = result
 	return true, err
@@ -246,10 +277,12 @@ func (t *taskTurn) endsAsTheEngine() bool {
 	return t.status.Sandbox != "" && t.status.Sandbox == sandboxName(t.task, t.status, role)
 }
 
-// ending is the reconciler's half of a turn's end or a failure the engine
-// carries out (engine.TaskInput.Ending), before the Workers end the run: what
-// the step says on the pull request, as each Agent's own account, and the
-// verdict the status keeps once the review's run is gone. A round no agent
+// ending is the reconciler's half of a turn's end, a failure, a branch's
+// update, a Task's own end, a resume and a pull request put up for a person
+// the engine carries out (engine.TaskInput.Ending), before the Workers end
+// the run: what the step says on the pull request and the issue, as each
+// Agent's own account, and the verdict the status keeps once the review's
+// run is gone. A round no agent
 // judged drops an earlier round's verdict first, as apply does. A failure
 // says so on the pull request and drops a Blocked Task's proposal, as fail
 // does; its issue goes back to a person after the tick (carried).
@@ -274,6 +307,20 @@ func (t *taskTurn) ending(ctx context.Context, _ model.TaskFacts, step model.Tas
 		// status as the branch takes in main, as updateBranch has it.
 		status.Review = r.reviewFrom(ctx, task, status)
 		r.comment(ctx, task, status, container, step.Message+".")
+	case model.ActionAwaitApproval:
+		r.approveForPerson(ctx, task, status, container, t.agents)
+	case model.ActionResume:
+		r.sayResumed(ctx, task, status, container)
+	case model.ActionDoneByStandardChange, model.ActionNothingToDo:
+		provider, repo, err := r.gitRepo(ctx, container)
+		if err != nil {
+			return err
+		}
+		if step.Action == model.ActionNothingToDo {
+			r.closeNothing(ctx, provider, repo, task, step.Feedback)
+		} else {
+			r.closeDoneByChange(ctx, provider, repo, task, status)
+		}
 	case model.ActionFail:
 		if t.step.Action == model.ActionFail {
 			// The step decided, as apply's: the review's verdict stays, and

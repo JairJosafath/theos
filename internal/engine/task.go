@@ -92,10 +92,12 @@ type TaskInput struct {
 	// Carry, when set, is asked first to carry out each step decided: it
 	// returns true for a step it carried out itself, through the runtime,
 	// and the engine then does nothing more; false leaves the step to the
-	// engine. The operator carries every step but a turn's offer, end and
-	// keeping in place, the round's pull request opened, checks run again,
-	// a failure, and an approved change's branch updated and merged itself
-	// until #336 moves the rest
+	// engine. The operator carries out only its waits itself, which say why
+	// in its own status vocabulary, and leaves the engine every other step:
+	// a turn's offer, end and keeping in place, the round's pull request
+	// opened, checks run again, a failure, an approved change's branch
+	// updated and merged, the Standard change, a Task's own ends and a pull
+	// request put up for a person, until #336 moves the waits too
 	// (docs/plans/lead-runtime.md, step 12). The engine reaches the host
 	// only for a step Carry leaves it, so a runtime whose Carry leaves it
 	// only steps that need none may tick with no host, and one that leaves
@@ -113,7 +115,13 @@ type TaskInput struct {
 	// the store after it, as the runtime may keep there why it failed.
 	// It also says what an approved change's branch updated with main
 	// (model.ActionUpdateBranch) says, which ends a turn only where the
-	// Workers keep no judging run (ports.Keeper).
+	// Workers keep no judging run (ports.Keeper); what a Task's own end and
+	// the Standard change say (model.ActionNothingToDo, ActionResume and
+	// ActionDoneByStandardChange: the issue closed or told, an earlier pull
+	// request closed, the proposal's branch deleted), and what a pull request
+	// put up for a person's approval says (model.ActionAwaitApproval: the
+	// agents' approvals as their own accounts). The record is read back after
+	// each of these, as the runtime may keep there what the step leaves.
 	Ending func(ctx context.Context, facts model.TaskFacts, step model.TaskStep) error
 	// Host, when set, reaches the Git host for a tick whose host was not
 	// given, the first time a step needs it: the host and the Task's
@@ -139,6 +147,14 @@ type TaskInput struct {
 	// what holds it, how the approved pull request merges, and what a merge
 	// records and files, in place of the engine's own (#336).
 	Merger Merger
+	// Proposer, when set, files the implementer's proposal as a Standard
+	// change, which blocks the Task until it merges (model.ActionPropose),
+	// and keeps the change's record; the change is then the runtime's, which
+	// its facts read (model.ChangeFacts), and the engine resumes the Task
+	// once it merged (model.ActionResume) or ends it done by it
+	// (model.ActionDoneByStandardChange). Without one those steps wait, not
+	// built (#336).
+	Proposer Proposer
 }
 
 // PullDraft is a round's pull request as a runtime writes it
@@ -208,11 +224,11 @@ const whyDone = "done"
 // can't do waits for a person (model.ReasonPersonMerges), and the tick after
 // the person's merge ends the Task Merged. The operator's Task reconcile
 // runs on it too (#336): it gives its own facts (TaskInput.Facts), carries
-// out every step but a turn's offer, end and keeping in place, a pull request
-// opened, checks run again, a failure, and a branch updated and merged itself
-// (TaskInput.Carry), says what a turn's end, a failure and a branch's update
+// out its waits itself (TaskInput.Carry), says what a turn's end, a failure,
+// a branch's update, a Task's own end and a pull request put up for a person
 // say itself (TaskInput.Ending), writes the pull request (TaskInput.Pull),
-// merges as it merges (TaskInput.Merger), reaches its host only for a step
+// merges as it merges (TaskInput.Merger), files a Standard change
+// (TaskInput.Proposer), reaches its host only for a step
 // that needs it (TaskInput.Host), and its Workers ready a turn before it is
 // offered (ports.Preparer), which also offers a restarted turn on a later
 // tick, suspend, resume and pause runs in place (ports.Suspender,
@@ -308,6 +324,9 @@ func (t *taskTick) hostFree(action model.TaskAction) bool {
 	case model.ActionMerge:
 		return t.in.Benchmark // ends Approved, merging nothing
 	}
+	if free, known := t.changeStepFree(action); known {
+		return free
+	}
 	return InPlace(action)
 }
 
@@ -382,7 +401,9 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 				return facts, err
 			}
 		}
-		facts.Run = run
+		// A "nothing to do" the Task can't end on is the round with no change
+		// it was (#72), in every runtime.
+		facts.Run = model.WithoutNothing(run, in.Issue, t.rec.PullRequest != 0, in.Benchmark)
 	}
 	if in.Facts != nil {
 		facts, err := in.Facts(ctx, facts)
@@ -448,7 +469,15 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 	case model.ActionStartVerify:
 		return t.start(ctx, step, model.RoleVerifier)
 	case model.ActionAwaitApproval:
-		return step, t.awaitApproval(ctx, role)
+		return step, t.awaitApproval(ctx, facts, step, role)
+	case model.ActionPropose:
+		return t.propose(ctx, facts, step, role)
+	case model.ActionResume:
+		return t.resumeChange(ctx, facts, step)
+	case model.ActionDoneByStandardChange:
+		return t.doneByChange(ctx, facts, step, role)
+	case model.ActionNothingToDo:
+		return t.nothingToDo(ctx, facts, step, role)
 	case model.ActionSpecDeclined:
 		return step, t.fail(ctx, facts, role, model.TaskStep{Action: model.ActionFail,
 			Reason: model.ReasonSpecDeclined, Message: model.SpecDeclinedMessage(t.rec.PullRequestURL)})
@@ -471,8 +500,7 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 		}
 		return step, t.fail(ctx, facts, role, step)
 	}
-	// What the operator alone does (a Standard change, an agent's outage)
-	// waits here, saying so.
+	// A step the engine has no way to carry out waits here, saying so.
 	return notBuilt(step), nil
 }
 

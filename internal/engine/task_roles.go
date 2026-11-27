@@ -113,13 +113,26 @@ func (t *taskTick) waitingPull(ctx context.Context, facts *model.TaskFacts) erro
 }
 
 // awaitApproval ends the review's run, which approved, and has the pull
-// request wait for a person: it says so on the pull request.
-func (t *taskTick) awaitApproval(ctx context.Context, role string) error {
+// request wait for a person: it says so on the pull request, in the
+// runtime's words where it has them (TaskInput.Ending: the operator posts
+// the agents' approvals as their own accounts, #336), else the engine's.
+func (t *taskTick) awaitApproval(ctx context.Context, facts model.TaskFacts, step model.TaskStep, role string) error {
 	says := "The agents approved this change; it waits for a person to approve it, or to merge it."
 	if t.in.Spec {
 		says = model.SpecWaitMessage(t.in.Issue, t.rec.PullRequestURL) + ". A person's merge approves it too."
 	}
-	t.comment(ctx, says)
+	if err := t.ending(ctx, facts, step, func() { t.comment(ctx, says) }); err != nil {
+		return err
+	}
+	if t.in.Ending != nil {
+		// What the approving run leaves for the merge stays with the record
+		// read back (KeepFindings), as its run ends here.
+		findings := t.rec.Findings
+		if err := t.reread(ctx); err != nil {
+			return err
+		}
+		t.rec.Findings = findings
+	}
 	return t.next(ctx, role, model.AwaitApproval(t.rec.Progress))
 }
 

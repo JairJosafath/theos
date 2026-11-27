@@ -47,38 +47,76 @@ const defaultStandardChangeRecheck = time.Minute
 // by the operator, which blocks the Task's issue; the Task is Blocked until it
 // merges. A repeated step reuses the issue it filed before. A Task without an
 // issue or a Crew, or whose issue a person closed during the round, fails
-// instead.
+// instead. On the engine's Task tick, taskTurn.Propose files it the same way
+// (fileProposal), and the engine ends the run and blocks the Task (#336).
 func (r *TaskReconciler) propose(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, step model.TaskStep) (ctrl.Result, error) {
 	run, err := runState(ctx, r.Client, task.Namespace, status.Sandbox, status.SandboxPod)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("reading the proposal of %s: %w", status.Sandbox, err)
 	}
+	filed, err := r.fileProposal(ctx, task, status, container, run)
+	switch {
+	case err != nil:
+		return ctrl.Result{}, err
+	case filed.refusal != "":
+		return ctrl.Result{}, r.fail(ctx, task, status, container, model.ReasonFailed, filed.refusal)
+	case filed.closed != nil:
+		// Nobody waits for a change any more.
+		if err := r.endRun(ctx, task, status); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.end(task, status, *filed.closed)
+		return ctrl.Result{}, nil
+	}
+	if err := r.endRun(ctx, task, status); err != nil {
+		return ctrl.Result{}, err
+	}
+	setProgress(status, model.Proposed(progressOf(status), run.Result.Commit))
+	status.Summary = run.Result.Summary
+	status.StandardChange = filed.change
+	r.proposed(ctx, task, status, step)
+	return ctrl.Result{}, nil // the status write triggers the next step
+}
+
+// filedProposal is what filing an implementer's proposal came to: the change
+// filed, else the proposal refused, which fails the Task, or the end of a
+// Task whose issue a person closed during the round.
+type filedProposal struct {
+	change  *c4v1beta1.TaskStandardChange
+	refusal string
+	closed  *model.TaskEnd
+}
+
+// fileProposal files the proposal run reports as a Standard change issue,
+// authored by the operator, which blocks the Task's issue, and returns the
+// change the status keeps: its issue, paths and proposal branch, and how many
+// the Task filed. A repeated step reuses the issue it filed before. A Task
+// without an issue or a Crew has it refused; one whose issue a person closed
+// during the round ends instead.
+func (r *TaskReconciler) fileProposal(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, run model.RunState) (filedProposal, error) {
 	if run.Result == nil || run.Result.Proposal == nil {
-		return ctrl.Result{}, fmt.Errorf("sandbox %s reported no proposal", status.Sandbox)
+		return filedProposal{}, fmt.Errorf("sandbox %s reported no proposal", status.Sandbox)
 	}
 	proposal := *run.Result.Proposal
 	n := int(task.Spec.Issue)
 	if refusal := model.ProposeRefusal(n, task.Labels[LabelCrew] != "", proposal.Paths); refusal != "" {
-		return ctrl.Result{}, r.fail(ctx, task, status, container, "Failed", refusal)
+		return filedProposal{refusal: refusal}, nil
 	}
 	provider, repo, err := r.gitRepo(ctx, container)
 	if err != nil {
-		return ctrl.Result{}, err
+		return filedProposal{}, err
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	waiting, err := provider.GetIssue(gitCtx, repo, n)
 	if err != nil {
-		return ctrl.Result{}, err
+		return filedProposal{}, err
 	}
 	if waiting.State == stateClosed {
-		// Nobody waits for a change any more.
-		if err := r.endRun(ctx, task, status); err != nil {
-			return ctrl.Result{}, err
-		}
-		r.end(task, status, model.IssueClosed(n))
-		return ctrl.Result{}, nil
+		closed := model.IssueClosed(n)
+		return filedProposal{closed: &closed}, nil
 	}
 	skip := 0
 	if status.StandardChange != nil {
@@ -86,7 +124,7 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1beta1.Task, stat
 	}
 	filed, isNew, err := fileStandardChange(gitCtx, provider, repo, task, proposal, waiting, skip)
 	if err != nil {
-		return ctrl.Result{}, err
+		return filedProposal{}, err
 	}
 	notes := []error{provider.AddIssueDependency(gitCtx, repo, n, repo, filed.Number)}
 	if isNew {
@@ -96,22 +134,18 @@ func (r *TaskReconciler) propose(ctx context.Context, task *c4v1beta1.Task, stat
 			task.Name, quotePaths(proposal.Paths), filed.Number)))
 	}
 	logNotes(ctx, task, notes)
+	count := model.ProposalCount(standardChangeCount(status))
+	return filedProposal{change: &c4v1beta1.TaskStandardChange{Issue: int32(filed.Number), IssueURL: filed.URL,
+		Paths: proposal.Paths, Branch: proposal.Branch, Count: int32(count)}}, nil
+}
 
-	if err := r.endRun(ctx, task, status); err != nil {
-		return ctrl.Result{}, err
-	}
-	var earlier int
-	if status.StandardChange != nil {
-		earlier = int(status.StandardChange.Count)
-	}
-	count := model.ProposalCount(earlier)
-	setProgress(status, model.Proposed(progressOf(status), run.Result.Commit))
-	status.Summary = run.Result.Summary
-	status.StandardChange = &c4v1beta1.TaskStandardChange{Issue: int32(filed.Number), IssueURL: filed.URL,
-		Paths: proposal.Paths, Branch: proposal.Branch, Count: int32(count)}
+// proposed says in the status that the Task is Blocked on the Standard change
+// it filed.
+func (r *TaskReconciler) proposed(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	step model.TaskStep) {
 	r.progress(task, status, metav1.ConditionTrue, "WaitingForStandardChange", step.Message)
-	logf.FromContext(ctx).Info("Filed a Standard change", "issue", filed.Number, "paths", proposal.Paths)
-	return ctrl.Result{}, nil // the status write triggers the next step
+	logf.FromContext(ctx).Info("Filed a Standard change", "issue", status.StandardChange.Issue,
+		"paths", status.StandardChange.Paths)
 }
 
 // fileStandardChange returns the open Standard change issue filed for the
@@ -226,6 +260,16 @@ func resumedRun(status *c4v1beta1.TaskStatus) bool {
 // was in, telling the implementer the change is in main.
 func (r *TaskReconciler) resume(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, step model.TaskStep) {
+	r.sayResumed(ctx, task, status, container)
+	setProgress(status, model.ResumeRound(progressOf(status), step.Feedback))
+	r.resumed(ctx, task, status, step)
+}
+
+// sayResumed says on the Task's issue that its Standard change merged and the
+// Task goes on, and deletes the change's proposal branch, which nothing reads
+// any more.
+func (r *TaskReconciler) sayResumed(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container) {
 	change := status.StandardChange
 	provider, repo, err := r.gitRepo(ctx, container)
 	notes := []error{err}
@@ -237,9 +281,13 @@ func (r *TaskReconciler) resume(ctx context.Context, task *c4v1beta1.Task, statu
 		cancel()
 	}
 	logNotes(ctx, task, notes)
-	setProgress(status, model.ResumeRound(progressOf(status), step.Feedback))
+}
+
+// resumed says in the status that the Task went on with its round.
+func (r *TaskReconciler) resumed(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	step model.TaskStep) {
 	r.progress(task, status, metav1.ConditionTrue, "Resumed", step.Message)
-	logf.FromContext(ctx).Info("Resumed Task after its Standard change merged", "issue", change.Issue,
+	logf.FromContext(ctx).Info("Resumed Task after its Standard change merged", "issue", status.StandardChange.Issue,
 		"round", status.Round)
 }
 
@@ -259,6 +307,19 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1bet
 	if err := r.endRun(ctx, task, status); err != nil {
 		return err
 	}
+	r.closeDoneByChange(ctx, provider, repo, task, status)
+	r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, reasonDoneByStandardChange, step.Message)
+	logDoneByChange(ctx, status)
+	return nil
+}
+
+// closeDoneByChange closes what a Task its Standard change finished leaves
+// open: its pull request from an earlier round, if any, the change's proposal
+// branch, and its issue, with a comment naming the change.
+func (r *TaskReconciler) closeDoneByChange(ctx context.Context, provider interface {
+	ports.GitHost
+	ports.Issues
+}, repo ports.Repository, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus) {
 	gitCtx, cancel := context.WithTimeout(ctx, r.gitTimeout())
 	defer cancel()
 	var notes []error
@@ -272,9 +333,12 @@ func (r *TaskReconciler) doneByStandardChange(ctx context.Context, task *c4v1bet
 		change.Issue, change.IssueURL), fmt.Sprintf(
 		"its Standard change #%d (%s) merged and left this issue nothing to do", change.Issue, change.IssueURL))...)
 	logNotes(ctx, task, notes)
-	r.finish(task, status, c4v1beta1.TaskMerged, metav1.ConditionTrue, reasonDoneByStandardChange, step.Message)
-	logf.FromContext(ctx).Info("Merged Task done by its Standard change", "issue", change.Issue)
-	return nil
+}
+
+// logDoneByChange says in the log that the Task ended done by its Standard
+// change.
+func logDoneByChange(ctx context.Context, status *c4v1beta1.TaskStatus) {
+	logf.FromContext(ctx).Info("Merged Task done by its Standard change", "issue", status.StandardChange.Issue)
 }
 
 // deleteProposal deletes the proposal branch of the Task's Standard change:
