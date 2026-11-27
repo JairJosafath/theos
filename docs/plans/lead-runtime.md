@@ -943,7 +943,9 @@ spec passes unchanged. Choices the plan left open:
   so a retry after a write that failed posts none twice (#906).
   `Reconcile` now writes the status, then calls `afterWrite`.
 - **The engine's `rerunChecks` is the operator's**, which changes the lead
-  runtime's, never reached there yet: a run at the commit still running
+  runtime's: a session reaches it when its agent pushes again the commit
+  whose checks failed, or a job of its checks is killed for lack of memory
+  (docs/no-cluster.md says what a user sees). A run at the commit still running
   waits for it (`Wait` with `Recheck`), where the engine went on with the
   step unchanged; with no failed run, a commit pushed again has its failure
   read as it stands (`Wait`, its due rerun cleared), and any other fails the
@@ -1001,9 +1003,16 @@ spec passes unchanged. Choices the plan left open:
   `TestTaskHostOpensThePullRequestAsTheAgent336`,
   `TestTaskTurnLeavesTheEngineTheHostSteps336`,
   `TestTaskTurnSaysWhatAHostStepSays336` and
-  `TestTaskTurnSaysWhenTheAgentIsBack336` on the operator's adapters. Tier 4:
-  every Task envtest spec, unchanged, now opens pull requests, reruns checks
-  and fails Tasks through the engine.
+  `TestTaskTurnSaysWhenTheAgentIsBack336` on the operator's adapters;
+  `contract.TaskStore`'s progress subtest now reads `AgentBack` back and
+  forgets it, on the fake, the operator's Crew store
+  (`TestCrewTaskStoreContract`) and `hostrun` on both its worlds. Slice 3's
+  `TestTaskTurnLeavesTheEngineATurnsEnd336` counts AgentUnavailable among
+  the engine's turn ends now. Tier 4: every Task envtest spec, unchanged,
+  now opens pull requests, reruns checks and fails Tasks through the engine.
+  The Gitea client is unchanged; `taskHost` only routes the pull request to
+  the agent bot's client, as `openPR` did, so `make test-gitea` (which needs
+  a Gitea that runs as other than root) has nothing new to see.
 
 What the remaining slices of #336 must do:
 - **The merge and the branch's update**, with the approval the merge posts:
