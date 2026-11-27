@@ -182,9 +182,9 @@ func TestTaskTurnLeavesTheEngineATurnsEnd336(t *testing.T) {
 		model.ActionVerify: true, model.ActionRetryVerify: true, model.ActionRetry: true,
 		model.ActionRetryReview: true, model.ActionRerun: true, model.ActionResolveConflicts: true,
 		// Slice 4: a paused run's rerun, and an approval that ran out reviewed
-		// again, are the engine's too; an Agent's outage writes when the agent
-		// is back, which the engine's record has no place for.
-		model.ActionRerunPaused: true, model.ActionReviewAgain: true, model.ActionAgentUnavailable: false,
+		// again, are the engine's too. Slice 5: an Agent's outage too, as the
+		// engine's record keeps when the agent is back (TaskRecord.AgentBack).
+		model.ActionRerunPaused: true, model.ActionReviewAgain: true, model.ActionAgentUnavailable: true,
 		model.ActionStartImplement: false, model.ActionFail: false, model.ActionMerge: false,
 		// A run kept in place is not a turn's end (engine.InPlace).
 		model.ActionSuspendRun: false, model.ActionResumeRun: false,

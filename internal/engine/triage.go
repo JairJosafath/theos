@@ -168,7 +168,7 @@ const reasonTriaged = "Triaged"
 // can't be applied fails it.
 func (t *taskTick) triaged(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (model.TaskStep, error) {
 	decision := model.NormalTriage(*facts.Run.Result.Triage)
-	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 	defer cancel()
 	issue, err := t.host.GetIssue(hostCtx, t.in.Repo, t.in.Issue)
 	if err != nil {
@@ -201,7 +201,7 @@ func (t *taskTick) triaged(ctx context.Context, facts model.TaskFacts, step mode
 // until model.MaxIssueAttempts of them failed.
 func (t *taskTick) failTriage(ctx context.Context, step model.TaskStep) error {
 	why := cmpOr(step.Feedback, step.Message)
-	hostCtx, cancel := context.WithTimeout(ctx, HostTimeout)
+	hostCtx, cancel := context.WithTimeout(ctx, t.in.hostTimeout())
 	err := t.host.CommentIssue(hostCtx, t.in.Repo, t.in.Issue,
 		model.TriageFailedComment(t.in.Task, why, t.in.TriageFailed+1))
 	cancel()

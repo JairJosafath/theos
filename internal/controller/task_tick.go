@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -42,9 +43,14 @@ import (
 // end says on the pull request the reconciler's (taskTurn.ending). It
 // suspends and resumes a run in place and brings its pause up to date
 // through the same Workers (engine.InPlace; ports.Suspender, ports.Resumer,
-// ports.Pauser). Every other step the reconciler carries out itself
-// (apply), as before, until later slices of #336 move them. The status is
-// written once, after the tick.
+// ports.Pauser). It opens the round's pull request, runs failed checks
+// again and fails the Task through the operator's host (taskHost, the
+// pull request as the Container's agent bot), and ends a turn whose agent is
+// unavailable, keeping when it is back in the record (hostStep); what these
+// say is the reconciler's, before the run ends (ending), after the tick
+// (carried) and after the status write (afterWrite). Every other step the
+// reconciler carries out itself (apply), as before, until later slices of
+// #336 move them. The status is written once, after the tick.
 
 // taskTurn is one reconcile of a Task on the engine's Task tick: the
 // ports.Runtime the tick runs on, and what the reconcile keeps between the
@@ -65,8 +71,20 @@ type taskTurn struct {
 	// endsTurn says the engine carries out step, a turn's end, whose
 	// Progressing reason the reconcile writes after the tick (ended);
 	// inPlace that it carries out step, a run suspended or resumed in place,
-	// which the reconcile says after the tick (keptInPlace).
-	endsTurn, inPlace bool
+	// which the reconcile says after the tick (keptInPlace); byHost that it
+	// carries out step through the Task's host (hostStep), which the
+	// reconcile says after the tick (carried).
+	endsTurn, inPlace, byHost bool
+	// reopened says the Task had a pull request before the step: a later
+	// round's, whose description stays the first round's. failed is the
+	// failure the engine carried out, said by ending, whose issue goes back
+	// to a person once the Task failed (carried).
+	reopened bool
+	failed   *model.TaskStep
+	// notes are what the step says once the status that records it is
+	// written (afterWrite), as a retry after a failed write must not say it
+	// twice (#906).
+	notes func(context.Context)
 	// in and envs are the run's inputs and test environments, read by
 	// prepare for the Sandbox the offer makes; firstIssueRun says the run
 	// is the Task's first on its issue, which announces the Task.
@@ -97,14 +115,17 @@ func (t *taskTurn) Workers() ports.Workers { return t.workers }
 func (t *taskTurn) Capabilities() ports.Capabilities { return operatorCapabilities }
 
 // input is the tick's input: the reconciler reads the facts, carries out
-// every step but a turn's offer, end and restart and a run kept in place, and
-// says what a turn's end says (ending).
+// every step but a turn's offer, end and restart, a run kept in place and the
+// steps of hostStep, says what a turn's end and a failure say (ending), and
+// writes the round's pull request (pull); the host is resolved when a step
+// needs it (host).
 func (t *taskTurn) input(ctx context.Context) engine.TaskInput {
 	in := engine.TaskInput{Task: t.task.Name, Container: t.container.Name, Issue: int(t.task.Spec.Issue),
 		Title: t.status.IssueTitle, Goal: t.task.Spec.Goal, Spec: isSpec(t.task),
 		Implementer: t.agents.implementer.Name, Reviewer: t.agents.reviewer.Name,
 		MaxRounds: int(t.agents.implementer.Spec.MaxRounds), Now: t.r.now(), Log: logf.FromContext(ctx),
-		Facts: t.readFacts, Carry: t.carry, Ending: t.ending}
+		Facts: t.readFacts, Carry: t.carry, Ending: t.ending, Host: t.host, HostTimeout: t.r.gitTimeout(),
+		Pull: t.pull}
 	if t.agents.verifier != nil {
 		in.Verifier = t.agents.verifier.Name
 	}
@@ -129,9 +150,22 @@ func offers(action model.TaskAction) bool {
 	return false
 }
 
-// carry carries out step, unless it is a turn's start, or a turn's end or a
-// run kept in place the engine carries out on the run the reconciler would
-// (endsAsTheEngine), which it leaves to the engine. The engine brought the
+// hostStep reports whether the engine carries out action through the Task's
+// host (taskHost), where it acts on the run the reconciler would
+// (endsAsTheEngine): the round's pull request opened (also by a rerun of the
+// checks of a commit pushed again), the failed jobs of its checks run again,
+// and a failure, which hands the issue back.
+func hostStep(action model.TaskAction) bool {
+	switch action {
+	case model.ActionOpenPR, model.ActionRerunChecks, model.ActionFail:
+		return true
+	}
+	return false
+}
+
+// carry carries out step, unless it is a turn's start, or a turn's end, a
+// run kept in place or a step of hostStep the engine carries out on the run
+// the reconciler would (endsAsTheEngine), which it leaves to the engine. The engine brought the
 // run's pause up to date before (ports.Pauser), as the step may wait on it.
 func (t *taskTurn) carry(ctx context.Context, _ model.TaskFacts, step model.TaskStep) (bool, error) {
 	t.step = step
@@ -147,6 +181,14 @@ func (t *taskTurn) carry(ctx context.Context, _ model.TaskFacts, step model.Task
 	}
 	if engine.InPlace(step.Action) && t.endsAsTheEngine() {
 		t.inPlace = true
+		return false, nil
+	}
+	if hostStep(step.Action) && t.endsAsTheEngine() {
+		if step.Unreviewed {
+			// As apply drops them: no agent judged this round's change.
+			status.Review, status.Verification = nil, nil
+		}
+		t.byHost, t.reopened = true, status.PullRequest != 0
 		return false, nil
 	}
 	result, err := t.r.apply(ctx, t.task, status, t.container, t.agents, step)
@@ -169,11 +211,13 @@ func (t *taskTurn) endsAsTheEngine() bool {
 	return t.status.Sandbox != "" && t.status.Sandbox == sandboxName(t.task, t.status, role)
 }
 
-// ending is the reconciler's half of a turn's end the engine carries out
-// (engine.TaskInput.Ending), before the Workers end the run: what the step
-// says on the pull request, as each Agent's own account, and the verdict the
-// status keeps once the review's run is gone. A round no agent judged drops
-// an earlier round's verdict first, as apply does.
+// ending is the reconciler's half of a turn's end or a failure the engine
+// carries out (engine.TaskInput.Ending), before the Workers end the run: what
+// the step says on the pull request, as each Agent's own account, and the
+// verdict the status keeps once the review's run is gone. A round no agent
+// judged drops an earlier round's verdict first, as apply does. A failure
+// says so on the pull request and drops a Blocked Task's proposal, as fail
+// does; its issue goes back to a person after the tick (carried).
 func (t *taskTurn) ending(ctx context.Context, _ model.TaskFacts, step model.TaskStep) error {
 	r, task, status, container := t.r, t.task, t.status, t.container
 	if step.Unreviewed {
@@ -190,6 +234,19 @@ func (t *taskTurn) ending(ctx context.Context, _ model.TaskFacts, step model.Tas
 		status.Review = r.sayConflicts(ctx, task, status, container, step)
 	case model.ActionReviewAgain:
 		r.comment(ctx, task, status, container, step.Message+".")
+	case model.ActionFail:
+		if t.step.Action == model.ActionFail {
+			// The step decided, as apply's: the review's verdict stays, and
+			// the feedback says why, which the engine reads back.
+			if review := r.reviewFrom(ctx, task, status); review != nil {
+				status.Review = review
+			}
+			status.Feedback = step.Feedback
+		}
+		r.comment(ctx, task, status, container, "The Task failed. "+step.Message)
+		// Only a Blocked Task has a proposal to drop, and no run to end.
+		r.dropProposal(ctx, task, status, container)
+		t.failed = &step
 	}
 	return nil
 }
@@ -203,7 +260,79 @@ func (t *taskTurn) ended(ctx context.Context, step model.TaskStep) {
 	if !t.endsTurn || step.Action != t.step.Action {
 		return
 	}
+	if step.Action == model.ActionAgentUnavailable {
+		// The record kept when the agent is back (agentBackAt): the Task
+		// waits, and looks again then.
+		t.result = t.r.waitForAgent(ctx, t.task, t.status, step)
+		return
+	}
 	t.r.turnEnded(ctx, t.task, t.status, step)
+}
+
+// carried says in the status what a step of hostStep the tick carried out
+// did (step is the tick's result), as apply's openPR, rerunChecks and fail
+// say it: a pull request opened waits for its checks, and its notes follow
+// the status write (afterWrite); checks run again, or a wait for their runs
+// to end first, or a failure read as it stands; a failed Task's issue goes
+// back to a person.
+func (t *taskTurn) carried(ctx context.Context, step model.TaskStep) {
+	if !t.byHost {
+		return
+	}
+	r, task, status := t.r, t.task, t.status
+	if f := t.failed; f != nil && status.Phase == c4v1beta1.TaskFailed {
+		r.failed(ctx, task, t.container, cmp.Or(f.Reason, model.ReasonFailed), f.Message)
+		return
+	}
+	switch {
+	case step.Action != t.step.Action && step.Action != model.ActionWait:
+		return // another step, said by its own
+	case t.facts.Phase == model.TaskImplementing:
+		if step.Action == t.step.Action {
+			t.opened(ctx)
+		}
+	case t.step.Action != model.ActionRerunChecks:
+	case step.Action == model.ActionWait && step.Recheck:
+		r.progress(task, status, metav1.ConditionTrue, "Waiting", step.Message)
+		t.result = ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}
+	case step.Action == model.ActionWait:
+		r.progress(task, status, metav1.ConditionTrue, "Checking", step.Message)
+	default:
+		r.progress(task, status, metav1.ConditionTrue, "RerunningChecks", step.Message)
+	}
+}
+
+// opened says in the status that the tick opened the round's pull request:
+// the Task waits for its checks, and looks again; once the status is written,
+// a spec's pull request is labelled for its review and a later round's notes
+// go on it (pullOpened).
+func (t *taskTurn) opened(ctx context.Context) {
+	r, task, status, container := t.r, t.task, t.status, t.container
+	r.progress(task, status, metav1.ConditionTrue, "Checking", t.step.Message+"; waiting for checks")
+	t.result = ctrl.Result{RequeueAfter: hostRecheck(ctx, r.checksRecheck())}
+	res, reopened := t.facts.Run.Result, t.reopened
+	t.notes = func(ctx context.Context) { r.pullOpened(ctx, task, status, container, res, reopened) }
+}
+
+// afterWrite says what the step says once the status that records it is
+// written.
+func (t *taskTurn) afterWrite(ctx context.Context) {
+	if t.notes != nil {
+		t.notes(ctx)
+	}
+}
+
+// pull is the round's pull request as the operator writes it
+// (engine.TaskInput.Pull): from the Task's branch, which may be an earlier
+// try's it continues, titled and described as openPR's.
+func (t *taskTurn) pull(facts model.TaskFacts) engine.PullDraft {
+	var summary string
+	var extra []string
+	if res := facts.Run.Result; res != nil {
+		summary, extra = res.Summary, res.Extra
+	}
+	return engine.PullDraft{Head: t.status.Branch, Title: pullTitle(t.task, t.status),
+		Body: pullBody(t.task, t.agents, t.status.Round, summary, extra)}
 }
 
 // keptInPlace says in the status that the tick suspended or resumed the
@@ -391,6 +520,9 @@ func (s *statusStore) SaveProgress(_ context.Context, task string, r ports.TaskR
 func recordOf(status *c4v1beta1.TaskStatus) ports.TaskRecord {
 	rec := ports.TaskRecord{Progress: progressOf(status), PullRequest: int(status.PullRequest),
 		PullRequestURL: status.PullRequestURL, Summary: status.Summary}
+	if status.AgentBackAt != nil {
+		rec.AgentBack = status.AgentBackAt.Time
+	}
 	if rec.Progress.Phase == "" {
 		rec.Progress.Phase = model.TaskPending
 	}
@@ -405,4 +537,8 @@ func setRecord(status *c4v1beta1.TaskStatus, r ports.TaskRecord) {
 	setProgress(status, r.Progress)
 	status.PullRequest, status.PullRequestURL = int32(r.PullRequest), r.PullRequestURL
 	status.Summary = r.Summary
+	status.AgentBackAt = nil
+	if !r.AgentBack.IsZero() {
+		status.AgentBackAt = &metav1.Time{Time: r.AgentBack}
+	}
 }
