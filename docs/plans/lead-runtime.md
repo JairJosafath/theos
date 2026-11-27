@@ -1030,6 +1030,112 @@ What the remaining slices of #336 must do:
 - `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
   one last past its tick yet.
 
+**Step 12 as built (slice 6: the merge and the branch's update on the tick)** (`internal/engine/task_merge.go`,
+`internal/controller/task_merge.go`, `ports.Keeper`, `engine.Merger`). The engine updates an
+approved change's branch with main and merges it for the operator: Merge,
+with the approvals it posts, and UpdateBranch, the review's Sandbox kept
+through the update until the merge. `Carry` no longer carries them where the
+engine acts on the run the reconciler would. Every Task envtest spec passes
+unchanged. Choices the plan left open:
+- **The judging run is kept by the Workers, not the record** (`ports.Keeper`,
+  an optional part of `Workers`): `Kept(task, round)` is the role whose done
+  run the Workers keep past its turn. The engine's update ends the judging
+  run only where the Workers keep none, and in a phase that runs no role
+  (Checking) the run a step ends is the kept one (`taskTick.endRole`), so the
+  merge, a next round, a review again and a failure there end it, as `endRun`
+  ends the Sandbox the status names. The operator's Workers keep nothing more
+  than they did: the review's Sandbox simply stays, and `Kept` reads its role
+  from the status's Sandbox where the Task's counters name it (`keptRole`).
+  A record field would have needed every store, `hostrun`'s among them, to
+  keep a run only the operator keeps. `contract.KeepingWorkers` states it: a
+  review answered and not ended is kept for its round, read back done with its
+  verdict, and kept no more once ended.
+- **The guard learned the kept run.** `endsAsTheEngine` takes, in a phase
+  with no run, the kept role's Sandbox as the turn the engine acts on. So in
+  Checking with the review kept, every step the engine carries (a turn's end,
+  a host step, the merge and update) is the engine's now, where slice 5 left
+  them all to `apply`; a status naming a Sandbox the counters don't name is
+  still `apply`'s. Slice 3's `TestTaskTurnLeavesTheEngineATurnsEnd336` row
+  "no run, but a sandbox named" became two: the kept review is the engine's,
+  a Sandbox the counters don't name is `apply`'s.
+- **The merge's operator-only parts are an `engine.Merger`**
+  (`TaskInput.Merger`), the operator's `taskTurn`: `HoldMerge` before the
+  pull request is read (the release hold, `waitForRelease`, a wait; a
+  Standard change whose approving run ended while its updated branch was
+  checked, `GatedMergeRefused`, a failure the engine carries out through
+  `Ending`; the review's verdict kept in the status and its run's result kept
+  for the follow-ups), `Merge` in place of the engine's squash
+  (`mergeReviewed`: the approvals as each Agent's account, the gated merge,
+  which may wait for CI, `WaitingForChecks`, or refuse, and `planSkip`), and
+  `Merged` after a merge by theos or a person, in place of the engine's
+  findings and issue close (the merge commit, `carryChecks`, `recordPull`,
+  `specMerged` or `closeIssue` with `mergeFindings`). The engine reads the
+  pull request, decides with `model.DecideMerge`, ends the judging run and
+  the Task, and reads the record back after each hook, as a gated merge
+  records the checks it read. `Merged` runs before the run ends, where
+  `apply` ended it first: nothing it writes reads what `endRun` changes, and a
+  failure (a spec's criteria not copied) leaves the Task unchanged for the
+  next tick, as in the engine's own order.
+- **A Benchmark's Task is `TaskInput.Benchmark`**: the merge ends it
+  Approved (`model.BenchmarkApproved`, which `apply`'s merge now shares) with
+  no host, after `HoldMerge` kept the review's verdict; `final` counts
+  Approved, and the operator's store finishes it succeeded, as `finish` did.
+- **What an update says is the runtime's, through `Ending`**, which now
+  covers UpdateBranch: the operator keeps the review's verdict in the status
+  and comments as its own account. After the tick (`mergeCarried`) the
+  reconciler writes `UpdatingBranch` and stamps `phaseChangedAt`, and for a
+  merge `BranchMoved` (a branch pushed after the review), the waits' reasons
+  and the conflict's `ResolvingConflicts`; a failure goes back to a person
+  (`handBack`, which `carried` shares).
+- **Two changes to the lead runtime**, each with its test: an update's
+  checks are waited for from the update, also when main moved again while
+  the Task already waited (`TestTaskTickWaitsForAnUpdatedBranchsChecksFromTheUpdate336`,
+  which failed before: the engine kept the first update's stamp in the same
+  phase, so the checks' limits ran from it); and a spec whose pull request a
+  person closed by the time it merges is declined, `SpecDeclined`, as the
+  design and the wait for a person have it, where the engine ended it
+  `PullRequestClosed` (`TestTaskTickDeclinesASpecWhosePullRequestClosed336`).
+  [no-cluster.md](../no-cluster.md) says both.
+- **What stays in `apply`, and why.** Its `merge` and `updateBranch` stay for
+  a status that names a Sandbox the counters don't name, as slice 5's steps
+  do. The Standard change (Propose, Resume, DoneByStandardChange) and
+  NothingToDo did not move, to keep this pull request to the merge: Propose
+  files the proposal as a Standard change issue the operator authors and
+  blocks the Task (`Blocked`) until it merges, Resume puts it back in its
+  round with what it tells the implementer, DoneByStandardChange closes an
+  earlier pull request and the issue naming the change, and NothingToDo
+  closes the issue with the agent's reason and ends the Task Merged with
+  nothing merged. Each is the operator's status and words (the change's
+  record, its resumed round) the engine has no hook or record field for
+  yet, and the engine's own steps for them wait `NotBuilt`; together they
+  are the next slice.
+- Tests: tier 1, `TestTaskTickKeepsTheJudgingRunUntilTheMerge336`,
+  `TestTaskTickWaitsForAnUpdatedBranchsChecksFromTheUpdate336`,
+  `TestTaskTickUpdatesTheBranchInTheRuntimesWords336`,
+  `TestTaskTickMergesThroughTheRuntimesMerger336`,
+  `TestTaskTickRecordsAPersonsMergeThroughTheMerger336`,
+  `TestTaskTickEndsABenchmarksTaskApproved336` and
+  `TestTaskTickDeclinesASpecWhosePullRequestClosed336` in the engine;
+  `TestSandboxWorkersKeepingContract336`, `TestTaskTurnLeavesTheEngineTheMerge336`,
+  `TestTaskTurnKeepsTheVerdictForTheMerge336`, `TestTaskTurnSaysWhatAMergeSays336`
+  and `TestStatusStoreEndsABenchmarksTaskApproved336` on the operator's
+  adapters. Tier 4: every Task envtest spec, unchanged, among them the gated
+  merge's, the release hold's, the Benchmark's and the Crew's
+  `UpdatingBranch`, now merges and updates branches through the engine. The
+  Gitea client is unchanged.
+
+What the remaining slices of #336 must do:
+- **The Standard change** (Propose, Resume, DoneByStandardChange) and
+  NothingToDo, once the engine has a Blocked phase's steps and the facts of a
+  proposal; specs (AwaitApproval, SpecDeclined), verification's own steps, a
+  person's approval and rules, budgets: each moves when the engine carries
+  it as the operator does, and `Carry` hands it over. With the last, `Carry`,
+  `Facts` and `Ending` go, and the facts are the engine's reads through the
+  ports.
+- **The Plan, Triage and Score reconciles** go on the tick last.
+- `slotHolders` still counts a Sandbox marked `ended-run`; no slice lets
+  one last past its tick yet.
+
 **Step 13 as built** (`internal/engine/triage.go`, `internal/engine/task_roles.go`,
 `internal/model/answers.go`, `internal/model/lead_roles.go`). All three
 roles are built; none is left `RoleNotBuilt`. Choices the plan left open:

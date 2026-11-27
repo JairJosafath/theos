@@ -48,9 +48,13 @@ import (
 // pull request as the Container's agent bot), and ends a turn whose agent is
 // unavailable, keeping when it is back in the record (hostStep); what these
 // say is the reconciler's, before the run ends (ending), after the tick
-// (carried) and after the status write (afterWrite). Every other step the
-// reconciler carries out itself (apply), as before, until later slices of
-// #336 move them. The status is written once, after the tick.
+// (carried) and after the status write (afterWrite). It updates an approved
+// change's branch with main, the judging run kept through it
+// (ports.Keeper), and merges it, the merge's operator-only parts the
+// reconciler's (engine.Merger: HoldMerge, Merge, Merged), what it says after
+// the tick (mergeCarried). Every other step the reconciler carries out
+// itself (apply), as before, until later slices of #336 move them. The
+// status is written once, after the tick.
 
 // taskTurn is one reconcile of a Task on the engine's Task tick: the
 // ports.Runtime the tick runs on, and what the reconcile keeps between the
@@ -73,8 +77,15 @@ type taskTurn struct {
 	// inPlace that it carries out step, a run suspended or resumed in place,
 	// which the reconcile says after the tick (keptInPlace); byHost that it
 	// carries out step through the Task's host (hostStep), which the
-	// reconcile says after the tick (carried).
-	endsTurn, inPlace, byHost bool
+	// reconcile says after the tick (carried); merges that it carries out
+	// step, a merge or a branch's update (mergeStep), which the reconcile
+	// says after the tick (mergeCarried).
+	endsTurn, inPlace, byHost, merges bool
+	// reviewRun is the approving review run's result HoldMerge read, for the
+	// follow-ups Merged files, and skip what Merge planned for main's push
+	// run (planSkip), which Merged carries onto the merge commit.
+	reviewRun *model.RunResult
+	skip      *pushSkip
 	// reopened says the Task had a pull request before the step: a later
 	// round's, whose description stays the first round's. failed is the
 	// failure the engine carried out, said by ending, whose issue goes back
@@ -93,7 +104,10 @@ type taskTurn struct {
 	firstIssueRun bool
 }
 
-var _ ports.Runtime = (*taskTurn)(nil)
+var (
+	_ ports.Runtime = (*taskTurn)(nil)
+	_ engine.Merger = (*taskTurn)(nil)
+)
 
 // newTaskTurn is the reconcile of task on the tick, on status as the
 // reconcile leaves it.
@@ -116,16 +130,17 @@ func (t *taskTurn) Capabilities() ports.Capabilities { return operatorCapabiliti
 
 // input is the tick's input: the reconciler reads the facts, carries out
 // every step but a turn's offer, end and restart, a run kept in place and the
-// steps of hostStep, says what a turn's end and a failure say (ending), and
-// writes the round's pull request (pull); the host is resolved when a step
-// needs it (host).
+// steps of hostStep and mergeStep, says what a turn's end, a failure and a
+// branch's update say (ending), writes the round's pull request (pull) and
+// merges as the operator merges (the Merger); the host is resolved when a
+// step needs it (host).
 func (t *taskTurn) input(ctx context.Context) engine.TaskInput {
 	in := engine.TaskInput{Task: t.task.Name, Container: t.container.Name, Issue: int(t.task.Spec.Issue),
 		Title: t.status.IssueTitle, Goal: t.task.Spec.Goal, Spec: isSpec(t.task),
 		Implementer: t.agents.implementer.Name, Reviewer: t.agents.reviewer.Name,
 		MaxRounds: int(t.agents.implementer.Spec.MaxRounds), Now: t.r.now(), Log: logf.FromContext(ctx),
 		Facts: t.readFacts, Carry: t.carry, Ending: t.ending, Host: t.host, HostTimeout: t.r.gitTimeout(),
-		Pull: t.pull}
+		Pull: t.pull, Benchmark: t.task.Spec.Benchmark != nil, Merger: t}
 	if t.agents.verifier != nil {
 		in.Verifier = t.agents.verifier.Name
 	}
@@ -163,10 +178,19 @@ func hostStep(action model.TaskAction) bool {
 	return false
 }
 
+// mergeStep reports whether the engine carries out action, an approved
+// change's way into main, where it acts on the run the reconciler would
+// (endsAsTheEngine): its merge, and its branch updated with main, the
+// judging run kept through it for the merge (ports.Keeper).
+func mergeStep(action model.TaskAction) bool {
+	return action == model.ActionMerge || action == model.ActionUpdateBranch
+}
+
 // carry carries out step, unless it is a turn's start, or a turn's end, a
-// run kept in place or a step of hostStep the engine carries out on the run
-// the reconciler would (endsAsTheEngine), which it leaves to the engine. The engine brought the
-// run's pause up to date before (ports.Pauser), as the step may wait on it.
+// run kept in place or a step of hostStep or mergeStep the engine carries
+// out on the run the reconciler would (endsAsTheEngine), which it leaves to
+// the engine. The engine brought the run's pause up to date before
+// (ports.Pauser), as the step may wait on it.
 func (t *taskTurn) carry(ctx context.Context, _ model.TaskFacts, step model.TaskStep) (bool, error) {
 	t.step = step
 	status := t.status
@@ -191,6 +215,14 @@ func (t *taskTurn) carry(ctx context.Context, _ model.TaskFacts, step model.Task
 		t.byHost, t.reopened = true, status.PullRequest != 0
 		return false, nil
 	}
+	if mergeStep(step.Action) && t.endsAsTheEngine() {
+		if step.Unreviewed {
+			// As apply drops them: no agent judged this round's change.
+			status.Review, status.Verification = nil, nil
+		}
+		t.merges = true
+		return false, nil
+	}
 	result, err := t.r.apply(ctx, t.task, status, t.container, t.agents, step)
 	t.result = result
 	return true, err
@@ -198,13 +230,16 @@ func (t *taskTurn) carry(ctx context.Context, _ model.TaskFacts, step model.Task
 
 // endsAsTheEngine reports whether the engine ends, suspends or resumes the
 // phase's run as the reconciler's endRun, suspendRun and resumeRun would:
-// the turn the engine acts on (the phase's role, in the Sandbox the status's
-// counters name) is the status's current Sandbox, or the phase has no run
-// and the status names no Sandbox. A status that forgot its Sandbox, or
-// names another, is left to apply, whose endRun ends whatever the status
-// names, as it always has.
+// the turn the engine acts on (the phase's role, else the judging run kept
+// past its turn for the merge, in the Sandbox the status's counters name) is
+// the status's current Sandbox, or the phase has no run and the status names
+// no Sandbox. A status that forgot its Sandbox, or names another, is left to
+// apply, whose endRun ends whatever the status names, as it always has.
 func (t *taskTurn) endsAsTheEngine() bool {
 	role := runRole(t.status.Phase)
+	if role == "" {
+		role = keptRole(t.task, t.status, int(t.status.Round)) // sandboxWorkers.Kept
+	}
 	if role == "" {
 		return t.status.Sandbox == ""
 	}
@@ -233,6 +268,11 @@ func (t *taskTurn) ending(ctx context.Context, _ model.TaskFacts, step model.Tas
 	case model.ActionResolveConflicts:
 		status.Review = r.sayConflicts(ctx, task, status, container, step)
 	case model.ActionReviewAgain:
+		r.comment(ctx, task, status, container, step.Message+".")
+	case model.ActionUpdateBranch:
+		// The judging run is kept for the merge; its verdict goes into the
+		// status as the branch takes in main, as updateBranch has it.
+		status.Review = r.reviewFrom(ctx, task, status)
 		r.comment(ctx, task, status, container, step.Message+".")
 	case model.ActionFail:
 		if t.step.Action == model.ActionFail {
@@ -276,14 +316,10 @@ func (t *taskTurn) ended(ctx context.Context, step model.TaskStep) {
 // to end first, or a failure read as it stands; a failed Task's issue goes
 // back to a person.
 func (t *taskTurn) carried(ctx context.Context, step model.TaskStep) {
-	if !t.byHost {
+	if !t.byHost || t.handBack(ctx) {
 		return
 	}
 	r, task, status := t.r, t.task, t.status
-	if f := t.failed; f != nil && status.Phase == c4v1beta1.TaskFailed {
-		r.failed(ctx, task, t.container, cmp.Or(f.Reason, model.ReasonFailed), f.Message)
-		return
-	}
 	switch {
 	case step.Action != t.step.Action && step.Action != model.ActionWait:
 		return // another step, said by its own
@@ -300,6 +336,18 @@ func (t *taskTurn) carried(ctx context.Context, step model.TaskStep) {
 	default:
 		r.progress(task, status, metav1.ConditionTrue, "RerunningChecks", step.Message)
 	}
+}
+
+// handBack hands a Task the engine failed back to a person, said by ending
+// (failed), once it failed, as fail hands it back after endRun; it reports
+// whether it did.
+func (t *taskTurn) handBack(ctx context.Context) bool {
+	f := t.failed
+	if f == nil || t.status.Phase != c4v1beta1.TaskFailed {
+		return false
+	}
+	t.r.failed(ctx, t.task, t.container, cmp.Or(f.Reason, model.ReasonFailed), f.Message)
+	return true
 }
 
 // opened says in the status that the tick opened the round's pull request:
@@ -504,13 +552,13 @@ func (s *statusStore) Progress(_ context.Context, task string) (ports.TaskRecord
 }
 
 // SaveProgress keeps r in the status; a final phase ends the Task, as the
-// reconciler ends one (end).
+// reconciler ends one (end): merged, failed, or a Benchmark's approved.
 func (s *statusStore) SaveProgress(_ context.Context, task string, r ports.TaskRecord) error {
 	if err := s.own(task); err != nil {
 		return err
 	}
 	setRecord(s.status, r)
-	if p := r.Progress.Phase; p == model.TaskMerged || p == model.TaskFailed {
+	if p := r.Progress.Phase; p == model.TaskMerged || p == model.TaskFailed || p == model.TaskApproved {
 		s.r.end(s.task, s.status, model.TaskEnd{Phase: p, Reason: r.Reason, Message: r.Message})
 	}
 	return nil

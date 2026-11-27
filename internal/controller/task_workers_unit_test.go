@@ -116,11 +116,11 @@ func playPod(t *testing.T, c client.Client, ns, name string, status corev1.PodSt
 
 // workersClient is controller-runtime's fake client with the API server's
 // UIDs, which tell a sandbox's pod from an earlier sandbox's of its name.
-func workersClient(t *testing.T, objects ...client.Object) client.Client {
+func workersClient(t *testing.T) client.Client {
 	t.Helper()
 	uids := 0
 	return fake.NewClientBuilder().WithScheme(checkpointScheme(t)).
-		WithStatusSubresource(&c4v1beta1.Task{}, &corev1.Pod{}).WithObjects(objects...).
+		WithStatusSubresource(&c4v1beta1.Task{}, &corev1.Pod{}).
 		WithInterceptorFuncs(interceptor.Funcs{Create: func(ctx context.Context, c client.WithWatch, obj client.Object,
 			opts ...client.CreateOption) error {
 			if obj.GetUID() == "" {
