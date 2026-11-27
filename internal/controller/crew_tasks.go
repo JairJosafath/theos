@@ -45,8 +45,8 @@ var _ ports.Runtime = crewRuntime{}
 
 func (r crewRuntime) Store() ports.TaskStore { return r.store }
 
-// Workers is nil: the Task reconciler makes the Sandboxes until it runs on
-// the engine's Task tick (#336).
+// Workers is nil: a Crew's tick runs no turn. A Task's turns are its
+// reconcile's Sandboxes (sandboxWorkers, #336).
 func (crewRuntime) Workers() ports.Workers { return nil }
 
 func (crewRuntime) Capabilities() ports.Capabilities { return operatorCapabilities }

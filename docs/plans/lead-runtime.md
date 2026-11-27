@@ -553,6 +553,87 @@ host's pages in `docs/screenshots/`, is still to do: it settles
 [Not tested, and who can](#not-tested-and-who-can), and the guide says
 what it found once it is done.
 
+**Step 12 as built (slice 1: the Workers adapter)** (`internal/controller/task_workers.go`).
+#336 lands in slices, each green as its own pull request. This first one is
+the operator's `Workers` and the contract run on it. The Task reconciler is
+unchanged: nothing outside the tests builds these Workers yet, and every
+Task envtest spec is untouched. Choices the plan left open:
+- **The Workers are one Task's, for one reconcile** (`r.workers(task,
+  status, build)`), as `crewRuntime` is one Crew's. They work on the status
+  as the reconcile leaves it, which the reconciler writes once, at the end.
+  A turn of another Task is an error.
+- **A turn is a Sandbox named as the reconciler names it.** The name is
+  `model.SandboxName` of the call's round and role and the status's
+  restarts, review attempts and reruns (`sandboxName`). So the engine's
+  restart (end the turn, save the moved counters, offer it again) makes a
+  new Sandbox, as the reconciler's rerun does today.
+- **Offer** makes the Sandbox with `buildSandbox`, from a `sandboxBuild`
+  the caller passes: the run's inputs, `runSandbox`'s. Like `startRun`, it
+  names the Sandbox in the status and forgets the old pod and
+  `agentBackAt`. If the Sandbox is there already, Offer makes nothing; it
+  only names it in a status that forgot it.
+- **Run** is `runState` on the pod the status says the run started on,
+  then `withSuspendedFor` and `withoutNothing`: `facts.Run` as the
+  reconciler reads it now. It also keeps the run's first pod in the status,
+  as `facts` does, so a replacement pod reads as an interrupted run.
+- **End** of the current run is `endRun`: the run is counted, recorded
+  and its leases taken. Its Sandbox is deleted after `writeStatus` inside
+  a Reconcile (`withEndedRuns`, #922), and at once outside one. End of
+  another turn deletes that Sandbox the same way. So the engine's `next`
+  and `restart`, which end a turn before they save the progress, lose no
+  run when the status write fails.
+- **A run ended for its claim** (`silent`, `released`). A Sandbox has no
+  claim, and the operator's Run never says an end is due. But the contract
+  asks that such a run read interrupted until its turn is offered again,
+  and an outside agent on a cluster (#260) would have a claim. So End
+  marks the Sandbox `theos.factory.io/ended-run=<why>` and suspends it at
+  once, and a current run is counted and recorded first. Agent Sandbox
+  deletes its pod and starts no other. Run then reads it done and
+  interrupted. The turn's next End deletes it. An Offer of the turn deletes
+  it and makes a new one, and errs while the old one is still being
+  deleted.
+- **The contract's lapse** on Sandboxes is a pod evicted with no answer
+  (`podDisrupted`). Run reads that as done and interrupted, which the
+  contract takes.
+- Tests: tier 1, `TestSandboxWorkersContract336` (`contract.Workers` on
+  controller-runtime's fake client, with the UIDs an interceptor gives) and
+  the adapter's own cases: `TestSandboxWorkersNameTheTurnAsTheReconciler336`,
+  `TestSandboxWorkersDeleteTheSandboxAfterTheStatus336`,
+  `TestSandboxWorkersKeepARunEndedForItsClaim336` and
+  `TestSandboxWorkersRunTheirTaskAlone336`. Tier 4, "The operator's Workers
+  keeps the Workers contract on Sandboxes": `contract.Workers` in envtest,
+  as the operator's ServiceAccount under the generated role. It runs as a
+  subtest of the suite's own `*testing.T` (`suiteT`), since a contract
+  takes one.
+
+What the later slices of #336 must do:
+- **Slice 2, the run side on the tick.** `Reconcile` reads the Task, calls
+  `engine.TaskTick` and writes the status. Its runtime's store keeps the
+  status in memory (`Progress` from it, `SaveProgress` into it, the one
+  write still `writeStatus`). Its Workers are `r.workers(task, status,
+  build)`, with `build` from `runSandbox`'s inputs. The steps before a run
+  can wait or end the Task: `runInputs` (the Agent's credentials, the
+  Standard on main, a closed issue), `continueEarlierTry` and
+  `startAtReview`, `leaseEnvironments` and a Benchmark's base branch. Offer
+  returns only an error, so these need a place of their own: an optional
+  part of `Workers` the engine asks for before it offers, or a typed wait
+  that `build` returns and the tick turns into a wait. Choose one and
+  record it here. The first run's comments (`announce`) and the `Running`
+  condition go with it.
+- **Suspend, resume and pause** become optional parts of `Workers` the
+  engine asks for by interface (`ports.Suspender`, `ports.Resumer` and a
+  pauser), as `agentrunner` asks for a harness's. The operator's Workers
+  implement them with `suspendRun`, `resumeRun` and `syncPause`. The Task
+  tick's `carry` turns those steps into `NotBuilt` waits today.
+- **What the tick doesn't carry yet**: the operator's own host actions
+  (open, merge, approve and comment as they write status), the Standard
+  change, specs, verification, a person's approval and rules, budgets, and
+  the Plan, Triage and Score Tasks' reconciles. Their roles' Sandboxes are
+  named by `model.SandboxName` too, so the same Workers serve them.
+- `slotHolders` counts a Sandbox marked `ended-run` as holding a slot while
+  it lasts. In the engine it lasts only until the same tick's restart ends
+  the turn. A slice that lets it last longer leaves it out of the count.
+
 **Step 13 as built** (`internal/engine/triage.go`, `internal/engine/task_roles.go`,
 `internal/model/answers.go`, `internal/model/lead_roles.go`). All three
 roles are built; none is left `RoleNotBuilt`. Choices the plan left open:

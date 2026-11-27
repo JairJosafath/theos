@@ -179,7 +179,13 @@ const (
 // managerUser is the operator's ServiceAccount in config/rbac/role_binding.yaml.
 const managerUser = "system:serviceaccount:system:controller-manager"
 
+// suiteT is the suite's test, for a spec that runs a contract of
+// internal/ports/contract, which takes a *testing.T, against envtest: it
+// runs the contract as a subtest of suiteT (task_workers_test.go, #336).
+var suiteT *testing.T
+
 func TestControllers(t *testing.T) {
+	suiteT = t
 	RegisterFailHandler(Fail)
 	// Reconcilers run in the background, a chain of them per wait, and a loaded
 	// device or CI runner has taken past 10s for one (#1099). A passing Eventually

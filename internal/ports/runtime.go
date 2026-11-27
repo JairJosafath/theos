@@ -81,7 +81,7 @@ type TaskRecord struct {
 // Workers runs one role's turn on a Task. The engine offers the turn, reads
 // the run back and ends it; whether the work is pushed to a sandbox or
 // pulled by a session is the Workers' own. Declared for the Task tick
-// (#334); the operator's Sandboxes come behind it with #336.
+// (#334); the operator's Sandboxes are behind it since #336.
 type Workers interface {
 	// Offer offers the turn w names. It is safe to repeat.
 	Offer(ctx context.Context, w WorkOrder) error
