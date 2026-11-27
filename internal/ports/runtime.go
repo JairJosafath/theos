@@ -114,6 +114,74 @@ type Preparer interface {
 	Prepare(ctx context.Context, w WorkOrder) (ready bool, err error)
 }
 
+// Suspender is the part of Workers that suspends a turn's run in place,
+// asked for by interface (#336): the run keeps what it saved (its
+// checkpoint) and goes on from there once resumed (Resumer), with no round
+// or rerun spent. The operator's Sandboxes have it: a suspended Sandbox
+// keeps its checkpoint volume and loses its pod. Workers whose sessions pull
+// the work have none, and a step that would suspend a run waits there,
+// saying it is not built.
+type Suspender interface {
+	// Suspend suspends the run of role on round of task in place, for why.
+	// It reports whether it suspended the run afresh: false when an earlier
+	// call did (the run counted then, its suspend not yet done), and this one
+	// only suspends it again. The engine counts a resume only on a fresh
+	// one. Safe to repeat.
+	Suspend(ctx context.Context, task string, round int, role string, why Suspension) (fresh bool, err error)
+}
+
+// Suspension is why Workers suspend a run (Suspender.Suspend).
+type Suspension struct {
+	Kind SuspendKind
+	// AgentBack is when the agent of a run suspended for it
+	// (SuspendForAgent) is due back: the run resumes then.
+	AgentBack time.Time
+}
+
+// SuspendKind is why a run is suspended in place.
+type SuspendKind string
+
+// The kinds of suspend: an interrupted run's, which counts a resume
+// (model.SuspendRun); a run's that paused at the runtime's ask; and that of
+// a run whose agent was unavailable.
+const (
+	SuspendInterrupted SuspendKind = "Interrupted"
+	SuspendPaused      SuspendKind = "Paused"
+	SuspendForAgent    SuspendKind = "ForAgent"
+)
+
+// Resumer is the part of Workers that resumes a suspended run in place,
+// asked for by interface (#336), with what a new turn of its role would get
+// now: the current Agent, and the run's remaining time. Like a Preparer, it
+// may hold the resume: the operator's needs the Agent's credentials and the
+// run's test environments again before the Sandbox runs.
+type Resumer interface {
+	// Resume resumes the suspended run of the turn w names. Not ready, it
+	// resumes nothing this tick and reports false: why is the runtime's,
+	// which may have changed the Task's record through its store, and a
+	// later tick asks again.
+	Resume(ctx context.Context, w WorkOrder) (resumed bool, err error)
+}
+
+// Pauser is the part of Workers that pauses a running turn at the runtime's
+// ask (model.TaskFacts.Pause, a Crew's or Brief's pause), asked for by
+// interface (#336). The engine brings the run's pause up to date on every
+// tick of a phase with a run, before it carries out the step: a run that
+// works is asked to pause at its next tool boundary, or the ask is taken
+// back, and a suspended run whose resume a pause holds is kept resumable.
+// Workers with no Pauser pause nothing.
+type Pauser interface {
+	// AskPause asks the running run of role on round of task to pause for
+	// why at its next tool boundary; an empty why takes the ask back. Safe
+	// to repeat.
+	AskPause(ctx context.Context, task string, round int, role, why string) error
+	// HoldSuspended keeps the suspended run of role on round of task
+	// resumable while a pause holds its resume: the operator takes its
+	// Sandbox's shutdown time off, which would expire it and its checkpoint.
+	// Safe to repeat.
+	HoldSuspended(ctx context.Context, task string, round int, role string) error
+}
+
 // WorkOrder is the turn Workers.Offer offers.
 type WorkOrder = model.WorkOrder
 

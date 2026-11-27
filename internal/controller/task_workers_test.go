@@ -60,4 +60,33 @@ var _ = Describe("The operator's Workers", func() {
 		Expect(suiteT.Run("SandboxWorkersContract336", func(t *testing.T) { contract.Workers(t, env) })).
 			To(BeTrue(), "contract.Workers on the operator's Sandboxes; its subtests' output says what failed")
 	})
+
+	// #336: the Sandboxes as Workers that keep a run in place
+	// (ports.Suspender, ports.Resumer) keep that contract too, under the
+	// operator's role: a suspend patches the Sandbox and a resume updates
+	// it. The test plays Agent Sandbox, deleting a suspended Sandbox's pod.
+	It("keeps the suspending Workers contract on Sandboxes", func() {
+		operator, err := client.New(managerCfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).NotTo(HaveOccurred())
+		r := &TaskReconciler{Client: operator, APIReader: operator, Scheme: scheme.Scheme}
+		// One project per Task the subtests make: three suspends, one resume.
+		var projects []string
+		for range 4 {
+			projects = append(projects, newProjectNamespace())
+		}
+		env := sandboxSuspendingEnv(r, func() client.Client { return k8sClient }, func(t *testing.T) *c4v1beta1.Task {
+			if len(projects) == 0 {
+				t.Fatal("no project left for another subtest of the contract")
+			}
+			task := workersTask(projects[0])
+			projects = projects[1:]
+			if err := k8sClient.Create(ctx, task); err != nil {
+				t.Fatal(err)
+			}
+			return task
+		})
+		Expect(suiteT.Run("SandboxSuspendingWorkersContract336", func(t *testing.T) {
+			contract.SuspendingWorkers(t, env)
+		})).To(BeTrue(), "contract.SuspendingWorkers on the operator's Sandboxes; its subtests' output says what failed")
+	})
 })

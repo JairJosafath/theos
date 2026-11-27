@@ -70,15 +70,25 @@ type sandboxWorkers struct {
 	// prepare, when set, readies a turn before it is offered; nil readies
 	// every turn at once.
 	prepare sandboxPrepare
+	// resume, when set, readies a suspended turn's resume, as prepare
+	// readies an offer; nil readies every resume.
+	resume sandboxPrepare
 	// created is the Sandbox the last Offer made, empty when it made none:
 	// a first run's comments go with the Sandbox that starts it, not with
 	// an offer that found it made (#906).
 	created string
+	// suspended is the Sandbox the last Suspend suspended afresh, and
+	// resumed the one the last Resume resumed, empty for none: the
+	// reconcile says so in the status after the tick (taskTurn.keptInPlace).
+	suspended, resumed string
 }
 
 var (
-	_ ports.Workers  = (*sandboxWorkers)(nil)
-	_ ports.Preparer = (*sandboxWorkers)(nil)
+	_ ports.Workers   = (*sandboxWorkers)(nil)
+	_ ports.Preparer  = (*sandboxWorkers)(nil)
+	_ ports.Suspender = (*sandboxWorkers)(nil)
+	_ ports.Resumer   = (*sandboxWorkers)(nil)
+	_ ports.Pauser    = (*sandboxWorkers)(nil)
 )
 
 // workers returns the Workers of task's reconcile, its status as the
@@ -267,5 +277,101 @@ func (w *sandboxWorkers) endSandbox(ctx context.Context, name, why string) error
 		return err
 	}
 	logf.FromContext(ctx).Info("Ended a run for its claim", "sandbox", name, "why", why)
+	return nil
+}
+
+// current refuses a turn whose Sandbox is not the Task's current one: the
+// run the reconciler suspends and resumes in place is the one its status
+// names (suspendRun, resumeRun).
+func (w *sandboxWorkers) current(task string, round int, role, what string) (string, error) {
+	if err := w.own(task); err != nil {
+		return "", err
+	}
+	name := w.name(round, role)
+	if name != w.status.Sandbox {
+		return "", fmt.Errorf("the Workers of Task %s %s only the Task's current run, not sandbox %s (the status names %q)",
+			w.task.Name, what, name, w.status.Sandbox)
+	}
+	return name, nil
+}
+
+// Suspend suspends the run of role's turn in round in place, as the
+// reconciler suspends one (suspendCurrent): the run is counted in the
+// status, and its Sandbox suspended once that status is written, keeping its
+// checkpoint volume; Agent Sandbox deletes its pod. A run counted already is
+// only suspended again, and the suspend is not fresh. Only the Task's
+// current run is suspended.
+func (w *sandboxWorkers) Suspend(ctx context.Context, task string, round int, role string,
+	why ports.Suspension) (bool, error) {
+	w.suspended = ""
+	name, err := w.current(task, round, role, "suspend")
+	if err != nil {
+		return false, err
+	}
+	fresh, err := w.r.suspendCurrent(ctx, w.task, w.status, suspendKindOf(why.Kind), why.AgentBack)
+	if fresh {
+		w.suspended = name
+	}
+	return fresh, err
+}
+
+// Resume resumes the suspended run of the turn order names in place, as the
+// reconciler resumes one (resumeRun): readied first (resume, the run's
+// credentials and test environments under its Sandbox's name), its
+// Sandbox gets the pod template a new run of the role would get now (build),
+// with what is left of its time, once the status that forgets its old pod
+// is written. Only the Task's current run is resumed.
+func (w *sandboxWorkers) Resume(ctx context.Context, order ports.WorkOrder) (bool, error) {
+	w.resumed = ""
+	name, err := w.current(order.Task, order.Round, order.Role, "resume")
+	if err != nil {
+		return false, err
+	}
+	if w.resume != nil {
+		if ready, err := w.resume(ctx, order, name); err != nil || !ready {
+			return false, err
+		}
+	}
+	run, err := w.build(ctx, order, name)
+	if err != nil {
+		return false, err
+	}
+	fresh, err := buildSandbox(run, w.r.Scheme, w.r.now())
+	if err != nil {
+		return false, err
+	}
+	if err := w.r.resumeInPlace(ctx, w.task, w.status, run.agent, fresh); err != nil {
+		return false, err
+	}
+	w.resumed = name
+	return true, nil
+}
+
+// AskPause asks the run of role's turn in round to pause at its next tool
+// boundary, or takes the ask back for an empty why: the pause annotation on
+// its Sandbox's pod template (askPause), the one thing the operator changes
+// under a running agent. A turn that is not the Task's current run is left
+// as it is, as the reconciler leaves it (syncPause).
+func (w *sandboxWorkers) AskPause(ctx context.Context, task string, round int, role, why string) error {
+	if err := w.own(task); err != nil {
+		return err
+	}
+	if name := w.name(round, role); name == w.status.Sandbox {
+		return w.r.askPause(ctx, w.task.Namespace, name, why)
+	}
+	return nil
+}
+
+// HoldSuspended takes the shutdown time off the suspended Sandbox of role's
+// turn in round, whose resume a pause holds (holdSandbox): Agent Sandbox
+// would expire it, and its checkpoint with it. A turn that is not the Task's
+// current run is left as it is.
+func (w *sandboxWorkers) HoldSuspended(ctx context.Context, task string, round int, role string) error {
+	if err := w.own(task); err != nil {
+		return err
+	}
+	if name := w.name(round, role); name == w.status.Sandbox {
+		return w.r.holdSandbox(ctx, w.task.Namespace, name)
+	}
 	return nil
 }
