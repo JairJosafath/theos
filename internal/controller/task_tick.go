@@ -35,9 +35,13 @@ import (
 // step 12; #336). The tick reads the Task's record from the reconcile's
 // status (statusStore), its run through the Task's Workers (sandboxWorkers),
 // and the rest of its facts from the reconciler (TaskReconciler.facts); it
-// decides, and offers a turn through the Workers. Every other step the
-// reconciler carries out itself (apply), as before, until later slices of
-// #336 move them. The status is written once, after the tick.
+// decides, offers a turn through the Workers, and ends one and moves the
+// Task on (engine.TurnEnd: a verification, a round not accepted, a review or
+// verification tried again, an interrupted run run again, a conflict to
+// resolve), what the end says on the pull request the reconciler's
+// (taskTurn.ending). Every other step the reconciler carries out itself
+// (apply), as before, until later slices of #336 move them. The status is
+// written once, after the tick.
 
 // taskTurn is one reconcile of a Task on the engine's Task tick: the
 // ports.Runtime the tick runs on, and what the reconcile keeps between the
@@ -55,6 +59,9 @@ type taskTurn struct {
 	step   model.TaskStep
 	facts  model.TaskFacts
 	result ctrl.Result
+	// endsTurn says the engine carries out step, a turn's end, whose
+	// Progressing reason the reconcile writes after the tick (ended).
+	endsTurn bool
 	// in and envs are the run's inputs and test environments, read by
 	// prepare for the Sandbox the offer makes; firstIssueRun says the run
 	// is the Task's first on its issue, which announces the Task.
@@ -90,7 +97,7 @@ func (t *taskTurn) input(ctx context.Context) engine.TaskInput {
 		Title: t.status.IssueTitle, Goal: t.task.Spec.Goal, Spec: isSpec(t.task),
 		Implementer: t.agents.implementer.Name, Reviewer: t.agents.reviewer.Name,
 		MaxRounds: int(t.agents.implementer.Spec.MaxRounds), Now: t.r.now(), Log: logf.FromContext(ctx),
-		Facts: t.readFacts, Carry: t.carry}
+		Facts: t.readFacts, Carry: t.carry, Ending: t.ending}
 	if t.agents.verifier != nil {
 		in.Verifier = t.agents.verifier.Name
 	}
@@ -115,9 +122,10 @@ func offers(action model.TaskAction) bool {
 	return false
 }
 
-// carry carries out step, unless it is a turn's start, which it leaves to the
-// engine. It brings the run's pause up to date first, as the step may wait
-// on it.
+// carry carries out step, unless it is a turn's start, or a turn's end the
+// engine ends as the reconciler would (endsAsTheEngine), which it leaves to
+// the engine. It brings the run's pause up to date first, as the step may
+// wait on it.
 func (t *taskTurn) carry(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (bool, error) {
 	t.step = step
 	status := t.status
@@ -129,6 +137,10 @@ func (t *taskTurn) carry(ctx context.Context, facts model.TaskFacts, step model.
 		}
 	}
 	if offers(step.Action) {
+		return false, nil
+	}
+	if engine.TurnEnd(step.Action) && t.endsAsTheEngine() {
+		t.endsTurn = true
 		return false, nil
 	}
 	result, err := t.r.apply(ctx, t.task, status, t.container, t.agents, step)

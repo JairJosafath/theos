@@ -97,6 +97,27 @@ type TaskInput struct {
 	// engine reaches the host only for a step Carry leaves it, so a runtime
 	// whose Carry leaves it only the offers may tick with no host.
 	Carry func(ctx context.Context, facts model.TaskFacts, step model.TaskStep) (bool, error)
+	// Ending, when set, is the runtime's half of a step that ends a turn
+	// (TurnEnd), called before the Workers end the run: what the step says
+	// on the pull request, in place of the engine's own comment or review,
+	// and what the runtime keeps of the run before it goes. The operator
+	// posts as each Agent's own account, and keeps the review on the Task's
+	// status (#336). With Ending set, the engine reaches the host for none
+	// of these steps.
+	Ending func(ctx context.Context, facts model.TaskFacts, step model.TaskStep) error
+}
+
+// TurnEnd reports whether action ends a turn and moves the Task on without
+// the host but for what the step says on the pull request (TaskInput.Ending):
+// a run to verify, a round not accepted, a review or verification to try
+// again, an interrupted run to run again and a conflict to resolve.
+func TurnEnd(action model.TaskAction) bool {
+	switch action {
+	case model.ActionVerify, model.ActionRetryVerify, model.ActionRetry, model.ActionRetryReview,
+		model.ActionRerun, model.ActionResolveConflicts:
+		return true
+	}
+	return false
 }
 
 // TaskResult is what a Task tick did: the step it carried out, which a
@@ -120,10 +141,12 @@ const whyDone = "done"
 // through the host, its progress through the store. A merge the runtime
 // can't do waits for a person (model.ReasonPersonMerges), and the tick after
 // the person's merge ends the Task Merged. The operator's Task reconcile
-// runs on it too (#336): it gives its own facts (TaskInput.Facts) and
-// carries out every step but a turn's offer itself (TaskInput.Carry), and
-// its Workers ready a turn before it is offered (ports.Preparer). The rest
-// of the operator's run side (pauses, resumes, budgets) is still its own.
+// runs on it too (#336): it gives its own facts (TaskInput.Facts), carries
+// out every step but a turn's offer and end itself (TaskInput.Carry), says
+// what a turn's end says itself (TaskInput.Ending), and its Workers ready a
+// turn before it is offered (ports.Preparer), which also offers a restarted
+// turn on a later tick. The rest of the operator's run side (pauses,
+// resumes, budgets) is still its own.
 func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput) (TaskResult, error) {
 	store, workers := rt.Store(), rt.Workers()
 	if workers == nil {
@@ -160,7 +183,7 @@ func TaskTick(ctx context.Context, rt ports.Runtime, host TaskHost, in TaskInput
 			return t.result(ctx, step)
 		}
 	}
-	if host == nil && !turnOnly(step.Action) {
+	if host == nil && !t.hostFree(step.Action) {
 		return TaskResult{Step: step, Record: t.rec}, fmt.Errorf(
 			"the Task tick has no host to carry out %s", step.Action)
 	}
@@ -183,13 +206,17 @@ func (t *taskTick) result(ctx context.Context, step model.TaskStep) (TaskResult,
 	return TaskResult{Step: step, Record: rec}, nil
 }
 
-// turnOnly reports whether the engine carries out action without the host:
-// a wait, or a turn's offer.
-func turnOnly(action model.TaskAction) bool {
+// hostFree reports whether the engine carries out action without the host:
+// a wait, a turn's offer, or a turn's end whose words on the pull request
+// are the runtime's (TaskInput.Ending) or none.
+func (t *taskTick) hostFree(action model.TaskAction) bool {
 	switch action {
 	case model.ActionNone, model.ActionWait, model.ActionStartImplement, model.ActionStartReview,
-		model.ActionStartVerify:
+		model.ActionStartVerify, model.ActionVerify, model.ActionRetryVerify, model.ActionRetryReview,
+		model.ActionRerun:
 		return true
+	case model.ActionRetry, model.ActionResolveConflicts:
+		return t.in.Ending != nil
 	}
 	return false
 }
@@ -263,7 +290,14 @@ func (t *taskTick) facts(ctx context.Context) (model.TaskFacts, error) {
 		facts.Run = run
 	}
 	if in.Facts != nil {
-		return in.Facts(ctx, facts)
+		facts, err := in.Facts(ctx, facts)
+		if err != nil {
+			return facts, err
+		}
+		// Reading them may have changed the record through the runtime's
+		// store: a step is carried out on the record as it is now.
+		t.rec, err = t.rt.Store().Progress(ctx, in.Task)
+		return facts, err
 	}
 	if t.host == nil {
 		return facts, errors.New("the Task tick has no host to read the Task's facts from")
@@ -311,8 +345,14 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 		return t.start(ctx, step, model.RoleVerifier)
 	case model.ActionVerify:
 		// The review's run ends; its approval stays, and the verifier runs.
+		if err := t.ending(ctx, facts, step, nil); err != nil {
+			return step, err
+		}
 		return step, t.next(ctx, role, model.VerifyChange(p))
 	case model.ActionRetryVerify:
+		if err := t.ending(ctx, facts, step, nil); err != nil {
+			return step, err
+		}
 		return step, t.restart(ctx, role, model.RetryReview(p), model.RoleVerifier)
 	case model.ActionAwaitApproval:
 		return step, t.awaitApproval(ctx, role)
@@ -329,15 +369,25 @@ func (t *taskTick) carry(ctx context.Context, facts model.TaskFacts, step model.
 		}
 		return step, t.rerunChecks(ctx, step)
 	case model.ActionRetry:
-		t.commentRound(ctx, facts, step)
+		if err := t.ending(ctx, facts, step, func() { t.commentRound(ctx, facts, step) }); err != nil {
+			return step, err
+		}
 		t.rec.Findings = nil // the next round is reviewed afresh
 		return step, t.next(ctx, role, model.NextRound(p, step.Feedback))
 	case model.ActionRetryReview:
+		if err := t.ending(ctx, facts, step, nil); err != nil {
+			return step, err
+		}
 		return step, t.restart(ctx, role, model.RetryReview(p), model.RoleReviewer)
 	case model.ActionRerun:
+		if err := t.ending(ctx, facts, step, nil); err != nil {
+			return step, err
+		}
 		return step, t.restart(ctx, role, model.Rerun(p), role)
 	case model.ActionResolveConflicts:
-		t.comment(ctx, step.Message+".")
+		if err := t.ending(ctx, facts, step, func() { t.comment(ctx, step.Message+".") }); err != nil {
+			return step, err
+		}
 		return step, t.restart(ctx, role, model.ResolveConflicts(p, step.Feedback), model.RoleImplementer)
 	case model.ActionUpdateBranch:
 		return t.updateBranch(ctx, facts, step)
@@ -392,15 +442,34 @@ func (t *taskTick) next(ctx context.Context, role string, p model.TaskProgress) 
 	return t.save(ctx, p)
 }
 
+// ending is what a step that ends a turn says before the run ends: the
+// runtime's half when it has one (TaskInput.Ending), else the engine's own
+// words on the pull request, say, which may be none.
+func (t *taskTick) ending(ctx context.Context, facts model.TaskFacts, step model.TaskStep, say func()) error {
+	if t.in.Ending != nil {
+		return t.in.Ending(ctx, facts, step)
+	}
+	if say != nil {
+		say()
+	}
+	return nil
+}
+
 // restart ends the run of role, saves p and offers its round to again at
 // once: a turn of the same round offered again starts afresh, where the
-// round's earlier answers would count until it is.
+// round's earlier answers would count until it is. Workers that ready a
+// turn (ports.Preparer) have it offered by a later tick instead, which
+// decides its start again and readies it then: the restart is a step of its
+// own in the runtime's record, and the readying, which may hold the turn and
+// say why, is the new turn's. Such Workers name each turn apart, so the
+// ended run reads back not started.
 func (t *taskTick) restart(ctx context.Context, role string, p model.TaskProgress, again string) error {
 	if err := t.next(ctx, role, p); err != nil {
 		return err
 	}
-	// A turn its Workers hold is offered by a later tick, which decides its
-	// start again.
+	if _, readies := t.rt.Workers().(ports.Preparer); readies {
+		return nil
+	}
 	_, err := t.offer(ctx, again)
 	return err
 }

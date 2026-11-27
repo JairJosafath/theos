@@ -219,8 +219,7 @@ func (r *TaskReconciler) applyInterrupted(ctx context.Context, task *c4v1beta1.T
 	} else {
 		setProgress(status, model.Rerun(progressOf(status)))
 	}
-	r.progress(task, status, metav1.ConditionTrue, "Interrupted", step.Message)
-	logf.FromContext(ctx).Info("Rerunning an interrupted run", "round", status.Round, "reruns", status.Reruns)
+	r.turnEnded(ctx, task, status, step)
 	return ctrl.Result{}, nil // the status write triggers the next step
 }
 

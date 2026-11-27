@@ -20,9 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	c4v1beta1 "github.com/JairJosafath/theos/api/v1beta1"
 	"github.com/JairJosafath/theos/internal/model"
@@ -68,26 +66,30 @@ func verifyFacts(task *c4v1beta1.Task, status *c4v1beta1.TaskStatus, facts *mode
 // verdict.
 func (r *TaskReconciler) applyVerify(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
 	container *c4v1beta1.Container, agents taskAgents, step model.TaskStep) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
 	if step.Action == model.ActionRetryVerify {
-		r.progress(task, status, metav1.ConditionTrue, "VerifierFailed", step.Message)
 		if err := r.endRun(ctx, task, status); err != nil {
 			return ctrl.Result{}, err
 		}
 		setProgress(status, model.RetryReview(progressOf(status)))
+		r.turnEnded(ctx, task, status, step)
 		return ctrl.Result{}, nil // the status write triggers the next step
 	}
-	// The review's run ends here: what it left for the merge stays in status.
-	status.Review = r.reviewFindings(ctx, task, status)
-	r.approve(ctx, task, status, container, agents.reviewer)
+	r.approveForVerify(ctx, task, status, container, agents)
 	if err := r.endRun(ctx, task, status); err != nil {
 		return ctrl.Result{}, err
 	}
 	setProgress(status, model.VerifyChange(progressOf(status)))
-	r.progress(task, status, metav1.ConditionTrue, model.ReasonVerifying, step.Message)
-	log.Info("Sent an approved Task to its verifier", "round", status.Round, "commit", status.Commit,
-		"verifier", task.Spec.VerifierRef)
+	r.turnEnded(ctx, task, status, step)
 	return ctrl.Result{}, nil // the status write triggers the next step
+}
+
+// approveForVerify keeps the approving review in the status, with what it
+// left for the merge, as its run ends for the change's verification, and
+// posts the approval on the pull request as the reviewer's account.
+func (r *TaskReconciler) approveForVerify(ctx context.Context, task *c4v1beta1.Task, status *c4v1beta1.TaskStatus,
+	container *c4v1beta1.Container, agents taskAgents) {
+	status.Review = r.reviewFindings(ctx, task, status)
+	r.approve(ctx, task, status, container, agents.reviewer)
 }
 
 // reviewFindings is the current review's verdict with what it left for the
